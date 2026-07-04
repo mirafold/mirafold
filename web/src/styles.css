@@ -102,6 +102,144 @@ body {
   padding: 6px 12px;
 }
 
+/* ---- Registry components (Level 2) --------------------------------------
+   Rendered blocks share the .rc base: a bordered panel that mounts with a
+   small rise so components visibly "arrive" in the transcript. */
+
+.turn-render {
+  padding: 0 4px;
+}
+
+.rc {
+  background: #141a26;
+  border: 1px solid #262f42;
+  border-radius: 10px;
+  padding: 14px 16px;
+  max-width: 720px;
+  animation: rc-mount 0.22s ease-out;
+}
+
+@keyframes rc-mount {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.rc-title {
+  font-weight: 600;
+  font-size: 0.95em;
+  margin-bottom: 8px;
+  color: #eef2f8;
+}
+
+.rc-detail {
+  font-size: 0.85em;
+  color: #8b96a8;
+}
+
+.rc a {
+  color: #7ab8ff;
+}
+
+/* card */
+.rc-card-title {
+  font-weight: 600;
+  color: #eef2f8;
+  margin-bottom: 6px;
+}
+
+.rc-card-body > p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.rc-card-footer {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid #232a38;
+  font-size: 0.82em;
+  color: #8b96a8;
+}
+
+/* list */
+.rc-list :is(ul, ol) {
+  margin: 0;
+  padding-left: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.rc-list li::marker {
+  color: #4ade80;
+}
+
+/* table */
+.rc-table {
+  padding: 10px 12px;
+}
+
+.rc-table .rc-title {
+  padding: 4px 4px 0;
+}
+
+.rc-table-scroll {
+  overflow-x: auto;
+}
+
+.rc-table table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.rc-table th {
+  text-align: left;
+  font-size: 0.82em;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #8b96a8;
+  border-bottom: 1px solid #313b4e;
+  padding: 8px 12px;
+}
+
+.rc-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid #1d2434;
+}
+
+.rc-table tr:last-child td {
+  border-bottom: none;
+}
+
+/* link-group */
+.rc-links-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rc-link {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  background: #18202e;
+  border: 1px solid #262f42;
+  border-radius: 8px;
+  text-decoration: none;
+  color: #7ab8ff;
+}
+
+.rc-link:hover {
+  border-color: #3a4a68;
+  background: #1b2434;
+}
+
+.rc-link-label {
+  font-weight: 500;
+}
+
 .status-line {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.85em;

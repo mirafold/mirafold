@@ -311,7 +311,7 @@ parameterizes **your** components; it does not author them. Reliable and safe.
     Live: a list-shaped ask with no mention of UI produced a schema-valid
     `list` render + prose coda, unprompted.
 
-- [ ] **Step 1.3 — Front-end registry + components**
+- [x] **Step 1.3 — Front-end registry + components**
   - Goal: render messages become real components in the output zone.
   - Build: `web/src/registry/` with a `registry` map (name → React component)
     and components `Card`, `List`, `Table`, `LinkGroup`. `RenderZone` dispatches
@@ -320,6 +320,13 @@ parameterizes **your** components; it does not author them. Reliable and safe.
   - Files: `web/src/registry/*`, `web/src/RenderZone.tsx`.
   - Done when: a single response renders mixed styled text **and** a live
     component (e.g. a table), in the right order.
+  - Status: **done, verified mock + live (2026-07-04)** — RenderZone's state
+    became a flat entry list (text blocks | render blocks) in wire order; a
+    render closes the streaming text block so later deltas open a new one
+    after the component; re-seen render ids update props in place. Registry
+    map is typed off the shared spec (`ComponentType<ComponentProps<N>>`).
+    Headless Chrome: mock turns mount card/table/etc. after their text; live,
+    a DB-comparison ask produced a styled 3-row table + prose guidance.
 
 - [ ] **Step 1.4 — Validation & graceful fallback**
   - Goal: a malformed instruction never breaks the UI.
