@@ -11,6 +11,13 @@ agent can never touch any of them.
 Think of it as a terminal successor, not a chat app: monospace command strips
 in, rich rendered output back.
 
+![genui-shell demo — paste data, get a live chart, pin it, keep working; the agent updates the pinned chart in place](demo/demo.gif)
+
+*The arc above, live and unscripted: paste numbers → the agent chooses a
+chart component → hover it (it's a real component, not a picture) → pin it →
+keep working → ask for a change and the agent updates the **pinned** chart
+in place.*
+
 This document is the technical orientation for someone taking ownership of the
 codebase. Companion documents:
 

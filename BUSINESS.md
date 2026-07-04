@@ -242,6 +242,8 @@ them with data — that's what the gates are for.)*
    anything else on this list.
 4. Decide the license (MIT vs BSL) and name-check the npm package name now
    (`genui-shell` availability), before someone else squats it.
+   *Name-check done 2026-07-04: `genui-shell` is unclaimed on npm (registry
+   404). License decision still open.*
 
 **Measured velocity (2026-07-04):** M0 closeout + PLAN 1.1–1.3, verified and
 pushed, in one working day (~5–6 plan steps/day). Half-pace projections
