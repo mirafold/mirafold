@@ -349,6 +349,35 @@ body {
   border-bottom: none;
 }
 
+/* fallback for malformed render instructions (Step 1.4) */
+.rc-fallback {
+  border-style: dashed;
+}
+
+.rc-fallback-note {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82em;
+  color: #d4a852;
+  margin-bottom: 8px;
+}
+
+.rc-fallback-note code {
+  background: #1b2130;
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+.rc-fallback pre {
+  margin: 0;
+  background: #0d1117;
+  border: 1px solid #232a38;
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 0.82em;
+  color: #a8b2c2;
+  overflow-x: auto;
+}
+
 /* chart */
 .rc-chart {
   max-width: 760px;

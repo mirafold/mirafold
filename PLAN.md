@@ -333,7 +333,7 @@ parameterizes **your** components; it does not author them. Reliable and safe.
     Headless Chrome: mock turns mount card/table/etc. after their text; live,
     a DB-comparison ask produced a styled 3-row table + prose guidance.
 
-- [ ] **Step 1.4 — Validation & graceful fallback**
+- [x] **Step 1.4 — Validation & graceful fallback**
   - Goal: a malformed instruction never breaks the UI.
   - Build: validate `render` props against the registry schema on the client
     (and/or server). On failure or unknown component, fall back to rendering the
@@ -345,6 +345,14 @@ parameterizes **your** components; it does not author them. Reliable and safe.
   - Files: validation util, `RenderZone.tsx`.
   - Done when: an intentionally bad `render` message degrades to styled text
     instead of throwing; a component that throws is caught by its boundary.
+  - Status: **done, verified (2026-07-04)** — shared `RenderBlock` (used by
+    transcript AND pin dock): unknown component → fallback, schema-invalid
+    props → fallback, throwing component → error boundary → fallback; the
+    fallback is a quiet warning + raw props as styled code. Verified against
+    a hostile-wire harness in headless Chrome (all three paths + a valid
+    render + live page afterward); the boundary was proven with a temporary
+    throw in Card, removed and confirmed absent from the rebuilt bundle.
+    **Phase 1 fully complete.**
 
 - [x] **Step 1.5 — Richer component + polish** *(pulled forward after live
   use showed the agent improvising raw SVG-as-text for graph requests)*

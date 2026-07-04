@@ -1,6 +1,4 @@
-import type { ComponentType } from "react";
-import type { ComponentName } from "@registry-spec";
-import { registry } from "./registry";
+import { RenderBlock } from "./registry/RenderBlock";
 
 // The dock renders the same entry objects the transcript holds, so a
 // `render` update-in-place (same wire id) is reflected here for free —
@@ -29,24 +27,18 @@ export function PinDock({
         </button>
       </div>
       <div className="pin-dock-items">
-        {items.map((item) => {
-          const Component = registry[item.component as ComponentName] as
-            | ComponentType<Record<string, unknown>>
-            | undefined;
-          if (!Component) return null;
-          return (
-            <div key={item.renderId} className="pin-dock-item">
-              <button
-                className="pin-btn is-pinned"
-                onClick={() => onUnpin(item.renderId)}
-                title="Unpin — return to its place in the transcript"
-              >
-                ✕
-              </button>
-              <Component {...item.props} />
-            </div>
-          );
-        })}
+        {items.map((item) => (
+          <div key={item.renderId} className="pin-dock-item">
+            <button
+              className="pin-btn is-pinned"
+              onClick={() => onUnpin(item.renderId)}
+              title="Unpin — return to its place in the transcript"
+            >
+              ✕
+            </button>
+            <RenderBlock component={item.component} props={item.props} />
+          </div>
+        ))}
       </div>
     </aside>
   );
