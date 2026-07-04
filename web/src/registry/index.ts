@@ -1,0 +1,17 @@
+// The front-end registry: render-message component names → React components.
+// Keyed by the shared spec (@registry-spec), so adding a component means
+// adding a schema there and an entry here — the type checker enforces both.
+
+import type { ComponentType } from "react";
+import type { ComponentName, ComponentProps } from "@registry-spec";
+import { Card } from "./Card";
+import { List } from "./List";
+import { Table } from "./Table";
+import { LinkGroup } from "./LinkGroup";
+
+export const registry: { [N in ComponentName]: ComponentType<ComponentProps<N>> } = {
+  card: Card,
+  list: List,
+  table: Table,
+  "link-group": LinkGroup,
+};
