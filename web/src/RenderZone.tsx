@@ -5,6 +5,7 @@ import rehypeHighlight from "rehype-highlight";
 import type { ComponentName } from "@registry-spec";
 import type { ZoneMsg } from "./Shell";
 import { registry } from "./registry";
+import { PinDock } from "./PinDock";
 
 // The scrollback is a flat list of entries: text blocks and rendered
 // components, in the exact order they arrived on the wire.
@@ -33,6 +34,10 @@ export function RenderZone({
 }) {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [status, setStatus] = useState<Status>(null);
+  // Pinning is pure output-zone state: renderIds in pin order. The dock
+  // only exists while something is pinned (see PLAN Step 1.6).
+  const [pinned, setPinned] = useState<string[]>([]);
+  const [dockCollapsed, setDockCollapsed] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   // The text block currently receiving deltas. Kept in a ref so a user prompt
   // sent mid-stream can't detach the tail of the reply.
@@ -128,48 +133,100 @@ export function RenderZone({
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [entries, status]);
 
+  const togglePin = (renderId: string) =>
+    setPinned((p) =>
+      p.includes(renderId) ? p.filter((id) => id !== renderId) : [...p, renderId],
+    );
+
+  // Dock items reference the same entry objects the transcript holds, so an
+  // update-in-place render (same wire id) keeps pinned components live.
+  const pinnedItems = pinned.flatMap((renderId) => {
+    const entry = entries.find((e) => e.kind === "render" && e.renderId === renderId);
+    return entry && entry.kind === "render" ? [entry] : [];
+  });
+
   return (
-    <div className="render-zone">
-      {entries.map((entry) => {
-        if (entry.kind === "render") {
-          // Dynamic dispatch erases the per-component prop typing; props are
-          // trusted here and validated in Step 1.4.
-          const Component = registry[entry.component as ComponentName] as
-            | React.ComponentType<Record<string, unknown>>
-            | undefined;
-          if (!Component) return null; // unknown component — graceful fallback is Step 1.4
-          return (
-            <div key={entry.id} className="turn turn-render">
-              <Component {...entry.props} />
+    <div className="zone-row">
+      <div className="render-zone">
+        {entries.map((entry) => {
+          if (entry.kind === "render") {
+            if (pinned.includes(entry.renderId)) {
+              // Promoted to the dock; the stub holds its place in history.
+              return (
+                <button
+                  key={entry.id}
+                  className="pin-stub"
+                  onClick={() => togglePin(entry.renderId)}
+                  title="Unpin — return it here"
+                >
+                  📌 pinned · {entry.component}
+                </button>
+              );
+            }
+            // Dynamic dispatch erases the per-component prop typing; props are
+            // trusted here and validated in Step 1.4.
+            const Component = registry[entry.component as ComponentName] as
+              | React.ComponentType<Record<string, unknown>>
+              | undefined;
+            if (!Component) return null; // unknown component — graceful fallback is Step 1.4
+            return (
+              <div key={entry.id} className="turn turn-render">
+                {/* Shell-drawn affordance: the frame around the component,
+                    never inside it — the agent can't fake or grab it. */}
+                <button
+                  className="pin-btn"
+                  onClick={() => togglePin(entry.renderId)}
+                  title="Pin — keep visible while the transcript scrolls"
+                >
+                  📌
+                </button>
+                <Component {...entry.props} />
+              </div>
+            );
+          }
+          return entry.role === "user" ? (
+            <div key={entry.id} className="turn turn-user">
+              <span className="glyph">❯</span> {entry.text}
+            </div>
+          ) : (
+            <div key={entry.id} className="turn turn-assistant markdown">
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                rehypePlugins={[rehypeHighlight]}
+                components={{
+                  a: ({ node: _node, ...props }) => (
+                    <a {...props} target="_blank" rel="noopener noreferrer" />
+                  ),
+                }}
+              >
+                {entry.text}
+              </ReactMarkdown>
             </div>
           );
-        }
-        return entry.role === "user" ? (
-          <div key={entry.id} className="turn turn-user">
-            <span className="glyph">❯</span> {entry.text}
+        })}
+        {status && (
+          <div className="status-line">
+            {status.state === "tool" ? `⚙ ${status.label ?? "tool"}` : "✳ thinking…"}
           </div>
+        )}
+        <div ref={bottomRef} />
+      </div>
+      {pinned.length > 0 &&
+        (dockCollapsed ? (
+          <button
+            className="pin-tab"
+            onClick={() => setDockCollapsed(false)}
+            title="Expand pinned"
+          >
+            📌 {pinned.length}
+          </button>
         ) : (
-          <div key={entry.id} className="turn turn-assistant markdown">
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              rehypePlugins={[rehypeHighlight]}
-              components={{
-                a: ({ node: _node, ...props }) => (
-                  <a {...props} target="_blank" rel="noopener noreferrer" />
-                ),
-              }}
-            >
-              {entry.text}
-            </ReactMarkdown>
-          </div>
-        );
-      })}
-      {status && (
-        <div className="status-line">
-          {status.state === "tool" ? `⚙ ${status.label ?? "tool"}` : "✳ thinking…"}
-        </div>
-      )}
-      <div ref={bottomRef} />
+          <PinDock
+            items={pinnedItems}
+            onUnpin={togglePin}
+            onCollapse={() => setDockCollapsed(true)}
+          />
+        ))}
     </div>
   );
 }
