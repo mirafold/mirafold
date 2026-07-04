@@ -2,9 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
-import type { ComponentName } from "@registry-spec";
 import type { ZoneMsg } from "./Shell";
-import { registry } from "./registry";
+import { RenderBlock } from "./registry/RenderBlock";
 import { PinDock } from "./PinDock";
 
 // The scrollback is a flat list of entries: text blocks and rendered
@@ -163,12 +162,6 @@ export function RenderZone({
                 </button>
               );
             }
-            // Dynamic dispatch erases the per-component prop typing; props are
-            // trusted here and validated in Step 1.4.
-            const Component = registry[entry.component as ComponentName] as
-              | React.ComponentType<Record<string, unknown>>
-              | undefined;
-            if (!Component) return null; // unknown component — graceful fallback is Step 1.4
             return (
               <div key={entry.id} className="turn turn-render">
                 {/* Shell-drawn affordance: the frame around the component,
@@ -180,7 +173,7 @@ export function RenderZone({
                 >
                   📌
                 </button>
-                <Component {...entry.props} />
+                <RenderBlock component={entry.component} props={entry.props} />
               </div>
             );
           }
