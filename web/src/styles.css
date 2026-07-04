@@ -115,10 +115,11 @@ body {
   }
 }
 
-/* The command bar: prompt glyph + monospace input, submits on Enter. */
+/* The command bar: prompt glyph + monospace input, submits on Enter.
+   Grows with content up to ~8 lines, then scrolls internally. */
 .prompt-box {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   padding: 12px 14px;
   margin: 8px 0 14px;
@@ -133,6 +134,7 @@ body {
 
 .prompt-box .glyph {
   font-size: 1em;
+  line-height: 1.5; /* match the textarea so the glyph sits on the first line */
 }
 
 .prompt-box textarea {
@@ -146,6 +148,10 @@ body {
   font-size: 0.95em;
   line-height: 1.5;
   outline: none;
+  max-height: calc(1.5em * 8);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #3a4a68 transparent;
 }
 
 .prompt-box textarea::placeholder {
