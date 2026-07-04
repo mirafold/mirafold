@@ -102,9 +102,10 @@ type WireMsg =
   | { type: "status"; state: "thinking" | "tool"; label?: string }
   | { type: "turn_end" }
   | { type: "error"; message: string }
-  // Phase 1 adds:  { type: "render"; component: string; props: object; id: string }
-  //                (re-sending an id updates that component's props in place —
-  //                 this is what makes pinned widgets live, see Step 1.6)
+  | { type: "render"; component: string; props: object; id: string }
+  //                (shipped in 1.1–1.3; re-sending an id updates that
+  //                 component's props in place — this is what makes pinned
+  //                 widgets live, see Step 1.6)
   // Phase T adds:  { type: "tool_output"; ... } and { type: "permission_request"; ... }
   // Phase 2 adds:  action descriptors carried inside render props
   // Phase 3 adds:  { type: "artifact"; html: string; id: string }
@@ -237,9 +238,13 @@ the engine already has capability parity; these give the browser the cockpit.
 Priority order was set explicitly: tool output → interrupt → permission
 prompts. Each step is independent and additive on the wire.
 
-**Priority update (2026-07-04):** Phase T is catch-up; the pin dock is the
-reason anyone shares the link. Build 1.1 → 1.3 → 1.6 and record the demo GIF
-(BUSINESS.md §9, gate M1) before starting Phase T.
+**Priority update (2026-07-04, evening):** Phase T is catch-up; the pin dock
+is the reason anyone shares the link. 1.1–1.3 shipped (same day as Phase 0
+closeout). Remaining pre-Phase-T order: **1.6 → 1.4 → record the demo GIF**
+(BUSINESS.md §9, gate M1). 1.4 must land before anything goes public — one
+malformed render breaking the UI in the demo thread would undercut the
+reliability story. 1.5 (Chart) can slip to after the GIF if the demo reads
+well without it.
 
 - [ ] **Step T.1 — Tool output in the transcript**
   - Goal: see what the agent actually did, not just that it used a tool.
@@ -333,7 +338,10 @@ parameterizes **your** components; it does not author them. Reliable and safe.
   - Build: validate `render` props against the registry schema on the client
     (and/or server). On failure or unknown component, fall back to rendering the
     raw content as styled text and surface a quiet warning. Add an error
-    boundary around each rendered component.
+    boundary around each rendered component. Note: 1.3 shipped a stub — an
+    unknown component currently renders `null` silently; replace that with
+    the visible fallback. `registrySchemas` (derived zod objects) already
+    exist for exactly this — validate with them on the client.
   - Files: validation util, `RenderZone.tsx`.
   - Done when: an intentionally bad `render` message degrades to styled text
     instead of throwing; a component that throws is caught by its boundary.
@@ -355,9 +363,10 @@ parameterizes **your** components; it does not author them. Reliable and safe.
     it to its place in history. Dock collapses to a thin edge tab; dissolves
     entirely when the last pin is removed. Pure client-side output-zone state —
     no wire change. Pinned `render` components stay **live** via
-    re-render-by-id (Step 1.1), so the agent can update a pinned chart while
-    the conversation continues. Later (Phase 2): a `{kind:"state"}` action may
-    let the agent itself pin/unpin.
+    re-render-by-id, which the 1.3 interpreter already implements (a re-seen
+    render id updates that entry's props in place) — this step is pure UI
+    work on top of a shipped mechanism. Later (Phase 2): a `{kind:"state"}`
+    action may let the agent itself pin/unpin.
   - Files: `web/src/PinDock.tsx`, `RenderZone.tsx`, `Shell.tsx`, styles.
   - Done when: pin a rendered chart, keep prompting — the chart stays visible
     and updates when the agent re-renders its id; unpinning the last item

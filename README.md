@@ -43,7 +43,7 @@ can navigate the whole codebase.
 
 ### 2.1 The wire protocol (`server/protocol.ts`)
 
-The contract between server and browser. Phase 0 ships the minimum:
+The contract between server and browser. Currently on the wire:
 
 ```ts
 // Server → browser
@@ -51,7 +51,12 @@ type WireMsg =
   | { type: "text_delta"; text: string }                          // streamed markdown
   | { type: "status"; state: "thinking" | "tool"; label?: string } // activity line
   | { type: "turn_end" }                                           // finalize the turn
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  | { type: "render"; component: string; props: Record<string, unknown>; id: string };
+    // ^ Phase 1: "mount registry component X with props P". Re-sending an id
+    //   updates that component in place (the live-pinned-widget mechanism).
+    //   `component` is a plain string so unknown instructions stay
+    //   representable and can degrade gracefully (Step 1.4).
 
 // Browser → server
 type ClientMsg = { type: "prompt"; text: string };
@@ -83,11 +88,11 @@ apart:
 
 - **`Session`** — the real thing, wrapping the Agent SDK.
 - **`MockSession`** — a scripted stand-in used automatically when
-  `ANTHROPIC_API_KEY` is unset. Emits every Phase 0 message type with
+  `ANTHROPIC_API_KEY` is unset. Emits every wire message type with
   realistic pacing, drawing replies from a shuffled deck of five demo
   templates (welcome, analytics report, code review, migration plan,
-  research brief) so an API-free demo feels varied and no template repeats
-  until all five have been seen.
+  research brief), and ends every turn with a schema-valid `render` so the
+  Phase 1 component pipeline is exercised API-free.
 
 This is a deliberate development strategy, not a testing afterthought:
 **every UI capability is built and verified against the mock first**; live
@@ -101,7 +106,7 @@ Two zones in the browser, hard boundary between them:
 ```
 ┌─ OUTPUT ZONE — agent-controlled, sandboxed ──────────┐
 │   Level 1: styled markdown            (shipped)      │
-│   Level 2: registry components        (Phase 1)      │
+│   Level 2: registry components        (shipped)      │
 │   Level 3: sandboxed-iframe artifacts (Phase 3)      │
 ├─ SHELL — TRUSTED, never re-rendered by the agent ────┤
 │   prompt box · WebSocket client · all credentials    │
@@ -138,6 +143,8 @@ rule.
 ```
 server/            the local daemon (Node, run with tsx)
   protocol.ts        WireMsg/ClientMsg — the shared wire contract
+  registry-spec.ts   zod shapes per component — spec = tool schema = validation
+  render-tools.ts    render_* tools (in-process MCP server) + RENDER_GUIDANCE
   session.ts         Session (real SDK) + MockSession behind AgentSession
   permissions.ts     canUseTool policy: workspace-scoped tool gating
   index.ts           Express + ws server; binds sockets to sessions
@@ -145,8 +152,9 @@ web/               the browser app (React 19 + Vite)
   index.html         entry html
   src/main.tsx       mounts <Shell/>, imports global CSS + highlight theme
   src/Shell.tsx      TRUSTED SHELL: owns socket + prompt box; message bus
-  src/PromptBox.tsx  the command bar (Enter sends, Shift+Enter newline)
-  src/RenderZone.tsx OUTPUT ZONE: WireMsg interpreter → turns + status line
+  src/PromptBox.tsx  the command bar (auto-grows to 8 lines; Enter sends)
+  src/RenderZone.tsx OUTPUT ZONE: WireMsg interpreter → entries + status line
+  src/registry/      render-message components: Card, List, Table, LinkGroup
   src/ws.ts          SocketClient: typed send/onMessage, auto-reconnect
   src/styles.css     the design identity in CSS (see §7)
 dist/              built front end (vite build output; served by Express)
@@ -206,10 +214,20 @@ means a fresh session.
   - `result` → `error` (if `is_error`) then always `turn_end`.
 - **`close()`** pushes a sentinel that ends the generator and calls
   `interrupt()` on the SDK query.
-- Session options: `cwd` is the resolved `workspace/` dir, model comes from
-  `DEFAULT_MODEL` (default `claude-sonnet-4-6`, switchable to
-  `claude-opus-4-8` per the locked decisions), and `canUseTool` comes from
-  `permissions.ts`.
+- Session options: `cwd` is the resolved `workspace/` dir (created on
+  construction — spawning into a missing cwd fails with a misleading SDK
+  error), model comes from `DEFAULT_MODEL` (default `claude-sonnet-4-6`,
+  switchable to `claude-opus-4-8` per the locked decisions), and
+  `canUseTool` comes from `permissions.ts`.
+- **Generative UI (Phase 1):** the session mounts an in-process MCP server
+  (`server/render-tools.ts`) exposing side-effect-free `render_card` /
+  `render_list` / `render_table` / `render_links` tools whose input schemas
+  are the registry spec (`server/registry-spec.ts`) plus an optional `id`
+  for update-in-place. Calling one emits a `render` WireMsg at that point in
+  the stream and returns the id to the model. `RENDER_GUIDANCE` (appended to
+  the `claude_code` system-prompt preset) teaches when to prefer a component
+  over prose; the tool schemas' `.describe()` strings are written for the
+  model. The agent reaches for components unprompted — verified live.
 
 `MockSession` implements the same interface with `setTimeout`-scheduled
 emissions: a `thinking` status, 1–3 fake tool statuses, the reply streamed
@@ -221,7 +239,8 @@ timers.
 `makeCanUseTool(workspaceDir)` returns the SDK's `canUseTool` callback:
 
 1. **Read-only tools** (Read, Glob, Grep, WebFetch, WebSearch, TodoWrite,
-   Task, NotebookRead) → always allowed.
+   Task, NotebookRead) → always allowed. Likewise `mcp__ui__render_*` —
+   our render tools emit UI and have no side effects.
 2. **Path-targeted mutations** (Write/Edit/MultiEdit/NotebookEdit) → allowed
    only if the target path resolves inside the workspace root (`isInside`
    does a resolve-then-prefix check).
@@ -268,20 +287,29 @@ same relative URL works unchanged.
 
 ### 6.3 `RenderZone.tsx` — the interpreter
 
-State: a list of `Turn`s (`{id, role, text, done}`) and an ephemeral
+State: a flat list of `Entry`s — text blocks (`{kind:"text", role, text,
+done}`) and rendered components (`{kind:"render", renderId, component,
+props}`) — in the exact order they arrived on the wire, plus an ephemeral
 `Status`. The reducer-like subscription handles each `ZoneMsg`:
 
-- `user_prompt` → append a done user turn, show `thinking`.
-- `text_delta` → append to the **streaming assistant turn**, or open one if
-  none is active. The streaming turn's id lives in a ref
-  (`streamingId`), *not* derived from "last turn in the list" — this is a
+- `user_prompt` → append a done user text entry, show `thinking`.
+- `text_delta` → append to the **streaming text block**, or open one if
+  none is active. The streaming block's id lives in a ref
+  (`streamingId`), *not* derived from "last entry in the list" — this is a
   deliberate correctness detail: if the user sends a new prompt mid-stream,
-  the user turn is appended after the streaming turn, and deltas still route
-  to the right turn by id instead of gluing the reply's tail onto the wrong
-  block.
+  the user entry is appended after the streaming block, and deltas still
+  route to the right block by id instead of gluing the reply's tail onto
+  the wrong one.
+- `render` → if the wire `id` has been seen, **update that entry's props in
+  place** (this is what will keep pinned widgets live in 1.6); otherwise
+  append a render entry and close the streaming text block, so later deltas
+  open a new block *after* the component — the transcript keeps wire order.
+  Dispatch is `registry[component]` (`web/src/registry/`), typed off the
+  shared spec; an unknown component currently renders nothing (the visible
+  fallback is Step 1.4).
 - `status` → set the activity line (`✳ thinking…` / `⚙ Bash`).
-- `turn_end` → mark the streaming turn done, clear the ref and status.
-- `error` → rendered as a bold-prefixed assistant turn.
+- `turn_end` → mark the streaming block done, clear the ref and status.
+- `error` → rendered as a bold-prefixed assistant entry.
 
 Assistant turns render through `react-markdown` + `remark-gfm` (tables,
 task lists) + `rehype-highlight` (fenced code), with links forced to open
@@ -294,9 +322,11 @@ the whole extension model.
 
 ### 6.4 `PromptBox.tsx`
 
-A one-row textarea with the green `❯` glyph. Enter submits (trimmed,
-non-empty), Shift+Enter inserts a newline. No send button — that's part of
-the identity, not an omission.
+A textarea with the green `❯` glyph that auto-grows with content (wraps and
+newlines both) up to 8 lines, then scrolls internally — a thin scrollbar is
+the "there's more" cue — and collapses back to one line on send. Enter
+submits (trimmed, non-empty), Shift+Enter inserts a newline. No send
+button — that's part of the identity, not an omission.
 
 ## 7. Design identity (locked)
 
@@ -394,15 +424,16 @@ permission policy. Deleting it between sessions is a clean reset.
 
 Read PLAN.md for the real thing; the shape in one breath:
 
-- **Now:** finish Phase 0's live smoke test (needs a real key) — Steps 0.3
-  and 0.7 are code-complete but unverified live.
-- **Next (before anything else):** Phase 1 steps 1.1 → 1.3 → 1.6 — the
-  `render` message + component registry (agent picks and parameterizes
-  *our* components: card, list, table, links) + the **pin dock** (pinned
-  components stay visible and *live*, updated in place by re-sends of the
-  same render id). That combination is the demo that justifies the product
-  (BUSINESS.md gate M1); Phase T (tool output, interrupt, permission
-  prompts) is deliberately sequenced after it.
+- **Shipped (2026-07-04):** Phase 0 verified live, and Phase 1 steps
+  1.1–1.3 — the `render` message + component registry (the agent picks and
+  parameterizes *our* components: card, list, table, links, unprompted).
+- **Now:** Step 1.6, the **pin dock** (pinned components stay visible and
+  *live*, updated in place by re-sends of the same render id — the
+  interpreter mechanism already works), then 1.4 (render validation +
+  graceful fallback — required before anything goes public), then the demo
+  GIF. That combination is the demo that justifies the product (BUSINESS.md
+  gate M1); Phase T (tool output, interrupt, permission prompts) is
+  deliberately sequenced after it.
 - **Then:** Phase 2 (typed, server-mediated actions from components),
   Phase 3 (sandboxed-iframe artifacts), Phase 4 (session registry —
   sessions as durable, multi-viewport things — persistence, fleet view,

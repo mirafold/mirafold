@@ -191,10 +191,13 @@ structurally profitable almost immediately or it's dead — a clean signal.
 
 Each gate is a go/no-go with a measurable signal. Do not pass a gate on hope.
 
-- **M0 — Engine live (now → weeks).** Finish PLAN 0.3/0.7 with a real key.
-  *Gate:* daily-drivable for your own work.
-- **M1 — The demo exists.** PLAN 1.1–1.3 + 1.6 (render protocol → registry →
-  pin dock). Record the GIF. *Gate:* the GIF makes a stranger say "want."
+- **M0 — Engine live. ✅ PASSED 2026-07-04.** PLAN 0.3/0.7 verified with a
+  real key (live smoke: warm multi-turn, workspace file ops, reconnect).
+- **M1 — The demo exists. ← IN PROGRESS.** PLAN 1.1–1.3 + 1.6 (render
+  protocol → registry → pin dock). 1.1–1.3 shipped 2026-07-04 — the live
+  agent already answers with real components unprompted. Remaining: 1.6,
+  then 1.4 (render fallback — required before anything goes public), then
+  record the GIF. *Gate:* the GIF makes a stranger say "want."
   Post it before building anything else. **Signal: ≥ a few hundred genuine
   reactions / ≥ 50 GitHub stars in week one.** If flat: the thesis needs
   work — iterate the demo, not the infra.
@@ -230,11 +233,19 @@ Each gate is a go/no-go with a measurable signal. Do not pass a gate on hope.
 *(Probabilities are gut-calibrated priors, not data. M1/M2 signals replace
 them with data — that's what the gates are for.)*
 
-## 11. Immediate next actions
+## 11. Immediate next actions (refreshed 2026-07-04)
 
-1. Put a real `ANTHROPIC_API_KEY` in `.env`; close PLAN 0.3 + 0.7.
-2. Build PLAN 1.1 → 1.3 → 1.6. Skip Phase T until after the GIF exists.
+1. ~~Put a real `ANTHROPIC_API_KEY` in `.env`; close PLAN 0.3 + 0.7.~~ Done.
+2. ~~Build PLAN 1.1 → 1.3.~~ Done. Next: **1.6 (pin dock) → 1.4 (fallback)**.
+   Skip Phase T until after the GIF exists; 1.4 ships before anything public.
 3. Record the demo GIF. Show it to strangers. Read §9-M1 before doing
    anything else on this list.
 4. Decide the license (MIT vs BSL) and name-check the npm package name now
    (`genui-shell` availability), before someone else squats it.
+
+**Measured velocity (2026-07-04):** M0 closeout + PLAN 1.1–1.3, verified and
+pushed, in one working day (~5–6 plan steps/day). Half-pace projections
+against the gates: M1 demo in hand ≈ 1–2 working days; M2-launchable
+(Phase T + 4.1/4.2 + packaging + L.1) ≈ one further week; M3 build ≈ 2–3
+weeks but sequenced by the M1/M2 signal windows, not by code — calendar to
+first revenue is realistically 6–10 weeks and gated on audience signal.
