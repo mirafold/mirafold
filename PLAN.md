@@ -275,7 +275,7 @@ reason anyone shares the link. Build 1.1 → 1.3 → 1.6 and record the demo GIF
 Goal of the phase: the output zone transforms per response. The agent picks and
 parameterizes **your** components; it does not author them. Reliable and safe.
 
-- [ ] **Step 1.1 — Extend protocol with `render`**
+- [x] **Step 1.1 — Extend protocol with `render`**
   - Goal: a typed contract for "show component X with props P".
   - Build: add `{ type: "render"; component: string; props: object; id: string }`
     to `WireMsg`. Define a `RegistrySpec` listing allowed component names and a
@@ -285,8 +285,14 @@ parameterizes **your** components; it does not author them. Reliable and safe.
   - Files: `server/protocol.ts`, `server/registry-spec.ts`.
   - Done when: types compile; the registry spec enumerates the Phase 1
     components (card, list, table, link-group).
+  - Status: **done (2026-07-04)** — spec is zod shapes (the SDK's `tool()`
+    takes the raw shape directly, so tool schema = spec = validation, one
+    source of truth); derived `registrySchemas` reject bad props/URLs at
+    runtime; `component` stays a plain string on the wire so unknown
+    instructions remain representable for 1.4's fallback. Shared via the
+    `@registry-spec` alias (tsconfig + vite).
 
-- [ ] **Step 1.2 — Render tools + system prompt**
+- [x] **Step 1.2 — Render tools + system prompt**
   - Goal: the agent can emit render instructions, and knows when/how.
   - Build: define render tools on the session (e.g. `render_card`,
     `render_list`, `render_table`, `render_links`) whose input schemas match the
@@ -297,6 +303,13 @@ parameterizes **your** components; it does not author them. Reliable and safe.
   - Files: `server/session.ts`, `server/render-tools.ts`, system prompt.
   - Done when: asking the agent for something list-shaped produces a `render`
     message with `component:"list"` and valid props (verify over the socket).
+  - Status: **done, verified live (2026-07-04)** — render tools are an
+    in-process SDK MCP server ("ui"); tool input = registry shape + optional
+    `id` (update-in-place); `RENDER_GUIDANCE` appended to the claude_code
+    preset; `mcp__ui__render_*` allowed in `canUseTool`. MockSession now ends
+    every turn with a schema-valid render (all four components covered).
+    Live: a list-shaped ask with no mention of UI produced a schema-valid
+    `list` render + prose coda, unprompted.
 
 - [ ] **Step 1.3 — Front-end registry + components**
   - Goal: render messages become real components in the output zone.

@@ -1,0 +1,82 @@
+// The component registry spec — the single source of truth for which
+// components the agent may render and what props each accepts.
+//
+// One zod shape per component serves three consumers:
+//   1. Step 1.2 — render tools: the SDK's tool() helper takes the raw shape
+//      directly, so the agent's tool-input schema IS this spec.
+//   2. Step 1.3 — the front end keys its React registry off ComponentName.
+//   3. Step 1.4 — client/server prop validation via the derived z.object.
+//
+// The .describe() strings are what the model reads when deciding how to fill
+// props — write them for the agent, not for humans.
+
+import { z } from "zod";
+
+// Body/detail strings render as sanitized markdown client-side, same pipeline
+// as ordinary turn text — so the agent can bold, link, and inline-code freely.
+const markdown = (what: string) =>
+  z.string().describe(`${what} Supports inline markdown (bold, links, \`code\`).`);
+
+export const registryShapes = {
+  card: {
+    title: z.string().describe("Card heading, a few words."),
+    body: markdown("Main card content, one short paragraph."),
+    footer: z
+      .string()
+      .optional()
+      .describe("Small muted footer line, e.g. a source, timestamp, or caveat."),
+  },
+
+  list: {
+    title: z.string().optional().describe("Optional heading above the list."),
+    ordered: z
+      .boolean()
+      .optional()
+      .describe("True for a numbered list (steps, rankings); false/omit for bullets."),
+    items: z
+      .array(
+        z.object({
+          text: markdown("The item itself, one line."),
+          detail: markdown("Optional second line, smaller and muted.").optional(),
+        }),
+      )
+      .min(1)
+      .describe("The list entries, in display order."),
+  },
+
+  table: {
+    title: z.string().optional().describe("Optional heading above the table."),
+    columns: z.array(z.string()).min(1).describe("Column headers, in display order."),
+    rows: z
+      .array(z.array(z.union([z.string(), z.number()])))
+      .describe(
+        "Table body: one array per row, cells aligned to `columns` by index. " +
+          "Cell strings support inline markdown.",
+      ),
+  },
+
+  "link-group": {
+    title: z.string().optional().describe("Optional heading above the links."),
+    links: z
+      .array(
+        z.object({
+          label: z.string().describe("Link text, a few words."),
+          href: z.url().describe("Absolute http(s) URL."),
+          description: z.string().optional().describe("One-line description, muted."),
+        }),
+      )
+      .min(1)
+      .describe("The links, in display order."),
+  },
+} as const;
+
+export type ComponentName = keyof typeof registryShapes;
+
+export const componentNames = Object.keys(registryShapes) as ComponentName[];
+
+/** Derived object schemas, for validating a full `render` props payload. */
+export const registrySchemas = Object.fromEntries(
+  Object.entries(registryShapes).map(([name, shape]) => [name, z.object(shape).strict()]),
+) as { [N in ComponentName]: z.ZodObject<(typeof registryShapes)[N]> };
+
+export type ComponentProps<N extends ComponentName> = z.infer<(typeof registrySchemas)[N]>;
