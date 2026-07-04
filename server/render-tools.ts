@@ -30,8 +30,12 @@ the exact point in your reply where you call them, so you can mix prose and
 components freely.
 
 - Prefer render_table to a markdown table, render_list to a markdown bullet or
-  numbered list, render_links to a bare pile of links, and render_card for a
-  single highlight, verdict, or summary worth setting off from the prose.
+  numbered list, render_links to a bare pile of links, render_card for a
+  single highlight, verdict, or summary worth setting off from the prose, and
+  render_chart for ANY plot or graph (line for trends, bar for comparisons).
+- You cannot emit raw HTML or SVG — the UI renders it as literal code, never
+  as visuals. Never hand-write markup for something a render tool covers; if
+  no component fits, say so in prose instead of improvising markup.
 - Plain markdown remains right for code blocks, long-form prose, and anything
   with no fitting component.
 - Every render_* result includes the component's id. Calling the same tool
@@ -71,6 +75,12 @@ export function makeRenderServer(emit: (msg: WireMsg) => void) {
         "Show a table component in the output zone. Use instead of a markdown table.",
         { ...registryShapes.table, ...idParam },
         async ({ id, ...props }) => emitRender("table", id, props),
+      ),
+      tool(
+        "render_chart",
+        "Show a chart in the output zone: line for trends over an ordered axis, bar for category comparisons. Use for ANY plot/graph — never hand-write SVG or ASCII charts.",
+        { ...registryShapes.chart, ...idParam },
+        async ({ id, ...props }) => emitRender("chart", id, props),
       ),
       tool(
         "render_links",

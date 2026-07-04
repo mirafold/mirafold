@@ -349,6 +349,79 @@ body {
   border-bottom: none;
 }
 
+/* chart */
+.rc-chart {
+  max-width: 760px;
+}
+
+.rc-chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.rc-chart-plot {
+  position: relative;
+}
+
+.rc-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-bottom: 8px;
+}
+
+.rc-chart-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82em;
+  color: #a8b2c2;
+}
+
+.rc-chart-chip {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.rc-chart-tip {
+  position: absolute;
+  top: 10px;
+  pointer-events: none;
+  background: #0d1117;
+  border: 1px solid #313b4e;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 0.8em;
+  min-width: 130px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rc-chart-tip-x {
+  color: #8b96a8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.rc-chart-tip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rc-chart-tip-name {
+  color: #c7d0dd;
+  flex: 1;
+}
+
+.rc-chart-tip-val {
+  color: #eef2f8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
 /* link-group */
 .rc-links-row {
   display: flex;
