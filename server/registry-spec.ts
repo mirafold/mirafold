@@ -55,6 +55,30 @@ export const registryShapes = {
       ),
   },
 
+  chart: {
+    title: z.string().optional().describe("Optional heading above the chart."),
+    kind: z
+      .enum(["line", "bar"])
+      .describe("line for change/trends over an ordered axis; bar for comparing categories."),
+    x: z
+      .array(z.string())
+      .min(1)
+      .describe("X-axis labels (time points or categories), in display order."),
+    series: z
+      .array(
+        z.object({
+          name: z.string().describe("Series name, shown in the legend."),
+          values: z
+            .array(z.number())
+            .describe("One numeric value per x label, aligned by index."),
+        }),
+      )
+      .min(1)
+      .max(6)
+      .describe("1–6 data series sharing the same x axis."),
+    yLabel: z.string().optional().describe("Optional y-axis unit/label, e.g. 'ms' or '$k'."),
+  },
+
   "link-group": {
     title: z.string().optional().describe("Optional heading above the links."),
     links: z

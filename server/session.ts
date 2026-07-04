@@ -345,6 +345,21 @@ const MOCK_RENDERS: (() => { component: string; props: Record<string, unknown> }
     },
   }),
   () => ({
+    component: "chart",
+    props: {
+      title: `p99 latency — ${pick(PROJECTS)}`,
+      kind: pick(["line", "bar"] as const),
+      x: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+      yLabel: "ms",
+      series: shuffled(SERVICES)
+        .slice(0, randInt(1, 3))
+        .map((svc) => ({
+          name: svc,
+          values: Array.from({ length: 7 }, () => randInt(40, 240)),
+        })),
+    },
+  }),
+  () => ({
     component: "link-group",
     props: {
       title: "Sources",

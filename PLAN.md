@@ -346,12 +346,22 @@ parameterizes **your** components; it does not author them. Reliable and safe.
   - Done when: an intentionally bad `render` message degrades to styled text
     instead of throwing; a component that throws is caught by its boundary.
 
-- [ ] **Step 1.5 — Richer component + polish**
+- [x] **Step 1.5 — Richer component + polish** *(pulled forward after live
+  use showed the agent improvising raw SVG-as-text for graph requests)*
   - Goal: prove the registry scales to a non-trivial component.
   - Build: add a `Chart` (or similarly richer) component + its schema + render
     tool; polish spacing/animation as components mount into the output zone.
   - Files: `registry/Chart`, spec, render tool.
   - Done when: the agent can render a chart from data it produced.
+  - Status: **done, verified live (2026-07-04)** — `chart` schema (line|bar,
+    x labels, 1–6 series, optional yLabel) + `render_chart` tool; hand-rolled
+    SVG component (no chart lib): categorical palette validated against the
+    dark surface, 2px lines, rounded-data-end bars, recessive grid, legend
+    for ≥2 series, direct end labels, hover crosshair + tooltip.
+    `RENDER_GUIDANCE` now also teaches that raw HTML/SVG renders as literal
+    code (never improvise markup) — truly arbitrary visuals remain Phase 3's
+    sandboxed artifacts. Live: a "show me a line graph of this data" ask
+    produced a two-series chart with working tooltip and zero raw SVG text.
 
 - [x] **Step 1.6 — Pin dock (emergent side panel)** *(built ahead of 1.4/1.5
   per the M1 priority order)*

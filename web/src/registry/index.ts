@@ -8,10 +8,12 @@ import { Card } from "./Card";
 import { List } from "./List";
 import { Table } from "./Table";
 import { LinkGroup } from "./LinkGroup";
+import { Chart } from "./Chart";
 
 export const registry: { [N in ComponentName]: ComponentType<ComponentProps<N>> } = {
   card: Card,
   list: List,
   table: Table,
   "link-group": LinkGroup,
+  chart: Chart,
 };
