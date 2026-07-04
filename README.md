@@ -141,9 +141,10 @@ When Phase 3 lands, agent-authored executable UI runs in a sandboxed iframe
 (`allow-scripts`, no `allow-same-origin`) that can only talk back through a
 mediated, allowlisted action bridge (Phase 2). The trusted shell is why this
 product can safely let an agent paint UI at all — treat the boundary as
-inviolable, and treat "the shell draws it, the agent can't fake it" (e.g. the
-future pin affordance and permission prompts) as the extension of the same
-rule.
+inviolable, and treat "the shell draws it, the agent can't fake it" as the
+extension of the same rule: the pin affordance is already drawn this way (a
+frame *around* rendered blocks, unreachable from agent props), and Phase T's
+permission prompts will follow it.
 
 ## 4. Repository layout
 
@@ -161,9 +162,12 @@ web/               the browser app (React 19 + Vite)
   src/Shell.tsx      TRUSTED SHELL: owns socket + prompt box; message bus
   src/PromptBox.tsx  the command bar (auto-grows to 8 lines; Enter sends)
   src/RenderZone.tsx OUTPUT ZONE: WireMsg interpreter → entries + status line
-  src/registry/      render-message components: Card, List, Table, LinkGroup
+  src/PinDock.tsx    right-side dock for pinned components (live via entries)
+  src/registry/      Card, List, Table, LinkGroup, Chart + RenderBlock
+                     (RenderBlock = validate → fallback → error boundary)
   src/ws.ts          SocketClient: typed send/onMessage, auto-reconnect
   src/styles.css     the design identity in CSS (see §7)
+demo/              the M1 demo GIF embedded at the top of this README
 dist/              built front end (vite build output; served by Express)
 workspace/         the agent's cwd — gitignored; all mutation is confined here
 PLAN.md            the phased build plan (source of truth for next steps)
@@ -228,13 +232,16 @@ means a fresh session.
   `canUseTool` comes from `permissions.ts`.
 - **Generative UI (Phase 1):** the session mounts an in-process MCP server
   (`server/render-tools.ts`) exposing side-effect-free `render_card` /
-  `render_list` / `render_table` / `render_links` tools whose input schemas
-  are the registry spec (`server/registry-spec.ts`) plus an optional `id`
-  for update-in-place. Calling one emits a `render` WireMsg at that point in
-  the stream and returns the id to the model. `RENDER_GUIDANCE` (appended to
-  the `claude_code` system-prompt preset) teaches when to prefer a component
-  over prose; the tool schemas' `.describe()` strings are written for the
-  model. The agent reaches for components unprompted — verified live.
+  `render_list` / `render_table` / `render_chart` / `render_links` tools
+  whose input schemas are the registry spec (`server/registry-spec.ts`) plus
+  an optional `id` for update-in-place. Calling one emits a `render` WireMsg
+  at that point in the stream and returns the id to the model.
+  `RENDER_GUIDANCE` (appended to the `claude_code` system-prompt preset)
+  teaches when to prefer a component over prose — and that raw HTML/SVG
+  renders as literal code, so the agent never improvises markup (arbitrary
+  visuals are Phase 3's sandboxed artifacts). The tool schemas' `.describe()`
+  strings are written for the model. The agent reaches for components
+  unprompted — verified live.
 
 `MockSession` implements the same interface with `setTimeout`-scheduled
 emissions: a `thinking` status, 1–3 fake tool statuses, the reply streamed
@@ -308,15 +315,25 @@ props}`) — in the exact order they arrived on the wire, plus an ephemeral
   route to the right block by id instead of gluing the reply's tail onto
   the wrong one.
 - `render` → if the wire `id` has been seen, **update that entry's props in
-  place** (this is what will keep pinned widgets live in 1.6); otherwise
-  append a render entry and close the streaming text block, so later deltas
-  open a new block *after* the component — the transcript keeps wire order.
-  Dispatch is `registry[component]` (`web/src/registry/`), typed off the
-  shared spec; an unknown component currently renders nothing (the visible
-  fallback is Step 1.4).
+  place** (this is what keeps pinned widgets live); otherwise append a
+  render entry and close the streaming text block, so later deltas open a
+  new block *after* the component — the transcript keeps wire order.
+  Dispatch goes through `RenderBlock` (`web/src/registry/RenderBlock.tsx`),
+  the single guarded path shared with the pin dock: unknown component or
+  schema-invalid props degrade to a quiet warning + raw props as styled
+  code, and a component that throws anyway is caught by a per-block error
+  boundary — a malformed instruction can never break the UI.
 - `status` → set the activity line (`✳ thinking…` / `⚙ Bash`).
 - `turn_end` → mark the streaming block done, clear the ref and status.
 - `error` → rendered as a bold-prefixed assistant entry.
+
+**Pinning (Step 1.6):** every rendered block gets a shell-drawn 📌 on hover.
+Pinning promotes it to a right-side dock (`PinDock.tsx`) and leaves a dashed
+stub holding its place in history; the dock collapses to a thin edge tab and
+dissolves when the last pin is removed. Pin state is pure output-zone state
+(`renderIds` in pin order) — no wire changes — and the dock renders the same
+entry objects the transcript holds, so update-in-place keeps pinned
+components live for free.
 
 Assistant turns render through `react-markdown` + `remark-gfm` (tables,
 task lists) + `rehype-highlight` (fenced code), with links forced to open
@@ -431,16 +448,16 @@ permission policy. Deleting it between sessions is a clean reset.
 
 Read PLAN.md for the real thing; the shape in one breath:
 
-- **Shipped (2026-07-04):** Phase 0 verified live, and Phase 1 steps
-  1.1–1.3 — the `render` message + component registry (the agent picks and
-  parameterizes *our* components: card, list, table, links, unprompted).
-- **Now:** Step 1.6, the **pin dock** (pinned components stay visible and
-  *live*, updated in place by re-sends of the same render id — the
-  interpreter mechanism already works), then 1.4 (render validation +
-  graceful fallback — required before anything goes public), then the demo
-  GIF. That combination is the demo that justifies the product (BUSINESS.md
-  gate M1); Phase T (tool output, interrupt, permission prompts) is
-  deliberately sequenced after it.
+- **Shipped (2026-07-04):** Phase 0 verified live, and **all of Phase 1** —
+  the `render` message + component registry (card, list, table, chart,
+  links — the agent picks and parameterizes *our* components, unprompted),
+  the pin dock (pinned components stay visible and *live*, updated in place
+  by re-sends of the same render id), and validation/graceful fallback (a
+  malformed render degrades to styled text; a crashing component is caught
+  by its boundary). The M1 demo GIF is recorded and embedded above.
+- **Now:** distribution — post the demo and read the M1 signal (BUSINESS.md
+  §9). On the build side: Phase T (tool output in the transcript, Esc
+  interrupt, browser permission prompts), which makes it daily-drivable.
 - **Then:** Phase 2 (typed, server-mediated actions from components),
   Phase 3 (sandboxed-iframe artifacts), Phase 4 (session registry —
   sessions as durable, multi-viewport things — persistence, fleet view,

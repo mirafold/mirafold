@@ -238,13 +238,12 @@ the engine already has capability parity; these give the browser the cockpit.
 Priority order was set explicitly: tool output → interrupt → permission
 prompts. Each step is independent and additive on the wire.
 
-**Priority update (2026-07-04, evening):** Phase T is catch-up; the pin dock
-is the reason anyone shares the link. 1.1–1.3 shipped (same day as Phase 0
-closeout). Remaining pre-Phase-T order: **1.6 → 1.4 → record the demo GIF**
-(BUSINESS.md §9, gate M1). 1.4 must land before anything goes public — one
-malformed render breaking the UI in the demo thread would undercut the
-reliability story. 1.5 (Chart) can slip to after the GIF if the demo reads
-well without it.
+**Priority update (2026-07-04, end of day):** resolved — all of Phase 1
+shipped (1.1–1.6 including chart and fallback) and the M1 demo GIF is
+recorded and embedded in the README. Phase T is now the active build front
+(T.1 → T.2 → T.3, in that order) while the M1 signal accrues; the
+owner-side M1 checklist (license, npm stub, repo public, post) lives in
+`~/genui-shell-next-steps.html` and BUSINESS.md §11.
 
 - [ ] **Step T.1 — Tool output in the transcript**
   - Goal: see what the agent actually did, not just that it used a tool.
