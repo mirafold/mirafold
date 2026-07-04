@@ -1,4 +1,5 @@
 import path from "node:path";
+import { mkdirSync } from "node:fs";
 import { query, type Query, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { WireMsg } from "./protocol";
 import { makeCanUseTool } from "./permissions";
@@ -46,6 +47,7 @@ export class Session implements AgentSession {
 
   constructor(opts?: { workspaceDir?: string; model?: string }) {
     const workspaceDir = path.resolve(opts?.workspaceDir ?? "workspace");
+    mkdirSync(workspaceDir, { recursive: true }); // spawn fails on a missing cwd
     this.q = query({
       prompt: this.promptStream(),
       options: {
@@ -317,7 +319,7 @@ export class MockSession implements AgentSession {
   private deck: number[] = [];
 
   pushPrompt(text: string) {
-    if (this.deck.length === 0) this.deck = shuffled([0, 1, 2, 3, 4]);
+    if (this.deck.length === 0) this.deck = shuffled(TEMPLATES.map((_, i) => i));
     const reply = TEMPLATES[this.deck.pop()!](text);
 
     let delay = 120;

@@ -56,7 +56,9 @@ export function makeCanUseTool(workspaceDir: string): CanUseTool {
       const command = String(input["command"] ?? "");
       // The regex can false-positive on legitimate commands (e.g. a path
       // inside a quoted string) — acceptable for a personal-first Phase 0.
-      if (/(^|[\s;|&'"=(])(\.\.\/|\.\.$|~\/|\/(?!$))/.test(command)) {
+      // ".." and "~" are denied whenever they end a token, not just at the
+      // end of the command, so `cd .. && …` can't slip past the gate.
+      if (/(^|[\s;|&'"=(])((\.\.|~)(?=\/|$|[\s;|&'")])|\/(?!$))/.test(command)) {
         return {
           behavior: "deny",
           message: `Bash commands must stay inside the workspace (${root}); use relative paths without "..", "~", or absolute paths.`,

@@ -6,6 +6,11 @@ where the agent's output stream is treated as a **UI-instruction stream**: the
 agent paints into an output zone whose components change shape per response,
 while a fixed, trusted shell holds the prompt box and the connection.
 
+Business strategy — positioning, wedges, pricing, go-to-market, and the
+milestone gates that sequence this plan — lives in **BUSINESS.md**. The two
+build-relevant conclusions from it: ship the Phase 1 demo (1.1–1.3 + 1.6)
+before Phase T, and design every seam so the daemon stays local-first.
+
 ## Locked decisions
 
 - **Scope:** personal-first, architected so multi-user is additive later.
@@ -17,6 +22,27 @@ while a fixed, trusted shell holds the prompt box and the connection.
   required.
 - **Stack:** TypeScript end to end. Server: Node + Agent SDK + Express + `ws`.
   Front end: React + Vite. Package manager: **yarn**.
+- **Distribution: local-first.** The daemon ships as `npx genui-shell` and
+  runs on the user's machine; we host only a static site/billing and (paid
+  tier) a dumb WebSocket relay that forwards wire-protocol frames. The engine
+  never runs on hosted compute; the API key never leaves the user's machine.
+  Hosted execution is explicitly out of scope. (Rationale: BUSINESS.md §5.)
+- **Sessions are decoupled from connections.** A connection is a *viewport*
+  that attaches to a session in a server-side registry; sessions survive
+  refreshes/disconnects and fan out to many viewports (second tab, phone via
+  relay). Phase 0 ships the simpler one-session-per-connection stopgap; the
+  registry lands in Step 4.2 and is the substrate for persistence (4.1), the
+  fleet view (4.6), and the relay (4.7).
+- **The model provider is configuration, not code.** The Agent SDK resolves
+  its endpoint from the daemon's env (`ANTHROPIC_BASE_URL` +
+  `ANTHROPIC_AUTH_TOKEN`, `DEFAULT_MODEL`), so local models (via an
+  Anthropic-API-compatible proxy such as LiteLLM → Ollama/vLLM) and
+  Bedrock/Vertex already work with zero code changes. Claude stays the
+  default — the demo and first impressions run on it. Local-model support
+  ships deliberately at the M2 OSS launch (see Phase L), not before: it
+  depends on Step 1.4's render fallback to degrade gracefully on weaker
+  models, and "BYOK or fully local" is a launch headline, not a build
+  prerequisite.
 - **Dev without the API:** when `ANTHROPIC_API_KEY` is unset the server falls
   back to a `MockSession` — same `AgentSession` interface, same wire protocol,
   scripted replies (5 shuffled demo templates). Every UI capability is built
@@ -82,11 +108,15 @@ type WireMsg =
   // Phase T adds:  { type: "tool_output"; ... } and { type: "permission_request"; ... }
   // Phase 2 adds:  action descriptors carried inside render props
   // Phase 3 adds:  { type: "artifact"; html: string; id: string }
+  // Phase 4 adds:  { type: "session_created"; sessionId: string; cwd: string }
+  //                and session metadata for the fleet view (Step 4.6)
 ```
 
 Browser→server is just `{ type: "prompt"; text: string }` plus
-`{ type: "interrupt" }` / `{ type: "permission_response"; ... }` (Phase T)
-and `{ type: "action"; ... }` (Phase 2). The output zone is an **interpreter** for
+`{ type: "interrupt" }` / `{ type: "permission_response"; ... }` (Phase T),
+`{ type: "action"; ... }` (Phase 2), and
+`{ type: "attach"; sessionId }` / `{ type: "create"; cwd? }` (Phase 4 —
+connections become viewports onto registry sessions). The output zone is an **interpreter** for
 `WireMsg`; building new UI capability = adding a message type + a handler.
 
 ## How to use this plan
@@ -125,7 +155,7 @@ bash/filesystem work (scoped to a workspace dir). A nicer Claude Code.
   - Files: `server/protocol.ts` (and a tsconfig path alias so `web/` can import it).
   - Done when: both `server/` and `web/` typecheck against the shared types.
 
-- [ ] **Step 0.3 — Warm session + permissions**
+- [x] **Step 0.3 — Warm session + permissions**
   - Goal: one persistent Agent SDK session driven by an async generator, with
     its event stream normalized into `WireMsg`.
   - Build: `server/session.ts` — a `Session` class that starts a single
@@ -139,10 +169,13 @@ bash/filesystem work (scoped to a workspace dir). A nicer Claude Code.
   - Done when: a throwaway script can construct a `Session`, push a prompt, and
     print streamed `WireMsg` objects to the console. Confirm the session stays
     warm across two sequential prompts (no reload between turns).
-  - Status: **code complete** — `Session` + `MockSession` behind one
-    `AgentSession` interface; deltas route to the streaming turn by id (a
-    mid-stream prompt can't detach a reply's tail). The live "done when"
-    is the only remaining item and needs `ANTHROPIC_API_KEY` in `.env`.
+  - Status: **done, verified live (2026-07-04)** — `Session` + `MockSession`
+    behind one `AgentSession` interface; deltas route to the streaming turn
+    by id (a mid-stream prompt can't detach a reply's tail). Live smoke:
+    prompt → streamed `text_delta` + tool `status`es → `turn_end`, and the
+    session recalled turn 1 in turn 2 with no reload (warm). Fix found by
+    the smoke: `Session` now creates the workspace dir (spawn fails on a
+    missing cwd with a misleading SDK error).
 
 - [x] **Step 0.4 — HTTP + WebSocket server**
   - Goal: a browser can connect and exchange messages with a session.
@@ -179,16 +212,17 @@ bash/filesystem work (scoped to a workspace dir). A nicer Claude Code.
   - Done when: a real conversation streams in, renders as styled markdown with
     working clickable links, and multiple turns stack in the output zone.
 
-- [ ] **Step 0.7 — Workspace scoping & reconnect stub + smoke test**
+- [x] **Step 0.7 — Workspace scoping & reconnect stub + smoke test**
   - Goal: agentic power works safely; the loop is solid end to end.
   - Build: point the session's working dir at `./workspace/` (gitignored);
     confirm `canUseTool` keeps bash/writes inside it. Write a short
     `README.md` with run instructions (note: Node 22 via nvm, yarn via
     corepack — system node is a bare v18 with no npm).
-  - Status: reconnect stub already shipped in `web/src/ws.ts` (re-opens on
-    drop, queues sends while closed); workspace dir + `canUseTool` are wired
-    in `session.ts`/`permissions.ts`. Remaining: live smoke test (needs API
-    key) + README.
+  - Status: **done, verified live (2026-07-04)** — README shipped; agent
+    created/read `workspace/smoke.txt` and it matched on disk; headless
+    Chrome (playwright-core + system Chrome) confirmed a SIGKILL'd server
+    restart reconnects the same page and the next prompt answers, with zero
+    page reloads observed.
   - Files: `README.md`; verification only for the rest.
   - Done when: you can ask the agent to create/read a file in `workspace/` and
     see it on disk; killing and restarting the socket reconnects without a page
@@ -196,12 +230,16 @@ bash/filesystem work (scoped to a workspace dir). A nicer Claude Code.
 
 ---
 
-## Phase T — Terminal parity (interleave with Phase 1 as desired)
+## Phase T — Terminal parity (after the Phase 1 demo)
 
 Goal of the phase: close the gap with the terminal Claude Code *experience* —
 the engine already has capability parity; these give the browser the cockpit.
 Priority order was set explicitly: tool output → interrupt → permission
 prompts. Each step is independent and additive on the wire.
+
+**Priority update (2026-07-04):** Phase T is catch-up; the pin dock is the
+reason anyone shares the link. Build 1.1 → 1.3 → 1.6 and record the demo GIF
+(BUSINESS.md §9, gate M1) before starting Phase T.
 
 - [ ] **Step T.1 — Tool output in the transcript**
   - Goal: see what the agent actually did, not just that it used a tool.
@@ -399,10 +437,29 @@ the multi-user seam. Each step is optional/independent — do as needed.
   - Done when: refreshing the page restores the conversation and rendered
     components.
 
-- [ ] **Step 4.2 — Multi-session UI**
-  - Build: list / switch / create sessions in the shell; one warm session per
-    active conversation server-side.
-  - Done when: you can keep several conversations and switch between them.
+- [ ] **Step 4.2 — Session registry (decouple sessions from connections)**
+  - Goal: sessions survive refreshes and disconnects; a connection is a
+    viewport, not a session. This is the substrate for 4.1, 4.4, 4.6, 4.7.
+  - Build: server-side `Map<sessionId, Session>` that outlives sockets. Add
+    `{type:"attach", sessionId}` / `{type:"create", cwd?}` to `ClientMsg` and
+    `{type:"session_created"}` to `WireMsg`; route each connection's prompts
+    to its attached session and fan the session's `WireMsg` stream out to
+    **all** attached viewports. `ws.on("close")` detaches (never closes) the
+    session; sessions die only on explicit close or idle timeout. Keep a
+    per-session ring buffer of emitted `WireMsg`s and replay it on attach so
+    a mid-conversation tab catches up (the cheap precursor to 4.1). Each
+    session gets its own working dir (`create` takes a `cwd`) — the mental
+    model is **session ≈ project**. Front end: URL routing `/s/<sessionId>`
+    (a tab is a session view — refresh-safe, bookmarkable), a session strip
+    in the shell (name = last cwd segment or first-prompt summary,
+    renamable), and browser-tab affordances: `document.title` + favicon
+    reflect state (thinking / idle / needs-permission) so the tab bar itself
+    reads as a fleet view.
+  - Files: `server/index.ts`, `server/registry.ts`, `server/protocol.ts`,
+    `web/src/Shell.tsx`, `web/src/ws.ts`, router.
+  - Done when: two tabs on the same `/s/<id>` see the identical live stream;
+    refreshing mid-turn reattaches without losing the session; two different
+    ids run two agents in different cwds concurrently.
 
 - [ ] **Step 4.3 — Theming & output-zone polish**
   - Build: theme system, transitions as components mount, friendlier visuals.
@@ -418,6 +475,89 @@ the multi-user seam. Each step is optional/independent — do as needed.
   - Build: per-user auth + session ownership at the shell boundary; the rest of
     the stack is unchanged because the seam was kept clean from Phase 0.
   - Done when: two users have isolated sessions and credentials.
+
+- [ ] **Step 4.6 — Mission control (fleet view)**
+  - Goal: the ambient supervision surface — wedge 1 in BUSINESS.md made
+    literal. Only possible because 4.2 gave sessions identity.
+  - Build: root page at `/` listing all live sessions from the registry —
+    name, cwd, status, last activity, optionally a pinned widget preview —
+    each row linking to `/s/<id>`, plus a "new session" affordance (pick
+    cwd). Server exposes session metadata (registry summary broadcast or
+    fetch-on-load + status pushes).
+  - Files: `web/src/FleetView.tsx`, `server/registry.ts`, `protocol.ts`.
+  - Done when: with three sessions running, `/` shows all three with live
+    status, and clicking one drops into its transcript.
+
+- [ ] **Step 4.7 — Hosted relay seam (the paid tier)**
+  - Goal: see and drive local sessions from another device (phone), without
+    the engine or the API key ever leaving the user's machine.
+  - Build: the daemon dials **out** via WSS to the relay with a pairing
+    token; the relay is a dumb forwarder that matches a remote browser to
+    the daemon and shuttles `WireMsg`/`ClientMsg` frames — to the registry
+    it is just another attached viewport (4.2 fan-out does the work). The
+    relay never executes anything and never sees the key; it does see frame
+    content in transit, so plan for per-pair E2E encryption before charging
+    for it. Relay service itself lives in a separate repo/deploy; this step
+    is the daemon-side pairing + client-side "connect via relay" path.
+  - Files: `server/relay-client.ts`, config for pairing token; relay service
+    external.
+  - Done when: a phone on a different network attaches to a home session
+    through the relay and the stream matches the local tab byte-for-byte.
+    (Business gating: BUSINESS.md §9, gate M3 — build only after M2 passes.)
+
+---
+
+## Phase L — Local & alternative models (M2 scope; do not start before M1)
+
+Goal of the phase: anyone running a capable local model can drive genui-shell
+with their code, their key, **and their inference** never leaving the machine.
+The engine seam already supports this (see Locked decisions) — this phase is
+about making the setup easy and the failure modes graceful, timed for the M2
+OSS launch where "fully local" is a headline. Prereq: Step 1.4 (render
+validation/fallback) must exist, since weaker models misfire render tools and
+must degrade to styled text, not broken UI.
+
+- [ ] **Step L.0 — Feasibility spike (optional, one afternoon, any time)**
+  - Goal: de-risk the M2 promise before making it publicly.
+  - Build: nothing in-repo. Run LiteLLM in front of a 30B-class local coding
+    model (e.g. Qwen3-Coder), set `ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN`/
+    `DEFAULT_MODEL` in `.env`, and drive a real session: bash, file edit,
+    multi-turn. Note failure modes (malformed tool calls, loops) for L.1 docs.
+  - Done when: a local model completes a create-and-read-a-file task through
+    the browser UI, and the rough edges are written down.
+
+- [ ] **Step L.1 — Documented path + preset (ship with the M2 launch)**
+  - Goal: a motivated local-model user is running in ~10 minutes.
+  - Build: `docs/local-models.md` — install proxy, point it at Ollama/vLLM,
+    three `.env` lines; a ready-made LiteLLM config checked into the repo
+    (`presets/litellm.local.yaml`); an honest "recommended models" table
+    (30B+ coding models work well, small models degrade — with hardware
+    notes). Frame as "works with any Anthropic-API-compatible endpoint";
+    Claude remains the documented default. Mention Bedrock/Vertex env
+    config in the same doc (free enterprise angle).
+  - Files: `docs/local-models.md`, `presets/litellm.local.yaml`, README link.
+  - Done when: a stranger following only the doc gets a local model running
+    against genui-shell; the M2 launch post can truthfully say "BYOK or
+    fully local."
+
+- [ ] **Step L.2 — `--local` easy mode (post-M2, demand-gated)**
+  - Goal: one command instead of ten minutes — build only if M2 issues show
+    real local-setup friction.
+  - Build: `npx genui-shell --local` detects a running Ollama/LM Studio,
+    lists installed models, wires the translation layer (bundled LiteLLM or
+    a minimal built-in Anthropic→OpenAI shim), and picks sane defaults.
+    Session strip shows which provider/model a session is on.
+  - Done when: on a machine with Ollama + a supported model, `--local` cold
+    start reaches a working session with zero manual config.
+
+- [ ] **Step L.3 — Per-session provider (stacks on 4.2, optional)**
+  - Goal: mix providers in one daemon — Claude for the hard refactor, a
+    local model for the log-tailing session.
+  - Build: `create` (Step 4.2) accepts an optional `provider`/`model`;
+    registry passes per-session env/config to the Agent SDK session; fleet
+    view (4.6) shows each session's model.
+  - Done when: two concurrent sessions run on two different providers and
+    the fleet view distinguishes them.
 
 ---
 

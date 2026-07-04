@@ -18,6 +18,7 @@ export class SocketClient {
   }
 
   private connect() {
+    if (this.closedByUs) return; // a queued reconnect must not outlive close()
     this.ws = new WebSocket(this.url);
     this.ws.onopen = () => {
       for (const msg of this.pending.splice(0)) this.ws.send(JSON.stringify(msg));

@@ -3,3 +3,4 @@ dist/
 workspace/
 .env
 *.log
+.claude/
