@@ -353,7 +353,8 @@ parameterizes **your** components; it does not author them. Reliable and safe.
   - Files: `registry/Chart`, spec, render tool.
   - Done when: the agent can render a chart from data it produced.
 
-- [ ] **Step 1.6 — Pin dock (emergent side panel)**
+- [x] **Step 1.6 — Pin dock (emergent side panel)** *(built ahead of 1.4/1.5
+  per the M1 priority order)*
   - Goal: keep chosen outputs visible while the transcript scrolls forever.
     The primitive is **pinning, not a panel** — the dock only exists while
     something is pinned, so users who never pin never see it.
@@ -372,6 +373,14 @@ parameterizes **your** components; it does not author them. Reliable and safe.
     and updates when the agent re-renders its id; unpinning the last item
     dissolves the dock. **Phase 1 complete — the output zone changes shape on
     demand, and can hold its shape when you ask it to.**
+  - Status: **done, verified mock + live (2026-07-04)** — pin state is
+    output-zone-only (`pinned: renderId[]`); the dock renders the same entry
+    objects the transcript holds, so update-in-place keeps pins live for
+    free. Mock: pin → dock + history stub, survives new turns, collapse ⇄
+    edge tab, last unpin dissolves + block returns. Live: pinned "Build
+    status" card updated `queued → deploying now` by the agent (same id) in
+    a follow-up turn, zero duplicates. Phase 1 remaining: 1.4 (before
+    anything public), 1.5 (optional pre-GIF).
 
 ---
 
