@@ -40,6 +40,11 @@ export function makeCanUseTool(workspaceDir: string): CanUseTool {
       return { behavior: "allow", updatedInput: input };
     }
 
+    // Our render tools (server/render-tools.ts): side-effect-free UI emission.
+    if (toolName.startsWith("mcp__ui__render_")) {
+      return { behavior: "allow", updatedInput: input };
+    }
+
     const field = PATH_FIELD[toolName];
     if (field) {
       const target = input[field];

@@ -8,6 +8,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@protocol": path.resolve(import.meta.dirname, "server/protocol.ts"),
+      "@registry-spec": path.resolve(import.meta.dirname, "server/registry-spec.ts"),
     },
   },
   server: {

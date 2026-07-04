@@ -1,8 +1,10 @@
 import path from "node:path";
 import { mkdirSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { query, type Query, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { WireMsg } from "./protocol";
 import { makeCanUseTool } from "./permissions";
+import { makeRenderServer, RENDER_GUIDANCE } from "./render-tools";
 
 /**
  * Common surface for the real agent session and the mock — the server
@@ -55,6 +57,8 @@ export class Session implements AgentSession {
         cwd: workspaceDir,
         canUseTool: makeCanUseTool(workspaceDir),
         includePartialMessages: true, // gives us token-level text deltas
+        mcpServers: { ui: makeRenderServer((msg) => this.emit(msg)) },
+        systemPrompt: { type: "preset", preset: "claude_code", append: RENDER_GUIDANCE },
       },
     });
     void this.pump();
@@ -307,6 +311,51 @@ const TEMPLATES: ((prompt: string) => string)[] = [
   researchTemplate,
 ];
 
+// Sample `render` payloads (mock-first: the render flow works API-free).
+// Props must satisfy the registry spec — validated by the 1.2 smoke test.
+const MOCK_RENDERS: (() => { component: string; props: Record<string, unknown> })[] = [
+  () => ({
+    component: "card",
+    props: {
+      title: `Deploy verdict: ${pick(PROJECTS)}`,
+      body: `**Ship it.** ${sentence()}`,
+      footer: `mock render · ${new Date().toLocaleTimeString()}`,
+    },
+  }),
+  () => ({
+    component: "list",
+    props: {
+      title: "Follow-ups",
+      ordered: true,
+      items: [
+        { text: sentence() },
+        { text: sentence(), detail: `owner: @${pick(SERVICES)}` },
+        { text: sentence() },
+      ],
+    },
+  }),
+  () => ({
+    component: "table",
+    props: {
+      title: `Hot paths — \`${pick(PROJECTS)}\``,
+      columns: ["service", "p99 (ms)", "calls/min"],
+      rows: shuffled(SERVICES)
+        .slice(0, 3)
+        .map((svc) => [`\`${svc}\``, randInt(60, 240), randInt(200, 9000)]),
+    },
+  }),
+  () => ({
+    component: "link-group",
+    props: {
+      title: "Sources",
+      links: [
+        { label: "Systems survey", href: "https://example.com/survey", description: "paper" },
+        { label: "Benchmark repo", href: "https://example.com/bench" },
+      ],
+    },
+  }),
+];
+
 /**
  * Stand-in session for API-free development: emits a scripted WireMsg
  * stream that covers every Phase 0 message type. Replies are drawn from
@@ -334,6 +383,17 @@ export class MockSession implements AgentSession {
       delay += 12;
       this.schedule(() => this.emit({ type: "text_delta", text: chunk }), delay);
     }
+    // Every mock turn ends with a rendered component so the Phase 1 pipeline
+    // is exercised without an API key.
+    const { component, props } = pick(MOCK_RENDERS)();
+    const label = `render_${component === "link-group" ? "links" : component}`;
+    delay += 300;
+    this.schedule(() => this.emit({ type: "status", state: "tool", label }), delay);
+    delay += 400;
+    this.schedule(
+      () => this.emit({ type: "render", component, props, id: randomUUID() }),
+      delay,
+    );
     this.schedule(() => this.emit({ type: "turn_end" }), delay + 40);
   }
 

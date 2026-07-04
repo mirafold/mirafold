@@ -12,7 +12,8 @@
     "forceConsistentCasingInFileNames": true,
     "isolatedModules": true,
     "paths": {
-      "@protocol": ["./server/protocol.ts"]
+      "@protocol": ["./server/protocol.ts"],
+      "@registry-spec": ["./server/registry-spec.ts"]
     }
   },
   "include": ["server", "web/src", "vite.config.ts"]
