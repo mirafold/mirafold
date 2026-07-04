@@ -30,23 +30,26 @@ export function RenderZone({
     () =>
       subscribe((msg) => {
         switch (msg.type) {
-          case "user_prompt":
-            setTurns((t) => [...t, { id: nextId++, role: "user", text: msg.text, done: true }]);
+          case "user_prompt": {
+            const id = nextId++;
+            setTurns((t) => [...t, { id, role: "user", text: msg.text, done: true }]);
             setStatus({ state: "thinking" });
             break;
-          case "text_delta":
+          }
+          case "text_delta": {
             setStatus(null);
-            setTurns((t) => {
-              const id = streamingId.current;
-              if (id !== null) {
-                return t.map((turn) =>
-                  turn.id === id ? { ...turn, text: turn.text + msg.text } : turn,
-                );
-              }
-              streamingId.current = nextId;
-              return [...t, { id: nextId++, role: "assistant", text: msg.text, done: false }];
-            });
+            const id = streamingId.current;
+            if (id !== null) {
+              setTurns((t) =>
+                t.map((turn) => (turn.id === id ? { ...turn, text: turn.text + msg.text } : turn)),
+              );
+            } else {
+              const newId = nextId++;
+              streamingId.current = newId;
+              setTurns((t) => [...t, { id: newId, role: "assistant", text: msg.text, done: false }]);
+            }
             break;
+          }
           case "status":
             setStatus({ state: msg.state, label: msg.label });
             break;
@@ -59,13 +62,15 @@ export function RenderZone({
             }
             break;
           }
-          case "error":
+          case "error": {
             setStatus(null);
+            const id = nextId++;
             setTurns((t) => [
               ...t,
-              { id: nextId++, role: "assistant", text: `**Error:** ${msg.message}`, done: true },
+              { id, role: "assistant", text: `**Error:** ${msg.message}`, done: true },
             ]);
             break;
+          }
         }
       }),
     [subscribe],

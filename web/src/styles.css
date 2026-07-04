@@ -60,9 +60,6 @@ body {
 .turn-assistant {
   padding: 0 4px;
   color: #d4dae4;
-}
-
-.turn-assistant {
   align-self: stretch;
   line-height: 1.55;
 }

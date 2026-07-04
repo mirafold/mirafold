@@ -16,7 +16,26 @@ const app = express();
 app.use(express.static("dist")); // built front end (dev uses Vite on :5173)
 
 const server = createServer(app);
-const wss = new WebSocketServer({ server, path: "/ws" });
+
+// Cross-site WebSocket hijacking guard: a browser always sends Origin on a
+// WS handshake, so we require it to be a loopback host. Non-browser clients
+// (wscat, tests) send no Origin and are allowed through — they can't be
+// weaponized by a malicious page the way a browser socket can.
+const isLoopbackOrigin = (origin: string | undefined): boolean => {
+  if (!origin) return true;
+  try {
+    const { hostname } = new URL(origin);
+    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
+  } catch {
+    return false;
+  }
+};
+
+const wss = new WebSocketServer({
+  server,
+  path: "/ws",
+  verifyClient: ({ origin }: { origin?: string }) => isLoopbackOrigin(origin),
+});
 
 wss.on("connection", (ws) => {
   const live = Boolean(process.env.ANTHROPIC_API_KEY);
