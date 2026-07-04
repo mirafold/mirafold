@@ -193,11 +193,13 @@ Each gate is a go/no-go with a measurable signal. Do not pass a gate on hope.
 
 - **M0 — Engine live. ✅ PASSED 2026-07-04.** PLAN 0.3/0.7 verified with a
   real key (live smoke: warm multi-turn, workspace file ops, reconnect).
-- **M1 — The demo exists. ← IN PROGRESS.** PLAN 1.1–1.3 + 1.6 (render
-  protocol → registry → pin dock). 1.1–1.3 shipped 2026-07-04 — the live
-  agent already answers with real components unprompted. Remaining: 1.6,
-  then 1.4 (render fallback — required before anything goes public), then
-  record the GIF. *Gate:* the GIF makes a stranger say "want."
+- **M1 — The demo exists. ← BUILD COMPLETE 2026-07-04; awaiting the post.**
+  All of Phase 1 shipped in one day (render protocol → registry incl. chart
+  → validation/fallback → pin dock) and the GIF is recorded and embedded in
+  the README (`demo/demo.gif`) — a live unscripted take with per-beat
+  assertions. Remaining is distribution, not code: license call, npm stub
+  publish, repo public, post the GIF. *Gate:* the GIF makes a stranger say
+  "want."
   Post it before building anything else. **Signal: ≥ a few hundred genuine
   reactions / ≥ 50 GitHub stars in week one.** If flat: the thesis needs
   work — iterate the demo, not the infra.
@@ -236,14 +238,19 @@ them with data — that's what the gates are for.)*
 ## 11. Immediate next actions (refreshed 2026-07-04)
 
 1. ~~Put a real `ANTHROPIC_API_KEY` in `.env`; close PLAN 0.3 + 0.7.~~ Done.
-2. ~~Build PLAN 1.1 → 1.3.~~ Done. Next: **1.6 (pin dock) → 1.4 (fallback)**.
-   Skip Phase T until after the GIF exists; 1.4 ships before anything public.
-3. Record the demo GIF. Show it to strangers. Read §9-M1 before doing
-   anything else on this list.
+2. ~~Build PLAN 1.1 → 1.3 → 1.6 (+1.4, +1.5).~~ Done — Phase 1 complete.
+3. ~~Record the demo GIF.~~ Done (`demo/demo.gif`, embedded in README).
+   **Show it to strangers — read §9-M1 first.** Owner-side checklist lives
+   at `~/genui-shell-next-steps.html`: license call → npm stub publish →
+   repo public (secrets sweep first) → post.
 4. Decide the license (MIT vs BSL) and name-check the npm package name now
    (`genui-shell` availability), before someone else squats it.
    *Name-check done 2026-07-04: `genui-shell` is unclaimed on npm (registry
-   404). License decision still open.*
+   404). License decision still open — recommendation on file: MIT for the
+   daemon (the paid tier is the relay service, a separate closed repo).*
+5. Build side while M1 signal accrues: Phase T (T.1 tool output → T.2
+   interrupt → T.3 permission prompts) — makes it daily-drivable and
+   doesn't touch the demo story.
 
 **Measured velocity (2026-07-04):** M0 closeout + PLAN 1.1–1.3, verified and
 pushed, in one working day (~5–6 plan steps/day). Half-pace projections
