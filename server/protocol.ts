@@ -21,7 +21,13 @@ export type WireMsg =
   | { type: "tool_result"; output: string; isError?: boolean; id: string }
   // Phase T.3: the turn is paused on a gated tool call until the browser
   // answers (or the server times out to deny). Drawn by the trusted shell.
-  | { type: "permission_request"; tool: string; detail: string; id: string };
+  | { type: "permission_request"; tool: string; detail: string; id: string }
+  // Phase 4.2: the server's echo of a user turn. User strips come off the
+  // wire (not a local echo) so every attached viewport — and the replay
+  // buffer — carries them identically.
+  | { type: "user_prompt"; text: string }
+  // Phase 4.2: reply to attach/create — which session this viewport is on.
+  | { type: "session_created"; sessionId: string; cwd: string };
 // Phase 3 adds:  { type: "artifact"; html: string; id: string }
 
 /** Browser → server */
@@ -30,5 +36,10 @@ export type ClientMsg =
   // Phase T.2: halt the in-flight turn (the session stays warm).
   | { type: "interrupt" }
   // Phase T.3: the user's answer to a permission_request.
-  | { type: "permission_response"; id: string; allow: boolean };
+  | { type: "permission_response"; id: string; allow: boolean }
+  // Phase 4.2: a connection is a viewport onto a registry session. attach
+  // joins an existing session (stale ids fall back to create); create
+  // starts a fresh one, optionally in a specific working dir.
+  | { type: "attach"; sessionId: string }
+  | { type: "create"; cwd?: string };
 // Phase 2 adds:  { type: "action"; action: Action; sourceId: string }
