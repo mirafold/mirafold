@@ -53,7 +53,18 @@ before Phase T, and design every seam so the daemon stays local-first.
 ## Design identity (locked during Phase 0)
 
 genui-shell is a **terminal successor, not a chat app** — the design signals
-terminal lineage on the input side and web richness on the output side:
+terminal lineage on the input side and web richness on the output side.
+
+**Visibility superset (locked 2026-07-05):** genui-shell is a different skin
+on the same terminal agent, and it must never show *less* than the terminal
+does — richness is added on top of raw visibility, never traded against it.
+Anything a terminal Claude Code user can see in the stream (thinking text,
+full tool arguments and diffs, subagent progress, todo checklists, output
+depth, cost/context meters) must eventually be surfaced here, because any
+line the terminal shows and we hide is a reason for a terminal user to go
+back. Phase T was the *capability* cut of parity (act, interrupt, approve);
+**Phase T2** below tracks the remaining *visibility* gaps. Collapsed-by-
+default is fine — invisible is not.
 
 - Full-width canvas; no centered column. If long prose lines ever itch, cap
   prose only (`max-width: 80ch`) — never tables, code, or components.
@@ -111,6 +122,11 @@ type WireMsg =
   // Phase 3 adds:  { type: "artifact"; html: string; id: string }
   // Phase 4 adds:  { type: "session_created"; sessionId: string; cwd: string }
   //                and session metadata for the fleet view (Step 4.6)
+  // Phase T2 adds: { type: "thinking_delta"; text: string }, optional fields
+  //                widening tool_use (full input) / tool_result (truncation),
+  //                subagent attribution, and { type: "usage"; ... } for the
+  //                status bar — all additive; optional fields old clients
+  //                simply ignore.
 ```
 
 Browser→server is just `{ type: "prompt"; text: string }` plus
@@ -564,6 +580,84 @@ fly" capability, gated behind the security model.
   - Files: `Artifact.tsx`.
   - Done when: a deliberately broken artifact fails gracefully.
     **Phase 3 complete — arbitrary UI on the fly, sandboxed.**
+
+---
+
+## Phase T2 — Full-stream parity (the visibility superset)
+
+Added 2026-07-05, when user testing surfaced the gap: Phase T closed the
+*capability* half of terminal parity (tool records, interrupt, permission
+prompts) but consciously cut visibility corners — one salient arg per tool
+call, 8KB output cap, thinking reduced to a status line, subagent traffic
+filtered entirely. Those cuts were right for demo-first sequencing and
+wrong as an endpoint: the locked vision (see Design identity) is that this
+skin never shows less than the terminal. Every step here is additive on the
+wire (new types or optional fields), independent of the others, and honors
+the transcript identity — dim, monospace, collapsed by default, but *there*.
+
+Ordering within the phase = trust value: thinking and diffs are where the
+terminal currently out-informs us most.
+
+- [ ] **Step T2.1 — Thinking text in the transcript**
+  - Goal: see the agent reason, not just `✳ thinking…`.
+  - Build: add `{ type: "thinking_delta"; text: string }`; pump forwards
+    thinking-block deltas (subagent traffic still excluded). RenderZone
+    accumulates them into a dim italic thinking block that auto-collapses to
+    one line when the turn's first text/tool arrives (click to expand).
+    MockSession streams a short scripted thought.
+  - Files: `protocol.ts`, `session.ts`, `RenderZone.tsx`, `styles.css`.
+  - Done when: a live turn shows its reasoning streaming, then collapsed in
+    place; replay preserves it.
+
+- [ ] **Step T2.2 — Full tool inputs + Edit/Write diffs**
+  - Goal: the expanded tool row shows everything the terminal shows.
+  - Build: widen `tool_use` with optional `input?: Record<string, unknown>`
+    (additive; old clients ignore it). `ToolBlock`'s expanded view renders
+    the full input; for Edit/MultiEdit render old→new as a colored diff, for
+    Write show the content as styled code. `detail` stays as the collapsed
+    row's one-liner.
+  - Files: `protocol.ts`, `session.ts`, `ToolBlock.tsx`, `styles.css`.
+  - Done when: a live Edit expands to a red/green diff of the actual change.
+
+- [ ] **Step T2.3 — Honest output depth**
+  - Goal: no silent truncation.
+  - Build: widen `tool_result` with optional `truncatedBytes?: number`; raise
+    the cap (64KB) and render an explicit "… N KB elided" marker in the
+    expanded block when it trips.
+  - Files: `protocol.ts`, `session.ts`, `ToolBlock.tsx`.
+  - Done when: a huge `cat` shows capped output ending in a visible elision
+    marker with the true elided size.
+
+- [ ] **Step T2.4 — Subagent visibility**
+  - Goal: a Task run is a window, not a black box.
+  - Build: instead of dropping `parent_tool_use_id` traffic, forward subagent
+    tool calls with optional `parentId?: string` on `tool_use`/`tool_result`;
+    RenderZone nests them indented under the owning Task row, collapsed as a
+    group ("⚙ subagent · N calls"). Subagent *text* stays filtered — its
+    prose is working monologue, not answer.
+  - Files: `protocol.ts`, `session.ts`, `RenderZone.tsx`, `ToolBlock.tsx`.
+  - Done when: a live Task shows its subagent's tool calls nested under it,
+    and the main transcript prose contains none of the subagent's text.
+
+- [ ] **Step T2.5 — Live todo checklist**
+  - Goal: the terminal's task list, as a real component.
+  - Build: normalize `TodoWrite` calls into `render` messages reusing a fixed
+    wire id per turn (update-in-place gives a live checklist for free) with a
+    small `todo-list` registry component; suppress the raw tool row.
+  - Files: `session.ts`, `registry-spec.ts`, `web/src/registry/`.
+  - Done when: a multi-step live turn shows items checking off as it works.
+
+- [ ] **Step T2.6 — Status bar (model, session, usage)**
+  - Goal: the workbench strip — context and cost at a glance.
+  - Build: add `{ type: "usage"; model: string; inputTokens: number;
+    outputTokens: number; costUsd?: number }` emitted from SDK `result`
+    events; slim shell-owned bar (bottom edge) showing model · session id ·
+    cwd · connection state · last-turn/session-cumulative usage. Collapsible,
+    per the side-surface rule.
+  - Files: `protocol.ts`, `session.ts`, `Shell.tsx`, `styles.css`.
+  - Done when: after a live turn the bar shows the model and a nonzero token
+    count; disconnecting flips the connection glyph.
+    **Phase T2 complete — the browser shows strictly more than the terminal.**
 
 ---
 

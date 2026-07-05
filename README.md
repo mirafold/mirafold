@@ -11,7 +11,11 @@ prompt box, the socket, and all credentials, and the agent can never touch
 any of them.
 
 Think of it as a terminal successor, not a chat app: monospace command strips
-in, rich rendered output back.
+in, rich rendered output back. The vision is a **strict superset of the
+terminal** — same engine, and never *less* visibility than the terminal gives
+(thinking, tool detail, diffs, subagent progress); richness is added on top
+of raw visibility, never traded against it (PLAN Phase T2 tracks the
+remaining gaps).
 
 ![genui-shell demo — ask about a repo and get a card, a table, and real links; paste data, get a live chart, pin it, and the agent updates it in place](demo/demo.gif)
 
@@ -573,8 +577,12 @@ Read PLAN.md for the real thing; the shape in one breath:
   message + an `emit_artifact` tool), the postMessage → mediated-action
   bridge, and error fallback. In parallel: distribution — post the demo and
   read the M1 signal (BUSINESS.md §9).
-- **Then:** the rest of Phase 4 — theming/polish, robust mid-turn resume,
-  the fleet view at `/`, and the phone relay, which is the paid tier.
+- **Then:** Phase T2 — full-stream visibility parity (thinking text,
+  Edit/Write diffs, honest output truncation, subagent visibility, live todo
+  checklist, status bar with usage), so the browser shows strictly more than
+  the terminal, never less. And the rest of Phase 4 — theming/polish, robust
+  mid-turn resume, the fleet view at `/`, and the phone relay, which is the
+  paid tier.
 
 Distribution intent shapes the architecture: the daemon ships as
 `npx genui-shell` and always runs on the user's machine; the only hosted
