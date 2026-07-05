@@ -505,6 +505,53 @@ body {
   font-weight: 500;
 }
 
+/* ---- Artifacts (Phase 3) -------------------------------------------------
+   Shell-drawn frame around the sandboxed iframe. The chrome bar (label +
+   "sandboxed" badge) lives OUTSIDE the iframe so agent content can't fake
+   or restyle it. User-resizable vertically; the iframe fills the rest. */
+
+.artifact {
+  display: flex;
+  flex-direction: column;
+  max-width: 720px;
+  height: 340px;
+  min-height: 120px;
+  resize: vertical;
+  overflow: hidden;
+  background: #141a26;
+  border: 1px solid #262f42;
+  border-radius: 10px;
+  animation: rc-mount 0.22s ease-out;
+}
+
+.artifact-chrome {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  border-bottom: 1px solid #262f42;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78em;
+  color: #8b94a7;
+  user-select: none;
+}
+
+.artifact-badge {
+  color: #4ade80;
+  border: 1px solid #2b4a38;
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 0.9em;
+}
+
+.artifact-frame {
+  flex: 1;
+  width: 100%;
+  border: 0;
+  display: block;
+  background: #141a26;
+}
+
 /* ---- Tool calls (Phase T.1) ---------------------------------------------
    Terminal-style records of what the agent actually did: one dim monospace
    row per call, collapsed by default; errors arrive expanded. Negative

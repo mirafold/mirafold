@@ -444,7 +444,7 @@ mediated by the server; the client never makes arbitrary external calls.
     registry spec (agent-facing subset = prompt|tool) and `card.actions`
     (≤3 `{label, action}` buttons). Types compile on both sides.
 
-- [ ] **Step 2.2 — Interactive components**
+- [x] **Step 2.2 — Interactive components**
   - Goal: buttons/selects in components emit actions through the shell.
   - Build: extend components to accept action props and emit `action` messages
     via the shell's socket (the shell owns the socket — components ask the shell
@@ -467,7 +467,7 @@ mediated by the server; the client never makes arbitrary external calls.
     project CLAUDE.md. Isolation is verified by assertion (host memory dir
     untouched across a "remember"-shaped live turn).
 
-- [ ] **Step 2.3 — Server-side action mediation**
+- [x] **Step 2.3 — Server-side action mediation**
   - Goal: `tool` actions are safe and auditable.
   - Build: a server-side allowlist of callable tools with arg validation;
     reject anything not on it; log every action. No direct client→external
@@ -493,7 +493,7 @@ Goal of the phase: when no registry component fits, the agent emits
 self-contained UI rendered in a locked-down iframe. The "build anything on the
 fly" capability, gated behind the security model.
 
-- [ ] **Step 3.1 — Sandboxed iframe host**
+- [x] **Step 3.1 — Sandboxed iframe host**
   - Goal: a safe container for arbitrary agent-authored HTML/JS.
   - Build: `web/src/Artifact.tsx` — renders content into a sandboxed
     `<iframe sandbox="allow-scripts">` (no `allow-same-origin`), strict CSP, no
@@ -502,6 +502,16 @@ fly" capability, gated behind the security model.
   - Files: `web/src/Artifact.tsx`.
   - Done when: a static test artifact renders in the iframe and provably cannot
     read anything from the shell (no cookies, no parent DOM, no socket).
+  - Status: **done, verified (2026-07-05)** — `Artifact.tsx`: opaque-origin
+    iframe (`allow-scripts` only) + injected `default-src 'none'` CSP (meta
+    policies intersect, so content can't loosen it); threat model inline,
+    incl. the accepted self-navigation residual and the `window.parent`
+    postMessage seam 3.3 will use. Chrome bar (title + "sandboxed" badge) is
+    shell-drawn outside the iframe. Verified in headless Chrome with a
+    hostile artifact mounted in the real render zone: 11/11 escape probes
+    blocked (cookie/local/session storage, indexedDB, parent & top DOM,
+    fetch to both origins, new WebSocket, external script/img) with shell
+    secrets planted first; parent-side `contentDocument === null`.
 
 - [ ] **Step 3.2 — Artifact wire message + agent capability**
   - Goal: the agent can emit an artifact.
