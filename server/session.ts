@@ -61,7 +61,19 @@ function toolDetail(input: unknown): string | undefined {
 
 // Cap transcript output so a huge tool dump can't flood the wire; the full
 // output still went to the model — this is only the human-facing record.
-const OUTPUT_CAP = 8_000;
+// Cap a tool result before it hits the wire and the replay buffer. Byte-
+// based (not char count) because the buffer's memory cost is bytes, and
+// honest: the elided amount is reported so the client marks it, never a
+// silent cut. Env-overridable (tuning; also lets tests trip it on demand).
+const OUTPUT_CAP_BYTES = Number(process.env.TOOL_OUTPUT_CAP_BYTES ?? 64_000);
+
+function capOutput(text: string): { text: string; truncatedBytes?: number } {
+  const total = Buffer.byteLength(text, "utf8");
+  if (total <= OUTPUT_CAP_BYTES) return { text };
+  // Decode a byte-bounded slice; a trailing partial char becomes U+FFFD.
+  const kept = new TextDecoder().decode(Buffer.from(text, "utf8").subarray(0, OUTPUT_CAP_BYTES));
+  return { text: kept, truncatedBytes: total - OUTPUT_CAP_BYTES };
+}
 
 function resultText(content: unknown): string {
   let text: string;
@@ -71,9 +83,7 @@ function resultText(content: unknown): string {
       .map((b) => (b?.type === "text" ? String(b.text) : `[${String(b?.type ?? "block")}]`))
       .join("\n");
   else text = content == null ? "" : JSON.stringify(content);
-  return text.length > OUTPUT_CAP
-    ? `${text.slice(0, OUTPUT_CAP)}\n… (+${text.length - OUTPUT_CAP} chars truncated)`
-    : text;
+  return text; // capping happens at emit via capOutput (T2.3)
 }
 
 /**
@@ -236,9 +246,11 @@ export class Session implements AgentSession {
             for (const block of content) {
               if (block.type !== "tool_result") continue;
               if (!this.announcedTools.delete(block.tool_use_id)) continue;
+              const capped = capOutput(resultText(block.content));
               this.emit({
                 type: "tool_result",
-                output: resultText(block.content),
+                output: capped.text,
+                truncatedBytes: capped.truncatedBytes,
                 isError: block.is_error === true,
                 id: block.tool_use_id,
               });
@@ -616,6 +628,37 @@ export class MockSession implements AgentSession {
       return;
     }
 
+    // Deterministic T2.3 hook: a "huge"/"big output"-sounding prompt runs a
+    // tool whose output blows past the cap, exercising the elision marker.
+    if (/huge|big output|large output|truncat/i.test(text)) {
+      const id = randomUUID();
+      const bigLine = "2026-07-05T12:00:00Z  INFO  request served in 42ms — ok\n";
+      const big = bigLine.repeat(2000); // ~110KB, well over the 64KB cap
+      const capped = capOutput(big);
+      this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+      this.schedule(() => {
+        this.emit({ type: "status", state: "tool", label: "Bash" });
+        this.emit({ type: "tool_use", name: "Bash", detail: "cat server.log", id });
+      }, 400);
+      this.schedule(
+        () =>
+          this.emit({
+            type: "tool_result",
+            output: capped.text,
+            truncatedBytes: capped.truncatedBytes,
+            id,
+          }),
+        900,
+      );
+      let d = 1100;
+      for (const chunk of "That log is enormous — showing the head, the rest is elided.".match(/.{1,16}/gs) ?? []) {
+        d += 14;
+        this.schedule(() => this.emit({ type: "text_delta", text: chunk }), d);
+      }
+      this.schedule(() => this.emit({ type: "turn_end" }), d + 40);
+      return;
+    }
+
     // Deterministic 3.4 hooks: broken/navigating artifacts exercise the
     // failure fallbacks API-free.
     if (/artifact/i.test(text) && /broken|crash/i.test(text)) {
@@ -728,8 +771,16 @@ export class MockSession implements AgentSession {
         this.emit({ type: "tool_use", name: t.name, detail: t.detail, id, input: t.input });
       }, delay);
       delay += randInt(300, 700);
+      const capped = capOutput(t.output);
       this.schedule(
-        () => this.emit({ type: "tool_result", output: t.output, isError: t.isError, id }),
+        () =>
+          this.emit({
+            type: "tool_result",
+            output: capped.text,
+            truncatedBytes: capped.truncatedBytes,
+            isError: t.isError,
+            id,
+          }),
         delay,
       );
     }

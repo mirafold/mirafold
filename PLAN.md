@@ -665,7 +665,7 @@ terminal currently out-informs us most.
     and live: agent wrote notes.txt (content shown) then edited banana→
     blueberry, expanding to a true `- banana` / `+ blueberry` diff.
 
-- [ ] **Step T2.3 — Honest output depth**
+- [x] **Step T2.3 — Honest output depth**
   - Goal: no silent truncation.
   - Build: widen `tool_result` with optional `truncatedBytes?: number`; raise
     the cap (64KB) and render an explicit "… N KB elided" marker in the
@@ -673,6 +673,18 @@ terminal currently out-informs us most.
   - Files: `protocol.ts`, `session.ts`, `ToolBlock.tsx`.
   - Done when: a huge `cat` shows capped output ending in a visible elision
     marker with the true elided size.
+  - Status: **done, verified (2026-07-05)** — `tool_result.truncatedBytes`
+    (optional); shared `capOutput` (byte-based, replaces the old 8KB
+    char-slice that baked a plain-text marker into the output) caps at
+    `TOOL_OUTPUT_CAP_BYTES` (default 64KB, env-overridable) and reports the
+    elided byte count. ToolBlock renders a dim amber "⋯ N KB/MB elided"
+    marker distinct from real output; `formatBytes` scales B/KB/MB. Both the
+    real pump and the mock route through the same helper. Note: real tools
+    (Claude Code Bash ~30KB) usually self-limit below the cap, so this is a
+    backstop for genuinely large results — verified live by setting the cap
+    to 800B and running a 60-line echo (real pump emitted "⋯ 2.3 KB
+    elided"); mock ("huge log" hook, ~110KB → 50.8 KB elided) confirms the
+    default path and that normal outputs carry no marker.
 
 - [ ] **Step T2.4 — Subagent visibility**
   - Goal: a Task run is a window, not a black box.

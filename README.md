@@ -507,8 +507,10 @@ To go live: `cp .env.example .env`, set `ANTHROPIC_API_KEY`, restart the
 server. The env file is loaded with `process.loadEnvFile()` and is optional
 by design. `DEFAULT_MODEL` and `PORT` can also be set there, and two tuning
 knobs have env overrides: `SESSION_IDLE_TIMEOUT_MS` (unattended-session
-lifetime) and `PERMISSION_TIMEOUT_MS` (how long a permission prompt waits
-before denying).
+lifetime), `PERMISSION_TIMEOUT_MS` (how long a permission prompt waits
+before denying), `TOOL_OUTPUT_CAP_BYTES` (per-result output cap before the
+elision marker, default 64 KB), and `MAX_THINKING_TOKENS` (opt-in extended
+thinking).
 
 Individual processes: `yarn dev:server` / `yarn dev:web`.
 

@@ -20,7 +20,10 @@ export type WireMsg =
   // T2.2 widens it with the FULL input (optional — old clients ignore it);
   // the client renders Edit/Write inputs as diffs/code, the rest as JSON.
   | { type: "tool_use"; name: string; detail?: string; id: string; input?: Record<string, unknown> }
-  | { type: "tool_result"; output: string; isError?: boolean; id: string }
+  // T2.3: `truncatedBytes`, when set, is how many UTF-8 bytes were elided
+  // after the cap — the client shows an explicit marker rather than cutting
+  // silently. Optional/additive.
+  | { type: "tool_result"; output: string; isError?: boolean; id: string; truncatedBytes?: number }
   // Phase T.3: the turn is paused on a gated tool call until the browser
   // answers (or the server times out to deny). Drawn by the trusted shell.
   | { type: "permission_request"; tool: string; detail: string; id: string }

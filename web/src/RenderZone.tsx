@@ -28,6 +28,7 @@ type Entry =
       detail?: string;
       input?: Record<string, unknown>; // full args (T2.2), rendered in the expansion
       output?: string; // undefined until the result arrives
+      truncatedBytes?: number; // T2.3: bytes elided past the cap, if any
       isError?: boolean;
     }
   | {
@@ -204,7 +205,7 @@ export function RenderZone({
             setEntries((es) =>
               es.map((e) =>
                 e.kind === "tool" && e.toolId === msg.id
-                  ? { ...e, output: msg.output, isError: msg.isError }
+                  ? { ...e, output: msg.output, truncatedBytes: msg.truncatedBytes, isError: msg.isError }
                   : e,
               ),
             );
@@ -332,6 +333,7 @@ export function RenderZone({
                 detail={entry.detail}
                 input={entry.input}
                 output={entry.output}
+                truncatedBytes={entry.truncatedBytes}
                 isError={entry.isError}
               />
             );

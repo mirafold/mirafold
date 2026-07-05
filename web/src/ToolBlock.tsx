@@ -12,12 +12,14 @@ export function ToolBlock({
   detail,
   input,
   output,
+  truncatedBytes,
   isError,
 }: {
   name: string;
   detail?: string;
   input?: Record<string, unknown>;
   output?: string;
+  truncatedBytes?: number;
   isError?: boolean;
 }) {
   // null = user hasn't touched it; errors then default to open.
@@ -42,12 +44,26 @@ export function ToolBlock({
         <div className="tool-body">
           {input && <ToolInput name={name} input={input} />}
           {!running && (
-            <pre className="tool-output">{output || "(no output)"}</pre>
+            <pre className="tool-output">
+              {output || "(no output)"}
+              {truncatedBytes ? (
+                <span className="tool-elided">
+                  {"\n⋯ "}
+                  {formatBytes(truncatedBytes)} elided
+                </span>
+              ) : null}
+            </pre>
           )}
         </div>
       )}
     </div>
   );
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 /** Render a tool's input the way the terminal would: diffs for edits,
