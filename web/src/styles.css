@@ -338,6 +338,64 @@ body {
   color: #4ade80;
 }
 
+/* todo list (T2.5): the terminal's live task list, updated in place */
+.rc-todos {
+  max-width: 560px;
+}
+
+.rc-todos-head {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78em;
+  color: #8b94a7;
+  margin-bottom: 8px;
+}
+
+.rc-todos ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.rc-todos .todo {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  font-size: 0.92em;
+  line-height: 1.4;
+}
+
+.todo-mark {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  width: 1em;
+  flex: none;
+}
+
+.todo-completed .todo-mark {
+  color: #4ade80;
+}
+.todo-completed .todo-text {
+  color: #6b7488;
+  text-decoration: line-through;
+}
+
+.todo-in_progress .todo-mark {
+  color: #7ab8ff;
+}
+.todo-in_progress .todo-text {
+  color: #eef2f8;
+  font-weight: 500;
+}
+
+.todo-pending .todo-mark {
+  color: #5a6480;
+}
+.todo-pending .todo-text {
+  color: #a8b2c2;
+}
+
 /* table */
 .rc-table {
   padding: 10px 12px;

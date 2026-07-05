@@ -9,6 +9,7 @@ import { List } from "./List";
 import { Table } from "./Table";
 import { LinkGroup } from "./LinkGroup";
 import { Chart } from "./Chart";
+import { TodoList } from "./TodoList";
 
 export const registry: { [N in ComponentName]: ComponentType<ComponentProps<N>> } = {
   card: Card,
@@ -16,4 +17,5 @@ export const registry: { [N in ComponentName]: ComponentType<ComponentProps<N>> 
   table: Table,
   "link-group": LinkGroup,
   chart: Chart,
+  "todo-list": TodoList,
 };
