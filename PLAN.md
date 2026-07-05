@@ -33,16 +33,26 @@ before Phase T, and design every seam so the daemon stays local-first.
   relay). Phase 0 ships the simpler one-session-per-connection stopgap; the
   registry lands in Step 4.2 and is the substrate for persistence (4.1), the
   fleet view (4.6), and the relay (4.7).
-- **The model provider is configuration, not code.** The Agent SDK resolves
-  its endpoint from the daemon's env (`ANTHROPIC_BASE_URL` +
-  `ANTHROPIC_AUTH_TOKEN`, `DEFAULT_MODEL`), so local models (via an
-  Anthropic-API-compatible proxy such as LiteLLM → Ollama/vLLM) and
-  Bedrock/Vertex already work with zero code changes. Claude stays the
-  default — the demo and first impressions run on it. Local-model support
-  ships deliberately at the M2 OSS launch (see Phase L), not before: it
-  depends on Step 1.4's render fallback to degrade gracefully on weaker
-  models, and "BYOK or fully local" is a launch headline, not a build
-  prerequisite.
+- **A faithful browser skin of terminal agents — the product identity, and a
+  core requirement.** genui-shell is **not** a generic UI with a swappable
+  model. It is a **faithful browser re-skin of whatever terminal coding agent
+  you already use** — Claude Code today, Codex (OpenAI) and Gemini CLI next —
+  with genui-shell's generative UI layered on top. A Codex user gets **Codex**
+  in the browser (its tools, its behavior, its config), never "Claude things";
+  a Claude Code user gets Claude Code. "Provider-neutral" here means **faithful
+  to each agent**, NOT one homogenized experience, and **no agent is
+  privileged**. Mechanically: behind the `AgentSession` seam we run **each
+  agent's own engine** and normalize its event stream into `WireMsg`;
+  genui-shell's `render_*` / `emit_artifact` tools inject into each agent via
+  **MCP** (Claude Code, Codex, and Gemini CLI all support MCP). No translation
+  proxy in the request path. We do **not** build a generic agent loop or our
+  own tools — that would be faithful to no one. The substrate is already right:
+  the wire protocol, output zone, security model, and generative UI consume
+  `WireMsg` only, so a new agent is one adapter, not a rewrite. It is the
+  **next build front (Phase P)**, ahead of the rest of Phase 4. (Local models
+  come through whichever agent can point at a local endpoint — Phase L is the
+  ergonomics; Step 1.4's render fallback lets weaker/local models degrade to
+  styled text.)
 - **Dev without the API:** when `ANTHROPIC_API_KEY` is unset the server falls
   back to a `MockSession` — same `AgentSession` interface, same wire protocol,
   scripted replies (5 shuffled demo templates). Every UI capability is built
@@ -485,12 +495,16 @@ mediated by the server; the client never makes arbitrary external calls.
     RENDER_GUIDANCE teaches `actions`. Live: the agent authored a "Tell me
     more" button unprompted-in-form; clicking it became a visible user turn
     answered in-session (post-click recall of a turn-1 fact proved warmth).
-    **Also fixed here: sessions now run with `settingSources: []`** — a
-    live test caught the embedded agent inheriting the HOST user's Claude
-    Code settings (whose allowlists bypass `canUseTool` silently: a
-    "remember this" wrote into the host's real ~/.claude memory dir) and
-    project CLAUDE.md. Isolation is verified by assertion (host memory dir
-    untouched across a "remember"-shaped live turn).
+    Note on `settingSources`: an interim build set it to `[]` to "isolate"
+    the daemon from the host's Claude Code config. **Reversed 2026-07-05** —
+    genui-shell is a different *view* of the terminal, so it must inherit the
+    user's own config (settings.json allowlists/deny rules, CLAUDE.md, memory)
+    exactly as the terminal does; switching to it has to be seamless. It is now
+    left unset (matches the CLI default: user+project+local). Honoring host
+    allowlists and letting "remember X" write to real memory are terminal-native
+    behaviors, not leaks. `canUseTool` still runs for anything the user's own
+    rules don't decide. (See the terminal-parity principle: deviation from
+    terminal behavior is what needs justifying, never parity.)
 
 - [x] **Step 2.3 — Server-side action mediation**
   - Goal: `tool` actions are safe and auditable.
@@ -762,10 +776,93 @@ terminal currently out-informs us most.
 
 ---
 
+## Phase P — Faithful browser skins for terminal agents (THE identity; do this BEFORE the rest of Phase 4)
+
+**Goal of the phase: genui-shell faithfully re-skins whichever terminal coding
+agent you already drive — Claude Code today, Codex (OpenAI) and Gemini CLI next
+— in the browser, with genui-shell's generative UI layered on top.** A Codex
+user gets **Codex** in the browser (its tools, its config, its behavior), never
+"Claude things"; a Claude Code user gets Claude Code. This is the **product
+identity** (see Design identity + Locked decisions + BUSINESS.md §4), the
+**next build front** — ahead of Phase 4's remaining polish — and it subsumes
+Phase L (local is just an agent pointed at a local endpoint).
+
+Mechanically: `AgentSession` is the seam, and everything valuable downstream —
+wire protocol, output zone, trusted-shell security, generative UI — consumes
+`WireMsg` and nothing else. So a new agent = one adapter that (a) drives that
+agent's **own engine**, (b) normalizes its event stream into `WireMsg`, and
+(c) injects genui-shell's generative-UI tools via **MCP** (Claude Code, Codex,
+and Gemini CLI all support MCP). We do **not** build a generic agent loop or
+our own tools — that would be faithful to no one; each agent brings its own
+loop, tools, and behavior, and we stay faithful to it. **No proxy, no
+privileged agent.** Feasibility varies per agent (Claude's engine is cleanly
+embeddable; Codex/Gemini CLI are open source + MCP but their embeddability must
+be checked), so each agent is a feasibility check + adapter, and we prove the
+pattern on one before committing to all.
+
+- [ ] **Step P.1 — Agent-adapter seam + config**
+  - Goal: "which agent" is configuration; nothing hard-assumes Claude Code.
+  - Build: generalize the `AgentSession` boundary into an **agent adapter** —
+    drive a terminal agent's engine, normalize its events to `WireMsg`, inject
+    the generative-UI MCP server. A `Backend` config names the agent
+    (`claude-code` | `codex` | `gemini-cli` | …) + its credentials/model/endpoint.
+    Replace the `ANTHROPIC_API_KEY`-only live/mock switch (`registry.ts`) with an
+    agent-neutral one. Secrets stay server-side. Refactor the existing Claude
+    path (`Session`) into the reference adapter behind this interface.
+  - Files: `server/adapters/*`, `server/registry.ts`, `server/session.ts`, `.env.example`.
+  - Done when: types compile; Claude Code runs through the new adapter seam with
+    no behavior change; the agent is chosen from config, not hardcoded.
+
+- [ ] **Step P.2 — Codex adapter: feasibility spike, then integration**
+  - Goal: prove the faithful-skin pattern generalizes beyond Claude, on the
+    agent an OpenAI user already uses.
+  - Build: investigate how Codex's engine embeds / exposes an event stream
+    (SDK / app-server protocol / headless mode); drive it from the daemon,
+    normalize its output to `WireMsg`, and inject the render MCP server so the
+    generative UI works on top. Spike first (one tool call + one render, end to
+    end) to learn the surface before the full adapter.
+  - Files: `server/adapters/codex.ts`, spike notes.
+  - Done when: a Codex session runs live from an OpenAI key, driven through
+    genui-shell into the browser — and it behaves like **Codex**.
+
+- [ ] **Step P.3 — Codex fidelity + generative-UI superset**
+  - Goal: a Codex user gets Codex, faithfully, plus genui-shell's richness — no
+    Claude-isms.
+  - Build: Codex's own tools/config/behavior surface as-is; genui-shell's
+    components, pins, and artifacts layer on top via MCP; verify no Claude
+    presets, `settings.json` inheritance, or Claude-specific affordances leak
+    into a Codex session.
+  - Done when: side by side, a Codex session and a Claude Code session each look
+    and behave like their own agent, both carrying the generative-UI layer.
+
+- [ ] **Step P.4 — Per-agent onboarding (no assumed agent)**
+  - Goal: first run is "pick your agent, give it its key/model" — Claude Code or
+    Codex or …, none assumed.
+  - Build: shell-owned onboarding + per-session agent selection (folds in the old
+    4.6 pick-cwd idea). Status bar shows which agent is behind the session. Keys
+    stay server-side.
+  - Done when: a stranger who only uses Codex reaches a working Codex-in-browser
+    session without editing files or seeing anything Claude.
+
+- [ ] **Step P.5 — Third agent + graceful degradation**
+  - Goal: prove N agents (add Gemini CLI), and that optional capabilities
+    degrade by absence.
+  - Build: a Gemini CLI adapter on the same seam; the **optional-feature rule** —
+    a capability an agent doesn't expose simply doesn't appear (e.g. the
+    reasoning stream renders only when that agent emits `thinking_delta`), no
+    special-casing; lean on Step 1.4's render fallback for weaker/local models.
+  - Done when: three agents (Claude Code, Codex, Gemini CLI) each run as their
+    own faithful skin behind one front end. **Phase P complete — each agent,
+    faithfully re-skinned; everyone's own tool in the browser.**
+
+---
+
 ## Phase 4 — Product hardening (the "others would want it" path)
 
 Goal of the phase: persistence, multiple sessions, polish, robust resume, and
-the multi-user seam. Each step is optional/independent — do as needed.
+the multi-user seam. Each step is optional/independent — do as needed. **Do
+Phase P first:** provider-neutrality is a prerequisite, not a parallel track,
+and the remaining Phase 4 polish (theming, resume, fleet view, relay) waits on it.
 
 - [x] **Step 4.1 — Session persistence**
   - Build: persist conversation + render history; restore on reconnect so a
@@ -774,8 +871,14 @@ the multi-user seam. Each step is optional/independent — do as needed.
     components.
   - Status: **done via 4.2 (2026-07-05)** — the registry's per-session ring
     buffer replays the full WireMsg history on every attach, so refresh
-    restores transcript + components + pins (verified in 4.2's checks).
-    In-memory only: durability across daemon restarts folds into 4.4.
+    restores transcript + components. NOTE (corrected 2026-07-05): a genuine
+    page reload does **not** restore *pins* — pin state is un-persisted
+    output-zone React state, never on the wire and not in the replay buffer,
+    so a hard refresh repaints the components un-pinned (verified in headless
+    Chrome: pin → Ctrl+R → component returns, pin gone). Pins survive only a
+    socket-level reconnect (React state isn't torn down), not a page reload.
+    Persisting pins across refresh (e.g. localStorage keyed by session id) is
+    unbuilt. In-memory only: durability across daemon restarts folds into 4.4.
 
 - [x] **Step 4.2 — Session registry (decouple sessions from connections)**
   - Goal: sessions survive refreshes and disconnects; a connection is a
@@ -856,46 +959,41 @@ the multi-user seam. Each step is optional/independent — do as needed.
 
 ---
 
-## Phase L — Local & alternative models (M2 scope; do not start before M1)
+## Phase L — Local models: zero-friction (ergonomics on top of Phase P)
 
-Goal of the phase: anyone running a capable local model can drive genui-shell
-with their code, their key, **and their inference** never leaving the machine.
-The engine seam already supports this (see Locked decisions) — this phase is
-about making the setup easy and the failure modes graceful, timed for the M2
-OSS launch where "fully local" is a headline. Prereq: Step 1.4 (render
-validation/fallback) must exist, since weaker models misfire render tools and
-must degrade to styled text, not broken UI.
+Goal of the phase: someone running a local LLM uses their agent in genui-shell
+as easily as a cloud user — inference never leaving the machine. **Local isn't
+a genui-shell feature; it's a property of the agent.** A terminal agent that
+can point at a local endpoint (e.g. Codex against a local OpenAI-compatible
+server — Ollama / vLLM / LM Studio) already runs locally; genui-shell just
+re-skins that agent, so a "local" session is just that agent configured for
+localhost — **no LiteLLM, no shim.** This phase is only the ergonomics and
+honest guidance. (Prereq: Phase P, and Step 1.4's render fallback so small
+models degrade to styled text, not broken UI.)
 
-- [ ] **Step L.0 — Feasibility spike (optional, one afternoon, any time)**
-  - Goal: de-risk the M2 promise before making it publicly.
-  - Build: nothing in-repo. Run LiteLLM in front of a 30B-class local coding
-    model (e.g. Qwen3-Coder), set `ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN`/
-    `DEFAULT_MODEL` in `.env`, and drive a real session: bash, file edit,
-    multi-turn. Note failure modes (malformed tool calls, loops) for L.1 docs.
-  - Done when: a local model completes a create-and-read-a-file task through
-    the browser UI, and the rough edges are written down.
+**Posture (locked 2026-07-05):** best-effort support for *whatever* endpoint a
+user's agent points at, with an honest heads-up that small/unusual local models
+may misfire (tool calls, loops) and degrade to plain text. Don't gate on a
+curated model list. Agent- or model-specific niceties (tuned prompts,
+capability toggles) for the big popular ones can come **later**, as demand
+shows which matter — not a launch prerequisite.
 
-- [ ] **Step L.1 — Documented path + preset (ship with the M2 launch)**
-  - Goal: a motivated local-model user is running in ~10 minutes.
-  - Build: `docs/local-models.md` — install proxy, point it at Ollama/vLLM,
-    three `.env` lines; a ready-made LiteLLM config checked into the repo
-    (`presets/litellm.local.yaml`); an honest "recommended models" table
-    (30B+ coding models work well, small models degrade — with hardware
-    notes). Frame as "works with any Anthropic-API-compatible endpoint";
-    Claude remains the documented default. Mention Bedrock/Vertex env
-    config in the same doc (free enterprise angle).
-  - Files: `docs/local-models.md`, `presets/litellm.local.yaml`, README link.
-  - Done when: a stranger following only the doc gets a local model running
-    against genui-shell; the M2 launch post can truthfully say "BYOK or
-    fully local."
+- [ ] **Step L.1 — Documented local path (ship with the M2 launch)**
+  - Goal: a motivated local-model user is running in a couple minutes.
+  - Build: `docs/local-models.md` — point a local-capable agent (e.g. Codex) at
+    a running Ollama/vLLM/LM Studio (base URL + model, no proxy); an honest
+    "recommended models" table (30B+ coding models work well, small models
+    degrade gracefully via Step 1.4 — with hardware notes).
+  - Files: `docs/local-models.md`, README link.
+  - Done when: a stranger following only the doc drives a local model through
+    the browser UI; the launch post can truthfully say "BYOK or fully local."
 
 - [ ] **Step L.2 — `--local` easy mode (post-M2, demand-gated)**
-  - Goal: one command instead of ten minutes — build only if M2 issues show
-    real local-setup friction.
-  - Build: `npx genui-shell --local` detects a running Ollama/LM Studio,
-    lists installed models, wires the translation layer (bundled LiteLLM or
-    a minimal built-in Anthropic→OpenAI shim), and picks sane defaults.
-    Session strip shows which provider/model a session is on.
+  - Goal: one command instead of a couple minutes — build only if setup
+    friction shows up in the tracker.
+  - Build: `npx genui-shell --local` detects a running Ollama/LM Studio, lists
+    installed models, and configures a local-capable agent to use it with sane
+    defaults (no proxy). Status bar shows the active agent/model.
   - Done when: on a machine with Ollama + a supported model, `--local` cold
     start reaches a working session with zero manual config.
 
