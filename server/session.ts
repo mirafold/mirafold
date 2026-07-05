@@ -15,8 +15,14 @@ export interface AgentSession {
   onMessage(cb: (msg: WireMsg) => void): void;
   /** Halt the in-flight turn; the session stays warm for the next prompt. */
   interrupt(): void;
+  /** The browser's answer to a permission_request (Phase T.3). */
+  resolvePermission(id: string, allow: boolean): void;
   close(): void;
 }
+
+// How long a permission prompt waits for the browser before denying.
+// Overridable for tests; deny-by-default is the security posture.
+const PERMISSION_TIMEOUT_MS = Number(process.env.PERMISSION_TIMEOUT_MS ?? 60_000);
 
 /** Unbounded async queue used to feed the SDK's streaming-input generator. */
 class AsyncQueue<T> {
@@ -83,6 +89,8 @@ export class Session implements AgentSession {
   // tool_use ids we announced on the wire — results for anything else
   // (render tools, subagent internals) must not paint orphan records.
   private announcedTools = new Set<string>();
+  // In-flight permission prompts, keyed by wire id → resolver.
+  private pendingAsks = new Map<string, (allow: boolean) => void>();
 
   constructor(opts?: { workspaceDir?: string; model?: string }) {
     const workspaceDir = path.resolve(opts?.workspaceDir ?? "workspace");
@@ -92,7 +100,7 @@ export class Session implements AgentSession {
       options: {
         model: opts?.model ?? process.env.DEFAULT_MODEL,
         cwd: workspaceDir,
-        canUseTool: makeCanUseTool(workspaceDir),
+        canUseTool: makeCanUseTool(workspaceDir, this.ask),
         includePartialMessages: true, // gives us token-level text deltas
         mcpServers: { ui: makeRenderServer((msg) => this.emit(msg)) },
         systemPrompt: { type: "preset", preset: "claude_code", append: RENDER_GUIDANCE },
@@ -111,6 +119,9 @@ export class Session implements AgentSession {
 
   interrupt() {
     if (this.closed) return;
+    // A pending permission prompt would keep the aborted turn hanging —
+    // interrupt means the user walked away from it: deny.
+    for (const finish of [...this.pendingAsks.values()]) finish(false);
     // The SDK also emits a result for the aborted turn; the extra turn_end
     // after the abort settles is a client-side no-op, kept as a guarantee.
     this.q
@@ -119,9 +130,30 @@ export class Session implements AgentSession {
       .catch(() => {}); // interrupting an idle session is not an error
   }
 
+  resolvePermission(id: string, allow: boolean) {
+    this.pendingAsks.get(id)?.(allow);
+  }
+
+  /** Pause the tool call on a browser prompt; deny on timeout or close. */
+  private ask = (tool: string, detail: string): Promise<boolean> => {
+    if (this.closed) return Promise.resolve(false);
+    return new Promise((resolve) => {
+      const id = randomUUID();
+      const finish = (allow: boolean) => {
+        clearTimeout(timer);
+        this.pendingAsks.delete(id);
+        resolve(allow);
+      };
+      const timer = setTimeout(() => finish(false), PERMISSION_TIMEOUT_MS);
+      this.pendingAsks.set(id, finish);
+      this.emit({ type: "permission_request", tool, detail, id });
+    });
+  };
+
   close() {
     if (this.closed) return;
     this.closed = true;
+    for (const finish of [...this.pendingAsks.values()]) finish(false);
     this.queue.push(CLOSE);
     this.q.interrupt().catch(() => {});
   }
@@ -504,8 +536,36 @@ export class MockSession implements AgentSession {
   private listeners = new Set<(msg: WireMsg) => void>();
   private timers: ReturnType<typeof setTimeout>[] = [];
   private deck: number[] = [];
+  private pendingAsks = new Map<string, (allow: boolean) => void>();
 
   pushPrompt(text: string) {
+    // Deterministic T.3 hook: a "dangerous"-sounding prompt pauses on a
+    // permission_request so the prompt bar is exercisable API-free.
+    if (/dangerous|sudo|rm -rf/i.test(text)) {
+      const id = randomUUID();
+      this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+      this.schedule(() => {
+        const timer = setTimeout(
+          () => this.pendingAsks.get(id)?.(false),
+          PERMISSION_TIMEOUT_MS,
+        );
+        this.timers.push(timer);
+        this.pendingAsks.set(id, (allow) => {
+          clearTimeout(timer);
+          this.pendingAsks.delete(id);
+          if (allow) this.playDangerousAllowed();
+          else this.playDangerousDenied();
+        });
+        this.emit({
+          type: "permission_request",
+          tool: "Bash",
+          detail: "rm -rf /var/cache/app && systemctl restart app",
+          id,
+        });
+      }, 450);
+      return;
+    }
+
     if (this.deck.length === 0) this.deck = shuffled(TEMPLATES.map((_, i) => i));
     const reply = TEMPLATES[this.deck.pop()!](text);
 
@@ -549,15 +609,61 @@ export class MockSession implements AgentSession {
   }
 
   interrupt() {
-    // Everything still scheduled belongs to the in-flight turn.
+    // Everything still scheduled belongs to the in-flight turn; abandoned
+    // permission prompts die with it (deny by default).
     for (const t of this.timers) clearTimeout(t);
     this.timers = [];
+    this.pendingAsks.clear();
     this.emit({ type: "turn_end" });
+  }
+
+  resolvePermission(id: string, allow: boolean) {
+    this.pendingAsks.get(id)?.(allow);
   }
 
   close() {
     for (const t of this.timers) clearTimeout(t);
     this.timers = [];
+    this.pendingAsks.clear();
+  }
+
+  /** Continuation after the permission prompt was allowed: run the "command". */
+  private playDangerousAllowed() {
+    const id = randomUUID();
+    this.schedule(() => {
+      this.emit({ type: "status", state: "tool", label: "Bash" });
+      this.emit({
+        type: "tool_use",
+        name: "Bash",
+        detail: "rm -rf /var/cache/app && systemctl restart app",
+        id,
+      });
+    }, 150);
+    this.schedule(
+      () =>
+        this.emit({
+          type: "tool_result",
+          output: `removed ${randInt(80, 400)} files (${randInt(40, 900)} MB)\napp.service restarted — active (running)`,
+          id,
+        }),
+      900,
+    );
+    let delay = 1100;
+    for (const chunk of "Cache cleared and the service restarted cleanly. ✅".match(/.{1,16}/gs) ?? []) {
+      delay += 14;
+      this.schedule(() => this.emit({ type: "text_delta", text: chunk }), delay);
+    }
+    this.schedule(() => this.emit({ type: "turn_end" }), delay + 60);
+  }
+
+  /** Continuation after the permission prompt was denied (or timed out). */
+  private playDangerousDenied() {
+    let delay = 150;
+    for (const chunk of "Understood — I won't run that command. Nothing was changed.".match(/.{1,16}/gs) ?? []) {
+      delay += 14;
+      this.schedule(() => this.emit({ type: "text_delta", text: chunk }), delay);
+    }
+    this.schedule(() => this.emit({ type: "turn_end" }), delay + 60);
   }
 
   private emit(msg: WireMsg) {

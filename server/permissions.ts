@@ -26,14 +26,23 @@ function isInside(root: string, candidate: string): boolean {
   return resolved === root || resolved.startsWith(root + path.sep);
 }
 
+/** Asks the user in the browser; resolves false on deny or timeout. */
+export type PermissionAsker = (tool: string, detail: string) => Promise<boolean>;
+
 /**
- * Phase 0 permission policy: read-only tools pass, file mutations must
- * target the workspace dir, Bash is heuristically confined (the session's
- * cwd is the workspace; commands referencing parent/absolute/home paths
- * are rejected — coarse on purpose, hardened in later phases).
+ * Permission policy (Phase 0 base + T.3 prompts): read-only tools pass,
+ * file mutations inside the workspace pass, in-workspace Bash passes.
+ * Everything that Phase 0 flatly denied — Bash reaching outside the
+ * workspace, writes outside it, unknown tools — now pauses the turn and
+ * asks the browser; deny stays the default (timeout, disconnect, Esc).
  */
-export function makeCanUseTool(workspaceDir: string): CanUseTool {
+export function makeCanUseTool(workspaceDir: string, ask: PermissionAsker): CanUseTool {
   const root = path.resolve(workspaceDir);
+  const denied = (message: string) => ({ behavior: "deny" as const, message });
+  const askOr = async (tool: string, detail: string, input: Record<string, unknown>, denyMsg: string) =>
+    (await ask(tool, detail))
+      ? { behavior: "allow" as const, updatedInput: input }
+      : denied(denyMsg);
 
   return async (toolName, input) => {
     if (READ_ONLY_TOOLS.has(toolName)) {
@@ -51,27 +60,36 @@ export function makeCanUseTool(workspaceDir: string): CanUseTool {
       if (typeof target === "string" && isInside(root, target)) {
         return { behavior: "allow", updatedInput: input };
       }
-      return {
-        behavior: "deny",
-        message: `File writes are only allowed inside ${root}`,
-      };
+      return askOr(
+        toolName,
+        String(target ?? "(unknown path)"),
+        input,
+        "The user declined this file write from the permission prompt.",
+      );
     }
 
     if (toolName === "Bash") {
       const command = String(input["command"] ?? "");
       // The regex can false-positive on legitimate commands (e.g. a path
-      // inside a quoted string) — acceptable for a personal-first Phase 0.
-      // ".." and "~" are denied whenever they end a token, not just at the
-      // end of the command, so `cd .. && …` can't slip past the gate.
+      // inside a quoted string) — with T.3 a false positive costs one
+      // browser prompt instead of a hard deny. ".." and "~" are flagged
+      // whenever they end a token, so `cd .. && …` can't slip past.
       if (/(^|[\s;|&'"=(])((\.\.|~)(?=\/|$|[\s;|&'")])|\/(?!$))/.test(command)) {
-        return {
-          behavior: "deny",
-          message: `Bash commands must stay inside the workspace (${root}); use relative paths without "..", "~", or absolute paths.`,
-        };
+        return askOr(
+          "Bash",
+          command,
+          input,
+          "The user declined this command from the permission prompt.",
+        );
       }
       return { behavior: "allow", updatedInput: input };
     }
 
-    return { behavior: "deny", message: `Tool ${toolName} is not allowed in Phase 0` };
+    return askOr(
+      toolName,
+      JSON.stringify(input).slice(0, 160),
+      input,
+      `The user declined the ${toolName} call from the permission prompt.`,
+    );
   };
 }
