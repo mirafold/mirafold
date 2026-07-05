@@ -63,8 +63,17 @@ full tool arguments and diffs, subagent progress, todo checklists, output
 depth, cost/context meters) must eventually be surfaced here, because any
 line the terminal shows and we hide is a reason for a terminal user to go
 back. Phase T was the *capability* cut of parity (act, interrupt, approve);
-**Phase T2** below tracks the remaining *visibility* gaps. Collapsed-by-
-default is fine — invisible is not.
+**Phase T2** below tracks the remaining *visibility* gaps.
+
+The offer, in one sentence: **total faithfulness to the terminal and its
+abilities, with a much better view and far more functionality, because the
+full power of HTML/CSS/JS is available to the output.** And fidelity costs
+nothing here precisely because of that power — the standard pattern for any
+stream that would muddy the transcript (thinking, verbose tool detail,
+subagent churn) is: render it live while the turn runs, then fold it to a
+dim one-liner (click to expand) once the final response lands. Collapsed-by-
+default is fine — invisible is not. The web skin gets to do what the
+terminal can't: keep every line AND keep the transcript clean.
 
 - Full-width canvas; no centered column. If long prose lines ever itch, cap
   prose only (`max-width: 80ch`) — never tables, code, or components.
