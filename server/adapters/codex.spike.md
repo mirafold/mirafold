@@ -112,3 +112,46 @@ one tool call + one render end to end.
 returns false for codex (→ mock) until this adapter lands and its OpenAI-key
 check is added; `createSession()` throws a clear "no adapter yet" for codex. So
 turning Codex on is: add the key check + the `codex` case, nothing structural.
+
+## Live probe results (2026-07-05) — ground truth from the installed SDK
+
+Ran two throwaway probes against `@openai/codex-sdk@0.142.5` live on Kyle's
+**ChatGPT login** (`codex login`, free — no OpenAI API key, $0). This resolves
+the spike's one open unknown: the real SDK event names/shapes. Raw capture in
+`scratchpad/codex-events.txt`.
+
+**Event names are dot-notation** (SDK projection, not the app-server's `item/…`):
+
+```
+{"type":"thread.started","thread_id":"019f347d-…"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"pong"}}
+{"type":"turn.completed","usage":{"input_tokens":11828,"cached_input_tokens":8960,
+                                  "output_tokens":5,"reasoning_output_tokens":0}}
+```
+
+Confirmed for the adapter:
+- Event `type`s seen: `thread.started` (carries `thread_id` → resume),
+  `turn.started`, `item.completed` (carries `item`), `turn.completed`
+  (carries `usage`). Discriminate work by `item.type` (`agent_message` seen;
+  `command_execution`/`file_change`/`reasoning`/`mcp_tool_call` per the app-server
+  table above — shapes still to confirm live).
+- **`usage` → WireMsg**: `input_tokens` (+ `cached_input_tokens` is a subset of
+  input, already counted — do NOT re-add) + `output_tokens` +
+  `reasoning_output_tokens`. Map inputTokens = `input_tokens`, outputTokens =
+  `output_tokens` (+ reasoning if we want parity with thinking cost).
+- **Streaming granularity**: `runStreamed` emitted **buffered `item.completed`
+  items, no token-level deltas** for these prompts. So v1 emits one `text_delta`
+  per completed `agent_message` item (good enough); token-by-token streaming (the
+  `item/agentMessage/delta` events) likely needs a config flag or the app-server
+  layer — deferred, optional-feature rule covers its absence.
+
+**Still to capture (cheap, next live window):** the `command_execution` item
+shape and the approval round-trip. Probe 2 set `approval_policy:"never"`, which
+made Codex **skip execution** (it narrated "done" but emitted no
+`command_execution` item) rather than auto-run. To capture a real command
+execution + `requestApproval`, use a writable sandbox with an approval policy
+that actually runs/asks (e.g. `sandbox_mode:"workspace-write"` +
+`approval_policy:"on-request"` or `on-failure`) — not `never`. One short live
+run will lock the tool/approval mapping; the rest of the adapter can be written
+offline from what's above.
