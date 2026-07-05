@@ -686,7 +686,7 @@ terminal currently out-informs us most.
     elided"); mock ("huge log" hook, ~110KB → 50.8 KB elided) confirms the
     default path and that normal outputs carry no marker.
 
-- [ ] **Step T2.4 — Subagent visibility**
+- [x] **Step T2.4 — Subagent visibility**
   - Goal: a Task run is a window, not a black box.
   - Build: instead of dropping `parent_tool_use_id` traffic, forward subagent
     tool calls with optional `parentId?: string` on `tool_use`/`tool_result`;
@@ -696,6 +696,19 @@ terminal currently out-informs us most.
   - Files: `protocol.ts`, `session.ts`, `RenderZone.tsx`, `ToolBlock.tsx`.
   - Done when: a live Task shows its subagent's tool calls nested under it,
     and the main transcript prose contains none of the subagent's text.
+  - Status: **done, verified (2026-07-05)** — pump now forwards subagent
+    `tool_use`/`tool_result` tagged with `parentId` (the Task's id); subagent
+    text/thinking stay dropped (they ride stream_event, still filtered).
+    `SubagentGroup` nests children indented under their parent row, collapsed
+    by default ("⚙ subagent · N calls"), keyed by parentId so it's
+    tool-name-agnostic. Mock "delegate" hook. Verified mock 6/6 (nested,
+    collapsed-by-default, Task at top level, expands to 3 child rows, prose
+    is the summary not the internals) and live: the real **Agent** tool (SDK
+    names it Agent, not Task — nesting keyed by id so it doesn't matter)
+    delegated a TODO search; its inner Bash grep nested under it and the
+    reply carried only the agent's own summary. Note subagent tool calls
+    still pass through canUseTool, so an out-of-workspace inner Bash prompts
+    like any other.
 
 - [ ] **Step T2.5 — Live todo checklist**
   - Goal: the terminal's task list, as a real component.

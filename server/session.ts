@@ -220,7 +220,10 @@ export class Session implements AgentSession {
             break;
           }
           case "assistant": {
-            if (msg.parent_tool_use_id) break; // subagent traffic — not ours to render
+            // Subagent tool CALLS are shown, nested (T2.4); subagent text and
+            // thinking stay filtered — those come via stream_event, still
+            // dropped above. parentId = the Task tool_use this call belongs to.
+            const parentId = msg.parent_tool_use_id ?? undefined;
             for (const block of msg.message.content) {
               if (block.type !== "tool_use") continue;
               // Render tools already paint their own component block.
@@ -235,12 +238,13 @@ export class Session implements AgentSession {
                   typeof block.input === "object" && block.input !== null
                     ? (block.input as Record<string, unknown>)
                     : undefined,
+                parentId,
               });
             }
             break;
           }
           case "user": {
-            if (msg.parent_tool_use_id) break;
+            const parentId = msg.parent_tool_use_id ?? undefined;
             const content = msg.message.content;
             if (!Array.isArray(content)) break; // plain prompt echo, not tool results
             for (const block of content) {
@@ -253,6 +257,7 @@ export class Session implements AgentSession {
                 truncatedBytes: capped.truncatedBytes,
                 isError: block.is_error === true,
                 id: block.tool_use_id,
+                parentId,
               });
             }
             break;
@@ -625,6 +630,49 @@ export class MockSession implements AgentSession {
         delay,
       );
       this.schedule(() => this.emit({ type: "turn_end" }), delay + 40);
+      return;
+    }
+
+    // Deterministic T2.4 hook: a "subagent"/"delegate"-sounding prompt spawns
+    // a Task whose inner tool calls nest under it (subagent text stays hidden).
+    if (/subagent|delegate/i.test(text)) {
+      const taskId = randomUUID();
+      this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+      this.schedule(() => {
+        this.emit({ type: "status", state: "tool", label: "Task" });
+        this.emit({
+          type: "tool_use",
+          name: "Task",
+          detail: "research: audit the config loader",
+          id: taskId,
+          input: { description: "audit config loader", subagent_type: "Explore" },
+        });
+      }, 350);
+      // Subagent's inner calls — each tagged with the Task's id as parentId.
+      const inner: { name: string; detail: string; output: string }[] = [
+        { name: "Grep", detail: '-rn "loadConfig" src/', output: "src/config.ts:12: export function loadConfig(" },
+        { name: "Read", detail: "src/config.ts", output: Array.from({ length: 4 }, (_, i) => `${i + 1}→${pick(SENTENCES)}`).join("\n") },
+        { name: "Bash", detail: "node -e 'require(\"./config\")'", output: "config OK — 3 sources merged" },
+      ];
+      let d = 700;
+      for (const t of inner) {
+        const cid = randomUUID();
+        d += randInt(250, 450);
+        this.schedule(() => this.emit({ type: "tool_use", name: t.name, detail: t.detail, id: cid, parentId: taskId }), d);
+        d += randInt(250, 450);
+        this.schedule(() => this.emit({ type: "tool_result", output: t.output, id: cid, parentId: taskId }), d);
+      }
+      d += 300;
+      this.schedule(
+        () => this.emit({ type: "tool_result", output: "Audit complete: loader merges 3 sources; no precedence bug found.", id: taskId }),
+        d,
+      );
+      d += 200;
+      for (const chunk of "The subagent audited the config loader — it merges three sources correctly, no precedence bug.".match(/.{1,16}/gs) ?? []) {
+        d += 14;
+        this.schedule(() => this.emit({ type: "text_delta", text: chunk }), d);
+      }
+      this.schedule(() => this.emit({ type: "turn_end" }), d + 40);
       return;
     }
 
