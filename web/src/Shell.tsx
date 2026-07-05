@@ -2,7 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import type { Action, WireMsg } from "@protocol";
 import { PromptBox } from "./PromptBox";
 import { RenderZone } from "./RenderZone";
+import { StatusBar, type Usage } from "./StatusBar";
 import { SocketClient } from "./ws";
+
+const ZERO_USAGE: Usage = { turnIn: 0, turnOut: 0, sumIn: 0, sumOut: 0, cost: 0 };
 
 /**
  * What the output zone consumes: the wire protocol plus one local control
@@ -27,10 +30,15 @@ export function Shell() {
   // Pending permission prompts, oldest first; the bar shows one at a time.
   // SHELL-OWNED UI: the agent can paint nothing here, so it can't fake it.
   const [asks, setAsks] = useState<{ tool: string; detail: string; id: string }[]>([]);
+  // Status-bar state (T2.6) — all shell-owned, none paintable by the agent.
+  const [connected, setConnected] = useState(false);
+  const [meta, setMeta] = useState<{ sessionId?: string; cwd?: string }>({});
+  const [usage, setUsage] = useState<Usage>(ZERO_USAGE);
 
   const bus = useMemo(() => {
     const socket = new SocketClient();
     const listeners = new Set<(m: ZoneMsg) => void>();
+    const connListeners = new Set<(c: boolean) => void>();
     // The URL carries the session identity; no id yet means "create one".
     let sessionId = location.pathname.match(/^\/s\/([\w-]+)/)?.[1] ?? null;
     socket.setHello(() =>
@@ -39,6 +47,10 @@ export function Shell() {
     // Every (re)open replays history — clear the zone so it repaints once.
     socket.onOpen(() => {
       for (const l of listeners) l({ type: "zone_reset" });
+      for (const c of connListeners) c(true);
+    });
+    socket.onClose(() => {
+      for (const c of connListeners) c(false);
     });
     socket.onMessage((m) => {
       if (m.type === "session_created") {
@@ -52,6 +64,12 @@ export function Shell() {
         listeners.add(l);
         return () => {
           listeners.delete(l);
+        };
+      },
+      onConnection(cb: (c: boolean) => void): () => void {
+        connListeners.add(cb);
+        return () => {
+          connListeners.delete(cb);
         };
       },
       sendPrompt(text: string) {
@@ -80,13 +98,31 @@ export function Shell() {
           setAsks([]); // a request that outlived its turn is void (server denies)
         } else if (m.type === "permission_request") {
           setAsks((a) => [...a, { tool: m.tool, detail: m.detail, id: m.id }]);
+        } else if (m.type === "session_created") {
+          setMeta({ sessionId: m.sessionId, cwd: m.cwd });
+        } else if (m.type === "usage") {
+          // Tokens are per-turn → sum for the session total. Cost is already
+          // the session-cumulative figure → take it as-is, never add (T2.6).
+          // Reset-on-zone_reset keeps both replay-safe: re-summing tokens and
+          // re-taking the final cost both land on the right number.
+          setUsage((u) => ({
+            model: m.model,
+            turnIn: m.inputTokens,
+            turnOut: m.outputTokens,
+            sumIn: u.sumIn + m.inputTokens,
+            sumOut: u.sumOut + m.outputTokens,
+            cost: m.costUsd ?? u.cost,
+          }));
         } else if (m.type === "zone_reset") {
           setBusy(false);
           setAsks([]);
+          setUsage(ZERO_USAGE);
         }
       }),
     [bus],
   );
+
+  useEffect(() => bus.onConnection(setConnected), [bus]);
 
   // Esc interrupts from anywhere in the page, not just the textarea.
   useEffect(() => {
@@ -149,6 +185,7 @@ export function Shell() {
         </div>
       )}
       <PromptBox onSend={bus.sendPrompt} busy={busy} onInterrupt={bus.interrupt} />
+      <StatusBar connected={connected} sessionId={meta.sessionId} cwd={meta.cwd} usage={usage} />
     </div>
   );
 }

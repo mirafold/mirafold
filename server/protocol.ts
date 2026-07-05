@@ -53,6 +53,16 @@ export type WireMsg =
   // channel raw agent markup may travel). Re-sending an id replaces that
   // artifact in place — same rule as `render`.
   | { type: "artifact"; html: string; id: string; title?: string }
+  // T2.6: per-turn token/cost accounting for the shell's status bar. One
+  // per completed turn (just before turn_end); the client sums for the
+  // session total. Replay-safe — buffered like everything else.
+  | {
+      type: "usage";
+      model: string;
+      inputTokens: number;
+      outputTokens: number;
+      costUsd?: number;
+    }
   // Phase T2.1: the model's reasoning stream, full fidelity. Renders as a
   // dim block that folds to one line once the turn's real output starts —
   // collapse-on-finalize, never dropped.

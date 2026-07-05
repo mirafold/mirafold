@@ -141,13 +141,19 @@ export class Session implements AgentSession {
   // In-flight permission prompts, keyed by wire id → resolver.
   private pendingAsks = new Map<string, (allow: boolean) => void>();
 
+  // T2.6: label shown in the status bar (the SDK falls back to its own
+  // default when `model` is unset, so we keep a readable stand-in).
+  private modelLabel: string;
+
   constructor(opts?: { workspaceDir?: string; model?: string }) {
     const workspaceDir = path.resolve(opts?.workspaceDir ?? "workspace");
     mkdirSync(workspaceDir, { recursive: true }); // spawn fails on a missing cwd
+    const model = opts?.model ?? process.env.DEFAULT_MODEL;
+    this.modelLabel = model ?? "default";
     this.q = query({
       prompt: this.promptStream(),
       options: {
-        model: opts?.model ?? process.env.DEFAULT_MODEL,
+        model,
         cwd: workspaceDir,
         canUseTool: makeCanUseTool(workspaceDir, this.ask),
         // ISOLATION: never inherit the host user's Claude Code config. The
@@ -368,6 +374,22 @@ export class Session implements AgentSession {
             if (msg.is_error) {
               const detail = "result" in msg ? msg.result : msg.subtype;
               this.emit({ type: "error", message: String(detail) });
+            }
+            // T2.6: per-turn usage for the status bar. Input includes cache
+            // tokens — that's the real context weight the user is paying for.
+            const u = (msg as { usage?: Record<string, number> }).usage;
+            if (u) {
+              const inputTokens =
+                (u["input_tokens"] ?? 0) +
+                (u["cache_read_input_tokens"] ?? 0) +
+                (u["cache_creation_input_tokens"] ?? 0);
+              this.emit({
+                type: "usage",
+                model: this.modelLabel,
+                inputTokens,
+                outputTokens: u["output_tokens"] ?? 0,
+                costUsd: (msg as { total_cost_usd?: number }).total_cost_usd,
+              });
             }
             this.todoRenderId = undefined; // next turn starts a fresh checklist
             this.emit({ type: "turn_end" });
@@ -695,6 +717,7 @@ export class MockSession implements AgentSession {
   private listeners = new Set<(msg: WireMsg) => void>();
   private timers: ReturnType<typeof setTimeout>[] = [];
   private deck: number[] = [];
+  private mockCost = 0; // cumulative session cost, mirroring the real SDK
   private pendingAsks = new Map<string, (allow: boolean) => void>();
 
   pushPrompt(text: string) {
@@ -986,6 +1009,22 @@ export class MockSession implements AgentSession {
     this.schedule(
       () => this.emit({ type: "render", component, props, id: randomUUID() }),
       delay,
+    );
+    // T2.6: per-turn tokens + cumulative cost, mirroring the real SDK.
+    const inTok = randInt(1800, 7200);
+    const outTok = randInt(200, 900);
+    this.mockCost = Number((this.mockCost + (inTok * 3 + outTok * 15) / 1_000_000).toFixed(4));
+    const costUsd = this.mockCost;
+    this.schedule(
+      () =>
+        this.emit({
+          type: "usage",
+          model: "mock-sonnet",
+          inputTokens: inTok,
+          outputTokens: outTok,
+          costUsd,
+        }),
+      delay + 20,
     );
     this.schedule(() => this.emit({ type: "turn_end" }), delay + 40);
   }
