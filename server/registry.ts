@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import type { WireMsg } from "./protocol";
-import { MockSession, Session, type AgentSession } from "./session";
+import {
+  createSession,
+  resolveBackend,
+  type AgentSession,
+  type Backend,
+} from "./adapters";
 
 // Replay depth: enough to reconstruct a long working session; beyond it the
 // oldest messages fall off and a late viewport sees a truncated head.
@@ -31,6 +36,10 @@ export type SessionEntry = {
 export class SessionRegistry {
   private entries = new Map<string, SessionEntry>();
 
+  // Which agent every session in this registry runs, resolved once from
+  // config (Phase P.1). The agent is chosen here, not hardcoded downstream.
+  constructor(private backend: Backend = resolveBackend()) {}
+
   create(cwd?: string): SessionEntry {
     const id = randomUUID().slice(0, 8);
     // cwd is whatever the caller chose (default: workspace/<id>). A session is
@@ -42,22 +51,9 @@ export class SessionRegistry {
     // remote-cwd vector it was guarding.)
     const dir = path.resolve(cwd ?? path.join("workspace", id));
     mkdirSync(dir, { recursive: true }); // action tools need it even in mock mode
-    // Live when any model credential/endpoint is configured — not just an
-    // Anthropic API key. The SDK resolves ANTHROPIC_API_KEY → ANTHROPIC_AUTH_TOKEN,
-    // and a custom ANTHROPIC_BASE_URL points at a proxy/local endpoint (which
-    // may need no key), so keying only on ANTHROPIC_API_KEY would silently drop
-    // those setups into the mock. Fall back to the mock only when nothing is
-    // configured. (Phase P.1 generalizes this to the provider config; today the
-    // one live backend is the Anthropic SDK — this is provider-neutral seam
-    // hygiene ahead of it, not the whole thing.)
-    const live = Boolean(
-      process.env.ANTHROPIC_API_KEY ||
-        process.env.ANTHROPIC_AUTH_TOKEN ||
-        process.env.ANTHROPIC_BASE_URL,
-    );
-    const session: AgentSession = live
-      ? new Session({ workspaceDir: dir })
-      : new MockSession();
+    // The configured agent becomes a concrete engine at this one seam
+    // (Phase P.1). Falls back to the mock when the agent has no credentials.
+    const session: AgentSession = createSession(this.backend, { cwd: dir });
     const entry: SessionEntry = { id, cwd: dir, session, buffer: [], viewports: new Set() };
     session.onMessage((msg) => this.broadcast(entry, msg));
     this.entries.set(id, entry);

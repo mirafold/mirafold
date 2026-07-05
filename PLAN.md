@@ -800,7 +800,7 @@ embeddable; Codex/Gemini CLI are open source + MCP but their embeddability must
 be checked), so each agent is a feasibility check + adapter, and we prove the
 pattern on one before committing to all.
 
-- [ ] **Step P.1 — Agent-adapter seam + config**
+- [x] **Step P.1 — Agent-adapter seam + config**
   - Goal: "which agent" is configuration; nothing hard-assumes Claude Code.
   - Build: generalize the `AgentSession` boundary into an **agent adapter** —
     drive a terminal agent's engine, normalize its events to `WireMsg`, inject
@@ -812,6 +812,23 @@ pattern on one before committing to all.
   - Files: `server/adapters/*`, `server/registry.ts`, `server/session.ts`, `.env.example`.
   - Done when: types compile; Claude Code runs through the new adapter seam with
     no behavior change; the agent is chosen from config, not hardcoded.
+  - Status: **done, verified live (2026-07-05)** — `server/session.ts` split into
+    `server/adapters/`: `types.ts` (the `AgentSession` contract + `AgentName`/
+    `Backend` config + agent-neutral helpers `capOutput`/`TodoItem`/
+    `PERMISSION_TIMEOUT_MS`), `claude-code.ts` (the former `Session`, renamed
+    `ClaudeCodeSession` — the reference adapter, Claude-only fidelity scoped
+    here), `mock.ts` (the `MockSession` stand-in), and `index.ts` (the seam:
+    `resolveBackend()` reads `GENUI_AGENT` (default `claude-code`) + per-agent
+    creds → `Backend{agent,live,model}`; `createSession()` dispatches agent→
+    engine, mock when not live). `registry.ts` resolves one `Backend` in its
+    ctor and calls `createSession(this.backend,{cwd})` — the old
+    `ANTHROPIC_API_KEY`-only switch is gone. `.env.example` documents
+    `GENUI_AGENT`. Verified: typecheck clean; config resolution (default→
+    claude-code, no-creds→mock, key→live, codex honored, bogus name→claude-code);
+    factory (no-creds→`MockSession`); **live e2e over a real WS** — a full Claude
+    Code turn (`session_created → user_prompt → text_delta → usage
+    claude-sonnet-4-6 26505in/5out $0.039 → turn_end`) ran through the new seam,
+    permission gating intact, zero behavior change.
 
 - [ ] **Step P.2 — Codex adapter: feasibility spike, then integration**
   - Goal: prove the faithful-skin pattern generalizes beyond Claude, on the
