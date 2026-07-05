@@ -583,6 +583,37 @@ export class MockSession implements AgentSession {
       return;
     }
 
+    // Deterministic 3.2 hook: an "artifact"-sounding prompt emits a small
+    // interactive artifact so the sandbox pipeline runs API-free.
+    if (/artifact/i.test(text)) {
+      this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+      let delay = 350;
+      for (const chunk of "No registry component fits a counter, so here's a sandboxed artifact.".match(/.{1,16}/gs) ?? []) {
+        delay += 14;
+        this.schedule(() => this.emit({ type: "text_delta", text: chunk }), delay);
+      }
+      delay += 300;
+      this.schedule(() => this.emit({ type: "status", state: "tool", label: "emit_artifact" }), delay);
+      delay += 400;
+      this.schedule(
+        () =>
+          this.emit({
+            type: "artifact",
+            title: "click counter",
+            html:
+              '<div style="text-align:center;padding:24px">' +
+              '<h2 style="margin:0 0 12px">Counter</h2>' +
+              '<button id="b" style="font-size:20px;padding:8px 24px;cursor:pointer">clicks: <span id="n">0</span></button>' +
+              "<script>let n=0;document.getElementById('b').onclick=()=>{document.getElementById('n').textContent=++n};</script>" +
+              "</div>",
+            id: randomUUID(),
+          }),
+        delay,
+      );
+      this.schedule(() => this.emit({ type: "turn_end" }), delay + 40);
+      return;
+    }
+
     // Deterministic T.3 hook: a "dangerous"-sounding prompt pauses on a
     // permission_request so the prompt bar is exercisable API-free.
     if (/dangerous|sudo|rm -rf/i.test(text)) {

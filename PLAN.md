@@ -513,7 +513,7 @@ fly" capability, gated behind the security model.
     fetch to both origins, new WebSocket, external script/img) with shell
     secrets planted first; parent-side `contentDocument === null`.
 
-- [ ] **Step 3.2 — Artifact wire message + agent capability**
+- [x] **Step 3.2 — Artifact wire message + agent capability**
   - Goal: the agent can emit an artifact.
   - Build: add `{ type:"artifact"; html: string; id: string }` to `WireMsg`;
     add an `emit_artifact` tool + system-prompt guidance (use only when no
@@ -521,6 +521,17 @@ fly" capability, gated behind the security model.
   - Files: `protocol.ts`, `server/render-tools.ts`, `RenderZone.tsx`.
   - Done when: the agent generates a small interactive artifact and it renders
     in the sandbox.
+  - Status: **done, verified (2026-07-05)** — `artifact` WireMsg (+ optional
+    `title`; update-in-place by id, same rule as `render`); `emit_artifact`
+    on the ui MCP server with last-resort guidance; RenderZone artifact
+    entries route to `Artifact.tsx`; MockSession "artifact" keyword hook for
+    API-free testing. `mcp__ui__*` now auto-allowed in permissions (UI
+    emission is side-effect-free; the sandbox is the containment — the first
+    live run surfaced the prompt friction). Verified mock-first in headless
+    Chrome (typed prompt → iframe mounts, 3 clicks inside the sandbox count
+    correctly), then live twice: the real agent chose emit_artifact
+    unprompted and its click-counter worked in the sandbox ("clicks: 2"
+    after 2 driven clicks, screenshot).
 
 - [ ] **Step 3.3 — postMessage bridge → action mediation**
   - Goal: artifacts can act, only through the Phase 2 mediated path.

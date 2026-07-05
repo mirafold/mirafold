@@ -34,9 +34,12 @@ components freely.
   numbered list, render_links to a bare pile of links, render_card for a
   single highlight, verdict, or summary worth setting off from the prose, and
   render_chart for ANY plot or graph (line for trends, bar for comparisons).
-- You cannot emit raw HTML or SVG — the UI renders it as literal code, never
-  as visuals. Never hand-write markup for something a render tool covers; if
-  no component fits, say so in prose instead of improvising markup.
+- Raw HTML or SVG in your text renders as literal code, never as visuals.
+  Never hand-write markup for something a render tool covers. When something
+  genuinely needs custom visuals or interactivity that NO render_* component
+  can express (a simulation, a custom diagram, a bespoke mini-app), use
+  emit_artifact — it runs your HTML/JS in a locked-down sandbox. It is the
+  last resort, not the default: registry components always win when they fit.
 - Plain markdown remains right for code blocks, long-form prose, and anything
   with no fitting component.
 - Every render_* result includes the component's id. Calling the same tool
@@ -93,6 +96,43 @@ export function makeRenderServer(emit: (msg: WireMsg) => void) {
         "Show a group of links in the output zone. Use for any collection of URLs worth clicking.",
         { ...registryShapes["link-group"], ...idParam },
         async ({ id, ...props }) => emitRender("link-group", id, props),
+      ),
+      tool(
+        "emit_artifact",
+        "Render self-contained HTML/CSS/JS in a sandboxed iframe. LAST RESORT: " +
+          "use only when no render_* component can express what's needed " +
+          "(custom visuals, simulations, bespoke interactivity).",
+        {
+          html: z
+            .string()
+            .describe(
+              "Body markup only (the host supplies <html>/<head>); inline " +
+                "<style> and <script> are fine. Must be fully self-contained: " +
+                "a strict CSP blocks ALL network (fetch/XHR/WebSocket, external " +
+                "scripts/images/fonts) and the sandbox has no cookies or " +
+                "storage. Dark background (#141a26) — style for it.",
+            ),
+          title: z
+            .string()
+            .optional()
+            .describe("Short label shown in the artifact's chrome bar."),
+          id: z
+            .string()
+            .optional()
+            .describe(
+              "Omit to render a new artifact. Pass an id returned by a " +
+                "previous emit_artifact call to replace that artifact in place.",
+            ),
+        },
+        async ({ html, title, id }) => {
+          const artifactId = id ?? randomUUID();
+          emit({ type: "artifact", html, id: artifactId, title });
+          return {
+            content: [
+              { type: "text" as const, text: `Rendered artifact (id: ${artifactId})` },
+            ],
+          };
+        },
       ),
     ],
   });

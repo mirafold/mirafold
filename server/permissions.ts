@@ -49,8 +49,10 @@ export function makeCanUseTool(workspaceDir: string, ask: PermissionAsker): CanU
       return { behavior: "allow", updatedInput: input };
     }
 
-    // Our render tools (server/render-tools.ts): side-effect-free UI emission.
-    if (toolName.startsWith("mcp__ui__render_")) {
+    // Our UI server (server/render-tools.ts): render_* and emit_artifact are
+    // side-effect-free UI emission — artifacts are contained by the iframe
+    // sandbox, not by this gate.
+    if (toolName.startsWith("mcp__ui__")) {
       return { behavior: "allow", updatedInput: input };
     }
 
