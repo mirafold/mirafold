@@ -1,8 +1,9 @@
 import { createServer } from "node:http";
+import path from "node:path";
 import express from "express";
 import { WebSocketServer } from "ws";
 import type { ClientMsg, WireMsg } from "./protocol";
-import { MockSession, Session, type AgentSession } from "./session";
+import { SessionRegistry, type SessionEntry } from "./registry";
 
 // .env is optional — without an API key we fall back to the mock session.
 try {
@@ -14,6 +15,8 @@ try {
 const port = Number(process.env.PORT ?? 3000);
 const app = express();
 app.use(express.static("dist")); // built front end (dev uses Vite on :5173)
+// /s/<id> is client-side routing — serve the app shell.
+app.get("/s/:id", (_req, res) => res.sendFile(path.resolve("dist/index.html")));
 
 const server = createServer(app);
 
@@ -37,41 +40,68 @@ const wss = new WebSocketServer({
   verifyClient: ({ origin }: { origin?: string }) => isLoopbackOrigin(origin),
 });
 
-wss.on("connection", (ws) => {
-  const live = Boolean(process.env.ANTHROPIC_API_KEY);
-  // One session per connection for now; multi-session is Phase 4.
-  const session: AgentSession = live ? new Session() : new MockSession();
-  console.log(`[ws] client connected → ${live ? "live agent" : "mock"} session`);
+const registry = new SessionRegistry();
 
-  const send = (msg: WireMsg) => {
+wss.on("connection", (ws) => {
+  // A connection is a viewport onto one registry session (Step 4.2).
+  let entry: SessionEntry | null = null;
+  const viewport = (msg: WireMsg) => {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
   };
-  session.onMessage(send);
+
+  const attachTo = (e: SessionEntry) => {
+    if (entry) registry.detach(entry, viewport);
+    entry = e;
+    // Identity first, then the replayed history, then the live stream.
+    viewport({ type: "session_created", sessionId: e.id, cwd: e.cwd });
+    registry.attach(e, viewport);
+    console.log(`[ws] viewport attached → session ${e.id} (${e.viewports.size} viewport(s))`);
+  };
 
   ws.on("message", (data) => {
     let msg: ClientMsg;
     try {
       msg = JSON.parse(String(data)) as ClientMsg;
     } catch {
-      send({ type: "error", message: "malformed client message" });
+      viewport({ type: "error", message: "malformed client message" });
       return;
     }
-    if (msg.type === "prompt" && typeof msg.text === "string" && msg.text.trim()) {
-      session.pushPrompt(msg.text);
-    } else if (msg.type === "interrupt") {
-      session.interrupt();
-    } else if (
-      msg.type === "permission_response" &&
-      typeof msg.id === "string" &&
-      typeof msg.allow === "boolean"
-    ) {
-      session.resolvePermission(msg.id, msg.allow);
+    switch (msg.type) {
+      case "create":
+        attachTo(registry.create(typeof msg.cwd === "string" ? msg.cwd : undefined));
+        break;
+      case "attach": {
+        // A stale/unknown id (old bookmark, server restart) gets a fresh
+        // session rather than an error page.
+        const existing =
+          typeof msg.sessionId === "string" ? registry.get(msg.sessionId) : undefined;
+        attachTo(existing ?? registry.create());
+        break;
+      }
+      case "prompt":
+        if (entry && typeof msg.text === "string" && msg.text.trim()) {
+          // Echo the user turn through the session stream so every viewport
+          // (and the replay buffer) renders the command strip.
+          registry.broadcast(entry, { type: "user_prompt", text: msg.text });
+          entry.session.pushPrompt(msg.text);
+        }
+        break;
+      case "interrupt":
+        entry?.session.interrupt();
+        break;
+      case "permission_response":
+        if (typeof msg.id === "string" && typeof msg.allow === "boolean") {
+          entry?.session.resolvePermission(msg.id, msg.allow);
+        }
+        break;
     }
   });
 
   ws.on("close", () => {
-    console.log("[ws] client disconnected");
-    session.close();
+    if (entry) {
+      registry.detach(entry, viewport);
+      console.log(`[ws] viewport detached ← session ${entry.id}`);
+    }
   });
 });
 

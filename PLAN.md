@@ -511,11 +511,15 @@ fly" capability, gated behind the security model.
 Goal of the phase: persistence, multiple sessions, polish, robust resume, and
 the multi-user seam. Each step is optional/independent — do as needed.
 
-- [ ] **Step 4.1 — Session persistence**
+- [x] **Step 4.1 — Session persistence**
   - Build: persist conversation + render history; restore on reconnect so a
     drop/refresh resumes the same view.
   - Done when: refreshing the page restores the conversation and rendered
     components.
+  - Status: **done via 4.2 (2026-07-05)** — the registry's per-session ring
+    buffer replays the full WireMsg history on every attach, so refresh
+    restores transcript + components + pins (verified in 4.2's checks).
+    In-memory only: durability across daemon restarts folds into 4.4.
 
 - [ ] **Step 4.2 — Session registry (decouple sessions from connections)**
   - Goal: sessions survive refreshes and disconnects; a connection is a

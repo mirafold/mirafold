@@ -159,6 +159,15 @@ export function RenderZone({
             ]);
             break;
           }
+          case "zone_reset": {
+            // A (re)attach replays the session's history from scratch.
+            streamingId.current = null;
+            setStatus(null);
+            setEntries([]);
+            // pinned renderIds survive — the replayed render entries carry
+            // the same wire ids, so pins re-bind to the repainted blocks.
+            break;
+          }
         }
       }),
     [subscribe],
