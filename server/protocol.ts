@@ -22,5 +22,8 @@ export type WireMsg =
 // Phase 3 adds:  { type: "artifact"; html: string; id: string }
 
 /** Browser → server */
-export type ClientMsg = { type: "prompt"; text: string };
+export type ClientMsg =
+  | { type: "prompt"; text: string }
+  // Phase T.2: halt the in-flight turn (the session stays warm).
+  | { type: "interrupt" };
 // Phase 2 adds:  { type: "action"; action: Action; sourceId: string }

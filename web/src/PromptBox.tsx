@@ -1,6 +1,14 @@
 import { useLayoutEffect, useRef, useState } from "react";
 
-export function PromptBox({ onSend }: { onSend: (text: string) => void }) {
+export function PromptBox({
+  onSend,
+  busy,
+  onInterrupt,
+}: {
+  onSend: (text: string) => void;
+  busy: boolean;
+  onInterrupt: () => void;
+}) {
   const [text, setText] = useState("");
   const ref = useRef<HTMLTextAreaElement>(null);
 
@@ -36,6 +44,11 @@ export function PromptBox({ onSend }: { onSend: (text: string) => void }) {
           }
         }}
       />
+      {busy && (
+        <button className="stop-btn" onClick={onInterrupt} title="Interrupt the turn">
+          ■ esc
+        </button>
+      )}
     </div>
   );
 }

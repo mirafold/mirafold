@@ -614,3 +614,24 @@ body {
 .prompt-box textarea::placeholder {
   color: #55617a;
 }
+
+/* Stop affordance (Phase T.2): shell-drawn, visible only while a turn is
+   in flight. Esc does the same thing from anywhere. */
+.stop-btn {
+  flex-shrink: 0;
+  align-self: flex-start;
+  padding: 2px 9px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82em;
+  line-height: 1.6;
+  color: #8b96a8;
+  background: transparent;
+  border: 1px solid #262f42;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.stop-btn:hover {
+  color: #e66767;
+  border-color: #4a2a33;
+}
