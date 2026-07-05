@@ -193,16 +193,20 @@ Each gate is a go/no-go with a measurable signal. Do not pass a gate on hope.
 
 - **M0 — Engine live. ✅ PASSED 2026-07-04.** PLAN 0.3/0.7 verified with a
   real key (live smoke: warm multi-turn, workspace file ops, reconnect).
-- **M1 — The demo exists. ← BUILD COMPLETE 2026-07-04; awaiting the post.**
-  All of Phase 1 shipped in one day (render protocol → registry incl. chart
-  → validation/fallback → pin dock) and the GIF is recorded and embedded in
-  the README (`demo/demo.gif`) — a live unscripted take with per-beat
-  assertions. Remaining is distribution, not code: license call, npm stub
-  publish, repo public, post the GIF. *Gate:* the GIF makes a stranger say
-  "want."
-  Post it before building anything else. **Signal: ≥ a few hundred genuine
-  reactions / ≥ 50 GitHub stars in week one.** If flat: the thesis needs
-  work — iterate the demo, not the infra.
+- **M1 — The demo exists. ← BUILD COMPLETE 2026-07-04; the post is
+  DEFERRED BY CHOICE.** All of Phase 1 shipped in one day (render protocol →
+  registry incl. chart → validation/fallback → pin dock) and the GIF is
+  recorded and embedded in the README (`demo/demo.gif`) — a live unscripted
+  take with per-beat assertions. The distribution prerequisites are mostly
+  done: license settled (**MIT**, 2026-07-05), npm name published/claimed,
+  secrets sweep clean. What remains — repo public + post the GIF — is being
+  **held deliberately**: the repo stays private while the product is built
+  deeper first (Phases T, 2, 3, and all of T2 have since shipped). So M1 is
+  build-complete but not launched, on purpose, not for lack of readiness.
+  *Gate (unchanged, for when it does post):* the GIF makes a stranger say
+  "want." **Signal target: ≥ a few hundred genuine reactions / ≥ 50 GitHub
+  stars in week one.** If flat when posted: the thesis needs work — iterate
+  the demo, not the infra.
 - **M2 — OSS launch.** Repo public, `npx genui-shell` works cold on a
   stranger's machine, local-model path documented (PLAN L.1; optional
   feasibility spike L.0 any time earlier), Show HN with the "BYOK or fully
@@ -235,22 +239,26 @@ Each gate is a go/no-go with a measurable signal. Do not pass a gate on hope.
 *(Probabilities are gut-calibrated priors, not data. M1/M2 signals replace
 them with data — that's what the gates are for.)*
 
-## 11. Immediate next actions (refreshed 2026-07-04)
+## 11. Immediate next actions (refreshed 2026-07-05)
 
 1. ~~Put a real `ANTHROPIC_API_KEY` in `.env`; close PLAN 0.3 + 0.7.~~ Done.
 2. ~~Build PLAN 1.1 → 1.3 → 1.6 (+1.4, +1.5).~~ Done — Phase 1 complete.
 3. ~~Record the demo GIF.~~ Done (`demo/demo.gif`, embedded in README).
-   **Show it to strangers — read §9-M1 first.** Owner-side checklist lives
-   at `~/genui-shell-next-steps.html`: license call → npm stub publish →
-   repo public (secrets sweep first) → post.
-4. Decide the license (MIT vs BSL) and name-check the npm package name now
-   (`genui-shell` availability), before someone else squats it.
-   *Name-check done 2026-07-04: `genui-shell` is unclaimed on npm (registry
-   404). License decision still open — recommendation on file: MIT for the
-   daemon (the paid tier is the relay service, a separate closed repo).*
-5. Build side while M1 signal accrues: Phase T (T.1 tool output → T.2
-   interrupt → T.3 permission prompts) — makes it daily-drivable and
-   doesn't touch the demo story.
+4. ~~Decide the license; name-check + claim the npm name.~~ Done —
+   **MIT** (settled 2026-07-05; daemon MIT, the paid relay is a separate
+   closed repo), `genui-shell` published/claimed on npm.
+5. ~~Phase T (tool output → interrupt → permission prompts).~~ Done — and
+   since then Phase 2 (actions), Phase 3 (sandboxed artifacts), and all of
+   Phase T2 (full-stream visibility parity) plus the 4.1/4.2 session
+   registry have shipped. The product is well past "daily-drivable."
+
+**Posture (2026-07-05): M1 launch deferred by choice.** The repo is held
+private and the GIF unposted on purpose — building the product deeper before
+courting an audience, not blocked on anything. The distribution steps (repo
+public → post) are staged and can fire whenever the decision is made; §9-M1
+holds the go/no-go and the signal target. Build-side, the live front is the
+rest of **Phase 4** (product hardening: theming, robust resume, fleet view,
+relay) with **Phase L** (local models) gated to M2.
 
 **Measured velocity (2026-07-04):** M0 closeout + PLAN 1.1–1.3, verified and
 pushed, in one working day (~5–6 plan steps/day). Half-pace projections
