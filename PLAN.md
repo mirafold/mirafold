@@ -841,6 +841,18 @@ pattern on one before committing to all.
   - Files: `server/adapters/codex.ts`, spike notes.
   - Done when: a Codex session runs live from an OpenAI key, driven through
     genui-shell into the browser — and it behaves like **Codex**.
+  - Status: **spike done (2026-07-05), verdict GREEN — live integration blocked
+    on credentials/tooling** (`server/adapters/codex.spike.md`). Codex embeds
+    the way the seam wants: official `@openai/codex-sdk` (Node 18+) spawns the
+    `codex` CLI and streams JSONL events (`Codex`→`startThread`→`runStreamed`);
+    events map cleanly onto existing `WireMsg` (no protocol change); native MCP
+    injection via `config.mcp_servers` satisfies the generative-UI requirement;
+    Codex's own `requestApproval` maps onto our `permission_request`. **Blocked
+    on**: `npm i @openai/codex-sdk`, the `codex` CLI binary, and an OpenAI key /
+    ChatGPT login — none present in this env. One P.3 flag: `render-tools.ts` is
+    in-process for the Claude SDK; Codex loads MCP servers as stdio subprocesses,
+    so the render server needs repackaging as a standalone stdio MCP (mechanical,
+    not a redesign). Box stays unchecked until the live run is observed.
 
 - [ ] **Step P.3 — Codex fidelity + generative-UI superset**
   - Goal: a Codex user gets Codex, faithfully, plus genui-shell's richness — no
