@@ -18,8 +18,11 @@ watch it update, supervise from anywhere — while the full agentic engine
 
 ## 2. The customer
 
-**Beachhead:** developers who already run terminal agents (Claude Code,
-Codex CLI, etc.) daily and profitably. Characteristics:
+**Beachhead:** developers who already run terminal agents daily and profitably
+— **whichever agent they use** (Claude Code, Codex, Gemini CLI, one on a local
+model, …). genui-shell faithfully re-skins whatever terminal agent they already
+use (§4.5, PLAN Phase P), so the beachhead is not "Claude users" but "anyone
+living in a terminal agent, whichever one." Characteristics:
 
 - Already pay for Max plans / burn API credit without flinching. Price
   sensitivity is low; *taste* sensitivity is high.
@@ -81,12 +84,24 @@ Ranked by durability (least → most durable):
    spoof the prompt box or touch credentials. As prompt-injection attacks on
    agent UIs become news, this becomes marketing, not just engineering.
 4. **Local-first trust** — your code and API key never leave your machine
-   (§5), and from M2, neither does your inference: local-model support
-   (PLAN Phase L) completes the story as "fully local, down to the model."
-   The platforms' hosted offerings can't match this posture — Anthropic's
-   front ends will never route to Llama — so it's the one structural
-   advantage an indie has over them, and local support deepens it rather
-   than diluting focus.
+   (§5), and neither does your inference when you run local: local-model
+   support (PLAN Phase L) completes the story as "fully local, down to the
+   model." The platforms' hosted offerings can't match this posture — a lab's
+   front end will never route to a local Llama — so it's a structural
+   advantage an indie has over them.
+5. **Agent neutrality — the structural moat, and the identity.** genui-shell is
+   a **faithful browser re-skin of whichever terminal agent you already use** —
+   Claude Code, Codex (OpenAI), Gemini CLI, or one on a local model — each in
+   its **own** skin, never homogenized (PLAN Phase P). A Codex user gets Codex
+   in the browser; a Claude Code user gets Claude Code; genui-shell's generative
+   UI rides on top of each. No lab's own front end can ever be neutral —
+   Anthropic's will only ever skin Claude Code, OpenAI's only Codex — so being
+   the single surface that faithfully skins *all* of them is the most durable
+   advantage an indie holds over every platform, and it **widens the beachhead**
+   from "Claude Code users" to "anyone living in a terminal agent, whichever
+   one." This is a product requirement and the identity, not a feature (PLAN
+   Locked decisions + Phase P), and it compounds with local-first (#4): **your
+   agent, your key, your machine, a far better view — for any agent.**
 
 ## 5. Delivery architecture — the answer to "don't I have to host it?"
 
@@ -152,8 +167,10 @@ Recognition-first, because first-mover value expires (§4.1):
 
 ## 7. Business model & pricing
 
-- **Free (OSS):** full local product, BYOK. This is distribution, not
-  charity — every free user is a demo-GIF amplifier and a conversion lead.
+- **Free (OSS):** full local product, BYOK — **for whichever terminal agent you
+  run** (Claude Code, Codex, Gemini CLI, or one on a local model), not
+  Claude-only. This is distribution, not charity — every free user is a demo-GIF
+  amplifier and a conversion lead.
 - **Pro — $12/mo or $99/yr:** relay access (any device), push notifications,
   session sync/persistence, share links, priority support. Price anchored
   against what this audience already spends ($20–200/mo on model access)
@@ -169,7 +186,9 @@ structurally profitable almost immediately or it's dead — a clean signal.
 
 1. **Platform risk (severe, unchanged).** Anthropic/OpenAI/Cursor ship genUI
    agent shells natively. *Mitigation:* speed (§9 gates), niche taste they
-   won't match, local-first posture they structurally can't match, and the
+   won't match, local-first posture they structurally can't match, **agent
+   neutrality they *structurally cannot* match** (each lab's shell only ever
+   skins its own agent; ours faithfully skins all of them — §4.5), and the
    honest acknowledgment that this caps the outcome at "beloved niche tool,"
    which is the plan anyway.
 2. **Demand risk.** Passionate terminal users might be passionate *about the
@@ -208,12 +227,16 @@ Each gate is a go/no-go with a measurable signal. Do not pass a gate on hope.
   stars in week one.** If flat when posted: the thesis needs work — iterate
   the demo, not the infra.
 - **M2 — OSS launch.** Repo public, `npx genui-shell` works cold on a
-  stranger's machine, local-model path documented (PLAN L.1; optional
-  feasibility spike L.0 any time earlier), Show HN with the "BYOK or fully
-  local" headline. *Signal: ≥ 300 stars, ≥ 20 people you don't know running
-  it (telemetry-free proxy: issues/discussions from strangers).* Local-setup
-  friction in the issue tracker is the demand signal that gates the
-  `--local` easy mode (PLAN L.2).
+  stranger's machine, **faithfully re-skinning more than one terminal agent by
+  then (PLAN Phase P): a stranger who uses Codex, not Claude, gets Codex in the
+  browser just as easily, with local documented (PLAN L.1)**. Show HN with the
+  headline **"your terminal agent — Claude Code, Codex, Gemini CLI — in a
+  browser, with live UI."** Phase P is a hard prerequisite of this gate, not a
+  stretch goal — launching Claude-Code-only would contradict the identity
+  (§4.5). *Signal: ≥ 300 stars, ≥ 20 people you don't know running it
+  (telemetry-free proxy: issues/discussions from strangers), across more than
+  one agent.* Local-setup friction in the issue tracker gates the `--local`
+  easy mode (PLAN L.2).
 - **M3 — Paid relay.** Build the session registry if not yet done (PLAN
   4.2), then relay + pairing + phone view + notifications (PLAN 4.7).
   *Signal: ≥ 25 paying subscribers in 60 days (~$300 MRR).* If M2 passed but
@@ -256,9 +279,13 @@ them with data — that's what the gates are for.)*
 private and the GIF unposted on purpose — building the product deeper before
 courting an audience, not blocked on anything. The distribution steps (repo
 public → post) are staged and can fire whenever the decision is made; §9-M1
-holds the go/no-go and the signal target. Build-side, the live front is the
-rest of **Phase 4** (product hardening: theming, robust resume, fleet view,
-relay) with **Phase L** (local models) gated to M2.
+holds the go/no-go and the signal target. **Build-side, the live front is now
+Phase P — faithful browser skins for more terminal agents (Codex, Gemini CLI),
+the identity made real (§4.5): a Codex user gets Codex in the browser, never
+Claude. A hard prerequisite of the M2 OSS launch, and ahead of the rest of
+Phase 4.** The remaining Phase 4 polish (theming, robust resume, fleet view,
+relay) and Phase L (local ergonomics — which comes through whichever agent can
+point at a local endpoint) follow it.
 
 **Measured velocity (2026-07-04):** M0 closeout + PLAN 1.1–1.3, verified and
 pushed, in one working day (~5–6 plan steps/day). Half-pace projections

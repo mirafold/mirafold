@@ -1,13 +1,26 @@
 # genui-shell
 
-A **generative-UI shell over the Claude Agent SDK**. Claude Code's full agentic
-engine — filesystem, bash, tools, a warm persistent session — runs behind a web
-front end, and the agent's output stream is treated as a **UI-instruction
-stream**: it paints streamed markdown and live registry components into an
+A **faithful browser re-skin of terminal coding agents**. genui-shell puts a
+browser dashboard — with generative UI on top — onto whichever terminal agent
+you already use (Claude Code today; Codex and Gemini CLI next), staying faithful
+to that agent: a Codex user gets **Codex** in the browser, never "Claude
+things". A full agentic engine — filesystem, bash, tools, a warm persistent
+session — runs behind a web front end, and the agent's output stream is treated
+as a **UI-instruction stream**: it paints streamed markdown and live registry components into an
 output zone, those components can act back through a server-mediated action
 bridge, and — when no component fits — the agent emits sandboxed arbitrary UI
 into a locked-down iframe. A fixed, trusted shell owns the prompt box, the
 socket, and all credentials, and the agent can never touch any of them.
+
+> **The faithful-skin-per-agent model is the identity, and multi-agent is the
+> next build front (PLAN Phase P) — not yet shipped.** The substrate is already
+> right: the wire protocol, output zone, security model, and generative UI
+> consume `WireMsg` only, behind the `AgentSession` seam (§2.2). Today the one
+> wired agent is **Claude Code** (via its Agent SDK, `server/session.ts`); Codex
+> and Gemini CLI become one adapter each — drive that agent's own engine,
+> normalize its events to `WireMsg`, inject the render tools via **MCP**. No
+> generic homegrown agent, no proxy, no privileged agent. The rest of this
+> document describes the current single-agent (Claude Code) implementation.
 
 Think of it as a terminal successor, not a chat app: monospace command strips
 in, rich rendered output back. The vision is a **strict superset of the
@@ -316,9 +329,14 @@ mediation path (§5.4).
   a misleading SDK error), model comes from `DEFAULT_MODEL` (default
   `claude-sonnet-4-6`, switchable to `claude-opus-4-8` per the locked
   decisions), and `canUseTool` comes from `permissions.ts`. `settingSources`
-  is empty **on purpose**: the daemon must not inherit the host machine's
-  CLAUDE.md or memory instructions (a session once wrote into the host's
-  real memory dir via "remember X" — isolation is verified by assertion).
+  is left **unset on purpose**, which matches the CLI default (user + project
+  + local): genui-shell is a different *view* of the terminal, so a user's own
+  Claude Code config — their `settings.json` permission allowlists/deny rules,
+  their CLAUDE.md, their memory — applies here exactly as in the terminal.
+  Switching to this from regular terminal use must be seamless and
+  unsurprising, so honoring those settings (and letting "remember X" write to
+  the real memory dir) is correct, not a leak. `canUseTool` still runs for
+  anything the user's own rules don't already decide.
 - **Generative UI (Phase 1):** the session mounts an in-process MCP server
   (`server/render-tools.ts`) exposing side-effect-free `render_card` /
   `render_list` / `render_table` / `render_chart` / `render_links` tools
@@ -344,22 +362,25 @@ the prompt drive every other capability API-free — `artifact`/`broken`/
 ### 5.3 `permissions.ts` — the tool policy
 
 `makeCanUseTool(workspaceDir, ask)` returns the SDK's `canUseTool` callback.
-The Phase 0 posture was allow-inside-workspace / deny-everything-else; T.3
-upgraded every hard deny into an **ask**: pause the turn, show a shell-drawn
-permission bar in the browser, deny by default (timeout, disconnect, Esc).
+The posture is **match the terminal**. Because the session inherits the user's
+Claude Code `settings.json` (§5.2), the SDK's own allow/deny rules resolve
+**first** — anything the user allowlisted runs without a prompt, anything they
+denied is blocked — and `canUseTool` is only the interactive fallback for
+undecided calls: the terminal's approval prompt, drawn on the shell's permission
+bar instead of the TUI. Deny is the default on timeout, disconnect, and Esc.
 
-1. **Read-only tools** (Read, Glob, Grep, WebFetch, WebSearch, TodoWrite,
-   Task, NotebookRead) → always allowed. Likewise `mcp__ui__render_*` —
-   our render tools emit UI and have no side effects.
-2. **Path-targeted mutations** (Write/Edit/MultiEdit/NotebookEdit) → allowed
-   if the target path resolves inside the workspace root (`isInside` does a
-   resolve-then-prefix check); otherwise ask.
-3. **Bash** → the session's cwd *is* the workspace, so confinement is
-   heuristic: a regex flags commands containing absolute paths, `..`, or
-   `~` where they end a token (so `cd .. && …` can't slip through
-   mid-command). Flagged commands ask; a false positive (e.g. a path inside
-   a quoted string) now costs one browser prompt instead of a hard deny.
-4. **Everything else** → ask.
+1. **The daemon's own `.env`/`.env.local`** → denied to any read tool
+   (defense-in-depth: the API key lives there).
+2. **Read-only tools** (Read, Glob, Grep, WebFetch, WebSearch, TodoWrite,
+   Task, NotebookRead) and our side-effect-free `mcp__ui__*` render tools →
+   allowed without a prompt.
+3. **Everything consequential** (Write/Edit/MultiEdit/NotebookEdit, Bash, and
+   any unknown tool) → **asks**. There is deliberately no "auto-allow inside
+   the workspace" — the terminal doesn't do that, so neither do we; a user who
+   wants specific commands promptless allowlists them in `settings.json`
+   exactly as in the terminal. (An interim build auto-allowed in-workspace
+   bash/writes and heuristically confined Bash with a regex; both were
+   deviations from terminal parity, removed 2026-07-05.)
 
 ### 5.4 `actions.ts` — component action mediation (Phase 2)
 
@@ -580,11 +601,12 @@ against the mock before the live agent.
 
 ### The workspace
 
-Each session's working directory is `./workspace/<session-id>/` (gitignored,
-created on demand; a custom cwd can be passed at session creation). File
-mutation and bash activity are confined there by the permission policy —
-reaching outside costs a browser permission prompt. Deleting `workspace/` is
-a clean reset.
+Each session's working directory is `./workspace/<session-id>/` by default
+(gitignored, created on demand; any directory you own can be passed as the cwd
+at session creation — a session is like launching the terminal there). File
+mutation and bash ask for approval on the shell's permission bar exactly as in
+the terminal, honoring the allowlists in your inherited `settings.json`.
+Deleting `workspace/` is a clean reset.
 
 ## 9. Life of a turn (end to end)
 
@@ -629,15 +651,25 @@ Read PLAN.md for the real thing; the shape in one breath:
   Edit/Write diffs, honest output truncation, subagent nesting, the live
   todo checklist, and the status bar with usage. The browser now shows
   strictly more than the terminal, never less.
-- **Now:** distribution — post the demo and read the M1 signal
+- **Next (the identity, made real):** **Phase P — faithful browser skins for
+  more terminal agents.** genui-shell re-skins whichever terminal agent you use;
+  Claude Code is wired today, and Codex (OpenAI) + Gemini CLI are one adapter
+  each (drive that agent's engine, normalize to `WireMsg`, inject the render
+  tools via MCP). A Codex user gets Codex, never Claude things. No homegrown
+  generic agent, no proxy, no privileged agent. A hard prerequisite of the M2
+  OSS launch, before the rest of Phase 4. See PLAN Phase P + BUSINESS.md §4.5.
+- **Also now:** distribution — post the demo and read the M1 signal
   (BUSINESS.md §9).
 - **Then:** the rest of Phase 4 — theming/polish, robust mid-turn resume,
-  the fleet view at `/`, and the phone relay, which is the paid tier.
+  the fleet view at `/`, and the phone relay (the paid tier) — plus Phase L
+  (local ergonomics, which falls out of Phase P's native `openai-compatible`
+  adapter).
 
 Distribution intent shapes the architecture: the daemon ships as
-`npx genui-shell` and always runs on the user's machine; the only hosted
-piece is ever a dumb WebSocket relay. The API key never leaves the user's
-machine. Keep every seam compatible with that.
+`npx genui-shell` and always runs on the user's machine; it re-skins whichever
+terminal agent the user already drives (Claude Code, Codex, Gemini CLI, …); the
+only hosted piece is ever a dumb WebSocket relay. The API key never leaves the
+user's machine. Keep every seam agent-neutral and compatible with that.
 
 ## 11. Conventions and gotchas
 
