@@ -35,6 +35,13 @@ type Entry =
       artifactId: string; // wire id — re-sends with this id replace the html
       html: string;
       title?: string;
+    }
+  | {
+      kind: "thinking";
+      id: number;
+      text: string;
+      done: boolean; // done ⇒ folded to one line unless the user expands it
+      expanded: boolean;
     };
 type Status = { state: "thinking" | "tool"; label?: string } | null;
 
@@ -64,10 +71,31 @@ export function RenderZone({
   // The text block currently receiving deltas. Kept in a ref so a user prompt
   // sent mid-stream can't detach the tail of the reply.
   const streamingId = useRef<number | null>(null);
+  // The thinking block currently receiving deltas (T2.1).
+  const thinkingId = useRef<number | null>(null);
 
   useEffect(
     () =>
       subscribe((msg) => {
+        // Collapse-on-finalize (T2.1): the open thinking block folds the
+        // moment the turn's real output starts.
+        const foldThinking = () => {
+          const id = thinkingId.current;
+          if (id === null) return;
+          thinkingId.current = null;
+          setEntries((es) =>
+            es.map((e) => (e.kind === "thinking" && e.id === id ? { ...e, done: true } : e)),
+          );
+        };
+        if (
+          msg.type === "text_delta" ||
+          msg.type === "render" ||
+          msg.type === "tool_use" ||
+          msg.type === "artifact" ||
+          msg.type === "turn_end"
+        ) {
+          foldThinking();
+        }
         switch (msg.type) {
           case "user_prompt": {
             const id = nextId++;
@@ -76,6 +104,25 @@ export function RenderZone({
               { kind: "text", id, role: "user", text: msg.text, done: true },
             ]);
             setStatus({ state: "thinking" });
+            break;
+          }
+          case "thinking_delta": {
+            setStatus(null); // the streaming thought itself is the signal
+            const id = thinkingId.current;
+            if (id !== null) {
+              setEntries((es) =>
+                es.map((e) =>
+                  e.kind === "thinking" && e.id === id ? { ...e, text: e.text + msg.text } : e,
+                ),
+              );
+            } else {
+              const newId = nextId++;
+              thinkingId.current = newId;
+              setEntries((es) => [
+                ...es,
+                { kind: "thinking", id: newId, text: msg.text, done: false, expanded: false },
+              ]);
+            }
             break;
           }
           case "text_delta": {
@@ -199,6 +246,7 @@ export function RenderZone({
           case "zone_reset": {
             // A (re)attach replays the session's history from scratch.
             streamingId.current = null;
+            thinkingId.current = null;
             setStatus(null);
             setEntries([]);
             // pinned renderIds survive — the replayed render entries carry
@@ -244,6 +292,37 @@ export function RenderZone({
     <div className="zone-row">
       <div className="render-zone">
         {entries.map((entry) => {
+          if (entry.kind === "thinking") {
+            const folded = entry.done && !entry.expanded;
+            const toggle = entry.done
+              ? () =>
+                  setEntries((es) =>
+                    es.map((e) =>
+                      e.kind === "thinking" && e.id === entry.id
+                        ? { ...e, expanded: !e.expanded }
+                        : e,
+                    ),
+                  )
+              : undefined;
+            return (
+              <div
+                key={entry.id}
+                className={
+                  "thinking-block" +
+                  (folded ? " thinking-folded" : "") +
+                  (entry.done ? " thinking-done" : "")
+                }
+                onClick={toggle}
+                title={entry.done ? (folded ? "Expand thinking" : "Collapse thinking") : undefined}
+              >
+                {folded ? (
+                  <>✳ {entry.text.replace(/\s+/g, " ").slice(0, 100)}…</>
+                ) : (
+                  entry.text
+                )}
+              </div>
+            );
+          }
           if (entry.kind === "tool") {
             return (
               <ToolBlock

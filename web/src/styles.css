@@ -593,6 +593,43 @@ body {
   word-break: break-word;
 }
 
+/* ---- Thinking (Phase T2.1) ------------------------------------------------
+   The model's reasoning, full fidelity: streams dim and italic while the
+   turn runs, folds to one clickable line once real output starts.
+   Collapsed is fine — invisible is not. */
+
+.thinking-block {
+  /* flex-none: overflow:hidden (folded state) would otherwise let the
+     zone's flex column squash this row to zero height */
+  flex: none;
+  color: #6b7488;
+  font-style: italic;
+  font-size: 0.88em;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-width: 80ch;
+  padding-left: 10px;
+  border-left: 2px solid #262f42;
+}
+
+.thinking-done {
+  cursor: pointer;
+}
+
+.thinking-done:hover {
+  color: #8b94a7;
+}
+
+.thinking-folded {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8em;
+  font-style: normal;
+}
+
 /* ---- Tool calls (Phase T.1) ---------------------------------------------
    Terminal-style records of what the agent actually did: one dim monospace
    row per call, collapsed by default; errors arrive expanded. Negative

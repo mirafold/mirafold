@@ -625,7 +625,7 @@ the transcript identity — dim, monospace, collapsed by default, but *there*.
 Ordering within the phase = trust value: thinking and diffs are where the
 terminal currently out-informs us most.
 
-- [ ] **Step T2.1 — Thinking text in the transcript**
+- [x] **Step T2.1 — Thinking text in the transcript**
   - Goal: see the agent reason, not just `✳ thinking…`.
   - Build: add `{ type: "thinking_delta"; text: string }`; pump forwards
     thinking-block deltas (subagent traffic still excluded). RenderZone
@@ -635,6 +635,16 @@ terminal currently out-informs us most.
   - Files: `protocol.ts`, `session.ts`, `RenderZone.tsx`, `styles.css`.
   - Done when: a live turn shows its reasoning streaming, then collapsed in
     place; replay preserves it.
+  - Status: **done, verified (2026-07-05)** — thinking streams dim/italic
+    with a left rule, folds to a ✳-prefixed one-liner on the turn's first
+    real output (text/tool/render/artifact/turn_end), click toggles.
+    Multiple thinking blocks per turn each fold independently. Optional
+    `MAX_THINKING_TOKENS` env for opt-in extended thinking; "think hard"
+    trigger words work without it. Gotcha fixed: the folded row's
+    overflow:hidden let the zone's flex column squash it to 0 height —
+    flex:none on the block. Mock 5/5 (stream → fold → expand → refold →
+    replay-folded); live: "think hard" turn streamed 1.4KB of real
+    reasoning, folded on the answer, survived refresh replay.
 
 - [ ] **Step T2.2 — Full tool inputs + Edit/Write diffs**
   - Goal: the expanded tool row shows everything the terminal shows.
