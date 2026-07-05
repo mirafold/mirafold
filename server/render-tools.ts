@@ -9,6 +9,7 @@ import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import type { WireMsg } from "./protocol";
 import { registryShapes, type ComponentName } from "./registry-spec";
+import { actionToolNames } from "./actions";
 
 const idParam = {
   id: z
@@ -43,7 +44,12 @@ components freely.
   one widget live (progress, updated stats) instead of stacking duplicates.
 - Text inside component props supports inline markdown only where the prop
   description says so; keep it terse — components are for scanning, prose is
-  for reading.`;
+  for reading.
+- render_card can carry up to 3 \`actions\` buttons. kind "prompt" sends its
+  text as the user's next turn when clicked (offer these for the obvious
+  drill-down asks — you will answer them in this same session); kind "tool"
+  runs a server-side helper — allowlisted names: ${actionToolNames.join(", ")}.
+  Never promise a button behavior outside these two kinds.`;
 
 export function makeRenderServer(emit: (msg: WireMsg) => void) {
   const emitRender = (component: ComponentName, id: string | undefined, props: object) => {

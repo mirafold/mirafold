@@ -431,7 +431,7 @@ parameterizes **your** components; it does not author them. Reliable and safe.
 Goal of the phase: components become interactive. Every action is typed and
 mediated by the server; the client never makes arbitrary external calls.
 
-- [ ] **Step 2.1 — Action protocol**
+- [x] **Step 2.1 — Action protocol**
   - Goal: a typed vocabulary for what a component interaction can do.
   - Build: define an `Action` union: `{kind:"prompt", text}` (send a follow-up
     into the warm session), `{kind:"tool", name, args}` (invoke a server-side
@@ -439,6 +439,10 @@ mediated by the server; the client never makes arbitrary external calls.
     Add `{ type:"action"; action: Action; sourceId: string }` to `ClientMsg`.
   - Files: `server/protocol.ts`.
   - Done when: types compile; render props can carry action descriptors.
+  - Status: **done (2026-07-05)** — `Action` union in the protocol
+    (state = pin/unpin, client-local, never sent); `actionSpec` zod in the
+    registry spec (agent-facing subset = prompt|tool) and `card.actions`
+    (≤3 `{label, action}` buttons). Types compile on both sides.
 
 - [ ] **Step 2.2 — Interactive components**
   - Goal: buttons/selects in components emit actions through the shell.
@@ -449,6 +453,19 @@ mediated by the server; the client never makes arbitrary external calls.
   - Files: `registry/*`, `Shell.tsx`, `ws.ts`.
   - Done when: clicking a button in a rendered component sends a follow-up
     prompt that the agent answers in the same warm session.
+  - Status: **done, verified mock + live (2026-07-05)** — `ActionContext`
+    provided per block by RenderBlock (sourceId = render id; transcript AND
+    dock); `ActionRow` buttons in Card; RenderZone resolves state actions
+    (pin/unpin) locally and hands prompt/tool to the shell's sender.
+    RENDER_GUIDANCE teaches `actions`. Live: the agent authored a "Tell me
+    more" button unprompted-in-form; clicking it became a visible user turn
+    answered in-session (post-click recall of a turn-1 fact proved warmth).
+    **Also fixed here: sessions now run with `settingSources: []`** — a
+    live test caught the embedded agent inheriting the HOST user's Claude
+    Code settings (whose allowlists bypass `canUseTool` silently: a
+    "remember this" wrote into the host's real ~/.claude memory dir) and
+    project CLAUDE.md. Isolation is verified by assertion (host memory dir
+    untouched across a "remember"-shaped live turn).
 
 - [ ] **Step 2.3 — Server-side action mediation**
   - Goal: `tool` actions are safe and auditable.
@@ -459,6 +476,14 @@ mediated by the server; the client never makes arbitrary external calls.
   - Done when: an allowlisted `tool` action runs server-side and returns a
     result into the conversation; a non-allowlisted one is rejected and logged.
     **Phase 2 complete — components can act, safely.**
+  - Status: **done, verified (2026-07-05)** — `server/actions.ts` allowlist
+    (`workspace_ls`, zod-validated args, path-escape guard, every attempt
+    logged); results broadcast as tool_use/tool_result records so the
+    action's effect is in every viewport's transcript. Verified in the
+    browser (button → tool block with real output) and over a raw
+    WebSocket: off-allowlist name and `../..` both rejected with errors on
+    the wire and REJECTED/failed lines in the server log. Mock 8/8.
+    **Phase 2 complete.**
 
 ---
 
@@ -521,7 +546,7 @@ the multi-user seam. Each step is optional/independent — do as needed.
     restores transcript + components + pins (verified in 4.2's checks).
     In-memory only: durability across daemon restarts folds into 4.4.
 
-- [ ] **Step 4.2 — Session registry (decouple sessions from connections)**
+- [x] **Step 4.2 — Session registry (decouple sessions from connections)**
   - Goal: sessions survive refreshes and disconnects; a connection is a
     viewport, not a session. This is the substrate for 4.1, 4.4, 4.6, 4.7.
   - Build: server-side `Map<sessionId, Session>` that outlives sockets. Add
@@ -544,6 +569,15 @@ the multi-user seam. Each step is optional/independent — do as needed.
   - Done when: two tabs on the same `/s/<id>` see the identical live stream;
     refreshing mid-turn reattaches without losing the session; two different
     ids run two agents in different cwds concurrently.
+  - Status: **done, verified mock + live (2026-07-05)** — `SessionRegistry`
+    (create/attach/detach/broadcast, 4000-msg ring buffer, 60-min idle
+    reaper); user strips come off the wire (`user_prompt` WireMsg, local
+    echo removed); `zone_reset` + replay repaint on every (re)open; stale
+    ids fall back to create; `/s/<id>` via history.replaceState; tab
+    title+favicon reflect idle/working/permission. Mock 12/12; live: two
+    concurrent agents in different `workspace/<id>` cwds + post-refresh
+    codename recall on the same warm session. Deferred to 4.6: the session
+    strip / rename UI (needs a session-list message).
 
 - [ ] **Step 4.3 — Theming & output-zone polish**
   - Build: theme system, transitions as components mount, friendlier visuals.

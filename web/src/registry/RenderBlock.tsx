@@ -1,6 +1,8 @@
 import { Component as ReactComponent, type ComponentType, type ReactNode } from "react";
+import type { Action } from "@protocol";
 import { registrySchemas, type ComponentName } from "@registry-spec";
 import { registry } from "./index";
+import { ActionContext } from "./actions";
 
 // A malformed instruction must never break the UI (PLAN 1.4). Three layers:
 //   1. unknown component name  → fallback
@@ -46,9 +48,15 @@ class RenderBoundary extends ReactComponent<
 export function RenderBlock({
   component,
   props,
+  renderId,
+  onAction,
 }: {
   component: string;
   props: Record<string, unknown>;
+  renderId: string;
+  // Provided by the shell via RenderZone; binds this block's identity to
+  // every action it emits. Components ask; the shell sends.
+  onAction: (action: Action, sourceId: string) => void;
 }) {
   const name = component as ComponentName;
   const Impl = registry[name] as ComponentType<Record<string, unknown>> | undefined;
@@ -64,7 +72,9 @@ export function RenderBlock({
     <RenderBoundary
       fallback={<Fallback component={component} props={props} reason="component crashed" />}
     >
-      <Impl {...(parsed.data as Record<string, unknown>)} />
+      <ActionContext.Provider value={(action) => onAction(action, renderId)}>
+        <Impl {...(parsed.data as Record<string, unknown>)} />
+      </ActionContext.Provider>
     </RenderBoundary>
   );
 }

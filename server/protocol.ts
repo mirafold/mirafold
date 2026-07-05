@@ -30,6 +30,17 @@ export type WireMsg =
   | { type: "session_created"; sessionId: string; cwd: string };
 // Phase 3 adds:  { type: "artifact"; html: string; id: string }
 
+/**
+ * Phase 2: the complete vocabulary of what a component interaction may do.
+ * Carried inside render props as {label, action} descriptors; the client
+ * never makes an arbitrary call — prompt/tool actions round-trip through
+ * the server, state actions touch output-zone state only (never sent).
+ */
+export type Action =
+  | { kind: "prompt"; text: string }
+  | { kind: "tool"; name: string; args?: Record<string, unknown> }
+  | { kind: "state"; op: "pin" | "unpin"; renderId: string };
+
 /** Browser → server */
 export type ClientMsg =
   | { type: "prompt"; text: string }
@@ -41,5 +52,7 @@ export type ClientMsg =
   // joins an existing session (stale ids fall back to create); create
   // starts a fresh one, optionally in a specific working dir.
   | { type: "attach"; sessionId: string }
-  | { type: "create"; cwd?: string };
-// Phase 2 adds:  { type: "action"; action: Action; sourceId: string }
+  | { type: "create"; cwd?: string }
+  // Phase 2: a component interaction, attributed to the render block
+  // (sourceId = its render id) that emitted it.
+  | { type: "action"; action: Action; sourceId: string };

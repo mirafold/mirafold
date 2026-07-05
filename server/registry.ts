@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { mkdirSync } from "node:fs";
 import path from "node:path";
 import type { WireMsg } from "./protocol";
 import { MockSession, Session, type AgentSession } from "./session";
@@ -33,6 +34,7 @@ export class SessionRegistry {
   create(cwd?: string): SessionEntry {
     const id = randomUUID().slice(0, 8);
     const dir = path.resolve(cwd ?? path.join("workspace", id));
+    mkdirSync(dir, { recursive: true }); // action tools need it even in mock mode
     const live = Boolean(process.env.ANTHROPIC_API_KEY);
     const session: AgentSession = live
       ? new Session({ workspaceDir: dir })

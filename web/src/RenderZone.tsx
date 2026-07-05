@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
+import type { Action } from "@protocol";
 import type { ZoneMsg } from "./Shell";
 import { RenderBlock } from "./registry/RenderBlock";
 import { PinDock } from "./PinDock";
@@ -38,8 +39,12 @@ let nextId = 0;
  */
 export function RenderZone({
   subscribe,
+  sendAction,
 }: {
   subscribe: (l: (m: ZoneMsg) => void) => () => void;
+  // Shell-provided sender for prompt/tool actions (Phase 2); state actions
+  // are resolved here because pin state is output-zone state.
+  sendAction: (action: Action, sourceId: string) => void;
 }) {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [status, setStatus] = useState<Status>(null);
@@ -182,6 +187,20 @@ export function RenderZone({
       p.includes(renderId) ? p.filter((id) => id !== renderId) : [...p, renderId],
     );
 
+  const handleAction = (action: Action, sourceId: string) => {
+    if (action.kind === "state") {
+      setPinned((p) =>
+        action.op === "pin"
+          ? p.includes(action.renderId)
+            ? p
+            : [...p, action.renderId]
+          : p.filter((id) => id !== action.renderId),
+      );
+      return; // state actions never leave the output zone
+    }
+    sendAction(action, sourceId);
+  };
+
   // Dock items reference the same entry objects the transcript holds, so an
   // update-in-place render (same wire id) keeps pinned components live.
   const pinnedItems = pinned.flatMap((renderId) => {
@@ -229,7 +248,12 @@ export function RenderZone({
                 >
                   📌
                 </button>
-                <RenderBlock component={entry.component} props={entry.props} />
+                <RenderBlock
+                  component={entry.component}
+                  props={entry.props}
+                  renderId={entry.renderId}
+                  onAction={handleAction}
+                />
               </div>
             );
           }
@@ -274,6 +298,7 @@ export function RenderZone({
             items={pinnedItems}
             onUnpin={togglePin}
             onCollapse={() => setDockCollapsed(true)}
+            onAction={handleAction}
           />
         ))}
     </div>
