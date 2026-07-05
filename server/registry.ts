@@ -33,9 +33,28 @@ export class SessionRegistry {
 
   create(cwd?: string): SessionEntry {
     const id = randomUUID().slice(0, 8);
+    // cwd is whatever the caller chose (default: workspace/<id>). A session is
+    // like launching the terminal in a directory you own, so any dir is fair
+    // game — safe because the socket binds to loopback (server/index.ts), so
+    // only local-you can pick it, exactly as with the terminal. (An interim
+    // build jailed this under workspace/; relaxed 2026-07-05 — the jail was
+    // itself a deviation from terminal parity, and loopback already closes the
+    // remote-cwd vector it was guarding.)
     const dir = path.resolve(cwd ?? path.join("workspace", id));
     mkdirSync(dir, { recursive: true }); // action tools need it even in mock mode
-    const live = Boolean(process.env.ANTHROPIC_API_KEY);
+    // Live when any model credential/endpoint is configured — not just an
+    // Anthropic API key. The SDK resolves ANTHROPIC_API_KEY → ANTHROPIC_AUTH_TOKEN,
+    // and a custom ANTHROPIC_BASE_URL points at a proxy/local endpoint (which
+    // may need no key), so keying only on ANTHROPIC_API_KEY would silently drop
+    // those setups into the mock. Fall back to the mock only when nothing is
+    // configured. (Phase P.1 generalizes this to the provider config; today the
+    // one live backend is the Anthropic SDK — this is provider-neutral seam
+    // hygiene ahead of it, not the whole thing.)
+    const live = Boolean(
+      process.env.ANTHROPIC_API_KEY ||
+        process.env.ANTHROPIC_AUTH_TOKEN ||
+        process.env.ANTHROPIC_BASE_URL,
+    );
     const session: AgentSession = live
       ? new Session({ workspaceDir: dir })
       : new MockSession();

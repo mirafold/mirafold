@@ -133,6 +133,11 @@ wss.on("connection", (ws) => {
   });
 });
 
-server.listen(port, () => {
-  console.log(`[genui-shell] server on http://localhost:${port} (ws at /ws)`);
+// Bind to loopback only. This daemon runs on the user's machine and the socket
+// has no authentication (multi-user auth is Step 4.5; the relay dials out in
+// 4.7). The Origin guard already blocks hostile browser pages; binding to
+// 127.0.0.1 also keeps non-browser LAN clients — which send no Origin and so
+// pass the guard — off the socket entirely.
+server.listen(port, "127.0.0.1", () => {
+  console.log(`[genui-shell] server on http://127.0.0.1:${port} (ws at /ws)`);
 });

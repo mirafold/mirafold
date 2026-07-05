@@ -122,7 +122,16 @@ export const registryShapes = {
       .array(
         z.object({
           label: z.string().describe("Link text, a few words."),
-          href: z.url().describe("Absolute http(s) URL."),
+          // http(s) only: z.url() alone accepts javascript:/data:/vbscript:,
+          // and LinkGroup renders href into a real anchor in the TRUSTED shell
+          // origin (outside the markdown sanitizer), so a bad scheme would be
+          // agent-controlled script one click from the shell's scope.
+          href: z
+            .url()
+            .refine((u) => /^https?:$/.test(new URL(u).protocol), {
+              message: "href must be an http(s) URL",
+            })
+            .describe("Absolute http(s) URL."),
           description: z.string().optional().describe("One-line description, muted."),
         }),
       )

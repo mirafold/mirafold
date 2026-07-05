@@ -15,7 +15,9 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/ws": {
-        target: "ws://localhost:3000",
+        // 127.0.0.1, not localhost: the server binds to the IPv4 loopback, and
+        // "localhost" can resolve to ::1 first and miss it.
+        target: "ws://127.0.0.1:3000",
         ws: true,
       },
     },
