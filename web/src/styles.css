@@ -710,6 +710,53 @@ body {
   border-color: #46242c;
 }
 
+/* Tool input (T2.2): full args in the expansion — diff / code / JSON. */
+.tool-input {
+  margin: 4px 0 2px 22px;
+}
+
+.tool-code,
+.tool-diff {
+  margin: 0 0 4px 0;
+  padding: 10px 12px;
+  background: #0d1117;
+  border: 1px solid #232a38;
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8em;
+  line-height: 1.5;
+  color: #a8b2c2;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 360px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #3a4a68 transparent;
+}
+
+.tool-code.tool-added {
+  border-color: #1f3a2a;
+}
+
+.tool-diff > div {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.diff-add {
+  background: #13341f;
+  color: #7ee2a8;
+}
+
+.diff-del {
+  background: #3a1d22;
+  color: #e88b95;
+}
+
+.diff-ctx {
+  color: #6b7488;
+}
+
 .status-line {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.85em;

@@ -17,7 +17,9 @@ export type WireMsg =
   // Phase T.1: the transcript record of a tool call. `tool_use` announces the
   // call (detail = its one human-salient argument, e.g. the bash command);
   // a later `tool_result` with the same id completes that record.
-  | { type: "tool_use"; name: string; detail?: string; id: string }
+  // T2.2 widens it with the FULL input (optional — old clients ignore it);
+  // the client renders Edit/Write inputs as diffs/code, the rest as JSON.
+  | { type: "tool_use"; name: string; detail?: string; id: string; input?: Record<string, unknown> }
   | { type: "tool_result"; output: string; isError?: boolean; id: string }
   // Phase T.3: the turn is paused on a gated tool call until the browser
   // answers (or the server times out to deny). Drawn by the trusted shell.
