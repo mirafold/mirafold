@@ -27,8 +27,11 @@ export type WireMsg =
   // buffer — carries them identically.
   | { type: "user_prompt"; text: string }
   // Phase 4.2: reply to attach/create — which session this viewport is on.
-  | { type: "session_created"; sessionId: string; cwd: string };
-// Phase 3 adds:  { type: "artifact"; html: string; id: string }
+  | { type: "session_created"; sessionId: string; cwd: string }
+  // Phase 3: agent-authored HTML for the sandboxed iframe host (the ONLY
+  // channel raw agent markup may travel). Re-sending an id replaces that
+  // artifact in place — same rule as `render`.
+  | { type: "artifact"; html: string; id: string; title?: string };
 
 /**
  * Phase 2: the complete vocabulary of what a component interaction may do.

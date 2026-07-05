@@ -7,6 +7,7 @@ import type { ZoneMsg } from "./Shell";
 import { RenderBlock } from "./registry/RenderBlock";
 import { PinDock } from "./PinDock";
 import { ToolBlock } from "./ToolBlock";
+import { Artifact } from "./Artifact";
 
 // The scrollback is a flat list of entries: text blocks and rendered
 // components, in the exact order they arrived on the wire.
@@ -27,6 +28,13 @@ type Entry =
       detail?: string;
       output?: string; // undefined until the result arrives
       isError?: boolean;
+    }
+  | {
+      kind: "artifact";
+      id: number;
+      artifactId: string; // wire id — re-sends with this id replace the html
+      html: string;
+      title?: string;
     };
 type Status = { state: "thinking" | "tool"; label?: string } | null;
 
@@ -105,6 +113,30 @@ export function RenderZone({
               return [
                 ...es,
                 { kind: "render", id, renderId: msg.id, component: msg.component, props: msg.props },
+              ];
+            });
+            break;
+          }
+          case "artifact": {
+            // Same wire-order rule as `render`: close the streaming block.
+            streamingId.current = null;
+            const id = nextId++;
+            setEntries((es) => {
+              const i = es.findIndex(
+                (e) => e.kind === "artifact" && e.artifactId === msg.id,
+              );
+              if (i >= 0) {
+                const updated = [...es];
+                updated[i] = {
+                  ...(updated[i] as Entry & { kind: "artifact" }),
+                  html: msg.html,
+                  title: msg.title,
+                };
+                return updated;
+              }
+              return [
+                ...es,
+                { kind: "artifact", id, artifactId: msg.id, html: msg.html, title: msg.title },
               ];
             });
             break;
@@ -221,6 +253,13 @@ export function RenderZone({
                 output={entry.output}
                 isError={entry.isError}
               />
+            );
+          }
+          if (entry.kind === "artifact") {
+            return (
+              <div key={entry.id} className="turn turn-render">
+                <Artifact html={entry.html} title={entry.title} />
+              </div>
             );
           }
           if (entry.kind === "render") {
