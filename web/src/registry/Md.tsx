@@ -3,8 +3,8 @@ import remarkGfm from "remark-gfm";
 import type { ComponentProps } from "react";
 
 // Same safety rule as turn text: links open in a new tab, and react-markdown
-// never emits raw HTML from its source.
-const safeAnchor = {
+// never emits raw HTML from its source. Shared with RenderZone's turn text.
+export const safeAnchor = {
   a: ({ node: _node, ...props }: ComponentProps<"a"> & { node?: unknown }) => (
     <a {...props} target="_blank" rel="noopener noreferrer" />
   ),

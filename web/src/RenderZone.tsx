@@ -5,6 +5,7 @@ import rehypeHighlight from "rehype-highlight";
 import type { Action } from "@protocol";
 import type { ZoneMsg } from "./Shell";
 import { RenderBlock } from "./registry/RenderBlock";
+import { safeAnchor } from "./registry/Md";
 import { PinDock } from "./PinDock";
 import { ToolBlock } from "./ToolBlock";
 import { Artifact } from "./Artifact";
@@ -445,11 +446,7 @@ export function RenderZone({
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 rehypePlugins={[rehypeHighlight]}
-                components={{
-                  a: ({ node: _node, ...props }) => (
-                    <a {...props} target="_blank" rel="noopener noreferrer" />
-                  ),
-                }}
+                components={safeAnchor}
               >
                 {entry.text}
               </ReactMarkdown>
