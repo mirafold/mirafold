@@ -733,7 +733,7 @@ terminal currently out-informs us most.
     checked them off 1/4→4/4 in a single block; only Write/Bash work rows
     remained visible).
 
-- [ ] **Step T2.6 — Status bar (model, session, usage)**
+- [x] **Step T2.6 — Status bar (model, session, usage)**
   - Goal: the workbench strip — context and cost at a glance.
   - Build: add `{ type: "usage"; model: string; inputTokens: number;
     outputTokens: number; costUsd?: number }` emitted from SDK `result`
@@ -744,6 +744,21 @@ terminal currently out-informs us most.
   - Done when: after a live turn the bar shows the model and a nonzero token
     count; disconnecting flips the connection glyph.
     **Phase T2 complete — the browser shows strictly more than the terminal.**
+  - Status: **done, verified (2026-07-05)** — `usage` WireMsg emitted per turn
+    from the SDK `result`; `StatusBar` (new, shell-owned, bottom edge) shows
+    connection dot · model · session · cwd · `turn ↑in ↓out` · session `Σ` ·
+    `$cost`, collapsible to just the dot. `ws.ts` gained `onClose`; Shell
+    tracks connection via onOpen/onClose. **Load-bearing finding from live
+    logs: input tokens are per-turn (~25k each, cache-heavy) but
+    `total_cost_usd` is CUMULATIVE** (turn 2 = turn 1 + a cache-read-sized
+    step) — so the client sums tokens but *sets* cost to the latest value,
+    not adds (the first cut double-counted). Mock emits a matching cumulative
+    cost. cwd chip suppressed when it just repeats the session id (default
+    workspace/<id>). All state resets on zone_reset so replay re-lands the
+    same figures. Verified mock 8/8 (accumulates across 2 turns, collapses to
+    a dot, replay-stable) + dot-flip (killed the server → green→amber, since
+    setOffline ignores loopback) + live (model claude-sonnet-4-6, Σ 25k→51k
+    over two turns, cost 0.035→0.043 — cumulative, not doubled).
 
 ---
 

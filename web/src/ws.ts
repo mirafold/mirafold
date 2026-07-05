@@ -12,6 +12,7 @@ export class SocketClient {
   private ws!: WebSocket;
   private listeners = new Set<Listener>();
   private openListeners = new Set<() => void>();
+  private closeListeners = new Set<() => void>();
   private pending: ClientMsg[] = [];
   private closedByUs = false;
   private hello: (() => ClientMsg) | null = null;
@@ -38,6 +39,7 @@ export class SocketClient {
       for (const l of this.listeners) l(msg);
     };
     this.ws.onclose = () => {
+      for (const cb of this.closeListeners) cb();
       if (!this.closedByUs) setTimeout(() => this.connect(), 1000);
     };
   }
@@ -51,6 +53,13 @@ export class SocketClient {
     this.openListeners.add(cb);
     return () => {
       this.openListeners.delete(cb);
+    };
+  }
+
+  onClose(cb: () => void): () => void {
+    this.closeListeners.add(cb);
+    return () => {
+      this.closeListeners.delete(cb);
     };
   }
 

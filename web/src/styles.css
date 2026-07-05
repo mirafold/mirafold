@@ -1011,3 +1011,86 @@ body {
   color: #e66767;
   border-color: #4a2a33;
 }
+
+/* ---- Status bar (T2.6) ---------------------------------------------------
+   The workbench strip: model · session · cwd · connection · usage. Slim,
+   monospace, shell-owned; folds to a single connection dot. */
+
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0 8px;
+  padding: 4px 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.74em;
+  color: #6b7488;
+  border-top: 1px solid #1c2331;
+}
+
+.status-bar-collapsed {
+  background: none;
+  border: 0;
+  border-top: 1px solid #1c2331;
+  cursor: pointer;
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.sb-toggle {
+  display: flex;
+  align-items: center;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.sb-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.sb-dot-on {
+  background: #4ade80;
+}
+
+.sb-dot-off {
+  background: #d4a852;
+  animation: sb-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes sb-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.sb-item {
+  white-space: nowrap;
+}
+
+.sb-model {
+  color: #8b94a7;
+}
+
+.sb-sep {
+  padding-left: 10px;
+  border-left: 1px solid #262f42;
+}
+
+.sb-cwd {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sb-spacer {
+  flex: 1;
+}
+
+.sb-usage {
+  color: #7e88a0;
+}

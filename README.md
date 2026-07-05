@@ -576,18 +576,18 @@ Read PLAN.md for the real thing; the shape in one breath:
   interrupt, browser permission prompts — making it daily-drivable; the
   **session registry** (Steps 4.1/4.2) — sessions survive refreshes, fan
   out to multiple tabs, and live at `/s/<id>`; **Phase 2** — typed,
-  server-mediated component actions (prompt / allowlisted tool / pin); and
+  server-mediated component actions (prompt / allowlisted tool / pin);
   **all of Phase 3** — the sandboxed artifact host (verified against a
   hostile artifact), the `emit_artifact` capability, the nonce-stamped
-  action bridge, and graceful failure fallbacks.
+  action bridge, and graceful failure fallbacks; and **all of Phase T2** —
+  full-stream visibility parity: thinking text (collapse-on-finalize),
+  Edit/Write diffs, honest output truncation, subagent nesting, the live
+  todo checklist, and the status bar with usage. The browser now shows
+  strictly more than the terminal, never less.
 - **Now:** distribution — post the demo and read the M1 signal
-  (BUSINESS.md §9) — and the start of Phase T2.
-- **Then:** Phase T2 — full-stream visibility parity (thinking text,
-  Edit/Write diffs, honest output truncation, subagent visibility, live todo
-  checklist, status bar with usage), so the browser shows strictly more than
-  the terminal, never less. And the rest of Phase 4 — theming/polish, robust
-  mid-turn resume, the fleet view at `/`, and the phone relay, which is the
-  paid tier.
+  (BUSINESS.md §9).
+- **Then:** the rest of Phase 4 — theming/polish, robust mid-turn resume,
+  the fleet view at `/`, and the phone relay, which is the paid tier.
 
 Distribution intent shapes the architecture: the daemon ships as
 `npx genui-shell` and always runs on the user's machine; the only hosted
