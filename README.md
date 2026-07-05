@@ -141,7 +141,7 @@ Two zones in the browser, hard boundary between them:
 ┌─ OUTPUT ZONE — agent-controlled, sandboxed ──────────┐
 │   Level 1: styled markdown            (shipped)      │
 │   Level 2: registry components        (shipped)      │
-│   Level 3: sandboxed-iframe artifacts (in progress)  │
+│   Level 3: sandboxed-iframe artifacts (shipped)      │
 ├─ SHELL — TRUSTED, never re-rendered by the agent ────┤
 │   prompt box · WebSocket client · all credentials    │
 └──────────────────────────────────────────────────────┘
@@ -171,14 +171,18 @@ The invariants, and where each is enforced today:
   cross-site socket. Non-browser clients (wscat, tests) send no Origin and
   pass — they aren't weaponizable the way a browser socket is.
 
-Agent-authored executable UI (Phase 3) runs only inside
+Agent-authored executable UI (Phase 3, shipped) runs only inside
 `web/src/Artifact.tsx`'s sandboxed iframe: `allow-scripts` without
 `allow-same-origin` gives the content an opaque origin (cookies, storage, and
 the parent DOM are structurally unreachable), and an injected
-`default-src 'none'` CSP cuts every network path. The host ships and is
-verified against a hostile artifact — every escape probe blocked; the threat
-model is documented inline in the file. Step 3.3 will let artifacts talk back
-*only* through the same mediated action bridge components use. The trusted
+`default-src 'none'` CSP cuts every network path — verified against a hostile
+artifact with every escape probe blocked; the threat model is documented
+inline in the file. Artifacts talk back through exactly one channel: a
+nonce-stamped postMessage bridge (`genui.prompt` / `genui.tool`) validated at
+every hop (source window, opaque origin, per-mount nonce, strict shape,
+rate limit) and forwarded through the same server-side allowlist mediation
+components use. Broken artifacts degrade to their source as styled code, and
+a self-navigating artifact is detected by liveness and blanked. The trusted
 shell is why this product can safely let an agent paint UI at all — treat the
 boundary as inviolable, and treat "the shell draws it, the agent can't fake
 it" as the extension of the same rule: the pin affordance (a frame *around*
@@ -571,12 +575,11 @@ Read PLAN.md for the real thing; the shape in one breath:
   **session registry** (Steps 4.1/4.2) — sessions survive refreshes, fan
   out to multiple tabs, and live at `/s/<id>`; **Phase 2** — typed,
   server-mediated component actions (prompt / allowlisted tool / pin); and
-  **Step 3.1** — the sandboxed artifact host, verified against a hostile
-  artifact.
-- **Now:** the rest of Phase 3 — put artifacts on the wire (`artifact`
-  message + an `emit_artifact` tool), the postMessage → mediated-action
-  bridge, and error fallback. In parallel: distribution — post the demo and
-  read the M1 signal (BUSINESS.md §9).
+  **all of Phase 3** — the sandboxed artifact host (verified against a
+  hostile artifact), the `emit_artifact` capability, the nonce-stamped
+  action bridge, and graceful failure fallbacks.
+- **Now:** distribution — post the demo and read the M1 signal
+  (BUSINESS.md §9) — and the start of Phase T2.
 - **Then:** Phase T2 — full-stream visibility parity (thinking text,
   Edit/Write diffs, honest output truncation, subagent visibility, live todo
   checklist, status bar with usage), so the browser shows strictly more than
