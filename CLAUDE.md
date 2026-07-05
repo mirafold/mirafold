@@ -9,8 +9,9 @@ sequence, lives in **BUSINESS.md** (milestone gates).
 
 ## Environment
 
-- Node 22 via nvm — `source ~/.nvm/nvm.sh && nvm use 22` in every shell.
-  System node is a bare v18 with no npm.
+- Node 22 via nvm, and `nvm alias default` is 22 — plain shells resolve
+  node 22 + npm with no sourcing. Only the OS copy at `/usr/bin/node` is
+  still a bare v18; don't hardcode that path.
 - yarn for all package operations. `yarn dev` = server (:3000) + Vite
   (:5173, use this one in dev). `yarn typecheck` must pass before committing.
 - No `ANTHROPIC_API_KEY` in `.env` → `MockSession`. Build and verify every
