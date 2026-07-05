@@ -17,6 +17,42 @@ import { z } from "zod";
 const markdown = (what: string) =>
   z.string().describe(`${what} Supports inline markdown (bold, links, \`code\`).`);
 
+// Phase 2: action descriptors components may carry. The agent-facing subset
+// is prompt|tool — state actions are shell-internal and not authorable.
+export const actionSpec = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("prompt"),
+    text: z
+      .string()
+      .describe(
+        "The follow-up sent as a user turn when clicked — it appears in the " +
+          "transcript exactly like typed input and you answer it in-session.",
+      ),
+  }),
+  z.object({
+    kind: z.literal("tool"),
+    name: z.string().describe("A server-allowlisted action tool, e.g. workspace_ls."),
+    args: z
+      .record(z.string(), z.unknown())
+      .optional()
+      .describe("Arguments for the tool, if it takes any."),
+  }),
+]);
+
+const actionsProp = z
+  .array(
+    z.object({
+      label: z.string().describe("Button text, 1–3 words."),
+      action: actionSpec,
+    }),
+  )
+  .max(3)
+  .optional()
+  .describe(
+    "Up to 3 action buttons rendered at the foot of the component. Use for " +
+      "the obvious next steps a reader would want one click away.",
+  );
+
 export const registryShapes = {
   card: {
     title: z.string().describe("Card heading, a few words."),
@@ -25,6 +61,7 @@ export const registryShapes = {
       .string()
       .optional()
       .describe("Small muted footer line, e.g. a source, timestamp, or caveat."),
+    actions: actionsProp,
   },
 
   list: {

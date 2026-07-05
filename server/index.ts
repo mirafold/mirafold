@@ -1,9 +1,11 @@
 import { createServer } from "node:http";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import express from "express";
 import { WebSocketServer } from "ws";
 import type { ClientMsg, WireMsg } from "./protocol";
 import { SessionRegistry, type SessionEntry } from "./registry";
+import { runActionTool } from "./actions";
 
 // .env is optional — without an API key we fall back to the mock session.
 try {
@@ -94,6 +96,32 @@ wss.on("connection", (ws) => {
           entry?.session.resolvePermission(msg.id, msg.allow);
         }
         break;
+      case "action": {
+        // Step 2.3: every component action is mediated here and logged.
+        if (!entry || typeof msg.action !== "object" || msg.action === null) break;
+        const src = typeof msg.sourceId === "string" ? msg.sourceId : "?";
+        if (msg.action.kind === "prompt" && typeof msg.action.text === "string") {
+          console.log(`[action] prompt from render ${src}`);
+          registry.broadcast(entry, { type: "user_prompt", text: msg.action.text });
+          entry.session.pushPrompt(msg.action.text);
+        } else if (msg.action.kind === "tool" && typeof msg.action.name === "string") {
+          const id = `action-${randomUUID().slice(0, 8)}`;
+          registry.broadcast(entry, {
+            type: "tool_use",
+            name: msg.action.name,
+            detail: `component action (${src})`,
+            id,
+          });
+          const { output, isError } = runActionTool(
+            msg.action.name,
+            msg.action.args,
+            entry.cwd,
+          );
+          registry.broadcast(entry, { type: "tool_result", output, isError, id });
+        }
+        // state actions never reach the server; anything else is ignored.
+        break;
+      }
     }
   });
 

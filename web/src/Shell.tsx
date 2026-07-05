@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { WireMsg } from "@protocol";
+import type { Action, WireMsg } from "@protocol";
 import { PromptBox } from "./PromptBox";
 import { RenderZone } from "./RenderZone";
 import { SocketClient } from "./ws";
@@ -64,6 +64,9 @@ export function Shell() {
       },
       answerPermission(id: string, allow: boolean) {
         socket.send({ type: "permission_response", id, allow });
+      },
+      sendAction(action: Action, sourceId: string) {
+        socket.send({ type: "action", action, sourceId });
       },
     };
   }, []);
@@ -130,7 +133,7 @@ export function Shell() {
 
   return (
     <div className="shell">
-      <RenderZone subscribe={bus.subscribe} />
+      <RenderZone subscribe={bus.subscribe} sendAction={bus.sendAction} />
       {asks.length > 0 && (
         <div className="perm-bar">
           <span className="perm-badge">permission</span>

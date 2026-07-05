@@ -101,6 +101,12 @@ export class Session implements AgentSession {
         model: opts?.model ?? process.env.DEFAULT_MODEL,
         cwd: workspaceDir,
         canUseTool: makeCanUseTool(workspaceDir, this.ask),
+        // ISOLATION: never inherit the host user's Claude Code config. The
+        // default pulls in user/project/local settings — meaning the host's
+        // permission allowlists (which can silently bypass canUseTool),
+        // CLAUDE.md, and memory instructions. A daemon session found this
+        // the hard way: "remember X" wrote into the host's real memory dir.
+        settingSources: [],
         includePartialMessages: true, // gives us token-level text deltas
         mcpServers: { ui: makeRenderServer((msg) => this.emit(msg)) },
         systemPrompt: { type: "preset", preset: "claude_code", append: RENDER_GUIDANCE },
@@ -539,6 +545,44 @@ export class MockSession implements AgentSession {
   private pendingAsks = new Map<string, (allow: boolean) => void>();
 
   pushPrompt(text: string) {
+    // Deterministic 2.2 hook: an "interactive"-sounding prompt yields a card
+    // with action buttons so the click→action→turn loop runs API-free.
+    if (/interactive|button/i.test(text)) {
+      this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+      let delay = 350;
+      for (const chunk of "Here's the deploy control card — the buttons are live.".match(/.{1,16}/gs) ?? []) {
+        delay += 14;
+        this.schedule(() => this.emit({ type: "text_delta", text: chunk }), delay);
+      }
+      delay += 350;
+      this.schedule(
+        () =>
+          this.emit({
+            type: "render",
+            component: "card",
+            props: {
+              title: `Deploy status — ${pick(PROJECTS)}`,
+              body: `**Healthy.** ${sentence()}`,
+              footer: "mock render · actions attached",
+              actions: [
+                {
+                  label: "Explain more",
+                  action: { kind: "prompt", text: "Explain the current deploy status in more detail." },
+                },
+                {
+                  label: "List workspace",
+                  action: { kind: "tool", name: "workspace_ls" },
+                },
+              ],
+            },
+            id: randomUUID(),
+          }),
+        delay,
+      );
+      this.schedule(() => this.emit({ type: "turn_end" }), delay + 40);
+      return;
+    }
+
     // Deterministic T.3 hook: a "dangerous"-sounding prompt pauses on a
     // permission_request so the prompt bar is exercisable API-free.
     if (/dangerous|sudo|rm -rf/i.test(text)) {

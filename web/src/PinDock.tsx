@@ -1,3 +1,4 @@
+import type { Action } from "@protocol";
 import { RenderBlock } from "./registry/RenderBlock";
 
 // The dock renders the same entry objects the transcript holds, so a
@@ -13,10 +14,12 @@ export function PinDock({
   items,
   onUnpin,
   onCollapse,
+  onAction,
 }: {
   items: PinnedItem[];
   onUnpin: (renderId: string) => void;
   onCollapse: () => void;
+  onAction: (action: Action, sourceId: string) => void;
 }) {
   return (
     <aside className="pin-dock">
@@ -36,7 +39,12 @@ export function PinDock({
             >
               ✕
             </button>
-            <RenderBlock component={item.component} props={item.props} />
+            <RenderBlock
+              component={item.component}
+              props={item.props}
+              renderId={item.renderId}
+              onAction={onAction}
+            />
           </div>
         ))}
       </div>

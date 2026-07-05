@@ -299,6 +299,32 @@ body {
   color: #8b96a8;
 }
 
+/* action buttons (Phase 2) — the one interactive surface inside components */
+.rc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #232a38;
+}
+
+.rc-action-btn {
+  padding: 4px 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82em;
+  color: #7ab8ff;
+  background: transparent;
+  border: 1px solid #26364e;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.rc-action-btn:hover {
+  background: #16202e;
+  border-color: #3a5a86;
+}
+
 /* list */
 .rc-list :is(ul, ol) {
   margin: 0;
