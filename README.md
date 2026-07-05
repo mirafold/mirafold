@@ -5,17 +5,16 @@ engine — filesystem, bash, tools, a warm persistent session — runs behind a 
 front end, and the agent's output stream is treated as a **UI-instruction
 stream**: it paints streamed markdown and live registry components into an
 output zone, those components can act back through a server-mediated action
-bridge, and Phase 3 (in progress) adds sandboxed arbitrary UI — the
-locked-down iframe host is already in place. A fixed, trusted shell owns the
-prompt box, the socket, and all credentials, and the agent can never touch
-any of them.
+bridge, and — when no component fits — the agent emits sandboxed arbitrary UI
+into a locked-down iframe. A fixed, trusted shell owns the prompt box, the
+socket, and all credentials, and the agent can never touch any of them.
 
 Think of it as a terminal successor, not a chat app: monospace command strips
 in, rich rendered output back. The vision is a **strict superset of the
-terminal** — same engine, and never *less* visibility than the terminal gives
-(thinking, tool detail, diffs, subagent progress); richness is added on top
-of raw visibility, never traded against it (PLAN Phase T2 tracks the
-remaining gaps).
+terminal** — same engine, and never *less* visibility than the terminal gives:
+thinking, full tool detail and diffs, subagent progress, the live task list,
+and token/cost usage are all surfaced (Phase T2, shipped). Richness is added
+on top of raw visibility, never traded against it.
 
 ![genui-shell demo — ask about a repo and get a card, a table, and real links; paste data, get a live chart, pin it, and the agent updates it in place](demo/demo.gif)
 
@@ -29,10 +28,10 @@ This document is the technical orientation for someone taking ownership of the
 codebase. Companion documents:
 
 - **[PLAN.md](PLAN.md)** — the phased build plan. Every step has
-  Goal / Build / Files / Done-when. Shipped so far: **Phases 0, 1, T, and 2**,
-  plus the Phase 4 session registry (4.1/4.2); **Phase 3 is in progress**
-  (the sandboxed host, 3.1, is done). PLAN.md is the source of truth for what
-  comes next and why.
+  Goal / Build / Files / Done-when. Shipped so far: **Phases 0, 1, T, 2, 3,
+  and T2**, plus the Phase 4 session registry (4.1/4.2). What remains is the
+  rest of Phase 4 (product hardening) and Phase L (local models, M2). PLAN.md
+  is the source of truth for what comes next and why.
 - **[BUSINESS.md](BUSINESS.md)** — positioning, wedges, pricing, and the
   milestone gates that sequence the plan. The two build-relevant conclusions:
   ship the Phase 1 demo before Phase T, and keep every seam local-first.
@@ -66,6 +65,7 @@ The contract between server and browser. Currently on the wire:
 // Server → browser
 type WireMsg =
   | { type: "text_delta"; text: string }                           // streamed markdown
+  | { type: "thinking_delta"; text: string }                       // T2.1: reasoning stream
   | { type: "status"; state: "thinking" | "tool"; label?: string } // activity line
   | { type: "turn_end" }                                           // finalize the turn
   | { type: "error"; message: string }
@@ -74,11 +74,19 @@ type WireMsg =
     //   updates that component in place (the live-pinned-widget mechanism).
     //   `component` is a plain string so unknown instructions stay
     //   representable and can degrade gracefully (Step 1.4).
-  | { type: "tool_use"; name: string; detail?: string; id: string }        // T.1: a tool
-  | { type: "tool_result"; output: string; isError?: boolean; id: string } //   call record
+  | { type: "artifact"; html: string; id: string; title?: string } // Phase 3: sandboxed UI
+  // Tool records (T.1). T2 widened both with OPTIONAL fields old clients
+  // ignore: `input` (full args → diffs/code), `parentId` (subagent nesting),
+  // `truncatedBytes` (explicit elision past the output cap).
+  | { type: "tool_use"; name: string; detail?: string; id: string;
+      input?: Record<string, unknown>; parentId?: string }
+  | { type: "tool_result"; output: string; isError?: boolean; id: string;
+      truncatedBytes?: number; parentId?: string }
   | { type: "permission_request"; tool: string; detail: string; id: string } // T.3
   | { type: "user_prompt"; text: string }              // 4.2: server-echoed user turn
-  | { type: "session_created"; sessionId: string; cwd: string }; // 4.2: attach reply
+  | { type: "session_created"; sessionId: string; cwd: string }    // 4.2: attach reply
+  | { type: "usage"; model: string; inputTokens: number;           // T2.6: status-bar
+      outputTokens: number; costUsd?: number };                    //   accounting
 
 // Browser → server
 type ClientMsg =
@@ -95,9 +103,9 @@ component interaction may do — `prompt` (round-trips as a user turn), `tool`
 (runs a server-side allowlisted tool, §5.4), or `state` (pin/unpin;
 output-zone-local, never sent).
 
-**The cardinal rule: later phases ADD message types; existing shapes never
-change.** That's what makes every phase additive and keeps old clients from
-breaking. The remaining planned additions are `artifact` (Phase 3) and the
+**The cardinal rule: later phases ADD message types (or OPTIONAL fields);
+existing shapes never change.** That's what makes every phase additive and
+keeps old clients from breaking. The only additions still planned are the
 session-list messages for the fleet view (Step 4.6).
 
 Both sides import the *same file*: the web build resolves `@protocol` to
@@ -186,8 +194,8 @@ a self-navigating artifact is detected by liveness and blanked. The trusted
 shell is why this product can safely let an agent paint UI at all — treat the
 boundary as inviolable, and treat "the shell draws it, the agent can't fake
 it" as the extension of the same rule: the pin affordance (a frame *around*
-rendered blocks, unreachable from agent props), the T.3 permission bar, and
-the artifact's "sandboxed" chrome are all drawn this way.
+rendered blocks, unreachable from agent props), the T.3 permission bar, the
+artifact's "sandboxed" chrome, and the status bar are all drawn this way.
 
 ## 4. Repository layout
 
@@ -204,14 +212,19 @@ server/            the local daemon (Node, run with tsx)
 web/               the browser app (React 19 + Vite)
   index.html         entry html
   src/main.tsx       mounts <Shell/>, imports global CSS + highlight theme
-  src/Shell.tsx      TRUSTED SHELL: socket + prompt box + permission bar; bus
+  src/Shell.tsx      TRUSTED SHELL: socket + prompt box + permission bar +
+                     status bar; the message bus
   src/PromptBox.tsx  the command bar (auto-grows to 8 lines; Enter sends)
-  src/RenderZone.tsx OUTPUT ZONE: WireMsg interpreter → entries + status line
-  src/ToolBlock.tsx  collapsed one-line tool-call records in the transcript (T.1)
+  src/RenderZone.tsx OUTPUT ZONE: WireMsg interpreter → entries + status line,
+                     incl. thinking blocks, artifacts, and subagent grouping
+  src/ToolBlock.tsx  tool-call records: collapsed row, expands to input diff +
+                     output with elision marker (T.1/T2.2/T2.3)
+  src/StatusBar.tsx  workbench strip: model · session · cwd · conn · usage (T2.6)
   src/PinDock.tsx    right-side dock for pinned components (live via entries)
-  src/Artifact.tsx   Level 3 host: sandboxed iframe for agent-authored UI (3.1)
-  src/registry/      Card, List, Table, LinkGroup, Chart, Md + RenderBlock
-                     (validate → fallback → error boundary) + ActionRow/context
+  src/Artifact.tsx   Level 3 host: sandboxed iframe for agent-authored UI (Phase 3)
+  src/registry/      Card, List, Table, LinkGroup, Chart, TodoList, Md +
+                     RenderBlock (validate → fallback → error boundary) +
+                     ActionRow/context
   src/ws.ts          SocketClient: typed send/onMessage, reconnect + hello
   src/styles.css     the design identity in CSS (see §7)
 demo/              the M1 demo GIF embedded at the top of this README
@@ -269,18 +282,26 @@ mediation path (§5.4).
 - **`pump()` normalizes SDK events into `WireMsg`:**
   - `stream_event` → `content_block_delta` (text) becomes `text_delta`
     (enabled by `includePartialMessages: true`, which is what gives
-    token-level streaming rather than whole-message chunks);
-    `content_block_start` for a thinking block becomes
-    `status:{state:"thinking"}`, for a tool_use block becomes
+    token-level streaming rather than whole-message chunks); a `thinking`
+    delta becomes `thinking_delta` (T2.1 — the reasoning stream, folded
+    client-side); `content_block_start` for a tool_use block becomes
     `status:{state:"tool", label:<tool name>}`.
-  - Events carrying a `parent_tool_use_id` are **subagent traffic** and are
-    skipped — a subagent's inner monologue must not paint into the user's
-    transcript.
-  - Full `tool_use` blocks become `tool_use` wire records (Phase T.1) with
-    the call's one human-salient argument as `detail` (e.g. the bash
-    command); a later `tool_result` with the same id completes the record —
-    results are only forwarded for ids the session announced.
-  - `result` → `error` (if `is_error`) then always `turn_end`.
+  - Full `tool_use` blocks become `tool_use` records (Phase T.1) carrying the
+    one human-salient argument as `detail` **and** the full `input` (T2.2 —
+    the client renders Edit/Write inputs as diffs/code); a later `tool_result`
+    with the same id completes the record, capped by `capOutput` with an
+    honest `truncatedBytes` (T2.3). Results are only forwarded for ids the
+    session announced.
+  - **Subagent traffic** (events with a `parent_tool_use_id`): its text and
+    thinking stay dropped — a subagent's monologue must not paint into the
+    transcript — but its tool *calls* are now forwarded tagged with
+    `parentId` (T2.4), which the client nests under the owning Task row.
+  - **Task list** (T2.5): the SDK's `TaskCreate`/`TaskUpdate` family (its
+    successor to `TodoWrite`) is folded into one live `todo-list` render that
+    updates in place; the raw Task* rows and their results are swallowed.
+  - `result` → `error` (if `is_error`) then a `usage` record (T2.6 —
+    per-turn tokens plus the SDK's cumulative `total_cost_usd`) then always
+    `turn_end`.
 - **`interrupt()`** (Phase T.2) halts the in-flight turn via the SDK; the
   session stays warm for the next prompt.
 - **Permission prompts** (Phase T.3): when `permissions.ts` needs the user,
@@ -312,10 +333,13 @@ mediation path (§5.4).
   unprompted — verified live.
 
 `MockSession` implements the same interface with `setTimeout`-scheduled
-emissions: a `thinking` status, fake `tool_use`/`tool_result` records, an
-occasional `permission_request` (so the prompt bar is exercisable API-free),
-the reply streamed in 16-char chunks at ~12ms, then `turn_end`. `close()`
-clears all pending timers.
+emissions: streamed `thinking_delta`, fake `tool_use`/`tool_result` records
+(incl. an Edit with a real before/after and a Write), a `usage` record, the
+reply streamed in 16-char chunks at ~12ms, then `turn_end`. Keyword hooks in
+the prompt drive every other capability API-free — `artifact`/`broken`/
+`navigates` (Phase 3 + its fallbacks), `subagent`/`delegate` (nested Task),
+`todo`/`plan` (live checklist), `huge` (the elision marker), `dangerous`
+(permission prompt). `close()` clears all pending timers.
 
 ### 5.3 `permissions.ts` — the tool policy
 
@@ -400,13 +424,19 @@ same relative URL works unchanged.
 
 ### 6.3 `RenderZone.tsx` — the interpreter
 
-State: a flat list of `Entry`s — text blocks (`{kind:"text", role, text,
-done}`), rendered components (`{kind:"render", renderId, component,
-props}`), and tool records (`{kind:"tool", …}`) — in the exact order they
+State: a flat list of `Entry`s — text blocks (`{kind:"text", …}`), rendered
+components (`{kind:"render", …}`), tool records (`{kind:"tool", …}`, which
+may carry `parentId` for subagent calls), thinking blocks (`{kind:"thinking",
+…}`), and artifacts (`{kind:"artifact", …}`) — in the exact order they
 arrived on the wire, plus an ephemeral `Status`. The reducer-like
 subscription handles each `ZoneMsg`:
 
 - `user_prompt` → append a done user text entry, show `thinking`.
+- `thinking_delta` → append to the streaming **thinking block** (dim italic,
+  its own id in a ref). The moment the turn's first real output arrives
+  (text/render/tool/artifact/turn_end) it **folds to one dim line**, still
+  expandable — this is the *collapse-on-finalize* pattern that lets the
+  transcript keep every line of reasoning without the clutter (§7).
 - `text_delta` → append to the **streaming text block**, or open one if
   none is active. The streaming block's id lives in a ref
   (`streamingId`), *not* derived from "last entry in the list" — this is a
@@ -425,7 +455,13 @@ subscription handles each `ZoneMsg`:
   boundary — a malformed instruction can never break the UI.
 - `tool_use` / `tool_result` → append a tool entry, then complete it by id
   when the result lands. Tool entries render through `ToolBlock.tsx` as dim
-  one-line monospace records, collapsed by default; errors arrive expanded.
+  one-line monospace records, collapsed by default (errors arrive expanded);
+  the expansion shows the full input — Edit/Write as a colored diff / code
+  (T2.2) — and any `truncatedBytes` as an explicit elision marker (T2.3). A
+  tool with `parentId` isn't rendered top-level: it's grouped under its Task
+  row in a collapsible `SubagentGroup` ("⚙ subagent · N calls", T2.4).
+- `artifact` → route to `Artifact.tsx` (the sandboxed iframe, Phase 3);
+  re-sending an id replaces it in place, same as `render`.
 - `status` → set the activity line (`✳ thinking…` / `⚙ Bash`).
 - `turn_end` → mark the streaming block done, finalize any dangling tool
   entries, clear the ref and status.
@@ -481,8 +517,16 @@ knowing because it constrains future UI work:
   pill.
 - Dark palette lives in `styles.css`; `highlight.js`'s github-dark theme for
   code.
-- Future side surfaces (pin dock, status bar) must be emergent/collapsible —
-  users who never pin never see a panel.
+- Side surfaces are emergent/collapsible — the pin dock only exists while
+  something is pinned, and the status bar folds to a single connection dot.
+- **Visibility superset + collapse-on-finalize** (the Phase T2 rule): the
+  browser must never show *less* than the terminal — thinking, full tool
+  detail, diffs, subagent progress, todos, and usage are all surfaced — but
+  noisy-but-faithful streams render live during the turn, then fold to a dim
+  expandable one-liner once the answer lands. Total fidelity, clean
+  transcript; the web skin gets to do both, which the terminal can't. Every
+  stream-handling decision passes one check: *would a terminal user miss
+  this line?*
 
 ## 8. Running it
 
@@ -555,17 +599,18 @@ a clean reset.
 5. The agent thinks/uses tools. Each tool call passes through `canUseTool` —
    auto-allowed calls flow, anything else pauses the turn on the browser's
    permission bar until the user answers (deny on timeout). The SDK's
-   stream events flow through `pump()`: thinking/tool starts → `status`,
-   full tool calls → `tool_use`/`tool_result` records, text tokens →
-   `text_delta`.
+   stream events flow through `pump()`: reasoning → `thinking_delta`, full
+   tool calls → `tool_use`/`tool_result` records (subagent calls tagged with
+   `parentId`), TaskCreate/Update → the live `todo-list`, text → `text_delta`.
 6. Every `WireMsg` is buffered in the session's ring buffer and fanned out
    to all viewports; `SocketClient` dispatches to the bus; `RenderZone`
-   interprets: statuses update the activity line, tool records append as
+   interprets: the thinking block streams then folds, tool records append as
    collapsed rows, deltas accumulate into the streaming assistant turn,
    markdown re-renders as it grows.
-7. The SDK emits `result` → server sends (`error` if failed, then)
-   `turn_end` → RenderZone finalizes the turn, clears status. The session
-   stays warm, waiting on the queue for the next prompt.
+7. The SDK emits `result` → server sends (`error` if failed, then) a `usage`
+   record (feeding the status bar) then `turn_end` → RenderZone finalizes the
+   turn, clears status. The session stays warm, waiting on the queue for the
+   next prompt.
 
 ## 10. Where the code is going (orientation, not a roadmap copy)
 
