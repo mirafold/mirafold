@@ -583,12 +583,13 @@ export class MockSession implements AgentSession {
       return;
     }
 
-    // Deterministic 3.2 hook: an "artifact"-sounding prompt emits a small
-    // interactive artifact so the sandbox pipeline runs API-free.
+    // Deterministic 3.2/3.3 hook: an "artifact"-sounding prompt emits a small
+    // interactive artifact with bridge buttons (one allowlisted tool, one
+    // off-allowlist, one prompt) so sandbox + bridge run API-free.
     if (/artifact/i.test(text)) {
       this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
       let delay = 350;
-      for (const chunk of "No registry component fits a counter, so here's a sandboxed artifact.".match(/.{1,16}/gs) ?? []) {
+      for (const chunk of "No registry component fits this, so here's a sandboxed artifact — the buttons use the bridge.".match(/.{1,16}/gs) ?? []) {
         delay += 14;
         this.schedule(() => this.emit({ type: "text_delta", text: chunk }), delay);
       }
@@ -599,12 +600,24 @@ export class MockSession implements AgentSession {
         () =>
           this.emit({
             type: "artifact",
-            title: "click counter",
+            title: "bridge demo",
             html:
               '<div style="text-align:center;padding:24px">' +
               '<h2 style="margin:0 0 12px">Counter</h2>' +
               '<button id="b" style="font-size:20px;padding:8px 24px;cursor:pointer">clicks: <span id="n">0</span></button>' +
-              "<script>let n=0;document.getElementById('b').onclick=()=>{document.getElementById('n').textContent=++n};</script>" +
+              '<div style="margin-top:16px;display:flex;gap:8px;justify-content:center">' +
+              '<button id="ls">list workspace</button>' +
+              '<button id="evil">off-allowlist</button>' +
+              '<button id="ask">ask for details</button>' +
+              "</div>" +
+              "<script>" +
+              "let n=0;document.getElementById('b').onclick=()=>{document.getElementById('n').textContent=++n};" +
+              "document.getElementById('ls').onclick=()=>genui.tool('workspace_ls');" +
+              // Raw postMessage on purpose: exercises the parent-side
+              // validation path, not just the injected helper.
+              "document.getElementById('evil').onclick=()=>parent.postMessage({genui:1,action:{kind:'tool',name:'secret_exfil'}},'*');" +
+              "document.getElementById('ask').onclick=()=>genui.prompt('Tell me more about this workspace.');" +
+              "</script>" +
               "</div>",
             id: randomUUID(),
           }),

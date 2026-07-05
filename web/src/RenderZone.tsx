@@ -258,7 +258,13 @@ export function RenderZone({
           if (entry.kind === "artifact") {
             return (
               <div key={entry.id} className="turn turn-render">
-                <Artifact html={entry.html} title={entry.title} />
+                <Artifact
+                  html={entry.html}
+                  title={entry.title}
+                  // Bridge actions ride the same mediated path as component
+                  // actions; Artifact's validation ensures no state ops.
+                  onAction={(action) => handleAction(action, entry.artifactId)}
+                />
               </div>
             );
           }
