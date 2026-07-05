@@ -279,7 +279,7 @@ owner-side M1 checklist (license, npm stub, repo public, post) lives in
     Esc halted "count to 60" mid-stream and the same session then answered
     "what was I doing?" with the counting task — warm, no reload.
 
-- [ ] **Step T.3 — Browser permission prompts**
+- [x] **Step T.3 — Browser permission prompts**
   - Goal: interactive approval like the terminal, rendered by the trusted shell.
   - Build: `canUseTool` awaits the browser — server sends
     `{ type: "permission_request"; tool: string; detail: string; id: string }`,
@@ -287,6 +287,15 @@ owner-side M1 checklist (license, npm stub, repo public, post) lives in
     Timeout defaults to deny. The prompt UI is shell-owned (never agent-rendered).
   - Done when: a gated Bash command pauses the turn, an Allow/Deny bar appears,
     and the decision resolves the tool call.
+  - Status: **done, verified mock + live (2026-07-05)** — every Phase 0 hard
+    deny became an ask (out-of-workspace Bash/writes, unknown tools);
+    in-workspace activity stays promptless. Deny is the default on timeout
+    (`PERMISSION_TIMEOUT_MS`, 60s), disconnect, and Esc/interrupt. The amber
+    bar is drawn by the Shell next to the prompt box. Mock 11/11 (allow,
+    deny, timeout-denies, bar clears with turn); live: `cat /etc/hostname`
+    paused pulsing on the bar → allow ran it (real hostname in the block);
+    `cat /etc/passwd` denied → zero file content on the wire, agent
+    acknowledged. **Phase T complete — terminal parity shipped.**
 
 ---
 

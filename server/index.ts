@@ -60,6 +60,12 @@ wss.on("connection", (ws) => {
       session.pushPrompt(msg.text);
     } else if (msg.type === "interrupt") {
       session.interrupt();
+    } else if (
+      msg.type === "permission_response" &&
+      typeof msg.id === "string" &&
+      typeof msg.allow === "boolean"
+    ) {
+      session.resolvePermission(msg.id, msg.allow);
     }
   });
 

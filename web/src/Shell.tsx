@@ -16,6 +16,9 @@ export function Shell() {
   // Whether a turn is in flight — drives the stop affordance and Esc.
   // Set by the local user_prompt echo, cleared by the wire's turn_end.
   const [busy, setBusy] = useState(false);
+  // Pending permission prompts, oldest first; the bar shows one at a time.
+  // SHELL-OWNED UI: the agent can paint nothing here, so it can't fake it.
+  const [asks, setAsks] = useState<{ tool: string; detail: string; id: string }[]>([]);
 
   const bus = useMemo(() => {
     const socket = new SocketClient();
@@ -37,6 +40,9 @@ export function Shell() {
       interrupt() {
         socket.send({ type: "interrupt" });
       },
+      answerPermission(id: string, allow: boolean) {
+        socket.send({ type: "permission_response", id, allow });
+      },
     };
   }, []);
 
@@ -44,10 +50,20 @@ export function Shell() {
     () =>
       bus.subscribe((m) => {
         if (m.type === "user_prompt") setBusy(true);
-        else if (m.type === "turn_end") setBusy(false);
+        else if (m.type === "turn_end") {
+          setBusy(false);
+          setAsks([]); // a request that outlived its turn is void (server denies)
+        } else if (m.type === "permission_request") {
+          setAsks((a) => [...a, { tool: m.tool, detail: m.detail, id: m.id }]);
+        }
       }),
     [bus],
   );
+
+  const answer = (id: string, allow: boolean) => {
+    bus.answerPermission(id, allow);
+    setAsks((a) => a.filter((x) => x.id !== id));
+  };
 
   // Esc interrupts from anywhere in the page, not just the textarea.
   useEffect(() => {
@@ -62,6 +78,20 @@ export function Shell() {
   return (
     <div className="shell">
       <RenderZone subscribe={bus.subscribe} />
+      {asks.length > 0 && (
+        <div className="perm-bar">
+          <span className="perm-badge">permission</span>
+          <span className="perm-tool">{asks[0].tool}</span>
+          <code className="perm-detail">{asks[0].detail}</code>
+          {asks.length > 1 && <span className="perm-more">+{asks.length - 1}</span>}
+          <button className="perm-allow" onClick={() => answer(asks[0].id, true)}>
+            allow
+          </button>
+          <button className="perm-deny" onClick={() => answer(asks[0].id, false)}>
+            deny
+          </button>
+        </div>
+      )}
       <PromptBox onSend={bus.sendPrompt} busy={busy} onInterrupt={bus.interrupt} />
     </div>
   );

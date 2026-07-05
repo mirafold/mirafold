@@ -18,12 +18,17 @@ export type WireMsg =
   // call (detail = its one human-salient argument, e.g. the bash command);
   // a later `tool_result` with the same id completes that record.
   | { type: "tool_use"; name: string; detail?: string; id: string }
-  | { type: "tool_result"; output: string; isError?: boolean; id: string };
+  | { type: "tool_result"; output: string; isError?: boolean; id: string }
+  // Phase T.3: the turn is paused on a gated tool call until the browser
+  // answers (or the server times out to deny). Drawn by the trusted shell.
+  | { type: "permission_request"; tool: string; detail: string; id: string };
 // Phase 3 adds:  { type: "artifact"; html: string; id: string }
 
 /** Browser → server */
 export type ClientMsg =
   | { type: "prompt"; text: string }
   // Phase T.2: halt the in-flight turn (the session stays warm).
-  | { type: "interrupt" };
+  | { type: "interrupt" }
+  // Phase T.3: the user's answer to a permission_request.
+  | { type: "permission_response"; id: string; allow: boolean };
 // Phase 2 adds:  { type: "action"; action: Action; sourceId: string }

@@ -615,6 +615,81 @@ body {
   color: #55617a;
 }
 
+/* Permission bar (Phase T.3): drawn by the trusted shell above the prompt
+   box — agent output cannot render, wrap, or fake this surface. Amber is
+   the "decision needed" accent. */
+.perm-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 9px 14px;
+  background: #1a1810;
+  border: 1px solid #4a3d1e;
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  animation: rc-mount 0.18s ease-out;
+}
+
+.perm-badge {
+  color: #d4a852;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.78em;
+  flex-shrink: 0;
+}
+
+.perm-tool {
+  color: #eef2f8;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.perm-detail {
+  flex: 1;
+  min-width: 0;
+  color: #a8b2c2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.perm-more {
+  color: #8b96a8;
+  flex-shrink: 0;
+}
+
+.perm-allow,
+.perm-deny {
+  flex-shrink: 0;
+  padding: 3px 12px;
+  font: inherit;
+  border-radius: 6px;
+  cursor: pointer;
+  background: transparent;
+}
+
+.perm-allow {
+  color: #4ade80;
+  border: 1px solid #234a32;
+}
+
+.perm-allow:hover {
+  background: #16281c;
+  border-color: #2f6a45;
+}
+
+.perm-deny {
+  color: #e66767;
+  border: 1px solid #4a2a33;
+}
+
+.perm-deny:hover {
+  background: #281a1e;
+  border-color: #6a3a45;
+}
+
 /* Stop affordance (Phase T.2): shell-drawn, visible only while a turn is
    in flight. Esc does the same thing from anywhere. */
 .stop-btn {
