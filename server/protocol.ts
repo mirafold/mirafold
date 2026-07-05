@@ -31,7 +31,11 @@ export type WireMsg =
   // Phase 3: agent-authored HTML for the sandboxed iframe host (the ONLY
   // channel raw agent markup may travel). Re-sending an id replaces that
   // artifact in place — same rule as `render`.
-  | { type: "artifact"; html: string; id: string; title?: string };
+  | { type: "artifact"; html: string; id: string; title?: string }
+  // Phase T2.1: the model's reasoning stream, full fidelity. Renders as a
+  // dim block that folds to one line once the turn's real output starts —
+  // collapse-on-finalize, never dropped.
+  | { type: "thinking_delta"; text: string };
 
 /**
  * Phase 2: the complete vocabulary of what a component interaction may do.

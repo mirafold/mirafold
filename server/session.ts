@@ -108,6 +108,11 @@ export class Session implements AgentSession {
         // the hard way: "remember X" wrote into the host's real memory dir.
         settingSources: [],
         includePartialMessages: true, // gives us token-level text deltas
+        // Opt-in extended thinking; unset leaves the preset's behavior
+        // (trigger words like "think hard" still work either way).
+        ...(process.env.MAX_THINKING_TOKENS
+          ? { maxThinkingTokens: Number(process.env.MAX_THINKING_TOKENS) }
+          : {}),
         mcpServers: { ui: makeRenderServer((msg) => this.emit(msg)) },
         systemPrompt: { type: "preset", preset: "claude_code", append: RENDER_GUIDANCE },
       },
@@ -190,6 +195,8 @@ export class Session implements AgentSession {
             const ev = msg.event;
             if (ev.type === "content_block_delta" && ev.delta.type === "text_delta") {
               this.emit({ type: "text_delta", text: ev.delta.text });
+            } else if (ev.type === "content_block_delta" && ev.delta.type === "thinking_delta") {
+              this.emit({ type: "thinking_delta", text: ev.delta.thinking });
             } else if (ev.type === "content_block_start") {
               if (ev.content_block.type === "thinking") {
                 this.emit({ type: "status", state: "thinking" });
@@ -676,6 +683,16 @@ export class MockSession implements AgentSession {
 
     let delay = 120;
     this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+    // T2.1: a short scripted thought streams before the work starts.
+    const thought =
+      "Reading the prompt again — the useful answer here is a quick check of " +
+      "current state, then a compact summary with one component that fits the " +
+      "data instead of a wall of prose. Gathering that first.";
+    for (const chunk of thought.match(/.{1,18}/gs) ?? []) {
+      delay += 11;
+      this.schedule(() => this.emit({ type: "thinking_delta", text: chunk }), delay);
+    }
+    delay += 200;
     for (let i = randInt(1, 2); i > 0; i--) {
       const t = pick(MOCK_TOOLS)();
       const id = randomUUID();
