@@ -156,12 +156,17 @@ export class Session implements AgentSession {
         model,
         cwd: workspaceDir,
         canUseTool: makeCanUseTool(workspaceDir, this.ask),
-        // ISOLATION: never inherit the host user's Claude Code config. The
-        // default pulls in user/project/local settings — meaning the host's
-        // permission allowlists (which can silently bypass canUseTool),
-        // CLAUDE.md, and memory instructions. A daemon session found this
-        // the hard way: "remember X" wrote into the host's real memory dir.
-        settingSources: [],
+        // settingSources is intentionally UNSET so it matches the CLI default
+        // (user + project + local). genui-shell is a different *view* of the
+        // terminal, so a user's own Claude Code config must apply here exactly
+        // as it does there — their settings.json permission allowlists and deny
+        // rules, their CLAUDE.md, their memory. Switching from the terminal to
+        // this has to be seamless and unsurprising. Honoring host allowlists
+        // (those tools then don't re-prompt in the browser) and letting
+        // "remember X" write to the real ~/.claude memory are terminal-native
+        // behaviors, not leaks to isolate against — the earlier settingSources:[]
+        // mistook the terminal's own behavior for a threat. (`canUseTool` still
+        // runs for anything the user's rules don't already decide.)
         includePartialMessages: true, // gives us token-level text deltas
         // Opt-in extended thinking; unset leaves the preset's behavior
         // (trigger words like "think hard" still work either way).
@@ -725,11 +730,7 @@ export class MockSession implements AgentSession {
     // with action buttons so the click→action→turn loop runs API-free.
     if (/interactive|button/i.test(text)) {
       this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
-      let delay = 350;
-      for (const chunk of "Here's the deploy control card — the buttons are live.".match(/.{1,16}/gs) ?? []) {
-        delay += 14;
-        this.schedule(() => this.emit({ type: "text_delta", text: chunk }), delay);
-      }
+      let delay = this.streamText("Here's the deploy control card — the buttons are live.", 350);
       delay += 350;
       this.schedule(
         () =>
@@ -786,11 +787,7 @@ export class MockSession implements AgentSession {
         );
         d += 550;
       }
-      d += 100;
-      for (const chunk of "Plan complete — all four steps done.".match(/.{1,16}/gs) ?? []) {
-        d += 14;
-        this.schedule(() => this.emit({ type: "text_delta", text: chunk }), d);
-      }
+      d = this.streamText("Plan complete — all four steps done.", d + 100);
       this.schedule(() => this.emit({ type: "turn_end" }), d + 40);
       return;
     }
@@ -829,11 +826,7 @@ export class MockSession implements AgentSession {
         () => this.emit({ type: "tool_result", output: "Audit complete: loader merges 3 sources; no precedence bug found.", id: taskId }),
         d,
       );
-      d += 200;
-      for (const chunk of "The subagent audited the config loader — it merges three sources correctly, no precedence bug.".match(/.{1,16}/gs) ?? []) {
-        d += 14;
-        this.schedule(() => this.emit({ type: "text_delta", text: chunk }), d);
-      }
+      d = this.streamText("The subagent audited the config loader — it merges three sources correctly, no precedence bug.", d + 200);
       this.schedule(() => this.emit({ type: "turn_end" }), d + 40);
       return;
     }
@@ -860,11 +853,7 @@ export class MockSession implements AgentSession {
           }),
         900,
       );
-      let d = 1100;
-      for (const chunk of "That log is enormous — showing the head, the rest is elided.".match(/.{1,16}/gs) ?? []) {
-        d += 14;
-        this.schedule(() => this.emit({ type: "text_delta", text: chunk }), d);
-      }
+      const d = this.streamText("That log is enormous — showing the head, the rest is elided.", 1100);
       this.schedule(() => this.emit({ type: "turn_end" }), d + 40);
       return;
     }
@@ -891,11 +880,7 @@ export class MockSession implements AgentSession {
     // off-allowlist, one prompt) so sandbox + bridge run API-free.
     if (/artifact/i.test(text)) {
       this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
-      let delay = 350;
-      for (const chunk of "No registry component fits this, so here's a sandboxed artifact — the buttons use the bridge.".match(/.{1,16}/gs) ?? []) {
-        delay += 14;
-        this.schedule(() => this.emit({ type: "text_delta", text: chunk }), delay);
-      }
+      let delay = this.streamText("No registry component fits this, so here's a sandboxed artifact — the buttons use the bridge.", 350);
       delay += 300;
       this.schedule(() => this.emit({ type: "status", state: "tool", label: "emit_artifact" }), delay);
       delay += 400;
@@ -994,11 +979,7 @@ export class MockSession implements AgentSession {
         delay,
       );
     }
-    delay += 250;
-    for (const chunk of reply.match(/.{1,16}/gs) ?? []) {
-      delay += 12;
-      this.schedule(() => this.emit({ type: "text_delta", text: chunk }), delay);
-    }
+    delay = this.streamText(reply, delay + 250, 12);
     // Every mock turn ends with a rendered component so the Phase 1 pipeline
     // is exercised without an API key.
     const { component, props } = pick(MOCK_RENDERS)();
@@ -1055,11 +1036,7 @@ export class MockSession implements AgentSession {
   /** Emit a one-artifact turn: brief text, then the artifact (Step 3.4 hooks). */
   private playArtifact(title: string, html: string) {
     this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
-    let delay = 300;
-    for (const chunk of `Here's the ${title} artifact.`.match(/.{1,16}/gs) ?? []) {
-      delay += 14;
-      this.schedule(() => this.emit({ type: "text_delta", text: chunk }), delay);
-    }
+    let delay = this.streamText(`Here's the ${title} artifact.`, 300);
     delay += 250;
     this.schedule(() => this.emit({ type: "status", state: "tool", label: "emit_artifact" }), delay);
     delay += 350;
@@ -1088,21 +1065,13 @@ export class MockSession implements AgentSession {
         }),
       900,
     );
-    let delay = 1100;
-    for (const chunk of "Cache cleared and the service restarted cleanly. ✅".match(/.{1,16}/gs) ?? []) {
-      delay += 14;
-      this.schedule(() => this.emit({ type: "text_delta", text: chunk }), delay);
-    }
+    const delay = this.streamText("Cache cleared and the service restarted cleanly. ✅", 1100);
     this.schedule(() => this.emit({ type: "turn_end" }), delay + 60);
   }
 
   /** Continuation after the permission prompt was denied (or timed out). */
   private playDangerousDenied() {
-    let delay = 150;
-    for (const chunk of "Understood — I won't run that command. Nothing was changed.".match(/.{1,16}/gs) ?? []) {
-      delay += 14;
-      this.schedule(() => this.emit({ type: "text_delta", text: chunk }), delay);
-    }
+    const delay = this.streamText("Understood — I won't run that command. Nothing was changed.", 150);
     this.schedule(() => this.emit({ type: "turn_end" }), delay + 60);
   }
 
@@ -1112,5 +1081,16 @@ export class MockSession implements AgentSession {
 
   private schedule(fn: () => void, ms: number) {
     this.timers.push(setTimeout(fn, ms));
+  }
+
+  /** Schedule `text` as 16-char text_delta chunks, the first `per` ms after
+   *  `from` and one every `per` ms; returns the delay cursor past the last. */
+  private streamText(text: string, from: number, per = 14): number {
+    let delay = from;
+    for (const chunk of text.match(/.{1,16}/gs) ?? []) {
+      delay += per;
+      this.schedule(() => this.emit({ type: "text_delta", text: chunk }), delay);
+    }
+    return delay;
   }
 }
