@@ -375,11 +375,8 @@ knowing because it constrains future UI work:
 
 ### Prerequisites
 
-- **Node 22 via nvm** — the system node here is a bare v18 with no npm.
-  Source nvm in any shell you use:
-  ```sh
-  source ~/.nvm/nvm.sh && nvm use 22
-  ```
+- **Node 22** (any install method; this machine uses nvm with 22 as the
+  default alias).
 - **yarn** for all package operations (via corepack: `corepack enable`).
 
 ### Development
