@@ -583,6 +583,23 @@ export class MockSession implements AgentSession {
       return;
     }
 
+    // Deterministic 3.4 hooks: broken/navigating artifacts exercise the
+    // failure fallbacks API-free.
+    if (/artifact/i.test(text) && /broken|crash/i.test(text)) {
+      this.playArtifact(
+        "broken demo",
+        '<h2>about to crash</h2><script>throw new Error("deliberate mock crash")</script>',
+      );
+      return;
+    }
+    if (/artifact/i.test(text) && /navigat|escape/i.test(text)) {
+      this.playArtifact(
+        "navigating demo",
+        '<h2>leaving…</h2><script>location.href="https://example.com/"</script>',
+      );
+      return;
+    }
+
     // Deterministic 3.2/3.3 hook: an "artifact"-sounding prompt emits a small
     // interactive artifact with bridge buttons (one allowlisted tool, one
     // off-allowlist, one prompt) so sandbox + bridge run API-free.
@@ -613,9 +630,9 @@ export class MockSession implements AgentSession {
               "<script>" +
               "let n=0;document.getElementById('b').onclick=()=>{document.getElementById('n').textContent=++n};" +
               "document.getElementById('ls').onclick=()=>genui.tool('workspace_ls');" +
-              // Raw postMessage on purpose: exercises the parent-side
-              // validation path, not just the injected helper.
-              "document.getElementById('evil').onclick=()=>parent.postMessage({genui:1,action:{kind:'tool',name:'secret_exfil'}},'*');" +
+              // Off-allowlist via the helper: must reach the server and be
+              // rejected THERE (raw un-nonced postMessage dies client-side).
+              "document.getElementById('evil').onclick=()=>genui.tool('secret_exfil');" +
               "document.getElementById('ask').onclick=()=>genui.prompt('Tell me more about this workspace.');" +
               "</script>" +
               "</div>",
@@ -713,6 +730,21 @@ export class MockSession implements AgentSession {
     for (const t of this.timers) clearTimeout(t);
     this.timers = [];
     this.pendingAsks.clear();
+  }
+
+  /** Emit a one-artifact turn: brief text, then the artifact (Step 3.4 hooks). */
+  private playArtifact(title: string, html: string) {
+    this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+    let delay = 300;
+    for (const chunk of `Here's the ${title} artifact.`.match(/.{1,16}/gs) ?? []) {
+      delay += 14;
+      this.schedule(() => this.emit({ type: "text_delta", text: chunk }), delay);
+    }
+    delay += 250;
+    this.schedule(() => this.emit({ type: "status", state: "tool", label: "emit_artifact" }), delay);
+    delay += 350;
+    this.schedule(() => this.emit({ type: "artifact", title, html, id: randomUUID() }), delay);
+    this.schedule(() => this.emit({ type: "turn_end" }), delay + 40);
   }
 
   /** Continuation after the permission prompt was allowed: run the "command". */

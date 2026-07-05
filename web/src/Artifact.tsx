@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Action } from "@protocol";
 
 /**
@@ -22,19 +22,32 @@ import type { Action } from "@protocol";
  *   can't terminate the iframe element and spill into the shell document.
  * - The postMessage bridge (Step 3.3) is the ONE outward channel, and it is
  *   validated at every hop: the listener accepts messages only from THIS
- *   iframe's contentWindow AND only from the opaque origin ("null"), so no
- *   other frame — and not even this artifact after a self-navigation — can
- *   speak on it. The payload must parse as a prompt or tool Action (state
- *   ops and malformed shapes are dropped), it is rate-limited, and what
- *   passes still only reaches the server's Step 2.3 allowlist mediation —
- *   the bridge grants no capability a registry component doesn't have.
- * - Accepted residuals: (1) the artifact can navigate ITSELF (location=,
- *   <a>, meta refresh) to an external URL, which then loads in the same
- *   opaque-origin sandbox with the bridge dead (origin check) — a phishing
- *   surface, not a data one; Step 3.4's load/error handling is the place to
- *   detect and blank it. (2) Bridge actions need no user gesture, so a
- *   hostile artifact could auto-fire them; the rate limit caps the burn and
- *   every action lands as a visible transcript record.
+ *   iframe's contentWindow, only from the opaque origin ("null"), and only
+ *   when stamped with the per-mount NONCE the boot script closes over — so
+ *   no other frame, and no document that replaces this one, can speak on
+ *   it. The payload must parse as a prompt or tool Action (state ops and
+ *   malformed shapes are dropped), it is rate-limited, and what passes
+ *   still only reaches the server's Step 2.3 allowlist mediation — the
+ *   bridge grants no capability a registry component doesn't have.
+ * - Self-navigation (location=, <a>, meta refresh) is detected (Step 3.4)
+ *   by liveness, not load-counting: every wrapped document announces
+ *   artifactReady (nonce-stamped) on its own load event, and the host
+ *   expects that announce shortly after every frame load event. A foreign
+ *   document can't know the nonce (it can't read its predecessor's source),
+ *   so the announce never comes and the frame is unmounted — the fallback
+ *   note takes its place. Note a navigated document KEEPS the opaque
+ *   origin, so the origin check alone would not kill the bridge — the
+ *   nonce is what does.
+ * - Crashes are handled, not trusted (Step 3.4): an injected first-script
+ *   hook reports uncaught errors/rejections over the postMessage channel.
+ *   An early crash (artifact broken on arrival) swaps the frame for the
+ *   source-as-code fallback; a late error only flags the chrome — a working
+ *   UI isn't torn down for a stray exception. The hook is convenience, not
+ *   security: a hostile artifact "faking" a crash only gets its own source
+ *   printed.
+ * - Accepted residual: bridge actions need no user gesture, so a hostile
+ *   artifact could auto-fire them; the rate limit caps the burn and every
+ *   action lands as a visible transcript record.
  *
  * The "artifact · sandboxed" chrome is drawn by the shell, outside the
  * iframe — same rule as the pin affordance: the agent can't fake it.
@@ -49,26 +62,47 @@ const ARTIFACT_BASE_CSS =
   "body{margin:12px;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;" +
   "font-size:14px;background:#141a26;color:#e6e9ef;color-scheme:dark}";
 
-// The agent-facing bridge API, injected before the content. Convenience
-// only — the security is in the parent-side validation, not here.
-const ARTIFACT_BRIDGE_JS =
-  "window.genui={" +
-  "prompt:function(text){parent.postMessage({genui:1,action:{kind:'prompt',text:String(text)}},'*')}," +
-  "tool:function(name,args){parent.postMessage({genui:1,action:Object.assign({kind:'tool',name:String(name)},args===undefined?{}:{args:args})},'*')}" +
-  "};";
+// First script in the document, closing over the per-mount nonce: the
+// genui bridge API, the error hook, and the liveness announce. Every
+// outbound message is nonce-stamped; the host drops anything unstamped.
+function bootScript(nonce: string): string {
+  return (
+    `(function(){var N=${JSON.stringify(nonce)};var sent=false;` +
+    "function post(m){m.genui=1;m.nonce=N;try{parent.postMessage(m,'*')}catch(e){}}" +
+    "window.genui={" +
+    "prompt:function(text){post({action:{kind:'prompt',text:String(text)}})}," +
+    "tool:function(name,args){post({action:Object.assign({kind:'tool',name:String(name)},args===undefined?{}:{args:args})})}" +
+    "};" +
+    "window.addEventListener('error',function(e){if(sent)return;sent=true;post({artifactError:String(e.message||'script error').slice(0,300)})});" +
+    "window.addEventListener('unhandledrejection',function(e){if(sent)return;sent=true;post({artifactError:String(e.reason||'unhandled rejection').slice(0,300)})});" +
+    "window.addEventListener('load',function(){post({artifactReady:true})});" +
+    "})();"
+  );
+}
 
-function wrap(html: string): string {
+function wrap(html: string, nonce: string): string {
   return (
     "<!doctype html><html><head><meta charset=\"utf-8\">" +
     `<meta http-equiv="Content-Security-Policy" content="${ARTIFACT_CSP}">` +
     `<style>${ARTIFACT_BASE_CSS}</style>` +
-    `<script>${ARTIFACT_BRIDGE_JS}</script>` +
+    `<script>${bootScript(nonce)}</script>` +
     `</head><body>${html}</body></html>`
   );
 }
 
 // Minimum gap between accepted bridge actions — a click cadence, not a loop.
 const ACTION_MIN_INTERVAL_MS = 400;
+
+// A crash inside this window means the artifact was broken on arrival →
+// swap in the source fallback. Later errors only flag the chrome.
+const EARLY_CRASH_WINDOW_MS = 2500;
+
+// After a frame load event, how long the matching artifactReady announce
+// may take. postMessage from the just-loaded document arrives within a
+// task or two; a foreign document never sends it at all.
+const READY_GRACE_MS = 400;
+
+type Failure = { kind: "crash"; message: string } | { kind: "navigation" };
 
 /** Strict parse of a bridge payload; anything not exactly right is null. */
 function parseBridgeAction(data: unknown): Action | null {
@@ -113,13 +147,47 @@ export function Artifact({
 }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const lastActionAt = useRef(0);
+  const readyCount = useRef(0);
+  const loadCount = useRef(0);
+  const mountedAt = useRef(Date.now());
+  const [failure, setFailure] = useState<Failure | null>(null);
+  const [lateError, setLateError] = useState<string | null>(null);
+
+  // One nonce per artifact life; new html (update-in-place) mints a new one.
+  const nonce = useMemo(() => crypto.randomUUID(), [html]);
+  const srcDoc = useMemo(() => wrap(html, nonce), [html, nonce]);
+
+  // New html = a new artifact life: reset failure state and the liveness
+  // counters BEFORE the new document's load event can fire.
+  useEffect(() => {
+    loadCount.current = 0;
+    readyCount.current = 0;
+    mountedAt.current = Date.now();
+    setFailure(null);
+    setLateError(null);
+  }, [html]);
 
   useEffect(() => {
-    if (!onAction) return;
     const onMsg = (e: MessageEvent) => {
-      // Identity first: only THIS artifact's window, only its opaque origin.
+      // Identity first: only THIS artifact's window, only its opaque origin,
+      // only messages stamped with this life's nonce.
       if (e.source !== frameRef.current?.contentWindow) return;
       if (e.origin !== "null") return;
+      const data = e.data as Record<string, unknown> | null;
+      if (!data || data["genui"] !== 1 || data["nonce"] !== nonce) return;
+      if (data["artifactReady"] === true) {
+        readyCount.current += 1;
+        return;
+      }
+      if (typeof data["artifactError"] === "string") {
+        if (Date.now() - mountedAt.current < EARLY_CRASH_WINDOW_MS) {
+          setFailure({ kind: "crash", message: data["artifactError"] });
+        } else {
+          setLateError(data["artifactError"]);
+        }
+        return;
+      }
+      if (!onAction) return;
       const action = parseBridgeAction(e.data);
       if (!action) return;
       const now = Date.now();
@@ -129,21 +197,63 @@ export function Artifact({
     };
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
-  }, [onAction]);
+  }, [onAction, nonce]);
+
+  // Liveness check: every load event must be answered by a nonce-stamped
+  // artifactReady. A document that replaced ours (self-navigation) can't
+  // send it — and an immediate navigation aborts the wrapped document
+  // before ITS load ever fires, so counting loads alone would miss it.
+  const handleLoad = () => {
+    loadCount.current += 1;
+    const expected = loadCount.current;
+    window.setTimeout(() => {
+      if (readyCount.current < expected) setFailure({ kind: "navigation" });
+    }, READY_GRACE_MS);
+  };
+
+  if (failure) {
+    return (
+      <div className="artifact artifact-failed">
+        <div className="artifact-chrome">
+          <span className="artifact-label">◱ {title ?? "artifact"}</span>
+          <span className="artifact-badge artifact-badge-failed">
+            {failure.kind === "navigation" ? "navigation blocked" : "failed"}
+          </span>
+        </div>
+        <div className="artifact-fallback">
+          <div className="artifact-fallback-note">
+            {failure.kind === "navigation"
+              ? "This artifact tried to navigate away and was blanked. Its source:"
+              : `This artifact crashed (${failure.message}). Its source:`}
+          </div>
+          <pre className="artifact-source">
+            <code>{html}</code>
+          </pre>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="artifact">
       <div className="artifact-chrome">
         <span className="artifact-label">◱ {title ?? "artifact"}</span>
-        <span className="artifact-badge">sandboxed</span>
+        {lateError ? (
+          <span className="artifact-badge artifact-badge-warn" title={lateError}>
+            ⚠ script error
+          </span>
+        ) : (
+          <span className="artifact-badge">sandboxed</span>
+        )}
       </div>
       <iframe
         ref={frameRef}
         className="artifact-frame"
         sandbox="allow-scripts"
-        srcDoc={wrap(html)}
+        srcDoc={srcDoc}
         referrerPolicy="no-referrer"
         title={title ?? "artifact"}
+        onLoad={handleLoad}
       />
     </div>
   );
