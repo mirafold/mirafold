@@ -13,6 +13,8 @@ import { makeRenderServer, RENDER_GUIDANCE } from "./render-tools";
 export interface AgentSession {
   pushPrompt(text: string): void;
   onMessage(cb: (msg: WireMsg) => void): void;
+  /** Halt the in-flight turn; the session stays warm for the next prompt. */
+  interrupt(): void;
   close(): void;
 }
 
@@ -105,6 +107,16 @@ export class Session implements AgentSession {
 
   onMessage(cb: (msg: WireMsg) => void) {
     this.listeners.add(cb);
+  }
+
+  interrupt() {
+    if (this.closed) return;
+    // The SDK also emits a result for the aborted turn; the extra turn_end
+    // after the abort settles is a client-side no-op, kept as a guarantee.
+    this.q
+      .interrupt()
+      .then(() => this.emit({ type: "turn_end" }))
+      .catch(() => {}); // interrupting an idle session is not an error
   }
 
   close() {
@@ -534,6 +546,13 @@ export class MockSession implements AgentSession {
 
   onMessage(cb: (msg: WireMsg) => void) {
     this.listeners.add(cb);
+  }
+
+  interrupt() {
+    // Everything still scheduled belongs to the in-flight turn.
+    for (const t of this.timers) clearTimeout(t);
+    this.timers = [];
+    this.emit({ type: "turn_end" });
   }
 
   close() {

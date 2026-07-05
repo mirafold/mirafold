@@ -263,13 +263,21 @@ owner-side M1 checklist (license, npm stub, repo public, post) lives in
     a failing `yarn test`. Headless Chrome: 9/9 mock checks; live Bash
     `ls -la` showed command + real output inline, collapsed.
 
-- [ ] **Step T.2 — Interrupt**
+- [x] **Step T.2 — Interrupt**
   - Goal: stop a runaway or wrong-direction turn without killing the session.
   - Build: add `{ type: "interrupt" }` to `ClientMsg`; wire to the SDK's
     `interrupt()`. Esc key + a stop affordance in the shell while a turn is
     streaming.
   - Done when: Esc mid-stream halts output, the session stays warm, and the
     next prompt works.
+  - Status: **done, verified mock + live (2026-07-05)** — shell tracks busy
+    (user_prompt → turn_end) and shows a `■ esc` button in the command bar;
+    Esc works page-wide. Session.interrupt() → SDK interrupt + guaranteed
+    turn_end; Mock cancels its scheduled tail. turn_end also settles any
+    still-pending tool rows ("interrupted — no result"). Mock: 8/8 checks
+    (incl. cancelled turns never receive their trailing component). Live:
+    Esc halted "count to 60" mid-stream and the same session then answered
+    "what was I doing?" with the counting task — warm, no reload.
 
 - [ ] **Step T.3 — Browser permission prompts**
   - Goal: interactive approval like the terminal, rendered by the trusted shell.

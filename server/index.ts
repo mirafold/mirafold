@@ -58,6 +58,8 @@ wss.on("connection", (ws) => {
     }
     if (msg.type === "prompt" && typeof msg.text === "string" && msg.text.trim()) {
       session.pushPrompt(msg.text);
+    } else if (msg.type === "interrupt") {
+      session.interrupt();
     }
   });
 

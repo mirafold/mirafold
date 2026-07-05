@@ -132,11 +132,16 @@ export function RenderZone({
             setStatus(null);
             const id = streamingId.current;
             streamingId.current = null;
-            if (id !== null) {
-              setEntries((es) =>
-                es.map((e) => (e.kind === "text" && e.id === id ? { ...e, done: true } : e)),
-              );
-            }
+            setEntries((es) =>
+              es.map((e) => {
+                if (e.kind === "text" && e.id === id) return { ...e, done: true };
+                // A tool still pending at turn end was interrupted — settle
+                // its record so the row doesn't pulse forever.
+                if (e.kind === "tool" && e.output === undefined)
+                  return { ...e, output: "(interrupted — no result)" };
+                return e;
+              }),
+            );
             break;
           }
           case "error": {
