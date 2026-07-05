@@ -533,7 +533,7 @@ fly" capability, gated behind the security model.
     unprompted and its click-counter worked in the sandbox ("clicks: 2"
     after 2 driven clicks, screenshot).
 
-- [ ] **Step 3.3 — postMessage bridge → action mediation**
+- [x] **Step 3.3 — postMessage bridge → action mediation**
   - Goal: artifacts can act, only through the Phase 2 mediated path.
   - Build: a `postMessage` protocol between the iframe and the shell; the shell
     validates and forwards artifact-originated actions through the **same**
@@ -541,6 +541,21 @@ fly" capability, gated behind the security model.
   - Files: `Artifact.tsx`, `Shell.tsx`, `server/actions.ts`.
   - Done when: a button inside an artifact triggers an allowlisted action via
     the bridge; an attempt to call anything off-allowlist is blocked.
+  - Status: **done, verified (2026-07-05)** — `genui.prompt()/genui.tool()`
+    helper injected into the sandbox; parent-side listener accepts messages
+    only from that iframe's contentWindow AND opaque origin (bridge dies if
+    the artifact self-navigates), strict-parses prompt/tool shapes (state ops
+    dropped), rate-limits (400ms), then rides the existing handleAction →
+    sendAction → server 2.3 mediation path. No server changes needed. Files
+    actually touched: `Artifact.tsx`, `RenderZone.tsx`, `render-tools.ts`
+    (bridge docs in emit_artifact), `session.ts` (mock bridge-demo buttons) —
+    Shell.tsx/actions.ts needed nothing. Verified mock-first in headless
+    Chrome: allowlisted click → real workspace_ls output; off-allowlist
+    (raw postMessage) → "not allowlisted" rejection record; prompt click →
+    user turn; forged same-shape message from the parent page → dropped.
+    Then live: the agent authored a "Workspace Browser" artifact unprompted
+    from the tool docs; its List Files button produced a mediated
+    workspace_ls record showing the hello.txt it had written.
 
 - [ ] **Step 3.4 — Artifact error boundaries & fallback**
   - Goal: broken artifacts never take down the page.
