@@ -646,7 +646,7 @@ terminal currently out-informs us most.
     replay-folded); live: "think hard" turn streamed 1.4KB of real
     reasoning, folded on the answer, survived refresh replay.
 
-- [ ] **Step T2.2 — Full tool inputs + Edit/Write diffs**
+- [x] **Step T2.2 — Full tool inputs + Edit/Write diffs**
   - Goal: the expanded tool row shows everything the terminal shows.
   - Build: widen `tool_use` with optional `input?: Record<string, unknown>`
     (additive; old clients ignore it). `ToolBlock`'s expanded view renders
@@ -655,6 +655,15 @@ terminal currently out-informs us most.
     row's one-liner.
   - Files: `protocol.ts`, `session.ts`, `ToolBlock.tsx`, `styles.css`.
   - Done when: a live Edit expands to a red/green diff of the actual change.
+  - Status: **done, verified (2026-07-05)** — `tool_use.input` carries the
+    full args; ToolBlock's expansion renders Edit/MultiEdit as an LCS
+    line-diff (red `-` / green `+` / dim context), Write as green-tinted
+    new content, everything else as pretty JSON, above the result. Expansion
+    now works even while the call is running (input is known immediately;
+    only the result waits). Mock gained Edit + Write tools with real
+    before/after code. Verified mock (Edit +8/-2 diff, Write content shown)
+    and live: agent wrote notes.txt (content shown) then edited banana→
+    blueberry, expanding to a true `- banana` / `+ blueberry` diff.
 
 - [ ] **Step T2.3 — Honest output depth**
   - Goal: no silent truncation.

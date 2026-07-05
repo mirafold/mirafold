@@ -221,6 +221,10 @@ export class Session implements AgentSession {
                 name: block.name,
                 detail: toolDetail(block.input),
                 id: block.id,
+                input:
+                  typeof block.input === "object" && block.input !== null
+                    ? (block.input as Record<string, unknown>)
+                    : undefined,
               });
             }
             break;
@@ -288,7 +292,29 @@ const MOCK_TOOLS: (() => {
   detail: string;
   output: string;
   isError?: boolean;
+  input?: Record<string, unknown>;
 })[] = [
+  () => ({
+    name: "Edit",
+    detail: pick(FILES),
+    input: {
+      file_path: pick(FILES),
+      old_string:
+        "export function retry(fn, times) {\n  for (let i = 0; i < times; i++) {\n    return fn();\n  }\n}",
+      new_string:
+        "export async function retry(fn, times) {\n  let lastErr;\n  for (let i = 0; i < times; i++) {\n    try {\n      return await fn();\n    } catch (err) {\n      lastErr = err;\n    }\n  }\n  throw lastErr;\n}",
+    },
+    output: `Updated 1 occurrence`,
+  }),
+  () => ({
+    name: "Write",
+    detail: pick(FILES),
+    input: {
+      file_path: pick(FILES),
+      content: `import { retry } from "./retry";\n\nexport const fetchStats = () =>\n  retry(() => fetch("/api/stats").then((r) => r.json()), 3);\n`,
+    },
+    output: "File created",
+  }),
   () => ({
     name: "Bash",
     detail: "ls -la src/",
@@ -699,7 +725,7 @@ export class MockSession implements AgentSession {
       delay += randInt(250, 550);
       this.schedule(() => {
         this.emit({ type: "status", state: "tool", label: t.name });
-        this.emit({ type: "tool_use", name: t.name, detail: t.detail, id });
+        this.emit({ type: "tool_use", name: t.name, detail: t.detail, id, input: t.input });
       }, delay);
       delay += randInt(300, 700);
       this.schedule(

@@ -26,6 +26,7 @@ type Entry =
       toolId: string; // wire id — the matching tool_result completes this record
       name: string;
       detail?: string;
+      input?: Record<string, unknown>; // full args (T2.2), rendered in the expansion
       output?: string; // undefined until the result arrives
       isError?: boolean;
     }
@@ -195,7 +196,7 @@ export function RenderZone({
             const id = nextId++;
             setEntries((es) => [
               ...es,
-              { kind: "tool", id, toolId: msg.id, name: msg.name, detail: msg.detail },
+              { kind: "tool", id, toolId: msg.id, name: msg.name, detail: msg.detail, input: msg.input },
             ]);
             break;
           }
@@ -329,6 +330,7 @@ export function RenderZone({
                 key={entry.id}
                 name={entry.name}
                 detail={entry.detail}
+                input={entry.input}
                 output={entry.output}
                 isError={entry.isError}
               />
