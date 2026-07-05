@@ -129,6 +129,20 @@ export const registryShapes = {
       .min(1)
       .describe("The links, in display order."),
   },
+
+  // T2.5: NOT agent-authored — there is no render tool for this. The server
+  // synthesizes it from the agent's TodoWrite calls (session.ts) so the
+  // terminal's live task list shows up as a real, update-in-place component.
+  "todo-list": {
+    todos: z
+      .array(
+        z.object({
+          content: z.string(),
+          status: z.enum(["pending", "in_progress", "completed"]),
+        }),
+      )
+      .describe("The agent's task list, in order."),
+  },
 } as const;
 
 export type ComponentName = keyof typeof registryShapes;

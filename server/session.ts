@@ -75,6 +75,37 @@ function capOutput(text: string): { text: string; truncatedBytes?: number } {
   return { text: kept, truncatedBytes: total - OUTPUT_CAP_BYTES };
 }
 
+// The SDK's session-task-list tools (T2.5) — folded into the live checklist,
+// never shown as raw tool rows. Note the subagent spawner is named "Agent"
+// in this SDK, not "Task", so it doesn't collide.
+const TASK_TOOLS = new Set([
+  "TaskCreate",
+  "TaskUpdate",
+  "TaskList",
+  "TaskGet",
+  "TaskStop",
+  "TaskOutput",
+  "TodoWrite",
+]);
+
+type TodoItem = { content: string; status: "pending" | "in_progress" | "completed" };
+
+/** Map a TodoWrite input to the todo-list component's props (T2.5). */
+function normalizeTodos(input: unknown): TodoItem[] | null {
+  if (typeof input !== "object" || input === null) return null;
+  const todos = (input as { todos?: unknown }).todos;
+  if (!Array.isArray(todos)) return null;
+  const out: TodoItem[] = [];
+  for (const t of todos) {
+    const content = (t as { content?: unknown })?.content;
+    if (typeof content !== "string" || !content) continue;
+    const s = (t as { status?: unknown })?.status;
+    const status = s === "in_progress" || s === "completed" ? s : "pending";
+    out.push({ content, status });
+  }
+  return out.length ? out : null;
+}
+
 function resultText(content: unknown): string {
   let text: string;
   if (typeof content === "string") text = content;
@@ -99,6 +130,14 @@ export class Session implements AgentSession {
   // tool_use ids we announced on the wire — results for anything else
   // (render tools, subagent internals) must not paint orphan records.
   private announcedTools = new Set<string>();
+  // T2.5: the live checklist. `tasks` is the session task list (id → item),
+  // built from Task*/TodoWrite calls and persisted across turns like the SDK's
+  // own list; `todoRenderId` is the render block it paints into, reset each
+  // turn so the checklist re-anchors to the latest activity. `taskSeq` mirrors
+  // the SDK's 1-based sequential ids so TaskUpdate.taskId lines up.
+  private tasks = new Map<string, TodoItem>();
+  private taskSeq = 0;
+  private todoRenderId?: string;
   // In-flight permission prompts, keyed by wire id → resolver.
   private pendingAsks = new Map<string, (allow: boolean) => void>();
 
@@ -171,6 +210,59 @@ export class Session implements AgentSession {
     });
   };
 
+  /** Fold a Task-family or TodoWrite call into the live checklist (T2.5). */
+  private trackTasks(name: string, input: unknown) {
+    const rec = (input ?? {}) as Record<string, unknown>;
+    if (name === "TodoWrite") {
+      // TodoWrite replaces the whole list in one call.
+      const todos = normalizeTodos(input);
+      if (todos) {
+        this.tasks = new Map(todos.map((t, i) => [String(i + 1), t]));
+        this.taskSeq = todos.length;
+        this.emitChecklist();
+      }
+      return;
+    }
+    if (name === "TaskCreate") {
+      const subject = typeof rec["subject"] === "string" ? rec["subject"] : "task";
+      this.tasks.set(String(++this.taskSeq), { content: subject, status: "pending" });
+      this.emitChecklist();
+      return;
+    }
+    if (name === "TaskUpdate") {
+      const id = rec["taskId"] === undefined ? "" : String(rec["taskId"]);
+      if (!id) return;
+      const status = rec["status"];
+      if (status === "deleted") {
+        this.tasks.delete(id);
+        this.emitChecklist();
+        return;
+      }
+      const existing = this.tasks.get(id) ?? { content: `task ${id}`, status: "pending" as const };
+      this.tasks.set(id, {
+        content: typeof rec["subject"] === "string" ? rec["subject"] : existing.content,
+        status:
+          status === "in_progress" || status === "completed" || status === "pending"
+            ? status
+            : existing.status,
+      });
+      this.emitChecklist();
+      return;
+    }
+    // TaskList / TaskGet / TaskStop / TaskOutput — reads/ops, no list change.
+  }
+
+  private emitChecklist() {
+    if (this.tasks.size === 0) return;
+    this.todoRenderId ??= randomUUID();
+    this.emit({
+      type: "render",
+      component: "todo-list",
+      props: { todos: [...this.tasks.values()] },
+      id: this.todoRenderId,
+    });
+  }
+
   close() {
     if (this.closed) return;
     this.closed = true;
@@ -228,6 +320,16 @@ export class Session implements AgentSession {
               if (block.type !== "tool_use") continue;
               // Render tools already paint their own component block.
               if (block.name.startsWith("mcp__ui__")) continue;
+              // T2.5: the agent's task list becomes one live checklist
+              // component (updated in place), not raw tool rows. This SDK
+              // manages it via the Task* family (TaskCreate/TaskUpdate,
+              // successor to TodoWrite); all of it — and its results, since
+              // we never announce these — is folded into the checklist.
+              // A subagent's own task calls are internal: swallow, don't render.
+              if (TASK_TOOLS.has(block.name)) {
+                if (!parentId) this.trackTasks(block.name, block.input);
+                continue;
+              }
               this.announcedTools.add(block.id);
               this.emit({
                 type: "tool_use",
@@ -267,6 +369,7 @@ export class Session implements AgentSession {
               const detail = "result" in msg ? msg.result : msg.subtype;
               this.emit({ type: "error", message: String(detail) });
             }
+            this.todoRenderId = undefined; // next turn starts a fresh checklist
             this.emit({ type: "turn_end" });
             break;
           }
@@ -630,6 +733,42 @@ export class MockSession implements AgentSession {
         delay,
       );
       this.schedule(() => this.emit({ type: "turn_end" }), delay + 40);
+      return;
+    }
+
+    // Deterministic T2.5 hook: a "todo"/"plan"/"checklist"-sounding prompt
+    // drives a live checklist — one render id, statuses progressing in place.
+    if (/todo|checklist|step by step|plan it/i.test(text)) {
+      const rid = randomUUID();
+      const items = [
+        "Read the current implementation",
+        "Draft the migration",
+        "Update the tests",
+        "Verify end to end",
+      ];
+      // active = index of the in_progress item; items before it are done.
+      // active === items.length means every item is completed.
+      const frame = (active: number): TodoItem[] =>
+        items.map((content, i) => ({
+          content,
+          status: i < active ? "completed" : i === active ? "in_progress" : "pending",
+        }));
+      this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+      let d = 300;
+      for (let active = 0; active <= items.length; active++) {
+        const todos = frame(active);
+        this.schedule(
+          () => this.emit({ type: "render", component: "todo-list", props: { todos }, id: rid }),
+          d,
+        );
+        d += 550;
+      }
+      d += 100;
+      for (const chunk of "Plan complete — all four steps done.".match(/.{1,16}/gs) ?? []) {
+        d += 14;
+        this.schedule(() => this.emit({ type: "text_delta", text: chunk }), d);
+      }
+      this.schedule(() => this.emit({ type: "turn_end" }), d + 40);
       return;
     }
 

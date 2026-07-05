@@ -710,13 +710,28 @@ terminal currently out-informs us most.
     still pass through canUseTool, so an out-of-workspace inner Bash prompts
     like any other.
 
-- [ ] **Step T2.5 — Live todo checklist**
+- [x] **Step T2.5 — Live todo checklist**
   - Goal: the terminal's task list, as a real component.
   - Build: normalize `TodoWrite` calls into `render` messages reusing a fixed
     wire id per turn (update-in-place gives a live checklist for free) with a
     small `todo-list` registry component; suppress the raw tool row.
   - Files: `session.ts`, `registry-spec.ts`, `web/src/registry/`.
   - Done when: a multi-step live turn shows items checking off as it works.
+  - Status: **done, verified (2026-07-05)** — `todo-list` registry component
+    (server-synthesized, no render tool; validated like any component).
+    **Key discovery: this SDK's task list is the `TaskCreate`/`TaskUpdate`
+    family, NOT `TodoWrite`** (live pump log proved it — the agent never
+    called TodoWrite). So the pump folds the whole Task* family into a
+    session-scoped checklist: TaskCreate appends a `pending` item (id mirrors
+    the SDK's 1-based sequential ids, so no result-parsing needed),
+    TaskUpdate moves it by `taskId` through in_progress/completed/deleted,
+    TaskList/TaskGet are swallowed silently; TodoWrite still handled for
+    compatibility. One render id per turn → one checklist that updates in
+    place. Subagent task calls stay internal. Raw Task* rows + results
+    suppressed. Verified mock 6/6 (counter climbs 0→4 in one block, ends
+    all-completed, no raw row) and live (real agent created 4 tasks then
+    checked them off 1/4→4/4 in a single block; only Write/Bash work rows
+    remained visible).
 
 - [ ] **Step T2.6 — Status bar (model, session, usage)**
   - Goal: the workbench strip — context and cost at a glance.
