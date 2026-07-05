@@ -582,13 +582,31 @@ fly" capability, gated behind the security model.
     from the tool docs; its List Files button produced a mediated
     workspace_ls record showing the hello.txt it had written.
 
-- [ ] **Step 3.4 — Artifact error boundaries & fallback**
+- [x] **Step 3.4 — Artifact error boundaries & fallback**
   - Goal: broken artifacts never take down the page.
   - Build: load/runtime error handling around the iframe; on failure, fall back
     to showing the artifact source as styled code with a note.
   - Files: `Artifact.tsx`.
   - Done when: a deliberately broken artifact fails gracefully.
     **Phase 3 complete — arbitrary UI on the fly, sandboxed.**
+  - Status: **done, verified (2026-07-05)** — boot script (per-mount nonce)
+    reports uncaught errors/rejections; early crash (<2.5s) swaps the frame
+    for source-as-code + note, late errors only flag the chrome (working UI
+    isn't torn down). Self-navigation detected by LIVENESS, not
+    load-counting: every wrapped doc announces nonce-stamped artifactReady
+    on load; a load event with no announce within 400ms → frame unmounted,
+    "navigation blocked" fallback. (Load-counting alone missed immediate
+    navigation — it aborts the srcdoc doc before its load fires. Also
+    corrected a 3.3 threat-model claim: a navigated doc KEEPS the opaque
+    origin, so the origin check never killed the bridge — the nonce, which
+    a successor document cannot know, is what does; raw un-nonced
+    postMessage is now dropped entirely.) Verified in headless Chrome,
+    6/6: crash fallback with source; real navigation to example.com
+    blanked; healthy artifact + nonce-stamped bridge still work after both
+    failures; un-nonced message from inside the sandbox dropped; zero shell
+    page errors. Live run not needed: the failure path is entirely
+    client-side and agent-independent — deliberate breakage is exactly what
+    the mock is for.
 
 ---
 

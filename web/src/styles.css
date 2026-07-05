@@ -552,6 +552,47 @@ body {
   background: #141a26;
 }
 
+/* Failure fallback (Step 3.4): the frame is gone; source takes its place. */
+.artifact-failed {
+  height: auto;
+  max-height: 340px;
+  resize: none;
+}
+
+.artifact-badge-failed {
+  color: #f87171;
+  border-color: #5b2a2a;
+}
+
+.artifact-badge-warn {
+  color: #d4a852;
+  border-color: #574727;
+  cursor: help;
+}
+
+.artifact-fallback {
+  overflow: auto;
+  padding: 10px 12px;
+}
+
+.artifact-fallback-note {
+  color: #8b94a7;
+  font-size: 0.85em;
+  margin-bottom: 8px;
+}
+
+.artifact-source {
+  margin: 0;
+  padding: 10px;
+  background: #0d1119;
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8em;
+  color: #b6c2d9;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* ---- Tool calls (Phase T.1) ---------------------------------------------
    Terminal-style records of what the agent actually did: one dim monospace
    row per call, collapsed by default; errors arrive expanded. Negative
