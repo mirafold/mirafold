@@ -29,6 +29,7 @@ type Entry =
       input?: Record<string, unknown>; // full args (T2.2), rendered in the expansion
       output?: string; // undefined until the result arrives
       truncatedBytes?: number; // T2.3: bytes elided past the cap, if any
+      parentId?: string; // T2.4: Task wire id if this is a subagent's call
       isError?: boolean;
     }
   | {
@@ -46,8 +47,42 @@ type Entry =
       expanded: boolean;
     };
 type Status = { state: "thinking" | "tool"; label?: string } | null;
+type ToolCall = Extract<Entry, { kind: "tool" }>;
 
 let nextId = 0;
+
+/** A Task's subagent tool calls (T2.4): collapsed by default — a subagent's
+ *  churn shouldn't crowd the transcript — expandable to the nested rows. */
+function SubagentGroup({ calls }: { calls: ToolCall[] }) {
+  const [open, setOpen] = useState(false);
+  const pending = calls.some((c) => c.output === undefined);
+  return (
+    <div className="subagent-group">
+      <button className="subagent-head" onClick={() => setOpen(!open)}>
+        <span className="subagent-caret">{open ? "▾" : "▸"}</span>
+        <span className="subagent-label">
+          ⚙ subagent · {calls.length} call{calls.length === 1 ? "" : "s"}
+          {pending ? " …" : ""}
+        </span>
+      </button>
+      {open && (
+        <div className="subagent-calls">
+          {calls.map((c) => (
+            <ToolBlock
+              key={c.id}
+              name={c.name}
+              detail={c.detail}
+              input={c.input}
+              output={c.output}
+              truncatedBytes={c.truncatedBytes}
+              isError={c.isError}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /**
  * The output zone — an interpreter for the wire protocol. Level 1: streamed
@@ -197,7 +232,7 @@ export function RenderZone({
             const id = nextId++;
             setEntries((es) => [
               ...es,
-              { kind: "tool", id, toolId: msg.id, name: msg.name, detail: msg.detail, input: msg.input },
+              { kind: "tool", id, toolId: msg.id, name: msg.name, detail: msg.detail, input: msg.input, parentId: msg.parentId },
             ]);
             break;
           }
@@ -290,6 +325,16 @@ export function RenderZone({
     return entry && entry.kind === "render" ? [entry] : [];
   });
 
+  // T2.4: subagent calls (parentId set) grouped under their Task's wire id.
+  const childrenByParent = new Map<string, ToolCall[]>();
+  for (const e of entries) {
+    if (e.kind === "tool" && e.parentId) {
+      const arr = childrenByParent.get(e.parentId) ?? [];
+      arr.push(e);
+      childrenByParent.set(e.parentId, arr);
+    }
+  }
+
   return (
     <div className="zone-row">
       <div className="render-zone">
@@ -326,16 +371,22 @@ export function RenderZone({
             );
           }
           if (entry.kind === "tool") {
+            // Subagent calls are rendered nested under their Task (below),
+            // not at the top level.
+            if (entry.parentId) return null;
+            const children = childrenByParent.get(entry.toolId);
             return (
-              <ToolBlock
-                key={entry.id}
-                name={entry.name}
-                detail={entry.detail}
-                input={entry.input}
-                output={entry.output}
-                truncatedBytes={entry.truncatedBytes}
-                isError={entry.isError}
-              />
+              <div key={entry.id} className="tool-group">
+                <ToolBlock
+                  name={entry.name}
+                  detail={entry.detail}
+                  input={entry.input}
+                  output={entry.output}
+                  truncatedBytes={entry.truncatedBytes}
+                  isError={entry.isError}
+                />
+                {children && children.length > 0 && <SubagentGroup calls={children} />}
+              </div>
             );
           }
           if (entry.kind === "artifact") {

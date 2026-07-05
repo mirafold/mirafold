@@ -763,6 +763,45 @@ body {
   font-style: italic;
 }
 
+/* Subagent group (T2.4): a Task's inner calls, nested and collapsible so a
+   subagent's churn is present but never crowds the transcript. */
+.tool-group {
+  display: contents;
+}
+
+.subagent-group {
+  margin: -8px 0 0 22px;
+  padding-left: 12px;
+  border-left: 1px solid #2b3346;
+}
+
+.subagent-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8em;
+  color: #7e88a0;
+}
+
+.subagent-head:hover .subagent-label {
+  color: #9aa4ba;
+}
+
+.subagent-caret {
+  color: #5a6480;
+}
+
+.subagent-calls {
+  margin-top: 2px;
+}
+
 .status-line {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.85em;

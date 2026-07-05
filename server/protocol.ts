@@ -19,11 +19,27 @@ export type WireMsg =
   // a later `tool_result` with the same id completes that record.
   // T2.2 widens it with the FULL input (optional — old clients ignore it);
   // the client renders Edit/Write inputs as diffs/code, the rest as JSON.
-  | { type: "tool_use"; name: string; detail?: string; id: string; input?: Record<string, unknown> }
+  // T2.4: `parentId`, when set, is the Task tool_use id this call belongs to —
+  // a subagent's call, which the client nests under its owning Task row.
+  | {
+      type: "tool_use";
+      name: string;
+      detail?: string;
+      id: string;
+      input?: Record<string, unknown>;
+      parentId?: string;
+    }
   // T2.3: `truncatedBytes`, when set, is how many UTF-8 bytes were elided
   // after the cap — the client shows an explicit marker rather than cutting
-  // silently. Optional/additive.
-  | { type: "tool_result"; output: string; isError?: boolean; id: string; truncatedBytes?: number }
+  // silently. Optional/additive. T2.4: `parentId` as on tool_use.
+  | {
+      type: "tool_result";
+      output: string;
+      isError?: boolean;
+      id: string;
+      truncatedBytes?: number;
+      parentId?: string;
+    }
   // Phase T.3: the turn is paused on a gated tool call until the browser
   // answers (or the server times out to deny). Drawn by the trusted shell.
   | { type: "permission_request"; tool: string; detail: string; id: string }
