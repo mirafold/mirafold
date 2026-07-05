@@ -479,6 +479,86 @@ body {
   font-weight: 500;
 }
 
+/* ---- Tool calls (Phase T.1) ---------------------------------------------
+   Terminal-style records of what the agent actually did: one dim monospace
+   row per call, collapsed by default; errors arrive expanded. Negative
+   margins tighten consecutive rows against the zone's 14px gap so a run of
+   tool calls reads as one burst of activity. */
+
+.tool-block {
+  margin: -5px 4px;
+  min-width: 0;
+}
+
+.tool-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 2px 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  color: #8b96a8;
+}
+
+.tool-caret {
+  width: 1em;
+  flex-shrink: 0;
+  color: #55617a;
+}
+
+.tool-block.is-running .tool-caret {
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.tool-name {
+  font-weight: 600;
+  color: #a8b2c2;
+  flex-shrink: 0;
+}
+
+.tool-head:hover .tool-name {
+  color: #d4dae4;
+}
+
+.tool-detail {
+  color: #667289;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.tool-output {
+  margin: 4px 0 6px 22px;
+  padding: 10px 12px;
+  background: #0d1117;
+  border: 1px solid #232a38;
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8em;
+  line-height: 1.5;
+  color: #a8b2c2;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 320px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #3a4a68 transparent;
+}
+
+.tool-block.is-error .tool-name {
+  color: #e66767;
+}
+
+.tool-block.is-error .tool-output {
+  border-color: #46242c;
+}
+
 .status-line {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.85em;

@@ -36,6 +36,38 @@ class AsyncQueue<T> {
 
 const CLOSE = Symbol("close");
 
+// The one human-salient argument of a tool call, for the transcript line.
+// Ordered: the first key present wins (Bash → command, Read → file_path, …).
+const DETAIL_KEYS = ["command", "file_path", "pattern", "url", "query", "description", "path"];
+
+function toolDetail(input: unknown): string | undefined {
+  if (typeof input !== "object" || input === null) return undefined;
+  const rec = input as Record<string, unknown>;
+  for (const key of DETAIL_KEYS) {
+    const v = rec[key];
+    if (typeof v === "string" && v) return v;
+  }
+  const json = JSON.stringify(rec);
+  return json === "{}" ? undefined : json.slice(0, 160);
+}
+
+// Cap transcript output so a huge tool dump can't flood the wire; the full
+// output still went to the model — this is only the human-facing record.
+const OUTPUT_CAP = 8_000;
+
+function resultText(content: unknown): string {
+  let text: string;
+  if (typeof content === "string") text = content;
+  else if (Array.isArray(content))
+    text = content
+      .map((b) => (b?.type === "text" ? String(b.text) : `[${String(b?.type ?? "block")}]`))
+      .join("\n");
+  else text = content == null ? "" : JSON.stringify(content);
+  return text.length > OUTPUT_CAP
+    ? `${text.slice(0, OUTPUT_CAP)}\n… (+${text.length - OUTPUT_CAP} chars truncated)`
+    : text;
+}
+
 /**
  * One persistent Agent SDK session. A single query() runs for the life of
  * the object; prompts are fed in through an async generator so the
@@ -46,6 +78,9 @@ export class Session implements AgentSession {
   private listeners = new Set<(msg: WireMsg) => void>();
   private q: Query;
   private closed = false;
+  // tool_use ids we announced on the wire — results for anything else
+  // (render tools, subagent internals) must not paint orphan records.
+  private announcedTools = new Set<string>();
 
   constructor(opts?: { workspaceDir?: string; model?: string }) {
     const workspaceDir = path.resolve(opts?.workspaceDir ?? "workspace");
@@ -117,6 +152,38 @@ export class Session implements AgentSession {
             }
             break;
           }
+          case "assistant": {
+            if (msg.parent_tool_use_id) break; // subagent traffic — not ours to render
+            for (const block of msg.message.content) {
+              if (block.type !== "tool_use") continue;
+              // Render tools already paint their own component block.
+              if (block.name.startsWith("mcp__ui__")) continue;
+              this.announcedTools.add(block.id);
+              this.emit({
+                type: "tool_use",
+                name: block.name,
+                detail: toolDetail(block.input),
+                id: block.id,
+              });
+            }
+            break;
+          }
+          case "user": {
+            if (msg.parent_tool_use_id) break;
+            const content = msg.message.content;
+            if (!Array.isArray(content)) break; // plain prompt echo, not tool results
+            for (const block of content) {
+              if (block.type !== "tool_result") continue;
+              if (!this.announcedTools.delete(block.tool_use_id)) continue;
+              this.emit({
+                type: "tool_result",
+                output: resultText(block.content),
+                isError: block.is_error === true,
+                id: block.tool_use_id,
+              });
+            }
+            break;
+          }
           case "result": {
             if (msg.is_error) {
               const detail = "result" in msg ? msg.result : msg.subtype;
@@ -157,7 +224,51 @@ const TOPICS = [
   "prompt-caching economics",
   "CRDT merge strategies",
 ] as const;
-const TOOL_LABELS = ["Read", "Grep", "Bash", "Glob", "WebFetch"] as const;
+// Mock tool calls (Phase T.1): each yields a full use→result pair so the
+// transcript's tool blocks are exercised API-free; the last one is an error.
+const MOCK_TOOLS: (() => {
+  name: string;
+  detail: string;
+  output: string;
+  isError?: boolean;
+})[] = [
+  () => ({
+    name: "Bash",
+    detail: "ls -la src/",
+    output: [
+      `total ${randInt(24, 96)}`,
+      ...shuffled(FILES)
+        .slice(0, 3)
+        .map(
+          (f) =>
+            `-rw-r--r--  1 dev dev  ${randInt(1, 9)}${randInt(100, 999)} Jul  4 1${randInt(0, 9)}:${randInt(10, 59)} ${f.split("/").pop()}`,
+        ),
+    ].join("\n"),
+  }),
+  () => ({
+    name: "Grep",
+    detail: `-rn "TODO" ${pick(FILES).split("/")[0]}/`,
+    output: shuffled(FILES)
+      .slice(0, 3)
+      .map((f) => `${f}:${randInt(10, 240)}: // TODO: ${sentence().toLowerCase()}`)
+      .join("\n"),
+  }),
+  () => ({
+    name: "Read",
+    detail: pick(FILES),
+    output: Array.from({ length: 5 }, (_, i) => `${i + 1}→${pick(SENTENCES)}`).join("\n"),
+  }),
+  () => ({
+    name: "Bash",
+    detail: "yarn test --run",
+    output: `$ vitest run
+✗ ${pick(SERVICES)} › invalidates the cache on write
+  AssertionError: expected 2 to be 1
+    at ${pick(FILES)}:${randInt(20, 200)}:${randInt(2, 40)}
+Tests: 1 failed, ${randInt(8, 30)} passed`,
+    isError: true,
+  }),
+];
 const SENTENCES = [
   "The hot path allocates on every call, which dominates the flame graph.",
   "Cache locality, not algorithmic complexity, explains most of the variance.",
@@ -388,10 +499,19 @@ export class MockSession implements AgentSession {
 
     let delay = 120;
     this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
-    for (let i = randInt(1, 3); i > 0; i--) {
+    for (let i = randInt(1, 2); i > 0; i--) {
+      const t = pick(MOCK_TOOLS)();
+      const id = randomUUID();
       delay += randInt(250, 550);
-      const label = pick(TOOL_LABELS);
-      this.schedule(() => this.emit({ type: "status", state: "tool", label }), delay);
+      this.schedule(() => {
+        this.emit({ type: "status", state: "tool", label: t.name });
+        this.emit({ type: "tool_use", name: t.name, detail: t.detail, id });
+      }, delay);
+      delay += randInt(300, 700);
+      this.schedule(
+        () => this.emit({ type: "tool_result", output: t.output, isError: t.isError, id }),
+        delay,
+      );
     }
     delay += 250;
     for (const chunk of reply.match(/.{1,16}/gs) ?? []) {

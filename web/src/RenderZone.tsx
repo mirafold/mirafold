@@ -5,6 +5,7 @@ import rehypeHighlight from "rehype-highlight";
 import type { ZoneMsg } from "./Shell";
 import { RenderBlock } from "./registry/RenderBlock";
 import { PinDock } from "./PinDock";
+import { ToolBlock } from "./ToolBlock";
 
 // The scrollback is a flat list of entries: text blocks and rendered
 // components, in the exact order they arrived on the wire.
@@ -16,6 +17,15 @@ type Entry =
       renderId: string; // wire id — re-sends with this id update props in place
       component: string;
       props: Record<string, unknown>;
+    }
+  | {
+      kind: "tool";
+      id: number;
+      toolId: string; // wire id — the matching tool_result completes this record
+      name: string;
+      detail?: string;
+      output?: string; // undefined until the result arrives
+      isError?: boolean;
     };
 type Status = { state: "thinking" | "tool"; label?: string } | null;
 
@@ -94,6 +104,27 @@ export function RenderZone({
             });
             break;
           }
+          case "tool_use": {
+            // Close the streaming text block (same reason as `render`):
+            // later deltas must open a new block after this record.
+            streamingId.current = null;
+            const id = nextId++;
+            setEntries((es) => [
+              ...es,
+              { kind: "tool", id, toolId: msg.id, name: msg.name, detail: msg.detail },
+            ]);
+            break;
+          }
+          case "tool_result": {
+            setEntries((es) =>
+              es.map((e) =>
+                e.kind === "tool" && e.toolId === msg.id
+                  ? { ...e, output: msg.output, isError: msg.isError }
+                  : e,
+              ),
+            );
+            break;
+          }
           case "status":
             setStatus({ state: msg.state, label: msg.label });
             break;
@@ -148,6 +179,17 @@ export function RenderZone({
     <div className="zone-row">
       <div className="render-zone">
         {entries.map((entry) => {
+          if (entry.kind === "tool") {
+            return (
+              <ToolBlock
+                key={entry.id}
+                name={entry.name}
+                detail={entry.detail}
+                output={entry.output}
+                isError={entry.isError}
+              />
+            );
+          }
           if (entry.kind === "render") {
             if (pinned.includes(entry.renderId)) {
               // Promoted to the dock; the stub holds its place in history.

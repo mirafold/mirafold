@@ -245,7 +245,7 @@ recorded and embedded in the README. Phase T is now the active build front
 owner-side M1 checklist (license, npm stub, repo public, post) lives in
 `~/genui-shell-next-steps.html` and BUSINESS.md §11.
 
-- [ ] **Step T.1 — Tool output in the transcript**
+- [x] **Step T.1 — Tool output in the transcript**
   - Goal: see what the agent actually did, not just that it used a tool.
   - Build: add `{ type: "tool_use"; name: string; detail?: string; id: string }`
     and `{ type: "tool_result"; output: string; isError?: boolean; id: string }`
@@ -254,6 +254,14 @@ owner-side M1 checklist (license, npm stub, repo public, post) lives in
     expanded by default.
   - Done when: a Bash run shows its command and (collapsed) output inline in
     the scrollback, styled like terminal output.
+  - Status: **done, verified mock + live (2026-07-05)** — tool_use blocks
+    come off `assistant` messages (detail = the salient arg: command/path/
+    pattern), results off `user` tool_result blocks, capped at 8KB;
+    render-tool and subagent traffic excluded via an announced-id set.
+    `ToolBlock` renders a dim mono row (pulsing while pending, click to
+    expand, errors auto-expanded). MockSession emits use→result pairs incl.
+    a failing `yarn test`. Headless Chrome: 9/9 mock checks; live Bash
+    `ls -la` showed command + real output inline, collapsed.
 
 - [ ] **Step T.2 — Interrupt**
   - Goal: stop a runaway or wrong-direction turn without killing the session.
