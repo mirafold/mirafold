@@ -961,6 +961,23 @@ pattern on one before committing to all.
   - Done when: three agents (Claude Code, Codex, Gemini CLI) each run as their
     own faithful skin behind one front end. **Phase P complete — each agent,
     faithfully re-skinned; everyone's own tool in the browser.**
+  - Status: **spike done (2026-07-06), verdict GREEN — live blocked on a free
+    Google login** (`server/adapters/gemini-cli.spike.md`). `@google/gemini-cli`
+    v0.49.0 installed. Gemini embeds like Codex: headless `gemini -p "<prompt>"
+    -o stream-json` emits JSONL events (`init`/`message`/`tool_use`/`tool_result`/
+    `error`/`result`) that map onto existing `WireMsg` (no protocol change); warm
+    multi-turn via `--session-id` + `--resume` (its Thread analog); native MCP
+    injection via a per-session `.gemini/settings.json` (adds our `render-mcp.ts`
+    without touching the user's global config); scoped tool approval via
+    `--allowed-mcp-server-names genui` (the analog of Codex's per-server
+    `approve`, since headless can't prompt). The optional-feature rule is the
+    degradation proof: no `thinking_delta` from Gemini → the reasoning block just
+    never appears, no special-casing. **Blocked on:** a one-time free Google
+    OAuth login (`gemini` → Login with Google — personal account, no key, no
+    billing). Open questions for the first live window: exact JSONL field names,
+    warm-session mechanics, the scoped-MCP-approval knob, and the OAuth creds
+    path — one short session answers all; the adapter is then a mechanical write
+    off the Codex template. Box stays open until the live 3-agent run is observed.
 
 ---
 
