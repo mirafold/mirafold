@@ -5,11 +5,13 @@ import type { ComponentProps } from "@registry-spec";
 // surface #141a26 — fixed slot order is the CVD-safety mechanism, never cycle
 // or reorder it. Adjacent-pair CVD sits in the floor band, so ≥2-series
 // charts always carry secondary encoding: legend + tooltip + end labels.
+// Mid-luminance slots hold up on the light theme too (4.3); axis/grid inks
+// come from the theme tokens via style (SVG attributes can't carry var()).
 const COLORS = ["#3987e5", "#199e70", "#c98500", "#008300", "#9085e9", "#e66767"];
-const SURFACE = "#141a26";
-const GRID = "#1d2434";
-const INK_MUTED = "#8b96a8";
-const INK = "#c7d0dd";
+const SURFACE = { stroke: "var(--surface)" };
+const GRID = { stroke: "var(--border-faint)" };
+const INK_MUTED = { fill: "var(--fg-dim)" };
+const INK = { fill: "var(--fg-mid)" };
 
 const W = 640;
 const H = 260;
@@ -106,21 +108,21 @@ export function Chart({ title, kind, x, series, yLabel }: ComponentProps<"chart"
           {/* recessive grid + y labels */}
           {tks.map((t, i) => (
             <g key={i}>
-              <line x1={PAD.left} x2={W - padRight} y1={yPos(t)} y2={yPos(t)} stroke={GRID} strokeWidth="1" />
-              <text x={PAD.left - 8} y={yPos(t) + 3.5} textAnchor="end" fontSize="10.5" fill={INK_MUTED}>
+              <line x1={PAD.left} x2={W - padRight} y1={yPos(t)} y2={yPos(t)} style={GRID} strokeWidth="1" />
+              <text x={PAD.left - 8} y={yPos(t) + 3.5} textAnchor="end" fontSize="10.5" style={INK_MUTED}>
                 {fmt(t)}
               </text>
             </g>
           ))}
           {yLabel && (
-            <text x={PAD.left - 8} y={PAD.top - 5} textAnchor="end" fontSize="10" fill={INK_MUTED}>
+            <text x={PAD.left - 8} y={PAD.top - 5} textAnchor="end" fontSize="10" style={INK_MUTED}>
               {yLabel}
             </text>
           )}
           {/* x labels, thinned */}
           {x.map((label, i) =>
             i % labelStride === 0 || i === x.length - 1 ? (
-              <text key={i} x={xPos(i)} y={H - 8} textAnchor="middle" fontSize="10.5" fill={INK_MUTED}>
+              <text key={i} x={xPos(i)} y={H - 8} textAnchor="middle" fontSize="10.5" style={INK_MUTED}>
                 {label.length > 12 ? label.slice(0, 11) + "…" : label}
               </text>
             ) : null,
@@ -148,7 +150,7 @@ export function Chart({ title, kind, x, series, yLabel }: ComponentProps<"chart"
           {kind === "line" && (
             <>
               {hover !== null && (
-                <line x1={xPos(hover)} x2={xPos(hover)} y1={PAD.top} y2={PAD.top + ih} stroke="#313b4e" strokeWidth="1" />
+                <line x1={xPos(hover)} x2={xPos(hover)} y1={PAD.top} y2={PAD.top + ih} style={GRID} strokeWidth="1" />
               )}
               {series.map((s, si) => (
                 <polyline
@@ -175,7 +177,7 @@ export function Chart({ title, kind, x, series, yLabel }: ComponentProps<"chart"
                       cy={yPos(s.values[hover])}
                       r="4.5"
                       fill={COLORS[si % COLORS.length]}
-                      stroke={SURFACE}
+                      style={SURFACE}
                       strokeWidth="2"
                     />
                   ) : null,
@@ -183,7 +185,7 @@ export function Chart({ title, kind, x, series, yLabel }: ComponentProps<"chart"
               {endLabels.map((l, i) => (
                 <g key={i}>
                   <circle cx={xPos(l.xi) + 8} cy={l.y} r="3" fill={l.color} />
-                  <text x={xPos(l.xi) + 15} y={l.y + 3.5} fontSize="10.5" fill={INK}>
+                  <text x={xPos(l.xi) + 15} y={l.y + 3.5} fontSize="10.5" style={INK}>
                     {l.name.length > 14 ? l.name.slice(0, 13) + "…" : l.name}
                   </text>
                 </g>
