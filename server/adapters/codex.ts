@@ -1,9 +1,34 @@
 import path from "node:path";
 import { mkdirSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
-import { Codex, type Thread, type ThreadEvent, type ThreadItem } from "@openai/codex-sdk";
+import {
+  Codex,
+  type McpToolCallItem,
+  type Thread,
+  type ThreadEvent,
+  type ThreadItem,
+} from "@openai/codex-sdk";
 import type { WireMsg } from "../protocol";
+import type { ComponentName } from "../registry-spec";
 import { type AgentSession, type TodoItem, capOutput } from "./types";
+
+// The generative-UI MCP server injected into Codex (P.3). Codex loads MCP
+// servers as stdio subprocesses, so genui-shell's render tools live in a
+// standalone process (server/render-mcp.ts) rather than in-process like the
+// Claude adapter's makeRenderServer. In dev the daemon runs under tsx, so the
+// child runs under tsx too; a compiled build would point node at render-mcp.js.
+const HERE = path.dirname(fileURLToPath(import.meta.url)); // server/adapters
+const RENDER_MCP_PATH = path.resolve(HERE, "..", "render-mcp.ts");
+const TSX_BIN = path.resolve(HERE, "..", "..", "node_modules", ".bin", "tsx");
+const GENUI_MCP = "genui"; // matches item.server on the mcp_tool_call events
+const RENDER_TOOL_COMPONENT: Record<string, ComponentName> = {
+  render_card: "card",
+  render_list: "list",
+  render_table: "table",
+  render_chart: "chart",
+  render_links: "link-group",
+};
 
 /** Unbounded async queue feeding the serial turn worker (one turn at a time). */
 class AsyncQueue<T> {
@@ -28,6 +53,18 @@ function mcpText(content: unknown): string {
   return content
     .map((b) => (b?.type === "text" ? String(b.text) : `[${String(b?.type ?? "block")}]`))
     .join("\n");
+}
+
+// The component id the render-mcp stub assigned (structuredContent is the
+// primary channel; the "(id: …)" text is a fallback if an engine drops it) —
+// used so the browser paints the same id the agent can re-send for update-in-place.
+function extractRenderId(item: McpToolCallItem): string {
+  const sc = item.result?.structured_content as { renderId?: unknown } | undefined;
+  if (sc && typeof sc.renderId === "string") return sc.renderId;
+  const m = mcpText(item.result?.content).match(/id:\s*([0-9a-fA-F-]{8,})/);
+  if (m) return m[1];
+  const argId = (item.arguments as { id?: unknown } | undefined)?.id;
+  return typeof argId === "string" ? argId : randomUUID();
 }
 
 /**
@@ -67,9 +104,25 @@ export class CodexSession implements AgentSession {
     this.modelLabel = opts?.model ?? "codex";
     // No `env`: the SDK then inherits process.env, so the CLI finds the user's
     // ~/.codex auth + config. No `apiKey` unless one is set (ChatGPT login path).
-    const codex = new Codex(
-      process.env.OPENAI_API_KEY ? { apiKey: process.env.OPENAI_API_KEY } : {},
-    );
+    const codex = new Codex({
+      ...(process.env.OPENAI_API_KEY ? { apiKey: process.env.OPENAI_API_KEY } : {}),
+      // Inject genui-shell's generative-UI tools as a stdio MCP server. Codex
+      // calls them like any tool; the adapter turns those calls into render/
+      // artifact WireMsgs below (it never reaches back into this subprocess).
+      // `default_tools_approval_mode: "approve"` auto-approves THIS server's
+      // tools only — they're genui-shell's own side-effect-free UI emission, the
+      // direct analog of the Claude adapter auto-allowing mcp__ui__*. Without it,
+      // headless exec mode (which can't prompt for approval) cancels the call.
+      config: {
+        mcp_servers: {
+          [GENUI_MCP]: {
+            command: TSX_BIN,
+            args: [RENDER_MCP_PATH],
+            default_tools_approval_mode: "approve",
+          },
+        },
+      },
+    });
     this.thread = codex.startThread({
       workingDirectory: workspaceDir,
       skipGitRepoCheck: true, // workspace dirs aren't git repos
@@ -224,6 +277,15 @@ export class CodexSession implements AgentSession {
         break;
       }
       case "mcp_tool_call": {
+        // Our own generative-UI server: never a raw tool row — turn the call
+        // into the render/artifact WireMsg it stands for (P.3). The stub server
+        // just validated the args and handed back the id; we paint it here.
+        if (item.server === GENUI_MCP) {
+          if (phase === "completed" && item.status !== "failed" && !item.error) {
+            this.emitGenerativeUI(item);
+          }
+          break;
+        }
         const label = `${item.server}.${item.tool}`;
         if (phase === "started") this.announceTool(item.id, label, item.tool, item.arguments);
         else if (phase === "completed") {
@@ -271,6 +333,28 @@ export class CodexSession implements AgentSession {
       id,
       input: typeof input === "object" && input !== null ? (input as Record<string, unknown>) : undefined,
     });
+  }
+
+  /** Turn a genui MCP tool call into the render/artifact WireMsg it stands for. */
+  private emitGenerativeUI(item: McpToolCallItem) {
+    const renderId = extractRenderId(item);
+    const args =
+      item.arguments && typeof item.arguments === "object"
+        ? { ...(item.arguments as Record<string, unknown>) }
+        : {};
+    delete args["id"];
+    if (item.tool === "emit_artifact") {
+      this.emit({
+        type: "artifact",
+        html: typeof args["html"] === "string" ? (args["html"] as string) : "",
+        id: renderId,
+        title: typeof args["title"] === "string" ? (args["title"] as string) : undefined,
+      });
+      return;
+    }
+    const component = RENDER_TOOL_COMPONENT[item.tool];
+    if (!component) return; // unknown genui tool — ignore rather than paint junk
+    this.emit({ type: "render", component, props: args, id: renderId });
   }
 
   private emitChecklist(items: { text: string; completed: boolean }[]) {
