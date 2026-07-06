@@ -91,13 +91,24 @@ wss.on("connection", (ws) => {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
   };
 
-  const attachTo = (e: SessionEntry) => {
+  // Identity first, then the replayed history, then the live stream. 4.4:
+  // a valid afterSeq turns the replay into a tail-only resume — the client
+  // is told via `resumed` so it keeps its state instead of repainting.
+  const attachTo = (e: SessionEntry, afterSeq?: number) => {
     if (entry) registry.detach(entry, viewport);
     entry = e;
-    // Identity first, then the replayed history, then the live stream.
-    viewport({ type: "session_created", sessionId: e.id, cwd: e.cwd, agent: e.agent });
-    registry.attach(e, viewport);
-    console.log(`[ws] viewport attached → session ${e.id} (${e.viewports.size} viewport(s))`);
+    const resumed = afterSeq !== undefined && registry.canResume(e, afterSeq);
+    viewport({
+      type: "session_created",
+      sessionId: e.id,
+      cwd: e.cwd,
+      agent: e.agent,
+      ...(resumed ? { resumed: true } : {}),
+    });
+    registry.attach(e, viewport, resumed ? afterSeq : undefined);
+    console.log(
+      `[ws] viewport ${resumed ? `resumed @${afterSeq}` : "attached"} → session ${e.id} (${e.viewports.size} viewport(s))`,
+    );
   };
 
   // P.4: advertise which agents this daemon offers + which are live, so the
@@ -141,7 +152,9 @@ wss.on("connection", (ws) => {
         // session rather than an error page.
         const existing =
           typeof msg.sessionId === "string" ? registry.get(msg.sessionId) : undefined;
-        attachTo(existing ?? registry.create());
+        const afterSeq =
+          existing && typeof msg.afterSeq === "number" ? msg.afterSeq : undefined;
+        attachTo(existing ?? registry.create(), afterSeq);
         break;
       }
       case "prompt":
@@ -200,6 +213,10 @@ wss.on("connection", (ws) => {
         break;
       case "bang_kill":
         if (entry?.bang && entry.bang.id === msg.id) entry.bang.proc.kill();
+        break;
+      case "ping":
+        // Liveness only — answered on this connection, never buffered.
+        viewport({ type: "pong" });
         break;
       case "interrupt":
         entry?.session.interrupt();

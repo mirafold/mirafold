@@ -47,6 +47,9 @@ export type SessionEntry = {
   session: AgentSession;
   buffer: WireMsg[];
   viewports: Set<Viewport>;
+  // 4.4: next session-scoped sequence number; broadcast stamps it onto every
+  // message so a reconnecting viewport can name where its stream broke off.
+  nextSeq: number;
   idleTimer?: NodeJS.Timeout;
   // Step 4.9: the one running `!` command, if any (one at a time per session,
   // like a terminal). The proc itself never leaves the server.
@@ -96,6 +99,7 @@ export class SessionRegistry {
       session,
       buffer: [],
       viewports: new Set(),
+      nextSeq: 1,
       pendingBang: [],
     };
     session.onMessage((msg) => this.broadcast(entry, msg));
@@ -109,6 +113,7 @@ export class SessionRegistry {
 
   /** Buffer a message and fan it out to every attached viewport. */
   broadcast(entry: SessionEntry, msg: WireMsg) {
+    msg.seq = entry.nextSeq++; // 4.4: resume cursor, one stamp for all viewports
     entry.buffer.push(msg);
     if (entry.buffer.length > BUFFER_CAP) {
       entry.buffer.splice(0, entry.buffer.length - BUFFER_CAP);
@@ -116,10 +121,27 @@ export class SessionRegistry {
     for (const viewport of entry.viewports) viewport(msg);
   }
 
-  /** Replay history into the viewport, then subscribe it to the live stream. */
-  attach(entry: SessionEntry, viewport: Viewport) {
+  /**
+   * 4.4: can a viewport that last saw `afterSeq` resume with a tail replay?
+   * Only if nothing after it has fallen off the ring buffer, and it isn't
+   * from some other life (a seq we never issued).
+   */
+  canResume(entry: SessionEntry, afterSeq: number): boolean {
+    if (!Number.isInteger(afterSeq) || afterSeq < 0 || afterSeq >= entry.nextSeq) return false;
+    const firstBuffered = entry.buffer[0]?.seq ?? entry.nextSeq;
+    return afterSeq >= firstBuffered - 1;
+  }
+
+  /**
+   * Replay history into the viewport, then subscribe it to the live stream.
+   * With `afterSeq` (pre-validated via canResume) only the unseen tail is
+   * replayed — the reconnecting viewport keeps its state, no repaint.
+   */
+  attach(entry: SessionEntry, viewport: Viewport, afterSeq?: number) {
     clearTimeout(entry.idleTimer);
-    for (const msg of entry.buffer) viewport(msg);
+    for (const msg of entry.buffer) {
+      if (afterSeq === undefined || (msg.seq ?? 0) > afterSeq) viewport(msg);
+    }
     entry.viewports.add(viewport);
   }
 

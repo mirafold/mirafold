@@ -2,11 +2,26 @@ import type { ClientMsg, WireMsg } from "@protocol";
 
 type Listener = (msg: WireMsg) => void;
 
+// Heartbeat (4.4): a wifi blip with no FIN leaves the socket half-open and
+// silently dead — the browser would wait forever. Ping on an interval and
+// treat any inbound traffic as life; a ping that goes unanswered past the
+// deadline closes the socket, which routes into the normal reconnect path.
+const PING_INTERVAL_MS = 25_000;
+const PONG_DEADLINE_MS = 8_000;
+// Reconnect backoff: fast first retry (the daemon is local), capped so a
+// long outage doesn't hammer; `online`/tab-visible events short-circuit it.
+const BACKOFF_MIN_MS = 500;
+const BACKOFF_MAX_MS = 5_000;
+
 /**
  * The shell's WebSocket client. Lives in the trusted shell — agent output
  * never touches it. Reconnects automatically on drop; every (re)open first
  * sends the hello (attach/create, Step 4.2) so the connection is a viewport
  * on the right session before anything else flows.
+ *
+ * Step 4.4: tracks the last broadcast `seq` seen so the hello can ask for a
+ * tail-only resume, heartbeats to catch half-open sockets, and backs off
+ * between attempts (with instant retry when the network returns).
  */
 export class SocketClient {
   private ws!: WebSocket;
@@ -15,36 +30,90 @@ export class SocketClient {
   private closeListeners = new Set<() => void>();
   private pending: ClientMsg[] = [];
   private closedByUs = false;
+  private backoff = BACKOFF_MIN_MS;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private pingTimer: ReturnType<typeof setInterval> | null = null;
+  private pongTimer: ReturnType<typeof setTimeout> | null = null;
   // Returns the join message (attach/create) for this open, or null to send
   // nothing yet — P.4 waits at onboarding until the user picks an agent.
   private hello: (() => ClientMsg | null) | null = null;
+  /** Last broadcast seq seen — the resume cursor sent as attach.afterSeq. */
+  lastSeq: number | null = null;
 
   constructor(private url = `ws://${location.host}/ws`) {
     this.connect();
+    // A returning network or a re-focused tab shouldn't wait out the backoff.
+    window.addEventListener("online", this.reconnectNow);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") this.reconnectNow();
+    });
   }
+
+  private reconnectNow = () => {
+    if (this.closedByUs || this.ws.readyState === WebSocket.OPEN) return;
+    if (this.ws.readyState === WebSocket.CONNECTING) return;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    this.backoff = BACKOFF_MIN_MS;
+    this.connect();
+  };
 
   private connect() {
     if (this.closedByUs) return; // a queued reconnect must not outlive close()
     this.ws = new WebSocket(this.url);
     this.ws.onopen = () => {
+      this.backoff = BACKOFF_MIN_MS;
       for (const cb of this.openListeners) cb();
       const hello = this.hello?.();
       if (hello) this.ws.send(JSON.stringify(hello));
       for (const msg of this.pending.splice(0)) this.ws.send(JSON.stringify(msg));
+      this.startHeartbeat();
     };
     this.ws.onmessage = (e) => {
+      this.alive(); // any traffic proves the pipe
       let msg: WireMsg;
       try {
         msg = JSON.parse(e.data as string) as WireMsg;
       } catch {
         return;
       }
+      if (typeof msg.seq === "number") this.lastSeq = msg.seq;
+      if (msg.type === "pong") return; // liveness only, not for the app
       for (const l of this.listeners) l(msg);
     };
     this.ws.onclose = () => {
+      this.stopHeartbeat();
       for (const cb of this.closeListeners) cb();
-      if (!this.closedByUs) setTimeout(() => this.connect(), 1000);
+      if (!this.closedByUs) {
+        this.reconnectTimer = setTimeout(() => this.connect(), this.backoff);
+        this.backoff = Math.min(this.backoff * 2, BACKOFF_MAX_MS);
+      }
     };
+  }
+
+  private startHeartbeat() {
+    this.pingTimer = setInterval(() => {
+      if (this.ws.readyState !== WebSocket.OPEN) return;
+      this.ws.send(JSON.stringify({ type: "ping" } satisfies ClientMsg));
+      this.pongTimer ??= setTimeout(() => {
+        // Half-open: nothing came back in time. Close → reconnect path.
+        this.pongTimer = null;
+        this.ws.close();
+      }, PONG_DEADLINE_MS);
+    }, PING_INTERVAL_MS);
+  }
+
+  private alive() {
+    if (this.pongTimer) {
+      clearTimeout(this.pongTimer);
+      this.pongTimer = null;
+    }
+  }
+
+  private stopHeartbeat() {
+    if (this.pingTimer) clearInterval(this.pingTimer);
+    this.pingTimer = null;
+    this.alive();
   }
 
   /** Evaluated and sent first on every open — how a viewport joins its session. */
@@ -80,6 +149,8 @@ export class SocketClient {
 
   close() {
     this.closedByUs = true;
+    this.stopHeartbeat();
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.ws.close();
   }
 }
