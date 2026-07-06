@@ -907,8 +907,9 @@ body {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  direction: rtl; /* left-side ellipsis: keep the tail, elide the head */
-  unicode-bidi: plaintext; /* …without RTL reordering the path's own chars */
+  /* Left-side ellipsis — keep the leaf, elide the head. The LRM sentinels
+     PromptBox adds around the text stop RTL from reordering the path. */
+  direction: rtl;
   text-align: left;
   flex-shrink: 0;
 }
@@ -932,6 +933,94 @@ body {
 
 .prompt-box textarea::placeholder {
   color: #55617a;
+}
+
+/* The `!` passthrough (Step 4.9). The strip echoes the command-strip look
+   with an amber `!` in place of the green `❯`; output is a plain mono block
+   streaming live below it. */
+.turn-bang .bang-glyph {
+  color: #d4a852;
+}
+
+.bang-state {
+  margin-left: 12px;
+  font-size: 0.85em;
+  color: #55617a;
+}
+
+.bang-fail {
+  color: #e0708a;
+}
+
+.bang-output {
+  margin: 0 0 4px;
+  padding: 8px 14px 10px 30px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.88em;
+  line-height: 1.45;
+  color: #aeb7c8;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+}
+
+/* Stdin for the running `!` command — shell-owned, ephemeral-path input
+   (never buffered or fanned out). Amber family: it's a live process asking. */
+.bang-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 9px 14px;
+  background: #16130d;
+  border: 1px solid #4a3d1e;
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.bang-bar-badge {
+  color: #d4a852;
+  font-weight: 700;
+}
+
+.bang-bar-cmd {
+  max-width: 30%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: #8b94a7;
+  font-size: 0.85em;
+}
+
+.bang-bar-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #e6ebf5;
+  font: inherit;
+  font-size: 0.9em;
+}
+
+.bang-bar-input::placeholder {
+  color: #55617a;
+}
+
+.bang-bar-mask,
+.bang-bar-kill {
+  background: transparent;
+  border: 1px solid #4a3d1e;
+  border-radius: 6px;
+  padding: 3px 10px;
+  color: #d4a852;
+  font-family: inherit;
+  font-size: 0.8em;
+  cursor: pointer;
+}
+
+.bang-bar-kill:hover {
+  border-color: #e0708a;
+  color: #e0708a;
 }
 
 /* Permission bar (Phase T.3): drawn by the trusted shell above the prompt

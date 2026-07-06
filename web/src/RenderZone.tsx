@@ -46,6 +46,15 @@ type Entry =
       text: string;
       done: boolean; // done ⇒ folded to one line unless the user expands it
       expanded: boolean;
+    }
+  | {
+      kind: "bang"; // a `!` shell command (4.9): its strip + live PTY output
+      id: number;
+      bangId: string; // wire id — output/end messages complete this record
+      command: string;
+      output: string;
+      exitCode?: number | null; // undefined while running; null = killed
+      done: boolean;
     };
 type Status = { state: "thinking" | "tool"; label?: string } | null;
 type ToolCall = Extract<Entry, { kind: "tool" }>;
@@ -281,6 +290,36 @@ export function RenderZone({
             ]);
             break;
           }
+          case "bang_start": {
+            // Same wire-order rule as `render`: close the streaming block.
+            streamingId.current = null;
+            const id = nextId++;
+            setEntries((es) => [
+              ...es,
+              { kind: "bang", id, bangId: msg.id, command: msg.command, output: "", done: false },
+            ]);
+            break;
+          }
+          case "bang_output": {
+            setEntries((es) =>
+              es.map((e) =>
+                e.kind === "bang" && e.bangId === msg.id
+                  ? { ...e, output: e.output + msg.data }
+                  : e,
+              ),
+            );
+            break;
+          }
+          case "bang_end": {
+            setEntries((es) =>
+              es.map((e) =>
+                e.kind === "bang" && e.bangId === msg.id
+                  ? { ...e, exitCode: msg.exitCode, done: true }
+                  : e,
+              ),
+            );
+            break;
+          }
           case "zone_reset": {
             // A (re)attach replays the session's history from scratch.
             streamingId.current = null;
@@ -368,6 +407,22 @@ export function RenderZone({
                 ) : (
                   entry.text
                 )}
+              </div>
+            );
+          }
+          if (entry.kind === "bang") {
+            return (
+              <div key={entry.id} className="bang-block">
+                <div className="turn turn-user turn-bang">
+                  <span className="glyph bang-glyph">!</span> {entry.command}
+                  {!entry.done && <span className="bang-state">running…</span>}
+                  {entry.done && entry.exitCode !== 0 && (
+                    <span className="bang-state bang-fail">
+                      {entry.exitCode === null ? "killed" : `exit ${entry.exitCode}`}
+                    </span>
+                  )}
+                </div>
+                {entry.output && <pre className="bang-output">{entry.output}</pre>}
               </div>
             );
           }

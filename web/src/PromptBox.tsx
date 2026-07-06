@@ -37,7 +37,9 @@ export function PromptBox({
     <div className="prompt-box">
       {cwd && (
         <span className="prompt-cwd" title={cwd}>
-          {cwd}
+          {/* LRM sentinels: the span is direction:rtl for a left-side
+              ellipsis; these keep the path itself in LTR order. */}
+          {"\u200E" + cwd + "\u200E"}
         </span>
       )}
       <span className="glyph">❯</span>
@@ -45,7 +47,7 @@ export function PromptBox({
         ref={ref}
         value={text}
         rows={1}
-        placeholder="Enter to send · Shift+Enter for newline"
+        placeholder="Enter to send · Shift+Enter for newline · !cmd runs in your shell"
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey) {
