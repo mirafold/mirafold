@@ -1,4 +1,6 @@
-import type { WireMsg } from "../protocol";
+import type { AgentName, WireMsg } from "../protocol";
+
+export type { AgentName } from "../protocol";
 
 /**
  * The agent-adapter seam. genui-shell re-skins whichever terminal coding
@@ -17,9 +19,6 @@ export interface AgentSession {
   resolvePermission(id: string, allow: boolean): void;
   close(): void;
 }
-
-/** The terminal agents genui-shell can re-skin (one adapter each). */
-export type AgentName = "claude-code" | "codex" | "gemini-cli";
 
 /**
  * Which agent a session runs, resolved once from config (never hardcoded).

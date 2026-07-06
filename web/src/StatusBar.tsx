@@ -21,11 +21,13 @@ function tokens(n: number): string {
 
 export function StatusBar({
   connected,
+  agent,
   sessionId,
   cwd,
   usage,
 }: {
   connected: boolean;
+  agent?: string;
   sessionId?: string;
   cwd?: string;
   usage: Usage;
@@ -57,7 +59,11 @@ export function StatusBar({
       <button className="sb-toggle" onClick={() => setOpen(false)} title="Hide status">
         {dot}
       </button>
-      {usage.model && <span className="sb-item sb-model">{usage.model}</span>}
+      {agent && <span className="sb-item sb-agent" title="the terminal agent behind this session">{agent}</span>}
+      {/* Model only when it adds something beyond the agent name (e.g. codex→codex is redundant). */}
+      {usage.model && usage.model !== agent && (
+        <span className="sb-item sb-model sb-sep">{usage.model}</span>
+      )}
       {sessionId && <span className="sb-item sb-sep">{sessionId}</span>}
       {showCwd && (
         <span className="sb-item sb-sep sb-cwd" title={cwd}>

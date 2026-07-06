@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import type { Action, WireMsg } from "@protocol";
+import type { Action, AgentName, WireMsg } from "@protocol";
+import { Onboarding } from "./Onboarding";
 import { PromptBox } from "./PromptBox";
 import { RenderZone } from "./RenderZone";
 import { StatusBar, type Usage } from "./StatusBar";
@@ -32,8 +33,12 @@ export function Shell() {
   const [asks, setAsks] = useState<{ tool: string; detail: string; id: string }[]>([]);
   // Status-bar state (T2.6) — all shell-owned, none paintable by the agent.
   const [connected, setConnected] = useState(false);
-  const [meta, setMeta] = useState<{ sessionId?: string; cwd?: string }>({});
+  const [meta, setMeta] = useState<{ sessionId?: string; cwd?: string; agent?: AgentName }>({});
   const [usage, setUsage] = useState<Usage>(ZERO_USAGE);
+  // P.4 onboarding: which agents the daemon offers, and whether we're still at
+  // the picker. A URL that already names a session skips onboarding (it attaches).
+  const [agents, setAgents] = useState<{ agent: AgentName; live: boolean }[] | null>(null);
+  const hasUrlSession = useMemo(() => /^\/s\/[\w-]+/.test(location.pathname), []);
 
   const bus = useMemo(() => {
     const socket = new SocketClient();
@@ -41,9 +46,9 @@ export function Shell() {
     const connListeners = new Set<(c: boolean) => void>();
     // The URL carries the session identity; no id yet means "create one".
     let sessionId = location.pathname.match(/^\/s\/([\w-]+)/)?.[1] ?? null;
-    socket.setHello(() =>
-      sessionId ? { type: "attach", sessionId } : { type: "create" },
-    );
+    // Attach to a known session; otherwise send nothing and wait at onboarding
+    // (P.4 — no agent is assumed, so we don't auto-create).
+    socket.setHello(() => (sessionId ? { type: "attach", sessionId } : null));
     // Every (re)open replays history — clear the zone so it repaints once.
     socket.onOpen(() => {
       for (const l of listeners) l({ type: "zone_reset" });
@@ -72,6 +77,11 @@ export function Shell() {
           connListeners.delete(cb);
         };
       },
+      // P.4: the user picked an agent at onboarding — create a session on it.
+      // session_created sets `sessionId`, so a later reconnect re-attaches.
+      createSession(agent: AgentName) {
+        socket.send({ type: "create", agent });
+      },
       sendPrompt(text: string) {
         // No local echo — the server broadcasts the user_prompt to every
         // viewport (including this one), so all tabs stay identical.
@@ -98,8 +108,10 @@ export function Shell() {
           setAsks([]); // a request that outlived its turn is void (server denies)
         } else if (m.type === "permission_request") {
           setAsks((a) => [...a, { tool: m.tool, detail: m.detail, id: m.id }]);
+        } else if (m.type === "agents") {
+          setAgents(m.agents);
         } else if (m.type === "session_created") {
-          setMeta({ sessionId: m.sessionId, cwd: m.cwd });
+          setMeta({ sessionId: m.sessionId, cwd: m.cwd, agent: m.agent });
         } else if (m.type === "usage") {
           // Tokens are per-turn → sum for the session total. Cost is already
           // the session-cumulative figure → take it as-is, never add (T2.6).
@@ -167,8 +179,13 @@ export function Shell() {
     setAsks((a) => a.filter((x) => x.id !== id));
   };
 
+  // Onboarding shows until this viewport has a session — but not when the URL
+  // already names one (that path attaches straight through).
+  const showOnboarding = !hasUrlSession && !meta.sessionId;
+
   return (
     <div className="shell">
+      {showOnboarding && <Onboarding agents={agents} onPick={bus.createSession} />}
       <RenderZone subscribe={bus.subscribe} sendAction={bus.sendAction} />
       {asks.length > 0 && (
         <div className="perm-bar">
@@ -185,7 +202,13 @@ export function Shell() {
         </div>
       )}
       <PromptBox onSend={bus.sendPrompt} busy={busy} onInterrupt={bus.interrupt} />
-      <StatusBar connected={connected} sessionId={meta.sessionId} cwd={meta.cwd} usage={usage} />
+      <StatusBar
+        connected={connected}
+        agent={meta.agent}
+        sessionId={meta.sessionId}
+        cwd={meta.cwd}
+        usage={usage}
+      />
     </div>
   );
 }

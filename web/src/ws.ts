@@ -15,7 +15,9 @@ export class SocketClient {
   private closeListeners = new Set<() => void>();
   private pending: ClientMsg[] = [];
   private closedByUs = false;
-  private hello: (() => ClientMsg) | null = null;
+  // Returns the join message (attach/create) for this open, or null to send
+  // nothing yet — P.4 waits at onboarding until the user picks an agent.
+  private hello: (() => ClientMsg | null) | null = null;
 
   constructor(private url = `ws://${location.host}/ws`) {
     this.connect();
@@ -26,7 +28,8 @@ export class SocketClient {
     this.ws = new WebSocket(this.url);
     this.ws.onopen = () => {
       for (const cb of this.openListeners) cb();
-      if (this.hello) this.ws.send(JSON.stringify(this.hello()));
+      const hello = this.hello?.();
+      if (hello) this.ws.send(JSON.stringify(hello));
       for (const msg of this.pending.splice(0)) this.ws.send(JSON.stringify(msg));
     };
     this.ws.onmessage = (e) => {
@@ -45,7 +48,7 @@ export class SocketClient {
   }
 
   /** Evaluated and sent first on every open — how a viewport joins its session. */
-  setHello(fn: () => ClientMsg) {
+  setHello(fn: () => ClientMsg | null) {
     this.hello = fn;
   }
 

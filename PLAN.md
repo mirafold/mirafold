@@ -924,7 +924,7 @@ pattern on one before committing to all.
     `codex`. **Phase P proven on a second agent — everyone's own tool, in the
     browser, carrying the generative UI.**
 
-- [ ] **Step P.4 — Per-agent onboarding (no assumed agent)**
+- [x] **Step P.4 — Per-agent onboarding (no assumed agent)**
   - Goal: first run is "pick your agent, give it its key/model" — Claude Code or
     Codex or …, none assumed.
   - Build: shell-owned onboarding + per-session agent selection (folds in the old
@@ -932,6 +932,24 @@ pattern on one before committing to all.
     stay server-side.
   - Done when: a stranger who only uses Codex reaches a working Codex-in-browser
     session without editing files or seeing anything Claude.
+  - Status: **done, verified (2026-07-06).** Agent choice is now per-session, made
+    in the browser — nothing assumes an agent. On connect the server sends an
+    `agents` WireMsg (each offerable agent + whether it has creds `live`); the
+    shell-owned `Onboarding` overlay renders the picker (no agent auto-created —
+    `setHello` returns null until the user picks). Picking sends
+    `create{agent}`; the registry resolves that agent's backend per session
+    (`resolveBackendFor`, secrets stay server-side — the client only names the
+    agent), stores it on the entry, and `session_created` carries `agent` so the
+    status bar names it. `AgentName` moved onto the wire (protocol.ts, single
+    source; adapters re-export). A `/s/<id>` deep-link skips onboarding and
+    attaches. Verified in headless Chrome against the real server: fresh load →
+    picker with Claude Code + Codex (screenshot); clicking **Codex** → `/s/<id>`,
+    overlay gone, status bar reads **`codex`**, and **zero Claude in the session**
+    (`anythingClaude:false`) — exactly the Done-when's Codex-only stranger; a
+    deep-link to the session attached with no onboarding. Non-live agents render
+    "no credentials · demo" (run the mock). cwd-per-session is carried but the UI
+    is agent-first; a cwd input can fold in later. **P.4 done — first run is
+    'choose your agent', none privileged.**
 
 - [ ] **Step P.5 — Third agent + graceful degradation**
   - Goal: prove N agents (add Gemini CLI), and that optional capabilities

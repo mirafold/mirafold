@@ -41,10 +41,27 @@ function agentHasCredentials(agent: AgentName): boolean {
  * (API-free dev). Secrets stay in the environment, read per-adapter.
  */
 export function resolveBackend(): Backend {
+  return resolveBackendFor(defaultAgent());
+}
+
+/** The env-configured default agent — a pre-selection hint, never assumed. */
+export function defaultAgent(): AgentName {
   const requested = process.env.GENUI_AGENT;
-  const agent: AgentName =
-    requested === "codex" || requested === "gemini-cli" ? requested : "claude-code";
+  return requested === "codex" || requested === "gemini-cli" ? requested : "claude-code";
+}
+
+/** Resolve one named agent's backend (live + model), for per-session choice (P.4). */
+export function resolveBackendFor(agent: AgentName): Backend {
   return { agent, live: agentHasCredentials(agent), model: modelFor(agent) };
+}
+
+// Agents with a landed adapter — the onboarding picker's universe. gemini-cli
+// is P.5, so it isn't offered yet (createSession would have no engine for it).
+const ADAPTER_AGENTS: AgentName[] = ["claude-code", "codex"];
+
+/** What onboarding advertises: each offerable agent and whether it has creds. */
+export function availableAgents(): { agent: AgentName; live: boolean }[] {
+  return ADAPTER_AGENTS.map((agent) => ({ agent, live: agentHasCredentials(agent) }));
 }
 
 /**
