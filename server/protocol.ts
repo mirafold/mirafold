@@ -124,7 +124,22 @@ type WireMsgBody =
   | { type: "bang_end"; id: string; exitCode: number | null }
   // Step 4.4: reply to a client ping — connection liveness only, never
   // buffered or sequenced.
-  | { type: "pong" };
+  | { type: "pong" }
+  // Step 4.6: the fleet snapshot, sent to `watch_sessions` connections on
+  // subscribe and re-sent whenever the fleet changes (create/close, status
+  // transition, rename). Per-viewport plumbing — never buffered/sequenced.
+  | { type: "sessions"; sessions: SessionMeta[] };
+
+/** One fleet row (4.6). `lastActivity` is epoch ms of the last broadcast. */
+export type SessionMeta = {
+  sessionId: string;
+  name: string;
+  cwd: string;
+  agent: AgentName;
+  status: "idle" | "working" | "permission";
+  lastActivity: number;
+  viewports: number;
+};
 
 /**
  * Phase 2: the complete vocabulary of what a component interaction may do.
@@ -169,4 +184,9 @@ export type ClientMsg =
   | { type: "bang_kill"; id: string }
   // Step 4.4: connection liveness probe; the server answers `pong`. Lets the
   // browser detect a half-open socket (wifi blip with no FIN) and reconnect.
-  | { type: "ping" };
+  | { type: "ping" }
+  // Step 4.6: this connection is a fleet watcher, not a session viewport —
+  // it receives `sessions` snapshots instead of a transcript stream.
+  | { type: "watch_sessions" }
+  // Step 4.6: rename a session (fleet affordance; 4.2 deferred it here).
+  | { type: "rename"; sessionId: string; name: string };

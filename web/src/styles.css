@@ -1588,3 +1588,202 @@ html {
   color: var(--fg);
   border-color: var(--border-hover);
 }
+
+/* ---- Mission control (Step 4.6) -------------------------------------------
+   The fleet page at / — every live session, its coarse state, one click to
+   drop in. Shell-owned; theme-aware via the same tokens. */
+
+.fleet {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 48px 24px;
+}
+
+.fleet-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 22px;
+}
+
+.fleet-title {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 650;
+  color: var(--fg-strong);
+}
+
+.fleet-count {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8em;
+  color: var(--fg-dim);
+}
+
+.fleet-spacer {
+  flex: 1;
+}
+
+.fleet-new {
+  padding: 5px 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid var(--ok-border);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.fleet-new:hover {
+  background: var(--ok-bg);
+  border-color: var(--ok-border-strong);
+}
+
+.fleet-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fleet-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border-2);
+  border-radius: 9px;
+  text-decoration: none;
+  color: var(--fg-body);
+  animation: rise 0.16s ease-out both;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.fleet-row:hover {
+  border-color: var(--border-hover);
+  background: var(--surface-hover);
+}
+
+.fleet-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.fleet-dot-idle {
+  background: var(--accent);
+}
+
+.fleet-dot-working {
+  background: var(--info);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.fleet-dot-permission {
+  background: var(--warn-fg);
+  animation: sb-pulse 1.2s ease-in-out infinite;
+}
+
+.fleet-name {
+  font-weight: 600;
+  color: var(--fg-strong);
+  white-space: nowrap;
+}
+
+.fleet-edit {
+  margin-left: 6px;
+  background: none;
+  border: none;
+  padding: 0 2px;
+  color: var(--fg-faint);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.fleet-row:hover .fleet-edit {
+  opacity: 1;
+}
+
+.fleet-edit:hover {
+  color: var(--fg);
+}
+
+.fleet-rename {
+  font: inherit;
+  font-weight: 600;
+  color: var(--fg-strong);
+  background: var(--bg-inset);
+  border: 1px solid var(--border-hover);
+  border-radius: 6px;
+  padding: 2px 8px;
+  outline: none;
+  width: 180px;
+}
+
+.fleet-id,
+.fleet-agent,
+.fleet-cwd,
+.fleet-ago,
+.fleet-views {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78em;
+}
+
+.fleet-id {
+  color: var(--fg-faint);
+  flex-shrink: 0;
+}
+
+.fleet-agent {
+  color: var(--accent);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.fleet-cwd {
+  color: var(--fg-dim);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.fleet-status {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78em;
+  flex-shrink: 0;
+}
+
+.fleet-status-idle {
+  color: var(--fg-dim);
+}
+
+.fleet-status-working {
+  color: var(--info);
+}
+
+.fleet-status-permission {
+  color: var(--warn-fg);
+}
+
+.fleet-ago,
+.fleet-views {
+  color: var(--fg-faint);
+  flex-shrink: 0;
+}
+
+/* status-bar home link (into mission control) */
+.sb-home {
+  color: var(--fg-dimmer);
+  text-decoration: none;
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  padding: 1px 8px;
+}
+
+.sb-home:hover {
+  color: var(--fg);
+  border-color: var(--border-hover);
+}
