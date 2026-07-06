@@ -9,8 +9,19 @@
  */
 export type AgentName = "claude-code" | "codex" | "gemini-cli";
 
-/** Server → browser */
-export type WireMsg =
+/**
+ * Server → browser.
+ * Step 4.4 (additive): every message BROADCAST onto a session's stream also
+ * carries `seq?: number` — a session-scoped, strictly increasing sequence
+ * number stamped by the registry (see the intersection on the union below).
+ * A reconnecting viewport sends the last seq it saw (`attach.afterSeq`) and
+ * the server replays only the tail — resume without a repaint. Per-viewport
+ * messages (session_created, agents, pong) carry no seq: they're connection
+ * plumbing, not session history.
+ */
+export type WireMsg = WireMsgBody & { seq?: number };
+
+type WireMsgBody =
   | { type: "text_delta"; text: string }
   | { type: "status"; state: "thinking" | "tool"; label?: string }
   | { type: "turn_end" }
@@ -56,8 +67,17 @@ export type WireMsg =
   | { type: "user_prompt"; text: string }
   // Phase 4.2: reply to attach/create — which session this viewport is on.
   // Phase P.4 adds `agent` (optional/additive): which terminal agent is behind
-  // the session, so the status bar can name it.
-  | { type: "session_created"; sessionId: string; cwd: string; agent?: AgentName }
+  // the session, so the status bar can name it. Step 4.4 adds `resumed`: true
+  // means the server honored `attach.afterSeq` and will replay only the tail —
+  // the client keeps its state and must NOT reset the zone; absent/false means
+  // a full replay follows.
+  | {
+      type: "session_created";
+      sessionId: string;
+      cwd: string;
+      agent?: AgentName;
+      resumed?: boolean;
+    }
   // Phase P.4: on connect, the server advertises which agents this daemon can
   // run and which have credentials (`live`) — the onboarding picker's source.
   // No agent is assumed; `default` is only a hint for pre-selection.
@@ -101,7 +121,10 @@ export type WireMsg =
   | { type: "bang_start"; command: string; id: string }
   | { type: "bang_output"; data: string; id: string }
   // exitCode null = killed by signal (user stop, session close).
-  | { type: "bang_end"; id: string; exitCode: number | null };
+  | { type: "bang_end"; id: string; exitCode: number | null }
+  // Step 4.4: reply to a client ping — connection liveness only, never
+  // buffered or sequenced.
+  | { type: "pong" };
 
 /**
  * Phase 2: the complete vocabulary of what a component interaction may do.
@@ -123,8 +146,11 @@ export type ClientMsg =
   | { type: "permission_response"; id: string; allow: boolean }
   // Phase 4.2: a connection is a viewport onto a registry session. attach
   // joins an existing session (stale ids fall back to create); create
-  // starts a fresh one, optionally in a specific working dir.
-  | { type: "attach"; sessionId: string }
+  // starts a fresh one, optionally in a specific working dir. Step 4.4 adds
+  // `afterSeq`: the last broadcast seq this viewport saw — when the server
+  // still has everything after it in the ring buffer, it resumes with a
+  // tail replay instead of a full repaint.
+  | { type: "attach"; sessionId: string; afterSeq?: number }
   // Phase P.4: `agent` names which terminal agent to run (chosen at onboarding);
   // omitted → the daemon's default. Credentials stay server-side, never sent.
   | { type: "create"; cwd?: string; agent?: AgentName }
@@ -140,4 +166,7 @@ export type ClientMsg =
   // broadcast, never buffered, never logged, never re-serialized into a
   // WireMsg (per the secrets non-negotiable).
   | { type: "bang_input"; data: string; id: string }
-  | { type: "bang_kill"; id: string };
+  | { type: "bang_kill"; id: string }
+  // Step 4.4: connection liveness probe; the server answers `pong`. Lets the
+  // browser detect a half-open socket (wifi blip with no FIN) and reconnect.
+  | { type: "ping" };

@@ -102,8 +102,9 @@ type WireMsg =
       truncatedBytes?: number; parentId?: string }
   | { type: "permission_request"; tool: string; detail: string; id: string } // T.3
   | { type: "user_prompt"; text: string }              // 4.2: server-echoed user turn
-  | { type: "session_created"; sessionId: string;                  // 4.2: attach reply
-      cwd: string; agent?: AgentName }                             //   (P.4: + agent)
+  | { type: "session_created"; sessionId: string; cwd: string;    // 4.2: attach reply
+      agent?: AgentName; resumed?: boolean }       // (P.4: + agent; 4.4: + resumed —
+                                                   //  true ⇒ tail replay, don't reset)
   | { type: "agents"; agents: { agent: AgentName; live: boolean }[]; // P.4: onboarding
       default: AgentName; cwd?: string; home?: string }            //   (4.8: + cwd/home)
   | { type: "usage"; model: string; inputTokens: number;           // T2.6: status-bar
@@ -112,20 +113,26 @@ type WireMsg =
   // What the user types into the command goes browser→server only (bang_input).
   | { type: "bang_start"; command: string; id: string }
   | { type: "bang_output"; data: string; id: string }
-  | { type: "bang_end"; id: string; exitCode: number | null };     // null = killed
+  | { type: "bang_end"; id: string; exitCode: number | null }      // null = killed
+  | { type: "pong" };                                    // 4.4: liveness reply
+// 4.4: the whole union is intersected with { seq?: number } — the registry
+// stamps a session-scoped increasing seq on every BROADCAST message (never
+// on per-viewport plumbing), giving reconnects a resume cursor.
 
 // Browser → server
 type ClientMsg =
   | { type: "prompt"; text: string }
   | { type: "interrupt" }                                       // T.2: halt the turn
   | { type: "permission_response"; id: string; allow: boolean } // T.3
-  | { type: "attach"; sessionId: string }   // 4.2: join a registry session…
+  | { type: "attach"; sessionId: string; afterSeq?: number } // 4.2: join a session…
+                                          // (4.4: afterSeq ⇒ tail-only resume)
   | { type: "create"; cwd?: string; agent?: AgentName } //  …or start a fresh one (P.4)
   | { type: "action"; action: Action; sourceId: string } // Phase 2: component action
   | { type: "bang"; command: string; id: string }        // 4.9: run `!cmd` in a PTY
   | { type: "bang_input"; data: string; id: string }     //   EPHEMERAL: PTY stdin —
                                                          //   never broadcast/buffered/logged
-  | { type: "bang_kill"; id: string };
+  | { type: "bang_kill"; id: string }
+  | { type: "ping" };                                    // 4.4: liveness probe
 ```
 
 `Action` (also in `protocol.ts`) is the complete vocabulary of what a
@@ -281,7 +288,8 @@ web/               the browser app (React 19 + Vite)
   src/registry/      Card, List, Table, LinkGroup, Chart, TodoList, Md +
                      RenderBlock (validate → fallback → error boundary) +
                      ActionRow/context
-  src/ws.ts          SocketClient: typed send/onMessage, reconnect + hello
+  src/ws.ts          SocketClient: typed send/onMessage, hello, seq cursor,
+                     heartbeat (half-open detection) + capped backoff (4.4)
   src/styles.css     the design identity in CSS (see §7)
 bin/               genui-shell launcher (4.10): spawns dist-server, opens browser
 demo/              the M1 demo GIF embedded at the top of this README
@@ -316,7 +324,13 @@ the server replies `session_created`, replays the session's buffered history,
 then subscribes the socket to the live stream. Every emitted `WireMsg` is
 fanned out to all attached viewports and kept in a ring buffer (4000
 messages) for replay, so a refresh or a second tab repaints the same
-transcript. Closing a tab merely detaches; a session with no viewports dies
+transcript. **Reconnects resume, they don't repaint** (4.4): every broadcast
+message carries a session-scoped `seq`; a reconnecting viewport sends the
+last seq it saw and, when the tail is still buffered, the server replays
+only the unseen messages under `session_created{resumed:true}` — mid-turn
+streaming continues into the same DOM block, pins and scroll survive. A
+cursor that has fallen off the ring (or a fresh page) takes the full-replay
+path as before. Closing a tab merely detaches; a session with no viewports dies
 only after an idle timeout (default 60 min, `SESSION_IDLE_TIMEOUT_MS`). Each
 session runs in a real working dir — default: the directory the daemon was
 launched from, exactly like a terminal agent (Step 4.8) — or any existing

@@ -254,11 +254,30 @@ and the remaining Phase 4 polish (theming, resume, fleet view, relay) waits on i
     in both themes (dark unchanged; light shows dark terminal blocks on a
     light canvas as designed).
 
-- [ ] **Step 4.4 — Robust reconnect / session resume**
+- [x] **Step 4.4 — Robust reconnect / session resume**
   - Build: replace the Phase 0 reconnect stub with real resume — re-attach to
     the live warm session (or rehydrate from persistence) without losing
     in-flight state.
   - Done when: a network blip mid-turn recovers cleanly.
+  - Status: **done, verified against a real severed connection (2026-07-06)**
+    — reconnects now RESUME instead of repainting: the registry stamps a
+    session-scoped `seq` on every broadcast message; the hello carries
+    `attach.afterSeq` (last seen cursor) and, when the tail is still in the
+    ring buffer, the server replays only the unseen messages under
+    `session_created{resumed:true}` — the client skips zone_reset, so
+    mid-turn streaming continues into the same DOM block and pins/scroll/
+    usage state survive. Cursor off the ring / fresh page → full replay as
+    before. Client hardening: app-level ping→pong heartbeat (25s interval,
+    8s deadline) closes half-open sockets into the reconnect path; backoff
+    500ms→5s cap, short-circuited by `online`/tab-visible. Verified 9/9 in
+    headless Chrome against a TCP proxy severed mid-turn (drop detected,
+    resumed, turn completed; pre-blip DOM node still connected — proof of
+    no repaint; no duplicated strips; idle blip + reload paths clean) plus
+    raw-socket ping→pong; server log shows `resumed @seq`. NOT in scope
+    (deliberate): durability across daemon restarts — the 4.1 note folds it
+    here, but real rehydration needs per-engine session resume (claude
+    --resume / codex thread ids) + a disk ring; that's its own step if
+    wanted (a dead daemon currently falls back to a fresh session cleanly).
 
 - [ ] **Step 4.5 — Multi-user seam (optional)**
   - Build: per-user auth + session ownership at the shell boundary; the rest of

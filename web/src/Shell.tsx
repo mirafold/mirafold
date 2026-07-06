@@ -76,11 +76,14 @@ export function Shell() {
     // The URL carries the session identity; no id yet means "create one".
     let sessionId = location.pathname.match(/^\/s\/([\w-]+)/)?.[1] ?? null;
     // Attach to a known session; otherwise send nothing and wait at onboarding
-    // (P.4 — no agent is assumed, so we don't auto-create).
-    socket.setHello(() => (sessionId ? { type: "attach", sessionId } : null));
-    // Every (re)open replays history — clear the zone so it repaints once.
+    // (P.4 — no agent is assumed, so we don't auto-create). 4.4: the hello
+    // names the last seq this viewport saw, asking for a tail-only resume.
+    socket.setHello(() =>
+      sessionId
+        ? { type: "attach", sessionId, afterSeq: socket.lastSeq ?? undefined }
+        : null,
+    );
     socket.onOpen(() => {
-      for (const l of listeners) l({ type: "zone_reset" });
       for (const c of connListeners) c(true);
     });
     socket.onClose(() => {
@@ -90,10 +93,14 @@ export function Shell() {
       if (m.type === "session_created") {
         sessionId = m.sessionId;
         history.replaceState(null, "", `/s/${m.sessionId}`);
-        // The server replays this session's buffer right after — clear the
-        // zone so residue from before the attach (e.g. a rejected-create
-        // error at onboarding, 4.8) never sits above the new transcript.
-        for (const l of listeners) l({ type: "zone_reset" });
+        // Full attach: the server replays the whole buffer next — clear the
+        // zone so pre-attach residue never sits above the transcript (4.8).
+        // Resumed attach (4.4): only the unseen tail follows — keep
+        // everything (state, scroll, an in-flight streaming block).
+        if (!m.resumed) {
+          socket.lastSeq = null; // cursor restarts with the full replay
+          for (const l of listeners) l({ type: "zone_reset" });
+        }
       }
       for (const l of listeners) l(m);
     });
