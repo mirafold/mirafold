@@ -146,6 +146,52 @@ Confirmed for the adapter:
   `item/agentMessage/delta` events) likely needs a config flag or the app-server
   layer — deferred, optional-feature rule covers its absence.
 
+## P.2 integration — RESOLVED (2026-07-05, later same day)
+
+Tooling arrived: `@openai/codex-sdk@0.142.5` + the `codex` CLI are installed,
+and `~/.codex/auth.json` (ChatGPT login) is present — so live is unblocked at
+$0. `server/adapters/codex.ts` implemented against the confirmed SDK types
+(`dist/index.d.ts`): warm `Thread`, one `runStreamed` per prompt via a serial
+worker, `AbortController` for interrupt, event→`WireMsg` normalization per the
+table above (agent_message→text_delta, reasoning→thinking_delta,
+command_execution/file_change/mcp_tool_call/web_search→tool_use+tool_result,
+todo_list→`render` checklist, turn.completed→usage+turn_end). Seam wired:
+`agentHasCredentials("codex")` = OPENAI_API_KEY or `~/.codex/auth.json`;
+`createSession` → `CodexSession`.
+
+**Verified LIVE (foreground, direct adapter drive), $0 ChatGPT login:**
+turn 1 → `PONG.` + `usage model=codex in=12419 out=7` + turn_end; turn 2 →
+`ZEBRA-9.` + usage — **warm-thread recall of a turn-1 codename confirmed
+(true)**. Behaves like Codex; no permission bar (SDK has no approval callback →
+optional-feature rule). Typecheck clean.
+
+**Bug found + fixed (Claude-ism leak):** the shared `DEFAULT_MODEL=claude-sonnet-4-6`
+was being handed to Codex, which 400s ("model not supported when using Codex
+with a ChatGPT account"). Fixed per inherit-don't-invent: model is now
+agent-specific (`modelFor()` — `DEFAULT_MODEL` for claude, `CODEX_MODEL`/
+`GEMINI_MODEL` for the others); unset → adapter passes no model → Codex inherits
+its own config default. This is why usage shows `model=codex`.
+
+**Two environment constraints (both faithful/expected, neither a code defect):**
+1. **Codex's bwrap sandbox can't build on this Ubuntu 24.04 box** —
+   `apparmor_restrict_unprivileged_userns=1` blocks furnishing the namespace
+   (uid-map, loopback) → `bwrap: loopback ... Operation not permitted`. **Kyle's
+   own terminal `codex` fails identically**, so reproducing it is correct. The
+   adapter sets NO sandboxMode/approvalPolicy (inherits the user's Codex
+   config). Whatever makes his terminal Codex run a command makes ours run it —
+   so the command-in-transcript path verifies for free then, no genui-shell
+   change. (See the inherit-don't-invent memory.)
+2. ~~This harness SIGTERMs any socket-binding process that runs a Codex turn~~ —
+   **RESOLVED, served-browser leg verified.** `npx tsx` under a socket-bound
+   server did get SIGTERM'd, but launching the server via the **direct
+   `./node_modules/.bin/tsx` binary in the harness background mode** stays alive.
+   Verified live in headless Chrome (playwright-core + system Chrome) against the
+   real `index.ts`: two-turn run rendered the agent reply, recalled a turn-1
+   codename (warm), status bar showed `codex` + per-turn/session usage. **Stale-build
+   gotcha:** the served `./dist` was a day old (pre-T2/4.2) and silently failed to
+   render replies (stuck at `thinking…`) — `yarn build` fixed it. Always rebuild
+   before served-mode (non-Vite) verification.
+
 **Still to capture (cheap, next live window):** the `command_execution` item
 shape and the approval round-trip. Probe 2 set `approval_policy:"never"`, which
 made Codex **skip execution** (it narrated "done" but emitted no
