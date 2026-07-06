@@ -679,11 +679,19 @@ Read PLAN.md for the real thing; the shape in one breath:
   (local ergonomics, which falls out of Phase P's native `openai-compatible`
   adapter).
 
-Distribution intent shapes the architecture: the daemon ships as
-`npx genui-shell` and always runs on the user's machine; it re-skins whichever
-terminal agent the user already drives (Claude Code, Codex, Gemini CLI, …); the
-only hosted piece is ever a dumb WebSocket relay. The API key never leaves the
-user's machine. Keep every seam agent-neutral and compatible with that.
+Distribution intent shapes the architecture: the daemon installs globally
+(`npm i -g genui-shell`) and runs from **any** directory like a terminal agent
+(`genui-shell`, on PATH beside `claude`/`codex`/`gemini`; `npx genui-shell` is
+the try path), always on the user's machine. It re-skins whichever terminal
+agent the user already drives (Claude Code, Codex, Gemini CLI, …); the only
+hosted piece is ever a dumb WebSocket relay, and the API key never leaves the
+user's machine. Two consequences follow the "your terminal agent, better face"
+promise and are planned as PLAN Phase 4 steps: the session runs in the real
+directory you launched from (not a scratch workspace) with a working-dir picker
+and the cwd shown at the prompt (Step 4.8), and `!` runs a **real** interactive
+shell via a PTY — `sudo`/`ssh` prompts work, unlike the terminal agents' own
+non-interactive `!` (Step 4.9). Packaging to `npm i -g` is Step 4.10. Keep every
+seam agent-neutral and compatible with that.
 
 ## 11. Conventions and gotchas
 

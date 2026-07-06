@@ -22,11 +22,14 @@ before Phase T, and design every seam so the daemon stays local-first.
   required.
 - **Stack:** TypeScript end to end. Server: Node + Agent SDK + Express + `ws`.
   Front end: React + Vite. Package manager: **yarn**.
-- **Distribution: local-first.** The daemon ships as `npx genui-shell` and
-  runs on the user's machine; we host only a static site/billing and (paid
-  tier) a dumb WebSocket relay that forwards wire-protocol frames. The engine
-  never runs on hosted compute; the API key never leaves the user's machine.
-  Hosted execution is explicitly out of scope. (Rationale: BUSINESS.md §5.)
+- **Distribution: local-first, installed like a terminal agent.** Ships as a
+  global install — `npm i -g genui-shell`, then `genui-shell` run from **any**
+  directory, on PATH exactly like `claude`/`codex`/`gemini` (`npx genui-shell`
+  is the zero-install try path). The daemon runs on the user's machine; we host
+  only a static site/billing and (paid tier) a dumb WebSocket relay that
+  forwards wire-protocol frames. The engine never runs on hosted compute; the
+  API key never leaves the user's machine. Hosted execution is explicitly out
+  of scope. (Rationale: BUSINESS.md §5; packaging is PLAN Step 4.10.)
 - **Sessions are decoupled from connections.** A connection is a *viewport*
   that attaches to a session in a server-side registry; sessions survive
   refreshes/disconnects and fan out to many viewports (second tab, phone via
@@ -271,6 +274,80 @@ and the remaining Phase 4 polish (theming, resume, fleet view, relay) waits on i
   - Done when: a phone on a different network attaches to a home session
     through the relay and the stream matches the local tab byte-for-byte.
     (Business gating: BUSINESS.md §9, gate M3 — build only after M2 passes.)
+
+- [ ] **Step 4.8 — Working directory = terminal parity**
+  - Goal: launching `genui-shell` behaves like launching a terminal agent — it
+    operates on a **real** directory you chose, and you can always see which
+    one. Closes the "why is my agent stuck in a scratch workspace?" gap.
+  - Build: (a) default a session's cwd to the directory the daemon was launched
+    from (`process.cwd()`), not `workspace/<id>` — the terminal's own model
+    (`registry.ts:59`; arbitrary-cwd safety was already settled 2026-07-05 —
+    loopback bind + Origin guard close the remote-cwd vector, not the retired
+    jail). (b) Onboarding gains a working-directory choice beside the agent
+    picker: a type/paste-a-path field first (a browsable folder tree, backed by
+    a local directory-listing endpoint, can fold in later). (c) The trusted
+    shell shows the session's cwd as a prompt-line affordance (e.g.
+    `~/Projects/foo ❯`), shell-owned so the agent can never spoof it — the data
+    already arrives via `session_created.cwd` (`Shell.tsx`).
+  - Files: `server/registry.ts`, `server/index.ts`, `web/src/Onboarding.tsx`,
+    `web/src/Shell.tsx`, `web/src/PromptBox.tsx`, `web/src/styles.css`.
+  - Done when: a stranger runs `genui-shell` in a real project and the session
+    operates on that directory (not a scratch dir), the cwd is visible at the
+    prompt, and a second session can be pointed at a different folder from the
+    picker.
+
+- [ ] **Step 4.9 — `!` bash passthrough (interactive, via PTY)**
+  - Goal: terminal-faithful `!`, and *better* than the terminal agents' `!` —
+    theirs run without a TTY and so can't do `sudo`, `ssh`, or any program that
+    prompts. genui-shell's `!` is a **real** shell: interactive commands work.
+    No feature is lost switching from the terminal.
+  - Build: the trusted shell intercepts a leading `!` and runs the rest as a
+    shell command in the session's cwd, **not** routed through the model
+    (instant, zero tokens, deterministic). Spawn it through a **PTY**
+    (`node-pty`), not a plain pipe, so `isatty()` is true and interactive
+    programs prompt normally. Add **new, additive** `WireMsg`/`ClientMsg` types
+    for the PTY output stream, input, and lifecycle (never reshape existing
+    ones). Output streams to the output zone **and into the agent's context**
+    (terminal-faithful — the model sees what you ran; injected at the adapter
+    seam, mechanism per-engine). Interactive input (e.g. a `sudo` password) is
+    a **shell-owned, masked** affordance on a **special ephemeral path**: never
+    written to the replay ring, never persisted, never echoed to other
+    viewports, never in a serialized secret (per the wire-protocol
+    non-negotiable). The prompt is **scoped to the viewport that issued the
+    `!`** and is *not* broadcast — matters once the relay exists (a `sudo`
+    prompt must never fan out to a phone).
+  - Tier 1 (this step): line-interactive prompts — `sudo`, `y/n`, ssh
+    host-key. Tier 2 (**deferred, stretch**): a full embedded terminal
+    (`node-pty` + xterm.js — pure-JS front end, no new native module) so
+    `!vim`/`!top`/curses apps render; arguably its own feature.
+  - Files: `server/protocol.ts`, `server/index.ts`, `server/registry.ts`, a new
+    `server/pty.ts`, `server/adapters/*` (context injection), `web/src/Shell.tsx`,
+    `web/src/PromptBox.tsx` (masked input), `web/src/ws.ts`.
+  - Done when: `!ls` runs instantly in the session cwd and its output is visible
+    *and* referenced by the agent on the next turn; `!sudo -v` prompts for a
+    password in a masked shell-owned field, accepts it, and succeeds; the
+    password never appears in the replay buffer or a second viewport.
+
+- [ ] **Step 4.10 — Package & publish: `genui-shell` on PATH (M2 launch)**
+  - Goal: satisfy the M2 gate's "`genui-shell` works cold on a stranger's
+    machine." Turn this repo from a clone-and-`yarn-dev` app into an installed
+    tool. This is the last-mile launch step — sequence it at the M2 gate.
+  - Build: a `bin` entry + launcher that boots the server and opens the browser;
+    bundle the built web assets so production serves `./dist` (not the Vite dev
+    split); a `files` allowlist; flip `private:false` and publish over the
+    `0.0.1` name-reservation placeholder. Because Step 4.9 adds **`node-pty`, a
+    native module**, packaging must rely on its **prebuilt binaries** so a
+    normal `npm i -g` stays a clean download (no compile-on-install): pin to
+    Node versions with prebuild coverage and test the install on macOS / Windows
+    / Linux. **Accepted limitation (decided 2026-07-06):** users on an unusual
+    platform/Node with no matching prebuild may hit compile-on-install — we do
+    **not** service that long tail perfectly; document the fallback, don't
+    engineer around it.
+  - Files: `package.json` (bin/files/private/exports), a new `bin/genui-shell`
+    launcher, `server/index.ts` (prod static serving).
+  - Done when: on a clean machine, `npm i -g genui-shell` then `genui-shell` in
+    any directory boots the daemon, opens the browser, and drives the user's own
+    agent — no clone, no `yarn`. (Ties to BUSINESS.md §9 gate M2 + §5.)
 
 ---
 
