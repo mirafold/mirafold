@@ -102,9 +102,17 @@ type WireMsg =
       truncatedBytes?: number; parentId?: string }
   | { type: "permission_request"; tool: string; detail: string; id: string } // T.3
   | { type: "user_prompt"; text: string }              // 4.2: server-echoed user turn
-  | { type: "session_created"; sessionId: string; cwd: string }    // 4.2: attach reply
+  | { type: "session_created"; sessionId: string;                  // 4.2: attach reply
+      cwd: string; agent?: AgentName }                             //   (P.4: + agent)
+  | { type: "agents"; agents: { agent: AgentName; live: boolean }[]; // P.4: onboarding
+      default: AgentName; cwd?: string; home?: string }            //   (4.8: + cwd/home)
   | { type: "usage"; model: string; inputTokens: number;           // T2.6: status-bar
-      outputTokens: number; costUsd?: number };                    //   accounting
+      outputTokens: number; costUsd?: number }                     //   accounting
+  // 4.9: the `!` passthrough's lifecycle + OUTPUT stream (broadcast, replayed).
+  // What the user types into the command goes browser→server only (bang_input).
+  | { type: "bang_start"; command: string; id: string }
+  | { type: "bang_output"; data: string; id: string }
+  | { type: "bang_end"; id: string; exitCode: number | null };     // null = killed
 
 // Browser → server
 type ClientMsg =
@@ -112,8 +120,12 @@ type ClientMsg =
   | { type: "interrupt" }                                       // T.2: halt the turn
   | { type: "permission_response"; id: string; allow: boolean } // T.3
   | { type: "attach"; sessionId: string }   // 4.2: join a registry session…
-  | { type: "create"; cwd?: string }        //   …or start a fresh one
-  | { type: "action"; action: Action; sourceId: string }; // Phase 2: component action
+  | { type: "create"; cwd?: string; agent?: AgentName } //  …or start a fresh one (P.4)
+  | { type: "action"; action: Action; sourceId: string } // Phase 2: component action
+  | { type: "bang"; command: string; id: string }        // 4.9: run `!cmd` in a PTY
+  | { type: "bang_input"; data: string; id: string }     //   EPHEMERAL: PTY stdin —
+                                                         //   never broadcast/buffered/logged
+  | { type: "bang_kill"; id: string };
 ```
 
 `Action` (also in `protocol.ts`) is the complete vocabulary of what a
@@ -125,6 +137,24 @@ output-zone-local, never sent).
 existing shapes never change.** That's what makes every phase additive and
 keeps old clients from breaking. The only additions still planned are the
 session-list messages for the fleet view (Step 4.6).
+
+**The `!` passthrough (Step 4.9).** A prompt starting with `!` never reaches
+the model: the trusted shell intercepts it and the server runs the rest in a
+**real PTY** (`node-pty`) in the session's cwd — so unlike the terminal
+agents' own pipe-based `!`, interactive programs work: `sudo` prompts,
+`ssh` host-key questions, y/n confirms. Output streams to every viewport and
+the replay ring like anything else; the finished transcript
+(`<bash-input>`/`<bash-output>`) is injected into the agent's context with
+the next prompt, so the model sees what you ran (agent-neutrally, via
+`pushPrompt` — no per-adapter code). Stdin is the one **ephemeral** path:
+only the issuing viewport gets the input bar (it auto-masks on password
+prompts), and `bang_input` goes straight to the PTY — never broadcast,
+buffered, or logged, so a password can't reach the ring or a second tab.
+Echo discipline is the terminal's own: echo-on input comes back as PTY
+output (visible everywhere, as in a terminal); password prompts turn echo
+off, so nothing comes back. A full embedded terminal (xterm.js consuming the
+raw stream — `!vim`, `!top`) is deferred Tier 2; today's stream is
+ANSI-stripped plain text, one command at a time per session.
 
 Both sides import the *same file*: the web build resolves `@protocol` to
 `server/protocol.ts` via a Vite alias + tsconfig path. There is one source of
@@ -695,8 +725,8 @@ promise and are PLAN Phase 4 steps: the session runs in the real directory you
 launched from (not a scratch workspace) with a working-dir picker and the cwd
 shown at the prompt (Step 4.8 — shipped 2026-07-06), and `!` runs a **real** interactive
 shell via a PTY — `sudo`/`ssh` prompts work, unlike the terminal agents' own
-non-interactive `!` (Step 4.9). Packaging to `npm i -g` is Step 4.10. Keep every
-seam agent-neutral and compatible with that.
+non-interactive `!` (Step 4.9 — shipped 2026-07-06, §2.1). Packaging to
+`npm i -g` is Step 4.10. Keep every seam agent-neutral and compatible with that.
 
 ## 11. Conventions and gotchas
 

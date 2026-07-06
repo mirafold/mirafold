@@ -149,6 +149,8 @@ type WireMsg =
   //                subagent attribution, and { type: "usage"; ... } for the
   //                status bar — all additive; optional fields old clients
   //                simply ignore.
+  // Step 4.9 adds: bang_start / bang_output / bang_end (the `!` PTY stream;
+  //                up: bang / bang_input (ephemeral stdin) / bang_kill).
 ```
 
 Browser→server is just `{ type: "prompt"; text: string }` plus
@@ -309,7 +311,7 @@ and the remaining Phase 4 polish (theming, resume, fleet view, relay) waits on i
     replay-after-reload intact. Live path unchanged (cwd flows to adapters
     exactly as before). Deferred as planned: browsable folder tree.
 
-- [ ] **Step 4.9 — `!` bash passthrough (interactive, via PTY)**
+- [x] **Step 4.9 — `!` bash passthrough (interactive, via PTY)**
   - Goal: terminal-faithful `!`, and *better* than the terminal agents' `!` —
     theirs run without a TTY and so can't do `sudo`, `ssh`, or any program that
     prompts. genui-shell's `!` is a **real** shell: interactive commands work.
@@ -340,6 +342,24 @@ and the remaining Phase 4 polish (theming, resume, fleet view, relay) waits on i
     *and* referenced by the agent on the next turn; `!sudo -v` prompts for a
     password in a masked shell-owned field, accepts it, and succeeds; the
     password never appears in the replay buffer or a second viewport.
+  - Status: **done, verified mock + live (2026-07-06)** — `server/pty.ts`
+    (node-pty 1.1.0, ANSI-stripped for Tier 1), additive wire types
+    (`bang_start/output/end` broadcast+replayed; `bang`/`bang_input`/
+    `bang_kill` up), one command at a time per session, PTY killed with the
+    session. Stdin is the ephemeral path: only the issuing viewport mounts
+    the BangBar (auto-masks when the output tail is a password prompt, manual
+    toggle, Ctrl-C→SIGINT, Esc/■→kill); `bang_input` goes PTY-only. Context
+    injection is agent-neutral: finished transcripts (16KB tail cap) ride the
+    next `pushPrompt` as `<bash-input>/<bash-output>`; the user_prompt strip
+    stays raw. Mock 14/14 in headless Chrome (broadcast, replay-secrecy —
+    password absent from both viewports and post-refresh replay — y/n echo
+    parity, kill, exit codes); live: real `!sudo -v` prompted masked through
+    the PTY (killed, not answered — full success is Kyle's password), and
+    Codex quoted the `!` marker back on the next turn. Fixed en route: the
+    4.8 prompt-cwd ellipsis was right-side (bidi) — now LRM-wrapped, leaf
+    stays visible. Deferred as planned (Tier 2): xterm.js full terminal for
+    curses apps; raw-ANSI stream; concurrent bangs; stdin re-attach after
+    refresh.
 
 - [ ] **Step 4.10 — Package & publish: `genui-shell` on PATH (M2 launch)**
   - Goal: satisfy the M2 gate's "`genui-shell` works cold on a stranger's

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Action, AgentName, WireMsg } from "@protocol";
 import { Onboarding } from "./Onboarding";
 import { PromptBox } from "./PromptBox";
@@ -43,6 +43,13 @@ export function Shell() {
   // the onboarding card can show a rejected working dir.
   const [daemon, setDaemon] = useState<{ cwd?: string; home?: string }>({});
   const [onbError, setOnbError] = useState<string | null>(null);
+  // 4.9: the `!` command THIS viewport issued, if still running — only the
+  // issuer gets the stdin affordance (a sudo prompt must never fan out to a
+  // second tab or, later, a phone via the relay). Lost on refresh: Tier 1.
+  const [myBang, setMyBang] = useState<{ id: string; command: string } | null>(null);
+  // Tail of the running command's output — drives the password-prompt
+  // detection that masks the stdin field. One bang per session, so untagged.
+  const [bangTail, setBangTail] = useState("");
   const hasUrlSession = useMemo(() => /^\/s\/[\w-]+/.test(location.pathname), []);
 
   // Paths render the way a terminal prompt would: home becomes ~.
@@ -104,6 +111,21 @@ export function Shell() {
         // viewport (including this one), so all tabs stay identical.
         socket.send({ type: "prompt", text });
       },
+      // 4.9: run a shell command in the session's cwd (the `!` path). The id
+      // is minted here so this viewport can correlate the broadcast stream.
+      sendBang(command: string): string {
+        const id = `bang-${Math.random().toString(36).slice(2, 10)}`;
+        socket.send({ type: "bang", command, id });
+        return id;
+      },
+      // EPHEMERAL: PTY stdin (possibly a password) — the server writes it to
+      // the process and nothing else; it never comes back on the wire.
+      sendBangInput(id: string, data: string) {
+        socket.send({ type: "bang_input", data, id });
+      },
+      killBang(id: string) {
+        socket.send({ type: "bang_kill", id });
+      },
       interrupt() {
         socket.send({ type: "interrupt" });
       },
@@ -135,6 +157,13 @@ export function Shell() {
           // Only the onboarding card consumes this; in-session errors already
           // render in the output zone.
           setOnbError(m.message);
+        } else if (m.type === "bang_start") {
+          setBangTail("");
+        } else if (m.type === "bang_output") {
+          // Only the tail matters (prompt detection) — keep it tiny.
+          setBangTail((t) => (t + m.data).slice(-400));
+        } else if (m.type === "bang_end") {
+          setMyBang((b) => (b && b.id === m.id ? null : b));
         } else if (m.type === "usage") {
           // Tokens are per-turn → sum for the session total. Cost is already
           // the session-cumulative figure → take it as-is, never add (T2.6).
@@ -202,6 +231,19 @@ export function Shell() {
     setAsks((a) => a.filter((x) => x.id !== id));
   };
 
+  // 4.9: a leading `!` is intercepted by the trusted shell and runs as a real
+  // shell command — instant, zero tokens, never routed through the model.
+  const send = (text: string) => {
+    const m = text.match(/^!\s*(.+)$/s);
+    if (m) {
+      const command = m[1].trim();
+      setMyBang({ id: bus.sendBang(command), command });
+      setBangTail("");
+    } else {
+      bus.sendPrompt(text);
+    }
+  };
+
   // Onboarding shows until this viewport has a session — but not when the URL
   // already names one (that path attaches straight through).
   const showOnboarding = !hasUrlSession && !meta.sessionId;
@@ -234,8 +276,16 @@ export function Shell() {
           </button>
         </div>
       )}
+      {myBang && (
+        <BangBar
+          command={myBang.command}
+          tail={bangTail}
+          onInput={(data) => bus.sendBangInput(myBang.id, data)}
+          onKill={() => bus.killBang(myBang.id)}
+        />
+      )}
       <PromptBox
-        onSend={bus.sendPrompt}
+        onSend={send}
         busy={busy}
         onInterrupt={bus.interrupt}
         cwd={tildify(meta.cwd)}
@@ -247,6 +297,79 @@ export function Shell() {
         cwd={meta.cwd}
         usage={usage}
       />
+    </div>
+  );
+}
+
+/**
+ * Stdin for the running `!` command (4.9) — SHELL-OWNED UI on the ephemeral
+ * input path: what's typed here goes to the PTY and nowhere else (never the
+ * replay ring, never other viewports), and only the issuing viewport mounts
+ * it. Masks itself when the command's output ends in a password prompt
+ * (echo-off input never comes back as output, so masking here is the only
+ * echo there is); a toggle overrides the guess either way.
+ */
+function BangBar({
+  command,
+  tail,
+  onInput,
+  onKill,
+}: {
+  command: string;
+  tail: string;
+  onInput: (data: string) => void;
+  onKill: () => void;
+}) {
+  const [val, setVal] = useState("");
+  const [maskOverride, setMaskOverride] = useState<boolean | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const lastLine = tail.slice(tail.lastIndexOf("\n") + 1);
+  const maskAuto = /pass(word|phrase)/i.test(lastLine) && /:\s*$/.test(lastLine);
+  const masked = maskOverride ?? maskAuto;
+
+  // A password prompt appearing is the moment the user wants to type here.
+  useEffect(() => {
+    if (maskAuto) inputRef.current?.focus();
+  }, [maskAuto]);
+
+  return (
+    <div className="bang-bar">
+      <span className="bang-bar-badge">!</span>
+      <span className="bang-bar-cmd" title={command}>
+        {command}
+      </span>
+      <input
+        ref={inputRef}
+        className="bang-bar-input"
+        type={masked ? "password" : "text"}
+        value={val}
+        spellCheck={false}
+        autoComplete="off"
+        placeholder={masked ? "password — sent to the command only, never stored" : "stdin"}
+        onChange={(e) => setVal(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            onInput(val + "\n");
+            setVal("");
+            setMaskOverride(null); // re-detect on the next prompt
+          } else if (e.key === "c" && e.ctrlKey) {
+            e.preventDefault();
+            onInput("\x03"); // SIGINT to the foreground process, like a terminal
+          } else if (e.key === "Escape") {
+            onKill();
+          }
+        }}
+      />
+      <button
+        className="bang-bar-mask"
+        onClick={() => setMaskOverride(!masked)}
+        title={masked ? "Show what I type" : "Mask what I type"}
+      >
+        {masked ? "abc" : "•••"}
+      </button>
+      <button className="bang-bar-kill" onClick={onKill} title="Kill the command (Esc)">
+        ■ kill
+      </button>
     </div>
   );
 }

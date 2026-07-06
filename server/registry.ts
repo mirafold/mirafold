@@ -11,6 +11,7 @@ import {
   type AgentSession,
   type Backend,
 } from "./adapters";
+import type { BangProc } from "./pty";
 
 // Replay depth: enough to reconstruct a long working session; beyond it the
 // oldest messages fall off and a late viewport sees a truncated head.
@@ -47,6 +48,12 @@ export type SessionEntry = {
   buffer: WireMsg[];
   viewports: Set<Viewport>;
   idleTimer?: NodeJS.Timeout;
+  // Step 4.9: the one running `!` command, if any (one at a time per session,
+  // like a terminal). The proc itself never leaves the server.
+  bang?: { id: string; proc: BangProc };
+  // Finished `!` transcripts waiting to ride into the agent's context with
+  // the next prompt — terminal-faithful: the model sees what you ran.
+  pendingBang: string[];
 };
 
 /**
@@ -89,6 +96,7 @@ export class SessionRegistry {
       session,
       buffer: [],
       viewports: new Set(),
+      pendingBang: [],
     };
     session.onMessage((msg) => this.broadcast(entry, msg));
     this.entries.set(id, entry);
@@ -120,6 +128,7 @@ export class SessionRegistry {
     entry.viewports.delete(viewport);
     if (entry.viewports.size === 0) {
       entry.idleTimer = setTimeout(() => {
+        entry.bang?.proc.kill(); // no orphaned PTYs past the session's life
         entry.session.close();
         this.entries.delete(entry.id);
       }, IDLE_TIMEOUT_MS);

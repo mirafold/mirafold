@@ -8,6 +8,27 @@ import type { AgentName, ClientMsg, WireMsg } from "./protocol";
 import { SessionRegistry, type SessionEntry } from "./registry";
 import { runActionTool } from "./actions";
 import { availableAgents, defaultAgent } from "./adapters";
+import { spawnBang } from "./pty";
+
+// How much of a `!` command's output rides into the agent's context with the
+// next prompt (tail-kept — the end of a long output is usually the payload).
+// The wire/replay stream is never capped by this; it only bounds the context
+// injection so one verbose command can't eat the model's window.
+const BANG_CONTEXT_CAP = Number(process.env.BANG_CONTEXT_CAP ?? 16_000);
+
+/**
+ * Step 4.9: prompts carry any finished-since-last-turn `!` transcripts as
+ * leading context — terminal-faithful (the model sees what you ran), and
+ * agent-neutral: it consumes only the AgentSession seam's pushPrompt, so
+ * every engine gets it without per-adapter code. The user_prompt broadcast
+ * stays the raw typed text; only the engine sees the injected block.
+ */
+const pushWithBangContext = (entry: SessionEntry, text: string) => {
+  const blocks = entry.pendingBang.splice(0);
+  entry.session.pushPrompt(
+    blocks.length ? `${blocks.join("\n")}\n${text}` : text,
+  );
+};
 
 // Agents the browser is allowed to name at onboarding (P.4). A create message
 // naming anything else falls back to the daemon default rather than erroring.
@@ -117,8 +138,57 @@ wss.on("connection", (ws) => {
           // Echo the user turn through the session stream so every viewport
           // (and the replay buffer) renders the command strip.
           registry.broadcast(entry, { type: "user_prompt", text: msg.text });
-          entry.session.pushPrompt(msg.text);
+          pushWithBangContext(entry, msg.text);
         }
+        break;
+      case "bang": {
+        // The `!` passthrough (4.9): run it in a PTY in the session's cwd —
+        // instant, zero tokens, never routed through the model.
+        if (!entry || typeof msg.command !== "string" || !msg.command.trim()) break;
+        if (!/^[\w-]{1,64}$/.test(String(msg.id))) break;
+        if (entry.bang) {
+          viewport({ type: "error", message: "a ! command is already running (stop it first)" });
+          break;
+        }
+        const e = entry;
+        const { command, id } = msg;
+        let output = "";
+        registry.broadcast(e, { type: "bang_start", command, id });
+        const proc = spawnBang(
+          command,
+          e.cwd,
+          (data) => {
+            output += data;
+            registry.broadcast(e, { type: "bang_output", data, id });
+          },
+          (exitCode) => {
+            e.bang = undefined;
+            registry.broadcast(e, { type: "bang_end", id, exitCode });
+            // Queue the transcript for the agent's next turn. Tail-kept cap;
+            // echo-off input (passwords) was never in the PTY output, so it
+            // can't leak into context here either.
+            const tail =
+              output.length > BANG_CONTEXT_CAP
+                ? `(… ${output.length - BANG_CONTEXT_CAP} chars elided …)\n` +
+                  output.slice(-BANG_CONTEXT_CAP)
+                : output;
+            e.pendingBang.push(
+              `<bash-input>${command}</bash-input>\n<bash-output exit-code="${exitCode ?? "killed"}">\n${tail}</bash-output>`,
+            );
+          },
+        );
+        e.bang = { id, proc };
+        break;
+      }
+      case "bang_input":
+        // EPHEMERAL SECRET PATH: straight to the PTY, nothing else — no
+        // broadcast, no buffer, no log (a password may be in `data`).
+        if (entry?.bang && entry.bang.id === msg.id && typeof msg.data === "string") {
+          entry.bang.proc.write(msg.data);
+        }
+        break;
+      case "bang_kill":
+        if (entry?.bang && entry.bang.id === msg.id) entry.bang.proc.kill();
         break;
       case "interrupt":
         entry?.session.interrupt();
@@ -135,7 +205,7 @@ wss.on("connection", (ws) => {
         if (msg.action.kind === "prompt" && typeof msg.action.text === "string") {
           console.log(`[action] prompt from render ${src}`);
           registry.broadcast(entry, { type: "user_prompt", text: msg.action.text });
-          entry.session.pushPrompt(msg.action.text);
+          pushWithBangContext(entry, msg.action.text);
         } else if (msg.action.kind === "tool" && typeof msg.action.name === "string") {
           const id = `action-${randomUUID().slice(0, 8)}`;
           registry.broadcast(entry, {
