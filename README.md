@@ -2,7 +2,7 @@
 
 A **faithful browser re-skin of terminal coding agents**. genui-shell puts a
 browser dashboard — with generative UI on top — onto whichever terminal agent
-you already use (Claude Code today; Codex and Gemini CLI next), staying faithful
+you already use — **Claude Code, Codex, or Gemini CLI** — staying faithful
 to that agent: a Codex user gets **Codex** in the browser, never "Claude
 things". A full agentic engine — filesystem, bash, tools, a warm persistent
 session — runs behind a web front end, and the agent's output stream is treated
@@ -12,15 +12,18 @@ bridge, and — when no component fits — the agent emits sandboxed arbitrary U
 into a locked-down iframe. A fixed, trusted shell owns the prompt box, the
 socket, and all credentials, and the agent can never touch any of them.
 
-> **The faithful-skin-per-agent model is the identity, and multi-agent is the
-> next build front (PLAN Phase P) — not yet shipped.** The substrate is already
-> right: the wire protocol, output zone, security model, and generative UI
-> consume `WireMsg` only, behind the `AgentSession` seam (§2.2). Today the one
-> wired agent is **Claude Code** (via its Agent SDK, `server/session.ts`); Codex
-> and Gemini CLI become one adapter each — drive that agent's own engine,
-> normalize its events to `WireMsg`, inject the render tools via **MCP**. No
-> generic homegrown agent, no proxy, no privileged agent. The rest of this
-> document describes the current single-agent (Claude Code) implementation.
+> **The faithful-skin-per-agent model is the identity, and it's shipped (PLAN
+> Phase P, complete).** Three terminal agents run behind one front end today —
+> **Claude Code** (Anthropic Agent SDK), **Codex** (OpenAI), and **Gemini CLI**
+> (Google) — each driving its **own** engine, normalizing its event stream to
+> `WireMsg` behind the `AgentSession` seam (§2.2), and carrying genui-shell's
+> generative UI via **MCP**. A new agent is one adapter in `server/adapters/`,
+> not a rewrite: the wire protocol, output zone, security model, and generative
+> UI consume `WireMsg` only. No generic homegrown agent, no proxy, no privileged
+> agent — onboarding lets you pick the agent per session. Claude Code is the
+> reference adapter, so this document's deeper sections use it for concrete
+> examples; Codex and Gemini CLI are the same pattern (`server/adapters/codex.ts`,
+> `server/adapters/gemini-cli.ts`).
 
 Think of it as a terminal successor, not a chat app: monospace command strips
 in, rich rendered output back. The vision is a **strict superset of the
@@ -41,10 +44,12 @@ This document is the technical orientation for someone taking ownership of the
 codebase. Companion documents:
 
 - **[PLAN.md](PLAN.md)** — the phased build plan. Every step has
-  Goal / Build / Files / Done-when. Shipped so far: **Phases 0, 1, T, 2, 3,
-  and T2**, plus the Phase 4 session registry (4.1/4.2). What remains is the
-  rest of Phase 4 (product hardening) and Phase L (local models, M2). PLAN.md
-  is the source of truth for what comes next and why.
+  Goal / Build / Files / Done-when. Shipped so far: **Phases 0, 1, T, 2, 3, T2,
+  and P** (three faithful agent skins — Claude Code, Codex, Gemini CLI), plus the
+  Phase 4 session registry (4.1/4.2). What remains is the rest of Phase 4
+  (product hardening) and Phase L (local models, M2). PLAN.md is the source of
+  truth for what comes next; completed phases are archived in
+  **[PLAN-ARCHIVE.md](PLAN-ARCHIVE.md)**.
 - **[BUSINESS.md](BUSINESS.md)** — positioning, wedges, pricing, and the
   milestone gates that sequence the plan. The two build-relevant conclusions:
   ship the Phase 1 demo before Phase T, and keep every seam local-first.
@@ -125,7 +130,7 @@ Both sides import the *same file*: the web build resolves `@protocol` to
 `server/protocol.ts` via a Vite alias + tsconfig path. There is one source of
 truth for message shapes, enforced by the type checker on both ends.
 
-### 2.2 `AgentSession` (`server/session.ts`)
+### 2.2 `AgentSession` (`server/adapters/`)
 
 ```ts
 interface AgentSession {
@@ -137,13 +142,19 @@ interface AgentSession {
 }
 ```
 
-Two implementations exist behind this interface, and the server (and
-everything downstream, including the entire front end) cannot tell them
-apart:
+Four implementations live behind this interface in `server/adapters/`, one per
+agent plus the mock, and the server (and everything downstream, including the
+entire front end) cannot tell them apart — they all emit `WireMsg` and nothing
+else. `createSession()` resolves which one from config + per-session onboarding:
 
-- **`Session`** — the real thing, wrapping the Agent SDK.
-- **`MockSession`** — a scripted stand-in used automatically when
-  `ANTHROPIC_API_KEY` is unset. Emits every wire message type with
+- **`ClaudeCodeSession`** — Claude Code via the Anthropic Agent SDK (the
+  reference adapter; Claude-specific fidelity is scoped here).
+- **`CodexSession`** — OpenAI's Codex via `@openai/codex-sdk` (spawns the
+  `codex` CLI, streams its JSONL events → `WireMsg`).
+- **`GeminiCliSession`** — Google's Gemini CLI via its headless `stream-json`
+  interface (one process per turn, warm across turns via `--session-id`/`--resume`).
+- **`MockSession`** — a scripted stand-in used automatically when the chosen
+  agent has no credentials. Emits every wire message type with
   realistic pacing, drawing replies from a shuffled deck of five demo
   templates (welcome, analytics report, code review, migration plan,
   research brief), and ends every turn with a schema-valid `render` so the
@@ -216,8 +227,10 @@ artifact's "sandboxed" chrome, and the status bar are all drawn this way.
 server/            the local daemon (Node, run with tsx)
   protocol.ts        WireMsg/ClientMsg/Action — the shared wire contract
   registry-spec.ts   zod shapes per component — spec = tool schema = validation
-  render-tools.ts    render_* tools (in-process MCP server) + RENDER_GUIDANCE
-  session.ts         Session (real SDK) + MockSession behind AgentSession
+  render-tools.ts    render_* tools as an in-process MCP server (Claude adapter) + RENDER_GUIDANCE
+  render-mcp.ts      the same render_* tools as a standalone stdio MCP server (Codex/Gemini)
+  adapters/          one AgentSession per agent: claude-code.ts, codex.ts,
+                     gemini-cli.ts, mock.ts (+ index.ts seam, types.ts)
   registry.ts        SessionRegistry: sessions decoupled from connections (4.2)
   actions.ts         Phase 2 mediation: allowlisted tools component actions may run
   permissions.ts     canUseTool policy: workspace gating + browser prompts (T.3)
@@ -282,9 +295,10 @@ there is no local echo) and pushed into the session; `interrupt` and
 `permission_response` forward to the session; `action` hits the Phase 2
 mediation path (§5.4).
 
-### 5.2 `session.ts` — the warm session
+### 5.2 `adapters/claude-code.ts` — the warm Claude Code session
 
-`Session` is the heart of the server. Key mechanics:
+`ClaudeCodeSession` is the reference adapter (Codex and Gemini are the same
+`AgentSession` shape — §2.2 — driving their own engines). Its key mechanics:
 
 - **One `query()` for the life of the object.** The SDK call's `prompt` is
   an async generator (`promptStream`) backed by a tiny unbounded

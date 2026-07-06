@@ -1,10 +1,11 @@
 # CLAUDE.md
 
 genui-shell — a **faithful browser re-skin of terminal coding agents**. It
-re-skins whichever terminal agent you already use (Claude Code today; Codex and
-Gemini CLI next), faithful to that agent, with genui-shell's generative UI
-layered on top — a Codex user gets Codex, never "Claude things". One adapter per
-agent; multi-agent is the next build front (PLAN Phase P). Orientation lives in
+re-skins whichever terminal agent you already use — **Claude Code, Codex, and
+Gemini CLI** all shipped (PLAN Phase P complete) — faithful to that agent, with
+genui-shell's generative UI layered on top — a Codex user gets Codex, never
+"Claude things". One adapter per agent in `server/adapters/`, none privileged;
+the agent is picked per session at onboarding. Orientation lives in
 **README.md** (architecture, the two load-bearing contracts, conventions). What to build next lives in **PLAN.md** (work steps in order,
 one per prompt; don't start a step until the previous "Done when" is
 satisfied; check steps off with a dated status note). Why, and in what
