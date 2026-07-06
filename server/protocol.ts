@@ -2,6 +2,13 @@
 // Later phases ADD message types; existing shapes never change.
 // The web side imports these same types via the `@protocol` alias.
 
+/**
+ * The terminal agents genui-shell can re-skin (one adapter each). On the wire
+ * since Phase P.4 — the browser picks which agent a session runs at onboarding,
+ * so the name is part of the shared contract (adapters/types.ts re-exports it).
+ */
+export type AgentName = "claude-code" | "codex" | "gemini-cli";
+
 /** Server → browser */
 export type WireMsg =
   | { type: "text_delta"; text: string }
@@ -48,7 +55,13 @@ export type WireMsg =
   // buffer — carries them identically.
   | { type: "user_prompt"; text: string }
   // Phase 4.2: reply to attach/create — which session this viewport is on.
-  | { type: "session_created"; sessionId: string; cwd: string }
+  // Phase P.4 adds `agent` (optional/additive): which terminal agent is behind
+  // the session, so the status bar can name it.
+  | { type: "session_created"; sessionId: string; cwd: string; agent?: AgentName }
+  // Phase P.4: on connect, the server advertises which agents this daemon can
+  // run and which have credentials (`live`) — the onboarding picker's source.
+  // No agent is assumed; `default` is only a hint for pre-selection.
+  | { type: "agents"; agents: { agent: AgentName; live: boolean }[]; default: AgentName }
   // Phase 3: agent-authored HTML for the sandboxed iframe host (the ONLY
   // channel raw agent markup may travel). Re-sending an id replaces that
   // artifact in place — same rule as `render`.
@@ -90,7 +103,9 @@ export type ClientMsg =
   // joins an existing session (stale ids fall back to create); create
   // starts a fresh one, optionally in a specific working dir.
   | { type: "attach"; sessionId: string }
-  | { type: "create"; cwd?: string }
+  // Phase P.4: `agent` names which terminal agent to run (chosen at onboarding);
+  // omitted → the daemon's default. Credentials stay server-side, never sent.
+  | { type: "create"; cwd?: string; agent?: AgentName }
   // Phase 2: a component interaction, attributed to the render block
   // (sourceId = its render id) that emitted it.
   | { type: "action"; action: Action; sourceId: string };

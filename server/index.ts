@@ -3,9 +3,16 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import express from "express";
 import { WebSocketServer } from "ws";
-import type { ClientMsg, WireMsg } from "./protocol";
+import type { AgentName, ClientMsg, WireMsg } from "./protocol";
 import { SessionRegistry, type SessionEntry } from "./registry";
 import { runActionTool } from "./actions";
+import { availableAgents, defaultAgent } from "./adapters";
+
+// Agents the browser is allowed to name at onboarding (P.4). A create message
+// naming anything else falls back to the daemon default rather than erroring.
+const OFFERABLE = new Set(availableAgents().map((a) => a.agent));
+const asAgent = (v: unknown): AgentName | undefined =>
+  typeof v === "string" && OFFERABLE.has(v as AgentName) ? (v as AgentName) : undefined;
 
 // .env is optional — without an API key we fall back to the mock session.
 try {
@@ -55,10 +62,14 @@ wss.on("connection", (ws) => {
     if (entry) registry.detach(entry, viewport);
     entry = e;
     // Identity first, then the replayed history, then the live stream.
-    viewport({ type: "session_created", sessionId: e.id, cwd: e.cwd });
+    viewport({ type: "session_created", sessionId: e.id, cwd: e.cwd, agent: e.agent });
     registry.attach(e, viewport);
     console.log(`[ws] viewport attached → session ${e.id} (${e.viewports.size} viewport(s))`);
   };
+
+  // P.4: advertise which agents this daemon offers + which are live, so the
+  // onboarding picker can render before any session exists. No agent assumed.
+  viewport({ type: "agents", agents: availableAgents(), default: defaultAgent() });
 
   ws.on("message", (data) => {
     let msg: ClientMsg;
@@ -70,7 +81,12 @@ wss.on("connection", (ws) => {
     }
     switch (msg.type) {
       case "create":
-        attachTo(registry.create(typeof msg.cwd === "string" ? msg.cwd : undefined));
+        attachTo(
+          registry.create({
+            cwd: typeof msg.cwd === "string" ? msg.cwd : undefined,
+            agent: asAgent(msg.agent),
+          }),
+        );
         break;
       case "attach": {
         // A stale/unknown id (old bookmark, server restart) gets a fresh

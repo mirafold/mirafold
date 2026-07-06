@@ -5,6 +5,8 @@ import type { WireMsg } from "./protocol";
 import {
   createSession,
   resolveBackend,
+  resolveBackendFor,
+  type AgentName,
   type AgentSession,
   type Backend,
 } from "./adapters";
@@ -20,6 +22,7 @@ export type Viewport = (msg: WireMsg) => void;
 export type SessionEntry = {
   id: string;
   cwd: string;
+  agent: AgentName;
   session: AgentSession;
   buffer: WireMsg[];
   viewports: Set<Viewport>;
@@ -40,8 +43,12 @@ export class SessionRegistry {
   // config (Phase P.1). The agent is chosen here, not hardcoded downstream.
   constructor(private backend: Backend = resolveBackend()) {}
 
-  create(cwd?: string): SessionEntry {
+  create(opts?: { cwd?: string; agent?: AgentName }): SessionEntry {
     const id = randomUUID().slice(0, 8);
+    // Which agent this session runs (P.4): the caller's choice at onboarding,
+    // resolved to a fresh backend here; no choice → the daemon default. Secrets
+    // stay server-side — the client only ever names the agent.
+    const backend = opts?.agent ? resolveBackendFor(opts.agent) : this.backend;
     // cwd is whatever the caller chose (default: workspace/<id>). A session is
     // like launching the terminal in a directory you own, so any dir is fair
     // game — safe because the socket binds to loopback (server/index.ts), so
@@ -49,12 +56,19 @@ export class SessionRegistry {
     // build jailed this under workspace/; relaxed 2026-07-05 — the jail was
     // itself a deviation from terminal parity, and loopback already closes the
     // remote-cwd vector it was guarding.)
-    const dir = path.resolve(cwd ?? path.join("workspace", id));
+    const dir = path.resolve(opts?.cwd ?? path.join("workspace", id));
     mkdirSync(dir, { recursive: true }); // action tools need it even in mock mode
     // The configured agent becomes a concrete engine at this one seam
     // (Phase P.1). Falls back to the mock when the agent has no credentials.
-    const session: AgentSession = createSession(this.backend, { cwd: dir });
-    const entry: SessionEntry = { id, cwd: dir, session, buffer: [], viewports: new Set() };
+    const session: AgentSession = createSession(backend, { cwd: dir });
+    const entry: SessionEntry = {
+      id,
+      cwd: dir,
+      agent: backend.agent,
+      session,
+      buffer: [],
+      viewports: new Set(),
+    };
     session.onMessage((msg) => this.broadcast(entry, msg));
     this.entries.set(id, entry);
     return entry;
