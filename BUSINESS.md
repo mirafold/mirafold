@@ -114,8 +114,13 @@ The product splits into three pieces with very different costs:
 └─ the engine (agent, bash, files) ── runs on the USER'S machine
 ```
 
-**Ship as: `npx genui-shell` (or `brew install`).** One command starts the
-local daemon (the existing `server/`) and opens the UI. Two modes:
+**Ship as a global install — `npm i -g genui-shell`, then `genui-shell` from
+any directory** (on PATH like `claude`/`codex`/`gemini`; `npx genui-shell` is
+the zero-install try path, `brew install` later). One command starts the local
+daemon (the existing `server/`) and opens the UI. Installing globally and
+running from wherever you are — not inside a project — is the whole point:
+genui-shell is your terminal agent with a better face, so it launches like one.
+Two modes:
 
 - **Free/local:** UI served from localhost. Full product, single machine.
   This is the open-core distribution engine (§6).
@@ -226,10 +231,11 @@ Each gate is a go/no-go with a measurable signal. Do not pass a gate on hope.
   "want." **Signal target: ≥ a few hundred genuine reactions / ≥ 50 GitHub
   stars in week one.** If flat when posted: the thesis needs work — iterate
   the demo, not the infra.
-- **M2 — OSS launch.** Repo public, `npx genui-shell` works cold on a
-  stranger's machine, **faithfully re-skinning more than one terminal agent by
-  then (PLAN Phase P): a stranger who uses Codex, not Claude, gets Codex in the
-  browser just as easily, with local documented (PLAN L.1)**. Show HN with the
+- **M2 — OSS launch.** Repo public; `npm i -g genui-shell` then `genui-shell`
+  works cold from any directory on a stranger's machine (packaging is PLAN Step
+  4.10), **faithfully re-skinning more than one terminal agent by then (PLAN
+  Phase P): a stranger who uses Codex, not Claude, gets Codex in the browser
+  just as easily, with local documented (PLAN L.1)**. Show HN with the
   headline **"your terminal agent — Claude Code, Codex, Gemini CLI — in a
   browser, with live UI."** Phase P is a hard prerequisite of this gate, not a
   stretch goal — launching Claude-Code-only would contradict the identity
@@ -290,6 +296,7 @@ point at a local endpoint) follow it.
 **Measured velocity (2026-07-04):** M0 closeout + PLAN 1.1–1.3, verified and
 pushed, in one working day (~5–6 plan steps/day). Half-pace projections
 against the gates: M1 demo in hand ≈ 1–2 working days; M2-launchable
-(Phase T + 4.1/4.2 + packaging + L.1) ≈ one further week; M3 build ≈ 2–3
-weeks but sequenced by the M1/M2 signal windows, not by code — calendar to
-first revenue is realistically 6–10 weeks and gated on audience signal.
+(Phase T + 4.1/4.2 + terminal-parity cwd (4.8) + interactive `!` (4.9) +
+packaging (4.10) + L.1) ≈ one further week; M3 build ≈ 2–3 weeks but sequenced
+by the M1/M2 signal windows, not by code — calendar to first revenue is
+realistically 6–10 weeks and gated on audience signal.
