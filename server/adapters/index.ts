@@ -1,4 +1,8 @@
+import path from "node:path";
+import os from "node:os";
+import { existsSync } from "node:fs";
 import { ClaudeCodeSession } from "./claude-code";
+import { CodexSession } from "./codex";
 import { MockSession } from "./mock";
 import type { AgentName, AgentSession, Backend } from "./types";
 
@@ -17,7 +21,14 @@ function agentHasCredentials(agent: AgentName): boolean {
           process.env.ANTHROPIC_AUTH_TOKEN ||
           process.env.ANTHROPIC_BASE_URL,
       );
-    case "codex": // Phase P.2
+    case "codex":
+      // OpenAI API key OR a `codex login` (ChatGPT subscription) — the SDK
+      // spawns the CLI, which reads ~/.codex/auth.json. Either counts as live;
+      // the key never reaches the wire. CODEX_HOME overrides the auth dir.
+      return (
+        Boolean(process.env.OPENAI_API_KEY) ||
+        existsSync(path.join(process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex"), "auth.json"))
+      );
     case "gemini-cli": // Phase P.5
       return false;
   }
@@ -33,7 +44,24 @@ export function resolveBackend(): Backend {
   const requested = process.env.GENUI_AGENT;
   const agent: AgentName =
     requested === "codex" || requested === "gemini-cli" ? requested : "claude-code";
-  return { agent, live: agentHasCredentials(agent), model: process.env.DEFAULT_MODEL };
+  return { agent, live: agentHasCredentials(agent), model: modelFor(agent) };
+}
+
+/**
+ * The model is agent-specific — never shared across agents. `DEFAULT_MODEL` is
+ * a Claude model id and must not be forced onto Codex (which would reject it).
+ * Each agent reads its own override; when unset the adapter passes no model, so
+ * the agent inherits its own config default (faithful skin — inherit, not invent).
+ */
+function modelFor(agent: AgentName): string | undefined {
+  switch (agent) {
+    case "claude-code":
+      return process.env.DEFAULT_MODEL;
+    case "codex":
+      return process.env.CODEX_MODEL;
+    case "gemini-cli":
+      return process.env.GEMINI_MODEL;
+  }
 }
 
 /**
@@ -46,9 +74,11 @@ export function createSession(backend: Backend, opts: { cwd: string }): AgentSes
   switch (backend.agent) {
     case "claude-code":
       return new ClaudeCodeSession({ workspaceDir: opts.cwd, model: backend.model });
+    case "codex":
+      return new CodexSession({ workspaceDir: opts.cwd, model: backend.model });
     default:
       // Reached only if a non-claude agent reports credentials before its
-      // adapter lands (P.2+). Fail loud rather than silently mislead.
-      throw new Error(`no adapter for agent "${backend.agent}" yet (Phase P.2+)`);
+      // adapter lands (P.5). Fail loud rather than silently mislead.
+      throw new Error(`no adapter for agent "${backend.agent}" yet (Phase P.5)`);
   }
 }

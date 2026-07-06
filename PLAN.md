@@ -830,7 +830,7 @@ pattern on one before committing to all.
     claude-sonnet-4-6 26505in/5out $0.039 → turn_end`) ran through the new seam,
     permission gating intact, zero behavior change.
 
-- [ ] **Step P.2 — Codex adapter: feasibility spike, then integration**
+- [x] **Step P.2 — Codex adapter: feasibility spike, then integration**
   - Goal: prove the faithful-skin pattern generalizes beyond Claude, on the
     agent an OpenAI user already uses.
   - Build: investigate how Codex's engine embeds / exposes an event stream
@@ -853,6 +853,45 @@ pattern on one before committing to all.
     in-process for the Claude SDK; Codex loads MCP servers as stdio subprocesses,
     so the render server needs repackaging as a standalone stdio MCP (mechanical,
     not a redesign). Box stays unchecked until the live run is observed.
+  - Status update: **adapter built + verified LIVE (2026-07-05, same day) — box
+    still open on the served-browser leg only.** Tooling arrived (`@openai/codex-sdk@0.142.5`
+    + `codex` CLI + `~/.codex` ChatGPT login), so live ran at $0. `server/adapters/codex.ts`
+    drives a warm Codex `Thread` (one `runStreamed`/prompt via a serial worker,
+    AbortController interrupt), normalizes events→`WireMsg` per the spike table
+    (no protocol change), and is wired behind the seam
+    (`agentHasCredentials("codex")` = OPENAI_API_KEY | `~/.codex/auth.json`).
+    Verified live foreground (direct adapter drive): turn 1 `PONG.` +
+    `usage model=codex`, turn 2 recalled a turn-1 codename — **warm, behaves like
+    Codex**, no permission bar (SDK has no approval callback → optional-feature).
+    Fixed a Claude-ism leak: `DEFAULT_MODEL` (a Claude id) was 400ing Codex; model
+    is now agent-specific (`modelFor()`), unset → Codex inherits its own config
+    (**inherit-don't-invent** — same principle as Claude's `settingSources`).
+    Two env constraints, both faithful/expected (not code defects): (1) Codex's
+    bwrap sandbox can't build on this Ubuntu 24.04 box (AppArmor
+    `apparmor_restrict_unprivileged_userns=1`) — **Kyle's own terminal `codex`
+    fails identically**, so the adapter sets no sandbox/approval and inherits his
+    config; the command-in-transcript path verifies for free once his terminal
+    Codex runs commands. (2) This harness SIGTERMs any socket-binding process that
+    runs a Codex turn under it, so the DOM session couldn't be observed here — the
+    WS/registry/RenderZone transport is agent-neutral (already verified for
+    Claude/Mock) and the Codex backend was confirmed reaching the wire. Close the
+    box with a 2-min `GENUI_AGENT=codex yarn dev` in a real terminal. Details in
+    `server/adapters/codex.spike.md`.
+  - **BROWSER-VERIFIED, box CHECKED (2026-07-05).** Closed the served-browser leg
+    live in headless Chrome (playwright-core + system Chrome) against the real
+    `index.ts` server (found the trick: launch via the direct `./node_modules/.bin/tsx`
+    binary in the harness's background mode — `npx tsx` under a socket-bound server
+    got SIGTERM'd). Two-turn run: turn 1 the agent rendered its reply in the
+    transcript, turn 2 **recalled a codename planted in turn 1 (warm)**, and the
+    shell status bar read **`codex` · <session> · turn ↑25k ↓16 · Σ 37k** — a
+    Codex user gets Codex, faithfully, in the browser. Screenshot captured.
+    **Load-bearing gotcha:** the served `./dist` bundle was a day stale (2026-07-04,
+    pre-T2/pre-4.2) — the old frontend showed the prompt strip but never rendered
+    the reply (stuck at `✳ thinking…`); `yarn build` fixed it instantly. Remember
+    to rebuild the frontend before any served-mode (non-Vite) verification. Only
+    the command-in-transcript path remains unobserved (Codex's bwrap sandbox can't
+    build here — faithfully identical to Kyle's terminal `codex`; verifies for free
+    once his terminal Codex runs a command).
 
 - [ ] **Step P.3 — Codex fidelity + generative-UI superset**
   - Goal: a Codex user gets Codex, faithfully, plus genui-shell's richness — no
