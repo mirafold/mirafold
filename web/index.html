@@ -5,6 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>genui-shell</title>
     <link rel="icon" href="data:," />
+    <script>
+      // Apply the stored theme before first paint so a light-theme user
+      // never sees a dark flash (4.3). Shell keeps it in sync after mount.
+      document.documentElement.dataset.theme =
+        localStorage.getItem("genui-theme") === "light" ? "light" : "dark";
+    </script>
   </head>
   <body>
     <div id="root"></div>

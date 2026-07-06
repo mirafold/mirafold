@@ -233,9 +233,26 @@ and the remaining Phase 4 polish (theming, resume, fleet view, relay) waits on i
     codename recall on the same warm session. Deferred to 4.6: the session
     strip / rename UI (needs a session-list message).
 
-- [ ] **Step 4.3 — Theming & output-zone polish**
+- [x] **Step 4.3 — Theming & output-zone polish**
   - Build: theme system, transitions as components mount, friendlier visuals.
   - Done when: the experience feels deliberately designed, not default.
+  - Status: **done, verified in headless Chrome (2026-07-06)** — the ~65
+    scattered hex values became one semantic token system (`:root` custom
+    properties; accidental near-duplicates like #8b94a7/#8b96a8 merged), and
+    a **light theme** landed with the identity-preserving twist: the terminal
+    chrome (prompt box, command strips, bang/perm/status bars, onboarding)
+    re-declares the dark palette inside light mode — mono-in/rich-out made
+    literal — and code/diff surfaces are pinned dark everywhere (hljs
+    github-dark unswapped; code reads as a terminal window on any canvas).
+    Chart SVG inks moved to token-driven `style` props (series palette
+    unchanged). ☾/☀ toggle in the status bar, localStorage-persisted,
+    applied pre-paint in index.html (no flash). Motion: 160ms rise on
+    transcript entries, theme-fade transitions, ::selection/focus-visible/
+    scrollbar polish, all off under prefers-reduced-motion. Verified 8/8:
+    default dark, toggle to light (chrome stays #161c28/#18202e, code stays
+    #0d1117), persistence across reload, toggle back; screenshots eyeballed
+    in both themes (dark unchanged; light shows dark terminal blocks on a
+    light canvas as designed).
 
 - [ ] **Step 4.4 — Robust reconnect / session resume**
   - Build: replace the Phase 0 reconnect stub with real resume — re-attach to

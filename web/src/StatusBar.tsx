@@ -25,12 +25,17 @@ export function StatusBar({
   sessionId,
   cwd,
   usage,
+  theme,
+  onToggleTheme,
 }: {
   connected: boolean;
   agent?: string;
   sessionId?: string;
   cwd?: string;
   usage: Usage;
+  // 4.3: shell-owned theme toggle — dark is the default and the identity.
+  theme: "dark" | "light";
+  onToggleTheme: () => void;
 }) {
   const [open, setOpen] = useState(true);
   const dot = (
@@ -86,6 +91,13 @@ export function StatusBar({
           )}
         </>
       )}
+      <button
+        className="sb-theme"
+        onClick={onToggleTheme}
+        title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+      >
+        {theme === "dark" ? "☾" : "☀"}
+      </button>
     </div>
   );
 }

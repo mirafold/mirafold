@@ -1,3 +1,157 @@
+/* ---- Theme tokens (Step 4.3) ---------------------------------------------
+   One semantic palette, two themes. Dark is the default and the identity;
+   light flips the OUTPUT side only — the terminal chrome (prompt box,
+   command strips, bang/permission/status bars, onboarding) keeps the dark
+   palette in both themes, making the mono-in / rich-out contrast literal.
+   Code surfaces (--code-*, --diff-*) are pinned dark everywhere: code reads
+   as terminal in any theme, and hljs github-dark keeps working unswapped. */
+
+:root {
+  color-scheme: dark;
+  /* surfaces */
+  --bg: #101319;
+  --bg-inset: #10151f;
+  --surface: #141a26;
+  --surface-2: #18202e;
+  --surface-3: #161c28;
+  --surface-hover: #1b2434;
+  /* code — pinned, no light override */
+  --code-bg: #0d1117;
+  --code-fg: #a8b2c2;
+  --inline-code-bg: #1b2130;
+  /* text */
+  --fg: #e6e9ef;
+  --fg-strong: #eef2f8;
+  --fg-body: #d4dae4;
+  --fg-mid: #a8b2c2;
+  --fg-dim: #8b96a8;
+  --fg-dimmer: #6b7488;
+  --fg-faint: #55617a;
+  /* accents */
+  --accent: #4ade80;
+  --info: #7ab8ff;
+  --warn-fg: #d4a852;
+  --error: #e66767;
+  /* borders */
+  --border: #232a38;
+  --border-2: #262f42;
+  --border-mid: #313b4e;
+  --border-hover: #3a4a68;
+  --border-faint: #1d2434;
+  --border-ghost: #1c2331;
+  /* accent-tinted families */
+  --ok-bg: #16281c;
+  --ok-border: #234a32;
+  --ok-border-strong: #2f6a45;
+  --err-bg: #281a1e;
+  --err-border: #4a2a33;
+  --err-border-strong: #6a3a45;
+  --info-bg: #16202e;
+  --info-border: #26364e;
+  --info-border-strong: #3a5a86;
+  --warn-bg: #1a1810;
+  --warn-bg-2: #16130d;
+  --warn-border: #4a3d1e;
+  --warn-border-2: #574727;
+  /* diffs — pinned (they sit on --code-bg) */
+  --diff-add-bg: #13341f;
+  --diff-add-fg: #7ee2a8;
+  --diff-add-border: #1f3a2a;
+  --diff-del-bg: #3a1d22;
+  --diff-del-fg: #e88b95;
+  /* misc */
+  --overlay: rgba(8, 11, 16, 0.82);
+  --selection: rgba(74, 222, 128, 0.25);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f5f7fa;
+  --bg-inset: #eef1f6;
+  --surface: #ffffff;
+  --surface-2: #eaeef4;
+  --surface-3: #eef1f6;
+  --surface-hover: #eef2f7;
+  --inline-code-bg: #e8edf4;
+  --fg: #26303f;
+  --fg-strong: #111927;
+  --fg-body: #2d3a4d;
+  --fg-mid: #45556c;
+  --fg-dim: #5b6a80;
+  --fg-dimmer: #7b879c;
+  --fg-faint: #97a2b4;
+  --accent: #189c51;
+  --info: #2b6cd4;
+  --warn-fg: #9c6d12;
+  --error: #c8404f;
+  --border: #dde3eb;
+  --border-2: #d6dde7;
+  --border-mid: #c6d0dc;
+  --border-hover: #9db1cc;
+  --border-faint: #e9edf3;
+  --border-ghost: #e6ebf1;
+  --ok-bg: #e9f7ee;
+  --ok-border: #b5dfc5;
+  --ok-border-strong: #7fc79c;
+  --err-bg: #fbeff1;
+  --err-border: #edccd3;
+  --err-border-strong: #d99aa8;
+  --info-bg: #e9f1fb;
+  --info-border: #c3d5ec;
+  --info-border-strong: #85aad8;
+  --warn-bg: #faf5e6;
+  --warn-bg-2: #faf5e6;
+  --warn-border: #e3cf9e;
+  --warn-border-2: #d9bd82;
+  --selection: rgba(24, 156, 81, 0.2);
+}
+
+/* Terminal chrome stays terminal: in light mode these subtrees re-declare
+   the dark values, so the input side keeps its identity while the output
+   canvas flips. (Custom properties inherit, so one block covers children.) */
+[data-theme="light"]
+  :is(.prompt-box, .turn-user, .bang-bar, .perm-bar, .status-bar, .status-bar-collapsed, .onb-overlay) {
+  color-scheme: dark;
+  --bg: #101319;
+  --bg-inset: #10151f;
+  --surface: #141a26;
+  --surface-2: #18202e;
+  --surface-3: #161c28;
+  --surface-hover: #1b2434;
+  --inline-code-bg: #1b2130;
+  --fg: #e6e9ef;
+  --fg-strong: #eef2f8;
+  --fg-body: #d4dae4;
+  --fg-mid: #a8b2c2;
+  --fg-dim: #8b96a8;
+  --fg-dimmer: #6b7488;
+  --fg-faint: #55617a;
+  --accent: #4ade80;
+  --info: #7ab8ff;
+  --warn-fg: #d4a852;
+  --error: #e66767;
+  --border: #232a38;
+  --border-2: #262f42;
+  --border-mid: #313b4e;
+  --border-hover: #3a4a68;
+  --border-faint: #1d2434;
+  --border-ghost: #1c2331;
+  --ok-bg: #16281c;
+  --ok-border: #234a32;
+  --ok-border-strong: #2f6a45;
+  --err-bg: #281a1e;
+  --err-border: #4a2a33;
+  --err-border-strong: #6a3a45;
+  --info-bg: #16202e;
+  --info-border: #26364e;
+  --info-border-strong: #3a5a86;
+  --warn-bg: #1a1810;
+  --warn-bg-2: #16130d;
+  --warn-border: #4a3d1e;
+  --warn-border-2: #574727;
+  --selection: rgba(74, 222, 128, 0.25);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -11,8 +165,8 @@ body,
 
 body {
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-  background: #101319;
-  color: #e6e9ef;
+  background: var(--bg);
+  color: var(--fg);
 }
 
 .shell {
@@ -42,7 +196,7 @@ body {
 }
 
 .glyph {
-  color: #4ade80;
+  color: var(--accent);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   user-select: none;
 }
@@ -52,10 +206,10 @@ body {
 .turn-user {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.92em;
-  color: #e2ecfb;
+  color: var(--fg-strong);
   white-space: pre-wrap;
-  background: #18202e;
-  border-left: 3px solid #4ade80;
+  background: var(--surface-2);
+  border-left: 3px solid var(--accent);
   border-radius: 6px;
   padding: 10px 14px;
   margin-top: 12px;
@@ -68,7 +222,7 @@ body {
 /* Agent output sits slightly inset from the strips, on the bare canvas. */
 .turn-assistant {
   padding: 0 4px;
-  color: #d4dae4;
+  color: var(--fg-body);
   align-self: stretch;
   line-height: 1.55;
 }
@@ -78,22 +232,23 @@ body {
 }
 
 .markdown a {
-  color: #7ab8ff;
+  color: var(--info);
 }
 
 .markdown code {
-  background: #1b2130;
+  background: var(--inline-code-bg);
   border-radius: 4px;
   padding: 1px 5px;
   font-size: 0.9em;
 }
 
 .markdown pre {
-  background: #0d1117;
-  border: 1px solid #232a38;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 12px;
   overflow-x: auto;
+  color: var(--code-fg); /* --code-bg is pinned dark; never inherit light fg */
 }
 
 .markdown pre code {
@@ -107,7 +262,7 @@ body {
 
 .markdown th,
 .markdown td {
-  border: 1px solid #313b4e;
+  border: 1px solid var(--border-mid);
   padding: 6px 12px;
 }
 
@@ -132,8 +287,8 @@ body {
   z-index: 1;
   padding: 2px 7px;
   font-size: 0.85em;
-  background: #18202e;
-  border: 1px solid #262f42;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
   border-radius: 6px;
   cursor: pointer;
   opacity: 0;
@@ -146,11 +301,11 @@ body {
 }
 
 .pin-btn:hover {
-  border-color: #3a4a68;
+  border-color: var(--border-hover);
 }
 
 .pin-btn.is-pinned {
-  color: #8b96a8;
+  color: var(--fg-dim);
 }
 
 /* Placeholder holding a pinned block's spot in the transcript. */
@@ -160,23 +315,23 @@ body {
   padding: 6px 12px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.82em;
-  color: #8b96a8;
+  color: var(--fg-dim);
   background: transparent;
-  border: 1px dashed #313b4e;
+  border: 1px dashed var(--border-mid);
   border-radius: 8px;
   cursor: pointer;
 }
 
 .pin-stub:hover {
-  color: #d4dae4;
-  border-color: #3a4a68;
+  color: var(--fg-body);
+  border-color: var(--border-hover);
 }
 
 .pin-dock {
   width: 340px;
   flex-shrink: 0;
   overflow-y: auto;
-  border-left: 1px solid #232a38;
+  border-left: 1px solid var(--border);
   padding: 18px 14px;
   display: flex;
   flex-direction: column;
@@ -202,21 +357,21 @@ body {
   font-size: 0.82em;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: #8b96a8;
+  color: var(--fg-dim);
 }
 
 .dock-btn {
   padding: 2px 8px;
   background: transparent;
-  color: #8b96a8;
-  border: 1px solid #262f42;
+  color: var(--fg-dim);
+  border: 1px solid var(--border-2);
   border-radius: 6px;
   cursor: pointer;
 }
 
 .dock-btn:hover {
-  color: #d4dae4;
-  border-color: #3a4a68;
+  color: var(--fg-body);
+  border-color: var(--border-hover);
 }
 
 .pin-dock-item {
@@ -235,21 +390,21 @@ body {
   padding: 14px 4px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.82em;
-  color: #8b96a8;
+  color: var(--fg-dim);
   background: transparent;
   border: none;
-  border-left: 1px solid #232a38;
+  border-left: 1px solid var(--border);
   cursor: pointer;
 }
 
 .pin-tab:hover {
-  color: #d4dae4;
-  background: #141a26;
+  color: var(--fg-body);
+  background: var(--surface);
 }
 
 .rc {
-  background: #141a26;
-  border: 1px solid #262f42;
+  background: var(--surface);
+  border: 1px solid var(--border-2);
   border-radius: 10px;
   padding: 14px 16px;
   max-width: 720px;
@@ -267,22 +422,22 @@ body {
   font-weight: 600;
   font-size: 0.95em;
   margin-bottom: 8px;
-  color: #eef2f8;
+  color: var(--fg-strong);
 }
 
 .rc-detail {
   font-size: 0.85em;
-  color: #8b96a8;
+  color: var(--fg-dim);
 }
 
 .rc a {
-  color: #7ab8ff;
+  color: var(--info);
 }
 
 /* card */
 .rc-card-title {
   font-weight: 600;
-  color: #eef2f8;
+  color: var(--fg-strong);
   margin-bottom: 6px;
 }
 
@@ -294,9 +449,9 @@ body {
 .rc-card-footer {
   margin-top: 10px;
   padding-top: 8px;
-  border-top: 1px solid #232a38;
+  border-top: 1px solid var(--border);
   font-size: 0.82em;
-  color: #8b96a8;
+  color: var(--fg-dim);
 }
 
 /* action buttons (Phase 2) — the one interactive surface inside components */
@@ -306,23 +461,23 @@ body {
   gap: 8px;
   margin-top: 12px;
   padding-top: 10px;
-  border-top: 1px solid #232a38;
+  border-top: 1px solid var(--border);
 }
 
 .rc-action-btn {
   padding: 4px 12px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.82em;
-  color: #7ab8ff;
+  color: var(--info);
   background: transparent;
-  border: 1px solid #26364e;
+  border: 1px solid var(--info-border);
   border-radius: 6px;
   cursor: pointer;
 }
 
 .rc-action-btn:hover {
-  background: #16202e;
-  border-color: #3a5a86;
+  background: var(--info-bg);
+  border-color: var(--info-border-strong);
 }
 
 /* list */
@@ -335,7 +490,7 @@ body {
 }
 
 .rc-list li::marker {
-  color: #4ade80;
+  color: var(--accent);
 }
 
 /* todo list (T2.5): the terminal's live task list, updated in place */
@@ -346,7 +501,7 @@ body {
 .rc-todos-head {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.78em;
-  color: #8b94a7;
+  color: var(--fg-dim);
   margin-bottom: 8px;
 }
 
@@ -374,26 +529,26 @@ body {
 }
 
 .todo-completed .todo-mark {
-  color: #4ade80;
+  color: var(--accent);
 }
 .todo-completed .todo-text {
-  color: #6b7488;
+  color: var(--fg-dimmer);
   text-decoration: line-through;
 }
 
 .todo-in_progress .todo-mark {
-  color: #7ab8ff;
+  color: var(--info);
 }
 .todo-in_progress .todo-text {
-  color: #eef2f8;
+  color: var(--fg-strong);
   font-weight: 500;
 }
 
 .todo-pending .todo-mark {
-  color: #5a6480;
+  color: var(--fg-faint);
 }
 .todo-pending .todo-text {
-  color: #a8b2c2;
+  color: var(--fg-mid);
 }
 
 /* table */
@@ -419,14 +574,14 @@ body {
   font-size: 0.82em;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: #8b96a8;
-  border-bottom: 1px solid #313b4e;
+  color: var(--fg-dim);
+  border-bottom: 1px solid var(--border-mid);
   padding: 8px 12px;
 }
 
 .rc-table td {
   padding: 8px 12px;
-  border-bottom: 1px solid #1d2434;
+  border-bottom: 1px solid var(--border-faint);
 }
 
 .rc-table tr:last-child td {
@@ -441,24 +596,24 @@ body {
 .rc-fallback-note {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.82em;
-  color: #d4a852;
+  color: var(--warn-fg);
   margin-bottom: 8px;
 }
 
 .rc-fallback-note code {
-  background: #1b2130;
+  background: var(--inline-code-bg);
   border-radius: 4px;
   padding: 1px 5px;
 }
 
 .rc-fallback pre {
   margin: 0;
-  background: #0d1117;
-  border: 1px solid #232a38;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 10px;
   font-size: 0.82em;
-  color: #a8b2c2;
+  color: var(--code-fg);
   overflow-x: auto;
 }
 
@@ -489,7 +644,7 @@ body {
   align-items: center;
   gap: 6px;
   font-size: 0.82em;
-  color: #a8b2c2;
+  color: var(--fg-mid);
 }
 
 .rc-chart-chip {
@@ -503,8 +658,9 @@ body {
   position: absolute;
   top: 10px;
   pointer-events: none;
-  background: #0d1117;
-  border: 1px solid #313b4e;
+  background: var(--surface);
+  border: 1px solid var(--border-mid);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
   border-radius: 8px;
   padding: 8px 10px;
   font-size: 0.8em;
@@ -515,7 +671,7 @@ body {
 }
 
 .rc-chart-tip-x {
-  color: #8b96a8;
+  color: var(--fg-dim);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
@@ -526,12 +682,12 @@ body {
 }
 
 .rc-chart-tip-name {
-  color: #c7d0dd;
+  color: var(--fg-mid);
   flex: 1;
 }
 
 .rc-chart-tip-val {
-  color: #eef2f8;
+  color: var(--fg-strong);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
@@ -547,16 +703,16 @@ body {
   flex-direction: column;
   gap: 2px;
   padding: 8px 12px;
-  background: #18202e;
-  border: 1px solid #262f42;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
   border-radius: 8px;
   text-decoration: none;
-  color: #7ab8ff;
+  color: var(--info);
 }
 
 .rc-link:hover {
-  border-color: #3a4a68;
-  background: #1b2434;
+  border-color: var(--border-hover);
+  background: var(--surface-hover);
 }
 
 .rc-link-label {
@@ -576,8 +732,8 @@ body {
   min-height: 120px;
   resize: vertical;
   overflow: hidden;
-  background: #141a26;
-  border: 1px solid #262f42;
+  background: var(--surface);
+  border: 1px solid var(--border-2);
   border-radius: 10px;
   animation: rc-mount 0.22s ease-out;
 }
@@ -587,16 +743,16 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 6px 12px;
-  border-bottom: 1px solid #262f42;
+  border-bottom: 1px solid var(--border-2);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.78em;
-  color: #8b94a7;
+  color: var(--fg-dim);
   user-select: none;
 }
 
 .artifact-badge {
-  color: #4ade80;
-  border: 1px solid #2b4a38;
+  color: var(--accent);
+  border: 1px solid var(--ok-border);
   border-radius: 999px;
   padding: 1px 8px;
   font-size: 0.9em;
@@ -607,7 +763,7 @@ body {
   width: 100%;
   border: 0;
   display: block;
-  background: #141a26;
+  background: var(--surface);
 }
 
 /* Failure fallback (Step 3.4): the frame is gone; source takes its place. */
@@ -618,13 +774,13 @@ body {
 }
 
 .artifact-badge-failed {
-  color: #f87171;
-  border-color: #5b2a2a;
+  color: var(--error);
+  border-color: var(--err-border);
 }
 
 .artifact-badge-warn {
-  color: #d4a852;
-  border-color: #574727;
+  color: var(--warn-fg);
+  border-color: var(--warn-border-2);
   cursor: help;
 }
 
@@ -634,7 +790,7 @@ body {
 }
 
 .artifact-fallback-note {
-  color: #8b94a7;
+  color: var(--fg-dim);
   font-size: 0.85em;
   margin-bottom: 8px;
 }
@@ -642,11 +798,11 @@ body {
 .artifact-source {
   margin: 0;
   padding: 10px;
-  background: #0d1119;
+  background: var(--code-bg);
   border-radius: 6px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.8em;
-  color: #b6c2d9;
+  color: var(--code-fg);
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -660,7 +816,7 @@ body {
   /* flex-none: overflow:hidden (folded state) would otherwise let the
      zone's flex column squash this row to zero height */
   flex: none;
-  color: #6b7488;
+  color: var(--fg-dimmer);
   font-style: italic;
   font-size: 0.88em;
   line-height: 1.5;
@@ -668,7 +824,7 @@ body {
   word-break: break-word;
   max-width: 80ch;
   padding-left: 10px;
-  border-left: 2px solid #262f42;
+  border-left: 2px solid var(--border-2);
 }
 
 .thinking-done {
@@ -676,7 +832,7 @@ body {
 }
 
 .thinking-done:hover {
-  color: #8b94a7;
+  color: var(--fg-dim);
 }
 
 .thinking-folded {
@@ -711,13 +867,13 @@ body {
   text-align: left;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.85em;
-  color: #8b96a8;
+  color: var(--fg-dim);
 }
 
 .tool-caret {
   width: 1em;
   flex-shrink: 0;
-  color: #55617a;
+  color: var(--fg-faint);
 }
 
 .tool-block.is-running .tool-caret {
@@ -726,16 +882,16 @@ body {
 
 .tool-name {
   font-weight: 600;
-  color: #a8b2c2;
+  color: var(--fg-mid);
   flex-shrink: 0;
 }
 
 .tool-head:hover .tool-name {
-  color: #d4dae4;
+  color: var(--fg-body);
 }
 
 .tool-detail {
-  color: #667289;
+  color: var(--fg-dimmer);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -745,27 +901,27 @@ body {
 .tool-output {
   margin: 4px 0 6px 22px;
   padding: 10px 12px;
-  background: #0d1117;
-  border: 1px solid #232a38;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
   border-radius: 8px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.8em;
   line-height: 1.5;
-  color: #a8b2c2;
+  color: var(--code-fg);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   max-height: 320px;
   overflow-y: auto;
   scrollbar-width: thin;
-  scrollbar-color: #3a4a68 transparent;
+  scrollbar-color: var(--border-hover) transparent;
 }
 
 .tool-block.is-error .tool-name {
-  color: #e66767;
+  color: var(--error);
 }
 
 .tool-block.is-error .tool-output {
-  border-color: #46242c;
+  border-color: var(--err-border);
 }
 
 /* Tool input (T2.2): full args in the expansion — diff / code / JSON. */
@@ -777,23 +933,23 @@ body {
 .tool-diff {
   margin: 0 0 4px 0;
   padding: 10px 12px;
-  background: #0d1117;
-  border: 1px solid #232a38;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
   border-radius: 8px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.8em;
   line-height: 1.5;
-  color: #a8b2c2;
+  color: var(--code-fg);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   max-height: 360px;
   overflow-y: auto;
   scrollbar-width: thin;
-  scrollbar-color: #3a4a68 transparent;
+  scrollbar-color: var(--border-hover) transparent;
 }
 
 .tool-code.tool-added {
-  border-color: #1f3a2a;
+  border-color: var(--diff-add-border);
 }
 
 .tool-diff > div {
@@ -802,22 +958,22 @@ body {
 }
 
 .diff-add {
-  background: #13341f;
-  color: #7ee2a8;
+  background: var(--diff-add-bg);
+  color: var(--diff-add-fg);
 }
 
 .diff-del {
-  background: #3a1d22;
-  color: #e88b95;
+  background: var(--diff-del-bg);
+  color: var(--diff-del-fg);
 }
 
 .diff-ctx {
-  color: #6b7488;
+  color: var(--fg-dimmer);
 }
 
 /* Truncation marker (T2.3): explicit, dim, never mistaken for real output. */
 .tool-elided {
-  color: #d4a852;
+  color: var(--warn-fg);
   font-style: italic;
 }
 
@@ -830,7 +986,7 @@ body {
 .subagent-group {
   margin: -8px 0 0 22px;
   padding-left: 12px;
-  border-left: 1px solid #2b3346;
+  border-left: 1px solid var(--border-mid);
 }
 
 .subagent-head {
@@ -845,15 +1001,15 @@ body {
   text-align: left;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.8em;
-  color: #7e88a0;
+  color: var(--fg-dim);
 }
 
 .subagent-head:hover .subagent-label {
-  color: #9aa4ba;
+  color: var(--fg-mid);
 }
 
 .subagent-caret {
-  color: #5a6480;
+  color: var(--fg-faint);
 }
 
 .subagent-calls {
@@ -863,7 +1019,7 @@ body {
 .status-line {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.85em;
-  color: #8b96a8;
+  color: var(--fg-dim);
   animation: pulse 1.4s ease-in-out infinite;
 }
 
@@ -881,13 +1037,13 @@ body {
   gap: 10px;
   padding: 12px 14px;
   margin: 8px 0 14px;
-  background: #161c28;
-  border: 1px solid #232a38;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
   border-radius: 8px;
 }
 
 .prompt-box:focus-within {
-  border-color: #3a4a68;
+  border-color: var(--border-hover);
 }
 
 .prompt-box .glyph {
@@ -902,7 +1058,7 @@ body {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.85em;
   line-height: 1.76; /* baseline-align with the 0.95em textarea text */
-  color: #55617a;
+  color: var(--fg-faint);
   max-width: 34%;
   overflow: hidden;
   white-space: nowrap;
@@ -928,28 +1084,28 @@ body {
   max-height: calc(1.5em * 8);
   overflow-y: auto;
   scrollbar-width: thin;
-  scrollbar-color: #3a4a68 transparent;
+  scrollbar-color: var(--border-hover) transparent;
 }
 
 .prompt-box textarea::placeholder {
-  color: #55617a;
+  color: var(--fg-faint);
 }
 
 /* The `!` passthrough (Step 4.9). The strip echoes the command-strip look
    with an amber `!` in place of the green `❯`; output is a plain mono block
    streaming live below it. */
 .turn-bang .bang-glyph {
-  color: #d4a852;
+  color: var(--warn-fg);
 }
 
 .bang-state {
   margin-left: 12px;
   font-size: 0.85em;
-  color: #55617a;
+  color: var(--fg-faint);
 }
 
 .bang-fail {
-  color: #e0708a;
+  color: var(--error);
 }
 
 .bang-output {
@@ -958,7 +1114,7 @@ body {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.88em;
   line-height: 1.45;
-  color: #aeb7c8;
+  color: var(--fg-mid);
   white-space: pre-wrap;
   word-break: break-word;
   overflow-x: auto;
@@ -972,14 +1128,14 @@ body {
   gap: 10px;
   margin-top: 8px;
   padding: 9px 14px;
-  background: #16130d;
-  border: 1px solid #4a3d1e;
+  background: var(--warn-bg-2);
+  border: 1px solid var(--warn-border);
   border-radius: 8px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 .bang-bar-badge {
-  color: #d4a852;
+  color: var(--warn-fg);
   font-weight: 700;
 }
 
@@ -988,7 +1144,7 @@ body {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  color: #8b94a7;
+  color: var(--fg-dim);
   font-size: 0.85em;
 }
 
@@ -997,30 +1153,30 @@ body {
   background: transparent;
   border: none;
   outline: none;
-  color: #e6ebf5;
+  color: var(--fg-strong);
   font: inherit;
   font-size: 0.9em;
 }
 
 .bang-bar-input::placeholder {
-  color: #55617a;
+  color: var(--fg-faint);
 }
 
 .bang-bar-mask,
 .bang-bar-kill {
   background: transparent;
-  border: 1px solid #4a3d1e;
+  border: 1px solid var(--warn-border);
   border-radius: 6px;
   padding: 3px 10px;
-  color: #d4a852;
+  color: var(--warn-fg);
   font-family: inherit;
   font-size: 0.8em;
   cursor: pointer;
 }
 
 .bang-bar-kill:hover {
-  border-color: #e0708a;
-  color: #e0708a;
+  border-color: var(--error);
+  color: var(--error);
 }
 
 /* Permission bar (Phase T.3): drawn by the trusted shell above the prompt
@@ -1032,8 +1188,8 @@ body {
   gap: 10px;
   margin-top: 8px;
   padding: 9px 14px;
-  background: #1a1810;
-  border: 1px solid #4a3d1e;
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-border);
   border-radius: 8px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.85em;
@@ -1041,7 +1197,7 @@ body {
 }
 
 .perm-badge {
-  color: #d4a852;
+  color: var(--warn-fg);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-size: 0.78em;
@@ -1049,7 +1205,7 @@ body {
 }
 
 .perm-tool {
-  color: #eef2f8;
+  color: var(--fg-strong);
   font-weight: 600;
   flex-shrink: 0;
 }
@@ -1057,14 +1213,14 @@ body {
 .perm-detail {
   flex: 1;
   min-width: 0;
-  color: #a8b2c2;
+  color: var(--fg-mid);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .perm-more {
-  color: #8b96a8;
+  color: var(--fg-dim);
   flex-shrink: 0;
 }
 
@@ -1079,23 +1235,23 @@ body {
 }
 
 .perm-allow {
-  color: #4ade80;
-  border: 1px solid #234a32;
+  color: var(--accent);
+  border: 1px solid var(--ok-border);
 }
 
 .perm-allow:hover {
-  background: #16281c;
-  border-color: #2f6a45;
+  background: var(--ok-bg);
+  border-color: var(--ok-border-strong);
 }
 
 .perm-deny {
-  color: #e66767;
-  border: 1px solid #4a2a33;
+  color: var(--error);
+  border: 1px solid var(--err-border);
 }
 
 .perm-deny:hover {
-  background: #281a1e;
-  border-color: #6a3a45;
+  background: var(--err-bg);
+  border-color: var(--err-border-strong);
 }
 
 /* Stop affordance (Phase T.2): shell-drawn, visible only while a turn is
@@ -1107,16 +1263,16 @@ body {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.82em;
   line-height: 1.6;
-  color: #8b96a8;
+  color: var(--fg-dim);
   background: transparent;
-  border: 1px solid #262f42;
+  border: 1px solid var(--border-2);
   border-radius: 6px;
   cursor: pointer;
 }
 
 .stop-btn:hover {
-  color: #e66767;
-  border-color: #4a2a33;
+  color: var(--error);
+  border-color: var(--err-border);
 }
 
 /* ---- Status bar (T2.6) ---------------------------------------------------
@@ -1131,14 +1287,14 @@ body {
   padding: 4px 10px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.74em;
-  color: #6b7488;
-  border-top: 1px solid #1c2331;
+  color: var(--fg-dimmer);
+  border-top: 1px solid var(--border-ghost);
 }
 
 .status-bar-collapsed {
   background: none;
   border: 0;
-  border-top: 1px solid #1c2331;
+  border-top: 1px solid var(--border-ghost);
   cursor: pointer;
   width: 100%;
   justify-content: flex-start;
@@ -1161,11 +1317,11 @@ body {
 }
 
 .sb-dot-on {
-  background: #4ade80;
+  background: var(--accent);
 }
 
 .sb-dot-off {
-  background: #d4a852;
+  background: var(--warn-fg);
   animation: sb-pulse 1.2s ease-in-out infinite;
 }
 
@@ -1180,12 +1336,12 @@ body {
 }
 
 .sb-model {
-  color: #8b94a7;
+  color: var(--fg-dim);
 }
 
 .sb-sep {
   padding-left: 10px;
-  border-left: 1px solid #262f42;
+  border-left: 1px solid var(--border-2);
 }
 
 .sb-cwd {
@@ -1199,12 +1355,12 @@ body {
 }
 
 .sb-usage {
-  color: #7e88a0;
+  color: var(--fg-dim);
 }
 
 /* ---- Status bar: agent identity chip (P.4) ------------------------------ */
 .sb-agent {
-  color: #4ade80;
+  color: var(--accent);
   font-weight: 600;
 }
 
@@ -1216,7 +1372,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(8, 11, 16, 0.82);
+  background: var(--overlay);
   backdrop-filter: blur(3px);
   padding: 24px;
 }
@@ -1224,8 +1380,8 @@ body {
 .onb-card {
   width: 100%;
   max-width: 460px;
-  background: #141a26;
-  border: 1px solid #262f42;
+  background: var(--surface);
+  border: 1px solid var(--border-2);
   border-radius: 12px;
   padding: 32px 28px;
   box-shadow: 0 18px 60px rgba(0, 0, 0, 0.5);
@@ -1235,7 +1391,7 @@ body {
 .onb-glyph {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 28px;
-  color: #4ade80;
+  color: var(--accent);
   line-height: 1;
 }
 
@@ -1243,7 +1399,7 @@ body {
   margin: 14px 0 6px;
   font-size: 20px;
   font-weight: 650;
-  color: #e6ebf5;
+  color: var(--fg-strong);
 }
 
 .onb-sub {
@@ -1251,7 +1407,7 @@ body {
   max-width: 40ch;
   font-size: 13.5px;
   line-height: 1.5;
-  color: #8b94a7;
+  color: var(--fg-dim);
 }
 
 /* The working-directory field (Step 4.8) — prefilled with the daemon's
@@ -1264,28 +1420,28 @@ body {
   font-size: 11px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #7e88a0;
+  color: var(--fg-dim);
 }
 
 .onb-cwd {
   width: 100%;
   margin-bottom: 14px;
   padding: 10px 12px;
-  background: #10151f;
-  border: 1px solid #2a3446;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-mid);
   border-radius: 8px;
-  color: #e6ebf5;
+  color: var(--fg-strong);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 13px;
   outline: none;
 }
 
 .onb-cwd:focus {
-  border-color: #3a4a68;
+  border-color: var(--border-hover);
 }
 
 .onb-cwd::placeholder {
-  color: #55617a;
+  color: var(--fg-faint);
 }
 
 /* A rejected working dir (no such directory) — fix the path and retry. */
@@ -1294,7 +1450,7 @@ body {
   text-align: left;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
-  color: #e0708a;
+  color: var(--error);
 }
 
 .onb-list {
@@ -1304,7 +1460,7 @@ body {
 }
 
 .onb-connecting {
-  color: #7e88a0;
+  color: var(--fg-dim);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 13px;
   padding: 14px;
@@ -1316,19 +1472,19 @@ body {
   justify-content: space-between;
   gap: 12px;
   padding: 14px 16px;
-  background: #18202e;
-  border: 1px solid #2a3446;
+  background: var(--surface-2);
+  border: 1px solid var(--border-mid);
   border-radius: 9px;
   cursor: pointer;
-  color: #e6ebf5;
+  color: var(--fg-strong);
   font-size: 15px;
   text-align: left;
   transition: border-color 0.12s ease, background 0.12s ease, transform 0.06s ease;
 }
 
 .onb-agent:hover {
-  border-color: #4ade80;
-  background: #1b2536;
+  border-color: var(--accent);
+  background: var(--surface-hover);
 }
 
 .onb-agent:active {
@@ -1346,9 +1502,89 @@ body {
 }
 
 .onb-live {
-  color: #4ade80;
+  color: var(--accent);
 }
 
 .onb-demo {
-  color: #8b94a7;
+  color: var(--fg-dim);
+}
+
+/* ---- Polish (Step 4.3) ----------------------------------------------------
+   Motion: everything that enters the transcript rises in — one short, soft
+   arrival, no bounce. Replay repaints use the same animation; at 160ms a
+   full-history repaint reads as a quick settle, not a shimmer storm. */
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+}
+
+.turn-user,
+.turn-assistant,
+.tool-block,
+.thinking-block,
+.bang-block,
+.status-line {
+  animation: rise 0.16s ease-out both;
+}
+
+/* Theme switch fades instead of snapping; hover borders ride the same rule. */
+body,
+.rc,
+.artifact,
+.turn-user,
+.prompt-box,
+.status-bar,
+.pin-dock,
+.rc-link,
+.onb-agent {
+  transition:
+    background-color 0.22s ease,
+    color 0.22s ease,
+    border-color 0.22s ease;
+}
+
+::selection {
+  background: var(--selection);
+}
+
+/* Keyboard focus gets a visible ring; pointer clicks stay quiet. */
+:focus-visible {
+  outline: 2px solid var(--border-hover);
+  outline-offset: 1px;
+}
+
+html {
+  scrollbar-color: var(--border-hover) transparent;
+}
+
+.render-zone,
+.pin-dock {
+  scrollbar-width: thin;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+.sb-theme {
+  background: transparent;
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  padding: 1px 8px;
+  color: var(--fg-dimmer);
+  font: inherit;
+  cursor: pointer;
+}
+
+.sb-theme:hover {
+  color: var(--fg);
+  border-color: var(--border-hover);
 }

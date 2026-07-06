@@ -585,8 +585,17 @@ knowing because it constrains future UI work:
   proportional type with rich markdown. No bubbles, ever.
 - Status is a dim, pulsing monospace activity line — not a spinner, not a
   pill.
-- Dark palette lives in `styles.css`; `highlight.js`'s github-dark theme for
-  code.
+- The palette is a semantic token system in `styles.css` (Step 4.3): one set
+  of `--fg/--surface/--border/--accent`-family custom properties, two themes.
+  **Dark is the default and the identity**; the light theme flips the output
+  canvas only — the terminal chrome (prompt box, command strips, bang/
+  permission/status bars, onboarding) re-declares the dark values and stays
+  terminal-dark, making mono-in / rich-out literal. Code surfaces (`--code-*`,
+  `--diff-*`, hljs github-dark) are pinned dark in both themes, so code reads
+  as a terminal window on any canvas. Toggle: the ☾/☀ button in the status
+  bar (persisted to localStorage, applied pre-paint in index.html).
+- Motion: transcript entries mount with a 160ms rise; theme switches fade;
+  all of it is disabled under `prefers-reduced-motion`.
 - Side surfaces are emergent/collapsible — the pin dock only exists while
   something is pinned, and the status bar folds to a single connection dot.
 - **Visibility superset + collapse-on-finalize** (the Phase T2 rule): the

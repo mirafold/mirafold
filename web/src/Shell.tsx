@@ -58,6 +58,17 @@ export function Shell() {
       ? "~" + p.slice(daemon.home.length)
       : p;
 
+  // 4.3: theme is shell-owned UI state. Dark is the default and the identity;
+  // index.html applies the stored choice before first paint (no flash) and
+  // this keeps the attribute + storage in sync on toggle.
+  const [theme, setTheme] = useState<"dark" | "light">(() =>
+    localStorage.getItem("genui-theme") === "light" ? "light" : "dark",
+  );
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem("genui-theme", theme);
+  }, [theme]);
+
   const bus = useMemo(() => {
     const socket = new SocketClient();
     const listeners = new Set<(m: ZoneMsg) => void>();
@@ -296,6 +307,8 @@ export function Shell() {
         sessionId={meta.sessionId}
         cwd={meta.cwd}
         usage={usage}
+        theme={theme}
+        onToggleTheme={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
       />
     </div>
   );
