@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
+import os from "node:os";
 import path from "node:path";
 import express from "express";
 import { WebSocketServer } from "ws";
@@ -69,7 +70,15 @@ wss.on("connection", (ws) => {
 
   // P.4: advertise which agents this daemon offers + which are live, so the
   // onboarding picker can render before any session exists. No agent assumed.
-  viewport({ type: "agents", agents: availableAgents(), default: defaultAgent() });
+  // 4.8: also where the daemon was launched — the default cwd for new
+  // sessions — plus home, so the client can show paths in ~-form.
+  viewport({
+    type: "agents",
+    agents: availableAgents(),
+    default: defaultAgent(),
+    cwd: process.cwd(),
+    home: os.homedir(),
+  });
 
   ws.on("message", (data) => {
     let msg: ClientMsg;
@@ -81,12 +90,19 @@ wss.on("connection", (ws) => {
     }
     switch (msg.type) {
       case "create":
-        attachTo(
-          registry.create({
-            cwd: typeof msg.cwd === "string" ? msg.cwd : undefined,
-            agent: asAgent(msg.agent),
-          }),
-        );
+        // A bad cwd (typo'd path) rejects the create rather than silently
+        // working somewhere else — the viewport stays unattached and the
+        // onboarding card shows the error (Step 4.8).
+        try {
+          attachTo(
+            registry.create({
+              cwd: typeof msg.cwd === "string" ? msg.cwd : undefined,
+              agent: asAgent(msg.agent),
+            }),
+          );
+        } catch (err) {
+          viewport({ type: "error", message: err instanceof Error ? err.message : String(err) });
+        }
         break;
       case "attach": {
         // A stale/unknown id (old bookmark, server restart) gets a fresh

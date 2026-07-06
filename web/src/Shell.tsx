@@ -38,7 +38,18 @@ export function Shell() {
   // P.4 onboarding: which agents the daemon offers, and whether we're still at
   // the picker. A URL that already names a session skips onboarding (it attaches).
   const [agents, setAgents] = useState<{ agent: AgentName; live: boolean }[] | null>(null);
+  // 4.8: where the daemon was launched (the default session cwd) + home for
+  // ~-abbreviation, both off the agents hello; and the last create error so
+  // the onboarding card can show a rejected working dir.
+  const [daemon, setDaemon] = useState<{ cwd?: string; home?: string }>({});
+  const [onbError, setOnbError] = useState<string | null>(null);
   const hasUrlSession = useMemo(() => /^\/s\/[\w-]+/.test(location.pathname), []);
+
+  // Paths render the way a terminal prompt would: home becomes ~.
+  const tildify = (p?: string) =>
+    p && daemon.home && (p === daemon.home || p.startsWith(daemon.home + "/"))
+      ? "~" + p.slice(daemon.home.length)
+      : p;
 
   const bus = useMemo(() => {
     const socket = new SocketClient();
@@ -61,6 +72,10 @@ export function Shell() {
       if (m.type === "session_created") {
         sessionId = m.sessionId;
         history.replaceState(null, "", `/s/${m.sessionId}`);
+        // The server replays this session's buffer right after — clear the
+        // zone so residue from before the attach (e.g. a rejected-create
+        // error at onboarding, 4.8) never sits above the new transcript.
+        for (const l of listeners) l({ type: "zone_reset" });
       }
       for (const l of listeners) l(m);
     });
@@ -79,8 +94,10 @@ export function Shell() {
       },
       // P.4: the user picked an agent at onboarding — create a session on it.
       // session_created sets `sessionId`, so a later reconnect re-attaches.
-      createSession(agent: AgentName) {
-        socket.send({ type: "create", agent });
+      // 4.8: `cwd` is the working dir typed at the picker; omitted → the
+      // daemon's launch dir.
+      createSession(agent: AgentName, cwd?: string) {
+        socket.send({ type: "create", agent, cwd });
       },
       sendPrompt(text: string) {
         // No local echo — the server broadcasts the user_prompt to every
@@ -110,8 +127,14 @@ export function Shell() {
           setAsks((a) => [...a, { tool: m.tool, detail: m.detail, id: m.id }]);
         } else if (m.type === "agents") {
           setAgents(m.agents);
+          setDaemon({ cwd: m.cwd, home: m.home });
         } else if (m.type === "session_created") {
           setMeta({ sessionId: m.sessionId, cwd: m.cwd, agent: m.agent });
+          setOnbError(null);
+        } else if (m.type === "error") {
+          // Only the onboarding card consumes this; in-session errors already
+          // render in the output zone.
+          setOnbError(m.message);
         } else if (m.type === "usage") {
           // Tokens are per-turn → sum for the session total. Cost is already
           // the session-cumulative figure → take it as-is, never add (T2.6).
@@ -185,7 +208,17 @@ export function Shell() {
 
   return (
     <div className="shell">
-      {showOnboarding && <Onboarding agents={agents} onPick={bus.createSession} />}
+      {showOnboarding && (
+        <Onboarding
+          agents={agents}
+          defaultCwd={tildify(daemon.cwd)}
+          error={onbError}
+          onPick={(agent, cwd) => {
+            setOnbError(null);
+            bus.createSession(agent, cwd);
+          }}
+        />
+      )}
       <RenderZone subscribe={bus.subscribe} sendAction={bus.sendAction} />
       {asks.length > 0 && (
         <div className="perm-bar">
@@ -201,7 +234,12 @@ export function Shell() {
           </button>
         </div>
       )}
-      <PromptBox onSend={bus.sendPrompt} busy={busy} onInterrupt={bus.interrupt} />
+      <PromptBox
+        onSend={bus.sendPrompt}
+        busy={busy}
+        onInterrupt={bus.interrupt}
+        cwd={tildify(meta.cwd)}
+      />
       <StatusBar
         connected={connected}
         agent={meta.agent}

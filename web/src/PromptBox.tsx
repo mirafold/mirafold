@@ -4,10 +4,15 @@ export function PromptBox({
   onSend,
   busy,
   onInterrupt,
+  cwd,
 }: {
   onSend: (text: string) => void;
   busy: boolean;
   onInterrupt: () => void;
+  // 4.8: the session's working dir, shown at the prompt like a terminal's
+  // `~/Projects/foo ❯`. Shell-owned — rendered here, never by agent output,
+  // so it can't be spoofed.
+  cwd?: string;
 }) {
   const [text, setText] = useState("");
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -30,6 +35,11 @@ export function PromptBox({
 
   return (
     <div className="prompt-box">
+      {cwd && (
+        <span className="prompt-cwd" title={cwd}>
+          {cwd}
+        </span>
+      )}
       <span className="glyph">❯</span>
       <textarea
         ref={ref}

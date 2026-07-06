@@ -255,7 +255,7 @@ web/               the browser app (React 19 + Vite)
   src/styles.css     the design identity in CSS (see §7)
 demo/              the M1 demo GIF embedded at the top of this README
 dist/              built front end (vite build output; served by Express)
-workspace/         the agent's cwd — gitignored; all mutation is confined here
+workspace/         legacy scratch dirs (pre-4.8 default cwd) — gitignored
 PLAN.md            the phased build plan (source of truth for next steps)
 BUSINESS.md        strategy; gates that sequence the plan
 vite.config.ts     web root, @protocol alias, /ws proxy → :3000, dist output
@@ -285,9 +285,11 @@ fanned out to all attached viewports and kept in a ring buffer (4000
 messages) for replay, so a refresh or a second tab repaints the same
 transcript. Closing a tab merely detaches; a session with no viewports dies
 only after an idle timeout (default 60 min, `SESSION_IDLE_TIMEOUT_MS`). Each
-session gets its own working dir (`workspace/<id>`) — mental model:
-session ≈ project. A stale/unknown attach id falls back to a fresh session
-rather than an error page.
+session runs in a real working dir — default: the directory the daemon was
+launched from, exactly like a terminal agent (Step 4.8) — or any existing
+directory typed at onboarding (`~` expands; a missing path rejects the
+create, like `cd`). Mental model: session ≈ project. A stale/unknown attach
+id falls back to a fresh session rather than an error page.
 
 Inbound messages route accordingly: `prompt` is echoed onto the session
 stream as `user_prompt` (all viewports render the command strip identically —
@@ -613,14 +615,17 @@ PLAN.md) is: every front-end step is verified end-to-end in headless Chrome
 via `playwright-core` (real typing/clicks), and every capability is proven
 against the mock before the live agent.
 
-### The workspace
+### The working directory
 
-Each session's working directory is `./workspace/<session-id>/` by default
-(gitignored, created on demand; any directory you own can be passed as the cwd
-at session creation — a session is like launching the terminal there). File
-mutation and bash ask for approval on the shell's permission bar exactly as in
-the terminal, honoring the allowlists in your inherited `settings.json`.
-Deleting `workspace/` is a clean reset.
+A session's working directory defaults to the directory the daemon was
+launched from (`process.cwd()`) — terminal parity, Step 4.8 — and the
+onboarding picker takes any existing path (`~` expands; a typo'd path rejects
+the create instead of silently creating a stray dir). The trusted shell shows
+the session's cwd at the prompt (`~/Projects/foo ❯`) and its leaf in the
+status bar. File mutation and bash ask for approval on the shell's permission
+bar exactly as in the terminal, honoring the allowlists in your inherited
+`settings.json`. (`./workspace/` is the legacy pre-4.8 scratch location —
+gitignored, safe to delete.)
 
 ## 9. Life of a turn (end to end)
 
@@ -686,9 +691,9 @@ the try path), always on the user's machine. It re-skins whichever terminal
 agent the user already drives (Claude Code, Codex, Gemini CLI, …); the only
 hosted piece is ever a dumb WebSocket relay, and the API key never leaves the
 user's machine. Two consequences follow the "your terminal agent, better face"
-promise and are planned as PLAN Phase 4 steps: the session runs in the real
-directory you launched from (not a scratch workspace) with a working-dir picker
-and the cwd shown at the prompt (Step 4.8), and `!` runs a **real** interactive
+promise and are PLAN Phase 4 steps: the session runs in the real directory you
+launched from (not a scratch workspace) with a working-dir picker and the cwd
+shown at the prompt (Step 4.8 — shipped 2026-07-06), and `!` runs a **real** interactive
 shell via a PTY — `sudo`/`ssh` prompts work, unlike the terminal agents' own
 non-interactive `!` (Step 4.9). Packaging to `npm i -g` is Step 4.10. Keep every
 seam agent-neutral and compatible with that.

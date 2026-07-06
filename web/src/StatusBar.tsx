@@ -48,10 +48,10 @@ export function StatusBar({
     );
   }
 
+  // The leaf names the project (session ≈ project); the prompt line carries
+  // the fuller ~-path (Step 4.8), so a leaf is enough here.
   const cwdLeaf = cwd ? cwd.split("/").filter(Boolean).pop() : undefined;
-  // Default sessions live at workspace/<id>, so the leaf just repeats the
-  // session id — only show cwd when it actually adds something (custom dir).
-  const showCwd = cwdLeaf && cwdLeaf !== sessionId;
+  const showCwd = Boolean(cwdLeaf);
   const hasUsage = usage.sumIn + usage.sumOut > 0;
 
   return (

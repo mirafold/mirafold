@@ -895,6 +895,24 @@ body {
   line-height: 1.5; /* match the textarea so the glyph sits on the first line */
 }
 
+/* The session's working dir at the prompt (Step 4.8) — dim, mono, terminal-
+   prompt style: `~/Projects/foo ❯`. Ellipsizes from the left so the leaf
+   (the part that identifies the project) always stays visible. */
+.prompt-cwd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  line-height: 1.76; /* baseline-align with the 0.95em textarea text */
+  color: #55617a;
+  max-width: 34%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  direction: rtl; /* left-side ellipsis: keep the tail, elide the head */
+  unicode-bidi: plaintext; /* …without RTL reordering the path's own chars */
+  text-align: left;
+  flex-shrink: 0;
+}
+
 .prompt-box textarea {
   flex: 1;
   resize: none;
@@ -1145,6 +1163,49 @@ body {
   font-size: 13.5px;
   line-height: 1.5;
   color: #8b94a7;
+}
+
+/* The working-directory field (Step 4.8) — prefilled with the daemon's
+   launch dir, editable to point the session anywhere that exists. */
+.onb-cwd-label {
+  display: block;
+  margin-bottom: 6px;
+  text-align: left;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #7e88a0;
+}
+
+.onb-cwd {
+  width: 100%;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  background: #10151f;
+  border: 1px solid #2a3446;
+  border-radius: 8px;
+  color: #e6ebf5;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  outline: none;
+}
+
+.onb-cwd:focus {
+  border-color: #3a4a68;
+}
+
+.onb-cwd::placeholder {
+  color: #55617a;
+}
+
+/* A rejected working dir (no such directory) — fix the path and retry. */
+.onb-error {
+  margin: -6px 0 12px;
+  text-align: left;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: #e0708a;
 }
 
 .onb-list {
