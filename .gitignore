@@ -4,3 +4,4 @@ workspace/
 .env
 *.log
 .claude/
+dist-server/
