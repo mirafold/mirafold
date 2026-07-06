@@ -3,6 +3,7 @@ import os from "node:os";
 import { existsSync } from "node:fs";
 import { ClaudeCodeSession } from "./claude-code";
 import { CodexSession } from "./codex";
+import { GeminiCliSession } from "./gemini-cli";
 import { MockSession } from "./mock";
 import type { AgentName, AgentSession, Backend } from "./types";
 
@@ -29,8 +30,12 @@ function agentHasCredentials(agent: AgentName): boolean {
         Boolean(process.env.OPENAI_API_KEY) ||
         existsSync(path.join(process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex"), "auth.json"))
       );
-    case "gemini-cli": // Phase P.5
-      return false;
+    case "gemini-cli":
+      // A Google AI Studio API key. NOTE: the free "Login with Google" OAuth
+      // path was deprecated by Google for the CLI in 2026 (IneligibleTierError),
+      // so ~/.gemini/oauth_creds.json existing is NOT a reliable "live" signal —
+      // key on GEMINI_API_KEY (GOOGLE_API_KEY is the CLI's other accepted name).
+      return Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
   }
 }
 
@@ -55,9 +60,8 @@ export function resolveBackendFor(agent: AgentName): Backend {
   return { agent, live: agentHasCredentials(agent), model: modelFor(agent) };
 }
 
-// Agents with a landed adapter — the onboarding picker's universe. gemini-cli
-// is P.5, so it isn't offered yet (createSession would have no engine for it).
-const ADAPTER_AGENTS: AgentName[] = ["claude-code", "codex"];
+// Agents with a landed adapter — the onboarding picker's universe.
+const ADAPTER_AGENTS: AgentName[] = ["claude-code", "codex", "gemini-cli"];
 
 /** What onboarding advertises: each offerable agent and whether it has creds. */
 export function availableAgents(): { agent: AgentName; live: boolean }[] {
@@ -93,9 +97,7 @@ export function createSession(backend: Backend, opts: { cwd: string }): AgentSes
       return new ClaudeCodeSession({ workspaceDir: opts.cwd, model: backend.model });
     case "codex":
       return new CodexSession({ workspaceDir: opts.cwd, model: backend.model });
-    default:
-      // Reached only if a non-claude agent reports credentials before its
-      // adapter lands (P.5). Fail loud rather than silently mislead.
-      throw new Error(`no adapter for agent "${backend.agent}" yet (Phase P.5)`);
+    case "gemini-cli":
+      return new GeminiCliSession({ workspaceDir: opts.cwd, model: backend.model });
   }
 }

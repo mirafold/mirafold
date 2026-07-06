@@ -951,7 +951,7 @@ pattern on one before committing to all.
     is agent-first; a cwd input can fold in later. **P.4 done — first run is
     'choose your agent', none privileged.**
 
-- [ ] **Step P.5 — Third agent + graceful degradation**
+- [x] **Step P.5 — Third agent + graceful degradation**
   - Goal: prove N agents (add Gemini CLI), and that optional capabilities
     degrade by absence.
   - Build: a Gemini CLI adapter on the same seam; the **optional-feature rule** —
@@ -978,6 +978,31 @@ pattern on one before committing to all.
     warm-session mechanics, the scoped-MCP-approval knob, and the OAuth creds
     path — one short session answers all; the adapter is then a mechanical write
     off the Codex template. Box stays open until the live 3-agent run is observed.
+  - **DONE, verified live (2026-07-06).** Real event shapes captured via probes:
+    `init{session_id,model}`, `message{role,content,delta}` (assistant=text_delta,
+    user ignored), `tool_use{tool_name:"mcp_<server>_<tool>",tool_id,parameters}`,
+    `tool_result{tool_id,status,output:"…(id: <uuid>)"}`, `result{stats:{input_tokens,
+    output_tokens,…}}` (+ a non-JSON ripgrep warning line the parser skips).
+    `GeminiCliSession` drives `gemini -p … -o stream-json` (one process/turn),
+    warm via `--session-id` then `--resume` (its Thread analog); generative UI via
+    the SAME `render-mcp.ts` named in a per-session **project `.gemini/settings.json`**
+    (merged over the user's global config, not clobbered), auto-trusted with
+    `"trust":true` + `--allowed-mcp-server-names genui` (headless can't prompt).
+    Auth: **the free Google-login OAuth was deprecated by Google in 2026
+    (IneligibleTierError → Antigravity)**, so it's a free AI Studio `GEMINI_API_KEY`,
+    forced via `selectedType:"gemini-api-key"` in the project settings (the global
+    still pointed at dead oauth-personal); key stays server-side. Wired into the
+    seam (agentHasCredentials keys on GEMINI_API_KEY; `ADAPTER_AGENTS` now includes
+    gemini-cli so onboarding offers it; createSession case). Verified live ($0
+    AI Studio tier): adapter direct — warm ORCA-7 recall + a render_table→`render`
+    WireMsg; **browser — the onboarding picker shows all three agents, picking
+    Gemini rendered a real `<table>` component (not markdown), status bar
+    `gemini-cli · gemini-2.5-flash`, screenshot**. Optional-feature/degradation
+    proof: Gemini emits no reasoning stream, so `thinking_delta` never fires and
+    the thinking block simply doesn't appear — by absence, no special-casing.
+    **Phase P COMPLETE — three terminal agents (Claude Code, Codex, Gemini CLI),
+    each faithfully re-skinned behind one front end, all carrying the generative
+    UI, none privileged.**
 
 ---
 
