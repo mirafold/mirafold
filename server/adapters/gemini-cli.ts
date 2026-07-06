@@ -1,20 +1,18 @@
 import path from "node:path";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import type { WireMsg } from "../protocol";
 import type { ComponentName } from "../registry-spec";
 import { type AgentSession, capOutput } from "./types";
+import { renderMcpCommand } from "./render-mcp-cmd";
 
 // Same generative-UI stdio MCP server the Codex adapter injects (P.3). Gemini
 // loads MCP servers from settings.json, so we write a per-session project
 // `.gemini/settings.json` naming it (merged over the user's global config).
 const CLOSE = Symbol("close");
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-const RENDER_MCP_PATH = path.resolve(HERE, "..", "render-mcp.ts");
-const TSX_BIN = path.resolve(HERE, "..", "..", "node_modules", ".bin", "tsx");
+const RENDER_MCP = renderMcpCommand();
 const GENUI_MCP = "genui";
 // Gemini names MCP tools `mcp_<server>_<tool>`; ours therefore start with this.
 const MCP_PREFIX = `mcp_${GENUI_MCP}_`;
@@ -106,7 +104,7 @@ export class GeminiCliSession implements AgentSession {
     cfg.security = { ...cfg.security, auth: { ...cfg.security?.auth, selectedType: "gemini-api-key" } };
     cfg.mcpServers = {
       ...cfg.mcpServers,
-      [GENUI_MCP]: { command: TSX_BIN, args: [RENDER_MCP_PATH], trust: true },
+      [GENUI_MCP]: { command: RENDER_MCP.command, args: RENDER_MCP.args, trust: true },
     };
     writeFileSync(file, JSON.stringify(cfg, null, 2));
   }

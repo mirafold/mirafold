@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import express from "express";
 import { WebSocketServer } from "ws";
 import type { AgentName, ClientMsg, WireMsg } from "./protocol";
@@ -43,11 +44,15 @@ try {
   /* no .env yet */
 }
 
-const port = Number(process.env.PORT ?? 3000);
 const app = express();
-app.use(express.static("dist")); // built front end (dev uses Vite on :5173)
+// The built front end lives at ../dist relative to THIS FILE, not the cwd —
+// the daemon launches from any directory (4.8/4.10). Resolves correctly from
+// both homes: server/ in the dev checkout, dist-server/ in the packaged
+// install. (Dev uses Vite on :5173 anyway.)
+const DIST = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "dist");
+app.use(express.static(DIST));
 // /s/<id> is client-side routing — serve the app shell.
-app.get("/s/:id", (_req, res) => res.sendFile(path.resolve("dist/index.html")));
+app.get("/s/:id", (_req, res) => res.sendFile(path.join(DIST, "index.html")));
 
 const server = createServer(app);
 
@@ -69,6 +74,12 @@ const wss = new WebSocketServer({
   server,
   path: "/ws",
   verifyClient: ({ origin }: { origin?: string }) => isLoopbackOrigin(origin),
+});
+// ws re-emits the http server's errors on itself; without a listener that
+// throws and defeats the EADDRINUSE port walk below. The walk (or the loud
+// rethrow) is handled on the http server — here we only log the rest.
+wss.on("error", (err: NodeJS.ErrnoException) => {
+  if (err.code !== "EADDRINUSE") console.error("[ws]", err);
 });
 
 const registry = new SessionRegistry();
@@ -240,6 +251,18 @@ wss.on("connection", (ws) => {
 // 4.7). The Origin guard already blocks hostile browser pages; binding to
 // 127.0.0.1 also keeps non-browser LAN clients — which send no Origin and so
 // pass the guard — off the socket entirely.
-server.listen(port, "127.0.0.1", () => {
-  console.log(`[genui-shell] server on http://127.0.0.1:${port} (ws at /ws)`);
-});
+// 4.10: a second daemon (another project, another terminal) must not crash on
+// EADDRINUSE — walk up a few ports; the launcher reads the final URL off stdout.
+const basePort = Number(process.env.PORT ?? 3000);
+const listen = (port: number) => {
+  const onBusy = (err: NodeJS.ErrnoException) => {
+    if (err.code === "EADDRINUSE" && port - basePort < 20) listen(port + 1);
+    else throw err;
+  };
+  server.once("error", onBusy);
+  server.listen(port, "127.0.0.1", () => {
+    server.removeListener("error", onBusy); // later errors stay loud, as before
+    console.log(`[genui-shell] server on http://127.0.0.1:${port} (ws at /ws)`);
+  });
+};
+listen(basePort);

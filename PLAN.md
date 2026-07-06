@@ -361,7 +361,7 @@ and the remaining Phase 4 polish (theming, resume, fleet view, relay) waits on i
     curses apps; raw-ANSI stream; concurrent bangs; stdin re-attach after
     refresh.
 
-- [ ] **Step 4.10 — Package & publish: `genui-shell` on PATH (M2 launch)**
+- [x] **Step 4.10 — Package & publish: `genui-shell` on PATH (M2 launch)**
   - Goal: satisfy the M2 gate's "`genui-shell` works cold on a stranger's
     machine." Turn this repo from a clone-and-`yarn-dev` app into an installed
     tool. This is the last-mile launch step — sequence it at the M2 gate.
@@ -381,6 +381,28 @@ and the remaining Phase 4 polish (theming, resume, fleet view, relay) waits on i
   - Done when: on a clean machine, `npm i -g genui-shell` then `genui-shell` in
     any directory boots the daemon, opens the browser, and drives the user's own
     agent — no clone, no `yarn`. (Ties to BUSINESS.md §9 gate M2 + §5.)
+  - Status: **built + verified cold 2026-07-06; the `npm publish` itself is
+    deliberately NOT run — it's the M2 launch trigger and Kyle's call** (repo
+    held private by choice; `npm publish` when ready, over the 0.0.1
+    placeholder). What shipped: `bin/genui-shell.js` (spawns the bundle from
+    the launch dir, opens the browser off the printed URL, `--no-open`);
+    `yarn build` now also esbuilds `dist-server/{index,render-mcp}.js`
+    (deps external); adapters spawn the render-MCP via `renderMcpCommand()`
+    (compiled twin beside the code, else tsx+TS — codex/gemini both);
+    dist served package-relative, not cwd; EADDRINUSE walks up to 20 ports
+    (plus a ws quirk fix: WebSocketServer re-emits listen errors — swallow
+    EADDRINUSE there or the walk dies); package.json: bin/files/engines
+    (>=20.12), web-only deps demoted to devDependencies → 9-file 235 KB
+    tarball, 109-package install. Verified: `npm pack` → `npm i -g` into a
+    clean prefix (~28 s incl. node-pty Linux compile — macOS/Win have
+    prebuilds, Linux toolchain fallback documented in README §8), then from
+    two different dirs: onboarding prefills each launch dir, mock turn +
+    `!` PTY work through the production bundle, second daemon walks to
+    :3001, xdg-open called with the right URL (stubbed); live: Codex
+    session in the installed copy spawned the COMPILED render-mcp.js and
+    painted a render_card. `npx genui-shell` untested against the registry
+    (needs the publish); macOS/Windows install untested here — both are
+    launch-day checks.
 
 ---
 

@@ -283,8 +283,11 @@ web/               the browser app (React 19 + Vite)
                      ActionRow/context
   src/ws.ts          SocketClient: typed send/onMessage, reconnect + hello
   src/styles.css     the design identity in CSS (see §7)
+bin/               genui-shell launcher (4.10): spawns dist-server, opens browser
 demo/              the M1 demo GIF embedded at the top of this README
 dist/              built front end (vite build output; served by Express)
+dist-server/       esbuild server bundles (4.10): index.js + render-mcp.js —
+                   what the installed `genui-shell` actually runs; gitignored
 workspace/         legacy scratch dirs (pre-4.8 default cwd) — gitignored
 PLAN.md            the phased build plan (source of truth for next steps)
 BUSINESS.md        strategy; gates that sequence the plan
@@ -597,10 +600,32 @@ knowing because it constrains future UI work:
 
 ## 8. Running it
 
-### Prerequisites
+### Installed (Step 4.10 — the product path)
+
+```sh
+npm i -g genui-shell
+cd ~/your/project
+genui-shell          # boots the daemon here, opens the browser
+```
+
+Like launching `claude`/`codex`/`gemini`: sessions default to the directory
+you ran it from, and a second `genui-shell` in another project walks to the
+next port (3001, …) and runs independently. `npx genui-shell` is the
+zero-install try path; `--no-open` skips the browser; `PORT` moves the base
+port. The package ships only the launcher + the two esbuild bundles + the
+built front end (~235 KB tarball); agent credentials come from your
+environment exactly as in a terminal (`ANTHROPIC_API_KEY`, `codex login`,
+`GEMINI_API_KEY`) — none live in the package. **Native-module note:**
+`node-pty` (the `!` PTY, Step 4.9) has prebuilt binaries for macOS and
+Windows; on Linux npm compiles it at install, which needs `make`/`g++`/
+`python3` — the accepted long-tail fallback, not something we engineer
+around. *(Publishing to npm is the M2 launch action — until then, install
+from a tarball: `npm pack` in the repo, then `npm i -g ./genui-shell-*.tgz`.)*
+
+### Prerequisites (development)
 
 - **Node 22** (any install method; this machine uses nvm with 22 as the
-  default alias).
+  default alias). The published package itself requires only Node ≥ 20.12.
 - **yarn** for all package operations (via corepack: `corepack enable`).
 
 ### Development
@@ -628,11 +653,16 @@ Individual processes: `yarn dev:server` / `yarn dev:web`.
 ### Production-ish
 
 ```sh
-yarn build        # vite build → dist/
+yarn build        # vite build → dist/  +  esbuild → dist-server/
 yarn dev:server   # Express serves dist/ and ws on :3000
 ```
 
-Open http://localhost:3000 — one port, no proxy.
+Open http://localhost:3000 — one port, no proxy. `yarn build` also emits the
+packaged server (`dist-server/index.js` + `render-mcp.js`, all deps external);
+`bin/genui-shell.js` runs that bundle — you can exercise the installed code
+path from the repo with `node bin/genui-shell.js`. The Codex/Gemini adapters
+spawn the render-MCP stub via `renderMcpCommand()`: the compiled twin when it
+exists beside the code, tsx + TS source in dev.
 
 ### Checks
 
@@ -726,7 +756,8 @@ launched from (not a scratch workspace) with a working-dir picker and the cwd
 shown at the prompt (Step 4.8 — shipped 2026-07-06), and `!` runs a **real** interactive
 shell via a PTY — `sudo`/`ssh` prompts work, unlike the terminal agents' own
 non-interactive `!` (Step 4.9 — shipped 2026-07-06, §2.1). Packaging to
-`npm i -g` is Step 4.10. Keep every seam agent-neutral and compatible with that.
+`npm i -g` is Step 4.10 — shipped 2026-07-06 (§8); the `npm publish` itself is
+the M2 launch trigger. Keep every seam agent-neutral and compatible with that.
 
 ## 11. Conventions and gotchas
 

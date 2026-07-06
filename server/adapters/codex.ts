@@ -1,6 +1,5 @@
 import path from "node:path";
 import { mkdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import {
   Codex,
@@ -12,15 +11,14 @@ import {
 import type { WireMsg } from "../protocol";
 import type { ComponentName } from "../registry-spec";
 import { type AgentSession, type TodoItem, capOutput } from "./types";
+import { renderMcpCommand } from "./render-mcp-cmd";
 
 // The generative-UI MCP server injected into Codex (P.3). Codex loads MCP
 // servers as stdio subprocesses, so genui-shell's render tools live in a
 // standalone process (server/render-mcp.ts) rather than in-process like the
-// Claude adapter's makeRenderServer. In dev the daemon runs under tsx, so the
-// child runs under tsx too; a compiled build would point node at render-mcp.js.
-const HERE = path.dirname(fileURLToPath(import.meta.url)); // server/adapters
-const RENDER_MCP_PATH = path.resolve(HERE, "..", "render-mcp.ts");
-const TSX_BIN = path.resolve(HERE, "..", "..", "node_modules", ".bin", "tsx");
+// Claude adapter's makeRenderServer. renderMcpCommand resolves how to spawn
+// it: tsx + TS source in dev, node + the esbuild twin in the packaged install.
+const RENDER_MCP = renderMcpCommand();
 const GENUI_MCP = "genui"; // matches item.server on the mcp_tool_call events
 const RENDER_TOOL_COMPONENT: Record<string, ComponentName> = {
   render_card: "card",
@@ -116,8 +114,8 @@ export class CodexSession implements AgentSession {
       config: {
         mcp_servers: {
           [GENUI_MCP]: {
-            command: TSX_BIN,
-            args: [RENDER_MCP_PATH],
+            command: RENDER_MCP.command,
+            args: RENDER_MCP.args,
             default_tools_approval_mode: "approve",
           },
         },

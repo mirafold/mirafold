@@ -1,14 +1,40 @@
 {
   "name": "genui-shell",
   "version": "0.1.0",
-  "private": true,
+  "description": "A faithful browser re-skin of the terminal coding agent you already use — Claude Code, Codex, or Gemini CLI — with generative UI layered on top.",
   "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kserrec/genui-shell.git"
+  },
+  "keywords": [
+    "claude-code",
+    "codex",
+    "gemini-cli",
+    "coding-agent",
+    "generative-ui",
+    "terminal",
+    "mcp"
+  ],
+  "bin": {
+    "genui-shell": "bin/genui-shell.js"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "dist-server/"
+  ],
+  "engines": {
+    "node": ">=20.12"
+  },
   "scripts": {
     "dev:server": "tsx watch server/index.ts",
     "dev:web": "vite",
     "dev": "concurrently -n server,web -c blue,green \"yarn dev:server\" \"yarn dev:web\"",
-    "build": "vite build",
+    "build": "vite build && yarn build:server",
+    "build:server": "esbuild server/index.ts server/render-mcp.ts --bundle --platform=node --format=esm --packages=external --outdir=dist-server",
+    "prepack": "yarn build",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -16,13 +42,7 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@openai/codex-sdk": "^0.142.5",
     "express": "^5.2.1",
-    "highlight.js": "^11.11.1",
     "node-pty": "^1.1.0",
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7",
-    "react-markdown": "^10.1.0",
-    "rehype-highlight": "^7.0.2",
-    "remark-gfm": "^4.0.1",
     "ws": "^8.21.0",
     "zod": "^4.4.3"
   },
@@ -34,7 +54,14 @@
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^6.0.3",
     "concurrently": "^10.0.3",
+    "esbuild": "^0.28.1",
+    "highlight.js": "^11.11.1",
     "playwright-core": "^1.61.1",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-markdown": "^10.1.0",
+    "rehype-highlight": "^7.0.2",
+    "remark-gfm": "^4.0.1",
     "tsx": "^4.23.0",
     "typescript": "^6.0.3",
     "vite": "^8.1.3"
