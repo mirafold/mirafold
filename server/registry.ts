@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { WireMsg } from "./protocol";
+import type { SessionMeta, WireMsg } from "./protocol";
 import {
   createSession,
   resolveBackend,
@@ -50,6 +50,12 @@ export type SessionEntry = {
   // 4.4: next session-scoped sequence number; broadcast stamps it onto every
   // message so a reconnecting viewport can name where its stream broke off.
   nextSeq: number;
+  // 4.6 fleet metadata: display name (defaults to the cwd leaf, renamable),
+  // coarse activity state derived from the broadcast stream, and when the
+  // stream last moved.
+  name: string;
+  status: SessionMeta["status"];
+  lastActivity: number;
   idleTimer?: NodeJS.Timeout;
   // Step 4.9: the one running `!` command, if any (one at a time per session,
   // like a terminal). The proc itself never leaves the server.
@@ -100,10 +106,14 @@ export class SessionRegistry {
       buffer: [],
       viewports: new Set(),
       nextSeq: 1,
+      name: path.basename(dir) || dir,
+      status: "idle",
+      lastActivity: Date.now(),
       pendingBang: [],
     };
     session.onMessage((msg) => this.broadcast(entry, msg));
     this.entries.set(id, entry);
+    this.notifyWatchers();
     return entry;
   }
 
@@ -118,6 +128,19 @@ export class SessionRegistry {
     if (entry.buffer.length > BUFFER_CAP) {
       entry.buffer.splice(0, entry.buffer.length - BUFFER_CAP);
     }
+    entry.lastActivity = Date.now();
+    // 4.6: coarse fleet status, derived from the stream itself — no adapter
+    // cooperation needed. Terminal states first; a permission hold sticks
+    // until the turn moves again.
+    const prev = entry.status;
+    if (msg.type === "turn_end" || msg.type === "error" || msg.type === "bang_end") {
+      entry.status = "idle";
+    } else if (msg.type === "permission_request") {
+      entry.status = "permission";
+    } else {
+      entry.status = "working";
+    }
+    if (entry.status !== prev) this.notifyWatchers();
     for (const viewport of entry.viewports) viewport(msg);
   }
 
@@ -143,18 +166,70 @@ export class SessionRegistry {
       if (afterSeq === undefined || (msg.seq ?? 0) > afterSeq) viewport(msg);
     }
     entry.viewports.add(viewport);
+    this.notifyWatchers(); // viewport counts are fleet metadata
   }
 
   /** Detaching never closes the session — the idle timer does, much later. */
   detach(entry: SessionEntry, viewport: Viewport) {
     entry.viewports.delete(viewport);
+    this.notifyWatchers(); // viewport counts are fleet metadata
     if (entry.viewports.size === 0) {
       entry.idleTimer = setTimeout(() => {
         entry.bang?.proc.kill(); // no orphaned PTYs past the session's life
         entry.session.close();
         this.entries.delete(entry.id);
+        this.notifyWatchers();
       }, IDLE_TIMEOUT_MS);
       entry.idleTimer.unref();
     }
+  }
+
+  // ---- Fleet watchers (4.6): connections that observe the registry itself —
+  // the mission-control page — rather than any one session's stream.
+
+  private watchers = new Set<Viewport>();
+  private notifyTimer: NodeJS.Timeout | null = null;
+
+  summary(): SessionMeta[] {
+    return [...this.entries.values()]
+      .map((e) => ({
+        sessionId: e.id,
+        name: e.name,
+        cwd: e.cwd,
+        agent: e.agent,
+        status: e.status,
+        lastActivity: e.lastActivity,
+        viewports: e.viewports.size,
+      }))
+      .sort((a, b) => b.lastActivity - a.lastActivity);
+  }
+
+  watch(viewport: Viewport) {
+    this.watchers.add(viewport);
+    viewport({ type: "sessions", sessions: this.summary() });
+  }
+
+  unwatch(viewport: Viewport) {
+    this.watchers.delete(viewport);
+  }
+
+  rename(id: string, name: string): boolean {
+    const entry = this.entries.get(id);
+    const clean = name.trim().slice(0, 60);
+    if (!entry || !clean) return false;
+    entry.name = clean;
+    this.notifyWatchers();
+    return true;
+  }
+
+  /** Push a fresh snapshot to every watcher, coalescing bursts. */
+  private notifyWatchers() {
+    if (this.watchers.size === 0 || this.notifyTimer) return;
+    this.notifyTimer = setTimeout(() => {
+      this.notifyTimer = null;
+      const msg: WireMsg = { type: "sessions", sessions: this.summary() };
+      for (const w of this.watchers) w(msg);
+    }, 100);
+    this.notifyTimer.unref();
   }
 }

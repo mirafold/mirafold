@@ -91,6 +91,9 @@ export function StatusBar({
           )}
         </>
       )}
+      <a className="sb-home" href="/" title="All sessions (mission control)">
+        ⌂
+      </a>
       <button
         className="sb-theme"
         onClick={onToggleTheme}

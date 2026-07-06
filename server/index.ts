@@ -85,8 +85,10 @@ wss.on("error", (err: NodeJS.ErrnoException) => {
 const registry = new SessionRegistry();
 
 wss.on("connection", (ws) => {
-  // A connection is a viewport onto one registry session (Step 4.2).
+  // A connection is a viewport onto one registry session (Step 4.2) — or,
+  // since 4.6, a fleet watcher observing the registry itself.
   let entry: SessionEntry | null = null;
+  let watching = false;
   const viewport = (msg: WireMsg) => {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
   };
@@ -218,6 +220,20 @@ wss.on("connection", (ws) => {
         // Liveness only — answered on this connection, never buffered.
         viewport({ type: "pong" });
         break;
+      case "watch_sessions":
+        // 4.6: this connection is the fleet page — snapshots, not a session.
+        if (entry) {
+          registry.detach(entry, viewport);
+          entry = null;
+        }
+        watching = true;
+        registry.watch(viewport);
+        break;
+      case "rename":
+        if (typeof msg.sessionId === "string" && typeof msg.name === "string") {
+          registry.rename(msg.sessionId, msg.name);
+        }
+        break;
       case "interrupt":
         entry?.session.interrupt();
         break;
@@ -260,6 +276,7 @@ wss.on("connection", (ws) => {
       registry.detach(entry, viewport);
       console.log(`[ws] viewport detached ← session ${entry.id}`);
     }
+    if (watching) registry.unwatch(viewport);
   });
 });
 

@@ -284,7 +284,7 @@ and the remaining Phase 4 polish (theming, resume, fleet view, relay) waits on i
     the stack is unchanged because the seam was kept clean from Phase 0.
   - Done when: two users have isolated sessions and credentials.
 
-- [ ] **Step 4.6 — Mission control (fleet view)**
+- [x] **Step 4.6 — Mission control (fleet view)**
   - Goal: the ambient supervision surface — wedge 1 in BUSINESS.md made
     literal. Only possible because 4.2 gave sessions identity.
   - Build: root page at `/` listing all live sessions from the registry —
@@ -295,6 +295,25 @@ and the remaining Phase 4 polish (theming, resume, fleet view, relay) waits on i
   - Files: `web/src/FleetView.tsx`, `server/registry.ts`, `protocol.ts`.
   - Done when: with three sessions running, `/` shows all three with live
     status, and clicking one drops into its transcript.
+  - Status: **done, verified mock 13/13 (2026-07-06)** — `/` is now
+    mission control (`FleetView.tsx`; routing in main.tsx: `/s/<id>` →
+    Shell, else fleet). New wire plumbing (additive, per-viewport, never
+    buffered): `watch_sessions` subscribes a connection as a fleet watcher;
+    `sessions` snapshots (id, name, cwd, agent, status, lastActivity,
+    viewport count) are pushed on change, 100ms-coalesced. Status is derived
+    in registry.broadcast from the stream itself — turn_end/error/bang_end →
+    idle, permission_request → permission (sticky until the turn moves),
+    else working — no adapter cooperation needed. Rows: pulsing status dot,
+    rename-in-place (`rename` ClientMsg — the 4.2 deferred item, landed),
+    ~-cwd, agent chip, relative last-activity, open-tab count; click = drop
+    into /s/<id>; ⌂ in the session status bar returns. New-session reuses
+    the onboarding card (create → navigate); an empty fleet auto-opens it,
+    so first-run still lands in "choose your agent". Verified: 3 sessions
+    across 2 cwds listed live; working/permission/idle transitions observed
+    on the fleet while a session ran; rename live + persisted to a fresh
+    watcher; click-through + ⌂ round-trip; both themes screenshot-checked.
+    Deferred: pinned-widget preview on rows (needs pin state on the wire —
+    see 4.1's note; revisit if supervision wants richer rows).
 
 - [ ] **Step 4.7 — Hosted relay seam (the paid tier)**
   - Goal: see and drive local sessions from another device (phone), without

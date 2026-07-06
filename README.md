@@ -114,7 +114,9 @@ type WireMsg =
   | { type: "bang_start"; command: string; id: string }
   | { type: "bang_output"; data: string; id: string }
   | { type: "bang_end"; id: string; exitCode: number | null }      // null = killed
-  | { type: "pong" };                                    // 4.4: liveness reply
+  | { type: "pong" }                                     // 4.4: liveness reply
+  | { type: "sessions"; sessions: SessionMeta[] };  // 4.6: fleet snapshot for
+                                                    //   watch_sessions viewers
 // 4.4: the whole union is intersected with { seq?: number } — the registry
 // stamps a session-scoped increasing seq on every BROADCAST message (never
 // on per-viewport plumbing), giving reconnects a resume cursor.
@@ -132,7 +134,9 @@ type ClientMsg =
   | { type: "bang_input"; data: string; id: string }     //   EPHEMERAL: PTY stdin —
                                                          //   never broadcast/buffered/logged
   | { type: "bang_kill"; id: string }
-  | { type: "ping" };                                    // 4.4: liveness probe
+  | { type: "ping" }                                     // 4.4: liveness probe
+  | { type: "watch_sessions" }             // 4.6: be a fleet watcher, not a viewport
+  | { type: "rename"; sessionId: string; name: string }; // 4.6: fleet rename
 ```
 
 `Action` (also in `protocol.ts`) is the complete vocabulary of what a
@@ -288,6 +292,8 @@ web/               the browser app (React 19 + Vite)
   src/registry/      Card, List, Table, LinkGroup, Chart, TodoList, Md +
                      RenderBlock (validate → fallback → error boundary) +
                      ActionRow/context
+  src/FleetView.tsx  mission control at / (4.6): live session list, rename,
+                     new-session affordance; routing lives in main.tsx
   src/ws.ts          SocketClient: typed send/onMessage, hello, seq cursor,
                      heartbeat (half-open detection) + capped backoff (4.4)
   src/styles.css     the design identity in CSS (see §7)
@@ -753,19 +759,19 @@ Read PLAN.md for the real thing; the shape in one breath:
   Edit/Write diffs, honest output truncation, subagent nesting, the live
   todo checklist, and the status bar with usage. The browser now shows
   strictly more than the terminal, never less.
-- **Next (the identity, made real):** **Phase P — faithful browser skins for
-  more terminal agents.** genui-shell re-skins whichever terminal agent you use;
-  Claude Code is wired today, and Codex (OpenAI) + Gemini CLI are one adapter
-  each (drive that agent's engine, normalize to `WireMsg`, inject the render
-  tools via MCP). A Codex user gets Codex, never Claude things. No homegrown
-  generic agent, no proxy, no privileged agent. A hard prerequisite of the M2
-  OSS launch, before the rest of Phase 4. See PLAN Phase P + BUSINESS.md §4.5.
+- **Also shipped (2026-07-06, the identity + the product path):** **Phase P**
+  — faithful browser skins for Codex (OpenAI) and Gemini CLI beside Claude
+  Code, one adapter each (drive that agent's engine, normalize to `WireMsg`,
+  inject the render tools via MCP; no homegrown loop, no proxy, no privileged
+  agent); and the **run-anywhere Phase 4 core**: launch-dir sessions with a
+  cwd picker (4.8), the interactive PTY `!` (4.9), packaging for
+  `npm i -g` (4.10 — publish held for the M2 launch), semantic theming +
+  light mode (4.3), seq-cursor resume + heartbeat (4.4), and **mission
+  control** — the live fleet at `/` (4.6).
 - **Also now:** distribution — post the demo and read the M1 signal
-  (BUSINESS.md §9).
-- **Then:** the rest of Phase 4 — theming/polish, robust mid-turn resume,
-  the fleet view at `/`, and the phone relay (the paid tier) — plus Phase L
-  (local ergonomics, which falls out of Phase P's native `openai-compatible`
-  adapter).
+  (BUSINESS.md §9); `npm publish` + repo-public is the M2 trigger.
+- **Then:** Phase L docs (local models — ships with M2), the multi-user seam
+  (4.5, optional), and the phone relay (4.7, the paid tier, gated on M2/M3).
 
 Distribution intent shapes the architecture: the daemon installs globally
 (`npm i -g genui-shell`) and runs from **any** directory like a terminal agent
