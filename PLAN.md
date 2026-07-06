@@ -893,7 +893,7 @@ pattern on one before committing to all.
     build here — faithfully identical to Kyle's terminal `codex`; verifies for free
     once his terminal Codex runs a command).
 
-- [ ] **Step P.3 — Codex fidelity + generative-UI superset**
+- [x] **Step P.3 — Codex fidelity + generative-UI superset**
   - Goal: a Codex user gets Codex, faithfully, plus genui-shell's richness — no
     Claude-isms.
   - Build: Codex's own tools/config/behavior surface as-is; genui-shell's
@@ -902,6 +902,27 @@ pattern on one before committing to all.
     into a Codex session.
   - Done when: side by side, a Codex session and a Claude Code session each look
     and behave like their own agent, both carrying the generative-UI layer.
+  - Status: **done, verified live (2026-07-06).** The render tools are in-process
+    for the Claude SDK but Codex loads MCP servers as stdio subprocesses, so
+    `server/render-mcp.ts` is a standalone stdio MCP server (schemas =
+    `registryShapes`, one source of truth) exposing the same render_*/emit_artifact
+    vocabulary. It's a thin stub — it advertises the tools and returns the
+    component id; the Codex adapter injects it via `config.mcp_servers.genui` and
+    synthesizes the render/artifact `WireMsg` from Codex's own `mcp_tool_call`
+    events (never reaching back into the subprocess), suppressing the raw tool
+    rows. **Key discovery:** headless `exec` mode can't prompt for approval, so MCP
+    tool calls are auto-cancelled unless the per-server
+    `default_tools_approval_mode = "approve"` is set (enum: auto|prompt|approve) —
+    scoped to the genui server only, the analog of the Claude adapter auto-allowing
+    `mcp__ui__*` (our own side-effect-free UI, not the user's commands). Verified
+    live ($0): Codex `render_table` → a real `<table>` registry component mounted
+    in the browser (not markdown), interleaved with Codex prose, `codex` status
+    bar, zero raw genui rows leaked (screenshot); `emit_artifact` → a valid
+    `artifact` WireMsg. Pins are agent-neutral client state on any render block →
+    covered by construction. No Claude-isms: server named `genui` (not `ui`), no
+    Claude preset/settingSources/model in the Codex path; the status bar reads
+    `codex`. **Phase P proven on a second agent — everyone's own tool, in the
+    browser, carrying the generative UI.**
 
 - [ ] **Step P.4 — Per-agent onboarding (no assumed agent)**
   - Goal: first run is "pick your agent, give it its key/model" — Claude Code or
