@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync } from "node:fs";
+import { statSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import type { WireMsg } from "./protocol";
 import {
@@ -18,6 +19,25 @@ const BUFFER_CAP = 4000;
 const IDLE_TIMEOUT_MS = Number(process.env.SESSION_IDLE_TIMEOUT_MS ?? 60 * 60_000);
 
 export type Viewport = (msg: WireMsg) => void;
+
+/**
+ * A user-chosen working dir behaves like `cd`: `~` expands, the path must
+ * already exist and be a directory, and a bad path throws (the caller turns
+ * it into an error WireMsg). No path → the daemon's own launch dir.
+ */
+export function resolveCwd(cwd?: string): string {
+  if (!cwd) return process.cwd();
+  const expanded = cwd.replace(/^~(?=\/|$)/, os.homedir());
+  const dir = path.resolve(expanded);
+  let stat;
+  try {
+    stat = statSync(dir);
+  } catch {
+    throw new Error(`no such directory: ${dir}`);
+  }
+  if (!stat.isDirectory()) throw new Error(`not a directory: ${dir}`);
+  return dir;
+}
 
 export type SessionEntry = {
   id: string;
@@ -49,15 +69,16 @@ export class SessionRegistry {
     // resolved to a fresh backend here; no choice → the daemon default. Secrets
     // stay server-side — the client only ever names the agent.
     const backend = opts?.agent ? resolveBackendFor(opts.agent) : this.backend;
-    // cwd is whatever the caller chose (default: workspace/<id>). A session is
-    // like launching the terminal in a directory you own, so any dir is fair
-    // game — safe because the socket binds to loopback (server/index.ts), so
-    // only local-you can pick it, exactly as with the terminal. (An interim
-    // build jailed this under workspace/; relaxed 2026-07-05 — the jail was
-    // itself a deviation from terminal parity, and loopback already closes the
-    // remote-cwd vector it was guarding.)
-    const dir = path.resolve(opts?.cwd ?? path.join("workspace", id));
-    mkdirSync(dir, { recursive: true }); // action tools need it even in mock mode
+    // cwd is whatever the caller chose; the default is the directory the
+    // daemon was launched from — the terminal's own model (Step 4.8; the
+    // earlier workspace/<id> scratch default was itself a parity gap). Any
+    // dir is fair game — safe because the socket binds to loopback
+    // (server/index.ts), so only local-you can pick it, exactly as with the
+    // terminal. (An interim build jailed this under workspace/; relaxed
+    // 2026-07-05 — loopback already closes the remote-cwd vector.) A chosen
+    // dir must already exist — `cd`, not `mkdir -p` — so a typo errors
+    // instead of silently creating and working in a stray directory.
+    const dir = resolveCwd(opts?.cwd);
     // The configured agent becomes a concrete engine at this one seam
     // (Phase P.1). Falls back to the mock when the agent has no credentials.
     const session: AgentSession = createSession(backend, { cwd: dir });

@@ -275,7 +275,7 @@ and the remaining Phase 4 polish (theming, resume, fleet view, relay) waits on i
     through the relay and the stream matches the local tab byte-for-byte.
     (Business gating: BUSINESS.md §9, gate M3 — build only after M2 passes.)
 
-- [ ] **Step 4.8 — Working directory = terminal parity**
+- [x] **Step 4.8 — Working directory = terminal parity**
   - Goal: launching `genui-shell` behaves like launching a terminal agent — it
     operates on a **real** directory you chose, and you can always see which
     one. Closes the "why is my agent stuck in a scratch workspace?" gap.
@@ -295,6 +295,19 @@ and the remaining Phase 4 polish (theming, resume, fleet view, relay) waits on i
     operates on that directory (not a scratch dir), the cwd is visible at the
     prompt, and a second session can be pointed at a different folder from the
     picker.
+  - Status: **done, verified mock (2026-07-06)** — default cwd is
+    `process.cwd()` (`resolveCwd` in registry.ts: `~` expands, path must
+    exist — `cd` semantics, a typo rejects the create instead of mkdir-p'ing
+    a stray dir); onboarding gained a prefilled working-directory field
+    (rejection error shown inline, retry works); the prompt line shows the
+    shell-owned `~/Projects/foo ❯` (left-ellipsized, spoof-proof) and the
+    status bar the cwd leaf. Additive protocol: `agents` hello now carries
+    `cwd`+`home` (for the prefill and ~-display). Fixed en route: a
+    `session_created` now zone_resets before replay, so a rejected-create
+    error never lingers above the new transcript. Headless Chrome 14/14
+    (default dir, refresh, second session in a typed dir, bad→retry) +
+    replay-after-reload intact. Live path unchanged (cwd flows to adapters
+    exactly as before). Deferred as planned: browsable folder tree.
 
 - [ ] **Step 4.9 — `!` bash passthrough (interactive, via PTY)**
   - Goal: terminal-faithful `!`, and *better* than the terminal agents' `!` —

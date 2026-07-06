@@ -61,7 +61,17 @@ export type WireMsg =
   // Phase P.4: on connect, the server advertises which agents this daemon can
   // run and which have credentials (`live`) — the onboarding picker's source.
   // No agent is assumed; `default` is only a hint for pre-selection.
-  | { type: "agents"; agents: { agent: AgentName; live: boolean }[]; default: AgentName }
+  // Step 4.8 adds (optional/additive): `cwd` — the directory the daemon was
+  // launched from, i.e. the default working dir for new sessions (terminal
+  // parity) — and `home`, so the client can render paths in ~-form. Neither
+  // is a secret: the daemon is local and the browser is the same user.
+  | {
+      type: "agents";
+      agents: { agent: AgentName; live: boolean }[];
+      default: AgentName;
+      cwd?: string;
+      home?: string;
+    }
   // Phase 3: agent-authored HTML for the sandboxed iframe host (the ONLY
   // channel raw agent markup may travel). Re-sending an id replaces that
   // artifact in place — same rule as `render`.
