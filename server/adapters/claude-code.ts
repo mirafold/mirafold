@@ -89,12 +89,15 @@ export class ClaudeCodeSession implements AgentSession {
   // default when `model` is unset, so we keep a readable stand-in).
   private modelLabel: string;
 
-  constructor(opts?: { workspaceDir?: string; model?: string }) {
+  // `engine` is the test seam (like Codex's thread swap / GENUI_GEMINI_BIN):
+  // query() spawns the real CLI at construction, so tests must inject a
+  // scripted stand-in here — there is no later moment to swap it.
+  constructor(opts?: { workspaceDir?: string; model?: string; engine?: typeof query }) {
     const workspaceDir = path.resolve(opts?.workspaceDir ?? "workspace");
     mkdirSync(workspaceDir, { recursive: true }); // spawn fails on a missing cwd
     const model = opts?.model ?? process.env.DEFAULT_MODEL;
     this.modelLabel = model ?? "default";
-    this.q = query({
+    this.q = (opts?.engine ?? query)({
       prompt: this.promptStream(),
       options: {
         model,
