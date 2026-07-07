@@ -339,7 +339,8 @@ web/               the browser app (React 19 + Vite)
   src/styles.css     the design identity in CSS (see §7)
 bin/               genui-shell launcher (4.10): spawns dist-server, opens browser
 demo/              the M1 demo GIF embedded at the top of this README
-docs/              ADAPTERS.md — the normative adapter specification (§2.2)
+docs/              ADAPTERS.md — the normative adapter specification (§2.2);
+                   local-models.md — running against Ollama/LM Studio/vLLM (§8)
 dist/              built front end (vite build output; served by Express)
 dist-server/       esbuild server bundles (4.10): index.js + render-mcp.js —
                    what the installed `genui-shell` actually runs; gitignored
@@ -750,6 +751,12 @@ thinking), `MAX_WS_PAYLOAD` (largest inbound WS frame, default 1 MB),
 (the socket auth token, §3 — set empty to disable, or pin a fixed value;
 `yarn dev` sets it empty because the Vite `:5173` proxy is cross-origin and
 can't carry the cookie).
+
+**Fully local, no API key:** a session is local when the *agent* behind it
+points at a local inference server — Claude Code against Ollama's Anthropic
+endpoint, or Codex against Ollama/LM Studio/vLLM. The recipe (two env vars, or
+one `config.toml` block) is **[docs/local-models.md](docs/local-models.md)**,
+with an honest model/hardware table.
 
 Individual processes: `yarn dev:server` / `yarn dev:web`.
 

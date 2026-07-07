@@ -506,7 +506,7 @@ curated model list. Agent- or model-specific niceties (tuned prompts,
 capability toggles) for the big popular ones can come **later**, as demand
 shows which matter — not a launch prerequisite.
 
-- [ ] **Step L.1 — Documented local path (ship with the M2 launch)**
+- [x] **Step L.1 — Documented local path (ship with the M2 launch)**
   - Goal: a motivated local-model user is running in a couple minutes.
   - Build: `docs/local-models.md` — point a local-capable agent (e.g. Codex) at
     a running Ollama/vLLM/LM Studio (base URL + model, no proxy); an honest
@@ -515,6 +515,27 @@ shows which matter — not a launch prerequisite.
   - Files: `docs/local-models.md`, README link.
   - Done when: a stranger following only the doc drives a local model through
     the browser UI; the launch post can truthfully say "BYOK or fully local."
+  - Status: **written 2026-07-07; facts verified against vendor docs + our
+    code, live local run still owed** — `docs/local-models.md` covers two
+    paths: (A) Claude Code → Ollama ≥ 0.14 via its Anthropic Messages API
+    (`ANTHROPIC_BASE_URL` + dummy `ANTHROPIC_AUTH_TOKEN`; our
+    `agentHasCredentials` already counts `ANTHROPIC_BASE_URL` as live, so no
+    code change), and (B) Codex → Ollama/LM Studio/vLLM via a top-level
+    default provider in `~/.codex/config.toml` (`wire_api = "responses"` is
+    now Codex's ONLY wire API — chat was removed; and it must be the config
+    *default*, since our adapter never passes `--oss`/`--profile`). Gemini
+    CLI: no local path, stated plainly. Honest model table (qwen3-coder 30B
+    ≈24 GB as the default pick; 7–8B expect misfires → Step 1.4 fallback) +
+    context-length floors (32K Claude Code / 64K Codex,
+    `OLLAMA_CONTEXT_LENGTH`). One wart documented for L.2: Codex liveness
+    keys on `OPENAI_API_KEY`/`auth.json`, so a config-only local setup needs
+    a dummy `OPENAI_API_KEY=local` — L.2's detection should remove it.
+    Claims verified against docs.ollama.com (anthropic-compatibility,
+    integrations/codex), developers.openai.com codex config reference, and
+    lmstudio.ai; code paths verified in `adapters/index.ts` + `codex.ts`.
+    NOT yet verified: the actual Done-when (a cold run against a real local
+    model) — no Ollama on this machine; it's a one-command check
+    (`ollama pull qwen3-coder`, then Path A) left for Kyle/launch day.
 
 - [ ] **Step L.2 — `--local` easy mode (post-M2, demand-gated)**
   - Goal: one command instead of a couple minutes — build only if setup
