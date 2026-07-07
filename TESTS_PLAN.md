@@ -126,7 +126,7 @@ Stub `window`/`document` listeners with no-op shims.
 - **Done when:** `yarn test` green with the stubbed-socket harness in
   `web/src/ws.test.ts`.
 
-### [ ] L.2c — Tier-3 E2E (`test:e2e`, opt-in)
+### [x] L.2c — Tier-3 E2E (`test:e2e`, opt-in)
 Formalize the headless-Chrome checks; kept out of the default run (needs Chrome,
 slower).
 - token→cookie→app boot; a full turn rendering in the DOM; **sandboxed-artifact
@@ -142,6 +142,13 @@ slower).
   scaffold is gone.
 
 ## Status log
+- **2026-07-07 — L.2c done.** 4 tests in `server/app.e2e.ts` (playwright-core +
+  /usr/bin/google-chrome, CHROME_BIN overridable), reusing the Tier-2 daemon
+  harness. `yarn test:e2e` runs `yarn build` first (stale ./dist fails
+  silently — the daemon serves it). Covers: 403 without token; ?token= →
+  cookie + clean URL + fleet boot; onboarding pick → real typing → checklist
+  turn streaming to completion in the DOM; artifact iframe whose script runs
+  under sandbox+CSP (counter click observed). ~12s incl. build.
 - **2026-07-07 — L.2b2 done.** 12 tests in `server/adapters/{codex,
   gemini-cli}.test.ts` (73 Tier-1 total). Deviation from the planned refactor,
   deliberate: instead of exporting the private handlers, the tests drive the
