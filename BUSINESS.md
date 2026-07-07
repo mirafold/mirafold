@@ -198,7 +198,11 @@ structurally profitable almost immediately or it's dead — a clean signal.
    which is the plan anyway.
 2. **Demand risk.** Passionate terminal users might be passionate *about the
    terminal* — supervision pain may be tolerated, not paid for. *Mitigation:*
-   validation gates (§9) before any billing code is written.
+   validation gates (§9) before any billing code is written. *(Amended
+   2026-07-07: the launch-complete pivot consciously overrides this — billing
+   is built pre-signal so the paid tier exists on launch day. The bounded
+   downside: ~2 weeks of build on a paid surface that §9-M3's signal may
+   still reject; the pivot-tier-not-product escape hatch stands.)*
 3. **Free-rider risk.** OSS local product is good enough; nobody pays for the
    relay. *Mitigation:* phone access + notifications are genuinely hard to
    self-host well; if conversion is still ~0%, the relay was the wrong paid
@@ -214,6 +218,22 @@ structurally profitable almost immediately or it's dead — a clean signal.
 ## 9. Milestones & validation gates
 
 Each gate is a go/no-go with a measurable signal. Do not pass a gate on hope.
+
+> **RESEQUENCED 2026-07-07 (the launch-complete pivot, Kyle's call).** The
+> original ladder posted the demo first (M1), open-sourced next (M2), and
+> built the paid relay only after M2's signal (M3). The new strategy is
+> **one full launch**: hold everything private until the product is
+> essentially complete — including the relay and a purchasable Pro tier —
+> then post the demo, flip the repo public, publish to npm, and open
+> billing on the same day. Rationale: no competitor offers this
+> combination (three faithful agent skins + local + generative UI + phone
+> relay), so lead with the whole package and let people who want to pay do
+> so immediately, instead of drip-releasing the wow. Consciously accepted
+> trade-off: the relay and billing get built before any market signal
+> (see §8 risk 2). The gates below keep their *signals* — they are now
+> read concurrently after the single launch rather than sequentially.
+> Build plan: PLAN.md **Phase R** (R.1–R.6); target ≈ two weeks
+> (~2026-07-21), relay security core first, inside the Fable-5 window.
 
 - **M0 — Engine live. ✅ PASSED 2026-07-04.** PLAN 0.3/0.7 verified with a
   real key (live smoke: warm multi-turn, workspace file ops, reconnect).
@@ -243,10 +263,14 @@ Each gate is a go/no-go with a measurable signal. Do not pass a gate on hope.
   (telemetry-free proxy: issues/discussions from strangers), across more than
   one agent.* Local-setup friction in the issue tracker gates the `--local`
   easy mode (PLAN L.2).
-- **M3 — Paid relay.** Build the session registry if not yet done (PLAN
-  4.2), then relay + pairing + phone view + notifications (PLAN 4.7).
-  *Signal: ≥ 25 paying subscribers in 60 days (~$300 MRR).* If M2 passed but
-  M3 fails, audience is real & paid surface is wrong — pivot tier, not product.
+- **M3 — Paid relay.** ~~Build only after M2 passes~~ **resequenced
+  2026-07-07: built pre-launch and purchasable on launch day** (see the
+  pivot note above; build steps are PLAN Phase R — relay + pairing + E2E +
+  phone view + entitlement/billing; push notifications may trail the launch
+  rather than gate it, and are not sold until they exist).
+  *Signal (unchanged): ≥ 25 paying subscribers in 60 days (~$300 MRR).* If
+  the launch lands but nobody pays, audience is real & paid surface is
+  wrong — pivot tier, not product.
 - **M4 — Wedge 2 (ops dashboards) + Phase 2 actions.** Interactive pinned
   widgets. *Signal: retention — do M3 subscribers still use it weekly?*
 - **M5 — Decide the long game.** With real usage data: deepen the niche
@@ -292,6 +316,17 @@ Claude. A hard prerequisite of the M2 OSS launch, and ahead of the rest of
 Phase 4.** The remaining Phase 4 polish (theming, robust resume, fleet view,
 relay) and Phase L (local ergonomics — which comes through whichever agent can
 point at a local endpoint) follow it.
+
+**Posture (2026-07-07): the launch-complete pivot.** Everything above
+through Phase L.1 is built and verified (three agent skins, Phase 4 core,
+local path proven end-to-end). Per the §9 pivot note, the launch is now a
+single event held until the relay and the paid tier are ready: PLAN Phase R,
+target ≈ two weeks (~2026-07-21), relay security core (R.1–R.3) first while
+Fable-5 access lasts (~2026-07-12). **Kyle-side prerequisites, needed early
+because of account-verification lead times:** a hosting account for the
+relay service + a domain (R.2), and a Stripe account (R.5). Launch day =
+demo post + repo public + `npm publish` + billing live, one splash; §9's
+M1/M2/M3 signals are then read concurrently against it.
 
 **Measured velocity (2026-07-04):** M0 closeout + PLAN 1.1–1.3, verified and
 pushed, in one working day (~5–6 plan steps/day). Half-pace projections

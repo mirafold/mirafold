@@ -185,7 +185,10 @@ Everything below is the remaining work.
 Goal of the phase: persistence, multiple sessions, polish, robust resume, and
 the multi-user seam. Each step is optional/independent — do as needed. Phase P
 shipped first, as required (provider-neutrality was a prerequisite, not a
-parallel track); everything below except the 4.7 relay is now done.
+parallel track); everything below except the 4.7 relay is now done — and 4.7
+is expanded into **Phase R** below (the 2026-07-07 launch-complete pivot:
+the relay ships *before* launch, purchasable on day one, not after an M2
+signal).
 
 - [x] **Step 4.1 — Session persistence**
   - Build: persist conversation + render history; restore on reconnect so a
@@ -341,22 +344,109 @@ parallel track); everything below except the 4.7 relay is now done.
     Deferred: pinned-widget preview on rows (needs pin state on the wire —
     see 4.1's note; revisit if supervision wants richer rows).
 
-- [ ] **Step 4.7 — Hosted relay seam (the paid tier)**
-  - Goal: see and drive local sessions from another device (phone), without
-    the engine or the API key ever leaving the user's machine.
-  - Build: the daemon dials **out** via WSS to the relay with a pairing
-    token; the relay is a dumb forwarder that matches a remote browser to
-    the daemon and shuttles `WireMsg`/`ClientMsg` frames — to the registry
-    it is just another attached viewport (4.2 fan-out does the work). The
-    relay never executes anything and never sees the key; it does see frame
-    content in transit, so plan for per-pair E2E encryption before charging
-    for it. Relay service itself lives in a separate repo/deploy; this step
-    is the daemon-side pairing + client-side "connect via relay" path.
-  - Files: `server/relay-client.ts`, config for pairing token; relay service
-    external.
-  - Done when: a phone on a different network attaches to a home session
-    through the relay and the stream matches the local tab byte-for-byte.
-    (Business gating: BUSINESS.md §9, gate M3 — build only after M2 passes.)
+- [ ] **Step 4.7 — Hosted relay seam (the paid tier)** → **expanded into
+  Phase R below** (launch-complete pivot, 2026-07-07). The original scope —
+  daemon dials out via WSS with a pairing token; the relay is a dumb
+  forwarder shuttling `WireMsg`/`ClientMsg` frames; to the registry a
+  remote device is just another attached viewport; per-pair E2E encryption
+  before charging — is unchanged; it's now sized into R.1–R.6 and sequenced
+  *before* launch instead of behind the M2 signal. Check this box when
+  Phase R ships.
+
+---
+
+## Phase R — The relay + one full launch (pivot, locked 2026-07-07)
+
+Goal of the phase: launch **once, complete** — the demo post, repo public,
+`npm publish`, and a purchasable Pro tier (the relay: your sessions from any
+device) all on the same day. Strategy rationale and accepted trade-offs:
+BUSINESS.md §9 (pivot note) + §8 risk 2. Target ≈ two weeks (~2026-07-21);
+R.1–R.3 are the security-sensitive core — do them first, inside the Fable-5
+window (~2026-07-12). Non-negotiables apply throughout, two above all:
+secrets/keys never transit the relay, and the relay never becomes a proxy in
+the agent's request path — it forwards opaque frames between viewports and
+the registry, nothing more. L.2/L.3 stay demand-gated post-launch;
+notifications are **not** part of the launch and are not sold until built.
+
+- [ ] **Step R.1 — Relay envelope + daemon dial-out, against a local stub**
+  - Goal: the daemon can serve its registry through an *outbound* WSS
+    connection, so no ports ever open on the user's machine.
+  - Build: a tiny relay envelope (pair / attach / frame / ping — `WireMsg`
+    and `ClientMsg` ride inside as opaque payloads; the wire protocol itself
+    is untouched). `server/relay-client.ts`: dial out with a pairing code,
+    multiplex remote viewports into the registry exactly like local sockets
+    (4.2 fan-out does the work). A minimal in-repo relay **stub** for dev
+    and Tier-2 tests (the real service is R.2).
+  - Files: `server/relay-client.ts`, `server/relay-protocol.ts`, stub +
+    `.itest.ts` beside them.
+  - Done when: a second browser attaches THROUGH the local stub and mirrors
+    a live mock session byte-for-byte (replay, streaming, interrupt all
+    work); the daemon never listens on a new port.
+
+- [ ] **Step R.2 — The relay service, deployed** *(needs Kyle: hosting
+  account + domain — start the signups now, verification has lead time)*
+  - Goal: the dumb forwarder, running in the world.
+  - Build: a separate small repo/deploy (closed source, per the settled MIT
+    open-core call): accepts daemon dial-ins and browser connections,
+    matches them by pairing code, shuttles opaque frames. No frame parsing,
+    no storage. Connection caps + rate limits + idle reaping (DoS posture
+    same as the daemon's). TLS via the host.
+  - Done when: a phone on cellular (not the home wifi) drives a home mock
+    session through the deployed relay, and the relay's logs show it
+    learned nothing but connection metadata.
+
+- [ ] **Step R.3 — Per-pair E2E encryption**
+  - Goal: the relay operator (us, or any self-hoster) *cannot* read frames —
+    the precondition BUSINESS.md set for charging money.
+  - Build: derive a per-pair key from the pairing secret (never sent to the
+    relay); encrypt every frame end-to-end (WebCrypto AES-GCM, replay
+    nonces); wrong-key or tampered frames fail closed. Key setup rides the
+    pairing handshake; the daemon-printed pairing code/QR is the root of
+    trust.
+  - Done when: relay logs show ciphertext only; a tampered frame and a
+    wrong-code pairing both fail cleanly; the local-tab experience is
+    byte-identical through the encrypted path.
+
+- [ ] **Step R.4 — Remote viewport UX (the phone experience)**
+  - Goal: connecting from a phone is one scan, and driving a session there
+    is genuinely pleasant — this is the thing people pay for.
+  - Build: shell-owned "connect a device" affordance (QR of the pairing
+    URL); a phone-width layout pass over the transcript/prompt/status
+    surfaces (the design identity holds — command strips, mono-in/rich-out);
+    mobile-network resilience reuses the 4.4 machinery (seq resume +
+    heartbeat) over the relay path. The `bang_input` ephemeral path stays
+    viewport-scoped (a `sudo` prompt must never fan out — the 4.9 invariant,
+    now load-bearing).
+  - Done when: a real phone pairs by QR, drives a full session (prompt,
+    render components, permission answer, interrupt) comfortably, and
+    survives a network flip (wifi→LTE) mid-turn without losing the
+    transcript.
+
+- [ ] **Step R.5 — Entitlement + billing** *(needs Kyle: Stripe account +
+  price confirmation — BUSINESS.md §7 says $12/mo · $99/yr)*
+  - Goal: paying unlocks the relay, on launch day, with almost nothing
+    standing between "want" and "paid."
+  - Build: Stripe Checkout → a relay entitlement token; the relay admits
+    daemon pairings only with an active entitlement (the *relay* checks
+    entitlement — the daemon and wire protocol stay payment-ignorant);
+    graceful expiry/renewal. A minimal landing page (demo GIF, install
+    command, buy button, docs links) on the R.2 domain.
+  - Done when: a Stripe test-mode purchase unlocks pairing end-to-end, and
+    expiry re-locks it without breaking the local product in any way.
+
+- [ ] **Step R.6 — Launch day (the M1+M2+M3 splash, one event)**
+  - Goal: everything fires together and the signals start reading.
+  - Build/checklist: refresh the demo GIF with the phone beat (the §6
+    launch asset as originally imagined); Kyle's review of the
+    credential-less onboarding presentation (the mock "demo" badge — his
+    flagged item); macOS/Windows cold-install checks; the real `!sudo -v`
+    password entry (Kyle); final secrets sweep of both repos; then, same
+    day: repo public → `npm publish` over the 0.0.1 placeholder → post
+    (X + Show HN + r/ClaudeAI + r/LocalLLaMA with the "BYOK or fully
+    local" line) with Pro purchasable from minute one.
+  - Done when: a stranger can watch the GIF, install cold, run their own
+    agent, pay, and drive it from their phone — all within the launch
+    hour. Signals per BUSINESS.md §9 read concurrently from here.
 
 - [x] **Step 4.8 — Working directory = terminal parity**
   - Goal: launching `genui-shell` behaves like launching a terminal agent — it
