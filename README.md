@@ -45,22 +45,29 @@ codebase. Companion documents:
 
 - **[PLAN.md](PLAN.md)** — the phased build plan. Every step has
   Goal / Build / Files / Done-when. Shipped so far: **Phases 0, 1, T, 2, 3, T2,
-  and P** (three faithful agent skins — Claude Code, Codex, Gemini CLI), plus the
-  Phase 4 session registry (4.1/4.2). What remains is the rest of Phase 4
-  (product hardening) and Phase L (local models, M2). PLAN.md is the source of
-  truth for what comes next; completed phases are archived in
+  and P** (three faithful agent skins — Claude Code, Codex, Gemini CLI), plus
+  all of Phase 4 except the hosted relay (4.7, gated on M2/M3). What remains
+  is 4.7 and Phase L (local models — L.1 ships with M2). PLAN.md is the source
+  of truth for what comes next; completed phases are archived in
   **[PLAN-ARCHIVE.md](PLAN-ARCHIVE.md)**.
 - **[BUSINESS.md](BUSINESS.md)** — positioning, wedges, pricing, and the
   milestone gates that sequence the plan. The two build-relevant conclusions:
   ship the Phase 1 demo before Phase T, and keep every seam local-first.
+- **[docs/ADAPTERS.md](docs/ADAPTERS.md)** — the normative adapter
+  specification: what an adapter must/should/may/must-never do, the shipped
+  capability matrix per provider, and the exact checklist for adding
+  provider #4. Read it before touching anything in `server/adapters/`.
 
 ---
 
 ## 1. The one-paragraph mental model
 
-The server holds **warm agent sessions** (each one long-lived `query()` from
-`@anthropic-ai/claude-agent-sdk`, fed prompts through an async generator so
-the conversation and prompt cache never reset between turns) in a registry;
+The server holds **warm agent sessions** in a registry — each adapter keeps
+its agent warm its own way: Claude Code is one long-lived `query()` from
+`@anthropic-ai/claude-agent-sdk` fed prompts through an async generator (so
+the conversation and prompt cache never reset between turns), Codex a
+persistent SDK `Thread`, Gemini CLI one process per turn resumed via
+`--session-id`/`--resume`;
 a WebSocket connection is a *viewport* that attaches to one. The session's
 SDK event stream is **normalized into a tiny wire protocol** (`WireMsg`),
 buffered for replay, and fanned out to every attached viewport. The browser is split into two zones
@@ -146,8 +153,9 @@ output-zone-local, never sent).
 
 **The cardinal rule: later phases ADD message types (or OPTIONAL fields);
 existing shapes never change.** That's what makes every phase additive and
-keeps old clients from breaking. The only additions still planned are the
-session-list messages for the fleet view (Step 4.6).
+keeps old clients from breaking. The union above is complete for everything
+shipped — no further additions are currently planned (the 4.7 relay forwards
+these same frames unchanged; it needs no new types).
 
 **The `!` passthrough (Step 4.9).** A prompt starting with `!` never reaches
 the model: the trusted shell intercepts it and the server runs the rest in a
@@ -209,6 +217,11 @@ This is a deliberate development strategy, not a testing afterthought:
 **every UI capability is built and verified against the mock first**; live
 verification with a real key comes last. You can develop the whole front end
 without spending a token.
+
+The full adapter contract — semantics beyond these five method signatures,
+the per-provider capability matrix, and the add-a-provider checklist — is
+**[docs/ADAPTERS.md](docs/ADAPTERS.md)**, the normative document for this
+seam.
 
 ## 3. The security model (do not violate)
 
@@ -293,16 +306,21 @@ server/            the local daemon (Node, run with tsx)
   render-tools.ts    render_* tools as an in-process MCP server (Claude adapter) + RENDER_GUIDANCE
   render-mcp.ts      the same render_* tools as a standalone stdio MCP server (Codex/Gemini)
   adapters/          one AgentSession per agent: claude-code.ts, codex.ts,
-                     gemini-cli.ts, mock.ts (+ index.ts seam, types.ts)
+                     gemini-cli.ts, mock.ts (+ index.ts seam, types.ts,
+                     async-queue.ts, render-mcp-cmd.ts, *.spike.md probe notes)
   registry.ts        SessionRegistry: sessions decoupled from connections (4.2)
   actions.ts         Phase 2 mediation: allowlisted tools component actions may run
   permissions.ts     canUseTool policy: workspace gating + browser prompts (T.3)
+  auth.ts            the 4.5 auth predicates (token cookie, loopback Origin) —
+                     pure functions; index.ts wires them into HTTP + WS
+  pty.ts             the `!` passthrough's PTY runner (node-pty, 4.9)
   index.ts           Express + ws server; connections attach as viewports
 web/               the browser app (React 19 + Vite)
   index.html         entry html
   src/main.tsx       mounts <Shell/>, imports global CSS + highlight theme
   src/Shell.tsx      TRUSTED SHELL: socket + prompt box + permission bar +
                      status bar; the message bus
+  src/Onboarding.tsx first-run card: pick the agent + working directory (P.4/4.8)
   src/PromptBox.tsx  the command bar (auto-grows to 8 lines; Enter sends)
   src/RenderZone.tsx OUTPUT ZONE: WireMsg interpreter → entries + status line,
                      incl. thinking blocks, artifacts, and subagent grouping
@@ -321,16 +339,23 @@ web/               the browser app (React 19 + Vite)
   src/styles.css     the design identity in CSS (see §7)
 bin/               genui-shell launcher (4.10): spawns dist-server, opens browser
 demo/              the M1 demo GIF embedded at the top of this README
+docs/              ADAPTERS.md — the normative adapter specification (§2.2)
 dist/              built front end (vite build output; served by Express)
 dist-server/       esbuild server bundles (4.10): index.js + render-mcp.js —
                    what the installed `genui-shell` actually runs; gitignored
 workspace/         legacy scratch dirs (pre-4.8 default cwd) — gitignored
 PLAN.md            the phased build plan (source of truth for next steps)
+PLAN-ARCHIVE.md    completed phases (0, T, 1, 2, 3, T2, P) with their status notes
 BUSINESS.md        strategy; gates that sequence the plan
 vite.config.ts     web root, @protocol alias, /ws proxy → :3000, dist output
 tsconfig.json      one tsconfig for both sides; @protocol path
-.env.example       ANTHROPIC_API_KEY / DEFAULT_MODEL / PORT
+.env.example       GENUI_AGENT + per-agent credentials/models (ANTHROPIC_API_KEY /
+                   DEFAULT_MODEL, OPENAI_API_KEY / CODEX_MODEL, GEMINI_API_KEY /
+                   GEMINI_MODEL) + PORT
 ```
+
+Tests live beside their source, tier picked by suffix — `*.test.ts` /
+`*.itest.ts` / `*.e2e.ts` (§8) — so they're omitted from the tree above.
 
 There is intentionally **no** shared `common/` package, monorepo tooling, or
 build step for the server — the repo is one yarn package, the server runs
@@ -342,9 +367,10 @@ crosses the boundary via a path alias.
 ### 5.1 `index.ts` + `registry.ts` — transport and the session registry
 
 Express serves `dist/` (the built front end; in dev you use Vite's server
-instead) plus `/s/<id>` as a client-side route, and hosts a `ws`
-WebSocketServer at `/ws`. Both the HTTP app and the socket are gated by the
-per-launch auth token (§3) behind the loopback-Origin guard; a capped inbound
+instead) plus `/` (mission control, 4.6) and `/s/<id>` as client-side routes,
+and hosts a `ws` WebSocketServer at `/ws`. Both the HTTP app and the socket are
+gated by the per-launch auth token (§3) behind the loopback-Origin guard — the
+pure predicates live in `server/auth.ts`, wired in here; a capped inbound
 frame (`MAX_WS_PAYLOAD`) and session ceiling (`MAX_SESSIONS`) bound resources.
 
 **Sessions are decoupled from connections** (Step 4.2). A connection is a
@@ -419,9 +445,10 @@ mediation path (§5.4).
   `interrupt()` on the SDK query.
 - Session options: `cwd` is the session's own workspace dir handed in by the
   registry (created on construction — spawning into a missing cwd fails with
-  a misleading SDK error), model comes from `DEFAULT_MODEL` (default
-  `claude-sonnet-4-6`, switchable to `claude-opus-4-8` per the locked
-  decisions), and `canUseTool` comes from `permissions.ts`. `settingSources`
+  a misleading SDK error), model comes from `DEFAULT_MODEL` (unset → the
+  SDK's own default; `.env.example` suggests `claude-sonnet-4-6`, with
+  `claude-opus-4-8` switchable per the locked decisions), and `canUseTool`
+  comes from `permissions.ts`. `settingSources`
   is left **unset on purpose**, which matches the CLI default (user + project
   + local): genui-shell is a different *view* of the terminal, so a user's own
   Claude Code config — their `settings.json` permission allowlists/deny rules,
@@ -531,10 +558,13 @@ Three behaviors matter:
 - **The hello**: on every open it first sends the message `setHello`
   provides (`attach`/`create`), making the connection a viewport onto a
   registry session.
-- **Auto-reconnect**: on non-deliberate close it retries every 1s. Because
-  the hello re-attaches to the same session id and the server replays the
-  buffer, a blip or refresh comes back to the same warm session (in-flight
-  hardening is Step 4.4).
+- **Auto-reconnect** (hardened in 4.4): on non-deliberate close it retries
+  with capped exponential backoff (500ms doubling to a 5s cap), short-circuited
+  the moment the network returns or the tab regains visibility. An app-level
+  `ping`→`pong` heartbeat (25s interval, 8s deadline) detects half-open
+  sockets — a wifi blip with no FIN — and forces them into the same reconnect
+  path. Because the hello re-attaches with the last seen `seq`, the server
+  resumes with a tail replay rather than a repaint (§5.1).
 - **Send queueing**: sends while closed are buffered and flushed on open, so
   typing during a blip isn't lost.
 
@@ -702,18 +732,24 @@ Open **http://localhost:5173**. Vite serves the front end with HMR and
 proxies `/ws` to the server. With no `.env`, you're in **mock mode** — type
 anything and the scripted personas exercise the full rendering pipeline.
 
-To go live: `cp .env.example .env`, set `ANTHROPIC_API_KEY`, restart the
-server. The env file is loaded with `process.loadEnvFile()` and is optional
-by design. `DEFAULT_MODEL` and `PORT` can also be set there, alongside these
-tuning knobs: `SESSION_IDLE_TIMEOUT_MS` (unattended-session lifetime),
+To go live: `cp .env.example .env`, set the credential for whichever agent
+you want live — `ANTHROPIC_API_KEY` (Claude Code), `OPENAI_API_KEY` or a
+prior `codex login` (Codex), `GEMINI_API_KEY` (Gemini CLI) — and restart the
+server; an agent without credentials keeps running the mock. The env file is
+loaded with `process.loadEnvFile()` and is optional by design. Also settable
+there: `GENUI_AGENT` (the default agent offered at onboarding), the per-agent
+model overrides `DEFAULT_MODEL` / `CODEX_MODEL` / `GEMINI_MODEL` (unset →
+that agent's own default), `PORT`, and these tuning knobs:
+`SESSION_IDLE_TIMEOUT_MS` (unattended-session lifetime),
 `PERMISSION_TIMEOUT_MS` (how long a permission prompt waits before denying),
 `TOOL_OUTPUT_CAP_BYTES` (per-result output cap before the elision marker,
-default 64 KB), `MAX_THINKING_TOKENS` (opt-in extended thinking),
-`MAX_WS_PAYLOAD` (largest inbound WS frame, default 1 MB), `MAX_SESSIONS`
-(concurrent-session ceiling, default 100), and `GENUI_TOKEN` (the socket auth
-token, §3 — set empty to disable, or pin a fixed value; `yarn dev` sets it
-empty because the Vite `:5173` proxy is cross-origin and can't carry the
-cookie).
+default 64 KB), `BANG_CONTEXT_CAP` (tail of a `!` transcript injected into
+the agent's context, default 16 KB), `MAX_THINKING_TOKENS` (opt-in extended
+thinking), `MAX_WS_PAYLOAD` (largest inbound WS frame, default 1 MB),
+`MAX_SESSIONS` (concurrent-session ceiling, default 100), and `GENUI_TOKEN`
+(the socket auth token, §3 — set empty to disable, or pin a fixed value;
+`yarn dev` sets it empty because the Vite `:5173` proxy is cross-origin and
+can't carry the cookie).
 
 Individual processes: `yarn dev:server` / `yarn dev:web`.
 
@@ -827,12 +863,18 @@ Read PLAN.md for the real thing; the shape in one breath:
   agent); and the **run-anywhere Phase 4 core**: launch-dir sessions with a
   cwd picker (4.8), the interactive PTY `!` (4.9), packaging for
   `npm i -g` (4.10 — publish held for the M2 launch), semantic theming +
-  light mode (4.3), seq-cursor resume + heartbeat (4.4), and **mission
-  control** — the live fleet at `/` (4.6).
+  light mode (4.3), seq-cursor resume + heartbeat (4.4), the per-launch auth
+  token + the rest of the pre-launch security audit (4.5's auth slice), and
+  **mission control** — the live fleet at `/` (4.6).
+- **Also shipped (2026-07-07):** the three-tier test suite (§8) — 120+ tests,
+  `node:test` + `tsx`, zero test-framework dependencies, no test ever reaches
+  a real model.
 - **Also now:** distribution — post the demo and read the M1 signal
   (BUSINESS.md §9); `npm publish` + repo-public is the M2 trigger.
-- **Then:** Phase L docs (local models — ships with M2), the multi-user seam
-  (4.5, optional), and the phone relay (4.7, the paid tier, gated on M2/M3).
+- **Then:** Phase L docs (local models — L.1 ships with M2), and the phone
+  relay (4.7, the paid tier, gated on M2/M3) — true multi-user isolation
+  (the part of 4.5 deliberately deferred) lands there, when viewports
+  actually become remote.
 
 Distribution intent shapes the architecture: the daemon installs globally
 (`npm i -g genui-shell`) and runs from **any** directory like a terminal agent

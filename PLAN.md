@@ -1,6 +1,7 @@
 # genui-shell — Build Plan
 
-A generative-UI shell over Claude Code. Claude Code's full agentic backend
+A faithful browser re-skin of terminal coding agents — Claude Code, Codex,
+and Gemini CLI, one adapter each (Phase P, shipped). The agent's full backend
 (filesystem, bash, tools, the warm session loop) runs behind a web front end
 where the agent's output stream is treated as a **UI-instruction stream**: the
 agent paints into an output zone whose components change shape per response,
@@ -39,9 +40,10 @@ before Phase T, and design every seam so the daemon stays local-first.
 - **A faithful browser skin of terminal agents — the product identity, and a
   core requirement.** genui-shell is **not** a generic UI with a swappable
   model. It is a **faithful browser re-skin of whatever terminal coding agent
-  you already use** — Claude Code today, Codex (OpenAI) and Gemini CLI next —
-  with genui-shell's generative UI layered on top. A Codex user gets **Codex**
-  in the browser (its tools, its behavior, its config), never "Claude things";
+  you already use** — Claude Code, Codex (OpenAI), and Gemini CLI, all three
+  shipped (Phase P) — with genui-shell's generative UI layered on top. A
+  Codex user gets **Codex** in the browser (its tools, its behavior, its
+  config), never "Claude things";
   a Claude Code user gets Claude Code. "Provider-neutral" here means **faithful
   to each agent**, NOT one homogenized experience, and **no agent is
   privileged**. Mechanically: behind the `AgentSession` seam we run **each
@@ -51,8 +53,9 @@ before Phase T, and design every seam so the daemon stays local-first.
   proxy in the request path. We do **not** build a generic agent loop or our
   own tools — that would be faithful to no one. The substrate is already right:
   the wire protocol, output zone, security model, and generative UI consume
-  `WireMsg` only, so a new agent is one adapter, not a rewrite. It is the
-  **next build front (Phase P)**, ahead of the rest of Phase 4. (Local models
+  `WireMsg` only, so a new agent is one adapter, not a rewrite. Built as
+  **Phase P (shipped 2026-07-06; steps archived in PLAN-ARCHIVE.md)**; the
+  normative adapter contract is **docs/ADAPTERS.md**. (Local models
   come through whichever agent can point at a local endpoint — Phase L is the
   ergonomics; Step 1.4's render fallback lets weaker/local models degrade to
   styled text.)
@@ -180,9 +183,9 @@ Everything below is the remaining work.
 ## Phase 4 — Product hardening (the "others would want it" path)
 
 Goal of the phase: persistence, multiple sessions, polish, robust resume, and
-the multi-user seam. Each step is optional/independent — do as needed. **Do
-Phase P first:** provider-neutrality is a prerequisite, not a parallel track,
-and the remaining Phase 4 polish (theming, resume, fleet view, relay) waits on it.
+the multi-user seam. Each step is optional/independent — do as needed. Phase P
+shipped first, as required (provider-neutrality was a prerequisite, not a
+parallel track); everything below except the 4.7 relay is now done.
 
 - [x] **Step 4.1 — Session persistence**
   - Build: persist conversation + render history; restore on reconnect so a
