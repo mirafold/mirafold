@@ -3,43 +3,20 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import type { WireMsg } from "../protocol";
-import type { ComponentName } from "../registry-spec";
-import { type AgentSession, capOutput } from "./types";
-import { renderMcpCommand } from "./render-mcp-cmd";
+import { type AgentSession, capOutput, toolDetail } from "./types";
+import { GENUI_MCP, RENDER_TOOL_COMPONENT, renderMcpCommand } from "./render-mcp-cmd";
+import { AsyncQueue, CLOSE } from "./async-queue";
 
 // Same generative-UI stdio MCP server the Codex adapter injects (P.3). Gemini
 // loads MCP servers from settings.json, so we write a per-session project
 // `.gemini/settings.json` naming it (merged over the user's global config).
-const CLOSE = Symbol("close");
-
 const RENDER_MCP = renderMcpCommand();
-const GENUI_MCP = "genui";
 // Gemini names MCP tools `mcp_<server>_<tool>`; ours therefore start with this.
 const MCP_PREFIX = `mcp_${GENUI_MCP}_`;
 const GEMINI_BIN = (() => {
   const beside = path.join(path.dirname(process.execPath), "gemini");
   return existsSync(beside) ? beside : "gemini"; // fall back to PATH
 })();
-
-const RENDER_TOOL_COMPONENT: Record<string, ComponentName> = {
-  render_card: "card",
-  render_list: "list",
-  render_table: "table",
-  render_chart: "chart",
-  render_links: "link-group",
-};
-
-const DETAIL_KEYS = ["command", "file_path", "pattern", "url", "query", "description", "path"];
-function toolDetail(input: unknown): string | undefined {
-  if (typeof input !== "object" || input === null) return undefined;
-  const rec = input as Record<string, unknown>;
-  for (const key of DETAIL_KEYS) {
-    const v = rec[key];
-    if (typeof v === "string" && v) return v;
-  }
-  const json = JSON.stringify(rec);
-  return json === "{}" ? undefined : json.slice(0, 160);
-}
 
 /** The component id the render-mcp stub returned, parsed from its output text. */
 function parseRenderId(output: unknown): string {
@@ -63,8 +40,7 @@ function parseRenderId(output: unknown): string {
  * (the analog of Codex's per-server `approve`), since headless can't prompt.
  */
 export class GeminiCliSession implements AgentSession {
-  private queue: (string | typeof CLOSE)[] = [];
-  private waiter?: (v: string | typeof CLOSE) => void;
+  private queue = new AsyncQueue<string | typeof CLOSE>();
   private listeners = new Set<(msg: WireMsg) => void>();
   private closed = false;
   private child?: ChildProcessWithoutNullStreams;
@@ -110,19 +86,7 @@ export class GeminiCliSession implements AgentSession {
   }
 
   pushPrompt(text: string) {
-    if (this.closed) return;
-    if (this.waiter) {
-      this.waiter(text);
-      this.waiter = undefined;
-    } else {
-      this.queue.push(text);
-    }
-  }
-
-  private nextPrompt(): Promise<string | typeof CLOSE> {
-    const item = this.queue.shift();
-    if (item !== undefined) return Promise.resolve(item);
-    return new Promise((resolve) => (this.waiter = resolve));
+    if (!this.closed) this.queue.push(text);
   }
 
   onMessage(cb: (msg: WireMsg) => void) {
@@ -141,7 +105,7 @@ export class GeminiCliSession implements AgentSession {
     if (this.closed) return;
     this.closed = true;
     this.child?.kill("SIGTERM");
-    this.pushPrompt(CLOSE as unknown as string);
+    this.queue.push(CLOSE);
   }
 
   private emit(msg: WireMsg) {
@@ -150,7 +114,7 @@ export class GeminiCliSession implements AgentSession {
 
   private async worker() {
     while (!this.closed) {
-      const item = await this.nextPrompt();
+      const item = await this.queue.next();
       if (item === CLOSE) return;
       await this.runTurn(item);
     }

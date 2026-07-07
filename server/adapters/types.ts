@@ -55,3 +55,18 @@ export function capOutput(text: string): { text: string; truncatedBytes?: number
 
 /** One entry of the live checklist component (T2.5); adapter-neutral shape. */
 export type TodoItem = { content: string; status: "pending" | "in_progress" | "completed" };
+
+// The one human-salient argument of a tool call, for the transcript line.
+// Ordered: the first key present wins (Bash → command, Read → file_path, …).
+const DETAIL_KEYS = ["command", "file_path", "pattern", "url", "query", "description", "path"];
+
+export function toolDetail(input: unknown): string | undefined {
+  if (typeof input !== "object" || input === null) return undefined;
+  const rec = input as Record<string, unknown>;
+  for (const key of DETAIL_KEYS) {
+    const v = rec[key];
+    if (typeof v === "string" && v) return v;
+  }
+  const json = JSON.stringify(rec);
+  return json === "{}" ? undefined : json.slice(0, 160);
+}

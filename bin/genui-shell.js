@@ -25,12 +25,13 @@ const child = spawn(process.execPath, [daemon], {
   stdio: ["inherit", "pipe", "inherit"],
 });
 
-// The daemon prints its final URL (it may walk past a busy port) — mirror
-// stdout and open the browser on the first URL seen.
+// The daemon prints its final URL (it may walk past a busy port, and it carries
+// the auth token as ?token=…) — mirror stdout and open the browser on the first
+// URL seen. \S* captures the token query, stopping at the space before "(ws…".
 let opened = false;
 child.stdout.on("data", (buf) => {
   process.stdout.write(buf);
-  const m = String(buf).match(/http:\/\/127\.0\.0\.1:\d+/);
+  const m = String(buf).match(/http:\/\/127\.0\.0\.1:\d+\/\S*/);
   if (m && !opened) {
     opened = true;
     if (!noOpen) openBrowser(m[0]);

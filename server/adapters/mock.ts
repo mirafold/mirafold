@@ -323,223 +323,229 @@ export class MockSession implements AgentSession {
   private mockCost = 0; // cumulative session cost, mirroring the real SDK
   private pendingAsks = new Map<string, (allow: boolean) => void>();
 
+  // Each deterministic hook exercises one UI capability API-free; anything
+  // else is a canned reply drawn from the template deck.
   pushPrompt(text: string) {
-    // Deterministic 2.2 hook: an "interactive"-sounding prompt yields a card
-    // with action buttons so the click→action→turn loop runs API-free.
-    if (/interactive|button/i.test(text)) {
-      this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
-      let delay = this.streamText("Here's the deploy control card — the buttons are live.", 350);
-      delay += 350;
-      this.schedule(
-        () =>
-          this.emit({
-            type: "render",
-            component: "card",
-            props: {
-              title: `Deploy status — ${pick(PROJECTS)}`,
-              body: `**Healthy.** ${sentence()}`,
-              footer: "mock render · actions attached",
-              actions: [
-                {
-                  label: "Explain more",
-                  action: { kind: "prompt", text: "Explain the current deploy status in more detail." },
-                },
-                {
-                  label: "List workspace",
-                  action: { kind: "tool", name: "workspace_ls" },
-                },
-              ],
-            },
-            id: randomUUID(),
-          }),
-        delay,
-      );
-      this.schedule(() => this.emit({ type: "turn_end" }), delay + 40);
-      return;
-    }
-
-    // Deterministic T2.5 hook: a "todo"/"plan"/"checklist"-sounding prompt
-    // drives a live checklist — one render id, statuses progressing in place.
-    if (/todo|checklist|step by step|plan it/i.test(text)) {
-      const rid = randomUUID();
-      const items = [
-        "Read the current implementation",
-        "Draft the migration",
-        "Update the tests",
-        "Verify end to end",
-      ];
-      // active = index of the in_progress item; items before it are done.
-      // active === items.length means every item is completed.
-      const frame = (active: number): TodoItem[] =>
-        items.map((content, i) => ({
-          content,
-          status: i < active ? "completed" : i === active ? "in_progress" : "pending",
-        }));
-      this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
-      let d = 300;
-      for (let active = 0; active <= items.length; active++) {
-        const todos = frame(active);
-        this.schedule(
-          () => this.emit({ type: "render", component: "todo-list", props: { todos }, id: rid }),
-          d,
+    if (/interactive|button/i.test(text)) return this.playActionCard();
+    if (/todo|checklist|step by step|plan it/i.test(text)) return this.playChecklist();
+    if (/subagent|delegate/i.test(text)) return this.playSubagent();
+    if (/huge|big output|large output|truncat/i.test(text)) return this.playHugeOutput();
+    if (/artifact/i.test(text)) {
+      // 3.4: broken/navigating artifacts exercise the failure fallbacks.
+      if (/broken|crash/i.test(text)) {
+        return this.playArtifact(
+          "broken demo",
+          '<h2>about to crash</h2><script>throw new Error("deliberate mock crash")</script>',
         );
-        d += 550;
       }
-      d = this.streamText("Plan complete — all four steps done.", d + 100);
-      this.schedule(() => this.emit({ type: "turn_end" }), d + 40);
-      return;
+      if (/navigat|escape/i.test(text)) {
+        return this.playArtifact(
+          "navigating demo",
+          '<h2>leaving…</h2><script>location.href="https://example.com/"</script>',
+        );
+      }
+      return this.playBridgeArtifact();
     }
+    if (/dangerous|sudo|rm -rf/i.test(text)) return this.playPermissionAsk();
+    this.playTemplateTurn(text);
+  }
 
-    // Deterministic T2.4 hook: a "subagent"/"delegate"-sounding prompt spawns
-    // a Task whose inner tool calls nest under it (subagent text stays hidden).
-    if (/subagent|delegate/i.test(text)) {
-      const taskId = randomUUID();
-      this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
-      this.schedule(() => {
-        this.emit({ type: "status", state: "tool", label: "Task" });
+  /** Deterministic 2.2 hook: a card with action buttons so the
+   *  click→action→turn loop runs API-free. */
+  private playActionCard() {
+    this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+    let delay = this.streamText("Here's the deploy control card — the buttons are live.", 350);
+    delay += 350;
+    this.schedule(
+      () =>
         this.emit({
-          type: "tool_use",
-          name: "Task",
-          detail: "research: audit the config loader",
-          id: taskId,
-          input: { description: "audit config loader", subagent_type: "Explore" },
-        });
-      }, 350);
-      // Subagent's inner calls — each tagged with the Task's id as parentId.
-      const inner: { name: string; detail: string; output: string }[] = [
-        { name: "Grep", detail: '-rn "loadConfig" src/', output: "src/config.ts:12: export function loadConfig(" },
-        { name: "Read", detail: "src/config.ts", output: Array.from({ length: 4 }, (_, i) => `${i + 1}→${pick(SENTENCES)}`).join("\n") },
-        { name: "Bash", detail: "node -e 'require(\"./config\")'", output: "config OK — 3 sources merged" },
-      ];
-      let d = 700;
-      for (const t of inner) {
-        const cid = randomUUID();
-        d += randInt(250, 450);
-        this.schedule(() => this.emit({ type: "tool_use", name: t.name, detail: t.detail, id: cid, parentId: taskId }), d);
-        d += randInt(250, 450);
-        this.schedule(() => this.emit({ type: "tool_result", output: t.output, id: cid, parentId: taskId }), d);
-      }
-      d += 300;
+          type: "render",
+          component: "card",
+          props: {
+            title: `Deploy status — ${pick(PROJECTS)}`,
+            body: `**Healthy.** ${sentence()}`,
+            footer: "mock render · actions attached",
+            actions: [
+              {
+                label: "Explain more",
+                action: { kind: "prompt", text: "Explain the current deploy status in more detail." },
+              },
+              {
+                label: "List workspace",
+                action: { kind: "tool", name: "workspace_ls" },
+              },
+            ],
+          },
+          id: randomUUID(),
+        }),
+      delay,
+    );
+    this.schedule(() => this.emit({ type: "turn_end" }), delay + 40);
+  }
+
+  /** Deterministic T2.5 hook: a live checklist — one render id, statuses
+   *  progressing in place. */
+  private playChecklist() {
+    const rid = randomUUID();
+    const items = [
+      "Read the current implementation",
+      "Draft the migration",
+      "Update the tests",
+      "Verify end to end",
+    ];
+    // active = index of the in_progress item; items before it are done.
+    // active === items.length means every item is completed.
+    const frame = (active: number): TodoItem[] =>
+      items.map((content, i) => ({
+        content,
+        status: i < active ? "completed" : i === active ? "in_progress" : "pending",
+      }));
+    this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+    let d = 300;
+    for (let active = 0; active <= items.length; active++) {
+      const todos = frame(active);
       this.schedule(
-        () => this.emit({ type: "tool_result", output: "Audit complete: loader merges 3 sources; no precedence bug found.", id: taskId }),
+        () => this.emit({ type: "render", component: "todo-list", props: { todos }, id: rid }),
         d,
       );
-      d = this.streamText("The subagent audited the config loader — it merges three sources correctly, no precedence bug.", d + 200);
-      this.schedule(() => this.emit({ type: "turn_end" }), d + 40);
-      return;
+      d += 550;
     }
+    d = this.streamText("Plan complete — all four steps done.", d + 100);
+    this.schedule(() => this.emit({ type: "turn_end" }), d + 40);
+  }
 
-    // Deterministic T2.3 hook: a "huge"/"big output"-sounding prompt runs a
-    // tool whose output blows past the cap, exercising the elision marker.
-    if (/huge|big output|large output|truncat/i.test(text)) {
-      const id = randomUUID();
-      const bigLine = "2026-07-05T12:00:00Z  INFO  request served in 42ms — ok\n";
-      const big = bigLine.repeat(2000); // ~110KB, well over the 64KB cap
-      const capped = capOutput(big);
-      this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
-      this.schedule(() => {
-        this.emit({ type: "status", state: "tool", label: "Bash" });
-        this.emit({ type: "tool_use", name: "Bash", detail: "cat server.log", id });
-      }, 400);
-      this.schedule(
-        () =>
-          this.emit({
-            type: "tool_result",
-            output: capped.text,
-            truncatedBytes: capped.truncatedBytes,
-            id,
-          }),
-        900,
-      );
-      const d = this.streamText("That log is enormous — showing the head, the rest is elided.", 1100);
-      this.schedule(() => this.emit({ type: "turn_end" }), d + 40);
-      return;
+  /** Deterministic T2.4 hook: a Task whose inner tool calls nest under it
+   *  (subagent text stays hidden). */
+  private playSubagent() {
+    const taskId = randomUUID();
+    this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+    this.schedule(() => {
+      this.emit({ type: "status", state: "tool", label: "Task" });
+      this.emit({
+        type: "tool_use",
+        name: "Task",
+        detail: "research: audit the config loader",
+        id: taskId,
+        input: { description: "audit config loader", subagent_type: "Explore" },
+      });
+    }, 350);
+    // Subagent's inner calls — each tagged with the Task's id as parentId.
+    const inner: { name: string; detail: string; output: string }[] = [
+      { name: "Grep", detail: '-rn "loadConfig" src/', output: "src/config.ts:12: export function loadConfig(" },
+      { name: "Read", detail: "src/config.ts", output: Array.from({ length: 4 }, (_, i) => `${i + 1}→${pick(SENTENCES)}`).join("\n") },
+      { name: "Bash", detail: "node -e 'require(\"./config\")'", output: "config OK — 3 sources merged" },
+    ];
+    let d = 700;
+    for (const t of inner) {
+      const cid = randomUUID();
+      d += randInt(250, 450);
+      this.schedule(() => this.emit({ type: "tool_use", name: t.name, detail: t.detail, id: cid, parentId: taskId }), d);
+      d += randInt(250, 450);
+      this.schedule(() => this.emit({ type: "tool_result", output: t.output, id: cid, parentId: taskId }), d);
     }
+    d += 300;
+    this.schedule(
+      () => this.emit({ type: "tool_result", output: "Audit complete: loader merges 3 sources; no precedence bug found.", id: taskId }),
+      d,
+    );
+    d = this.streamText("The subagent audited the config loader — it merges three sources correctly, no precedence bug.", d + 200);
+    this.schedule(() => this.emit({ type: "turn_end" }), d + 40);
+  }
 
-    // Deterministic 3.4 hooks: broken/navigating artifacts exercise the
-    // failure fallbacks API-free.
-    if (/artifact/i.test(text) && /broken|crash/i.test(text)) {
-      this.playArtifact(
-        "broken demo",
-        '<h2>about to crash</h2><script>throw new Error("deliberate mock crash")</script>',
-      );
-      return;
-    }
-    if (/artifact/i.test(text) && /navigat|escape/i.test(text)) {
-      this.playArtifact(
-        "navigating demo",
-        '<h2>leaving…</h2><script>location.href="https://example.com/"</script>',
-      );
-      return;
-    }
-
-    // Deterministic 3.2/3.3 hook: an "artifact"-sounding prompt emits a small
-    // interactive artifact with bridge buttons (one allowlisted tool, one
-    // off-allowlist, one prompt) so sandbox + bridge run API-free.
-    if (/artifact/i.test(text)) {
-      this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
-      let delay = this.streamText("No registry component fits this, so here's a sandboxed artifact — the buttons use the bridge.", 350);
-      delay += 300;
-      this.schedule(() => this.emit({ type: "status", state: "tool", label: "emit_artifact" }), delay);
-      delay += 400;
-      this.schedule(
-        () =>
-          this.emit({
-            type: "artifact",
-            title: "bridge demo",
-            html:
-              '<div style="text-align:center;padding:24px">' +
-              '<h2 style="margin:0 0 12px">Counter</h2>' +
-              '<button id="b" style="font-size:20px;padding:8px 24px;cursor:pointer">clicks: <span id="n">0</span></button>' +
-              '<div style="margin-top:16px;display:flex;gap:8px;justify-content:center">' +
-              '<button id="ls">list workspace</button>' +
-              '<button id="evil">off-allowlist</button>' +
-              '<button id="ask">ask for details</button>' +
-              "</div>" +
-              "<script>" +
-              "let n=0;document.getElementById('b').onclick=()=>{document.getElementById('n').textContent=++n};" +
-              "document.getElementById('ls').onclick=()=>genui.tool('workspace_ls');" +
-              // Off-allowlist via the helper: must reach the server and be
-              // rejected THERE (raw un-nonced postMessage dies client-side).
-              "document.getElementById('evil').onclick=()=>genui.tool('secret_exfil');" +
-              "document.getElementById('ask').onclick=()=>genui.prompt('Tell me more about this workspace.');" +
-              "</script>" +
-              "</div>",
-            id: randomUUID(),
-          }),
-        delay,
-      );
-      this.schedule(() => this.emit({ type: "turn_end" }), delay + 40);
-      return;
-    }
-
-    // Deterministic T.3 hook: a "dangerous"-sounding prompt pauses on a
-    // permission_request so the prompt bar is exercisable API-free.
-    if (/dangerous|sudo|rm -rf/i.test(text)) {
-      const id = randomUUID();
-      this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
-      this.schedule(() => {
-        const timer = setTimeout(
-          () => this.pendingAsks.get(id)?.(false),
-          PERMISSION_TIMEOUT_MS,
-        );
-        this.timers.push(timer);
-        this.pendingAsks.set(id, (allow) => {
-          clearTimeout(timer);
-          this.pendingAsks.delete(id);
-          if (allow) this.playDangerousAllowed();
-          else this.playDangerousDenied();
-        });
+  /** Deterministic T2.3 hook: a tool whose output blows past the cap,
+   *  exercising the elision marker. */
+  private playHugeOutput() {
+    const id = randomUUID();
+    const bigLine = "2026-07-05T12:00:00Z  INFO  request served in 42ms — ok\n";
+    const big = bigLine.repeat(2000); // ~110KB, well over the 64KB cap
+    const capped = capOutput(big);
+    this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+    this.schedule(() => {
+      this.emit({ type: "status", state: "tool", label: "Bash" });
+      this.emit({ type: "tool_use", name: "Bash", detail: "cat server.log", id });
+    }, 400);
+    this.schedule(
+      () =>
         this.emit({
-          type: "permission_request",
-          tool: "Bash",
-          detail: "rm -rf /var/cache/app && systemctl restart app",
+          type: "tool_result",
+          output: capped.text,
+          truncatedBytes: capped.truncatedBytes,
           id,
-        });
-      }, 450);
-      return;
-    }
+        }),
+      900,
+    );
+    const d = this.streamText("That log is enormous — showing the head, the rest is elided.", 1100);
+    this.schedule(() => this.emit({ type: "turn_end" }), d + 40);
+  }
 
+  /** Deterministic 3.2/3.3 hook: a small interactive artifact with bridge
+   *  buttons (one allowlisted tool, one off-allowlist, one prompt) so
+   *  sandbox + bridge run API-free. */
+  private playBridgeArtifact() {
+    this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+    let delay = this.streamText("No registry component fits this, so here's a sandboxed artifact — the buttons use the bridge.", 350);
+    delay += 300;
+    this.schedule(() => this.emit({ type: "status", state: "tool", label: "emit_artifact" }), delay);
+    delay += 400;
+    this.schedule(
+      () =>
+        this.emit({
+          type: "artifact",
+          title: "bridge demo",
+          html:
+            '<div style="text-align:center;padding:24px">' +
+            '<h2 style="margin:0 0 12px">Counter</h2>' +
+            '<button id="b" style="font-size:20px;padding:8px 24px;cursor:pointer">clicks: <span id="n">0</span></button>' +
+            '<div style="margin-top:16px;display:flex;gap:8px;justify-content:center">' +
+            '<button id="ls">list workspace</button>' +
+            '<button id="evil">off-allowlist</button>' +
+            '<button id="ask">ask for details</button>' +
+            "</div>" +
+            "<script>" +
+            "let n=0;document.getElementById('b').onclick=()=>{document.getElementById('n').textContent=++n};" +
+            "document.getElementById('ls').onclick=()=>genui.tool('workspace_ls');" +
+            // Off-allowlist via the helper: must reach the server and be
+            // rejected THERE (raw un-nonced postMessage dies client-side).
+            "document.getElementById('evil').onclick=()=>genui.tool('secret_exfil');" +
+            "document.getElementById('ask').onclick=()=>genui.prompt('Tell me more about this workspace.');" +
+            "</script>" +
+            "</div>",
+          id: randomUUID(),
+        }),
+      delay,
+    );
+    this.schedule(() => this.emit({ type: "turn_end" }), delay + 40);
+  }
+
+  /** Deterministic T.3 hook: pause on a permission_request so the prompt bar
+   *  is exercisable API-free. */
+  private playPermissionAsk() {
+    const id = randomUUID();
+    this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+    this.schedule(() => {
+      const timer = setTimeout(
+        () => this.pendingAsks.get(id)?.(false),
+        PERMISSION_TIMEOUT_MS,
+      );
+      this.timers.push(timer);
+      this.pendingAsks.set(id, (allow) => {
+        clearTimeout(timer);
+        this.pendingAsks.delete(id);
+        if (allow) this.playDangerousAllowed();
+        else this.playDangerousDenied();
+      });
+      this.emit({
+        type: "permission_request",
+        tool: "Bash",
+        detail: "rm -rf /var/cache/app && systemctl restart app",
+        id,
+      });
+    }, 450);
+  }
+
+  /** A canned turn off the shuffled template deck: thinking, 1–2 tool
+   *  use/result pairs, the streamed reply, one rendered component, usage. */
+  private playTemplateTurn(text: string) {
     if (this.deck.length === 0) this.deck = shuffled(TEMPLATES.map((_, i) => i));
     const reply = TEMPLATES[this.deck.pop()!](text);
 

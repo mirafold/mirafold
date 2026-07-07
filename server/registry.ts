@@ -18,6 +18,11 @@ import type { BangProc } from "./pty";
 const BUFFER_CAP = 4000;
 // A session with no viewports survives this long, then dies for real.
 const IDLE_TIMEOUT_MS = Number(process.env.SESSION_IDLE_TIMEOUT_MS ?? 60 * 60_000);
+// Ceiling on concurrent sessions: a runaway or hostile local client can't
+// exhaust memory + PTYs by creating without bound. Generous — a human working
+// across projects won't approach it; create() throws past it (the caller turns
+// that into an error WireMsg). Env-overridable.
+const MAX_SESSIONS = Number(process.env.MAX_SESSIONS ?? 100);
 
 export type Viewport = (msg: WireMsg) => void;
 
@@ -80,6 +85,9 @@ export class SessionRegistry {
   constructor(private backend: Backend = resolveBackend()) {}
 
   create(opts?: { cwd?: string; agent?: AgentName }): SessionEntry {
+    if (this.entries.size >= MAX_SESSIONS) {
+      throw new Error(`session limit reached (${MAX_SESSIONS})`);
+    }
     const id = randomUUID().slice(0, 8);
     // Which agent this session runs (P.4): the caller's choice at onboarding,
     // resolved to a fresh backend here; no choice → the daemon default. Secrets

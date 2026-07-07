@@ -1,8 +1,22 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import type { ComponentName } from "../registry-spec";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+
+/** The server name the adapters register the render MCP under — it's how
+ *  their event streams recognize our tool calls among the agent's own. */
+export const GENUI_MCP = "genui";
+
+/** render_* tool name → the registry component a call to it paints. */
+export const RENDER_TOOL_COMPONENT: Record<string, ComponentName> = {
+  render_card: "card",
+  render_list: "list",
+  render_table: "table",
+  render_chart: "chart",
+  render_links: "link-group",
+};
 
 /**
  * How to spawn the stdio render-MCP server (server/render-mcp.ts) for engines

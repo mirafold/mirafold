@@ -279,10 +279,33 @@ and the remaining Phase 4 polish (theming, resume, fleet view, relay) waits on i
     --resume / codex thread ids) + a disk ring; that's its own step if
     wanted (a dead daemon currently falls back to a fresh session cleanly).
 
-- [ ] **Step 4.5 — Multi-user seam (optional)**
+- [x] **Step 4.5 — Socket auth token (security slice of the multi-user seam)**
   - Build: per-user auth + session ownership at the shell boundary; the rest of
     the stack is unchanged because the seam was kept clean from Phase 0.
   - Done when: two users have isolated sessions and credentials.
+  - Status: **auth slice done + verified (2026-07-06)**, from the pre-launch
+    security audit (see [[security-audit-2026-07-06]] memory). The launch-gating
+    risk was cross-user RCE: loopback lets any *other account on a shared
+    machine* reach the socket and `bang`-exec a shell as the daemon user. Closed
+    with a per-launch token (`AUTH_TOKEN = GENUI_TOKEN ?? randomUUID()`) gating
+    BOTH the HTTP app and the WebSocket: valid `?token=` mints an
+    `HttpOnly; SameSite=Strict` `genui_token` cookie + 302 to the clean path,
+    else 403; `verifyClient` accepts the cookie (browsers) or a `?token=` query
+    (non-browser), still behind the loopback-origin guard. Launcher opens the
+    token URL; `GENUI_TOKEN=""` disables it (single-user, and the Vite dev proxy
+    which can't present the cookie — `dev:server` sets it empty). Transport-layer
+    only: no `WireMsg` change, key never serialized. Also folded in from the same
+    audit: `.env` secret-path guard widened to Grep/Glob + WebFetch/WebSearch
+    de-auto-allowed (kills the promptless read→exfil chain), `workspace_ls`
+    symlink-escape closed (`realpathSync`), WS frame cap (`MAX_WS_PAYLOAD`) +
+    session cap (`MAX_SESSIONS`), and defense-in-depth shell headers (CSP/nosniff/
+    X-Frame-Options). Verified: function-level (13/13 permissions+actions), wire
+    (auth accept/reject, DoS caps fire), headless Chrome (token→cookie→app+WS,
+    component + sandboxed artifact render under the CSP with zero violations).
+  - Deferred (the rest of the original seam): true multi-user *isolation* — one
+    daemon still holds one credential set and any authed viewport sees every
+    session. Per-user identity + session ownership belongs with the 4.7 relay
+    (when viewports actually become remote/other-user); revisit there.
 
 - [x] **Step 4.6 — Mission control (fleet view)**
   - Goal: the ambient supervision surface — wedge 1 in BUSINESS.md made

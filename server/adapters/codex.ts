@@ -9,9 +9,9 @@ import {
   type ThreadItem,
 } from "@openai/codex-sdk";
 import type { WireMsg } from "../protocol";
-import type { ComponentName } from "../registry-spec";
 import { type AgentSession, type TodoItem, capOutput } from "./types";
-import { renderMcpCommand } from "./render-mcp-cmd";
+import { GENUI_MCP, RENDER_TOOL_COMPONENT, renderMcpCommand } from "./render-mcp-cmd";
+import { AsyncQueue, CLOSE } from "./async-queue";
 
 // The generative-UI MCP server injected into Codex (P.3). Codex loads MCP
 // servers as stdio subprocesses, so genui-shell's render tools live in a
@@ -19,32 +19,6 @@ import { renderMcpCommand } from "./render-mcp-cmd";
 // Claude adapter's makeRenderServer. renderMcpCommand resolves how to spawn
 // it: tsx + TS source in dev, node + the esbuild twin in the packaged install.
 const RENDER_MCP = renderMcpCommand();
-const GENUI_MCP = "genui"; // matches item.server on the mcp_tool_call events
-const RENDER_TOOL_COMPONENT: Record<string, ComponentName> = {
-  render_card: "card",
-  render_list: "list",
-  render_table: "table",
-  render_chart: "chart",
-  render_links: "link-group",
-};
-
-/** Unbounded async queue feeding the serial turn worker (one turn at a time). */
-class AsyncQueue<T> {
-  private items: T[] = [];
-  private waiters: ((value: T) => void)[] = [];
-  push(item: T) {
-    const waiter = this.waiters.shift();
-    if (waiter) waiter(item);
-    else this.items.push(item);
-  }
-  next(): Promise<T> {
-    const item = this.items.shift();
-    if (item !== undefined) return Promise.resolve(item);
-    return new Promise((resolve) => this.waiters.push(resolve));
-  }
-}
-
-const CLOSE = Symbol("close");
 
 function mcpText(content: unknown): string {
   if (!Array.isArray(content)) return content == null ? "" : String(content);
