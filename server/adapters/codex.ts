@@ -20,7 +20,7 @@ import { AsyncQueue, CLOSE } from "./async-queue";
 // it: tsx + TS source in dev, node + the esbuild twin in the packaged install.
 const RENDER_MCP = renderMcpCommand();
 
-function mcpText(content: unknown): string {
+export function mcpText(content: unknown): string {
   if (!Array.isArray(content)) return content == null ? "" : String(content);
   return content
     .map((b) => (b?.type === "text" ? String(b.text) : `[${String(b?.type ?? "block")}]`))
@@ -30,7 +30,7 @@ function mcpText(content: unknown): string {
 // The component id the render-mcp stub assigned (structuredContent is the
 // primary channel; the "(id: …)" text is a fallback if an engine drops it) —
 // used so the browser paints the same id the agent can re-send for update-in-place.
-function extractRenderId(item: McpToolCallItem): string {
+export function extractRenderId(item: McpToolCallItem): string {
   const sc = item.result?.structured_content as { renderId?: unknown } | undefined;
   if (sc && typeof sc.renderId === "string") return sc.renderId;
   const m = mcpText(item.result?.content).match(/id:\s*([0-9a-fA-F-]{8,})/);

@@ -28,7 +28,7 @@ a test baseline is a one-time bootstrap, not a roadmap step.
 
 ## Chunks
 
-### [ ] L.2a — Tier 1: all pure/unit (one chunk, one commit)
+### [x] L.2a — Tier 1: all pure/unit (one chunk, one commit)
 Two enabling refactors baked in: extract `server/auth.ts` (`cookieToken`,
 `isLoopbackOrigin`, `verifyToken`, token resolution) out of `index.ts`, and
 export the adapter normalizers (`normalizeTodos`, `resultText`, `mcpText`,
@@ -92,4 +92,12 @@ slower).
   scaffold is gone.
 
 ## Status log
-- (none yet)
+- **2026-07-06 — L.2a done.** 52 tests green via `yarn test` (node:test + tsx,
+  zero deps). Refactors landed: `server/auth.ts` extracted from index.ts (pure
+  auth predicates); adapter normalizers + `MOCK_RENDERS` + client pure helpers
+  (`diffLines`/`formatBytes`/`niceTicks`/`fmt`/`tokens`) exported for testing.
+  Files: `{auth,permissions,actions,pty,registry,registry-spec}.test.ts`,
+  `adapters/{types,normalizers}.test.ts`, `web/src/{tildify,StatusBar,
+  ToolBlock,registry/Chart}.test.ts`. Typecheck picks them up (tsconfig include).
+  Runtime auth wiring re-smoked after the extraction (HTTP 403/302, WS
+  reject/accept). Next: L.2b (Tier-2 mock integration).

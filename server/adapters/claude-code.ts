@@ -28,7 +28,7 @@ const TASK_TOOLS = new Set([
 ]);
 
 /** Map a TodoWrite input to the todo-list component's props (T2.5). */
-function normalizeTodos(input: unknown): TodoItem[] | null {
+export function normalizeTodos(input: unknown): TodoItem[] | null {
   if (typeof input !== "object" || input === null) return null;
   const todos = (input as { todos?: unknown }).todos;
   if (!Array.isArray(todos)) return null;
@@ -43,7 +43,7 @@ function normalizeTodos(input: unknown): TodoItem[] | null {
   return out.length ? out : null;
 }
 
-function resultText(content: unknown): string {
+export function resultText(content: unknown): string {
   let text: string;
   if (typeof content === "string") text = content;
   else if (Array.isArray(content))
