@@ -136,6 +136,12 @@ slower).
   scaffold is gone.
 
 ## Status log
+- **2026-07-07 — all five review fixes landed** (8e6f2c8…63e097c): ws.ts
+  duplicate-socket race (verified in headless Chrome — forced the CLOSING
+  window + online/visibilitychange, exactly one live socket, single-paint),
+  bang accumulator cap, broadcast seq on a shallow copy, claude-code dead-pump
+  guard, stale zone_reset comments. L.2b3 now asserts shipped behavior, not a
+  red harness.
 - **2026-07-06 — chunks L.2b2/L.2b3 + the L.2b bang-secrets bullet added** from
   the Fable 5 max-effort review of the reconnect/permission/adapter code. The
   same review found real bugs (ws.ts duplicate-socket race is the big one) —
