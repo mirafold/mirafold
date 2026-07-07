@@ -67,6 +67,10 @@ export class ClaudeCodeSession implements AgentSession {
   private listeners = new Set<(msg: WireMsg) => void>();
   private q: Query;
   private closed = false;
+  // pump() exited — the SDK stream is gone. Distinct from `closed`: this is
+  // the abnormal path (stream death without close()), where a queued prompt
+  // would otherwise sit in the void forever.
+  private dead = false;
   // tool_use ids we announced on the wire — results for anything else
   // (render tools, subagent internals) must not paint orphan records.
   private announcedTools = new Set<string>();
@@ -121,7 +125,15 @@ export class ClaudeCodeSession implements AgentSession {
   }
 
   pushPrompt(text: string) {
-    if (!this.closed) this.queue.push(text);
+    if (this.closed) return;
+    if (this.dead) {
+      // Grammar: error, then turn_end — the viewport must not wedge busy on a
+      // prompt no engine will ever consume.
+      this.emit({ type: "error", message: "agent engine stream ended — start a new session" });
+      this.emit({ type: "turn_end" });
+      return;
+    }
+    this.queue.push(text);
   }
 
   onMessage(cb: (msg: WireMsg) => void) {
@@ -347,6 +359,8 @@ export class ClaudeCodeSession implements AgentSession {
         this.emit({ type: "error", message: err instanceof Error ? err.message : String(err) });
         this.emit({ type: "turn_end" });
       }
+    } finally {
+      this.dead = true;
     }
   }
 }
