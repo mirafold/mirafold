@@ -343,7 +343,9 @@ crosses the boundary via a path alias.
 
 Express serves `dist/` (the built front end; in dev you use Vite's server
 instead) plus `/s/<id>` as a client-side route, and hosts a `ws`
-WebSocketServer at `/ws` with the loopback-Origin guard.
+WebSocketServer at `/ws`. Both the HTTP app and the socket are gated by the
+per-launch auth token (§3) behind the loopback-Origin guard; a capped inbound
+frame (`MAX_WS_PAYLOAD`) and session ceiling (`MAX_SESSIONS`) bound resources.
 
 **Sessions are decoupled from connections** (Step 4.2). A connection is a
 *viewport* onto a session in the `SessionRegistry`: its first message is a
@@ -460,13 +462,18 @@ denied is blocked — and `canUseTool` is only the interactive fallback for
 undecided calls: the terminal's approval prompt, drawn on the shell's permission
 bar instead of the TUI. Deny is the default on timeout, disconnect, and Esc.
 
-1. **The daemon's own `.env`/`.env.local`** → denied to any read tool
-   (defense-in-depth: the API key lives there).
-2. **Read-only tools** (Read, Glob, Grep, WebFetch, WebSearch, TodoWrite,
-   Task, NotebookRead) and our side-effect-free `mcp__ui__*` render tools →
-   allowed without a prompt.
-3. **Everything consequential** (Write/Edit/MultiEdit/NotebookEdit, Bash, and
-   any unknown tool) → **asks**. There is deliberately no "auto-allow inside
+1. **The daemon's own `.env`/`.env.local`** → denied to every auto-allowed
+   read tool that takes a path (Read, NotebookRead, Grep, Glob), so the read
+   side of a read→exfil chain is blocked. Defense-in-depth (the API key lives
+   there): still string-based, so `Bash cat .env` isn't caught here — but Bash
+   asks.
+2. **Local read-only tools** (Read, Glob, Grep, TodoWrite, Task, NotebookRead)
+   and our side-effect-free `mcp__ui__*` render tools → allowed without a
+   prompt.
+3. **Network tools (WebFetch, WebSearch) and everything consequential**
+   (Write/Edit/MultiEdit/NotebookEdit, Bash, and any unknown tool) → **asks**.
+   The terminal prompts on undecided fetches too, and asking denies a prompt
+   injection a silent exfil egress. There is deliberately no "auto-allow inside
    the workspace" — the terminal doesn't do that, so neither do we; a user who
    wants specific commands promptless allowlists them in `settings.json`
    exactly as in the terminal. (An interim build auto-allowed in-workspace
@@ -663,7 +670,11 @@ Like launching `claude`/`codex`/`gemini`: sessions default to the directory
 you ran it from, and a second `genui-shell` in another project walks to the
 next port (3001, …) and runs independently. `npx genui-shell` is the
 zero-install try path; `--no-open` skips the browser; `PORT` moves the base
-port. The package ships only the launcher + the two esbuild bundles + the
+port. The daemon prints (and opens) a URL carrying a per-launch auth token
+(§3) — that token, held as a browser cookie, is what keeps another account on
+a shared machine off your socket. With `--no-open` or on a headless box, open
+the exact printed URL (it has the token); `GENUI_TOKEN=""` disables the token
+on a single-user machine. The package ships only the launcher + the two esbuild bundles + the
 built front end (~235 KB tarball); agent credentials come from your
 environment exactly as in a terminal (`ANTHROPIC_API_KEY`, `codex login`,
 `GEMINI_API_KEY`) — none live in the package. **Native-module note:**
@@ -692,12 +703,16 @@ anything and the scripted personas exercise the full rendering pipeline.
 
 To go live: `cp .env.example .env`, set `ANTHROPIC_API_KEY`, restart the
 server. The env file is loaded with `process.loadEnvFile()` and is optional
-by design. `DEFAULT_MODEL` and `PORT` can also be set there, and two tuning
-knobs have env overrides: `SESSION_IDLE_TIMEOUT_MS` (unattended-session
-lifetime), `PERMISSION_TIMEOUT_MS` (how long a permission prompt waits
-before denying), `TOOL_OUTPUT_CAP_BYTES` (per-result output cap before the
-elision marker, default 64 KB), and `MAX_THINKING_TOKENS` (opt-in extended
-thinking).
+by design. `DEFAULT_MODEL` and `PORT` can also be set there, alongside these
+tuning knobs: `SESSION_IDLE_TIMEOUT_MS` (unattended-session lifetime),
+`PERMISSION_TIMEOUT_MS` (how long a permission prompt waits before denying),
+`TOOL_OUTPUT_CAP_BYTES` (per-result output cap before the elision marker,
+default 64 KB), `MAX_THINKING_TOKENS` (opt-in extended thinking),
+`MAX_WS_PAYLOAD` (largest inbound WS frame, default 1 MB), `MAX_SESSIONS`
+(concurrent-session ceiling, default 100), and `GENUI_TOKEN` (the socket auth
+token, §3 — set empty to disable, or pin a fixed value; `yarn dev` sets it
+empty because the Vite `:5173` proxy is cross-origin and can't carry the
+cookie).
 
 Individual processes: `yarn dev:server` / `yarn dev:web`.
 
