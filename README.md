@@ -734,12 +734,31 @@ exists beside the code, tsx + TS source in dev.
 ### Checks
 
 ```sh
-yarn typecheck    # tsc --noEmit over server + web + vite config
+yarn typecheck    # tsc --noEmit over server + web + vite config (tests included)
+yarn test         # Tier 1 — pure/unit, node:test + tsx, ~2s, run on every commit
+yarn test:server  # Tier 2 — spawns the real daemon (mock-forced), drives real ws sockets, ~20s
+yarn test:e2e     # Tier 3 — yarn build + headless Chrome (playwright-core), opt-in, ~12s
 ```
 
-There is no test suite yet. The project's verification convention (from
-PLAN.md) is: every front-end step is verified end-to-end in headless Chrome
-via `playwright-core` (real typing/clicks), and every capability is proven
+The suite is **`node:test` + `tsx`, zero test-framework dependencies** — the
+`test*` scripts are just aliases for `node --import tsx --test <glob>`. Tests
+live next to their source; the suffix picks the tier: `*.test.ts` (Tier 1,
+pure logic — security predicates, caps, adapter event mapping on synthetic
+events, the `SocketClient` reconnect state machine on a stubbed WebSocket),
+`*.itest.ts` (Tier 2, integration — the auth gate, DoS caps, the mock-turn
+wire grammar, registry replay/resume, the bang-secrets invariant), and
+`*.e2e.ts` (Tier 3 — token→cookie boot, a full turn rendering in the DOM,
+the artifact iframe executing under the CSP; needs `google-chrome`, path
+overridable via `CHROME_BIN`).
+
+Two rules the suite is built on: **no test may reach a real model** — Tier 2/3
+spawn the daemon with every provider credential forced empty (a set env var
+beats `.env`), so everything runs on the `MockSession`; and **Tier 3 rebuilds
+first** because the daemon serves `./dist` and a stale build fails silently.
+
+The project's broader verification convention (from PLAN.md) still applies:
+every front-end step is verified end-to-end in headless Chrome via
+`playwright-core` (real typing/clicks), and every capability is proven
 against the mock before the live agent.
 
 ### The working directory
