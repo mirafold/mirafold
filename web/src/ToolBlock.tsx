@@ -60,7 +60,7 @@ export function ToolBlock({
   );
 }
 
-function formatBytes(n: number): string {
+export function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
@@ -103,7 +103,7 @@ function ToolInput({ name, input }: { name: string; input: Record<string, unknow
 type DiffLine = { sign: " " | "-" | "+"; text: string };
 
 /** Line-level diff via LCS — enough to read an Edit at a glance. */
-function diffLines(oldText: string, newText: string): DiffLine[] {
+export function diffLines(oldText: string, newText: string): DiffLine[] {
   const a = oldText.split("\n");
   const b = newText.split("\n");
   const n = a.length;

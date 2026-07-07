@@ -252,7 +252,7 @@ const TEMPLATES: ((prompt: string) => string)[] = [
 
 // Sample `render` payloads (mock-first: the render flow works API-free).
 // Props must satisfy the registry spec — validated by the 1.2 smoke test.
-const MOCK_RENDERS: (() => { component: string; props: Record<string, unknown> })[] = [
+export const MOCK_RENDERS: (() => { component: string; props: Record<string, unknown> })[] = [
   () => ({
     component: "card",
     props: {

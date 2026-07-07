@@ -10,6 +10,7 @@ import { SessionRegistry, type SessionEntry } from "./registry";
 import { runActionTool } from "./actions";
 import { availableAgents, defaultAgent } from "./adapters";
 import { spawnBang } from "./pty";
+import { COOKIE_NAME, cookieToken, isLoopbackOrigin, verifyToken } from "./auth";
 
 // How much of a `!` command's output rides into the agent's context with the
 // next prompt (tail-kept — the end of a long output is usually the payload).
@@ -93,19 +94,6 @@ const DIST = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "d
 // can't present the daemon's cookie — `dev:server` sets it empty for that).
 const AUTH_TOKEN = process.env.GENUI_TOKEN ?? randomUUID();
 const AUTH_ENABLED = AUTH_TOKEN !== "";
-const COOKIE_NAME = "genui_token";
-
-const cookieToken = (cookieHeader?: string): string | undefined => {
-  if (!cookieHeader) return undefined;
-  for (const part of cookieHeader.split(";")) {
-    const eq = part.indexOf("=");
-    if (eq < 0) continue;
-    if (part.slice(0, eq).trim() === COOKIE_NAME) {
-      return decodeURIComponent(part.slice(eq + 1).trim());
-    }
-  }
-  return undefined;
-};
 
 if (AUTH_ENABLED) {
   // Guards every HTTP route below (app shell, assets, /s/:id). A valid cookie
@@ -127,30 +115,6 @@ app.get("/s/:id", (_req, res) => res.sendFile(path.join(DIST, "index.html")));
 
 const server = createServer(app);
 
-// Cross-site WebSocket hijacking guard: a browser always sends Origin on a
-// WS handshake, so we require it to be a loopback host. Non-browser clients
-// (wscat, tests) send no Origin and are allowed through — they can't be
-// weaponized by a malicious page the way a browser socket can.
-const isLoopbackOrigin = (origin: string | undefined): boolean => {
-  if (!origin) return true;
-  try {
-    const { hostname } = new URL(origin);
-    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
-  } catch {
-    return false;
-  }
-};
-
-// The token rides the handshake as the SameSite cookie (browsers) or as a
-// `?token=` query on the ws URL (non-browser clients, e.g. tests). The loopback
-// origin guard still runs first — belt-and-suspenders with the token.
-const verifyToken = (req: IncomingMessage): boolean => {
-  if (!AUTH_ENABLED) return true;
-  if (cookieToken(req.headers.cookie) === AUTH_TOKEN) return true;
-  const q = new URL(req.url ?? "", "http://localhost").searchParams.get("token");
-  return q === AUTH_TOKEN;
-};
-
 // Cap a single inbound frame so a hostile client can't force an unbounded
 // allocation. Client messages (prompts, bang commands, stdin) are small; 1 MB
 // is comfortably above any real one. Env-overridable.
@@ -161,7 +125,7 @@ const wss = new WebSocketServer({
   path: "/ws",
   maxPayload: MAX_WS_PAYLOAD,
   verifyClient: (info: { origin?: string; req: IncomingMessage }) =>
-    isLoopbackOrigin(info.origin) && verifyToken(info.req),
+    isLoopbackOrigin(info.origin) && verifyToken(info.req, AUTH_TOKEN, AUTH_ENABLED),
 });
 // ws re-emits the http server's errors on itself; without a listener that
 // throws and defeats the EADDRINUSE port walk below. The walk (or the loud

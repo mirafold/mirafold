@@ -19,7 +19,7 @@ const GEMINI_BIN = (() => {
 })();
 
 /** The component id the render-mcp stub returned, parsed from its output text. */
-function parseRenderId(output: unknown): string {
+export function parseRenderId(output: unknown): string {
   const m = String(output ?? "").match(/id:\s*([0-9a-fA-F-]{8,})/);
   return m ? m[1] : randomUUID();
 }

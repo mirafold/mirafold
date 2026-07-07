@@ -17,7 +17,7 @@ const W = 640;
 const H = 260;
 const PAD = { top: 16, right: 118, bottom: 28, left: 48 };
 
-function niceTicks(min: number, max: number, count = 4): number[] {
+export function niceTicks(min: number, max: number, count = 4): number[] {
   const span = max - min || Math.abs(max) || 1;
   const raw = span / count;
   const mag = 10 ** Math.floor(Math.log10(raw));
@@ -33,7 +33,7 @@ function niceTicks(min: number, max: number, count = 4): number[] {
   return out;
 }
 
-const fmt = (v: number): string =>
+export const fmt = (v: number): string =>
   Math.abs(v) >= 1e6
     ? `${+(v / 1e6).toFixed(1)}M`
     : Math.abs(v) >= 1e3
