@@ -4,7 +4,7 @@
 // Results are broadcast as tool_use/tool_result records, so an action's
 // effect is visible in every viewport's transcript.
 
-import { readdirSync, statSync } from "node:fs";
+import { readdirSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 
@@ -14,9 +14,21 @@ type ActionTool = {
   run: (args: Record<string, unknown>, cwd: string) => string;
 };
 
+// Resolve `candidate` under `root` and confirm it stays inside — following
+// symlinks, so a link planted in the workspace can't point the listing out of
+// it. realpathSync throws on a missing path (nothing to list anyway → treat as
+// outside). `root` is realpath'd too, so the prefix compare is against the
+// canonical base.
 const inside = (root: string, candidate: string): string | null => {
-  const resolved = path.resolve(root, candidate);
-  return resolved === root || resolved.startsWith(root + path.sep) ? resolved : null;
+  let real: string;
+  let realRoot: string;
+  try {
+    realRoot = realpathSync(root);
+    real = realpathSync(path.resolve(realRoot, candidate));
+  } catch {
+    return null;
+  }
+  return real === realRoot || real.startsWith(realRoot + path.sep) ? real : null;
 };
 
 const ACTION_TOOLS: Record<string, ActionTool> = {

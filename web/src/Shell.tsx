@@ -5,6 +5,7 @@ import { PromptBox } from "./PromptBox";
 import { RenderZone } from "./RenderZone";
 import { StatusBar, type Usage } from "./StatusBar";
 import { SocketClient } from "./ws";
+import { tildify } from "./tildify";
 
 const ZERO_USAGE: Usage = { turnIn: 0, turnOut: 0, sumIn: 0, sumOut: 0, cost: 0 };
 
@@ -51,12 +52,6 @@ export function Shell() {
   // detection that masks the stdin field. One bang per session, so untagged.
   const [bangTail, setBangTail] = useState("");
   const hasUrlSession = useMemo(() => /^\/s\/[\w-]+/.test(location.pathname), []);
-
-  // Paths render the way a terminal prompt would: home becomes ~.
-  const tildify = (p?: string) =>
-    p && daemon.home && (p === daemon.home || p.startsWith(daemon.home + "/"))
-      ? "~" + p.slice(daemon.home.length)
-      : p;
 
   // 4.3: theme is shell-owned UI state. Dark is the default and the identity;
   // index.html applies the stored choice before first paint (no flash) and
@@ -271,7 +266,7 @@ export function Shell() {
       {showOnboarding && (
         <Onboarding
           agents={agents}
-          defaultCwd={tildify(daemon.cwd)}
+          defaultCwd={tildify(daemon.cwd, daemon.home)}
           error={onbError}
           onPick={(agent, cwd) => {
             setOnbError(null);
@@ -306,7 +301,7 @@ export function Shell() {
         onSend={send}
         busy={busy}
         onInterrupt={bus.interrupt}
-        cwd={tildify(meta.cwd)}
+        cwd={tildify(meta.cwd, daemon.home)}
       />
       <StatusBar
         connected={connected}

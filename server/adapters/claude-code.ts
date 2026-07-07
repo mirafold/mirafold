@@ -9,43 +9,10 @@ import {
   type AgentSession,
   type TodoItem,
   capOutput,
+  toolDetail,
   PERMISSION_TIMEOUT_MS,
 } from "./types";
-
-/** Unbounded async queue used to feed the SDK's streaming-input generator. */
-class AsyncQueue<T> {
-  private items: T[] = [];
-  private waiters: ((value: T) => void)[] = [];
-
-  push(item: T) {
-    const waiter = this.waiters.shift();
-    if (waiter) waiter(item);
-    else this.items.push(item);
-  }
-
-  next(): Promise<T> {
-    const item = this.items.shift();
-    if (item !== undefined) return Promise.resolve(item);
-    return new Promise((resolve) => this.waiters.push(resolve));
-  }
-}
-
-const CLOSE = Symbol("close");
-
-// The one human-salient argument of a tool call, for the transcript line.
-// Ordered: the first key present wins (Bash → command, Read → file_path, …).
-const DETAIL_KEYS = ["command", "file_path", "pattern", "url", "query", "description", "path"];
-
-function toolDetail(input: unknown): string | undefined {
-  if (typeof input !== "object" || input === null) return undefined;
-  const rec = input as Record<string, unknown>;
-  for (const key of DETAIL_KEYS) {
-    const v = rec[key];
-    if (typeof v === "string" && v) return v;
-  }
-  const json = JSON.stringify(rec);
-  return json === "{}" ? undefined : json.slice(0, 160);
-}
+import { AsyncQueue, CLOSE } from "./async-queue";
 
 // The SDK's session-task-list tools (T2.5) — folded into the live checklist,
 // never shown as raw tool rows. Note the subagent spawner is named "Agent"

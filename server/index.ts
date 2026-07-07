@@ -1,4 +1,4 @@
-import { createServer } from "node:http";
+import { createServer, type IncomingMessage } from "node:http";
 import { randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
@@ -45,11 +45,82 @@ try {
 }
 
 const app = express();
+
+// Defense-in-depth headers on the shell page. The client XSS surface is already
+// closed (react-markdown escapes raw HTML, no innerHTML), so this guards against
+// a future regression: it caps where the app can source/connect (no external
+// script or exfil target beyond the local WS), forbids being framed
+// (clickjacking), and stops MIME sniffing. `script-src`/`style-src` keep
+// 'unsafe-inline' because the pre-paint theme script in index.html and React's
+// inline style attributes need it — the tightening that matters here is
+// connect/img/object/base/frame, not script. `frame-src 'self'` still admits the
+// artifact's srcDoc iframe (verified); the iframe carries its OWN stricter CSP.
+const SHELL_CSP = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data:",
+  "font-src 'self' data:",
+  "connect-src 'self' ws: wss:",
+  "frame-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+].join("; ");
+app.use((_req, res, next) => {
+  res.setHeader("Content-Security-Policy", SHELL_CSP);
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("X-Frame-Options", "DENY");
+  next();
+});
+
 // The built front end lives at ../dist relative to THIS FILE, not the cwd —
 // the daemon launches from any directory (4.8/4.10). Resolves correctly from
 // both homes: server/ in the dev checkout, dist-server/ in the packaged
 // install. (Dev uses Vite on :5173 anyway.)
 const DIST = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "dist");
+
+// Socket auth (Step 4.5). The loopback bind keeps the internet and the LAN out,
+// but "same machine" includes every OTHER user account on a shared box — and the
+// socket drives a shell as us. A per-launch token closes that: it gates the
+// served app AND the WebSocket, so another local user (who never sees the token)
+// can't connect. The launcher opens a URL carrying the token; the browser keeps
+// it as a SameSite cookie, so refreshes, new tabs, and fleet links all present
+// it automatically — no per-URL threading. Set GENUI_TOKEN="" to disable (a
+// single-user machine, or the Vite dev proxy on :5173, whose cross-origin page
+// can't present the daemon's cookie — `dev:server` sets it empty for that).
+const AUTH_TOKEN = process.env.GENUI_TOKEN ?? randomUUID();
+const AUTH_ENABLED = AUTH_TOKEN !== "";
+const COOKIE_NAME = "genui_token";
+
+const cookieToken = (cookieHeader?: string): string | undefined => {
+  if (!cookieHeader) return undefined;
+  for (const part of cookieHeader.split(";")) {
+    const eq = part.indexOf("=");
+    if (eq < 0) continue;
+    if (part.slice(0, eq).trim() === COOKIE_NAME) {
+      return decodeURIComponent(part.slice(eq + 1).trim());
+    }
+  }
+  return undefined;
+};
+
+if (AUTH_ENABLED) {
+  // Guards every HTTP route below (app shell, assets, /s/:id). A valid cookie
+  // passes; a valid `?token=` query mints the cookie then redirects to the
+  // clean path so the token never lingers in the address bar or history.
+  app.use((req, res, next) => {
+    if (cookieToken(req.headers.cookie) === AUTH_TOKEN) return next();
+    if (typeof req.query.token === "string" && req.query.token === AUTH_TOKEN) {
+      res.cookie(COOKIE_NAME, AUTH_TOKEN, { httpOnly: true, sameSite: "strict", path: "/" });
+      return res.redirect(req.path);
+    }
+    res.status(403).type("text/plain").send("genui-shell: missing or invalid token");
+  });
+}
+
 app.use(express.static(DIST));
 // /s/<id> is client-side routing — serve the app shell.
 app.get("/s/:id", (_req, res) => res.sendFile(path.join(DIST, "index.html")));
@@ -70,10 +141,27 @@ const isLoopbackOrigin = (origin: string | undefined): boolean => {
   }
 };
 
+// The token rides the handshake as the SameSite cookie (browsers) or as a
+// `?token=` query on the ws URL (non-browser clients, e.g. tests). The loopback
+// origin guard still runs first — belt-and-suspenders with the token.
+const verifyToken = (req: IncomingMessage): boolean => {
+  if (!AUTH_ENABLED) return true;
+  if (cookieToken(req.headers.cookie) === AUTH_TOKEN) return true;
+  const q = new URL(req.url ?? "", "http://localhost").searchParams.get("token");
+  return q === AUTH_TOKEN;
+};
+
+// Cap a single inbound frame so a hostile client can't force an unbounded
+// allocation. Client messages (prompts, bang commands, stdin) are small; 1 MB
+// is comfortably above any real one. Env-overridable.
+const MAX_WS_PAYLOAD = Number(process.env.MAX_WS_PAYLOAD ?? 1_000_000);
+
 const wss = new WebSocketServer({
   server,
   path: "/ws",
-  verifyClient: ({ origin }: { origin?: string }) => isLoopbackOrigin(origin),
+  maxPayload: MAX_WS_PAYLOAD,
+  verifyClient: (info: { origin?: string; req: IncomingMessage }) =>
+    isLoopbackOrigin(info.origin) && verifyToken(info.req),
 });
 // ws re-emits the http server's errors on itself; without a listener that
 // throws and defeats the EADDRINUSE port walk below. The walk (or the loud
@@ -151,12 +239,17 @@ wss.on("connection", (ws) => {
         break;
       case "attach": {
         // A stale/unknown id (old bookmark, server restart) gets a fresh
-        // session rather than an error page.
+        // session rather than an error page — unless the session cap rejects
+        // the fallback create, which surfaces as an error (not a crash).
         const existing =
           typeof msg.sessionId === "string" ? registry.get(msg.sessionId) : undefined;
         const afterSeq =
           existing && typeof msg.afterSeq === "number" ? msg.afterSeq : undefined;
-        attachTo(existing ?? registry.create(), afterSeq);
+        try {
+          attachTo(existing ?? registry.create(), afterSeq);
+        } catch (err) {
+          viewport({ type: "error", message: err instanceof Error ? err.message : String(err) });
+        }
         break;
       }
       case "prompt":
@@ -296,7 +389,10 @@ const listen = (port: number) => {
   server.once("error", onBusy);
   server.listen(port, "127.0.0.1", () => {
     server.removeListener("error", onBusy); // later errors stay loud, as before
-    console.log(`[genui-shell] server on http://127.0.0.1:${port} (ws at /ws)`);
+    // The token rides the URL so the launcher opens an authenticated page; the
+    // browser trades it for the cookie on first load (see the auth block above).
+    const url = `http://127.0.0.1:${port}/${AUTH_ENABLED ? `?token=${AUTH_TOKEN}` : ""}`;
+    console.log(`[genui-shell] server on ${url} (ws at /ws)`);
   });
 };
 listen(basePort);

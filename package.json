@@ -29,7 +29,7 @@
     "node": ">=20.12"
   },
   "scripts": {
-    "dev:server": "tsx watch server/index.ts",
+    "dev:server": "GENUI_TOKEN= tsx watch server/index.ts",
     "dev:web": "vite",
     "dev": "concurrently -n server,web -c blue,green \"yarn dev:server\" \"yarn dev:web\"",
     "build": "vite build && yarn build:server",

@@ -2,17 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import type { AgentName, SessionMeta } from "@protocol";
 import { Onboarding } from "./Onboarding";
 import { SocketClient } from "./ws";
+import { tildify } from "./tildify";
 
 // 4.6 Mission control: the root page is an ambient supervision surface —
 // every live session in the registry with name, cwd, coarse status, and last
 // activity, each row dropping into its transcript at /s/<id>. This is shell
 // UI end to end: agent output can never paint here.
-
-const AGENT_LABEL: Record<AgentName, string> = {
-  "claude-code": "claude-code",
-  codex: "codex",
-  "gemini-cli": "gemini-cli",
-};
 
 function ago(ts: number): string {
   const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
@@ -70,11 +65,6 @@ export function FleetView() {
     document.title = "genui-shell — sessions";
   }, []);
 
-  const tildify = (p: string) =>
-    daemon.home && (p === daemon.home || p.startsWith(daemon.home + "/"))
-      ? "~" + p.slice(daemon.home.length)
-      : p;
-
   const commitRename = (id: string, name: string) => {
     setRenaming(null);
     if (name.trim()) socket.send({ type: "rename", sessionId: id, name });
@@ -88,7 +78,7 @@ export function FleetView() {
       {onboarding && (
         <Onboarding
           agents={agents}
-          defaultCwd={daemon.cwd ? tildify(daemon.cwd) : undefined}
+          defaultCwd={tildify(daemon.cwd, daemon.home)}
           error={onbError}
           onPick={(agent, cwd) => {
             setOnbError(null);
@@ -141,9 +131,9 @@ export function FleetView() {
               </span>
             )}
             <span className="fleet-id">{s.sessionId}</span>
-            <span className="fleet-agent">{AGENT_LABEL[s.agent] ?? s.agent}</span>
+            <span className="fleet-agent">{s.agent}</span>
             <span className="fleet-cwd" title={s.cwd}>
-              {tildify(s.cwd)}
+              {tildify(s.cwd, daemon.home)}
             </span>
             <span className="fleet-spacer" />
             <span className={`fleet-status fleet-status-${s.status}`}>

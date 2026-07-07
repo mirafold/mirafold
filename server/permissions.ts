@@ -1,13 +1,16 @@
 import path from "node:path";
 import type { CanUseTool } from "@anthropic-ai/claude-agent-sdk";
 
-// Read-only tools: no side effects, allowed without a prompt — same as the terminal.
+// Local read-only tools: no side effects and no network egress, allowed without
+// a prompt — same as the terminal. WebFetch/WebSearch are deliberately NOT here:
+// the terminal prompts on undecided network fetches, and auto-allowing them
+// would (a) diverge from that fidelity and (b) hand a prompt injection a
+// zero-click exfil egress. They fall through to `ask` like any consequential
+// call; a user's own settings.json allowlist still short-circuits them first.
 const READ_ONLY_TOOLS = new Set([
   "Read",
   "Glob",
   "Grep",
-  "WebFetch",
-  "WebSearch",
   "TodoWrite",
   "Task",
   "NotebookRead",
@@ -24,13 +27,18 @@ const DETAIL_FIELD: Record<string, string> = {
 };
 
 // The daemon's own secrets must never be read back out through a tool — even a
-// read-only one — because the API key lives in .env and Read+WebFetch would be
-// an exfil path. Defense-in-depth only: it closes the obvious `Read .env`, not
-// every route, so it is not a full boundary.
+// read-only one — because the API key lives in .env and any file-reading tool
+// would be an exfil source. Covers every auto-allowed reader that takes a path:
+// Read/NotebookRead (file_path) AND Grep/Glob (path) — the latter two also
+// return file contents / paths and would otherwise sidestep the Read guard.
+// Defense-in-depth: still string-based (a symlink or `Bash cat .env` isn't
+// caught — but Bash asks), so it closes the obvious routes, not every one.
 const SECRET_PATHS = new Set([path.resolve(".env"), path.resolve(".env.local")]);
 const READ_PATH_FIELD: Record<string, string> = {
   Read: "file_path",
   NotebookRead: "notebook_path",
+  Grep: "path",
+  Glob: "path",
 };
 
 /** Asks the user in the browser; resolves false on deny or timeout. */
@@ -46,11 +54,13 @@ export type PermissionAsker = (tool: string, detail: string) => Promise<boolean>
  * TUI. Deny is the default on timeout, disconnect, and Esc.
  *
  *   - the daemon's own .env is never readable (defense-in-depth);
- *   - read-only tools and our side-effect-free UI tools (mcp__ui__*) pass;
- *   - everything else (Write/Edit/Bash/unknown) ASKS. There is deliberately no
- *     blanket "auto-allow inside the workspace" — the terminal doesn't do that,
- *     so neither do we; a user allowlists the commands they want promptless in
- *     their settings.json exactly as in the terminal.
+ *   - local read-only tools and our side-effect-free UI tools (mcp__ui__*) pass;
+ *   - network tools (WebFetch/WebSearch) and everything else consequential
+ *     (Write/Edit/Bash/unknown) ASK — the terminal prompts on undecided fetches
+ *     too, and asking denies a prompt injection a silent exfil egress. There is
+ *     deliberately no blanket "auto-allow inside the workspace" — the terminal
+ *     doesn't do that, so neither do we; a user allowlists the commands they
+ *     want promptless in their settings.json exactly as in the terminal.
  */
 export function makeCanUseTool(workspaceDir: string, ask: PermissionAsker): CanUseTool {
   const root = path.resolve(workspaceDir);

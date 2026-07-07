@@ -194,6 +194,10 @@ else. `createSession()` resolves which one from config + per-session onboarding:
   `codex` CLI, streams its JSONL events → `WireMsg`).
 - **`GeminiCliSession`** — Google's Gemini CLI via its headless `stream-json`
   interface (one process per turn, warm across turns via `--session-id`/`--resume`).
+  Note: to inject the render MCP server, this adapter writes a
+  `.gemini/settings.json` into the session's working directory (merged
+  non-destructively over anything already there) — so pointing a Gemini session
+  at a project drops that file in it.
 - **`MockSession`** — a scripted stand-in used automatically when the chosen
   agent has no credentials. Emits every wire message type with
   realistic pacing, drawing replies from a shuffled deck of five demo
@@ -243,6 +247,24 @@ The invariants, and where each is enforced today:
   `Origin`; a malicious web page can't drive your local agent through a
   cross-site socket. Non-browser clients (wscat, tests) send no Origin and
   pass — they aren't weaponizable the way a browser socket is.
+- **Per-launch auth token** (`server/index.ts`, Step 4.5): loopback keeps the
+  network out, but "same machine" includes other user accounts on a shared box —
+  and the socket drives a shell. A random token generated each launch gates both
+  the served app and the WebSocket: the launcher opens a URL carrying it, the
+  browser stores it as an `HttpOnly; SameSite=Strict` cookie (so refreshes, new
+  tabs, and fleet links just work), and connections without it get a 403 / a
+  refused handshake. Set `GENUI_TOKEN=""` to disable it on a single-user machine
+  (the dev server does this — the Vite `:5173` proxy is cross-origin and can't
+  present the cookie); set `GENUI_TOKEN=<value>` to pin one.
+- **The daemon's own `.env` is never readable through a tool**
+  (`server/permissions.ts`): the secret-path guard denies `Read`/`Grep`/`Glob`
+  at `.env`/`.env.local`, and `WebFetch`/`WebSearch` are not auto-allowed (they
+  ask, like the terminal) so a prompt injection has no silent read→exfil path.
+  Defense-in-depth, not a full boundary.
+- **Resource caps**: one inbound WS frame is capped (`MAX_WS_PAYLOAD`, 1 MB) and
+  concurrent sessions are capped (`MAX_SESSIONS`, 100) so a runaway or hostile
+  local client can't exhaust memory/PTYs. The shell page also ships
+  defense-in-depth headers (CSP, `nosniff`, `X-Frame-Options: DENY`).
 
 Agent-authored executable UI (Phase 3, shipped) runs only inside
 `web/src/Artifact.tsx`'s sandboxed iframe: `allow-scripts` without
