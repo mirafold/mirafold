@@ -235,13 +235,20 @@ wss.on("connection", (ws) => {
         }
         const e = entry;
         const { command, id } = msg;
+        // Tail-kept accumulator, capped as data arrives — a long-running
+        // command (`!yes`) must not grow server memory until exit.
         let output = "";
+        let elided = 0;
         registry.broadcast(e, { type: "bang_start", command, id });
         const proc = spawnBang(
           command,
           e.cwd,
           (data) => {
             output += data;
+            if (output.length > BANG_CONTEXT_CAP) {
+              elided += output.length - BANG_CONTEXT_CAP;
+              output = output.slice(-BANG_CONTEXT_CAP);
+            }
             registry.broadcast(e, { type: "bang_output", data, id });
           },
           (exitCode) => {
@@ -250,11 +257,7 @@ wss.on("connection", (ws) => {
             // Queue the transcript for the agent's next turn. Tail-kept cap;
             // echo-off input (passwords) was never in the PTY output, so it
             // can't leak into context here either.
-            const tail =
-              output.length > BANG_CONTEXT_CAP
-                ? `(… ${output.length - BANG_CONTEXT_CAP} chars elided …)\n` +
-                  output.slice(-BANG_CONTEXT_CAP)
-                : output;
+            const tail = elided > 0 ? `(… ${elided} chars elided …)\n` + output : output;
             e.pendingBang.push(
               `<bash-input>${command}</bash-input>\n<bash-output exit-code="${exitCode ?? "killed"}">\n${tail}</bash-output>`,
             );
