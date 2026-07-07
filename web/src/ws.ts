@@ -44,14 +44,19 @@ export class SocketClient {
     this.connect();
     // A returning network or a re-focused tab shouldn't wait out the backoff.
     window.addEventListener("online", this.reconnectNow);
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible") this.reconnectNow();
-    });
+    document.addEventListener("visibilitychange", this.onVisible);
   }
+
+  private onVisible = () => {
+    if (document.visibilityState === "visible") this.reconnectNow();
+  };
 
   private reconnectNow = () => {
     if (this.closedByUs || this.ws.readyState === WebSocket.OPEN) return;
     if (this.ws.readyState === WebSocket.CONNECTING) return;
+    // CLOSING falls through on purpose: the heartbeat's close() of a dead pipe
+    // can take seconds to complete, and a returning network shouldn't wait for
+    // it — connect() supersedes, and the old socket's handlers go inert.
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
     this.backoff = BACKOFF_MIN_MS;
@@ -60,16 +65,22 @@ export class SocketClient {
 
   private connect() {
     if (this.closedByUs) return; // a queued reconnect must not outlive close()
-    this.ws = new WebSocket(this.url);
-    this.ws.onopen = () => {
+    // Each handler checks it still belongs to the current socket: a superseded
+    // socket's late onclose must not kill the new heartbeat, fire close
+    // listeners, or schedule an extra connect (the duplicate-viewport race).
+    const sock = new WebSocket(this.url);
+    this.ws = sock;
+    sock.onopen = () => {
+      if (this.ws !== sock) return;
       this.backoff = BACKOFF_MIN_MS;
       for (const cb of this.openListeners) cb();
       const hello = this.hello?.();
-      if (hello) this.ws.send(JSON.stringify(hello));
-      for (const msg of this.pending.splice(0)) this.ws.send(JSON.stringify(msg));
+      if (hello) sock.send(JSON.stringify(hello));
+      for (const msg of this.pending.splice(0)) sock.send(JSON.stringify(msg));
       this.startHeartbeat();
     };
-    this.ws.onmessage = (e) => {
+    sock.onmessage = (e) => {
+      if (this.ws !== sock) return;
       this.alive(); // any traffic proves the pipe
       let msg: WireMsg;
       try {
@@ -81,7 +92,8 @@ export class SocketClient {
       if (msg.type === "pong") return; // liveness only, not for the app
       for (const l of this.listeners) l(msg);
     };
-    this.ws.onclose = () => {
+    sock.onclose = () => {
+      if (this.ws !== sock) return;
       this.stopHeartbeat();
       for (const cb of this.closeListeners) cb();
       if (!this.closedByUs) {
@@ -92,6 +104,9 @@ export class SocketClient {
   }
 
   private startHeartbeat() {
+    // A superseded socket skips stopHeartbeat (its onclose is inert), so a
+    // fresh open must clear whatever timers the previous socket left running.
+    this.stopHeartbeat();
     this.pingTimer = setInterval(() => {
       if (this.ws.readyState !== WebSocket.OPEN) return;
       this.ws.send(JSON.stringify({ type: "ping" } satisfies ClientMsg));
@@ -151,6 +166,8 @@ export class SocketClient {
     this.closedByUs = true;
     this.stopHeartbeat();
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    window.removeEventListener("online", this.reconnectNow);
+    document.removeEventListener("visibilitychange", this.onVisible);
     this.ws.close();
   }
 }
