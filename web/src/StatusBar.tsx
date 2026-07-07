@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ConnectDevice, type RelayInfo } from "./ConnectDevice";
 
 // T2.6: the workbench strip — model, session, cwd, connection, and token/cost
 // usage at a glance. Shell-owned (the agent can't paint here) and collapsible
@@ -27,6 +28,7 @@ export function StatusBar({
   usage,
   theme,
   onToggleTheme,
+  relay,
 }: {
   connected: boolean;
   agent?: string;
@@ -36,6 +38,8 @@ export function StatusBar({
   // 4.3: shell-owned theme toggle — dark is the default and the identity.
   theme: "dark" | "light";
   onToggleTheme: () => void;
+  // R.4: pairing info for the "connect a device" QR (absent → no button).
+  relay?: RelayInfo;
 }) {
   const [open, setOpen] = useState(true);
   const dot = (
@@ -91,6 +95,7 @@ export function StatusBar({
           )}
         </>
       )}
+      <ConnectDevice relay={relay} />
       <a className="sb-home" href="/" title="All sessions (mission control)">
         ⌂
       </a>

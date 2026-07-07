@@ -477,6 +477,36 @@ notifications are **not** part of the launch and are not sold until built.
     render components, permission answer, interrupt) comfortably, and
     survives a network flip (wifi→LTE) mid-turn without losing the
     transcript.
+  - Status: **built + verified locally (2026-07-07); the box stays open for
+    the real-phone pass, which needs the R.2 deployed relay.** What shipped:
+    (a) the shell-owned pairing affordance — `⧉ pair` in the status bar and
+    fleet header opens a QR of `http(s)://<relay>/#code=<code>`
+    (`ConnectDevice.tsx`; `qrcode-generator` devDep rendered as an inline
+    SVG path, black-on-white in both themes; copyable URL; Esc/backdrop
+    closes). The pairing info rides a new optional `relay` field on the
+    `agents` hello, sent to LOCAL viewports only — the code never crosses
+    the relay path, even encrypted. (b) A phone-width CSS pass
+    (`@media (max-width: 640px)`): tighter shell padding, wrapping
+    status/perm bars, ≥40px tap targets on allow/deny/stop/kill, markdown
+    tables scroll in place, fleet rows rewrap (id/tab-count hidden, cwd on
+    its own line), pin dock hidden (desktop affordance), short prompt
+    placeholder. (c) Resilience needed no new code — 4.4 seq-resume +
+    heartbeat just work over the relay, now proven. Verified — Tier-3
+    `phone.e2e.ts` (4 tests, 390×844 touch context through the stub): QR
+    affordance (session + fleet, exact pairing URL, Esc); pair-by-URL →
+    tap into session → checklist turn with a rendered component, no
+    sideways scroll at any point; permission answered by thumb (button
+    height asserted); **offline→online flip mid-turn resumes the stream —
+    pre-blip DOM node still connected (tail resume, not repaint)**.
+    Tier-2 additions: the relay-path hello omits the pairing info, and a
+    sudo-style password typed from the remote viewport reaches the PTY
+    only (no viewport stream, no replay, no relay frame — the 4.9
+    invariant, now load-bearing, plus ciphertext-tap audit). Screenshots
+    eyeballed (phone dark/light, perm bar, pair overlay). Also:
+    `test:e2e` now runs files sequentially (`--test-concurrency=1`) —
+    three concurrent Chrome+daemon suites flaked on modest hardware.
+    Owed to launch (R.6 checklist): scan the QR with a real phone through
+    the deployed relay, drive a session, and flip wifi→LTE mid-turn.
 
 - [ ] **Step R.5 — Entitlement + billing** *(needs Kyle: Stripe account +
   price confirmation — BUSINESS.md §7 says $12/mo · $99/yr)*

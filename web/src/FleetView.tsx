@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { AgentName, SessionMeta } from "@protocol";
 import { Onboarding } from "./Onboarding";
+import { ConnectDevice } from "./ConnectDevice";
 import { SocketClient } from "./ws";
 import { tildify } from "./tildify";
 
@@ -23,7 +24,11 @@ const STATUS_LABEL = { idle: "idle", working: "working", permission: "needs you"
 export function FleetView() {
   const [sessions, setSessions] = useState<SessionMeta[] | null>(null);
   const [agents, setAgents] = useState<{ agent: AgentName; live: boolean }[] | null>(null);
-  const [daemon, setDaemon] = useState<{ cwd?: string; home?: string }>({});
+  const [daemon, setDaemon] = useState<{
+    cwd?: string;
+    home?: string;
+    relay?: { url: string; code: string };
+  }>({});
   const [connected, setConnected] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [onbError, setOnbError] = useState<string | null>(null);
@@ -41,7 +46,7 @@ export function FleetView() {
       if (m.type === "sessions") setSessions(m.sessions);
       else if (m.type === "agents") {
         setAgents(m.agents);
-        setDaemon({ cwd: m.cwd, home: m.home });
+        setDaemon({ cwd: m.cwd, home: m.home, relay: m.relay });
       } else if (m.type === "session_created") {
         // The create issued from the onboarding card below: enter the session.
         location.assign(`/s/${m.sessionId}`);
@@ -94,6 +99,7 @@ export function FleetView() {
           {sessions === null ? "connecting…" : `${sessions.length} session${sessions.length === 1 ? "" : "s"}`}
         </span>
         <span className="fleet-spacer" />
+        <ConnectDevice relay={daemon.relay} />
         <button className="fleet-new" onClick={() => setShowNew(true)}>
           + new session
         </button>

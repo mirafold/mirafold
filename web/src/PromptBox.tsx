@@ -1,5 +1,12 @@
 import { useLayoutEffect, useRef, useState } from "react";
 
+// R.4: the desktop placeholder is keyboard lore that wraps to three ugly
+// lines on a phone — narrow viewports get the short form. Checked once at
+// module load: a mid-session resize isn't worth a listener.
+const PLACEHOLDER = window.matchMedia?.("(max-width: 640px)")?.matches
+  ? "Message · !cmd runs in your shell"
+  : "Enter to send · Shift+Enter for newline · !cmd runs in your shell";
+
 export function PromptBox({
   onSend,
   busy,
@@ -47,7 +54,7 @@ export function PromptBox({
         ref={ref}
         value={text}
         rows={1}
-        placeholder="Enter to send · Shift+Enter for newline · !cmd runs in your shell"
+        placeholder={PLACEHOLDER}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey) {

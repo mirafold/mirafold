@@ -85,12 +85,18 @@ type WireMsgBody =
   // launched from, i.e. the default working dir for new sessions (terminal
   // parity) — and `home`, so the client can render paths in ~-form. Neither
   // is a secret: the daemon is local and the browser is the same user.
+  // Step R.4 adds `relay` — the deliberately user-facing pairing info (HTTP
+  // origin of the relay + the pairing code) so the shell can draw the
+  // "connect a device" QR. Sent to LOCAL viewports only, over the loopback
+  // socket the user already owns: the code must never travel the relay path,
+  // even encrypted, so remote viewports get the hello without it.
   | {
       type: "agents";
       agents: { agent: AgentName; live: boolean }[];
       default: AgentName;
       cwd?: string;
       home?: string;
+      relay?: { url: string; code: string };
     }
   // Phase 3: agent-authored HTML for the sandboxed iframe host (the ONLY
   // channel raw agent markup may travel). Re-sending an id replaces that
