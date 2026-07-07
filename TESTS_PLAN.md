@@ -97,7 +97,7 @@ they can be fed fake `ThreadEvent`s / JSONL lines directly.
   adapters; `capOutput`/`truncatedBytes` applied at the adapter seam.
 - **Done when:** `yarn test` green with the new handler exports covered.
 
-### [ ] L.2b3 — Tier 1: `SocketClient` reconnect state machine (`web/src/ws.ts`)
+### [x] L.2b3 — Tier 1: `SocketClient` reconnect state machine (`web/src/ws.ts`)
 The one load-bearing client module with zero coverage in any tier. Testable
 with `node:test` + a stubbed `globalThis.WebSocket` (a tiny class exposing
 `readyState`, handler props, and instance tracking) — no jsdom, no browser.
@@ -136,6 +136,13 @@ slower).
   scaffold is gone.
 
 ## Status log
+- **2026-07-07 — L.2b3 done.** 9 tests in `web/src/ws.test.ts` (61 total green)
+  over a stubbed `globalThis.WebSocket` + real-registry window/document shims,
+  node:test mock timers driving heartbeat/backoff. Red-harness proven: run
+  against the pre-fix ws.ts (b8707c7), the supersede-race and close-listener
+  tests fail; against the fixed code all pass. Enabling export: the four
+  timing constants (PING_INTERVAL_MS etc.). Next: L.2b (Tier-2 mock
+  integration) or L.2b2 (adapter event mapping).
 - **2026-07-07 — all five review fixes landed** (8e6f2c8…63e097c): ws.ts
   duplicate-socket race (verified in headless Chrome — forced the CLOSING
   window + online/visibilitychange, exactly one live socket, single-paint),

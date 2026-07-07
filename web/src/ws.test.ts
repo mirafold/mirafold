@@ -1,0 +1,282 @@
+import { test, type TestContext } from "node:test";
+import assert from "node:assert/strict";
+import {
+  SocketClient,
+  PING_INTERVAL_MS,
+  PONG_DEADLINE_MS,
+  BACKOFF_MIN_MS,
+  BACKOFF_MAX_MS,
+} from "./ws";
+
+// L.2b3: the reconnect state machine, driven through a stubbed WebSocket —
+// no browser, no jsdom. The stub exposes what the client touches (readyState,
+// handler props, send/close) plus test-side controls to open a socket,
+// deliver a frame, and complete a close. Every instance is tracked so the
+// core invariant — at most one live socket, ever — is directly observable.
+
+class FakeWS {
+  static CONNECTING = 0;
+  static OPEN = 1;
+  static CLOSING = 2;
+  static CLOSED = 3;
+  static instances: FakeWS[] = [];
+  readyState = FakeWS.CONNECTING;
+  sent: string[] = [];
+  onopen: (() => void) | null = null;
+  onmessage: ((e: { data: string }) => void) | null = null;
+  onclose: (() => void) | null = null;
+  constructor(public url: string) {
+    FakeWS.instances.push(this);
+  }
+  send(data: string) {
+    this.sent.push(data);
+  }
+  close() {
+    // Browser semantics: close() only starts the handshake; onclose comes
+    // later (finishClose) — the CLOSING window the duplicate-socket race
+    // lived in.
+    if (this.readyState === FakeWS.CONNECTING || this.readyState === FakeWS.OPEN) {
+      this.readyState = FakeWS.CLOSING;
+    }
+  }
+  open() {
+    this.readyState = FakeWS.OPEN;
+    this.onopen?.();
+  }
+  receive(msg: unknown) {
+    this.onmessage?.({ data: JSON.stringify(msg) });
+  }
+  finishClose() {
+    this.readyState = FakeWS.CLOSED;
+    this.onclose?.();
+  }
+  parsedSent(): { type: string }[] {
+    return this.sent.map((s) => JSON.parse(s) as { type: string });
+  }
+  pings(): number {
+    return this.parsedSent().filter((m) => m.type === "ping").length;
+  }
+}
+
+type Handler = () => void;
+
+/** window/document stand-ins: real listener registries so tests can fire
+ * online/visibilitychange and assert removal on close(). */
+function shimDom() {
+  const win = new Map<string, Set<Handler>>();
+  const doc = new Map<string, Set<Handler>>();
+  const listeners = (m: Map<string, Set<Handler>>) => ({
+    addEventListener: (type: string, fn: Handler) => {
+      if (!m.has(type)) m.set(type, new Set());
+      m.get(type)!.add(fn);
+    },
+    removeEventListener: (type: string, fn: Handler) => {
+      m.get(type)?.delete(fn);
+    },
+  });
+  const g = globalThis as Record<string, unknown>;
+  g.window = listeners(win);
+  g.document = { ...listeners(doc), visibilityState: "visible" };
+  return {
+    online: () => {
+      for (const fn of win.get("online") ?? []) fn();
+    },
+    visible: () => {
+      for (const fn of doc.get("visibilitychange") ?? []) fn();
+    },
+    listenerCount: () =>
+      (win.get("online")?.size ?? 0) + (doc.get("visibilitychange")?.size ?? 0),
+  };
+}
+
+function setup(t: TestContext) {
+  t.mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
+  FakeWS.instances = [];
+  (globalThis as Record<string, unknown>).WebSocket = FakeWS;
+  const dom = shimDom();
+  const client = new SocketClient("ws://test/ws");
+  return { dom, client, sock: () => FakeWS.instances.at(-1)! };
+}
+
+test("hello goes first on every open; sends while connecting queue in order", (t) => {
+  const { client, sock } = setup(t);
+  client.setHello(() => ({ type: "attach", sessionId: "s1" }));
+  client.send({ type: "prompt", text: "a" });
+  client.send({ type: "prompt", text: "b" });
+  assert.equal(sock().sent.length, 0); // nothing leaves a CONNECTING socket
+
+  sock().open();
+  assert.deepEqual(
+    sock().parsedSent().map((m) => m.type),
+    ["attach", "prompt", "prompt"],
+  );
+  assert.deepEqual(
+    sock().sent.slice(1).map((s) => (JSON.parse(s) as { text: string }).text),
+    ["a", "b"],
+  );
+
+  // Reconnect: hello leads again, then the newly queued message — none lost.
+  sock().close();
+  sock().finishClose();
+  t.mock.timers.tick(BACKOFF_MIN_MS);
+  client.send({ type: "prompt", text: "c" });
+  sock().open();
+  assert.deepEqual(
+    sock().parsedSent().map((m) => m.type),
+    ["attach", "prompt"],
+  );
+});
+
+test("a null hello sends nothing but still flushes the queue (P.4 onboarding)", (t) => {
+  const { client, sock } = setup(t);
+  client.setHello(() => null);
+  client.send({ type: "prompt", text: "queued" });
+  sock().open();
+  assert.deepEqual(
+    sock().parsedSent().map((m) => m.type),
+    ["prompt"],
+  );
+});
+
+test("overlapping reconnect triggers supersede a CLOSING socket — at most one live socket", (t) => {
+  const { dom, client, sock } = setup(t);
+  client.setHello(() => ({ type: "attach", sessionId: "s1" }));
+  const one = sock();
+  one.open();
+  const seen: string[] = [];
+  let closes = 0;
+  client.onMessage((m) => seen.push(m.type));
+  client.onClose(() => closes++);
+
+  // The production race: heartbeat ping goes unanswered on a dead pipe,
+  // client calls close() → CLOSING; then the network comes back.
+  t.mock.timers.tick(PING_INTERVAL_MS);
+  t.mock.timers.tick(PONG_DEADLINE_MS);
+  assert.equal(one.readyState, FakeWS.CLOSING);
+
+  dom.online(); // supersedes: socket #2
+  assert.equal(FakeWS.instances.length, 2);
+  dom.visible(); // while #2 is CONNECTING — must not stack #3
+  dom.online();
+  assert.equal(FakeWS.instances.length, 2);
+
+  const two = sock();
+  two.open();
+  assert.equal(two.parsedSent()[0]!.type, "attach");
+
+  // The superseded socket's late onclose must be inert: no spurious close
+  // listeners, no extra scheduled connect, heartbeat of #2 untouched.
+  one.finishClose();
+  assert.equal(closes, 0);
+  t.mock.timers.tick(BACKOFF_MAX_MS);
+  assert.equal(FakeWS.instances.length, 2);
+  one.receive({ type: "turn_end" }); // stale frame on the dead socket
+  assert.deepEqual(seen, []);
+  t.mock.timers.tick(PING_INTERVAL_MS);
+  assert.equal(two.pings(), 1); // exactly one interval running
+  assert.equal(one.pings(), 1); // only the ping from before the blip
+  assert.equal(FakeWS.instances.filter((s) => s.readyState === FakeWS.OPEN).length, 1);
+});
+
+test("an unanswered ping closes the socket into the reconnect path", (t) => {
+  const { client, sock } = setup(t);
+  void client;
+  const one = sock();
+  one.open();
+  t.mock.timers.tick(PING_INTERVAL_MS);
+  assert.equal(one.pings(), 1);
+  t.mock.timers.tick(PONG_DEADLINE_MS - 1);
+  assert.equal(one.readyState, FakeWS.OPEN); // deadline not hit yet
+  t.mock.timers.tick(1);
+  assert.equal(one.readyState, FakeWS.CLOSING);
+  one.finishClose();
+  t.mock.timers.tick(BACKOFF_MIN_MS);
+  assert.equal(FakeWS.instances.length, 2); // reconnect scheduled and fired
+});
+
+test("any inbound traffic clears the pong deadline, not just pong", (t) => {
+  const { client, sock } = setup(t);
+  void client;
+  const one = sock();
+  one.open();
+  t.mock.timers.tick(PING_INTERVAL_MS);
+  one.receive({ type: "turn_end" }); // proof of life, no pong needed
+  t.mock.timers.tick(PONG_DEADLINE_MS);
+  assert.equal(one.readyState, FakeWS.OPEN);
+});
+
+test("heartbeat timers never stack across reconnects", (t) => {
+  const { client, sock } = setup(t);
+  void client;
+  sock().open();
+  sock().close();
+  sock().finishClose();
+  t.mock.timers.tick(BACKOFF_MIN_MS);
+  const two = sock();
+  two.open();
+  t.mock.timers.tick(PING_INTERVAL_MS);
+  assert.equal(two.pings(), 1); // a leftover interval would make this 2
+});
+
+test("lastSeq tracks only seq-stamped frames; pong is swallowed; garbage ignored", (t) => {
+  const { client, sock } = setup(t);
+  const one = sock();
+  one.open();
+  const seen: string[] = [];
+  client.onMessage((m) => seen.push(m.type));
+
+  one.receive({ type: "text_delta", text: "x", seq: 3 });
+  assert.equal(client.lastSeq, 3);
+  one.receive({ type: "turn_end" }); // unstamped — cursor must not move
+  assert.equal(client.lastSeq, 3);
+  one.receive({ type: "pong" });
+  one.onmessage!({ data: "not json{" });
+  assert.deepEqual(seen, ["text_delta", "turn_end"]); // no pong, no crash
+});
+
+test("backoff doubles to the cap and resets on a successful open", (t) => {
+  const { client, sock } = setup(t);
+  void client;
+  // Expected delays for consecutive failed attempts: 500, 1000, 2000, 4000,
+  // then pinned at 5000.
+  const delays = [
+    BACKOFF_MIN_MS,
+    1000,
+    2000,
+    4000,
+    BACKOFF_MAX_MS,
+    BACKOFF_MAX_MS,
+  ];
+  for (const delay of delays) {
+    const n = FakeWS.instances.length;
+    sock().finishClose(); // connection attempt failed
+    t.mock.timers.tick(delay - 1);
+    assert.equal(FakeWS.instances.length, n); // not yet
+    t.mock.timers.tick(1);
+    assert.equal(FakeWS.instances.length, n + 1);
+  }
+  // A successful open resets the ladder to the minimum.
+  sock().open();
+  sock().close();
+  sock().finishClose();
+  const n = FakeWS.instances.length;
+  t.mock.timers.tick(BACKOFF_MIN_MS);
+  assert.equal(FakeWS.instances.length, n + 1);
+});
+
+test("deliberate close(): no reconnect, heartbeat stopped, dom listeners removed", (t) => {
+  const { dom, client, sock } = setup(t);
+  const one = sock();
+  one.open();
+  assert.equal(dom.listenerCount(), 2);
+
+  client.close();
+  one.finishClose();
+  t.mock.timers.tick(BACKOFF_MAX_MS + PING_INTERVAL_MS);
+  assert.equal(FakeWS.instances.length, 1); // no reconnect ever scheduled
+  assert.equal(one.pings(), 0); // heartbeat cleared before the first ping
+  assert.equal(dom.listenerCount(), 0);
+  dom.online(); // nothing left listening
+  dom.visible();
+  assert.equal(FakeWS.instances.length, 1);
+});
