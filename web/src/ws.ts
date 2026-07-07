@@ -1,4 +1,13 @@
 import type { ClientMsg, WireMsg } from "@protocol";
+import {
+  derivePair,
+  frameCiphers,
+  openHandshake,
+  randomBytes,
+  sealHandshake,
+  type FrameCipher,
+  type PairSecret,
+} from "@relay-crypto";
 
 type Listener = (msg: WireMsg) => void;
 
@@ -14,19 +23,20 @@ export const BACKOFF_MIN_MS = 500;
 export const BACKOFF_MAX_MS = 5_000;
 
 /**
- * The default endpoint: same-origin /ws. Two Phase-R additions, both inert on
- * a local page: wss: when the page itself is https (the deployed relay), and
- * the pairing code — a remote page arrives as /?code=<pairing code>, and
- * in-app navigation (fleet row links, history.replaceState) drops the query,
- * so the code is kept per-tab in sessionStorage and re-attached to every
- * (re)connect URL. Shell-owned state: agent output can never read or set it.
+ * Phase R.3 — the remote (relay) path. A remote page is opened as
+ * /#code=<pairing code>: the code rides the URL FRAGMENT, which never leaves
+ * the browser, so the relay's HTTP logs can't see it. It's stashed per-tab in
+ * sessionStorage (in-app navigation — fleet row links, history.replaceState —
+ * drops the fragment) and scrubbed from the address bar. Shell-owned state:
+ * agent output can never read or set it.
  */
-function defaultWsUrl(): string {
-  const fromUrl = new URLSearchParams(location.search).get("code");
-  if (fromUrl) sessionStorage.setItem("genui-relay-code", fromUrl);
-  const code = fromUrl ?? sessionStorage.getItem("genui-relay-code");
-  const proto = location.protocol === "https:" ? "wss" : "ws";
-  return `${proto}://${location.host}/ws${code ? `?code=${encodeURIComponent(code)}` : ""}`;
+function relayCodeFromPage(): string | null {
+  const m = location.hash.match(/(?:^#|&)code=([A-Za-z0-9_-]+)/);
+  if (m) {
+    sessionStorage.setItem("genui-relay-code", m[1]);
+    history.replaceState(null, "", location.pathname + location.search);
+  }
+  return m?.[1] ?? sessionStorage.getItem("genui-relay-code");
 }
 
 /**
@@ -38,9 +48,16 @@ function defaultWsUrl(): string {
  * Step 4.4: tracks the last broadcast `seq` seen so the hello can ask for a
  * tail-only resume, heartbeats to catch half-open sockets, and backs off
  * between attempts (with instant retry when the network returns).
+ *
+ * Phase R.3: with a pairing code present, the connection is end-to-end
+ * encrypted — the relay sees only the code's derived pairId in the URL and
+ * ciphertext frames. Each (re)connect performs the handshake before the
+ * hello, and any frame that fails to authenticate closes the socket (fail
+ * closed → normal reconnect → fresh handshake). A local page has no code and
+ * none of this engages.
  */
 export class SocketClient {
-  private ws!: WebSocket;
+  private ws?: WebSocket;
   private listeners = new Set<Listener>();
   private openListeners = new Set<() => void>();
   private closeListeners = new Set<() => void>();
@@ -56,11 +73,37 @@ export class SocketClient {
   /** Last broadcast seq seen — the resume cursor sent as attach.afterSeq. */
   lastSeq: number | null = null;
 
-  constructor(private url = defaultWsUrl()) {
-    this.connect();
+  private url!: string;
+  private pair: PairSecret | null = null;
+  /** Open AND (on the relay path) handshaken — the app may talk. */
+  private ready = false;
+  /** Per-socket sender, swapped in connect(); queues until a socket exists. */
+  private transmit: (msg: ClientMsg) => void = (m) => this.pending.push(m);
+
+  constructor(url?: string) {
     // A returning network or a re-focused tab shouldn't wait out the backoff.
     window.addEventListener("online", this.reconnectNow);
     document.addEventListener("visibilitychange", this.onVisible);
+    if (url) {
+      this.url = url;
+      this.connect();
+      return;
+    }
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    const code = relayCodeFromPage();
+    if (!code) {
+      this.url = `${proto}://${location.host}/ws`;
+      this.connect();
+      return;
+    }
+    // Remote mode: key derivation is async; sends queue in `pending` until
+    // the first connect. Only the derived id ever reaches a URL.
+    void derivePair(code).then((pair) => {
+      if (this.closedByUs) return;
+      this.pair = pair;
+      this.url = `${proto}://${location.host}/ws?pair=${pair.id}`;
+      this.connect();
+    });
   }
 
   private onVisible = () => {
@@ -68,7 +111,7 @@ export class SocketClient {
   };
 
   private reconnectNow = () => {
-    if (this.closedByUs || this.ws.readyState === WebSocket.OPEN) return;
+    if (this.closedByUs || !this.ws || this.ws.readyState === WebSocket.OPEN) return;
     if (this.ws.readyState === WebSocket.CONNECTING) return;
     // CLOSING falls through on purpose: the heartbeat's close() of a dead pipe
     // can take seconds to complete, and a returning network shouldn't wait for
@@ -86,30 +129,70 @@ export class SocketClient {
     // listeners, or schedule an extra connect (the duplicate-viewport race).
     const sock = new WebSocket(this.url);
     this.ws = sock;
+    this.ready = false;
+
+    // R.3 per-connection channel state. Send/receive each chain their async
+    // seal/open so frame ORDER is preserved — the strict +1 counters make
+    // order part of the security contract, not just a nicety.
+    const pair = this.pair;
+    let cipher: FrameCipher | null = null;
+    let clientNonce: Uint8Array<ArrayBuffer> | null = null;
+    let sendChain: Promise<void> = Promise.resolve();
+    let recvChain: Promise<void> = Promise.resolve();
+
+    this.transmit = (msg: ClientMsg) => {
+      const text = JSON.stringify(msg);
+      if (!pair) {
+        if (sock.readyState === WebSocket.OPEN) sock.send(text);
+        return;
+      }
+      sendChain = sendChain.then(async () => {
+        if (this.ws === sock && cipher && sock.readyState === WebSocket.OPEN) {
+          sock.send(await cipher.seal(text));
+        }
+      });
+    };
+
     sock.onopen = () => {
       if (this.ws !== sock) return;
       this.backoff = BACKOFF_MIN_MS;
-      for (const cb of this.openListeners) cb();
-      const hello = this.hello?.();
-      if (hello) sock.send(JSON.stringify(hello));
-      for (const msg of this.pending.splice(0)) sock.send(JSON.stringify(msg));
-      this.startHeartbeat();
+      if (!pair) {
+        this.finishOpen();
+        return;
+      }
+      // Handshake first; the hello and everything else wait for the reply.
+      clientNonce = randomBytes(32);
+      void sealHandshake(pair, "c", clientNonce).then((frame) => {
+        if (this.ws === sock && sock.readyState === WebSocket.OPEN) sock.send(frame);
+      });
     };
     sock.onmessage = (e) => {
       if (this.ws !== sock) return;
       this.alive(); // any traffic proves the pipe
-      let msg: WireMsg;
-      try {
-        msg = JSON.parse(e.data as string) as WireMsg;
-      } catch {
+      if (!pair) {
+        this.dispatch(e.data as string);
         return;
       }
-      if (typeof msg.seq === "number") this.lastSeq = msg.seq;
-      if (msg.type === "pong") return; // liveness only, not for the app
-      for (const l of this.listeners) l(msg);
+      recvChain = recvChain.then(async () => {
+        if (this.ws !== sock) return;
+        try {
+          if (!cipher) {
+            const daemonNonce = await openHandshake(pair, "d", e.data as string);
+            cipher = await frameCiphers(pair, clientNonce!, daemonNonce, "c");
+            this.finishOpen();
+          } else {
+            this.dispatch(await cipher.open(e.data as string));
+          }
+        } catch {
+          // Fail closed: an unauthentic frame kills the channel; the normal
+          // reconnect path starts over with a fresh handshake.
+          sock.close();
+        }
+      });
     };
     sock.onclose = () => {
       if (this.ws !== sock) return;
+      this.ready = false;
       this.stopHeartbeat();
       for (const cb of this.closeListeners) cb();
       if (!this.closedByUs) {
@@ -119,17 +202,40 @@ export class SocketClient {
     };
   }
 
+  /** The channel is usable (handshaken, on the relay path) — start the app flow. */
+  private finishOpen() {
+    this.ready = true;
+    for (const cb of this.openListeners) cb();
+    const hello = this.hello?.();
+    if (hello) this.transmit(hello);
+    for (const msg of this.pending.splice(0)) this.transmit(msg);
+    this.startHeartbeat();
+  }
+
+  /** One decrypted/plain wire frame → the app. */
+  private dispatch(text: string) {
+    let msg: WireMsg;
+    try {
+      msg = JSON.parse(text) as WireMsg;
+    } catch {
+      return;
+    }
+    if (typeof msg.seq === "number") this.lastSeq = msg.seq;
+    if (msg.type === "pong") return; // liveness only, not for the app
+    for (const l of this.listeners) l(msg);
+  }
+
   private startHeartbeat() {
     // A superseded socket skips stopHeartbeat (its onclose is inert), so a
     // fresh open must clear whatever timers the previous socket left running.
     this.stopHeartbeat();
     this.pingTimer = setInterval(() => {
-      if (this.ws.readyState !== WebSocket.OPEN) return;
-      this.ws.send(JSON.stringify({ type: "ping" } satisfies ClientMsg));
+      if (!this.ready || this.ws?.readyState !== WebSocket.OPEN) return;
+      this.transmit({ type: "ping" } satisfies ClientMsg);
       this.pongTimer ??= setTimeout(() => {
         // Half-open: nothing came back in time. Close → reconnect path.
         this.pongTimer = null;
-        this.ws.close();
+        this.ws?.close();
       }, PONG_DEADLINE_MS);
     }, PING_INTERVAL_MS);
   }
@@ -174,7 +280,7 @@ export class SocketClient {
   }
 
   send(msg: ClientMsg) {
-    if (this.ws.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(msg));
+    if (this.ready && this.ws?.readyState === WebSocket.OPEN) this.transmit(msg);
     else this.pending.push(msg);
   }
 
@@ -184,6 +290,6 @@ export class SocketClient {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     window.removeEventListener("online", this.reconnectNow);
     document.removeEventListener("visibilitychange", this.onVisible);
-    this.ws.close();
+    this.ws?.close();
   }
 }
