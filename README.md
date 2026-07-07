@@ -876,12 +876,18 @@ Read PLAN.md for the real thing; the shape in one breath:
 - **Also shipped (2026-07-07):** the three-tier test suite (§8) — 120+ tests,
   `node:test` + `tsx`, zero test-framework dependencies, no test ever reaches
   a real model.
-- **Also now:** distribution — post the demo and read the M1 signal
-  (BUSINESS.md §9); `npm publish` + repo-public is the M2 trigger.
-- **Then:** Phase L docs (local models — L.1 ships with M2), and the phone
-  relay (4.7, the paid tier, gated on M2/M3) — true multi-user isolation
-  (the part of 4.5 deliberately deferred) lands there, when viewports
-  actually become remote.
+- **Also shipped (2026-07-07):** Phase L.1 — the documented local path
+  (`docs/local-models.md`), verified end-to-end against a real local model.
+- **Now (the launch-complete pivot, 2026-07-07):** **Phase R** — the hosted
+  relay (pairing, E2E encryption, phone viewport, entitlement/billing) built
+  *before* going public, so the launch is one event: demo post, repo public,
+  `npm publish`, and a purchasable Pro tier on the same day (~two-week
+  target; PLAN Phase R, BUSINESS.md §9 pivot note). True multi-user
+  isolation (the part of 4.5 deliberately deferred) lands here, when
+  viewports actually become remote.
+- **Post-launch, demand-gated:** `--local` easy mode (L.2), per-session
+  provider mix (L.3), push notifications, and further agent adapters as
+  users ask.
 
 Distribution intent shapes the architecture: the daemon installs globally
 (`npm i -g genui-shell`) and runs from **any** directory like a terminal agent
