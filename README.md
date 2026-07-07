@@ -512,7 +512,8 @@ capabilities downward, and nothing below the shell ever holds the socket:
 
 `ZoneMsg = WireMsg | {type:"zone_reset"}` is the output zone's full input
 vocabulary: the wire protocol plus one local control message that clears the
-transcript before a replay repaints it (fired on every socket open).
+transcript before a replay repaints it (fired on a non-resumed
+`session_created`; a tail resume skips it so the zone keeps appending).
 
 The shell also owns two pieces of shell-drawn UI the agent can't fake: the
 **permission bar** (pending `permission_request`s, oldest first, allow/deny —

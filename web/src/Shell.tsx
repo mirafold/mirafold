@@ -12,7 +12,7 @@ const ZERO_USAGE: Usage = { turnIn: 0, turnOut: 0, sumIn: 0, sumOut: 0, cost: 0 
 /**
  * What the output zone consumes: the wire protocol plus one local control
  * message — zone_reset clears the transcript before a replay repaints it
- * (fired on every socket open, Step 4.2).
+ * (fired on a non-resumed session_created; a 4.4 tail resume skips it).
  */
 export type ZoneMsg = WireMsg | { type: "zone_reset" };
 
