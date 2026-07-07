@@ -45,5 +45,9 @@ sequence, lives in **BUSINESS.md** (milestone gates).
 - **Verification**: front-end steps are verified end-to-end in headless
   Chrome (`playwright-core` + `/usr/bin/google-chrome`), driving real
   typing/clicks; server steps over a real WebSocket. A step isn't done until
-  its "Done when" has actually been observed.
+  its "Done when" has actually been observed. The test suite (README §8):
+  `yarn test` (Tier-1 unit, every commit) · `yarn test:server` (Tier-2, real
+  daemon + real sockets, mock-forced) · `yarn test:e2e` (Tier-3 headless
+  Chrome, rebuilds dist first). node:test + tsx, zero test deps; no test may
+  ever reach a real model. New code lands with tests in the matching tier.
 - **Comments** only for non-obvious constraints — the code says what it does.
