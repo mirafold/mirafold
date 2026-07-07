@@ -736,17 +736,21 @@ exists beside the code, tsx + TS source in dev.
 ```sh
 yarn typecheck    # tsc --noEmit over server + web + vite config (tests included)
 yarn test         # Tier 1 — pure/unit, node:test + tsx, ~2s, run on every commit
-yarn test:server  # Tier 2 — spawns the real daemon (mock-forced), drives real ws sockets, ~20s
+yarn test:server  # Tier 2 — spawns the real daemon (mock-forced), drives real ws sockets, ~30s
 yarn test:e2e     # Tier 3 — yarn build + headless Chrome (playwright-core), opt-in, ~12s
 ```
 
 The suite is **`node:test` + `tsx`, zero test-framework dependencies** — the
 `test*` scripts are just aliases for `node --import tsx --test <glob>`. Tests
 live next to their source; the suffix picks the tier: `*.test.ts` (Tier 1,
-pure logic — security predicates, caps, adapter event mapping on synthetic
-events, the `SocketClient` reconnect state machine on a stubbed WebSocket),
-`*.itest.ts` (Tier 2, integration — the auth gate, DoS caps, the mock-turn
-wire grammar, registry replay/resume, the bang-secrets invariant), and
+pure logic — security predicates, caps, all three adapters' event mapping on
+synthetic events (Claude Code through an injected engine seam, Codex through
+a stubbed thread, Gemini through a scripted binary), the `SocketClient`
+reconnect state machine on a stubbed WebSocket), `*.itest.ts` (Tier 2,
+integration — the auth gate, DoS caps, the mock-turn wire grammar, the
+interrupt/component-action wire paths, the permission deny-on-timeout,
+registry replay/resume, the bang-secrets invariant, and the stdio render-MCP
+stub's ack contract over a real MCP handshake), and
 `*.e2e.ts` (Tier 3 — token→cookie boot, a full turn rendering in the DOM,
 the artifact iframe executing under the CSP; needs `google-chrome`, path
 overridable via `CHROME_BIN`).

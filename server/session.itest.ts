@@ -122,6 +122,84 @@ test("permission deny: no tool runs, the turn still ends", async () => {
   assert.match(text, /won't run/);
 });
 
+test("interrupt mid-turn: the stream stops dead and the turn still ends", async () => {
+  c.send({ type: "prompt", text: "tell me a long story" });
+  await c.waitFor(
+    (m) => m.type === "thinking_delta" || m.type === "text_delta",
+    "first delta",
+    20_000,
+  );
+  c.send({ type: "interrupt" });
+  await c.type("turn_end", 20_000);
+  const count = c.received.length;
+  await new Promise((r) => setTimeout(r, 600));
+  assert.equal(c.received.length, count); // the aborted turn never speaks again
+  // The session takes the next turn cleanly.
+  const next = await runTurn(c, "still alive?");
+  assert.equal(next[next.length - 1].type, "turn_end");
+});
+
+test("component tool action: mediated server-side, broadcast as a tool row pair", async () => {
+  c.send({
+    type: "action",
+    action: { kind: "tool", name: "workspace_ls", args: { path: "." } },
+    sourceId: "r-test",
+  });
+  const use = (await c.type("tool_use")) as Any;
+  assert.equal(use.name, "workspace_ls");
+  assert.match(use.detail ?? "", /component action \(r-test\)/);
+  const result = (await c.waitFor(
+    (m) => m.type === "tool_result" && (m as Any).id === use.id,
+    "action result",
+  )) as Any;
+  assert.equal(result.isError, false);
+  assert.match(result.output, /package\.json/); // the session cwd (repo root) listed
+});
+
+test("off-allowlist component action: rejected server-side, reported as an error row", async () => {
+  c.send({
+    type: "action",
+    action: { kind: "tool", name: "secret_exfil" },
+    sourceId: "r-evil",
+  });
+  const use = (await c.type("tool_use")) as Any;
+  const result = (await c.waitFor(
+    (m) => m.type === "tool_result" && (m as Any).id === use.id,
+    "rejected result",
+  )) as Any;
+  assert.equal(result.isError, true);
+  assert.match(result.output, /not allowlisted/);
+});
+
+test("prompt-kind component action: echoes as a user turn and runs it", async () => {
+  c.send({
+    type: "action",
+    action: { kind: "prompt", text: "clicked follow-up" },
+    sourceId: "r-test",
+  });
+  const echo = (await c.type("user_prompt")) as Any;
+  assert.equal(echo.text, "clicked follow-up");
+  await c.type("turn_end", 20_000); // the click became a real turn
+});
+
+test("permission timeout: nobody answers → deny by default, the turn still ends", async () => {
+  const quick = await startDaemon({ PERMISSION_TIMEOUT_MS: "700" });
+  try {
+    const { client } = await createSession(quick.port);
+    const from = client.mark();
+    client.send({ type: "prompt", text: "run something dangerous" });
+    await client.type("permission_request");
+    await client.type("turn_end", 20_000); // no permission_response ever sent
+    const turn = client.received.slice(from) as Any[];
+    assert.ok(!turn.some((m) => m.type === "tool_use")); // the held tool never ran
+    const text = turn.filter((m) => m.type === "text_delta").map((m) => m.text).join("");
+    assert.match(text, /won't run/);
+    client.close();
+  } finally {
+    await quick.stop();
+  }
+});
+
 test("session cap: create past the limit errors without crashing the socket", async () => {
   const capped = await startDaemon({ MAX_SESSIONS: "1" });
   try {
