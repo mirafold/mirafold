@@ -62,9 +62,15 @@ Rest of the pure-logic net:
 - **Done when:** `yarn test` green across all of the above; every security-core
   case maps to a shipped invariant (HIGH-1 exfil guard, HIGH-2 auth, symlink).
 
-### [ ] L.2b — Tier-2 mock integration (`test:server`)
+### [x] L.2b — Tier-2 mock integration (`test:server`)
 Spins up the daemon on the mock, drives the real socket. (Formalizes the
 throwaway smoke scripts from the security work.)
+Harness notes (learned 2026-07-07): Tier-2 files are named `*.itest.ts` so the
+Tier-1 `yarn test` glob (`*.test.ts`) never picks them up — typecheck still
+covers both. Spawn the daemon with ANTHROPIC_API_KEY/ANTHROPIC_AUTH_TOKEN/
+ANTHROPIC_BASE_URL explicitly EMPTY (credential detection would otherwise
+route `claude-code` to the real metered engine, not the mock) and a fixed
+GENUI_TOKEN for the auth tests (empty string disables auth entirely).
 - Auth: HTTP 403 (no/wrong token) / 302+cookie / 200; WS reject vs accept via
   cookie and via `?token=`.
 - DoS caps: session cap → error (not crash); oversized frame → close 1009.
@@ -136,6 +142,17 @@ slower).
   scaffold is gone.
 
 ## Status log
+- **2026-07-07 — L.2b done.** 27 tests across `server/{auth,session,registry,
+  bang}.itest.ts` + `server/itest-harness.ts` (spawns the real daemon as a
+  child process, drives real ws sockets); `yarn test:server` runs them (~19s).
+  Covers the auth gate (HTTP 403/302+cookie, WS token/cookie/Origin), DoS caps
+  (session limit error, 1009 on oversized frame), the full mock-turn grammar +
+  every hook (checklist id-progression, subagent nesting, huge-output
+  truncatedBytes, artifact, permission allow/deny), registry fan-out/replay/
+  tail-resume/foreign-seq/stale-id/fleet-status/rename/idle-timeout, and the
+  bang-secrets invariant (stdin data absent from both viewports, the replay
+  buffer, and server logs, while pw-len output flows) + one-bang-at-a-time +
+  bang_kill. Tier-1 unaffected (61 green; `*.itest.ts` never matches its glob).
 - **2026-07-07 — L.2b3 done.** 9 tests in `web/src/ws.test.ts` (61 total green)
   over a stubbed `globalThis.WebSocket` + real-registry window/document shims,
   node:test mock timers driving heartbeat/backoff. Red-harness proven: run

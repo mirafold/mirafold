@@ -36,7 +36,8 @@
     "build:server": "esbuild server/index.ts server/render-mcp.ts --bundle --platform=node --format=esm --packages=external --outdir=dist-server",
     "prepack": "yarn build",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test \"server/**/*.test.ts\" \"web/src/**/*.test.ts\""
+    "test": "node --import tsx --test \"server/**/*.test.ts\" \"web/src/**/*.test.ts\"",
+    "test:server": "node --import tsx --test \"server/**/*.itest.ts\""
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.201",
