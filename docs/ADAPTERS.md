@@ -114,7 +114,8 @@ every adapter must honor:
 
 Adapters must **never** emit registry-owned plumbing: `user_prompt`,
 `session_created`, `agents`, `sessions`, `pong`, or any `bang_*` message, and
-never stamp `seq` (the registry stamps it on broadcast).
+never stamp `seq` (the registry stamps it on broadcast — onto a shallow copy,
+so adapters may assume broadcast never mutates their emitted objects).
 
 **`interrupt()`** — halt the in-flight turn using the provider's own mechanism
 (Claude SDK `interrupt()`, Codex `AbortController`, Gemini child-process kill);
