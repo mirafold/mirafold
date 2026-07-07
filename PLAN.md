@@ -533,9 +533,19 @@ shows which matter — not a launch prerequisite.
     Claims verified against docs.ollama.com (anthropic-compatibility,
     integrations/codex), developers.openai.com codex config reference, and
     lmstudio.ai; code paths verified in `adapters/index.ts` + `codex.ts`.
-    NOT yet verified: the actual Done-when (a cold run against a real local
-    model) — no Ollama on this machine; it's a one-command check
-    (`ollama pull qwen3-coder`, then Path A) left for Kyle/launch day.
+    **Done-when verified live later the same day (2026-07-07):** Ollama
+    0.31.1 installed on this CPU-only ThinkPad T480; Path A followed as
+    written in headless Chrome — onboarding showed Claude Code "ready" off
+    `ANTHROPIC_BASE_URL` alone, a real typed turn drove qwen3-1.7b through
+    Ollama's Anthropic endpoint, and the model's thinking stream rendered
+    live in the transcript (~25 min: honest CPU prefill of Claude Code's
+    measured ~26K-token agent surface at single-digit tok/s). Doc updated
+    with what the run taught: the user-space `num_ctx` Modelfile route
+    (replacing the sudo-needing `OLLAMA_CONTEXT_LENGTH` advice in Path A),
+    a "CPU-only reality" section with the measured numbers, and a
+    fits-in-RAM warning (18 GB qwen3-coder does NOT fit a 16 GB machine —
+    it hangs loading rather than failing fast). 8B-on-CPU is impractical
+    (~1 h/turn); 30B+ needs the GPU-class hardware the table now says.
 
 - [ ] **Step L.2 — `--local` easy mode (post-M2, demand-gated)**
   - Goal: one command instead of a couple minutes — build only if setup

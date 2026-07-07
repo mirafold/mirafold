@@ -26,18 +26,29 @@ Since v0.14.0, Ollama serves [Anthropic's Messages API](https://docs.ollama.com/
 so Claude Code — and therefore genui-shell's Claude Code adapter, which drives
 the same engine — can run against a local model with two environment variables.
 
-1. Install Ollama and pull a coding model (see the [model table](#choosing-a-model) below):
+1. Install Ollama and pull a coding model (see the [model table](#choosing-a-model)
+   below — the model must fit in your free RAM/VRAM; `qwen3-coder` is an 18 GB
+   download that wants ~24 GB, so on a 16 GB machine pick something smaller):
 
 ```sh
 ollama pull qwen3-coder
 ```
 
-2. Launch genui-shell with the Anthropic endpoint pointed at Ollama:
+2. Give it the context window Claude Code needs (a derived model with a bigger
+   `num_ctx` — plain user-space, no service config; see
+   [context length](#choosing-a-model)):
+
+```sh
+printf 'FROM qwen3-coder\nPARAMETER num_ctx 32768\n' > /tmp/Modelfile
+ollama create qwen3-coder-32k -f /tmp/Modelfile
+```
+
+3. Launch genui-shell with the Anthropic endpoint pointed at Ollama:
 
 ```sh
 export ANTHROPIC_BASE_URL=http://localhost:11434
 export ANTHROPIC_AUTH_TOKEN=ollama
-export DEFAULT_MODEL=qwen3-coder
+export DEFAULT_MODEL=qwen3-coder-32k
 genui-shell
 ```
 
@@ -116,11 +127,30 @@ your agent runs:
 | `gpt-oss:120b` | 120B MoE | ~64–80 GB (H100 / big-RAM Mac) | Excellent, if you have the hardware |
 | 7–8B models | 7–8B | ~8 GB | Expect misfires — see below |
 
+(The "needs" column assumes a GPU or Apple-Silicon unified memory. CPU-only
+is a different regime — see below.)
+
 Context length: configure **at least 32K tokens** for Claude Code, and
-**64K+ for Codex** (both agents carry large system prompts and tool schemas;
-Ollama's default context is smaller than this — raise it, e.g.
-`OLLAMA_CONTEXT_LENGTH=65536`, or the agent will truncate and behave
-erratically).
+**64K+ for Codex** — both agents carry large system prompts and tool schemas,
+and Ollama's per-model default context is far smaller, which makes the agent
+truncate and behave erratically. The clean way to raise it is a **derived
+model** (user-space, per-model, no service restart), as in Path A step 2:
+`PARAMETER num_ctx 32768` in a two-line Modelfile. (Server-wide
+`OLLAMA_CONTEXT_LENGTH=65536` also works, but on Linux that means editing the
+Ollama systemd service's environment.)
+
+**The number that gates CPU-only machines is prefill.** A faithful Claude
+Code turn sends the full agent surface — system prompt, tool schemas, your
+own settings and memory — before your first word: **~26K tokens, measured**.
+A GPU chews through that in seconds. A CPU-only laptop we measured (ThinkPad
+T480, 8 threads) prefilled ~6.5 tok/s on an 8B Q4 model — an hour before the
+first reply token — and a 1.7B model completed a browser turn in ~25 minutes
+end-to-end. It genuinely works (that run is this doc's verification), but
+it's proof, not daily driving: on CPU-only hardware treat local Claude Code
+as an experiment with small models, and use a ≥16–24 GB GPU for real work.
+(Slow prefill can also outlive a client's stream timeout and get retried;
+Ollama's prompt prefix cache makes each retry resume where the last stopped,
+so long prefills still converge.)
 
 **What "degrades gracefully" means here.** genui-shell's generative UI rides on
 the agent's own tool calling (MCP). Big coding models use the `render_*` tools
