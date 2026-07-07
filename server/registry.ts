@@ -131,7 +131,10 @@ export class SessionRegistry {
 
   /** Buffer a message and fan it out to every attached viewport. */
   broadcast(entry: SessionEntry, msg: WireMsg) {
-    msg.seq = entry.nextSeq++; // 4.4: resume cursor, one stamp for all viewports
+    // 4.4: resume cursor, one stamp for all viewports. Stamped on a shallow
+    // copy — the adapter's object is never mutated or held by the buffer, so
+    // an adapter re-emitting a message can't corrupt an already-buffered seq.
+    msg = { ...msg, seq: entry.nextSeq++ };
     entry.buffer.push(msg);
     if (entry.buffer.length > BUFFER_CAP) {
       entry.buffer.splice(0, entry.buffer.length - BUFFER_CAP);
