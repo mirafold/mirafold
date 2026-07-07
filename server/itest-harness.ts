@@ -38,6 +38,8 @@ export function startDaemon(env: Record<string, string> = {}): Promise<Daemon> {
       GOOGLE_API_KEY: "",
       CODEX_HOME: path.join(ROOT, "itest-no-codex-home"), // no auth.json here
       GENUI_TOKEN: "",
+      GENUI_RELAY_URL: "", // no dial-out unless a relay test asks for it
+      GENUI_RELAY_CODE: "",
       // Random base + the daemon's own EADDRINUSE walk absorbs collisions
       // between parallel test files; the real port is read off stdout.
       PORT: String(3900 + Math.floor(Math.random() * 90)),
@@ -91,9 +93,13 @@ export class TestClient {
 
   constructor(
     port: number,
-    opts: { token?: string; origin?: string; cookie?: string } = {},
+    opts: { token?: string; origin?: string; cookie?: string; query?: string } = {},
   ) {
-    const q = opts.token !== undefined ? `?token=${encodeURIComponent(opts.token)}` : "";
+    // `query` is used verbatim (the relay tests pass ?code=…); `token` keeps
+    // its dedicated shorthand for the auth tests.
+    const q =
+      opts.query ??
+      (opts.token !== undefined ? `?token=${encodeURIComponent(opts.token)}` : "");
     this.ws = new WebSocket(`ws://127.0.0.1:${port}/ws${q}`, {
       headers: {
         ...(opts.origin ? { origin: opts.origin } : {}),
