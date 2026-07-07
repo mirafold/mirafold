@@ -22,21 +22,29 @@ export type DaemonToRelay =
 
 // URL contract with the relay (the in-repo stub now, the deployed R.2 service
 // later). Viewports use the same /ws path a local browser uses against the
-// daemon, so the web client connects to either end unchanged.
+// daemon, so the web client connects to either end unchanged. R.3: both ends
+// identify the pair by `?pair=<pairId>` — the SHA-256-derived id from
+// relay-crypto.ts — and the pairing code itself never travels to the relay.
 export const DAEMON_PATH = "/daemon";
 export const VIEWPORT_PATH = "/ws";
+export const PAIR_PARAM = "pair";
 
 // Application close codes (4xxx range is ours to define).
-export const CLOSE_CODE_TAKEN = 4002; // a daemon already holds that pairing code
-export const CLOSE_BAD_CODE = 4003; // no daemon paired under that code
+export const CLOSE_CODE_TAKEN = 4002; // a daemon already holds that pair id
+export const CLOSE_BAD_CODE = 4003; // no daemon paired under that id
 
-// A pairing code shorter than this is refused outright — a guessable dev
-// code must never silently work against a relay.
-export const MIN_CODE_LENGTH = 8;
+// A pair id shorter than this is refused outright — a guessable dev value
+// must never silently work against a relay. (Real ids are 22 chars.)
+export const MIN_PAIR_ID_LENGTH = 8;
+
+// An announced viewport must complete the E2E handshake within this window
+// or the daemon drops it — half-open channels don't accumulate.
+export const HANDSHAKE_TIMEOUT_MS = 15_000;
 
 /**
  * High-entropy pairing code (~128 bits, URL-safe). It is the root of trust
- * for the remote path: printed by the daemon, carried only inside the dial
- * URL, and (R.3) the input to the per-pair E2E key derivation.
+ * for the remote path: printed by the daemon, shown to the user (QR in R.4),
+ * and the input to every key in relay-crypto.ts. It is NEVER sent to the
+ * relay — only its derived pairId is.
  */
 export const mintPairingCode = () => randomBytes(16).toString("base64url");

@@ -13,7 +13,8 @@
     "isolatedModules": true,
     "paths": {
       "@protocol": ["./server/protocol.ts"],
-      "@registry-spec": ["./server/registry-spec.ts"]
+      "@registry-spec": ["./server/registry-spec.ts"],
+      "@relay-crypto": ["./server/relay-crypto.ts"]
     }
   },
   "include": ["server", "web/src", "vite.config.ts"]

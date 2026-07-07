@@ -424,7 +424,7 @@ notifications are **not** part of the launch and are not sold until built.
     session through the deployed relay, and the relay's logs show it
     learned nothing but connection metadata.
 
-- [ ] **Step R.3 — Per-pair E2E encryption**
+- [x] **Step R.3 — Per-pair E2E encryption**
   - Goal: the relay operator (us, or any self-hoster) *cannot* read frames —
     the precondition BUSINESS.md set for charging money.
   - Build: derive a per-pair key from the pairing secret (never sent to the
@@ -435,6 +435,33 @@ notifications are **not** part of the launch and are not sold until built.
   - Done when: relay logs show ciphertext only; a tampered frame and a
     wrong-code pairing both fail cleanly; the local-tab experience is
     byte-identical through the encrypted path.
+  - Status: **done, verified across all three tiers (2026-07-07)** — one
+    shared WebCrypto-only module, `server/relay-crypto.ts`, runs verbatim in
+    the daemon and the browser (new `@relay-crypto` alias in both configs).
+    Scheme v1, documented in the module header: the relay is given only
+    `pairId = SHA-256(code)` (the `?pair=` param replaced R.1's `?code=` —
+    the code itself now never travels to the relay in any URL or frame);
+    per-connection handshake (role-pinned AEAD hellos exchanging 32-byte
+    nonces under an HKDF handshake key) derives fresh **directional**
+    AES-256-GCM frame keys, so recorded ciphertext can never be replayed
+    into a new connection (a replayed prompt/bang would otherwise
+    re-execute); frame ivs are strict +1 counters — replay, reorder, drop,
+    and tamper all throw, and every failure path drops the viewport (fail
+    closed, never open). Browser side: the code arrives as a URL *fragment*
+    (`/#code=…`, never sent in HTTP), is stashed per-tab and scrubbed from
+    the address bar; ws.ts handshakes before the hello on every (re)connect
+    and chains async seal/open to preserve frame order. Daemon side:
+    relay-client handshakes each announced viewport (15s timeout) before
+    any Connection exists. Verified — Tier-1 (10 crypto tests: tamper/
+    replay/reorder/cross-channel/reflection/wrong-key all rejected); Tier-2
+    (9 tests incl. a stub tap recording exactly what a relay operator could
+    observe: >50 frames, all base64url ciphertext, no code in any URL;
+    tampered frame → viewport dropped; right-pairId-wrong-code → handshake
+    refused); Tier-3 (headless Chrome through the stub: transcripts
+    character-identical AND the tap saw no plaintext; address bar scrubbed).
+    Not provided, deliberate (candidate v2): forward secrecy — an ECDH
+    handshake would close "code leaks later, recorded traffic opens";
+    per-launch codes bound that window today.
 
 - [ ] **Step R.4 — Remote viewport UX (the phone experience)**
   - Goal: connecting from a phone is one scan, and driving a session there

@@ -8,7 +8,10 @@ import { startRelayStub, type RelayStub } from "./relay-stub";
 // relay stub and mirrors a live mock session — replay, streaming, and the
 // pairing-code handoff across in-app navigation all through the dial-out
 // path. The stub serves ./dist, so the remote page loads the app from the
-// relay origin exactly as a phone would in R.2.
+// relay origin exactly as a phone would in R.2. R.3 rides underneath: the
+// page gets the code as a URL FRAGMENT (never sent to the relay), the shell
+// scrubs it from the address bar, and the stub's tap proves everything the
+// relay forwarded was ciphertext.
 
 const CODE = "e2e-pairing-code-77adf1";
 const CHROME = process.env.CHROME_BIN ?? "/usr/bin/google-chrome";
@@ -18,9 +21,10 @@ let d: Daemon;
 let browser: Browser;
 let local: Page;
 let remote: Page;
+const tapped: string[] = [];
 
 before(async () => {
-  stub = await startRelayStub();
+  stub = await startRelayStub({ tap: { frame: (_dir, p) => tapped.push(p) } });
   d = await startDaemon({ GENUI_TOKEN: "", GENUI_RELAY_URL: stub.url, GENUI_RELAY_CODE: CODE });
   browser = await chromium.launch({ executablePath: CHROME });
 });
@@ -43,11 +47,13 @@ test("local page: create a session and run a deterministic mock turn", async () 
 
 test("a second browser attaches THROUGH the stub and replays the transcript", async () => {
   remote = await browser.newPage();
-  // The pairing code arrives once on the URL; the fleet row link is a full
-  // navigation that drops the query — sessionStorage must carry it across.
-  await remote.goto(`http://127.0.0.1:${stub.port}/?code=${CODE}`);
+  // The pairing code arrives once, as a FRAGMENT (it never reaches the relay);
+  // the shell scrubs it from the bar and keeps it per-tab, so the fleet row's
+  // full navigation — which drops the fragment — still stays paired.
+  await remote.goto(`http://127.0.0.1:${stub.port}/#code=${CODE}`);
   await remote.locator(".fleet-row").first().click();
   await remote.waitForURL(/\/s\/[\w-]+/);
+  assert.ok(!remote.url().includes(CODE), "pairing code scrubbed from the address bar");
   await remote.waitForSelector("text=Plan complete — all four steps done.", {
     timeout: 15_000,
   });
@@ -81,4 +87,12 @@ test("typing in the remote browser drives the session; both transcripts mirror",
   );
   assert.ok(a.includes("hello from the far side of the relay"), "turn is in the transcript");
   assert.equal(b, a, "remote and local transcripts are identical");
+
+  // R.3: everything the relay shuttled for that mirrored session was
+  // ciphertext — base64url only, no JSON, no prompt text, no code.
+  assert.ok(tapped.length > 50, `expected real traffic through the tap, saw ${tapped.length}`);
+  for (const p of tapped) {
+    assert.ok(/^[A-Za-z0-9_-]+$/.test(p), `relay saw a non-ciphertext frame: ${p.slice(0, 80)}`);
+    assert.ok(!p.includes("hello from the far side"), "relay saw plaintext prompt text");
+  }
 });

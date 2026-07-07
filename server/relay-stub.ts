@@ -17,7 +17,8 @@ import {
   CLOSE_BAD_CODE,
   CLOSE_CODE_TAKEN,
   DAEMON_PATH,
-  MIN_CODE_LENGTH,
+  MIN_PAIR_ID_LENGTH,
+  PAIR_PARAM,
   VIEWPORT_PATH,
   type DaemonToRelay,
   type RelayToDaemon,
@@ -27,7 +28,17 @@ type Pair = { daemon: WebSocket; viewports: Map<string, WebSocket> };
 
 export type RelayStub = { port: number; url: string; stop: () => Promise<void> };
 
-export function startRelayStub(opts: { port?: number } = {}): Promise<RelayStub> {
+/**
+ * `tap` is test-only observability: it sees exactly what the relay itself
+ * can see (upgrade URLs and forwarded payloads) so tests can PROVE that is
+ * ciphertext and ids only. The stub itself still never parses a payload.
+ */
+export type RelayTap = {
+  url?: (u: string) => void;
+  frame?: (dir: "c2d" | "d2c", p: string) => void;
+};
+
+export function startRelayStub(opts: { port?: number; tap?: RelayTap } = {}): Promise<RelayStub> {
   const app = express();
   const DIST = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "dist");
   app.use(express.static(DIST));
@@ -40,18 +51,19 @@ export function startRelayStub(opts: { port?: number } = {}): Promise<RelayStub>
   const wss = new WebSocketServer({ noServer: true, maxPayload: 8_000_000 });
 
   server.on("upgrade", (req, socket, head) => {
+    opts.tap?.url?.(req.url ?? "");
     const url = new URL(req.url ?? "/", "ws://relay");
-    const code = url.searchParams.get("code") ?? "";
+    const pairId = url.searchParams.get(PAIR_PARAM) ?? "";
     if (url.pathname === DAEMON_PATH) {
       wss.handleUpgrade(req, socket, head, (ws) => {
-        // One daemon per code, ever — a second dial-in (or a guessably short
-        // code) is refused, never silently adopted.
-        if (code.length < MIN_CODE_LENGTH || pairs.has(code)) {
+        // One daemon per pair id, ever — a second dial-in (or a guessably
+        // short id) is refused, never silently adopted.
+        if (pairId.length < MIN_PAIR_ID_LENGTH || pairs.has(pairId)) {
           ws.close(CLOSE_CODE_TAKEN);
           return;
         }
         const pair: Pair = { daemon: ws, viewports: new Map() };
-        pairs.set(code, pair);
+        pairs.set(pairId, pair);
         ws.on("message", (data) => {
           let env: DaemonToRelay;
           try {
@@ -62,19 +74,20 @@ export function startRelayStub(opts: { port?: number } = {}): Promise<RelayStub>
           if (env.t === "pong") return;
           const viewport = pair.viewports.get(env.v);
           if (env.t === "frame" && viewport?.readyState === WebSocket.OPEN) {
+            opts.tap?.frame?.("d2c", env.p);
             viewport.send(env.p); // opaque — routed, never parsed
           } else if (env.t === "close") {
-            viewport?.close();
+            viewport?.close(CLOSE_BAD_CODE);
           }
         });
         ws.on("close", () => {
-          pairs.delete(code);
+          pairs.delete(pairId);
           for (const viewport of pair.viewports.values()) viewport.close(CLOSE_BAD_CODE);
         });
       });
     } else if (url.pathname === VIEWPORT_PATH) {
       wss.handleUpgrade(req, socket, head, (ws) => {
-        const pair = pairs.get(code);
+        const pair = pairs.get(pairId);
         if (!pair) {
           ws.close(CLOSE_BAD_CODE);
           return;
@@ -83,9 +96,9 @@ export function startRelayStub(opts: { port?: number } = {}): Promise<RelayStub>
         pair.viewports.set(v, ws);
         pair.daemon.send(JSON.stringify({ t: "open", v } satisfies RelayToDaemon));
         ws.on("message", (data) => {
-          pair.daemon.send(
-            JSON.stringify({ t: "frame", v, p: String(data) } satisfies RelayToDaemon),
-          );
+          const p = String(data);
+          opts.tap?.frame?.("c2d", p);
+          pair.daemon.send(JSON.stringify({ t: "frame", v, p } satisfies RelayToDaemon));
         });
         ws.on("close", () => {
           if (pair.viewports.delete(v) && pair.daemon.readyState === WebSocket.OPEN) {
