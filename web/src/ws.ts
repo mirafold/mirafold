@@ -6,12 +6,12 @@ type Listener = (msg: WireMsg) => void;
 // silently dead — the browser would wait forever. Ping on an interval and
 // treat any inbound traffic as life; a ping that goes unanswered past the
 // deadline closes the socket, which routes into the normal reconnect path.
-const PING_INTERVAL_MS = 25_000;
-const PONG_DEADLINE_MS = 8_000;
+export const PING_INTERVAL_MS = 25_000;
+export const PONG_DEADLINE_MS = 8_000;
 // Reconnect backoff: fast first retry (the daemon is local), capped so a
 // long outage doesn't hammer; `online`/tab-visible events short-circuit it.
-const BACKOFF_MIN_MS = 500;
-const BACKOFF_MAX_MS = 5_000;
+export const BACKOFF_MIN_MS = 500;
+export const BACKOFF_MAX_MS = 5_000;
 
 /**
  * The shell's WebSocket client. Lives in the trusted shell — agent output
