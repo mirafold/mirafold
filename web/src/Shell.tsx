@@ -41,8 +41,13 @@ export function Shell() {
   const [agents, setAgents] = useState<{ agent: AgentName; live: boolean }[] | null>(null);
   // 4.8: where the daemon was launched (the default session cwd) + home for
   // ~-abbreviation, both off the agents hello; and the last create error so
-  // the onboarding card can show a rejected working dir.
-  const [daemon, setDaemon] = useState<{ cwd?: string; home?: string }>({});
+  // the onboarding card can show a rejected working dir. R.4 adds the
+  // pairing info for the "connect a device" QR (local viewports only).
+  const [daemon, setDaemon] = useState<{
+    cwd?: string;
+    home?: string;
+    relay?: { url: string; code: string };
+  }>({});
   const [onbError, setOnbError] = useState<string | null>(null);
   // 4.9: the `!` command THIS viewport issued, if still running — only the
   // issuer gets the stdin affordance (a sudo prompt must never fan out to a
@@ -162,7 +167,7 @@ export function Shell() {
           setAsks((a) => [...a, { tool: m.tool, detail: m.detail, id: m.id }]);
         } else if (m.type === "agents") {
           setAgents(m.agents);
-          setDaemon({ cwd: m.cwd, home: m.home });
+          setDaemon({ cwd: m.cwd, home: m.home, relay: m.relay });
         } else if (m.type === "session_created") {
           setMeta({ sessionId: m.sessionId, cwd: m.cwd, agent: m.agent });
           setOnbError(null);
@@ -311,6 +316,7 @@ export function Shell() {
         usage={usage}
         theme={theme}
         onToggleTheme={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+        relay={daemon.relay}
       />
     </div>
   );

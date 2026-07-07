@@ -231,12 +231,61 @@ test("interrupt sent through the relay halts the in-flight turn", async () => {
   assert.ok(!slice.some((m) => m.type === "render" || m.type === "usage"));
 });
 
+test("the pairing code rides the LOCAL hello only — the relay-path hello omits it", async () => {
+  const local = new TestClient(d.port);
+  await local.opened();
+  const localHello = (await local.type("agents")) as Any;
+  assert.equal(localHello.relay?.code, CODE); // the R.4 QR's data source
+  assert.match(localHello.relay?.url, /^http:/);
+  local.close();
+
+  const remoteHello = remote.received.find((m) => m.type === "agents") as Any;
+  assert.ok(remoteHello, "remote viewport got the hello");
+  assert.equal(remoteHello.relay, undefined); // never re-sent over the relay
+});
+
+test("a sudo-style prompt answered from the phone: the secret reaches the PTY only", async () => {
+  // The 4.9 ephemeral-path invariant, now load-bearing over the relay: the
+  // remote viewport types into a password prompt; the secret must appear in
+  // no viewport's stream (echo-off PTY), no replay, and no relay frame.
+  const watcher = new TestClient(d.port);
+  await watcher.opened();
+  await watcher.type("agents");
+  watcher.send({ type: "attach", sessionId } as never);
+  await watcher.type("session_created");
+
+  remote.send({
+    type: "bang",
+    command: `bash -c 'read -s -p "Password: " x; echo; echo "got ok"'`,
+    id: "relay-bang-1",
+  } as never);
+  await remote.waitFor(
+    (m) => m.type === "bang_output" && (m as Any).data.includes("Password:"),
+    "password prompt",
+  );
+  remote.send({ type: "bang_input", data: "hunter2-relay\n", id: "relay-bang-1" } as never);
+  await remote.waitFor((m) => m.type === "bang_end", "bang_end", 20_000);
+  await watcher.waitFor((m) => m.type === "bang_end", "watcher bang_end", 20_000);
+
+  const leak = (msgs: WireMsg[]) => msgs.some((m) => JSON.stringify(m).includes("hunter2"));
+  assert.ok(!leak(remote.received), "secret leaked into the issuing viewport's stream");
+  assert.ok(!leak(watcher.received), "secret leaked into another viewport's stream");
+  assert.ok(
+    remote.received.some(
+      (m) => m.type === "bang_output" && (m as Any).data.includes("got ok"),
+    ),
+    "the command actually consumed the typed secret",
+  );
+  watcher.close();
+});
+
 test("the relay observed only pair ids and ciphertext — never the code or a plaintext frame", () => {
   assert.ok(tapped.length > 50, `expected real traffic through the tap, saw ${tapped.length}`);
   for (const { p } of tapped) {
     // Ciphertext is base64url; any JSON delimiter or field name means a leak.
     assert.ok(/^[A-Za-z0-9_-]+$/.test(p), `frame is not ciphertext: ${p.slice(0, 80)}`);
     assert.ok(!p.includes(CODE));
+    assert.ok(!p.includes("hunter2"), "the bang_input secret crossed the relay in the clear");
   }
   assert.ok(tappedUrls.length >= 2); // daemon dial-in + viewports
   for (const u of tappedUrls) {

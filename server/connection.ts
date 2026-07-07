@@ -49,6 +49,9 @@ export function openConnection(
   registry: SessionRegistry,
   viewport: (msg: WireMsg) => void,
   label = "ws",
+  // R.4: pairing info for the "connect a device" QR. The local WS path passes
+  // it; the relay path never does — the code must not cross the relay.
+  relay?: { url: string; code: string },
 ): Connection {
   // A connection is a viewport onto one registry session (Step 4.2) — or,
   // since 4.6, a fleet watcher observing the registry itself.
@@ -85,6 +88,7 @@ export function openConnection(
     default: defaultAgent(),
     cwd: process.cwd(),
     home: os.homedir(),
+    ...(relay ? { relay } : {}),
   });
 
   const handleMessage = (raw: string) => {

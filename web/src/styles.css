@@ -1787,3 +1787,213 @@ html {
   color: var(--fg);
   border-color: var(--border-hover);
 }
+
+/* ---- Connect a device (Step R.4) -------------------------------------------
+   Shell-owned pairing affordance: a status-bar / fleet-header button opening
+   a QR of the pairing URL. The QR stays black-on-white in both themes —
+   scanners want contrast, not theming. */
+
+.sb-pair {
+  padding: 1px 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.74em;
+  color: var(--fg-dimmer);
+  background: transparent;
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.sb-pair:hover {
+  color: var(--fg);
+  border-color: var(--border-hover);
+}
+
+.fleet-head .sb-pair {
+  padding: 5px 12px;
+  font-size: 0.85em;
+}
+
+.pair-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--overlay);
+  backdrop-filter: blur(3px);
+  padding: 24px;
+}
+
+.pair-card {
+  width: 100%;
+  max-width: 380px;
+  background: var(--surface);
+  border: 1px solid var(--border-2);
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.5);
+}
+
+.pair-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.pair-title {
+  color: var(--fg-strong);
+  font-size: 0.95em;
+}
+
+.pair-close {
+  margin-left: auto;
+  background: transparent;
+  border: 0;
+  color: var(--fg-dimmer);
+  font: inherit;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+
+.pair-close:hover {
+  color: var(--fg);
+}
+
+.pair-qr {
+  display: block;
+  width: 100%;
+  max-width: 260px;
+  margin: 0 auto;
+  border-radius: 8px;
+}
+
+.pair-hint {
+  margin: 14px 2px 10px;
+  font-size: 0.82em;
+  line-height: 1.5;
+  color: var(--fg-dim);
+}
+
+.pair-url-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pair-url {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.72em;
+  color: var(--fg-mid);
+  background: var(--bg-inset);
+  border: 1px solid var(--border-faint);
+  border-radius: 6px;
+  padding: 6px 8px;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.pair-copy {
+  flex-shrink: 0;
+  padding: 5px 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78em;
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid var(--ok-border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.pair-copy:hover {
+  background: var(--ok-bg);
+}
+
+/* ---- Phone-width pass (Step R.4) -------------------------------------------
+   The identity holds at 390px: command strips, mono-in/rich-out, full-width
+   canvas — just tighter chrome, wrapping bars, and comfortable tap targets.
+   Wide content (tables, code) scrolls inside its own box; the page itself
+   must never scroll horizontally. */
+
+@media (max-width: 640px) {
+  .shell {
+    padding: 0 10px;
+  }
+
+  .prompt-box {
+    padding: 10px;
+    margin: 6px 0 8px;
+    gap: 8px;
+  }
+
+  /* The cwd crumb yields to the typing space on a narrow prompt. */
+  .prompt-cwd {
+    max-width: 34vw;
+  }
+
+  .status-bar {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+
+  /* Comfortable thumb targets on the answer-or-act surfaces. */
+  .perm-bar {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .perm-allow,
+  .perm-deny,
+  .stop-btn,
+  .bang-bar-kill {
+    min-height: 40px;
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .perm-detail {
+    flex-basis: 100%;
+    order: 5;
+  }
+
+  /* Markdown tables scroll in place rather than widening the page. */
+  .markdown table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .fleet {
+    padding: 20px 12px;
+  }
+
+  /* Fleet rows: name + state read first; plumbing columns step back. */
+  .fleet-row {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+
+  .fleet-id,
+  .fleet-views {
+    display: none;
+  }
+
+  .fleet-cwd {
+    flex-basis: 100%;
+    order: 6;
+  }
+
+  .onb-card {
+    padding: 24px 18px;
+  }
+
+  .pin-dock {
+    display: none; /* supervision dock is a desktop affordance */
+  }
+}

@@ -109,13 +109,24 @@ wss.on("error", (err: NodeJS.ErrnoException) => {
 
 const registry = new SessionRegistry();
 
+// Relay config (Phase R). The pairing code is minted once per launch (or
+// pinned via GENUI_RELAY_CODE); its HTTP twin of GENUI_RELAY_URL is what a
+// phone's browser opens. Local viewports get both in the hello so the shell
+// can draw the "connect a device" QR (R.4) — remote viewports never do.
+const RELAY_URL = process.env.GENUI_RELAY_URL;
+const RELAY_CODE = RELAY_URL ? process.env.GENUI_RELAY_CODE || mintPairingCode() : undefined;
+const relayInfo =
+  RELAY_URL && RELAY_CODE
+    ? { url: RELAY_URL.replace(/^ws/, "http"), code: RELAY_CODE }
+    : undefined;
+
 wss.on("connection", (ws) => {
   // The per-viewport logic lives in connection.ts (shared with the R.1 relay
   // path); this block only binds it to the local WebSocket transport.
   const viewport = (msg: WireMsg) => {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
   };
-  const conn = openConnection(registry, viewport);
+  const conn = openConnection(registry, viewport, "ws", relayInfo);
   ws.on("message", (data) => conn.handleMessage(String(data)));
   ws.on("close", conn.close);
 });
@@ -146,13 +157,10 @@ listen(basePort);
 
 // Phase R.1: remote viewports arrive through an OUTBOUND dial to the relay —
 // the daemon never opens a listening port for remote access. The pairing code
-// is the root of trust for that path: printed here (and into the relay URL),
-// nowhere else; R.3 turns it into the per-pair E2E key. Off unless
-// GENUI_RELAY_URL is set; GENUI_RELAY_CODE pins the code (tests, stable
-// pairings), otherwise each launch mints a fresh high-entropy one.
-const relayUrl = process.env.GENUI_RELAY_URL;
-if (relayUrl) {
-  const code = process.env.GENUI_RELAY_CODE || mintPairingCode();
-  startRelayClient({ url: relayUrl, code, registry });
-  console.log(`[relay] dialing ${relayUrl} — pairing code: ${code}`);
+// is the root of trust for that path: printed here and shown as the R.4 QR,
+// nowhere else — R.3 derives the E2E keys from it, and only its hash reaches
+// the relay. Off unless GENUI_RELAY_URL is set.
+if (RELAY_URL && RELAY_CODE) {
+  startRelayClient({ url: RELAY_URL, code: RELAY_CODE, registry });
+  console.log(`[relay] dialing ${RELAY_URL} — pairing code: ${RELAY_CODE}`);
 }
