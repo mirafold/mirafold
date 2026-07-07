@@ -13,10 +13,14 @@ import { AsyncQueue, CLOSE } from "./async-queue";
 const RENDER_MCP = renderMcpCommand();
 // Gemini names MCP tools `mcp_<server>_<tool>`; ours therefore start with this.
 const MCP_PREFIX = `mcp_${GENUI_MCP}_`;
-const GEMINI_BIN = (() => {
+// Resolved per spawn: GENUI_GEMINI_BIN overrides (an operator knob, and the
+// seam the adapter tests use to substitute a scripted stub), else the copy
+// installed beside node (nvm global installs land there), else PATH.
+const geminiBin = () => {
+  if (process.env.GENUI_GEMINI_BIN) return process.env.GENUI_GEMINI_BIN;
   const beside = path.join(path.dirname(process.execPath), "gemini");
-  return existsSync(beside) ? beside : "gemini"; // fall back to PATH
-})();
+  return existsSync(beside) ? beside : "gemini";
+};
 
 /** The component id the render-mcp stub returned, parsed from its output text. */
 export function parseRenderId(output: unknown): string {
@@ -128,7 +132,7 @@ export class GeminiCliSession implements AgentSession {
       this.started = true;
       this.emit({ type: "status", state: "thinking" });
 
-      const child = spawn(GEMINI_BIN, args, {
+      const child = spawn(geminiBin(), args, {
         cwd: this.workspaceDir,
         env: process.env, // GEMINI_API_KEY lives here; never serialized to the wire
       });

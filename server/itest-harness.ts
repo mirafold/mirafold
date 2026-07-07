@@ -63,7 +63,13 @@ export function startDaemon(env: Record<string, string> = {}): Promise<Daemon> {
         logs: () => log,
         stop: () =>
           new Promise<void>((done) => {
-            child.once("exit", () => done());
+            // SIGKILL fallback: a daemon that shrugs off SIGTERM must not
+            // wedge the whole suite in an after() hook.
+            const hard = setTimeout(() => child.kill("SIGKILL"), 3_000);
+            child.once("exit", () => {
+              clearTimeout(hard);
+              done();
+            });
             child.kill();
           }),
       });

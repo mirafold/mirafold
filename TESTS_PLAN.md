@@ -86,7 +86,7 @@ GENUI_TOKEN for the auth tests (empty string disables auth entirely).
   command's own `bang_output` does. One test locks the ephemeral path forever.
 - **Done when:** `yarn test:server` green with a mock-backed daemon.
 
-### [ ] L.2b2 — Tier 1: adapter event mapping + error-path turn grammar
+### [x] L.2b2 — Tier 1: adapter event mapping + error-path turn grammar
 Synthetic events only — no real models (per ground rules). One enabling
 refactor, same move L.2a made for the normalizers: export the per-adapter
 event handlers (Codex's `handleEvent`, Gemini's `consume`/`handleEvent`) so
@@ -142,6 +142,18 @@ slower).
   scaffold is gone.
 
 ## Status log
+- **2026-07-07 — L.2b2 done.** 12 tests in `server/adapters/{codex,
+  gemini-cli}.test.ts` (73 Tier-1 total). Deviation from the planned refactor,
+  deliberate: instead of exporting the private handlers, the tests drive the
+  REAL loop — Codex via a stubbed `thread.runStreamed` replaying synthetic
+  ThreadEvents (covers worker→runTurn→handleEvent→onItem plus the announced-set
+  and end() plumbing the exported-handler route would have skipped), Gemini via
+  a scripted stub binary substituted with the new `GENUI_GEMINI_BIN` env knob
+  (resolved per spawn — the real gemini sits beside node, so a PATH shim can't
+  shadow it). Mapping tables, genui render/artifact suppression, cached-tokens
+  never re-added, orphan results dropped, capOutput seam, checklist id reset,
+  and exactly-one-turn_end on: normal, turn.failed, thrown stream, interrupt
+  (both), spawn failure, crash-exit-no-result.
 - **2026-07-07 — L.2b done.** 27 tests across `server/{auth,session,registry,
   bang}.itest.ts` + `server/itest-harness.ts` (spawns the real daemon as a
   child process, drives real ws sockets); `yarn test:server` runs them (~19s).
