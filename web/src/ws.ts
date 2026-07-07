@@ -14,6 +14,22 @@ export const BACKOFF_MIN_MS = 500;
 export const BACKOFF_MAX_MS = 5_000;
 
 /**
+ * The default endpoint: same-origin /ws. Two Phase-R additions, both inert on
+ * a local page: wss: when the page itself is https (the deployed relay), and
+ * the pairing code — a remote page arrives as /?code=<pairing code>, and
+ * in-app navigation (fleet row links, history.replaceState) drops the query,
+ * so the code is kept per-tab in sessionStorage and re-attached to every
+ * (re)connect URL. Shell-owned state: agent output can never read or set it.
+ */
+function defaultWsUrl(): string {
+  const fromUrl = new URLSearchParams(location.search).get("code");
+  if (fromUrl) sessionStorage.setItem("genui-relay-code", fromUrl);
+  const code = fromUrl ?? sessionStorage.getItem("genui-relay-code");
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  return `${proto}://${location.host}/ws${code ? `?code=${encodeURIComponent(code)}` : ""}`;
+}
+
+/**
  * The shell's WebSocket client. Lives in the trusted shell — agent output
  * never touches it. Reconnects automatically on drop; every (re)open first
  * sends the hello (attach/create, Step 4.2) so the connection is a viewport
@@ -40,7 +56,7 @@ export class SocketClient {
   /** Last broadcast seq seen — the resume cursor sent as attach.afterSeq. */
   lastSeq: number | null = null;
 
-  constructor(private url = `ws://${location.host}/ws`) {
+  constructor(private url = defaultWsUrl()) {
     this.connect();
     // A returning network or a re-focused tab shouldn't wait out the backoff.
     window.addEventListener("online", this.reconnectNow);

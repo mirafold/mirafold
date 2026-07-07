@@ -368,7 +368,7 @@ the agent's request path — it forwards opaque frames between viewports and
 the registry, nothing more. L.2/L.3 stay demand-gated post-launch;
 notifications are **not** part of the launch and are not sold until built.
 
-- [ ] **Step R.1 — Relay envelope + daemon dial-out, against a local stub**
+- [x] **Step R.1 — Relay envelope + daemon dial-out, against a local stub**
   - Goal: the daemon can serve its registry through an *outbound* WSS
     connection, so no ports ever open on the user's machine.
   - Build: a tiny relay envelope (pair / attach / frame / ping — `WireMsg`
@@ -382,6 +382,35 @@ notifications are **not** part of the launch and are not sold until built.
   - Done when: a second browser attaches THROUGH the local stub and mirrors
     a live mock session byte-for-byte (replay, streaming, interrupt all
     work); the daemon never listens on a new port.
+  - Status: **done, verified across all three tiers (2026-07-07)** —
+    `relay-protocol.ts` defines the envelope (relay→daemon `open/frame/
+    close/ping`, daemon→relay `frame/close/pong`; payload `p` is an opaque
+    string — plain JSON until R.3 makes it ciphertext) and the pairing code
+    (128-bit base64url, minted per launch or pinned via `GENUI_RELAY_CODE`;
+    `GENUI_RELAY_URL` turns the whole path on). The per-viewport server
+    logic moved out of index.ts into `connection.ts` unchanged, so local
+    sockets and relay viewports run the *same* code — a remote device is
+    literally one more attached viewport, and 4.2 fan-out / replay / 4.4
+    resume came free. `relay-client.ts` dials out (the daemon listens on no
+    new port), multiplexes viewports by id, reconnects 1s→30s backoff.
+    `relay-stub.ts` is the honest dumb forwarder: one daemon per code,
+    wrong/short code refused (4003/4002), never parses `p`, never logs frame
+    contents, stores nothing; serves ./dist so a browser can load the app
+    from the relay origin; standalone-runnable. Web: the shell's WS URL is
+    now protocol-aware (wss: on https) and carries `?code=`, kept per-tab in
+    sessionStorage so fleet-link navigation doesn't drop the pairing.
+    Verified — Tier-2 (6 tests): full mock turn through the stub;
+    byte-for-byte mirror (deepEqual of the seq-stamped streams, replay AND
+    live, both directions); interrupt through the relay cancels the turn
+    (no render/usage); wrong code + duplicate daemon refused; daemon
+    re-dials after a stub restart and reattaches the same warm session.
+    Tier-3 (3 tests, headless Chrome): a second real browser loads the app
+    FROM the stub with `?code=`, clicks through the fleet row (code survives
+    the navigation), replays the finished turn, then drives a new turn whose
+    transcripts settle character-identical in both browsers. Known and
+    accepted until R.3: frames cross the relay as plaintext (including a
+    remote `bang_input`), so the local stub is the only sanctioned relay —
+    exactly why R.3 is sequenced before any deployed use.
 
 - [ ] **Step R.2 — The relay service, deployed** *(needs Kyle: hosting
   account + domain — start the signups now, verification has lead time)*
