@@ -32,6 +32,25 @@ living in a terminal agent, whichever one." Characteristics:
 - They are terminal-native and allergic to toy UIs. The product must signal
   terminal lineage (PLAN.md's design identity section already locks this).
 
+**First target inside the beachhead (added 2026-07-08):** the API-key-by-
+conviction cohort — people with enough money and desire for terminal agents
+that they already run on a metered API key and **reject subscriptions
+specifically because they refuse arbitrary limits mid-work**. They spend many
+hours a day, often all day, in coding agents, and they work from multiple
+devices. Why they're first, not just included:
+
+- They have already revealed the exact preference we sell to: they pay a
+  premium (metered API over a capped plan) for *the absence of friction while
+  working*. An extra $12/mo for the same work to look much better and do more
+  is nothing to them — noise against their monthly model spend.
+- Multi-device is their existing behavior, not a feature we have to convince
+  them to want — the relay maps onto how they already work.
+- They are structurally resistant to the free-competitor pull (§8.3): the
+  free tools court users selecting on "free"; this cohort selects on "best
+  experience, no limits," and BYOK-native is the only product shape that
+  even fits them — a lab's bundled front end can't serve someone who chose
+  the API key to escape the lab's plan limits.
+
 Estimated reachable population: tens of thousands today, growing fast.
 Realistic capture at indie scale: hundreds to low thousands of paying users.
 This is a niche business by design — see §8 (Risks).
@@ -179,7 +198,11 @@ Recognition-first, because first-mover value expires (§4.1):
 - **Pro — $12/mo or $99/yr:** relay access (any device), push notifications,
   session sync/persistence, share links, priority support. Price anchored
   against what this audience already spends ($20–200/mo on model access)
-  — $12 is an impulse add-on for them.
+  — $12 is an impulse add-on for them. Sharpest for the §2 first target
+  (the API-key-by-conviction cohort, added 2026-07-08): they already pay a
+  premium precisely to avoid limits while working, so the ask is "make the
+  hours you already live in look much better and do more" at a price that
+  is noise to them.
 - **Later, maybe:** team tier (shared sessions, SSO) if pull emerges.
 - **Never (at this stage):** flat-fee bundled API usage.
 
