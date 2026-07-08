@@ -1,7 +1,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import WebSocket from "ws";
-import type { ClientMsg, WireMsg } from "./protocol";
+import type { WireMsg } from "./protocol";
 import { startDaemon, TestClient, type Daemon } from "./itest-harness";
 import { startRelayStub, type RelayStub } from "./relay-stub";
 import {
@@ -11,15 +11,8 @@ import {
   PAIR_PARAM,
   VIEWPORT_PATH,
 } from "./relay-protocol";
-import {
-  derivePair,
-  frameCiphers,
-  openHandshake,
-  randomBytes,
-  sealHandshake,
-  type FrameCipher,
-  type PairSecret,
-} from "./relay-crypto";
+import { derivePair } from "./relay-crypto";
+import { RemoteClient, broadcasts, waitForLog as waitForLogH } from "./relay-test-client";
 
 // R.1 + R.3: the relay seam over real processes — the daemon (child) dials
 // OUT to the stub (in this test process); remote viewports handshake and talk
@@ -44,133 +37,9 @@ const tap = {
   url: (u: string) => tappedUrls.push(u),
 };
 
-/**
- * The browser side of the encrypted channel, as ws.ts implements it: connect
- * with the derived pairId, handshake, then seal/open every frame with the
- * per-connection ciphers. Same waitFor API as TestClient.
- */
-class RemoteClient {
-  ws!: WebSocket;
-  received: WireMsg[] = [];
-  closed!: Promise<{ code: number }>;
-  private cipher!: FrameCipher;
-  private sendChain: Promise<void> = Promise.resolve();
-  private recvChain: Promise<void> = Promise.resolve();
-  private cursor = 0;
-  private wake: (() => void)[] = [];
-
-  static async connect(port: number, code: string, pairIdOverride?: string): Promise<RemoteClient> {
-    const c = new RemoteClient();
-    const pair = await derivePair(code);
-    const pairId = pairIdOverride ?? pair.id;
-    c.ws = new WebSocket(`ws://127.0.0.1:${port}${VIEWPORT_PATH}?${PAIR_PARAM}=${pairId}`);
-    c.closed = new Promise((res) => {
-      c.ws.on("close", (code) => res({ code }));
-      c.ws.on("error", () => res({ code: -1 }));
-    });
-    await new Promise<void>((res, rej) => {
-      c.ws.on("open", res);
-      c.ws.on("error", rej);
-    });
-    const nonceC = randomBytes(32);
-    const hsDone = new Promise<void>((res, rej) => {
-      const t = setTimeout(() => rej(new Error("handshake timed out")), 10_000);
-      c.ws.on("close", () => {
-        clearTimeout(t);
-        rej(new Error("closed during handshake")); // no-op if already settled
-      });
-      c.ws.once("message", async (data) => {
-        try {
-          const nonceD = await openHandshake(pair, "d", String(data));
-          c.cipher = await frameCiphers(pair, nonceC, nonceD, "c");
-          // From here on, every frame is app traffic.
-          c.ws.on("message", (data2) => {
-            c.recvChain = c.recvChain.then(async () => {
-              c.received.push(JSON.parse(await c.cipher.open(String(data2))) as WireMsg);
-              for (const w of c.wake.splice(0)) w();
-            });
-          });
-          clearTimeout(t);
-          res();
-        } catch (err) {
-          clearTimeout(t);
-          rej(err as Error);
-        }
-      });
-    });
-    c.ws.send(await sealHandshake(pair, "c", nonceC));
-    await hsDone;
-    return c;
-  }
-
-  send(msg: ClientMsg) {
-    this.sendChain = this.sendChain.then(async () => {
-      this.ws.send(await this.cipher.seal(JSON.stringify(msg)));
-    });
-  }
-
-  /** A frame the daemon must reject: sealed correctly, then corrupted. */
-  async sendTampered() {
-    const sealed = await this.cipher.seal(JSON.stringify({ type: "ping" }));
-    const last = sealed.at(-1) === "A" ? "B" : "A";
-    this.ws.send(sealed.slice(0, -1) + last);
-  }
-
-  waitFor(pred: (m: WireMsg) => boolean, label = "message", timeoutMs = 15_000): Promise<WireMsg> {
-    return new Promise((resolve, reject) => {
-      const deadline = setTimeout(() => {
-        reject(
-          new Error(
-            `timed out waiting for ${label}; seen: ${this.received.map((m) => m.type).join(",")}`,
-          ),
-        );
-      }, timeoutMs);
-      const scan = () => {
-        while (this.cursor < this.received.length) {
-          const m = this.received[this.cursor++];
-          if (pred(m)) {
-            clearTimeout(deadline);
-            resolve(m);
-            return;
-          }
-        }
-        this.wake.push(scan);
-      };
-      scan();
-    });
-  }
-
-  type(t: WireMsg["type"], timeoutMs?: number): Promise<WireMsg> {
-    return this.waitFor((m) => m.type === t, t, timeoutMs);
-  }
-
-  mark(): number {
-    return this.received.length;
-  }
-
-  close() {
-    this.ws.close();
-  }
-}
-
+// Bound to this file's default daemon; the shared helper takes an explicit one.
 const waitForLog = (re: RegExp, timeoutMs = 10_000, daemon?: Daemon) =>
-  new Promise<void>((resolve, reject) => {
-    const dm = daemon ?? d;
-    const t0 = Date.now();
-    const poll = setInterval(() => {
-      if (re.test(dm.logs())) {
-        clearInterval(poll);
-        resolve();
-      } else if (Date.now() - t0 > timeoutMs) {
-        clearInterval(poll);
-        reject(new Error(`daemon log never matched ${re};\n${dm.logs()}`));
-      }
-    }, 50);
-  });
-
-/** Everything seq-stamped (i.e. the session's broadcast stream). */
-const broadcasts = (c: { received: WireMsg[] }) =>
-  (c.received as Any[]).filter((m) => typeof m.seq === "number");
+  waitForLogH(re, timeoutMs, daemon ?? d);
 
 before(async () => {
   stub = await startRelayStub({ tap });
