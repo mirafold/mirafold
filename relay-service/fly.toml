@@ -1,0 +1,39 @@
+# genui-relay on Fly.io — single instance/region to start (PLAN R.2 decision).
+# The multi-region path (pair affinity via a ~20-line fly-replay shim) is added
+# ONLY if growth demands it; the stateless forwarder makes the host replaceable.
+#
+# Before first deploy (needs Kyle's Fly.io account + the owned domain):
+#   fly launch --no-deploy      # or `fly apps create genui-relay`
+#   fly deploy
+#   fly certs add relay.<your-domain>   # TLS is terminated by the platform
+# Point the daemon at it with GENUI_RELAY_URL=wss://relay.<your-domain>
+
+app = "genui-relay"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+  HOST = "0.0.0.0"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false   # a stopped machine drops every live pairing
+  auto_start_machines = true
+  min_machines_running = 1
+
+  # WebSocket upgrades ride the same HTTP service; Fly proxies them transparently.
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 2000
+    soft_limit = 1800
+
+[[http_service.checks]]
+  method = "get"
+  path = "/health"
+  interval = "15s"
+  timeout = "2s"
+  grace_period = "5s"

@@ -319,6 +319,42 @@ notifications are **not** part of the launch and are not sold until built.
   - Done when: a phone on cellular (not the home wifi) drives a home mock
     session through the deployed relay, and the relay's logs show it
     learned nothing but connection metadata.
+  - Status: **sequencing (a) — write + verify locally — DONE (2026-07-08);
+    (b) Kyle's signups and (c) deploy remain, so the box stays open.** The
+    service lives at `relay-service/` (the seed of the standalone private
+    `genui-relay` repo; not in the npm `files` list, won't publish). It's a
+    dependency-light (`ws` only) portable Node process — the stub's shape
+    grown up: `src/relay.ts` (`startRelay`), `src/limits.ts` (the env-tuned
+    DoS caps), `src/contract.ts` (the routing envelope, VENDORED — a
+    sync-guard test fails if it drifts from `server/relay-protocol.ts`),
+    `src/main.ts` (SIGTERM-draining entrypoint), plus `Dockerfile`,
+    `fly.toml` (single instance, `/health` check, `auto_stop_machines=false`),
+    `tsconfig.json`, `README.md`. Hardening beyond the stub: global
+    connection cap, max-pairs, per-pair viewport cap (independent of the
+    daemon's own remote-viewport cap — defense in depth), per-connection
+    frame rate limit (flood → drop), ws heartbeat reaper, max payload,
+    `GET /health` and 404-everything-else. **Trust decision made and
+    documented** (README "the trust decision"): the relay is a PURE
+    forwarder and serves NO app bundle, so it structurally can't inject
+    page JS that steals the pairing code from the URL fragment — the phone
+    loads the app from a SEPARATE static origin (the R.5 landing host) and
+    only then opens the encrypted socket. The tunnel-through-daemon
+    alternative is noted as held in reserve (R.4h's tolerant schemas make
+    the static-origin path's version skew survivable). Version-bump =
+    "wrong pairing code" is a README line. Verified: `server/relay-service.
+    itest.ts` (9 tests, Tier 2) runs the REAL daemon dialed at the REAL
+    service — full remote turn + byte-for-byte local mirror, health/404,
+    short-id + taken-id + unknown-id refusals, global cap, per-pair cap,
+    rate-limit drop, heartbeat-doesn't-kill-healthy, and the contract
+    sync-guard; the standalone package also `npm install && npm run build`s
+    on its own NodeNext tsconfig and the compiled `dist/main.js` serves
+    `/health` and drains on SIGTERM (checked, artifacts not committed). The
+    R.1/R.3 crypto + ciphertext-only properties already hold against the
+    stub (relay.itest.ts, whose `RemoteClient` moved to the shared
+    `server/relay-test-client.ts`). Owed to (c): Kyle's Fly.io account +
+    owned domain, then `fly deploy` + `fly certs add` + point
+    `GENUI_RELAY_URL=wss://relay.<domain>`; the cellular-phone Done-when is
+    R.6's real-hardware check.
 
 - [x] **Step R.3 — Per-pair E2E encryption**
   - Goal: the relay operator (us, or any self-hoster) *cannot* read frames —
