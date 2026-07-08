@@ -30,6 +30,18 @@ async function runTurn(client: TestClient, text: string): Promise<Any[]> {
   return client.received.slice(from) as Any[];
 }
 
+test("an unknown ClientMsg type is ignored and the socket lives (R.4h)", async () => {
+  // Ignore-unknown is the versioning story on the daemon side too: a newer
+  // client bundle may send types this daemon predates. No error, no close —
+  // and the very same socket then drives a full turn.
+  c.send({ type: "warp_drive", factor: 9 } as never);
+  c.sendRaw(JSON.stringify({ type: "even_less_known" }));
+  const turn = await runTurn(c, "still here after unknown frames");
+  assert.equal(turn[0].type, "user_prompt");
+  assert.equal(turn[turn.length - 1].type, "turn_end");
+  assert.ok(!turn.some((m) => m.type === "error"));
+});
+
 test("a template turn follows the full wire grammar", async () => {
   const turn = await runTurn(c, "hello from the integration suite");
 

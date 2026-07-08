@@ -1,6 +1,6 @@
 import { Component as ReactComponent, type ComponentType, type ReactNode } from "react";
 import type { Action } from "@protocol";
-import { registrySchemas, type ComponentName } from "@registry-spec";
+import { clientSchemas, type ComponentName } from "@registry-spec";
 import { registry } from "./index";
 import { ActionContext } from "./actions";
 
@@ -60,7 +60,9 @@ export function RenderBlock({
 }) {
   const name = component as ComponentName;
   const Impl = registry[name] as ComponentType<Record<string, unknown>> | undefined;
-  const schema = registrySchemas[name];
+  // Tolerant twin, not the strict source schema (R.4h): a newer daemon's
+  // extra props must strip, not fail this whole component into the fallback.
+  const schema = clientSchemas[name];
   if (!Impl || !schema) {
     return <Fallback component={component} props={props} reason="unknown component" />;
   }

@@ -158,9 +158,27 @@ export type ComponentName = keyof typeof registryShapes;
 
 export const componentNames = Object.keys(registryShapes) as ComponentName[];
 
-/** Derived object schemas, for validating a full `render` props payload. */
+/**
+ * Derived object schemas, for validating a full `render` props payload at the
+ * SOURCE — agent output entering the system (render-mcp / render-tools, and
+ * the tests that pin the vocabulary). Strict: an unknown key here is a
+ * malformed agent instruction and must be rejected where it's authored.
+ */
 export const registrySchemas = Object.fromEntries(
   Object.entries(registryShapes).map(([name, shape]) => [name, z.object(shape).strict()]),
+) as { [N in ComponentName]: z.ZodObject<(typeof registryShapes)[N]> };
+
+/**
+ * Tolerant twins for the CLIENT side (R.4h — the Postel split). The component
+ * vocabulary is part of the wire contract in practice, and the wire rule is
+ * additive-only: a newer daemon may send props from a newer vocabulary, and a
+ * client built yesterday must render the parts it knows, not reject the whole
+ * component into the raw-JSON fallback. z.object() (no .strict()) strips
+ * unknown keys on parse — new optional props degrade invisibly on old
+ * clients. RenderBlock validates with THESE; never tighten them to strict.
+ */
+export const clientSchemas = Object.fromEntries(
+  Object.entries(registryShapes).map(([name, shape]) => [name, z.object(shape)]),
 ) as { [N in ComponentName]: z.ZodObject<(typeof registryShapes)[N]> };
 
 export type ComponentProps<N extends ComponentName> = z.infer<(typeof registrySchemas)[N]>;

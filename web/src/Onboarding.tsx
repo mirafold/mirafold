@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { AgentName } from "@protocol";
-import { CONNECT_HINT, LABEL } from "./agents-meta";
+import { agentLabel, connectHint } from "./agents-meta";
 
 // P.4: the shell-owned onboarding picker. No agent is assumed — first run is
 // "choose your agent." Credentials never reach the browser; the server tells us
@@ -64,12 +64,14 @@ export function Onboarding({
                 onClick={() => onPick(agent, cwd.trim() || undefined)}
               >
                 <span className="onb-agent-row">
-                  <span className="onb-agent-name">{LABEL[agent]}</span>
+                  <span className="onb-agent-name">{agentLabel(agent)}</span>
                   <span className={`onb-agent-status ${live ? "onb-live" : "onb-demo"}`}>
                     {live ? "ready" : "no credentials · demo"}
                   </span>
                 </span>
-                {!live && <span className="onb-agent-hint">{CONNECT_HINT[agent]}</span>}
+                {!live && connectHint(agent) && (
+                  <span className="onb-agent-hint">{connectHint(agent)}</span>
+                )}
               </button>
             ))
           )}

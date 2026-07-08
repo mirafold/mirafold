@@ -6,7 +6,7 @@ import { RenderZone } from "./RenderZone";
 import { StatusBar, type Usage } from "./StatusBar";
 import { SocketClient } from "./ws";
 import { tildify } from "./tildify";
-import { CONNECT_HINT, LABEL } from "./agents-meta";
+import { agentLabel, connectHint } from "./agents-meta";
 
 const ZERO_USAGE: Usage = { turnIn: 0, turnOut: 0, sumIn: 0, sumOut: 0, cost: 0 };
 
@@ -293,10 +293,10 @@ export function Shell() {
           <span className="demo-banner-badge">demo</span>
           <span className="demo-banner-text">
             scripted replies — no real agent is running
-            {meta.agent && (
+            {meta.agent && connectHint(meta.agent) && (
               <>
                 {" · to connect "}
-                {LABEL[meta.agent]}: {CONNECT_HINT[meta.agent]}, then restart genui-shell
+                {agentLabel(meta.agent)}: {connectHint(meta.agent)}, then restart genui-shell
               </>
             )}
           </span>

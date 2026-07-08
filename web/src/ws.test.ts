@@ -234,6 +234,25 @@ test("lastSeq tracks only seq-stamped frames; pong is swallowed; garbage ignored
   assert.deepEqual(seen, ["text_delta", "turn_end"]); // no pong, no crash
 });
 
+test("an unknown message type is inert but still moves the resume cursor (R.4h)", (t) => {
+  // Ignore-unknown is the wire protocol's versioning story: a newer daemon
+  // may stamp types this bundle has never heard of. They must not crash the
+  // client, AND they must advance lastSeq — otherwise the next reconnect
+  // would ask the server to replay frames this client already saw.
+  const { client, sock } = setup(t);
+  const one = sock();
+  one.open();
+  const seen: string[] = [];
+  client.onMessage((m) => seen.push(m.type));
+
+  one.receive({ type: "hologram_delta", data: "from the future", seq: 7 });
+  assert.equal(client.lastSeq, 7);
+  one.receive({ type: "text_delta", text: "x", seq: 8 });
+  assert.equal(client.lastSeq, 8);
+  // Delivered to subscribers (whose switches ignore it), in order, no crash.
+  assert.deepEqual(seen, ["hologram_delta", "text_delta"]);
+});
+
 test("backoff doubles to the cap and resets on a successful open", (t) => {
   const { client, sock } = setup(t);
   void client;

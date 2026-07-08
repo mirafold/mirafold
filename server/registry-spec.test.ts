@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { registrySchemas, type ComponentName } from "./registry-spec";
+import { clientSchemas, registrySchemas, type ComponentName } from "./registry-spec";
 import { MOCK_RENDERS } from "./adapters/mock";
 
 test("every MOCK_RENDERS payload satisfies its component schema", () => {
@@ -20,6 +20,20 @@ test("card schema requires body and rejects unknown keys (strict)", () => {
   assert.equal(registrySchemas.card.safeParse({ title: "t", body: "b" }).success, true);
   assert.equal(registrySchemas.card.safeParse({ title: "t" }).success, false);
   assert.equal(registrySchemas.card.safeParse({ title: "t", body: "b", nope: 1 }).success, false);
+});
+
+test("client twin: tomorrow's optional prop strips instead of failing (R.4h)", () => {
+  // The compat contract itself: yesterday's TOLERANT schema accepts a payload
+  // carrying a prop that doesn't exist yet, drops the unknown key, and keeps
+  // the rest — while the strict source schema still rejects it at authoring.
+  const tomorrow = { title: "t", body: "b", accent: "teal" };
+  assert.equal(registrySchemas.card.safeParse(tomorrow).success, false);
+  const parsed = clientSchemas.card.safeParse(tomorrow);
+  assert.ok(parsed.success);
+  assert.deepEqual(parsed.data, { title: "t", body: "b" }); // stripped, kept, rendered
+  // Malformed props still fail the tolerant twin — tolerance is about unknown
+  // keys only, never about accepting a broken payload.
+  assert.equal(clientSchemas.card.safeParse({ title: "t" }).success, false);
 });
 
 test("every schema rejects wrong-shaped payloads, not just card", () => {
