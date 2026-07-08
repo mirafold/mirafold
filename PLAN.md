@@ -450,7 +450,16 @@ notifications are **not** part of the launch and are not sold until built.
     *reading* traffic, but a relay that serves tampered page JS could steal
     the pairing code from the fragment — the honest asterisk on the E2E
     story (industry-standard for web E2E; decide serve-from-relay vs.
-    separate static origin, and word the marketing accordingly).
+    separate static origin, and word the marketing accordingly). The
+    2026-07-08 contract design review adds a third argument to that same
+    call: if the app bundle is fetched THROUGH the daemon (relay tunnels
+    HTTP), client and daemon are always the same version — the trust
+    question and the version-skew problem collapse into one choice; if the
+    relay serves its own bundle, permanent skew is a commitment and R.4h's
+    tolerant schemas become mandatory, not prudent. Also note: a future
+    relay-protocol version bump presents to the user as "wrong pairing
+    code" (the v1 string is baked into key derivation — a clean break by
+    construction) — worth one line in the relay's error surface.
     (Daemon-side guards from the same audit already landed, 2026-07-07:
     weak pinned GENUI_RELAY_CODE refused at startup — min 16 chars, minted
     fallback — and relay-client caps + idle-reaps remote viewports:
@@ -730,7 +739,10 @@ notifications are **not** part of the launch and are not sold until built.
     handlers) is loud but points nowhere.
   - Build: read the package version once (esbuild-safe — import or embed at
     build time) → boot line, `--version`/`--help` in `bin/genui-shell.js`,
-    `agents` hello (additive field) and status bar; mirror every `error`
+    `agents` hello (additive field) and status bar — and the client
+    announces its own build back (additive field on `attach`/`create`), so
+    a skewed pair is visible from the daemon's log (2026-07-08 contract
+    review); mirror every `error`
     WireMsg the daemon emits to `console.error` with a timestamp; one
     opt-in `GENUI_DEBUG=1` that logs normalized adapter events + engine
     stderr; a "keep this secret" marker on the pairing-code line; catch the
@@ -747,6 +759,46 @@ notifications are **not** part of the launch and are not sold until built.
     the transcript and the terminal log with a timestamp; and a wrong-Node
     `.env` user is told exactly what happened instead of silently getting
     the mock.
+
+- [ ] **Step R.4h — Protocol compat hardening (from the 2026-07-08 contract
+  design review)** *(pre-launch, small; must land BEFORE version skew can
+  exist — i.e. before the relay puts a phone bundle and an npm daemon on
+  two release trains)*
+  - Goal: the additive-only wire rule is enforced at the `WireMsg` layer and
+    silently violated one layer up. (1) `registry-spec.ts` derives every
+    component schema with `.strict()`, and the CLIENT validates render props
+    with it — so adding one optional prop to `card` makes every older client
+    reject every card into the raw-JSON fallback. The component vocabulary
+    is part of the wire contract in practice, and it is non-additive today.
+    (2) The ignore-unknown-message-type behavior both switches rely on
+    (`RenderZone`, `connection.ts` — no `default:`) is the de facto
+    versioning story, but it's an accident, not a stated/tested rule.
+    (3) `Onboarding.tsx`'s `LABEL: Record<AgentName, string>` is exhaustive
+    over the closed union — a future agent #4's name from a newer daemon
+    renders an undefined label instead of the raw string, making "add an
+    agent" quietly non-additive for old clients.
+  - Build: the Postel split — schemas stay `.strict()` where AGENT output is
+    validated (render-mcp / render-tools, reject malformed input at the
+    source) and become tolerant (strip unknown keys) where the CLIENT
+    parses (`RenderBlock`'s copy — e.g. a derived `.strip()` twin exported
+    alongside); raw-string fallback for unknown agent names in the picker,
+    fleet, and status bar; make ignore-unknown a tested rule (Tier 1: the
+    client swallows an unknown WireMsg type — ws.test-style; Tier 2: the
+    daemon swallows an unknown ClientMsg type and the socket lives — folds
+    into Q.4's sweep naturally); write the implicit agent-#N requirements
+    list into README §2.2 (MCP stdio + tool results visible in the engine's
+    own event stream for the renderId ack ride-back, a discernible turn
+    boundary, a warm-session mechanism, an interrupt, auto-trust for the
+    injected MCP server) so the seam's real contract stops living only in
+    the adapters' source.
+  - Files: `server/registry-spec.ts`, `web/src/registry/RenderBlock.tsx`,
+    `web/src/Onboarding.tsx` / `web/src/FleetView.tsx` /
+    `web/src/StatusBar.tsx` (name fallback), `README.md` §2.2, tests in kind.
+  - Done when: a new optional prop on an existing component renders fine on
+    a client built before the prop existed (proven by test: yesterday's
+    tolerant schema accepts tomorrow's payload); an unknown message type is
+    provably ignored on both ends; and an unknown agent name shows as its
+    raw string, not undefined.
 
 - [ ] **Step R.5 — Entitlement + billing** *(needs Kyle: Stripe account +
   price confirmation — BUSINESS.md §7 says $12/mo · $99/yr)*
@@ -1021,7 +1073,12 @@ fix restores what that agent's *terminal* user already sees — nothing invented
     already exist), `item/agentMessage/delta` → `text_delta`,
     `item/agentReasoning/delta` → `thinking_delta`, live command output.
     Inherit-don't-invent still governs: surface Codex's own approval
-    semantics, never re-implement policy.
+    semantics, never re-implement policy. Contract note (2026-07-08 design
+    review): this is the first step to hit the binary-permission wall —
+    `resolvePermission(id, boolean)` on the seam and allow/deny-only on the
+    wire can't express "approve for session" or edited input; widening both
+    (additively: an optional `options` field on `permission_request`, a
+    richer response variant) is part of this step's work, not a surprise.
   - Done when: a gated command in an untrusted cwd raises the permission bar
     and proceeds on allow — exactly what the terminal does — and text/
     reasoning stream token-wise.
@@ -1093,6 +1150,10 @@ anywhere; each is independent.
     (compile-time: the fixture satisfies the type; runtime: field names and
     representative values asserted). Adding a new message type means adding a
     fixture; changing an existing shape breaks the build or the test.
+    (Complement, not overlap: Step R.4h owns the other half of the compat
+    story — unknown types ignored on both ends, tolerant client prop
+    schemas. Fixtures pin what exists; R.4h pins how the ends treat what
+    doesn't yet.)
   - Files: new `server/protocol.test.ts`.
   - Done when: renaming or retyping any existing on-wire field fails the
     suite loudly, and adding a message type touches no existing fixture.
