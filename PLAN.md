@@ -59,6 +59,22 @@ before Phase T, and design every seam so the daemon stays local-first.
   come through whichever agent can point at a local endpoint — Phase L is the
   ergonomics; Step 1.4's render fallback lets weaker/local models degrade to
   styled text.)
+- **Relay service architecture (locked 2026-07-07):** the R.2 relay is a
+  **portable Node.js + `ws` process** — the stub's shape grown up — in a
+  separate **private repo** (`genui-relay`, the open-core split). No
+  proprietary programming model (Cloudflare Workers/Durable Objects
+  explicitly rejected: rewrite-to-leave lock-in on the launch-critical
+  path). Initial deploy: **Fly.io, single instance/region** — automatic
+  TLS, container deploys, and a later multi-region path whose only
+  platform-specific code is a ~20-line `fly-replay` routing shim (pair
+  affinity), added ONLY if growth demands it. The same artifact runs on
+  any VPS/app host, so the vendor is replaceable behind the domain we
+  own. Rationale: pair affinity is the hard part of "global relay";
+  every zero-ops global offering sells proprietary routing for it, and
+  the stateless dumb-forwarder design already caps any future migration
+  at reworking one small service while every installed daemon just
+  re-dials. (Kyle's constraints, all met: no lock-in, easy scaling, no
+  rewrite-on-success beyond that bounded service.)
 - **Dev without the API:** when `ANTHROPIC_API_KEY` is unset the server falls
   back to a `MockSession` — same `AgentSession` interface, same wire protocol,
   scripted replies (5 shuffled demo templates). Every UI capability is built
@@ -412,14 +428,20 @@ notifications are **not** part of the launch and are not sold until built.
     remote `bang_input`), so the local stub is the only sanctioned relay —
     exactly why R.3 is sequenced before any deployed use.
 
-- [ ] **Step R.2 — The relay service, deployed** *(needs Kyle: hosting
-  account + domain — start the signups now, verification has lead time)*
+- [ ] **Step R.2 — The relay service, deployed** *(needs Kyle: Fly.io
+  account + a domain — start both signups now; the code half is buildable
+  before either exists)*
   - Goal: the dumb forwarder, running in the world.
-  - Build: a separate small repo/deploy (closed source, per the settled MIT
-    open-core call): accepts daemon dial-ins and browser connections,
-    matches them by pairing code, shuttles opaque frames. No frame parsing,
-    no storage. Connection caps + rate limits + idle reaping (DoS posture
-    same as the daemon's). TLS via the host.
+  - Build: per the locked relay-architecture decision (2026-07-07, above) —
+    a portable Node.js + `ws` service in a new **private repo**
+    (`genui-relay`, closed source per the settled MIT open-core call):
+    accepts daemon dial-ins and browser connections, matches them by pair
+    id, shuttles opaque frames. No frame parsing, no storage. Connection
+    caps + rate limits + idle reaping (DoS posture same as the daemon's).
+    Deploy: Fly.io single instance, TLS via the platform, behind our own
+    domain (the indirection that keeps the host replaceable). Sequencing:
+    (a) write + verify the service locally against the daemon's full test
+    posture (doable now), (b) Kyle's signups, (c) deploy + point domain.
   - Done when: a phone on cellular (not the home wifi) drives a home mock
     session through the deployed relay, and the relay's logs show it
     learned nothing but connection metadata.
