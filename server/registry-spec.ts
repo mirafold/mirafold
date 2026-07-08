@@ -156,8 +156,6 @@ export const registryShapes = {
 
 export type ComponentName = keyof typeof registryShapes;
 
-export const componentNames = Object.keys(registryShapes) as ComponentName[];
-
 /**
  * Derived object schemas, for validating a full `render` props payload at the
  * SOURCE — agent output entering the system (render-mcp / render-tools, and

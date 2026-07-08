@@ -12,7 +12,7 @@
 // app from a separate static origin and the relay only ever sees ciphertext.
 // The only HTTP it answers is GET /health (for the platform's health check).
 
-import { createServer, type Server } from "node:http";
+import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, WebSocket, type RawData } from "ws";
 import {

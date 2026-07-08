@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import type { WireMsg } from "../protocol";
 import type { ComponentName } from "../registry-spec";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -17,6 +18,36 @@ export const RENDER_TOOL_COMPONENT: Record<string, ComponentName> = {
   render_chart: "chart",
   render_links: "link-group",
 };
+
+/** Matches the component id inside the render-MCP stub's ack text
+ *  ("Rendered card (id: …)") — the fallback channel when an engine drops
+ *  structured content. */
+export const RENDER_ID_RE = /id:\s*([0-9a-fA-F-]{8,})/;
+
+/**
+ * The render/artifact WireMsg a genui MCP tool call stands for (P.3/P.5):
+ * the stub only validated the args and returned the id — the adapter watching
+ * the agent's own event stream paints the message here. Returns null for an
+ * unknown genui tool (ignore rather than paint junk).
+ */
+export function generativeUIMsg(
+  tool: string,
+  params: Record<string, unknown>,
+  id: string,
+): WireMsg | null {
+  const props = { ...params };
+  delete props["id"];
+  if (tool === "emit_artifact") {
+    return {
+      type: "artifact",
+      html: typeof props["html"] === "string" ? (props["html"] as string) : "",
+      id,
+      title: typeof props["title"] === "string" ? (props["title"] as string) : undefined,
+    };
+  }
+  const component = RENDER_TOOL_COMPONENT[tool];
+  return component ? { type: "render", component, props, id } : null;
+}
 
 /**
  * How to spawn the stdio render-MCP server (server/render-mcp.ts) for engines

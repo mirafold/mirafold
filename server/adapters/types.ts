@@ -56,6 +56,17 @@ export function capOutput(text: string): { text: string; truncatedBytes?: number
 /** One entry of the live checklist component (T2.5); adapter-neutral shape. */
 export type TodoItem = { content: string; status: "pending" | "in_progress" | "completed" };
 
+/** Flatten an SDK/MCP content-block array to transcript text: text blocks
+ *  joined by newline, anything else as a `[type]` placeholder. */
+export function joinTextBlocks(blocks: unknown[]): string {
+  return blocks
+    .map((b) => {
+      const block = b as { type?: unknown; text?: unknown } | null;
+      return block?.type === "text" ? String(block.text) : `[${String(block?.type ?? "block")}]`;
+    })
+    .join("\n");
+}
+
 // The one human-salient argument of a tool call, for the transcript line.
 // Ordered: the first key present wins (Bash → command, Read → file_path, …).
 const DETAIL_KEYS = ["command", "file_path", "pattern", "url", "query", "description", "path"];

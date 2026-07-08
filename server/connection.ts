@@ -35,6 +35,88 @@ const pushWithBangContext = (entry: SessionEntry, text: string) => {
   );
 };
 
+/**
+ * Step 4.9: run one `!` command in the session's PTY and drive its whole
+ * lifecycle — the bang_start/…/bang_end grammar, the head-kept wire budget
+ * (what viewports and the replay ring see, R.4d), and the tail-kept context
+ * accumulator that rides into the agent's next prompt.
+ */
+const startBang = (registry: SessionRegistry, e: SessionEntry, command: string, id: string) => {
+  // Tail-kept accumulator, capped as data arrives — a long-running
+  // command (`!yes`) must not grow server memory until exit.
+  let output = "";
+  let elided = 0;
+  // R.4d: per-command wire budget (bytes broadcast / bytes withheld).
+  let wireSent = 0;
+  let wireElided = 0;
+  registry.broadcast(e, { type: "bang_start", command, id });
+  try {
+    const proc = spawnBang(
+      command,
+      e.cwd,
+      (data) => {
+        output += data;
+        if (output.length > BANG_CONTEXT_CAP) {
+          elided += output.length - BANG_CONTEXT_CAP;
+          output = output.slice(-BANG_CONTEXT_CAP);
+        }
+        // R.4d: head-kept wire cap. Past it nothing is broadcast (so
+        // nothing enters the ring); the marker announces the cut the
+        // moment it happens, and the exit path reports the total.
+        const bytes = Buffer.byteLength(data, "utf8");
+        const room = BANG_OUTPUT_CAP_BYTES - wireSent;
+        if (room > 0) {
+          const head =
+            bytes <= room
+              ? data
+              : new TextDecoder().decode(Buffer.from(data, "utf8").subarray(0, room));
+          wireSent += Math.min(bytes, room);
+          wireElided += Math.max(0, bytes - room);
+          registry.broadcast(e, { type: "bang_output", data: head, id });
+          if (wireSent >= BANG_OUTPUT_CAP_BYTES) {
+            registry.broadcast(e, {
+              type: "bang_output",
+              data: `\n(… output cap reached (${BANG_OUTPUT_CAP_BYTES} bytes) — further output elided …)\n`,
+              id,
+            });
+          }
+        } else {
+          wireElided += bytes;
+        }
+      },
+      (exitCode) => {
+        e.bang = undefined;
+        if (wireElided > 0) {
+          registry.broadcast(e, {
+            type: "bang_output",
+            data: `(… ${wireElided} bytes elided …)\n`,
+            id,
+          });
+        }
+        registry.broadcast(e, { type: "bang_end", id, exitCode });
+        // Queue the transcript for the agent's next turn. Tail-kept cap;
+        // echo-off input (passwords) was never in the PTY output, so it
+        // can't leak into context here either.
+        const tail = elided > 0 ? `(… ${elided} chars elided …)\n` + output : output;
+        e.pendingBang.push(
+          `<bash-input>${command}</bash-input>\n<bash-output exit-code="${exitCode ?? "killed"}">\n${tail}</bash-output>`,
+        );
+      },
+    );
+    e.bang = { id, proc };
+  } catch (err) {
+    // A throwing spawn (missing shell — the win32 /bin/bash trap, R.4f)
+    // is a session-level error, never a daemon death: this handler runs
+    // inside the ws message path of a process with no uncaughtException
+    // net, so an escaped throw here would take every session with it.
+    registry.broadcast(e, {
+      type: "error",
+      message: `! failed to start: ${err instanceof Error ? err.message : String(err)}`,
+    });
+    registry.broadcast(e, { type: "bang_end", id, exitCode: null });
+  }
+};
+
 // Agents the browser is allowed to name at onboarding (P.4). A create message
 // naming anything else falls back to the daemon default rather than erroring.
 const OFFERABLE = new Set(availableAgents().map((a) => a.agent));
@@ -177,7 +259,7 @@ export function openConnection(
           pushWithBangContext(entry, msg.text);
         }
         break;
-      case "bang": {
+      case "bang":
         // The `!` passthrough (4.9): run it in a PTY in the session's cwd —
         // instant, zero tokens, never routed through the model.
         if (!entry || typeof msg.command !== "string" || !msg.command.trim()) break;
@@ -186,83 +268,8 @@ export function openConnection(
           sendError("a ! command is already running (stop it first)");
           break;
         }
-        const e = entry;
-        const { command, id } = msg;
-        // Tail-kept accumulator, capped as data arrives — a long-running
-        // command (`!yes`) must not grow server memory until exit.
-        let output = "";
-        let elided = 0;
-        // R.4d: per-command wire budget (bytes broadcast / bytes withheld).
-        let wireSent = 0;
-        let wireElided = 0;
-        registry.broadcast(e, { type: "bang_start", command, id });
-        try {
-          const proc = spawnBang(
-            command,
-            e.cwd,
-            (data) => {
-              output += data;
-              if (output.length > BANG_CONTEXT_CAP) {
-                elided += output.length - BANG_CONTEXT_CAP;
-                output = output.slice(-BANG_CONTEXT_CAP);
-              }
-              // R.4d: head-kept wire cap. Past it nothing is broadcast (so
-              // nothing enters the ring); the marker announces the cut the
-              // moment it happens, and the exit path reports the total.
-              const bytes = Buffer.byteLength(data, "utf8");
-              const room = BANG_OUTPUT_CAP_BYTES - wireSent;
-              if (room > 0) {
-                const head =
-                  bytes <= room
-                    ? data
-                    : new TextDecoder().decode(Buffer.from(data, "utf8").subarray(0, room));
-                wireSent += Math.min(bytes, room);
-                wireElided += Math.max(0, bytes - room);
-                registry.broadcast(e, { type: "bang_output", data: head, id });
-                if (wireSent >= BANG_OUTPUT_CAP_BYTES) {
-                  registry.broadcast(e, {
-                    type: "bang_output",
-                    data: `\n(… output cap reached (${BANG_OUTPUT_CAP_BYTES} bytes) — further output elided …)\n`,
-                    id,
-                  });
-                }
-              } else {
-                wireElided += bytes;
-              }
-            },
-            (exitCode) => {
-              e.bang = undefined;
-              if (wireElided > 0) {
-                registry.broadcast(e, {
-                  type: "bang_output",
-                  data: `(… ${wireElided} bytes elided …)\n`,
-                  id,
-                });
-              }
-              registry.broadcast(e, { type: "bang_end", id, exitCode });
-              // Queue the transcript for the agent's next turn. Tail-kept cap;
-              // echo-off input (passwords) was never in the PTY output, so it
-              // can't leak into context here either.
-              const tail = elided > 0 ? `(… ${elided} chars elided …)\n` + output : output;
-              e.pendingBang.push(
-                `<bash-input>${command}</bash-input>\n<bash-output exit-code="${exitCode ?? "killed"}">\n${tail}</bash-output>`,
-              );
-            },
-          );
-          e.bang = { id, proc };
-        } catch (err) {
-          // A throwing spawn (missing shell — the win32 /bin/bash trap, R.4f)
-          // is a session-level error, never a daemon death: this handler runs
-          // inside the ws message path of a process with no uncaughtException
-          // net, so an escaped throw here would take every session with it.
-          registry.broadcast(e, {
-            type: "error",
-            message: `! failed to start: ${err instanceof Error ? err.message : String(err)}`,
-          });
-          registry.broadcast(e, { type: "bang_end", id, exitCode: null });
-        }
+        startBang(registry, entry, msg.command, msg.id);
         break;
-      }
       case "bang_input":
         // EPHEMERAL SECRET PATH: straight to the PTY, nothing else — no
         // broadcast, no buffer, no log (a password may be in `data`).
