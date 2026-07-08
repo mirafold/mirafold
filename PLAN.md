@@ -1047,7 +1047,7 @@ fix restores what that agent's *terminal* user already sees — nothing invented
     **claude-opus-4-8** (the subscription's real resolved default) where
     the pre-F.3 code showed the literal "default".
 
-- [ ] **Step F.4 — Gemini honesty pass (silent death on stderr-only failure)**
+- [x] **Step F.4 — Gemini honesty pass (silent death on stderr-only failure)**
   - Goal: live-observed trap — in a cwd outside the user's Gemini trusted
     folders, the CLI writes the trust error to **stderr only** and exits 55
     with nothing on stdout; the adapter reads only stdout, so the turn ends
@@ -1064,6 +1064,19 @@ fix restores what that agent's *terminal* user already sees — nothing invented
     (`GENUI_GEMINI_BIN` seam).
   - Done when: a stub that dies stderr-only surfaces as an `error` WireMsg in
     the transcript (no more silent turn).
+  - Status: **done, verified (2026-07-08).** `runTurn` now keeps a capped
+    (`STDERR_TAIL_CAP` 4000) stderr tail and a `sawEvent` flag (set when any
+    stdout line parses as JSON). On `close`, a non-zero exit code (null =
+    signal kill/interrupt, excluded) with no parsed stdout events and a
+    non-empty stderr tail emits `error: gemini exited <code>: <tail>` before
+    the turn_end. Gated by `sawEvent` so a turn that DID stream stdout (its
+    own `error` event, a normal reply) never double-reports. Verified — Tier
+    1 (stub gained a `FAKE_STDERR` knob; 2 new tests: stderr-only exit 55
+    surfaces the trust-folder message before turn_end; a nonzero exit WITH
+    stdout events stays single — 127 total green). Live not exercised (needs
+    a real Gemini key + an untrusted cwd, and the stub reproduces the exact
+    stdout-silent/stderr-only/nonzero shape); the R.4g `GENUI_DEBUG` stderr
+    stream already surfaced the same tail for operators.
 
 - [ ] **Step F.5 — Codex app-server migration (approvals, streaming, visible
   reasoning)** *(post-launch, demand-gated — the big one)*

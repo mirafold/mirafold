@@ -13,6 +13,8 @@ import { AsyncQueue, CLOSE } from "./async-queue";
 const RENDER_MCP = renderMcpCommand();
 // Gemini names MCP tools `mcp_<server>_<tool>`; ours therefore start with this.
 const MCP_PREFIX = `mcp_${GENUI_MCP}_`;
+// F.4: how much of a failed turn's stderr rides into the surfaced error.
+const STDERR_TAIL_CAP = 4000;
 // Resolved per spawn: GENUI_GEMINI_BIN overrides (an operator knob, and the
 // seam the adapter tests use to substitute a scripted stub), else the copy
 // installed beside node (nvm global installs land there), else PATH.
@@ -140,6 +142,12 @@ export class GeminiCliSession implements AgentSession {
 
       let buf = "";
       let ended = false;
+      // F.4: whether any stdout event parsed this turn, and a capped stderr
+      // tail — so a stderr-only non-zero exit (the trust-folder trap: Gemini
+      // writes the error to stderr, exits 55, and emits NOTHING on stdout)
+      // surfaces as an error instead of a silent "thinking…" then nothing.
+      let sawEvent = false;
+      let stderrTail = "";
       const end = () => {
         if (ended) return;
         ended = true;
@@ -155,6 +163,7 @@ export class GeminiCliSession implements AgentSession {
         } catch {
           return;
         }
+        sawEvent = true;
         this.handleEvent(ev);
       };
 
@@ -166,16 +175,24 @@ export class GeminiCliSession implements AgentSession {
           buf = buf.slice(nl + 1);
         }
       });
-      // Diagnostics only; errors also arrive as events. R.4g: GENUI_DEBUG=1
-      // surfaces it (a trust-folder refusal, for one, is stderr-only — F.4).
+      // Usually diagnostics, but sometimes the ONLY signal (F.4). Keep a
+      // capped tail for the stderr-only-failure path; GENUI_DEBUG=1 also
+      // streams it live (R.4g).
       child.stderr.on("data", (d: Buffer) => {
+        stderrTail = (stderrTail + d.toString()).slice(-STDERR_TAIL_CAP);
         if (process.env.GENUI_DEBUG) {
           console.error(`[${new Date().toISOString()}] [debug gemini-cli stderr] ${d}`);
         }
       });
-      child.on("close", () => {
+      child.on("close", (code: number | null) => {
         if (buf) consume(buf);
         if (this.child === child) this.child = undefined;
+        // F.4: a non-zero exit that produced no stdout events, with something
+        // on stderr, is a silent failure — surface it (code null = a signal
+        // kill/interrupt, not this case).
+        if (!this.closed && !sawEvent && code != null && code !== 0 && stderrTail.trim()) {
+          this.emit({ type: "error", message: `gemini exited ${code}: ${stderrTail.trim()}` });
+        }
         end(); // covers the case where no `result` event arrived (crash/kill)
       });
       child.on("error", (err) => {
