@@ -298,7 +298,11 @@ The invariants, and where each is enforced today:
   tabs, and fleet links just work), and connections without it get a 403 / a
   refused handshake. Set `GENUI_TOKEN=""` to disable it on a single-user machine
   (the dev server does this — the Vite `:5173` proxy is cross-origin and can't
-  present the cookie); set `GENUI_TOKEN=<value>` to pin one.
+  present the cookie); set `GENUI_TOKEN=<value>` to pin one. **With auth off the
+  loopback-Origin guard is the only gate, and it admits any page served from
+  localhost on any port** — so another local dev server, or a hostile package's
+  local server, could drive the agent. Keep auth on outside the single-user dev
+  case; the daemon logs a loud warning at startup when it's off.
 - **The daemon's own `.env` is never readable through a tool**
   (`server/permissions.ts`): the secret-path guard denies `Read`/`Grep`/`Glob`
   at `.env`/`.env.local`, and `WebFetch`/`WebSearch` are not auto-allowed (they
