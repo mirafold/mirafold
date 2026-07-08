@@ -543,6 +543,117 @@ notifications are **not** part of the launch and are not sold until built.
     Owed to launch (R.6 checklist): scan the QR with a real phone through
     the deployed relay, drive a session, and flip wifi→LTE mid-turn.
 
+- [ ] **Step R.4b — First-run honesty (from the 2026-07-07 cold-start
+  friction log)** *(independent of R.5/R.2 — buildable now, no external
+  accounts; launch-gating in effect: the first five minutes are only good
+  today if the user arrives with an env var already set)*
+  - Goal: fix what the first hundred real users hit in minute one, all
+    observed live in a fresh-clone + clean-prefix-install walk. The likeliest
+    launch user — Claude Code on a Pro/Max **subscription**, no API key — is
+    shown "Claude Code — no credentials · demo" (observed on this very
+    machine, a logged-in daily Claude Code user); a stranger who clicks a
+    demo row gets a fabricated research brief with fake tool rows (one
+    duplicated) and a fake **$0.018 cost**, whose only fakeness cue is the
+    dim `mock-sonnet` label (the flagged "mock is not a user tier" item, now
+    concretely observed); a zero-credential machine gets three dead-end
+    badges with no guidance anywhere on screen.
+  - Build: (1) **Count a Claude Code subscription login as live**:
+    `agentHasCredentials("claude-code")` also accepts
+    `~/.claude/.credentials.json` (mirror the codex `auth.json` check — the
+    SDK runs fine on the login alone, proven live 2026-07-07); document
+    `ANTHROPIC_AUTH_TOKEN`/`ANTHROPIC_BASE_URL` (already accepted by the
+    code) and the login path in `.env.example`, which today presents the API
+    key as Claude's only live path while documenting the login path for
+    Codex. (2) **Honest mock presentation in-session**: a shell-drawn demo
+    banner (the agent can't fake or clear it — same rule as the permission
+    bar), no fabricated dollar cost (drop it or label it simulated), and a
+    "connect your agent" pointer naming the concrete fix for the session's
+    agent (env var name / `codex login`). Fix the mock's duplicated Bash row
+    while in the file. (3) **Onboarding guidance**: a "no credentials" row
+    carries the one-line how-to (env var name or login command) instead of a
+    bare badge. (4) **Two daemon-message honesty fixes**: the EADDRINUSE
+    port walk currently prints "server on :3000" *and then* "server on
+    :3001" — the first line is false and, with `--no-open`, gets copied
+    (observed: it pointed at a different daemon); print a "busy — walking"
+    line instead, so only the bound port says "server on". And the 403 body
+    ("genui-shell: missing or invalid token") should state the recovery:
+    open the full token URL printed by the terminal that launched
+    genui-shell.
+  - Files: `server/adapters/index.ts`, `.env.example`,
+    `server/adapters/mock.ts`, `web/src/Onboarding.tsx`, `web/src/Shell.tsx`
+    (banner), `server/index.ts` (port walk + 403 body), tests in kind
+    (Tier 1: the creds check; Tier 3: onboarding guidance text + demo banner).
+  - Done when: a machine with only `~/.claude/.credentials.json` (no env
+    keys) shows Claude Code **ready** and drives a real session; a
+    zero-credential user can read, on the picker itself, exactly what to set
+    or run for each agent; a mock session is unmistakably labeled a demo and
+    shows no dollar cost; the startup log names only the port it actually
+    bound; the 403 page tells the user where the right URL is.
+
+- [ ] **Step R.4c — Resilience honesty (from the 2026-07-07 failure-mode
+  probe)** *(independent of R.2/R.5 — buildable now; both items are everyday
+  events, not exotic: a laptop sleeping, a crash, or re-running `genui-shell`)*
+  - Goal: two live-observed "the app lies / loses data quietly" behaviors
+    from a run-and-break survey (17 malformed frames, daemon kill, relay
+    kill, 10 MB `!`, two-tab permission, live agent-subprocess kill — the
+    rest all passed: the daemon is hard to crash, the stateless relay
+    recovers fully, cross-tab permissions and agent-subprocess death are
+    handled honestly). The two that need fixing both trace to the same fact —
+    the daemon holds every session **in memory with no persistence**, so its
+    death is unrecoverable AND unannounced:
+    (1) **Silent session wipe on reconnect.** Observed: kill the daemon with
+    a browser attached, restart it → the client's `attach` with the old id
+    hits the "stale/unknown id falls back to a fresh session" path
+    (`connection.ts`), so it reconnects into a NEW empty session, the URL
+    silently rewrites (`/s/38c8dbab` → `/s/d0ba3bdf`), and the transcript
+    blanks with no explanation. (Durable cross-restart persistence is the
+    deferred 4.1/4.4 item and stays deferred — this is only about being
+    HONEST that it happened.)
+    (2) **Stuck "busy"/stop affordance on mid-turn death.** Observed: when
+    the daemon dies mid-turn the connection dot correctly flips to
+    "reconnecting…", but the ■ esc stop button stays visible because busy
+    clears only on `turn_end`/`zone_reset` (`Shell.tsx`) and neither arrives
+    — it looks like the agent is still working.
+  - Build: (a) distinguish "attached to the session I asked for" from "server
+    gave me a fresh one" — the server already knows (it took the fallback
+    branch), so carry a flag (e.g. reuse/extend `session_created` — additive)
+    that lets the shell show a shell-drawn notice ("that session ended —
+    started a new one") instead of a silent swap; (b) clear busy (and the
+    stop affordance) on socket close/reconnect-in-progress, re-deriving it
+    from replay as today, so a dropped turn doesn't look live.
+  - Files: `web/src/Shell.tsx`, `web/src/ws.ts`, `server/connection.ts`,
+    `server/protocol.ts` (additive flag if used), tests in kind (Tier 2:
+    fallback-create signals the new-session case; Tier 3: kill-daemon →
+    restart shows the notice, and mid-turn drop clears the stop button).
+  - Done when: after a daemon restart the user sees an explicit "session
+    ended, new one started" cue (not a blank screen + changed URL), and a
+    turn interrupted by a daemon drop stops showing the ■ esc/working state
+    while it reconnects.
+
+- [ ] **Step R.4d — Cap `!` passthrough output (from the same probe)**
+  *(small, server-side; buildable now)*
+  - Goal: close an uncapped-output gap. Observed: a `!` command emitting
+    10 MB streamed **entirely** onto the wire and into the session ring
+    buffer, and was **replayed in full (10.4 MB) to a second viewport** — the
+    64 KB tool-output cap (`TOOL_OUTPUT_CAP_BYTES`, applied via `capOutput`)
+    does NOT cover the bang path. A runaway `!yes` / `!cat huge.log` floods
+    every reconnect and new tab, and (each `bang_output` being one ring
+    message) can evict the real transcript from the 4000-message ring — a
+    cheap local resource-exhaustion lever and a bad UX either way.
+  - Build: bound the bang output the daemon retains/broadcasts — a per-command
+    total cap with an honest truncation marker (the `bang_output`/`bang_end`
+    grammar already carries a stream; mirror the tool cap's "N bytes elided"
+    honesty rather than cutting silently), and/or coalesce/stop buffering past
+    a ceiling so the ring can't be pushed out by one command. Keep the live
+    ephemeral stdin path untouched (that's the secret path, §4.9).
+  - Files: `server/pty.ts` / the bang path in `server/connection.ts` +
+    `server/registry.ts` (what enters the ring), a new env knob mirroring
+    `TOOL_OUTPUT_CAP_BYTES` (e.g. `BANG_OUTPUT_CAP_BYTES`), tests in kind
+    (Tier 2: a big-output `!` is capped on the wire and in replay).
+  - Done when: a `!` command producing far more than the cap is truncated
+    with a visible marker, replay to a fresh viewport is bounded, and one
+    runaway command can no longer evict a session's transcript from the ring.
+
 - [ ] **Step R.5 — Entitlement + billing** *(needs Kyle: Stripe account +
   price confirmation — BUSINESS.md §7 says $12/mo · $99/yr)*
   - Goal: paying unlocks the relay, on launch day, with almost nothing
@@ -559,12 +670,20 @@ notifications are **not** part of the launch and are not sold until built.
   - Goal: everything fires together and the signals start reading.
   - Build/checklist: refresh the demo GIF with the phone beat (the §6
     launch asset as originally imagined); Kyle's review of the
-    credential-less onboarding presentation (the mock "demo" badge — his
-    flagged item); macOS/Windows cold-install checks; the real `!sudo -v`
-    password entry (Kyle); final secrets sweep of both repos; then, same
-    day: repo public → `npm publish` over the 0.0.1 placeholder → post
-    (X + Show HN + r/ClaudeAI + r/LocalLLaMA with the "BYOK or fully
-    local" line) with Pro purchasable from minute one.
+    credential-less onboarding presentation (R.4b builds the fix — this is
+    the final launch-day eyeball of it); macOS/Windows cold-install checks;
+    the real `!sudo -v` password entry (Kyle); final secrets sweep of both
+    repos; small hygiene from the 2026-07-07 cold-start friction log:
+    pin a `packageManager` field in package.json (no pin today — corepack
+    users get whatever yarn resolves; the v1 lockfile implies classic),
+    README §8's tarball footnote must name its real prerequisites (`yarn`
+    on PATH + a prior `yarn install` — `prepack` runs `yarn build`) and
+    correct the tarball size (~259 KB, not ~235 KB), and refresh the dated
+    `DEFAULT_MODEL=claude-sonnet-4-6` suggestion in `.env.example`; verify
+    `npx genui-shell` against the real registry (unverifiable until
+    publish); then, same day: repo public → `npm publish` over the 0.0.1
+    placeholder → post (X + Show HN + r/ClaudeAI + r/LocalLLaMA with the
+    "BYOK or fully local" line) with Pro purchasable from minute one.
   - Done when: a stranger can watch the GIF, install cold, run their own
     agent, pay, and drive it from their phone — all within the launch
     hour. Signals per BUSINESS.md §9 read concurrently from here.
@@ -695,6 +814,125 @@ notifications are **not** part of the launch and are not sold until built.
     painted a render_card. `npx genui-shell` untested against the registry
     (needs the publish); macOS/Windows install untested here — both are
     launch-day checks.
+
+---
+
+## Phase F — Fidelity gap-close (from the 2026-07-07 parity evaluation)
+
+Source: a parity evaluation of each adapter against its engine's **full** event
+vocabulary — `@anthropic-ai/claude-agent-sdk@0.3.201` (38-type `SDKMessage`
+union; the adapter handles 4), `@openai/codex-sdk@0.142.5` (vocabulary 100%
+covered; the gaps are behavioral), `@google/gemini-cli@0.49.0` (stream-json
+emitter read in the installed bundle) — then live-probed cheaply (Claude
+subscription login, Codex ChatGPT login $0, one small Gemini flash call).
+Every claim below marked "observed" was seen in a live run, not inferred.
+F.1–F.4 are small, adapter-scoped, additive-protocol-only — sequence them
+anywhere, including as pre-launch polish. F.5–F.6 are engine-surface
+migrations: post-launch, demand-gated. Faithful-skin rule throughout: each
+fix restores what that agent's *terminal* user already sees — nothing invented.
+
+- [ ] **Step F.1 — Slash-command output renders (buffered assistant text)**
+  - Goal: typing `/context`, `/compact`, `/usage` — the SDK supports 45
+    commands including the user's own skills — shows the command's output.
+    Observed: the output arrives as a **buffered `assistant` text message with
+    zero `stream_event` deltas** (local, cost 0), and the adapter renders
+    assistant text only from deltas → the command runs but nothing paints.
+    (Not `local_command_output` as the SDK types suggest — verified live.)
+  - Build: in `pump()`'s `assistant` case, emit text blocks that were *not*
+    already streamed this turn as `text_delta` (track whether deltas preceded
+    the message; the normal streamed path must not double-render). Unsupported
+    commands ("/status isn't available in this environment") arrive the same
+    buffered way — the same fix covers them, no special-casing.
+  - Files: `server/adapters/claude-code.ts` (+ its `.test.ts`, scripted engine).
+  - Done when: a scripted-engine test shows a buffered-only assistant message
+    rendering exactly once and a streamed turn not doubling; live, `/context`
+    in a claude-code session paints the context table in the transcript.
+
+- [ ] **Step F.2 — System-notice line (the UI must not lie in degraded service)**
+  - Goal: surface the service events the terminal shows and the adapter drops:
+    `rate_limit_event` (**observed live on an ordinary one-word turn** — it is
+    not rare), `system/api_retry` (terminal shows "retrying (attempt n)…";
+    genui-shell sits on "thinking…" looking hung), `system/compact_boundary`
+    (context silently compacts today), and `model_refusal_*` (turn appears to
+    end for no reason).
+  - Build: one additive `WireMsg` — `notice { text, kind? }` — mapped from
+    those four in the claude adapter; RenderZone draws it as a dim persistent
+    system line (thinking-block styling family, not agent markdown).
+  - Files: `server/protocol.ts`, `server/adapters/claude-code.ts`,
+    `web/src/RenderZone.tsx`, `web/src/styles.css`, tests in kind.
+  - Done when: scripted-engine tests map each of the four to a `notice`; a
+    forced api_retry (scripted) is visible in the transcript instead of a
+    silent stall.
+
+- [ ] **Step F.3 — Honest model label in the status bar**
+  - Goal: show the model the engine actually resolved, like the terminal's
+    own status line. Observed: Claude's `system/init` carries the real model
+    (`claude-fable-5`) while the adapter's label says the configured value or
+    literally `"default"`; Gemini's `init.model` can be the literal string
+    `"auto"` while the real models (router + worker) appear only in
+    `result.stats.models`.
+  - Build: claude adapter reads `system/init.model` into `modelLabel` (the
+    gemini adapter already reads its init — this is consistency); gemini
+    adapter prefers the `result.stats.models` keys when the init label is
+    `"auto"`/unset. `usage.model` already exists on the wire — no protocol
+    change.
+  - Files: `server/adapters/claude-code.ts`, `server/adapters/gemini-cli.ts`,
+    matching tests.
+  - Done when: tests assert engine-reported names flow into `usage.model` for
+    both adapters; live status bar shows the real model, not "default"/"auto".
+
+- [ ] **Step F.4 — Gemini honesty pass (silent death on stderr-only failure)**
+  - Goal: live-observed trap — in a cwd outside the user's Gemini trusted
+    folders, the CLI writes the trust error to **stderr only** and exits 55
+    with nothing on stdout; the adapter reads only stdout, so the turn ends
+    silently: "thinking…", then nothing, no error. (The companion finding —
+    Google ended the individual OAuth free tier, observed as "migrate to
+    Antigravity" — turned out to already be handled: `agentHasCredentials`
+    in `server/adapters/index.ts` keys Gemini liveness on
+    `GEMINI_API_KEY`/`GOOGLE_API_KEY` only, with the IneligibleTierError
+    documented in-code. Verified 2026-07-07 during the cold-start pass;
+    nothing to build there.)
+  - Build: keep a capped stderr tail per turn; when the child exits non-zero
+    having emitted no stdout events, emit `error` with that tail.
+  - Files: `server/adapters/gemini-cli.ts`, stub-binary tests
+    (`GENUI_GEMINI_BIN` seam).
+  - Done when: a stub that dies stderr-only surfaces as an `error` WireMsg in
+    the transcript (no more silent turn).
+
+- [ ] **Step F.5 — Codex app-server migration (approvals, streaming, visible
+  reasoning)** *(post-launch, demand-gated — the big one)*
+  - Goal: close the three live-confirmed divergences from terminal Codex, all
+    rooted in the SDK's headless `exec` surface: (1) **no approval round-trip**
+    — observed: in a cwd outside the user's trusted projects, headless Codex
+    runs read-only with approvals disabled and *narrates* a refusal where the
+    terminal would prompt; trust is location-dependent and invisible (our
+    `workspace/` sessions work only because they sit under the trusted repo
+    path). (2) **No streaming** — the reply lands as one buffered
+    `item.completed` lump. (3) **Reasoning can be entirely absent** — observed:
+    79 reasoning tokens spent, no `reasoning` item emitted at all.
+  - Build: drive Codex's **app-server** (JSON-RPC 2.0, the surface behind the
+    VS Code extension — see codex.spike.md's original event table):
+    `requestApproval` → `permission_request` (the browser bar + wire machinery
+    already exist), `item/agentMessage/delta` → `text_delta`,
+    `item/agentReasoning/delta` → `thinking_delta`, live command output.
+    Inherit-don't-invent still governs: surface Codex's own approval
+    semantics, never re-implement policy.
+  - Done when: a gated command in an untrusted cwd raises the permission bar
+    and proceeds on allow — exactly what the terminal does — and text/
+    reasoning stream token-wise.
+
+- [ ] **Step F.6 — Gemini ACP migration (thinking + approvals)** *(post-launch,
+  demand-gated — the F.5 analog)*
+  - Goal: terminal Gemini visibly shows its thinking; the stream-json emitter
+    forwards only `text` parts (confirmed in the bundle source AND live with a
+    forced-reasoning prompt: no thought events on a thinking-capable model).
+    Approvals hit the same headless wall as Codex. The P.5 spike already named
+    ACP as the upgrade path.
+  - Build: drive `gemini --acp` (Agent Client Protocol, the surface Zed uses):
+    `agent_thought_chunk` → `thinking_delta`, `session/request_permission` →
+    `permission_request`. stream-json remains the fallback surface.
+  - Done when: a Gemini session shows the folding thinking block live, and a
+    gated tool raises the permission bar instead of failing silently.
 
 ---
 
