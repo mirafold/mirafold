@@ -712,7 +712,7 @@ polish and security-test insurance).
     before() under machine load (15s boot window); alone 14/14, next full
     run 57/57 — pre-existing load flake, not this change.
 
-- [ ] **Step R.4c — Resilience honesty (from the 2026-07-07 failure-mode
+- [x] **Step R.4c — Resilience honesty (from the 2026-07-07 failure-mode
   probe)** *(independent of R.2/R.5 — buildable now; both items are everyday
   events, not exotic: a laptop sleeping, a crash, or re-running `genui-shell`)*
   - Goal: two live-observed "the app lies / loses data quietly" behaviors
@@ -751,6 +751,25 @@ polish and security-test insurance).
     ended, new one started" cue (not a blank screen + changed URL), and a
     turn interrupted by a daemon drop stops showing the ■ esc/working state
     while it reconnects.
+  - Status: **done, verified (2026-07-08).** (1) `session_created` gained an
+    additive `fallback?: boolean`, set ONLY when an id was actually asked
+    for and the registry doesn't have it (an id-less attach never had a
+    transcript to lose); the shell draws a dismissable `.session-notice`
+    ("that session ended — started a new one …the previous transcript
+    wasn't saved"), same warn-toned shell-owned family as the demo banner,
+    cleared on dismiss or on the first prompt into the new session.
+    (2) busy now clears on socket close AND re-derives from any turn
+    activity (`status`/`thinking_delta`/`text_delta`/`tool_use`, not just
+    `user_prompt`) — necessary because a 4.4 tail resume mid-turn replays
+    none of the turn's opening frames, so close-clears-busy would otherwise
+    have left a live streaming turn with no ■ esc. Verified — Tier 2 58
+    (fallback:true on gone-id attach; absent on create and on live
+    re-attach); Tier 3 13, new `resilience.e2e.ts`: real daemon killed
+    mid-turn under headless Chrome → `.stop-btn` detaches; restart on the
+    same port → notice appears with the URL moved on, dismiss removes it;
+    phone.e2e's offline→online mid-turn resume still passes (the busy
+    rework didn't regress tail resume). The gap-close block R.4b–R.4h is
+    now COMPLETE except R.4e (test-only, next).
 
 - [ ] **Step R.4e — Prove the artifact sandbox fails closed (from the
   2026-07-08 test-suite quality review)** *(test-only, buildable now;

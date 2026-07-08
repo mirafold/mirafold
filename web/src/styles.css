@@ -1182,6 +1182,42 @@ body {
 /* Permission bar (Phase T.3): drawn by the trusted shell above the prompt
    box — agent output cannot render, wrap, or fake this surface. Amber is
    the "decision needed" accent. */
+/* R.4c: the shell-drawn "session ended" notice — same trust rule and visual
+   family as the demo banner; dismissable because it's a one-time event. */
+.session-notice {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 8px 0 4px;
+  padding: 7px 14px;
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-border);
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8em;
+  flex-shrink: 0;
+}
+
+.session-notice-text {
+  color: var(--fg-mid);
+  min-width: 0;
+  flex: 1;
+}
+
+.session-notice-dismiss {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: var(--fg-dim);
+  cursor: pointer;
+  font: inherit;
+  padding: 0 2px;
+}
+
+.session-notice-dismiss:hover {
+  color: var(--fg-strong);
+}
+
 /* R.4b: the shell-drawn demo banner — pinned above the transcript, never
    paintable by agent output. Dim warn tones: informative, not alarming. */
 .demo-banner {
