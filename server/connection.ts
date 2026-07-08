@@ -154,30 +154,42 @@ export function openConnection(
         let output = "";
         let elided = 0;
         registry.broadcast(e, { type: "bang_start", command, id });
-        const proc = spawnBang(
-          command,
-          e.cwd,
-          (data) => {
-            output += data;
-            if (output.length > BANG_CONTEXT_CAP) {
-              elided += output.length - BANG_CONTEXT_CAP;
-              output = output.slice(-BANG_CONTEXT_CAP);
-            }
-            registry.broadcast(e, { type: "bang_output", data, id });
-          },
-          (exitCode) => {
-            e.bang = undefined;
-            registry.broadcast(e, { type: "bang_end", id, exitCode });
-            // Queue the transcript for the agent's next turn. Tail-kept cap;
-            // echo-off input (passwords) was never in the PTY output, so it
-            // can't leak into context here either.
-            const tail = elided > 0 ? `(… ${elided} chars elided …)\n` + output : output;
-            e.pendingBang.push(
-              `<bash-input>${command}</bash-input>\n<bash-output exit-code="${exitCode ?? "killed"}">\n${tail}</bash-output>`,
-            );
-          },
-        );
-        e.bang = { id, proc };
+        try {
+          const proc = spawnBang(
+            command,
+            e.cwd,
+            (data) => {
+              output += data;
+              if (output.length > BANG_CONTEXT_CAP) {
+                elided += output.length - BANG_CONTEXT_CAP;
+                output = output.slice(-BANG_CONTEXT_CAP);
+              }
+              registry.broadcast(e, { type: "bang_output", data, id });
+            },
+            (exitCode) => {
+              e.bang = undefined;
+              registry.broadcast(e, { type: "bang_end", id, exitCode });
+              // Queue the transcript for the agent's next turn. Tail-kept cap;
+              // echo-off input (passwords) was never in the PTY output, so it
+              // can't leak into context here either.
+              const tail = elided > 0 ? `(… ${elided} chars elided …)\n` + output : output;
+              e.pendingBang.push(
+                `<bash-input>${command}</bash-input>\n<bash-output exit-code="${exitCode ?? "killed"}">\n${tail}</bash-output>`,
+              );
+            },
+          );
+          e.bang = { id, proc };
+        } catch (err) {
+          // A throwing spawn (missing shell — the win32 /bin/bash trap, R.4f)
+          // is a session-level error, never a daemon death: this handler runs
+          // inside the ws message path of a process with no uncaughtException
+          // net, so an escaped throw here would take every session with it.
+          registry.broadcast(e, {
+            type: "error",
+            message: `! failed to start: ${err instanceof Error ? err.message : String(err)}`,
+          });
+          registry.broadcast(e, { type: "bang_end", id, exitCode: null });
+        }
         break;
       }
       case "bang_input":

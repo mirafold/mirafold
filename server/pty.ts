@@ -1,4 +1,6 @@
 import { spawn, type IPty } from "node-pty";
+import { existsSync } from "node:fs";
+import { isAbsolute } from "node:path";
 
 /**
  * The `!` bash passthrough (Step 4.9). Commands run through a real PTY — not
@@ -24,14 +26,38 @@ export function cleanPtyOutput(data: string): string {
   return data.replace(ANSI_RE, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 }
 
+/**
+ * The shell a `!` command runs in, per platform — terminal-faithful: a
+ * Windows user's own terminal runs %ComSpec% (cmd.exe), never /bin/bash.
+ * The win32 argv is a verbatim string (node-pty appends it unquoted), the
+ * same `/d /s /c "…"` form node's own child_process uses for shell:true.
+ * Exported for tests; `platform`/`env` are injectable for the same reason.
+ */
+export function bangShell(
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env,
+): { file: string; args: (command: string) => string[] | string } {
+  if (platform === "win32") {
+    return { file: env.ComSpec || "cmd.exe", args: (c) => `/d /s /c "${c}"` };
+  }
+  return { file: env.SHELL || "/bin/bash", args: (c) => ["-c", c] };
+}
+
 export function spawnBang(
   command: string,
   cwd: string,
   onData: (cleanText: string) => void,
   onExit: (exitCode: number | null) => void,
 ): BangProc {
-  const shell = process.env.SHELL || "/bin/bash";
-  const proc: IPty = spawn(shell, ["-c", command], {
+  const { file, args } = bangShell();
+  // A missing shell binary must throw HERE, identically on every platform:
+  // win32 node-pty throws synchronously (ConPTY), but unix only fails after
+  // the fork, inside the child — this check gives the caller one clean,
+  // catchable failure mode instead of two (R.4f).
+  if (isAbsolute(file) && !existsSync(file)) {
+    throw new Error(`shell not found: ${file}`);
+  }
+  const proc: IPty = spawn(file, args(command), {
     name: "xterm-256color",
     cols: 120,
     rows: 30,

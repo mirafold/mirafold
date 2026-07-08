@@ -77,6 +77,28 @@ test("bang secrets invariant: stdin data is ephemeral, output is not", async () 
   late.close();
 });
 
+test("a failing shell spawn errors the session, never the daemon (R.4f)", async () => {
+  // Its own daemon: the bad SHELL must poison only this one.
+  const bad = await startDaemon({ SHELL: "/nonexistent/genui-itest-shell" });
+  const { client } = await createSession(bad.port);
+
+  client.send({ type: "bang", id: "bf", command: "echo hi" } as never);
+  await client.type("bang_start");
+  const err = (await client.type("error")) as Any;
+  assert.match(err.message, /shell not found: \/nonexistent\/genui-itest-shell/);
+  const end = (await client.type("bang_end")) as Any;
+  assert.equal(end.id, "bf");
+  assert.equal(end.exitCode, null);
+
+  // The daemon survived the keystroke: the same session still runs a full
+  // turn over the same socket.
+  client.send({ type: "prompt", text: "still alive?" } as never);
+  await client.type("turn_end", 30_000);
+
+  client.close();
+  await bad.stop();
+});
+
 test("one bang at a time; bang_kill ends it with a null exit code", async () => {
   c.send({ type: "bang", id: "b2", command: "sleep 30" } as never);
   await c.type("bang_start");
