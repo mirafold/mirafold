@@ -82,6 +82,12 @@ export class ClaudeCodeSession implements AgentSession {
   private tasks = new Map<string, TodoItem>();
   private taskSeq = 0;
   private todoRenderId?: string;
+  // F.1: did this turn stream any assistant text via stream_event? If so, the
+  // buffered `assistant` text message is a duplicate and must be skipped. If
+  // NOT (slash-command output — /context, /usage, unsupported commands — all
+  // arrive as buffered assistant text with zero deltas), the buffered text is
+  // the ONLY copy and must be emitted, or the command runs but nothing paints.
+  private streamedText = false;
   // In-flight permission prompts, keyed by wire id → resolver.
   private pendingAsks = new Map<string, (allow: boolean) => void>();
 
@@ -270,6 +276,7 @@ export class ClaudeCodeSession implements AgentSession {
             if (msg.parent_tool_use_id) break; // subagent traffic — not ours to render
             const ev = msg.event;
             if (ev.type === "content_block_delta" && ev.delta.type === "text_delta") {
+              this.streamedText = true; // F.1: mark this turn as streamed
               this.emit({ type: "text_delta", text: ev.delta.text });
             } else if (ev.type === "content_block_delta" && ev.delta.type === "thinking_delta") {
               this.emit({ type: "thinking_delta", text: ev.delta.thinking });
@@ -291,6 +298,17 @@ export class ClaudeCodeSession implements AgentSession {
             // dropped above. parentId = the Task tool_use this call belongs to.
             const parentId = msg.parent_tool_use_id ?? undefined;
             for (const block of msg.message.content) {
+              // F.1: buffered assistant text with no preceding deltas — the
+              // shape slash-command output arrives in. Emit only when this
+              // turn streamed nothing (else it's a duplicate of the stream),
+              // and never for a subagent (its prose stays filtered like its
+              // deltas). Renders the command output that would otherwise vanish.
+              if (block.type === "text") {
+                if (!parentId && !this.streamedText && typeof block.text === "string" && block.text) {
+                  this.emit({ type: "text_delta", text: block.text });
+                }
+                continue;
+              }
               if (block.type !== "tool_use") continue;
               // Render tools already paint their own component block.
               if (block.name.startsWith("mcp__ui__")) continue;
@@ -360,6 +378,7 @@ export class ClaudeCodeSession implements AgentSession {
               });
             }
             this.todoRenderId = undefined; // next turn starts a fresh checklist
+            this.streamedText = false; // F.1: next turn's streamed/buffered decision is independent
             this.emit({ type: "turn_end" });
             break;
           }
