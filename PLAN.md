@@ -536,7 +536,7 @@ polish and security-test insurance).
     onboarding eyeball: the demo badge text itself still reads
     "no credentials · demo" with the hint underneath.
 
-- [ ] **Step R.4d — Cap `!` passthrough output (from the same probe)**
+- [x] **Step R.4d — Cap `!` passthrough output (from the same probe)**
   *(small, server-side; buildable now)*
   - Goal: close an uncapped-output gap. Observed: a `!` command emitting
     10 MB streamed **entirely** onto the wire and into the session ring
@@ -559,6 +559,22 @@ polish and security-test insurance).
   - Done when: a `!` command producing far more than the cap is truncated
     with a visible marker, replay to a fresh viewport is bounded, and one
     runaway command can no longer evict a session's transcript from the ring.
+  - Status: **done, verified (2026-07-08).** `BANG_OUTPUT_CAP_BYTES`
+    (default 256 KB, env-overridable) bounds what the bang path broadcasts
+    per command, in `connection.ts`'s onData: head-kept byte budget (same
+    byte-slice technique as `capOutput`), a marker the moment the cap hits
+    ("output cap reached (N bytes) — further output elided"), zero
+    broadcasts past it (so nothing more enters the ring), and a final
+    "(… N bytes elided …)" before `bang_end` with the withheld total. The
+    PTY keeps running and the agent-context tail (`BANG_CONTEXT_CAP`,
+    tail-kept) still accumulates — only the wire/ring is bounded; the
+    ephemeral stdin path is untouched. Verified — Tier 2 (new test, own
+    daemon with an 8 KB cap): a 200 KB `!` lands < cap+300 bytes on the
+    live viewport WITH both markers, a fresh viewport's replay is bounded
+    the same, and a mock turn run beforehand still replays (no ring
+    eviction). Full suites: 103 Tier 1, 55 Tier 2, 12 Tier 3 (one
+    unreproducible single-test flake in the first of three e2e runs; two
+    subsequent full passes).
 
 - [ ] **Step R.4h — Protocol compat hardening (from the 2026-07-08 contract
   design review)** *(pre-launch, small; must land BEFORE version skew can

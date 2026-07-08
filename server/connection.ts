@@ -12,6 +12,14 @@ import { spawnBang } from "./pty";
 // injection so one verbose command can't eat the model's window.
 const BANG_CONTEXT_CAP = Number(process.env.BANG_CONTEXT_CAP ?? 16_000);
 
+// R.4d: how much of a `!` command's output reaches the wire — and therefore
+// the replay ring — per command (head-kept, honest marker; mirrors the
+// TOOL_OUTPUT_CAP_BYTES pattern). Without it one runaway `!yes` floods every
+// viewport, is replayed in full to each new tab, and its chunks evict the
+// real transcript from the ring. The PTY keeps running past the cap and the
+// agent-context tail above keeps accumulating — only the broadcast stops.
+const BANG_OUTPUT_CAP_BYTES = Number(process.env.BANG_OUTPUT_CAP_BYTES ?? 262_144);
+
 /**
  * Step 4.9: prompts carry any finished-since-last-turn `!` transcripts as
  * leading context — terminal-faithful (the model sees what you ran), and
@@ -154,6 +162,9 @@ export function openConnection(
         // command (`!yes`) must not grow server memory until exit.
         let output = "";
         let elided = 0;
+        // R.4d: per-command wire budget (bytes broadcast / bytes withheld).
+        let wireSent = 0;
+        let wireElided = 0;
         registry.broadcast(e, { type: "bang_start", command, id });
         try {
           const proc = spawnBang(
@@ -165,10 +176,39 @@ export function openConnection(
                 elided += output.length - BANG_CONTEXT_CAP;
                 output = output.slice(-BANG_CONTEXT_CAP);
               }
-              registry.broadcast(e, { type: "bang_output", data, id });
+              // R.4d: head-kept wire cap. Past it nothing is broadcast (so
+              // nothing enters the ring); the marker announces the cut the
+              // moment it happens, and the exit path reports the total.
+              const bytes = Buffer.byteLength(data, "utf8");
+              const room = BANG_OUTPUT_CAP_BYTES - wireSent;
+              if (room > 0) {
+                const head =
+                  bytes <= room
+                    ? data
+                    : new TextDecoder().decode(Buffer.from(data, "utf8").subarray(0, room));
+                wireSent += Math.min(bytes, room);
+                wireElided += Math.max(0, bytes - room);
+                registry.broadcast(e, { type: "bang_output", data: head, id });
+                if (wireSent >= BANG_OUTPUT_CAP_BYTES) {
+                  registry.broadcast(e, {
+                    type: "bang_output",
+                    data: `\n(… output cap reached (${BANG_OUTPUT_CAP_BYTES} bytes) — further output elided …)\n`,
+                    id,
+                  });
+                }
+              } else {
+                wireElided += bytes;
+              }
             },
             (exitCode) => {
               e.bang = undefined;
+              if (wireElided > 0) {
+                registry.broadcast(e, {
+                  type: "bang_output",
+                  data: `(… ${wireElided} bytes elided …)\n`,
+                  id,
+                });
+              }
               registry.broadcast(e, { type: "bang_end", id, exitCode });
               // Queue the transcript for the agent's next turn. Tail-kept cap;
               // echo-off input (passwords) was never in the PTY output, so it
