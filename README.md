@@ -358,8 +358,11 @@ server/            the local daemon (Node, run with tsx)
   relay-crypto.ts    per-pair E2E encryption, WebCrypto-only — the same file
                      runs in the browser via the @relay-crypto alias (R.3)
   relay-client.ts    daemon dial-out: no listening port for remote access (R.1)
-  relay-stub.ts      in-repo dumb-forwarder stub for dev + tests (real service:
-                     genui-relay, a separate private repo — PLAN R.2)
+  relay-stub.ts      in-repo dumb-forwarder stub for dev + tests
+  relay-test-client.ts  shared RemoteClient test helper (the browser side of
+                     the encrypted relay channel) used by relay.itest.ts and
+                     relay-service.itest.ts
+  version.ts         reads package.json's version at build time (R.4g)
   index.ts           Express + ws server; connections attach as viewports
 web/               the browser app (React 19 + Vite)
   index.html         entry html
@@ -386,11 +389,23 @@ web/               the browser app (React 19 + Vite)
                      heartbeat (half-open detection) + capped backoff (4.4);
                      on a relay page (#code= fragment) it handshakes and
                      seals/opens every frame via @relay-crypto (R.3)
+  src/agents-meta.ts display labels + per-agent "how to connect" hints,
+                     reached only via agentLabel()/connectHint() so an
+                     unknown agent name degrades to its raw string (R.4h)
+  src/version.ts     the web bundle's own build version (R.4g)
   src/styles.css     the design identity in CSS (see §7)
 bin/               genui-shell launcher (4.10): spawns dist-server, opens browser
 demo/              the M1 demo GIF embedded at the top of this README
 docs/              ADAPTERS.md — the normative adapter specification (§2.2);
                    local-models.md — running against Ollama/LM Studio/vLLM (§8)
+relay-service/     the DEPLOYABLE hosted relay (PLAN R.2) — a separate,
+                   dependency-light Node+ws package (own package.json/
+                   tsconfig, builds independently); the seed of the
+                   standalone private `genui-relay` repo. Its routing
+                   contract (src/contract.ts) is vendored from
+                   server/relay-protocol.ts with a sync-guard test
+                   (server/relay-service.itest.ts) — not part of the
+                   npm-published package (not in `files` above)
 dist/              built front end (vite build output; served by Express)
 dist-server/       esbuild server bundles (4.10): index.js + render-mcp.js —
                    what the installed `genui-shell` actually runs; gitignored
@@ -859,14 +874,18 @@ tamper/replay/reorder/wrong-key all rejected), `*.itest.ts` (Tier 2,
 integration — the auth gate, DoS caps, the mock-turn wire grammar, the
 interrupt/component-action wire paths, the permission deny-on-timeout,
 registry replay/resume, the bang-secrets invariant, the stdio render-MCP
-stub's ack contract over a real MCP handshake, and the relay path over the
-stub: byte-for-byte local/remote mirror, a ciphertext-only tap audit of what
-the relay can observe, fail-closed tamper/wrong-code, daemon re-dial), and
-`*.e2e.ts` (Tier 3 — token→cookie boot, a full turn rendering in the DOM,
-the artifact iframe executing under the CSP, a second browser mirrored
-through the relay stub, and the phone suite: 390×844 touch pairing, thumb
-permissions, offline→online mid-turn resume; needs `google-chrome`, path
-overridable via `CHROME_BIN`).
+stub's ack contract over a real MCP handshake, the relay path over the
+in-repo stub: byte-for-byte local/remote mirror, a ciphertext-only tap audit
+of what the relay can observe, fail-closed tamper/wrong-code, daemon re-dial,
+and — against the actual DEPLOYABLE `relay-service/` package (not just the
+stub) — its own caps/rate-limit/health-check hardening and a routing-contract
+sync-guard), and `*.e2e.ts` (Tier 3 — token→cookie boot, a full turn
+rendering in the DOM, the artifact iframe executing under the CSP with a
+hostile-artifact containment proof (each defense verified by flipping it),
+a second browser mirrored through the relay stub, a killed-mid-turn daemon
+restart showing an honest "session ended" notice, and the phone suite:
+390×844 touch pairing, thumb permissions, offline→online mid-turn resume;
+needs `google-chrome`, path overridable via `CHROME_BIN`).
 
 Two rules the suite is built on: **no test may reach a real model** — Tier 2/3
 spawn the daemon with every provider credential forced empty (a set env var
@@ -954,14 +973,30 @@ Read PLAN.md for the real thing; the shape in one breath:
   R.4's local slice (the ⧉ pair QR affordance, the phone-width layout pass,
   offline→online mid-turn resume over the relay) — all verified across all
   three tiers against the in-repo stub.
-- **Now (the launch-complete pivot, 2026-07-07):** finishing **Phase R** —
-  deploy the relay service (R.2: a portable Node.js + `ws` process in a
-  separate private repo, Fly.io single-region first — architecture locked,
-  see PLAN's decisions), entitlement/billing (R.5, Stripe), then launch as
-  one event: demo post, repo public, `npm publish`, and a purchasable Pro
-  tier on the same day (PLAN Phase R, BUSINESS.md §9 pivot note). True
-  multi-user isolation (the part of 4.5 deliberately deferred) lands here,
-  when viewports actually become remote.
+- **Also shipped (2026-07-08):** the full pre-launch gap-close block,
+  **R.4b–R.4h** — a subscription login counts as live credentials and a
+  mock session is honestly labeled a demo (R.4b); a failing `!` shell spawn
+  errors only that session, never the daemon (R.4f); runaway `!` output is
+  capped on the wire and in the replay ring (R.4d); the wire's additive-only
+  rule is enforced with a tolerant/strict schema split and tested
+  ignore-unknown on both ends (R.4h); version everywhere plus timestamped
+  error mirroring and `GENUI_DEBUG=1` (R.4g); an honest "session ended,
+  started a new one" notice replaces a silent URL swap, and a dead daemon
+  no longer leaves a fake "still working" state (R.4c); and the artifact
+  sandbox's containment properties are now proven by tests that fail when
+  each defense is flipped (R.4e). Also: **R.2's code half** — the
+  deployable `relay-service/` package, hardened (caps, rate limit, health
+  check) and verified against the real daemon, with the "no app bundle
+  served" trust decision made and documented; and three **Phase F** fidelity
+  fixes — slash-command output renders (F.1), the status bar shows the
+  model the engine actually resolved instead of "default"/"auto" (F.3), and
+  a Gemini stderr-only failure surfaces instead of dying silently (F.4).
+- **Now:** finishing **Phase R** — R.2's deploy (needs Kyle: a Fly.io
+  account + a domain; the code is ready) and entitlement/billing (R.5,
+  Stripe), then launch as one event: demo post, repo public, `npm publish`,
+  and a purchasable Pro tier on the same day (PLAN Phase R, BUSINESS.md §9
+  pivot note). True multi-user isolation (the part of 4.5 deliberately
+  deferred) lands here, when viewports actually become remote.
 - **Post-launch, demand-gated:** `--local` easy mode (L.2), per-session
   provider mix (L.3), push notifications, and further agent adapters as
   users ask.
