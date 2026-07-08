@@ -771,7 +771,7 @@ polish and security-test insurance).
     rework didn't regress tail resume). The gap-close block R.4b–R.4h is
     now COMPLETE except R.4e (test-only, next).
 
-- [ ] **Step R.4e — Prove the artifact sandbox fails closed (from the
+- [x] **Step R.4e — Prove the artifact sandbox fails closed (from the
   2026-07-08 test-suite quality review)** *(test-only, buildable now;
   pre-launch — this is the trusted-shell boundary against agent-authored
   content, and it currently has one positive test and zero negative ones)*
@@ -803,6 +803,33 @@ polish and security-test insurance).
   - Done when: temporarily flipping each defense (add `allow-same-origin`,
     remove the CSP meta, let state ops through the parser) makes at least one
     test fail — verified by actually flipping each, then restoring it.
+  - Status: **done, verified — including the flip-each-defense proof
+    (2026-07-08).** Tier 1 `web/src/Artifact.test.ts` (8 tests): exported
+    `parseBridgeAction` + `wrap()` and unit-tested them — prompt/tool
+    accepted (with/without object args); state ops, junk, missing/wrong
+    `genui` stamp, no action, blank/typed/>4000-char text, missing name,
+    array/string args, >200-char name all rejected; `wrap()` output carries
+    the `default-src 'none'` CSP meta AND the nonce-closing boot script,
+    both positioned BEFORE the content. Tier 3: a `/hostile/` mock hook
+    (`HOSTILE_ARTIFACT`) whose script attempts every escape and records the
+    outcome into its OWN DOM; `app.e2e.ts` asserts in a real browser that
+    `parent.document` is blocked, `document.cookie` throws, `fetch()` trips
+    a CSP violation (never succeeds), the iframe `sandbox` is EXACTLY
+    `allow-scripts`, and — via the transcript — that a forged/unstamped
+    bridge message and a state op never land while a 2-action burst is
+    rate-limited to one (only `burst-alpha` reaches the transcript, never
+    `burst-beta` or the forged prompt); a second test drives the navigating
+    artifact (now `about:blank`, hermetic) into the "navigation blocked"
+    fallback. Two real-containment wrinkles found and handled: the
+    artifact's own CSP blocks Playwright's frame script-injection, so the
+    test reads `frame.content()` (no injection) instead of evaluate/
+    waitForSelector; and the transcript accumulates across tests, so it
+    targets the NEWEST iframe. Flip-proof (actually done, then restored):
+    parser accepting state ops → 3 Tier-1 fail; dropping the CSP meta from
+    `wrap()` → 1 Tier-1 fail; adding `allow-same-origin` to the sandbox →
+    Tier-3 test 6 fails. Full suites green: 119 Tier 1, 58 Tier 2, 15
+    Tier 3. **The entire pre-launch gap-close block R.4b–R.4h is now
+    complete.**
 
 - [ ] **Step R.5 — Entitlement + billing** *(needs Kyle: Stripe account +
   price confirmation — BUSINESS.md §7 says $12/mo · $99/yr)*

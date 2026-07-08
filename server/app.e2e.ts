@@ -107,3 +107,62 @@ test("sandboxed artifact: scripts run inside the iframe under the shell CSP", as
   await frame!.click("#b");
   assert.equal(await frame!.textContent("#n"), "1");
 });
+
+test("hostile artifact is contained: escapes fail, sandbox is exactly allow-scripts (R.4e)", async () => {
+  await page.locator("textarea").click();
+  await page.keyboard.type("show me a hostile artifact");
+  await page.keyboard.press("Enter");
+
+  // The transcript accumulates across tests, so target the NEWEST iframe (an
+  // earlier test's bridge-demo artifact is still in the scrollback).
+  const lastFrame = page.locator("iframe").last();
+  await lastFrame.waitFor({ timeout: 30_000 });
+  // The sandbox attribute is EXACTLY allow-scripts — one added token
+  // (allow-same-origin) would hand the artifact the shell's origin.
+  assert.equal(await lastFrame.getAttribute("sandbox"), "allow-scripts");
+
+  // The artifact's own CSP blocks Playwright's script injection into the frame
+  // (evaluate/waitForFunction/textContent all inject) — a real containment
+  // property. So read the frame's serialized HTML, which needs no injection,
+  // and poll until every escape attempt has recorded its outcome. Re-query the
+  // frame each pass: a bridge action triggers a new turn whose re-render can
+  // detach an earlier frame handle.
+  const div = (html: string, id: string) =>
+    html.match(new RegExp(`<div id="${id}">([^<]*)</div>`))?.[1] ?? "";
+  let frameHtml = "";
+  for (let i = 0; i < 60; i++) {
+    const fr = await (await page.locator("iframe").last().elementHandle())?.contentFrame();
+    frameHtml = fr ? await fr.content() : "";
+    if (div(frameHtml, "sent") === "attacks-sent") break;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  assert.equal(div(frameHtml, "sent"), "attacks-sent", "hostile script never finished");
+
+  // Opaque origin: the shell's DOM and app-origin cookie are unreachable.
+  assert.equal(div(frameHtml, "dom"), "parent-dom-blocked");
+  assert.equal(div(frameHtml, "cookie"), "cookie-blocked");
+  // Injected CSP: fetch tripped a policy violation, it did not succeed.
+  assert.match(div(frameHtml, "csp"), /^csp-violation/);
+
+  // The bridge: an unstamped/forged prompt never lands, a state op never
+  // lands, and the 400ms rate limit drops the second of a burst — so of
+  // everything the artifact tried to send, only "burst-alpha" reaches the
+  // transcript as a command strip.
+  await page.waitForSelector("text=burst-alpha", { timeout: 15_000 });
+  const body = await page.locator(".shell").innerText();
+  assert.ok(!body.includes("burst-beta"), "rate limit failed: second burst action landed");
+  assert.ok(
+    !body.includes("forged-unstamped-prompt"),
+    "nonce check failed: a forged bridge message landed",
+  );
+});
+
+test("navigating artifact is blanked into the navigation-blocked fallback (R.4e)", async () => {
+  await page.locator("textarea").click();
+  await page.keyboard.type("show me a navigating artifact");
+  await page.keyboard.press("Enter");
+  // The liveness kill (no nonce-stamped artifactReady) unmounts the frame
+  // and shows the fallback with the source.
+  await page.waitForSelector("text=navigation blocked", { timeout: 30_000 });
+  await page.waitForSelector("text=tried to navigate away", { timeout: 5_000 });
+});
