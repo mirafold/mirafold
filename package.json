@@ -4,9 +4,14 @@
   "description": "A faithful browser re-skin of the terminal coding agent you already use — Claude Code, Codex, or Gemini CLI — with generative UI layered on top.",
   "license": "MIT",
   "type": "module",
+  "author": "Kyle Serrecchia (https://github.com/kserrec)",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/kserrec/genui-shell.git"
+  },
+  "homepage": "https://github.com/kserrec/genui-shell#readme",
+  "bugs": {
+    "url": "https://github.com/kserrec/genui-shell/issues"
   },
   "keywords": [
     "claude-code",
@@ -28,6 +33,7 @@
   "engines": {
     "node": ">=20.12"
   },
+  "packageManager": "yarn@1.22.22",
   "scripts": {
     "dev:server": "GENUI_TOKEN= tsx watch server/index.ts",
     "dev:web": "vite",
