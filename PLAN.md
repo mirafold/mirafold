@@ -812,14 +812,30 @@ notifications are **not** part of the launch and are not sold until built.
     operability review): a stranger-facing top section on README.md itself —
     install, GIF, what it is, then "engineering docs below" — because the
     npm package page renders the README, and today it opens as a 60 KB
-    maintainer doc.
+    maintainer doc. And (2026-07-08 competitive scan): before creating the
+    Stripe products, a price/packaging sanity pass against the observed
+    anchors — Happy $0 (free E2E relay, native apps, 22.5k stars),
+    CloudCLI Cloud €7/mo, Omnara $9/mo — the tier is sold as **the genUI
+    experience from any device** (uncontested), never as bare phone access
+    (zero-priced by the market); $12 stands per BUSINESS §7 + the §2 first
+    target unless Kyle recuts it here, eyes open.
   - Done when: a Stripe test-mode purchase unlocks pairing end-to-end, and
     expiry re-locks it without breaking the local product in any way.
 
 - [ ] **Step R.6 — Launch day (the M1+M2+M3 splash, one event)**
   - Goal: everything fires together and the signals start reading.
   - Build/checklist: refresh the demo GIF with the phone beat (the §6
-    launch asset as originally imagined); Kyle's review of the
+    launch asset as originally imagined) — per the 2026-07-08 competitive
+    scan, the phone beat must show a RENDERED COMPONENT on the phone (live
+    checklist, chart, pinned widget), not a chat transcript on a phone,
+    which is Happy/Omnara/CloudCLI's already-free table stakes; launch copy
+    leads with "your terminal agent with a real UI — faithfully, whichever
+    agent you run," phone second; pre-write the honest comparison
+    (vs Happy, CloudCLI, Omnara, Claude Code on the web / Codex cloud —
+    they're good, here's the different bet) as a README/site FAQ section,
+    because the Show HN thread will ask "how is this different from Happy"
+    in the first hour and the answer should be ours, not the thread's;
+    Kyle's review of the
     credential-less onboarding presentation (R.4b builds the fix — this is
     the final launch-day eyeball of it); macOS/Windows cold-install checks;
     the real `!sudo -v` password entry (Kyle); final secrets sweep of both
