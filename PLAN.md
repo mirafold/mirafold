@@ -654,6 +654,39 @@ notifications are **not** part of the launch and are not sold until built.
     with a visible marker, replay to a fresh viewport is bounded, and one
     runaway command can no longer evict a session's transcript from the ring.
 
+- [ ] **Step R.4e — Prove the artifact sandbox fails closed (from the
+  2026-07-08 test-suite quality review)** *(test-only, buildable now;
+  pre-launch — this is the trusted-shell boundary against agent-authored
+  content, and it currently has one positive test and zero negative ones)*
+  - Goal: every containment property `Artifact.tsx` documents is held up only
+    by the comment describing it. Today **no test fails** if:
+    `sandbox="allow-scripts"` gains `allow-same-origin` (one word — a hostile
+    artifact can then reach the shell's DOM, cookie, and socket); the injected
+    `default-src 'none'` CSP is dropped from `wrap()` (network exfiltration
+    opens; the friendly counter demo still passes); `parseBridgeAction` starts
+    accepting state ops, oversized payloads, or malformed shapes; the
+    nonce/origin/source checks on the bridge listener are removed; the 400 ms
+    action rate limit is deleted; or the navigation-liveness kill is deleted.
+    The only artifact test (`app.e2e.ts`) is the friendly positive path.
+  - Build: (a) Tier 1 — `parseBridgeAction` and `wrap()` are pure functions;
+    unit-test them directly (prompt/tool accepted; state kind, junk, missing
+    `genui` stamp, >4000-char text, array args all rejected; `wrap()` output
+    carries the CSP meta and boot script *before* the content). (b) Tier 3 —
+    a "show me a hostile artifact" mock hook whose html attempts the escapes,
+    then assert containment in a real browser: `fetch()` blocked by the CSP,
+    `parent.document` throws, an unstamped/forged `postMessage` never lands an
+    action, a state-op bridge message is dropped, an action burst is
+    rate-limited, `location=` navigation unmounts the frame into the
+    "navigation blocked" fallback — and assert the rendered iframe's `sandbox`
+    attribute is **exactly** `allow-scripts`.
+  - Files: new `web/src/Artifact.test.ts` (Tier 1), `server/adapters/mock.ts`
+    (hostile hook), `server/app.e2e.ts` (Tier 3 cases); `web/src/Artifact.tsx`
+    only if an export is needed for the unit tests. The rest of the review's
+    findings live in **Phase Q** below.
+  - Done when: temporarily flipping each defense (add `allow-same-origin`,
+    remove the CSP meta, let state ops through the parser) makes at least one
+    test fail — verified by actually flipping each, then restoring it.
+
 - [ ] **Step R.5 — Entitlement + billing** *(needs Kyle: Stripe account +
   price confirmation — BUSINESS.md §7 says $12/mo · $99/yr)*
   - Goal: paying unlocks the relay, on launch day, with almost nothing
@@ -933,6 +966,111 @@ fix restores what that agent's *terminal* user already sees — nothing invented
     `permission_request`. stream-json remains the fallback surface.
   - Done when: a Gemini session shows the folding thinking block live, and a
     gated tool raises the permission bar instead of failing silently.
+
+---
+
+## Phase Q — Test-suite bite (from the 2026-07-08 test-quality review)
+
+Source: a critical read of all 28 test files in all three tiers against the
+code they guard, asking one question — *which load-bearing behaviors could
+regress tomorrow without any test failing?* The verdict on the existing suite
+was good: the relay crypto tests are genuinely adversarial (tamper, replay,
+reorder, reflection, wrong-key all asserted to fail), the relay itests prove
+via a tap that the operator sees only ciphertext, the bang-secret test checks
+absence from streams + replay + logs, and the adapter tests pin the full
+event→WireMsg grammar including error paths. Almost nothing passes vacuously.
+The gaps concentrate where the browser renders the trusted-shell boundary
+(the pre-launch item is **Step R.4e** above) and in a handful of server
+invariants held only by convention. Every step below is **test-only** — no
+product code changes — and keeps the zero-test-deps rule (node:test + tsx;
+DOM behavior is proven in Tier-3 headless Chrome, never jsdom). Sequence
+anywhere; each is independent.
+
+- [ ] **Step Q.1 — Render pipeline fails soft, and update-in-place is real
+  in the DOM**
+  - Goal: Step 1.4's promise — "a malformed instruction must never break the
+    UI" — has three fallback layers in `RenderBlock.tsx` (unknown component,
+    schema-failing props, crash → error boundary) and **zero tests**; the mock
+    only ever sends valid renders. Client-side update-in-place is proven only
+    at the wire (`session.itest.ts` asserts five frames share one id) — no
+    test asserts the DOM holds *one* checklist rather than five, so a
+    regression in `RenderZone`'s `findIndex` update path passes every tier.
+    The pin machinery (pin → dock, live update while pinned, pins re-binding
+    across a `zone_reset` replay) — a shell-owned affordance — is untested.
+  - Build: a "render something malformed" mock hook (unknown component name +
+    schema-invalid props for a known one), then Tier-3 assertions: the
+    fallback block paints with the raw props visible, the zone keeps working
+    afterwards; the existing checklist e2e additionally asserts exactly one
+    todo-list block in the DOM; a pin e2e: pin a component, drive an update
+    (dock copy repaints), reload mid-session (pin survives the replay),
+    unpin returns it to the transcript.
+  - Files: `server/adapters/mock.ts` (malformed hook), `server/app.e2e.ts`.
+  - Done when: malformed instructions visibly degrade instead of crashing in
+    a real browser, the five-frame checklist paints one block not five, and a
+    pinned widget stays live across an update and a reload.
+
+- [ ] **Step Q.2 — Freeze the wire protocol in executable form**
+  - Goal: the first non-negotiable — "later work ADDS message types, never
+    reshapes existing ones" — is a comment, not a check. The itests assert
+    some fields incidentally, but a deliberate reshape refactor would update
+    those tests in the same commit and go green. Since the relay, this is
+    load-bearing for real: a phone can run yesterday's bundle against today's
+    daemon.
+  - Build: a Tier-1 golden-fixtures test — one canonical JSON sample per
+    `WireMsg` and `ClientMsg` variant, assigned to the type in both directions
+    (compile-time: the fixture satisfies the type; runtime: field names and
+    representative values asserted). Adding a new message type means adding a
+    fixture; changing an existing shape breaks the build or the test.
+  - Files: new `server/protocol.test.ts`.
+  - Done when: renaming or retyping any existing on-wire field fails the
+    suite loudly, and adding a message type touches no existing fixture.
+
+- [ ] **Step Q.3 — Ring-buffer eviction and the resume boundary**
+  - Goal: `BUFFER_CAP` (4000) eviction has zero tests, and `canResume`'s edge
+    (`afterSeq >= firstBuffered - 1`) is exactly the off-by-one that regresses
+    silently: if eviction broke, memory grows unbounded; if the boundary
+    broke, a long session replays a corrupted tail after eviction. Nothing
+    would catch either today.
+  - Build: Tier-1 unit tests directly against `SessionRegistry` (constructible
+    with a mock backend, no daemon): push past the cap, assert the buffer
+    stays bounded and holds exactly the newest window; a late attach replays
+    exactly the retained window; `canResume` flips false precisely at the
+    evicted edge and a valid post-eviction tail resume replays the right
+    messages.
+  - Files: `server/registry.test.ts` (extend — today it covers only
+    `resolveCwd`).
+  - Done when: cap, eviction contents, and the resume boundary at the evicted
+    edge are each pinned by an assertion that an off-by-one would fail.
+
+- [ ] **Step Q.4 — Hostile-client sweep of `connection.ts`**
+  - Goal: the malformed paths are dead code to the suite. No test sends
+    non-JSON (the `"malformed client message"` reply is never observed), a
+    bang id failing the `^[\w-]{1,64}$` regex, a non-string prompt text, or a
+    junk `action` object. The oversized-frame test exists; the garbage-frame
+    tests don't.
+  - Build: one Tier-2 itest sweeping every `ClientMsg` type with wrong-typed
+    fields, missing fields, and raw garbage over a real socket; after the
+    sweep, assert the connection is still attached and a valid turn completes
+    normally (nothing crashed, nothing wedged, no spurious broadcast reached
+    a second viewport).
+  - Files: new `server/hostile-client.itest.ts` (or extend
+    `server/session.itest.ts`).
+  - Done when: every `case` in `connection.ts`'s message switch has at least
+    one malformed-input assertion, and the socket provably survives the whole
+    sweep mid-session.
+
+- [ ] **Step Q.5 — Pin the `.env` guard's edges**
+  - Goal: the `SECRET_PATHS` deny in `permissions.ts` is tested only on the
+    literal relative strings (`.env`, `.env.local`). Untested but currently
+    working via `path.resolve`: an absolute path to the daemon's `.env`, a
+    `subdir/../.env` traversal, and the cross-cwd case (session cwd ≠ daemon
+    launch dir). Nothing pins that these resolve into the guard. (The symlink
+    bypass is a documented accepted residual — out of scope.)
+  - Build: extend the Tier-1 permissions tests with those resolutions across
+    all four guarded readers (Read/NotebookRead/Grep/Glob).
+  - Files: `server/permissions.test.ts`.
+  - Done when: absolute, traversal, and cross-cwd routes to the daemon's env
+    files are each asserted denied.
 
 ---
 
