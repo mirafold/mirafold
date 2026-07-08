@@ -356,6 +356,15 @@ export class ClaudeCodeSession implements AgentSession {
             }
             break;
           }
+          case "system": {
+            // F.3: system/init carries the model the engine ACTUALLY resolved
+            // (e.g. "claude-fable-5"), which differs from the configured value
+            // or the "default" placeholder we start with — show the truth in
+            // the status bar, like the terminal's own status line.
+            const model = (msg as { model?: unknown }).model;
+            if (typeof model === "string" && model) this.modelLabel = model;
+            break;
+          }
           case "result": {
             if (msg.is_error) {
               const detail = "result" in msg ? msg.result : msg.subtype;

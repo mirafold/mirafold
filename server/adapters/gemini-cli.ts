@@ -185,6 +185,21 @@ export class GeminiCliSession implements AgentSession {
     });
   }
 
+  // F.3: init.model can be the literal "auto" (router mode) while the real
+  // model(s) the router actually used show up only in result.stats.models.
+  // Prefer those concrete names when the init label is a placeholder — the
+  // status bar should name what ran, like the terminal's own status line.
+  private honestModel(models: unknown): string {
+    const vague = !this.modelLabel || this.modelLabel === "auto" || this.modelLabel === "gemini";
+    if (!vague) return this.modelLabel;
+    const names = Array.isArray(models)
+      ? models.filter((m): m is string => typeof m === "string")
+      : models && typeof models === "object"
+        ? Object.keys(models as Record<string, unknown>)
+        : [];
+    return names.length ? names.join(", ") : this.modelLabel;
+  }
+
   /** Normalize one JSONL event into WireMsg. */
   private handleEvent(ev: Record<string, unknown>) {
     switch (ev["type"]) {
@@ -243,7 +258,7 @@ export class GeminiCliSession implements AgentSession {
         const stats = (ev["stats"] ?? {}) as Record<string, unknown>;
         this.emit({
           type: "usage",
-          model: this.modelLabel,
+          model: this.honestModel(stats["models"]),
           inputTokens: Number(stats["input_tokens"] ?? 0),
           outputTokens: Number(stats["output_tokens"] ?? 0),
         });

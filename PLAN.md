@@ -1017,7 +1017,7 @@ fix restores what that agent's *terminal* user already sees — nothing invented
     forced api_retry (scripted) is visible in the transcript instead of a
     silent stall.
 
-- [ ] **Step F.3 — Honest model label in the status bar**
+- [x] **Step F.3 — Honest model label in the status bar**
   - Goal: show the model the engine actually resolved, like the terminal's
     own status line. Observed: Claude's `system/init` carries the real model
     (`claude-fable-5`) while the adapter's label says the configured value or
@@ -1033,6 +1033,19 @@ fix restores what that agent's *terminal* user already sees — nothing invented
     matching tests.
   - Done when: tests assert engine-reported names flow into `usage.model` for
     both adapters; live status bar shows the real model, not "default"/"auto".
+  - Status: **done, verified scripted + live (2026-07-08).** Claude adapter:
+    a new `system` case in `pump()` reads `system/init.model` into
+    `modelLabel` (was the configured value or the "default" placeholder).
+    Gemini adapter: a `honestModel()` helper prefers concrete names from
+    `result.stats.models` (object keys or a string array, joined) when the
+    init label is vague (`auto`/`gemini`/unset), else keeps the init model;
+    wired into the result-case `usage.model`. No protocol change
+    (`usage.model` already existed). Verified — Tier 1 (3 new: claude
+    system/init model reaches usage.model; gemini `auto`→real stats models;
+    gemini concrete init model kept over stats — 125 total green). Live on
+    this machine with `DEFAULT_MODEL` unset: `usage.model` came through as
+    **claude-opus-4-8** (the subscription's real resolved default) where
+    the pre-F.3 code showed the literal "default".
 
 - [ ] **Step F.4 — Gemini honesty pass (silent death on stderr-only failure)**
   - Goal: live-observed trap — in a cwd outside the user's Gemini trusted
