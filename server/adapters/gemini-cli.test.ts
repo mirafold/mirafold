@@ -125,6 +125,43 @@ test("happy stream: full JSONL→WireMsg mapping, exactly one turn_end", async (
   s.close();
 });
 
+test("F.3 honest model: init 'auto' is replaced by the real models from result.stats", async () => {
+  // Router mode reports model:"auto" at init; the concrete model(s) it used
+  // appear only in result.stats.models — the status bar must show those.
+  fixture("auto.jsonl", [
+    { type: "init", model: "auto" },
+    { type: "message", role: "assistant", content: "reply" },
+    {
+      type: "result",
+      stats: {
+        input_tokens: 5,
+        output_tokens: 3,
+        models: { "gemini-2.5-flash": { calls: 1 }, "gemini-2.5-pro": { calls: 1 } },
+      },
+    },
+  ]);
+  const { s, msgs, awaitTurnEnd } = makeSession();
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const model = msgs.find((m) => m.type === "usage")!.model;
+  assert.notEqual(model, "auto");
+  assert.match(model!, /gemini-2\.5-flash/);
+  assert.match(model!, /gemini-2\.5-pro/);
+  s.close();
+});
+
+test("F.3 honest model: a concrete init model is kept even if stats.models is present", async () => {
+  fixture("concrete.jsonl", [
+    { type: "init", model: "gemini-2.5-pro" },
+    { type: "result", stats: { input_tokens: 1, output_tokens: 1, models: { "gemini-2.5-flash": {} } } },
+  ]);
+  const { s, msgs, awaitTurnEnd } = makeSession();
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  assert.equal(msgs.find((m) => m.type === "usage")!.model, "gemini-2.5-pro"); // init wins
+  s.close();
+});
+
 test("capOutput applies at the adapter seam", async () => {
   fixture("huge.jsonl", [
     { type: "tool_use", tool_name: "run_shell_command", tool_id: "h1", parameters: { command: "cat log" } },

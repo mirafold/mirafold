@@ -240,6 +240,21 @@ test("checklist: task tools fold into one render id per turn, list persists, id 
   s.close();
 });
 
+test("F.3 honest model label: system/init's resolved model reaches usage.model", async () => {
+  // The configured value is "test-model", but the engine reports the real
+  // model it resolved via system/init — that's what the status bar must show.
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    { type: "system", subtype: "init", model: "claude-fable-5" },
+    streamDelta({ type: "text_delta", text: "hi" }),
+    assistant([{ type: "text", text: "hi" }]),
+    RESULT,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  assert.equal(msgs.find((m) => m.type === "usage")!.model, "claude-fable-5");
+  s.close();
+});
+
 test("F.1 slash-command output: buffered assistant text with no deltas renders once", async () => {
   // /context, /usage, and unsupported commands arrive as a buffered assistant
   // text message with ZERO stream_event deltas — the adapter must paint it, or
