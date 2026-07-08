@@ -78,7 +78,15 @@ if (AUTH_ENABLED) {
       res.cookie(COOKIE_NAME, AUTH_TOKEN, { httpOnly: true, sameSite: "strict", path: "/" });
       return res.redirect(req.path);
     }
-    res.status(403).type("text/plain").send("genui-shell: missing or invalid token");
+    // R.4b: a bare denial is a dead end — name the recovery. The right URL
+    // (with ?token=…) is in the terminal that launched genui-shell.
+    res
+      .status(403)
+      .type("text/plain")
+      .send(
+        "genui-shell: missing or invalid token.\n" +
+          "Open the full URL (with ?token=...) printed by the terminal where genui-shell is running.",
+      );
   });
 }
 
@@ -153,18 +161,26 @@ wss.on("connection", (ws) => {
 // EADDRINUSE — walk up a few ports; the launcher reads the final URL off stdout.
 const basePort = Number(process.env.PORT ?? 3000);
 const listen = (port: number) => {
-  const onBusy = (err: NodeJS.ErrnoException) => {
-    if (err.code === "EADDRINUSE" && port - basePort < 20) listen(port + 1);
-    else throw err;
-  };
-  server.once("error", onBusy);
-  server.listen(port, "127.0.0.1", () => {
+  const onListening = () => {
     server.removeListener("error", onBusy); // later errors stay loud, as before
     // The token rides the URL so the launcher opens an authenticated page; the
     // browser trades it for the cookie on first load (see the auth block above).
     const url = `http://127.0.0.1:${port}/${AUTH_ENABLED ? `?token=${AUTH_TOKEN}` : ""}`;
     console.log(`[genui-shell] server on ${url} (ws at /ws)`);
-  });
+  };
+  const onBusy = (err: NodeJS.ErrnoException) => {
+    // The stale "listening" callback must go with the failed attempt, or the
+    // walk's eventual success fires EVERY attempt's callback and the log
+    // claims "server on" ports we never bound — a line users copy (R.4b).
+    server.removeListener("listening", onListening);
+    if (err.code === "EADDRINUSE" && port - basePort < 20) {
+      console.log(`[genui-shell] :${port} busy — trying :${port + 1}`);
+      listen(port + 1);
+    } else throw err;
+  };
+  server.once("error", onBusy);
+  server.once("listening", onListening);
+  server.listen(port, "127.0.0.1");
 };
 listen(basePort);
 

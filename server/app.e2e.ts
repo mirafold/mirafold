@@ -44,8 +44,27 @@ test("?token= mints the cookie, cleans the URL, boots the shell", async () => {
 
 test("onboarding → a full mock turn renders in the DOM", async () => {
   // An empty registry opens straight into "choose your agent".
-  await page.locator(".onb-agent", { hasText: "Claude Code" }).click();
+  // R.4b: every credential-less row carries its one-line fix on the picker
+  // itself (the harness forces all three agents credential-less).
+  await page.waitForSelector(".onb-agent-hint");
+  assert.equal(await page.locator(".onb-agent-hint").count(), 3);
+  const claudeRow = page.locator(".onb-agent", { hasText: "Claude Code" });
+  assert.match(await claudeRow.innerText(), /ANTHROPIC_API_KEY|`claude`/);
+  assert.match(
+    await page.locator(".onb-agent", { hasText: "Codex" }).innerText(),
+    /codex login/,
+  );
+
+  await claudeRow.click();
   await page.waitForURL(/\/s\/[\w-]+/);
+
+  // R.4b: the shell-drawn demo banner is up before anything else paints — a
+  // mock session is unmistakably labeled, with the concrete fix named.
+  await page.waitForSelector(".demo-banner");
+  const banner = await page.locator(".demo-banner").innerText();
+  assert.match(banner, /demo/i);
+  assert.match(banner, /no real agent/);
+  assert.match(banner, /ANTHROPIC_API_KEY|`claude`/);
 
   // Real typing into the real prompt box; the checklist hook is deterministic.
   await page.locator("textarea").click();
@@ -58,6 +77,16 @@ test("onboarding → a full mock turn renders in the DOM", async () => {
   await page.waitForSelector("text=Read the current implementation", { timeout: 15_000 });
   // …and the turn runs to its streamed conclusion.
   await page.waitForSelector("text=Plan complete — all four steps done.", { timeout: 30_000 });
+});
+
+test("a demo turn shows tokens but never a fabricated dollar cost (R.4b)", async () => {
+  // The checklist hook emits no usage — run a template turn, which does.
+  await page.locator("textarea").click();
+  await page.keyboard.type("hello there");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector(".sb-usage", { timeout: 30_000 });
+  const bar = await page.locator(".status-bar").innerText();
+  assert.ok(!bar.includes("$"), `status bar shows a dollar cost in a demo session: ${bar}`);
 });
 
 test("sandboxed artifact: scripts run inside the iframe under the shell CSP", async () => {

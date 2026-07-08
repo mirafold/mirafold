@@ -109,12 +109,12 @@ const SENTENCES = [
 ] as const;
 const sentence = () => pick(SENTENCES);
 
-const welcomeTemplate = (prompt: string) => `## Mock session
+const welcomeTemplate = (prompt: string) => `## Demo session
 
 You said: **${prompt}**
 
-No \`ANTHROPIC_API_KEY\` is set, so this canned response exercises the
-rendering pipeline instead of the real agent.
+This agent has no credentials, so a scripted demo reply is exercising the
+rendering pipeline — nothing here came from a real agent.
 
 - Streaming text deltas ✓
 - Markdown with [a safe link](https://example.com) ✓
@@ -129,7 +129,8 @@ export type WireMsg = { type: "text_delta"; text: string };
 | tables | render |
 | links | open in new tab |
 
-Set the API key in \`.env\` to talk to the live agent.`;
+To go live, connect your agent's credentials (see the demo banner above) and
+restart genui-shell.`;
 
 const analyticsTemplate = () => {
   const project = pick(PROJECTS);
@@ -320,7 +321,6 @@ export class MockSession implements AgentSession {
   private listeners = new Set<(msg: WireMsg) => void>();
   private timers: ReturnType<typeof setTimeout>[] = [];
   private deck: number[] = [];
-  private mockCost = 0; // cumulative session cost, mirroring the real SDK
   private pendingAsks = new Map<string, (allow: boolean) => void>();
 
   // Each deterministic hook exercises one UI capability API-free; anything
@@ -561,8 +561,10 @@ export class MockSession implements AgentSession {
       this.schedule(() => this.emit({ type: "thinking_delta", text: chunk }), delay);
     }
     delay += 200;
-    for (let i = randInt(1, 2); i > 0; i--) {
-      const t = pick(MOCK_TOOLS)();
+    // Drawn without replacement — two identical tool rows in one turn read
+    // as a rendering bug to a first-time viewer (R.4b).
+    for (const factory of shuffled(MOCK_TOOLS).slice(0, randInt(1, 2))) {
+      const t = factory();
       const id = randomUUID();
       delay += randInt(250, 550);
       this.schedule(() => {
@@ -595,11 +597,11 @@ export class MockSession implements AgentSession {
       () => this.emit({ type: "render", component, props, id: randomUUID() }),
       delay,
     );
-    // T2.6: per-turn tokens + cumulative cost, mirroring the real SDK.
+    // T2.6: per-turn tokens so the meters run — but NO costUsd: a fabricated
+    // dollar figure is the one number a demo viewer takes as real (R.4b;
+    // omitted → the status bar shows no cost at all).
     const inTok = randInt(1800, 7200);
     const outTok = randInt(200, 900);
-    this.mockCost = Number((this.mockCost + (inTok * 3 + outTok * 15) / 1_000_000).toFixed(4));
-    const costUsd = this.mockCost;
     this.schedule(
       () =>
         this.emit({
@@ -607,7 +609,6 @@ export class MockSession implements AgentSession {
           model: "mock-sonnet",
           inputTokens: inTok,
           outputTokens: outTok,
-          costUsd,
         }),
       delay + 20,
     );

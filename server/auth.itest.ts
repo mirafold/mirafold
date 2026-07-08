@@ -23,6 +23,26 @@ test("HTTP: no token → 403; wrong token → 403", async () => {
   assert.equal((await http("/?token=wrong")).status, 403);
 });
 
+test("HTTP: the 403 body names the recovery, not just the denial (R.4b)", async () => {
+  const body = await (await http("/")).text();
+  assert.match(body, /\?token=/);
+  assert.match(body, /terminal/i);
+});
+
+test("EADDRINUSE walk: only the bound port says 'server on' (R.4b)", async () => {
+  // Collide on purpose: a second daemon asked for the first one's port.
+  const d2 = await startDaemon({ PORT: String(d.port) });
+  try {
+    assert.notEqual(d2.port, d.port); // it walked
+    const serverOn = d2.logs().match(/server on http:\/\/127\.0\.0\.1:(\d+)\//g) ?? [];
+    assert.equal(serverOn.length, 1, `expected one 'server on' line, got: ${serverOn}`);
+    assert.match(serverOn[0], new RegExp(`:${d2.port}/`));
+    assert.match(d2.logs(), new RegExp(`:${d.port} busy — trying :${d.port + 1}`));
+  } finally {
+    await d2.stop();
+  }
+});
+
 test("HTTP: valid ?token= mints the cookie and redirects to the clean path", async () => {
   const res = await http(`/?token=${TOKEN}`);
   assert.equal(res.status, 302);

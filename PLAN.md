@@ -458,7 +458,7 @@ polish and security-test insurance).
     and session complete a full mock turn — one keystroke no longer costs
     every in-memory session).
 
-- [ ] **Step R.4b — First-run honesty (from the 2026-07-07 cold-start
+- [x] **Step R.4b — First-run honesty (from the 2026-07-07 cold-start
   friction log)** *(independent of R.5/R.2 — buildable now, no external
   accounts; launch-gating in effect: the first five minutes are only good
   today if the user arrives with an env var already set)*
@@ -504,6 +504,37 @@ polish and security-test insurance).
     or run for each agent; a mock session is unmistakably labeled a demo and
     shows no dollar cost; the startup log names only the port it actually
     bound; the 403 page tells the user where the right URL is.
+  - Status: **done, verified across all three tiers + one live turn on the
+    target machine (2026-07-08).** (1) `agentHasCredentials("claude-code")`
+    also accepts `<CLAUDE_CONFIG_DIR|~/.claude>/.credentials.json`; the
+    itest harness pins `CLAUDE_CONFIG_DIR` to an empty dir so logged-in dev
+    machines still test against the mock; `.env.example` now lists all four
+    live paths (login first, then key/token/base-url). (2) `session_created`
+    gained an additive `demo?: boolean` (set from the new
+    `SessionEntry.live`); the shell draws a persistent `.demo-banner` —
+    warn-toned, agent-unpaintable — reading "demo · scripted replies — no
+    real agent is running · to connect <agent>: <fix>"; the per-agent fixes
+    live in a new shared `web/src/agents-meta.ts` (LABEL + CONNECT_HINT).
+    The mock now emits usage WITHOUT costUsd (status bar shows tokens, no
+    dollar figure — only real adapters price turns), draws its 1–2 tool
+    rows without replacement (the duplicated-Bash fix), and its welcome
+    template says "demo session / no credentials" instead of claiming an
+    ANTHROPIC_API_KEY problem regardless of agent. (3) Credential-less
+    picker rows carry the one-line fix (`.onb-agent-hint`). (4) The port
+    walk prints ":3000 busy — trying :3001" and only the bound port says
+    "server on" (the stale listening callback was the bug — both closures
+    fired on the eventual bind); the 403 body names the recovery (open the
+    ?token= URL from the launching terminal). Verified — Tier 1 (103: creds
+    check via CLAUDE_CONFIG_DIR seam incl. each env var alone); Tier 2 (54:
+    403-body wording; forced port collision → exactly one "server on" line,
+    naming the walked port); Tier 3 (12: picker hints for all three agents,
+    demo banner up before the first turn with the claude fix named, a
+    template turn's status bar shows tokens and no "$"). Live, this machine
+    (subscription login, zero env keys): hello now says claude-code
+    live:true, and a real session answered one short prompt on
+    claude-sonnet-4-6 — the exact user the step was for. Note for R.6's
+    onboarding eyeball: the demo badge text itself still reads
+    "no credentials · demo" with the hint underneath.
 
 - [ ] **Step R.4d — Cap `!` passthrough output (from the same probe)**
   *(small, server-side; buildable now)*

@@ -6,6 +6,7 @@ import { RenderZone } from "./RenderZone";
 import { StatusBar, type Usage } from "./StatusBar";
 import { SocketClient } from "./ws";
 import { tildify } from "./tildify";
+import { CONNECT_HINT, LABEL } from "./agents-meta";
 
 const ZERO_USAGE: Usage = { turnIn: 0, turnOut: 0, sumIn: 0, sumOut: 0, cost: 0 };
 
@@ -34,7 +35,12 @@ export function Shell() {
   const [asks, setAsks] = useState<{ tool: string; detail: string; id: string }[]>([]);
   // Status-bar state (T2.6) — all shell-owned, none paintable by the agent.
   const [connected, setConnected] = useState(false);
-  const [meta, setMeta] = useState<{ sessionId?: string; cwd?: string; agent?: AgentName }>({});
+  const [meta, setMeta] = useState<{
+    sessionId?: string;
+    cwd?: string;
+    agent?: AgentName;
+    demo?: boolean;
+  }>({});
   const [usage, setUsage] = useState<Usage>(ZERO_USAGE);
   // P.4 onboarding: which agents the daemon offers, and whether we're still at
   // the picker. A URL that already names a session skips onboarding (it attaches).
@@ -169,7 +175,7 @@ export function Shell() {
           setAgents(m.agents);
           setDaemon({ cwd: m.cwd, home: m.home, relay: m.relay });
         } else if (m.type === "session_created") {
-          setMeta({ sessionId: m.sessionId, cwd: m.cwd, agent: m.agent });
+          setMeta({ sessionId: m.sessionId, cwd: m.cwd, agent: m.agent, demo: m.demo });
           setOnbError(null);
         } else if (m.type === "error") {
           // Only the onboarding card consumes this; in-session errors already
@@ -278,6 +284,23 @@ export function Shell() {
             bus.createSession(agent, cwd);
           }}
         />
+      )}
+      {meta.demo && (
+        // R.4b: SHELL-OWNED banner — the agent paints nothing here, so a demo
+        // session is unmistakably labeled and the label can't be faked or
+        // cleared (same trust rule as the permission bar).
+        <div className="demo-banner">
+          <span className="demo-banner-badge">demo</span>
+          <span className="demo-banner-text">
+            scripted replies — no real agent is running
+            {meta.agent && (
+              <>
+                {" · to connect "}
+                {LABEL[meta.agent]}: {CONNECT_HINT[meta.agent]}, then restart genui-shell
+              </>
+            )}
+          </span>
+        </div>
       )}
       <RenderZone subscribe={bus.subscribe} sendAction={bus.sendAction} />
       {asks.length > 0 && (

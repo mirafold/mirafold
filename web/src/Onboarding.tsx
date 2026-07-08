@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { AgentName } from "@protocol";
+import { CONNECT_HINT, LABEL } from "./agents-meta";
 
 // P.4: the shell-owned onboarding picker. No agent is assumed — first run is
 // "choose your agent." Credentials never reach the browser; the server tells us
@@ -9,12 +10,8 @@ import type { AgentName } from "@protocol";
 // daemon was launched from (terminal parity), editable to point a session
 // anywhere. The server rejects a path that doesn't exist; `error` is that
 // rejection, shown here so the user can fix the path and retry.
-
-const LABEL: Record<AgentName, string> = {
-  "claude-code": "Claude Code",
-  codex: "Codex",
-  "gemini-cli": "Gemini CLI",
-};
+// R.4b: a credential-less row carries the one-line fix (login command or env
+// var) instead of a bare badge — the picker itself says what to set or run.
 
 export function Onboarding({
   agents,
@@ -66,10 +63,13 @@ export function Onboarding({
                 className="onb-agent"
                 onClick={() => onPick(agent, cwd.trim() || undefined)}
               >
-                <span className="onb-agent-name">{LABEL[agent]}</span>
-                <span className={`onb-agent-status ${live ? "onb-live" : "onb-demo"}`}>
-                  {live ? "ready" : "no credentials · demo"}
+                <span className="onb-agent-row">
+                  <span className="onb-agent-name">{LABEL[agent]}</span>
+                  <span className={`onb-agent-status ${live ? "onb-live" : "onb-demo"}`}>
+                    {live ? "ready" : "no credentials · demo"}
+                  </span>
                 </span>
+                {!live && <span className="onb-agent-hint">{CONNECT_HINT[agent]}</span>}
               </button>
             ))
           )}
