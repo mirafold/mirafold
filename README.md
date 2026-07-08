@@ -757,14 +757,16 @@ port. The daemon prints (and opens) a URL carrying a per-launch auth token
 a shared machine off your socket. With `--no-open` or on a headless box, open
 the exact printed URL (it has the token); `GENUI_TOKEN=""` disables the token
 on a single-user machine. The package ships only the launcher + the two esbuild bundles + the
-built front end (~235 KB tarball); agent credentials come from your
+built front end (9 files, ~264 KB tarball); agent credentials come from your
 environment exactly as in a terminal (`ANTHROPIC_API_KEY`, `codex login`,
 `GEMINI_API_KEY`) — none live in the package. **Native-module note:**
 `node-pty` (the `!` PTY, Step 4.9) has prebuilt binaries for macOS and
 Windows; on Linux npm compiles it at install, which needs `make`/`g++`/
 `python3` — the accepted long-tail fallback, not something we engineer
 around. *(Publishing to npm is the M2 launch action — until then, install
-from a tarball: `npm pack` in the repo, then `npm i -g ./genui-shell-*.tgz`.)*
+from a tarball. Prerequisites: `yarn` on PATH and a prior `yarn install`,
+because `prepack` runs `yarn build`. Then: `npm pack` in the repo, and
+`npm i -g ./genui-shell-*.tgz`.)*
 
 ### Prerequisites (development)
 

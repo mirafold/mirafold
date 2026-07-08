@@ -908,21 +908,29 @@ polish and security-test insurance).
       is this different from Happy" in the first hour and the answer
       should be ours, not the thread's.
   - **Package & repo hygiene** (2026-07-07 friction log + 2026-07-08
-    operability review):
-    - Pin a `packageManager` field in package.json (no pin today — corepack
-      users get whatever yarn resolves; the v1 lockfile implies classic).
-    - Add `bugs` / `homepage` / `author` to package.json (homepage = the
-      R.2 domain; `npm pack --dry-run` itself verified clean 2026-07-08 —
-      9 files, 259 KB, LICENSE + README included, no strays).
-    - README §8's tarball footnote: name its real prerequisites (`yarn` on
-      PATH + a prior `yarn install` — `prepack` runs `yarn build`) and
-      correct the tarball size (~259 KB, not ~235 KB).
-    - Refresh the dated `DEFAULT_MODEL=claude-sonnet-4-6` suggestion in
-      `.env.example`.
-    - GitHub issue template warning against pasting boot output verbatim
-      (it contains the `?token=` URL and, with the relay on, the pairing
-      code — the remote-path credential).
-    - Final secrets sweep of both repos.
+    operability review) — **ALL DONE 2026-07-08:**
+    - [x] Pin a `packageManager` field in package.json — `yarn@1.22.22`
+      (matches the v1 lockfile; corepack now resolves a fixed yarn).
+    - [x] Add `bugs` / `homepage` / `author` to package.json (author =
+      "Kyle Serrecchia (github.com/kserrec)"; homepage/bugs = the GitHub
+      repo for now — swap homepage to the R.2 domain once it exists).
+      `npm pack --dry-run` re-verified: 9 files, ~264 KB, LICENSE + README
+      in, `.github/` NOT shipped (not in the `files` whitelist).
+    - [x] README §8 tarball footnote: names the real prerequisites (`yarn`
+      on PATH + a prior `yarn install`, since `prepack` runs `yarn build`)
+      and the corrected size (9 files, ~264 KB — the real current number,
+      not the ~259 KB estimate).
+    - [x] Refresh the dated `DEFAULT_MODEL` suggestion in `.env.example` —
+      now unset by default (Claude Code inherits its OWN configured model,
+      the faithful-skin default) with a comment showing how to pin one
+      (`claude-sonnet-5` as the example); no stale id shipped.
+    - [x] GitHub issue template (`.github/ISSUE_TEMPLATE/bug_report.md`)
+      leading with the SCRUB-two-secrets warning (`?token=` URL + relay
+      pairing code) before any log paste; asks for `--version` and
+      `GENUI_DEBUG=1`.
+    - [x] Secrets sweep of the repo (relay-service included): `.env`
+      gitignored + untracked; no secret-shaped strings in tracked files
+      (only doc prose + the deliberate `OPENAI_API_KEY=local` dummy).
   - **Real-hardware checks** (need R.2 deployed; none need the registry):
     - Scan the QR with a real phone through the deployed relay, drive a
       session, flip wifi→LTE mid-turn (owed by R.4 — now listed, not just
