@@ -687,6 +687,67 @@ notifications are **not** part of the launch and are not sold until built.
     remove the CSP meta, let state ops through the parser) makes at least one
     test fail — verified by actually flipping each, then restoring it.
 
+- [ ] **Step R.4f — `!` must not kill the daemon (from the 2026-07-08
+  operability review)** *(pre-launch bug fix, small; found by reading, not
+  yet observed on a real Windows box — the code path is unambiguous)*
+  - Goal: on Windows, typing any `!` command almost certainly kills the whole
+    daemon. `spawnBang` picks `process.env.SHELL || "/bin/bash"`
+    (`server/pty.ts`); on Windows `SHELL` is unset and `/bin/bash` doesn't
+    exist, so node-pty's `spawn` throws — inside `connection.ts`'s `bang`
+    case (no try/catch), inside the ws message handler, in a process with no
+    `uncaughtException` handler. One keystroke, every in-memory session gone.
+    The tarball ships win32 prebuilds and R.6 plans Windows checks — Windows
+    is an intended audience.
+  - Build: per-platform shell fallback (win32 → `cmd.exe /c` or
+    PowerShell — pick one, terminal-faithful for what a Windows user's own
+    terminal would run); wrap the spawn so a throw becomes an `error`
+    WireMsg + `bang_end` on that session, never a process death (this also
+    hardens the mac/linux path against exotic SHELL values).
+  - Files: `server/pty.ts`, the bang case in `server/connection.ts`, tests
+    in kind (Tier 2: a bang with a forced-bad shell errors the session and
+    the daemon survives; the real Windows keystroke lands in R.6's
+    cold-install checks).
+  - Done when: a failing shell spawn surfaces as an in-transcript error on
+    that session only, proven over a real socket — and the R.6 Windows pass
+    runs `!dir` successfully.
+
+- [ ] **Step R.4g — Supportability sweep: version, error logging, honest
+  failure text (from the 2026-07-08 operability review)** *(pre-launch;
+  several small touches, one theme: a stranger's bug report must contain
+  enough to act on)*
+  - Goal: today a bug report contains nothing usable. (1) **No version
+    anywhere** — no `--version`, none in the boot line, the UI, or the
+    `agents` hello; post-relay, the phone bundle vs daemon version is a
+    second invisible axis. (2) **The likeliest failures never reach the
+    terminal** — engine/adapter errors (bad key, engine died, CLI missing)
+    go to the browser as `error` WireMsgs and are never logged server-side;
+    there are 14 log sites total (boot/attach/action/relay), no timestamps,
+    and no debug knob. (3) The boot output **prints the pairing code** — a
+    user pasting their terminal into a public issue leaks the remote-path
+    credential. (4) On Node < 20.12, `process.loadEnvFile` doesn't exist and
+    the bare try/catch swallows it — a valid key in `.env` lands in mock
+    mode with zero indication why. (5) A daemon crash (no process-level
+    handlers) is loud but points nowhere.
+  - Build: read the package version once (esbuild-safe — import or embed at
+    build time) → boot line, `--version`/`--help` in `bin/genui-shell.js`,
+    `agents` hello (additive field) and status bar; mirror every `error`
+    WireMsg the daemon emits to `console.error` with a timestamp; one
+    opt-in `GENUI_DEBUG=1` that logs normalized adapter events + engine
+    stderr; a "keep this secret" marker on the pairing-code line; catch the
+    missing-`loadEnvFile` case distinctly and say so ("this Node can't read
+    .env — need ≥ 20.12"); `uncaughtException`/`unhandledRejection`
+    last-gasp handlers that print version + report URL and re-exit nonzero
+    (crash stays loud — it just signs its name).
+  - Files: `bin/genui-shell.js`, `server/index.ts`, `server/protocol.ts`
+    (additive hello field), `web/src/StatusBar.tsx`, adapters (debug hook),
+    tests in kind (Tier 1: version string + flag; Tier 2: error mirroring
+    observed in daemon logs).
+  - Done when: `genui-shell --version` answers; the boot line, status bar,
+    and hello all carry the version; a live-agent failure appears in BOTH
+    the transcript and the terminal log with a timestamp; and a wrong-Node
+    `.env` user is told exactly what happened instead of silently getting
+    the mock.
+
 - [ ] **Step R.5 — Entitlement + billing** *(needs Kyle: Stripe account +
   price confirmation — BUSINESS.md §7 says $12/mo · $99/yr)*
   - Goal: paying unlocks the relay, on launch day, with almost nothing
@@ -695,7 +756,11 @@ notifications are **not** part of the launch and are not sold until built.
     daemon pairings only with an active entitlement (the *relay* checks
     entitlement — the daemon and wire protocol stay payment-ignorant);
     graceful expiry/renewal. A minimal landing page (demo GIF, install
-    command, buy button, docs links) on the R.2 domain.
+    command, buy button, docs links) on the R.2 domain. Also (2026-07-08
+    operability review): a stranger-facing top section on README.md itself —
+    install, GIF, what it is, then "engineering docs below" — because the
+    npm package page renders the README, and today it opens as a 60 KB
+    maintainer doc.
   - Done when: a Stripe test-mode purchase unlocks pairing end-to-end, and
     expiry re-locks it without breaking the local product in any way.
 
@@ -712,7 +777,14 @@ notifications are **not** part of the launch and are not sold until built.
     README §8's tarball footnote must name its real prerequisites (`yarn`
     on PATH + a prior `yarn install` — `prepack` runs `yarn build`) and
     correct the tarball size (~259 KB, not ~235 KB), and refresh the dated
-    `DEFAULT_MODEL=claude-sonnet-4-6` suggestion in `.env.example`; verify
+    `DEFAULT_MODEL=claude-sonnet-4-6` suggestion in `.env.example`; from the
+    2026-07-08 operability review: add `bugs` / `homepage` / `author` to
+    package.json (homepage = the R.2 domain; `npm pack --dry-run` itself
+    verified clean — 9 files, 259 KB, LICENSE + README included, no strays),
+    a GitHub issue template that warns against pasting boot output verbatim
+    (it contains the `?token=` URL and, with the relay on, the pairing
+    code — the remote-path credential), and run `!dir` on the Windows pass
+    (the R.4f fix's real-hardware check); verify
     `npx genui-shell` against the real registry (unverifiable until
     publish); then, same day: repo public → `npm publish` over the 0.0.1
     placeholder → post (X + Show HN + r/ClaudeAI + r/LocalLLaMA with the
