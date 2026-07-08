@@ -9,6 +9,7 @@ import {
   type AgentSession,
   type TodoItem,
   capOutput,
+  joinTextBlocks,
   toolDetail,
   PERMISSION_TIMEOUT_MS,
 } from "./types";
@@ -43,15 +44,11 @@ export function normalizeTodos(input: unknown): TodoItem[] | null {
   return out.length ? out : null;
 }
 
+// Capping happens at emit via capOutput (T2.3), never here.
 export function resultText(content: unknown): string {
-  let text: string;
-  if (typeof content === "string") text = content;
-  else if (Array.isArray(content))
-    text = content
-      .map((b) => (b?.type === "text" ? String(b.text) : `[${String(b?.type ?? "block")}]`))
-      .join("\n");
-  else text = content == null ? "" : JSON.stringify(content);
-  return text; // capping happens at emit via capOutput (T2.3)
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) return joinTextBlocks(content);
+  return content == null ? "" : JSON.stringify(content);
 }
 
 /**

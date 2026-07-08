@@ -1036,6 +1036,16 @@ the M2 launch trigger. Keep every seam agent-neutral and compatible with that.
   aliasing it.
 - **Mock-first development:** if a UI feature can't be exercised without an
   API key, add the message flow to `MockSession` first.
+- **Accepted duplication (don't consolidate on the next refactor):** the
+  adapters' identical `worker()` prompt loops and listener/`emit` boilerplate
+  stay duplicated — a shared base class would couple adapters that
+  deliberately stand alone behind `AgentSession`, for no readability gain.
+  Likewise `RenderZone`'s near-twin `render`/`artifact` upsert blocks (the
+  matched key and updated fields differ; a generic helper reads worse), and
+  `mock.ts`'s length (scripted demo content, not tangle). Shared logic that
+  IS consolidated lives in `adapters/types.ts` (`capOutput`, `toolDetail`,
+  `joinTextBlocks`) and `adapters/render-mcp-cmd.ts` (`generativeUIMsg`,
+  `RENDER_ID_RE`) — decided at the 2026-07-08 refactor.
 - **`dist/` is gitignored build output** served by Express; rebuild with
   `yarn build` when the front end changes and you're testing the one-port
   path.

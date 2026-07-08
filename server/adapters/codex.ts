@@ -9,8 +9,8 @@ import {
   type ThreadItem,
 } from "@openai/codex-sdk";
 import type { WireMsg } from "../protocol";
-import { type AgentSession, type TodoItem, capOutput } from "./types";
-import { GENUI_MCP, RENDER_TOOL_COMPONENT, renderMcpCommand } from "./render-mcp-cmd";
+import { type AgentSession, type TodoItem, capOutput, joinTextBlocks } from "./types";
+import { GENUI_MCP, RENDER_ID_RE, generativeUIMsg, renderMcpCommand } from "./render-mcp-cmd";
 import { AsyncQueue, CLOSE } from "./async-queue";
 
 // The generative-UI MCP server injected into Codex (P.3). Codex loads MCP
@@ -22,9 +22,7 @@ const RENDER_MCP = renderMcpCommand();
 
 export function mcpText(content: unknown): string {
   if (!Array.isArray(content)) return content == null ? "" : String(content);
-  return content
-    .map((b) => (b?.type === "text" ? String(b.text) : `[${String(b?.type ?? "block")}]`))
-    .join("\n");
+  return joinTextBlocks(content);
 }
 
 // The component id the render-mcp stub assigned (structuredContent is the
@@ -33,7 +31,7 @@ export function mcpText(content: unknown): string {
 export function extractRenderId(item: McpToolCallItem): string {
   const sc = item.result?.structured_content as { renderId?: unknown } | undefined;
   if (sc && typeof sc.renderId === "string") return sc.renderId;
-  const m = mcpText(item.result?.content).match(/id:\s*([0-9a-fA-F-]{8,})/);
+  const m = mcpText(item.result?.content).match(RENDER_ID_RE);
   if (m) return m[1];
   const argId = (item.arguments as { id?: unknown } | undefined)?.id;
   return typeof argId === "string" ? argId : randomUUID();
@@ -309,24 +307,12 @@ export class CodexSession implements AgentSession {
 
   /** Turn a genui MCP tool call into the render/artifact WireMsg it stands for. */
   private emitGenerativeUI(item: McpToolCallItem) {
-    const renderId = extractRenderId(item);
     const args =
       item.arguments && typeof item.arguments === "object"
-        ? { ...(item.arguments as Record<string, unknown>) }
+        ? (item.arguments as Record<string, unknown>)
         : {};
-    delete args["id"];
-    if (item.tool === "emit_artifact") {
-      this.emit({
-        type: "artifact",
-        html: typeof args["html"] === "string" ? (args["html"] as string) : "",
-        id: renderId,
-        title: typeof args["title"] === "string" ? (args["title"] as string) : undefined,
-      });
-      return;
-    }
-    const component = RENDER_TOOL_COMPONENT[item.tool];
-    if (!component) return; // unknown genui tool — ignore rather than paint junk
-    this.emit({ type: "render", component, props: args, id: renderId });
+    const msg = generativeUIMsg(item.tool, args, extractRenderId(item));
+    if (msg) this.emit(msg);
   }
 
   private emitChecklist(items: { text: string; completed: boolean }[]) {

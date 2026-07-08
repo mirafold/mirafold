@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import type { WireMsg } from "../protocol";
 import { type AgentSession, capOutput, toolDetail } from "./types";
-import { GENUI_MCP, RENDER_TOOL_COMPONENT, renderMcpCommand } from "./render-mcp-cmd";
+import { GENUI_MCP, RENDER_ID_RE, generativeUIMsg, renderMcpCommand } from "./render-mcp-cmd";
 import { AsyncQueue, CLOSE } from "./async-queue";
 
 // Same generative-UI stdio MCP server the Codex adapter injects (P.3). Gemini
@@ -26,7 +26,7 @@ const geminiBin = () => {
 
 /** The component id the render-mcp stub returned, parsed from its output text. */
 export function parseRenderId(output: unknown): string {
-  const m = String(output ?? "").match(/id:\s*([0-9a-fA-F-]{8,})/);
+  const m = String(output ?? "").match(RENDER_ID_RE);
   return m ? m[1] : randomUUID();
 }
 
@@ -287,19 +287,7 @@ export class GeminiCliSession implements AgentSession {
   /** A buffered genui tool call → the render/artifact WireMsg it stands for. */
   private emitGenerativeUI(pending: { tool: string; params: Record<string, unknown> }, output: unknown) {
     const id = typeof pending.params["id"] === "string" ? (pending.params["id"] as string) : parseRenderId(output);
-    const props = { ...pending.params };
-    delete props["id"];
-    if (pending.tool === "emit_artifact") {
-      this.emit({
-        type: "artifact",
-        html: typeof props["html"] === "string" ? (props["html"] as string) : "",
-        id,
-        title: typeof props["title"] === "string" ? (props["title"] as string) : undefined,
-      });
-      return;
-    }
-    const component = RENDER_TOOL_COMPONENT[pending.tool];
-    if (!component) return;
-    this.emit({ type: "render", component, props, id });
+    const msg = generativeUIMsg(pending.tool, pending.params, id);
+    if (msg) this.emit(msg);
   }
 }
