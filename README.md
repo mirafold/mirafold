@@ -45,10 +45,13 @@ codebase. Companion documents:
 
 - **[PLAN.md](PLAN.md)** — the phased build plan. Every step has
   Goal / Build / Files / Done-when. Shipped so far: **Phases 0, 1, T, 2, 3, T2,
-  and P** (three faithful agent skins — Claude Code, Codex, Gemini CLI), plus
-  all of Phase 4 except the hosted relay (4.7, gated on M2/M3). What remains
-  is 4.7 and Phase L (local models — L.1 ships with M2). PLAN.md is the source
-  of truth for what comes next; completed phases are archived in
+  and P** (three faithful agent skins — Claude Code, Codex, Gemini CLI), all
+  of Phase 4, L.1, and the buildable core of **Phase R** (the hosted relay:
+  R.1 dial-out + envelope, R.3 per-pair E2E encryption, R.4's QR pairing +
+  phone layout — all verified against the in-repo stub). What remains is the
+  relay *deploy* (R.2, Fly.io), billing (R.5), and launch day (R.6), plus
+  demand-gated Phase L ergonomics. PLAN.md is the source of truth for what
+  comes next; completed phases are archived in
   **[PLAN-ARCHIVE.md](PLAN-ARCHIVE.md)**.
 - **[BUSINESS.md](BUSINESS.md)** — positioning, wedges, pricing, and the
   milestone gates that sequence the plan. The two build-relevant conclusions:
@@ -113,7 +116,9 @@ type WireMsg =
       agent?: AgentName; resumed?: boolean }       // (P.4: + agent; 4.4: + resumed —
                                                    //  true ⇒ tail replay, don't reset)
   | { type: "agents"; agents: { agent: AgentName; live: boolean }[]; // P.4: onboarding
-      default: AgentName; cwd?: string; home?: string }            //   (4.8: + cwd/home)
+      default: AgentName; cwd?: string; home?: string;             //   (4.8: + cwd/home)
+      relay?: { url: string; code: string } }        // R.4: pairing info for the QR —
+                                                     //   local viewports only
   | { type: "usage"; model: string; inputTokens: number;           // T2.6: status-bar
       outputTokens: number; costUsd?: number }                     //   accounting
   // 4.9: the `!` passthrough's lifecycle + OUTPUT stream (broadcast, replayed).
@@ -154,8 +159,12 @@ output-zone-local, never sent).
 **The cardinal rule: later phases ADD message types (or OPTIONAL fields);
 existing shapes never change.** That's what makes every phase additive and
 keeps old clients from breaking. The union above is complete for everything
-shipped — no further additions are currently planned (the 4.7 relay forwards
-these same frames unchanged; it needs no new types).
+shipped. The Phase R relay proves the rule from below: it carries these same
+frames as **opaque, end-to-end-encrypted payloads** inside its own tiny
+envelope (`server/relay-protocol.ts` — a transport layer under `WireMsg`,
+not new message types), and R.4 added exactly one optional field
+(`agents.relay`, the pairing info for the connect-a-device QR — sent to
+local viewports only, never across the relay).
 
 **The `!` passthrough (Step 4.9).** A prompt starting with `!` never reaches
 the model: the trusted shell intercepts it and the server runs the rest in a
@@ -314,6 +323,14 @@ server/            the local daemon (Node, run with tsx)
   auth.ts            the 4.5 auth predicates (token cookie, loopback Origin) —
                      pure functions; index.ts wires them into HTTP + WS
   pty.ts             the `!` passthrough's PTY runner (node-pty, 4.9)
+  connection.ts      one viewport's server side, transport-agnostic (R.1) —
+                     shared verbatim by local sockets and relay viewports
+  relay-protocol.ts  the relay envelope + pairing-code mint (R.1/R.3)
+  relay-crypto.ts    per-pair E2E encryption, WebCrypto-only — the same file
+                     runs in the browser via the @relay-crypto alias (R.3)
+  relay-client.ts    daemon dial-out: no listening port for remote access (R.1)
+  relay-stub.ts      in-repo dumb-forwarder stub for dev + tests (real service:
+                     genui-relay, a separate private repo — PLAN R.2)
   index.ts           Express + ws server; connections attach as viewports
 web/               the browser app (React 19 + Vite)
   index.html         entry html
@@ -334,8 +351,12 @@ web/               the browser app (React 19 + Vite)
                      ActionRow/context
   src/FleetView.tsx  mission control at / (4.6): live session list, rename,
                      new-session affordance; routing lives in main.tsx
+  src/ConnectDevice.tsx  shell-owned "⧉ pair" affordance: QR of the pairing
+                     URL, status bar + fleet header (R.4)
   src/ws.ts          SocketClient: typed send/onMessage, hello, seq cursor,
-                     heartbeat (half-open detection) + capped backoff (4.4)
+                     heartbeat (half-open detection) + capped backoff (4.4);
+                     on a relay page (#code= fragment) it handshakes and
+                     seals/opens every frame via @relay-crypto (R.3)
   src/styles.css     the design identity in CSS (see §7)
 bin/               genui-shell launcher (4.10): spawns dist-server, opens browser
 demo/              the M1 demo GIF embedded at the top of this README
@@ -348,8 +369,8 @@ workspace/         legacy scratch dirs (pre-4.8 default cwd) — gitignored
 PLAN.md            the phased build plan (source of truth for next steps)
 PLAN-ARCHIVE.md    completed phases (0, T, 1, 2, 3, T2, P) with their status notes
 BUSINESS.md        strategy; gates that sequence the plan
-vite.config.ts     web root, @protocol alias, /ws proxy → :3000, dist output
-tsconfig.json      one tsconfig for both sides; @protocol path
+vite.config.ts     web root, @protocol/@relay-crypto aliases, /ws proxy → :3000
+tsconfig.json      one tsconfig for both sides; @protocol/@relay-crypto paths
 .env.example       GENUI_AGENT + per-agent credentials/models (ANTHROPIC_API_KEY /
                    DEFAULT_MODEL, OPENAI_API_KEY / CODEX_MODEL, GEMINI_API_KEY /
                    GEMINI_MODEL) + PORT
@@ -747,10 +768,15 @@ that agent's own default), `PORT`, and these tuning knobs:
 default 64 KB), `BANG_CONTEXT_CAP` (tail of a `!` transcript injected into
 the agent's context, default 16 KB), `MAX_THINKING_TOKENS` (opt-in extended
 thinking), `MAX_WS_PAYLOAD` (largest inbound WS frame, default 1 MB),
-`MAX_SESSIONS` (concurrent-session ceiling, default 100), and `GENUI_TOKEN`
+`MAX_SESSIONS` (concurrent-session ceiling, default 100), `GENUI_TOKEN`
 (the socket auth token, §3 — set empty to disable, or pin a fixed value;
 `yarn dev` sets it empty because the Vite `:5173` proxy is cross-origin and
-can't carry the cookie).
+can't carry the cookie), and the Phase R relay pair: `GENUI_RELAY_URL`
+(ws/wss address of a relay — set, the daemon dials out and remote pairing
+turns on; unset, the whole relay path is off) and `GENUI_RELAY_CODE` (pin
+the pairing code across restarts; unset, a fresh 128-bit code is minted per
+launch and printed). For dev, `node --import tsx server/relay-stub.ts` runs
+the in-repo stub relay on `:9100`.
 
 **Fully local, no API key:** a session is local when the *agent* behind it
 points at a local inference server — Claude Code against Ollama's Anthropic
@@ -778,9 +804,10 @@ exists beside the code, tsx + TS source in dev.
 
 ```sh
 yarn typecheck    # tsc --noEmit over server + web + vite config (tests included)
-yarn test         # Tier 1 — pure/unit, node:test + tsx, ~2s, run on every commit
-yarn test:server  # Tier 2 — spawns the real daemon (mock-forced), drives real ws sockets, ~30s
-yarn test:e2e     # Tier 3 — yarn build + headless Chrome (playwright-core), opt-in, ~12s
+yarn test         # Tier 1 — pure/unit, node:test + tsx, ~3s, run on every commit
+yarn test:server  # Tier 2 — spawns the real daemon (mock-forced), drives real ws sockets, ~45s
+yarn test:e2e     # Tier 3 — yarn build + headless Chrome (playwright-core), opt-in, ~75s
+                  #   (files run sequentially — parallel Chrome suites flake on modest hardware)
 ```
 
 The suite is **`node:test` + `tsx`, zero test-framework dependencies** — the
@@ -789,13 +816,18 @@ live next to their source; the suffix picks the tier: `*.test.ts` (Tier 1,
 pure logic — security predicates, caps, all three adapters' event mapping on
 synthetic events (Claude Code through an injected engine seam, Codex through
 a stubbed thread, Gemini through a scripted binary), the `SocketClient`
-reconnect state machine on a stubbed WebSocket), `*.itest.ts` (Tier 2,
+reconnect state machine on a stubbed WebSocket, and the R.3 E2E crypto —
+tamper/replay/reorder/wrong-key all rejected), `*.itest.ts` (Tier 2,
 integration — the auth gate, DoS caps, the mock-turn wire grammar, the
 interrupt/component-action wire paths, the permission deny-on-timeout,
-registry replay/resume, the bang-secrets invariant, and the stdio render-MCP
-stub's ack contract over a real MCP handshake), and
+registry replay/resume, the bang-secrets invariant, the stdio render-MCP
+stub's ack contract over a real MCP handshake, and the relay path over the
+stub: byte-for-byte local/remote mirror, a ciphertext-only tap audit of what
+the relay can observe, fail-closed tamper/wrong-code, daemon re-dial), and
 `*.e2e.ts` (Tier 3 — token→cookie boot, a full turn rendering in the DOM,
-the artifact iframe executing under the CSP; needs `google-chrome`, path
+the artifact iframe executing under the CSP, a second browser mirrored
+through the relay stub, and the phone suite: 390×844 touch pairing, thumb
+permissions, offline→online mid-turn resume; needs `google-chrome`, path
 overridable via `CHROME_BIN`).
 
 Two rules the suite is built on: **no test may reach a real model** — Tier 2/3
@@ -873,18 +905,25 @@ Read PLAN.md for the real thing; the shape in one breath:
   light mode (4.3), seq-cursor resume + heartbeat (4.4), the per-launch auth
   token + the rest of the pre-launch security audit (4.5's auth slice), and
   **mission control** — the live fleet at `/` (4.6).
-- **Also shipped (2026-07-07):** the three-tier test suite (§8) — 120+ tests,
+- **Also shipped (2026-07-07):** the three-tier test suite (§8) — 150+ tests,
   `node:test` + `tsx`, zero test-framework dependencies, no test ever reaches
   a real model.
 - **Also shipped (2026-07-07):** Phase L.1 — the documented local path
   (`docs/local-models.md`), verified end-to-end against a real local model.
-- **Now (the launch-complete pivot, 2026-07-07):** **Phase R** — the hosted
-  relay (pairing, E2E encryption, phone viewport, entitlement/billing) built
-  *before* going public, so the launch is one event: demo post, repo public,
-  `npm publish`, and a purchasable Pro tier on the same day (~two-week
-  target; PLAN Phase R, BUSINESS.md §9 pivot note). True multi-user
-  isolation (the part of 4.5 deliberately deferred) lands here, when
-  viewports actually become remote.
+- **Also shipped (2026-07-07):** the buildable core of **Phase R** — the
+  relay envelope + daemon dial-out (R.1), per-pair E2E encryption (R.3: the
+  relay sees only a hash of the pairing code and ciphertext frames), and
+  R.4's local slice (the ⧉ pair QR affordance, the phone-width layout pass,
+  offline→online mid-turn resume over the relay) — all verified across all
+  three tiers against the in-repo stub.
+- **Now (the launch-complete pivot, 2026-07-07):** finishing **Phase R** —
+  deploy the relay service (R.2: a portable Node.js + `ws` process in a
+  separate private repo, Fly.io single-region first — architecture locked,
+  see PLAN's decisions), entitlement/billing (R.5, Stripe), then launch as
+  one event: demo post, repo public, `npm publish`, and a purchasable Pro
+  tier on the same day (PLAN Phase R, BUSINESS.md §9 pivot note). True
+  multi-user isolation (the part of 4.5 deliberately deferred) lands here,
+  when viewports actually become remote.
 - **Post-launch, demand-gated:** `--local` easy mode (L.2), per-session
   provider mix (L.3), push notifications, and further agent adapters as
   users ask.
