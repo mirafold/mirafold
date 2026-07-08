@@ -851,3 +851,293 @@ pattern on one before committing to all.
     **Phase P COMPLETE — three terminal agents (Claude Code, Codex, Gemini CLI),
     each faithfully re-skinned behind one front end, all carrying the generative
     UI, none privileged.**
+
+---
+
+## Phase 4 — Product hardening (completed steps; moved 2026-07-08)
+
+Phase 4's completed steps, moved out of PLAN.md (its header, intro, and the
+4.7 → Phase R pointer stay there — Phase R is the live front). Preserved
+verbatim, full dated status notes included.
+
+- [x] **Step 4.1 — Session persistence**
+  - Build: persist conversation + render history; restore on reconnect so a
+    drop/refresh resumes the same view.
+  - Done when: refreshing the page restores the conversation and rendered
+    components.
+  - Status: **done via 4.2 (2026-07-05)** — the registry's per-session ring
+    buffer replays the full WireMsg history on every attach, so refresh
+    restores transcript + components. NOTE (corrected 2026-07-05): a genuine
+    page reload does **not** restore *pins* — pin state is un-persisted
+    output-zone React state, never on the wire and not in the replay buffer,
+    so a hard refresh repaints the components un-pinned (verified in headless
+    Chrome: pin → Ctrl+R → component returns, pin gone). Pins survive only a
+    socket-level reconnect (React state isn't torn down), not a page reload.
+    Persisting pins across refresh (e.g. localStorage keyed by session id) is
+    unbuilt. In-memory only: durability across daemon restarts folds into 4.4.
+
+- [x] **Step 4.2 — Session registry (decouple sessions from connections)**
+  - Goal: sessions survive refreshes and disconnects; a connection is a
+    viewport, not a session. This is the substrate for 4.1, 4.4, 4.6, 4.7.
+  - Build: server-side `Map<sessionId, Session>` that outlives sockets. Add
+    `{type:"attach", sessionId}` / `{type:"create", cwd?}` to `ClientMsg` and
+    `{type:"session_created"}` to `WireMsg`; route each connection's prompts
+    to its attached session and fan the session's `WireMsg` stream out to
+    **all** attached viewports. `ws.on("close")` detaches (never closes) the
+    session; sessions die only on explicit close or idle timeout. Keep a
+    per-session ring buffer of emitted `WireMsg`s and replay it on attach so
+    a mid-conversation tab catches up (the cheap precursor to 4.1). Each
+    session gets its own working dir (`create` takes a `cwd`) — the mental
+    model is **session ≈ project**. Front end: URL routing `/s/<sessionId>`
+    (a tab is a session view — refresh-safe, bookmarkable), a session strip
+    in the shell (name = last cwd segment or first-prompt summary,
+    renamable), and browser-tab affordances: `document.title` + favicon
+    reflect state (thinking / idle / needs-permission) so the tab bar itself
+    reads as a fleet view.
+  - Files: `server/index.ts`, `server/registry.ts`, `server/protocol.ts`,
+    `web/src/Shell.tsx`, `web/src/ws.ts`, router.
+  - Done when: two tabs on the same `/s/<id>` see the identical live stream;
+    refreshing mid-turn reattaches without losing the session; two different
+    ids run two agents in different cwds concurrently.
+  - Status: **done, verified mock + live (2026-07-05)** — `SessionRegistry`
+    (create/attach/detach/broadcast, 4000-msg ring buffer, 60-min idle
+    reaper); user strips come off the wire (`user_prompt` WireMsg, local
+    echo removed); `zone_reset` + replay repaint on every (re)open; stale
+    ids fall back to create; `/s/<id>` via history.replaceState; tab
+    title+favicon reflect idle/working/permission. Mock 12/12; live: two
+    concurrent agents in different `workspace/<id>` cwds + post-refresh
+    codename recall on the same warm session. Deferred to 4.6: the session
+    strip / rename UI (needs a session-list message).
+
+- [x] **Step 4.3 — Theming & output-zone polish**
+  - Build: theme system, transitions as components mount, friendlier visuals.
+  - Done when: the experience feels deliberately designed, not default.
+  - Status: **done, verified in headless Chrome (2026-07-06)** — the ~65
+    scattered hex values became one semantic token system (`:root` custom
+    properties; accidental near-duplicates like #8b94a7/#8b96a8 merged), and
+    a **light theme** landed with the identity-preserving twist: the terminal
+    chrome (prompt box, command strips, bang/perm/status bars, onboarding)
+    re-declares the dark palette inside light mode — mono-in/rich-out made
+    literal — and code/diff surfaces are pinned dark everywhere (hljs
+    github-dark unswapped; code reads as a terminal window on any canvas).
+    Chart SVG inks moved to token-driven `style` props (series palette
+    unchanged). ☾/☀ toggle in the status bar, localStorage-persisted,
+    applied pre-paint in index.html (no flash). Motion: 160ms rise on
+    transcript entries, theme-fade transitions, ::selection/focus-visible/
+    scrollbar polish, all off under prefers-reduced-motion. Verified 8/8:
+    default dark, toggle to light (chrome stays #161c28/#18202e, code stays
+    #0d1117), persistence across reload, toggle back; screenshots eyeballed
+    in both themes (dark unchanged; light shows dark terminal blocks on a
+    light canvas as designed).
+
+- [x] **Step 4.4 — Robust reconnect / session resume**
+  - Build: replace the Phase 0 reconnect stub with real resume — re-attach to
+    the live warm session (or rehydrate from persistence) without losing
+    in-flight state.
+  - Done when: a network blip mid-turn recovers cleanly.
+  - Status: **done, verified against a real severed connection (2026-07-06)**
+    — reconnects now RESUME instead of repainting: the registry stamps a
+    session-scoped `seq` on every broadcast message; the hello carries
+    `attach.afterSeq` (last seen cursor) and, when the tail is still in the
+    ring buffer, the server replays only the unseen messages under
+    `session_created{resumed:true}` — the client skips zone_reset, so
+    mid-turn streaming continues into the same DOM block and pins/scroll/
+    usage state survive. Cursor off the ring / fresh page → full replay as
+    before. Client hardening: app-level ping→pong heartbeat (25s interval,
+    8s deadline) closes half-open sockets into the reconnect path; backoff
+    500ms→5s cap, short-circuited by `online`/tab-visible. Verified 9/9 in
+    headless Chrome against a TCP proxy severed mid-turn (drop detected,
+    resumed, turn completed; pre-blip DOM node still connected — proof of
+    no repaint; no duplicated strips; idle blip + reload paths clean) plus
+    raw-socket ping→pong; server log shows `resumed @seq`. NOT in scope
+    (deliberate): durability across daemon restarts — the 4.1 note folds it
+    here, but real rehydration needs per-engine session resume (claude
+    --resume / codex thread ids) + a disk ring; that's its own step if
+    wanted (a dead daemon currently falls back to a fresh session cleanly).
+
+- [x] **Step 4.5 — Socket auth token (security slice of the multi-user seam)**
+  - Build: per-user auth + session ownership at the shell boundary; the rest of
+    the stack is unchanged because the seam was kept clean from Phase 0.
+  - Done when: two users have isolated sessions and credentials.
+  - Status: **auth slice done + verified (2026-07-06)**, from the pre-launch
+    security audit (see [[security-audit-2026-07-06]] memory). The launch-gating
+    risk was cross-user RCE: loopback lets any *other account on a shared
+    machine* reach the socket and `bang`-exec a shell as the daemon user. Closed
+    with a per-launch token (`AUTH_TOKEN = GENUI_TOKEN ?? randomUUID()`) gating
+    BOTH the HTTP app and the WebSocket: valid `?token=` mints an
+    `HttpOnly; SameSite=Strict` `genui_token` cookie + 302 to the clean path,
+    else 403; `verifyClient` accepts the cookie (browsers) or a `?token=` query
+    (non-browser), still behind the loopback-origin guard. Launcher opens the
+    token URL; `GENUI_TOKEN=""` disables it (single-user, and the Vite dev proxy
+    which can't present the cookie — `dev:server` sets it empty). Transport-layer
+    only: no `WireMsg` change, key never serialized. Also folded in from the same
+    audit: `.env` secret-path guard widened to Grep/Glob + WebFetch/WebSearch
+    de-auto-allowed (kills the promptless read→exfil chain), `workspace_ls`
+    symlink-escape closed (`realpathSync`), WS frame cap (`MAX_WS_PAYLOAD`) +
+    session cap (`MAX_SESSIONS`), and defense-in-depth shell headers (CSP/nosniff/
+    X-Frame-Options). Verified: function-level (13/13 permissions+actions), wire
+    (auth accept/reject, DoS caps fire), headless Chrome (token→cookie→app+WS,
+    component + sandboxed artifact render under the CSP with zero violations).
+  - Deferred (the rest of the original seam): true multi-user *isolation* — one
+    daemon still holds one credential set and any authed viewport sees every
+    session. Per-user identity + session ownership belongs with the 4.7 relay
+    (when viewports actually become remote/other-user); revisit there.
+
+- [x] **Step 4.6 — Mission control (fleet view)**
+  - Goal: the ambient supervision surface — wedge 1 in BUSINESS.md made
+    literal. Only possible because 4.2 gave sessions identity.
+  - Build: root page at `/` listing all live sessions from the registry —
+    name, cwd, status, last activity, optionally a pinned widget preview —
+    each row linking to `/s/<id>`, plus a "new session" affordance (pick
+    cwd). Server exposes session metadata (registry summary broadcast or
+    fetch-on-load + status pushes).
+  - Files: `web/src/FleetView.tsx`, `server/registry.ts`, `protocol.ts`.
+  - Done when: with three sessions running, `/` shows all three with live
+    status, and clicking one drops into its transcript.
+  - Status: **done, verified mock 13/13 (2026-07-06)** — `/` is now
+    mission control (`FleetView.tsx`; routing in main.tsx: `/s/<id>` →
+    Shell, else fleet). New wire plumbing (additive, per-viewport, never
+    buffered): `watch_sessions` subscribes a connection as a fleet watcher;
+    `sessions` snapshots (id, name, cwd, agent, status, lastActivity,
+    viewport count) are pushed on change, 100ms-coalesced. Status is derived
+    in registry.broadcast from the stream itself — turn_end/error/bang_end →
+    idle, permission_request → permission (sticky until the turn moves),
+    else working — no adapter cooperation needed. Rows: pulsing status dot,
+    rename-in-place (`rename` ClientMsg — the 4.2 deferred item, landed),
+    ~-cwd, agent chip, relative last-activity, open-tab count; click = drop
+    into /s/<id>; ⌂ in the session status bar returns. New-session reuses
+    the onboarding card (create → navigate); an empty fleet auto-opens it,
+    so first-run still lands in "choose your agent". Verified: 3 sessions
+    across 2 cwds listed live; working/permission/idle transitions observed
+    on the fleet while a session ran; rename live + persisted to a fresh
+    watcher; click-through + ⌂ round-trip; both themes screenshot-checked.
+    Deferred: pinned-widget preview on rows (needs pin state on the wire —
+    see 4.1's note; revisit if supervision wants richer rows).
+
+
+- [x] **Step 4.8 — Working directory = terminal parity**
+  - Goal: launching `genui-shell` behaves like launching a terminal agent — it
+    operates on a **real** directory you chose, and you can always see which
+    one. Closes the "why is my agent stuck in a scratch workspace?" gap.
+  - Build: (a) default a session's cwd to the directory the daemon was launched
+    from (`process.cwd()`), not `workspace/<id>` — the terminal's own model
+    (`registry.ts:59`; arbitrary-cwd safety was already settled 2026-07-05 —
+    loopback bind + Origin guard close the remote-cwd vector, not the retired
+    jail). (b) Onboarding gains a working-directory choice beside the agent
+    picker: a type/paste-a-path field first (a browsable folder tree, backed by
+    a local directory-listing endpoint, can fold in later). (c) The trusted
+    shell shows the session's cwd as a prompt-line affordance (e.g.
+    `~/Projects/foo ❯`), shell-owned so the agent can never spoof it — the data
+    already arrives via `session_created.cwd` (`Shell.tsx`).
+  - Files: `server/registry.ts`, `server/index.ts`, `web/src/Onboarding.tsx`,
+    `web/src/Shell.tsx`, `web/src/PromptBox.tsx`, `web/src/styles.css`.
+  - Done when: a stranger runs `genui-shell` in a real project and the session
+    operates on that directory (not a scratch dir), the cwd is visible at the
+    prompt, and a second session can be pointed at a different folder from the
+    picker.
+  - Status: **done, verified mock (2026-07-06)** — default cwd is
+    `process.cwd()` (`resolveCwd` in registry.ts: `~` expands, path must
+    exist — `cd` semantics, a typo rejects the create instead of mkdir-p'ing
+    a stray dir); onboarding gained a prefilled working-directory field
+    (rejection error shown inline, retry works); the prompt line shows the
+    shell-owned `~/Projects/foo ❯` (left-ellipsized, spoof-proof) and the
+    status bar the cwd leaf. Additive protocol: `agents` hello now carries
+    `cwd`+`home` (for the prefill and ~-display). Fixed en route: a
+    `session_created` now zone_resets before replay, so a rejected-create
+    error never lingers above the new transcript. Headless Chrome 14/14
+    (default dir, refresh, second session in a typed dir, bad→retry) +
+    replay-after-reload intact. Live path unchanged (cwd flows to adapters
+    exactly as before). Deferred as planned: browsable folder tree.
+
+- [x] **Step 4.9 — `!` bash passthrough (interactive, via PTY)**
+  - Goal: terminal-faithful `!`, and *better* than the terminal agents' `!` —
+    theirs run without a TTY and so can't do `sudo`, `ssh`, or any program that
+    prompts. genui-shell's `!` is a **real** shell: interactive commands work.
+    No feature is lost switching from the terminal.
+  - Build: the trusted shell intercepts a leading `!` and runs the rest as a
+    shell command in the session's cwd, **not** routed through the model
+    (instant, zero tokens, deterministic). Spawn it through a **PTY**
+    (`node-pty`), not a plain pipe, so `isatty()` is true and interactive
+    programs prompt normally. Add **new, additive** `WireMsg`/`ClientMsg` types
+    for the PTY output stream, input, and lifecycle (never reshape existing
+    ones). Output streams to the output zone **and into the agent's context**
+    (terminal-faithful — the model sees what you ran; injected at the adapter
+    seam, mechanism per-engine). Interactive input (e.g. a `sudo` password) is
+    a **shell-owned, masked** affordance on a **special ephemeral path**: never
+    written to the replay ring, never persisted, never echoed to other
+    viewports, never in a serialized secret (per the wire-protocol
+    non-negotiable). The prompt is **scoped to the viewport that issued the
+    `!`** and is *not* broadcast — matters once the relay exists (a `sudo`
+    prompt must never fan out to a phone).
+  - Tier 1 (this step): line-interactive prompts — `sudo`, `y/n`, ssh
+    host-key. Tier 2 (**deferred, stretch**): a full embedded terminal
+    (`node-pty` + xterm.js — pure-JS front end, no new native module) so
+    `!vim`/`!top`/curses apps render; arguably its own feature.
+  - Files: `server/protocol.ts`, `server/index.ts`, `server/registry.ts`, a new
+    `server/pty.ts`, `server/adapters/*` (context injection), `web/src/Shell.tsx`,
+    `web/src/PromptBox.tsx` (masked input), `web/src/ws.ts`.
+  - Done when: `!ls` runs instantly in the session cwd and its output is visible
+    *and* referenced by the agent on the next turn; `!sudo -v` prompts for a
+    password in a masked shell-owned field, accepts it, and succeeds; the
+    password never appears in the replay buffer or a second viewport.
+  - Status: **done, verified mock + live (2026-07-06)** — `server/pty.ts`
+    (node-pty 1.1.0, ANSI-stripped for Tier 1), additive wire types
+    (`bang_start/output/end` broadcast+replayed; `bang`/`bang_input`/
+    `bang_kill` up), one command at a time per session, PTY killed with the
+    session. Stdin is the ephemeral path: only the issuing viewport mounts
+    the BangBar (auto-masks when the output tail is a password prompt, manual
+    toggle, Ctrl-C→SIGINT, Esc/■→kill); `bang_input` goes PTY-only. Context
+    injection is agent-neutral: finished transcripts (16KB tail cap) ride the
+    next `pushPrompt` as `<bash-input>/<bash-output>`; the user_prompt strip
+    stays raw. Mock 14/14 in headless Chrome (broadcast, replay-secrecy —
+    password absent from both viewports and post-refresh replay — y/n echo
+    parity, kill, exit codes); live: real `!sudo -v` prompted masked through
+    the PTY (killed, not answered — full success is Kyle's password), and
+    Codex quoted the `!` marker back on the next turn. Fixed en route: the
+    4.8 prompt-cwd ellipsis was right-side (bidi) — now LRM-wrapped, leaf
+    stays visible. Deferred as planned (Tier 2): xterm.js full terminal for
+    curses apps; raw-ANSI stream; concurrent bangs; stdin re-attach after
+    refresh.
+
+- [x] **Step 4.10 — Package & publish: `genui-shell` on PATH (M2 launch)**
+  - Goal: satisfy the M2 gate's "`genui-shell` works cold on a stranger's
+    machine." Turn this repo from a clone-and-`yarn-dev` app into an installed
+    tool. This is the last-mile launch step — sequence it at the M2 gate.
+  - Build: a `bin` entry + launcher that boots the server and opens the browser;
+    bundle the built web assets so production serves `./dist` (not the Vite dev
+    split); a `files` allowlist; flip `private:false` and publish over the
+    `0.0.1` name-reservation placeholder. Because Step 4.9 adds **`node-pty`, a
+    native module**, packaging must rely on its **prebuilt binaries** so a
+    normal `npm i -g` stays a clean download (no compile-on-install): pin to
+    Node versions with prebuild coverage and test the install on macOS / Windows
+    / Linux. **Accepted limitation (decided 2026-07-06):** users on an unusual
+    platform/Node with no matching prebuild may hit compile-on-install — we do
+    **not** service that long tail perfectly; document the fallback, don't
+    engineer around it.
+  - Files: `package.json` (bin/files/private/exports), a new `bin/genui-shell`
+    launcher, `server/index.ts` (prod static serving).
+  - Done when: on a clean machine, `npm i -g genui-shell` then `genui-shell` in
+    any directory boots the daemon, opens the browser, and drives the user's own
+    agent — no clone, no `yarn`. (Ties to BUSINESS.md §9 gate M2 + §5.)
+  - Status: **built + verified cold 2026-07-06; the `npm publish` itself is
+    deliberately NOT run — it's the M2 launch trigger and Kyle's call** (repo
+    held private by choice; `npm publish` when ready, over the 0.0.1
+    placeholder). What shipped: `bin/genui-shell.js` (spawns the bundle from
+    the launch dir, opens the browser off the printed URL, `--no-open`);
+    `yarn build` now also esbuilds `dist-server/{index,render-mcp}.js`
+    (deps external); adapters spawn the render-MCP via `renderMcpCommand()`
+    (compiled twin beside the code, else tsx+TS — codex/gemini both);
+    dist served package-relative, not cwd; EADDRINUSE walks up to 20 ports
+    (plus a ws quirk fix: WebSocketServer re-emits listen errors — swallow
+    EADDRINUSE there or the walk dies); package.json: bin/files/engines
+    (>=20.12), web-only deps demoted to devDependencies → 9-file 235 KB
+    tarball, 109-package install. Verified: `npm pack` → `npm i -g` into a
+    clean prefix (~28 s incl. node-pty Linux compile — macOS/Win have
+    prebuilds, Linux toolchain fallback documented in README §8), then from
+    two different dirs: onboarding prefills each launch dir, mock turn +
+    `!` PTY work through the production bundle, second daemon walks to
+    :3001, xdg-open called with the right URL (stubbed); live: Codex
+    session in the installed copy spawned the COMPILED render-mcp.js and
+    painted a render_card. `npx genui-shell` untested against the registry
+    (needs the publish); macOS/Windows install untested here — both are
+    launch-day checks.

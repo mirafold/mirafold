@@ -192,7 +192,9 @@ until the previous step's "Done when" is satisfied. Check items off as you go.
 
 Phases 0, T, 1, 2, 3, T2, and P are **done** — their steps and full dated status
 notes now live in **PLAN-ARCHIVE.md** (moved out to keep this document focused).
-Everything below is the remaining work.
+Phase 4's completed steps (4.1–4.6, 4.8–4.10) joined them 2026-07-08; its
+header stays below with the 4.7 → Phase R pointer. Everything below is the
+remaining work.
 
 ---
 
@@ -206,166 +208,16 @@ is expanded into **Phase R** below (the 2026-07-07 launch-complete pivot:
 the relay ships *before* launch, purchasable on day one, not after an M2
 signal).
 
-- [x] **Step 4.1 — Session persistence**
-  - Build: persist conversation + render history; restore on reconnect so a
-    drop/refresh resumes the same view.
-  - Done when: refreshing the page restores the conversation and rendered
-    components.
-  - Status: **done via 4.2 (2026-07-05)** — the registry's per-session ring
-    buffer replays the full WireMsg history on every attach, so refresh
-    restores transcript + components. NOTE (corrected 2026-07-05): a genuine
-    page reload does **not** restore *pins* — pin state is un-persisted
-    output-zone React state, never on the wire and not in the replay buffer,
-    so a hard refresh repaints the components un-pinned (verified in headless
-    Chrome: pin → Ctrl+R → component returns, pin gone). Pins survive only a
-    socket-level reconnect (React state isn't torn down), not a page reload.
-    Persisting pins across refresh (e.g. localStorage keyed by session id) is
-    unbuilt. In-memory only: durability across daemon restarts folds into 4.4.
-
-- [x] **Step 4.2 — Session registry (decouple sessions from connections)**
-  - Goal: sessions survive refreshes and disconnects; a connection is a
-    viewport, not a session. This is the substrate for 4.1, 4.4, 4.6, 4.7.
-  - Build: server-side `Map<sessionId, Session>` that outlives sockets. Add
-    `{type:"attach", sessionId}` / `{type:"create", cwd?}` to `ClientMsg` and
-    `{type:"session_created"}` to `WireMsg`; route each connection's prompts
-    to its attached session and fan the session's `WireMsg` stream out to
-    **all** attached viewports. `ws.on("close")` detaches (never closes) the
-    session; sessions die only on explicit close or idle timeout. Keep a
-    per-session ring buffer of emitted `WireMsg`s and replay it on attach so
-    a mid-conversation tab catches up (the cheap precursor to 4.1). Each
-    session gets its own working dir (`create` takes a `cwd`) — the mental
-    model is **session ≈ project**. Front end: URL routing `/s/<sessionId>`
-    (a tab is a session view — refresh-safe, bookmarkable), a session strip
-    in the shell (name = last cwd segment or first-prompt summary,
-    renamable), and browser-tab affordances: `document.title` + favicon
-    reflect state (thinking / idle / needs-permission) so the tab bar itself
-    reads as a fleet view.
-  - Files: `server/index.ts`, `server/registry.ts`, `server/protocol.ts`,
-    `web/src/Shell.tsx`, `web/src/ws.ts`, router.
-  - Done when: two tabs on the same `/s/<id>` see the identical live stream;
-    refreshing mid-turn reattaches without losing the session; two different
-    ids run two agents in different cwds concurrently.
-  - Status: **done, verified mock + live (2026-07-05)** — `SessionRegistry`
-    (create/attach/detach/broadcast, 4000-msg ring buffer, 60-min idle
-    reaper); user strips come off the wire (`user_prompt` WireMsg, local
-    echo removed); `zone_reset` + replay repaint on every (re)open; stale
-    ids fall back to create; `/s/<id>` via history.replaceState; tab
-    title+favicon reflect idle/working/permission. Mock 12/12; live: two
-    concurrent agents in different `workspace/<id>` cwds + post-refresh
-    codename recall on the same warm session. Deferred to 4.6: the session
-    strip / rename UI (needs a session-list message).
-
-- [x] **Step 4.3 — Theming & output-zone polish**
-  - Build: theme system, transitions as components mount, friendlier visuals.
-  - Done when: the experience feels deliberately designed, not default.
-  - Status: **done, verified in headless Chrome (2026-07-06)** — the ~65
-    scattered hex values became one semantic token system (`:root` custom
-    properties; accidental near-duplicates like #8b94a7/#8b96a8 merged), and
-    a **light theme** landed with the identity-preserving twist: the terminal
-    chrome (prompt box, command strips, bang/perm/status bars, onboarding)
-    re-declares the dark palette inside light mode — mono-in/rich-out made
-    literal — and code/diff surfaces are pinned dark everywhere (hljs
-    github-dark unswapped; code reads as a terminal window on any canvas).
-    Chart SVG inks moved to token-driven `style` props (series palette
-    unchanged). ☾/☀ toggle in the status bar, localStorage-persisted,
-    applied pre-paint in index.html (no flash). Motion: 160ms rise on
-    transcript entries, theme-fade transitions, ::selection/focus-visible/
-    scrollbar polish, all off under prefers-reduced-motion. Verified 8/8:
-    default dark, toggle to light (chrome stays #161c28/#18202e, code stays
-    #0d1117), persistence across reload, toggle back; screenshots eyeballed
-    in both themes (dark unchanged; light shows dark terminal blocks on a
-    light canvas as designed).
-
-- [x] **Step 4.4 — Robust reconnect / session resume**
-  - Build: replace the Phase 0 reconnect stub with real resume — re-attach to
-    the live warm session (or rehydrate from persistence) without losing
-    in-flight state.
-  - Done when: a network blip mid-turn recovers cleanly.
-  - Status: **done, verified against a real severed connection (2026-07-06)**
-    — reconnects now RESUME instead of repainting: the registry stamps a
-    session-scoped `seq` on every broadcast message; the hello carries
-    `attach.afterSeq` (last seen cursor) and, when the tail is still in the
-    ring buffer, the server replays only the unseen messages under
-    `session_created{resumed:true}` — the client skips zone_reset, so
-    mid-turn streaming continues into the same DOM block and pins/scroll/
-    usage state survive. Cursor off the ring / fresh page → full replay as
-    before. Client hardening: app-level ping→pong heartbeat (25s interval,
-    8s deadline) closes half-open sockets into the reconnect path; backoff
-    500ms→5s cap, short-circuited by `online`/tab-visible. Verified 9/9 in
-    headless Chrome against a TCP proxy severed mid-turn (drop detected,
-    resumed, turn completed; pre-blip DOM node still connected — proof of
-    no repaint; no duplicated strips; idle blip + reload paths clean) plus
-    raw-socket ping→pong; server log shows `resumed @seq`. NOT in scope
-    (deliberate): durability across daemon restarts — the 4.1 note folds it
-    here, but real rehydration needs per-engine session resume (claude
-    --resume / codex thread ids) + a disk ring; that's its own step if
-    wanted (a dead daemon currently falls back to a fresh session cleanly).
-
-- [x] **Step 4.5 — Socket auth token (security slice of the multi-user seam)**
-  - Build: per-user auth + session ownership at the shell boundary; the rest of
-    the stack is unchanged because the seam was kept clean from Phase 0.
-  - Done when: two users have isolated sessions and credentials.
-  - Status: **auth slice done + verified (2026-07-06)**, from the pre-launch
-    security audit (see [[security-audit-2026-07-06]] memory). The launch-gating
-    risk was cross-user RCE: loopback lets any *other account on a shared
-    machine* reach the socket and `bang`-exec a shell as the daemon user. Closed
-    with a per-launch token (`AUTH_TOKEN = GENUI_TOKEN ?? randomUUID()`) gating
-    BOTH the HTTP app and the WebSocket: valid `?token=` mints an
-    `HttpOnly; SameSite=Strict` `genui_token` cookie + 302 to the clean path,
-    else 403; `verifyClient` accepts the cookie (browsers) or a `?token=` query
-    (non-browser), still behind the loopback-origin guard. Launcher opens the
-    token URL; `GENUI_TOKEN=""` disables it (single-user, and the Vite dev proxy
-    which can't present the cookie — `dev:server` sets it empty). Transport-layer
-    only: no `WireMsg` change, key never serialized. Also folded in from the same
-    audit: `.env` secret-path guard widened to Grep/Glob + WebFetch/WebSearch
-    de-auto-allowed (kills the promptless read→exfil chain), `workspace_ls`
-    symlink-escape closed (`realpathSync`), WS frame cap (`MAX_WS_PAYLOAD`) +
-    session cap (`MAX_SESSIONS`), and defense-in-depth shell headers (CSP/nosniff/
-    X-Frame-Options). Verified: function-level (13/13 permissions+actions), wire
-    (auth accept/reject, DoS caps fire), headless Chrome (token→cookie→app+WS,
-    component + sandboxed artifact render under the CSP with zero violations).
-  - Deferred (the rest of the original seam): true multi-user *isolation* — one
-    daemon still holds one credential set and any authed viewport sees every
-    session. Per-user identity + session ownership belongs with the 4.7 relay
-    (when viewports actually become remote/other-user); revisit there.
-
-- [x] **Step 4.6 — Mission control (fleet view)**
-  - Goal: the ambient supervision surface — wedge 1 in BUSINESS.md made
-    literal. Only possible because 4.2 gave sessions identity.
-  - Build: root page at `/` listing all live sessions from the registry —
-    name, cwd, status, last activity, optionally a pinned widget preview —
-    each row linking to `/s/<id>`, plus a "new session" affordance (pick
-    cwd). Server exposes session metadata (registry summary broadcast or
-    fetch-on-load + status pushes).
-  - Files: `web/src/FleetView.tsx`, `server/registry.ts`, `protocol.ts`.
-  - Done when: with three sessions running, `/` shows all three with live
-    status, and clicking one drops into its transcript.
-  - Status: **done, verified mock 13/13 (2026-07-06)** — `/` is now
-    mission control (`FleetView.tsx`; routing in main.tsx: `/s/<id>` →
-    Shell, else fleet). New wire plumbing (additive, per-viewport, never
-    buffered): `watch_sessions` subscribes a connection as a fleet watcher;
-    `sessions` snapshots (id, name, cwd, agent, status, lastActivity,
-    viewport count) are pushed on change, 100ms-coalesced. Status is derived
-    in registry.broadcast from the stream itself — turn_end/error/bang_end →
-    idle, permission_request → permission (sticky until the turn moves),
-    else working — no adapter cooperation needed. Rows: pulsing status dot,
-    rename-in-place (`rename` ClientMsg — the 4.2 deferred item, landed),
-    ~-cwd, agent chip, relative last-activity, open-tab count; click = drop
-    into /s/<id>; ⌂ in the session status bar returns. New-session reuses
-    the onboarding card (create → navigate); an empty fleet auto-opens it,
-    so first-run still lands in "choose your agent". Verified: 3 sessions
-    across 2 cwds listed live; working/permission/idle transitions observed
-    on the fleet while a session ran; rename live + persisted to a fresh
-    watcher; click-through + ⌂ round-trip; both themes screenshot-checked.
-    Deferred: pinned-widget preview on rows (needs pin state on the wire —
-    see 4.1's note; revisit if supervision wants richer rows).
+Steps 4.1–4.6 and 4.8–4.10 are **done** — moved to **PLAN-ARCHIVE.md**
+2026-07-08 with their full dated status notes (same convention as the
+earlier phases). Only 4.7 remains below, as the pointer to Phase R.
 
 - [ ] **Step 4.7 — Hosted relay seam (the paid tier)** → **expanded into
   Phase R below** (launch-complete pivot, 2026-07-07). The original scope —
   daemon dials out via WSS with a pairing token; the relay is a dumb
   forwarder shuttling `WireMsg`/`ClientMsg` frames; to the registry a
   remote device is just another attached viewport; per-pair E2E encryption
-  before charging — is unchanged; it's now sized into R.1–R.6 and sequenced
+  before charging — is unchanged; it's now sized into R.1–R.7 and sequenced
   *before* launch instead of behind the M2 signal. Check this box when
   Phase R ships.
 
@@ -552,6 +404,41 @@ notifications are **not** part of the launch and are not sold until built.
     Owed to launch (R.6 checklist): scan the QR with a real phone through
     the deployed relay, drive a session, and flip wifi→LTE mid-turn.
 
+**The gap-close block (R.4b–R.4h), re-sequenced 2026-07-08.** Seven
+pre-launch steps from the evaluation series. Step ids are
+discovery-stamped and STABLE — commits, memories, and cross-references
+cite them — so the letters don't move; the ORDER below is the order to
+work them (priority, not discovery date). Cut line if the launch window
+forces one: **R.4f, R.4b, R.4h — don't launch without** (a crash bug, the
+likeliest-user honesty fix, and the compat fix that's only cheap before
+relay skew exists); **R.4d, R.4g — strongly should** (a DoS lever and the
+bug-report surface); **R.4c, R.4e — slip only as a last resort** (honesty
+polish and security-test insurance).
+
+- [ ] **Step R.4f — `!` must not kill the daemon (from the 2026-07-08
+  operability review)** *(pre-launch bug fix, small; found by reading, not
+  yet observed on a real Windows box — the code path is unambiguous)*
+  - Goal: on Windows, typing any `!` command almost certainly kills the whole
+    daemon. `spawnBang` picks `process.env.SHELL || "/bin/bash"`
+    (`server/pty.ts`); on Windows `SHELL` is unset and `/bin/bash` doesn't
+    exist, so node-pty's `spawn` throws — inside `connection.ts`'s `bang`
+    case (no try/catch), inside the ws message handler, in a process with no
+    `uncaughtException` handler. One keystroke, every in-memory session gone.
+    The tarball ships win32 prebuilds and R.6 plans Windows checks — Windows
+    is an intended audience.
+  - Build: per-platform shell fallback (win32 → `cmd.exe /c` or
+    PowerShell — pick one, terminal-faithful for what a Windows user's own
+    terminal would run); wrap the spawn so a throw becomes an `error`
+    WireMsg + `bang_end` on that session, never a process death (this also
+    hardens the mac/linux path against exotic SHELL values).
+  - Files: `server/pty.ts`, the bang case in `server/connection.ts`, tests
+    in kind (Tier 2: a bang with a forced-bad shell errors the session and
+    the daemon survives; the real Windows keystroke lands in R.6's
+    cold-install checks).
+  - Done when: a failing shell spawn surfaces as an in-transcript error on
+    that session only, proven over a real socket — and the R.6 Windows pass
+    runs `!dir` successfully.
+
 - [ ] **Step R.4b — First-run honesty (from the 2026-07-07 cold-start
   friction log)** *(independent of R.5/R.2 — buildable now, no external
   accounts; launch-gating in effect: the first five minutes are only good
@@ -599,46 +486,6 @@ notifications are **not** part of the launch and are not sold until built.
     shows no dollar cost; the startup log names only the port it actually
     bound; the 403 page tells the user where the right URL is.
 
-- [ ] **Step R.4c — Resilience honesty (from the 2026-07-07 failure-mode
-  probe)** *(independent of R.2/R.5 — buildable now; both items are everyday
-  events, not exotic: a laptop sleeping, a crash, or re-running `genui-shell`)*
-  - Goal: two live-observed "the app lies / loses data quietly" behaviors
-    from a run-and-break survey (17 malformed frames, daemon kill, relay
-    kill, 10 MB `!`, two-tab permission, live agent-subprocess kill — the
-    rest all passed: the daemon is hard to crash, the stateless relay
-    recovers fully, cross-tab permissions and agent-subprocess death are
-    handled honestly). The two that need fixing both trace to the same fact —
-    the daemon holds every session **in memory with no persistence**, so its
-    death is unrecoverable AND unannounced:
-    (1) **Silent session wipe on reconnect.** Observed: kill the daemon with
-    a browser attached, restart it → the client's `attach` with the old id
-    hits the "stale/unknown id falls back to a fresh session" path
-    (`connection.ts`), so it reconnects into a NEW empty session, the URL
-    silently rewrites (`/s/38c8dbab` → `/s/d0ba3bdf`), and the transcript
-    blanks with no explanation. (Durable cross-restart persistence is the
-    deferred 4.1/4.4 item and stays deferred — this is only about being
-    HONEST that it happened.)
-    (2) **Stuck "busy"/stop affordance on mid-turn death.** Observed: when
-    the daemon dies mid-turn the connection dot correctly flips to
-    "reconnecting…", but the ■ esc stop button stays visible because busy
-    clears only on `turn_end`/`zone_reset` (`Shell.tsx`) and neither arrives
-    — it looks like the agent is still working.
-  - Build: (a) distinguish "attached to the session I asked for" from "server
-    gave me a fresh one" — the server already knows (it took the fallback
-    branch), so carry a flag (e.g. reuse/extend `session_created` — additive)
-    that lets the shell show a shell-drawn notice ("that session ended —
-    started a new one") instead of a silent swap; (b) clear busy (and the
-    stop affordance) on socket close/reconnect-in-progress, re-deriving it
-    from replay as today, so a dropped turn doesn't look live.
-  - Files: `web/src/Shell.tsx`, `web/src/ws.ts`, `server/connection.ts`,
-    `server/protocol.ts` (additive flag if used), tests in kind (Tier 2:
-    fallback-create signals the new-session case; Tier 3: kill-daemon →
-    restart shows the notice, and mid-turn drop clears the stop button).
-  - Done when: after a daemon restart the user sees an explicit "session
-    ended, new one started" cue (not a blank screen + changed URL), and a
-    turn interrupted by a daemon drop stops showing the ■ esc/working state
-    while it reconnects.
-
 - [ ] **Step R.4d — Cap `!` passthrough output (from the same probe)**
   *(small, server-side; buildable now)*
   - Goal: close an uncapped-output gap. Observed: a `!` command emitting
@@ -662,103 +509,6 @@ notifications are **not** part of the launch and are not sold until built.
   - Done when: a `!` command producing far more than the cap is truncated
     with a visible marker, replay to a fresh viewport is bounded, and one
     runaway command can no longer evict a session's transcript from the ring.
-
-- [ ] **Step R.4e — Prove the artifact sandbox fails closed (from the
-  2026-07-08 test-suite quality review)** *(test-only, buildable now;
-  pre-launch — this is the trusted-shell boundary against agent-authored
-  content, and it currently has one positive test and zero negative ones)*
-  - Goal: every containment property `Artifact.tsx` documents is held up only
-    by the comment describing it. Today **no test fails** if:
-    `sandbox="allow-scripts"` gains `allow-same-origin` (one word — a hostile
-    artifact can then reach the shell's DOM, cookie, and socket); the injected
-    `default-src 'none'` CSP is dropped from `wrap()` (network exfiltration
-    opens; the friendly counter demo still passes); `parseBridgeAction` starts
-    accepting state ops, oversized payloads, or malformed shapes; the
-    nonce/origin/source checks on the bridge listener are removed; the 400 ms
-    action rate limit is deleted; or the navigation-liveness kill is deleted.
-    The only artifact test (`app.e2e.ts`) is the friendly positive path.
-  - Build: (a) Tier 1 — `parseBridgeAction` and `wrap()` are pure functions;
-    unit-test them directly (prompt/tool accepted; state kind, junk, missing
-    `genui` stamp, >4000-char text, array args all rejected; `wrap()` output
-    carries the CSP meta and boot script *before* the content). (b) Tier 3 —
-    a "show me a hostile artifact" mock hook whose html attempts the escapes,
-    then assert containment in a real browser: `fetch()` blocked by the CSP,
-    `parent.document` throws, an unstamped/forged `postMessage` never lands an
-    action, a state-op bridge message is dropped, an action burst is
-    rate-limited, `location=` navigation unmounts the frame into the
-    "navigation blocked" fallback — and assert the rendered iframe's `sandbox`
-    attribute is **exactly** `allow-scripts`.
-  - Files: new `web/src/Artifact.test.ts` (Tier 1), `server/adapters/mock.ts`
-    (hostile hook), `server/app.e2e.ts` (Tier 3 cases); `web/src/Artifact.tsx`
-    only if an export is needed for the unit tests. The rest of the review's
-    findings live in **Phase Q** below.
-  - Done when: temporarily flipping each defense (add `allow-same-origin`,
-    remove the CSP meta, let state ops through the parser) makes at least one
-    test fail — verified by actually flipping each, then restoring it.
-
-- [ ] **Step R.4f — `!` must not kill the daemon (from the 2026-07-08
-  operability review)** *(pre-launch bug fix, small; found by reading, not
-  yet observed on a real Windows box — the code path is unambiguous)*
-  - Goal: on Windows, typing any `!` command almost certainly kills the whole
-    daemon. `spawnBang` picks `process.env.SHELL || "/bin/bash"`
-    (`server/pty.ts`); on Windows `SHELL` is unset and `/bin/bash` doesn't
-    exist, so node-pty's `spawn` throws — inside `connection.ts`'s `bang`
-    case (no try/catch), inside the ws message handler, in a process with no
-    `uncaughtException` handler. One keystroke, every in-memory session gone.
-    The tarball ships win32 prebuilds and R.6 plans Windows checks — Windows
-    is an intended audience.
-  - Build: per-platform shell fallback (win32 → `cmd.exe /c` or
-    PowerShell — pick one, terminal-faithful for what a Windows user's own
-    terminal would run); wrap the spawn so a throw becomes an `error`
-    WireMsg + `bang_end` on that session, never a process death (this also
-    hardens the mac/linux path against exotic SHELL values).
-  - Files: `server/pty.ts`, the bang case in `server/connection.ts`, tests
-    in kind (Tier 2: a bang with a forced-bad shell errors the session and
-    the daemon survives; the real Windows keystroke lands in R.6's
-    cold-install checks).
-  - Done when: a failing shell spawn surfaces as an in-transcript error on
-    that session only, proven over a real socket — and the R.6 Windows pass
-    runs `!dir` successfully.
-
-- [ ] **Step R.4g — Supportability sweep: version, error logging, honest
-  failure text (from the 2026-07-08 operability review)** *(pre-launch;
-  several small touches, one theme: a stranger's bug report must contain
-  enough to act on)*
-  - Goal: today a bug report contains nothing usable. (1) **No version
-    anywhere** — no `--version`, none in the boot line, the UI, or the
-    `agents` hello; post-relay, the phone bundle vs daemon version is a
-    second invisible axis. (2) **The likeliest failures never reach the
-    terminal** — engine/adapter errors (bad key, engine died, CLI missing)
-    go to the browser as `error` WireMsgs and are never logged server-side;
-    there are 14 log sites total (boot/attach/action/relay), no timestamps,
-    and no debug knob. (3) The boot output **prints the pairing code** — a
-    user pasting their terminal into a public issue leaks the remote-path
-    credential. (4) On Node < 20.12, `process.loadEnvFile` doesn't exist and
-    the bare try/catch swallows it — a valid key in `.env` lands in mock
-    mode with zero indication why. (5) A daemon crash (no process-level
-    handlers) is loud but points nowhere.
-  - Build: read the package version once (esbuild-safe — import or embed at
-    build time) → boot line, `--version`/`--help` in `bin/genui-shell.js`,
-    `agents` hello (additive field) and status bar — and the client
-    announces its own build back (additive field on `attach`/`create`), so
-    a skewed pair is visible from the daemon's log (2026-07-08 contract
-    review); mirror every `error`
-    WireMsg the daemon emits to `console.error` with a timestamp; one
-    opt-in `GENUI_DEBUG=1` that logs normalized adapter events + engine
-    stderr; a "keep this secret" marker on the pairing-code line; catch the
-    missing-`loadEnvFile` case distinctly and say so ("this Node can't read
-    .env — need ≥ 20.12"); `uncaughtException`/`unhandledRejection`
-    last-gasp handlers that print version + report URL and re-exit nonzero
-    (crash stays loud — it just signs its name).
-  - Files: `bin/genui-shell.js`, `server/index.ts`, `server/protocol.ts`
-    (additive hello field), `web/src/StatusBar.tsx`, adapters (debug hook),
-    tests in kind (Tier 1: version string + flag; Tier 2: error mirroring
-    observed in daemon logs).
-  - Done when: `genui-shell --version` answers; the boot line, status bar,
-    and hello all carry the version; a live-agent failure appears in BOTH
-    the transcript and the terminal log with a timestamp; and a wrong-Node
-    `.env` user is told exactly what happened instead of silently getting
-    the mock.
 
 - [ ] **Step R.4h — Protocol compat hardening (from the 2026-07-08 contract
   design review)** *(pre-launch, small; must land BEFORE version skew can
@@ -800,6 +550,119 @@ notifications are **not** part of the launch and are not sold until built.
     provably ignored on both ends; and an unknown agent name shows as its
     raw string, not undefined.
 
+- [ ] **Step R.4g — Supportability sweep: version, error logging, honest
+  failure text (from the 2026-07-08 operability review)** *(pre-launch;
+  several small touches, one theme: a stranger's bug report must contain
+  enough to act on)*
+  - Goal: today a bug report contains nothing usable. (1) **No version
+    anywhere** — no `--version`, none in the boot line, the UI, or the
+    `agents` hello; post-relay, the phone bundle vs daemon version is a
+    second invisible axis. (2) **The likeliest failures never reach the
+    terminal** — engine/adapter errors (bad key, engine died, CLI missing)
+    go to the browser as `error` WireMsgs and are never logged server-side;
+    there are 14 log sites total (boot/attach/action/relay), no timestamps,
+    and no debug knob. (3) The boot output **prints the pairing code** — a
+    user pasting their terminal into a public issue leaks the remote-path
+    credential. (4) On Node < 20.12, `process.loadEnvFile` doesn't exist and
+    the bare try/catch swallows it — a valid key in `.env` lands in mock
+    mode with zero indication why. (5) A daemon crash (no process-level
+    handlers) is loud but points nowhere.
+  - Build: read the package version once (esbuild-safe — import or embed at
+    build time) → boot line, `--version`/`--help` in `bin/genui-shell.js`,
+    `agents` hello (additive field) and status bar — and the client
+    announces its own build back (additive field on `attach`/`create`), so
+    a skewed pair is visible from the daemon's log (2026-07-08 contract
+    review); mirror every `error`
+    WireMsg the daemon emits to `console.error` with a timestamp; one
+    opt-in `GENUI_DEBUG=1` that logs normalized adapter events + engine
+    stderr; a "keep this secret" marker on the pairing-code line; catch the
+    missing-`loadEnvFile` case distinctly and say so ("this Node can't read
+    .env — need ≥ 20.12"); `uncaughtException`/`unhandledRejection`
+    last-gasp handlers that print version + report URL and re-exit nonzero
+    (crash stays loud — it just signs its name).
+  - Files: `bin/genui-shell.js`, `server/index.ts`, `server/protocol.ts`
+    (additive hello field), `web/src/StatusBar.tsx`, adapters (debug hook),
+    tests in kind (Tier 1: version string + flag; Tier 2: error mirroring
+    observed in daemon logs).
+  - Done when: `genui-shell --version` answers; the boot line, status bar,
+    and hello all carry the version; a live-agent failure appears in BOTH
+    the transcript and the terminal log with a timestamp; and a wrong-Node
+    `.env` user is told exactly what happened instead of silently getting
+    the mock.
+
+- [ ] **Step R.4c — Resilience honesty (from the 2026-07-07 failure-mode
+  probe)** *(independent of R.2/R.5 — buildable now; both items are everyday
+  events, not exotic: a laptop sleeping, a crash, or re-running `genui-shell`)*
+  - Goal: two live-observed "the app lies / loses data quietly" behaviors
+    from a run-and-break survey (17 malformed frames, daemon kill, relay
+    kill, 10 MB `!`, two-tab permission, live agent-subprocess kill — the
+    rest all passed: the daemon is hard to crash, the stateless relay
+    recovers fully, cross-tab permissions and agent-subprocess death are
+    handled honestly). The two that need fixing both trace to the same fact —
+    the daemon holds every session **in memory with no persistence**, so its
+    death is unrecoverable AND unannounced:
+    (1) **Silent session wipe on reconnect.** Observed: kill the daemon with
+    a browser attached, restart it → the client's `attach` with the old id
+    hits the "stale/unknown id falls back to a fresh session" path
+    (`connection.ts`), so it reconnects into a NEW empty session, the URL
+    silently rewrites (`/s/38c8dbab` → `/s/d0ba3bdf`), and the transcript
+    blanks with no explanation. (Durable cross-restart persistence is the
+    deferred 4.1/4.4 item and stays deferred — this is only about being
+    HONEST that it happened.)
+    (2) **Stuck "busy"/stop affordance on mid-turn death.** Observed: when
+    the daemon dies mid-turn the connection dot correctly flips to
+    "reconnecting…", but the ■ esc stop button stays visible because busy
+    clears only on `turn_end`/`zone_reset` (`Shell.tsx`) and neither arrives
+    — it looks like the agent is still working.
+  - Build: (a) distinguish "attached to the session I asked for" from "server
+    gave me a fresh one" — the server already knows (it took the fallback
+    branch), so carry a flag (e.g. reuse/extend `session_created` — additive)
+    that lets the shell show a shell-drawn notice ("that session ended —
+    started a new one") instead of a silent swap; (b) clear busy (and the
+    stop affordance) on socket close/reconnect-in-progress, re-deriving it
+    from replay as today, so a dropped turn doesn't look live.
+  - Files: `web/src/Shell.tsx`, `web/src/ws.ts`, `server/connection.ts`,
+    `server/protocol.ts` (additive flag if used), tests in kind (Tier 2:
+    fallback-create signals the new-session case; Tier 3: kill-daemon →
+    restart shows the notice, and mid-turn drop clears the stop button).
+  - Done when: after a daemon restart the user sees an explicit "session
+    ended, new one started" cue (not a blank screen + changed URL), and a
+    turn interrupted by a daemon drop stops showing the ■ esc/working state
+    while it reconnects.
+
+- [ ] **Step R.4e — Prove the artifact sandbox fails closed (from the
+  2026-07-08 test-suite quality review)** *(test-only, buildable now;
+  pre-launch — this is the trusted-shell boundary against agent-authored
+  content, and it currently has one positive test and zero negative ones)*
+  - Goal: every containment property `Artifact.tsx` documents is held up only
+    by the comment describing it. Today **no test fails** if:
+    `sandbox="allow-scripts"` gains `allow-same-origin` (one word — a hostile
+    artifact can then reach the shell's DOM, cookie, and socket); the injected
+    `default-src 'none'` CSP is dropped from `wrap()` (network exfiltration
+    opens; the friendly counter demo still passes); `parseBridgeAction` starts
+    accepting state ops, oversized payloads, or malformed shapes; the
+    nonce/origin/source checks on the bridge listener are removed; the 400 ms
+    action rate limit is deleted; or the navigation-liveness kill is deleted.
+    The only artifact test (`app.e2e.ts`) is the friendly positive path.
+  - Build: (a) Tier 1 — `parseBridgeAction` and `wrap()` are pure functions;
+    unit-test them directly (prompt/tool accepted; state kind, junk, missing
+    `genui` stamp, >4000-char text, array args all rejected; `wrap()` output
+    carries the CSP meta and boot script *before* the content). (b) Tier 3 —
+    a "show me a hostile artifact" mock hook whose html attempts the escapes,
+    then assert containment in a real browser: `fetch()` blocked by the CSP,
+    `parent.document` throws, an unstamped/forged `postMessage` never lands an
+    action, a state-op bridge message is dropped, an action burst is
+    rate-limited, `location=` navigation unmounts the frame into the
+    "navigation blocked" fallback — and assert the rendered iframe's `sandbox`
+    attribute is **exactly** `allow-scripts`.
+  - Files: new `web/src/Artifact.test.ts` (Tier 1), `server/adapters/mock.ts`
+    (hostile hook), `server/app.e2e.ts` (Tier 3 cases); `web/src/Artifact.tsx`
+    only if an export is needed for the unit tests. The rest of the review's
+    findings live in **Phase Q** below.
+  - Done when: temporarily flipping each defense (add `allow-same-origin`,
+    remove the CSP meta, let state ops through the parser) makes at least one
+    test fail — verified by actually flipping each, then restoring it.
+
 - [ ] **Step R.5 — Entitlement + billing** *(needs Kyle: Stripe account +
   price confirmation — BUSINESS.md §7 says $12/mo · $99/yr)*
   - Goal: paying unlocks the relay, on launch day, with almost nothing
@@ -822,171 +685,63 @@ notifications are **not** part of the launch and are not sold until built.
   - Done when: a Stripe test-mode purchase unlocks pairing end-to-end, and
     expiry re-locks it without breaking the local product in any way.
 
-- [ ] **Step R.6 — Launch day (the M1+M2+M3 splash, one event)**
+- [ ] **Step R.6 — Launch prep (the week before; everything verifiable
+  without publishing)** *(split out of the old launch-day mega-step
+  2026-07-08 — same items, grouped so nothing hides mid-paragraph; nothing
+  here requires `npm publish`, most of it requires R.2's deploy)*
+  - Goal: on launch morning, R.7 is a three-move sequence, not a scramble.
+  - **Assets & copy** (2026-07-08 competitive scan):
+    - Refresh the demo GIF with the phone beat (the §6 launch asset as
+      originally imagined) — the phone beat must show a RENDERED COMPONENT
+      on the phone (live checklist, chart, pinned widget), not a chat
+      transcript on a phone, which is Happy/Omnara/CloudCLI's already-free
+      table stakes.
+    - Launch copy leads with "your terminal agent with a real UI —
+      faithfully, whichever agent you run"; phone second.
+    - Pre-write the honest comparison (vs Happy, CloudCLI, Omnara, Claude
+      Code on the web / Codex cloud — they're good, here's the different
+      bet) as a README/site FAQ section: the Show HN thread will ask "how
+      is this different from Happy" in the first hour and the answer
+      should be ours, not the thread's.
+  - **Package & repo hygiene** (2026-07-07 friction log + 2026-07-08
+    operability review):
+    - Pin a `packageManager` field in package.json (no pin today — corepack
+      users get whatever yarn resolves; the v1 lockfile implies classic).
+    - Add `bugs` / `homepage` / `author` to package.json (homepage = the
+      R.2 domain; `npm pack --dry-run` itself verified clean 2026-07-08 —
+      9 files, 259 KB, LICENSE + README included, no strays).
+    - README §8's tarball footnote: name its real prerequisites (`yarn` on
+      PATH + a prior `yarn install` — `prepack` runs `yarn build`) and
+      correct the tarball size (~259 KB, not ~235 KB).
+    - Refresh the dated `DEFAULT_MODEL=claude-sonnet-4-6` suggestion in
+      `.env.example`.
+    - GitHub issue template warning against pasting boot output verbatim
+      (it contains the `?token=` URL and, with the relay on, the pairing
+      code — the remote-path credential).
+    - Final secrets sweep of both repos.
+  - **Real-hardware checks** (need R.2 deployed; none need the registry):
+    - Scan the QR with a real phone through the deployed relay, drive a
+      session, flip wifi→LTE mid-turn (owed by R.4 — now listed, not just
+      owed).
+    - macOS and Windows cold-installs from the tarball; on the Windows
+      pass, run `!dir` (the R.4f fix's real-hardware check).
+    - The real `!sudo -v` password entry (Kyle — verified through the
+      masked prompt earlier, killed before entry; only Kyle can finish it).
+    - Kyle's final eyeball of the credential-less onboarding presentation
+      (R.4b builds the fix; this is the last look at how it reads).
+  - Done when: every box above is checked and the only remaining
+    launch-blocking action is R.7's publish sequence itself.
+
+- [ ] **Step R.7 — Launch day (the M1+M2+M3 splash, one event)**
   - Goal: everything fires together and the signals start reading.
-  - Build/checklist: refresh the demo GIF with the phone beat (the §6
-    launch asset as originally imagined) — per the 2026-07-08 competitive
-    scan, the phone beat must show a RENDERED COMPONENT on the phone (live
-    checklist, chart, pinned widget), not a chat transcript on a phone,
-    which is Happy/Omnara/CloudCLI's already-free table stakes; launch copy
-    leads with "your terminal agent with a real UI — faithfully, whichever
-    agent you run," phone second; pre-write the honest comparison
-    (vs Happy, CloudCLI, Omnara, Claude Code on the web / Codex cloud —
-    they're good, here's the different bet) as a README/site FAQ section,
-    because the Show HN thread will ask "how is this different from Happy"
-    in the first hour and the answer should be ours, not the thread's;
-    Kyle's review of the
-    credential-less onboarding presentation (R.4b builds the fix — this is
-    the final launch-day eyeball of it); macOS/Windows cold-install checks;
-    the real `!sudo -v` password entry (Kyle); final secrets sweep of both
-    repos; small hygiene from the 2026-07-07 cold-start friction log:
-    pin a `packageManager` field in package.json (no pin today — corepack
-    users get whatever yarn resolves; the v1 lockfile implies classic),
-    README §8's tarball footnote must name its real prerequisites (`yarn`
-    on PATH + a prior `yarn install` — `prepack` runs `yarn build`) and
-    correct the tarball size (~259 KB, not ~235 KB), and refresh the dated
-    `DEFAULT_MODEL=claude-sonnet-4-6` suggestion in `.env.example`; from the
-    2026-07-08 operability review: add `bugs` / `homepage` / `author` to
-    package.json (homepage = the R.2 domain; `npm pack --dry-run` itself
-    verified clean — 9 files, 259 KB, LICENSE + README included, no strays),
-    a GitHub issue template that warns against pasting boot output verbatim
-    (it contains the `?token=` URL and, with the relay on, the pairing
-    code — the remote-path credential), and run `!dir` on the Windows pass
-    (the R.4f fix's real-hardware check); verify
-    `npx genui-shell` against the real registry (unverifiable until
-    publish); then, same day: repo public → `npm publish` over the 0.0.1
-    placeholder → post (X + Show HN + r/ClaudeAI + r/LocalLLaMA with the
-    "BYOK or fully local" line) with Pro purchasable from minute one.
+  - Build, same day, in order: repo public → `npm publish` over the 0.0.1
+    placeholder → verify `npx genui-shell` against the real registry (the
+    one check that's unverifiable until publish) → post (X + Show HN +
+    r/ClaudeAI + r/LocalLLaMA with the "BYOK or fully local" line) with
+    Pro purchasable from minute one.
   - Done when: a stranger can watch the GIF, install cold, run their own
     agent, pay, and drive it from their phone — all within the launch
     hour. Signals per BUSINESS.md §9 read concurrently from here.
-
-- [x] **Step 4.8 — Working directory = terminal parity**
-  - Goal: launching `genui-shell` behaves like launching a terminal agent — it
-    operates on a **real** directory you chose, and you can always see which
-    one. Closes the "why is my agent stuck in a scratch workspace?" gap.
-  - Build: (a) default a session's cwd to the directory the daemon was launched
-    from (`process.cwd()`), not `workspace/<id>` — the terminal's own model
-    (`registry.ts:59`; arbitrary-cwd safety was already settled 2026-07-05 —
-    loopback bind + Origin guard close the remote-cwd vector, not the retired
-    jail). (b) Onboarding gains a working-directory choice beside the agent
-    picker: a type/paste-a-path field first (a browsable folder tree, backed by
-    a local directory-listing endpoint, can fold in later). (c) The trusted
-    shell shows the session's cwd as a prompt-line affordance (e.g.
-    `~/Projects/foo ❯`), shell-owned so the agent can never spoof it — the data
-    already arrives via `session_created.cwd` (`Shell.tsx`).
-  - Files: `server/registry.ts`, `server/index.ts`, `web/src/Onboarding.tsx`,
-    `web/src/Shell.tsx`, `web/src/PromptBox.tsx`, `web/src/styles.css`.
-  - Done when: a stranger runs `genui-shell` in a real project and the session
-    operates on that directory (not a scratch dir), the cwd is visible at the
-    prompt, and a second session can be pointed at a different folder from the
-    picker.
-  - Status: **done, verified mock (2026-07-06)** — default cwd is
-    `process.cwd()` (`resolveCwd` in registry.ts: `~` expands, path must
-    exist — `cd` semantics, a typo rejects the create instead of mkdir-p'ing
-    a stray dir); onboarding gained a prefilled working-directory field
-    (rejection error shown inline, retry works); the prompt line shows the
-    shell-owned `~/Projects/foo ❯` (left-ellipsized, spoof-proof) and the
-    status bar the cwd leaf. Additive protocol: `agents` hello now carries
-    `cwd`+`home` (for the prefill and ~-display). Fixed en route: a
-    `session_created` now zone_resets before replay, so a rejected-create
-    error never lingers above the new transcript. Headless Chrome 14/14
-    (default dir, refresh, second session in a typed dir, bad→retry) +
-    replay-after-reload intact. Live path unchanged (cwd flows to adapters
-    exactly as before). Deferred as planned: browsable folder tree.
-
-- [x] **Step 4.9 — `!` bash passthrough (interactive, via PTY)**
-  - Goal: terminal-faithful `!`, and *better* than the terminal agents' `!` —
-    theirs run without a TTY and so can't do `sudo`, `ssh`, or any program that
-    prompts. genui-shell's `!` is a **real** shell: interactive commands work.
-    No feature is lost switching from the terminal.
-  - Build: the trusted shell intercepts a leading `!` and runs the rest as a
-    shell command in the session's cwd, **not** routed through the model
-    (instant, zero tokens, deterministic). Spawn it through a **PTY**
-    (`node-pty`), not a plain pipe, so `isatty()` is true and interactive
-    programs prompt normally. Add **new, additive** `WireMsg`/`ClientMsg` types
-    for the PTY output stream, input, and lifecycle (never reshape existing
-    ones). Output streams to the output zone **and into the agent's context**
-    (terminal-faithful — the model sees what you ran; injected at the adapter
-    seam, mechanism per-engine). Interactive input (e.g. a `sudo` password) is
-    a **shell-owned, masked** affordance on a **special ephemeral path**: never
-    written to the replay ring, never persisted, never echoed to other
-    viewports, never in a serialized secret (per the wire-protocol
-    non-negotiable). The prompt is **scoped to the viewport that issued the
-    `!`** and is *not* broadcast — matters once the relay exists (a `sudo`
-    prompt must never fan out to a phone).
-  - Tier 1 (this step): line-interactive prompts — `sudo`, `y/n`, ssh
-    host-key. Tier 2 (**deferred, stretch**): a full embedded terminal
-    (`node-pty` + xterm.js — pure-JS front end, no new native module) so
-    `!vim`/`!top`/curses apps render; arguably its own feature.
-  - Files: `server/protocol.ts`, `server/index.ts`, `server/registry.ts`, a new
-    `server/pty.ts`, `server/adapters/*` (context injection), `web/src/Shell.tsx`,
-    `web/src/PromptBox.tsx` (masked input), `web/src/ws.ts`.
-  - Done when: `!ls` runs instantly in the session cwd and its output is visible
-    *and* referenced by the agent on the next turn; `!sudo -v` prompts for a
-    password in a masked shell-owned field, accepts it, and succeeds; the
-    password never appears in the replay buffer or a second viewport.
-  - Status: **done, verified mock + live (2026-07-06)** — `server/pty.ts`
-    (node-pty 1.1.0, ANSI-stripped for Tier 1), additive wire types
-    (`bang_start/output/end` broadcast+replayed; `bang`/`bang_input`/
-    `bang_kill` up), one command at a time per session, PTY killed with the
-    session. Stdin is the ephemeral path: only the issuing viewport mounts
-    the BangBar (auto-masks when the output tail is a password prompt, manual
-    toggle, Ctrl-C→SIGINT, Esc/■→kill); `bang_input` goes PTY-only. Context
-    injection is agent-neutral: finished transcripts (16KB tail cap) ride the
-    next `pushPrompt` as `<bash-input>/<bash-output>`; the user_prompt strip
-    stays raw. Mock 14/14 in headless Chrome (broadcast, replay-secrecy —
-    password absent from both viewports and post-refresh replay — y/n echo
-    parity, kill, exit codes); live: real `!sudo -v` prompted masked through
-    the PTY (killed, not answered — full success is Kyle's password), and
-    Codex quoted the `!` marker back on the next turn. Fixed en route: the
-    4.8 prompt-cwd ellipsis was right-side (bidi) — now LRM-wrapped, leaf
-    stays visible. Deferred as planned (Tier 2): xterm.js full terminal for
-    curses apps; raw-ANSI stream; concurrent bangs; stdin re-attach after
-    refresh.
-
-- [x] **Step 4.10 — Package & publish: `genui-shell` on PATH (M2 launch)**
-  - Goal: satisfy the M2 gate's "`genui-shell` works cold on a stranger's
-    machine." Turn this repo from a clone-and-`yarn-dev` app into an installed
-    tool. This is the last-mile launch step — sequence it at the M2 gate.
-  - Build: a `bin` entry + launcher that boots the server and opens the browser;
-    bundle the built web assets so production serves `./dist` (not the Vite dev
-    split); a `files` allowlist; flip `private:false` and publish over the
-    `0.0.1` name-reservation placeholder. Because Step 4.9 adds **`node-pty`, a
-    native module**, packaging must rely on its **prebuilt binaries** so a
-    normal `npm i -g` stays a clean download (no compile-on-install): pin to
-    Node versions with prebuild coverage and test the install on macOS / Windows
-    / Linux. **Accepted limitation (decided 2026-07-06):** users on an unusual
-    platform/Node with no matching prebuild may hit compile-on-install — we do
-    **not** service that long tail perfectly; document the fallback, don't
-    engineer around it.
-  - Files: `package.json` (bin/files/private/exports), a new `bin/genui-shell`
-    launcher, `server/index.ts` (prod static serving).
-  - Done when: on a clean machine, `npm i -g genui-shell` then `genui-shell` in
-    any directory boots the daemon, opens the browser, and drives the user's own
-    agent — no clone, no `yarn`. (Ties to BUSINESS.md §9 gate M2 + §5.)
-  - Status: **built + verified cold 2026-07-06; the `npm publish` itself is
-    deliberately NOT run — it's the M2 launch trigger and Kyle's call** (repo
-    held private by choice; `npm publish` when ready, over the 0.0.1
-    placeholder). What shipped: `bin/genui-shell.js` (spawns the bundle from
-    the launch dir, opens the browser off the printed URL, `--no-open`);
-    `yarn build` now also esbuilds `dist-server/{index,render-mcp}.js`
-    (deps external); adapters spawn the render-MCP via `renderMcpCommand()`
-    (compiled twin beside the code, else tsx+TS — codex/gemini both);
-    dist served package-relative, not cwd; EADDRINUSE walks up to 20 ports
-    (plus a ws quirk fix: WebSocketServer re-emits listen errors — swallow
-    EADDRINUSE there or the walk dies); package.json: bin/files/engines
-    (>=20.12), web-only deps demoted to devDependencies → 9-file 235 KB
-    tarball, 109-package install. Verified: `npm pack` → `npm i -g` into a
-    clean prefix (~28 s incl. node-pty Linux compile — macOS/Win have
-    prebuilds, Linux toolchain fallback documented in README §8), then from
-    two different dirs: onboarding prefills each launch dir, mock turn +
-    `!` PTY work through the production bundle, second daemon walks to
-    :3001, xdg-open called with the right URL (stubbed); live: Codex
-    session in the installed copy spawned the COMPILED render-mcp.js and
-    painted a render_card. `npx genui-shell` untested against the registry
-    (needs the publish); macOS/Windows install untested here — both are
-    launch-day checks.
 
 ---
 
