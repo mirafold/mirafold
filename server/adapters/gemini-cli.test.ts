@@ -24,7 +24,7 @@ before(() => {
     stub,
     // `exec` so SIGTERM hits the sleeping process itself — a forked sleep
     // would hold the stdout pipe open and the adapter's `close` never fires.
-    '#!/usr/bin/env bash\n[ -n "$FAKE_EVENTS" ] && cat "$FAKE_EVENTS"\n[ -n "$FAKE_HANG" ] && exec sleep 30\nexit "${FAKE_EXIT:-0}"\n',
+    '#!/usr/bin/env bash\n[ -n "$FAKE_EVENTS" ] && cat "$FAKE_EVENTS"\n[ -n "$FAKE_STDERR" ] && echo "$FAKE_STDERR" >&2\n[ -n "$FAKE_HANG" ] && exec sleep 30\nexit "${FAKE_EXIT:-0}"\n',
   );
   chmodSync(stub, 0o755);
   process.env.GENUI_GEMINI_BIN = stub;
@@ -34,6 +34,7 @@ after(() => {
   delete process.env.FAKE_EVENTS;
   delete process.env.FAKE_HANG;
   delete process.env.FAKE_EXIT;
+  delete process.env.FAKE_STDERR;
   rmSync(tmp, { recursive: true, force: true });
 });
 
@@ -174,6 +175,43 @@ test("capOutput applies at the adapter seam", async () => {
   const r = msgs.find((m) => m.type === "tool_result")!;
   assert.ok((r.truncatedBytes ?? 0) > 0);
   assert.ok(r.output.length < 70_000);
+  s.close();
+});
+
+test("F.4 stderr-only non-zero exit surfaces as an error, not a silent turn", async () => {
+  // The trust-folder trap: Gemini writes the error to stderr, exits nonzero,
+  // and emits NOTHING on stdout. Before F.4 the turn ended silently.
+  delete process.env.FAKE_EVENTS; // no stdout at all
+  process.env.FAKE_STDERR = "Error: the current folder is not a trusted folder";
+  process.env.FAKE_EXIT = "55";
+  const { s, msgs, turnEnds, awaitTurnEnd } = makeSession();
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  delete process.env.FAKE_STDERR;
+  delete process.env.FAKE_EXIT;
+
+  const err = msgs.find((m) => m.type === "error");
+  assert.ok(err, `expected an error WireMsg; saw ${msgs.map((m) => m.type).join(",")}`);
+  assert.match(err.message, /trusted folder/);
+  assert.match(err.message, /55/);
+  const types = msgs.map((m) => m.type);
+  assert.ok(types.indexOf("error") < types.lastIndexOf("turn_end")); // error before turn_end
+  assert.equal(turnEnds(), 1);
+  s.close();
+});
+
+test("F.4 does not fire when stdout carried events (a normal error event stays single)", async () => {
+  // A turn that DID emit stdout events must not also get the stderr-tail error,
+  // even on a nonzero exit — sawEvent gates it.
+  fixture("with-stdout.jsonl", [{ type: "message", role: "assistant", content: "partial" }]);
+  process.env.FAKE_STDERR = "some incidental stderr noise";
+  process.env.FAKE_EXIT = "1";
+  const { s, msgs, awaitTurnEnd } = makeSession();
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  delete process.env.FAKE_STDERR;
+  delete process.env.FAKE_EXIT;
+  assert.ok(!msgs.some((m) => m.type === "error")); // stdout events → no F.4 error
   s.close();
 });
 
