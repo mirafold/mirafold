@@ -53,6 +53,7 @@ export function Shell() {
     cwd?: string;
     home?: string;
     relay?: { url: string; code: string };
+    version?: string;
   }>({});
   const [onbError, setOnbError] = useState<string | null>(null);
   // 4.9: the `!` command THIS viewport issued, if still running — only the
@@ -173,7 +174,7 @@ export function Shell() {
           setAsks((a) => [...a, { tool: m.tool, detail: m.detail, id: m.id }]);
         } else if (m.type === "agents") {
           setAgents(m.agents);
-          setDaemon({ cwd: m.cwd, home: m.home, relay: m.relay });
+          setDaemon({ cwd: m.cwd, home: m.home, relay: m.relay, version: m.version });
         } else if (m.type === "session_created") {
           setMeta({ sessionId: m.sessionId, cwd: m.cwd, agent: m.agent, demo: m.demo });
           setOnbError(null);
@@ -340,6 +341,7 @@ export function Shell() {
         theme={theme}
         onToggleTheme={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
         relay={daemon.relay}
+        version={daemon.version}
       />
     </div>
   );

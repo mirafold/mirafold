@@ -103,6 +103,8 @@ type WireMsgBody =
   // "connect a device" QR. Sent to LOCAL viewports only, over the loopback
   // socket the user already owns: the code must never travel the relay path,
   // even encrypted, so remote viewports get the hello without it.
+  // Step R.4g adds `version` (optional/additive) — the daemon's package
+  // version, for the status bar and bug reports.
   | {
       type: "agents";
       agents: { agent: AgentName; live: boolean }[];
@@ -110,6 +112,7 @@ type WireMsgBody =
       cwd?: string;
       home?: string;
       relay?: { url: string; code: string };
+      version?: string;
     }
   // Phase 3: agent-authored HTML for the sandboxed iframe host (the ONLY
   // channel raw agent markup may travel). Re-sending an id replaces that
@@ -184,10 +187,14 @@ export type ClientMsg =
   // `afterSeq`: the last broadcast seq this viewport saw — when the server
   // still has everything after it in the ring buffer, it resumes with a
   // tail replay instead of a full repaint.
-  | { type: "attach"; sessionId: string; afterSeq?: number }
+  // Step R.4g adds `clientVersion` to attach and create (optional/additive):
+  // the browser bundle announces its build so a skewed daemon↔client pair is
+  // visible in the daemon's log — the axis that matters once the relay puts
+  // the phone bundle and the npm daemon on different release trains.
+  | { type: "attach"; sessionId: string; afterSeq?: number; clientVersion?: string }
   // Phase P.4: `agent` names which terminal agent to run (chosen at onboarding);
   // omitted → the daemon's default. Credentials stay server-side, never sent.
-  | { type: "create"; cwd?: string; agent?: AgentName }
+  | { type: "create"; cwd?: string; agent?: AgentName; clientVersion?: string }
   // Phase 2: a component interaction, attributed to the render block
   // (sourceId = its render id) that emitted it.
   | { type: "action"; action: Action; sourceId: string }

@@ -642,7 +642,7 @@ polish and security-test insurance).
     full regression pass). With this, all three "don't launch without"
     steps (R.4f, R.4b, R.4h) are closed.
 
-- [ ] **Step R.4g — Supportability sweep: version, error logging, honest
+- [x] **Step R.4g — Supportability sweep: version, error logging, honest
   failure text (from the 2026-07-08 operability review)** *(pre-launch;
   several small touches, one theme: a stranger's bug report must contain
   enough to act on)*
@@ -681,6 +681,36 @@ polish and security-test insurance).
     the transcript and the terminal log with a timestamp; and a wrong-Node
     `.env` user is told exactly what happened instead of silently getting
     the mock.
+  - Status: **done, verified across all three tiers (2026-07-08).**
+    (1) Version: new `server/version.ts` + `web/src/version.ts` import
+    package.json at build time (`resolveJsonModule` on; esbuild/Vite inline
+    it) — boot line (`v0.1.0 — server on …`, harness regex unbroken),
+    `--version`/`-v` + `--help`/`-h` in the launcher (answer without
+    booting; the launcher reads the package.json shipped beside it),
+    `agents` hello `version` field, status bar `v0.1.0` item; the client
+    stamps `clientVersion` onto attach/create at ONE choke point
+    (`SocketClient.stamp`, covering hello + queued sends) and the daemon
+    logs "version skew: client vX, daemon vY". (2) Error mirroring, two
+    choke points: `registry.broadcast` (adapter/session-stream errors —
+    the likeliest live failures) and connection's `sendError` (viewport
+    errors: malformed frame, bad cwd, bang-busy), both ISO-timestamped.
+    (3) `GENUI_DEBUG=1`: one line per broadcast WireMsg (truncated to 300
+    chars; bang_input never crosses broadcast, so no secret can appear) +
+    engine stderr where an stderr surface exists (claude-code via the SDK's
+    stderr callback, gemini-cli via child.stderr; the Codex SDK exposes
+    none). (4) Pairing-code line now carries "KEEP THAT CODE SECRET…".
+    (5) Old-Node path: loadEnvFile absence is detected distinctly and says
+    credentials in .env were NOT loaded (branch typechecked; a <20.12
+    runtime isn't runnable here). (6) Last-gasp uncaughtException/
+    unhandledRejection handlers print version + issues URL (with a
+    don't-paste-tokens warning) and exit 1. Verified — Tier 1 111 (semver;
+    client and daemon versions equal; launcher --version/--help by real
+    spawn), Tier 2 57 (hello version; bad-cwd error mirrored timestamped;
+    skew logged; R.4f test now also asserts the broadcast-path mirror),
+    Tier 3 12 (status bar shows v-semver, full regression). Note: one
+    parallel Tier-2 run had relay.itest's whole file fail on its shared
+    before() under machine load (15s boot window); alone 14/14, next full
+    run 57/57 — pre-existing load flake, not this change.
 
 - [ ] **Step R.4c — Resilience honesty (from the 2026-07-07 failure-mode
   probe)** *(independent of R.2/R.5 — buildable now; both items are everyday

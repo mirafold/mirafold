@@ -4,12 +4,40 @@
 // it's listening. The daemon does the real work; this is spawn + open only.
 // `--no-open` skips the browser (tests, servers, second terminals).
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const daemon = path.resolve(HERE, "..", "dist-server", "index.js");
+
+// R.4g: --version/--help answer without booting anything. The launcher isn't
+// bundled, so it reads the package.json shipped beside it at runtime.
+const version = () =>
+  JSON.parse(readFileSync(path.resolve(HERE, "..", "package.json"), "utf8")).version;
+
+if (process.argv.includes("--version") || process.argv.includes("-v")) {
+  console.log(version());
+  process.exit(0);
+}
+if (process.argv.includes("--help") || process.argv.includes("-h")) {
+  console.log(
+    `genui-shell v${version()} — a faithful browser re-skin of your terminal coding agent\n` +
+      `\n` +
+      `Usage: genui-shell [options]\n` +
+      `\n` +
+      `Runs the local daemon in the current directory and opens the browser UI.\n` +
+      `\n` +
+      `Options:\n` +
+      `  --no-open        don't open the browser (prints the URL only)\n` +
+      `  -v, --version    print the version and exit\n` +
+      `  -h, --help       show this help and exit\n` +
+      `\n` +
+      `Config is read from .env in the launch directory (see .env.example) —\n` +
+      `agent credentials, PORT, GENUI_AGENT, GENUI_RELAY_URL, GENUI_DEBUG=1.`,
+  );
+  process.exit(0);
+}
 
 if (!existsSync(daemon)) {
   console.error(

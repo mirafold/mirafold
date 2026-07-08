@@ -29,6 +29,7 @@ export function StatusBar({
   theme,
   onToggleTheme,
   relay,
+  version,
 }: {
   connected: boolean;
   agent?: string;
@@ -40,6 +41,9 @@ export function StatusBar({
   onToggleTheme: () => void;
   // R.4: pairing info for the "connect a device" QR (absent → no button).
   relay?: RelayInfo;
+  // R.4g: the daemon's version, off the agents hello — the first thing a
+  // bug report needs.
+  version?: string;
 }) {
   const [open, setOpen] = useState(true);
   const dot = (
@@ -94,6 +98,11 @@ export function StatusBar({
             </span>
           )}
         </>
+      )}
+      {version && (
+        <span className="sb-item sb-sep sb-version" title="genui-shell daemon version">
+          v{version}
+        </span>
       )}
       <ConnectDevice relay={relay} />
       <a className="sb-home" href="/" title="All sessions (mission control)">

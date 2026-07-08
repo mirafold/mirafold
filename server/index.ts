@@ -10,12 +10,35 @@ import { openConnection } from "./connection";
 import { startRelayClient } from "./relay-client";
 import { MIN_PAIRING_CODE_LENGTH, resolvePairingCode } from "./relay-protocol";
 import { COOKIE_NAME, cookieToken, isLoopbackOrigin, verifyToken } from "./auth";
+import { VERSION } from "./version";
+
+// R.4g: last-gasp handlers — a crash stays loud and exits nonzero, it just
+// signs its name first so a stranger's report contains something actionable.
+const lastGasp = (kind: string) => (err: unknown) => {
+  console.error(`[genui-shell] v${VERSION} crashed (${kind}):`, err);
+  console.error(
+    "[genui-shell] please report this at https://github.com/kserrec/genui-shell/issues " +
+      "(include the two lines above; never paste the ?token= URL or a pairing code)",
+  );
+  process.exit(1);
+};
+process.on("uncaughtException", lastGasp("uncaughtException"));
+process.on("unhandledRejection", lastGasp("unhandledRejection"));
 
 // .env is optional — without an API key we fall back to the mock session.
-try {
-  process.loadEnvFile();
-} catch {
-  /* no .env yet */
+// R.4g: on Node < 20.12 loadEnvFile doesn't exist; swallowing that silently
+// strands a valid key in .env in mock mode with no clue why — say so.
+if (typeof process.loadEnvFile === "function") {
+  try {
+    process.loadEnvFile();
+  } catch {
+    /* no .env yet */
+  }
+} else {
+  console.warn(
+    `[genui-shell] this Node (${process.version}) can't read .env (needs >= 20.12) — ` +
+      "credentials set in .env were NOT loaded; export them in the environment or upgrade Node",
+  );
 }
 
 const app = express();
@@ -166,7 +189,7 @@ const listen = (port: number) => {
     // The token rides the URL so the launcher opens an authenticated page; the
     // browser trades it for the cookie on first load (see the auth block above).
     const url = `http://127.0.0.1:${port}/${AUTH_ENABLED ? `?token=${AUTH_TOKEN}` : ""}`;
-    console.log(`[genui-shell] server on ${url} (ws at /ws)`);
+    console.log(`[genui-shell] v${VERSION} — server on ${url} (ws at /ws)`);
   };
   const onBusy = (err: NodeJS.ErrnoException) => {
     // The stale "listening" callback must go with the failed attempt, or the
@@ -191,5 +214,9 @@ listen(basePort);
 // the relay. Off unless GENUI_RELAY_URL is set.
 if (RELAY_URL && RELAY_CODE) {
   startRelayClient({ url: RELAY_URL, code: RELAY_CODE, registry });
-  console.log(`[relay] dialing ${RELAY_URL} — pairing code: ${RELAY_CODE}`);
+  console.log(
+    `[relay] dialing ${RELAY_URL} — pairing code: ${RELAY_CODE}\n` +
+      `[relay] KEEP THAT CODE SECRET — it grants remote access to your sessions; ` +
+      `never paste this boot output into an issue or chat`,
+  );
 }

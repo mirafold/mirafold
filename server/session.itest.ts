@@ -30,6 +30,29 @@ async function runTurn(client: TestClient, text: string): Promise<Any[]> {
   return client.received.slice(from) as Any[];
 }
 
+test("supportability: hello carries the version; errors and skew reach the log (R.4g)", async () => {
+  const t = new TestClient(d.port);
+  await t.opened();
+  const hello = (await t.type("agents")) as Any;
+  assert.match(hello.version, /^\d+\.\d+\.\d+/);
+
+  // A viewport-scoped error (bad cwd) reaches the terminal, timestamped —
+  // the daemon log is what a stranger pastes into a bug report.
+  t.send({ type: "create", cwd: "/nonexistent/genui-r4g" } as never);
+  const err = (await t.type("error")) as Any;
+  assert.match(err.message, /no such directory/);
+  assert.match(
+    d.logs(),
+    /\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\] \[ws\] error: no such directory: \/nonexistent\/genui-r4g/,
+  );
+
+  // A client announcing a different build is logged as version skew.
+  t.send({ type: "attach", sessionId: "stale-id", clientVersion: "0.0.0-skew" } as never);
+  await t.type("session_created"); // stale id → fallback create still works
+  assert.match(d.logs(), /version skew: client v0\.0\.0-skew, daemon v\d+\.\d+\.\d+/);
+  t.close();
+});
+
 test("an unknown ClientMsg type is ignored and the socket lives (R.4h)", async () => {
   // Ignore-unknown is the versioning story on the daemon side too: a newer
   // client bundle may send types this daemon predates. No error, no close —

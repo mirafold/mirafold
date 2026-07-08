@@ -143,6 +143,8 @@ test("a failing shell spawn errors the session, never the daemon (R.4f)", async 
   const end = (await client.type("bang_end")) as Any;
   assert.equal(end.id, "bf");
   assert.equal(end.exitCode, null);
+  // R.4g: session-stream errors are mirrored to the daemon log, timestamped.
+  assert.match(bad.logs(), /Z\] \[session \w+\] error: ! failed to start/);
 
   // The daemon survived the keystroke: the same session still runs a full
   // turn over the same socket.
