@@ -442,6 +442,19 @@ notifications are **not** part of the launch and are not sold until built.
     domain (the indirection that keeps the host replaceable). Sequencing:
     (a) write + verify the service locally against the daemon's full test
     posture (doable now), (b) Kyle's signups, (c) deploy + point domain.
+    From the 2026-07-07 security audit, two items owed to this step:
+    (1) if the relay serves the shell page, it must send the daemon's same
+    security-header set (the `SHELL_CSP` block in `server/index.ts`) — the
+    stub serves `dist/` bare; (2) make the "who serves the app JS" trust
+    call explicit in the R.2 write-up: E2E encryption stops the relay
+    *reading* traffic, but a relay that serves tampered page JS could steal
+    the pairing code from the fragment — the honest asterisk on the E2E
+    story (industry-standard for web E2E; decide serve-from-relay vs.
+    separate static origin, and word the marketing accordingly).
+    (Daemon-side guards from the same audit already landed, 2026-07-07:
+    weak pinned GENUI_RELAY_CODE refused at startup — min 16 chars, minted
+    fallback — and relay-client caps + idle-reaps remote viewports:
+    `MAX_REMOTE_VIEWPORTS`, `RELAY_VIEWPORT_IDLE_MS`.)
   - Done when: a phone on cellular (not the home wifi) drives a home mock
     session through the deployed relay, and the relay's logs show it
     learned nothing but connection metadata.

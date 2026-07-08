@@ -26,6 +26,15 @@ const RECONNECT_MAX_MS = 30_000;
 // local socket), sealed (~4/3 base64) plus envelope overhead — same
 // no-unbounded-allocation posture.
 const MAX_ENVELOPE = Math.ceil(Number(process.env.MAX_WS_PAYLOAD ?? 1_000_000) * 1.5) + 8_192;
+// Ceilings on what the relay can make the daemon hold. The relay is untrusted
+// for resource pressure too (R.2 adds relay-side caps, but the daemon must
+// survive a hostile one): viewport announcements past the cap are refused
+// outright, and a handshaken viewport that goes silent past the idle window
+// is dropped. The web client heartbeats every 25s, so only a dead peer — or a
+// replayed handshake hello, which can never send an authentic frame — stays
+// quiet that long.
+const MAX_REMOTE_VIEWPORTS = Number(process.env.MAX_REMOTE_VIEWPORTS ?? 16);
+const VIEWPORT_IDLE_MS = Number(process.env.RELAY_VIEWPORT_IDLE_MS ?? 90_000);
 
 export type RelayClient = { stop: () => void };
 
@@ -38,7 +47,9 @@ type Remote = {
   // would kill the channel.
   sendChain: Promise<void>;
   recvChain: Promise<void>;
-  hsTimer: NodeJS.Timeout;
+  // Handshake deadline first, then rearmed as the idle reaper on every
+  // authenticated inbound frame.
+  timer: NodeJS.Timeout;
 };
 
 /**
@@ -67,7 +78,7 @@ export function startRelayClient(opts: {
 
   const dropAll = () => {
     for (const r of remotes.values()) {
-      clearTimeout(r.hsTimer);
+      clearTimeout(r.timer);
       r.conn?.close();
     }
     remotes.clear();
@@ -87,10 +98,14 @@ export function startRelayClient(opts: {
     const drop = (v: string) => {
       const r = remotes.get(v);
       if (!r) return;
-      clearTimeout(r.hsTimer);
+      clearTimeout(r.timer);
       r.conn?.close();
       remotes.delete(v);
       sendEnv({ t: "close", v });
+    };
+    const rearm = (r: Remote, v: string, ms: number) => {
+      clearTimeout(r.timer);
+      r.timer = setTimeout(() => drop(v), ms);
     };
     ws.on("open", () => {
       wasOpen = true;
@@ -108,10 +123,14 @@ export function startRelayClient(opts: {
         case "open":
           if (typeof env.v === "string" && !remotes.has(env.v)) {
             const v = env.v;
+            if (remotes.size >= MAX_REMOTE_VIEWPORTS) {
+              sendEnv({ t: "close", v });
+              break;
+            }
             remotes.set(v, {
               sendChain: Promise.resolve(),
               recvChain: Promise.resolve(),
-              hsTimer: setTimeout(() => drop(v), HANDSHAKE_TIMEOUT_MS),
+              timer: setTimeout(() => drop(v), HANDSHAKE_TIMEOUT_MS),
             });
           }
           break;
@@ -129,7 +148,7 @@ export function startRelayClient(opts: {
                 const nonceD = randomBytes(32);
                 sendEnv({ t: "frame", v, p: await sealHandshake(pair, "d", nonceD) });
                 r.cipher = await frameCiphers(pair, nonceC, nonceD, "d");
-                clearTimeout(r.hsTimer);
+                rearm(r, v, VIEWPORT_IDLE_MS);
                 r.conn = openConnection(
                   opts.registry,
                   (msg) => {
@@ -142,7 +161,9 @@ export function startRelayClient(opts: {
                   "relay",
                 );
               } else {
-                r.conn!.handleMessage(await r.cipher.open(p));
+                const text = await r.cipher.open(p); // throws → drop below
+                rearm(r, v, VIEWPORT_IDLE_MS);
+                r.conn!.handleMessage(text);
               }
             } catch {
               drop(v); // tampered/replayed/wrong-key — never processed
@@ -153,7 +174,7 @@ export function startRelayClient(opts: {
         case "close": {
           const r = remotes.get(env.v);
           if (r) {
-            clearTimeout(r.hsTimer);
+            clearTimeout(r.timer);
             r.conn?.close();
             remotes.delete(env.v);
           }

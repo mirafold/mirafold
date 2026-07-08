@@ -153,16 +153,17 @@ class RemoteClient {
   }
 }
 
-const waitForLog = (re: RegExp, timeoutMs = 10_000) =>
+const waitForLog = (re: RegExp, timeoutMs = 10_000, daemon?: Daemon) =>
   new Promise<void>((resolve, reject) => {
+    const dm = daemon ?? d;
     const t0 = Date.now();
     const poll = setInterval(() => {
-      if (re.test(d.logs())) {
+      if (re.test(dm.logs())) {
         clearInterval(poll);
         resolve();
       } else if (Date.now() - t0 > timeoutMs) {
         clearInterval(poll);
-        reject(new Error(`daemon log never matched ${re};\n${d.logs()}`));
+        reject(new Error(`daemon log never matched ${re};\n${dm.logs()}`));
       }
     }, 50);
   });
@@ -327,6 +328,105 @@ test("a second daemon dialing the same pair id is refused", async () => {
     ws.on("error", () => res(-1));
   });
   assert.equal(code, CLOSE_CODE_TAKEN);
+});
+
+test("a weak pinned GENUI_RELAY_CODE is refused: the daemon mints and the weak code admits no one", async () => {
+  const stub2 = await startRelayStub();
+  const d2 = await startDaemon({
+    GENUI_RELAY_URL: stub2.url,
+    GENUI_RELAY_CODE: "kyle123", // guessable — must never become the credential
+  });
+  try {
+    await waitForLog(/GENUI_RELAY_CODE .* REFUSED/, 10_000, d2);
+    await waitForLog(/\[relay\] paired/, 10_000, d2);
+    const minted = d2.logs().match(/pairing code: (\S+)/)?.[1];
+    assert.ok(minted && minted !== "kyle123" && minted.length >= 16);
+
+    // The weak code's pairId matches no daemon at the relay…
+    await assert.rejects(() => RemoteClient.connect(stub2.port, "kyle123"));
+    // …and the minted code works.
+    const ok = await RemoteClient.connect(stub2.port, minted);
+    await ok.type("agents");
+    ok.close();
+  } finally {
+    await d2.stop();
+    await stub2.stop();
+  }
+});
+
+test("the daemon refuses viewports past MAX_REMOTE_VIEWPORTS and frees slots on close", async () => {
+  // Own stub + daemon: the cap is env-tuned to 2 so the test stays cheap. A
+  // hostile relay announcing endless viewports must not grow daemon state.
+  const stub2 = await startRelayStub();
+  const d2 = await startDaemon({
+    GENUI_RELAY_URL: stub2.url,
+    GENUI_RELAY_CODE: CODE,
+    MAX_REMOTE_VIEWPORTS: "2",
+  });
+  try {
+    await waitForLog(/\[relay\] paired/, 10_000, d2);
+    const c1 = await RemoteClient.connect(stub2.port, CODE);
+    const c2 = await RemoteClient.connect(stub2.port, CODE);
+    await c1.type("agents");
+    await c2.type("agents");
+
+    // Third announcement: the daemon answers with a close envelope before any
+    // handshake state exists, and the stub closes the viewport socket.
+    await assert.rejects(() => RemoteClient.connect(stub2.port, CODE));
+
+    // The refusal must not have disturbed the admitted viewports…
+    c1.send({ type: "ping" });
+    await c1.type("pong");
+
+    // …and a closed viewport frees its slot (drop → close envelope → delete).
+    c2.close();
+    let c4: RemoteClient | undefined;
+    for (let i = 0; i < 20 && !c4; i++) {
+      await new Promise((r) => setTimeout(r, 200));
+      c4 = await RemoteClient.connect(stub2.port, CODE).catch(() => undefined);
+    }
+    assert.ok(c4, "a slot never freed up after closing a viewport");
+    await c4.type("agents");
+    c1.close();
+    c4.close();
+  } finally {
+    await d2.stop();
+    await stub2.stop();
+  }
+});
+
+test("a handshaken viewport that goes silent is idle-reaped; an active one survives", async () => {
+  // A replayed handshake hello can never send an authentic frame — this reaper
+  // is what keeps such a zombie from parking a Connection forever. The real
+  // client heartbeats every 25s, far inside the 90s default; here the window
+  // is tuned down so the test proves both sides of the line quickly.
+  const stub3 = await startRelayStub();
+  const d3 = await startDaemon({
+    GENUI_RELAY_URL: stub3.url,
+    GENUI_RELAY_CODE: CODE,
+    RELAY_VIEWPORT_IDLE_MS: "1000",
+  });
+  try {
+    await waitForLog(/\[relay\] paired/, 10_000, d3);
+    const idle = await RemoteClient.connect(stub3.port, CODE);
+    const active = await RemoteClient.connect(stub3.port, CODE);
+    await idle.type("agents");
+    await active.type("agents");
+
+    // Keep one side chatty (well inside the 1s window) while the other stays mute.
+    const beat = setInterval(() => active.send({ type: "ping" }), 300);
+    const { code } = await idle.closed; // reaped → close envelope → stub closes us
+    clearInterval(beat);
+    assert.equal(code, CLOSE_BAD_CODE);
+
+    // The chatty viewport out-lived the reap window and still round-trips.
+    active.send({ type: "ping" });
+    await active.type("pong");
+    active.close();
+  } finally {
+    await d3.stop();
+    await stub3.stop();
+  }
 });
 
 test("the daemon re-dials after a relay restart and the session is reachable again", async () => {

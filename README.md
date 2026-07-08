@@ -287,6 +287,14 @@ The invariants, and where each is enforced today:
   concurrent sessions are capped (`MAX_SESSIONS`, 100) so a runaway or hostile
   local client can't exhaust memory/PTYs. The shell page also ships
   defense-in-depth headers (CSP, `nosniff`, `X-Frame-Options: DENY`).
+- **The relay is untrusted for resource pressure too** (`server/relay-client.ts`):
+  viewport announcements past `MAX_REMOTE_VIEWPORTS` (16) are refused, and a
+  handshaken viewport with no authenticated frame for `RELAY_VIEWPORT_IDLE_MS`
+  (90 s) is dropped — so a hostile relay (or a replayed handshake hello, which
+  can never produce an authentic frame) can't park connections or grow daemon
+  state. A pinned `GENUI_RELAY_CODE` under 16 chars is refused at startup with
+  a minted fallback: the code is the remote path's only credential, and a
+  guessable one would be brute-forceable remote shell access.
 
 Agent-authored executable UI (Phase 3, shipped) runs only inside
 `web/src/Artifact.tsx`'s sandboxed iframe: `allow-scripts` without
@@ -773,10 +781,17 @@ thinking), `MAX_WS_PAYLOAD` (largest inbound WS frame, default 1 MB),
 `yarn dev` sets it empty because the Vite `:5173` proxy is cross-origin and
 can't carry the cookie), and the Phase R relay pair: `GENUI_RELAY_URL`
 (ws/wss address of a relay — set, the daemon dials out and remote pairing
-turns on; unset, the whole relay path is off) and `GENUI_RELAY_CODE` (pin
+turns on; unset, the whole relay path is off), `GENUI_RELAY_CODE` (pin
 the pairing code across restarts; unset, a fresh 128-bit code is minted per
-launch and printed). For dev, `node --import tsx server/relay-stub.ts` runs
-the in-repo stub relay on `:9100`.
+launch and printed — a pin shorter than 16 chars is refused with a warning
+and a minted code is used instead, because the code is the remote path's
+only credential and a guessable one is remote shell access),
+`MAX_REMOTE_VIEWPORTS` (ceiling on relay-announced viewports the daemon
+will hold, default 16), and `RELAY_VIEWPORT_IDLE_MS` (a handshaken remote
+viewport that sends no authenticated frame for this long is dropped,
+default 90 s — the web client heartbeats every 25 s, so only a dead or fake
+peer goes quiet that long). For dev, `node --import tsx server/relay-stub.ts`
+runs the in-repo stub relay on `:9100`.
 
 **Fully local, no API key:** a session is local when the *agent* behind it
 points at a local inference server — Claude Code against Ollama's Anthropic
