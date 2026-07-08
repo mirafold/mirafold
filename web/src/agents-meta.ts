@@ -16,3 +16,16 @@ export const CONNECT_HINT: Record<AgentName, string> = {
   codex: "run `codex login`, or set OPENAI_API_KEY in .env",
   "gemini-cli": "set GEMINI_API_KEY in .env (free key: aistudio.google.com/apikey)",
 };
+
+// R.4h: look up through these, never index the records directly. The records
+// are exhaustive over TODAY'S closed AgentName union, but the wire is
+// additive-only: a newer daemon can announce an agent this bundle has never
+// heard of, and it must display as its raw name — not `undefined`.
+
+export function agentLabel(agent: string): string {
+  return (LABEL as Record<string, string | undefined>)[agent] ?? agent;
+}
+
+export function connectHint(agent: string): string | undefined {
+  return (CONNECT_HINT as Record<string, string | undefined>)[agent];
+}

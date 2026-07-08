@@ -576,7 +576,7 @@ polish and security-test insurance).
     unreproducible single-test flake in the first of three e2e runs; two
     subsequent full passes).
 
-- [ ] **Step R.4h — Protocol compat hardening (from the 2026-07-08 contract
+- [x] **Step R.4h — Protocol compat hardening (from the 2026-07-08 contract
   design review)** *(pre-launch, small; must land BEFORE version skew can
   exist — i.e. before the relay puts a phone bundle and an npm daemon on
   two release trains)*
@@ -615,6 +615,32 @@ polish and security-test insurance).
     tolerant schema accepts tomorrow's payload); an unknown message type is
     provably ignored on both ends; and an unknown agent name shows as its
     raw string, not undefined.
+  - Status: **done, verified across all three tiers (2026-07-08).** The
+    Postel split: `registry-spec.ts` now exports BOTH derivations —
+    `registrySchemas` stays `.strict()` for the SOURCE side (render-mcp /
+    render-tools inputs, vocabulary-pinning tests) and a new `clientSchemas`
+    (plain `z.object`, zod-v4 default = strip unknown keys) is what
+    `RenderBlock` validates with, so a newer daemon's extra prop strips
+    instead of failing the whole component into the raw-JSON fallback.
+    Ignore-unknown is now a stated rule (protocol.ts header) with teeth:
+    Tier 1 ws.test proves an unknown seq-stamped type is delivered inert
+    AND still advances lastSeq (otherwise resume would re-replay seen
+    frames); Tier 2 session.itest sends two unknown ClientMsg frames and
+    the same socket then drives a clean full turn. Agent names: the R.4b
+    `agents-meta.ts` records are now reached only through `agentLabel()`
+    (falls back to the raw string) and `connectHint()` (undefined → hint
+    line simply omitted) — Onboarding and the demo banner updated;
+    FleetView/StatusBar already rendered raw strings. README §2.2 gained
+    the "what agent #N actually requires" list (MCP stdio; tool results
+    visible in the engine's own stream for the renderId ack ride-back; a
+    discernible turn boundary; a warm-session mechanism; an interrupt;
+    auto-trust for the injected MCP server). Verified — Tier 1 107 (new:
+    tolerant-twin strips tomorrow's prop while strict still rejects it +
+    malformed still fails the twin; unknown-type inertness + cursor
+    advance; label/hint fallbacks), Tier 2 56 (unknown ClientMsg swallowed,
+    socket lives), Tier 3 12/12 (client bundle rebuilt with clientSchemas —
+    full regression pass). With this, all three "don't launch without"
+    steps (R.4f, R.4b, R.4h) are closed.
 
 - [ ] **Step R.4g — Supportability sweep: version, error logging, honest
   failure text (from the 2026-07-08 operability review)** *(pre-launch;

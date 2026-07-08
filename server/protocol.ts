@@ -1,6 +1,15 @@
 // Wire protocol — the contract between server and browser.
 // Later phases ADD message types; existing shapes never change.
 // The web side imports these same types via the `@protocol` alias.
+//
+// The flip side of additive-only, stated as a RULE (R.4h, tested in
+// ws.test.ts and session.itest.ts): both ends IGNORE unknown message types —
+// no error, no close. That's what lets an old client face a new daemon (and
+// vice versa once the relay puts them on different release trains). The
+// client must still honor `seq` on unknown broadcast types, or resume would
+// re-replay frames it already saw. Same spirit one layer up: the client
+// validates render props with the tolerant clientSchemas (unknown keys
+// strip) and shows unknown agent names as raw strings.
 
 /**
  * The terminal agents genui-shell can re-skin (one adapter each). On the wire

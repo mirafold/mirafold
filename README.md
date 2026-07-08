@@ -227,6 +227,27 @@ This is a deliberate development strategy, not a testing afterthought:
 verification with a real key comes last. You can develop the whole front end
 without spending a token.
 
+**What agent #N actually requires (R.4h).** The five method signatures above
+undersell the seam's real contract — these properties of the underlying
+engine are load-bearing in every shipped adapter, and an agent that lacks one
+needs a workaround (or isn't a fit) *before* the adapter is started:
+
+- **MCP over stdio**, so the shell can inject its `render_*` / `emit_artifact`
+  tools without touching the agent's request path.
+- **The engine's own event stream must show tool results** (not just tool
+  calls) — the render tools return a `renderId` acknowledgment, and the
+  adapter reads it riding back through that stream to correlate `render`
+  messages with the turn that authored them.
+- **A discernible turn boundary** — something in the stream that reliably
+  means "this turn is over", to emit `turn_end` from.
+- **A warm-session mechanism** — either a long-lived process or a
+  resume-by-id flag (Gemini's `--session-id`/`--resume`), so a session
+  survives across prompts without replaying history.
+- **An interrupt** that halts the current turn while keeping the session warm.
+- **A way to auto-trust the injected MCP server** (config file, CLI flag, or
+  settings merge) — a first-turn interactive "trust this server?" prompt has
+  no terminal to answer it here.
+
 The full adapter contract — semantics beyond these five method signatures,
 the per-provider capability matrix, and the add-a-provider checklist — is
 **[docs/ADAPTERS.md](docs/ADAPTERS.md)**, the normative document for this
