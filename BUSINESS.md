@@ -96,6 +96,14 @@ Ranked by durability (least → most durable):
 
 1. **First-mover on genUI-over-agent** — real but expiring. Worth weeks-to-
    months of recognition, not a moat. Cash it in at launch (§6).
+   *(Confirmed by the 2026-07-08 competitive scan: across the whole
+   "browser/mobile UI for terminal agents" field — Happy, CloudCLI,
+   Omnara, a dozen smaller OSS projects, and the labs' own web offerings —
+   nobody renders the agent's work as generative UI; every one of them is
+   a chat/terminal transcript. The genUI frameworks that do exist (Google
+   A2UI, AG-UI, Vercel AI SDK) are for building new agent apps, not for
+   re-skinning terminal agents. Still uncontested — the clock is running
+   but hasn't started expiring.)*
 2. **Taste** — the mono-in/rich-out identity, the pin-dock interaction, the
    restraint of registry-first. Big platforms ship lowest-common-denominator
    UI; a niche tool can be opinionated. This is the actual product bet.
@@ -121,6 +129,14 @@ Ranked by durability (least → most durable):
    one." This is a product requirement and the identity, not a feature (PLAN
    Locked decisions + Phase P), and it compounds with local-first (#4): **your
    agent, your key, your machine, a far better view — for any agent.**
+   *(Precision from the 2026-07-08 scan: multi-agent COVERAGE alone is not
+   unique — CloudCLI/claudecodeui (12.5k stars, AGPL) fronts Claude Code,
+   Cursor CLI, Codex, and Gemini CLI. What remains uncontested is the
+   combination this section actually claims: **faithful** per-agent skins
+   (inherit the agent's own config, reproduce its walls, never homogenize)
+   with the generative UI riding on top. Marketing must claim the
+   combination, not bare "works with all agents," which invites a factual
+   "so does CloudCLI.")*
 
 ## 5. Delivery architecture — the answer to "don't I have to host it?"
 
@@ -202,7 +218,11 @@ Recognition-first, because first-mover value expires (§4.1):
   (the API-key-by-conviction cohort, added 2026-07-08): they already pay a
   premium precisely to avoid limits while working, so the ask is "make the
   hours you already live in look much better and do more" at a price that
-  is noise to them.
+  is noise to them. Competitive anchors (2026-07-08 scan): Happy $0,
+  CloudCLI Cloud €7/mo, Omnara $9/mo — all for bare remote access. $12
+  holds only if the tier is sold as the genUI experience anywhere (which
+  none of them has), not as phone access (which the market zero-priced);
+  see the §8.3 amendment and the R.5 packaging check in PLAN.md.
 - **Later, maybe:** team tier (shared sessions, SSO) if pull emerges.
 - **Never (at this stage):** flat-fee bundled API usage.
 
@@ -229,7 +249,19 @@ structurally profitable almost immediately or it's dead — a clean signal.
 3. **Free-rider risk.** OSS local product is good enough; nobody pays for the
    relay. *Mitigation:* phone access + notifications are genuinely hard to
    self-host well; if conversion is still ~0%, the relay was the wrong paid
-   surface — pivot the paid tier, keep the audience.
+   surface — pivot the paid tier, keep the audience. *(Amended 2026-07-08,
+   competitive scan: the original mitigation is stale — **Happy**
+   (happy.engineering, 22.5k GitHub stars, MIT) already ships phone access
+   free: E2E-encrypted relay they run at no charge, native iOS/Android,
+   voice, QR pairing, Claude Code + Codex, explicitly positioned as
+   "no VC, no monetization pressure." Omnara (YC) charges $9/mo and
+   CloudCLI Cloud €7/mo for the same surface. So "hard to self-host well"
+   no longer protects the relay price — nobody has to self-host it. What
+   still holds: (a) the §2 first target selects on best-experience-no-
+   limits, not free (added same day); (b) none of them has the generative
+   UI — the paid pitch must be "the genUI experience, from any device,"
+   never bare phone access, which the market has zero-priced; (c) the
+   pivot-the-paid-tier escape hatch stands unchanged.)*
 4. **Solo-founder bandwidth.** PLAN.md has ~20 open steps; wedge 1 adds
    relay + mobile + notifications. *Mitigation:* the sequencing in §9 cuts
    scope to a launchable core; everything else waits.
