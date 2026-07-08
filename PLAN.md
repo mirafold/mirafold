@@ -415,7 +415,7 @@ relay skew exists); **R.4d, R.4g — strongly should** (a DoS lever and the
 bug-report surface); **R.4c, R.4e — slip only as a last resort** (honesty
 polish and security-test insurance).
 
-- [ ] **Step R.4f — `!` must not kill the daemon (from the 2026-07-08
+- [x] **Step R.4f — `!` must not kill the daemon (from the 2026-07-08
   operability review)** *(pre-launch bug fix, small; found by reading, not
   yet observed on a real Windows box — the code path is unambiguous)*
   - Goal: on Windows, typing any `!` command almost certainly kills the whole
@@ -438,6 +438,25 @@ polish and security-test insurance).
   - Done when: a failing shell spawn surfaces as an in-transcript error on
     that session only, proven over a real socket — and the R.6 Windows pass
     runs `!dir` successfully.
+  - Status: **done, verified Tier 1 + Tier 2 (2026-07-08); the `!dir`
+    keystroke on real Windows stays owed to R.6's cold-install pass.**
+    `bangShell()` in `server/pty.ts` picks the shell per platform — win32
+    runs `%ComSpec%` (fallback `cmd.exe`) with the verbatim `/d /s /c "…"`
+    argv string node's own `shell:true` uses; unix keeps
+    `$SHELL || /bin/bash` — and `spawnBang` pre-checks an absolute shell
+    path with `existsSync`, throwing a clean `shell not found: <path>`.
+    That pre-check matters because the two platforms fail differently
+    (probed live 2026-07-08): win32 node-pty throws synchronously, but on
+    unix the fork succeeds and `execvp(3) failed.` surfaces only inside the
+    child — the check gives every platform one catchable failure mode. The
+    `bang` case in `connection.ts` now wraps the spawn: a throw broadcasts
+    `error` ("! failed to start: …") + `bang_end` (exitCode null) on that
+    session and nothing else. Verified — Tier 1 (4 new tests: per-platform
+    shell/argv selection incl. ComSpec, missing-shell throw); Tier 2 (new
+    test, own daemon with `SHELL=/nonexistent/…`: `!echo hi` over a real
+    socket yields `bang_start` → `error` → `bang_end`, then the SAME daemon
+    and session complete a full mock turn — one keystroke no longer costs
+    every in-memory session).
 
 - [ ] **Step R.4b — First-run honesty (from the 2026-07-07 cold-start
   friction log)** *(independent of R.5/R.2 — buildable now, no external
