@@ -70,13 +70,17 @@ type WireMsgBody =
   // the session, so the status bar can name it. Step 4.4 adds `resumed`: true
   // means the server honored `attach.afterSeq` and will replay only the tail —
   // the client keeps its state and must NOT reset the zone; absent/false means
-  // a full replay follows.
+  // a full replay follows. Step R.4b adds `demo` (optional/additive): true
+  // means the agent had no credentials and this session runs the scripted
+  // mock — the shell draws a persistent demo banner the agent can't fake or
+  // clear (same trust rule as the permission bar).
   | {
       type: "session_created";
       sessionId: string;
       cwd: string;
       agent?: AgentName;
       resumed?: boolean;
+      demo?: boolean;
     }
   // Phase P.4: on connect, the server advertises which agents this daemon can
   // run and which have credentials (`live`) — the onboarding picker's source.

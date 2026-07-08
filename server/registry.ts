@@ -49,6 +49,9 @@ export type SessionEntry = {
   id: string;
   cwd: string;
   agent: AgentName;
+  // R.4b: false ⇒ the agent had no credentials and `session` is the scripted
+  // mock — carried to the shell as session_created.demo so the banner draws.
+  live: boolean;
   session: AgentSession;
   buffer: WireMsg[];
   viewports: Set<Viewport>;
@@ -110,6 +113,7 @@ export class SessionRegistry {
       id,
       cwd: dir,
       agent: backend.agent,
+      live: backend.live,
       session,
       buffer: [],
       viewports: new Set(),

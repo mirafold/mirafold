@@ -37,6 +37,10 @@ export function startDaemon(env: Record<string, string> = {}): Promise<Daemon> {
       GEMINI_API_KEY: "",
       GOOGLE_API_KEY: "",
       CODEX_HOME: path.join(ROOT, "itest-no-codex-home"), // no auth.json here
+      // R.4b made a `claude` subscription login count as live credentials —
+      // point the check at an empty dir so a logged-in dev machine (the
+      // usual case) still runs every test against the mock.
+      CLAUDE_CONFIG_DIR: path.join(ROOT, "itest-no-claude-home"),
       GENUI_TOKEN: "",
       GENUI_RELAY_URL: "", // no dial-out unless a relay test asks for it
       GENUI_RELAY_CODE: "",

@@ -71,6 +71,7 @@ export function openConnection(
       cwd: e.cwd,
       agent: e.agent,
       ...(resumed ? { resumed: true } : {}),
+      ...(e.live ? {} : { demo: true }),
     });
     registry.attach(e, viewport, resumed ? afterSeq : undefined);
     console.log(

@@ -1182,6 +1182,35 @@ body {
 /* Permission bar (Phase T.3): drawn by the trusted shell above the prompt
    box — agent output cannot render, wrap, or fake this surface. Amber is
    the "decision needed" accent. */
+/* R.4b: the shell-drawn demo banner — pinned above the transcript, never
+   paintable by agent output. Dim warn tones: informative, not alarming. */
+.demo-banner {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 8px 0 4px;
+  padding: 7px 14px;
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-border);
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8em;
+  flex-shrink: 0;
+}
+
+.demo-banner-badge {
+  color: var(--warn-fg);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.85em;
+  flex-shrink: 0;
+}
+
+.demo-banner-text {
+  color: var(--fg-mid);
+  min-width: 0;
+}
+
 .perm-bar {
   display: flex;
   align-items: center;
@@ -1468,9 +1497,9 @@ body {
 
 .onb-agent {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
   padding: 14px 16px;
   background: var(--surface-2);
   border: 1px solid var(--border-mid);
@@ -1491,8 +1520,23 @@ body {
   transform: translateY(1px);
 }
 
+.onb-agent-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .onb-agent-name {
   font-weight: 600;
+}
+
+/* R.4b: the one-line fix for a credential-less agent, on the picker itself. */
+.onb-agent-hint {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--fg-dim);
 }
 
 .onb-agent-status {

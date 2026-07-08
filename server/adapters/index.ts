@@ -15,12 +15,24 @@ function agentHasCredentials(agent: AgentName): boolean {
     case "claude-code":
       // The Agent SDK resolves ANTHROPIC_API_KEY → ANTHROPIC_AUTH_TOKEN, and a
       // custom ANTHROPIC_BASE_URL points at a proxy/local endpoint (which may
-      // need no key) — so any of the three counts as "live". Keying only on the
-      // API key would silently drop those setups into the mock.
-      return Boolean(
-        process.env.ANTHROPIC_API_KEY ||
-          process.env.ANTHROPIC_AUTH_TOKEN ||
-          process.env.ANTHROPIC_BASE_URL,
+      // need no key) — so any of the three counts as "live". A Claude
+      // subscription login (`claude` in a terminal, no key) also counts: it
+      // writes ~/.claude/.credentials.json and the SDK runs on it alone
+      // (proven live 2026-07-07) — the likeliest launch user's setup, R.4b.
+      // CLAUDE_CONFIG_DIR is Claude Code's own override for that dir, and the
+      // test harness points it at an empty dir to force the mock.
+      return (
+        Boolean(
+          process.env.ANTHROPIC_API_KEY ||
+            process.env.ANTHROPIC_AUTH_TOKEN ||
+            process.env.ANTHROPIC_BASE_URL,
+        ) ||
+        existsSync(
+          path.join(
+            process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude"),
+            ".credentials.json",
+          ),
+        )
       );
     case "codex":
       // OpenAI API key OR a `codex login` (ChatGPT subscription) — the SDK
