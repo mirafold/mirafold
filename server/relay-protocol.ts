@@ -48,3 +48,19 @@ export const HANDSHAKE_TIMEOUT_MS = 15_000;
  * relay — only its derived pairId is.
  */
 export const mintPairingCode = () => randomBytes(16).toString("base64url");
+
+// A pinned code (GENUI_RELAY_CODE) below this length is refused: the code is
+// the ONLY credential on the remote path — whoever knows it drives a shell on
+// this machine — and a short one falls to an offline dictionary run against
+// its pairId (which the relay logs by design), where relay-side rate limits
+// can't help. Minted codes are 22 chars.
+export const MIN_PAIRING_CODE_LENGTH = 16;
+
+/** The launch's pairing code: the pin if it's strong enough, else minted.
+ *  `weakPin` reports a pin that was refused so the caller can warn loudly. */
+export function resolvePairingCode(pinned?: string): { code: string; weakPin: boolean } {
+  if (pinned && pinned.length >= MIN_PAIRING_CODE_LENGTH) {
+    return { code: pinned, weakPin: false };
+  }
+  return { code: mintPairingCode(), weakPin: Boolean(pinned) };
+}

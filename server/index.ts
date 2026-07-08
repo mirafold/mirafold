@@ -8,7 +8,7 @@ import type { WireMsg } from "./protocol";
 import { SessionRegistry } from "./registry";
 import { openConnection } from "./connection";
 import { startRelayClient } from "./relay-client";
-import { mintPairingCode } from "./relay-protocol";
+import { MIN_PAIRING_CODE_LENGTH, resolvePairingCode } from "./relay-protocol";
 import { COOKIE_NAME, cookieToken, isLoopbackOrigin, verifyToken } from "./auth";
 
 // .env is optional — without an API key we fall back to the mock session.
@@ -114,7 +114,20 @@ const registry = new SessionRegistry();
 // phone's browser opens. Local viewports get both in the hello so the shell
 // can draw the "connect a device" QR (R.4) — remote viewports never do.
 const RELAY_URL = process.env.GENUI_RELAY_URL;
-const RELAY_CODE = RELAY_URL ? process.env.GENUI_RELAY_CODE || mintPairingCode() : undefined;
+let RELAY_CODE: string | undefined;
+if (RELAY_URL) {
+  const { code, weakPin } = resolvePairingCode(process.env.GENUI_RELAY_CODE);
+  if (weakPin) {
+    // Refusing beats honoring: a guessable code is remote shell access for
+    // whoever guesses it, and the minted fallback keeps the relay usable.
+    console.warn(
+      `[relay] GENUI_RELAY_CODE is shorter than ${MIN_PAIRING_CODE_LENGTH} chars and was REFUSED — ` +
+        `a guessable pairing code hands remote shell access to whoever guesses it. ` +
+        `Using a freshly minted code instead (printed below).`,
+    );
+  }
+  RELAY_CODE = code;
+}
 const relayInfo =
   RELAY_URL && RELAY_CODE
     ? { url: RELAY_URL.replace(/^ws/, "http"), code: RELAY_CODE }
