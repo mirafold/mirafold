@@ -971,7 +971,7 @@ anywhere, including as pre-launch polish. F.5–F.6 are engine-surface
 migrations: post-launch, demand-gated. Faithful-skin rule throughout: each
 fix restores what that agent's *terminal* user already sees — nothing invented.
 
-- [ ] **Step F.1 — Slash-command output renders (buffered assistant text)**
+- [x] **Step F.1 — Slash-command output renders (buffered assistant text)**
   - Goal: typing `/context`, `/compact`, `/usage` — the SDK supports 45
     commands including the user's own skills — shows the command's output.
     Observed: the output arrives as a **buffered `assistant` text message with
@@ -987,6 +987,19 @@ fix restores what that agent's *terminal* user already sees — nothing invented
   - Done when: a scripted-engine test shows a buffered-only assistant message
     rendering exactly once and a streamed turn not doubling; live, `/context`
     in a claude-code session paints the context table in the transcript.
+  - Status: **done, verified scripted + live (2026-07-08).** A per-turn
+    `streamedText` flag in the claude adapter: set when a `stream_event`
+    text_delta is emitted, reset on `result`. The `assistant` case now emits
+    `text` blocks as `text_delta` only when the turn streamed nothing AND
+    the message isn't a subagent's (its prose stays filtered like its
+    deltas) — so buffered slash-command output paints while the normal
+    streamed path never double-renders. Verified — Tier 1 (3 new scripted
+    tests: buffered-only renders once; a streamed turn ignores its buffered
+    copy; the decision resets per turn — 122 total green). Live on this
+    machine (subscription login): `/context` painted the full context table
+    (1 text_delta, 1839 chars: "## Context Usage … Tokens: 26.2k / 200k …")
+    where before the fix it produced nothing. Covers unsupported commands
+    too (same buffered shape, no special-casing).
 
 - [ ] **Step F.2 — System-notice line (the UI must not lie in degraded service)**
   - Goal: surface the service events the terminal shows and the adapter drops:

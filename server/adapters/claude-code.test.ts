@@ -240,6 +240,54 @@ test("checklist: task tools fold into one render id per turn, list persists, id 
   s.close();
 });
 
+test("F.1 slash-command output: buffered assistant text with no deltas renders once", async () => {
+  // /context, /usage, and unsupported commands arrive as a buffered assistant
+  // text message with ZERO stream_event deltas — the adapter must paint it, or
+  // the command runs and nothing shows.
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    assistant([{ type: "text", text: "Context: 42k/200k tokens used." }]),
+    RESULT,
+  ]);
+  s.pushPrompt("/context");
+  await awaitTurnEnd();
+  const texts = msgs.filter((m) => m.type === "text_delta");
+  assert.equal(texts.length, 1);
+  assert.equal(texts[0].text, "Context: 42k/200k tokens used.");
+  s.close();
+});
+
+test("F.1 no double-render: a streamed turn ignores its buffered assistant text", async () => {
+  // The normal path streams text via stream_event AND the SDK re-sends it in
+  // the buffered assistant message — the buffered copy must not paint again.
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    streamDelta({ type: "text_delta", text: "streamed reply" }),
+    assistant([{ type: "text", text: "streamed reply" }]),
+    RESULT,
+  ]);
+  s.pushPrompt("hi");
+  await awaitTurnEnd();
+  const texts = msgs.filter((m) => m.type === "text_delta");
+  assert.equal(texts.length, 1); // only the streamed one, not the buffered copy
+  assert.equal(texts[0].text, "streamed reply");
+  s.close();
+});
+
+test("F.1 the streamed/buffered decision resets per turn", async () => {
+  // Turn 1 streams; turn 2 is a buffered-only slash command. Turn 1's flag
+  // must not suppress turn 2's output.
+  const { s, msgs, awaitTurnEnd } = makeSession(
+    [streamDelta({ type: "text_delta", text: "first" }), assistant([{ type: "text", text: "first" }]), RESULT],
+    [assistant([{ type: "text", text: "/usage table here" }]), RESULT],
+  );
+  s.pushPrompt("hi");
+  await awaitTurnEnd(1);
+  s.pushPrompt("/usage");
+  await awaitTurnEnd(2);
+  const texts = msgs.filter((m) => m.type === "text_delta").map((m) => m.text);
+  assert.deepEqual(texts, ["first", "/usage table here"]);
+  s.close();
+});
+
 test("error result: error before the single turn_end, no usage without a usage block", async () => {
   const { s, msgs, turnEnds, awaitTurnEnd } = makeSession([
     { type: "result", is_error: true, subtype: "error_during_execution" },
