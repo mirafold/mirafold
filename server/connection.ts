@@ -5,6 +5,7 @@ import type { SessionEntry, SessionRegistry } from "./registry";
 import { runActionTool } from "./actions";
 import { availableAgents, defaultAgent } from "./adapters";
 import { spawnBang } from "./pty";
+import { VERSION } from "./version";
 
 // How much of a `!` command's output rides into the agent's context with the
 // next prompt (tail-kept — the end of a long output is usually the payload).
@@ -97,15 +98,33 @@ export function openConnection(
     default: defaultAgent(),
     cwd: process.cwd(),
     home: os.homedir(),
+    version: VERSION,
     ...(relay ? { relay } : {}),
   });
+
+  // R.4g: a viewport-scoped error reaches the terminal too — the browser may
+  // be a stranger's; the terminal log is what lands in a bug report.
+  const sendError = (message: string) => {
+    console.error(`[${new Date().toISOString()}] [${label}] error: ${message}`);
+    viewport({ type: "error", message });
+  };
+
+  // R.4g: the client announces its build on attach/create; a skewed pair is
+  // the first thing to know about a weird bug report, so log it here.
+  const noteClientVersion = (v: unknown) => {
+    if (typeof v === "string" && v && v !== VERSION) {
+      console.warn(
+        `[${new Date().toISOString()}] [${label}] version skew: client v${v}, daemon v${VERSION}`,
+      );
+    }
+  };
 
   const handleMessage = (raw: string) => {
     let msg: ClientMsg;
     try {
       msg = JSON.parse(raw) as ClientMsg;
     } catch {
-      viewport({ type: "error", message: "malformed client message" });
+      sendError("malformed client message");
       return;
     }
     switch (msg.type) {
@@ -113,6 +132,7 @@ export function openConnection(
         // A bad cwd (typo'd path) rejects the create rather than silently
         // working somewhere else — the viewport stays unattached and the
         // onboarding card shows the error (Step 4.8).
+        noteClientVersion(msg.clientVersion);
         try {
           attachTo(
             registry.create({
@@ -121,13 +141,14 @@ export function openConnection(
             }),
           );
         } catch (err) {
-          viewport({ type: "error", message: err instanceof Error ? err.message : String(err) });
+          sendError(err instanceof Error ? err.message : String(err));
         }
         break;
       case "attach": {
         // A stale/unknown id (old bookmark, server restart) gets a fresh
         // session rather than an error page — unless the session cap rejects
         // the fallback create, which surfaces as an error (not a crash).
+        noteClientVersion(msg.clientVersion);
         const existing =
           typeof msg.sessionId === "string" ? registry.get(msg.sessionId) : undefined;
         const afterSeq =
@@ -135,7 +156,7 @@ export function openConnection(
         try {
           attachTo(existing ?? registry.create(), afterSeq);
         } catch (err) {
-          viewport({ type: "error", message: err instanceof Error ? err.message : String(err) });
+          sendError(err instanceof Error ? err.message : String(err));
         }
         break;
       }
@@ -153,7 +174,7 @@ export function openConnection(
         if (!entry || typeof msg.command !== "string" || !msg.command.trim()) break;
         if (!/^[\w-]{1,64}$/.test(String(msg.id))) break;
         if (entry.bang) {
-          viewport({ type: "error", message: "a ! command is already running (stop it first)" });
+          sendError("a ! command is already running (stop it first)");
           break;
         }
         const e = entry;

@@ -135,6 +135,26 @@ export class SessionRegistry {
 
   /** Buffer a message and fan it out to every attached viewport. */
   broadcast(entry: SessionEntry, msg: WireMsg) {
+    // R.4g: the likeliest live failures (bad key, engine died, CLI missing)
+    // arrive here as adapter-emitted `error` WireMsgs and used to reach only
+    // the browser — mirror them to the terminal, timestamped, because the
+    // terminal log is what a stranger pastes into a bug report.
+    if (msg.type === "error") {
+      console.error(
+        `[${new Date().toISOString()}] [session ${entry.id}] error: ${msg.message}`,
+      );
+    }
+    // R.4g: GENUI_DEBUG=1 traces every normalized event on the session
+    // stream (bang_input never crosses broadcast, so no secret can land
+    // here). One line per WireMsg, payload truncated.
+    if (process.env.GENUI_DEBUG) {
+      const body = JSON.stringify(msg);
+      console.error(
+        `[${new Date().toISOString()}] [debug ${entry.id}] ${msg.type} ${
+          body.length > 300 ? body.slice(0, 300) + "…" : body
+        }`,
+      );
+    }
     // 4.4: resume cursor, one stamp for all viewports. Stamped on a shallow
     // copy — the adapter's object is never mutated or held by the buffer, so
     // an adapter re-emitting a message can't corrupt an already-buffered seq.

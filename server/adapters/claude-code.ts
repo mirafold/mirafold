@@ -115,6 +115,14 @@ export class ClaudeCodeSession implements AgentSession {
         // mistook the terminal's own behavior for a threat. (`canUseTool` still
         // runs for anything the user's rules don't already decide.)
         includePartialMessages: true, // gives us token-level text deltas
+        // R.4g: GENUI_DEBUG=1 surfaces the engine's own stderr (the SDK
+        // swallows it otherwise) — where a bad key or dead CLI explains itself.
+        ...(process.env.GENUI_DEBUG
+          ? {
+              stderr: (data: string) =>
+                console.error(`[${new Date().toISOString()}] [debug claude-code stderr] ${data}`),
+            }
+          : {}),
         // Opt-in extended thinking; unset leaves the preset's behavior
         // (trigger words like "think hard" still work either way).
         ...(process.env.MAX_THINKING_TOKENS

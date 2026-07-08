@@ -87,6 +87,8 @@ test("a demo turn shows tokens but never a fabricated dollar cost (R.4b)", async
   await page.waitForSelector(".sb-usage", { timeout: 30_000 });
   const bar = await page.locator(".status-bar").innerText();
   assert.ok(!bar.includes("$"), `status bar shows a dollar cost in a demo session: ${bar}`);
+  // R.4g: the daemon version is visible in the status bar.
+  assert.match(bar, /v\d+\.\d+\.\d+/);
 });
 
 test("sandboxed artifact: scripts run inside the iframe under the shell CSP", async () => {

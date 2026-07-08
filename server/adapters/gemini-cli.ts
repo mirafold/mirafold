@@ -166,7 +166,13 @@ export class GeminiCliSession implements AgentSession {
           buf = buf.slice(nl + 1);
         }
       });
-      child.stderr.on("data", () => {}); // diagnostics only; errors also arrive as events
+      // Diagnostics only; errors also arrive as events. R.4g: GENUI_DEBUG=1
+      // surfaces it (a trust-folder refusal, for one, is stderr-only — F.4).
+      child.stderr.on("data", (d: Buffer) => {
+        if (process.env.GENUI_DEBUG) {
+          console.error(`[${new Date().toISOString()}] [debug gemini-cli stderr] ${d}`);
+        }
+      });
       child.on("close", () => {
         if (buf) consume(buf);
         if (this.child === child) this.child = undefined;

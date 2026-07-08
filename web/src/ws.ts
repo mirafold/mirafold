@@ -1,4 +1,5 @@
 import type { ClientMsg, WireMsg } from "@protocol";
+import { CLIENT_VERSION } from "./version";
 import {
   derivePair,
   frameCiphers,
@@ -207,7 +208,7 @@ export class SocketClient {
     this.ready = true;
     for (const cb of this.openListeners) cb();
     const hello = this.hello?.();
-    if (hello) this.transmit(hello);
+    if (hello) this.transmit(this.stamp(hello));
     for (const msg of this.pending.splice(0)) this.transmit(msg);
     this.startHeartbeat();
   }
@@ -279,7 +280,16 @@ export class SocketClient {
     };
   }
 
+  // R.4g: attach/create announce this bundle's build (additive field) so the
+  // daemon can log a skewed pair — one choke point, no caller threads it.
+  private stamp(msg: ClientMsg): ClientMsg {
+    return msg.type === "attach" || msg.type === "create"
+      ? { ...msg, clientVersion: CLIENT_VERSION }
+      : msg;
+  }
+
   send(msg: ClientMsg) {
+    msg = this.stamp(msg);
     if (this.ready && this.ws?.readyState === WebSocket.OPEN) this.transmit(msg);
     else this.pending.push(msg);
   }
