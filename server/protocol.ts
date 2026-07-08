@@ -82,7 +82,11 @@ type WireMsgBody =
   // a full replay follows. Step R.4b adds `demo` (optional/additive): true
   // means the agent had no credentials and this session runs the scripted
   // mock — the shell draws a persistent demo banner the agent can't fake or
-  // clear (same trust rule as the permission bar).
+  // clear (same trust rule as the permission bar). Step R.4c adds `fallback`
+  // (optional/additive): true means the viewport asked to attach to a
+  // session this registry doesn't have (daemon restarted, session expired)
+  // and got a FRESH one instead — the shell must say so, never silently
+  // swap the URL over a blank transcript.
   | {
       type: "session_created";
       sessionId: string;
@@ -90,6 +94,7 @@ type WireMsgBody =
       agent?: AgentName;
       resumed?: boolean;
       demo?: boolean;
+      fallback?: boolean;
     }
   // Phase P.4: on connect, the server advertises which agents this daemon can
   // run and which have credentials (`live`) — the onboarding picker's source.

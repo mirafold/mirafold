@@ -56,6 +56,12 @@ export function Shell() {
     version?: string;
   }>({});
   const [onbError, setOnbError] = useState<string | null>(null);
+  // R.4c: the server took the attach-fallback branch — the session this tab
+  // asked for is gone (daemon restart, expiry) and this is a FRESH one. A
+  // silent URL swap over a blank transcript reads as data loss with no
+  // explanation; this shell-drawn notice says what happened. Cleared on
+  // dismiss or on the first prompt into the new session.
+  const [sessionNotice, setSessionNotice] = useState(false);
   // 4.9: the `!` command THIS viewport issued, if still running — only the
   // issuer gets the stdin affordance (a sudo prompt must never fan out to a
   // second tab or, later, a phone via the relay). Lost on refresh: Tier 1.
@@ -166,8 +172,20 @@ export function Shell() {
   useEffect(
     () =>
       bus.subscribe((m) => {
-        if (m.type === "user_prompt") setBusy(true);
-        else if (m.type === "turn_end") {
+        if (m.type === "user_prompt") {
+          setBusy(true);
+          setSessionNotice(false); // they've moved on in the new session
+        } else if (
+          m.type === "status" ||
+          m.type === "thinking_delta" ||
+          m.type === "text_delta" ||
+          m.type === "tool_use"
+        ) {
+          // R.4c: busy re-derives from ANY turn activity, not just the
+          // user_prompt — a tail resume mid-turn replays none of the turn's
+          // opening frames, and busy was cleared on the disconnect.
+          setBusy(true);
+        } else if (m.type === "turn_end") {
           setBusy(false);
           setAsks([]); // a request that outlived its turn is void (server denies)
         } else if (m.type === "permission_request") {
@@ -178,6 +196,7 @@ export function Shell() {
         } else if (m.type === "session_created") {
           setMeta({ sessionId: m.sessionId, cwd: m.cwd, agent: m.agent, demo: m.demo });
           setOnbError(null);
+          if (m.fallback) setSessionNotice(true);
         } else if (m.type === "error") {
           // Only the onboarding card consumes this; in-session errors already
           // render in the output zone.
@@ -211,7 +230,18 @@ export function Shell() {
     [bus],
   );
 
-  useEffect(() => bus.onConnection(setConnected), [bus]);
+  useEffect(
+    () =>
+      bus.onConnection((c) => {
+        setConnected(c);
+        // R.4c: a dropped socket can't be mid-turn from this viewport's point
+        // of view — clear the working state and the ■ esc stop affordance so
+        // a dead daemon doesn't look like an agent still thinking. Replay (or
+        // the turn-activity frames above) re-derives busy after reconnect.
+        if (!c) setBusy(false);
+      }),
+    [bus],
+  );
 
   // Esc interrupts from anywhere in the page, not just the textarea.
   useEffect(() => {
@@ -285,6 +315,22 @@ export function Shell() {
             bus.createSession(agent, cwd);
           }}
         />
+      )}
+      {sessionNotice && (
+        // R.4c: SHELL-OWNED notice — honest about the swap the server made.
+        <div className="session-notice">
+          <span className="session-notice-text">
+            that session ended — started a new one (the daemon restarted or the
+            session expired; the previous transcript wasn't saved)
+          </span>
+          <button
+            className="session-notice-dismiss"
+            onClick={() => setSessionNotice(false)}
+            title="Dismiss"
+          >
+            ✕
+          </button>
+        </div>
       )}
       {meta.demo && (
         // R.4b: SHELL-OWNED banner — the agent paints nothing here, so a demo

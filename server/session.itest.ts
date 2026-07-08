@@ -53,6 +53,35 @@ test("supportability: hello carries the version; errors and skew reach the log (
   t.close();
 });
 
+test("attach to a gone session says so; create and live re-attach don't (R.4c)", async () => {
+  // The server knows when it takes the fallback branch — the flag is what
+  // lets the shell explain the swap instead of silently blanking.
+  const t = new TestClient(d.port);
+  await t.opened();
+  await t.type("agents");
+  t.send({ type: "attach", sessionId: "gone-after-restart" } as never);
+  const sc = (await t.type("session_created")) as Any;
+  assert.equal(sc.fallback, true);
+  assert.notEqual(sc.sessionId, "gone-after-restart");
+
+  // A deliberate create is not a fallback…
+  const t2 = new TestClient(d.port);
+  await t2.opened();
+  await t2.type("agents");
+  t2.send({ type: "create", agent: "claude-code" } as never);
+  const sc2 = (await t2.type("session_created")) as Any;
+  assert.equal(sc2.fallback, undefined);
+
+  // …and neither is re-attaching to a session that exists.
+  t.send({ type: "attach", sessionId: sc2.sessionId } as never);
+  const sc3 = (await t.type("session_created")) as Any;
+  assert.equal(sc3.sessionId, sc2.sessionId);
+  assert.equal(sc3.fallback, undefined);
+
+  t.close();
+  t2.close();
+});
+
 test("an unknown ClientMsg type is ignored and the socket lives (R.4h)", async () => {
   // Ignore-unknown is the versioning story on the daemon side too: a newer
   // client bundle may send types this daemon predates. No error, no close —

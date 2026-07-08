@@ -70,7 +70,7 @@ export function openConnection(
   // Identity first, then the replayed history, then the live stream. 4.4:
   // a valid afterSeq turns the replay into a tail-only resume — the client
   // is told via `resumed` so it keeps its state instead of repainting.
-  const attachTo = (e: SessionEntry, afterSeq?: number) => {
+  const attachTo = (e: SessionEntry, afterSeq?: number, fallback = false) => {
     if (entry) registry.detach(entry, viewport);
     entry = e;
     const resumed = afterSeq !== undefined && registry.canResume(e, afterSeq);
@@ -81,6 +81,9 @@ export function openConnection(
       agent: e.agent,
       ...(resumed ? { resumed: true } : {}),
       ...(e.live ? {} : { demo: true }),
+      // R.4c: the caller asked for a session that no longer exists and got a
+      // fresh one — the shell shows a notice instead of a silent swap.
+      ...(fallback ? { fallback: true } : {}),
     });
     registry.attach(e, viewport, resumed ? afterSeq : undefined);
     console.log(
@@ -154,7 +157,13 @@ export function openConnection(
         const afterSeq =
           existing && typeof msg.afterSeq === "number" ? msg.afterSeq : undefined;
         try {
-          attachTo(existing ?? registry.create(), afterSeq);
+          // fallback only when a session was actually ASKED for and is gone —
+          // an id-less attach never had a transcript to lose.
+          attachTo(
+            existing ?? registry.create(),
+            afterSeq,
+            typeof msg.sessionId === "string" && !existing,
+          );
         } catch (err) {
           sendError(err instanceof Error ? err.message : String(err));
         }
