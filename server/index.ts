@@ -9,7 +9,7 @@ import { SessionRegistry } from "./registry";
 import { openConnection } from "./connection";
 import { startRelayClient } from "./relay-client";
 import { MIN_PAIRING_CODE_LENGTH, resolvePairingCode } from "./relay-protocol";
-import { COOKIE_NAME, cookieToken, isLoopbackOrigin, verifyToken } from "./auth";
+import { COOKIE_NAME, cookieToken, isLoopbackOrigin, tokensMatch, verifyToken } from "./auth";
 import { VERSION } from "./version";
 
 // R.4g: last-gasp handlers — a crash stays loud and exits nonzero, it just
@@ -91,13 +91,27 @@ const DIST = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "d
 const AUTH_TOKEN = process.env.GENUI_TOKEN ?? randomUUID();
 const AUTH_ENABLED = AUTH_TOKEN !== "";
 
+if (!AUTH_ENABLED) {
+  // Auth off means the loopback-Origin guard is the ONLY gate — and it admits
+  // ANY page served from localhost (any port). So any local web content the
+  // user has open (another dev server, a hostile npm postinstall's local
+  // server) can drive this agent: shell + file access as the user. Fine for a
+  // single-user dev box (the Vite proxy needs it); a loud line so it's never
+  // an accident on a shared machine or a forgotten production setting.
+  console.warn(
+    "[genui-shell] AUTH DISABLED (GENUI_TOKEN=\"\") — any page served from " +
+      "localhost can drive this agent (shell + file access). Safe only on a " +
+      "single-user machine; never run this way on a shared box or in production.",
+  );
+}
+
 if (AUTH_ENABLED) {
   // Guards every HTTP route below (app shell, assets, /s/:id). A valid cookie
   // passes; a valid `?token=` query mints the cookie then redirects to the
   // clean path so the token never lingers in the address bar or history.
   app.use((req, res, next) => {
-    if (cookieToken(req.headers.cookie) === AUTH_TOKEN) return next();
-    if (typeof req.query.token === "string" && req.query.token === AUTH_TOKEN) {
+    if (tokensMatch(cookieToken(req.headers.cookie), AUTH_TOKEN)) return next();
+    if (typeof req.query.token === "string" && tokensMatch(req.query.token, AUTH_TOKEN)) {
       res.cookie(COOKIE_NAME, AUTH_TOKEN, { httpOnly: true, sameSite: "strict", path: "/" });
       return res.redirect(req.path);
     }

@@ -3,7 +3,24 @@
 // and the WebSocket; index.ts wires these into the Express middleware and the
 // ws verifyClient. Pure functions only — no env reads, no server state.
 
+import { timingSafeEqual } from "node:crypto";
+
 export const COOKIE_NAME = "genui_token";
+
+/**
+ * Constant-time token comparison. A plain `===` on a secret can leak it one
+ * character at a time via how long the mismatch takes to reject; comparing in
+ * time that doesn't depend on where the first difference is closes that. The
+ * token's LENGTH isn't secret (it's fixed for the launch), so bailing early on
+ * a length mismatch is fine — only equal-length inputs reach the timing-safe
+ * compare, which never throws on them.
+ */
+export function tokensMatch(candidate: string | null | undefined, expected: string): boolean {
+  if (candidate == null) return false;
+  const a = Buffer.from(candidate);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
 
 /** Just enough of an http/ws request to check auth — so tests can pass a plain
  *  object and Node's IncomingMessage satisfies it structurally. */
@@ -45,7 +62,7 @@ export function isLoopbackOrigin(origin: string | undefined): boolean {
  */
 export function verifyToken(req: TokenRequest, expected: string, enabled: boolean): boolean {
   if (!enabled) return true;
-  if (cookieToken(req.headers.cookie) === expected) return true;
+  if (tokensMatch(cookieToken(req.headers.cookie), expected)) return true;
   const q = new URL(req.url ?? "", "http://localhost").searchParams.get("token");
-  return q === expected;
+  return tokensMatch(q, expected);
 }

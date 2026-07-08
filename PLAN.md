@@ -931,6 +931,11 @@ polish and security-test insurance).
     - [x] Secrets sweep of the repo (relay-service included): `.env`
       gitignored + untracked; no secret-shaped strings in tracked files
       (only doc prose + the deliberate `OPENAI_API_KEY=local` dummy).
+    - [ ] Dependency vulnerability audit right before publish (`yarn audit`
+      / `npm audit` on the daemon AND `relay-service/`) — clear or pin
+      anything flagged in `express`, `ws`, `react-markdown`, the agent
+      SDKs, etc. (2026-07-08 security audit: the one item that can't be
+      cleared offline; a known-vuln transitive dep is a real ship risk).
   - **Real-hardware checks** (need R.2 deployed; none need the registry):
     - Scan the QR with a real phone through the deployed relay, drive a
       session, flip wifi→LTE mid-turn (owed by R.4 — now listed, not just
