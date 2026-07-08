@@ -77,6 +77,60 @@ test("bang secrets invariant: stdin data is ephemeral, output is not", async () 
   late.close();
 });
 
+test("runaway ! output is capped on the wire, in replay, and can't evict the ring (R.4d)", async () => {
+  // Its own daemon with a small cap so the test doesn't shovel 10 MB around.
+  const CAP = 8192;
+  const bd = await startDaemon({ BANG_OUTPUT_CAP_BYTES: String(CAP) });
+  const { client, sessionId: sid } = await createSession(bd.port);
+
+  // Real transcript content first — the thing a runaway command used to evict.
+  client.send({ type: "prompt", text: "plan it step by step" } as never);
+  await client.waitFor(
+    (m) => m.type === "text_delta" && /Plan complete/.test((m as Any).text),
+    "mock turn text",
+    30_000,
+  );
+  await client.type("turn_end", 30_000);
+
+  // ~200 KB of output against an 8 KB cap.
+  client.send({
+    type: "bang",
+    id: "big1",
+    command: "head -c 200000 /dev/zero | tr '\\0' x",
+  } as never);
+  await client.type("bang_start");
+  await client.type("bang_end", 20_000);
+
+  const wire = (client.received as Any[])
+    .filter((m) => m.type === "bang_output")
+    .map((m) => m.data)
+    .join("");
+  // Head + the two honest markers, nothing near 200 KB.
+  assert.ok(wire.length < CAP + 300, `wire carried ${wire.length} bytes`);
+  assert.match(wire, /output cap reached/);
+  assert.match(wire, /\(… \d+ bytes elided …\)/);
+
+  // A fresh viewport's replay is bounded the same way, and the earlier
+  // turn's transcript is still in the ring.
+  const late = new TestClient(bd.port);
+  await late.opened();
+  await late.type("agents");
+  late.send({ type: "attach", sessionId: sid } as never);
+  await late.type("session_created");
+  await late.waitFor((m) => m.type === "bang_end", "replayed bang_end");
+  const replay = (late.received as Any[])
+    .filter((m) => m.type === "bang_output")
+    .map((m) => m.data)
+    .join("");
+  assert.ok(replay.length < CAP + 300, `replay carried ${replay.length} bytes`);
+  assert.match(replay, /output cap reached/);
+  assert.ok(JSON.stringify(late.received).includes("Plan complete"), "ring evicted the transcript");
+
+  client.close();
+  late.close();
+  await bd.stop();
+});
+
 test("a failing shell spawn errors the session, never the daemon (R.4f)", async () => {
   // Its own daemon: the bad SHELL must poison only this one.
   const bad = await startDaemon({ SHELL: "/nonexistent/genui-itest-shell" });
