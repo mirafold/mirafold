@@ -287,7 +287,7 @@ Each gate is a go/no-go with a measurable signal. Do not pass a gate on hope.
 > trade-off: the relay and billing get built before any market signal
 > (see §8 risk 2). The gates below keep their *signals* — they are now
 > read concurrently after the single launch rather than sequentially.
-> Build plan: PLAN.md **Phase R** (R.1–R.6); target ≈ two weeks
+> Build plan: PLAN.md **Phase R** (R.1–R.7); target ≈ two weeks
 > (~2026-07-21), relay security core first, inside the Fable-5 window.
 
 - **M0 — Engine live. ✅ PASSED 2026-07-04.** PLAN 0.3/0.7 verified with a
