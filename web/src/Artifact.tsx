@@ -80,7 +80,8 @@ function bootScript(nonce: string): string {
   );
 }
 
-function wrap(html: string, nonce: string): string {
+// Exported for the R.4e Tier-1 sandbox tests only — not part of any API.
+export function wrap(html: string, nonce: string): string {
   return (
     "<!doctype html><html><head><meta charset=\"utf-8\">" +
     `<meta http-equiv="Content-Security-Policy" content="${ARTIFACT_CSP}">` +
@@ -104,8 +105,9 @@ const READY_GRACE_MS = 400;
 
 type Failure = { kind: "crash"; message: string } | { kind: "navigation" };
 
-/** Strict parse of a bridge payload; anything not exactly right is null. */
-function parseBridgeAction(data: unknown): Action | null {
+/** Strict parse of a bridge payload; anything not exactly right is null.
+ *  Exported for the R.4e Tier-1 sandbox tests only — not part of any API. */
+export function parseBridgeAction(data: unknown): Action | null {
   if (typeof data !== "object" || data === null) return null;
   const d = data as Record<string, unknown>;
   if (d["genui"] !== 1) return null;
