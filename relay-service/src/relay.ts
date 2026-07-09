@@ -12,7 +12,7 @@
 // app from a separate static origin and the relay only ever sees ciphertext.
 // The only HTTP it answers is GET /health (for the platform's health check).
 
-import { createServer } from "node:http";
+import { createServer, type IncomingMessage } from "node:http";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, WebSocket, type RawData } from "ws";
 import {
@@ -34,6 +34,12 @@ export type RelayOptions = Partial<Limits> & {
   host?: string;
   /** Structured, frame-content-free logging. Defaults to timestamped stdout. */
   log?: (line: string) => void;
+  /** Request header carrying the true client IP, set by the trusted proxy in
+   * front of us (e.g. "fly-client-ip"). The socket address is the proxy's, so
+   * without this every connection shares one per-IP bucket. Empty = direct
+   * connection, use the socket address. Never trust this header on a port an
+   * untrusted client can reach directly — it is spoofable there. */
+  clientIpHeader?: string;
 };
 
 export type Relay = {
@@ -58,7 +64,18 @@ export function startRelay(opts: RelayOptions = {}): Promise<Relay> {
 
   const pairs = new Map<string, Pair>();
   const meta = new WeakMap<WebSocket, Meta>();
+  const perIp = new Map<string, number>();
   let connections = 0;
+
+  const ipHeader = opts.clientIpHeader?.toLowerCase() ?? "";
+  const clientIp = (req: IncomingMessage): string => {
+    if (ipHeader) {
+      const h = req.headers[ipHeader];
+      const first = (Array.isArray(h) ? h[0] : h)?.split(",")[0].trim();
+      if (first) return first;
+    }
+    return req.socket.remoteAddress ?? "unknown";
+  };
 
   const server = createServer((req, res) => {
     // The ONLY HTTP surface: a health check. Everything else is 404 — the
@@ -81,8 +98,9 @@ export function startRelay(opts: RelayOptions = {}): Promise<Relay> {
   const guard = (ws: WebSocket) =>
     ws.on("error", (err: Error) => log(`socket error: ${err.message}`));
 
-  const track = (ws: WebSocket) => {
+  const track = (ws: WebSocket, ip: string) => {
     connections++;
+    perIp.set(ip, (perIp.get(ip) ?? 0) + 1);
     meta.set(ws, { alive: true, windowStart: Date.now(), frames: 0 });
     ws.on("pong", () => {
       const m = meta.get(ws);
@@ -90,6 +108,9 @@ export function startRelay(opts: RelayOptions = {}): Promise<Relay> {
     });
     ws.once("close", () => {
       connections--;
+      const left = (perIp.get(ip) ?? 1) - 1;
+      if (left <= 0) perIp.delete(ip);
+      else perIp.set(ip, left);
     });
   };
 
@@ -112,7 +133,7 @@ export function startRelay(opts: RelayOptions = {}): Promise<Relay> {
     return true;
   };
 
-  const acceptDaemon = (ws: WebSocket, pairId: string) => {
+  const acceptDaemon = (ws: WebSocket, pairId: string, ip: string) => {
     // One daemon per pair id, ever; a short/guessable id or a second
     // dial-in is refused, never silently adopted. And no more distinct
     // pairs than the cap — a hostile flood of dial-ins can't exhaust us.
@@ -125,7 +146,7 @@ export function startRelay(opts: RelayOptions = {}): Promise<Relay> {
       ws.close(CLOSE_OVERLOADED);
       return;
     }
-    track(ws);
+    track(ws, ip);
     const pair: Pair = { daemon: ws, viewports: new Map() };
     pairs.set(pairId, pair);
     log(`daemon paired (${pairs.size} pair(s), ${connections} conn)`);
@@ -152,7 +173,7 @@ export function startRelay(opts: RelayOptions = {}): Promise<Relay> {
     });
   };
 
-  const acceptViewport = (ws: WebSocket, pairId: string) => {
+  const acceptViewport = (ws: WebSocket, pairId: string, ip: string) => {
     const pair = pairs.get(pairId);
     if (!pair) {
       ws.close(CLOSE_BAD_CODE);
@@ -166,7 +187,7 @@ export function startRelay(opts: RelayOptions = {}): Promise<Relay> {
       ws.close(CLOSE_OVERLOADED);
       return;
     }
-    track(ws);
+    track(ws, ip);
     const v = randomUUID().slice(0, 8);
     pair.viewports.set(v, ws);
     pair.daemon.send(JSON.stringify({ t: "open", v } satisfies RelayToDaemon));
@@ -191,6 +212,7 @@ export function startRelay(opts: RelayOptions = {}): Promise<Relay> {
       socket.destroy();
       return;
     }
+    const ip = clientIp(req);
     wss.handleUpgrade(req, socket, head, (ws) => {
       guard(ws);
       // Global capacity gate: the refused socket exists only long enough to
@@ -200,8 +222,15 @@ export function startRelay(opts: RelayOptions = {}): Promise<Relay> {
         ws.close(CLOSE_OVERLOADED);
         return;
       }
-      if (isDaemon) acceptDaemon(ws, pairId);
-      else acceptViewport(ws, pairId);
+      // Per-source gate: one host can't hold more than its share, so it can
+      // neither exhaust the global budget nor squat every pair slot.
+      if (cfg.maxConnectionsPerIp > 0 && (perIp.get(ip) ?? 0) >= cfg.maxConnectionsPerIp) {
+        log(`per-IP cap reached (${cfg.maxConnectionsPerIp}) — refusing one source`);
+        ws.close(CLOSE_OVERLOADED);
+        return;
+      }
+      if (isDaemon) acceptDaemon(ws, pairId, ip);
+      else acceptViewport(ws, pairId, ip);
     });
   });
 

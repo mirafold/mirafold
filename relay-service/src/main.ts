@@ -7,6 +7,9 @@ import { startRelay } from "./relay.js";
 const relay = await startRelay({
   port: Number(process.env.PORT ?? 8080),
   host: process.env.HOST ?? "0.0.0.0",
+  // Set by the platform's edge (e.g. RELAY_CLIENT_IP_HEADER=fly-client-ip);
+  // empty means the per-IP cap keys on the socket address (direct/dev).
+  clientIpHeader: process.env.RELAY_CLIENT_IP_HEADER,
 });
 
 let closing = false;
