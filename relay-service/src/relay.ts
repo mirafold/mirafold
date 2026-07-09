@@ -112,100 +112,96 @@ export function startRelay(opts: RelayOptions = {}): Promise<Relay> {
     return true;
   };
 
+  const acceptDaemon = (ws: WebSocket, pairId: string) => {
+    // One daemon per pair id, ever; a short/guessable id or a second
+    // dial-in is refused, never silently adopted. And no more distinct
+    // pairs than the cap — a hostile flood of dial-ins can't exhaust us.
+    if (pairId.length < MIN_PAIR_ID_LENGTH || pairs.has(pairId)) {
+      ws.close(CLOSE_CODE_TAKEN);
+      return;
+    }
+    if (pairs.size >= cfg.maxPairs) {
+      log(`pair cap reached (${cfg.maxPairs}) — refusing daemon`);
+      ws.close(CLOSE_OVERLOADED);
+      return;
+    }
+    track(ws);
+    const pair: Pair = { daemon: ws, viewports: new Map() };
+    pairs.set(pairId, pair);
+    log(`daemon paired (${pairs.size} pair(s), ${connections} conn)`);
+    ws.on("message", (data: RawData) => {
+      if (!withinRate(ws)) return;
+      let env: DaemonToRelay;
+      try {
+        env = JSON.parse(String(data)) as DaemonToRelay;
+      } catch {
+        return;
+      }
+      if (env.t === "pong") return;
+      const viewport = pair.viewports.get(env.v);
+      if (env.t === "frame" && viewport?.readyState === WebSocket.OPEN) {
+        viewport.send(env.p); // opaque — routed, never parsed
+      } else if (env.t === "close") {
+        viewport?.close(CLOSE_BAD_CODE);
+      }
+    });
+    ws.on("close", () => {
+      pairs.delete(pairId);
+      for (const viewport of pair.viewports.values()) viewport.close(CLOSE_BAD_CODE);
+      log(`daemon unpaired (${pairs.size} pair(s) left)`);
+    });
+  };
+
+  const acceptViewport = (ws: WebSocket, pairId: string) => {
+    const pair = pairs.get(pairId);
+    if (!pair) {
+      ws.close(CLOSE_BAD_CODE);
+      return;
+    }
+    // Per-pair viewport cap: independent of the daemon's own remote-viewport
+    // cap (defense in depth — a hostile relay-adjacent flood must not force
+    // the daemon to fend off unbounded announcements).
+    if (pair.viewports.size >= cfg.maxViewportsPerPair) {
+      log(`viewport cap reached for a pair (${cfg.maxViewportsPerPair}) — refusing`);
+      ws.close(CLOSE_OVERLOADED);
+      return;
+    }
+    track(ws);
+    const v = randomUUID().slice(0, 8);
+    pair.viewports.set(v, ws);
+    pair.daemon.send(JSON.stringify({ t: "open", v } satisfies RelayToDaemon));
+    ws.on("message", (data: RawData) => {
+      if (!withinRate(ws)) return;
+      if (pair.daemon.readyState === WebSocket.OPEN) {
+        pair.daemon.send(JSON.stringify({ t: "frame", v, p: String(data) } satisfies RelayToDaemon));
+      }
+    });
+    ws.on("close", () => {
+      if (pair.viewports.delete(v) && pair.daemon.readyState === WebSocket.OPEN) {
+        pair.daemon.send(JSON.stringify({ t: "close", v } satisfies RelayToDaemon));
+      }
+    });
+  };
+
   server.on("upgrade", (req, socket, head) => {
     const url = new URL(req.url ?? "/", "ws://relay");
     const pairId = url.searchParams.get(PAIR_PARAM) ?? "";
     const isDaemon = url.pathname === DAEMON_PATH;
-    const isViewport = url.pathname === VIEWPORT_PATH;
-    if (!isDaemon && !isViewport) {
+    if (!isDaemon && url.pathname !== VIEWPORT_PATH) {
       socket.destroy();
       return;
     }
-    // Global capacity gate: refuse the upgrade before allocating a socket.
-    if (connections >= cfg.maxConnections) {
-      wss.handleUpgrade(req, socket, head, (ws) => {
-        guard(ws);
-        log(`connection cap reached (${cfg.maxConnections}) — refusing`);
-        ws.close(CLOSE_OVERLOADED);
-      });
-      return;
-    }
-
-    if (isDaemon) {
-      wss.handleUpgrade(req, socket, head, (ws) => {
-        guard(ws);
-        // One daemon per pair id, ever; a short/guessable id or a second
-        // dial-in is refused, never silently adopted. And no more distinct
-        // pairs than the cap — a hostile flood of dial-ins can't exhaust us.
-        if (pairId.length < MIN_PAIR_ID_LENGTH || pairs.has(pairId)) {
-          ws.close(CLOSE_CODE_TAKEN);
-          return;
-        }
-        if (pairs.size >= cfg.maxPairs) {
-          log(`pair cap reached (${cfg.maxPairs}) — refusing daemon`);
-          ws.close(CLOSE_OVERLOADED);
-          return;
-        }
-        track(ws);
-        const pair: Pair = { daemon: ws, viewports: new Map() };
-        pairs.set(pairId, pair);
-        log(`daemon paired (${pairs.size} pair(s), ${connections} conn)`);
-        ws.on("message", (data: RawData) => {
-          if (!withinRate(ws)) return;
-          let env: DaemonToRelay;
-          try {
-            env = JSON.parse(String(data)) as DaemonToRelay;
-          } catch {
-            return;
-          }
-          if (env.t === "pong") return;
-          const viewport = pair.viewports.get(env.v);
-          if (env.t === "frame" && viewport?.readyState === WebSocket.OPEN) {
-            viewport.send(env.p); // opaque — routed, never parsed
-          } else if (env.t === "close") {
-            viewport?.close(CLOSE_BAD_CODE);
-          }
-        });
-        ws.on("close", () => {
-          pairs.delete(pairId);
-          for (const viewport of pair.viewports.values()) viewport.close(CLOSE_BAD_CODE);
-          log(`daemon unpaired (${pairs.size} pair(s) left)`);
-        });
-      });
-      return;
-    }
-
-    // Viewport.
     wss.handleUpgrade(req, socket, head, (ws) => {
       guard(ws);
-      const pair = pairs.get(pairId);
-      if (!pair) {
-        ws.close(CLOSE_BAD_CODE);
-        return;
-      }
-      // Per-pair viewport cap: independent of the daemon's own remote-viewport
-      // cap (defense in depth — a hostile relay-adjacent flood must not force
-      // the daemon to fend off unbounded announcements).
-      if (pair.viewports.size >= cfg.maxViewportsPerPair) {
-        log(`viewport cap reached for a pair (${cfg.maxViewportsPerPair}) — refusing`);
+      // Global capacity gate: the refused socket exists only long enough to
+      // be told why (the client sees a clean CLOSE_OVERLOADED, not a hangup).
+      if (connections >= cfg.maxConnections) {
+        log(`connection cap reached (${cfg.maxConnections}) — refusing`);
         ws.close(CLOSE_OVERLOADED);
         return;
       }
-      track(ws);
-      const v = randomUUID().slice(0, 8);
-      pair.viewports.set(v, ws);
-      pair.daemon.send(JSON.stringify({ t: "open", v } satisfies RelayToDaemon));
-      ws.on("message", (data: RawData) => {
-        if (!withinRate(ws)) return;
-        if (pair.daemon.readyState === WebSocket.OPEN) {
-          pair.daemon.send(JSON.stringify({ t: "frame", v, p: String(data) } satisfies RelayToDaemon));
-        }
-      });
-      ws.on("close", () => {
-        if (pair.viewports.delete(v) && pair.daemon.readyState === WebSocket.OPEN) {
-          pair.daemon.send(JSON.stringify({ t: "close", v } satisfies RelayToDaemon));
-        }
-      });
+      if (isDaemon) acceptDaemon(ws, pairId);
+      else acceptViewport(ws, pairId);
     });
   });
 
