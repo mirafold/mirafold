@@ -4,7 +4,9 @@
 #
 # Before first deploy (needs Kyle's Fly.io account + the owned domain):
 #   fly launch --no-deploy      # or `fly apps create genui-relay`
-#   fly deploy
+#   fly deploy --ha=false       # WITHOUT --ha=false the first deploy creates
+#                               # TWO machines; pair affinity needs exactly one
+#                               # (fix after the fact: fly scale count 1)
 #   fly certs add relay.<your-domain>   # TLS is terminated by the platform
 # Point the daemon at it with GENUI_RELAY_URL=wss://relay.<your-domain>
 

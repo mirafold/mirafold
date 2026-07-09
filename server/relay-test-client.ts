@@ -29,11 +29,16 @@ export class RemoteClient {
   private cursor = 0;
   private wake: (() => void)[] = [];
 
-  static async connect(port: number, code: string, pairIdOverride?: string): Promise<RemoteClient> {
+  static connect(port: number, code: string, pairIdOverride?: string): Promise<RemoteClient> {
+    return RemoteClient.connectUrl(`ws://127.0.0.1:${port}`, code, pairIdOverride);
+  }
+
+  /** Same client against any relay URL — e.g. the DEPLOYED one (wss://…). */
+  static async connectUrl(base: string, code: string, pairIdOverride?: string): Promise<RemoteClient> {
     const c = new RemoteClient();
     const pair = await derivePair(code);
     const pairId = pairIdOverride ?? pair.id;
-    c.ws = new WebSocket(`ws://127.0.0.1:${port}${VIEWPORT_PATH}?${PAIR_PARAM}=${pairId}`);
+    c.ws = new WebSocket(`${base}${VIEWPORT_PATH}?${PAIR_PARAM}=${pairId}`);
     c.closed = new Promise((res) => {
       c.ws.on("close", (code) => res({ code }));
       c.ws.on("error", () => res({ code: -1 }));
