@@ -392,6 +392,27 @@ notifications are **not** part of the launch and are not sold until built.
     (launch-gating: daemons must bake OUR name, never fly.dev), and the
     cellular-phone pass (R.6 real-hardware check — also needs the app-serving
     static origin, which is R.5's landing host).
+    **2026-07-08 (later still): security audit of the deployed relay — one
+    fix landed here, two deferred by design.** Finding #1 (real, ship-time):
+    the relay capped total sockets/pairs but nothing per source, so one host
+    could open thousands of quiet connections (each just answering pings to
+    dodge the reaper) to eat the whole global budget, or squat every pair
+    slot with junk daemons — the per-*connection* frame-rate limit can't stop
+    it (the attack is many idle connections, not one noisy one); the "same
+    DoS posture as the daemon" note assumed a localhost-only listener, which
+    the public relay is not. FIXED: `RELAY_MAX_CONNECTIONS_PER_IP` (default
+    64, 0 disables) keyed on a trusted `RELAY_CLIENT_IP_HEADER`
+    (`fly-client-ip`, set in fly.toml — the socket address is Fly's shared
+    proxy) with the same clean-refuse shape; two standalone tests (socket-IP
+    cap + header-keyed cap that frees on close). Finding #2 (Origin allowlist
+    on viewport upgrades) → R.5 (needs that step's static origin domain).
+    Finding #3 (pairId squat against a specific victim) → theoretical, no
+    action (128-bit codes, pairId only over wss). Audit-verified clean: no
+    secrets, `ws` 8.21.0 no CVEs, unprivileged container, E2E-blind confirmed
+    in code, and no crash-via-send path (every `ws.send` is OPEN-guarded with
+    no async gap, and send-on-closing is silent in ws — checked the source).
+    All suites re-green: 13/13 standalone, 9/9 relay-service.itest, typecheck
+    both repos.
 
 - [x] **Step R.3 — Per-pair E2E encryption**
   - Goal: the relay operator (us, or any self-hoster) *cannot* read frames —
@@ -923,6 +944,18 @@ polish and security-test insurance).
     experience from any device** (uncontested), never as bare phone access
     (zero-priced by the market); $12 stands per BUSINESS §7 + the §2 first
     target unless Kyle recuts it here, eyes open.
+  - **Relay `Origin` allowlist (from the 2026-07-08 security audit,
+    finding #2 — deferred to here because it needs this step's domain).**
+    The relay accepts viewport WebSocket upgrades from any web origin (the
+    browser same-origin rule does not cover WebSockets unless the server
+    checks the `Origin` header). Harmless today — a stray page can't finish
+    the E2E handshake without the pairing code, so it gets nothing — but
+    once this step stands up the static app-serving origin, pin the viewport
+    endpoint to admit only that origin (env-configured, empty = allow any,
+    same refuse-with-a-clean-close shape as the other caps). Closes the last
+    "any stranger can open a socket" gap and shrinks the DoS surface the
+    per-IP cap (R.2) already blunts. One Tier-2 test: right origin admitted,
+    wrong origin refused, unset = allow-any preserved.
   - Done when: a Stripe test-mode purchase unlocks pairing end-to-end, and
     expiry re-locks it without breaking the local product in any way.
 
@@ -977,6 +1010,13 @@ polish and security-test insurance).
     - Scan the QR with a real phone through the deployed relay, drive a
       session, flip wifi→LTE mid-turn (owed by R.4 — now listed, not just
       owed).
+    - Relay cap sanity under real load (from the 2026-07-08 security audit,
+      finding #1 follow-up): the per-IP / global / pair caps ship as reasoned
+      defaults (`RELAY_MAX_CONNECTIONS_PER_IP=64`, 2000/1000); once the relay
+      is on real hardware behind Fly, confirm the numbers against actual
+      resource use and a NAT'd-office case (many legit users, one IP) before
+      relying on them — tune via env, no redeploy. Confirm `fly-client-ip`
+      reaches the process (the per-IP cap keys on it, not Fly's proxy IP).
     - macOS and Windows cold-installs from the tarball; on the Windows
       pass, run `!dir` (the R.4f fix's real-hardware check).
     - The real `!sudo -v` password entry (Kyle — verified through the

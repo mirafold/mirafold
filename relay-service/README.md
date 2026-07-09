@@ -55,15 +55,29 @@ All values are env-overridable (`src/limits.ts`):
 | env | default | meaning |
 | --- | --- | --- |
 | `RELAY_MAX_CONNECTIONS` | 2000 | hard ceiling on live sockets |
+| `RELAY_MAX_CONNECTIONS_PER_IP` | 64 | live sockets one source IP may hold (0 disables) |
 | `RELAY_MAX_PAIRS` | 1000 | distinct daemons at once |
 | `RELAY_MAX_VIEWPORTS_PER_PAIR` | 8 | browser viewports per pair |
 | `RELAY_MAX_PAYLOAD_BYTES` | 8000000 | single-frame ceiling |
 | `RELAY_RATE_MAX_FRAMES` / `RELAY_RATE_WINDOW_MS` | 480 / 1000 | per-connection frame rate |
 | `RELAY_HEARTBEAT_MS` | 30000 | ws ping interval; a missed ping is reaped |
+| `RELAY_CLIENT_IP_HEADER` | *(unset)* | trusted header carrying the true client IP |
 | `PORT` / `HOST` | 8080 / 0.0.0.0 | listen address |
 
 A guessably short pair id, a second daemon on a taken id, an unknown pair id, a
-capacity cap, or a frame flood each get a clean close (codes in `src/contract.ts`).
+capacity cap, a per-source cap, or a frame flood each get a clean close (codes
+in `src/contract.ts`).
+
+**The per-source cap (`RELAY_MAX_CONNECTIONS_PER_IP`)** is what stops one host
+from opening thousands of quiet connections to eat the whole global budget, or
+squatting every pair slot with junk daemons — the per-*connection* frame-rate
+limit can't, since that attack is many idle connections rather than one noisy
+one. Behind a proxy (Fly.io), the socket address is the proxy's and is shared
+by everyone, so set `RELAY_CLIENT_IP_HEADER` to the header the edge stamps with
+the real client IP (`fly-client-ip` on Fly — already set in `fly.toml`). Leave
+it unset only when clients reach the process directly; **never** set it on a
+port an untrusted client can hit without the proxy, because the header is
+spoofable there.
 
 ## Run it
 

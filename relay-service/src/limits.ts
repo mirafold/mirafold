@@ -6,6 +6,9 @@
 export type Limits = {
   /** Hard ceiling on live sockets across all pairs. */
   maxConnections: number;
+  /** Live sockets one source IP may hold — stops one host eating the global
+   * budget or squatting every pair slot. 0 disables the per-IP gate. */
+  maxConnectionsPerIp: number;
   /** Distinct daemons (pairs) at once. */
   maxPairs: number;
   /** Browser viewports per pair — independent of the daemon's own cap. */
@@ -27,6 +30,7 @@ const num = (name: string, fallback: number): number => {
 
 export const LIMITS: Limits = {
   maxConnections: num("RELAY_MAX_CONNECTIONS", 2_000),
+  maxConnectionsPerIp: num("RELAY_MAX_CONNECTIONS_PER_IP", 64),
   maxPairs: num("RELAY_MAX_PAIRS", 1_000),
   maxViewportsPerPair: num("RELAY_MAX_VIEWPORTS_PER_PAIR", 8),
   maxPayloadBytes: num("RELAY_MAX_PAYLOAD_BYTES", 8_000_000),
