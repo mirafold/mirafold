@@ -354,7 +354,25 @@ notifications are **not** part of the launch and are not sold until built.
     `server/relay-test-client.ts`). Owed to (c): Kyle's Fly.io account +
     owned domain, then `fly deploy` + `fly certs add` + point
     `GENUI_RELAY_URL=wss://relay.<domain>`; the cellular-phone Done-when is
-    R.6's real-hardware check.
+    R.6's real-hardware check. **2026-07-08 (later): the standalone private
+    repo now EXISTS** — `~/Projects/genui-relay`, pushed to the private
+    GitHub repo `kserrec/genui-relay`. It adds what only the split repo can
+    hold: an 11-test self-contained suite (node:test + tsx, raw ws clients —
+    routing, refusal codes, every cap), `scripts/smoke.mjs` (post-deploy
+    go/no-go: health over HTTPS, pair + byte-identical round-trip, bogus-id
+    refusal against the LIVE relay), `DEPLOY.md` (the command-by-command
+    deploy-day runbook, incl. day-2 ops + rollback), committed lockfile +
+    `npm ci` Dockerfile, and `npm run sync` / `sync:check` back to
+    `relay-service/` (which stays dev source of truth until first deploy —
+    the itest still verifies it against the real daemon). Standing up that
+    suite immediately caught and fixed a real pre-deploy crash: `ws` emits
+    `'error'` on a protocol-violating frame (e.g. oversize), no handler was
+    attached, and the unhandled `'error'` would have hit main.ts's
+    `uncaughtException` → exit(1) → every live pairing dropped by one
+    hostile frame. Fixed in `relay-service/src/relay.ts` (`guard()` on every
+    accepted socket, synced to the repo); the oversize-frame test now pins
+    sender-dies-relay-lives. All suites re-verified: 11/11 standalone, 9/9
+    relay-service.itest, Tier-1 + typecheck green in both repos.
 
 - [x] **Step R.3 — Per-pair E2E encryption**
   - Goal: the relay operator (us, or any self-hoster) *cannot* read frames —
