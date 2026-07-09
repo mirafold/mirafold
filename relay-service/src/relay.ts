@@ -74,6 +74,13 @@ export function startRelay(opts: RelayOptions = {}): Promise<Relay> {
   // the frame ceiling sits well above any single client frame.
   const wss = new WebSocketServer({ noServer: true, maxPayload: cfg.maxPayloadBytes });
 
+  // ws surfaces protocol violations (oversize frame, bad opcode) as 'error'
+  // events; unhandled, one such frame would crash the whole process (an
+  // uncaughtException in main.ts) and drop every live pairing. Swallow and
+  // log — ws follows up with its own close (e.g. 1009) on that socket only.
+  const guard = (ws: WebSocket) =>
+    ws.on("error", (err: Error) => log(`socket error: ${err.message}`));
+
   const track = (ws: WebSocket) => {
     connections++;
     meta.set(ws, { alive: true, windowStart: Date.now(), frames: 0 });
@@ -117,6 +124,7 @@ export function startRelay(opts: RelayOptions = {}): Promise<Relay> {
     // Global capacity gate: refuse the upgrade before allocating a socket.
     if (connections >= cfg.maxConnections) {
       wss.handleUpgrade(req, socket, head, (ws) => {
+        guard(ws);
         log(`connection cap reached (${cfg.maxConnections}) — refusing`);
         ws.close(CLOSE_OVERLOADED);
       });
@@ -125,6 +133,7 @@ export function startRelay(opts: RelayOptions = {}): Promise<Relay> {
 
     if (isDaemon) {
       wss.handleUpgrade(req, socket, head, (ws) => {
+        guard(ws);
         // One daemon per pair id, ever; a short/guessable id or a second
         // dial-in is refused, never silently adopted. And no more distinct
         // pairs than the cap — a hostile flood of dial-ins can't exhaust us.
@@ -168,6 +177,7 @@ export function startRelay(opts: RelayOptions = {}): Promise<Relay> {
 
     // Viewport.
     wss.handleUpgrade(req, socket, head, (ws) => {
+      guard(ws);
       const pair = pairs.get(pairId);
       if (!pair) {
         ws.close(CLOSE_BAD_CODE);
