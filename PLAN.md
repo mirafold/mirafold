@@ -373,6 +373,25 @@ notifications are **not** part of the launch and are not sold until built.
     accepted socket, synced to the repo); the oversize-frame test now pins
     sender-dies-relay-lives. All suites re-verified: 11/11 standalone, 9/9
     relay-service.itest, Tier-1 + typecheck green in both repos.
+    **2026-07-08 (later still): DEPLOYED — sequencing (b) and (c) are
+    substantially done.** Kyle signed up for Fly.io + installed flyctl;
+    `fly apps create genui-relay` + `fly deploy` succeeded; app lives at
+    `genui-relay.fly.dev` (TLS via the platform). Two deploy-day lessons
+    folded into DEPLOY.md + fly.toml: (1) Fly's first deploy creates TWO
+    machines by default (`--ha=false` avoids; pair affinity needs exactly
+    one — fixed live with `fly scale count 1`); (2) the trial account stops
+    machines after 5 min until a credit card is added (Kyle's next action).
+    Verified against production: `npm run smoke -- wss://genui-relay.fly.dev`
+    PASS, and a REAL daemon (mock session) dialed out, completed the E2E
+    handshake, and streamed a full 74-frame turn (incl. `render`) to a
+    `RemoteClient.connectUrl` viewport — plus `fly logs` shows ONLY
+    connection metadata ("daemon paired (1 pair(s), 1 conn)"), no frame
+    contents, no pair ids: the "learned nothing" Done-when criterion,
+    observed. Still open before the box closes: Kyle's credit card (else
+    machines stop), the owned domain + `fly certs add relay.<domain>`
+    (launch-gating: daemons must bake OUR name, never fly.dev), and the
+    cellular-phone pass (R.6 real-hardware check — also needs the app-serving
+    static origin, which is R.5's landing host).
 
 - [x] **Step R.3 — Per-pair E2E encryption**
   - Goal: the relay operator (us, or any self-hoster) *cannot* read frames —
