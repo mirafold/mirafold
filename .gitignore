@@ -5,3 +5,6 @@ workspace/
 *.log
 .claude/
 dist-server/
+
+# Local-only, candid user-testing notes — never publish to this public repo.
+USER-TESTING-FEEDBACK.md
