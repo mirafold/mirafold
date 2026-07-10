@@ -378,6 +378,17 @@ export function RenderZone({
   return (
     <div className="zone-row">
       <div className="render-zone">
+        {entries.length === 0 && !status && (
+          // #12: a fresh session (no transcript yet) shows an inviting welcome
+          // instead of raw emptiness. Shell-owned and agent-neutral.
+          <div className="zone-empty">
+            <div className="zone-empty-glyph">❯</div>
+            <div className="zone-empty-title">Hello 👋</div>
+            <div className="zone-empty-sub">
+              You're in a genui-shell session. Type a prompt below to get started.
+            </div>
+          </div>
+        )}
         {entries.map((entry) => {
           if (entry.kind === "thinking") {
             const folded = entry.done && !entry.expanded;
