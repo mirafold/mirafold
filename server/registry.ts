@@ -11,6 +11,7 @@ import {
   type AgentSession,
   type Backend,
 } from "./adapters";
+import type { CredentialKind } from "./provider-policy";
 import type { BangProc } from "./pty";
 
 // Replay depth: enough to reconstruct a long working session; beyond it the
@@ -52,6 +53,9 @@ export type SessionEntry = {
   // R.4b: false ⇒ the agent had no credentials and `session` is the scripted
   // mock — carried to the shell as session_created.demo so the banner draws.
   live: boolean;
+  // R.4i: the credential kind behind this session — read by the relay gate in
+  // connection.ts to refuse a subscription-backed session over the paid relay.
+  kind: CredentialKind;
   session: AgentSession;
   buffer: WireMsg[];
   viewports: Set<Viewport>;
@@ -114,6 +118,7 @@ export class SessionRegistry {
       cwd: dir,
       agent: backend.agent,
       live: backend.live,
+      kind: backend.kind,
       session,
       buffer: [],
       viewports: new Set(),

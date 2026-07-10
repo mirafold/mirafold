@@ -807,7 +807,14 @@ anything and the scripted personas exercise the full rendering pipeline.
 To go live: `cp .env.example .env`, set the credential for whichever agent
 you want live — `ANTHROPIC_API_KEY` (Claude Code), `OPENAI_API_KEY` or a
 prior `codex login` (Codex), `GEMINI_API_KEY` (Gemini CLI) — and restart the
-server; an agent without credentials keeps running the mock. The env file is
+server; an agent without credentials keeps running the mock. **Closed models
+are API-key here:** a Claude or Gemini *subscription* login is deliberately not
+a live path — those providers' terms don't allow subscription use in a
+third-party app, so the picker shows it as `blocked` and points you at the API
+key (a Codex/ChatGPT subscription works locally, but not over the paid relay).
+Point an agent at a local endpoint (Ollama, a proxy — e.g. `ANTHROPIC_BASE_URL`)
+and it's BYO, no restriction. The one dated source of truth for the whole rule
+is `server/provider-policy.ts`. The env file is
 loaded with `process.loadEnvFile()` and is optional by design. Also settable
 there: `GENUI_AGENT` (the default agent offered at onboarding), the per-agent
 model overrides `DEFAULT_MODEL` / `CODEX_MODEL` / `GEMINI_MODEL` (unset →
@@ -978,8 +985,8 @@ Read PLAN.md for the real thing; the shape in one breath:
   offline→online mid-turn resume over the relay) — all verified across all
   three tiers against the in-repo stub.
 - **Also shipped (2026-07-08):** the full pre-launch gap-close block,
-  **R.4b–R.4h** — a subscription login counts as live credentials and a
-  mock session is honestly labeled a demo (R.4b); a failing `!` shell spawn
+  **R.4b–R.4h** — a mock session is honestly labeled a demo (R.4b; its
+  subscription-login-counts-as-live half was later reversed by R.4i, below); a failing `!` shell spawn
   errors only that session, never the daemon (R.4f); runaway `!` output is
   capped on the wire and in the replay ring (R.4d); the wire's additive-only
   rule is enforced with a tolerant/strict schema split and tested
@@ -995,6 +1002,14 @@ Read PLAN.md for the real thing; the shape in one breath:
   fixes — slash-command output renders (F.1), the status bar shows the
   model the engine actually resolved instead of "default"/"auto" (F.3), and
   a Gemini stderr-only failure surfaces instead of dying silently (F.4).
+- **Also shipped (2026-07-10):** the **per-provider credential policy**
+  (R.4i/R.4j) — one dated source of truth, `server/provider-policy.ts`,
+  enforcing what each closed provider's terms permit: a Claude/Gemini
+  subscription login is refused (shown `blocked` with the API-key fix, reversing
+  R.4b's subscription-as-live), an OpenAI subscription runs locally but not over
+  the relay, and no subscription is driven over the paid relay at all — while
+  API keys and local/BYO endpoints run everywhere. Verified across all three
+  tiers; docs + BUSINESS.md reconciled to match.
 - **Now:** finishing **Phase R** — R.2's deploy (needs Kyle: a Fly.io
   account + a domain; the code is ready) and entitlement/billing (R.5,
   Stripe), then launch as one event: demo post, repo public, `npm publish`,

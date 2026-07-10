@@ -44,7 +44,9 @@ export function Shell() {
   const [usage, setUsage] = useState<Usage>(ZERO_USAGE);
   // P.4 onboarding: which agents the daemon offers, and whether we're still at
   // the picker. A URL that already names a session skips onboarding (it attaches).
-  const [agents, setAgents] = useState<{ agent: AgentName; live: boolean }[] | null>(null);
+  const [agents, setAgents] = useState<
+    { agent: AgentName; live: boolean; blocked?: boolean; detail?: string }[] | null
+  >(null);
   // 4.8: where the daemon was launched (the default session cwd) + home for
   // ~-abbreviation, both off the agents hello; and the last create error so
   // the onboarding card can show a rejected working dir. R.4 adds the
@@ -62,6 +64,10 @@ export function Shell() {
   // explanation; this shell-drawn notice says what happened. Cleared on
   // dismiss or on the first prompt into the new session.
   const [sessionNotice, setSessionNotice] = useState(false);
+  // R.4i: the daemon refused this REMOTE viewport because the session runs on a
+  // subscription login, which can't be driven over the paid relay. Shell-owned
+  // (the agent paints nothing), shown until dismissed.
+  const [refusedNotice, setRefusedNotice] = useState<string | null>(null);
   // 4.9: the `!` command THIS viewport issued, if still running — only the
   // issuer gets the stdin affordance (a sudo prompt must never fan out to a
   // second tab or, later, a phone via the relay). Lost on refresh: Tier 1.
@@ -197,6 +203,11 @@ export function Shell() {
           setMeta({ sessionId: m.sessionId, cwd: m.cwd, agent: m.agent, demo: m.demo });
           setOnbError(null);
           if (m.fallback) setSessionNotice(true);
+        } else if (m.type === "refused") {
+          // R.4i: no session — the relay refused this subscription-backed
+          // attach. Show the reason (also surfaced at onboarding if we're there).
+          setRefusedNotice(m.message);
+          setOnbError(m.message);
         } else if (m.type === "error") {
           // Only the onboarding card consumes this; in-session errors already
           // render in the output zone.
@@ -326,6 +337,19 @@ export function Shell() {
           <button
             className="session-notice-dismiss"
             onClick={() => setSessionNotice(false)}
+            title="Dismiss"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+      {refusedNotice && (
+        // R.4i: SHELL-OWNED — the relay refused a subscription-backed session.
+        <div className="session-notice">
+          <span className="session-notice-text">{refusedNotice}</span>
+          <button
+            className="session-notice-dismiss"
+            onClick={() => setRefusedNotice(null)}
             title="Dismiss"
           >
             ✕

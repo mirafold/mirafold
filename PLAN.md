@@ -18,9 +18,18 @@ before Phase T, and design every seam so the daemon stays local-first.
 - **Rendering:** curated component registry first (Level 2), sandboxed
   arbitrary artifacts later (Level 3).
 - **Model:** `claude-sonnet-4-6` default, `claude-opus-4-8` switchable per-task.
-- **Auth:** personal `ANTHROPIC_API_KEY`, server-side only. The Claude
-  subscription / `claude login` cannot drive the SDK headlessly — API key is
-  required.
+- **Auth:** personal API keys, server-side only — and for the **closed
+  providers** (Anthropic, OpenAI, Google) an API key is the only *fully*
+  supported credential. Their terms restrict driving a subscription/OAuth login
+  from a third-party app: Anthropic and Google prohibit it outright (local and
+  relay); OpenAI permits it for free LOCAL use but not the paid relay. So
+  genui-shell refuses prohibited subscription use — a Claude/Gemini login shows
+  as `blocked` with the API-key fix, and NO subscription (even OpenAI's) is
+  driven over the relay. API keys and local/BYO endpoints (Ollama, a proxy) are
+  the live paths. The one dated source of truth is `server/provider-policy.ts`
+  (R.4i, 2026-07-10). *(This corrects the earlier "the subscription can't drive
+  the SDK headlessly — API key is required" claim: R.4b proved it technically
+  can; the block is a LEGAL rule, not a technical limit.)*
 - **Stack:** TypeScript end to end. Server: Node + Agent SDK + Express + `ws`.
   Front end: React + Vite. Package manager: **yarn**.
 - **Distribution: local-first, installed like a terminal agent.** Ships as a
@@ -185,7 +194,6 @@ Each step below is sized to be completed reliably in a single prompt. Work them
 in order. Each has **Goal / Build / Files / Done when**. Do not start a step
 until the previous step's "Done when" is satisfied. Check items off as you go.
 
-
 ---
 
 ## Completed phases (archived)
@@ -193,8 +201,12 @@ until the previous step's "Done when" is satisfied. Check items off as you go.
 Phases 0, T, 1, 2, 3, T2, and P are **done** — their steps and full dated status
 notes now live in **PLAN-ARCHIVE.md** (moved out to keep this document focused).
 Phase 4's completed steps (4.1–4.6, 4.8–4.10) joined them 2026-07-08; its
-header stays below with the 4.7 → Phase R pointer. Everything below is the
-remaining work.
+header stays below with the 4.7 → Phase R pointer. **2026-07-10:** the
+fully-complete steps of Phases R, F, and L (R.1, R.3, R.4b–R.4k, F.1, F.3, F.4,
+L.1) were archived the same way to lean this file out — each keeps a one-line
+`[x]` pointer inline; the full Goal/Build/Files/Status is in PLAN-ARCHIVE.md
+("Phase R / F / L — completed steps"). Only OPEN steps carry their full body
+here. Everything below marked `[ ]` is the remaining work.
 
 ---
 
@@ -236,49 +248,7 @@ the agent's request path — it forwards opaque frames between viewports and
 the registry, nothing more. L.2/L.3 stay demand-gated post-launch;
 notifications are **not** part of the launch and are not sold until built.
 
-- [x] **Step R.1 — Relay envelope + daemon dial-out, against a local stub**
-  - Goal: the daemon can serve its registry through an *outbound* WSS
-    connection, so no ports ever open on the user's machine.
-  - Build: a tiny relay envelope (pair / attach / frame / ping — `WireMsg`
-    and `ClientMsg` ride inside as opaque payloads; the wire protocol itself
-    is untouched). `server/relay-client.ts`: dial out with a pairing code,
-    multiplex remote viewports into the registry exactly like local sockets
-    (4.2 fan-out does the work). A minimal in-repo relay **stub** for dev
-    and Tier-2 tests (the real service is R.2).
-  - Files: `server/relay-client.ts`, `server/relay-protocol.ts`, stub +
-    `.itest.ts` beside them.
-  - Done when: a second browser attaches THROUGH the local stub and mirrors
-    a live mock session byte-for-byte (replay, streaming, interrupt all
-    work); the daemon never listens on a new port.
-  - Status: **done, verified across all three tiers (2026-07-07)** —
-    `relay-protocol.ts` defines the envelope (relay→daemon `open/frame/
-    close/ping`, daemon→relay `frame/close/pong`; payload `p` is an opaque
-    string — plain JSON until R.3 makes it ciphertext) and the pairing code
-    (128-bit base64url, minted per launch or pinned via `GENUI_RELAY_CODE`;
-    `GENUI_RELAY_URL` turns the whole path on). The per-viewport server
-    logic moved out of index.ts into `connection.ts` unchanged, so local
-    sockets and relay viewports run the *same* code — a remote device is
-    literally one more attached viewport, and 4.2 fan-out / replay / 4.4
-    resume came free. `relay-client.ts` dials out (the daemon listens on no
-    new port), multiplexes viewports by id, reconnects 1s→30s backoff.
-    `relay-stub.ts` is the honest dumb forwarder: one daemon per code,
-    wrong/short code refused (4003/4002), never parses `p`, never logs frame
-    contents, stores nothing; serves ./dist so a browser can load the app
-    from the relay origin; standalone-runnable. Web: the shell's WS URL is
-    now protocol-aware (wss: on https) and carries `?code=`, kept per-tab in
-    sessionStorage so fleet-link navigation doesn't drop the pairing.
-    Verified — Tier-2 (6 tests): full mock turn through the stub;
-    byte-for-byte mirror (deepEqual of the seq-stamped streams, replay AND
-    live, both directions); interrupt through the relay cancels the turn
-    (no render/usage); wrong code + duplicate daemon refused; daemon
-    re-dials after a stub restart and reattaches the same warm session.
-    Tier-3 (3 tests, headless Chrome): a second real browser loads the app
-    FROM the stub with `?code=`, clicks through the fleet row (code survives
-    the navigation), replays the finished turn, then drives a new turn whose
-    transcripts settle character-identical in both browsers. Known and
-    accepted until R.3: frames cross the relay as plaintext (including a
-    remote `bang_input`), so the local stub is the only sanctioned relay —
-    exactly why R.3 is sequenced before any deployed use.
+- [x] **Step R.1 — Relay envelope + daemon dial-out** — done 2026-07-07; the relay envelope + outbound WSS dial-out, remote viewports multiplexed as ordinary Connections, verified across all tiers against the in-repo stub. Full status → PLAN-ARCHIVE.md.
 
 - [ ] **Step R.2 — The relay service, deployed** *(needs Kyle: Fly.io
   account + a domain — start both signups now; the code half is buildable
@@ -319,139 +289,35 @@ notifications are **not** part of the launch and are not sold until built.
   - Done when: a phone on cellular (not the home wifi) drives a home mock
     session through the deployed relay, and the relay's logs show it
     learned nothing but connection metadata.
-  - Status: **sequencing (a) — write + verify locally — DONE (2026-07-08);
-    (b) Kyle's signups and (c) deploy remain, so the box stays open.** The
-    service lives at `relay-service/` (the seed of the standalone private
-    `genui-relay` repo; not in the npm `files` list, won't publish). It's a
-    dependency-light (`ws` only) portable Node process — the stub's shape
-    grown up: `src/relay.ts` (`startRelay`), `src/limits.ts` (the env-tuned
-    DoS caps), `src/contract.ts` (the routing envelope, VENDORED — a
-    sync-guard test fails if it drifts from `server/relay-protocol.ts`),
-    `src/main.ts` (SIGTERM-draining entrypoint), plus `Dockerfile`,
-    `fly.toml` (single instance, `/health` check, `auto_stop_machines=false`),
-    `tsconfig.json`, `README.md`. Hardening beyond the stub: global
-    connection cap, max-pairs, per-pair viewport cap (independent of the
-    daemon's own remote-viewport cap — defense in depth), per-connection
-    frame rate limit (flood → drop), ws heartbeat reaper, max payload,
-    `GET /health` and 404-everything-else. **Trust decision made and
-    documented** (README "the trust decision"): the relay is a PURE
-    forwarder and serves NO app bundle, so it structurally can't inject
-    page JS that steals the pairing code from the URL fragment — the phone
-    loads the app from a SEPARATE static origin (the R.5 landing host) and
-    only then opens the encrypted socket. The tunnel-through-daemon
-    alternative is noted as held in reserve (R.4h's tolerant schemas make
-    the static-origin path's version skew survivable). Version-bump =
-    "wrong pairing code" is a README line. Verified: `server/relay-service.
-    itest.ts` (9 tests, Tier 2) runs the REAL daemon dialed at the REAL
-    service — full remote turn + byte-for-byte local mirror, health/404,
-    short-id + taken-id + unknown-id refusals, global cap, per-pair cap,
-    rate-limit drop, heartbeat-doesn't-kill-healthy, and the contract
-    sync-guard; the standalone package also `npm install && npm run build`s
-    on its own NodeNext tsconfig and the compiled `dist/main.js` serves
-    `/health` and drains on SIGTERM (checked, artifacts not committed). The
-    R.1/R.3 crypto + ciphertext-only properties already hold against the
-    stub (relay.itest.ts, whose `RemoteClient` moved to the shared
-    `server/relay-test-client.ts`). Owed to (c): Kyle's Fly.io account +
-    owned domain, then `fly deploy` + `fly certs add` + point
-    `GENUI_RELAY_URL=wss://relay.<domain>`; the cellular-phone Done-when is
-    R.6's real-hardware check. **2026-07-08 (later): the standalone private
-    repo now EXISTS** — `~/Projects/genui-relay`, pushed to the private
-    GitHub repo `kserrec/genui-relay`. It adds what only the split repo can
-    hold: an 11-test self-contained suite (node:test + tsx, raw ws clients —
-    routing, refusal codes, every cap), `scripts/smoke.mjs` (post-deploy
-    go/no-go: health over HTTPS, pair + byte-identical round-trip, bogus-id
-    refusal against the LIVE relay), `DEPLOY.md` (the command-by-command
-    deploy-day runbook, incl. day-2 ops + rollback), committed lockfile +
-    `npm ci` Dockerfile, and `npm run sync` / `sync:check` back to
-    `relay-service/` (which stays dev source of truth until first deploy —
-    the itest still verifies it against the real daemon). Standing up that
-    suite immediately caught and fixed a real pre-deploy crash: `ws` emits
-    `'error'` on a protocol-violating frame (e.g. oversize), no handler was
-    attached, and the unhandled `'error'` would have hit main.ts's
-    `uncaughtException` → exit(1) → every live pairing dropped by one
-    hostile frame. Fixed in `relay-service/src/relay.ts` (`guard()` on every
-    accepted socket, synced to the repo); the oversize-frame test now pins
-    sender-dies-relay-lives. All suites re-verified: 11/11 standalone, 9/9
-    relay-service.itest, Tier-1 + typecheck green in both repos.
-    **2026-07-08 (later still): DEPLOYED — sequencing (b) and (c) are
-    substantially done.** Kyle signed up for Fly.io + installed flyctl;
-    `fly apps create genui-relay` + `fly deploy` succeeded; app lives at
-    `genui-relay.fly.dev` (TLS via the platform). Two deploy-day lessons
-    folded into DEPLOY.md + fly.toml: (1) Fly's first deploy creates TWO
-    machines by default (`--ha=false` avoids; pair affinity needs exactly
-    one — fixed live with `fly scale count 1`); (2) the trial account stops
-    machines after 5 min until a credit card is added (Kyle's next action).
-    Verified against production: `npm run smoke -- wss://genui-relay.fly.dev`
-    PASS, and a REAL daemon (mock session) dialed out, completed the E2E
-    handshake, and streamed a full 74-frame turn (incl. `render`) to a
-    `RemoteClient.connectUrl` viewport — plus `fly logs` shows ONLY
-    connection metadata ("daemon paired (1 pair(s), 1 conn)"), no frame
-    contents, no pair ids: the "learned nothing" Done-when criterion,
-    observed. Still open before the box closes: Kyle's credit card (else
-    machines stop), the owned domain + `fly certs add relay.<domain>`
-    (launch-gating: daemons must bake OUR name, never fly.dev), and the
-    cellular-phone pass (R.6 real-hardware check — also needs the app-serving
-    static origin, which is R.5's landing host).
-    **2026-07-08 (later still): security audit of the deployed relay — one
-    fix landed here, two deferred by design.** Finding #1 (real, ship-time):
-    the relay capped total sockets/pairs but nothing per source, so one host
-    could open thousands of quiet connections (each just answering pings to
-    dodge the reaper) to eat the whole global budget, or squat every pair
-    slot with junk daemons — the per-*connection* frame-rate limit can't stop
-    it (the attack is many idle connections, not one noisy one); the "same
-    DoS posture as the daemon" note assumed a localhost-only listener, which
-    the public relay is not. FIXED: `RELAY_MAX_CONNECTIONS_PER_IP` (default
-    64, 0 disables) keyed on a trusted `RELAY_CLIENT_IP_HEADER`
-    (`fly-client-ip`, set in fly.toml — the socket address is Fly's shared
-    proxy) with the same clean-refuse shape; two standalone tests (socket-IP
-    cap + header-keyed cap that frees on close). Finding #2 (Origin allowlist
-    on viewport upgrades) → R.5 (needs that step's static origin domain).
-    Finding #3 (pairId squat against a specific victim) → theoretical, no
-    action (128-bit codes, pairId only over wss). Audit-verified clean: no
-    secrets, `ws` 8.21.0 no CVEs, unprivileged container, E2E-blind confirmed
-    in code, and no crash-via-send path (every `ws.send` is OPEN-guarded with
-    no async gap, and send-on-closing is silent in ws — checked the source).
-    All suites re-green: 13/13 standalone, 9/9 relay-service.itest, typecheck
-    both repos.
+  - Status: **DEPLOYED and verified in production; the box stays open only on
+    non-code items.** The service (`relay-service/` — the vendored dev
+    source-of-truth; the standalone private `genui-relay` repo is what deploys,
+    kept in sync via `npm run sync`/`sync:check`) is a dependency-light (`ws`
+    only) portable Node process: a PURE forwarder that parses no frames, stores
+    nothing, and serves NO app bundle. Hardening in place — global + per-pair +
+    per-IP connection caps (`RELAY_MAX_CONNECTIONS_PER_IP`, `fly-client-ip`),
+    frame rate limit, heartbeat reaper, max payload, `/health` + 404-everything.
+    **Trust decision (documented in the relay README):** a pure forwarder can't
+    inject page JS that steals the pairing code from the URL fragment, so the
+    phone loads the app from a SEPARATE static origin (R.5's landing host) and
+    only then opens the encrypted socket. **Live:** deployed to
+    **`genui-relay.fly.dev`** (Fly.io, single instance via `fly scale count 1`,
+    platform TLS); `npm run smoke` PASSes against it and a real daemon streamed a
+    full remote turn while `fly logs` showed only connection metadata — the
+    "learned nothing" Done-when, observed in production. Verified:
+    `server/relay-service.itest.ts` (9, Tier 2, real daemon ↔ real service) + the
+    standalone 13-test suite + the live smoke.
+  - **Owed to close the box (all non-code, Kyle's):** (1) a credit card on Fly —
+    the trial stops machines after ~5 min idle; (2) an owned domain +
+    `fly certs add relay.<domain>` + `GENUI_RELAY_URL=wss://relay.<domain>` —
+    launch-gating, since installed daemons must bake OUR name, never `fly.dev`;
+    (3) the cellular-phone Done-when (an R.6 real-hardware check; also needs
+    R.5's static origin). Deferred security-audit items: Finding #2 (viewport
+    `Origin` allowlist) → R.5 (needs its domain); Finding #3 (pairId squat) → no
+    action (128-bit codes). Full deploy-day history (the two Fly gotchas), the
+    pre-deploy `ws` crash fix, and the audit detail are in PLAN-ARCHIVE.md.
 
-- [x] **Step R.3 — Per-pair E2E encryption**
-  - Goal: the relay operator (us, or any self-hoster) *cannot* read frames —
-    the precondition BUSINESS.md set for charging money.
-  - Build: derive a per-pair key from the pairing secret (never sent to the
-    relay); encrypt every frame end-to-end (WebCrypto AES-GCM, replay
-    nonces); wrong-key or tampered frames fail closed. Key setup rides the
-    pairing handshake; the daemon-printed pairing code/QR is the root of
-    trust.
-  - Done when: relay logs show ciphertext only; a tampered frame and a
-    wrong-code pairing both fail cleanly; the local-tab experience is
-    byte-identical through the encrypted path.
-  - Status: **done, verified across all three tiers (2026-07-07)** — one
-    shared WebCrypto-only module, `server/relay-crypto.ts`, runs verbatim in
-    the daemon and the browser (new `@relay-crypto` alias in both configs).
-    Scheme v1, documented in the module header: the relay is given only
-    `pairId = SHA-256(code)` (the `?pair=` param replaced R.1's `?code=` —
-    the code itself now never travels to the relay in any URL or frame);
-    per-connection handshake (role-pinned AEAD hellos exchanging 32-byte
-    nonces under an HKDF handshake key) derives fresh **directional**
-    AES-256-GCM frame keys, so recorded ciphertext can never be replayed
-    into a new connection (a replayed prompt/bang would otherwise
-    re-execute); frame ivs are strict +1 counters — replay, reorder, drop,
-    and tamper all throw, and every failure path drops the viewport (fail
-    closed, never open). Browser side: the code arrives as a URL *fragment*
-    (`/#code=…`, never sent in HTTP), is stashed per-tab and scrubbed from
-    the address bar; ws.ts handshakes before the hello on every (re)connect
-    and chains async seal/open to preserve frame order. Daemon side:
-    relay-client handshakes each announced viewport (15s timeout) before
-    any Connection exists. Verified — Tier-1 (10 crypto tests: tamper/
-    replay/reorder/cross-channel/reflection/wrong-key all rejected); Tier-2
-    (9 tests incl. a stub tap recording exactly what a relay operator could
-    observe: >50 frames, all base64url ciphertext, no code in any URL;
-    tampered frame → viewport dropped; right-pairId-wrong-code → handshake
-    refused); Tier-3 (headless Chrome through the stub: transcripts
-    character-identical AND the tap saw no plaintext; address bar scrubbed).
-    Not provided, deliberate (candidate v2): forward secrecy — an ECDH
-    handshake would close "code leaks later, recorded traffic opens";
-    per-launch codes bound that window today.
+- [x] **Step R.3 — Per-pair E2E encryption** — done 2026-07-07; WebCrypto AES-GCM, per-connection directional keys off the pairing code, fail-closed on tamper/replay/reorder; the relay sees only ciphertext. → PLAN-ARCHIVE.md.
 
 - [ ] **Step R.4 — Remote viewport UX (the phone experience)**
   - Goal: connecting from a phone is one scan, and driving a session there
@@ -508,422 +374,30 @@ likeliest-user honesty fix, and the compat fix that's only cheap before
 relay skew exists); **R.4d, R.4g — strongly should** (a DoS lever and the
 bug-report surface); **R.4c, R.4e — slip only as a last resort** (honesty
 polish and security-test insurance).
+**Added 2026-07-10 (provider-ToS review — different provenance, same
+pre-launch block): R.4i, R.4j. R.4i is don't-launch-without (legal
+exposure to Kyle and to users, not polish); R.4j is the prose that pairs
+with it. Both sequence BEFORE R.5.**
 
-- [x] **Step R.4f — `!` must not kill the daemon (from the 2026-07-08
-  operability review)** *(pre-launch bug fix, small; found by reading, not
-  yet observed on a real Windows box — the code path is unambiguous)*
-  - Goal: on Windows, typing any `!` command almost certainly kills the whole
-    daemon. `spawnBang` picks `process.env.SHELL || "/bin/bash"`
-    (`server/pty.ts`); on Windows `SHELL` is unset and `/bin/bash` doesn't
-    exist, so node-pty's `spawn` throws — inside `connection.ts`'s `bang`
-    case (no try/catch), inside the ws message handler, in a process with no
-    `uncaughtException` handler. One keystroke, every in-memory session gone.
-    The tarball ships win32 prebuilds and R.6 plans Windows checks — Windows
-    is an intended audience.
-  - Build: per-platform shell fallback (win32 → `cmd.exe /c` or
-    PowerShell — pick one, terminal-faithful for what a Windows user's own
-    terminal would run); wrap the spawn so a throw becomes an `error`
-    WireMsg + `bang_end` on that session, never a process death (this also
-    hardens the mac/linux path against exotic SHELL values).
-  - Files: `server/pty.ts`, the bang case in `server/connection.ts`, tests
-    in kind (Tier 2: a bang with a forced-bad shell errors the session and
-    the daemon survives; the real Windows keystroke lands in R.6's
-    cold-install checks).
-  - Done when: a failing shell spawn surfaces as an in-transcript error on
-    that session only, proven over a real socket — and the R.6 Windows pass
-    runs `!dir` successfully.
-  - Status: **done, verified Tier 1 + Tier 2 (2026-07-08); the `!dir`
-    keystroke on real Windows stays owed to R.6's cold-install pass.**
-    `bangShell()` in `server/pty.ts` picks the shell per platform — win32
-    runs `%ComSpec%` (fallback `cmd.exe`) with the verbatim `/d /s /c "…"`
-    argv string node's own `shell:true` uses; unix keeps
-    `$SHELL || /bin/bash` — and `spawnBang` pre-checks an absolute shell
-    path with `existsSync`, throwing a clean `shell not found: <path>`.
-    That pre-check matters because the two platforms fail differently
-    (probed live 2026-07-08): win32 node-pty throws synchronously, but on
-    unix the fork succeeds and `execvp(3) failed.` surfaces only inside the
-    child — the check gives every platform one catchable failure mode. The
-    `bang` case in `connection.ts` now wraps the spawn: a throw broadcasts
-    `error` ("! failed to start: …") + `bang_end` (exitCode null) on that
-    session and nothing else. Verified — Tier 1 (4 new tests: per-platform
-    shell/argv selection incl. ComSpec, missing-shell throw); Tier 2 (new
-    test, own daemon with `SHELL=/nonexistent/…`: `!echo hi` over a real
-    socket yields `bang_start` → `error` → `bang_end`, then the SAME daemon
-    and session complete a full mock turn — one keystroke no longer costs
-    every in-memory session).
+- [x] **Step R.4f — `!` must not kill the daemon** — done 2026-07-08; per-platform shell selection + wrapped spawn, so a bad shell errors only that session, never the daemon. → PLAN-ARCHIVE.md.
 
-- [x] **Step R.4b — First-run honesty (from the 2026-07-07 cold-start
-  friction log)** *(independent of R.5/R.2 — buildable now, no external
-  accounts; launch-gating in effect: the first five minutes are only good
-  today if the user arrives with an env var already set)*
-  - Goal: fix what the first hundred real users hit in minute one, all
-    observed live in a fresh-clone + clean-prefix-install walk. The likeliest
-    launch user — Claude Code on a Pro/Max **subscription**, no API key — is
-    shown "Claude Code — no credentials · demo" (observed on this very
-    machine, a logged-in daily Claude Code user); a stranger who clicks a
-    demo row gets a fabricated research brief with fake tool rows (one
-    duplicated) and a fake **$0.018 cost**, whose only fakeness cue is the
-    dim `mock-sonnet` label (the flagged "mock is not a user tier" item, now
-    concretely observed); a zero-credential machine gets three dead-end
-    badges with no guidance anywhere on screen.
-  - Build: (1) **Count a Claude Code subscription login as live**:
-    `agentHasCredentials("claude-code")` also accepts
-    `~/.claude/.credentials.json` (mirror the codex `auth.json` check — the
-    SDK runs fine on the login alone, proven live 2026-07-07); document
-    `ANTHROPIC_AUTH_TOKEN`/`ANTHROPIC_BASE_URL` (already accepted by the
-    code) and the login path in `.env.example`, which today presents the API
-    key as Claude's only live path while documenting the login path for
-    Codex. (2) **Honest mock presentation in-session**: a shell-drawn demo
-    banner (the agent can't fake or clear it — same rule as the permission
-    bar), no fabricated dollar cost (drop it or label it simulated), and a
-    "connect your agent" pointer naming the concrete fix for the session's
-    agent (env var name / `codex login`). Fix the mock's duplicated Bash row
-    while in the file. (3) **Onboarding guidance**: a "no credentials" row
-    carries the one-line how-to (env var name or login command) instead of a
-    bare badge. (4) **Two daemon-message honesty fixes**: the EADDRINUSE
-    port walk currently prints "server on :3000" *and then* "server on
-    :3001" — the first line is false and, with `--no-open`, gets copied
-    (observed: it pointed at a different daemon); print a "busy — walking"
-    line instead, so only the bound port says "server on". And the 403 body
-    ("genui-shell: missing or invalid token") should state the recovery:
-    open the full token URL printed by the terminal that launched
-    genui-shell.
-  - Files: `server/adapters/index.ts`, `.env.example`,
-    `server/adapters/mock.ts`, `web/src/Onboarding.tsx`, `web/src/Shell.tsx`
-    (banner), `server/index.ts` (port walk + 403 body), tests in kind
-    (Tier 1: the creds check; Tier 3: onboarding guidance text + demo banner).
-  - Done when: a machine with only `~/.claude/.credentials.json` (no env
-    keys) shows Claude Code **ready** and drives a real session; a
-    zero-credential user can read, on the picker itself, exactly what to set
-    or run for each agent; a mock session is unmistakably labeled a demo and
-    shows no dollar cost; the startup log names only the port it actually
-    bound; the 403 page tells the user where the right URL is.
-  - Status: **done, verified across all three tiers + one live turn on the
-    target machine (2026-07-08).** (1) `agentHasCredentials("claude-code")`
-    also accepts `<CLAUDE_CONFIG_DIR|~/.claude>/.credentials.json`; the
-    itest harness pins `CLAUDE_CONFIG_DIR` to an empty dir so logged-in dev
-    machines still test against the mock; `.env.example` now lists all four
-    live paths (login first, then key/token/base-url). (2) `session_created`
-    gained an additive `demo?: boolean` (set from the new
-    `SessionEntry.live`); the shell draws a persistent `.demo-banner` —
-    warn-toned, agent-unpaintable — reading "demo · scripted replies — no
-    real agent is running · to connect <agent>: <fix>"; the per-agent fixes
-    live in a new shared `web/src/agents-meta.ts` (LABEL + CONNECT_HINT).
-    The mock now emits usage WITHOUT costUsd (status bar shows tokens, no
-    dollar figure — only real adapters price turns), draws its 1–2 tool
-    rows without replacement (the duplicated-Bash fix), and its welcome
-    template says "demo session / no credentials" instead of claiming an
-    ANTHROPIC_API_KEY problem regardless of agent. (3) Credential-less
-    picker rows carry the one-line fix (`.onb-agent-hint`). (4) The port
-    walk prints ":3000 busy — trying :3001" and only the bound port says
-    "server on" (the stale listening callback was the bug — both closures
-    fired on the eventual bind); the 403 body names the recovery (open the
-    ?token= URL from the launching terminal). Verified — Tier 1 (103: creds
-    check via CLAUDE_CONFIG_DIR seam incl. each env var alone); Tier 2 (54:
-    403-body wording; forced port collision → exactly one "server on" line,
-    naming the walked port); Tier 3 (12: picker hints for all three agents,
-    demo banner up before the first turn with the claude fix named, a
-    template turn's status bar shows tokens and no "$"). Live, this machine
-    (subscription login, zero env keys): hello now says claude-code
-    live:true, and a real session answered one short prompt on
-    claude-sonnet-4-6 — the exact user the step was for. Note for R.6's
-    onboarding eyeball: the demo badge text itself still reads
-    "no credentials · demo" with the hint underneath.
+- [x] **Step R.4b — First-run honesty** — done 2026-07-08; live-credential detection, an honest shell-drawn demo banner with no fake cost, onboarding hints, and port-walk + 403 wording fixes. (Its subscription-login-counts-as-live half was later reversed by R.4i.) → PLAN-ARCHIVE.md.
 
-- [x] **Step R.4d — Cap `!` passthrough output (from the same probe)**
-  *(small, server-side; buildable now)*
-  - Goal: close an uncapped-output gap. Observed: a `!` command emitting
-    10 MB streamed **entirely** onto the wire and into the session ring
-    buffer, and was **replayed in full (10.4 MB) to a second viewport** — the
-    64 KB tool-output cap (`TOOL_OUTPUT_CAP_BYTES`, applied via `capOutput`)
-    does NOT cover the bang path. A runaway `!yes` / `!cat huge.log` floods
-    every reconnect and new tab, and (each `bang_output` being one ring
-    message) can evict the real transcript from the 4000-message ring — a
-    cheap local resource-exhaustion lever and a bad UX either way.
-  - Build: bound the bang output the daemon retains/broadcasts — a per-command
-    total cap with an honest truncation marker (the `bang_output`/`bang_end`
-    grammar already carries a stream; mirror the tool cap's "N bytes elided"
-    honesty rather than cutting silently), and/or coalesce/stop buffering past
-    a ceiling so the ring can't be pushed out by one command. Keep the live
-    ephemeral stdin path untouched (that's the secret path, §4.9).
-  - Files: `server/pty.ts` / the bang path in `server/connection.ts` +
-    `server/registry.ts` (what enters the ring), a new env knob mirroring
-    `TOOL_OUTPUT_CAP_BYTES` (e.g. `BANG_OUTPUT_CAP_BYTES`), tests in kind
-    (Tier 2: a big-output `!` is capped on the wire and in replay).
-  - Done when: a `!` command producing far more than the cap is truncated
-    with a visible marker, replay to a fresh viewport is bounded, and one
-    runaway command can no longer evict a session's transcript from the ring.
-  - Status: **done, verified (2026-07-08).** `BANG_OUTPUT_CAP_BYTES`
-    (default 256 KB, env-overridable) bounds what the bang path broadcasts
-    per command, in `connection.ts`'s onData: head-kept byte budget (same
-    byte-slice technique as `capOutput`), a marker the moment the cap hits
-    ("output cap reached (N bytes) — further output elided"), zero
-    broadcasts past it (so nothing more enters the ring), and a final
-    "(… N bytes elided …)" before `bang_end` with the withheld total. The
-    PTY keeps running and the agent-context tail (`BANG_CONTEXT_CAP`,
-    tail-kept) still accumulates — only the wire/ring is bounded; the
-    ephemeral stdin path is untouched. Verified — Tier 2 (new test, own
-    daemon with an 8 KB cap): a 200 KB `!` lands < cap+300 bytes on the
-    live viewport WITH both markers, a fresh viewport's replay is bounded
-    the same, and a mock turn run beforehand still replays (no ring
-    eviction). Full suites: 103 Tier 1, 55 Tier 2, 12 Tier 3 (one
-    unreproducible single-test flake in the first of three e2e runs; two
-    subsequent full passes).
+- [x] **Step R.4d — Cap `!` passthrough output** — done 2026-07-08; `BANG_OUTPUT_CAP_BYTES` bounds bang output on the wire and in the replay ring so one runaway command can't flood viewports or evict the transcript. → PLAN-ARCHIVE.md.
 
-- [x] **Step R.4h — Protocol compat hardening (from the 2026-07-08 contract
-  design review)** *(pre-launch, small; must land BEFORE version skew can
-  exist — i.e. before the relay puts a phone bundle and an npm daemon on
-  two release trains)*
-  - Goal: the additive-only wire rule is enforced at the `WireMsg` layer and
-    silently violated one layer up. (1) `registry-spec.ts` derives every
-    component schema with `.strict()`, and the CLIENT validates render props
-    with it — so adding one optional prop to `card` makes every older client
-    reject every card into the raw-JSON fallback. The component vocabulary
-    is part of the wire contract in practice, and it is non-additive today.
-    (2) The ignore-unknown-message-type behavior both switches rely on
-    (`RenderZone`, `connection.ts` — no `default:`) is the de facto
-    versioning story, but it's an accident, not a stated/tested rule.
-    (3) `Onboarding.tsx`'s `LABEL: Record<AgentName, string>` is exhaustive
-    over the closed union — a future agent #4's name from a newer daemon
-    renders an undefined label instead of the raw string, making "add an
-    agent" quietly non-additive for old clients.
-  - Build: the Postel split — schemas stay `.strict()` where AGENT output is
-    validated (render-mcp / render-tools, reject malformed input at the
-    source) and become tolerant (strip unknown keys) where the CLIENT
-    parses (`RenderBlock`'s copy — e.g. a derived `.strip()` twin exported
-    alongside); raw-string fallback for unknown agent names in the picker,
-    fleet, and status bar; make ignore-unknown a tested rule (Tier 1: the
-    client swallows an unknown WireMsg type — ws.test-style; Tier 2: the
-    daemon swallows an unknown ClientMsg type and the socket lives — folds
-    into Q.4's sweep naturally); write the implicit agent-#N requirements
-    list into README §2.2 (MCP stdio + tool results visible in the engine's
-    own event stream for the renderId ack ride-back, a discernible turn
-    boundary, a warm-session mechanism, an interrupt, auto-trust for the
-    injected MCP server) so the seam's real contract stops living only in
-    the adapters' source.
-  - Files: `server/registry-spec.ts`, `web/src/registry/RenderBlock.tsx`,
-    `web/src/Onboarding.tsx` / `web/src/FleetView.tsx` /
-    `web/src/StatusBar.tsx` (name fallback), `README.md` §2.2, tests in kind.
-  - Done when: a new optional prop on an existing component renders fine on
-    a client built before the prop existed (proven by test: yesterday's
-    tolerant schema accepts tomorrow's payload); an unknown message type is
-    provably ignored on both ends; and an unknown agent name shows as its
-    raw string, not undefined.
-  - Status: **done, verified across all three tiers (2026-07-08).** The
-    Postel split: `registry-spec.ts` now exports BOTH derivations —
-    `registrySchemas` stays `.strict()` for the SOURCE side (render-mcp /
-    render-tools inputs, vocabulary-pinning tests) and a new `clientSchemas`
-    (plain `z.object`, zod-v4 default = strip unknown keys) is what
-    `RenderBlock` validates with, so a newer daemon's extra prop strips
-    instead of failing the whole component into the raw-JSON fallback.
-    Ignore-unknown is now a stated rule (protocol.ts header) with teeth:
-    Tier 1 ws.test proves an unknown seq-stamped type is delivered inert
-    AND still advances lastSeq (otherwise resume would re-replay seen
-    frames); Tier 2 session.itest sends two unknown ClientMsg frames and
-    the same socket then drives a clean full turn. Agent names: the R.4b
-    `agents-meta.ts` records are now reached only through `agentLabel()`
-    (falls back to the raw string) and `connectHint()` (undefined → hint
-    line simply omitted) — Onboarding and the demo banner updated;
-    FleetView/StatusBar already rendered raw strings. README §2.2 gained
-    the "what agent #N actually requires" list (MCP stdio; tool results
-    visible in the engine's own stream for the renderId ack ride-back; a
-    discernible turn boundary; a warm-session mechanism; an interrupt;
-    auto-trust for the injected MCP server). Verified — Tier 1 107 (new:
-    tolerant-twin strips tomorrow's prop while strict still rejects it +
-    malformed still fails the twin; unknown-type inertness + cursor
-    advance; label/hint fallbacks), Tier 2 56 (unknown ClientMsg swallowed,
-    socket lives), Tier 3 12/12 (client bundle rebuilt with clientSchemas —
-    full regression pass). With this, all three "don't launch without"
-    steps (R.4f, R.4b, R.4h) are closed.
+- [x] **Step R.4h — Protocol compat hardening** — done 2026-07-08; the Postel split (strict schemas at the source, tolerant `clientSchemas` at the client), tested ignore-unknown on both ends, raw-string fallback for unknown agent names. → PLAN-ARCHIVE.md.
 
-- [x] **Step R.4g — Supportability sweep: version, error logging, honest
-  failure text (from the 2026-07-08 operability review)** *(pre-launch;
-  several small touches, one theme: a stranger's bug report must contain
-  enough to act on)*
-  - Goal: today a bug report contains nothing usable. (1) **No version
-    anywhere** — no `--version`, none in the boot line, the UI, or the
-    `agents` hello; post-relay, the phone bundle vs daemon version is a
-    second invisible axis. (2) **The likeliest failures never reach the
-    terminal** — engine/adapter errors (bad key, engine died, CLI missing)
-    go to the browser as `error` WireMsgs and are never logged server-side;
-    there are 14 log sites total (boot/attach/action/relay), no timestamps,
-    and no debug knob. (3) The boot output **prints the pairing code** — a
-    user pasting their terminal into a public issue leaks the remote-path
-    credential. (4) On Node < 20.12, `process.loadEnvFile` doesn't exist and
-    the bare try/catch swallows it — a valid key in `.env` lands in mock
-    mode with zero indication why. (5) A daemon crash (no process-level
-    handlers) is loud but points nowhere.
-  - Build: read the package version once (esbuild-safe — import or embed at
-    build time) → boot line, `--version`/`--help` in `bin/genui-shell.js`,
-    `agents` hello (additive field) and status bar — and the client
-    announces its own build back (additive field on `attach`/`create`), so
-    a skewed pair is visible from the daemon's log (2026-07-08 contract
-    review); mirror every `error`
-    WireMsg the daemon emits to `console.error` with a timestamp; one
-    opt-in `GENUI_DEBUG=1` that logs normalized adapter events + engine
-    stderr; a "keep this secret" marker on the pairing-code line; catch the
-    missing-`loadEnvFile` case distinctly and say so ("this Node can't read
-    .env — need ≥ 20.12"); `uncaughtException`/`unhandledRejection`
-    last-gasp handlers that print version + report URL and re-exit nonzero
-    (crash stays loud — it just signs its name).
-  - Files: `bin/genui-shell.js`, `server/index.ts`, `server/protocol.ts`
-    (additive hello field), `web/src/StatusBar.tsx`, adapters (debug hook),
-    tests in kind (Tier 1: version string + flag; Tier 2: error mirroring
-    observed in daemon logs).
-  - Done when: `genui-shell --version` answers; the boot line, status bar,
-    and hello all carry the version; a live-agent failure appears in BOTH
-    the transcript and the terminal log with a timestamp; and a wrong-Node
-    `.env` user is told exactly what happened instead of silently getting
-    the mock.
-  - Status: **done, verified across all three tiers (2026-07-08).**
-    (1) Version: new `server/version.ts` + `web/src/version.ts` import
-    package.json at build time (`resolveJsonModule` on; esbuild/Vite inline
-    it) — boot line (`v0.1.0 — server on …`, harness regex unbroken),
-    `--version`/`-v` + `--help`/`-h` in the launcher (answer without
-    booting; the launcher reads the package.json shipped beside it),
-    `agents` hello `version` field, status bar `v0.1.0` item; the client
-    stamps `clientVersion` onto attach/create at ONE choke point
-    (`SocketClient.stamp`, covering hello + queued sends) and the daemon
-    logs "version skew: client vX, daemon vY". (2) Error mirroring, two
-    choke points: `registry.broadcast` (adapter/session-stream errors —
-    the likeliest live failures) and connection's `sendError` (viewport
-    errors: malformed frame, bad cwd, bang-busy), both ISO-timestamped.
-    (3) `GENUI_DEBUG=1`: one line per broadcast WireMsg (truncated to 300
-    chars; bang_input never crosses broadcast, so no secret can appear) +
-    engine stderr where an stderr surface exists (claude-code via the SDK's
-    stderr callback, gemini-cli via child.stderr; the Codex SDK exposes
-    none). (4) Pairing-code line now carries "KEEP THAT CODE SECRET…".
-    (5) Old-Node path: loadEnvFile absence is detected distinctly and says
-    credentials in .env were NOT loaded (branch typechecked; a <20.12
-    runtime isn't runnable here). (6) Last-gasp uncaughtException/
-    unhandledRejection handlers print version + issues URL (with a
-    don't-paste-tokens warning) and exit 1. Verified — Tier 1 111 (semver;
-    client and daemon versions equal; launcher --version/--help by real
-    spawn), Tier 2 57 (hello version; bad-cwd error mirrored timestamped;
-    skew logged; R.4f test now also asserts the broadcast-path mirror),
-    Tier 3 12 (status bar shows v-semver, full regression). Note: one
-    parallel Tier-2 run had relay.itest's whole file fail on its shared
-    before() under machine load (15s boot window); alone 14/14, next full
-    run 57/57 — pre-existing load flake, not this change.
+- [x] **Step R.4g — Supportability sweep** — done 2026-07-08; version everywhere (`--version`, boot line, hello, status bar, client skew log), timestamped error mirroring, `GENUI_DEBUG=1`, secret-scrub warnings, last-gasp crash handlers. → PLAN-ARCHIVE.md.
 
-- [x] **Step R.4c — Resilience honesty (from the 2026-07-07 failure-mode
-  probe)** *(independent of R.2/R.5 — buildable now; both items are everyday
-  events, not exotic: a laptop sleeping, a crash, or re-running `genui-shell`)*
-  - Goal: two live-observed "the app lies / loses data quietly" behaviors
-    from a run-and-break survey (17 malformed frames, daemon kill, relay
-    kill, 10 MB `!`, two-tab permission, live agent-subprocess kill — the
-    rest all passed: the daemon is hard to crash, the stateless relay
-    recovers fully, cross-tab permissions and agent-subprocess death are
-    handled honestly). The two that need fixing both trace to the same fact —
-    the daemon holds every session **in memory with no persistence**, so its
-    death is unrecoverable AND unannounced:
-    (1) **Silent session wipe on reconnect.** Observed: kill the daemon with
-    a browser attached, restart it → the client's `attach` with the old id
-    hits the "stale/unknown id falls back to a fresh session" path
-    (`connection.ts`), so it reconnects into a NEW empty session, the URL
-    silently rewrites (`/s/38c8dbab` → `/s/d0ba3bdf`), and the transcript
-    blanks with no explanation. (Durable cross-restart persistence is the
-    deferred 4.1/4.4 item and stays deferred — this is only about being
-    HONEST that it happened.)
-    (2) **Stuck "busy"/stop affordance on mid-turn death.** Observed: when
-    the daemon dies mid-turn the connection dot correctly flips to
-    "reconnecting…", but the ■ esc stop button stays visible because busy
-    clears only on `turn_end`/`zone_reset` (`Shell.tsx`) and neither arrives
-    — it looks like the agent is still working.
-  - Build: (a) distinguish "attached to the session I asked for" from "server
-    gave me a fresh one" — the server already knows (it took the fallback
-    branch), so carry a flag (e.g. reuse/extend `session_created` — additive)
-    that lets the shell show a shell-drawn notice ("that session ended —
-    started a new one") instead of a silent swap; (b) clear busy (and the
-    stop affordance) on socket close/reconnect-in-progress, re-deriving it
-    from replay as today, so a dropped turn doesn't look live.
-  - Files: `web/src/Shell.tsx`, `web/src/ws.ts`, `server/connection.ts`,
-    `server/protocol.ts` (additive flag if used), tests in kind (Tier 2:
-    fallback-create signals the new-session case; Tier 3: kill-daemon →
-    restart shows the notice, and mid-turn drop clears the stop button).
-  - Done when: after a daemon restart the user sees an explicit "session
-    ended, new one started" cue (not a blank screen + changed URL), and a
-    turn interrupted by a daemon drop stops showing the ■ esc/working state
-    while it reconnects.
-  - Status: **done, verified (2026-07-08).** (1) `session_created` gained an
-    additive `fallback?: boolean`, set ONLY when an id was actually asked
-    for and the registry doesn't have it (an id-less attach never had a
-    transcript to lose); the shell draws a dismissable `.session-notice`
-    ("that session ended — started a new one …the previous transcript
-    wasn't saved"), same warn-toned shell-owned family as the demo banner,
-    cleared on dismiss or on the first prompt into the new session.
-    (2) busy now clears on socket close AND re-derives from any turn
-    activity (`status`/`thinking_delta`/`text_delta`/`tool_use`, not just
-    `user_prompt`) — necessary because a 4.4 tail resume mid-turn replays
-    none of the turn's opening frames, so close-clears-busy would otherwise
-    have left a live streaming turn with no ■ esc. Verified — Tier 2 58
-    (fallback:true on gone-id attach; absent on create and on live
-    re-attach); Tier 3 13, new `resilience.e2e.ts`: real daemon killed
-    mid-turn under headless Chrome → `.stop-btn` detaches; restart on the
-    same port → notice appears with the URL moved on, dismiss removes it;
-    phone.e2e's offline→online mid-turn resume still passes (the busy
-    rework didn't regress tail resume). The gap-close block R.4b–R.4h is
-    now COMPLETE except R.4e (test-only, next).
+- [x] **Step R.4c — Resilience honesty** — done 2026-07-08; an explicit "that session ended — started a new one" notice replaces the silent URL swap, and busy/stop clears on a mid-turn daemon drop. → PLAN-ARCHIVE.md.
 
-- [x] **Step R.4e — Prove the artifact sandbox fails closed (from the
-  2026-07-08 test-suite quality review)** *(test-only, buildable now;
-  pre-launch — this is the trusted-shell boundary against agent-authored
-  content, and it currently has one positive test and zero negative ones)*
-  - Goal: every containment property `Artifact.tsx` documents is held up only
-    by the comment describing it. Today **no test fails** if:
-    `sandbox="allow-scripts"` gains `allow-same-origin` (one word — a hostile
-    artifact can then reach the shell's DOM, cookie, and socket); the injected
-    `default-src 'none'` CSP is dropped from `wrap()` (network exfiltration
-    opens; the friendly counter demo still passes); `parseBridgeAction` starts
-    accepting state ops, oversized payloads, or malformed shapes; the
-    nonce/origin/source checks on the bridge listener are removed; the 400 ms
-    action rate limit is deleted; or the navigation-liveness kill is deleted.
-    The only artifact test (`app.e2e.ts`) is the friendly positive path.
-  - Build: (a) Tier 1 — `parseBridgeAction` and `wrap()` are pure functions;
-    unit-test them directly (prompt/tool accepted; state kind, junk, missing
-    `genui` stamp, >4000-char text, array args all rejected; `wrap()` output
-    carries the CSP meta and boot script *before* the content). (b) Tier 3 —
-    a "show me a hostile artifact" mock hook whose html attempts the escapes,
-    then assert containment in a real browser: `fetch()` blocked by the CSP,
-    `parent.document` throws, an unstamped/forged `postMessage` never lands an
-    action, a state-op bridge message is dropped, an action burst is
-    rate-limited, `location=` navigation unmounts the frame into the
-    "navigation blocked" fallback — and assert the rendered iframe's `sandbox`
-    attribute is **exactly** `allow-scripts`.
-  - Files: new `web/src/Artifact.test.ts` (Tier 1), `server/adapters/mock.ts`
-    (hostile hook), `server/app.e2e.ts` (Tier 3 cases); `web/src/Artifact.tsx`
-    only if an export is needed for the unit tests. The rest of the review's
-    findings live in **Phase Q** below.
-  - Done when: temporarily flipping each defense (add `allow-same-origin`,
-    remove the CSP meta, let state ops through the parser) makes at least one
-    test fail — verified by actually flipping each, then restoring it.
-  - Status: **done, verified — including the flip-each-defense proof
-    (2026-07-08).** Tier 1 `web/src/Artifact.test.ts` (8 tests): exported
-    `parseBridgeAction` + `wrap()` and unit-tested them — prompt/tool
-    accepted (with/without object args); state ops, junk, missing/wrong
-    `genui` stamp, no action, blank/typed/>4000-char text, missing name,
-    array/string args, >200-char name all rejected; `wrap()` output carries
-    the `default-src 'none'` CSP meta AND the nonce-closing boot script,
-    both positioned BEFORE the content. Tier 3: a `/hostile/` mock hook
-    (`HOSTILE_ARTIFACT`) whose script attempts every escape and records the
-    outcome into its OWN DOM; `app.e2e.ts` asserts in a real browser that
-    `parent.document` is blocked, `document.cookie` throws, `fetch()` trips
-    a CSP violation (never succeeds), the iframe `sandbox` is EXACTLY
-    `allow-scripts`, and — via the transcript — that a forged/unstamped
-    bridge message and a state op never land while a 2-action burst is
-    rate-limited to one (only `burst-alpha` reaches the transcript, never
-    `burst-beta` or the forged prompt); a second test drives the navigating
-    artifact (now `about:blank`, hermetic) into the "navigation blocked"
-    fallback. Two real-containment wrinkles found and handled: the
-    artifact's own CSP blocks Playwright's frame script-injection, so the
-    test reads `frame.content()` (no injection) instead of evaluate/
-    waitForSelector; and the transcript accumulates across tests, so it
-    targets the NEWEST iframe. Flip-proof (actually done, then restored):
-    parser accepting state ops → 3 Tier-1 fail; dropping the CSP meta from
-    `wrap()` → 1 Tier-1 fail; adding `allow-same-origin` to the sandbox →
-    Tier-3 test 6 fails. Full suites green: 119 Tier 1, 58 Tier 2, 15
-    Tier 3. **The entire pre-launch gap-close block R.4b–R.4h is now
-    complete.**
+- [x] **Step R.4e — Prove the artifact sandbox fails closed** — done 2026-07-08; Tier-1 unit tests on `parseBridgeAction`/`wrap()` + a Tier-3 hostile-artifact suite, with a flip-each-defense proof (each containment property has a test that fails when the defense is removed). → PLAN-ARCHIVE.md.
+
+- [x] **Step R.4i — Per-provider credential policy** — done 2026-07-10; `server/provider-policy.ts` is the one source of truth: Claude/Gemini subscription blocked, no subscription over the relay, tri-state onboarding (`live`/`blocked`/`none`), the relay gate in `connection.ts`. Verified all three tiers. → PLAN-ARCHIVE.md.
+
+- [x] **Step R.4j — Reconcile docs & business to the provider policy** — done 2026-07-10 (prose-only); PLAN Auth decision, BUSINESS.md §2/§7/§8.5, both CLAUDE.md files, `.env.example`, README, and the private `genui-relay/README` all cite `provider-policy.ts`. → PLAN-ARCHIVE.md.
+
+- [x] **Step R.4k — Onboarding honesty + local-model discoverability** — done 2026-07-10; live-row endpoint/model `detail`, a named local-model signpost under the picker, where-to-get-it credential links, and the Codex subscription "could change" disclosure. Verified Tier 1 + Tier 3. → PLAN-ARCHIVE.md.
 
 - [ ] **Step R.5 — Entitlement + billing** *(needs Kyle: Stripe account +
   price confirmation — BUSINESS.md §7 says $12/mo · $99/yr)*
@@ -1053,35 +527,7 @@ anywhere, including as pre-launch polish. F.5–F.6 are engine-surface
 migrations: post-launch, demand-gated. Faithful-skin rule throughout: each
 fix restores what that agent's *terminal* user already sees — nothing invented.
 
-- [x] **Step F.1 — Slash-command output renders (buffered assistant text)**
-  - Goal: typing `/context`, `/compact`, `/usage` — the SDK supports 45
-    commands including the user's own skills — shows the command's output.
-    Observed: the output arrives as a **buffered `assistant` text message with
-    zero `stream_event` deltas** (local, cost 0), and the adapter renders
-    assistant text only from deltas → the command runs but nothing paints.
-    (Not `local_command_output` as the SDK types suggest — verified live.)
-  - Build: in `pump()`'s `assistant` case, emit text blocks that were *not*
-    already streamed this turn as `text_delta` (track whether deltas preceded
-    the message; the normal streamed path must not double-render). Unsupported
-    commands ("/status isn't available in this environment") arrive the same
-    buffered way — the same fix covers them, no special-casing.
-  - Files: `server/adapters/claude-code.ts` (+ its `.test.ts`, scripted engine).
-  - Done when: a scripted-engine test shows a buffered-only assistant message
-    rendering exactly once and a streamed turn not doubling; live, `/context`
-    in a claude-code session paints the context table in the transcript.
-  - Status: **done, verified scripted + live (2026-07-08).** A per-turn
-    `streamedText` flag in the claude adapter: set when a `stream_event`
-    text_delta is emitted, reset on `result`. The `assistant` case now emits
-    `text` blocks as `text_delta` only when the turn streamed nothing AND
-    the message isn't a subagent's (its prose stays filtered like its
-    deltas) — so buffered slash-command output paints while the normal
-    streamed path never double-renders. Verified — Tier 1 (3 new scripted
-    tests: buffered-only renders once; a streamed turn ignores its buffered
-    copy; the decision resets per turn — 122 total green). Live on this
-    machine (subscription login): `/context` painted the full context table
-    (1 text_delta, 1839 chars: "## Context Usage … Tokens: 26.2k / 200k …")
-    where before the fix it produced nothing. Covers unsupported commands
-    too (same buffered shape, no special-casing).
+- [x] **Step F.1 — Slash-command output renders** — done 2026-07-08; buffered assistant text (e.g. `/context`) paints exactly once without double-rendering a streamed turn. → PLAN-ARCHIVE.md.
 
 - [ ] **Step F.2 — System-notice line (the UI must not lie in degraded service)**
   - Goal: surface the service events the terminal shows and the adapter drops:
@@ -1099,66 +545,9 @@ fix restores what that agent's *terminal* user already sees — nothing invented
     forced api_retry (scripted) is visible in the transcript instead of a
     silent stall.
 
-- [x] **Step F.3 — Honest model label in the status bar**
-  - Goal: show the model the engine actually resolved, like the terminal's
-    own status line. Observed: Claude's `system/init` carries the real model
-    (`claude-fable-5`) while the adapter's label says the configured value or
-    literally `"default"`; Gemini's `init.model` can be the literal string
-    `"auto"` while the real models (router + worker) appear only in
-    `result.stats.models`.
-  - Build: claude adapter reads `system/init.model` into `modelLabel` (the
-    gemini adapter already reads its init — this is consistency); gemini
-    adapter prefers the `result.stats.models` keys when the init label is
-    `"auto"`/unset. `usage.model` already exists on the wire — no protocol
-    change.
-  - Files: `server/adapters/claude-code.ts`, `server/adapters/gemini-cli.ts`,
-    matching tests.
-  - Done when: tests assert engine-reported names flow into `usage.model` for
-    both adapters; live status bar shows the real model, not "default"/"auto".
-  - Status: **done, verified scripted + live (2026-07-08).** Claude adapter:
-    a new `system` case in `pump()` reads `system/init.model` into
-    `modelLabel` (was the configured value or the "default" placeholder).
-    Gemini adapter: a `honestModel()` helper prefers concrete names from
-    `result.stats.models` (object keys or a string array, joined) when the
-    init label is vague (`auto`/`gemini`/unset), else keeps the init model;
-    wired into the result-case `usage.model`. No protocol change
-    (`usage.model` already existed). Verified — Tier 1 (3 new: claude
-    system/init model reaches usage.model; gemini `auto`→real stats models;
-    gemini concrete init model kept over stats — 125 total green). Live on
-    this machine with `DEFAULT_MODEL` unset: `usage.model` came through as
-    **claude-opus-4-8** (the subscription's real resolved default) where
-    the pre-F.3 code showed the literal "default".
+- [x] **Step F.3 — Honest model label in the status bar** — done 2026-07-08; the adapters read the engine-resolved model (`system/init`, gemini `result.stats.models`) into `usage.model` instead of "default"/"auto". → PLAN-ARCHIVE.md.
 
-- [x] **Step F.4 — Gemini honesty pass (silent death on stderr-only failure)**
-  - Goal: live-observed trap — in a cwd outside the user's Gemini trusted
-    folders, the CLI writes the trust error to **stderr only** and exits 55
-    with nothing on stdout; the adapter reads only stdout, so the turn ends
-    silently: "thinking…", then nothing, no error. (The companion finding —
-    Google ended the individual OAuth free tier, observed as "migrate to
-    Antigravity" — turned out to already be handled: `agentHasCredentials`
-    in `server/adapters/index.ts` keys Gemini liveness on
-    `GEMINI_API_KEY`/`GOOGLE_API_KEY` only, with the IneligibleTierError
-    documented in-code. Verified 2026-07-07 during the cold-start pass;
-    nothing to build there.)
-  - Build: keep a capped stderr tail per turn; when the child exits non-zero
-    having emitted no stdout events, emit `error` with that tail.
-  - Files: `server/adapters/gemini-cli.ts`, stub-binary tests
-    (`GENUI_GEMINI_BIN` seam).
-  - Done when: a stub that dies stderr-only surfaces as an `error` WireMsg in
-    the transcript (no more silent turn).
-  - Status: **done, verified (2026-07-08).** `runTurn` now keeps a capped
-    (`STDERR_TAIL_CAP` 4000) stderr tail and a `sawEvent` flag (set when any
-    stdout line parses as JSON). On `close`, a non-zero exit code (null =
-    signal kill/interrupt, excluded) with no parsed stdout events and a
-    non-empty stderr tail emits `error: gemini exited <code>: <tail>` before
-    the turn_end. Gated by `sawEvent` so a turn that DID stream stdout (its
-    own `error` event, a normal reply) never double-reports. Verified — Tier
-    1 (stub gained a `FAKE_STDERR` knob; 2 new tests: stderr-only exit 55
-    surfaces the trust-folder message before turn_end; a nonzero exit WITH
-    stdout events stays single — 127 total green). Live not exercised (needs
-    a real Gemini key + an untrusted cwd, and the stub reproduces the exact
-    stdout-silent/stderr-only/nonzero shape); the R.4g `GENUI_DEBUG` stderr
-    stream already surfaced the same tail for operators.
+- [x] **Step F.4 — Gemini honesty pass** — done 2026-07-08; a stderr-only non-zero exit surfaces as an `error` WireMsg instead of a silent turn. → PLAN-ARCHIVE.md.
 
 - [ ] **Step F.5 — Codex app-server migration (approvals, streaming, visible
   reasoning)** *(post-launch, demand-gated — the big one)*
@@ -1330,46 +719,7 @@ curated model list. Agent- or model-specific niceties (tuned prompts,
 capability toggles) for the big popular ones can come **later**, as demand
 shows which matter — not a launch prerequisite.
 
-- [x] **Step L.1 — Documented local path (ship with the M2 launch)**
-  - Goal: a motivated local-model user is running in a couple minutes.
-  - Build: `docs/local-models.md` — point a local-capable agent (e.g. Codex) at
-    a running Ollama/vLLM/LM Studio (base URL + model, no proxy); an honest
-    "recommended models" table (30B+ coding models work well, small models
-    degrade gracefully via Step 1.4 — with hardware notes).
-  - Files: `docs/local-models.md`, README link.
-  - Done when: a stranger following only the doc drives a local model through
-    the browser UI; the launch post can truthfully say "BYOK or fully local."
-  - Status: **written 2026-07-07; facts verified against vendor docs + our
-    code, live local run still owed** — `docs/local-models.md` covers two
-    paths: (A) Claude Code → Ollama ≥ 0.14 via its Anthropic Messages API
-    (`ANTHROPIC_BASE_URL` + dummy `ANTHROPIC_AUTH_TOKEN`; our
-    `agentHasCredentials` already counts `ANTHROPIC_BASE_URL` as live, so no
-    code change), and (B) Codex → Ollama/LM Studio/vLLM via a top-level
-    default provider in `~/.codex/config.toml` (`wire_api = "responses"` is
-    now Codex's ONLY wire API — chat was removed; and it must be the config
-    *default*, since our adapter never passes `--oss`/`--profile`). Gemini
-    CLI: no local path, stated plainly. Honest model table (qwen3-coder 30B
-    ≈24 GB as the default pick; 7–8B expect misfires → Step 1.4 fallback) +
-    context-length floors (32K Claude Code / 64K Codex,
-    `OLLAMA_CONTEXT_LENGTH`). One wart documented for L.2: Codex liveness
-    keys on `OPENAI_API_KEY`/`auth.json`, so a config-only local setup needs
-    a dummy `OPENAI_API_KEY=local` — L.2's detection should remove it.
-    Claims verified against docs.ollama.com (anthropic-compatibility,
-    integrations/codex), developers.openai.com codex config reference, and
-    lmstudio.ai; code paths verified in `adapters/index.ts` + `codex.ts`.
-    **Done-when verified live later the same day (2026-07-07):** Ollama
-    0.31.1 installed on this CPU-only ThinkPad T480; Path A followed as
-    written in headless Chrome — onboarding showed Claude Code "ready" off
-    `ANTHROPIC_BASE_URL` alone, a real typed turn drove qwen3-1.7b through
-    Ollama's Anthropic endpoint, and the model's thinking stream rendered
-    live in the transcript (~25 min: honest CPU prefill of Claude Code's
-    measured ~26K-token agent surface at single-digit tok/s). Doc updated
-    with what the run taught: the user-space `num_ctx` Modelfile route
-    (replacing the sudo-needing `OLLAMA_CONTEXT_LENGTH` advice in Path A),
-    a "CPU-only reality" section with the measured numbers, and a
-    fits-in-RAM warning (18 GB qwen3-coder does NOT fit a 16 GB machine —
-    it hangs loading rather than failing fast). 8B-on-CPU is impractical
-    (~1 h/turn); 30B+ needs the GPU-class hardware the table now says.
+- [x] **Step L.1 — Documented local path** — done 2026-07-07; `docs/local-models.md` (Claude Code→Ollama, Codex→local providers), facts verified vs vendor docs and live on CPU. → PLAN-ARCHIVE.md.
 
 - [ ] **Step L.2 — `--local` easy mode (post-M2, demand-gated)**
   - Goal: one command instead of a couple minutes — build only if setup

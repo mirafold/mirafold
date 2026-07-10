@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { AgentName } from "@protocol";
-import { agentLabel, connectHint } from "./agents-meta";
+import { agentLabel, blockedHint, connectHint } from "./agents-meta";
 
 // P.4: the shell-owned onboarding picker. No agent is assumed — first run is
 // "choose your agent." Credentials never reach the browser; the server tells us
@@ -19,7 +19,7 @@ export function Onboarding({
   error,
   onPick,
 }: {
-  agents: { agent: AgentName; live: boolean }[] | null;
+  agents: { agent: AgentName; live: boolean; blocked?: boolean; detail?: string }[] | null;
   defaultCwd?: string;
   error?: string | null;
   onPick: (agent: AgentName, cwd?: string) => void;
@@ -57,25 +57,46 @@ export function Onboarding({
           {agents === null ? (
             <div className="onb-connecting">connecting…</div>
           ) : (
-            agents.map(({ agent, live }) => (
-              <button
-                key={agent}
-                className="onb-agent"
-                onClick={() => onPick(agent, cwd.trim() || undefined)}
-              >
-                <span className="onb-agent-row">
-                  <span className="onb-agent-name">{agentLabel(agent)}</span>
-                  <span className={`onb-agent-status ${live ? "onb-live" : "onb-demo"}`}>
-                    {live ? "ready" : "no credentials · demo"}
+            agents.map(({ agent, live, blocked, detail }) => {
+              // R.4i: three states. live → ready. blocked → a prohibited
+              // subscription is present; say so and name the API-key fix (still
+              // clickable — it runs the demo, like any non-live agent). none →
+              // no credentials · demo.
+              const hint = blocked ? blockedHint(agent) : !live ? connectHint(agent) : undefined;
+              const statusText = live
+                ? "ready"
+                : blocked
+                  ? "subscription not supported"
+                  : "no credentials · demo";
+              const statusClass = live ? "onb-live" : blocked ? "onb-blocked" : "onb-demo";
+              return (
+                <button
+                  key={agent}
+                  className="onb-agent"
+                  onClick={() => onPick(agent, cwd.trim() || undefined)}
+                >
+                  <span className="onb-agent-row">
+                    <span className="onb-agent-name">{agentLabel(agent)}</span>
+                    <span className={`onb-agent-status ${statusClass}`}>{statusText}</span>
                   </span>
-                </span>
-                {!live && connectHint(agent) && (
-                  <span className="onb-agent-hint">{connectHint(agent)}</span>
-                )}
-              </button>
-            ))
+                  {/* R.4k: a live agent shows what's behind it (local endpoint
+                      or configured model), so a local-model user isn't left
+                      guessing whether their setup was picked up. */}
+                  {live && detail && <span className="onb-agent-detail">{detail}</span>}
+                  {hint && <span className="onb-agent-hint">{hint}</span>}
+                </button>
+              );
+            })
           )}
         </div>
+        {/* R.4k: local/open models are a first-class choice, not a fourth agent
+            — they're a mode of Claude Code or Codex. Say so plainly so the
+            "fully local" promise is visible on the screen a local user lands on. */}
+        <p className="onb-local-note">
+          Running a local/open model (Ollama, LM Studio, vLLM)? It's a full
+          choice here, not just the cloud agents — point Claude Code or Codex at
+          it (see <code>docs/local-models.md</code>).
+        </p>
       </div>
     </div>
   );

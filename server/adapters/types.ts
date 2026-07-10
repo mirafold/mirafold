@@ -1,4 +1,5 @@
 import type { AgentName, WireMsg } from "../protocol";
+import type { CredentialKind } from "../provider-policy";
 
 export type { AgentName } from "../protocol";
 
@@ -29,6 +30,10 @@ export interface AgentSession {
  */
 export type Backend = {
   agent: AgentName;
+  // R.4i: which kind of credential drives this session — the input to the
+  // per-provider relay policy (`provider-policy.ts`). Read by the relay gate to
+  // refuse subscription-backed sessions over the paid path.
+  kind: CredentialKind;
   live: boolean;
   model?: string;
 };

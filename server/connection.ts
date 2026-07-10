@@ -4,6 +4,7 @@ import type { AgentName, ClientMsg, WireMsg } from "./protocol";
 import type { SessionEntry, SessionRegistry } from "./registry";
 import { runActionTool } from "./actions";
 import { availableAgents, defaultAgent } from "./adapters";
+import { allowedOverRelay } from "./provider-policy";
 import { spawnBang } from "./pty";
 import { VERSION } from "./version";
 
@@ -143,6 +144,10 @@ export function openConnection(
   // R.4: pairing info for the "connect a device" QR. The local WS path passes
   // it; the relay path never does — the code must not cross the relay.
   relay?: { url: string; code: string },
+  // R.4i: true for a viewport arriving over the paid relay (relay-client passes
+  // it). The relay gate refuses to attach such a viewport to a subscription-
+  // backed session; local viewports are never gated.
+  remote = false,
 ): Connection {
   // A connection is a viewport onto one registry session (Step 4.2) — or,
   // since 4.6, a fleet watcher observing the registry itself.
@@ -153,6 +158,24 @@ export function openConnection(
   // a valid afterSeq turns the replay into a tail-only resume — the client
   // is told via `resumed` so it keeps its state instead of repainting.
   const attachTo = (e: SessionEntry, afterSeq?: number, fallback = false) => {
+    // R.4i: the relay gate. A remote viewport may not drive a subscription-
+    // backed session — charging for remote access to it trips the closed-model
+    // providers' reselling clauses (provider-policy.ts). Refuse WITHOUT
+    // attaching, and leave `entry` as it was so the viewport keeps whatever it
+    // legitimately watched. Local viewports are never gated. (A remote CREATE
+    // that lands here leaves the just-created session unattached; it's idle-
+    // reaped — the important case this closes is a phone attaching to a
+    // subscription session a local tab started.)
+    if (remote && !allowedOverRelay(e.kind)) {
+      viewport({
+        type: "refused",
+        reason: "subscription-relay",
+        message:
+          "This session runs on a subscription login, which can't be used over the relay. Use an API key to drive an agent remotely.",
+      });
+      console.log(`[${label}] refused remote viewport → session ${e.id} (${e.kind})`);
+      return;
+    }
     if (entry) registry.detach(entry, viewport);
     entry = e;
     const resumed = afterSeq !== undefined && registry.canResume(e, afterSeq);
