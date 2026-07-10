@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
 import type { AgentName, SessionMeta } from "@protocol";
 import { Onboarding } from "./Onboarding";
 import { ConnectDevice } from "./ConnectDevice";
@@ -105,54 +105,53 @@ export function FleetView() {
         </button>
       </header>
       <div className="fleet-list">
-        {(sessions ?? []).map((s) => (
-          <a key={s.sessionId} className="fleet-row" href={`/s/${s.sessionId}`}>
-            <span className={`fleet-dot fleet-dot-${s.status}`} title={STATUS_LABEL[s.status]} />
-            {renaming === s.sessionId ? (
-              <input
-                className="fleet-rename"
-                defaultValue={s.name}
-                autoFocus
-                spellCheck={false}
-                onClick={(e) => e.preventDefault()}
-                onBlur={(e) => commitRename(s.sessionId, e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") commitRename(s.sessionId, e.currentTarget.value);
-                  else if (e.key === "Escape") setRenaming(null);
-                }}
-              />
-            ) : (
-              <span className="fleet-name">
-                {s.name}
-                <button
-                  className="fleet-edit"
-                  title="Rename"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    setRenaming(s.sessionId);
+        {(sessions ?? []).map((s) => {
+          const startRename = (e: ReactMouseEvent) => {
+            e.preventDefault();
+            setRenaming(s.sessionId);
+          };
+          return (
+            <a key={s.sessionId} className="fleet-row" href={`/s/${s.sessionId}`}>
+              <span className={`fleet-dot fleet-dot-${s.status}`} title={STATUS_LABEL[s.status]} />
+              {renaming === s.sessionId ? (
+                <input
+                  className="fleet-rename"
+                  defaultValue={s.name}
+                  autoFocus
+                  spellCheck={false}
+                  onClick={(e) => e.preventDefault()}
+                  onBlur={(e) => commitRename(s.sessionId, e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") commitRename(s.sessionId, e.currentTarget.value);
+                    else if (e.key === "Escape") setRenaming(null);
                   }}
-                >
-                  ✎
-                </button>
+                />
+              ) : (
+                <span className="fleet-name">
+                  {s.name}
+                  <button className="fleet-edit" title="Rename this session" onClick={startRename}>
+                    ✎
+                  </button>
+                </span>
+              )}
+              <span className="fleet-agent">{s.agent}</span>
+              <span className="fleet-cwd" title={s.cwd}>
+                {tildify(s.cwd, daemon.home)}
               </span>
-            )}
-            <span className="fleet-id">{s.sessionId}</span>
-            <span className="fleet-agent">{s.agent}</span>
-            <span className="fleet-cwd" title={s.cwd}>
-              {tildify(s.cwd, daemon.home)}
-            </span>
-            <span className="fleet-spacer" />
-            <span className={`fleet-status fleet-status-${s.status}`}>
-              {STATUS_LABEL[s.status]}
-            </span>
-            <span className="fleet-ago">{ago(s.lastActivity)}</span>
-            {s.viewports > 0 && (
-              <span className="fleet-views" title={`${s.viewports} open tab(s)`}>
-                ⧉ {s.viewports}
+              <span className="fleet-spacer" />
+              <span className="fleet-id" title="session id">
+                {s.sessionId}
               </span>
-            )}
-          </a>
-        ))}
+              <span className="fleet-sep" aria-hidden="true">
+                —
+              </span>
+              <span className={`fleet-status fleet-status-${s.status}`}>
+                {STATUS_LABEL[s.status]}
+              </span>
+              <span className="fleet-ago">{ago(s.lastActivity)}</span>
+            </a>
+          );
+        })}
       </div>
     </div>
   );
