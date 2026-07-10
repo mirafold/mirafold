@@ -51,6 +51,19 @@ devices. Why they're first, not just included:
   even fits them — a lab's bundled front end can't serve someone who chose
   the API key to escape the lab's plan limits.
 
+**BYOK for closed models is now a requirement, not just a positioning
+(added 2026-07-10).** A provider-terms review confirmed the closed providers
+restrict third-party subscription use: Anthropic and Google prohibit driving a
+subscription/OAuth login from another app entirely, and OpenAI permits it only
+for free local use, never a paid relay. genui-shell enforces this in code
+(`server/provider-policy.ts`, PLAN R.4i) — a Claude/Gemini subscription is
+refused with an API-key pointer, and no subscription is driven over the relay.
+This *sharpens* the first target rather than shrinking it: the API-key cohort is
+exactly who's unaffected, and "closed models are BYOK here" is now a true,
+enforceable line, not marketing. It also retires an earlier code assumption that
+the day-one user would arrive on a Pro/Max subscription — the day-one closed-
+model user is the **API-key holder**, which is what this section always said.
+
 Estimated reachable population: tens of thousands today, growing fast.
 Realistic capture at indie scale: hundreds to low thousands of paying users.
 This is a niche business by design — see §8 (Risks).
@@ -223,12 +236,82 @@ Recognition-first, because first-mover value expires (§4.1):
   holds only if the tier is sold as the genUI experience anywhere (which
   none of them has), not as phone access (which the market zero-priced);
   see the §8.3 amendment and the R.5 packaging check in PLAN.md.
+- **Relay rule: no vendor subscriptions (2026-07-10).** The Pro tier is remote
+  access to sessions the user's own local daemon drives — on their own **API
+  key OR a local/open model**, both welcome; only *vendor subscription auth* is
+  excluded (a subscription-backed session is refused over the relay by the
+  daemon, per `server/provider-policy.ts`, independent of billing). Local models
+  are in fact the *safest* relay users — no vendor credential in the picture at
+  all. The reason it's subscriptions specifically: charging for remote access to
+  a subscription-driven agent trips the closed providers' reselling clauses,
+  even though the credential never transits the E2E-blind relay. So "the relay
+  never touches your key" and "the relay excludes only subscriptions, not keys
+  or local models" are both true and both load-bearing.
 - **Later, maybe:** team tier (shared sessions, SSO) if pull emerges.
-- **Never (at this stage):** flat-fee bundled API usage.
+- **Never (at this stage):** flat-fee bundled API usage, or reselling
+  subscription-backed access over the relay.
 
 Costs: relay + site + auth/billing ≈ $20–100/mo at launch scale. Model
 costs: $0 (BYOK). Break-even at ~5–10 subscribers; this business is
 structurally profitable almost immediately or it's dead — a clean signal.
+
+### 7b. Monetization backlog (directions, not roadmap — added 2026-07-10)
+
+From the 2026-07-10 strategy memo. **These are captured directions, NOT
+committed roadmap** — the pre-launch sequence stays R.5→R.7 (relay billing →
+launch), and nothing here gates launch. The unifying thesis: sell what a
+*browser skin* can do that a terminal can't, and keep every paid path off
+ToS-risky ground (§2, §8.5). Revisit after launch signals read (§9).
+
+**Hosted inference tier (later, only if the core sells).** For the dead-end
+user — no API key, no local hardware — who still wants genui-shell. Structure:
+a **capped token bucket + markup**, metered/tiered, **never unlimited-flat**
+(coding is token-hungry; a flat plan lets power users bleed you — this is why
+§7's "never flat-fee bundled API usage" holds, and this tier is the *metered*
+exception to it, not a reversal). Start as a **metered proxy to a serverless
+provider** (Together / Fireworks / DeepInfra, ~$0.20–1.00/M tokens), **not owned
+GPUs** (an H100 at ~$1,300–1,800/mo is only economic at a utilization you won't
+have early). Can stand **alone** (subscribe for hosted-model use, no relay
+needed), so it captures the no-key/no-hardware user and converts free/BYO users
+upward — but it must be profitable on its own (no relay margin to
+cross-subsidize). Offer **BYO-frontier-key** as the premium escape hatch for
+Opus/GPT-class quality. The hard tension the memo names: the profit band is
+squeezed between the open-model token floor (~$16/mo for a moderate coding user)
+and the subsidized **$20 frontier-subscription** ceiling — so **sell turnkey
+convenience, not cheap tokens**; that premium is the only thing that pries the
+band apart.
+
+**Eight browser-skin monetization ideas** (memo §3; some already partly in §7):
+1. **Shared / co-driven sessions → Teams tier** — *strongest, nearly built.*
+   The session registry already fans one session to many viewports and the
+   relay already carries remote ones; this is multiplayer pair-programming /
+   mob-debugging with an agent. Elevates §7's "team tier, maybe."
+2. **Priority relay / device tiers** — *lowest-hanging fruit;* `limits.ts` caps
+   are already env knobs. Free = basic; Pro = more devices / higher limits /
+   lower latency.
+3. **Async + push notifications** — "start a task, close the laptop, get pinged
+   when it finishes or needs a permission." Mobile-native; already named in §7's
+   Pro bullet and on Phase L.
+4. **Publish & share artifacts** — hosted shareable URLs for Phase-3 agent UI,
+   with access control / custom domains as the paid layer.
+5. **Premium component packs → marketplace** — *deepest moat.* First-party
+   packs now (dataviz/BI, DB/SQL explorer, DevOps dashboards, diff/review); a
+   third-party marketplace with a revenue cut later (ecosystem play).
+6. **Opt-in encrypted history + cross-session search** — persistent searchable
+   transcripts + pinned widgets, E2E-encrypted via the existing `relay-crypto`
+   to stay local-first-faithful.
+7. **Org admin & compliance → Enterprise** — leverage the existing permission
+   system + action logging: SSO, central policy, audit logs, seats, usage
+   dashboards.
+8. **White-label / embed (B2B)** — license the shell as the front-end for a
+   company's own internal agent; leans on the agent-neutrality moat (§4.5).
+
+**Suggested sequencing (post-launch, demand-gated):** first the cheap,
+high-margin, near-built pair — priority relay tiers (#2) + shared sessions (#1);
+then the market-broadeners — push/async (#3), publish artifacts (#4), premium
+component packs (#5), the hosted-inference tier; later the platform bets —
+component marketplace (#5 → ecosystem), org/enterprise (#7), white-label (#8).
+The free local skin is the funnel feeding all of it.
 
 ## 8. Risks, ranked
 
@@ -268,7 +351,17 @@ structurally profitable almost immediately or it's dead — a clean signal.
 5. **SDK/ToS drift.** The Agent SDK's key requirements, subscription-auth
    rules, or rate structures change under you. *Mitigation:* BYOK keeps you
    out of the blast radius of most pricing changes; wire-protocol seam keeps
-   you portable if the SDK shifts.
+   you portable if the SDK shifts. *Concrete stance (2026-07-10 provider-terms
+   review, enforced in `server/provider-policy.ts`):* closed-provider
+   subscriptions are prohibited where their terms say so — Anthropic + Gemini
+   everywhere, OpenAI over the relay — and this is a dated, one-file,
+   revisit-able rule, so a terms change is a small edit, not a scramble. All
+   three moved in H1 2026; treat the table as living. This is our reading of
+   published terms, not legal advice — but a lawyer is only *warranted* if we
+   ever monetize a subscription-dependent path, which the current design avoids
+   (paid = API-key/local only; the tolerated free Codex subscription is a
+   personal-use scope). So it's a conditional pre-launch item, not an
+   unconditional blocker (revisit at PLAN R.6 if the design changes).
 
 ## 9. Milestones & validation gates
 

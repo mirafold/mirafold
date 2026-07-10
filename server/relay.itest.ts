@@ -1,5 +1,8 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import WebSocket from "ws";
 import type { WireMsg } from "./protocol";
 import { startDaemon, TestClient, type Daemon } from "./itest-harness";
@@ -295,6 +298,59 @@ test("a handshaken viewport that goes silent is idle-reaped; an active one survi
   } finally {
     await d3.stop();
     await stub3.stop();
+  }
+});
+
+test("R.4i: a subscription-backed session is refused over the relay but served locally", async () => {
+  // Give this daemon a Claude SUBSCRIPTION login (a .credentials.json, no API
+  // key) → credentialKind "subscription". createSession still routes to the
+  // mock (we never drive a real subscription), but the session's KIND is what
+  // gates the relay: a remote viewport must be refused with the reason, while a
+  // LOCAL viewport on the same daemon is served — the paid path is closed to a
+  // subscription, the free local path is not.
+  const claudeDir = mkdtempSync(path.join(os.tmpdir(), "genui-sub-"));
+  writeFileSync(path.join(claudeDir, ".credentials.json"), "{}");
+  const stub2 = await startRelayStub();
+  const d2 = await startDaemon({
+    GENUI_RELAY_URL: stub2.url,
+    GENUI_RELAY_CODE: CODE,
+    CLAUDE_CONFIG_DIR: claudeDir,
+  });
+  try {
+    await waitForLog(/\[relay\] paired/, 10_000, d2);
+
+    // The picker hello marks claude-code blocked, not live.
+    const r = await RemoteClient.connect(stub2.port, CODE);
+    const hello = (await r.type("agents")) as Any;
+    const claude = hello.agents.find((a: Any) => a.agent === "claude-code");
+    assert.equal(claude.live, false);
+    assert.equal(claude.blocked, true);
+
+    // Remote (relay) viewport creates a claude-code session → refused, no attach.
+    r.send({ type: "create", agent: "claude-code" } as never);
+    const refused = (await r.type("refused")) as Any;
+    assert.equal(refused.reason, "subscription-relay");
+    assert.match(refused.message, /subscription/i);
+    assert.ok(
+      !r.received.some((m) => m.type === "session_created"),
+      "a refused remote viewport must not be handed a session",
+    );
+
+    // A LOCAL viewport on the SAME daemon is served the (mock-backed) session —
+    // the gate is remote-only.
+    const local = new TestClient(d2.port);
+    await local.opened();
+    await local.type("agents");
+    local.send({ type: "create", agent: "claude-code" } as never);
+    const created = (await local.type("session_created")) as Any;
+    assert.equal(created.demo, true); // runs the mock, never the subscription
+    assert.ok(!local.received.some((m) => m.type === "refused"));
+    local.close();
+    r.close();
+  } finally {
+    await d2.stop();
+    await stub2.stop();
+    rmSync(claudeDir, { recursive: true, force: true });
   }
 });
 

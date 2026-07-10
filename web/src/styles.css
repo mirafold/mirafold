@@ -1575,6 +1575,29 @@ body {
   color: var(--fg-dim);
 }
 
+/* R.4k: the "what's behind this row" line for a live agent (local endpoint or
+   configured model) — accent-tinted so it reads as confirmation, not a warning. */
+.onb-agent-detail {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--accent);
+  opacity: 0.85;
+}
+
+/* R.4k: the local-model signpost under the picker — dim, one notch above the
+   card background, so "run your own model" is discoverable without shouting. */
+.onb-local-note {
+  margin-top: 14px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fg-dim);
+}
+.onb-local-note code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+}
+
 .onb-agent-status {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 11.5px;
@@ -1587,6 +1610,12 @@ body {
 
 .onb-demo {
   color: var(--fg-dim);
+}
+
+/* R.4i: a prohibited subscription is present — warn-toned, not the neutral
+   demo grey, so it reads as "attention needed", not just "no key". */
+.onb-blocked {
+  color: var(--warn-fg);
 }
 
 /* ---- Polish (Step 4.3) ----------------------------------------------------

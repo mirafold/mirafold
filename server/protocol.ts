@@ -110,15 +110,28 @@ type WireMsgBody =
   // even encrypted, so remote viewports get the hello without it.
   // Step R.4g adds `version` (optional/additive) — the daemon's package
   // version, for the status bar and bug reports.
+  // Step R.4i adds `blocked` per agent entry (optional/additive): true means a
+  // prohibited subscription credential is present (an Anthropic/Gemini login,
+  // which their terms don't allow in a third-party app) — the picker shows the
+  // API-key fix instead of a demo or a dead badge. Old clients ignore it and
+  // see `live: false`. Step R.4k adds `detail` (optional/additive): a "what's
+  // behind this row" label for a LIVE agent — its local endpoint or configured
+  // model — so a local-model user sees their setup was picked up.
   | {
       type: "agents";
-      agents: { agent: AgentName; live: boolean }[];
+      agents: { agent: AgentName; live: boolean; blocked?: boolean; detail?: string }[];
       default: AgentName;
       cwd?: string;
       home?: string;
       relay?: { url: string; code: string };
       version?: string;
     }
+  // Step R.4i: the daemon refused to attach this REMOTE (relay) viewport to the
+  // session because the session's credential can't be used over the paid relay
+  // — a subscription-backed agent (closed-model reselling posture). Sent instead
+  // of session_created; the shell shows the reason. Never sent to local
+  // viewports. `reason` is a stable machine tag; `message` is the human line.
+  | { type: "refused"; reason: string; message: string }
   // Phase 3: agent-authored HTML for the sandboxed iframe host (the ONLY
   // channel raw agent markup may travel). Re-sending an id replaces that
   // artifact in place — same rule as `render`.

@@ -1,5 +1,8 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { startDaemon, type Daemon } from "./itest-harness";
 
@@ -54,6 +57,8 @@ test("onboarding → a full mock turn renders in the DOM", async () => {
     await page.locator(".onb-agent", { hasText: "Codex" }).innerText(),
     /codex login/,
   );
+  // R.4k: the local/open-model path is named on the picker screen itself.
+  assert.match(await page.locator(".onb-local-note").innerText(), /local\/open model/i);
 
   await claudeRow.click();
   await page.waitForURL(/\/s\/[\w-]+/);
@@ -77,6 +82,64 @@ test("onboarding → a full mock turn renders in the DOM", async () => {
   await page.waitForSelector("text=Read the current implementation", { timeout: 15_000 });
   // …and the turn runs to its streamed conclusion.
   await page.waitForSelector("text=Plan complete — all four steps done.", { timeout: 30_000 });
+});
+
+test("R.4i: a subscription-only Claude shows a BLOCKED row with the API-key fix, not a demo", async () => {
+  // A daemon whose only Claude credential is a subscription login (a
+  // .credentials.json, no API key) — Anthropic's terms don't allow that in a
+  // third-party app, so the picker must say so and name the fix, distinct from
+  // the plain "no credentials · demo" state the other two agents show here.
+  const claudeDir = mkdtempSync(path.join(os.tmpdir(), "genui-sub-e2e-"));
+  writeFileSync(path.join(claudeDir, ".credentials.json"), "{}");
+  const token = "e2e-blocked-9c2f";
+  const d2 = await startDaemon({ GENUI_TOKEN: token, CLAUDE_CONFIG_DIR: claudeDir });
+  const page2 = await browser.newPage();
+  try {
+    await page2.goto(`http://127.0.0.1:${d2.port}/?token=${token}`);
+    const claudeRow = page2.locator(".onb-agent", { hasText: "Claude Code" });
+    await claudeRow.waitFor();
+    // Warn-toned "subscription not supported", not the neutral demo status.
+    assert.equal(await claudeRow.locator(".onb-blocked").count(), 1);
+    assert.match(
+      await claudeRow.locator(".onb-agent-status").innerText(),
+      /subscription not supported/,
+    );
+    // The honest hint: WHY (terms) plus the concrete fix (an API key).
+    const rowText = await claudeRow.innerText();
+    assert.match(rowText, /third-party apps/);
+    assert.match(rowText, /ANTHROPIC_API_KEY/);
+    // Codex/Gemini are credential-less here → their ordinary demo hints, no block.
+    assert.equal(
+      await page2.locator(".onb-agent", { hasText: "Codex" }).locator(".onb-blocked").count(),
+      0,
+    );
+  } finally {
+    await page2.close();
+    await d2.stop();
+    rmSync(claudeDir, { recursive: true, force: true });
+  }
+});
+
+test("R.4k: a local-endpoint daemon shows the endpoint on the picker row", async () => {
+  // Point Claude Code at a local endpoint (ANTHROPIC_BASE_URL) → kind `local`,
+  // live, and the picker must show the endpoint so the local-model user sees
+  // their setup was picked up (not a bare "ready"). The URL need not resolve —
+  // we only read onboarding, never drive a turn.
+  const token = "e2e-local-9c2f";
+  const d2 = await startDaemon({ GENUI_TOKEN: token, ANTHROPIC_BASE_URL: "http://localhost:11434" });
+  const page2 = await browser.newPage();
+  try {
+    await page2.goto(`http://127.0.0.1:${d2.port}/?token=${token}`);
+    const claudeRow = page2.locator(".onb-agent", { hasText: "Claude Code" });
+    await claudeRow.waitFor();
+    assert.match(await claudeRow.locator(".onb-agent-status").innerText(), /ready/);
+    const detail = await claudeRow.locator(".onb-agent-detail").innerText();
+    assert.match(detail, /local endpoint/);
+    assert.match(detail, /localhost:11434/);
+  } finally {
+    await page2.close();
+    await d2.stop();
+  }
 });
 
 test("a demo turn shows tokens but never a fabricated dollar cost (R.4b)", async () => {

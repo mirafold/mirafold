@@ -159,6 +159,8 @@ export function startRelayClient(opts: {
                     });
                   },
                   "relay",
+                  undefined, // no pairing info crosses the relay path
+                  true, // R.4i: remote viewport — subject to the relay gate
                 );
               } else {
                 const text = await r.cipher.open(p); // throws → drop below

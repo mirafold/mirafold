@@ -40,6 +40,14 @@ sequence, lives in **BUSINESS.md** (milestone gates).
   security, generative UI stay agent-neutral). Claude-specific behavior (the
   `claude_code` preset, inherited `settings.json`) is Claude Code's fidelity,
   scoped to that adapter only.
+- **Provider credential policy** (R.4i, 2026-07-10): genui-shell must not enable
+  prohibited subscription use. Closed-provider subscriptions are restricted by
+  their terms — Anthropic + Gemini prohibit third-party subscription use
+  outright; OpenAI allows it for local use but not the paid relay — so a
+  Claude/Gemini login shows as `blocked` (API-key fix), and no subscription is
+  driven over the relay. API keys and local/BYO endpoints are the live paths.
+  The dated, revisit-able matrix lives in **one file**,
+  `server/provider-policy.ts`; consume it, never re-encode the rule elsewhere.
 - **Shared modules** cross server/web only via aliases declared in BOTH
   `tsconfig.json` and `vite.config.ts` (`@protocol`, `@registry-spec`).
 - **Verification**: front-end steps are verified end-to-end in headless
