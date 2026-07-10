@@ -3,10 +3,11 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
-import { WebSocketServer } from "ws";
+import { WebSocketServer, type WebSocket } from "ws";
 import type { WireMsg } from "./protocol";
 import { SessionRegistry } from "./registry";
 import { openConnection } from "./connection";
+import { sweepLiveness } from "./ws-liveness";
 import { startRelayClient } from "./relay-client";
 import { MIN_PAIRING_CODE_LENGTH, resolvePairingCode } from "./relay-protocol";
 import { COOKIE_NAME, cookieToken, isLoopbackOrigin, tokensMatch, verifyToken } from "./auth";
@@ -178,9 +179,15 @@ const relayInfo =
     ? { url: RELAY_URL.replace(/^ws/, "http"), code: RELAY_CODE }
     : undefined;
 
+// #10: per-socket liveness, read by the heartbeat below to reap half-open
+// leftovers whose `close` never arrived (see ws-liveness.ts).
+const liveViewports = new WeakMap<WebSocket, boolean>();
+
 wss.on("connection", (ws) => {
   // The per-viewport logic lives in connection.ts (shared with the R.1 relay
   // path); this block only binds it to the local WebSocket transport.
+  liveViewports.set(ws, true);
+  ws.on("pong", () => liveViewports.set(ws, true));
   const viewport = (msg: WireMsg) => {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
   };
@@ -188,6 +195,16 @@ wss.on("connection", (ws) => {
   ws.on("message", (data) => conn.handleMessage(String(data)));
   ws.on("close", conn.close);
 });
+
+// #10: server-side liveness heartbeat. Browsers auto-answer protocol pings, so
+// a socket that misses a ping/pong round is a half-open leftover; terminating
+// it fires `close` → conn.close → registry.detach, keeping viewport counts
+// honest and letting idle sessions actually reach their reaper. Local sockets
+// only — remote viewports have their own idle reaper (RELAY_VIEWPORT_IDLE_MS).
+const WS_HEARTBEAT_MS = Number(process.env.WS_HEARTBEAT_MS ?? 30_000);
+const heartbeat = setInterval(() => sweepLiveness(wss.clients, liveViewports), WS_HEARTBEAT_MS);
+heartbeat.unref(); // the listening server keeps the process alive; the beat shouldn't
+wss.on("close", () => clearInterval(heartbeat));
 
 // Bind to loopback only. This daemon runs on the user's machine and the socket
 // has no authentication (multi-user auth is Step 4.5; the relay dials out in
