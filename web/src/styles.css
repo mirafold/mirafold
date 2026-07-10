@@ -1,10 +1,15 @@
 /* ---- Theme tokens (Step 4.3) ---------------------------------------------
    One semantic palette, two themes. Dark is the default and the identity;
-   light flips the OUTPUT side only — the terminal chrome (prompt box,
-   command strips, bang/permission/status bars, onboarding) keeps the dark
-   palette in both themes, making the mono-in / rich-out contrast literal.
-   Code surfaces (--code-*, --diff-*) are pinned dark everywhere: code reads
-   as terminal in any theme, and hljs github-dark keeps working unswapped. */
+   light is a TRUE, unified light theme — the whole UI, chrome included
+   (prompt box, command strips, bang/permission/status bars, onboarding),
+   flips to the light palette. Faithful re-skin: a real terminal switched to
+   light mode has a light input, so ours follows suit — the earlier
+   "chrome stays dark / mono-in-rich-out" split contradicted that founding
+   principle and was reversed (see USER-TESTING-FEEDBACK.md #8). The input
+   stays distinctly an input via light-palette cues (inset surface, border,
+   monospace), not a dark block. Code surfaces (--code-*, --diff-*) stay
+   pinned dark everywhere: hljs github-dark keeps working unswapped, exactly
+   as a light IDE's code blocks commonly stay dark. */
 
 :root {
   color-scheme: dark;
@@ -106,51 +111,10 @@
   --selection: rgba(24, 156, 81, 0.2);
 }
 
-/* Terminal chrome stays terminal: in light mode these subtrees re-declare
-   the dark values, so the input side keeps its identity while the output
-   canvas flips. (Custom properties inherit, so one block covers children.) */
-[data-theme="light"]
-  :is(.prompt-box, .turn-user, .bang-bar, .perm-bar, .status-bar, .status-bar-collapsed, .onb-overlay) {
-  color-scheme: dark;
-  --bg: #101319;
-  --bg-inset: #10151f;
-  --surface: #141a26;
-  --surface-2: #18202e;
-  --surface-3: #161c28;
-  --surface-hover: #1b2434;
-  --inline-code-bg: #1b2130;
-  --fg: #e6e9ef;
-  --fg-strong: #eef2f8;
-  --fg-body: #d4dae4;
-  --fg-mid: #a8b2c2;
-  --fg-dim: #8b96a8;
-  --fg-dimmer: #6b7488;
-  --fg-faint: #55617a;
-  --accent: #4ade80;
-  --info: #7ab8ff;
-  --warn-fg: #d4a852;
-  --error: #e66767;
-  --border: #232a38;
-  --border-2: #262f42;
-  --border-mid: #313b4e;
-  --border-hover: #3a4a68;
-  --border-faint: #1d2434;
-  --border-ghost: #1c2331;
-  --ok-bg: #16281c;
-  --ok-border: #234a32;
-  --ok-border-strong: #2f6a45;
-  --err-bg: #281a1e;
-  --err-border: #4a2a33;
-  --err-border-strong: #6a3a45;
-  --info-bg: #16202e;
-  --info-border: #26364e;
-  --info-border-strong: #3a5a86;
-  --warn-bg: #1a1810;
-  --warn-bg-2: #16130d;
-  --warn-border: #4a3d1e;
-  --warn-border-2: #574727;
-  --selection: rgba(74, 222, 128, 0.25);
-}
+/* #8 (2026-07-10): the former "chrome stays dark in light mode" override was
+   removed here — light is now a true unified light theme (see header comment
+   and USER-TESTING-FEEDBACK.md #8). The chrome subtrees now inherit the light
+   :root[data-theme="light"] palette like everything else. */
 
 * {
   box-sizing: border-box;
@@ -1444,11 +1408,11 @@ body {
 
 .onb-card {
   width: 100%;
-  max-width: 460px;
+  max-width: 560px;
   background: var(--surface);
   border: 1px solid var(--border-2);
   border-radius: 12px;
-  padding: 32px 28px;
+  padding: 36px 34px;
   box-shadow: 0 18px 60px rgba(0, 0, 0, 0.5);
   text-align: center;
 }
@@ -1462,15 +1426,15 @@ body {
 
 .onb-title {
   margin: 14px 0 6px;
-  font-size: 20px;
+  font-size: 25px;
   font-weight: 650;
   color: var(--fg-strong);
 }
 
 .onb-sub {
   margin: 0 auto 22px;
-  max-width: 40ch;
-  font-size: 13.5px;
+  max-width: 46ch;
+  font-size: 15px;
   line-height: 1.5;
   color: var(--fg-dim);
 }
@@ -1482,7 +1446,7 @@ body {
   margin-bottom: 6px;
   text-align: left;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--fg-dim);
@@ -1491,13 +1455,13 @@ body {
 .onb-cwd {
   width: 100%;
   margin-bottom: 14px;
-  padding: 10px 12px;
+  padding: 11px 13px;
   background: var(--bg-inset);
   border: 1px solid var(--border-mid);
   border-radius: 8px;
   color: var(--fg-strong);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 13px;
+  font-size: 14px;
   outline: none;
 }
 
@@ -1535,14 +1499,14 @@ body {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 6px;
-  padding: 14px 16px;
+  gap: 7px;
+  padding: 17px 19px;
   background: var(--surface-2);
   border: 1px solid var(--border-mid);
   border-radius: 9px;
   cursor: pointer;
   color: var(--fg-strong);
-  font-size: 15px;
+  font-size: 17px;
   text-align: left;
   transition: border-color 0.12s ease, background 0.12s ease, transform 0.06s ease;
 }
@@ -1570,7 +1534,7 @@ body {
 /* R.4b: the one-line fix for a credential-less agent, on the picker itself. */
 .onb-agent-hint {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11.5px;
+  font-size: 13px;
   line-height: 1.45;
   color: var(--fg-dim);
 }
@@ -1579,7 +1543,7 @@ body {
    configured model) — accent-tinted so it reads as confirmation, not a warning. */
 .onb-agent-detail {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11.5px;
+  font-size: 13px;
   line-height: 1.45;
   color: var(--accent);
   opacity: 0.85;
@@ -1588,19 +1552,19 @@ body {
 /* R.4k: the local-model signpost under the picker — dim, one notch above the
    card background, so "run your own model" is discoverable without shouting. */
 .onb-local-note {
-  margin-top: 14px;
-  font-size: 12px;
-  line-height: 1.5;
+  margin-top: 16px;
+  font-size: 13px;
+  line-height: 1.55;
   color: var(--fg-dim);
 }
 .onb-local-note code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .onb-agent-status {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11.5px;
+  font-size: 13px;
   letter-spacing: 0.02em;
 }
 
@@ -1684,18 +1648,25 @@ html {
 }
 
 .sb-theme {
-  background: transparent;
-  border: 1px solid var(--border-2);
-  border-radius: 6px;
-  padding: 1px 8px;
-  color: var(--fg-dimmer);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-mid);
+  border-radius: 7px;
+  padding: 6px 11px;
+  color: var(--fg);
   font: inherit;
+  font-size: 20px;
+  line-height: 1;
   cursor: pointer;
 }
 
 .sb-theme:hover {
   color: var(--fg);
   border-color: var(--border-hover);
+  background: var(--surface-hover);
 }
 
 /* ---- Mission control (Step 4.6) -------------------------------------------
@@ -1800,15 +1771,17 @@ html {
   white-space: nowrap;
 }
 
+/* #6: the rename pencil is always visible (was opacity:0, hover-only — Kyle
+   couldn't tell a name was editable), brightening on row/self hover. */
 .fleet-edit {
   margin-left: 6px;
   background: none;
   border: none;
-  padding: 0 2px;
-  color: var(--fg-faint);
+  padding: 0 3px;
+  color: var(--fg-dim);
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.12s ease;
+  opacity: 0.7;
+  transition: opacity 0.12s ease, color 0.12s ease;
 }
 
 .fleet-row:hover .fleet-edit {
@@ -1834,8 +1807,7 @@ html {
 .fleet-id,
 .fleet-agent,
 .fleet-cwd,
-.fleet-ago,
-.fleet-views {
+.fleet-ago {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.78em;
 }
@@ -1877,24 +1849,40 @@ html {
   color: var(--warn-fg);
 }
 
-.fleet-ago,
-.fleet-views {
+.fleet-ago {
+  color: var(--fg-faint);
+  flex-shrink: 0;
+}
+
+/* #6: separates the session id (left edge of the right-hand group) from the
+   state cluster, so the right side reads as two groups instead of one clutter. */
+.fleet-sep {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78em;
   color: var(--fg-faint);
   flex-shrink: 0;
 }
 
 /* status-bar home link (into mission control) */
 .sb-home {
-  color: var(--fg-dimmer);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  color: var(--fg);
   text-decoration: none;
-  border: 1px solid var(--border-2);
-  border-radius: 6px;
-  padding: 1px 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-mid);
+  border-radius: 7px;
+  padding: 6px 11px;
+  font-size: 20px;
+  line-height: 1;
 }
 
 .sb-home:hover {
   color: var(--fg);
   border-color: var(--border-hover);
+  background: var(--surface-hover);
 }
 
 /* ---- Connect a device (Step R.4) -------------------------------------------
@@ -2089,7 +2077,7 @@ html {
   }
 
   .fleet-id,
-  .fleet-views {
+  .fleet-sep {
     display: none;
   }
 
