@@ -9,7 +9,7 @@ const TOKEN = "itest-token-4a1b";
 let d: Daemon;
 
 before(async () => {
-  d = await startDaemon({ GENUI_TOKEN: TOKEN });
+  d = await startDaemon({ MIRAFOLD_TOKEN: TOKEN });
 });
 after(async () => {
   await d.stop();
@@ -48,13 +48,13 @@ test("HTTP: valid ?token= mints the cookie and redirects to the clean path", asy
   assert.equal(res.status, 302);
   assert.equal(res.headers.get("location"), "/");
   const cookie = res.headers.get("set-cookie") ?? "";
-  assert.match(cookie, new RegExp(`genui_token=${TOKEN}`));
+  assert.match(cookie, new RegExp(`mirafold_token=${TOKEN}`));
   assert.match(cookie, /HttpOnly/i);
   assert.match(cookie, /SameSite=Strict/i);
 });
 
 test("HTTP: valid cookie passes the gate", async () => {
-  const res = await http("/", { headers: { cookie: `genui_token=${TOKEN}` } });
+  const res = await http("/", { headers: { cookie: `mirafold_token=${TOKEN}` } });
   assert.notEqual(res.status, 403);
 });
 
@@ -71,7 +71,7 @@ test("WS: accepted via ?token= — agents hello arrives", async () => {
 });
 
 test("WS: accepted via cookie", async () => {
-  const c = new TestClient(d.port, { cookie: `genui_token=${TOKEN}` });
+  const c = new TestClient(d.port, { cookie: `mirafold_token=${TOKEN}` });
   await c.opened();
   await c.type("agents");
   c.close();

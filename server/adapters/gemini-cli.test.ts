@@ -8,7 +8,7 @@ import { GeminiCliSession } from "./gemini-cli";
 
 // L.2b2: the Gemini JSONL→WireMsg mapping and the turn grammar. The real
 // adapter spawns a real child — a scripted stub substituted via
-// GENUI_GEMINI_BIN that replays a JSONL fixture ($FAKE_EVENTS), optionally
+// MIRAFOLD_GEMINI_BIN that replays a JSONL fixture ($FAKE_EVENTS), optionally
 // hangs ($FAKE_HANG) or exits nonzero ($FAKE_EXIT). No model, no network,
 // but the full spawn → line-split → handleEvent → exit path runs as shipped.
 
@@ -27,10 +27,10 @@ before(() => {
     '#!/usr/bin/env bash\n[ -n "$FAKE_EVENTS" ] && cat "$FAKE_EVENTS"\n[ -n "$FAKE_STDERR" ] && echo "$FAKE_STDERR" >&2\n[ -n "$FAKE_HANG" ] && exec sleep 30\nexit "${FAKE_EXIT:-0}"\n',
   );
   chmodSync(stub, 0o755);
-  process.env.GENUI_GEMINI_BIN = stub;
+  process.env.MIRAFOLD_GEMINI_BIN = stub;
 });
 after(() => {
-  delete process.env.GENUI_GEMINI_BIN;
+  delete process.env.MIRAFOLD_GEMINI_BIN;
   delete process.env.FAKE_EVENTS;
   delete process.env.FAKE_HANG;
   delete process.env.FAKE_EXIT;
@@ -78,13 +78,13 @@ test("happy stream: full JSONL→WireMsg mapping, exactly one turn_end", async (
     { type: "tool_result", tool_id: "t1", status: "success", output: "file.txt" },
     // genui render with an explicit id in params (update-in-place) — must
     // paint a render, never a tool row.
-    { type: "tool_use", tool_name: "mcp_genui_render_card", tool_id: "r1", parameters: { title: "T", id: "keep-me" } },
+    { type: "tool_use", tool_name: "mcp_mirafold_render_card", tool_id: "r1", parameters: { title: "T", id: "keep-me" } },
     { type: "tool_result", tool_id: "r1", status: "success", output: "Rendered card (id: ignored-1234)" },
     // genui artifact without an id — takes the stub-assigned one from output.
-    { type: "tool_use", tool_name: "mcp_genui_emit_artifact", tool_id: "r2", parameters: { html: "<b>x</b>", title: "demo" } },
+    { type: "tool_use", tool_name: "mcp_mirafold_emit_artifact", tool_id: "r2", parameters: { html: "<b>x</b>", title: "demo" } },
     { type: "tool_result", tool_id: "r2", status: "success", output: "Rendered artifact (id: abcd1234-5678)" },
     // failed genui call → suppressed entirely.
-    { type: "tool_use", tool_name: "mcp_genui_render_table", tool_id: "r3", parameters: { columns: ["a"] } },
+    { type: "tool_use", tool_name: "mcp_mirafold_render_table", tool_id: "r3", parameters: { columns: ["a"] } },
     { type: "tool_result", tool_id: "r3", status: "error", output: "nope" },
     // a result for an id never announced → dropped, no orphan row.
     { type: "tool_result", tool_id: "orphan", status: "success", output: "never announced" },
@@ -228,11 +228,11 @@ test("crash (exit with no result event): still exactly one turn_end, no usage", 
 });
 
 test("spawn failure: error WireMsg, then exactly one turn_end", async () => {
-  process.env.GENUI_GEMINI_BIN = path.join(tmp, "does-not-exist");
+  process.env.MIRAFOLD_GEMINI_BIN = path.join(tmp, "does-not-exist");
   const { s, msgs, turnEnds, awaitTurnEnd } = makeSession();
   s.pushPrompt("go");
   await awaitTurnEnd();
-  process.env.GENUI_GEMINI_BIN = stub;
+  process.env.MIRAFOLD_GEMINI_BIN = stub;
   const types = msgs.map((m) => m.type);
   assert.match(msgs.find((m) => m.type === "error")!.message, /gemini spawn failed/);
   assert.ok(types.indexOf("error") < types.indexOf("turn_end"));

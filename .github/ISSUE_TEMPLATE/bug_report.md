@@ -38,7 +38,7 @@ Replace either with `[redacted]`. Everything else is safe to share.
 <!--
 The terminal where genui-shell is running (SCRUB the token and pairing code
 per the note above). If the failure is in the browser, the DevTools console
-too. Setting `GENUI_DEBUG=1` before launching adds normalized event traces.
+too. Setting `MIRAFOLD_DEBUG=1` before launching adds normalized event traces.
 -->
 
 ```

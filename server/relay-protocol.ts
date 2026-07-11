@@ -49,7 +49,7 @@ export const HANDSHAKE_TIMEOUT_MS = 15_000;
  */
 export const mintPairingCode = () => randomBytes(16).toString("base64url");
 
-// A pinned code (GENUI_RELAY_CODE) below this length is refused: the code is
+// A pinned code (MIRAFOLD_RELAY_CODE) below this length is refused: the code is
 // the ONLY credential on the remote path — whoever knows it drives a shell on
 // this machine — and a short one falls to an offline dictionary run against
 // its pairId (which the relay logs by design), where relay-side rate limits

@@ -17,8 +17,8 @@ export default defineConfig({
     // is the :5173 URL a developer actually uses (the daemon serves :3000; the
     // installed `genui-shell` CLI opens that one itself in bin/). Vite spawns the
     // browser detached, so its logs never bleed into the terminal. Opt out with
-    // GENUI_NO_OPEN=1 (CI, a second terminal, an already-open tab).
-    open: !process.env.GENUI_NO_OPEN,
+    // MIRAFOLD_NO_OPEN=1 (CI, a second terminal, an already-open tab).
+    open: !process.env.MIRAFOLD_NO_OPEN,
     port: 5173,
     proxy: {
       "/ws": {

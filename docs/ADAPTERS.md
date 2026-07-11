@@ -1,7 +1,7 @@
 # The Adapter Specification — multi-provider architecture, normatively
 
 This is the authoritative contract for **adding or modifying an agent adapter**
-in genui-shell. README.md orients a new owner; PLAN.md sequences the work; this
+in Mirafold. README.md orients a new owner; PLAN.md sequences the work; this
 document states what an adapter **must, should, may, and must never** do, what
 each shipped provider actually supports (the capability matrix), and the exact
 checklist for landing provider #4. It exists so that a future session — human
@@ -16,7 +16,7 @@ this document and the code ever disagree — then fix this document.
 
 ## 1. The architecture in four sentences
 
-genui-shell is a **faithful browser re-skin of terminal coding agents**. Each
+Mirafold is a **faithful browser re-skin of terminal coding agents**. Each
 supported agent runs its **own engine** behind one seam — the `AgentSession`
 interface (`server/adapters/types.ts`) — and normalizes its native event stream
 into the wire protocol (`WireMsg`, `server/protocol.ts`); everything downstream
@@ -38,7 +38,7 @@ These restate the CLAUDE.md non-negotiables as testable adapter requirements.
 - **I2 — Inherit, don't invent.** The user's own configuration for that agent
   (Claude Code `settings.json`/CLAUDE.md/memory; Codex `~/.codex/config.toml`;
   Gemini `~/.gemini/settings.json`) applies exactly as in the terminal. The
-  adapter adds only what genui-shell needs (the render MCP server, a model
+  adapter adds only what Mirafold needs (the render MCP server, a model
   override *if the user set one*) and adds it non-destructively. The historical
   bug class here is real: `DEFAULT_MODEL` (a Claude id) was once handed to
   Codex, which 400s — hence `modelFor()` (§6) and the rule that an unset model
@@ -212,10 +212,10 @@ The proven sequence (used for both Codex and Gemini; keep it):
 Locked 2026-07-05, restated here because it is the standing answer to "how do
 we support provider X that isn't a terminal agent":
 
-**Local isn't a genui-shell feature; it's a property of the agent.** A
+**Local isn't a Mirafold feature; it's a property of the agent.** A
 terminal agent that can point at a local OpenAI-compatible endpoint (Codex →
 Ollama/vLLM/LM Studio; Claude Code → `ANTHROPIC_BASE_URL` — already counted as
-"live" by `agentHasCredentials`) already runs locally, and genui-shell simply
+"live" by `agentHasCredentials`) already runs locally, and Mirafold simply
 re-skins it. **No LiteLLM, no shim, no homegrown loop for bare models.** Phase
 L is documentation and ergonomics (`docs/local-models.md`, later `--local`
 detection), not architecture. Small models that misfire on render tools

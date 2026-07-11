@@ -1,6 +1,6 @@
-# genui-shell
+# Mirafold
 
-A **faithful browser re-skin of terminal coding agents**. genui-shell puts a
+A **faithful browser re-skin of terminal coding agents**. Mirafold puts a
 browser dashboard — with generative UI on top — onto whichever terminal agent
 you already use — **Claude Code, Codex, or Gemini CLI** — staying faithful
 to that agent: a Codex user gets **Codex** in the browser, never "Claude
@@ -16,7 +16,7 @@ socket, and all credentials, and the agent can never touch any of them.
 > Phase P, complete).** Three terminal agents run behind one front end today —
 > **Claude Code** (Anthropic Agent SDK), **Codex** (OpenAI), and **Gemini CLI**
 > (Google) — each driving its **own** engine, normalizing its event stream to
-> `WireMsg` behind the `AgentSession` seam (§2.2), and carrying genui-shell's
+> `WireMsg` behind the `AgentSession` seam (§2.2), and carrying Mirafold's
 > generative UI via **MCP**. A new agent is one adapter in `server/adapters/`,
 > not a rewrite: the wire protocol, output zone, security model, and generative
 > UI consume `WireMsg` only. No generic homegrown agent, no proxy, no privileged
@@ -32,7 +32,7 @@ thinking, full tool detail and diffs, subagent progress, the live task list,
 and token/cost usage are all surfaced (Phase T2, shipped). Richness is added
 on top of raw visibility, never traded against it.
 
-![genui-shell demo — ask about a repo and get a card, a table, and real links; paste data, get a live chart, pin it, and the agent updates it in place](demo/demo.gif)
+![Mirafold demo — ask about a repo and get a card, a table, and real links; paste data, get a live chart, pin it, and the agent updates it in place](demo/demo.gif)
 
 *Two prompts, live and unscripted: ask about a repo → the agent answers with
 an overview card, a dependency table, and doc links — clicking one opens the
@@ -296,9 +296,9 @@ The invariants, and where each is enforced today:
   the served app and the WebSocket: the launcher opens a URL carrying it, the
   browser stores it as an `HttpOnly; SameSite=Strict` cookie (so refreshes, new
   tabs, and fleet links just work), and connections without it get a 403 / a
-  refused handshake. Set `GENUI_TOKEN=""` to disable it on a single-user machine
+  refused handshake. Set `MIRAFOLD_TOKEN=""` to disable it on a single-user machine
   (the dev server does this — the Vite `:5173` proxy is cross-origin and can't
-  present the cookie); set `GENUI_TOKEN=<value>` to pin one. **With auth off the
+  present the cookie); set `MIRAFOLD_TOKEN=<value>` to pin one. **With auth off the
   loopback-Origin guard is the only gate, and it admits any page served from
   localhost on any port** — so another local dev server, or a hostile package's
   local server, could drive the agent. Keep auth on outside the single-user dev
@@ -317,7 +317,7 @@ The invariants, and where each is enforced today:
   handshaken viewport with no authenticated frame for `RELAY_VIEWPORT_IDLE_MS`
   (90 s) is dropped — so a hostile relay (or a replayed handshake hello, which
   can never produce an authentic frame) can't park connections or grow daemon
-  state. A pinned `GENUI_RELAY_CODE` under 16 chars is refused at startup with
+  state. A pinned `MIRAFOLD_RELAY_CODE` under 16 chars is refused at startup with
   a minted fallback: the code is the remote path's only credential, and a
   guessable one would be brute-forceable remote shell access.
 
@@ -398,7 +398,7 @@ web/               the browser app (React 19 + Vite)
                      unknown agent name degrades to its raw string (R.4h)
   src/version.ts     the web bundle's own build version (R.4g)
   src/styles.css     the design identity in CSS (see §7)
-bin/               genui-shell launcher (4.10): spawns dist-server, opens browser
+bin/               mirafold launcher (4.10): spawns dist-server, opens browser
 demo/              the M1 demo GIF embedded at the top of this README
 docs/              ADAPTERS.md — the normative adapter specification (§2.2);
                    local-models.md — running against Ollama/LM Studio/vLLM (§8)
@@ -412,14 +412,14 @@ relay-service/     the DEPLOYABLE hosted relay (PLAN R.2) — a separate,
                    npm-published package (not in `files` above)
 dist/              built front end (vite build output; served by Express)
 dist-server/       esbuild server bundles (4.10): index.js + render-mcp.js —
-                   what the installed `genui-shell` actually runs; gitignored
+                   what the installed `mirafold` actually runs; gitignored
 workspace/         legacy scratch dirs (pre-4.8 default cwd) — gitignored
 PLAN.md            the phased build plan (source of truth for next steps)
 PLAN-ARCHIVE.md    completed phases (0, T, 1, 2, 3, T2, P) with their status notes
 BUSINESS.md        strategy; gates that sequence the plan
 vite.config.ts     web root, @protocol/@relay-crypto aliases, /ws proxy → :3000
 tsconfig.json      one tsconfig for both sides; @protocol/@relay-crypto paths
-.env.example       GENUI_AGENT + per-agent credentials/models (ANTHROPIC_API_KEY /
+.env.example       MIRAFOLD_AGENT + per-agent credentials/models (ANTHROPIC_API_KEY /
                    DEFAULT_MODEL, OPENAI_API_KEY / CODEX_MODEL, GEMINI_API_KEY /
                    GEMINI_MODEL) + PORT
 ```
@@ -520,7 +520,7 @@ mediation path (§5.4).
   `claude-opus-4-8` switchable per the locked decisions), and `canUseTool`
   comes from `permissions.ts`. `settingSources`
   is left **unset on purpose**, which matches the CLI default (user + project
-  + local): genui-shell is a different *view* of the terminal, so a user's own
+  + local): Mirafold is a different *view* of the terminal, so a user's own
   Claude Code config — their `settings.json` permission allowlists/deny rules,
   their CLAUDE.md, their memory — applies here exactly as in the terminal.
   Switching to this from regular terminal use must be seamless and
@@ -766,19 +766,19 @@ knowing because it constrains future UI work:
 ### Installed (Step 4.10 — the product path)
 
 ```sh
-npm i -g genui-shell
+npm i -g mirafold
 cd ~/your/project
-genui-shell          # boots the daemon here, opens the browser
+mirafold          # boots the daemon here, opens the browser
 ```
 
 Like launching `claude`/`codex`/`gemini`: sessions default to the directory
-you ran it from, and a second `genui-shell` in another project walks to the
-next port (3001, …) and runs independently. `npx genui-shell` is the
+you ran it from, and a second `mirafold` in another project walks to the
+next port (3001, …) and runs independently. `npx mirafold` is the
 zero-install try path; `--no-open` skips the browser; `PORT` moves the base
 port. The daemon prints (and opens) a URL carrying a per-launch auth token
 (§3) — that token, held as a browser cookie, is what keeps another account on
 a shared machine off your socket. With `--no-open` or on a headless box, open
-the exact printed URL (it has the token); `GENUI_TOKEN=""` disables the token
+the exact printed URL (it has the token); `MIRAFOLD_TOKEN=""` disables the token
 on a single-user machine. The package ships only the launcher + the two esbuild bundles + the
 built front end (9 files, ~264 KB tarball); agent credentials come from your
 environment exactly as in a terminal (`ANTHROPIC_API_KEY`, `codex login`,
@@ -789,7 +789,7 @@ Windows; on Linux npm compiles it at install, which needs `make`/`g++`/
 around. *(Publishing to npm is the M2 launch action — until then, install
 from a tarball. Prerequisites: `yarn` on PATH and a prior `yarn install`,
 because `prepack` runs `yarn build`. Then: `npm pack` in the repo, and
-`npm i -g ./genui-shell-*.tgz`.)*
+`npm i -g ./mirafold-*.tgz`.)*
 
 ### Prerequisites (development)
 
@@ -820,7 +820,7 @@ Point an agent at a local endpoint (Ollama, a proxy — e.g. `ANTHROPIC_BASE_URL
 and it's BYO, no restriction. The one dated source of truth for the whole rule
 is `server/provider-policy.ts`. The env file is
 loaded with `process.loadEnvFile()` and is optional by design. Also settable
-there: `GENUI_AGENT` (the default agent offered at onboarding), the per-agent
+there: `MIRAFOLD_AGENT` (the default agent offered at onboarding), the per-agent
 model overrides `DEFAULT_MODEL` / `CODEX_MODEL` / `GEMINI_MODEL` (unset →
 that agent's own default), `PORT`, and these tuning knobs:
 `SESSION_IDLE_TIMEOUT_MS` (unattended-session lifetime),
@@ -829,12 +829,12 @@ that agent's own default), `PORT`, and these tuning knobs:
 default 64 KB), `BANG_CONTEXT_CAP` (tail of a `!` transcript injected into
 the agent's context, default 16 KB), `MAX_THINKING_TOKENS` (opt-in extended
 thinking), `MAX_WS_PAYLOAD` (largest inbound WS frame, default 1 MB),
-`MAX_SESSIONS` (concurrent-session ceiling, default 100), `GENUI_TOKEN`
+`MAX_SESSIONS` (concurrent-session ceiling, default 100), `MIRAFOLD_TOKEN`
 (the socket auth token, §3 — set empty to disable, or pin a fixed value;
 `yarn dev` sets it empty because the Vite `:5173` proxy is cross-origin and
-can't carry the cookie), and the Phase R relay pair: `GENUI_RELAY_URL`
+can't carry the cookie), and the Phase R relay pair: `MIRAFOLD_RELAY_URL`
 (ws/wss address of a relay — set, the daemon dials out and remote pairing
-turns on; unset, the whole relay path is off), `GENUI_RELAY_CODE` (pin
+turns on; unset, the whole relay path is off), `MIRAFOLD_RELAY_CODE` (pin
 the pairing code across restarts; unset, a fresh 128-bit code is minted per
 launch and printed — a pin shorter than 16 chars is refused with a warning
 and a minted code is used instead, because the code is the remote path's
@@ -863,8 +863,8 @@ yarn dev:server   # Express serves dist/ and ws on :3000
 
 Open http://localhost:3000 — one port, no proxy. `yarn build` also emits the
 packaged server (`dist-server/index.js` + `render-mcp.js`, all deps external);
-`bin/genui-shell.js` runs that bundle — you can exercise the installed code
-path from the repo with `node bin/genui-shell.js`. The Codex/Gemini adapters
+`bin/mirafold.js` runs that bundle — you can exercise the installed code
+path from the repo with `node bin/mirafold.js`. The Codex/Gemini adapters
 spawn the render-MCP stub via `renderMcpCommand()`: the compiled twin when it
 exists beside the code, tsx + TS source in dev.
 
@@ -998,7 +998,7 @@ Read PLAN.md for the real thing; the shape in one breath:
   capped on the wire and in the replay ring (R.4d); the wire's additive-only
   rule is enforced with a tolerant/strict schema split and tested
   ignore-unknown on both ends (R.4h); version everywhere plus timestamped
-  error mirroring and `GENUI_DEBUG=1` (R.4g); an honest "session ended,
+  error mirroring and `MIRAFOLD_DEBUG=1` (R.4g); an honest "session ended,
   started a new one" notice replaces a silent URL swap, and a dead daemon
   no longer leaves a fake "still working" state (R.4c); and the artifact
   sandbox's containment properties are now proven by tests that fail when
@@ -1028,8 +1028,8 @@ Read PLAN.md for the real thing; the shape in one breath:
   users ask.
 
 Distribution intent shapes the architecture: the daemon installs globally
-(`npm i -g genui-shell`) and runs from **any** directory like a terminal agent
-(`genui-shell`, on PATH beside `claude`/`codex`/`gemini`; `npx genui-shell` is
+(`npm i -g mirafold`) and runs from **any** directory like a terminal agent
+(`mirafold`, on PATH beside `claude`/`codex`/`gemini`; `npx mirafold` is
 the try path), always on the user's machine. It re-skins whichever terminal
 agent the user already drives (Claude Code, Codex, Gemini CLI, …); the only
 hosted piece is ever a dumb WebSocket relay, and the API key never leaves the

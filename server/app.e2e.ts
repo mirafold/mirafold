@@ -20,7 +20,7 @@ let page: Page; // carries the auth cookie across tests, like a real tab
 let base: string;
 
 before(async () => {
-  d = await startDaemon({ GENUI_TOKEN: TOKEN });
+  d = await startDaemon({ MIRAFOLD_TOKEN: TOKEN });
   base = `http://127.0.0.1:${d.port}`;
   browser = await chromium.launch({ executablePath: CHROME });
 });
@@ -41,8 +41,8 @@ test("?token= mints the cookie, cleans the URL, boots the shell", async () => {
   await page.goto(`${base}/?token=${TOKEN}`);
   assert.equal(page.url(), `${base}/`); // token traded for the cookie, gone from the bar
   const cookies = await page.context().cookies(base);
-  assert.ok(cookies.some((c) => c.name === "genui_token" && c.value === TOKEN));
-  assert.equal(await page.locator(".fleet-title").textContent(), "genui-shell");
+  assert.ok(cookies.some((c) => c.name === "mirafold_token" && c.value === TOKEN));
+  assert.equal(await page.locator(".fleet-title").textContent(), "Mirafold");
 });
 
 test("onboarding → a full mock turn renders in the DOM", async () => {
@@ -92,7 +92,7 @@ test("R.4i: a subscription-only Claude shows a BLOCKED row with the API-key fix,
   const claudeDir = mkdtempSync(path.join(os.tmpdir(), "genui-sub-e2e-"));
   writeFileSync(path.join(claudeDir, ".credentials.json"), "{}");
   const token = "e2e-blocked-9c2f";
-  const d2 = await startDaemon({ GENUI_TOKEN: token, CLAUDE_CONFIG_DIR: claudeDir });
+  const d2 = await startDaemon({ MIRAFOLD_TOKEN: token, CLAUDE_CONFIG_DIR: claudeDir });
   const page2 = await browser.newPage();
   try {
     await page2.goto(`http://127.0.0.1:${d2.port}/?token=${token}`);
@@ -126,7 +126,7 @@ test("R.4k: a local-endpoint daemon shows the endpoint on the picker row", async
   // their setup was picked up (not a bare "ready"). The URL need not resolve —
   // we only read onboarding, never drive a turn.
   const token = "e2e-local-9c2f";
-  const d2 = await startDaemon({ GENUI_TOKEN: token, ANTHROPIC_BASE_URL: "http://localhost:11434" });
+  const d2 = await startDaemon({ MIRAFOLD_TOKEN: token, ANTHROPIC_BASE_URL: "http://localhost:11434" });
   const page2 = await browser.newPage();
   try {
     await page2.goto(`http://127.0.0.1:${d2.port}/?token=${token}`);

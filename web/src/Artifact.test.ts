@@ -12,26 +12,26 @@ import { parseBridgeAction, wrap } from "./Artifact";
 
 test("bridge parser accepts a well-formed prompt action", () => {
   assert.deepEqual(
-    parseBridgeAction({ genui: 1, action: { kind: "prompt", text: "hello" } }),
+    parseBridgeAction({ mirafold: 1, action: { kind: "prompt", text: "hello" } }),
     { kind: "prompt", text: "hello" },
   );
 });
 
 test("bridge parser accepts tool actions, with and without object args", () => {
-  assert.deepEqual(parseBridgeAction({ genui: 1, action: { kind: "tool", name: "workspace_ls" } }), {
+  assert.deepEqual(parseBridgeAction({ mirafold: 1, action: { kind: "tool", name: "workspace_ls" } }), {
     kind: "tool",
     name: "workspace_ls",
     args: undefined,
   });
   assert.deepEqual(
-    parseBridgeAction({ genui: 1, action: { kind: "tool", name: "t", args: { a: 1 } } }),
+    parseBridgeAction({ mirafold: 1, action: { kind: "tool", name: "t", args: { a: 1 } } }),
     { kind: "tool", name: "t", args: { a: 1 } },
   );
 });
 
 test("bridge parser drops state ops — they never leave the sandbox", () => {
   assert.equal(
-    parseBridgeAction({ genui: 1, action: { kind: "state", op: "set", key: "x", value: "y" } }),
+    parseBridgeAction({ mirafold: 1, action: { kind: "state", op: "set", key: "x", value: "y" } }),
     null,
   );
 });
@@ -43,26 +43,26 @@ test("bridge parser drops junk and malformed shapes", () => {
     "prompt",
     [],
     {},
-    { action: { kind: "prompt", text: "no genui stamp" } }, // missing stamp
-    { genui: 2, action: { kind: "prompt", text: "wrong stamp" } },
-    { genui: 1 }, // no action
-    { genui: 1, action: null },
-    { genui: 1, action: { kind: "prompt" } }, // no text
-    { genui: 1, action: { kind: "prompt", text: 7 } },
-    { genui: 1, action: { kind: "prompt", text: "   " } }, // blank
-    { genui: 1, action: { kind: "tool" } }, // no name
-    { genui: 1, action: { kind: "tool", name: 7 } },
-    { genui: 1, action: { kind: "tool", name: "t", args: [1, 2] } }, // array args
-    { genui: 1, action: { kind: "tool", name: "t", args: "s" } },
-    { genui: 1, action: { kind: "tool", name: "x".repeat(201) } }, // name cap
+    { action: { kind: "prompt", text: "no mirafold stamp" } }, // missing stamp
+    { mirafold: 2, action: { kind: "prompt", text: "wrong stamp" } },
+    { mirafold: 1 }, // no action
+    { mirafold: 1, action: null },
+    { mirafold: 1, action: { kind: "prompt" } }, // no text
+    { mirafold: 1, action: { kind: "prompt", text: 7 } },
+    { mirafold: 1, action: { kind: "prompt", text: "   " } }, // blank
+    { mirafold: 1, action: { kind: "tool" } }, // no name
+    { mirafold: 1, action: { kind: "tool", name: 7 } },
+    { mirafold: 1, action: { kind: "tool", name: "t", args: [1, 2] } }, // array args
+    { mirafold: 1, action: { kind: "tool", name: "t", args: "s" } },
+    { mirafold: 1, action: { kind: "tool", name: "x".repeat(201) } }, // name cap
   ]) {
     assert.equal(parseBridgeAction(bad), null, JSON.stringify(bad));
   }
 });
 
 test("bridge parser caps prompt text at 4000 chars", () => {
-  const at = { genui: 1, action: { kind: "prompt", text: "x".repeat(4000) } };
-  const over = { genui: 1, action: { kind: "prompt", text: "x".repeat(4001) } };
+  const at = { mirafold: 1, action: { kind: "prompt", text: "x".repeat(4000) } };
+  const over = { mirafold: 1, action: { kind: "prompt", text: "x".repeat(4001) } };
   assert.notEqual(parseBridgeAction(at), null);
   assert.equal(parseBridgeAction(over), null);
 });
@@ -83,7 +83,7 @@ test("wrap() injects the nonce-closing boot script before the content", () => {
   assert.notEqual(boot, -1, "boot script must close over the nonce");
   assert.ok(boot < out.indexOf("content-marker"), "boot script must come before the content");
   // The bridge stamps every outbound message; the host drops the unstamped.
-  assert.match(out, /m\.genui=1;m\.nonce=N/);
+  assert.match(out, /m\.mirafold=1;m\.nonce=N/);
 });
 
 test("wrap() puts the content in the body, inside the wrapper document", () => {

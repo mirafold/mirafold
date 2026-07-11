@@ -27,7 +27,7 @@ type ToolResult = {
 let client: Client;
 
 before(async () => {
-  client = new Client({ name: "genui-itest", version: "0.0.0" });
+  client = new Client({ name: "mirafold-itest", version: "0.0.0" });
   await client.connect(
     new StdioClientTransport({
       command: process.execPath,

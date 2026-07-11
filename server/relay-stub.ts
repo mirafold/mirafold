@@ -134,6 +134,6 @@ export function startRelayStub(opts: { port?: number; tap?: RelayTap } = {}): Pr
 // Runnable standalone for dev: `node --import tsx server/relay-stub.ts`.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   startRelayStub({ port: Number(process.env.PORT ?? 9100) }).then(({ url }) =>
-    console.log(`[relay-stub] on ${url} — point the daemon at GENUI_RELAY_URL=${url}`),
+    console.log(`[relay-stub] on ${url} — point the daemon at MIRAFOLD_RELAY_URL=${url}`),
   );
 }

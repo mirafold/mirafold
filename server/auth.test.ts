@@ -2,10 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { cookieToken, isLoopbackOrigin, verifyToken } from "./auth";
 
-test("cookieToken extracts the genui_token value", () => {
-  assert.equal(cookieToken("genui_token=abc"), "abc");
-  assert.equal(cookieToken("foo=1; genui_token=abc; bar=2"), "abc");
-  assert.equal(cookieToken("genui_token=a%20b"), "a b"); // URL-decoded
+test("cookieToken extracts the mirafold_token value", () => {
+  assert.equal(cookieToken("mirafold_token=abc"), "abc");
+  assert.equal(cookieToken("foo=1; mirafold_token=abc; bar=2"), "abc");
+  assert.equal(cookieToken("mirafold_token=a%20b"), "a b"); // URL-decoded
 });
 
 test("cookieToken returns undefined when absent/malformed", () => {
@@ -13,7 +13,7 @@ test("cookieToken returns undefined when absent/malformed", () => {
   assert.equal(cookieToken(""), undefined);
   assert.equal(cookieToken("foo=1"), undefined);
   assert.equal(cookieToken("no-equals-sign"), undefined);
-  assert.equal(cookieToken("genui_tokenX=abc"), undefined); // must be an exact name match
+  assert.equal(cookieToken("mirafold_tokenX=abc"), undefined); // must be an exact name match
 });
 
 test("isLoopbackOrigin: loopback and no-Origin pass, foreign fails", () => {
@@ -28,13 +28,13 @@ test("isLoopbackOrigin: loopback and no-Origin pass, foreign fails", () => {
 
 test("verifyToken accepts a matching cookie or ?token= query", () => {
   const T = "secret";
-  assert.equal(verifyToken({ headers: { cookie: "genui_token=secret" } }, T, true), true);
+  assert.equal(verifyToken({ headers: { cookie: "mirafold_token=secret" } }, T, true), true);
   assert.equal(verifyToken({ headers: {}, url: "/ws?token=secret" }, T, true), true);
 });
 
 test("verifyToken rejects a wrong or missing token when enabled", () => {
   const T = "secret";
-  assert.equal(verifyToken({ headers: { cookie: "genui_token=wrong" } }, T, true), false);
+  assert.equal(verifyToken({ headers: { cookie: "mirafold_token=wrong" } }, T, true), false);
   assert.equal(verifyToken({ headers: {}, url: "/ws?token=wrong" }, T, true), false);
   assert.equal(verifyToken({ headers: {}, url: "/ws" }, T, true), false);
   assert.equal(verifyToken({ headers: {} }, T, true), false);

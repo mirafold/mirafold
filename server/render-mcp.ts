@@ -1,4 +1,4 @@
-// Standalone stdio MCP server exposing genui-shell's generative-UI vocabulary
+// Standalone stdio MCP server exposing Mirafold's generative-UI vocabulary
 // (render_* + emit_artifact) to agents that load MCP servers as subprocesses —
 // Codex today (Gemini CLI next). The Claude adapter injects the same tools
 // IN-PROCESS via makeRenderServer (render-tools.ts); this is the out-of-process
@@ -34,7 +34,7 @@ const idParam = {
     ),
 };
 
-const server = new McpServer({ name: "genui", version: "1.0.0" });
+const server = new McpServer({ name: "mirafold", version: "1.0.0" });
 
 // Returned to the agent AND read back by the adapter (codex.ts) off the
 // mcp_tool_call result. structuredContent is the primary channel; the text is a

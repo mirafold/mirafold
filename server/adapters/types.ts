@@ -4,7 +4,7 @@ import type { CredentialKind } from "../provider-policy";
 export type { AgentName } from "../protocol";
 
 /**
- * The agent-adapter seam. genui-shell re-skins whichever terminal coding
+ * The agent-adapter seam. Mirafold re-skins whichever terminal coding
  * agent you already drive; behind this interface each agent runs its **own**
  * engine and normalizes its event stream into `WireMsg` — everything
  * downstream (wire protocol, output zone, security, generative UI) consumes

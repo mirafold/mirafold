@@ -149,10 +149,10 @@ export class SessionRegistry {
         `[${new Date().toISOString()}] [session ${entry.id}] error: ${msg.message}`,
       );
     }
-    // R.4g: GENUI_DEBUG=1 traces every normalized event on the session
+    // R.4g: MIRAFOLD_DEBUG=1 traces every normalized event on the session
     // stream (bang_input never crosses broadcast, so no secret can land
     // here). One line per WireMsg, payload truncated.
-    if (process.env.GENUI_DEBUG) {
+    if (process.env.MIRAFOLD_DEBUG) {
       const body = JSON.stringify(msg);
       console.error(
         `[${new Date().toISOString()}] [debug ${entry.id}] ${msg.type} ${

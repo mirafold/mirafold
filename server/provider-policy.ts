@@ -11,7 +11,7 @@ import type { AgentName } from "./protocol";
 //   Anthropic (claude-code), closed:
 //     - subscription (OAuth login): PROHIBITED everywhere. Anthropic's terms ban
 //       using a Free/Pro/Max OAuth token in any third-party tool (Feb 2026,
-//       enforced Apr 4 — the OpenClaw change); genui-shell IS another tool.
+//       enforced Apr 4 — the OpenClaw change); Mirafold IS another tool.
 //     - API key: allowed locally; relay = API key only.
 //   Google Gemini (gemini-cli), closed: same as Anthropic — the Gemini CLI ToS
 //     third-party clause, and the individual tiers were cut off from the CLI on
