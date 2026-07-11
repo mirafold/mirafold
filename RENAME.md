@@ -67,12 +67,14 @@ and both adapter spikes now name the product **Mirafold**. Deliberately KEPT as
 + the rejected `genui-shell.com` domain, RENAME.md itself, and PLAN-ARCHIVE.md
 (history).
 
-## Still owed (needs Kyle / launch timing)
+## npm — DONE (2026-07-11)
 
-- **Old npm package** `genui-shell@0.0.1` IS published (registry 200) → deprecate
-  it pointing at `mirafold`. Needs npm auth — **npm is NOT logged in here (E401)**,
-  so this is Kyle's:
-  `npm login` then `npm deprecate genui-shell "renamed to 'mirafold' — install mirafold instead"`.
-- **Publish `mirafold`** (unpublished, 404) — a LAUNCH step (R.6/R.7), not now:
-  the product isn't launch-ready, and `npx mirafold` should install a complete build.
-- **Push** both repo commits when ready (held during the parallel session).
+- **`genui-shell` deprecated** on npm, pointing at `mirafold`.
+- **`mirafold` name secured**: a minimal `mirafold@0.0.0` placeholder published
+  (coming-soon bin; no product code). Kept at
+  `../mirafold-npm-placeholder/` outside both repos.
+- The REAL `mirafold` publish (full build over the placeholder) is still a LAUNCH
+  step (R.6/R.7) — bump the version above 0.0.0 then `npm publish` from the repo.
+
+The rename is complete. This doc can be deleted; it stays as the record of what
+was kept load-bearing (esp. the `genui-relay v1` crypto salt) and why.
