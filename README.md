@@ -737,13 +737,15 @@ knowing because it constrains future UI work:
   pill.
 - The palette is a semantic token system in `styles.css` (Step 4.3): one set
   of `--fg/--surface/--border/--accent`-family custom properties, two themes.
-  **Dark is the default and the identity**; the light theme flips the output
-  canvas only — the terminal chrome (prompt box, command strips, bang/
-  permission/status bars, onboarding) re-declares the dark values and stays
-  terminal-dark, making mono-in / rich-out literal. Code surfaces (`--code-*`,
-  `--diff-*`, hljs github-dark) are pinned dark in both themes, so code reads
-  as a terminal window on any canvas. Toggle: the ☾/☀ button in the status
-  bar (persisted to localStorage, applied pre-paint in index.html).
+  **Dark is the default and the identity**; the light theme is a TRUE, unified
+  light theme — the whole UI, terminal chrome included (prompt box, command
+  strips, bang/permission/status bars, onboarding), flips to the light palette.
+  Faithful re-skin: a real terminal switched to light mode has a light input, so
+  ours follows suit — the input stays distinctly an input via border/inset/
+  monospace, not a dark block. Code surfaces (`--code-*`, `--diff-*`, hljs
+  github-dark) are pinned dark in both themes, so code reads as a terminal
+  window on any canvas. Toggle: the ☾/☀ button in the status bar (persisted to
+  localStorage, applied pre-paint in index.html).
 - Motion: transcript entries mount with a 160ms rise; theme switches fade;
   all of it is disabled under `prefers-reduced-motion`.
 - Side surfaces are emergent/collapsible — the pin dock only exists while

@@ -738,6 +738,12 @@ shows which matter — not a launch prerequisite.
     view (4.6) shows each session's model.
   - Done when: two concurrent sessions run on two different providers and
     the fleet view distinguishes them.
+  - Note (2026-07-10): the fleet view already distinguishes sessions by model
+    (the model column, done this session). A user-testing pass surfaced the
+    matching onboarding need — lead with the model/backend *source* (make
+    local/open-source models first-class; let Codex pick subscription vs API
+    key) — which folds into L.2/L.3, since it needs exactly this per-session
+    provider/model choice.
 
 ---
 
