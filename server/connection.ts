@@ -321,6 +321,14 @@ export function openConnection(
           registry.rename(msg.sessionId, msg.name);
         }
         break;
+      case "end_session":
+        // #11: usable from a session viewport or a fleet watcher — the registry
+        // tears the session down and signals any attached viewports.
+        if (typeof msg.sessionId === "string") {
+          registry.end(msg.sessionId);
+          console.log(`[${label}] end_session → ${msg.sessionId}`);
+        }
+        break;
       case "interrupt":
         entry?.session.interrupt();
         break;

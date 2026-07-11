@@ -33,6 +33,9 @@ export function FleetView() {
   const [showNew, setShowNew] = useState(false);
   const [onbError, setOnbError] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
+  // #11: sessionId whose "end" button is armed (first click); a second click
+  // ends it. Auto-disarms after a few seconds.
+  const [confirmEnd, setConfirmEnd] = useState<string | null>(null);
   const [, setTick] = useState(0); // re-render so the "ago" labels stay honest
 
   const socket = useMemo(() => {
@@ -149,6 +152,29 @@ export function FleetView() {
                 {STATUS_LABEL[s.status]}
               </span>
               <span className="fleet-ago">{ago(s.lastActivity)}</span>
+              <button
+                className={"fleet-end" + (confirmEnd === s.sessionId ? " fleet-end-armed" : "")}
+                title={
+                  confirmEnd === s.sessionId
+                    ? "Click again to end this session"
+                    : "End this session"
+                }
+                onClick={(e) => {
+                  e.preventDefault();
+                  if (confirmEnd === s.sessionId) {
+                    socket.send({ type: "end_session", sessionId: s.sessionId });
+                    setConfirmEnd(null);
+                  } else {
+                    setConfirmEnd(s.sessionId);
+                    setTimeout(
+                      () => setConfirmEnd((c) => (c === s.sessionId ? null : c)),
+                      3000,
+                    );
+                  }
+                }}
+              >
+                {confirmEnd === s.sessionId ? "end?" : "end"}
+              </button>
             </a>
           );
         })}

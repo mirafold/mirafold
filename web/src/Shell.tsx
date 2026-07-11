@@ -121,6 +121,12 @@ export function Shell() {
           for (const l of listeners) l({ type: "zone_reset" });
         }
       }
+      if (m.type === "session_ended") {
+        // #11: the session is gone (ended here, from the fleet, or another tab)
+        // — leave to mission control; there's nothing left to attach to.
+        location.assign("/");
+        return;
+      }
       for (const l of listeners) l(m);
     });
     return {
@@ -168,6 +174,11 @@ export function Shell() {
       },
       answerPermission(id: string, allow: boolean) {
         socket.send({ type: "permission_response", id, allow });
+      },
+      // #11: end this session — the server tears it down and replies
+      // session_ended, which routes this viewport back to mission control.
+      endSession() {
+        if (sessionId) socket.send({ type: "end_session", sessionId });
       },
       sendAction(action: Action, sourceId: string) {
         socket.send({ type: "action", action, sourceId });
@@ -410,6 +421,7 @@ export function Shell() {
         usage={usage}
         theme={theme}
         onToggleTheme={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+        onEndSession={meta.sessionId ? bus.endSession : undefined}
         relay={daemon.relay}
         version={daemon.version}
       />

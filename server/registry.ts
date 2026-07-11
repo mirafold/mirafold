@@ -213,7 +213,10 @@ export class SessionRegistry {
   detach(entry: SessionEntry, viewport: Viewport) {
     entry.viewports.delete(viewport);
     this.notifyWatchers(); // viewport counts are fleet metadata
-    if (entry.viewports.size === 0) {
+    // The `=== entry` guard skips this for a session already ended (#11):
+    // end() deletes it from the map, so a later detach mustn't re-arm the idle
+    // timer or double-close the engine.
+    if (entry.viewports.size === 0 && this.entries.get(entry.id) === entry) {
       entry.idleTimer = setTimeout(() => {
         entry.bang?.proc.kill(); // no orphaned PTYs past the session's life
         entry.session.close();
@@ -222,6 +225,24 @@ export class SessionRegistry {
       }, IDLE_TIMEOUT_MS);
       entry.idleTimer.unref();
     }
+  }
+
+  /**
+   * #11: explicit teardown — the user chose "end session". Kill any running
+   * PTY, close the engine, drop it from the fleet, and tell attached viewports
+   * it's over (they leave to mission control). A subsequent detach on this
+   * entry is a no-op (guarded above), so close() runs exactly once.
+   */
+  end(id: string): boolean {
+    const entry = this.entries.get(id);
+    if (!entry) return false;
+    clearTimeout(entry.idleTimer);
+    entry.bang?.proc.kill();
+    entry.session.close();
+    this.entries.delete(id);
+    for (const viewport of entry.viewports) viewport({ type: "session_ended", sessionId: id });
+    this.notifyWatchers();
+    return true;
   }
 
   // ---- Fleet watchers (4.6): connections that observe the registry itself —

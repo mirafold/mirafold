@@ -1680,6 +1680,33 @@ html {
   }
 }
 
+/* #11: in-session "end" — a shell-owned control in the status bar, two-click
+   (end → end?) with a danger tone when armed. */
+.sb-end {
+  background: transparent;
+  border: 1px solid var(--border-2);
+  border-radius: 7px;
+  padding: 6px 10px;
+  color: var(--fg-mid);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+
+.sb-end:hover {
+  color: var(--error);
+  border-color: var(--err-border-strong);
+}
+
+.sb-end-armed,
+.sb-end-armed:hover {
+  color: var(--error);
+  border-color: var(--err-border-strong);
+  background: var(--err-bg);
+}
+
 .sb-theme {
   display: inline-flex;
   align-items: center;
@@ -1885,6 +1912,34 @@ html {
 .fleet-ago {
   color: var(--fg-faint);
   flex-shrink: 0;
+}
+
+/* #11: per-row "end session" — dim by default, danger-toned on hover/armed.
+   Two-click (end → end?) guards against an accidental kill. */
+.fleet-end {
+  flex-shrink: 0;
+  margin-left: 2px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.74em;
+  color: var(--fg-faint);
+  background: none;
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+
+.fleet-end:hover {
+  color: var(--error);
+  border-color: var(--err-border-strong);
+}
+
+.fleet-end-armed,
+.fleet-end-armed:hover {
+  color: var(--error);
+  border-color: var(--err-border-strong);
+  background: var(--err-bg);
 }
 
 /* #6: separates the session id (left edge of the right-hand group) from the
