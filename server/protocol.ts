@@ -168,7 +168,11 @@ type WireMsgBody =
   // Step 4.6: the fleet snapshot, sent to `watch_sessions` connections on
   // subscribe and re-sent whenever the fleet changes (create/close, status
   // transition, rename). Per-viewport plumbing — never buffered/sequenced.
-  | { type: "sessions"; sessions: SessionMeta[] };
+  | { type: "sessions"; sessions: SessionMeta[] }
+  // #11: the session was explicitly ended (from here, the fleet view, or another
+  // tab). A per-viewport control signal — an attached viewport leaves to mission
+  // control; never buffered or sequenced.
+  | { type: "session_ended"; sessionId: string };
 
 /** One fleet row (4.6). `lastActivity` is epoch ms of the last broadcast. */
 export type SessionMeta = {
@@ -233,4 +237,8 @@ export type ClientMsg =
   // it receives `sessions` snapshots instead of a transcript stream.
   | { type: "watch_sessions" }
   // Step 4.6: rename a session (fleet affordance; 4.2 deferred it here).
-  | { type: "rename"; sessionId: string; name: string };
+  | { type: "rename"; sessionId: string; name: string }
+  // #11: explicitly end a session — kill its PTY, close the engine, drop it from
+  // the fleet, and kick any attached viewports back to mission control. Usable
+  // from a session viewport or a fleet watcher.
+  | { type: "end_session"; sessionId: string };

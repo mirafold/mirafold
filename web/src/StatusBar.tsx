@@ -28,6 +28,7 @@ export function StatusBar({
   usage,
   theme,
   onToggleTheme,
+  onEndSession,
   relay,
   version,
 }: {
@@ -39,6 +40,9 @@ export function StatusBar({
   // 4.3: shell-owned theme toggle — dark is the default and the identity.
   theme: "dark" | "light";
   onToggleTheme: () => void;
+  // #11: end this session (absent when there's no session yet). Two-click
+  // confirm lives in this shell-owned control, never in agent output.
+  onEndSession?: () => void;
   // R.4: pairing info for the "connect a device" QR (absent → no button).
   relay?: RelayInfo;
   // R.4g: the daemon's version, off the agents hello — the first thing a
@@ -46,6 +50,9 @@ export function StatusBar({
   version?: string;
 }) {
   const [open, setOpen] = useState(true);
+  // #11: first click arms, second click ends — guards against a stray click
+  // killing a session. Disarms itself after a few seconds.
+  const [confirmEnd, setConfirmEnd] = useState(false);
   const dot = (
     <span
       className={`sb-dot ${connected ? "sb-dot-on" : "sb-dot-off"}`}
@@ -105,6 +112,21 @@ export function StatusBar({
         </span>
       )}
       <ConnectDevice relay={relay} />
+      {onEndSession && (
+        <button
+          className={"sb-end" + (confirmEnd ? " sb-end-armed" : "")}
+          title={confirmEnd ? "Click again to end this session" : "End this session"}
+          onClick={() => {
+            if (confirmEnd) onEndSession();
+            else {
+              setConfirmEnd(true);
+              setTimeout(() => setConfirmEnd(false), 3000);
+            }
+          }}
+        >
+          {confirmEnd ? "end?" : "end"}
+        </button>
+      )}
       <a className="sb-home" href="/" title="All sessions (mission control)">
         ⌂
       </a>
