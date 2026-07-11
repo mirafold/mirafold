@@ -258,6 +258,7 @@ export class SessionRegistry {
         name: e.name,
         cwd: e.cwd,
         agent: e.agent,
+        model: e.session.modelName,
         status: e.status,
         lastActivity: e.lastActivity,
         viewports: e.viewports.size,

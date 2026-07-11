@@ -18,6 +18,10 @@ export interface AgentSession {
   interrupt(): void;
   /** The browser's answer to a permission_request (Phase T.3). */
   resolvePermission(id: string, allow: boolean): void;
+  /** #6: current best-known model label, for the fleet row / status bar. Known
+   *  at construction from config/DEFAULT_MODEL; may refine after the first turn
+   *  for agents whose real model only appears mid-stream (Claude, Gemini). */
+  readonly modelName: string;
   close(): void;
 }
 

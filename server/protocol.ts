@@ -180,6 +180,9 @@ export type SessionMeta = {
   name: string;
   cwd: string;
   agent: AgentName;
+  // #6: the model the session's agent is running (best-known label). Present
+  // even before the first turn (from config/DEFAULT_MODEL); may refine after.
+  model: string;
   status: "idle" | "working" | "permission";
   lastActivity: number;
   viewports: number;

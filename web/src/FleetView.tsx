@@ -137,6 +137,9 @@ export function FleetView() {
                   </button>
                 </span>
               )}
+              <span className="fleet-model" title="model">
+                {s.model}
+              </span>
               <span className="fleet-agent">{s.agent}</span>
               <span className="fleet-cwd" title={s.cwd}>
                 {tildify(s.cwd, daemon.home)}
