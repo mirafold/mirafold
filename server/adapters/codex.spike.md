@@ -7,7 +7,7 @@ adapter, and confirm the faithful-skin pattern generalizes past Claude Code.
 
 Codex is drivable as its **own engine** with a streamed event feed and native
 MCP injection, so a Codex session can be normalized to `WireMsg` and carry
-genui-shell's generative UI **without** a homegrown loop or a request-path
+Mirafold's generative UI **without** a homegrown loop or a request-path
 proxy. No shared code needs a Codex-specific branch; it's one adapter behind
 `createSession()`, same as `claude-code`.
 
@@ -67,7 +67,7 @@ if a Codex build doesn't emit reasoning, `thinking_delta` simply never fires.
 ## The core requirement — generative UI via MCP — is satisfied
 
 Codex natively loads MCP servers (`mcp_servers` in config.toml). Inject
-genui-shell's render server through the SDK's `config`:
+Mirafold's render server through the SDK's `config`:
 
 ```ts
 new Codex({ config: { mcp_servers: { genui_ui: {
@@ -179,14 +179,14 @@ its own config default. This is why usage shows `model=codex`.
    own terminal `codex` fails identically**, so reproducing it is correct. The
    adapter sets NO sandboxMode/approvalPolicy (inherits the user's Codex
    config). Whatever makes his terminal Codex run a command makes ours run it —
-   so the command-in-transcript path verifies for free then, no genui-shell
+   so the command-in-transcript path verifies for free then, no Mirafold
    change. (See the inherit-don't-invent memory.)
    **RESOLVED + command path now VERIFIED (2026-07-06):** Kyle relaxed the
    AppArmor restriction on his machine (`sudo sysctl -w
    kernel.apparmor_restrict_unprivileged_userns=0`). Codex's sandbox then builds,
    and the same file-creating prompt now succeeds identically in his terminal
    Codex (`exec /bin/bash -lc 'echo hello > demo-term.txt' succeeded`) and through
-   the genui-shell adapter — which rendered it as a `tool_use Shell` +
+   the Mirafold adapter — which rendered it as a `tool_use Shell` +
    `tool_result err=false` block and wrote the file. So `command_execution`
    normalization is now observed live; P.2 is fully verified incl. command
    execution. (Un-persisted: resets to 1 on reboot unless he adds

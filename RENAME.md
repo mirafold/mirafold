@@ -59,12 +59,20 @@ when the rename is done and verified.
   pricing work — do NOT stage it. Its own genui→Mirafold rebrand is DEFERRED
   until that session lands.
 
-## Deferred (intentional, low value / entangled)
+## Docs — DONE (product refs → Mirafold, commands → mirafold)
 
-- **Internal working-doc bodies** (PLAN.md, BUSINESS.md, CLAUDE.md) keep their
-  `genui-shell` references — they name the repo (which is kept) and the product
-  rename is recorded in PLAN R.2. `BUSINESS.md` additionally blocked on the
-  parallel pricing session.
-- **Old npm package** `genui-shell` IS published (registry 200) → deprecate it
-  pointing at `mirafold` (needs Kyle's npm auth). `mirafold` is unpublished
-  (404) — publishing it for real is a LAUNCH step (R.6/R.7), not now.
+BUSINESS.md, PLAN.md, CLAUDE.md, relay-service/README.md, the issue template,
+and both adapter spikes now name the product **Mirafold**. Deliberately KEPT as
+`genui-shell`: repo/folder/path refs, GitHub URLs, PLAN.md's rename-record lines
++ the rejected `genui-shell.com` domain, RENAME.md itself, and PLAN-ARCHIVE.md
+(history).
+
+## Still owed (needs Kyle / launch timing)
+
+- **Old npm package** `genui-shell@0.0.1` IS published (registry 200) → deprecate
+  it pointing at `mirafold`. Needs npm auth — **npm is NOT logged in here (E401)**,
+  so this is Kyle's:
+  `npm login` then `npm deprecate genui-shell "renamed to 'mirafold' — install mirafold instead"`.
+- **Publish `mirafold`** (unpublished, 404) — a LAUNCH step (R.6/R.7), not now:
+  the product isn't launch-ready, and `npx mirafold` should install a complete build.
+- **Push** both repo commits when ready (held during the parallel session).
