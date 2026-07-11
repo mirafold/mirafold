@@ -1707,6 +1707,9 @@ html {
   background: var(--err-bg);
 }
 
+/* #9: the status-bar icon buttons — mission-control home (an <a>) and the theme
+   toggle (a <button>) — share one look; only the link's text-decoration differs. */
+.sb-home,
 .sb-theme {
   display: inline-flex;
   align-items: center;
@@ -1723,6 +1726,11 @@ html {
   cursor: pointer;
 }
 
+.sb-home {
+  text-decoration: none;
+}
+
+.sb-home:hover,
 .sb-theme:hover {
   color: var(--fg);
   border-color: var(--border-hover);
@@ -1957,28 +1965,6 @@ html {
   font-size: 0.78em;
   color: var(--fg-faint);
   flex-shrink: 0;
-}
-
-/* status-bar home link (into mission control) */
-.sb-home {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 34px;
-  color: var(--fg);
-  text-decoration: none;
-  background: var(--surface-2);
-  border: 1px solid var(--border-mid);
-  border-radius: 7px;
-  padding: 6px 11px;
-  font-size: 20px;
-  line-height: 1;
-}
-
-.sb-home:hover {
-  color: var(--fg);
-  border-color: var(--border-hover);
-  background: var(--surface-hover);
 }
 
 /* ---- Connect a device (Step R.4) -------------------------------------------
