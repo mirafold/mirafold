@@ -100,6 +100,7 @@ test("fleet watcher: snapshot on watch, status working → idle across a turn", 
   const mine = snap.sessions.find((s: Any) => s.sessionId === sessionId);
   assert.ok(mine, "watched snapshot lists the session");
   assert.equal(mine.agent, "claude-code");
+  assert.equal(mine.model, "mock-sonnet", "#6: fleet meta carries the model (mock here)");
   assert.equal(mine.status, "idle");
 
   a.send({ type: "prompt", text: "keep the fleet busy" });

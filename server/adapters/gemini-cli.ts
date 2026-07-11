@@ -55,6 +55,12 @@ export class GeminiCliSession implements AgentSession {
   private modelLabel: string;
   private model?: string;
   private workspaceDir: string;
+
+  // F.3: `modelLabel` may be "auto" until a turn resolves the concrete model;
+  // honestModel() refines the status line per turn. The fleet uses this label.
+  get modelName(): string {
+    return this.modelLabel;
+  }
   // Non-genui tool ids we announced, and buffered genui render calls awaiting
   // their tool_result (which carries the assigned component id).
   private announced = new Set<string>();

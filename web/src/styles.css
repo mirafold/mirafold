@@ -1865,6 +1865,7 @@ html {
 }
 
 .fleet-id,
+.fleet-model,
 .fleet-agent,
 .fleet-cwd,
 .fleet-ago {
@@ -1874,6 +1875,13 @@ html {
 
 .fleet-id {
   color: var(--fg-faint);
+  flex-shrink: 0;
+}
+
+/* #6: the model the session runs, read left of the agent (model → agent → cwd). */
+.fleet-model {
+  color: var(--fg-dim);
+  white-space: nowrap;
   flex-shrink: 0;
 }
 

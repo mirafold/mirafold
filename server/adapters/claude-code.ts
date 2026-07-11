@@ -92,6 +92,10 @@ export class ClaudeCodeSession implements AgentSession {
   // default when `model` is unset, so we keep a readable stand-in).
   private modelLabel: string;
 
+  get modelName(): string {
+    return this.modelLabel;
+  }
+
   // `engine` is the test seam (like Codex's thread swap / GENUI_GEMINI_BIN):
   // query() spawns the real CLI at construction, so tests must inject a
   // scripted stand-in here — there is no later moment to swap it.

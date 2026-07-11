@@ -351,6 +351,10 @@ export class MockSession implements AgentSession {
   private deck: number[] = [];
   private pendingAsks = new Map<string, (allow: boolean) => void>();
 
+  get modelName(): string {
+    return "mock-sonnet";
+  }
+
   // Each deterministic hook exercises one UI capability API-free; anything
   // else is a canned reply drawn from the template deck.
   pushPrompt(text: string) {

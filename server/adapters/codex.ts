@@ -68,6 +68,10 @@ export class CodexSession implements AgentSession {
   private todoRenderId?: string;
   private modelLabel: string;
 
+  get modelName(): string {
+    return this.modelLabel;
+  }
+
   constructor(opts?: { workspaceDir?: string; model?: string }) {
     const workspaceDir = path.resolve(opts?.workspaceDir ?? "workspace");
     mkdirSync(workspaceDir, { recursive: true });
