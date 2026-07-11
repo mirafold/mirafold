@@ -108,7 +108,7 @@ one tool call + one render end to end.
 
 ## Registry/config wiring already in place (from P.1)
 
-`resolveBackend()` already honors `GENUI_AGENT=codex`; `agentHasCredentials`
+`resolveBackend()` already honors `MIRAFOLD_AGENT=codex`; `agentHasCredentials`
 returns false for codex (→ mock) until this adapter lands and its OpenAI-key
 check is added; `createSession()` throws a clear "no adapter yet" for codex. So
 turning Codex on is: add the key check + the `codex` case, nothing structural.

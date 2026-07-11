@@ -12,7 +12,7 @@
 // strip) and shows unknown agent names as raw strings.
 
 /**
- * The terminal agents genui-shell can re-skin (one adapter each). On the wire
+ * The terminal agents Mirafold can re-skin (one adapter each). On the wire
  * since Phase P.4 — the browser picks which agent a session runs at onboarding,
  * so the name is part of the shared contract (adapters/types.ts re-exports it).
  */

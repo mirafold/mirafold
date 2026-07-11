@@ -1,5 +1,5 @@
 {
-  "name": "genui-shell",
+  "name": "mirafold",
   "version": "0.1.0",
   "description": "A faithful browser re-skin of the terminal coding agent you already use — Claude Code, Codex, or Gemini CLI — with generative UI layered on top.",
   "license": "MIT",
@@ -23,7 +23,7 @@
     "mcp"
   ],
   "bin": {
-    "genui-shell": "bin/genui-shell.js"
+    "mirafold": "bin/mirafold.js"
   },
   "files": [
     "bin/",
@@ -35,7 +35,7 @@
   },
   "packageManager": "yarn@1.22.22",
   "scripts": {
-    "dev:server": "GENUI_TOKEN= tsx watch server/index.ts",
+    "dev:server": "MIRAFOLD_TOKEN= tsx watch server/index.ts",
     "dev:web": "vite",
     "dev": "concurrently -n server,web -c blue,green \"yarn dev:server\" \"yarn dev:web\"",
     "build": "vite build && yarn build:server",

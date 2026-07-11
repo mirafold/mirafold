@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// genui-shell launcher (Step 4.10): boot the daemon in the CURRENT directory
+// mirafold launcher (Step 4.10): boot the daemon in the CURRENT directory
 // (sessions default to it — terminal parity, 4.8) and open the browser once
 // it's listening. The daemon does the real work; this is spawn + open only.
 // `--no-open` skips the browser (tests, servers, second terminals).
@@ -22,9 +22,9 @@ if (process.argv.includes("--version") || process.argv.includes("-v")) {
 }
 if (process.argv.includes("--help") || process.argv.includes("-h")) {
   console.log(
-    `genui-shell v${version()} — a faithful browser re-skin of your terminal coding agent\n` +
+    `mirafold v${version()} — a faithful browser re-skin of your terminal coding agent\n` +
       `\n` +
-      `Usage: genui-shell [options]\n` +
+      `Usage: mirafold [options]\n` +
       `\n` +
       `Runs the local daemon in the current directory and opens the browser UI.\n` +
       `\n` +
@@ -41,7 +41,7 @@ if (process.argv.includes("--help") || process.argv.includes("-h")) {
 
 if (!existsSync(daemon)) {
   console.error(
-    "genui-shell: built server not found (dist-server/). " +
+    "mirafold: built server not found (dist-server/). " +
       "In a dev checkout run `yarn build` first (or use `yarn dev`); " +
       "an installed copy missing it should be reinstalled.",
   );

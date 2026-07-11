@@ -102,8 +102,8 @@ export function makeRenderServer(emit: (msg: WireMsg) => void) {
         "Render self-contained HTML/CSS/JS in a sandboxed iframe. LAST RESORT: " +
           "use only when no render_* component can express what's needed " +
           "(custom visuals, simulations, bespoke interactivity). The sandbox " +
-          "exposes exactly two outward calls: genui.prompt(text) sends text " +
-          "as the user's next turn; genui.tool(name, args) runs an " +
+          "exposes exactly two outward calls: mirafold.prompt(text) sends text " +
+          "as the user's next turn; mirafold.tool(name, args) runs an " +
           "allowlisted server helper (names: " +
           actionToolNames.join(", ") +
           "). Anything else stays inside the sandbox.",

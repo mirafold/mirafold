@@ -10,11 +10,11 @@ import {
 } from "@openai/codex-sdk";
 import type { WireMsg } from "../protocol";
 import { type AgentSession, type TodoItem, capOutput, joinTextBlocks } from "./types";
-import { GENUI_MCP, RENDER_ID_RE, generativeUIMsg, renderMcpCommand } from "./render-mcp-cmd";
+import { MIRAFOLD_MCP, RENDER_ID_RE, generativeUIMsg, renderMcpCommand } from "./render-mcp-cmd";
 import { AsyncQueue, CLOSE } from "./async-queue";
 
 // The generative-UI MCP server injected into Codex (P.3). Codex loads MCP
-// servers as stdio subprocesses, so genui-shell's render tools live in a
+// servers as stdio subprocesses, so Mirafold's render tools live in a
 // standalone process (server/render-mcp.ts) rather than in-process like the
 // Claude adapter's makeRenderServer. renderMcpCommand resolves how to spawn
 // it: tsx + TS source in dev, node + the esbuild twin in the packaged install.
@@ -45,7 +45,7 @@ export function extractRenderId(item: McpToolCallItem): string {
  * normalized into the shared `WireMsg` union — no protocol change (P.2 spike).
  *
  * Faithful-skin posture (see the inherit-don't-invent principle): this adapter
- * passes ONLY genui-shell's genuine concerns — the session working directory
+ * passes ONLY Mirafold's genuine concerns — the session working directory
  * (session ≈ project) and the model when configured. It deliberately sets NO
  * `sandboxMode`/`approvalPolicy`, so Codex reads the user's own
  * `~/.codex/config.toml` and behaves exactly as their terminal `codex` does —
@@ -80,16 +80,16 @@ export class CodexSession implements AgentSession {
     // ~/.codex auth + config. No `apiKey` unless one is set (ChatGPT login path).
     const codex = new Codex({
       ...(process.env.OPENAI_API_KEY ? { apiKey: process.env.OPENAI_API_KEY } : {}),
-      // Inject genui-shell's generative-UI tools as a stdio MCP server. Codex
+      // Inject Mirafold's generative-UI tools as a stdio MCP server. Codex
       // calls them like any tool; the adapter turns those calls into render/
       // artifact WireMsgs below (it never reaches back into this subprocess).
       // `default_tools_approval_mode: "approve"` auto-approves THIS server's
-      // tools only — they're genui-shell's own side-effect-free UI emission, the
+      // tools only — they're Mirafold's own side-effect-free UI emission, the
       // direct analog of the Claude adapter auto-allowing mcp__ui__*. Without it,
       // headless exec mode (which can't prompt for approval) cancels the call.
       config: {
         mcp_servers: {
-          [GENUI_MCP]: {
+          [MIRAFOLD_MCP]: {
             command: RENDER_MCP.command,
             args: RENDER_MCP.args,
             default_tools_approval_mode: "approve",
@@ -254,7 +254,7 @@ export class CodexSession implements AgentSession {
         // Our own generative-UI server: never a raw tool row — turn the call
         // into the render/artifact WireMsg it stands for (P.3). The stub server
         // just validated the args and handed back the id; we paint it here.
-        if (item.server === GENUI_MCP) {
+        if (item.server === MIRAFOLD_MCP) {
           if (phase === "completed" && item.status !== "failed" && !item.error) {
             this.emitGenerativeUI(item);
           }
@@ -309,7 +309,7 @@ export class CodexSession implements AgentSession {
     });
   }
 
-  /** Turn a genui MCP tool call into the render/artifact WireMsg it stands for. */
+  /** Turn a Mirafold MCP tool call into the render/artifact WireMsg it stands for. */
   private emitGenerativeUI(item: McpToolCallItem) {
     const args =
       item.arguments && typeof item.arguments === "object"

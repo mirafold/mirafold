@@ -16,9 +16,9 @@ import { VERSION } from "./version";
 // R.4g: last-gasp handlers — a crash stays loud and exits nonzero, it just
 // signs its name first so a stranger's report contains something actionable.
 const lastGasp = (kind: string) => (err: unknown) => {
-  console.error(`[genui-shell] v${VERSION} crashed (${kind}):`, err);
+  console.error(`[mirafold] v${VERSION} crashed (${kind}):`, err);
   console.error(
-    "[genui-shell] please report this at https://github.com/kserrec/genui-shell/issues " +
+    "[mirafold] please report this at https://github.com/kserrec/genui-shell/issues " +
       "(include the two lines above; never paste the ?token= URL or a pairing code)",
   );
   process.exit(1);
@@ -37,7 +37,7 @@ if (typeof process.loadEnvFile === "function") {
   }
 } else {
   console.warn(
-    `[genui-shell] this Node (${process.version}) can't read .env (needs >= 20.12) — ` +
+    `[mirafold] this Node (${process.version}) can't read .env (needs >= 20.12) — ` +
       "credentials set in .env were NOT loaded; export them in the environment or upgrade Node",
   );
 }
@@ -86,10 +86,10 @@ const DIST = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "d
 // served app AND the WebSocket, so another local user (who never sees the token)
 // can't connect. The launcher opens a URL carrying the token; the browser keeps
 // it as a SameSite cookie, so refreshes, new tabs, and fleet links all present
-// it automatically — no per-URL threading. Set GENUI_TOKEN="" to disable (a
+// it automatically — no per-URL threading. Set MIRAFOLD_TOKEN="" to disable (a
 // single-user machine, or the Vite dev proxy on :5173, whose cross-origin page
 // can't present the daemon's cookie — `dev:server` sets it empty for that).
-const AUTH_TOKEN = process.env.GENUI_TOKEN ?? randomUUID();
+const AUTH_TOKEN = process.env.MIRAFOLD_TOKEN ?? randomUUID();
 const AUTH_ENABLED = AUTH_TOKEN !== "";
 
 if (!AUTH_ENABLED) {
@@ -100,7 +100,7 @@ if (!AUTH_ENABLED) {
   // single-user dev box (the Vite proxy needs it); a loud line so it's never
   // an accident on a shared machine or a forgotten production setting.
   console.warn(
-    "[genui-shell] AUTH DISABLED (GENUI_TOKEN=\"\") — any page served from " +
+    "[mirafold] AUTH DISABLED (MIRAFOLD_TOKEN=\"\") — any page served from " +
       "localhost can drive this agent (shell + file access). Safe only on a " +
       "single-user machine; never run this way on a shared box or in production.",
   );
@@ -117,13 +117,13 @@ if (AUTH_ENABLED) {
       return res.redirect(req.path);
     }
     // R.4b: a bare denial is a dead end — name the recovery. The right URL
-    // (with ?token=…) is in the terminal that launched genui-shell.
+    // (with ?token=…) is in the terminal that launched mirafold.
     res
       .status(403)
       .type("text/plain")
       .send(
-        "genui-shell: missing or invalid token.\n" +
-          "Open the full URL (with ?token=...) printed by the terminal where genui-shell is running.",
+        "mirafold: missing or invalid token.\n" +
+          "Open the full URL (with ?token=...) printed by the terminal where mirafold is running.",
       );
   });
 }
@@ -156,18 +156,18 @@ wss.on("error", (err: NodeJS.ErrnoException) => {
 const registry = new SessionRegistry();
 
 // Relay config (Phase R). The pairing code is minted once per launch (or
-// pinned via GENUI_RELAY_CODE); its HTTP twin of GENUI_RELAY_URL is what a
+// pinned via MIRAFOLD_RELAY_CODE); its HTTP twin of MIRAFOLD_RELAY_URL is what a
 // phone's browser opens. Local viewports get both in the hello so the shell
 // can draw the "connect a device" QR (R.4) — remote viewports never do.
-const RELAY_URL = process.env.GENUI_RELAY_URL;
+const RELAY_URL = process.env.MIRAFOLD_RELAY_URL;
 let RELAY_CODE: string | undefined;
 if (RELAY_URL) {
-  const { code, weakPin } = resolvePairingCode(process.env.GENUI_RELAY_CODE);
+  const { code, weakPin } = resolvePairingCode(process.env.MIRAFOLD_RELAY_CODE);
   if (weakPin) {
     // Refusing beats honoring: a guessable code is remote shell access for
     // whoever guesses it, and the minted fallback keeps the relay usable.
     console.warn(
-      `[relay] GENUI_RELAY_CODE is shorter than ${MIN_PAIRING_CODE_LENGTH} chars and was REFUSED — ` +
+      `[relay] MIRAFOLD_RELAY_CODE is shorter than ${MIN_PAIRING_CODE_LENGTH} chars and was REFUSED — ` +
         `a guessable pairing code hands remote shell access to whoever guesses it. ` +
         `Using a freshly minted code instead (printed below).`,
     );
@@ -220,7 +220,7 @@ const listen = (port: number) => {
     // The token rides the URL so the launcher opens an authenticated page; the
     // browser trades it for the cookie on first load (see the auth block above).
     const url = `http://127.0.0.1:${port}/${AUTH_ENABLED ? `?token=${AUTH_TOKEN}` : ""}`;
-    console.log(`[genui-shell] v${VERSION} — server on ${url} (ws at /ws)`);
+    console.log(`[mirafold] v${VERSION} — server on ${url} (ws at /ws)`);
   };
   const onBusy = (err: NodeJS.ErrnoException) => {
     // The stale "listening" callback must go with the failed attempt, or the
@@ -228,7 +228,7 @@ const listen = (port: number) => {
     // claims "server on" ports we never bound — a line users copy (R.4b).
     server.removeListener("listening", onListening);
     if (err.code === "EADDRINUSE" && port - basePort < 20) {
-      console.log(`[genui-shell] :${port} busy — trying :${port + 1}`);
+      console.log(`[mirafold] :${port} busy — trying :${port + 1}`);
       listen(port + 1);
     } else throw err;
   };
@@ -242,7 +242,7 @@ listen(basePort);
 // the daemon never opens a listening port for remote access. The pairing code
 // is the root of trust for that path: printed here and shown as the R.4 QR,
 // nowhere else — R.3 derives the E2E keys from it, and only its hash reaches
-// the relay. Off unless GENUI_RELAY_URL is set.
+// the relay. Off unless MIRAFOLD_RELAY_URL is set.
 if (RELAY_URL && RELAY_CODE) {
   startRelayClient({ url: RELAY_URL, code: RELAY_CODE, registry });
   console.log(

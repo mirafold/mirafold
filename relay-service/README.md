@@ -88,7 +88,7 @@ npm run dev          # tsx, from source
 npm run build && npm start
 ```
 
-Point a daemon at it: `GENUI_RELAY_URL=ws://localhost:8080 genui-shell`.
+Point a daemon at it: `MIRAFOLD_RELAY_URL=ws://localhost:8080 genui-shell`.
 
 ## Deploy (Fly.io)
 
@@ -101,6 +101,6 @@ fly deploy
 fly certs add relay.your-domain.example
 ```
 
-Then `GENUI_RELAY_URL=wss://relay.your-domain.example`. See `fly.toml` for the
+Then `MIRAFOLD_RELAY_URL=wss://relay.your-domain.example`. See `fly.toml` for the
 single-instance config and the health check. Keep `auto_stop_machines = false`:
 a stopped machine drops every live pairing.

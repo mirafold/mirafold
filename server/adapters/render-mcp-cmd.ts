@@ -8,7 +8,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 /** The server name the adapters register the render MCP under — it's how
  *  their event streams recognize our tool calls among the agent's own. */
-export const GENUI_MCP = "genui";
+export const MIRAFOLD_MCP = "mirafold";
 
 /** render_* tool name → the registry component a call to it paints. */
 export const RENDER_TOOL_COMPONENT: Record<string, ComponentName> = {
@@ -25,10 +25,10 @@ export const RENDER_TOOL_COMPONENT: Record<string, ComponentName> = {
 export const RENDER_ID_RE = /id:\s*([0-9a-fA-F-]{8,})/;
 
 /**
- * The render/artifact WireMsg a genui MCP tool call stands for (P.3/P.5):
+ * The render/artifact WireMsg a Mirafold MCP tool call stands for (P.3/P.5):
  * the stub only validated the args and returned the id — the adapter watching
  * the agent's own event stream paints the message here. Returns null for an
- * unknown genui tool (ignore rather than paint junk).
+ * unknown Mirafold MCP tool (ignore rather than paint junk).
  */
 export function generativeUIMsg(
   tool: string,

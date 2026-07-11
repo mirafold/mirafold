@@ -81,11 +81,11 @@ export function Shell() {
   // index.html applies the stored choice before first paint (no flash) and
   // this keeps the attribute + storage in sync on toggle.
   const [theme, setTheme] = useState<"dark" | "light">(() =>
-    localStorage.getItem("genui-theme") === "light" ? "light" : "dark",
+    localStorage.getItem("mirafold-theme") === "light" ? "light" : "dark",
   );
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    localStorage.setItem("genui-theme", theme);
+    localStorage.setItem("mirafold-theme", theme);
   }, [theme]);
 
   const bus = useMemo(() => {
@@ -281,10 +281,10 @@ export function Shell() {
     const state = asks.length > 0 ? "permission" : busy ? "busy" : "idle";
     document.title =
       state === "permission"
-        ? "⚠ permission — genui-shell"
+        ? "⚠ permission — Mirafold"
         : state === "busy"
-          ? "✳ working — genui-shell"
-          : "genui-shell";
+          ? "✳ working — Mirafold"
+          : "Mirafold";
     const canvas = document.createElement("canvas");
     canvas.width = canvas.height = 32;
     const ctx = canvas.getContext("2d");
@@ -378,7 +378,7 @@ export function Shell() {
             {meta.agent && connectHint(meta.agent) && (
               <>
                 {" · to connect "}
-                {agentLabel(meta.agent)}: {connectHint(meta.agent)}, then restart genui-shell
+                {agentLabel(meta.agent)}: {connectHint(meta.agent)}, then restart Mirafold
               </>
             )}
           </span>

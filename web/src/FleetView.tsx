@@ -70,7 +70,7 @@ export function FleetView() {
   }, [socket]);
 
   useEffect(() => {
-    document.title = "genui-shell — sessions";
+    document.title = "Mirafold — sessions";
   }, []);
 
   const commitRename = (id: string, name: string) => {
@@ -96,7 +96,7 @@ export function FleetView() {
       )}
       <header className="fleet-head">
         <span className="glyph">❯</span>
-        <h1 className="fleet-title">genui-shell</h1>
+        <h1 className="fleet-title">Mirafold</h1>
         <span className={`sb-dot ${connected ? "sb-dot-on" : "sb-dot-off"}`} />
         <span className="fleet-count">
           {sessions === null ? "connecting…" : `${sessions.length} session${sessions.length === 1 ? "" : "s"}`}

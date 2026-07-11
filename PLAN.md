@@ -283,7 +283,7 @@ notifications are **not** part of the launch and are not sold until built.
     code" (the v1 string is baked into key derivation — a clean break by
     construction) — worth one line in the relay's error surface.
     (Daemon-side guards from the same audit already landed, 2026-07-07:
-    weak pinned GENUI_RELAY_CODE refused at startup — min 16 chars, minted
+    weak pinned MIRAFOLD_RELAY_CODE refused at startup — min 16 chars, minted
     fallback — and relay-client caps + idle-reaps remote viewports:
     `MAX_REMOTE_VIEWPORTS`, `RELAY_VIEWPORT_IDLE_MS`.)
   - Done when: a phone on cellular (not the home wifi) drives a home mock
@@ -308,9 +308,37 @@ notifications are **not** part of the launch and are not sold until built.
     `server/relay-service.itest.ts` (9, Tier 2, real daemon ↔ real service) + the
     standalone 13-test suite + the live smoke.
   - **Owed to close the box (all non-code, Kyle's):** (1) a credit card on Fly —
-    the trial stops machines after ~5 min idle; (2) an owned domain +
-    `fly certs add relay.<domain>` + `GENUI_RELAY_URL=wss://relay.<domain>` —
-    launch-gating, since installed daemons must bake OUR name, never `fly.dev`;
+    the trial stops machines after ~5 min idle; **DONE 2026-07-11: card added;
+    the `genui-relay` machine was restarted and is `started`/health-passing.**
+    (2) an owned domain + `fly certs add relay.<domain>` +
+    `MIRAFOLD_RELAY_URL=wss://relay.<domain>` — launch-gating, since installed
+    daemons must bake OUR name, never `fly.dev`. **DONE 2026-07-11 (infra):
+    `relay.mirafold.sh` is LIVE — A/AAAA at Namecheap → Fly, cert Issued, and
+    `scripts/smoke.mjs wss://relay.mirafold.sh` PASSES the full protocol (dial-in,
+    pair, byte-identical forward, 4003 refuse).** STILL OPEN (code, part of the
+    rename/R.5): nothing bakes a default relay URL yet — `server/index.ts` reads
+    `process.env.MIRAFOLD_RELAY_URL` and the relay is OFF when unset, so shipped
+    daemons don't yet point at `wss://relay.mirafold.sh` by default. Baking that
+    default is the intended design (daemon always knows the relay; the relay
+    enforces entitlement, R.5) but it turns the relay ON for everyone until R.5
+    gates it — do it as part of the rename + R.5, not a standalone hardcode.
+    **PRODUCT RENAMED 2026-07-11: genui-shell → `Mirafold`.** Domains
+    `mirafold.com` + `mirafold.sh` BOUGHT (Namecheap; `.com` canonical, `.sh`
+    for the `curl mirafold.sh | sh` install one-liner + `relay.mirafold.sh`).
+    The earlier `genui-shell.com` choice (2026-07-10) is SUPERSEDED: on review,
+    GENUI® being a live registered mark (General UI, LLC, USPTO ser. 88100880)
+    in the *agentic-coding software* field — Kyle's own catch — made the
+    same-industry relatedness too strong to keep any `genui`-led name; the
+    downside (a launch-timed C&D / npm-or-domain dispute, cost asymmetric and
+    correlated with success) outweighed the descriptive-use defense. `Mirafold`
+    is a coined word (mira = look/marvel; -fold = manifold/shaping) → clean
+    trademark slate (knockout search 2026-07-11: no registered/pending mark,
+    no competing product; only an unrelated origami-facade research project
+    and different-class marks Mifold/MiracleFold). Available on every channel
+    (.com/.sh/.dev/.io/.app, npm `mirafold`, GitHub `mirafold`/`mirafold-sh`).
+    **Still owed for the rename:** codebase/repo/npm/GitHub-org rename
+    genui-shell → mirafold; the vendored relay app is still `genui-relay` on
+    Fly (internal name — rename optional, not launch-gating).
     (3) the cellular-phone Done-when (an R.6 real-hardware check; also needs
     R.5's static origin). Deferred security-audit items: Finding #2 (viewport
     `Origin` allowlist) → R.5 (needs its domain); Finding #3 (pairId squat) → no
@@ -387,7 +415,7 @@ with it. Both sequence BEFORE R.5.**
 
 - [x] **Step R.4h — Protocol compat hardening** — done 2026-07-08; the Postel split (strict schemas at the source, tolerant `clientSchemas` at the client), tested ignore-unknown on both ends, raw-string fallback for unknown agent names. → PLAN-ARCHIVE.md.
 
-- [x] **Step R.4g — Supportability sweep** — done 2026-07-08; version everywhere (`--version`, boot line, hello, status bar, client skew log), timestamped error mirroring, `GENUI_DEBUG=1`, secret-scrub warnings, last-gasp crash handlers. → PLAN-ARCHIVE.md.
+- [x] **Step R.4g — Supportability sweep** — done 2026-07-08; version everywhere (`--version`, boot line, hello, status bar, client skew log), timestamped error mirroring, `MIRAFOLD_DEBUG=1`, secret-scrub warnings, last-gasp crash handlers. → PLAN-ARCHIVE.md.
 
 - [x] **Step R.4c — Resilience honesty** — done 2026-07-08; an explicit "that session ended — started a new one" notice replaces the silent URL swap, and busy/stop clears on a mid-turn daemon drop. → PLAN-ARCHIVE.md.
 
@@ -400,13 +428,23 @@ with it. Both sequence BEFORE R.5.**
 - [x] **Step R.4k — Onboarding honesty + local-model discoverability** — done 2026-07-10; live-row endpoint/model `detail`, a named local-model signpost under the picker, where-to-get-it credential links, and the Codex subscription "could change" disclosure. Verified Tier 1 + Tier 3. → PLAN-ARCHIVE.md.
 
 - [ ] **Step R.5 — Entitlement + billing** *(needs Kyle: Stripe account +
-  price confirmation — BUSINESS.md §7 says $12/mo · $99/yr)*
+  price confirmation — BUSINESS.md §7 says $12/mo · $99/yr, held over
+  $10/$79.99 on 2026-07-11)*
   - Goal: paying unlocks the relay, on launch day, with almost nothing
     standing between "want" and "paid."
   - Build: Stripe Checkout → a relay entitlement token; the relay admits
     daemon pairings only with an active entitlement (the *relay* checks
     entitlement — the daemon and wire protocol stay payment-ignorant);
-    graceful expiry/renewal. A minimal landing page (demo GIF, install
+    graceful expiry/renewal. **Trial & cancellation (settled 2026-07-11,
+    BUSINESS §7):** card-required 7-day free trial via Stripe
+    `trial_period_days = 7` (card captured, not charged), on both the monthly
+    and annual price — the entitlement check admits pairings when the
+    subscription status is `trialing` OR `active`. Cancel-anytime with **no
+    refund**: set `cancel_at_period_end = true` so access holds through the
+    already-paid period then lapses (no proration). **No 30-day money-back
+    guarantee** — deliberately rejected (the trial covers try-before-buy;
+    a guarantee would re-add refund fees + a `charge.refunded`-revoke path).
+    A minimal landing page (demo GIF, install
     command, buy button, docs links) on the R.2 domain. Also (2026-07-08
     operability review): a stranger-facing top section on README.md itself —
     install, GIF, what it is, then "engineering docs below" — because the
@@ -471,7 +509,7 @@ with it. Both sequence BEFORE R.5.**
     - [x] GitHub issue template (`.github/ISSUE_TEMPLATE/bug_report.md`)
       leading with the SCRUB-two-secrets warning (`?token=` URL + relay
       pairing code) before any log paste; asks for `--version` and
-      `GENUI_DEBUG=1`.
+      `MIRAFOLD_DEBUG=1`.
     - [x] Secrets sweep of the repo (relay-service included): `.env`
       gitignored + untracked; no secret-shaped strings in tracked files
       (only doc prose + the deliberate `OPENAI_API_KEY=local` dummy).

@@ -107,7 +107,7 @@ export function StatusBar({
         </>
       )}
       {version && (
-        <span className="sb-item sb-sep sb-version" title="genui-shell daemon version">
+        <span className="sb-item sb-sep sb-version" title="Mirafold daemon version">
           v{version}
         </span>
       )}

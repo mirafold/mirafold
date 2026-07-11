@@ -37,7 +37,7 @@ export function Onboarding({
         <div className="onb-glyph">❯</div>
         <h1 className="onb-title">Choose your agent</h1>
         <p className="onb-sub">
-          genui-shell re-skins the terminal agent you already use — faithfully, with
+          Mirafold re-skins the terminal agent you already use — faithfully, with
           a richer view on top.
         </p>
         <label className="onb-cwd-label" htmlFor="onb-cwd">

@@ -22,7 +22,7 @@ export type Daemon = {
  * Start `server/index.ts` with every provider credential forced EMPTY so
  * credential detection routes all agents to the MockSession — a set (even
  * empty) env var beats `.env` under process.loadEnvFile(), verified. No test
- * may ever reach a metered engine. GENUI_TOKEN defaults to disabled; auth
+ * may ever reach a metered engine. MIRAFOLD_TOKEN defaults to disabled; auth
  * tests pass their own.
  */
 export function startDaemon(env: Record<string, string> = {}): Promise<Daemon> {
@@ -41,9 +41,9 @@ export function startDaemon(env: Record<string, string> = {}): Promise<Daemon> {
       // point the check at an empty dir so a logged-in dev machine (the
       // usual case) still runs every test against the mock.
       CLAUDE_CONFIG_DIR: path.join(ROOT, "itest-no-claude-home"),
-      GENUI_TOKEN: "",
-      GENUI_RELAY_URL: "", // no dial-out unless a relay test asks for it
-      GENUI_RELAY_CODE: "",
+      MIRAFOLD_TOKEN: "",
+      MIRAFOLD_RELAY_URL: "", // no dial-out unless a relay test asks for it
+      MIRAFOLD_RELAY_CODE: "",
       // Random base + the daemon's own EADDRINUSE walk absorbs collisions
       // between parallel test files; the real port is read off stdout.
       PORT: String(3900 + Math.floor(Math.random() * 90)),

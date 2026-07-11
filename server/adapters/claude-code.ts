@@ -96,7 +96,7 @@ export class ClaudeCodeSession implements AgentSession {
     return this.modelLabel;
   }
 
-  // `engine` is the test seam (like Codex's thread swap / GENUI_GEMINI_BIN):
+  // `engine` is the test seam (like Codex's thread swap / MIRAFOLD_GEMINI_BIN):
   // query() spawns the real CLI at construction, so tests must inject a
   // scripted stand-in here — there is no later moment to swap it.
   constructor(opts?: { workspaceDir?: string; model?: string; engine?: typeof query }) {
@@ -111,7 +111,7 @@ export class ClaudeCodeSession implements AgentSession {
         cwd: workspaceDir,
         canUseTool: makeCanUseTool(workspaceDir, this.ask),
         // settingSources is intentionally UNSET so it matches the CLI default
-        // (user + project + local). genui-shell is a different *view* of the
+        // (user + project + local). Mirafold is a different *view* of the
         // terminal, so a user's own Claude Code config must apply here exactly
         // as it does there — their settings.json permission allowlists and deny
         // rules, their CLAUDE.md, their memory. Switching from the terminal to
@@ -122,9 +122,9 @@ export class ClaudeCodeSession implements AgentSession {
         // mistook the terminal's own behavior for a threat. (`canUseTool` still
         // runs for anything the user's rules don't already decide.)
         includePartialMessages: true, // gives us token-level text deltas
-        // R.4g: GENUI_DEBUG=1 surfaces the engine's own stderr (the SDK
+        // R.4g: MIRAFOLD_DEBUG=1 surfaces the engine's own stderr (the SDK
         // swallows it otherwise) — where a bad key or dead CLI explains itself.
-        ...(process.env.GENUI_DEBUG
+        ...(process.env.MIRAFOLD_DEBUG
           ? {
               stderr: (data: string) =>
                 console.error(`[${new Date().toISOString()}] [debug claude-code stderr] ${data}`),

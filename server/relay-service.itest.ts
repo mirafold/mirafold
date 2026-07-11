@@ -37,8 +37,8 @@ const waitForLog = (re: RegExp, ms = 10_000, dm?: Daemon) => waitForLogH(re, ms,
 before(async () => {
   relay = await startRelay({ host: "127.0.0.1" });
   d = await startDaemon({
-    GENUI_RELAY_URL: `ws://127.0.0.1:${relay.port}`,
-    GENUI_RELAY_CODE: CODE,
+    MIRAFOLD_RELAY_URL: `ws://127.0.0.1:${relay.port}`,
+    MIRAFOLD_RELAY_CODE: CODE,
   });
   await waitForLog(/\[relay\] paired/);
 });
@@ -124,8 +124,8 @@ test("the global connection cap refuses upgrades past the ceiling", async () => 
   // Own relay+daemon so the tiny cap can't disturb the shared pairing.
   const r = await startRelay({ host: "127.0.0.1", maxConnections: 2 });
   const dd = await startDaemon({
-    GENUI_RELAY_URL: `ws://127.0.0.1:${r.port}`,
-    GENUI_RELAY_CODE: CODE,
+    MIRAFOLD_RELAY_URL: `ws://127.0.0.1:${r.port}`,
+    MIRAFOLD_RELAY_CODE: CODE,
   });
   try {
     await waitForLog(/\[relay\] paired/, 10_000, dd); // daemon = conn #1
@@ -142,8 +142,8 @@ test("the global connection cap refuses upgrades past the ceiling", async () => 
 test("the per-pair viewport cap refuses extra viewports on one pair", async () => {
   const r = await startRelay({ host: "127.0.0.1", maxViewportsPerPair: 1 });
   const dd = await startDaemon({
-    GENUI_RELAY_URL: `ws://127.0.0.1:${r.port}`,
-    GENUI_RELAY_CODE: CODE,
+    MIRAFOLD_RELAY_URL: `ws://127.0.0.1:${r.port}`,
+    MIRAFOLD_RELAY_CODE: CODE,
   });
   try {
     await waitForLog(/\[relay\] paired/, 10_000, dd);
@@ -164,8 +164,8 @@ test("a frame flood past the rate limit drops that connection", async () => {
     rateWindowMs: 1000,
   });
   const dd = await startDaemon({
-    GENUI_RELAY_URL: `ws://127.0.0.1:${r.port}`,
-    GENUI_RELAY_CODE: CODE,
+    MIRAFOLD_RELAY_URL: `ws://127.0.0.1:${r.port}`,
+    MIRAFOLD_RELAY_CODE: CODE,
   });
   try {
     await waitForLog(/\[relay\] paired/, 10_000, dd);
@@ -183,8 +183,8 @@ test("a frame flood past the rate limit drops that connection", async () => {
 test("the heartbeat reaper does not kill a healthy connection", async () => {
   const r = await startRelay({ host: "127.0.0.1", heartbeatMs: 150 });
   const dd = await startDaemon({
-    GENUI_RELAY_URL: `ws://127.0.0.1:${r.port}`,
-    GENUI_RELAY_CODE: CODE,
+    MIRAFOLD_RELAY_URL: `ws://127.0.0.1:${r.port}`,
+    MIRAFOLD_RELAY_CODE: CODE,
   });
   try {
     await waitForLog(/\[relay\] paired/, 10_000, dd);

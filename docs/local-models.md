@@ -1,9 +1,9 @@
-# Local models — run genui-shell with inference that never leaves your machine
+# Local models — run Mirafold with inference that never leaves your machine
 
-**Local isn't a genui-shell feature; it's a property of the agent.** genui-shell
+**Local isn't a Mirafold feature; it's a property of the agent.** Mirafold
 is a faithful re-skin of the terminal agent you already use, and it inherits
 that agent's configuration untouched — so if *your agent* points at a local
-inference server, your genui-shell session is fully local. There is no proxy,
+inference server, your Mirafold session is fully local. There is no proxy,
 no shim, and nothing genui-specific to configure: you set the agent up exactly
 as you would for the terminal, and the browser skin follows.
 
@@ -23,7 +23,7 @@ below use [Ollama](https://ollama.com); LM Studio and vLLM notes follow.
 ## Path A — Claude Code against Ollama (the fastest fully-local path)
 
 Since v0.14.0, Ollama serves [Anthropic's Messages API](https://docs.ollama.com/api/anthropic-compatibility),
-so Claude Code — and therefore genui-shell's Claude Code adapter, which drives
+so Claude Code — and therefore Mirafold's Claude Code adapter, which drives
 the same engine — can run against a local model with two environment variables.
 
 1. Install Ollama and pull a coding model (see the [model table](#choosing-a-model)
@@ -43,20 +43,20 @@ printf 'FROM qwen3-coder\nPARAMETER num_ctx 32768\n' > /tmp/Modelfile
 ollama create qwen3-coder-32k -f /tmp/Modelfile
 ```
 
-3. Launch genui-shell with the Anthropic endpoint pointed at Ollama:
+3. Launch Mirafold with the Anthropic endpoint pointed at Ollama:
 
 ```sh
 export ANTHROPIC_BASE_URL=http://localhost:11434
 export ANTHROPIC_AUTH_TOKEN=ollama
 export DEFAULT_MODEL=qwen3-coder-32k
-genui-shell
+mirafold
 ```
 
 (`ANTHROPIC_AUTH_TOKEN` is required by the client but ignored by Ollama — any
 non-empty value works. In a clone instead of the installed CLI, put the same
 three lines in `.env` and run `yarn dev`.)
 
-That's it. genui-shell counts a set `ANTHROPIC_BASE_URL` as "this agent is
+That's it. Mirafold counts a set `ANTHROPIC_BASE_URL` as "this agent is
 configured" (exactly so that local setups don't fall back to the API-free mock),
 so onboarding shows Claude Code as live, and every token of inference stays on
 your machine.
@@ -76,7 +76,7 @@ Two things to know first:
   server must offer `/v1/responses`. Ollama and LM Studio do; vLLM does for
   supported models, depending on your deployment.
 - Make the local provider the **top-level default** in `config.toml` (not a
-  `--profile` you pass on the command line): genui-shell spawns Codex through
+  `--profile` you pass on the command line): Mirafold spawns Codex through
   its SDK and inherits your config defaults, but never passes CLI flags like
   `--oss` or `--profile`.
 
@@ -96,28 +96,28 @@ For LM Studio, use `base_url = "http://localhost:1234/v1"`; for vLLM,
 `base_url = "http://localhost:8000/v1"` (and confirm your vLLM serves the
 Responses API for your model).
 
-2. Tell genui-shell the agent is configured. genui-shell decides live-vs-mock
+2. Tell Mirafold the agent is configured. Mirafold decides live-vs-mock
    for Codex by looking for an `OPENAI_API_KEY` or a `codex login` — it can't
    yet see a config-file-only local provider — so give it any non-empty key:
 
 ```sh
 export OPENAI_API_KEY=local
-genui-shell
+mirafold
 ```
 
 The value never reaches your local server (Codex ignores OpenAI auth once
-`model_provider` points elsewhere); it only flips genui-shell's "configured"
+`model_provider` points elsewhere); it only flips Mirafold's "configured"
 signal. This wart is scheduled to disappear in PLAN Step L.2 (`--local`
 detection).
 
 3. Verify in the terminal first if anything misbehaves: plain `codex` in the
-   same directory should chat with your local model. If it does and genui-shell
-   doesn't, that's a genui-shell bug — please report it.
+   same directory should chat with your local model. If it does and Mirafold
+   doesn't, that's a Mirafold bug — please report it.
 
 ## Choosing a model
 
 Local coding agents live and die on two axes: **tool-calling reliability** and
-**context length**. Rough guidance, not a gate — genui-shell will run whatever
+**context length**. Rough guidance, not a gate — Mirafold will run whatever
 your agent runs:
 
 | Model | Size | Needs (roughly) | Verdict for agent work |
@@ -152,10 +152,10 @@ as an experiment with small models, and use a ≥16–24 GB GPU for real work.
 Ollama's prompt prefix cache makes each retry resume where the last stopped,
 so long prefills still converge.)
 
-**What "degrades gracefully" means here.** genui-shell's generative UI rides on
+**What "degrades gracefully" means here.** Mirafold's generative UI rides on
 the agent's own tool calling (MCP). Big coding models use the `render_*` tools
 well; small or unusual models may call them with malformed arguments, loop, or
-ignore them. genui-shell is built for that: a malformed render instruction
+ignore them. Mirafold is built for that: a malformed render instruction
 degrades to a quiet warning plus the raw content as styled text (README §6.3) —
 you lose the chart, never the answer. We deliberately don't gate on a curated
 model list; this table is guidance from what we've seen work.

@@ -46,7 +46,7 @@ const waitForLog = (re: RegExp, timeoutMs = 10_000, daemon?: Daemon) =>
 
 before(async () => {
   stub = await startRelayStub({ tap });
-  d = await startDaemon({ GENUI_RELAY_URL: stub.url, GENUI_RELAY_CODE: CODE });
+  d = await startDaemon({ MIRAFOLD_RELAY_URL: stub.url, MIRAFOLD_RELAY_CODE: CODE });
   await waitForLog(/\[relay\] paired/);
 });
 after(async () => {
@@ -202,14 +202,14 @@ test("a second daemon dialing the same pair id is refused", async () => {
   assert.equal(code, CLOSE_CODE_TAKEN);
 });
 
-test("a weak pinned GENUI_RELAY_CODE is refused: the daemon mints and the weak code admits no one", async () => {
+test("a weak pinned MIRAFOLD_RELAY_CODE is refused: the daemon mints and the weak code admits no one", async () => {
   const stub2 = await startRelayStub();
   const d2 = await startDaemon({
-    GENUI_RELAY_URL: stub2.url,
-    GENUI_RELAY_CODE: "kyle123", // guessable — must never become the credential
+    MIRAFOLD_RELAY_URL: stub2.url,
+    MIRAFOLD_RELAY_CODE: "kyle123", // guessable — must never become the credential
   });
   try {
-    await waitForLog(/GENUI_RELAY_CODE .* REFUSED/, 10_000, d2);
+    await waitForLog(/MIRAFOLD_RELAY_CODE .* REFUSED/, 10_000, d2);
     await waitForLog(/\[relay\] paired/, 10_000, d2);
     const minted = d2.logs().match(/pairing code: (\S+)/)?.[1];
     assert.ok(minted && minted !== "kyle123" && minted.length >= 16);
@@ -231,8 +231,8 @@ test("the daemon refuses viewports past MAX_REMOTE_VIEWPORTS and frees slots on 
   // hostile relay announcing endless viewports must not grow daemon state.
   const stub2 = await startRelayStub();
   const d2 = await startDaemon({
-    GENUI_RELAY_URL: stub2.url,
-    GENUI_RELAY_CODE: CODE,
+    MIRAFOLD_RELAY_URL: stub2.url,
+    MIRAFOLD_RELAY_CODE: CODE,
     MAX_REMOTE_VIEWPORTS: "2",
   });
   try {
@@ -274,8 +274,8 @@ test("a handshaken viewport that goes silent is idle-reaped; an active one survi
   // is tuned down so the test proves both sides of the line quickly.
   const stub3 = await startRelayStub();
   const d3 = await startDaemon({
-    GENUI_RELAY_URL: stub3.url,
-    GENUI_RELAY_CODE: CODE,
+    MIRAFOLD_RELAY_URL: stub3.url,
+    MIRAFOLD_RELAY_CODE: CODE,
     RELAY_VIEWPORT_IDLE_MS: "1000",
   });
   try {
@@ -312,8 +312,8 @@ test("R.4i: a subscription-backed session is refused over the relay but served l
   writeFileSync(path.join(claudeDir, ".credentials.json"), "{}");
   const stub2 = await startRelayStub();
   const d2 = await startDaemon({
-    GENUI_RELAY_URL: stub2.url,
-    GENUI_RELAY_CODE: CODE,
+    MIRAFOLD_RELAY_URL: stub2.url,
+    MIRAFOLD_RELAY_CODE: CODE,
     CLAUDE_CONFIG_DIR: claudeDir,
   });
   try {

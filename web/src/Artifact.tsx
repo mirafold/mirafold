@@ -67,13 +67,13 @@ const ARTIFACT_BASE_CSS =
   "font-size:14px;background:#141a26;color:#e6e9ef;color-scheme:dark}";
 
 // First script in the document, closing over the per-mount nonce: the
-// genui bridge API, the error hook, and the liveness announce. Every
+// mirafold bridge API, the error hook, and the liveness announce. Every
 // outbound message is nonce-stamped; the host drops anything unstamped.
 function bootScript(nonce: string): string {
   return (
     `(function(){var N=${JSON.stringify(nonce)};var sent=false;` +
-    "function post(m){m.genui=1;m.nonce=N;try{parent.postMessage(m,'*')}catch(e){}}" +
-    "window.genui={" +
+    "function post(m){m.mirafold=1;m.nonce=N;try{parent.postMessage(m,'*')}catch(e){}}" +
+    "window.mirafold={" +
     "prompt:function(text){post({action:{kind:'prompt',text:String(text)}})}," +
     "tool:function(name,args){post({action:Object.assign({kind:'tool',name:String(name)},args===undefined?{}:{args:args})})}" +
     "};" +
@@ -114,7 +114,7 @@ type Failure = { kind: "crash"; message: string } | { kind: "navigation" };
 export function parseBridgeAction(data: unknown): Action | null {
   if (typeof data !== "object" || data === null) return null;
   const d = data as Record<string, unknown>;
-  if (d["genui"] !== 1) return null;
+  if (d["mirafold"] !== 1) return null;
   const a = d["action"];
   if (typeof a !== "object" || a === null) return null;
   const act = a as Record<string, unknown>;
@@ -184,7 +184,7 @@ export function Artifact({
       if (e.source !== frameRef.current?.contentWindow) return;
       if (e.origin !== "null") return;
       const data = e.data as Record<string, unknown> | null;
-      if (!data || data["genui"] !== 1 || data["nonce"] !== nonce) return;
+      if (!data || data["mirafold"] !== 1 || data["nonce"] !== nonce) return;
       if (data["artifactReady"] === true) {
         readyCount.current += 1;
         return;

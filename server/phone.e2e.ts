@@ -30,7 +30,7 @@ const noSideScroll = async (p: Page) => {
 
 before(async () => {
   stub = await startRelayStub();
-  d = await startDaemon({ GENUI_TOKEN: "", GENUI_RELAY_URL: stub.url, GENUI_RELAY_CODE: CODE });
+  d = await startDaemon({ MIRAFOLD_TOKEN: "", MIRAFOLD_RELAY_URL: stub.url, MIRAFOLD_RELAY_CODE: CODE });
   browser = await chromium.launch({ executablePath: CHROME });
 });
 after(async () => {

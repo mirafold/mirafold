@@ -11,13 +11,13 @@ import { fileURLToPath } from "node:url";
 // spawned with inherited stdio and no browser is running yet, the opener
 // BECOMES the browser and chatters into that terminal for its whole lifetime
 // (Chrome's `[pid:pid:…] ERROR:…` / TensorFlow Lite lines — seen in user
-// testing 2026-07-10, from a Chrome launched outside genui-shell). So this
+// testing 2026-07-10, from a Chrome launched outside Mirafold). So this
 // asserts the guarantee from inside the opener itself: a stub `xdg-open`
 // first on PATH records where its stdio really points and whether it was
 // detached into its own session.
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const LAUNCHER = path.join(ROOT, "bin", "genui-shell.js");
+const LAUNCHER = path.join(ROOT, "bin", "mirafold.js");
 const DAEMON = path.join(ROOT, "dist-server", "index.js");
 
 // /proc + xdg-open: the guarantee is per-platform code in openBrowser; this
@@ -39,7 +39,7 @@ fd1=$(readlink /proc/$$/fd/1)
 fd2=$(readlink /proc/$$/fd/2)
 sid=$(ps -o sid= -p $$ | tr -d " ")
 printf 'args=%s\\nfd0=%s\\nfd1=%s\\nfd2=%s\\npid=%s\\nsid=%s\\n' \\
-  "$*" "$fd0" "$fd1" "$fd2" "$$" "$sid" > "$GENUI_TEST_RECORD"
+  "$*" "$fd0" "$fd1" "$fd2" "$$" "$sid" > "$MIRAFOLD_TEST_RECORD"
 `,
   );
   chmodSync(path.join(tmp, "xdg-open"), 0o755);
@@ -53,7 +53,7 @@ printf 'args=%s\\nfd0=%s\\nfd1=%s\\nfd2=%s\\npid=%s\\nsid=%s\\n' \\
     env: {
       ...process.env,
       PATH: `${tmp}:${process.env.PATH}`,
-      GENUI_TEST_RECORD: record,
+      MIRAFOLD_TEST_RECORD: record,
       // Same forced-empty credentials as the Tier-2 harness: no test may ever
       // reach a metered engine, even though this one never creates a session.
       ANTHROPIC_API_KEY: "",
@@ -64,9 +64,9 @@ printf 'args=%s\\nfd0=%s\\nfd1=%s\\nfd2=%s\\npid=%s\\nsid=%s\\n' \\
       GOOGLE_API_KEY: "",
       CODEX_HOME: path.join(ROOT, "itest-no-codex-home"),
       CLAUDE_CONFIG_DIR: path.join(ROOT, "itest-no-claude-home"),
-      GENUI_TOKEN: "",
-      GENUI_RELAY_URL: "",
-      GENUI_RELAY_CODE: "",
+      MIRAFOLD_TOKEN: "",
+      MIRAFOLD_RELAY_URL: "",
+      MIRAFOLD_RELAY_CODE: "",
       PORT: String(3900 + Math.floor(Math.random() * 90)),
     },
   });

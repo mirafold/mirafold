@@ -61,7 +61,7 @@ function credentialKind(agent: AgentName): CredentialKind {
 
 /**
  * Which agent every session runs, resolved once from config — never
- * hardcoded. `GENUI_AGENT` names the terminal agent (default `claude-code`);
+ * hardcoded. `MIRAFOLD_AGENT` names the terminal agent (default `claude-code`);
  * when it has no credentials we run the `MockSession` stand-in instead
  * (API-free dev). Secrets stay in the environment, read per-adapter.
  */
@@ -71,7 +71,7 @@ export function resolveBackend(): Backend {
 
 /** The env-configured default agent — a pre-selection hint, never assumed. */
 export function defaultAgent(): AgentName {
-  const requested = process.env.GENUI_AGENT;
+  const requested = process.env.MIRAFOLD_AGENT;
   return requested === "codex" || requested === "gemini-cli" ? requested : "claude-code";
 }
 

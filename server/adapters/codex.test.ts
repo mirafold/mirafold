@@ -6,7 +6,7 @@ import { mkdtempSync } from "node:fs";
 import type { ThreadEvent } from "@openai/codex-sdk";
 import type { WireMsg } from "../protocol";
 import { CodexSession } from "./codex";
-import { GENUI_MCP } from "./render-mcp-cmd";
+import { MIRAFOLD_MCP } from "./render-mcp-cmd";
 
 // L.2b2: the Codex event→WireMsg mapping and the turn grammar, on synthetic
 // ThreadEvents — no engine, no network. The session is real; only its private
@@ -16,7 +16,7 @@ import { GENUI_MCP } from "./render-mcp-cmd";
 type Any = WireMsg & Record<string, any>;
 type Turn = ThreadEvent[] | ((signal: AbortSignal) => AsyncGenerator<ThreadEvent>);
 
-const tmp = mkdtempSync(path.join(os.tmpdir(), "genui-codex-test-"));
+const tmp = mkdtempSync(path.join(os.tmpdir(), "mcp-codex-test-"));
 const ev = (e: Record<string, unknown>) => e as unknown as ThreadEvent;
 
 /** A CodexSession on a stubbed thread; each pushPrompt consumes the next turn. */
@@ -167,14 +167,14 @@ test("failed command: isError; completion without a start still announces", asyn
   s.close();
 });
 
-test("genui MCP calls paint render/artifact, never tool rows; failures and unknowns are suppressed", async () => {
-  const genui = (tool: string, args: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
+test("mcp MCP calls paint render/artifact, never tool rows; failures and unknowns are suppressed", async () => {
+  const mcp = (tool: string, args: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
     ev({
       type: "item.completed",
       item: {
         type: "mcp_tool_call",
         id: `g-${tool}`,
-        server: GENUI_MCP,
+        server: MIRAFOLD_MCP,
         tool,
         arguments: args,
         status: "completed",
@@ -184,10 +184,10 @@ test("genui MCP calls paint render/artifact, never tool rows; failures and unkno
     });
   const { s, msgs, turnEnds, awaitTurnEnd } = makeSession([
     ev({ type: "turn.started" }),
-    genui("render_card", { title: "T", id: "keep-me" }),
-    genui("emit_artifact", { html: "<b>x</b>", title: "demo" }),
-    genui("render_table", { columns: ["a"] }, { status: "failed" }),
-    genui("render_bogus", {}),
+    mcp("render_card", { title: "T", id: "keep-me" }),
+    mcp("emit_artifact", { html: "<b>x</b>", title: "demo" }),
+    mcp("render_table", { columns: ["a"] }, { status: "failed" }),
+    mcp("render_bogus", {}),
     ev({ type: "turn.completed", usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1, reasoning_output_tokens: 0 } }),
   ]);
   s.pushPrompt("go");

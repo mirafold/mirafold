@@ -15,7 +15,7 @@ let browser: Browser;
 let page: Page;
 
 before(async () => {
-  d = await startDaemon({ GENUI_TOKEN: "" });
+  d = await startDaemon({ MIRAFOLD_TOKEN: "" });
   browser = await chromium.launch({ executablePath: CHROME });
   page = await browser.newPage();
 });
@@ -44,7 +44,7 @@ test("mid-turn daemon death clears the working state; restart shows the notice",
 
   // Restart on the same port. The client reconnects, asks for the old id,
   // and must be TOLD it got a fresh session: notice up, URL moved on.
-  d = await startDaemon({ GENUI_TOKEN: "", PORT: String(port) });
+  d = await startDaemon({ MIRAFOLD_TOKEN: "", PORT: String(port) });
   assert.equal(d.port, port, "restart re-bound a different port; test cannot proceed");
   await page.waitForSelector(".session-notice", { timeout: 30_000 });
   const notice = await page.locator(".session-notice").innerText();

@@ -5,7 +5,7 @@
 
 import { timingSafeEqual } from "node:crypto";
 
-export const COOKIE_NAME = "genui_token";
+export const COOKIE_NAME = "mirafold_token";
 
 /**
  * Constant-time token comparison. A plain `===` on a secret can leak it one

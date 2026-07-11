@@ -389,7 +389,7 @@ export function RenderZone({
             <div className="zone-empty-glyph">❯</div>
             <div className="zone-empty-title">Hello 👋</div>
             <div className="zone-empty-sub">
-              You're in a genui-shell session. Type a prompt below to get started.
+              You're in a Mirafold session. Type a prompt below to get started.
             </div>
           </div>
         )}
