@@ -695,13 +695,15 @@ touching the socket. `state` actions (pin/unpin) are handled inside the zone;
 `prompt` and `tool` actions go up through the shell's `sendAction` and
 round-trip via the server (§5.4).
 
-**Pinning (Step 1.6):** every rendered block gets a shell-drawn 📌 on hover.
-Pinning promotes it to a right-side dock (`PinDock.tsx`) and leaves a dashed
-stub holding its place in history; the dock collapses to a thin edge tab and
-dissolves when the last pin is removed. Pin state is pure output-zone state
-(`renderIds` in pin order) — no wire changes — and the dock renders the same
-entry objects the transcript holds, so update-in-place keeps pinned
-components live for free.
+**Pinning (Step 1.6):** every rendered block gets a shell-drawn pin — a
+hover 📌 over registry components, a control in the artifact's chrome bar
+(outside the iframe, same trust rule as the badge). Pinning promotes the
+block to a right-side dock (`PinDock.tsx`) and leaves a dashed stub holding
+its place in history; the dock collapses to a thin edge tab and dissolves
+when the last pin is removed. Pin state is pure output-zone state (wire ids,
+render or artifact, in pin order) — no wire changes — and the dock renders
+the same entry objects the transcript holds, so update-in-place keeps pinned
+blocks live for free.
 
 Assistant turns render through `react-markdown` + `remark-gfm` (tables,
 task lists) + `rehype-highlight` (fenced code), with links forced to open

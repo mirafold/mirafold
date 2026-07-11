@@ -747,6 +747,69 @@ shows which matter — not a launch prerequisite.
 
 ---
 
+## Stretch goals (unscheduled — polish, no milestone gates on these)
+
+Pick one up only when the phases above are quiet.
+
+**Chart-vocabulary investigation (2026-07-10).** A session prompt asked for a
+pie chart; the registry `chart` only knows `line | bar`, so the agent fell
+back to a sandboxed artifact — correct behavior, but heavier (iframe), outside
+the theme tokens, and outside the registry's palette/interaction rules. Survey
+of the remaining gaps, ranked by how likely a coding-agent session is to hit
+them:
+
+| data shape the agent can't express | today | fill |
+| --- | --- | --- |
+| part-of-whole (language mix, pass/fail split) | artifact fallback | `kind: "pie"` → S.1 |
+| composition over an axis (tokens by model per day) | grouped bars only | `stacked?: boolean` on bar → S.2 |
+| long category labels (file paths, test names) | 12-char x-label truncation | `horizontal?: boolean` bars → S.2 |
+| distribution (latency histogram) | agent must think to pre-bin | no new kind — teach pre-binning in the bar `.describe()` → S.2 |
+| single KPI (coverage %, p95, session cost) | prose in a `card` | new `stat` registry component → S.3 |
+| paired numerics / correlation (scatter) | none | defer: needs a numeric-x data shape, rare in-domain — revisit on demand |
+| matrix shading (heatmap) | plain `table` | defer with scatter |
+
+Wire-contract check (all additive, nothing reshapes): new *optional props*
+(`stacked`, `horizontal`) strip silently on older clients — the R.4h tolerant
+schemas' ideal degradation; a new *`kind` enum value* fails an old client's
+parse into the Step 1.4 raw-props fallback — legible, and the designed path.
+
+- [ ] **Step S.1 — `chart` kind: pie (donut)**
+  - Goal: a proportions ask renders as a native, theme-tokened chart — never
+    an artifact fallback.
+  - Build: add `pie` to the `kind` enum. Mapping: `x` = slice names,
+    `series[0].values` = slice values (validate exactly 1 series for pie);
+    fold slices past 6 into "other" so the fixed-slot palette (slot order is
+    the CVD mechanism — never cycle) always suffices. Donut rendering with
+    direct labels + hover tooltip (the ≥2-encodings rule). Read the dataviz
+    skill before writing the renderer, as Chart.tsx did.
+  - Files: `server/registry-spec.ts`, `web/src/registry/Chart.tsx` (+
+    `Chart.test.ts`, `registry-spec.test.ts`, an `app.e2e.ts` mock turn).
+  - Done when: a mock-session prompt for a pie renders a donut in the output
+    zone in both themes, and a malformed pie (e.g. 2 series) degrades into
+    the raw-props fallback, observed in headless Chrome.
+
+- [ ] **Step S.2 — chart ergonomics: `stacked`, `horizontal`, histogram hint**
+  - Goal: composition and long-label asks stop degrading (cramped grouped
+    bars, truncated labels).
+  - Build: optional `stacked` (bar → cumulative segments) and `horizontal`
+    (bars grow rightward; y carries the category labels untruncated) props;
+    extend the bar `.describe()` to tell the agent to pre-bin distributions
+    into bar buckets.
+  - Done when: stacked and horizontal mock turns render correctly, and an
+    old-client simulation (parse through yesterday's tolerant schema) shows
+    the props stripping to a plain grouped/vertical bar, not a fallback.
+
+- [ ] **Step S.3 — `stat` registry component (KPI tile)**
+  - Goal: single-number answers (coverage %, p95 ms, cost) get a glanceable
+    tile instead of a sentence in a `card` — the natural pin-dock resident.
+  - Build: new registry entry `stat`: `label`, `value` (string — the agent
+    formats units), optional `delta` (+/- with good/bad direction), optional
+    `footer`; follows the dataviz stat-tile guidance.
+  - Done when: a mock turn renders the tile, it pins to the dock, and an
+    update-in-place re-send (same wire id) changes the value live.
+
+---
+
 ## Conventions
 
 - TypeScript everywhere; yarn for all package operations.
