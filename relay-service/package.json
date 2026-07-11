@@ -2,7 +2,7 @@
   "name": "genui-relay",
   "version": "0.1.0",
   "private": true,
-  "description": "The genui-shell hosted relay — a dumb, E2E-blind WebSocket forwarder that pairs a local daemon with remote browser viewports.",
+  "description": "The Mirafold hosted relay — a dumb, E2E-blind WebSocket forwarder that pairs a local daemon with remote browser viewports.",
   "license": "UNLICENSED",
   "type": "module",
   "engines": {

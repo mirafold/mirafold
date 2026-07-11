@@ -15,7 +15,7 @@ export default defineConfig({
   server: {
     // #1/#4: open the dev UI on launch so there's no manual address entry. This
     // is the :5173 URL a developer actually uses (the daemon serves :3000; the
-    // installed `genui-shell` CLI opens that one itself in bin/). Vite spawns the
+    // installed `mirafold` CLI opens that one itself in bin/). Vite spawns the
     // browser detached, so its logs never bleed into the terminal. Opt out with
     // MIRAFOLD_NO_OPEN=1 (CI, a second terminal, an already-open tab).
     open: !process.env.MIRAFOLD_NO_OPEN,
