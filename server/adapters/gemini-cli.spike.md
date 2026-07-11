@@ -8,7 +8,7 @@ optional-feature rule (capabilities an agent lacks simply don't appear).
 
 Like Codex, Gemini CLI is drivable as its **own engine** with a streamed JSONL
 event feed and native MCP injection, so a Gemini session normalizes to `WireMsg`
-and carries genui-shell's generative UI **without** a homegrown loop or a
+and carries Mirafold's generative UI **without** a homegrown loop or a
 request-path proxy. One adapter behind `createSession()`, same as `claude-code`
 and `codex`. No shared code needs a Gemini branch.
 

@@ -1,4 +1,4 @@
-# genui-shell — Business Plan
+# Mirafold — Business Plan
 
 *Drafted 2026-07-04. Companion to PLAN.md (the build plan). This document is
 the honest version — assumptions are labeled, risks are ranked, and the
@@ -20,7 +20,7 @@ watch it update, supervise from anywhere — while the full agentic engine
 
 **Beachhead:** developers who already run terminal agents daily and profitably
 — **whichever agent they use** (Claude Code, Codex, Gemini CLI, one on a local
-model, …). genui-shell faithfully re-skins whatever terminal agent they already
+model, …). Mirafold faithfully re-skins whatever terminal agent they already
 use (§4.5, PLAN Phase P), so the beachhead is not "Claude users" but "anyone
 living in a terminal agent, whichever one." Characteristics:
 
@@ -55,7 +55,7 @@ devices. Why they're first, not just included:
 (added 2026-07-10).** A provider-terms review confirmed the closed providers
 restrict third-party subscription use: Anthropic and Google prohibit driving a
 subscription/OAuth login from another app entirely, and OpenAI permits it only
-for free local use, never a paid relay. genui-shell enforces this in code
+for free local use, never a paid relay. Mirafold enforces this in code
 (`server/provider-policy.ts`, PLAN R.4i) — a Claude/Gemini subscription is
 refused with an API-key pointer, and no subscription is driven over the relay.
 This *sharpens* the first target rather than shrinking it: the API-key cohort is
@@ -79,7 +79,7 @@ incumbent UI. Enter through the door nobody guards.
 
 **Wedge 1 — Mission control for your agents (launch wedge).**
 Same audience, unserved job. Power users increasingly run several
-sessions/loops/cron agents at once. genui-shell's primitives map exactly:
+sessions/loops/cron agents at once. Mirafold's primitives map exactly:
 multi-session (Phase 4.2) + pin dock (Phase 1.6) + live re-render-by-id =
 a fleet view where each agent's status, current task, and key outputs are
 pinned, live widgets (PLAN Steps 4.2 + 4.6). The phone/tablet view of this
@@ -129,11 +129,11 @@ Ranked by durability (least → most durable):
    model." The platforms' hosted offerings can't match this posture — a lab's
    front end will never route to a local Llama — so it's a structural
    advantage an indie has over them.
-5. **Agent neutrality — the structural moat, and the identity.** genui-shell is
+5. **Agent neutrality — the structural moat, and the identity.** Mirafold is
    a **faithful browser re-skin of whichever terminal agent you already use** —
    Claude Code, Codex (OpenAI), Gemini CLI, or one on a local model — each in
    its **own** skin, never homogenized (PLAN Phase P). A Codex user gets Codex
-   in the browser; a Claude Code user gets Claude Code; genui-shell's generative
+   in the browser; a Claude Code user gets Claude Code; Mirafold's generative
    UI rides on top of each. No lab's own front end can ever be neutral —
    Anthropic's will only ever skin Claude Code, OpenAI's only Codex — so being
    the single surface that faithfully skins *all* of them is the most durable
@@ -162,12 +162,12 @@ The product splits into three pieces with very different costs:
 └─ the engine (agent, bash, files) ── runs on the USER'S machine
 ```
 
-**Ship as a global install — `npm i -g genui-shell`, then `genui-shell` from
-any directory** (on PATH like `claude`/`codex`/`gemini`; `npx genui-shell` is
+**Ship as a global install — `npm i -g mirafold`, then `mirafold` from
+any directory** (on PATH like `claude`/`codex`/`gemini`; `npx mirafold` is
 the zero-install try path, `brew install` later). One command starts the local
 daemon (the existing `server/`) and opens the UI. Installing globally and
 running from wherever you are — not inside a project — is the whole point:
-genui-shell is your terminal agent with a better face, so it launches like one.
+Mirafold is your terminal agent with a better face, so it launches like one.
 Two modes:
 
 - **Free/local:** UI served from localhost. Full product, single machine.
@@ -235,7 +235,24 @@ Recognition-first, because first-mover value expires (§4.1):
   CloudCLI Cloud €7/mo, Omnara $9/mo — all for bare remote access. $12
   holds only if the tier is sold as the genUI experience anywhere (which
   none of them has), not as phone access (which the market zero-priced);
-  see the §8.3 amendment and the R.5 packaging check in PLAN.md.
+  see the §8.3 amendment and the R.5 packaging check in PLAN.md. **Prices
+  held at $12/$99 (2026-07-11):** $10/mo and $79.99/yr were considered and
+  rejected — at this cohort's $20–200/mo model spend the $2 cut buys no
+  conversion (both are impulse noise) while giving up ~17% per-sub revenue,
+  and $10 slides into Omnara's $9 "bare remote access" framing we're pricing
+  *away* from; $79.99/yr over-discounts to 44% off (vs the current healthy
+  2-months-free 31%) and its `.99` charm cheapens a premium dev add-on.
+- **Trial & cancellation (settled 2026-07-11):** **card-required 7-day free
+  trial** (Stripe `trial_period_days = 7` — card captured, not charged; access
+  gated on subscription status `trialing` OR `active`), applied to **both**
+  monthly and annual. **No 30-day money-back guarantee** — it was considered
+  and rejected: the trial already covers try-before-you-buy, and a guarantee
+  re-adds refund fees (Stripe keeps its ~2.9%+$0.30 fee on refunds), a
+  `charge.refunded`-revoke webhook, and a longer free-use/refund window for no
+  extra benefit. **Cancel anytime → no refund → access to period end** (Stripe
+  `cancel_at_period_end = true`; stays `active` through the paid period, then
+  lapses — no proration). On annual this means an unused-months forfeit, which
+  is exactly why the trial matters most before the $99 charge. See PLAN.md R.5.
 - **Relay rule: no vendor subscriptions (2026-07-10).** The Pro tier is remote
   access to sessions the user's own local daemon drives — on their own **API
   key OR a local/open model**, both welcome; only *vendor subscription auth* is
@@ -264,7 +281,7 @@ launch), and nothing here gates launch. The unifying thesis: sell what a
 ToS-risky ground (§2, §8.5). Revisit after launch signals read (§9).
 
 **Hosted inference tier (later, only if the core sells).** For the dead-end
-user — no API key, no local hardware — who still wants genui-shell. Structure:
+user — no API key, no local hardware — who still wants Mirafold. Structure:
 a **capped token bucket + markup**, metered/tiered, **never unlimited-flat**
 (coding is token-hungry; a flat plan lets power users bleed you — this is why
 §7's "never flat-fee bundled API usage" holds, and this tier is the *metered*
@@ -399,7 +416,7 @@ Each gate is a go/no-go with a measurable signal. Do not pass a gate on hope.
   "want." **Signal target: ≥ a few hundred genuine reactions / ≥ 50 GitHub
   stars in week one.** If flat when posted: the thesis needs work — iterate
   the demo, not the infra.
-- **M2 — OSS launch.** Repo public; `npm i -g genui-shell` then `genui-shell`
+- **M2 — OSS launch.** Repo public; `npm i -g mirafold` then `mirafold`
   works cold from any directory on a stranger's machine (packaging is PLAN Step
   4.10), **faithfully re-skinning more than one terminal agent by then (PLAN
   Phase P): a stranger who uses Codex, not Claude, gets Codex in the browser
@@ -447,7 +464,7 @@ them with data — that's what the gates are for.)*
 3. ~~Record the demo GIF.~~ Done (`demo/demo.gif`, embedded in README).
 4. ~~Decide the license; name-check + claim the npm name.~~ Done —
    **MIT** (settled 2026-07-05; daemon MIT, the paid relay is a separate
-   closed repo), `genui-shell` published/claimed on npm.
+   closed repo), `mirafold` published/claimed on npm.
 5. ~~Phase T (tool output → interrupt → permission prompts).~~ Done — and
    since then Phase 2 (actions), Phase 3 (sandboxed artifacts), and all of
    Phase T2 (full-stream visibility parity) plus the 4.1/4.2 session

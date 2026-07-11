@@ -1,9 +1,9 @@
 # CLAUDE.md
 
-genui-shell — a **faithful browser re-skin of terminal coding agents**. It
+Mirafold — a **faithful browser re-skin of terminal coding agents**. It
 re-skins whichever terminal agent you already use — **Claude Code, Codex, and
 Gemini CLI** all shipped (PLAN Phase P complete) — faithful to that agent, with
-genui-shell's generative UI layered on top — a Codex user gets Codex, never
+Mirafold's generative UI layered on top — a Codex user gets Codex, never
 "Claude things". One adapter per agent in `server/adapters/`, none privileged;
 the agent is picked per session at onboarding. Orientation lives in
 **README.md** (architecture, the two load-bearing contracts, conventions). What to build next lives in **PLAN.md** (work steps in order,
@@ -31,7 +31,7 @@ sequence, lives in **BUSINESS.md** (milestone gates).
   Phase 3 sandboxed iframe.
 - **Secrets stay server-side** — never serialize one into a `WireMsg`.
 - **Faithful skin per agent** (identity + core requirement, PLAN Phase P):
-  genui-shell re-skins each terminal agent faithfully — a Codex user gets Codex,
+  Mirafold re-skins each terminal agent faithfully — a Codex user gets Codex,
   never "Claude things" — and no agent is privileged. A new agent is one adapter
   behind the `AgentSession` seam: drive that agent's **own** engine, normalize
   its events to `WireMsg`, inject the render tools via **MCP**. Never build a
@@ -40,7 +40,7 @@ sequence, lives in **BUSINESS.md** (milestone gates).
   security, generative UI stay agent-neutral). Claude-specific behavior (the
   `claude_code` preset, inherited `settings.json`) is Claude Code's fidelity,
   scoped to that adapter only.
-- **Provider credential policy** (R.4i, 2026-07-10): genui-shell must not enable
+- **Provider credential policy** (R.4i, 2026-07-10): Mirafold must not enable
   prohibited subscription use. Closed-provider subscriptions are restricted by
   their terms — Anthropic + Gemini prohibit third-party subscription use
   outright; OpenAI allows it for local use but not the paid relay — so a

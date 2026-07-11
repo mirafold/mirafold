@@ -9,7 +9,7 @@ assignees: ""
 <!--
 ⚠️ BEFORE YOU PASTE YOUR TERMINAL OUTPUT — SCRUB TWO SECRETS:
 
-  1. The URL genui-shell opens contains `?token=…`. That token is what keeps
+  1. The URL Mirafold opens contains `?token=…`. That token is what keeps
      other accounts on your machine off your session. Remove it.
   2. If you use the relay (remote access), the boot log prints a `pairing
      code`. Anyone who has it can drive a shell on your machine. Remove it.
@@ -25,7 +25,7 @@ Replace either with `[redacted]`. Everything else is safe to share.
 
 **Version**
 
-<!-- Output of `genui-shell --version` -->
+<!-- Output of `mirafold --version` -->
 
 **Environment**
 
@@ -36,7 +36,7 @@ Replace either with `[redacted]`. Everything else is safe to share.
 **Logs**
 
 <!--
-The terminal where genui-shell is running (SCRUB the token and pairing code
+The terminal where mirafold is running (SCRUB the token and pairing code
 per the note above). If the failure is in the browser, the DevTools console
 too. Setting `MIRAFOLD_DEBUG=1` before launching adds normalized event traces.
 -->

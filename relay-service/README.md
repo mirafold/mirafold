@@ -1,14 +1,14 @@
 # genui-relay
 
-The hosted relay for [genui-shell](https://github.com/kserrec/genui-shell) — a
-**dumb, end-to-end-blind WebSocket forwarder**. It lets a genui-shell daemon
+The hosted relay for [Mirafold](https://github.com/kserrec/genui-shell) — a
+**dumb, end-to-end-blind WebSocket forwarder**. It lets a Mirafold daemon
 running on your machine be reached from a phone or a second device without
 opening any inbound port: the daemon dials *out* to the relay, the browser
 connects *in*, and the relay shuttles opaque frames between them. It is the
 paid tier's substrate (PLAN Phase R).
 
 > This directory is the seed of the standalone, closed-source `genui-relay`
-> repo — the open-core split (genui-shell is MIT; the hosted service is not).
+> repo — the open-core split (Mirafold is MIT; the hosted service is not).
 > It lives inside the genui-shell repo during development so it can be verified
 > against the real daemon (`server/relay-service.itest.ts`); it moves to its
 > own private repo at deploy time.
@@ -31,13 +31,13 @@ the pairing code out of the URL fragment before encryption ever happens — the
 honest asterisk on every browser "E2E" story.
 
 genui-relay closes that hole structurally: **it is a pure forwarder and serves
-no JS.** The phone loads the genui-shell web app from a **separate static
+no JS.** The phone loads the Mirafold web app from a **separate static
 origin** (the landing-page host), and only *then* opens an encrypted WebSocket
 to the relay. A compromised relay can drop or scramble ciphertext (denial of
 service) but can neither read it nor inject code into the page that produced
 it. (The considered alternative — tunnelling the app bundle *through* the
 daemon so client and daemon are always the same version — is a larger change
-kept in reserve; genui-shell's tolerant wire schemas already make the
+kept in reserve; Mirafold's tolerant wire schemas already make the
 static-origin path's version skew survivable.)
 
 ### Versioning
@@ -88,7 +88,7 @@ npm run dev          # tsx, from source
 npm run build && npm start
 ```
 
-Point a daemon at it: `MIRAFOLD_RELAY_URL=ws://localhost:8080 genui-shell`.
+Point a daemon at it: `MIRAFOLD_RELAY_URL=ws://localhost:8080 mirafold`.
 
 ## Deploy (Fly.io)
 

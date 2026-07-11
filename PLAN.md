@@ -1,4 +1,4 @@
-# genui-shell — Build Plan
+# Mirafold — Build Plan
 
 A faithful browser re-skin of terminal coding agents — Claude Code, Codex,
 and Gemini CLI, one adapter each (Phase P, shipped). The agent's full backend
@@ -23,7 +23,7 @@ before Phase T, and design every seam so the daemon stays local-first.
   supported credential. Their terms restrict driving a subscription/OAuth login
   from a third-party app: Anthropic and Google prohibit it outright (local and
   relay); OpenAI permits it for free LOCAL use but not the paid relay. So
-  genui-shell refuses prohibited subscription use — a Claude/Gemini login shows
+  Mirafold refuses prohibited subscription use — a Claude/Gemini login shows
   as `blocked` with the API-key fix, and NO subscription (even OpenAI's) is
   driven over the relay. API keys and local/BYO endpoints (Ollama, a proxy) are
   the live paths. The one dated source of truth is `server/provider-policy.ts`
@@ -33,8 +33,8 @@ before Phase T, and design every seam so the daemon stays local-first.
 - **Stack:** TypeScript end to end. Server: Node + Agent SDK + Express + `ws`.
   Front end: React + Vite. Package manager: **yarn**.
 - **Distribution: local-first, installed like a terminal agent.** Ships as a
-  global install — `npm i -g genui-shell`, then `genui-shell` run from **any**
-  directory, on PATH exactly like `claude`/`codex`/`gemini` (`npx genui-shell`
+  global install — `npm i -g mirafold`, then `mirafold` run from **any**
+  directory, on PATH exactly like `claude`/`codex`/`gemini` (`npx mirafold`
   is the zero-install try path). The daemon runs on the user's machine; we host
   only a static site/billing and (paid tier) a dumb WebSocket relay that
   forwards wire-protocol frames. The engine never runs on hosted compute; the
@@ -47,17 +47,17 @@ before Phase T, and design every seam so the daemon stays local-first.
   registry lands in Step 4.2 and is the substrate for persistence (4.1), the
   fleet view (4.6), and the relay (4.7).
 - **A faithful browser skin of terminal agents — the product identity, and a
-  core requirement.** genui-shell is **not** a generic UI with a swappable
+  core requirement.** Mirafold is **not** a generic UI with a swappable
   model. It is a **faithful browser re-skin of whatever terminal coding agent
   you already use** — Claude Code, Codex (OpenAI), and Gemini CLI, all three
-  shipped (Phase P) — with genui-shell's generative UI layered on top. A
+  shipped (Phase P) — with Mirafold's generative UI layered on top. A
   Codex user gets **Codex** in the browser (its tools, its behavior, its
   config), never "Claude things";
   a Claude Code user gets Claude Code. "Provider-neutral" here means **faithful
   to each agent**, NOT one homogenized experience, and **no agent is
   privileged**. Mechanically: behind the `AgentSession` seam we run **each
   agent's own engine** and normalize its event stream into `WireMsg`;
-  genui-shell's `render_*` / `emit_artifact` tools inject into each agent via
+  Mirafold's `render_*` / `emit_artifact` tools inject into each agent via
   **MCP** (Claude Code, Codex, and Gemini CLI all support MCP). No translation
   proxy in the request path. We do **not** build a generic agent loop or our
   own tools — that would be faithful to no one. The substrate is already right:
@@ -93,10 +93,10 @@ before Phase T, and design every seam so the daemon stays local-first.
 
 ## Design identity (locked during Phase 0)
 
-genui-shell is a **terminal successor, not a chat app** — the design signals
+Mirafold is a **terminal successor, not a chat app** — the design signals
 terminal lineage on the input side and web richness on the output side.
 
-**Visibility superset (locked 2026-07-05):** genui-shell is a different skin
+**Visibility superset (locked 2026-07-05):** Mirafold is a different skin
 on the same terminal agent, and it must never show *less* than the terminal
 does — richness is added on top of raw visibility, never traded against it.
 Anything a terminal Claude Code user can see in the stream (thinking text,
@@ -541,7 +541,7 @@ with it. Both sequence BEFORE R.5.**
 - [ ] **Step R.7 — Launch day (the M1+M2+M3 splash, one event)**
   - Goal: everything fires together and the signals start reading.
   - Build, same day, in order: repo public → `npm publish` over the 0.0.1
-    placeholder → verify `npx genui-shell` against the real registry (the
+    placeholder → verify `npx mirafold` against the real registry (the
     one check that's unverifiable until publish) → post (X + Show HN +
     r/ClaudeAI + r/LocalLLaMA with the "BYOK or fully local" line) with
     Pro purchasable from minute one.
@@ -571,7 +571,7 @@ fix restores what that agent's *terminal* user already sees — nothing invented
   - Goal: surface the service events the terminal shows and the adapter drops:
     `rate_limit_event` (**observed live on an ordinary one-word turn** — it is
     not rare), `system/api_retry` (terminal shows "retrying (attempt n)…";
-    genui-shell sits on "thinking…" looking hung), `system/compact_boundary`
+    Mirafold sits on "thinking…" looking hung), `system/compact_boundary`
     (context silently compacts today), and `model_refusal_*` (turn appears to
     end for no reason).
   - Build: one additive `WireMsg` — `notice { text, kind? }` — mapped from
@@ -740,11 +740,11 @@ anywhere; each is independent.
 
 ## Phase L — Local models: zero-friction (ergonomics on top of Phase P)
 
-Goal of the phase: someone running a local LLM uses their agent in genui-shell
+Goal of the phase: someone running a local LLM uses their agent in Mirafold
 as easily as a cloud user — inference never leaving the machine. **Local isn't
-a genui-shell feature; it's a property of the agent.** A terminal agent that
+a Mirafold feature; it's a property of the agent.** A terminal agent that
 can point at a local endpoint (e.g. Codex against a local OpenAI-compatible
-server — Ollama / vLLM / LM Studio) already runs locally; genui-shell just
+server — Ollama / vLLM / LM Studio) already runs locally; Mirafold just
 re-skins that agent, so a "local" session is just that agent configured for
 localhost — **no LiteLLM, no shim.** This phase is only the ergonomics and
 honest guidance. (Prereq: Phase P, and Step 1.4's render fallback so small
@@ -762,7 +762,7 @@ shows which matter — not a launch prerequisite.
 - [ ] **Step L.2 — `--local` easy mode (post-M2, demand-gated)**
   - Goal: one command instead of a couple minutes — build only if setup
     friction shows up in the tracker.
-  - Build: `npx genui-shell --local` detects a running Ollama/LM Studio, lists
+  - Build: `npx mirafold --local` detects a running Ollama/LM Studio, lists
     installed models, and configures a local-capable agent to use it with sane
     defaults (no proxy). Status bar shows the active agent/model.
   - Done when: on a machine with Ollama + a supported model, `--local` cold
