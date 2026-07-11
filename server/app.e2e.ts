@@ -154,6 +154,29 @@ test("a demo turn shows tokens but never a fabricated dollar cost (R.4b)", async
   assert.match(bar, /v\d+\.\d+\.\d+/);
 });
 
+test("theme is a segmented sun|moon switch; home is the far-right control", async () => {
+  const lightOpt = page.locator(".sb-theme-opt", { hasText: "☀" });
+  const darkOpt = page.locator(".sb-theme-opt", { hasText: "☾" });
+  // Both modes visible at once; dark (the default identity) is lit.
+  assert.equal(await lightOpt.count(), 1);
+  assert.equal(await darkOpt.count(), 1);
+  assert.match((await darkOpt.getAttribute("class")) ?? "", /is-active/);
+  assert.equal(await page.locator("html").getAttribute("data-theme"), "dark");
+  // Clicking the sun side switches to light; re-clicking it is a no-op.
+  await lightOpt.click();
+  assert.equal(await page.locator("html").getAttribute("data-theme"), "light");
+  assert.match((await lightOpt.getAttribute("class")) ?? "", /is-active/);
+  await lightOpt.click();
+  assert.equal(await page.locator("html").getAttribute("data-theme"), "light");
+  await darkOpt.click(); // restore the default for later tests
+  assert.equal(await page.locator("html").getAttribute("data-theme"), "dark");
+  // Home (⌂ → mission control) sits at the status bar's far right.
+  assert.match(
+    (await page.locator(".status-bar > *:last-child").getAttribute("class")) ?? "",
+    /sb-home/,
+  );
+});
+
 test("sandboxed artifact: scripts run inside the iframe under the shell CSP", async () => {
   await page.locator("textarea").click();
   await page.keyboard.type("show me an artifact");
@@ -169,6 +192,21 @@ test("sandboxed artifact: scripts run inside the iframe under the shell CSP", as
   assert.equal(await frame!.textContent("#n"), "0");
   await frame!.click("#b");
   assert.equal(await frame!.textContent("#n"), "1");
+});
+
+test("an artifact pins to the dock via its chrome control, and unpins back", async () => {
+  // The pin rides the shell-drawn chrome bar (outside the iframe). One
+  // artifact is in the transcript from the previous test.
+  await page.locator(".artifact-pin").click();
+  await page.waitForSelector(".pin-dock");
+  // The dock holds the live iframe; a stub holds its place in the flow.
+  assert.equal(await page.locator(".pin-dock iframe").count(), 1);
+  assert.match(await page.locator(".pin-stub").innerText(), /pinned/);
+  // Unpin from the dock chrome → dock closes, the artifact returns inline.
+  await page.locator(".pin-dock .artifact-pin").click();
+  await page.waitForSelector(".pin-dock", { state: "detached" });
+  assert.equal(await page.locator(".pin-stub").count(), 0);
+  assert.equal(await page.locator(".render-zone iframe").count(), 1);
 });
 
 test("hostile artifact is contained: escapes fail, sandbox is exactly allow-scripts (R.4e)", async () => {

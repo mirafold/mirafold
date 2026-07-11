@@ -127,16 +127,29 @@ export function StatusBar({
           {confirmEnd ? "end?" : "end"}
         </button>
       )}
+      {/* Segmented switch: both modes visible, the current one lit — nothing
+          to decode as "state or action". Clicking the other side switches. */}
+      <div className="sb-theme" role="group" aria-label="theme">
+        <button
+          className={"sb-theme-opt" + (theme === "light" ? " is-active" : "")}
+          onClick={() => theme !== "light" && onToggleTheme()}
+          title="Light theme"
+          aria-pressed={theme === "light"}
+        >
+          ☀
+        </button>
+        <button
+          className={"sb-theme-opt" + (theme === "dark" ? " is-active" : "")}
+          onClick={() => theme !== "dark" && onToggleTheme()}
+          title="Dark theme"
+          aria-pressed={theme === "dark"}
+        >
+          ☾
+        </button>
+      </div>
       <a className="sb-home" href="/" title="All sessions (mission control)">
         ⌂
       </a>
-      <button
-        className="sb-theme"
-        onClick={onToggleTheme}
-        title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-      >
-        {theme === "dark" ? "☾" : "☀"}
-      </button>
     </div>
   );
 }

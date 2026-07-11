@@ -110,8 +110,8 @@ export function RenderZone({
 }) {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [status, setStatus] = useState<Status>(null);
-  // Pinning is pure output-zone state: renderIds in pin order. The dock
-  // only exists while something is pinned (see PLAN Step 1.6).
+  // Pinning is pure output-zone state: wire ids (render or artifact) in pin
+  // order. The dock only exists while something is pinned (PLAN Step 1.6).
   const [pinned, setPinned] = useState<string[]>([]);
   const [dockCollapsed, setDockCollapsed] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -359,10 +359,14 @@ export function RenderZone({
   };
 
   // Dock items reference the same entry objects the transcript holds, so an
-  // update-in-place render (same wire id) keeps pinned components live.
-  const pinnedItems = pinned.flatMap((renderId) => {
-    const entry = entries.find((e) => e.kind === "render" && e.renderId === renderId);
-    return entry && entry.kind === "render" ? [entry] : [];
+  // update-in-place render/artifact (same wire id) keeps pinned blocks live.
+  const pinnedItems = pinned.flatMap((id) => {
+    const entry = entries.find(
+      (e) =>
+        (e.kind === "render" && e.renderId === id) ||
+        (e.kind === "artifact" && e.artifactId === id),
+    );
+    return entry && (entry.kind === "render" || entry.kind === "artifact") ? [entry] : [];
   });
 
   // T2.4: subagent calls (parentId set) grouped under their Task's wire id.
@@ -457,6 +461,19 @@ export function RenderZone({
             );
           }
           if (entry.kind === "artifact") {
+            if (pinned.includes(entry.artifactId)) {
+              // Promoted to the dock; the stub holds its place in history.
+              return (
+                <button
+                  key={entry.id}
+                  className="pin-stub"
+                  onClick={() => togglePin(entry.artifactId)}
+                  title="Unpin — return it here"
+                >
+                  📌 pinned · {entry.title ?? "artifact"}
+                </button>
+              );
+            }
             return (
               <div key={entry.id} className="turn turn-render">
                 <Artifact
@@ -465,6 +482,7 @@ export function RenderZone({
                   // Bridge actions ride the same mediated path as component
                   // actions; Artifact's validation ensures no state ops.
                   onAction={(action) => handleAction(action, entry.artifactId)}
+                  pin={{ pinned: false, onToggle: () => togglePin(entry.artifactId) }}
                 />
               </div>
             );

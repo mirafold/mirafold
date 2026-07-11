@@ -755,6 +755,27 @@ body {
   font-size: 0.9em;
 }
 
+/* Right side of the chrome bar: the badge plus the shell-drawn pin control. */
+.artifact-chrome-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.artifact-pin {
+  padding: 0 2px;
+  background: transparent;
+  border: 0;
+  color: var(--fg-dim);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.artifact-pin:hover {
+  color: var(--fg);
+}
+
 .artifact-frame {
   flex: 1;
   width: 100%;
@@ -1707,10 +1728,9 @@ html {
   background: var(--err-bg);
 }
 
-/* #9: the status-bar icon buttons — mission-control home (an <a>) and the theme
-   toggle (a <button>) — share one look; only the link's text-decoration differs. */
-.sb-home,
-.sb-theme {
+/* #9: mission-control home — an <a> styled as an icon button, the status
+   bar's far-right control. */
+.sb-home {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1724,17 +1744,52 @@ html {
   font-size: 20px;
   line-height: 1;
   cursor: pointer;
-}
-
-.sb-home {
   text-decoration: none;
 }
 
-.sb-home:hover,
-.sb-theme:hover {
-  color: var(--fg);
+.sb-home:hover {
   border-color: var(--border-hover);
   background: var(--surface-hover);
+}
+
+/* Theme as a segmented sun|moon switch: both modes visible, the active side
+   lit, so the control never needs decoding as state-vs-action. */
+.sb-theme {
+  display: inline-flex;
+  align-items: stretch;
+  background: var(--surface-2);
+  border: 1px solid var(--border-mid);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.sb-theme-opt {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  padding: 6px 9px;
+  background: transparent;
+  border: 0;
+  color: var(--fg-dimmer);
+  font: inherit;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sb-theme-opt + .sb-theme-opt {
+  border-left: 1px solid var(--border-mid);
+}
+
+.sb-theme-opt:hover {
+  color: var(--fg-mid);
+}
+
+.sb-theme-opt.is-active {
+  color: var(--fg);
+  background: var(--surface-hover);
+  cursor: default;
 }
 
 /* ---- Mission control (Step 4.6) -------------------------------------------
