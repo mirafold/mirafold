@@ -58,7 +58,11 @@ const ARTIFACT_CSP =
 
 // Base styles so bare artifact markup reads as part of the output zone;
 // content can override them, but only inside its own opaque document.
+// Hardcoded hex (like the background): the opaque origin can't read the
+// shell's CSS vars, so the scrollbar mirrors the dark theme's
+// `scrollbar-color`/`scrollbar-width` from styles.css by value.
 const ARTIFACT_BASE_CSS =
+  "html{scrollbar-color:#3a4a68 transparent;scrollbar-width:thin}" +
   "body{margin:12px;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;" +
   "font-size:14px;background:#141a26;color:#e6e9ef;color-scheme:dark}";
 
@@ -142,10 +146,14 @@ export function Artifact({
   html,
   title,
   onAction,
+  pin,
 }: {
   html: string;
   title?: string;
   onAction?: (action: Action) => void;
+  // Pin/unpin lives in the shell-drawn chrome bar, outside the iframe — the
+  // same trust rule as the badge: agent content can't fake or cover it.
+  pin?: { pinned: boolean; onToggle: () => void };
 }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const lastActionAt = useRef(0);
@@ -213,13 +221,30 @@ export function Artifact({
     }, READY_GRACE_MS);
   };
 
+  const pinBtn = pin && (
+    <button
+      className="artifact-pin"
+      onClick={pin.onToggle}
+      title={
+        pin.pinned
+          ? "Unpin — return to its place in the transcript"
+          : "Pin — keep visible while the transcript scrolls"
+      }
+    >
+      {pin.pinned ? "✕" : "📌"}
+    </button>
+  );
+
   if (failure) {
     return (
       <div className="artifact artifact-failed">
         <div className="artifact-chrome">
           <span className="artifact-label">◱ {title ?? "artifact"}</span>
-          <span className="artifact-badge artifact-badge-failed">
-            {failure.kind === "navigation" ? "navigation blocked" : "failed"}
+          <span className="artifact-chrome-tools">
+            <span className="artifact-badge artifact-badge-failed">
+              {failure.kind === "navigation" ? "navigation blocked" : "failed"}
+            </span>
+            {pinBtn}
           </span>
         </div>
         <div className="artifact-fallback">
@@ -240,13 +265,16 @@ export function Artifact({
     <div className="artifact">
       <div className="artifact-chrome">
         <span className="artifact-label">◱ {title ?? "artifact"}</span>
-        {lateError ? (
-          <span className="artifact-badge artifact-badge-warn" title={lateError}>
-            ⚠ script error
-          </span>
-        ) : (
-          <span className="artifact-badge">sandboxed</span>
-        )}
+        <span className="artifact-chrome-tools">
+          {lateError ? (
+            <span className="artifact-badge artifact-badge-warn" title={lateError}>
+              ⚠ script error
+            </span>
+          ) : (
+            <span className="artifact-badge">sandboxed</span>
+          )}
+          {pinBtn}
+        </span>
       </div>
       <iframe
         ref={frameRef}

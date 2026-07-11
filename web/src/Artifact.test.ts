@@ -91,3 +91,12 @@ test("wrap() puts the content in the body, inside the wrapper document", () => {
   assert.match(out, /<body><b>content-marker<\/b><\/body><\/html>$/);
   assert.match(out, /^<!doctype html>/);
 });
+
+test("wrap() themes the sandbox's scrollbars to match the shell", () => {
+  // The opaque document can't read the shell's CSS vars, so the base CSS
+  // carries the dark theme's scrollbar values by hex — without this, inner
+  // scrollers fall back to the browser-default gray bar.
+  const out = wrap("<b>x</b>", "n");
+  assert.match(out, /scrollbar-color:#3a4a68 transparent/);
+  assert.match(out, /scrollbar-width:thin/);
+});
