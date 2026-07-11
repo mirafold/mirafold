@@ -896,7 +896,10 @@ sync-guard), and `*.e2e.ts` (Tier 3 — token→cookie boot, a full turn
 rendering in the DOM, the artifact iframe executing under the CSP with a
 hostile-artifact containment proof (each defense verified by flipping it),
 a second browser mirrored through the relay stub, a killed-mid-turn daemon
-restart showing an honest "session ended" notice, and the phone suite:
+restart showing an honest "session ended" notice, the launcher's browser-open
+guarantee (a stub `xdg-open` proves, from inside the spawned opener, stdio →
+`/dev/null` + own session — a cold-started browser can never chatter into the
+user's terminal), and the phone suite:
 390×844 touch pairing, thumb permissions, offline→online mid-turn resume;
 needs `google-chrome`, path overridable via `CHROME_BIN`).
 
