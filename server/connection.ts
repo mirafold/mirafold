@@ -235,6 +235,16 @@ export function openConnection(
       sendError("malformed client message");
       return;
     }
+    // A frame that parses to a non-object (`null`, a number, a bare string)
+    // has no `.type` — and `null.type` THROWS, which on the local WS path
+    // (index.ts has no try/catch around handleMessage) escapes to the
+    // uncaughtException handler and exits the daemon. Reject it here, the same
+    // shape as bad JSON. Unknown-but-object types still fall through the switch
+    // untouched (the R.4h ignore-unknown contract).
+    if (typeof msg !== "object" || msg === null) {
+      sendError("malformed client message");
+      return;
+    }
     switch (msg.type) {
       case "create":
         // A bad cwd (typo'd path) rejects the create rather than silently
@@ -286,7 +296,11 @@ export function openConnection(
         // The `!` passthrough (4.9): run it in a PTY in the session's cwd —
         // instant, zero tokens, never routed through the model.
         if (!entry || typeof msg.command !== "string" || !msg.command.trim()) break;
-        if (!/^[\w-]{1,64}$/.test(String(msg.id))) break;
+        // `id` is a client-minted string (ClientMsg). Validate the RAW value —
+        // String(msg.id) would coerce a missing/numeric id ("undefined", "123")
+        // into something that passes the regex and launches a bang with a bad
+        // correlation id.
+        if (typeof msg.id !== "string" || !/^[\w-]{1,64}$/.test(msg.id)) break;
         if (entry.bang) {
           sendError("a ! command is already running (stop it first)");
           break;
