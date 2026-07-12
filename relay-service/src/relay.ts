@@ -18,6 +18,7 @@ import { WebSocketServer, WebSocket, type RawData } from "ws";
 import {
   CLOSE_BAD_CODE,
   CLOSE_CODE_TAKEN,
+  CLOSE_FORBIDDEN_ORIGIN,
   CLOSE_OVERLOADED,
   CLOSE_RATE_LIMITED,
   DAEMON_PATH,
@@ -40,6 +41,13 @@ export type RelayOptions = Partial<Limits> & {
    * connection, use the socket address. Never trust this header on a port an
    * untrusted client can reach directly — it is spoofable there. */
   clientIpHeader?: string;
+  /** Web origins allowed to open a VIEWPORT socket, e.g.
+   * ["https://app.mirafold.com"]. The browser same-origin rule does NOT cover
+   * WebSockets, so a stray page on any origin can otherwise open one (harmless
+   * without the pairing code, but it's DoS surface). Empty/unset = allow any
+   * origin (dev, and before the static app origin exists). Daemon dial-ins are
+   * never gated — they carry no Origin header. Exact scheme+host(+port) match. */
+  allowedViewportOrigins?: string[];
 };
 
 export type Relay = {
@@ -75,6 +83,19 @@ export function startRelay(opts: RelayOptions = {}): Promise<Relay> {
       if (first) return first;
     }
     return req.socket.remoteAddress ?? "unknown";
+  };
+
+  // Viewport Origin allowlist. Empty set = allow any (preserves the pre-gate
+  // behavior and dev/no-static-origin-yet). When set, only these exact origins
+  // may open a viewport socket; anything else (including a missing Origin) is
+  // refused. Daemon dial-ins bypass this — they are not browsers.
+  const allowedOrigins = new Set(
+    (opts.allowedViewportOrigins ?? []).map((o) => o.trim()).filter(Boolean),
+  );
+  const originAllowed = (req: IncomingMessage): boolean => {
+    if (allowedOrigins.size === 0) return true;
+    const origin = req.headers.origin;
+    return typeof origin === "string" && allowedOrigins.has(origin);
   };
 
   const server = createServer((req, res) => {
@@ -227,6 +248,14 @@ export function startRelay(opts: RelayOptions = {}): Promise<Relay> {
       if (cfg.maxConnectionsPerIp > 0 && (perIp.get(ip) ?? 0) >= cfg.maxConnectionsPerIp) {
         log(`per-IP cap reached (${cfg.maxConnectionsPerIp}) — refusing one source`);
         ws.close(CLOSE_OVERLOADED);
+        return;
+      }
+      // Origin gate (viewports only): with an allowlist configured, a socket
+      // from any other web origin is refused before it can pair. Daemons carry
+      // no Origin and are never gated here.
+      if (!isDaemon && !originAllowed(req)) {
+        log(`viewport origin refused (${req.headers.origin ?? "none"})`);
+        ws.close(CLOSE_FORBIDDEN_ORIGIN);
         return;
       }
       if (isDaemon) acceptDaemon(ws, pairId, ip);
