@@ -35,7 +35,13 @@ export const CLOSE_CODE_TAKEN = 4002; // a daemon already holds that pair id
 export const CLOSE_BAD_CODE = 4003; // no daemon paired under that id
 export const CLOSE_OVERLOADED = 4004; // relay at a capacity cap
 export const CLOSE_FORBIDDEN_ORIGIN = 4006; // viewport upgrade from a non-allowlisted web origin
+export const CLOSE_UNENTITLED = 4007; // daemon dial-in without a valid entitlement token
 export const CLOSE_RATE_LIMITED = 4008; // a connection exceeded its frame rate
+
+// Request header a daemon presents its entitlement token on when dialing in
+// (the paid-tier gate, R.5). Relay-only for now; when the daemon side is wired
+// this joins the shared contract with server/relay-protocol.ts.
+export const ENTITLEMENT_HEADER = "mirafold-entitlement";
 
 // The shared subset the sync-guard test checks against server/relay-protocol.ts.
 export const SHARED_CONTRACT = {

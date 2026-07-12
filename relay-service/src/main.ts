@@ -14,6 +14,11 @@ const relay = await startRelay({
   // app origin, RELAY_ALLOWED_ORIGINS=https://app.mirafold.com). Unset = allow
   // any origin — the default until that static origin exists (R.5).
   allowedViewportOrigins: process.env.RELAY_ALLOWED_ORIGINS?.split(","),
+  // Ed25519 public key (base64 SPKI DER) that signs paid-tier entitlement
+  // tokens (R.5). Unset = no entitlement check — the default until billing
+  // ships. The relay holds only the public half; the minting backend has the
+  // private key.
+  entitlementPublicKey: process.env.RELAY_ENTITLEMENT_PUBLIC_KEY,
 });
 
 let closing = false;
