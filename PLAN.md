@@ -775,18 +775,19 @@ anywhere; each is independent.
   suites green: Tier 1 155, Tier 2 74; typecheck clean. Files:
   `server/hostile-client.itest.ts` (new), `server/connection.ts` (two guards).
 
-- [ ] **Step Q.5 — Pin the `.env` guard's edges**
-  - Goal: the `SECRET_PATHS` deny in `permissions.ts` is tested only on the
-    literal relative strings (`.env`, `.env.local`). Untested but currently
-    working via `path.resolve`: an absolute path to the daemon's `.env`, a
-    `subdir/../.env` traversal, and the cross-cwd case (session cwd ≠ daemon
-    launch dir). Nothing pins that these resolve into the guard. (The symlink
-    bypass is a documented accepted residual — out of scope.)
-  - Build: extend the Tier-1 permissions tests with those resolutions across
-    all four guarded readers (Read/NotebookRead/Grep/Glob).
-  - Files: `server/permissions.test.ts`.
-  - Done when: absolute, traversal, and cross-cwd routes to the daemon's env
-    files are each asserted denied.
+- [x] **Step Q.5 — Pin the `.env` guard's edges** — done 2026-07-12. Three
+  Tier-1 tests added to `server/permissions.test.ts`, each across all four
+  guarded readers (Read/NotebookRead/Grep/Glob): (1) an absolute path to the
+  daemon's `.env`/`.env.local` denies; (2) a `sub/deeper/../../.env` traversal
+  that resolves onto `<cwd>/.env` denies; (3) cross-cwd (session running in a
+  different dir than the daemon launched) — both an absolute path and a relative
+  traversal back to the daemon's env deny, while the session's OWN dir `.env`
+  stays out of scope (allowed), pinning that the guard protects the daemon's
+  secrets specifically. Verified non-vacuous: weakening the guard to a naive
+  raw-string match (dropping `path.resolve`) fails the traversal and cross-cwd
+  tests. 158 Tier-1 pass, typecheck clean. (Symlink bypass remains the
+  documented accepted residual — out of scope.) Files:
+  `server/permissions.test.ts`.
 
 ---
 
