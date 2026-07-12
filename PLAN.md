@@ -480,6 +480,29 @@ with it. Both sequence BEFORE R.5.**
     **Still owed at deploy:** set `RELAY_ALLOWED_ORIGINS=https://<static app
     origin>` on Fly once R.5's static origin domain is final — until then it
     ships unset (allow-any), which is correct pre-launch.
+  - **Relay entitlement gate — CODE DONE 2026-07-12** (the decision-independent
+    half, buildable with no Stripe: every R.5 billing design ends in "the relay
+    admits a pairing only with an active entitlement," so the relay's *check* is
+    invariant). `RELAY_ENTITLEMENT_PUBLIC_KEY` (Ed25519 public key, base64 SPKI
+    DER) gates daemon dial-ins: with it set, a daemon must present a valid,
+    unexpired token on the `mirafold-entitlement` header or be refused with a
+    clean close (`CLOSE_UNENTITLED` = 4007); the relay verifies signature + `exp`
+    OFFLINE via `node:crypto` (no new dep, no Stripe call, no state — stays a
+    dumb E2E-blind forwarder) and holds only the PUBLIC half, so it can never
+    mint one. Token is compact `<b64url(payload)>.<b64url(sig)>`. Unset = no
+    check (today's behavior). In `relay.ts` + `contract.ts` + `main.ts` (synced
+    both repos, `sync:check` green), README, and a standalone test (valid admits
+    + its viewport works / no-token / expired / garbage / wrong-key all refused);
+    cross-repo itest (9, real daemon) still green.
+    **Still owed (needs Kyle):** (1) the Stripe **test secret key** (test mode,
+    in a gitignored `.env`) to build the Checkout + minting half; (2) the
+    **decision — where the minting backend lives** (recommended: a Cloudflare
+    Pages Function on mirafold.com — $0, no new infra — which on the subscription
+    webhook mints the signed token; alt: a small Fly service). (3) Then: the
+    daemon side (dial-out sends the header; genui-shell app code — hold until the
+    other session frees it), and the R.5 open refinements (token→account binding
+    vs. sharing, revocation-before-expiry window). Pricing $12/$99 · 7-day trial
+    · cancel-at-period-end stands per BUSINESS §7 unless recut.
   - Done when: a Stripe test-mode purchase unlocks pairing end-to-end, and
     expiry re-locks it without breaking the local product in any way.
 
@@ -709,22 +732,25 @@ anywhere; each is independent.
   pins the exact shape of the known ones. 150 Tier-1 tests pass; typecheck
   clean. Files: `server/protocol.test.ts` (new).
 
-- [ ] **Step Q.3 — Ring-buffer eviction and the resume boundary**
-  - Goal: `BUFFER_CAP` (4000) eviction has zero tests, and `canResume`'s edge
-    (`afterSeq >= firstBuffered - 1`) is exactly the off-by-one that regresses
-    silently: if eviction broke, memory grows unbounded; if the boundary
-    broke, a long session replays a corrupted tail after eviction. Nothing
-    would catch either today.
-  - Build: Tier-1 unit tests directly against `SessionRegistry` (constructible
-    with a mock backend, no daemon): push past the cap, assert the buffer
-    stays bounded and holds exactly the newest window; a late attach replays
-    exactly the retained window; `canResume` flips false precisely at the
-    evicted edge and a valid post-eviction tail resume replays the right
-    messages.
-  - Files: `server/registry.test.ts` (extend — today it covers only
-    `resolveCwd`).
-  - Done when: cap, eviction contents, and the resume boundary at the evicted
-    edge are each pinned by an assertion that an off-by-one would fail.
+- [x] **Step Q.3 — Ring-buffer eviction and the resume boundary** — done
+  2026-07-12. Five Tier-1 tests in `server/registry.test.ts`, driven directly
+  against `SessionRegistry` with a `live:false` mock backend (the inert
+  MockSession — no daemon, no network, nothing emitted until a prompt), calling
+  `broadcast`/`canResume`/`attach` by hand. Pinned: (1) after `PUSH = cap+500`
+  broadcasts the ring is bounded at EXACTLY `BUFFER_CAP` (absolute value
+  asserted, not derived — a ±1 fails) and holds the newest window, contiguous by
+  seq, oldest evicted; (2) a late attach with no `afterSeq` replays exactly that
+  window in order; (3) `canResume` is true at `firstBuffered-1` and false at
+  `firstBuffered-2` — the exact evicted edge — plus range guards (saw-latest,
+  never-issued, negative, non-integer); (4) a post-eviction tail resume replays
+  exactly the seqs `> afterSeq` from both the edge and mid-window; (5) an
+  un-evicted small buffer resumes from seq 0. **Verified the assertions bite by
+  mutation:** `canResume` edge → `firstBuffered` (too strict) and
+  `firstBuffered-2` (too lenient), and the eviction splice keeping `cap+1`, each
+  fail the matching test; all revert green (155 Tier-1 pass, typecheck clean).
+  `BUFFER_CAP` (module-private) is mirrored in the test with a sync note — the
+  mirror is what lets a cap off-by-one fail. Files: `server/registry.test.ts`
+  (extended; was `resolveCwd`-only).
 
 - [ ] **Step Q.4 — Hostile-client sweep of `connection.ts`**
   - Goal: the malformed paths are dead code to the suite. No test sends
