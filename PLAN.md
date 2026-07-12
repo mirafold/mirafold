@@ -690,25 +690,24 @@ anywhere; each is independent.
     a real browser, the five-frame checklist paints one block not five, and a
     pinned widget stays live across an update and a reload.
 
-- [ ] **Step Q.2 — Freeze the wire protocol in executable form**
-  - Goal: the first non-negotiable — "later work ADDS message types, never
-    reshapes existing ones" — is a comment, not a check. The itests assert
-    some fields incidentally, but a deliberate reshape refactor would update
-    those tests in the same commit and go green. Since the relay, this is
-    load-bearing for real: a phone can run yesterday's bundle against today's
-    daemon.
-  - Build: a Tier-1 golden-fixtures test — one canonical JSON sample per
-    `WireMsg` and `ClientMsg` variant, assigned to the type in both directions
-    (compile-time: the fixture satisfies the type; runtime: field names and
-    representative values asserted). Adding a new message type means adding a
-    fixture; changing an existing shape breaks the build or the test.
-    (Complement, not overlap: Step R.4h owns the other half of the compat
-    story — unknown types ignored on both ends, tolerant client prop
-    schemas. Fixtures pin what exists; R.4h pins how the ends treat what
-    doesn't yet.)
-  - Files: new `server/protocol.test.ts`.
-  - Done when: renaming or retyping any existing on-wire field fails the
-    suite loudly, and adding a message type touches no existing fixture.
+- [x] **Step Q.2 — Freeze the wire protocol in executable form** — done
+  2026-07-12. `server/protocol.test.ts`: a mapped-type golden-fixtures test with
+  two teeth. COMPILE-TIME (the `yarn typecheck` commit gate) — `WIRE` and
+  `CLIENT` are `{ [T in WireMsg["type"]]: Extract<WireMsg, { type: T }> }` maps,
+  so they require exactly one fixture per `type` discriminant: 22 WireMsg + 13
+  ClientMsg variants, plus standalone `SessionMeta` and all three `Action`
+  fixtures. RUNTIME (`yarn test`) — every fixture round-trips through
+  JSON.stringify→parse byte-for-byte (no undefined/function drift), its runtime
+  `type` matches its key, and the nested/security-sensitive shapes (agents row,
+  relay block, SessionMeta key set, permission_response, the ephemeral
+  bang_input) are pinned by deepEqual. **Both teeth verified by experiment:**
+  adding a new WireMsg type without a fixture → `TS2741 Property … missing in
+  WireByType`; renaming `text_delta.text`→`content` → loud errors across every
+  adapter and the fixture. So adding a message type forces a NEW fixture and
+  touches no existing one; reshaping an existing frame can't pass the build.
+  Complement to R.4h (which pins how the ends treat UNKNOWN messages) — this
+  pins the exact shape of the known ones. 150 Tier-1 tests pass; typecheck
+  clean. Files: `server/protocol.test.ts` (new).
 
 - [ ] **Step Q.3 — Ring-buffer eviction and the resume boundary**
   - Goal: `BUFFER_CAP` (4000) eviction has zero tests, and `canResume`'s edge
