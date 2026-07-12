@@ -97,6 +97,8 @@ type WireMsg =
   | { type: "status"; state: "thinking" | "tool"; label?: string } // activity line
   | { type: "turn_end" }                                           // finalize the turn
   | { type: "error"; message: string }
+  | { type: "notice"; text: string;                                // F.2: degraded-service
+      kind?: "retry" | "compaction" | "rate_limit" | "refusal" }   //   status line (dim)
   | { type: "render"; component: string; props: Record<string, unknown>; id: string }
     // ^ Phase 1: "mount registry component X with props P". Re-sending an id
     //   updates that component in place (the live-pinned-widget mechanism).
@@ -686,6 +688,10 @@ subscription handles each `ZoneMsg`:
 - `turn_end` → mark the streaming block done, finalize any dangling tool
   entries, clear the ref and status.
 - `error` → rendered as a bold-prefixed assistant entry.
+- `notice` → append a dim system-status line (F.2: retry / compaction /
+  rate-limit / refusal — the events the terminal shows in degraded service).
+  Unlike real output it does *not* fold the thinking block or close the
+  streaming text block; a status aside isn't the turn's content starting.
 - `zone_reset` → clear everything; the replay that follows repaints it.
 
 **Actions (Phase 2):** `RenderBlock` wraps each rendered component in an

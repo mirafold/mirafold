@@ -102,7 +102,9 @@ every adapter must honor:
    moves before first output.
 2. Body, in the provider's own stream order: `thinking_delta`* /
    `text_delta`* / `tool_use`→`tool_result` pairs / `render` / `artifact` /
-   `status` updates. `tool_result` may only be emitted for an `id` previously
+   `status` updates, plus an optional `notice` (F.2) for degraded-service
+   events the provider surfaces (retry / compaction / rate-limit / refusal).
+   `tool_result` may only be emitted for an `id` previously
    announced by a `tool_use`; results for unannounced ids are dropped.
    Every tool output passes through `capOutput()` (honest, byte-based
    truncation with `truncatedBytes` reported — never a silent cut) and every
