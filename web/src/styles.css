@@ -862,6 +862,36 @@ body {
   font-style: normal;
 }
 
+/* ---- Service-status line (F.2) ------------------------------------------
+   Events the terminal shows and the adapter would otherwise drop — a retry,
+   a compaction, a rate-limit warning, a model refusal. Same dim system-line
+   family as the thinking block, never agent markdown. rate_limit / refusal
+   read as warnings (amber); retry / compaction stay neutral-dim. */
+
+.notice-line {
+  flex: none; /* same reason as .thinking-block: don't let the flex column squash it */
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  color: var(--fg-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8em;
+  line-height: 1.5;
+  max-width: 80ch;
+  padding: 2px 0 2px 10px;
+  border-left: 2px solid var(--border-2);
+}
+
+.notice-glyph {
+  opacity: 0.85;
+}
+
+.notice-line[data-kind="rate_limit"],
+.notice-line[data-kind="refusal"] {
+  color: var(--warn-fg);
+  border-left-color: var(--warn-fg);
+}
+
 /* ---- Tool calls (Phase T.1) ---------------------------------------------
    Terminal-style records of what the agent actually did: one dim monospace
    row per call, collapsed by default; errors arrive expanded. Negative
@@ -1652,6 +1682,7 @@ body {
 .turn-assistant,
 .tool-block,
 .thinking-block,
+.notice-line,
 .bang-block,
 .status-line {
   animation: rise 0.16s ease-out both;

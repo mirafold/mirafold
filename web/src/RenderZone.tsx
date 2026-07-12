@@ -48,6 +48,14 @@ type Entry =
       expanded: boolean;
     }
   | {
+      // F.2: a service-status line (retry, compaction, rate limit, refusal) —
+      // the UI must not lie in degraded service. Persistent, dim, non-agent.
+      kind: "notice";
+      id: number;
+      text: string;
+      noticeKind?: string;
+    }
+  | {
       kind: "bang"; // a `!` shell command (4.9): its strip + live PTY output
       id: number;
       bangId: string; // wire id — output/end messages complete this record
@@ -290,6 +298,17 @@ export function RenderZone({
             ]);
             break;
           }
+          case "notice": {
+            // A dim system line in transcript order. It does NOT fold thinking
+            // or close the streaming text block — a retry/compaction is a status
+            // aside, not the turn's real output starting.
+            const id = nextId++;
+            setEntries((es) => [
+              ...es,
+              { kind: "notice", id, text: msg.text, noticeKind: msg.kind },
+            ]);
+            break;
+          }
           case "bang_start": {
             // Same wire-order rule as `render`: close the streaming block.
             streamingId.current = null;
@@ -422,6 +441,20 @@ export function RenderZone({
                 ) : (
                   entry.text
                 )}
+              </div>
+            );
+          }
+          if (entry.kind === "notice") {
+            const glyph =
+              entry.noticeKind === "retry"
+                ? "↻"
+                : entry.noticeKind === "compaction"
+                  ? "⊙"
+                  : "⚠"; // rate_limit / refusal / unknown
+            return (
+              <div key={entry.id} className="notice-line" data-kind={entry.noticeKind}>
+                <span className="notice-glyph">{glyph}</span>
+                <span>{entry.text}</span>
               </div>
             );
           }

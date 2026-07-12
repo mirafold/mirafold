@@ -358,12 +358,77 @@ export class ClaudeCodeSession implements AgentSession {
             break;
           }
           case "system": {
-            // F.3: system/init carries the model the engine ACTUALLY resolved
-            // (e.g. "claude-fable-5"), which differs from the configured value
-            // or the "default" placeholder we start with — show the truth in
-            // the status bar, like the terminal's own status line.
-            const model = (msg as { model?: unknown }).model;
-            if (typeof model === "string" && model) this.modelLabel = model;
+            const sub = (msg as { subtype?: unknown }).subtype;
+            if (sub === "init") {
+              // F.3: system/init carries the model the engine ACTUALLY resolved
+              // (e.g. "claude-fable-5"), which differs from the configured value
+              // or the "default" placeholder we start with — show the truth in
+              // the status bar, like the terminal's own status line.
+              const model = (msg as { model?: unknown }).model;
+              if (typeof model === "string" && model) this.modelLabel = model;
+            } else if (sub === "api_retry") {
+              // F.2: the terminal shows "retrying (attempt n)…" here; without
+              // this we sit on "thinking…" looking hung through the backoff.
+              const m = msg as { attempt?: number; max_retries?: number };
+              const n = typeof m.attempt === "number" ? m.attempt : undefined;
+              const max = typeof m.max_retries === "number" ? m.max_retries : undefined;
+              const which = n && max ? ` (attempt ${n}/${max})` : n ? ` (attempt ${n})` : "";
+              this.emit({ type: "notice", text: `API error — retrying${which}…`, kind: "retry" });
+            } else if (sub === "compact_boundary") {
+              // F.2: context silently compacts today — say so.
+              const trigger = (msg as { compact_metadata?: { trigger?: unknown } }).compact_metadata
+                ?.trigger;
+              this.emit({
+                type: "notice",
+                text:
+                  trigger === "manual"
+                    ? "context compacted"
+                    : "context automatically compacted to free space",
+                kind: "compaction",
+              });
+            } else if (sub === "model_refusal_fallback") {
+              // F.2: the model declined and the turn was retried on a fallback —
+              // without this the swap is invisible.
+              const fb = (msg as { fallback_model?: unknown }).fallback_model;
+              this.emit({
+                type: "notice",
+                text:
+                  typeof fb === "string" && fb
+                    ? `the model declined — retried on ${fb}`
+                    : "the model declined — retried on a fallback model",
+                kind: "refusal",
+              });
+            } else if (sub === "model_refusal_no_fallback") {
+              // F.2: no fallback configured — the turn ends as an error (the
+              // result frame carries that); this line says WHY it ended.
+              this.emit({
+                type: "notice",
+                text: "the model declined to complete this request",
+                kind: "refusal",
+              });
+            }
+            break;
+          }
+          case "rate_limit_event": {
+            // F.2: observed live on ordinary turns, so surface it ONLY when it
+            // actually matters — approaching (allowed_warning) or hitting
+            // (rejected) the limit — never on the constant plain "allowed".
+            const info = (
+              msg as { rate_limit_info?: { status?: unknown; rateLimitType?: unknown } }
+            ).rate_limit_info;
+            const status = info?.status;
+            if (status === "allowed_warning" || status === "rejected") {
+              const t = info?.rateLimitType;
+              const scope = typeof t === "string" && t ? ` (${t.replace(/_/g, " ")})` : "";
+              this.emit({
+                type: "notice",
+                text:
+                  status === "rejected"
+                    ? `rate limit reached${scope} — requests are being throttled`
+                    : `approaching the rate limit${scope}`,
+                kind: "rate_limit",
+              });
+            }
             break;
           }
           case "result": {
