@@ -752,22 +752,28 @@ anywhere; each is independent.
   mirror is what lets a cap off-by-one fail. Files: `server/registry.test.ts`
   (extended; was `resolveCwd`-only).
 
-- [ ] **Step Q.4 — Hostile-client sweep of `connection.ts`**
-  - Goal: the malformed paths are dead code to the suite. No test sends
-    non-JSON (the `"malformed client message"` reply is never observed), a
-    bang id failing the `^[\w-]{1,64}$` regex, a non-string prompt text, or a
-    junk `action` object. The oversized-frame test exists; the garbage-frame
-    tests don't.
-  - Build: one Tier-2 itest sweeping every `ClientMsg` type with wrong-typed
-    fields, missing fields, and raw garbage over a real socket; after the
-    sweep, assert the connection is still attached and a valid turn completes
-    normally (nothing crashed, nothing wedged, no spurious broadcast reached
-    a second viewport).
-  - Files: new `server/hostile-client.itest.ts` (or extend
-    `server/session.itest.ts`).
-  - Done when: every `case` in `connection.ts`'s message switch has at least
-    one malformed-input assertion, and the socket provably survives the whole
-    sweep mid-session.
+- [x] **Step Q.4 — Hostile-client sweep of `connection.ts`** — done 2026-07-12.
+  New `server/hostile-client.itest.ts` (2 Tier-2 tests, real daemon + real
+  sockets): every `ClientMsg` case swept with wrong-typed/missing fields and raw
+  garbage, mid-session, with a SECOND viewport on the same session asserting no
+  garbage frame leaks a broadcast; then a valid turn completes (socket survived,
+  session not torn down by the end_session garbage). A sentinel `ping`/`pong`
+  after the barrage proves every frame was processed; the daemon log is asserted
+  free of the last-gasp crash line. **The sweep found two real bugs, both
+  fixed in `connection.ts` (the one product change this step needed):** (1) a
+  raw frame parsing to `null` (or a bare number/string) has no `.type`, and
+  `null.type` THREW — on the local WS path (`index.ts` wraps `handleMessage` in
+  no try/catch) that hit the uncaughtException handler and `process.exit(1)`,
+  so any local viewport could crash the whole daemon; added a non-object guard
+  mirroring the malformed-JSON reply (the relay path already had a try/catch, so
+  only the local path was exposed). (2) the bang-id guard used
+  `!/…/.test(String(msg.id))`, coercing a missing/numeric id (`"undefined"`,
+  `"123"`) into a value that passed the regex and LAUNCHED a bang with a bad
+  correlation id — tightened to require `typeof msg.id === "string"` first. Both
+  fixes verified to bite by reverting each (null → daemon crash fails the sweep;
+  bang-id → missing-id bang leaks a `bang_start` to the 2nd viewport). Full
+  suites green: Tier 1 155, Tier 2 74; typecheck clean. Files:
+  `server/hostile-client.itest.ts` (new), `server/connection.ts` (two guards).
 
 - [ ] **Step Q.5 — Pin the `.env` guard's edges**
   - Goal: the `SECRET_PATHS` deny in `permissions.ts` is tested only on the
