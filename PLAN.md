@@ -468,6 +468,18 @@ with it. Both sequence BEFORE R.5.**
     "any stranger can open a socket" gap and shrinks the DoS surface the
     per-IP cap (R.2) already blunts. One Tier-2 test: right origin admitted,
     wrong origin refused, unset = allow-any preserved.
+    **CODE DONE 2026-07-12** (pulled forward — it needs no Stripe, and the
+    mechanism is env-configured so it lands safely before the value exists):
+    `RELAY_ALLOWED_ORIGINS` (comma-separated) gates viewport upgrades; unset =
+    allow any (today's behavior, preserved); a wrong origin OR a missing
+    `Origin` is refused with a clean close (`CLOSE_FORBIDDEN_ORIGIN` = 4006);
+    daemon dial-ins carry no `Origin` and are never gated. In `relay.ts` +
+    `contract.ts` + `main.ts` (synced both repos, `sync:check` green), README
+    env table + prose, and the standalone Tier-2 test (admit/refuse/missing/
+    unset + daemon-unaffected). Cross-repo itest (9, real daemon) still green.
+    **Still owed at deploy:** set `RELAY_ALLOWED_ORIGINS=https://<static app
+    origin>` on Fly once R.5's static origin domain is final — until then it
+    ships unset (allow-any), which is correct pre-launch.
   - Done when: a Stripe test-mode purchase unlocks pairing end-to-end, and
     expiry re-locks it without breaking the local product in any way.
 

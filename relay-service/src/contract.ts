@@ -34,6 +34,7 @@ export const PAIR_PARAM = "pair";
 export const CLOSE_CODE_TAKEN = 4002; // a daemon already holds that pair id
 export const CLOSE_BAD_CODE = 4003; // no daemon paired under that id
 export const CLOSE_OVERLOADED = 4004; // relay at a capacity cap
+export const CLOSE_FORBIDDEN_ORIGIN = 4006; // viewport upgrade from a non-allowlisted web origin
 export const CLOSE_RATE_LIMITED = 4008; // a connection exceeded its frame rate
 
 // The shared subset the sync-guard test checks against server/relay-protocol.ts.

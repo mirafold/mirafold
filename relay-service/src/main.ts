@@ -10,6 +10,10 @@ const relay = await startRelay({
   // Set by the platform's edge (e.g. RELAY_CLIENT_IP_HEADER=fly-client-ip);
   // empty means the per-IP cap keys on the socket address (direct/dev).
   clientIpHeader: process.env.RELAY_CLIENT_IP_HEADER,
+  // Comma-separated web origins allowed to open a viewport (e.g. the static
+  // app origin, RELAY_ALLOWED_ORIGINS=https://app.mirafold.com). Unset = allow
+  // any origin — the default until that static origin exists (R.5).
+  allowedViewportOrigins: process.env.RELAY_ALLOWED_ORIGINS?.split(","),
 });
 
 let closing = false;
