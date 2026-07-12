@@ -150,6 +150,15 @@ type WireMsgBody =
   // dim block that folds to one line once the turn's real output starts —
   // collapse-on-finalize, never dropped.
   | { type: "thinking_delta"; text: string }
+  // Phase F.2: a service-status line — an event the terminal shows and the
+  // adapter would otherwise drop, so the UI never lies in degraded service:
+  // an API retry (terminal shows "retrying…"; we'd sit on "thinking…" looking
+  // hung), a context compaction (silent today), a rate-limit warning, a model
+  // refusal (the turn appears to end for no reason). NOT an error — the turn
+  // continues (retry/compaction) or ends honestly (refusal, alongside the
+  // result). Drawn as a dim persistent system line, never agent markdown.
+  // `kind` lets the client tag it; old clients ignore it and show the text.
+  | { type: "notice"; text: string; kind?: "retry" | "compaction" | "rate_limit" | "refusal" }
   // Step 4.9: the `!` bash passthrough, run in a real PTY (interactive
   // programs prompt normally). These three carry the command's lifecycle and
   // its OUTPUT stream — broadcast and replay-buffered like everything else;

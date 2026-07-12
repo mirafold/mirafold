@@ -579,21 +579,30 @@ fix restores what that agent's *terminal* user already sees — nothing invented
 
 - [x] **Step F.1 — Slash-command output renders** — done 2026-07-08; buffered assistant text (e.g. `/context`) paints exactly once without double-rendering a streamed turn. → PLAN-ARCHIVE.md.
 
-- [ ] **Step F.2 — System-notice line (the UI must not lie in degraded service)**
-  - Goal: surface the service events the terminal shows and the adapter drops:
-    `rate_limit_event` (**observed live on an ordinary one-word turn** — it is
-    not rare), `system/api_retry` (terminal shows "retrying (attempt n)…";
-    Mirafold sits on "thinking…" looking hung), `system/compact_boundary`
-    (context silently compacts today), and `model_refusal_*` (turn appears to
-    end for no reason).
-  - Build: one additive `WireMsg` — `notice { text, kind? }` — mapped from
-    those four in the claude adapter; RenderZone draws it as a dim persistent
-    system line (thinking-block styling family, not agent markdown).
-  - Files: `server/protocol.ts`, `server/adapters/claude-code.ts`,
-    `web/src/RenderZone.tsx`, `web/src/styles.css`, tests in kind.
-  - Done when: scripted-engine tests map each of the four to a `notice`; a
-    forced api_retry (scripted) is visible in the transcript instead of a
-    silent stall.
+- [x] **Step F.2 — System-notice line (the UI must not lie in degraded service)**
+  — done 2026-07-12. One additive `WireMsg`, `notice { text, kind? }` (kind ∈
+  `retry | compaction | rate_limit | refusal`), mapped in the claude adapter's
+  `pump()` from five SDK events: `system/api_retry` → "API error — retrying
+  (attempt n/m)…" (retry), `system/compact_boundary` → auto/manual compaction
+  line (compaction), `system/model_refusal_fallback` → "declined — retried on
+  <model>" and `model_refusal_no_fallback` → "declined to complete this
+  request" (refusal), and top-level `rate_limit_event` → surfaced ONLY on
+  `allowed_warning`/`rejected` (the constant plain `allowed` stays silent, so
+  the "not rare" event doesn't spam). The `system/init` model-resolve (F.3) is
+  now gated on `subtype === "init"` so the new subtypes don't disturb it.
+  RenderZone draws a dim persistent `.notice-line` (thinking-block family,
+  per-kind glyph ↻/⊙/⚠, amber for rate_limit/refusal via `--warn-fg`) — it does
+  NOT fold thinking or close the streaming block, since a status aside isn't the
+  turn's real output. Verified: 4 new scripted-engine tests in
+  `claude-code.test.ts` map each event (and the silent-`allowed` case) to the
+  right `notice` while the turn still completes (Tier-1, 146 pass); `yarn
+  typecheck` + `yarn build` clean. Files: `server/protocol.ts`,
+  `server/adapters/claude-code.ts`, `web/src/RenderZone.tsx`,
+  `web/src/styles.css`, `server/adapters/claude-code.test.ts`.
+  Note: the browser render is exercised by build/typecheck and mirrors the
+  proven thinking-block branch — a *live* notice wasn't driven in Chrome
+  because the mock adapter has no notice path (out of F.2's file scope); the
+  scripted mapping is the plan's named Done-when and is green.
 
 - [x] **Step F.3 — Honest model label in the status bar** — done 2026-07-08; the adapters read the engine-resolved model (`system/init`, gemini `result.stats.models`) into `usage.model` instead of "default"/"auto". → PLAN-ARCHIVE.md.
 

@@ -303,6 +303,92 @@ test("F.1 the streamed/buffered decision resets per turn", async () => {
   s.close();
 });
 
+test("F.2 api_retry: a scripted retry surfaces as a notice, not a silent stall", async () => {
+  // The terminal shows "retrying (attempt n)…" here; without the notice the UI
+  // sits on "thinking…" through the backoff, looking hung. The turn still ends.
+  const { s, msgs, turnEnds, awaitTurnEnd } = makeSession([
+    { type: "system", subtype: "api_retry", attempt: 2, max_retries: 5, retry_delay_ms: 1000 },
+    streamDelta({ type: "text_delta", text: "recovered" }),
+    RESULT,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const notice = msgs.find((m) => m.type === "notice")!;
+  assert.equal(notice.kind, "retry");
+  assert.match(notice.text, /retrying \(attempt 2\/5\)/);
+  assert.equal(turnEnds(), 1); // the retry is not an error — the turn completes
+  assert.ok(!msgs.some((m) => m.type === "error"));
+  s.close();
+});
+
+test("F.2 compact_boundary: auto and manual compaction each surface as a notice", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession(
+    [{ type: "system", subtype: "compact_boundary", compact_metadata: { trigger: "auto" } }, RESULT],
+    [{ type: "system", subtype: "compact_boundary", compact_metadata: { trigger: "manual" } }, RESULT],
+  );
+  s.pushPrompt("one");
+  await awaitTurnEnd(1);
+  s.pushPrompt("two");
+  await awaitTurnEnd(2);
+  const notices = msgs.filter((m) => m.type === "notice");
+  assert.deepEqual(notices.map((n) => n.kind), ["compaction", "compaction"]);
+  assert.match(notices[0].text, /automatically compacted/);
+  assert.match(notices[1].text, /compacted/);
+  s.close();
+});
+
+test("F.2 model refusal: fallback names the model; no-fallback explains the ended turn", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession(
+    [
+      { type: "system", subtype: "model_refusal_fallback", fallback_model: "claude-opus-4-8" },
+      RESULT,
+    ],
+    [{ type: "system", subtype: "model_refusal_no_fallback" }, { type: "result", is_error: true, subtype: "refusal" }],
+  );
+  s.pushPrompt("one");
+  await awaitTurnEnd(1);
+  s.pushPrompt("two");
+  await awaitTurnEnd(2);
+  const notices = msgs.filter((m) => m.type === "notice");
+  assert.equal(notices.length, 2);
+  assert.equal(notices[0].kind, "refusal");
+  assert.match(notices[0].text, /retried on claude-opus-4-8/);
+  assert.equal(notices[1].kind, "refusal");
+  assert.match(notices[1].text, /declined to complete/);
+  s.close();
+});
+
+test("F.2 rate_limit_event: warning and rejected notify; plain 'allowed' stays silent", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession(
+    [
+      { type: "rate_limit_event", rate_limit_info: { status: "allowed" } },
+      streamDelta({ type: "text_delta", text: "fine" }),
+      RESULT,
+    ],
+    [
+      { type: "rate_limit_event", rate_limit_info: { status: "allowed_warning", rateLimitType: "five_hour" } },
+      RESULT,
+    ],
+    [
+      { type: "rate_limit_event", rate_limit_info: { status: "rejected", rateLimitType: "seven_day_opus" } },
+      RESULT,
+    ],
+  );
+  s.pushPrompt("one");
+  await awaitTurnEnd(1);
+  s.pushPrompt("two");
+  await awaitTurnEnd(2);
+  s.pushPrompt("three");
+  await awaitTurnEnd(3);
+  const notices = msgs.filter((m) => m.type === "notice");
+  assert.equal(notices.length, 2); // the constant plain "allowed" produced none
+  assert.equal(notices[0].kind, "rate_limit");
+  assert.match(notices[0].text, /approaching the rate limit \(five hour\)/);
+  assert.equal(notices[1].kind, "rate_limit");
+  assert.match(notices[1].text, /rate limit reached \(seven day opus\)/);
+  s.close();
+});
+
 test("error result: error before the single turn_end, no usage without a usage block", async () => {
   const { s, msgs, turnEnds, awaitTurnEnd } = makeSession([
     { type: "result", is_error: true, subtype: "error_during_execution" },
