@@ -13,7 +13,7 @@
 // The only HTTP it answers is GET /health (for the platform's health check).
 
 import { createServer, type IncomingMessage } from "node:http";
-import { randomUUID } from "node:crypto";
+import { createPublicKey, randomUUID, verify as verifySignature, type KeyObject } from "node:crypto";
 import { WebSocketServer, WebSocket, type RawData } from "ws";
 import {
   CLOSE_BAD_CODE,
@@ -21,7 +21,9 @@ import {
   CLOSE_FORBIDDEN_ORIGIN,
   CLOSE_OVERLOADED,
   CLOSE_RATE_LIMITED,
+  CLOSE_UNENTITLED,
   DAEMON_PATH,
+  ENTITLEMENT_HEADER,
   MIN_PAIR_ID_LENGTH,
   PAIR_PARAM,
   VIEWPORT_PATH,
@@ -48,6 +50,13 @@ export type RelayOptions = Partial<Limits> & {
    * origin (dev, and before the static app origin exists). Daemon dial-ins are
    * never gated — they carry no Origin header. Exact scheme+host(+port) match. */
   allowedViewportOrigins?: string[];
+  /** Ed25519 public key (base64 SPKI DER) that signs entitlement tokens — the
+   * paid-tier gate (R.5). When set, a daemon must present a valid, unexpired
+   * token (header `mirafold-entitlement`) to open a pairing; the relay verifies
+   * the signature + expiry OFFLINE (no Stripe call, no state — it stays a dumb
+   * forwarder) and holds only the PUBLIC half, so it can never mint one. Unset =
+   * no entitlement check (today's behavior, before billing ships). */
+  entitlementPublicKey?: string;
 };
 
 export type Relay = {
@@ -96,6 +105,21 @@ export function startRelay(opts: RelayOptions = {}): Promise<Relay> {
     if (allowedOrigins.size === 0) return true;
     const origin = req.headers.origin;
     return typeof origin === "string" && allowedOrigins.has(origin);
+  };
+
+  // Entitlement gate (daemons only). null = no check (pre-billing default).
+  // When configured, a daemon must present a valid, unexpired signed token.
+  const entitlementKey: KeyObject | null = opts.entitlementPublicKey
+    ? createPublicKey({
+        key: Buffer.from(opts.entitlementPublicKey, "base64"),
+        format: "der",
+        type: "spki",
+      })
+    : null;
+  const entitled = (req: IncomingMessage): boolean => {
+    if (!entitlementKey) return true;
+    const h = req.headers[ENTITLEMENT_HEADER];
+    return entitlementValid(Array.isArray(h) ? h[0] : h, entitlementKey);
   };
 
   const server = createServer((req, res) => {
@@ -258,6 +282,15 @@ export function startRelay(opts: RelayOptions = {}): Promise<Relay> {
         ws.close(CLOSE_FORBIDDEN_ORIGIN);
         return;
       }
+      // Entitlement gate (daemons only): with a public key configured, a daemon
+      // must present a valid, unexpired token to open a pairing — the paid-tier
+      // gate. Viewports need no token; a pairing only exists behind an entitled
+      // daemon, so the daemon's entitlement covers it.
+      if (isDaemon && !entitled(req)) {
+        log(`daemon entitlement refused`);
+        ws.close(CLOSE_UNENTITLED);
+        return;
+      }
       if (isDaemon) acceptDaemon(ws, pairId, ip);
       else acceptViewport(ws, pairId, ip);
     });
@@ -310,4 +343,26 @@ export function startRelay(opts: RelayOptions = {}): Promise<Relay> {
 
 function stripUndefined<T extends object>(o: T): Partial<T> {
   return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as Partial<T>;
+}
+
+// Verifies a compact entitlement token, "<b64url(payloadJSON)>.<b64url(sig)>":
+// an Ed25519 signature (by the key that pairs with entitlementKey) over the
+// payload segment's bytes, and a payload `exp` (unix seconds) still in the
+// future. Offline and side-effect-free — the relay stores nothing and calls no
+// one. Any malformed, mis-signed, or expired token returns false.
+function entitlementValid(token: string | undefined, key: KeyObject): boolean {
+  if (!token) return false;
+  const dot = token.indexOf(".");
+  if (dot <= 0 || dot === token.length - 1) return false;
+  const payloadSeg = token.slice(0, dot);
+  try {
+    const sig = Buffer.from(token.slice(dot + 1), "base64url");
+    if (!verifySignature(null, Buffer.from(payloadSeg), key, sig)) return false;
+    const payload = JSON.parse(Buffer.from(payloadSeg, "base64url").toString("utf8")) as {
+      exp?: unknown;
+    };
+    return typeof payload.exp === "number" && payload.exp * 1000 > Date.now();
+  } catch {
+    return false;
+  }
 }
