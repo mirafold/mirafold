@@ -30,14 +30,48 @@ export const BACKOFF_MAX_MS = 5_000;
  * sessionStorage (in-app navigation — fleet row links, history.replaceState —
  * drops the fragment) and scrubbed from the address bar. Shell-owned state:
  * agent output can never read or set it.
+ *
+ * Static-origin serving (R.4/R.5): the page may be served from a static origin
+ * that is NOT the relay (app.mirafold.com serves the bundle; relay.mirafold.sh
+ * carries the socket — the trust split: whoever serves the JS must not carry
+ * the traffic, and vice versa). The fragment then also carries
+ * relay=<ws(s) origin> saying where to dial. Same-origin remains the fallback
+ * (dev, and a self-host that serves both from one host).
  */
-function relayCodeFromPage(): string | null {
-  const m = location.hash.match(/(?:^#|&)code=([A-Za-z0-9_-]+)/);
-  if (m) {
-    sessionStorage.setItem("genui-relay-code", m[1]);
-    history.replaceState(null, "", location.pathname + location.search);
+
+/** Parses `#code=…[&relay=…]`. Exported for tests — pure, no storage/DOM.
+ *  The relay origin is honored only as a well-formed ws:/wss: URL (normalized
+ *  to its origin); anything else — a crafted link steering the socket at some
+ *  other protocol — is dropped, falling back to same-origin. */
+export function relayTargetFromFragment(hash: string): { code: string; ws: string | null } | null {
+  const code = hash.match(/(?:^#|&)code=([A-Za-z0-9_-]+)/);
+  if (!code) return null;
+  const raw = hash.match(/(?:^#|&)relay=([^&]+)/);
+  let ws: string | null = null;
+  if (raw) {
+    try {
+      const u = new URL(decodeURIComponent(raw[1]));
+      if (u.protocol === "ws:" || u.protocol === "wss:") ws = u.origin;
+    } catch {
+      /* malformed — same-origin fallback */
+    }
   }
-  return m?.[1] ?? sessionStorage.getItem("genui-relay-code");
+  return { code: code[1], ws };
+}
+
+function relayTargetFromPage(): { code: string; ws: string | null } | null {
+  const target = relayTargetFromFragment(location.hash);
+  if (target) {
+    sessionStorage.setItem("genui-relay-code", target.code);
+    // A fresh #code with no relay param must also CLEAR a stale stored origin —
+    // the new pairing decides where to dial, not a leftover from the last one.
+    if (target.ws) sessionStorage.setItem("genui-relay-ws", target.ws);
+    else sessionStorage.removeItem("genui-relay-ws");
+    history.replaceState(null, "", location.pathname + location.search);
+    return target;
+  }
+  const code = sessionStorage.getItem("genui-relay-code");
+  return code ? { code, ws: sessionStorage.getItem("genui-relay-ws") } : null;
 }
 
 /**
@@ -91,18 +125,21 @@ export class SocketClient {
       return;
     }
     const proto = location.protocol === "https:" ? "wss" : "ws";
-    const code = relayCodeFromPage();
-    if (!code) {
+    const target = relayTargetFromPage();
+    if (!target) {
       this.url = `${proto}://${location.host}/ws`;
       this.connect();
       return;
     }
     // Remote mode: key derivation is async; sends queue in `pending` until
-    // the first connect. Only the derived id ever reaches a URL.
-    void derivePair(code).then((pair) => {
+    // the first connect. Only the derived id ever reaches a URL. The socket
+    // dials the fragment's relay origin when one was given (static-origin
+    // serving), else this page's own host (dev / self-host fallback).
+    void derivePair(target.code).then((pair) => {
       if (this.closedByUs) return;
       this.pair = pair;
-      this.url = `${proto}://${location.host}/ws?pair=${pair.id}`;
+      const base = target.ws ?? `${proto}://${location.host}`;
+      this.url = `${base}/ws?pair=${pair.id}`;
       this.connect();
     });
   }

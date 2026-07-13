@@ -7,7 +7,10 @@ import qrcode from "qrcode-generator";
 // never appears in any HTTP request, only on this screen and the phone's.
 // Trusted-shell surface end to end: agent output can never paint or read it.
 
-export type RelayInfo = { url: string; code: string };
+// `ws` (static-origin serving): the relay's ws(s) origin, present when `url`
+// is a separate static app origin — it rides the QR fragment so the loaded
+// page knows where to dial. Absent = the page dials its own host.
+export type RelayInfo = { url: string; code: string; ws?: string };
 
 function QrSvg({ text }: { text: string }) {
   // Error level M and auto type-number; modules become one <path>, drawn
@@ -53,7 +56,9 @@ export function ConnectDevice({ relay }: { relay?: RelayInfo }) {
   }, [open]);
 
   if (!relay) return null;
-  const href = `${relay.url}/#code=${relay.code}`;
+  const href = `${relay.url}/#code=${relay.code}${
+    relay.ws ? `&relay=${encodeURIComponent(relay.ws)}` : ""
+  }`;
 
   return (
     <>
