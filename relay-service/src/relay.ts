@@ -199,13 +199,20 @@ export function startRelay(opts: RelayOptions = {}): Promise<Relay> {
       if (!withinRate(ws)) return;
       let env: DaemonToRelay;
       try {
-        env = JSON.parse(String(data)) as DaemonToRelay;
+        const parsed: unknown = JSON.parse(String(data));
+        // JSON.parse can succeed with a non-envelope — "null" parses to null,
+        // and reading `.t` off it would throw uncaught and kill the process.
+        if (typeof parsed !== "object" || parsed === null) return;
+        env = parsed as DaemonToRelay;
       } catch {
         return;
       }
       if (env.t === "pong") return;
       const viewport = pair.viewports.get(env.v);
-      if (env.t === "frame" && viewport?.readyState === WebSocket.OPEN) {
+      // `p` must be the string the contract promises: ws.send() throws on a
+      // non-string (object/bool/null), and that throw here is uncaught — it
+      // would kill the process. So a mistyped `p` is dropped, not forwarded.
+      if (env.t === "frame" && typeof env.p === "string" && viewport?.readyState === WebSocket.OPEN) {
         viewport.send(env.p); // opaque — routed, never parsed
       } else if (env.t === "close") {
         viewport?.close(CLOSE_BAD_CODE);
@@ -233,7 +240,12 @@ export function startRelay(opts: RelayOptions = {}): Promise<Relay> {
       return;
     }
     track(ws, ip);
-    const v = randomUUID().slice(0, 8);
+    // 32 random bits across ≤8 live viewports: a collision would cross-wire
+    // two sockets under one id, so regenerate on the astronomically rare hit.
+    let v: string;
+    do {
+      v = randomUUID().slice(0, 8);
+    } while (pair.viewports.has(v));
     pair.viewports.set(v, ws);
     pair.daemon.send(JSON.stringify({ t: "open", v } satisfies RelayToDaemon));
     ws.on("message", (data: RawData) => {
