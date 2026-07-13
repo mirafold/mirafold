@@ -174,9 +174,18 @@ if (RELAY_URL) {
   }
   RELAY_CODE = code;
 }
+// Where the phone loads the viewport app FROM (static-origin serving). The
+// relay serves no JS — the trust decision: whoever carries the traffic must
+// not serve the code that could read the pairing fragment. With
+// MIRAFOLD_APP_URL set (e.g. https://app.mirafold.com) the QR points there and
+// `ws` rides the fragment so the page knows where to dial; unset falls back to
+// the relay URL's HTTP twin (dev + stub, where one host plays both parts).
+const APP_URL = process.env.MIRAFOLD_APP_URL?.trim().replace(/\/+$/, "");
 const relayInfo =
   RELAY_URL && RELAY_CODE
-    ? { url: RELAY_URL.replace(/^ws/, "http"), code: RELAY_CODE }
+    ? APP_URL
+      ? { url: APP_URL, code: RELAY_CODE, ws: RELAY_URL }
+      : { url: RELAY_URL.replace(/^ws/, "http"), code: RELAY_CODE }
     : undefined;
 
 // #10: per-socket liveness, read by the heartbeat below to reap half-open

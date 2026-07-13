@@ -108,6 +108,10 @@ type WireMsgBody =
   // "connect a device" QR. Sent to LOCAL viewports only, over the loopback
   // socket the user already owns: the code must never travel the relay path,
   // even encrypted, so remote viewports get the hello without it.
+  // Static-origin serving adds `ws` (optional/additive): the relay's ws(s)
+  // origin, set when `url` is a SEPARATE static app origin (MIRAFOLD_APP_URL —
+  // the relay serves no JS, the trust decision). The QR fragment carries it so
+  // the loaded page knows where to dial; absent = the page dials its own host.
   // Step R.4g adds `version` (optional/additive) — the daemon's package
   // version, for the status bar and bug reports.
   // Step R.4i adds `blocked` per agent entry (optional/additive): true means a
@@ -123,7 +127,7 @@ type WireMsgBody =
       default: AgentName;
       cwd?: string;
       home?: string;
-      relay?: { url: string; code: string };
+      relay?: { url: string; code: string; ws?: string };
       version?: string;
     }
   // Step R.4i: the daemon refused to attach this REMOTE (relay) viewport to the

@@ -2,6 +2,7 @@ import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import {
   SocketClient,
+  relayTargetFromFragment,
   PING_INTERVAL_MS,
   PONG_DEADLINE_MS,
   BACKOFF_MIN_MS,
@@ -298,4 +299,48 @@ test("deliberate close(): no reconnect, heartbeat stopped, dom listeners removed
   dom.online(); // nothing left listening
   dom.visible();
   assert.equal(FakeWS.instances.length, 1);
+});
+
+// Static-origin serving: the fragment may carry relay=<ws(s) origin> beside
+// the code — where the socket dials when the page is served from a static
+// origin that is not the relay. Pure parser, tested directly.
+test("fragment parsing: code alone, code+relay, and hostile/malformed relay values", () => {
+  // Local page: no code → no remote mode, regardless of a stray relay param.
+  assert.equal(relayTargetFromFragment(""), null);
+  assert.equal(relayTargetFromFragment("#relay=wss%3A%2F%2Fx.example"), null);
+
+  // Code alone (today's QR): same-origin dial (ws null).
+  assert.deepEqual(relayTargetFromFragment("#code=abc-DEF_123"), { code: "abc-DEF_123", ws: null });
+
+  // Code + relay (the app.mirafold.com QR): the encoded ws(s) URL comes back
+  // normalized to its origin — path/trailing-slash junk can't smuggle into the
+  // dial URL we build from it.
+  assert.deepEqual(
+    relayTargetFromFragment(`#code=abc&relay=${encodeURIComponent("wss://relay.mirafold.sh")}`),
+    { code: "abc", ws: "wss://relay.mirafold.sh" },
+  );
+  assert.deepEqual(
+    relayTargetFromFragment(`#code=abc&relay=${encodeURIComponent("ws://127.0.0.1:8080/some/path/")}`),
+    { code: "abc", ws: "ws://127.0.0.1:8080" },
+  );
+  // Params in either order.
+  assert.deepEqual(
+    relayTargetFromFragment(`#relay=${encodeURIComponent("wss://r.example")}&code=abc`),
+    { code: "abc", ws: "wss://r.example" },
+  );
+
+  // A crafted link must not steer the socket anywhere but ws(s): non-socket
+  // protocols and unparseable values are dropped → same-origin fallback.
+  for (const hostile of [
+    encodeURIComponent("https://evil.example"),
+    encodeURIComponent("javascript:alert(1)"),
+    "not%20a%20url",
+    "%ZZbadencoding",
+  ]) {
+    assert.deepEqual(
+      relayTargetFromFragment(`#code=abc&relay=${hostile}`),
+      { code: "abc", ws: null },
+      hostile,
+    );
+  }
 });

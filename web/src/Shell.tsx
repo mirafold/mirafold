@@ -54,7 +54,7 @@ export function Shell() {
   const [daemon, setDaemon] = useState<{
     cwd?: string;
     home?: string;
-    relay?: { url: string; code: string };
+    relay?: { url: string; code: string; ws?: string };
     version?: string;
   }>({});
   const [onbError, setOnbError] = useState<string | null>(null);
