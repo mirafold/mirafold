@@ -506,6 +506,36 @@ with it. Both sequence BEFORE R.5.**
   - Done when: a Stripe test-mode purchase unlocks pairing end-to-end, and
     expiry re-locks it without breaking the local product in any way.
 
+- [ ] **Step R.5b — Release strategy, locked (all three repos)** *(a
+  decision to make + write down, not a build; do before R.6's final week)*
+  - Goal: one agreed, written release sequence so R.6/R.7 execute a plan
+    instead of improvising how each piece ships.
+  - Decide and record: (a) **shape of the release** — private beta / staged
+    rollout vs. the single M1+M2+M3 public splash R.7 currently assumes;
+    (b) **per-repo mechanics + order** — `genui-shell` (repo public + `npm
+    publish` + versioning/cadence), `genui-relay` (deploy pipeline, when the
+    entitlement gate flips ON, when the default `MIRAFOLD_RELAY_URL` bake
+    lands — see R.2), `mirafold-site` (Stripe button flip, demo swap); (c)
+    **rollback / kill-switch** for each (the relay gate and per-daemon relay
+    URL are the levers); (d) how the codebase/npm/GitHub rename (R.2) is
+    sequenced into all of the above.
+  - Done when: a written release-sequence exists that R.6 and R.7 just
+    follow, with no open "how do we actually ship this" questions.
+
+- [ ] **Step R.5c — User-testing round before release (Kyle-led)** *(needs
+  R.2 deployed + the phone experience end-to-end; gates R.7)*
+  - Goal: real users other than Kyle drive real sessions — across the three
+    agents, on real hardware and phones, through the deployed relay — before
+    a stranger ever does at launch.
+  - **Expect this to grow the roadmap.** It is near-certain that testing
+    surfaces a batch of small, must-fix-before-release items; each gets
+    logged and triaged into Phase R as an explicit launch blocker (its own
+    R.5c-N sub-item or folded into R.6), not carried in someone's head. This
+    step is the intake for that backlog as much as the testing itself.
+  - Done when: the testing round is complete, every finding is written down,
+    and each must-fix item is either fixed or explicitly scheduled as a
+    Phase R blocker ahead of R.7.
+
 - [ ] **Step R.6 — Launch prep (the week before; everything verifiable
   without publishing)** *(split out of the old launch-day mega-step
   2026-07-08 — same items, grouped so nothing hides mid-paragraph; nothing
