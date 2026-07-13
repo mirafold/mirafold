@@ -34,7 +34,7 @@ if (process.argv.includes("--help") || process.argv.includes("-h")) {
       `  -h, --help       show this help and exit\n` +
       `\n` +
       `Config is read from .env in the launch directory (see .env.example) —\n` +
-      `agent credentials, PORT, GENUI_AGENT, GENUI_RELAY_URL, GENUI_DEBUG=1.`,
+      `agent credentials, PORT, MIRAFOLD_AGENT, MIRAFOLD_RELAY_URL, MIRAFOLD_DEBUG=1.`,
   );
   process.exit(0);
 }
