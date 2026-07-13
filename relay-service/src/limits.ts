@@ -23,8 +23,11 @@ export type Limits = {
 };
 
 const num = (name: string, fallback: number): number => {
-  const v = process.env[name];
-  const n = v === undefined ? NaN : Number(v);
+  // Number("") === 0, so a set-but-empty var (an easy .env/CI accident) would
+  // silently become 0 — refuse-everything or cap-disabled, depending on the
+  // knob — instead of the default. Empty/whitespace means unset; "0" is honored.
+  const v = process.env[name]?.trim();
+  const n = v ? Number(v) : NaN;
   return Number.isFinite(n) && n >= 0 ? n : fallback;
 };
 
