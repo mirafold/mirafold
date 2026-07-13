@@ -501,8 +501,15 @@ with it. Both sequence BEFORE R.5.**
     webhook mints the signed token; alt: a small Fly service). (3) Then: the
     daemon side (dial-out sends the header; genui-shell app code — hold until the
     other session frees it), and the R.5 open refinements (token→account binding
-    vs. sharing, revocation-before-expiry window). Pricing $12/$99 · 7-day trial
-    · cancel-at-period-end stands per BUSINESS §7 unless recut.
+    vs. sharing, revocation-before-expiry window, and — 2026-07-12 audit, B2 — a
+    relay-side **max token lifetime** backstop that rejects an implausibly
+    long-lived `exp` even from a buggy or compromised minter). Pricing $12/$99 ·
+    7-day trial · cancel-at-period-end stands per BUSINESS §7 unless recut.
+    **Launch blocker (2026-07-12 audit, B2):** flipping the relay ON for everyone
+    (baking the default `MIRAFOLD_RELAY_URL`, see R.2) must land **with**
+    `RELAY_ENTITLEMENT_PUBLIC_KEY` set — never before. An open relay with the gate
+    off lets anyone squat the pair/connection caps and lock real daemons out, so
+    "entitlement gate ON at deploy" is an explicit gate on R.7, not just an owed item.
   - Done when: a Stripe test-mode purchase unlocks pairing end-to-end, and
     expiry re-locks it without breaking the local product in any way.
 
@@ -594,6 +601,14 @@ with it. Both sequence BEFORE R.5.**
       resource use and a NAT'd-office case (many legit users, one IP) before
       relying on them — tune via env, no redeploy. Confirm `fly-client-ip`
       reaches the process (the per-IP cap keys on it, not Fly's proxy IP).
+    - Pre-handshake flood hardening (2026-07-12 audit, B3): every relay cap
+      (global / per-IP / pair) is checked *after* the WebSocket handshake, so raw
+      TCP / half-open HTTP connections that never upgrade are bounded only by
+      Node's defaults and Fly's edge — fine on Fly, but the DEPLOY.md self-host/
+      VPS path has no such floor. Set `server.headersTimeout` / `requestTimeout` /
+      `maxConnections` explicitly in `relay.ts` (cheap, local) and fold a
+      slowloris-style connection flood into this step's load-test, not just the
+      frame/connection caps.
     - macOS and Windows cold-installs from the tarball; on the Windows
       pass, run `!dir` (the R.4f fix's real-hardware check).
     - The real `!sudo -v` password entry (Kyle — verified through the
