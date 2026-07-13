@@ -122,15 +122,33 @@ export function startRelay(opts: RelayOptions = {}): Promise<Relay> {
     return entitlementValid(Array.isArray(h) ? h[0] : h, entitlementKey);
   };
 
-  const server = createServer((req, res) => {
-    // The ONLY HTTP surface: a health check. Everything else is 404 — the
-    // relay serves no app bundle by design (README, the trust decision).
-    if (req.method === "GET" && req.url === "/health") {
-      res.writeHead(200, { "content-type": "text/plain" }).end("ok");
-      return;
-    }
-    res.writeHead(404, { "content-type": "text/plain" }).end("genui-relay: not found");
-  });
+  // Pre-handshake flood floor. Every cap below is enforced AFTER the WebSocket
+  // handshake, so raw TCP / half-open sockets that never upgrade would otherwise
+  // be bounded only by Node's generous defaults — fine behind Fly's edge, but
+  // the self-host/VPS path (DEPLOY.md) has no such floor. The two timeouts cut a
+  // slowloris, swept every connectionsCheckingInterval; they must be passed as
+  // createServer options — set as post-hoc properties, Node's timeout checker
+  // silently ignores them (verified). Both clear on a successful upgrade, so a
+  // live WebSocket is never severed by them. 0 disables the corresponding knob.
+  const server = createServer(
+    {
+      connectionsCheckingInterval: cfg.connectionCheckMs,
+      headersTimeout: cfg.headersTimeoutMs,
+      requestTimeout: cfg.requestTimeoutMs,
+    },
+    (req, res) => {
+      // The ONLY HTTP surface: a health check. Everything else is 404 — the
+      // relay serves no app bundle by design (README, the trust decision).
+      if (req.method === "GET" && req.url === "/health") {
+        res.writeHead(200, { "content-type": "text/plain" }).end("ok");
+        return;
+      }
+      res.writeHead(404, { "content-type": "text/plain" }).end("genui-relay: not found");
+    },
+  );
+  // maxConnections is a net.Server property and DOES take effect post-construction
+  // (it caps raw accepted sockets immediately, no timeout sweep). 0 = unbounded.
+  if (cfg.maxSockets > 0) server.maxConnections = cfg.maxSockets;
 
   // Daemon envelopes carry whole WireMsgs (artifacts, capped tool output), so
   // the frame ceiling sits well above any single client frame.
