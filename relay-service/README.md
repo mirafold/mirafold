@@ -61,6 +61,10 @@ All values are env-overridable (`src/limits.ts`):
 | `RELAY_MAX_PAYLOAD_BYTES` | 8000000 | single-frame ceiling |
 | `RELAY_RATE_MAX_FRAMES` / `RELAY_RATE_WINDOW_MS` | 480 / 1000 | per-connection frame rate |
 | `RELAY_HEARTBEAT_MS` | 30000 | ws ping interval; a missed ping is reaped |
+| `RELAY_MAX_SOCKETS` | 2400 | raw TCP sockets accepted at once — the pre-handshake floor; keep ≥ `RELAY_MAX_CONNECTIONS`; 0 = unbounded |
+| `RELAY_HEADERS_TIMEOUT_MS` | 15000 | ms to receive the full request headers before a stalled handshake is cut; 0 disables |
+| `RELAY_REQUEST_TIMEOUT_MS` | 20000 | ms to receive the whole request before a stalled handshake is cut; 0 disables |
+| `RELAY_CONNECTION_CHECK_MS` | 5000 | how often stalled handshakes are swept for the two timeouts above; 0 disables both |
 | `RELAY_CLIENT_IP_HEADER` | *(unset)* | trusted header carrying the true client IP |
 | `PORT` / `HOST` | 8080 / 0.0.0.0 | listen address |
 
