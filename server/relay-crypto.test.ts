@@ -59,8 +59,13 @@ test("ciphertext contains no plaintext substrings", async () => {
 test("a tampered frame fails to open", async () => {
   const { client, daemon } = await channel();
   const sealed = await client.seal("payload");
+  // Tamper an INTERIOR character, never the last one: base64's final char can
+  // carry 2–4 padding bits that decoders silently ignore, so a last-char flip
+  // sometimes decodes to identical bytes and the frame legitimately opens (a
+  // real flake this test had). Every interior character is fully significant.
+  const i = sealed.length - 8;
   const flip = (c: string) => (c === "A" ? "B" : "A");
-  const tampered = sealed.slice(0, -1) + flip(sealed.at(-1)!);
+  const tampered = sealed.slice(0, i) + flip(sealed[i]) + sealed.slice(i + 1);
   await assert.rejects(() => daemon.open(tampered));
 });
 
