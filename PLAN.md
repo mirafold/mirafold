@@ -427,6 +427,63 @@ with it. Both sequence BEFORE R.5.**
 
 - [x] **Step R.4k — Onboarding honesty + local-model discoverability** — done 2026-07-10; live-row endpoint/model `detail`, a named local-model signpost under the picker, where-to-get-it credential links, and the Codex subscription "could change" disclosure. Verified Tier 1 + Tier 3. → PLAN-ARCHIVE.md.
 
+- [ ] **Step R.4l — Pre-release polish + fidelity intake** *(opened
+  2026-07-13, the day of the first real-phone pass through the deployed
+  relay; Kyle's explicit instruction: document now, fix NOTHING yet)*
+  - Goal: every rough edge Kyle has seen gets written down concretely,
+    triaged, and scheduled — nothing carried in anyone's head. This is the
+    same intake muscle R.5c formalizes for outside testers, started early
+    on Kyle's own findings.
+  - Known items so far (all reported 2026-07-13; each needs Kyle's
+    concrete enumeration before it's actionable):
+    1. **Phone viewport styling + small UX issues** — first real phone
+       session (wifi, via app.mirafold.com): "don't love the styling yet
+       and some other little things." Expected: the phone viewport has had
+       near-zero mobile-specific design attention. Punch list owed.
+    2. **Desktop styling issues too** — "from the session to the
+       fleetview": the session view AND FleetView both have styling
+       problems in Kyle's eyes. Details owed; enumerate screen by screen
+       with him.
+    3. **Permission prompts diverge from terminal behavior — FIDELITY
+       BUG, not polish.** Kyle: "permissions questions seem to work
+       differently than they do in the terminal, breaking our fidelity
+       commitment." The faithful re-skin is the product's core promise
+       (never less than the terminal), so treat this as a bug with an
+       investigation shape: reproduce per agent (Claude Code / Codex /
+       Gemini CLI), write down the exact terminal behavior vs. what the
+       shell does (which prompts appear, their wording, approve/deny
+       semantics, session-scoped vs. permanent grants, where the answer
+       is stored), then close each gap or document the divergence as a
+       deliberate, disclosed exception. Specifics owed from Kyle: which
+       agent(s) and which prompt flows he saw diverge.
+    4. **Startup/onboarding flow — redesign discussion. BIG (Kyle's
+       word).** Kyle's sketch (2026-07-13, explicitly not settled — "im
+       not sure"): a staged flow — pick the agent first, then how it's
+       backed (subscription vs. API keys), then the model. Hard
+       requirements he voiced: (a) "simple af"; (b) surface what the
+       user ALREADY HAS — detected credentials make it obvious what they
+       can pick right now; (c) unavailable options stay VISIBLE but
+       clearly unavailable (gray out, not hide — it must read as "an
+       option if you want it"); (d) each unavailable option carries
+       how-to-get-it instructions inline. Raw material that already
+       exists: R.4b/R.4i/R.4k built live-credential detection, the
+       tri-state picker (`live`/`blocked`/`none`), per-row `detail`
+       labels, and where-to-get-it links — this redesign re-stages that
+       material, it doesn't start from zero. One constraint the
+       discussion must start from: the "subscription or keys" step
+       collides with the provider policy (`server/provider-policy.ts`) —
+       Claude/Gemini subscriptions are BLOCKED by their providers' terms
+       (only Codex allows subscription use, locally only, never over the
+       relay), so "subscription" can't be a symmetric choice across
+       agents; the flow has to present that honestly per agent. Also
+       new vs. today: a model-selection step (today model comes from
+       DEFAULT_MODEL/agent config, not the onboarding UI). Next action:
+       a dedicated design discussion with Kyle BEFORE any build.
+  - Done when: each item above is enumerated concretely with Kyle,
+    triaged (fix now / R.6 pre-release blocker / post-launch), and either
+    fixed or explicitly scheduled — and the permissions fidelity item has
+    a written terminal-vs-shell comparison behind whatever triage it gets.
+
 - [ ] **Step R.5 — Entitlement + billing** *(needs Kyle: Stripe account +
   price confirmation — BUSINESS.md §7 says $12/mo · $99/yr, held over
   $10/$79.99 on 2026-07-11)*
