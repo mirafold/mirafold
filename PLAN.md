@@ -575,7 +575,7 @@ clarify). No web/src folder reshuffle (one component per file already reads).
     `server/app.e2e.ts` citation stays for H.13's sweep, per this step's
     note. Ritual green with exact parity: typecheck, 159/159, 74/74, 20/20.
 
-- [ ] **Step H.9 — `Shell.tsx`: extract the session bus**
+- [x] **Step H.9 — `Shell.tsx`: extract the session bus**
   - Goal: the hand-rolled socket + pub/sub machinery — the single most
     disorienting block in the file — becomes its own named module beside
     `ws.ts`, so `Shell.tsx` stops embedding a messaging system mid-component.
@@ -589,6 +589,15 @@ clarify). No web/src folder reshuffle (one component per file already reads).
   - Done when: the ritual passes in full — Tier 3 is the real gate here
     (attach/resume/replay are all driven in headless Chrome by the existing
     suites), with exact count parity and no test edited to accommodate.
+  - Status: **DONE 2026-07-15.** The whole `useMemo` bus body moved verbatim
+    (comments included) into `web/src/session-bus.ts` as `createSessionBus()`
+    behind an explicit `SessionBus` interface; `Shell.tsx` now holds one line
+    (`useMemo(() => createSessionBus(), [])`). `ZoneMsg` lives with the bus
+    and is re-exported from `Shell.tsx`, so `RenderZone`'s import site is
+    untouched — zero files beyond the two named ones changed, no test edited.
+    Shell.tsx: 503 → 406 lines. Ritual green with exact parity: typecheck,
+    159/159, 74/74, 20/20 — the Tier-3 suites drive attach/resume/replay and
+    the R.4c notice through the extracted bus unchanged.
 
 - [ ] **Step H.10 — `Shell.tsx`: group the state**
   - Goal: the wall of ~13 independent `useState` hooks reads as a handful of
