@@ -40,12 +40,18 @@ sequence, lives in **BUSINESS.md** (milestone gates).
   security, generative UI stay agent-neutral). Claude-specific behavior (the
   `claude_code` preset, inherited `settings.json`) is Claude Code's fidelity,
   scoped to that adapter only.
-- **Provider credential policy** (R.4i, 2026-07-10): Mirafold must not enable
-  prohibited subscription use. Closed-provider subscriptions are restricted by
-  their terms — Anthropic + Gemini prohibit third-party subscription use
-  outright; OpenAI allows it for local use but not the paid relay — so a
-  Claude/Gemini login shows as `blocked` (API-key fix), and no subscription is
-  driven over the relay. API keys and local/BYO endpoints are the live paths.
+- **Provider credential policy** (R.4i 2026-07-10; re-verified 2026-07-15,
+  K.3 + the disclosed-uncertainty rule): Mirafold must not enable prohibited
+  subscription use. Anthropic + Gemini prohibit third-party subscription use
+  in writing → a Claude/Gemini login shows as `blocked` (API-key fix). OpenAI
+  is uncertain (no written permission, visibly permissive posture) → a
+  Codex/ChatGPT login runs LOCALLY as a **disclosed gray area** under the
+  **disclosed-uncertainty rule**: the user sees the uncertainty stated
+  plainly (never "OpenAI permits") and makes the call; the `blocked`
+  machinery stays ready for a one-line flip if OpenAI enforces. NO
+  subscription of any kind is driven over the paid relay — absolute bound.
+  The rule's canonical statement + the dated per-row citations live in
+  `server/provider-policy.ts`; consume it, never re-encode it elsewhere.
   The dated, revisit-able matrix lives in **one file**,
   `server/provider-policy.ts`; consume it, never re-encode the rule elsewhere.
 - **Shared modules** cross server/web only via aliases declared in BOTH

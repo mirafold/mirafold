@@ -22,12 +22,19 @@ before Phase T, and design every seam so the daemon stays local-first.
   providers** (Anthropic, OpenAI, Google) an API key is the only *fully*
   supported credential. Their terms restrict driving a subscription/OAuth login
   from a third-party app: Anthropic and Google prohibit it outright (local and
-  relay); OpenAI permits it for free LOCAL use but not the paid relay. So
-  Mirafold refuses prohibited subscription use — a Claude/Gemini login shows
-  as `blocked` with the API-key fix, and NO subscription (even OpenAI's) is
-  driven over the relay. API keys and local/BYO endpoints (Ollama, a proxy) are
-  the live paths. The one dated source of truth is `server/provider-policy.ts`
-  (R.4i, 2026-07-10). *(This corrects the earlier "the subscription can't drive
+  relay) — a Claude/Gemini login shows as `blocked` with the API-key fix — and
+  OpenAI grants no written permission either way, so a Codex/ChatGPT login is
+  allowed for free LOCAL use as a **disclosed gray area** under the
+  **disclosed-uncertainty rule** (Kyle, 2026-07-15: uncertain terms +
+  permissive provider posture + minimal exposure ⇒ permissive reading with
+  the uncertainty stated to the user, never asserted as permission; the
+  `blocked` machinery stays ready for a one-line flip if OpenAI enforces).
+  NO subscription of any kind is driven over the paid relay — that bound is
+  absolute. API keys and local/BYO endpoints (Ollama, a proxy) are the fully
+  supported paths. The one dated source of truth — including the canonical
+  statement of the disclosed-uncertainty rule — is `server/provider-policy.ts`
+  (R.4i 2026-07-10; re-verified with per-row citations + rule locked
+  2026-07-15, K.3). *(This corrects the earlier "the subscription can't drive
   the SDK headlessly — API key is required" claim: R.4b proved it technically
   can; the block is a LEGAL rule, not a technical limit.)*
 - **Stack:** TypeScript end to end. Server: Node + Agent SDK + Express + `ws`.
@@ -83,7 +90,12 @@ before Phase T, and design every seam so the daemon stays local-first.
   the stateless dumb-forwarder design already caps any future migration
   at reworking one small service while every installed daemon just
   re-dials. (Kyle's constraints, all met: no lock-in, easy scaling, no
-  rewrite-on-success beyond that bounded service.)
+  rewrite-on-success beyond that bounded service.) *(2026-07-15: the
+  open-core half of this decision is REVERSED — Kyle's call, the relay goes
+  open (MIT) too; we sell the hosted convenience, and open relay code is a
+  trust asset for the E2E story. The separate repo, Fly deploy, and paid
+  entitlement gate all stand unchanged. Executed by Phase K.1; until that
+  flip lands the repo remains private.)*
 - **Dev without the API:** when `ANTHROPIC_API_KEY` is unset the server falls
   back to a `MockSession` — same `AgentSession` interface, same wire protocol,
   scripted replies (5 shuffled demo templates). Every UI capability is built
@@ -715,6 +727,298 @@ earlier phases). Only 4.7 remains below, as the pointer to Phase R.
 
 ---
 
+## Phase K — Legal & compliance readiness (opened 2026-07-15; gates the remaining Phase R steps)
+
+Origin: a 2026-07-15 full legal review (provider terms re-verified against
+current published docs the same day). The finding, in one line: the
+architecture already sits on the defensible side of every hard line (the
+provider-policy gate, E2E blindness, local-first execution) — what's missing
+is almost entirely *paper*: an entity, the two user-facing legal documents,
+disclosure hygiene, and a handful of one-command checks. Two decisions Kyle
+locked the same day, recorded here:
+
+- **The relay goes open (the 2026-07-07 open-core split is REVERSED).**
+  Kyle's call: we sell the hosted convenience, not code secrecy — and open
+  relay code is a comfort to exactly the security-conscious audience the E2E
+  story courts ("verify what the relay can't see"). The paid tier and the
+  entitlement gate are unchanged; only the source visibility flips. Two
+  consequences: the deferred git-history-scrub question is now **moot**
+  (nothing private left to leak from the shell's history), and the site's
+  "open source" line can cover the whole product. Executed by K.1.
+- **Billing/tax is outsourced to a merchant of record** (Paddle /
+  Lemon Squeezy class) for a fee premium — convenience over margin, Kyle's
+  explicit call. K.4 picks the vendor and reworks R.5's Stripe-specific half;
+  the Ed25519 entitlement-token design is vendor-agnostic and stands as built.
+- **The disclosed-uncertainty rule** (locked 2026-07-15, after K.3 executed):
+  when a provider's terms are uncertain — neither clearly permitting nor
+  prohibiting — and our exposure is minimal with a visibly permissive provider
+  posture, take the PERMISSIVE reading and put the uncertainty in front of the
+  user (their account, their call), under two hard conditions: the disclosure
+  states uncertainty, never permission; and enforcement degrades gracefully
+  (the blocked state + one-line flip stay ready). Written prohibitions are
+  always honored; the paid relay always fails closed. Canonical statement
+  lives in `server/provider-policy.ts`; first application: the codex
+  subscription row.
+
+**Sequencing:** these steps gate the remaining Phase R build steps (R.5
+onward) and the R.7 launch — R.7 must not execute while any K step is open
+except K.10's actual filing and the parking lot. Nearly everything here is a
+decision, a document, or Kyle's-hands account work, so Phase K may proceed in
+parallel with Phase H without disturbing H's behavior-preserving invariant;
+the only code it touches is a LICENSE file, dated comment edits in
+`server/provider-policy.ts`, and (K.3, conditionally) one boolean in that
+same file. Steps marked *(assistant: investigate)* need thorough
+re-verification against current primary sources before acting — do not act
+on this plan's summary alone.
+
+- [x] **Step K.1 — Open the relay (decision executed)** — done 2026-07-15
+  (status note below)
+  - Goal: `genui-relay` becomes public MIT alongside the shell — one
+    licensing story across the product, and "fully open source" becomes a
+    true marketing claim.
+  - Build: swap the relay's `UNLICENSED` for MIT (LICENSE file +
+    `package.json` `license` field; copyright line = the K.2 entity once it
+    exists, Kyle personally until then); a README pass removing the
+    closed-source framing; the repo flips public **per R.5b's written
+    release order**, not ad hoc. When the flip lands, update the umbrella
+    docs (`../CLAUDE.md` open-core paragraph, `../ROADMAP.md`) — dated
+    amendments already mark the decision there. Until the flip, the repo
+    stays private and the existing don't-leak-relay-specifics rule holds.
+  - Done when: the relay repo carries MIT, R.5b's release sequence names the
+    moment it goes public, and no doc still claims the open-core split.
+  - Status (2026-07-15): DONE. `genui-relay` relicensed — `LICENSE` (MIT,
+    same copyright line as the shell's; entity swap owed to K.2/K.8) +
+    `package.json` `license: "MIT"` (`private: true` kept — it's the
+    don't-publish-to-npm flag, orthogonal to source license); README
+    blockquote + ARCHITECTURE.md §6 rewritten for the open state (self-host
+    expected; sold thing = the hosted instance). Shell-side docs reconciled:
+    R.2's "closed source" build text amended, BUSINESS.md §5/§6 updated
+    (§6(2)(c) "relay naturally closed" reversed), and **the public-flip
+    moment is seeded into R.5b's decide-list (b)** — the flip itself
+    executes there, not here. Relay standalone suite 20/20 after the
+    package.json edit. The repo REMAINS PRIVATE until R.5b/R.7 flips it.
+
+- [ ] **Step K.2 — Legal entity before the first charge** *(Kyle's hands —
+  external filings; ~a week of lead time, start early)*
+  - Goal: no natural person is the counterparty to paid traffic whose
+    product feature is "a phone on the internet drives a shell on a
+    customer's machine." Unbounded personal liability → bounded entity
+    liability, for a few hundred dollars.
+  - Do: single-member LLC (state filing directly, or a bundler like Stripe
+    Atlas — fine even if billing lands on a merchant of record); EIN;
+    business bank account; the billing/MoR account created **under the
+    entity** (migrating a personal payments account later is painful). The
+    entity becomes the named party in K.5's ToS, the site footer, and both
+    repos' LICENSE copyright lines.
+  - Done when: the entity exists and K.4/R.5's live payment configuration is
+    created under it — a **hard prerequisite**: no live checkout under a
+    personal account, ever.
+
+- [x] **Step K.3 — Provider-terms re-verification** — done 2026-07-15
+  (status note below) *(assistant:
+  investigate — thoroughly, against current primary sources)*
+  - Goal: every row of `server/provider-policy.ts` cites a current, quotable
+    document before launch; the code matches the verified matrix.
+  - The known wrinkle (found 2026-07-15): the matrix's OpenAI row rests on
+    "OpenAI publicly permits ChatGPT accounts in third-party harnesses"
+    (free LOCAL use), but OpenAI's current plan/help pages say reselling
+    access or "using ChatGPT to power third-party services" is prohibited on
+    the paid tiers. There is a defensible reading (a local re-skin driving
+    OpenAI's own Codex CLI is the user using Codex, not a third-party
+    service powered by ChatGPT), but the gap between "publicly permits" and
+    the terms text is wide. Investigate: locate the specific, current OpenAI
+    document permitting Codex/ChatGPT sign-in in third-party harnesses. If
+    it can't be pinned verbatim, flip `SUBSCRIPTION_LOCAL_OK.codex` to
+    `false` — fail closed, the same principle the relay gate already
+    encodes — and update the R.4k onboarding disclosure ("could change" →
+    "changed"). Also re-verify the Anthropic row (re-confirmed 2026-07-15:
+    the Feb 2026 consumer-terms clarification stands) and the Google row;
+    re-date the file's header comment either way.
+  - Done when: each row cites a named, dated source; the code matches; and a
+    launch-week matrix re-check is an explicit line item on R.7 (all three
+    providers moved within six months — assume they move again).
+  - Status (2026-07-15): DONE — investigated against primary sources, and
+    **the OpenAI row FLIPPED to prohibited (fail closed)**. Findings, per row:
+    **Anthropic** — ban re-confirmed, now pinned verbatim to the Claude Code
+    docs "Legal and compliance" page ("Anthropic does not permit third-party
+    developers to offer Claude.ai login or to route requests through Free,
+    Pro, or Max plan credentials on behalf of their users"). **Google** —
+    stronger than a terms question now: Gemini CLI stopped serving individual
+    accounts (free/AI Pro/AI Ultra) 2026-06-18 per the official
+    google-gemini/gemini-cli discussion #28017; API-key use continues under
+    the Gemini API ToS. Side-finding logged into R.6: **Antigravity CLI**
+    announced as Gemini CLI's successor — adapter-impact check added there.
+    **OpenAI** — no written general permission exists: the Codex auth docs
+    are silent, a Codex maintainer deferred to the general ToS when asked
+    directly (openai/codex discussion #8338), and the ChatGPT plan pages
+    prohibit "using ChatGPT to power third-party services"; the permissive
+    evidence (Altman's 2026-05-02 OpenClaw sign-in tweet, reported
+    non-enforcement) is posture, not permission → per this step's rule,
+    `SUBSCRIPTION_LOCAL_OK.codex` flipped to `false`. Code + copy landed:
+    `provider-policy.ts` (header rewritten with per-row citations + the
+    flip), its test, `agents-meta.ts` (codex CONNECT_HINT drops `codex
+    login`; new codex BLOCKED_HINT), adapter comments, e2e expectation;
+    R.4k's "could change" disclosure retired (it changed). Docs reconciled:
+    PLAN Auth decision + R.4l(4), CLAUDE.md (both repos' + umbrella),
+    BUSINESS.md §2 passage, `.env.example`, site FAQ ("Mostly no" → "No") +
+    site CLAUDE copy rule. R.7 gained the launch-week matrix re-check; R.6
+    gained the Antigravity succession check. Verified: `yarn typecheck` +
+    Tier 1 (159) + Tier 2 (74) + Tier 3 (20), all green; site re-rendered
+    headless at 1280w. Flip-back condition documented in the policy header:
+    a written, general OpenAI allowance.
+  - **Amendment (2026-07-15, same day — Kyle's call): the codex row
+    re-flipped to ALLOWED locally, as a disclosed gray area.** Kyle weighed
+    the fail-closed outcome against OpenAI's demonstrated posture and chose
+    permissive-with-full-disclosure, locking it as the standing
+    **disclosed-uncertainty rule** (see the phase header + the canonical
+    statement in `server/provider-policy.ts`). The two clean-making
+    conditions hold in code: (1) the codex CONNECT_HINT states uncertainty,
+    never permission ("not clearly permitted by OpenAI's terms, tolerated
+    in practice; your account, your call") — unit + e2e tests pin both the
+    caveat and the absence of any "OpenAI permits" claim; (2) graceful
+    degradation stays ready — the codex BLOCKED_HINT is kept current though
+    unused, so enforcement is a one-line policy flip. The relay refusal is
+    untouched (absolute bound). All docs re-reconciled to the amended state;
+    all four tiers re-verified green (typecheck, 159/74/20).
+
+- [ ] **Step K.4 — Merchant-of-record billing** *(decision 2026-07-15:
+  outsource tax/compliance; assistant: investigate the vendor choice)*
+  - Goal: US state sales tax, EU VAT (which applies from the **first** B2C
+    euro for a non-EU seller — no threshold), the FTC Negative-Option
+    ("click-to-cancel") disclosure/consent/reminder mechanics, and the EU
+    14-day withdrawal-right waiver all become the vendor's problem, traded
+    for a bigger per-transaction fee.
+  - Investigate: Paddle vs. Lemon Squeezy (Stripe + Stripe Tax stays the
+    fallback if no MoR meets requirements). Hard requirements from BUSINESS
+    §7 + R.5, each verified in writing against the vendor's current docs:
+    card-required 7-day trial; cancel-at-period-end with no refund path;
+    $12/mo · $99/yr pricing; a subscription-lifecycle webhook the minting
+    backend can consume to mint/expire the Ed25519 entitlement token;
+    checkout linkable from a static page; trial-conversion reminder and
+    easy-as-signup cancellation handled by the vendor.
+  - Then: rework R.5's build half (checkout → webhook → minting) for the
+    chosen vendor — the relay-side entitlement check is untouched — and
+    re-point the site PLAN's checkout-button blocker.
+  - Done when: vendor chosen with the requirement checklist recorded, R.5's
+    body rewritten for it, and the account exists under the K.2 entity.
+
+- [ ] **Step K.5 — Terms of Service + Privacy Policy (from a written data
+  inventory)**
+  - Goal: the two user-facing legal documents exist, are published, and are
+    *true* — which for this product is a strength: the honest answer is
+    "almost nothing," so write it down and lean into it.
+  - Build, in order: (1) a **data inventory** — exactly what the relay, the
+    site, and the billing vendor see and retain, and for how long (relay:
+    IPs, pairing ids, connection timing, byte counts — never plaintext
+    content; site: Cloudflare logs; billing: vendor-held card/name data).
+    Deliberately minimize relay/site logging and write the retention down —
+    what isn't retained can't be breached or subpoenaed. The inventory feeds
+    both documents AND K.6's marketing wording. (2) **ToS**: warranty
+    disclaimer; liability cap at fees paid + exclusion of consequential
+    damages (the primary shield for the remote-execution liability);
+    acceptable use; a user-responsibility-for-provider-terms clause (pairs
+    with K.3 — Mirafold enforces known restrictions but doesn't warrant the
+    user's standing with any provider, and where terms are uncertain the
+    disclosed-uncertainty rule applies: the product disclosed it, the user
+    chose it); age line (18+, or 13+ with capacity
+    to contract); governing law; the K.4 trial/cancellation mechanics.
+    (3) **Privacy policy**: the inventory verbatim, subprocessors named
+    (Fly.io, Cloudflare, the billing vendor), GDPR-shaped rights handling
+    (an IP address alone is personal data — one EU customer makes us a
+    controller; minimal data keeps the document short, not optional).
+    Publish both as pages on mirafold.com (site PLAN S.6), linked from the
+    footer and the checkout flow. Kyle's call: 1–2 hours of a real lawyer's
+    review before launch (recommended — this step and K.2 are the one place
+    it's worth buying); a quality startup-standard template is the floor.
+  - Done when: both pages are live (or staged into the R.5b release order),
+    every sentence in them traces to the inventory, and the K.2 entity is
+    the named party.
+
+- [ ] **Step K.6 — Claim accuracy + third-party trademark hygiene**
+  *(executes in the site repo — site PLAN S.7; this step is the contract)*
+  - Goal: everything the marketing says about security and about other
+    companies' products stays literally true and safely nominative.
+  - Build: E2E claims qualified to match the K.5 inventory (the relay sees
+    ciphertext plus connection metadata; the R.2 "who serves the app JS"
+    asterisk stays honestly worded). A non-affiliation footer on the site
+    and in the README's stranger-facing top (the npm page renders it):
+    "Claude Code, Codex, and Gemini CLI are trademarks of their respective
+    owners; Mirafold is not affiliated with or endorsed by Anthropic,
+    OpenAI, or Google." Word marks only — never provider logos, never their
+    branded visual identity in our marketing (naming a product to state
+    compatibility is nominative fair use; logos and implied endorsement are
+    where it dies). ™ on Mirafold until K.10 registers. The K.1 decision
+    upgrades the site's "Free and open source — MIT" line to cover the whole
+    product — a copy opportunity, not just compliance.
+  - Done when: the site pass ships (verified per the site's own
+    conventions) and the README carries the same non-affiliation line.
+
+- [ ] **Step K.7 — SECURITY.md + vulnerability-disclosure contact (both
+  repos)**
+  - Goal: researchers have a private channel that isn't a public issue —
+    expected for this product category, cheap, and part of the
+    reasonable-care record.
+  - Build: `SECURITY.md` in genui-shell and genui-relay — supported
+    versions, a private contact address on the entity's domain, a response
+    promise Kyle can actually keep, no bounty implied. Keep the existing
+    dated audits + fixes in PLAN-ARCHIVE.md intact: they are the
+    reasonable-care evidence if a claim ever lands.
+  - Done when: both files exist and the contact address routes to Kyle.
+
+- [ ] **Step K.8 — Dependency license scan** *(assistant)*
+  - Goal: nothing copyleft ships in either repo's distributed artifacts.
+  - Build: run a license scan (`npx license-checker --production` or
+    equivalent) over both repos; record the dated output in this step's
+    status note; fix or replace anything GPL/AGPL-shaped in a shipped path
+    (the React/Vite ecosystem is near-uniformly MIT/Apache — this is a
+    ten-minute verification, but verify). Confirm both LICENSE files carry
+    the K.2 entity's copyright line once it exists.
+  - Done when: the recorded scan shows permissive-only production trees.
+
+- [ ] **Step K.9 — Contributor policy, decided before the repos go public**
+  - Goal: incoming-contribution IP settled before contributor #1 — adding a
+    CLA after contributors exist is nearly impossible.
+  - Decide: DCO vs. CLA. Recommended: **DCO** — with K.1, everything is MIT
+    with no relicensing intent, which removes a CLA's main benefit; the DCO
+    (`Signed-off-by` + the GitHub DCO check) documents provenance at
+    near-zero contributor friction. Record the choice in R.5b; add
+    `CONTRIBUTING.md` to both public-bound repos noting it.
+  - Done when: the decision is written in R.5b and CONTRIBUTING.md exists in
+    both repos.
+
+- [ ] **Step K.10 — Mirafold trademark filing** *(Kyle's hands; NOT
+  launch-gating; assistant: investigate first)*
+  - Goal: a priority date on the coined mark before launch attention — the
+    GENUI® lesson, applied forward. The 2026-07-11 knockout search was
+    clean; an intent-to-use application locks priority **before** launch.
+  - Investigate first (assistant): confirm classes (expect 9 + 42), filing
+    basis (intent-to-use pre-launch vs. use-in-commerce at launch), specimen
+    expectations, and current TEAS fees (~$250–350/class as of the review) —
+    deliver Kyle a filing brief he can follow without a lawyer.
+  - Do (Kyle): file via TEAS under the K.2 entity. ™ in use until
+    registration; ® only after.
+  - Done when: the brief is delivered (assistant half) and the application
+    is filed (Kyle's half — before or shortly after launch both work).
+
+- [ ] **Step K.11 — Export-control sanity note** *(assistant; expected
+  conclusion: no action required)*
+  - Goal: a written, dated paragraph closing the question instead of leaving
+    it ambient.
+  - Investigate: the shell's E2E layer calls platform WebCrypto rather than
+    implementing cryptography, and publicly available open-source software
+    using standard crypto sits in the EAR's publicly-available carve-out
+    (post-2021, generally without even the old BIS email notification).
+    Verify that reading is current; write the one-paragraph conclusion into
+    the repo (docs/ or this step's status). Optional belt-and-suspenders: the
+    five-minute BIS/NSA notification email with the public repo URL at R.7.
+  - Done when: the dated note exists with the conclusion.
+
+**Phase K parking lot (post-launch, revenue-triggered — explicitly NOT R.7
+gates):** cyber/E&O insurance once real revenue exists; CCPA formalities at
+its thresholds (far off at launch scale).
+
+---
+
 ## Phase R — The relay + one full launch (pivot, locked 2026-07-07)
 
 Goal of the phase: launch **once, complete** — the demo post, repo public,
@@ -736,7 +1040,9 @@ notifications are **not** part of the launch and are not sold until built.
   - Goal: the dumb forwarder, running in the world.
   - Build: per the locked relay-architecture decision (2026-07-07, above) —
     a portable Node.js + `ws` service in a new **private repo**
-    (`genui-relay`, closed source per the settled MIT open-core call):
+    (`genui-relay`, closed source per the settled MIT open-core call —
+    *2026-07-15: superseded by Phase K.1, the relay is MIT and flips public
+    at launch; the repo separation itself stands*):
     accepts daemon dial-ins and browser connections, matches them by pair
     id, shuttles opaque frames. No frame parsing, no storage. Connection
     caps + rate limits + idle reaping (DoS posture same as the daemon's).
@@ -952,10 +1258,12 @@ with it. Both sequence BEFORE R.5.**
        material, it doesn't start from zero. One constraint the
        discussion must start from: the "subscription or keys" step
        collides with the provider policy (`server/provider-policy.ts`) —
-       Claude/Gemini subscriptions are BLOCKED by their providers' terms
-       (only Codex allows subscription use, locally only, never over the
-       relay), so "subscription" can't be a symmetric choice across
-       agents; the flow has to present that honestly per agent. Also
+       Claude/Gemini subscriptions are prohibited in writing (never a
+       choice), while Codex subscription is live locally only as a
+       disclosed gray area (the K.3 disclosed-uncertainty rule — its
+       caveat must ride the option), and no subscription ever rides the
+       relay; the flow has to present that honestly per agent rather
+       than offering a symmetric subscription-vs-keys fork. Also
        new vs. today: a model-selection step (today model comes from
        DEFAULT_MODEL/agent config, not the onboarding UI). Next action:
        a dedicated design discussion with Kyle BEFORE any build.
@@ -969,6 +1277,13 @@ with it. Both sequence BEFORE R.5.**
   $10/$79.99 on 2026-07-11)*
   - Goal: paying unlocks the relay, on launch day, with almost nothing
     standing between "want" and "paid."
+  - **Phase K reshapes this step (2026-07-15):** K.2 (the entity) is a hard
+    prerequisite for any live payment configuration, and K.4 replaces the
+    Stripe-specific half below with the chosen merchant of record — the
+    Ed25519 entitlement-token design and the relay-side check are
+    vendor-agnostic and stand as built. Resolve K.2/K.4 before building
+    here; the "Stripe" text below is the pre-decision design, kept until
+    K.4 rewrites it.
   - Build: Stripe Checkout → a relay entitlement token; the relay admits
     daemon pairings only with an active entitlement (the *relay* checks
     entitlement — the daemon and wire protocol stay payment-ignorant);
@@ -1057,9 +1372,10 @@ with it. Both sequence BEFORE R.5.**
   - Decide and record: (a) **shape of the release** — private beta / staged
     rollout vs. the single M1+M2+M3 public splash R.7 currently assumes;
     (b) **per-repo mechanics + order** — `genui-shell` (repo public + `npm
-    publish` + versioning/cadence), `genui-relay` (deploy pipeline, when the
+    publish` + versioning/cadence), `genui-relay` (deploy pipeline, **when
+    the repo flips public — owed to K.1, which relicensed it MIT**, when the
     entitlement gate flips ON, when the default `MIRAFOLD_RELAY_URL` bake
-    lands — see R.2), `mirafold-site` (Stripe button flip, demo swap); (c)
+    lands — see R.2), `mirafold-site` (checkout button flip, demo swap); (c)
     **rollback / kill-switch** for each (the relay gate and per-daemon relay
     URL are the levers); (d) how the codebase/npm/GitHub rename (R.2) is
     sequenced into all of the above.
@@ -1085,6 +1401,14 @@ with it. Both sequence BEFORE R.5.**
   2026-07-08 — same items, grouped so nothing hides mid-paragraph; nothing
   here requires `npm publish`, most of it requires R.2's deploy)*
   - Goal: on launch morning, R.7 is a three-move sequence, not a scramble.
+  - **Gemini CLI succession check (from K.3's re-verification, 2026-07-15):**
+    Google stopped serving Gemini CLI requests for individual accounts on
+    2026-06-18 and announced **Antigravity CLI** as the successor terminal
+    agent (API-key/enterprise users continue on the legacy CLI for now).
+    Verify our `gemini-cli` adapter still drives a real turn with an API key
+    on current bits, and write down the Antigravity question (new adapter?
+    rename? drop?) as a post-launch decision — the faithful-skin seam means
+    it's one adapter either way, not a rewrite.
   - **Assets & copy** (2026-07-08 competitive scan):
     - Refresh the demo GIF with the phone beat (the §6 launch asset as
       originally imagined) — the phone beat must show a RENDERED COMPONENT
@@ -1157,6 +1481,15 @@ with it. Both sequence BEFORE R.5.**
 
 - [ ] **Step R.7 — Launch day (the M1+M2+M3 splash, one event)**
   - Goal: everything fires together and the signals start reading.
+  - **Launch-week provider-terms re-check (K.3's standing item):** within
+    the launch week, re-verify all three rows of `server/provider-policy.ts`
+    against current provider documents and re-date the file — all three
+    providers moved within H1 2026, and launching on a stale row is exactly
+    the exposure K.3 exists to close. Includes re-checking the codex
+    disclosed-gray-area row both ways: a written OpenAI allowance would let
+    its caveat drop; signs of enforcement (the Anthropic pattern:
+    server-side blocks first, docs later) mean flipping it to blocked —
+    one line, the copy sits ready.
   - Build, same day, in order: repo public → `npm publish` over the 0.0.1
     placeholder → verify `npx mirafold` against the real registry (the
     one check that's unverifiable until publish) → post (X + Show HN +

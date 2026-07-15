@@ -52,12 +52,15 @@ devices. Why they're first, not just included:
   the API key to escape the lab's plan limits.
 
 **BYOK for closed models is now a requirement, not just a positioning
-(added 2026-07-10).** A provider-terms review confirmed the closed providers
-restrict third-party subscription use: Anthropic and Google prohibit driving a
-subscription/OAuth login from another app entirely, and OpenAI permits it only
-for free local use, never a paid relay. Mirafold enforces this in code
-(`server/provider-policy.ts`, PLAN R.4i) — a Claude/Gemini subscription is
-refused with an API-key pointer, and no subscription is driven over the relay.
+(added 2026-07-10; re-verified 2026-07-15, PLAN K.3).** A provider-terms
+review confirmed Anthropic and Google prohibit driving a subscription/OAuth
+login from another app in writing — those are refused with an API-key
+pointer. OpenAI grants no written permission but shows a visibly permissive
+posture, so a Codex/ChatGPT login runs locally as a **disclosed gray area**
+(the K.3 disclosed-uncertainty rule: state the uncertainty to the user,
+their account, their call — honesty as positioning, consistent with §4's
+trust story). No subscription of any kind is driven over the paid relay.
+Enforced in code (`server/provider-policy.ts`, PLAN R.4i/K.3).
 This *sharpens* the first target rather than shrinking it: the API-key cohort is
 exactly who's unaffected, and "closed models are BYOK here" is now a true,
 enforceable line, not marketing. It also retires an earlier code assumption that
@@ -171,7 +174,8 @@ Mirafold is your terminal agent with a better face, so it launches like one.
 Two modes:
 
 - **Free/local:** UI served from localhost. Full product, single machine.
-  This is the open-core distribution engine (§6).
+  This is the open-source distribution engine (§6; since 2026-07-15 the
+  whole product is open — relay included, PLAN Phase K.1).
 - **Paid/connected:** the daemon pairs with your hosted **relay** (PLAN
   Step 4.7) — a thin WebSocket forwarder (the wire protocol is already the
   seam: once the session registry lands (PLAN 4.2), the relay is just
@@ -205,7 +209,11 @@ Recognition-first, because first-mover value expires (§4.1):
    goal is *recognition* — OSS on HN/GitHub is the only reliable indie
    distribution channel; (b) it converts would-be clones into contributors;
    (c) the paid relay is naturally closed. Cost: someone can self-host a
-   relay. Accept it; self-hosters were never customers.
+   relay. Accept it; self-hosters were never customers. *(2026-07-15
+   update, PLAN Phase K.1: settled as MIT for everything — the relay too,
+   reversing (c). Open relay code is a trust asset for the E2E story
+   ("verify what the relay can't see"), and the self-host cost was already
+   accepted in this section; what's sold is the hosted convenience.)*
 3. **Launch sequence:** demo GIF on X → Show HN → r/ClaudeAI, agent-tooling
    Discords → a "how the trusted-shell security model works" writeup (the
    security angle earns a second, distinct news cycle among exactly the

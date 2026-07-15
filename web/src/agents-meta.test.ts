@@ -10,7 +10,14 @@ test("known agents resolve to display labels and hints", () => {
   assert.equal(agentLabel("claude-code"), "Claude Code");
   assert.equal(agentLabel("codex"), "Codex");
   assert.equal(agentLabel("gemini-cli"), "Gemini CLI");
+  // Disclosed-uncertainty rule (K.3 amendment, 2026-07-15): codex may
+  // suggest `codex login`, but ONLY with the uncertainty stated — the hint
+  // must never assert OpenAI permission, and must keep the API-key path.
   assert.match(connectHint("codex")!, /codex login/);
+  assert.match(connectHint("codex")!, /not clearly permitted/);
+  assert.match(connectHint("codex")!, /your account, your call/);
+  assert.match(connectHint("codex")!, /OPENAI_API_KEY/);
+  assert.doesNotMatch(connectHint("codex")!, /OpenAI permits/);
 });
 
 test("an unknown agent name falls back to its raw string, hint-less", () => {

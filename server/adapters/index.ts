@@ -45,8 +45,10 @@ function credentialKind(agent: AgentName): CredentialKind {
       return "none";
     case "codex":
       // OpenAI API key → api-key. A `codex login` (ChatGPT subscription) writes
-      // ~/.codex/auth.json → subscription: allowed for LOCAL use (OpenAI permits
-      // it) but refused over the relay. CODEX_HOME overrides the auth dir.
+      // ~/.codex/auth.json → subscription: allowed for LOCAL use as a disclosed
+      // gray area (provider-policy's disclosed-uncertainty rule, K.3 amendment
+      // 2026-07-15) but always refused over the relay. CODEX_HOME overrides
+      // the auth dir.
       if (process.env.OPENAI_API_KEY) return "api-key";
       if (loginFileExists(process.env.CODEX_HOME, ".codex", "auth.json")) return "subscription";
       return "none";
@@ -78,9 +80,10 @@ export function defaultAgent(): AgentName {
 /** Resolve one named agent's backend (kind + live + model), per-session (P.4). */
 export function resolveBackendFor(agent: AgentName): Backend {
   const kind = credentialKind(agent);
-  // `live` ⇒ the REAL agent runs. A prohibited subscription (claude/gemini) is
-  // NOT live — it falls back to the mock, so we never actually drive it — and
-  // onboarding shows it as `blocked` with the API-key fix (R.4i).
+  // `live` ⇒ the REAL agent runs. A prohibited subscription (claude/gemini —
+  // written bans; codex only if provider-policy ever flips it) is NOT live —
+  // it falls back to the mock, so we never actually drive it — and onboarding
+  // shows it as `blocked` with the API-key fix (R.4i).
   return { agent, kind, live: allowedLocally(agent, kind), model: modelFor(agent) };
 }
 

@@ -53,10 +53,14 @@ test("onboarding → a full mock turn renders in the DOM", async () => {
   assert.equal(await page.locator(".onb-agent-hint").count(), 3);
   const claudeRow = page.locator(".onb-agent", { hasText: "Claude Code" });
   assert.match(await claudeRow.innerText(), /ANTHROPIC_API_KEY|`claude`/);
-  assert.match(
-    await page.locator(".onb-agent", { hasText: "Codex" }).innerText(),
-    /codex login/,
-  );
+  // Disclosed-uncertainty rule (K.3 amendment, 2026-07-15): the Codex row
+  // offers `codex login` WITH the uncertainty caveat, plus the API-key path.
+  const codexRowText = await page
+    .locator(".onb-agent", { hasText: "Codex" })
+    .innerText();
+  assert.match(codexRowText, /codex login/);
+  assert.match(codexRowText, /not clearly permitted/);
+  assert.match(codexRowText, /OPENAI_API_KEY/);
   // The local/open-model path is named on the picker screen itself (R.4k).
   assert.match(await page.locator(".onb-local-note").innerText(), /local\/open model/i);
 
