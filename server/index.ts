@@ -7,7 +7,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 import type { WireMsg } from "./protocol";
 import { SessionRegistry } from "./sessions/registry";
 import { openConnection } from "./sessions/connection";
-import { sweepLiveness } from "./ws-liveness";
+import { sweepLiveness } from "./sessions/ws-liveness";
 import { startRelayClient } from "./relay/relay-client";
 import { MIN_PAIRING_CODE_LENGTH, resolvePairingCode } from "./relay/relay-protocol";
 import { COOKIE_NAME, cookieToken, isLoopbackOrigin, tokensMatch, verifyToken } from "./auth";

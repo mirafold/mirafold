@@ -492,7 +492,7 @@ clarify). No web/src folder reshuffle (one component per file already reads).
     (the contract), untouched. Ritual green with exact parity: typecheck,
     159/159, 74/74, 20/20.
 
-- [ ] **Step H.5 — Carve out `server/sessions/`, part 2: liveness + the
+- [x] **Step H.5 — Carve out `server/sessions/`, part 2: liveness + the
   session itests**
   - Goal: finish the sessions folder — the cross-cutting session integration
     tests live with the subsystem they exercise.
@@ -502,6 +502,17 @@ clarify). No web/src folder reshuffle (one component per file already reads).
     relative paths change, typecheck enforces).
   - Files: the seven moved files, their importers.
   - Done when: the ritual passes in full with exact count parity.
+  - Status: **DONE 2026-07-15.** Six files `git mv`'d (`ws-liveness.ts` + test
+    + itest, `session.itest.ts`, `end-session.itest.ts`,
+    `hostile-client.itest.ts` — the step's "seven" counted the harness path
+    fix, which turned out to be just the four itests' `../itest-harness`).
+    `index.ts` repointed for `sweepLiveness`. No doc cites the moved files
+    outside dated `[x]` history. Ritual: typecheck + 159/159 + 20/20 e2e; one
+    Tier-2 run flaked 66/74 (parallel real-daemon contention right after a
+    full-suite back-to-back — not the move; the failures didn't name the moved
+    files' subjects) and three consecutive re-runs are 74/74 clean. Worth an
+    eye: if Tier-2 flakes under load again, a `--test-concurrency` cap for
+    `test:server` is the likely fix (R.4l-adjacent, not this phase).
 
 - [ ] **Step H.6 — Carve out `server/security/`**
   - Goal: the two trust gates — who may connect (`auth`) and what a tool may
