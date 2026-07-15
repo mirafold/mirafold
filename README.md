@@ -372,6 +372,9 @@ server/            the local daemon (Node, run with tsx)
     relay-test-client.ts  shared RemoteClient test helper (the browser side of
                        the encrypted relay channel) used by relay.itest.ts and
                        relay-service.itest.ts
+  testing/           cross-cutting test infrastructure (H.8): itest-harness.ts
+                     (spawns the real daemon for Tier 2/3) + the whole-product
+                     e2e suites (app, launcher, phone, resilience)
   version.ts         reads package.json's version at build time (R.4g)
   index.ts           Express + ws server; connections attach as viewports
 web/               the browser app (React 19 + Vite)

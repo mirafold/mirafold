@@ -1,7 +1,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import type { WireMsg } from "../protocol";
-import { startDaemon, createSession, TestClient, type Daemon } from "../itest-harness";
+import { startDaemon, createSession, TestClient, type Daemon } from "../testing/itest-harness";
 
 // Q.4 — the hostile-client sweep. Every `case` in connection.ts's message
 // switch has a malformed path (wrong-typed field, missing field, junk object)

@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import WebSocket from "ws";
 import type { WireMsg } from "../protocol";
-import { startDaemon, TestClient, type Daemon } from "../itest-harness";
+import { startDaemon, TestClient, type Daemon } from "../testing/itest-harness";
 import { startRelayStub, type RelayStub } from "./relay-stub";
 import {
   CLOSE_BAD_CODE,

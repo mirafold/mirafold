@@ -6,7 +6,7 @@
 
 import WebSocket from "ws";
 import type { ClientMsg, WireMsg } from "../protocol";
-import type { Daemon } from "../itest-harness";
+import type { Daemon } from "../testing/itest-harness";
 import { PAIR_PARAM, VIEWPORT_PATH } from "./relay-protocol";
 import {
   derivePair,

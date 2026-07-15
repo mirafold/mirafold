@@ -553,7 +553,7 @@ clarify). No web/src folder reshuffle (one component per file already reads).
     lean on it. Cost: ~2-3 min instead of ~40 s. Two consecutive serialized
     runs: 74/74, 74/74.
 
-- [ ] **Step H.8 — Carve out `server/testing/`**
+- [x] **Step H.8 — Carve out `server/testing/`**
   - Goal: cross-cutting test infrastructure stops crowding the root; what
     remains at `server/` root is exactly the spine (entry points + contracts).
   - Build: `git mv` into `server/testing/`: `itest-harness.ts` and the four
@@ -563,6 +563,17 @@ clarify). No web/src folder reshuffle (one component per file already reads).
   - Files: the five moved files, every itest that imports the harness.
   - Done when: the ritual passes in full with exact count parity, and
     `ls server/*.ts` shows only the documented root spine.
+  - Status: **DONE 2026-07-15.** Five files `git mv`'d into `server/testing/`;
+    eleven importers across sessions/, relay/, security/, pty/ repointed to
+    `../testing/itest-harness`. Two `import.meta.url`-relative ROOT
+    computations deepened one level (`itest-harness.ts` — it spawns the
+    daemon from ROOT — and `launcher.e2e.ts`); Tier 2 + Tier 3 passing is the
+    proof both resolve. `ls server/*.ts` is exactly the root spine: the two
+    entry points (`index.ts`, `render-mcp.ts` + its itest beside it,
+    `render-tools.ts`) and the contracts (`protocol`, `registry-spec`,
+    `provider-policy`, `version`, each with its test). Q.1's
+    `server/app.e2e.ts` citation stays for H.13's sweep, per this step's
+    note. Ritual green with exact parity: typecheck, 159/159, 74/74, 20/20.
 
 - [ ] **Step H.9 — `Shell.tsx`: extract the session bus**
   - Goal: the hand-rolled socket + pub/sub machinery — the single most
