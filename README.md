@@ -282,7 +282,7 @@ The invariants, and where each is enforced today:
   smuggle script or markup (same rule in the registry's `Md` component).
   Links are forced to `target="_blank" rel="noopener noreferrer"`. The one
   place agent HTML executes is `Artifact.tsx`'s opaque-origin iframe.
-- **Tool use is gated server-side** (`server/permissions.ts`, see §5.3);
+- **Tool use is gated server-side** (`server/security/permissions.ts`, see §5.3);
   anything outside the auto-allowed set pauses the turn on a shell-drawn
   permission bar in the browser, deny by default (T.3).
 - **Component actions are mediated server-side** (`server/sessions/actions.ts`, see
@@ -306,7 +306,7 @@ The invariants, and where each is enforced today:
   local server, could drive the agent. Keep auth on outside the single-user dev
   case; the daemon logs a loud warning at startup when it's off.
 - **The daemon's own `.env` is never readable through a tool**
-  (`server/permissions.ts`): the secret-path guard denies `Read`/`Grep`/`Glob`
+  (`server/security/permissions.ts`): the secret-path guard denies `Read`/`Grep`/`Glob`
   at `.env`/`.env.local`, and `WebFetch`/`WebSearch` are not auto-allowed (they
   ask, like the terminal) so a prompt injection has no silent read→exfil path.
   Defense-in-depth, not a full boundary.
@@ -352,9 +352,10 @@ server/            the local daemon (Node, run with tsx)
   adapters/          one AgentSession per agent: claude-code.ts, codex.ts,
                      gemini-cli.ts, mock.ts (+ index.ts seam, types.ts,
                      async-queue.ts, render-mcp-cmd.ts, *.spike.md probe notes)
-  permissions.ts     canUseTool policy: workspace gating + browser prompts (T.3)
-  auth.ts            the 4.5 auth predicates (token cookie, loopback Origin) —
-                     pure functions; index.ts wires them into HTTP + WS
+  security/          the two trust gates (H.6):
+    auth.ts            the 4.5 auth predicates (token cookie, loopback Origin) —
+                       pure functions; index.ts wires them into HTTP + WS
+    permissions.ts     canUseTool policy: workspace gating + browser prompts (T.3)
   pty.ts             the `!` passthrough's PTY runner (node-pty, 4.9)
   sessions/          the session state core (H.4):
     registry.ts        SessionRegistry: sessions decoupled from connections (4.2)
@@ -441,7 +442,7 @@ Express serves `dist/` (the built front end; in dev you use Vite's server
 instead) plus `/` (mission control, 4.6) and `/s/<id>` as client-side routes,
 and hosts a `ws` WebSocketServer at `/ws`. Both the HTTP app and the socket are
 gated by the per-launch auth token (§3) behind the loopback-Origin guard — the
-pure predicates live in `server/auth.ts`, wired in here; a capped inbound
+pure predicates live in `server/security/auth.ts`, wired in here; a capped inbound
 frame (`MAX_WS_PAYLOAD`) and session ceiling (`MAX_SESSIONS`) bound resources.
 
 **Sessions are decoupled from connections** (Step 4.2). A connection is a

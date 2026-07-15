@@ -10,7 +10,7 @@ import { openConnection } from "./sessions/connection";
 import { sweepLiveness } from "./sessions/ws-liveness";
 import { startRelayClient } from "./relay/relay-client";
 import { MIN_PAIRING_CODE_LENGTH, resolvePairingCode } from "./relay/relay-protocol";
-import { COOKIE_NAME, cookieToken, isLoopbackOrigin, tokensMatch, verifyToken } from "./auth";
+import { COOKIE_NAME, cookieToken, isLoopbackOrigin, tokensMatch, verifyToken } from "./security/auth";
 import { VERSION } from "./version";
 
 // R.4g: last-gasp handlers — a crash stays loud and exits nonzero, it just

@@ -514,7 +514,7 @@ clarify). No web/src folder reshuffle (one component per file already reads).
     eye: if Tier-2 flakes under load again, a `--test-concurrency` cap for
     `test:server` is the likely fix (R.4l-adjacent, not this phase).
 
-- [ ] **Step H.6 — Carve out `server/security/`**
+- [x] **Step H.6 — Carve out `server/security/`**
   - Goal: the two trust gates — who may connect (`auth`) and what a tool may
     do (`permissions`) — are findable as one subsystem.
   - Build: `git mv` into `server/security/`: `auth.ts` + test + itest,
@@ -522,6 +522,14 @@ clarify). No web/src folder reshuffle (one component per file already reads).
     `server/permissions.ts` and `server/auth.ts`.
   - Files: the five moved files, their importers, `README.md`.
   - Done when: the ritual passes in full with exact count parity.
+  - Status: **DONE 2026-07-15.** Five files `git mv`'d into `server/security/`
+    (auth + test + itest, permissions + test); importers repointed
+    (`index.ts` for the auth predicates, `adapters/claude-code.ts` for
+    `makeCanUseTool`), `auth.itest.ts`'s harness import gained a `../`.
+    README updated: §4/§5 citations now `server/security/…` and the tree
+    gains the `security/` block. Old-path grep: only RENAME.md + dated `[x]`
+    PLAN history. Ritual green with exact parity: typecheck, 159/159, 74/74,
+    20/20.
 
 - [ ] **Step H.7 — Carve out `server/pty/`**
   - Goal: the `!` passthrough machinery is one folder.
