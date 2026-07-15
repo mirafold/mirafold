@@ -14,7 +14,7 @@ import {
   PAIR_PARAM,
   VIEWPORT_PATH,
 } from "./relay-protocol";
-import { derivePair } from "../relay-crypto";
+import { derivePair } from "./relay-crypto";
 import { RemoteClient, broadcasts, waitForLog as waitForLogH } from "./relay-test-client";
 
 // R.1 + R.3: the relay seam over real processes — the daemon (child) dials

@@ -360,10 +360,10 @@ server/            the local daemon (Node, run with tsx)
   pty.ts             the `!` passthrough's PTY runner (node-pty, 4.9)
   connection.ts      one viewport's server side, transport-agnostic (R.1) —
                      shared verbatim by local sockets and relay viewports
-  relay-crypto.ts    per-pair E2E encryption, WebCrypto-only — the same file
-                     runs in the browser via the @relay-crypto alias (R.3)
-  relay/             the remote-viewport path (H.2):
+  relay/             the remote-viewport path (H.2/H.3):
     relay-protocol.ts  the relay envelope + pairing-code mint (R.1/R.3)
+    relay-crypto.ts    per-pair E2E encryption, WebCrypto-only — the same file
+                       runs in the browser via the @relay-crypto alias (R.3)
     relay-client.ts    daemon dial-out: no listening port for remote access (R.1)
     relay-stub.ts      in-repo dumb-forwarder stub for dev + tests
     relay-test-client.ts  shared RemoteClient test helper (the browser side of
