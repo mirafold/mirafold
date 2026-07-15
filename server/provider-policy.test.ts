@@ -18,10 +18,15 @@ test("LOCAL use: api-key and local endpoints always run; none never does", () =>
   }
 });
 
-test("LOCAL subscription: OpenAI (codex) allowed; Anthropic + Gemini prohibited", () => {
-  assert.equal(allowedLocally("codex", "subscription"), true, "OpenAI permits third-party harnesses");
+test("LOCAL subscription: written bans honored; codex allowed as a DISCLOSED gray area", () => {
+  // Anthropic + Google prohibit it in writing → refused outright. OpenAI has
+  // no written permission either way but a visibly permissive posture, so the
+  // disclosed-uncertainty rule (K.3 amendment, 2026-07-15) allows it locally —
+  // the codex CONNECT_HINT must carry the uncertainty disclosure (asserted in
+  // web/src/agents-meta.test.ts), and the relay still refuses it below.
+  assert.equal(allowedLocally("codex", "subscription"), true, "disclosed-uncertainty rule");
   assert.equal(allowedLocally("claude-code", "subscription"), false, "Anthropic ToS ban");
-  assert.equal(allowedLocally("gemini-cli", "subscription"), false, "Gemini ToS ban");
+  assert.equal(allowedLocally("gemini-cli", "subscription"), false, "Gemini ToS ban / tier cutoff");
 });
 
 test("RELAY: the terms gate refuses subscription only — api-key, local, demo pass", () => {
