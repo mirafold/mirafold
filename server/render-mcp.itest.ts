@@ -7,14 +7,14 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { RENDER_TOOL_COMPONENT } from "./adapters/render-mcp-cmd";
 import { parseRenderId } from "./adapters/gemini-cli";
 
-// L.2e: the stdio render-MCP stub (render-mcp.ts) over a real MCP handshake —
+// The stdio render-MCP stub (render-mcp.ts) over a real MCP handshake —
 // the process Codex/Gemini engines actually spawn. The adapters never see this
 // process's output directly; they read the ack back off their engine's event
 // stream, so what matters here is exactly the ack contract: the renderId in
 // structuredContent (Codex's primary channel) AND in parseable text (the
 // fallback both adapters share). Pinned to the TS source via tsx — the
 // compiled twin is the same source, and a stale dist-server must not decide
-// what this test observes.
+// what this test observes (L.2e).
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 

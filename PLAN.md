@@ -625,7 +625,7 @@ clarify). No web/src folder reshuffle (one component per file already reads).
     indirection without removing any. Ritual green with exact parity:
     typecheck, 159/159, 74/74, 20/20; no test edited.
 
-- [ ] **Step H.11 — Comment legibility pass, server side**
+- [x] **Step H.11 — Comment legibility pass, server side**
   - Goal: every comment stands alone for a reader who has never seen this
     document — the plan-step code becomes a suffix, never the substance.
   - Build: sweep `server/` (adapters and relay included) for comments whose
@@ -637,6 +637,15 @@ clarify). No web/src folder reshuffle (one component per file already reads).
   - Done when: a grep for comment lines *opening* with a bare step id finds
     none under `server/`, and the ritual's typecheck + Tier 1 pass (a
     comment-only diff needs no Tier 2/3).
+  - Status: **DONE 2026-07-15.** ~95 comment sites across 31 files: each
+    leading id ("R.4c:", "T2.4:", "#11:", "Step 4.9:") demoted to a trailing
+    parenthetical at the end of its comment block — the substance was already
+    in the text, so rewording was mostly position + capitalization, with a
+    handful of true rewrites (protocol.ts's interior "T2.4:" cross-reference,
+    the `/** #6 */` JSDoc shape). The whole diff verified comment-only (a
+    grep over changed lines finds nothing but comment lines). The Done-when
+    grep finds zero comment lines opening with a bare id under `server/`;
+    typecheck + 159/159 Tier 1 green.
 
 - [ ] **Step H.12 — Comment legibility pass, web side**
   - Goal: same standard as H.11 across the browser code.

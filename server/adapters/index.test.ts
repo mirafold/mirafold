@@ -5,12 +5,12 @@ import os from "node:os";
 import path from "node:path";
 import { availableAgents } from "./index";
 
-// R.4i: the per-provider policy, at the detection layer. This REVERSES the R.4b
+// The per-provider policy, at the detection layer. This REVERSES the R.4b
 // behavior (a Claude subscription login used to count as live): Anthropic's
 // terms don't allow a subscription in a third-party app, so a login-only machine
 // is now `blocked` (not live, with the API-key fix on the picker), while an API
 // key or a local endpoint (ANTHROPIC_BASE_URL) is live. CLAUDE_CONFIG_DIR
-// (Claude Code's own dir override) is the seam that makes this hermetic.
+// (Claude Code's own dir override) is the seam that makes this hermetic (R.4i).
 
 const ENV_KEYS = [
   "ANTHROPIC_API_KEY",

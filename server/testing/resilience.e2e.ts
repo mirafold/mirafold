@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { startDaemon, type Daemon } from "./itest-harness";
 
-// R.4c: the two "the app lies quietly" behaviors, exercised for real — a
+// The two "the app lies quietly" behaviors, exercised for real — a
 // daemon killed mid-turn must not leave the ■ esc working state up, and a
 // restarted daemon must SAY it swapped the gone session for a fresh one
-// instead of silently rewriting the URL over a blank transcript.
+// instead of silently rewriting the URL over a blank transcript (R.4c).
 
 const CHROME = process.env.CHROME_BIN ?? "/usr/bin/google-chrome";
 

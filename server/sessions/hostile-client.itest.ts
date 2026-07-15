@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import type { WireMsg } from "../protocol";
 import { startDaemon, createSession, TestClient, type Daemon } from "../testing/itest-harness";
 
-// Q.4 — the hostile-client sweep. Every `case` in connection.ts's message
+// The hostile-client sweep. Every `case` in connection.ts's message
 // switch has a malformed path (wrong-typed field, missing field, junk object)
 // that no test exercised; the non-JSON reply and the `^[\w-]{1,64}$` bang-id
 // guard were dead code to the suite. This drives all of them over a REAL
@@ -15,7 +15,7 @@ import { startDaemon, createSession, TestClient, type Daemon } from "../testing/
 // (or a bare number/string) has no `.type`; `null.type` throws, and on the
 // local WS path (index.ts wraps handleMessage in NO try/catch) that escapes to
 // the uncaughtException handler, which exits the daemon. Without the
-// non-object guard in connection.ts this file times out — the daemon is gone.
+// non-object guard in connection.ts this file times out — the daemon is gone (Q.4).
 
 type Any = WireMsg & Record<string, any>;
 

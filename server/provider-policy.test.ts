@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import type { AgentName } from "./protocol";
 import { allowedLocally, allowedOverRelay, type CredentialKind } from "./provider-policy";
 
-// R.4i: the whole matrix, cell by cell. This is the single source of truth for
+// The whole matrix, cell by cell. This is the single source of truth for
 // which credential runs where — if a provider's terms change, this test is the
-// first thing that must change with it.
+// first thing that must change with it (R.4i).
 
 const AGENTS: AgentName[] = ["claude-code", "codex", "gemini-cli"];
 const KINDS: CredentialKind[] = ["api-key", "subscription", "local", "none"];

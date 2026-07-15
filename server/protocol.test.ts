@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { WireMsg, ClientMsg, SessionMeta, Action } from "./protocol";
 
-// Q.2 — the wire protocol frozen in executable form. The first non-negotiable
+// The wire protocol frozen in executable form. The first non-negotiable
 // ("later work ADDS message types, never reshapes existing ones") is otherwise
 // only a comment. Here it has two teeth:
 //
@@ -25,7 +25,7 @@ import type { WireMsg, ClientMsg, SessionMeta, Action } from "./protocol";
 // Complement, not overlap, with R.4h (ws.test.ts / session.itest.ts): those
 // pin how the ends treat messages they DON'T know (unknown types ignored,
 // tolerant client prop schemas). This pins the exact shape of the ones that
-// DO exist.
+// DO exist (Q.2).
 
 // A SessionMeta fixture (the fleet row, 4.6) — its own type, referenced by the
 // `sessions` frame and asserted for its exact key set below.

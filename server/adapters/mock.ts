@@ -311,11 +311,11 @@ export const MOCK_RENDERS: (() => { component: string; props: Record<string, unk
   }),
 ];
 
-// R.4e: the hostile-artifact fixture. Each escape attempt writes its outcome
+// The hostile-artifact fixture. Each escape attempt writes its outcome
 // into the artifact's own DOM (the one place it CAN write), so a browser test
 // reads containment results through the frame. It also fires the bridge
 // abuses whose proof is a NON-event in the transcript: forged/unstamped
-// postMessages and an action burst against the rate limit.
+// postMessages and an action burst against the rate limit (R.4e).
 const HOSTILE_ARTIFACT =
   "<h2>hostile artifact</h2>" +
   '<div id="dom">pending</div>' +
@@ -363,7 +363,7 @@ export class MockSession implements AgentSession {
     if (/subagent|delegate/i.test(text)) return this.playSubagent();
     if (/huge|big output|large output|truncat/i.test(text)) return this.playHugeOutput();
     if (/artifact/i.test(text)) {
-      // 3.4: broken/navigating artifacts exercise the failure fallbacks.
+      // broken/navigating artifacts exercise the failure fallbacks (3.4).
       if (/broken|crash/i.test(text)) {
         return this.playArtifact(
           "broken demo",
@@ -378,8 +378,8 @@ export class MockSession implements AgentSession {
           '<h2>leaving…</h2><script>location.href="about:blank"</script>',
         );
       }
-      // R.4e: an artifact that ATTEMPTS the escapes, reporting each result
-      // into its own DOM so the e2e can assert containment from outside.
+      // An artifact that ATTEMPTS the escapes, reporting each result
+      // into its own DOM so the e2e can assert containment from outside (R.4e).
       if (/hostile/i.test(text)) return this.playArtifact("hostile demo", HOSTILE_ARTIFACT);
       return this.playBridgeArtifact();
     }
@@ -588,7 +588,7 @@ export class MockSession implements AgentSession {
 
     let delay = 120;
     this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
-    // T2.1: a short scripted thought streams before the work starts.
+    // A short scripted thought streams before the work starts (T2.1).
     const thought =
       "Reading the prompt again — the useful answer here is a quick check of " +
       "current state, then a compact summary with one component that fits the " +
@@ -634,9 +634,9 @@ export class MockSession implements AgentSession {
       () => this.emit({ type: "render", component, props, id: randomUUID() }),
       delay,
     );
-    // T2.6: per-turn tokens so the meters run — but NO costUsd: a fabricated
+    // Per-turn tokens so the meters run — but NO costUsd: a fabricated
     // dollar figure is the one number a demo viewer takes as real (R.4b;
-    // omitted → the status bar shows no cost at all).
+    // omitted → the status bar shows no cost at all) (T2.6).
     const inTok = randInt(1800, 7200);
     const outTok = randInt(200, 900);
     this.schedule(

@@ -88,8 +88,8 @@ test("typing in the remote browser drives the session; both transcripts mirror",
   assert.ok(a.includes("hello from the far side of the relay"), "turn is in the transcript");
   assert.equal(b, a, "remote and local transcripts are identical");
 
-  // R.3: everything the relay shuttled for that mirrored session was
-  // ciphertext — base64url only, no JSON, no prompt text, no code.
+  // Everything the relay shuttled for that mirrored session was
+  // ciphertext — base64url only, no JSON, no prompt text, no code (R.3).
   assert.ok(tapped.length > 50, `expected real traffic through the tap, saw ${tapped.length}`);
   for (const p of tapped) {
     assert.ok(/^[A-Za-z0-9_-]+$/.test(p), `relay saw a non-ciphertext frame: ${p.slice(0, 80)}`);

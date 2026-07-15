@@ -50,17 +50,17 @@ export type SessionEntry = {
   id: string;
   cwd: string;
   agent: AgentName;
-  // R.4b: false ⇒ the agent had no credentials and `session` is the scripted
-  // mock — carried to the shell as session_created.demo so the banner draws.
+  // False ⇒ the agent had no credentials and `session` is the scripted
+  // mock — carried to the shell as session_created.demo so the banner draws (R.4b).
   live: boolean;
-  // R.4i: the credential kind behind this session — read by the relay gate in
-  // connection.ts to refuse a subscription-backed session over the paid relay.
+  // The credential kind behind this session — read by the relay gate in
+  // connection.ts to refuse a subscription-backed session over the paid relay (R.4i).
   kind: CredentialKind;
   session: AgentSession;
   buffer: WireMsg[];
   viewports: Set<Viewport>;
-  // 4.4: next session-scoped sequence number; broadcast stamps it onto every
-  // message so a reconnecting viewport can name where its stream broke off.
+  // Next session-scoped sequence number; broadcast stamps it onto every
+  // message so a reconnecting viewport can name where its stream broke off (4.4).
   nextSeq: number;
   // 4.6 fleet metadata: display name (defaults to the cwd leaf, renamable),
   // coarse activity state derived from the broadcast stream, and when the
@@ -69,8 +69,8 @@ export type SessionEntry = {
   status: SessionMeta["status"];
   lastActivity: number;
   idleTimer?: NodeJS.Timeout;
-  // Step 4.9: the one running `!` command, if any (one at a time per session,
-  // like a terminal). The proc itself never leaves the server.
+  // The one running `!` command, if any (one at a time per session,
+  // like a terminal). The proc itself never leaves the server (4.9).
   bang?: { id: string; proc: BangProc };
   // Finished `!` transcripts waiting to ride into the agent's context with
   // the next prompt — terminal-faithful: the model sees what you ran.
@@ -140,18 +140,18 @@ export class SessionRegistry {
 
   /** Buffer a message and fan it out to every attached viewport. */
   broadcast(entry: SessionEntry, msg: WireMsg) {
-    // R.4g: the likeliest live failures (bad key, engine died, CLI missing)
+    // The likeliest live failures (bad key, engine died, CLI missing)
     // arrive here as adapter-emitted `error` WireMsgs and used to reach only
     // the browser — mirror them to the terminal, timestamped, because the
-    // terminal log is what a stranger pastes into a bug report.
+    // terminal log is what a stranger pastes into a bug report (R.4g).
     if (msg.type === "error") {
       console.error(
         `[${new Date().toISOString()}] [session ${entry.id}] error: ${msg.message}`,
       );
     }
-    // R.4g: MIRAFOLD_DEBUG=1 traces every normalized event on the session
+    // MIRAFOLD_DEBUG=1 traces every normalized event on the session
     // stream (bang_input never crosses broadcast, so no secret can land
-    // here). One line per WireMsg, payload truncated.
+    // here). One line per WireMsg, payload truncated (R.4g).
     if (process.env.MIRAFOLD_DEBUG) {
       const body = JSON.stringify(msg);
       console.error(
@@ -160,18 +160,18 @@ export class SessionRegistry {
         }`,
       );
     }
-    // 4.4: resume cursor, one stamp for all viewports. Stamped on a shallow
+    // Resume cursor, one stamp for all viewports. Stamped on a shallow
     // copy — the adapter's object is never mutated or held by the buffer, so
-    // an adapter re-emitting a message can't corrupt an already-buffered seq.
+    // an adapter re-emitting a message can't corrupt an already-buffered seq (4.4).
     msg = { ...msg, seq: entry.nextSeq++ };
     entry.buffer.push(msg);
     if (entry.buffer.length > BUFFER_CAP) {
       entry.buffer.splice(0, entry.buffer.length - BUFFER_CAP);
     }
     entry.lastActivity = Date.now();
-    // 4.6: coarse fleet status, derived from the stream itself — no adapter
+    // Coarse fleet status, derived from the stream itself — no adapter
     // cooperation needed. Terminal states first; a permission hold sticks
-    // until the turn moves again.
+    // until the turn moves again (4.6).
     const prev = entry.status;
     if (msg.type === "turn_end" || msg.type === "error" || msg.type === "bang_end") {
       entry.status = "idle";
@@ -185,9 +185,9 @@ export class SessionRegistry {
   }
 
   /**
-   * 4.4: can a viewport that last saw `afterSeq` resume with a tail replay?
+   * Can a viewport that last saw `afterSeq` resume with a tail replay?
    * Only if nothing after it has fallen off the ring buffer, and it isn't
-   * from some other life (a seq we never issued).
+   * from some other life (a seq we never issued) (4.4).
    */
   canResume(entry: SessionEntry, afterSeq: number): boolean {
     if (!Number.isInteger(afterSeq) || afterSeq < 0 || afterSeq >= entry.nextSeq) return false;
@@ -228,10 +228,10 @@ export class SessionRegistry {
   }
 
   /**
-   * #11: explicit teardown — the user chose "end session". Kill any running
+   * Explicit teardown — the user chose "end session". Kill any running
    * PTY, close the engine, drop it from the fleet, and tell attached viewports
    * it's over (they leave to mission control). A subsequent detach on this
-   * entry is a no-op (guarded above), so close() runs exactly once.
+   * entry is a no-op (guarded above), so close() runs exactly once (#11).
    */
   end(id: string): boolean {
     const entry = this.entries.get(id);

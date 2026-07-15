@@ -13,8 +13,8 @@ import { MIN_PAIRING_CODE_LENGTH, resolvePairingCode } from "./relay/relay-proto
 import { COOKIE_NAME, cookieToken, isLoopbackOrigin, tokensMatch, verifyToken } from "./security/auth";
 import { VERSION } from "./version";
 
-// R.4g: last-gasp handlers — a crash stays loud and exits nonzero, it just
-// signs its name first so a stranger's report contains something actionable.
+// Last-gasp handlers — a crash stays loud and exits nonzero, it just
+// signs its name first so a stranger's report contains something actionable (R.4g).
 const lastGasp = (kind: string) => (err: unknown) => {
   console.error(`[mirafold] v${VERSION} crashed (${kind}):`, err);
   console.error(
@@ -27,8 +27,8 @@ process.on("uncaughtException", lastGasp("uncaughtException"));
 process.on("unhandledRejection", lastGasp("unhandledRejection"));
 
 // .env is optional — without an API key we fall back to the mock session.
-// R.4g: on Node < 20.12 loadEnvFile doesn't exist; swallowing that silently
-// strands a valid key in .env in mock mode with no clue why — say so.
+// On Node < 20.12 loadEnvFile doesn't exist; swallowing that silently
+// strands a valid key in .env in mock mode with no clue why — say so (R.4g).
 if (typeof process.loadEnvFile === "function") {
   try {
     process.loadEnvFile();
@@ -116,8 +116,8 @@ if (AUTH_ENABLED) {
       res.cookie(COOKIE_NAME, AUTH_TOKEN, { httpOnly: true, sameSite: "strict", path: "/" });
       return res.redirect(req.path);
     }
-    // R.4b: a bare denial is a dead end — name the recovery. The right URL
-    // (with ?token=…) is in the terminal that launched mirafold.
+    // A bare denial is a dead end — name the recovery. The right URL
+    // (with ?token=…) is in the terminal that launched mirafold (R.4b).
     res
       .status(403)
       .type("text/plain")
@@ -188,8 +188,8 @@ const relayInfo =
       : { url: RELAY_URL.replace(/^ws/, "http"), code: RELAY_CODE }
     : undefined;
 
-// #10: per-socket liveness, read by the heartbeat below to reap half-open
-// leftovers whose `close` never arrived (see ws-liveness.ts).
+// Per-socket liveness, read by the heartbeat below to reap half-open
+// leftovers whose `close` never arrived (see ws-liveness.ts) (#10).
 const liveViewports = new WeakMap<WebSocket, boolean>();
 
 wss.on("connection", (ws) => {
@@ -205,11 +205,11 @@ wss.on("connection", (ws) => {
   ws.on("close", conn.close);
 });
 
-// #10: server-side liveness heartbeat. Browsers auto-answer protocol pings, so
+// Server-side liveness heartbeat. Browsers auto-answer protocol pings, so
 // a socket that misses a ping/pong round is a half-open leftover; terminating
 // it fires `close` → conn.close → registry.detach, keeping viewport counts
 // honest and letting idle sessions actually reach their reaper. Local sockets
-// only — remote viewports have their own idle reaper (RELAY_VIEWPORT_IDLE_MS).
+// only — remote viewports have their own idle reaper (RELAY_VIEWPORT_IDLE_MS) (#10).
 const WS_HEARTBEAT_MS = Number(process.env.WS_HEARTBEAT_MS ?? 30_000);
 const heartbeat = setInterval(() => sweepLiveness(wss.clients, liveViewports), WS_HEARTBEAT_MS);
 heartbeat.unref(); // the listening server keeps the process alive; the beat shouldn't
@@ -220,8 +220,8 @@ wss.on("close", () => clearInterval(heartbeat));
 // 4.7). The Origin guard already blocks hostile browser pages; binding to
 // 127.0.0.1 also keeps non-browser LAN clients — which send no Origin and so
 // pass the guard — off the socket entirely.
-// 4.10: a second daemon (another project, another terminal) must not crash on
-// EADDRINUSE — walk up a few ports; the launcher reads the final URL off stdout.
+// A second daemon (another project, another terminal) must not crash on
+// EADDRINUSE — walk up a few ports; the launcher reads the final URL off stdout (4.10).
 const basePort = Number(process.env.PORT ?? 3000);
 const listen = (port: number) => {
   const onListening = () => {

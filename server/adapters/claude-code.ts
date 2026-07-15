@@ -71,25 +71,25 @@ export class ClaudeCodeSession implements AgentSession {
   // tool_use ids we announced on the wire — results for anything else
   // (render tools, subagent internals) must not paint orphan records.
   private announcedTools = new Set<string>();
-  // T2.5: the live checklist. `tasks` is the session task list (id → item),
+  // The live checklist. `tasks` is the session task list (id → item),
   // built from Task*/TodoWrite calls and persisted across turns like the SDK's
   // own list; `todoRenderId` is the render block it paints into, reset each
   // turn so the checklist re-anchors to the latest activity. `taskSeq` mirrors
-  // the SDK's 1-based sequential ids so TaskUpdate.taskId lines up.
+  // the SDK's 1-based sequential ids so TaskUpdate.taskId lines up (T2.5).
   private tasks = new Map<string, TodoItem>();
   private taskSeq = 0;
   private todoRenderId?: string;
-  // F.1: did this turn stream any assistant text via stream_event? If so, the
+  // Did this turn stream any assistant text via stream_event? If so, the
   // buffered `assistant` text message is a duplicate and must be skipped. If
   // NOT (slash-command output — /context, /usage, unsupported commands — all
   // arrive as buffered assistant text with zero deltas), the buffered text is
-  // the ONLY copy and must be emitted, or the command runs but nothing paints.
+  // the ONLY copy and must be emitted, or the command runs but nothing paints (F.1).
   private streamedText = false;
   // In-flight permission prompts, keyed by wire id → resolver.
   private pendingAsks = new Map<string, (allow: boolean) => void>();
 
-  // T2.6: label shown in the status bar (the SDK falls back to its own
-  // default when `model` is unset, so we keep a readable stand-in).
+  // Label shown in the status bar (the SDK falls back to its own
+  // default when `model` is unset, so we keep a readable stand-in) (T2.6).
   private modelLabel: string;
 
   get modelName(): string {
@@ -122,8 +122,8 @@ export class ClaudeCodeSession implements AgentSession {
         // mistook the terminal's own behavior for a threat. (`canUseTool` still
         // runs for anything the user's rules don't already decide.)
         includePartialMessages: true, // gives us token-level text deltas
-        // R.4g: MIRAFOLD_DEBUG=1 surfaces the engine's own stderr (the SDK
-        // swallows it otherwise) — where a bad key or dead CLI explains itself.
+        // MIRAFOLD_DEBUG=1 surfaces the engine's own stderr (the SDK
+        // swallows it otherwise) — where a bad key or dead CLI explains itself (R.4g).
         ...(process.env.MIRAFOLD_DEBUG
           ? {
               stderr: (data: string) =>
@@ -299,11 +299,11 @@ export class ClaudeCodeSession implements AgentSession {
             // dropped above. parentId = the Task tool_use this call belongs to.
             const parentId = msg.parent_tool_use_id ?? undefined;
             for (const block of msg.message.content) {
-              // F.1: buffered assistant text with no preceding deltas — the
+              // Buffered assistant text with no preceding deltas — the
               // shape slash-command output arrives in. Emit only when this
               // turn streamed nothing (else it's a duplicate of the stream),
               // and never for a subagent (its prose stays filtered like its
-              // deltas). Renders the command output that would otherwise vanish.
+              // deltas). Renders the command output that would otherwise vanish (F.1).
               if (block.type === "text") {
                 if (!parentId && !this.streamedText && typeof block.text === "string" && block.text) {
                   this.emit({ type: "text_delta", text: block.text });
@@ -313,12 +313,12 @@ export class ClaudeCodeSession implements AgentSession {
               if (block.type !== "tool_use") continue;
               // Render tools already paint their own component block.
               if (block.name.startsWith("mcp__ui__")) continue;
-              // T2.5: the agent's task list becomes one live checklist
+              // The agent's task list becomes one live checklist
               // component (updated in place), not raw tool rows. This SDK
               // manages it via the Task* family (TaskCreate/TaskUpdate,
               // successor to TodoWrite); all of it — and its results, since
               // we never announce these — is folded into the checklist.
-              // A subagent's own task calls are internal: swallow, don't render.
+              // A subagent's own task calls are internal: swallow, don't render (T2.5).
               if (TASK_TOOLS.has(block.name)) {
                 if (!parentId) this.trackTasks(block.name, block.input);
                 continue;
@@ -360,22 +360,22 @@ export class ClaudeCodeSession implements AgentSession {
           case "system": {
             const sub = (msg as { subtype?: unknown }).subtype;
             if (sub === "init") {
-              // F.3: system/init carries the model the engine ACTUALLY resolved
+              // system/init carries the model the engine ACTUALLY resolved
               // (e.g. "claude-fable-5"), which differs from the configured value
               // or the "default" placeholder we start with — show the truth in
-              // the status bar, like the terminal's own status line.
+              // the status bar, like the terminal's own status line (F.3).
               const model = (msg as { model?: unknown }).model;
               if (typeof model === "string" && model) this.modelLabel = model;
             } else if (sub === "api_retry") {
-              // F.2: the terminal shows "retrying (attempt n)…" here; without
-              // this we sit on "thinking…" looking hung through the backoff.
+              // The terminal shows "retrying (attempt n)…" here; without
+              // this we sit on "thinking…" looking hung through the backoff (F.2).
               const m = msg as { attempt?: number; max_retries?: number };
               const n = typeof m.attempt === "number" ? m.attempt : undefined;
               const max = typeof m.max_retries === "number" ? m.max_retries : undefined;
               const which = n && max ? ` (attempt ${n}/${max})` : n ? ` (attempt ${n})` : "";
               this.emit({ type: "notice", text: `API error — retrying${which}…`, kind: "retry" });
             } else if (sub === "compact_boundary") {
-              // F.2: context silently compacts today — say so.
+              // Context silently compacts today — say so (F.2).
               const trigger = (msg as { compact_metadata?: { trigger?: unknown } }).compact_metadata
                 ?.trigger;
               this.emit({
@@ -387,8 +387,8 @@ export class ClaudeCodeSession implements AgentSession {
                 kind: "compaction",
               });
             } else if (sub === "model_refusal_fallback") {
-              // F.2: the model declined and the turn was retried on a fallback —
-              // without this the swap is invisible.
+              // The model declined and the turn was retried on a fallback —
+              // without this the swap is invisible (F.2).
               const fb = (msg as { fallback_model?: unknown }).fallback_model;
               this.emit({
                 type: "notice",
@@ -399,8 +399,8 @@ export class ClaudeCodeSession implements AgentSession {
                 kind: "refusal",
               });
             } else if (sub === "model_refusal_no_fallback") {
-              // F.2: no fallback configured — the turn ends as an error (the
-              // result frame carries that); this line says WHY it ended.
+              // No fallback configured — the turn ends as an error (the
+              // result frame carries that); this line says WHY it ended (F.2).
               this.emit({
                 type: "notice",
                 text: "the model declined to complete this request",
@@ -410,9 +410,9 @@ export class ClaudeCodeSession implements AgentSession {
             break;
           }
           case "rate_limit_event": {
-            // F.2: observed live on ordinary turns, so surface it ONLY when it
+            // Observed live on ordinary turns, so surface it ONLY when it
             // actually matters — approaching (allowed_warning) or hitting
-            // (rejected) the limit — never on the constant plain "allowed".
+            // (rejected) the limit — never on the constant plain "allowed" (F.2).
             const info = (
               msg as { rate_limit_info?: { status?: unknown; rateLimitType?: unknown } }
             ).rate_limit_info;
@@ -436,8 +436,8 @@ export class ClaudeCodeSession implements AgentSession {
               const detail = "result" in msg ? msg.result : msg.subtype;
               this.emit({ type: "error", message: String(detail) });
             }
-            // T2.6: per-turn usage for the status bar. Input includes cache
-            // tokens — that's the real context weight the user is paying for.
+            // Per-turn usage for the status bar. Input includes cache
+            // tokens — that's the real context weight the user is paying for (T2.6).
             const u = (msg as { usage?: Record<string, number> }).usage;
             if (u) {
               const inputTokens =

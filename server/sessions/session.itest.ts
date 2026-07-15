@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 import type { WireMsg } from "../protocol";
 import { startDaemon, createSession, TestClient, type Daemon } from "../testing/itest-harness";
 
-// L.2b: the mock-turn contract — every scripted MockSession hook drives the
+// The mock-turn contract — every scripted MockSession hook drives the
 // full wire path (adapter → registry broadcast → real socket), plus the DoS
 // caps. One session is reused across the turn tests; caps get their own
-// daemon so limits don't interfere.
+// daemon so limits don't interfere (L.2b).
 
 type Any = WireMsg & Record<string, any>;
 

@@ -46,8 +46,8 @@ type WireMsgBody =
   // a later `tool_result` with the same id completes that record.
   // T2.2 widens it with the FULL input (optional — old clients ignore it);
   // the client renders Edit/Write inputs as diffs/code, the rest as JSON.
-  // T2.4: `parentId`, when set, is the Task tool_use id this call belongs to —
-  // a subagent's call, which the client nests under its owning Task row.
+  // `parentId`, when set, is the Task tool_use id this call belongs to —
+  // a subagent's call, which the client nests under its owning Task row (T2.4).
   | {
       type: "tool_use";
       name: string;
@@ -56,9 +56,10 @@ type WireMsgBody =
       input?: Record<string, unknown>;
       parentId?: string;
     }
-  // T2.3: `truncatedBytes`, when set, is how many UTF-8 bytes were elided
+  // `truncatedBytes`, when set, is how many UTF-8 bytes were elided
   // after the cap — the client shows an explicit marker rather than cutting
-  // silently. Optional/additive. T2.4: `parentId` as on tool_use.
+  // silently. Optional/additive. `parentId` rides here too, exactly as on
+  // tool_use (T2.3, T2.4).
   | {
       type: "tool_result";
       output: string;
@@ -130,19 +131,19 @@ type WireMsgBody =
       relay?: { url: string; code: string; ws?: string };
       version?: string;
     }
-  // Step R.4i: the daemon refused to attach this REMOTE (relay) viewport to the
+  // The daemon refused to attach this REMOTE (relay) viewport to the
   // session because the session's credential can't be used over the paid relay
   // — a subscription-backed agent (closed-model reselling posture). Sent instead
   // of session_created; the shell shows the reason. Never sent to local
-  // viewports. `reason` is a stable machine tag; `message` is the human line.
+  // viewports. `reason` is a stable machine tag; `message` is the human line (R.4i).
   | { type: "refused"; reason: string; message: string }
   // Phase 3: agent-authored HTML for the sandboxed iframe host (the ONLY
   // channel raw agent markup may travel). Re-sending an id replaces that
   // artifact in place — same rule as `render`.
   | { type: "artifact"; html: string; id: string; title?: string }
-  // T2.6: per-turn token/cost accounting for the shell's status bar. One
+  // Per-turn token/cost accounting for the shell's status bar. One
   // per completed turn (just before turn_end); the client sums for the
-  // session total. Replay-safe — buffered like everything else.
+  // session total. Replay-safe — buffered like everything else (T2.6).
   | {
       type: "usage";
       model: string;
@@ -163,28 +164,28 @@ type WireMsgBody =
   // result). Drawn as a dim persistent system line, never agent markdown.
   // `kind` lets the client tag it; old clients ignore it and show the text.
   | { type: "notice"; text: string; kind?: "retry" | "compaction" | "rate_limit" | "refusal" }
-  // Step 4.9: the `!` bash passthrough, run in a real PTY (interactive
+  // The `!` bash passthrough, run in a real PTY (interactive
   // programs prompt normally). These three carry the command's lifecycle and
   // its OUTPUT stream — broadcast and replay-buffered like everything else;
   // what the user TYPES into the command travels only browser→server
   // (bang_input below) and never appears on this side of the wire. When a
   // program echoes typed input (echo on), that echo arrives here as ordinary
   // PTY output — exactly the terminal's behavior; password prompts turn echo
-  // off, so a password never reaches the wire, the ring, or other viewports.
+  // off, so a password never reaches the wire, the ring, or other viewports (4.9).
   | { type: "bang_start"; command: string; id: string }
   | { type: "bang_output"; data: string; id: string }
   // exitCode null = killed by signal (user stop, session close).
   | { type: "bang_end"; id: string; exitCode: number | null }
-  // Step 4.4: reply to a client ping — connection liveness only, never
-  // buffered or sequenced.
+  // Reply to a client ping — connection liveness only, never
+  // buffered or sequenced (4.4).
   | { type: "pong" }
-  // Step 4.6: the fleet snapshot, sent to `watch_sessions` connections on
+  // The fleet snapshot, sent to `watch_sessions` connections on
   // subscribe and re-sent whenever the fleet changes (create/close, status
-  // transition, rename). Per-viewport plumbing — never buffered/sequenced.
+  // transition, rename). Per-viewport plumbing — never buffered/sequenced (4.6).
   | { type: "sessions"; sessions: SessionMeta[] }
-  // #11: the session was explicitly ended (from here, the fleet view, or another
+  // The session was explicitly ended (from here, the fleet view, or another
   // tab). A per-viewport control signal — an attached viewport leaves to mission
-  // control; never buffered or sequenced.
+  // control; never buffered or sequenced (#11).
   | { type: "session_ended"; sessionId: string };
 
 /** One fleet row (4.6). `lastActivity` is epoch ms of the last broadcast. */
@@ -193,8 +194,8 @@ export type SessionMeta = {
   name: string;
   cwd: string;
   agent: AgentName;
-  // #6: the model the session's agent is running (best-known label). Present
-  // even before the first turn (from config/DEFAULT_MODEL); may refine after.
+  // The model the session's agent is running (best-known label). Present
+  // even before the first turn (from config/DEFAULT_MODEL); may refine after (#6).
   model: string;
   status: "idle" | "working" | "permission";
   lastActivity: number;
@@ -236,9 +237,9 @@ export type ClientMsg =
   // Phase 2: a component interaction, attributed to the render block
   // (sourceId = its render id) that emitted it.
   | { type: "action"; action: Action; sourceId: string }
-  // Step 4.9: run `command` in a PTY in the session's cwd — the `!` path,
+  // Run `command` in a PTY in the session's cwd — the `!` path,
   // never routed through the model. `id` is client-minted so the issuing
-  // viewport can correlate the broadcast stream and own the stdin affordance.
+  // viewport can correlate the broadcast stream and own the stdin affordance (4.9).
   | { type: "bang"; command: string; id: string }
   // EPHEMERAL SECRET PATH: a line typed into the running command's stdin
   // (possibly a password). Written to the PTY and nothing else — never
@@ -246,15 +247,15 @@ export type ClientMsg =
   // WireMsg (per the secrets non-negotiable).
   | { type: "bang_input"; data: string; id: string }
   | { type: "bang_kill"; id: string }
-  // Step 4.4: connection liveness probe; the server answers `pong`. Lets the
-  // browser detect a half-open socket (wifi blip with no FIN) and reconnect.
+  // Connection liveness probe; the server answers `pong`. Lets the
+  // browser detect a half-open socket (wifi blip with no FIN) and reconnect (4.4).
   | { type: "ping" }
-  // Step 4.6: this connection is a fleet watcher, not a session viewport —
-  // it receives `sessions` snapshots instead of a transcript stream.
+  // This connection is a fleet watcher, not a session viewport —
+  // it receives `sessions` snapshots instead of a transcript stream (4.6).
   | { type: "watch_sessions" }
-  // Step 4.6: rename a session (fleet affordance; 4.2 deferred it here).
+  // Rename a session (fleet affordance; 4.2 deferred it here) (4.6).
   | { type: "rename"; sessionId: string; name: string }
-  // #11: explicitly end a session — kill its PTY, close the engine, drop it from
+  // Explicitly end a session — kill its PTY, close the engine, drop it from
   // the fleet, and kick any attached viewports back to mission control. Usable
-  // from a session viewport or a fleet watcher.
+  // from a session viewport or a fleet watcher (#11).
   | { type: "end_session"; sessionId: string };

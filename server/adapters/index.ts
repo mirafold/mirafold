@@ -114,12 +114,12 @@ export function availableAgents(): {
 }
 
 /**
- * R.4k: a short "what's behind this row" label for a LIVE agent, so the picker
+ * A short "what's behind this row" label for a LIVE agent, so the picker
  * isn't a bare "ready" — the confusion a local-model user hits ("I don't see my
  * model"). A `local` kind shows the endpoint it was pointed at; otherwise a
  * configured model override, if any. Honest scope: the TRULY resolved model
  * only arrives from the engine's init on the first turn (F.3, the status bar) —
- * this is the CONFIGURED target, which is exactly what was invisible before.
+ * this is the CONFIGURED target, which is exactly what was invisible before (R.4k).
  */
 function agentDetail(agent: AgentName, kind: CredentialKind): string | undefined {
   if (kind === "local") {

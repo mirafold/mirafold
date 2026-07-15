@@ -6,9 +6,9 @@ import { fileURLToPath } from "node:url";
 import { VERSION } from "./version";
 import { CLIENT_VERSION } from "../web/src/version";
 
-// R.4g: a bug report must be able to name a version. The daemon inlines it
+// A bug report must be able to name a version. The daemon inlines it
 // at build time (server/version.ts), the web bundle announces its own copy
-// back, and the launcher answers --version without booting anything.
+// back, and the launcher answers --version without booting anything (R.4g).
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const BIN = path.join(ROOT, "bin", "mirafold.js");

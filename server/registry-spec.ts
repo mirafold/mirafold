@@ -139,9 +139,9 @@ export const registryShapes = {
       .describe("The links, in display order."),
   },
 
-  // T2.5: NOT agent-authored — there is no render tool for this. The server
+  // NOT agent-authored — there is no render tool for this. The server
   // synthesizes it from the agent's TodoWrite calls (session.ts) so the
-  // terminal's live task list shows up as a real, update-in-place component.
+  // terminal's live task list shows up as a real, update-in-place component (T2.5).
   "todo-list": {
     todos: z
       .array(
