@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
 import os from "node:os";
-import type { AgentName, ClientMsg, WireMsg } from "./protocol";
+import type { AgentName, ClientMsg, WireMsg } from "../protocol";
 import type { SessionEntry, SessionRegistry } from "./registry";
 import { runActionTool } from "./actions";
-import { availableAgents, defaultAgent } from "./adapters";
-import { allowedOverRelay } from "./provider-policy";
-import { spawnBang } from "./pty";
-import { VERSION } from "./version";
+import { availableAgents, defaultAgent } from "../adapters";
+import { allowedOverRelay } from "../provider-policy";
+import { spawnBang } from "../pty";
+import { VERSION } from "../version";
 
 // How much of a `!` command's output rides into the agent's context with the
 // next prompt (tail-kept — the end of a long output is usually the payload).

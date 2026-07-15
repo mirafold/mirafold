@@ -1,7 +1,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import type { WireMsg } from "./protocol";
-import { startDaemon, createSession, TestClient, type Daemon } from "./itest-harness";
+import type { WireMsg } from "../protocol";
+import { startDaemon, createSession, TestClient, type Daemon } from "../itest-harness";
 
 // L.2b: the session registry over the real socket — fan-out, ring-buffer
 // replay, 4.4 tail resume vs full replay, stale-id fallback, the fleet

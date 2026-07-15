@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { SessionMeta, WireMsg } from "./protocol";
+import type { SessionMeta, WireMsg } from "../protocol";
 import {
   createSession,
   resolveBackend,
@@ -10,9 +10,9 @@ import {
   type AgentName,
   type AgentSession,
   type Backend,
-} from "./adapters";
-import type { CredentialKind } from "./provider-policy";
-import type { BangProc } from "./pty";
+} from "../adapters";
+import type { CredentialKind } from "../provider-policy";
+import type { BangProc } from "../pty";
 
 // Replay depth: enough to reconstruct a long working session; beyond it the
 // oldest messages fall off and a late viewport sees a truncated head.
