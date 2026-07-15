@@ -882,7 +882,9 @@ on this plan's summary alone.
     all four tiers re-verified green (typecheck, 159/74/20).
 
 - [ ] **Step K.4 — Merchant-of-record billing** *(decision 2026-07-15:
-  outsource tax/compliance; assistant: investigate the vendor choice)*
+  outsource tax/compliance)* — 🟡 investigation done 2026-07-15, **Paddle
+  recommended** (checklist in the status note); box open only on Kyle's
+  account creation (under the K.2 entity) + his confirm of the pick
   - Goal: US state sales tax, EU VAT (which applies from the **first** B2C
     euro for a non-EU seller — no threshold), the FTC Negative-Option
     ("click-to-cancel") disclosure/consent/reminder mechanics, and the EU
@@ -901,6 +903,48 @@ on this plan's summary alone.
     re-point the site PLAN's checkout-button blocker.
   - Done when: vendor chosen with the requirement checklist recorded, R.5's
     body rewritten for it, and the account exists under the K.2 entity.
+  - **Status (2026-07-15): INVESTIGATION DONE — recommendation: PADDLE.**
+    Only the account creation remains (Kyle, under the K.2 entity — the box
+    stays open on that alone). The requirement checklist, verified against
+    Paddle's current docs:
+    - card-required 7-day free trial: ✅ native (Paddle's "card-required
+      free" trial type; their help center explicitly covers trial
+      compliance — the FTC negative-option disclosure/consent/reminder
+      mechanics are the MoR's job);
+    - cancel-at-period-end, no refund: ✅ native (a scheduled change; the
+      Paddle-sent emails carry a cancellation link and access holds through
+      the paid period — exactly BUSINESS §7's design);
+    - $12/mo · $99/yr: ✅ arbitrary monthly + annual prices;
+    - lifecycle webhooks for entitlement minting: ✅ signed webhooks
+      (`subscription.trialing` / `.activated` / `.updated` / `.canceled`),
+      and Paddle's subscription statuses are literally `trialing`/`active` —
+      the R.5 entitlement rule ("admit when trialing OR active") maps
+      verbatim;
+    - checkout from a static page: ✅ hosted checkout links + a Paddle.js
+      overlay (works on the no-build mirafold.com);
+    - tax: ✅ merchant of record — global VAT/sales-tax collection and
+      remittance are Paddle's, which is the entire point (K.4's premise:
+      EU VAT applies from the first B2C sale).
+    Fees: 5% + 50¢ — the "small fee for convenience" trade, accepted.
+    The rest of the 2026 field, and why not them: **Lemon Squeezy** is in
+    migration limbo (Stripe acquired it; users being funneled to Stripe
+    Managed Payments) — excluded. **Stripe Managed Payments** (Stripe's own
+    MoR) is still beta/invite-only in mid-2026 and effectively ~6.4% + 30¢
+    all-in — can't launch on a beta; noted as a possible future migration
+    since its transaction-level MoR is attractive and the entitlement design
+    is vendor-agnostic. **Polar** is the runner-up (developer-first, open
+    source, card-captured trials with auto-conversion + reminders, clean
+    signed webhooks) but repriced to ~5% + 50¢ in 2026 — fee parity with
+    Paddle — and is a much younger company with reported EU DPA gaps;
+    for the revenue-critical path, Paddle's decade of MoR track record wins
+    at the same price. **Creem** (3.9% + 40¢ sticker) is the youngest —
+    excluded for the same reason.
+    **Sequencing note (important):** Paddle verifies the merchant's website
+    before allowing live sales, and that review expects ToS/privacy/pricing
+    pages — so the order is K.2 (entity) → K.5 pages live on mirafold.com →
+    Paddle account + site verification (sandbox account can start any
+    time) → R.5 build. Start the Paddle signup early; verification takes
+    days, not minutes.
 
 - [ ] **Step K.5 — Terms of Service + Privacy Policy (from a written data
   inventory)**
@@ -965,7 +1009,8 @@ on this plan's summary alone.
     reasonable-care evidence if a claim ever lands.
   - Done when: both files exist and the contact address routes to Kyle.
 
-- [ ] **Step K.8 — Dependency license scan** *(assistant)*
+- [x] **Step K.8 — Dependency license scan** — done 2026-07-15 (status
+  note below) *(assistant)*
   - Goal: nothing copyleft ships in either repo's distributed artifacts.
   - Build: run a license scan (`npx license-checker --production` or
     equivalent) over both repos; record the dated output in this step's
@@ -974,6 +1019,22 @@ on this plan's summary alone.
     ten-minute verification, but verify). Confirm both LICENSE files carry
     the K.2 entity's copyright line once it exists.
   - Done when: the recorded scan shows permissive-only production trees.
+  - Status (2026-07-15): DONE — **no copyleft in either production tree.**
+    `license-checker --production` results: **genui-shell** — 86 MIT, 7 ISC,
+    3 Apache-2.0, 2 BSD-3-Clause, 1 BSD-2-Clause, plus 3 flagged "Custom"
+    that are the Anthropic Agent SDK and its two platform sub-packages
+    (`@anthropic-ai/claude-agent-sdk*@0.3.201`): **proprietary** — "© 
+    Anthropic PBC. All rights reserved. Use is subject to the Legal
+    Agreements…" — not copyleft, consumed as an ordinary npm dependency,
+    never vendored or modified; fine to depend on, but MIT doesn't cover it,
+    so README §12 (new) states the engine-license picture plainly
+    (`@openai/codex-sdk` = Apache-2.0; Gemini CLI = not a dependency, the
+    adapter spawns the user's own `gemini` binary). **genui-relay** — `ws`
+    (MIT) is the entire production tree; the scan's UNLICENSED hit was the
+    repo's own stale `package-lock.json` root metadata from before K.1's
+    relicense — resynced via `npm install --package-lock-only`, now MIT
+    throughout. Still owed (to K.2, not this step): swap both LICENSE
+    copyright lines from Kyle personally to the entity once it exists.
 
 - [ ] **Step K.9 — Contributor policy, decided before the repos go public**
   - Goal: incoming-contribution IP settled before contributor #1 — adding a
@@ -1277,13 +1338,21 @@ with it. Both sequence BEFORE R.5.**
   $10/$79.99 on 2026-07-11)*
   - Goal: paying unlocks the relay, on launch day, with almost nothing
     standing between "want" and "paid."
-  - **Phase K reshapes this step (2026-07-15):** K.2 (the entity) is a hard
-    prerequisite for any live payment configuration, and K.4 replaces the
-    Stripe-specific half below with the chosen merchant of record — the
-    Ed25519 entitlement-token design and the relay-side check are
-    vendor-agnostic and stand as built. Resolve K.2/K.4 before building
-    here; the "Stripe" text below is the pre-decision design, kept until
-    K.4 rewrites it.
+  - **Phase K reshapes this step (2026-07-15; K.4 investigation done same
+    day):** K.2 (the entity) is a hard prerequisite for any live payment
+    configuration, and the billing vendor is now a **merchant of record —
+    Paddle recommended** (K.4's verified checklist; Kyle confirms at account
+    creation). The Ed25519 entitlement-token design and the relay-side check
+    are vendor-agnostic and stand as built — Paddle's subscription statuses
+    (`trialing`/`active`) map verbatim onto the "admit when trialing OR
+    active" rule. Read the Stripe-specific text below through that mapping
+    (Stripe Checkout → Paddle hosted checkout/overlay; `trial_period_days=7`
+    → Paddle card-required free trial; `cancel_at_period_end` → Paddle
+    scheduled cancel; Stripe webhook → Paddle signed subscription webhooks
+    feeding the same minting backend). Tax, FTC negative-option mechanics,
+    and EU withdrawal disclosures ride with the MoR. Sequencing: K.2 →
+    K.5's ToS/privacy pages live (Paddle site verification needs them) →
+    Paddle account (sandbox first) → build here.
   - Build: Stripe Checkout → a relay entitlement token; the relay admits
     daemon pairings only with an active entitlement (the *relay* checks
     entitlement — the daemon and wire protocol stay payment-ignorant);
@@ -1346,24 +1415,30 @@ with it. Both sequence BEFORE R.5.**
     both repos, `sync:check` green), README, and a standalone test (valid admits
     + its viewport works / no-token / expired / garbage / wrong-key all refused);
     cross-repo itest (9, real daemon) still green.
-    **Still owed (needs Kyle):** (1) the Stripe **test secret key** (test mode,
-    in a gitignored `.env`) to build the Checkout + minting half; (2) the
-    **decision — where the minting backend lives** (recommended: a Cloudflare
-    Pages Function on mirafold.com — $0, no new infra — which on the subscription
-    webhook mints the signed token; alt: a small Fly service). (3) Then: the
-    daemon side (dial-out sends the header; genui-shell app code — hold until the
-    other session frees it), and the R.5 open refinements (token→account binding
-    vs. sharing, revocation-before-expiry window, and — 2026-07-12 audit, B2 — a
+    **Still owed (needs Kyle; vendor now Paddle per K.4):** (1) the Paddle
+    **sandbox account + API/webhook credentials** (sandbox needs no site
+    verification — start any time; the LIVE account needs the K.2 entity and
+    K.5's pages for Paddle's site review) to build the checkout + minting
+    half; (2) the **decision — where the minting backend lives**
+    (recommended: a Cloudflare Pages Function on mirafold.com — $0, no new
+    infra — which on Paddle's `subscription.trialing`/`.activated`/
+    `.canceled` webhooks mints/expires the signed token; alt: a small Fly
+    service). (3) Then: the daemon side (dial-out sends the header;
+    genui-shell app code — hold until the other session frees it), and the
+    R.5 open refinements (token→account binding vs. sharing,
+    revocation-before-expiry window, and — 2026-07-12 audit, B2 — a
     relay-side **max token lifetime** backstop that rejects an implausibly
-    long-lived `exp` even from a buggy or compromised minter). Pricing $12/$99 ·
-    7-day trial · cancel-at-period-end stands per BUSINESS §7 unless recut.
+    long-lived `exp` even from a buggy or compromised minter). Pricing
+    $12/$99 · 7-day card-required trial · cancel-at-period-end stands per
+    BUSINESS §7 unless recut — all three verified native in Paddle (K.4).
     **Launch blocker (2026-07-12 audit, B2):** flipping the relay ON for everyone
     (baking the default `MIRAFOLD_RELAY_URL`, see R.2) must land **with**
     `RELAY_ENTITLEMENT_PUBLIC_KEY` set — never before. An open relay with the gate
     off lets anyone squat the pair/connection caps and lock real daemons out, so
     "entitlement gate ON at deploy" is an explicit gate on R.7, not just an owed item.
-  - Done when: a Stripe test-mode purchase unlocks pairing end-to-end, and
-    expiry re-locks it without breaking the local product in any way.
+  - Done when: a sandbox-mode purchase (Paddle test checkout, per K.4)
+    unlocks pairing end-to-end, and expiry re-locks it without breaking the
+    local product in any way.
 
 - [ ] **Step R.5b — Release strategy, locked (all three repos)** *(a
   decision to make + write down, not a build; do before R.6's final week)*
