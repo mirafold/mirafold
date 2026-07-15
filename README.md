@@ -398,6 +398,8 @@ web/               the browser app (React 19 + Vite)
                      new-session affordance; routing lives in main.tsx
   src/ConnectDevice.tsx  shell-owned "⧉ pair" affordance: QR of the pairing
                      URL, status bar + fleet header (R.4)
+  src/session-bus.ts the shell's message bus (H.9): one SocketClient + the
+                     pub/sub fan-out and senders Shell.tsx consumes
   src/ws.ts          SocketClient: typed send/onMessage, hello, seq cursor,
                      heartbeat (half-open detection) + capped backoff (4.4);
                      on a relay page (#code= fragment) it handshakes and
