@@ -1112,3 +1112,18 @@ the M2 launch trigger. Keep every seam agent-neutral and compatible with that.
   path.
 - **PLAN.md step hygiene:** work steps in order, don't start one until the
   previous step's "Done when" is satisfied, and check items off as you go.
+
+## 12. Licensing
+
+Mirafold's own code is **MIT** (see `LICENSE`). Two dependency notes worth
+knowing (from the 2026-07-15 license scan, PLAN K.8):
+
+- **The agent engines carry their own licenses — MIT here doesn't cover
+  them.** `@anthropic-ai/claude-agent-sdk` is proprietary (© Anthropic PBC,
+  use subject to Anthropic's legal agreements); `@openai/codex-sdk` is
+  Apache-2.0; Gemini CLI isn't a dependency at all — the adapter spawns the
+  `gemini` binary the *user* installed. All are consumed as ordinary npm
+  dependencies (or the user's own install), never vendored or modified.
+- **Everything else in the production tree is permissive** (MIT/ISC/
+  Apache-2.0/BSD) — no copyleft. Re-run the check with
+  `npx license-checker --production --summary` after dependency changes.
