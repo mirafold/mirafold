@@ -413,7 +413,6 @@ relay-service/     pointer README only (Phase G): the hosted relay lives in
 dist/              built front end (vite build output; served by Express)
 dist-server/       esbuild server bundles (4.10): index.js + render-mcp.js —
                    what the installed `mirafold` actually runs; gitignored
-workspace/         legacy scratch dirs (pre-4.8 default cwd) — gitignored
 PLAN.md            the phased build plan (source of truth for next steps)
 PLAN-ARCHIVE.md    completed phases (0, T, 1, 2, 3, T2, P) with their status notes
 BUSINESS.md        strategy; gates that sequence the plan
@@ -928,8 +927,7 @@ the create instead of silently creating a stray dir). The trusted shell shows
 the session's cwd at the prompt (`~/Projects/foo ❯`) and its leaf in the
 status bar. File mutation and bash ask for approval on the shell's permission
 bar exactly as in the terminal, honoring the allowlists in your inherited
-`settings.json`. (`./workspace/` is the legacy pre-4.8 scratch location —
-gitignored, safe to delete.)
+`settings.json`.
 
 ## 9. Life of a turn (end to end)
 
