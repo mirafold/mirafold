@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { ConnectDevice, type RelayInfo } from "./ConnectDevice";
 
-// T2.6: the workbench strip — model, session, cwd, connection, and token/cost
+// The workbench strip — model, session, cwd, connection, and token/cost
 // usage at a glance. Shell-owned (the agent can't paint here) and collapsible
-// per the side-surface rule: it folds to a single connection dot.
+// per the side-surface rule: it folds to a single connection dot (T2.6).
 
 export type Usage = {
   model?: string;
@@ -37,21 +37,21 @@ export function StatusBar({
   sessionId?: string;
   cwd?: string;
   usage: Usage;
-  // 4.3: shell-owned theme toggle — dark is the default and the identity.
+  // Shell-owned theme toggle — dark is the default and the identity (4.3).
   theme: "dark" | "light";
   onToggleTheme: () => void;
-  // #11: end this session (absent when there's no session yet). Two-click
-  // confirm lives in this shell-owned control, never in agent output.
+  // End this session (absent when there's no session yet). Two-click
+  // confirm lives in this shell-owned control, never in agent output (#11).
   onEndSession?: () => void;
-  // R.4: pairing info for the "connect a device" QR (absent → no button).
+  // Pairing info for the "connect a device" QR (absent → no button) (R.4).
   relay?: RelayInfo;
-  // R.4g: the daemon's version, off the agents hello — the first thing a
-  // bug report needs.
+  // The daemon's version, off the agents hello — the first thing a
+  // bug report needs (R.4g).
   version?: string;
 }) {
   const [open, setOpen] = useState(true);
-  // #11: first click arms, second click ends — guards against a stray click
-  // killing a session. Disarms itself after a few seconds.
+  // First click arms, second click ends — guards against a stray click
+  // killing a session. Disarms itself after a few seconds (#11).
   const [confirmEnd, setConfirmEnd] = useState(false);
   const dot = (
     <span

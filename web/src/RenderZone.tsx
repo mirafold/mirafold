@@ -48,8 +48,8 @@ type Entry =
       expanded: boolean;
     }
   | {
-      // F.2: a service-status line (retry, compaction, rate limit, refusal) —
-      // the UI must not lie in degraded service. Persistent, dim, non-agent.
+      // A service-status line (retry, compaction, rate limit, refusal) —
+      // the UI must not lie in degraded service. Persistent, dim, non-agent (F.2).
       kind: "notice";
       id: number;
       text: string;
@@ -388,7 +388,7 @@ export function RenderZone({
     return entry && (entry.kind === "render" || entry.kind === "artifact") ? [entry] : [];
   });
 
-  // T2.4: subagent calls (parentId set) grouped under their Task's wire id.
+  // Subagent calls (parentId set) grouped under their Task's wire id (T2.4).
   const childrenByParent = new Map<string, ToolCall[]>();
   for (const e of entries) {
     if (e.kind === "tool" && e.parentId) {
@@ -402,8 +402,8 @@ export function RenderZone({
     <div className="zone-row">
       <div className="render-zone">
         {entries.length === 0 && !status && (
-          // #12: a fresh session (no transcript yet) shows an inviting welcome
-          // instead of raw emptiness. Shell-owned and agent-neutral.
+          // A fresh session (no transcript yet) shows an inviting welcome
+          // instead of raw emptiness. Shell-owned and agent-neutral (#12).
           <div className="zone-empty">
             <div className="zone-empty-glyph">❯</div>
             <div className="zone-empty-title">Hello 👋</div>

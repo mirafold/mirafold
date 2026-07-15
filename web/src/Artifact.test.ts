@@ -2,11 +2,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseBridgeAction, wrap } from "./Artifact";
 
-// R.4e: the artifact sandbox's pure functions, pinned by tests so flipping a
+// The artifact sandbox's pure functions, pinned by tests so flipping a
 // defense fails loudly instead of silently shipping. parseBridgeAction is the
 // gate between agent-authored script and the shell's action path; wrap() is
 // what guarantees every artifact document carries the lockdown CSP and the
-// nonce-closing boot script BEFORE any hostile content runs.
+// nonce-closing boot script BEFORE any hostile content runs (R.4e).
 
 // ---- parseBridgeAction: what may leave the sandbox ------------------------
 

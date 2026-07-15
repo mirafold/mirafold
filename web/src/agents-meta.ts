@@ -1,9 +1,9 @@
 import type { AgentName } from "@protocol";
 
-// R.4b: shared display metadata for the offerable agents. LABEL is the human
+// Shared display metadata for the offerable agents. LABEL is the human
 // name; CONNECT_HINT is the one concrete action that makes that agent live —
 // shown on the onboarding picker's credential-less rows and in the in-session
-// demo banner, so "no credentials" is never a dead end.
+// demo banner, so "no credentials" is never a dead end (R.4b).
 
 export const LABEL: Record<AgentName, string> = {
   "claude-code": "Claude Code",
@@ -26,11 +26,11 @@ export const CONNECT_HINT: Record<AgentName, string> = {
     "set GEMINI_API_KEY (free key at aistudio.google.com/apikey) — Gemini has no local path",
 };
 
-// R.4i: the hint for a BLOCKED agent — a prohibited subscription credential is
+// The hint for a BLOCKED agent — a prohibited subscription credential is
 // present. Distinct from CONNECT_HINT because the honest message names WHY it
 // won't run, not just how to fix it. Partial: only the closed providers whose
 // subscription we detect and refuse (Anthropic, Gemini). Codex never lands here
-// locally — OpenAI's subscription is permitted for local use.
+// locally — OpenAI's subscription is permitted for local use (R.4i).
 export const BLOCKED_HINT: Partial<Record<AgentName, string>> = {
   "claude-code":
     "a Claude subscription can't be used in third-party apps (Anthropic's terms) — set ANTHROPIC_API_KEY to use Claude here",
@@ -38,10 +38,10 @@ export const BLOCKED_HINT: Partial<Record<AgentName, string>> = {
     "a Gemini subscription can't be used in third-party apps (Google's terms) — set GEMINI_API_KEY to use Gemini here",
 };
 
-// R.4h: look up through these, never index the records directly. The records
+// Look up through these, never index the records directly. The records
 // are exhaustive over TODAY'S closed AgentName union, but the wire is
 // additive-only: a newer daemon can announce an agent this bundle has never
-// heard of, and it must display as its raw name — not `undefined`.
+// heard of, and it must display as its raw name — not `undefined` (R.4h).
 
 export function agentLabel(agent: string): string {
   return (LABEL as Record<string, string | undefined>)[agent] ?? agent;

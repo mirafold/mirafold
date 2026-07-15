@@ -19,8 +19,8 @@ const ZERO_USAGE: Usage = { turnIn: 0, turnOut: 0, sumIn: 0, sumOut: 0, cost: 0 
  * re-rendered or touched by agent output. The agent only paints into
  * RenderZone via the message bus below.
  *
- * Step 4.2: a connection is a viewport onto a registry session. The URL is
- * the session identity (/s/<id>) — refresh-safe and shareable across tabs.
+ * A connection is a viewport onto a registry session. The URL is
+ * the session identity (/s/<id>) — refresh-safe and shareable across tabs (4.2).
  */
 export function Shell() {
   // ── The turn ──────────────────────────────────────────────────────────
@@ -56,15 +56,15 @@ export function Shell() {
 
   // ── The dismissable notices (all SHELL-OWNED — the agent paints none) ───
   const [notices, setNotices] = useState<{
-    // R.4c: the server took the attach-fallback branch — the session this tab
+    // The server took the attach-fallback branch — the session this tab
     // asked for is gone (daemon restart, expiry) and this is a FRESH one. A
     // silent URL swap over a blank transcript reads as data loss with no
     // explanation; this shell-drawn notice says what happened. Cleared on
-    // dismiss or on the first prompt into the new session.
+    // dismiss or on the first prompt into the new session (R.4c).
     session: boolean;
-    // R.4i: the daemon refused this REMOTE viewport because the session runs
+    // The daemon refused this REMOTE viewport because the session runs
     // on a subscription login, which can't be driven over the paid relay.
-    // Shown until dismissed.
+    // Shown until dismissed (R.4i).
     refused: string | null;
     // The last create error, so the onboarding card can show a rejected
     // working dir (4.8).
@@ -113,9 +113,9 @@ export function Shell() {
           m.type === "text_delta" ||
           m.type === "tool_use"
         ) {
-          // R.4c: busy re-derives from ANY turn activity, not just the
+          // Busy re-derives from ANY turn activity, not just the
           // user_prompt — a tail resume mid-turn replays none of the turn's
-          // opening frames, and busy was cleared on the disconnect.
+          // opening frames, and busy was cleared on the disconnect (R.4c).
           setBusy(true);
         } else if (m.type === "turn_end") {
           setBusy(false);
@@ -138,8 +138,8 @@ export function Shell() {
             ...(m.fallback ? { session: true } : {}),
           }));
         } else if (m.type === "refused") {
-          // R.4i: no session — the relay refused this subscription-backed
-          // attach. Show the reason (also surfaced at onboarding if we're there).
+          // No session — the relay refused this subscription-backed
+          // attach. Show the reason (also surfaced at onboarding if we're there) (R.4i).
           setNotices((n) => ({ ...n, refused: m.message, onboarding: m.message }));
         } else if (m.type === "error") {
           // Only the onboarding card consumes this; in-session errors already
@@ -178,10 +178,10 @@ export function Shell() {
     () =>
       bus.onConnection((c) => {
         setConnected(c);
-        // R.4c: a dropped socket can't be mid-turn from this viewport's point
+        // A dropped socket can't be mid-turn from this viewport's point
         // of view — clear the working state and the ■ esc stop affordance so
         // a dead daemon doesn't look like an agent still thinking. Replay (or
-        // the turn-activity frames above) re-derives busy after reconnect.
+        // the turn-activity frames above) re-derives busy after reconnect (R.4c).
         if (!c) setBusy(false);
       }),
     [bus],
@@ -230,8 +230,8 @@ export function Shell() {
     setAsks((a) => a.filter((x) => x.id !== id));
   };
 
-  // 4.9: a leading `!` is intercepted by the trusted shell and runs as a real
-  // shell command — instant, zero tokens, never routed through the model.
+  // A leading `!` is intercepted by the trusted shell and runs as a real
+  // shell command — instant, zero tokens, never routed through the model (4.9).
   const send = (text: string) => {
     const m = text.match(/^!\s*(.+)$/s);
     if (m) {
@@ -260,7 +260,7 @@ export function Shell() {
         />
       )}
       {notices.session && (
-        // R.4c: SHELL-OWNED notice — honest about the swap the server made.
+        // SHELL-OWNED notice — honest about the swap the server made (R.4c).
         <div className="session-notice">
           <span className="session-notice-text">
             that session ended — started a new one (the daemon restarted or the
@@ -276,7 +276,7 @@ export function Shell() {
         </div>
       )}
       {notices.refused && (
-        // R.4i: SHELL-OWNED — the relay refused a subscription-backed session.
+        // SHELL-OWNED — the relay refused a subscription-backed session (R.4i).
         <div className="session-notice">
           <span className="session-notice-text">{notices.refused}</span>
           <button
@@ -289,9 +289,9 @@ export function Shell() {
         </div>
       )}
       {meta.demo && (
-        // R.4b: SHELL-OWNED banner — the agent paints nothing here, so a demo
+        // SHELL-OWNED banner — the agent paints nothing here, so a demo
         // session is unmistakably labeled and the label can't be faked or
-        // cleared (same trust rule as the permission bar).
+        // cleared (same trust rule as the permission bar) (R.4b).
         <div className="demo-banner">
           <span className="demo-banner-badge">demo</span>
           <span className="demo-banner-text">

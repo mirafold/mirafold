@@ -647,11 +647,16 @@ clarify). No web/src folder reshuffle (one component per file already reads).
     grep finds zero comment lines opening with a bare id under `server/`;
     typecheck + 159/159 Tier 1 green.
 
-- [ ] **Step H.12 — Comment legibility pass, web side**
+- [x] **Step H.12 — Comment legibility pass, web side**
   - Goal: same standard as H.11 across the browser code.
   - Build: same sweep over `web/src/` (registry included).
   - Files: `web/src/**/*.ts(x)` (comments only).
   - Done when: same as H.11, for `web/`.
+  - Status: **DONE 2026-07-15.** Same transform as H.11 over `web/src/`
+    (registry included): ~40 sites across 14 files, ids demoted to trailing
+    parentheticals. Diff verified comment-only; the Done-when grep finds zero
+    comment lines opening with a bare id under `web/src/`; typecheck +
+    159/159 Tier 1 green.
 
 - [ ] **Step H.13 — Docs re-synced to the new shape + final full sweep**
   - Goal: the README's map matches reality, a newcomer's first two minutes
