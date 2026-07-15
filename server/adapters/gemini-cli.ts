@@ -66,11 +66,11 @@ export class GeminiCliSession implements AgentSession {
   private announced = new Set<string>();
   private pendingRenders = new Map<string, { tool: string; params: Record<string, unknown> }>();
 
-  constructor(opts?: { workspaceDir?: string; model?: string }) {
-    this.workspaceDir = path.resolve(opts?.workspaceDir ?? "workspace");
+  constructor(opts: { workspaceDir: string; model?: string }) {
+    this.workspaceDir = path.resolve(opts.workspaceDir);
     mkdirSync(this.workspaceDir, { recursive: true });
-    this.model = opts?.model;
-    this.modelLabel = opts?.model ?? "gemini";
+    this.model = opts.model;
+    this.modelLabel = opts.model ?? "gemini";
     this.writeProjectSettings();
     void this.worker();
   }

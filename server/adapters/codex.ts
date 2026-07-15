@@ -72,10 +72,10 @@ export class CodexSession implements AgentSession {
     return this.modelLabel;
   }
 
-  constructor(opts?: { workspaceDir?: string; model?: string }) {
-    const workspaceDir = path.resolve(opts?.workspaceDir ?? "workspace");
+  constructor(opts: { workspaceDir: string; model?: string }) {
+    const workspaceDir = path.resolve(opts.workspaceDir);
     mkdirSync(workspaceDir, { recursive: true });
-    this.modelLabel = opts?.model ?? "codex";
+    this.modelLabel = opts.model ?? "codex";
     // No `env`: the SDK then inherits process.env, so the CLI finds the user's
     // ~/.codex auth + config. No `apiKey` unless one is set (ChatGPT login path).
     const codex = new Codex({
@@ -100,7 +100,7 @@ export class CodexSession implements AgentSession {
     this.thread = codex.startThread({
       workingDirectory: workspaceDir,
       skipGitRepoCheck: true, // workspace dirs aren't git repos
-      ...(opts?.model ? { model: opts.model } : {}),
+      ...(opts.model ? { model: opts.model } : {}),
       // sandboxMode / approvalPolicy intentionally UNSET — inherited from the
       // user's own Codex config (faithful skin; see the class doc).
     });
