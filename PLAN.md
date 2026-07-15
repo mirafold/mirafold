@@ -415,11 +415,13 @@ clarify). No web/src folder reshuffle (one component per file already reads).
     `workspaceDir ?? "workspace"` default (claude-code.ts:103, codex.ts:76,
     gemini-cli.ts:70) that would mkdir `./workspace` if ever constructed bare —
     but no call site omits the option (`createSession` always passes
-    `opts.cwd`; every test passes a tmp dir), so it is provably unexercised,
-    and removing a default is a logic change Phase H forbids. Left in place,
-    noted here; a later pass may drop the default or make the option required.
-    The two explanatory comments in `registry.ts`/`permissions.ts` stay, per
-    the step.
+    `opts.cwd`; every test passes a tmp dir), so it was provably unexercised.
+    **Addressed same day (Kyle: no deferrals of known weirdness):**
+    `workspaceDir` is now a required constructor option in all three adapters —
+    the literal `"workspace"` fallback is gone entirely, typecheck enforces
+    every call site, and all three tiers re-ran green with exact parity
+    (159/74/20). The two explanatory comments in `registry.ts`/`permissions.ts`
+    stay, per the step.
 
 - [ ] **Step H.2 — Carve out `server/relay/` (the non-aliased files)**
   - Goal: the eight-file relay family reads as one subsystem.

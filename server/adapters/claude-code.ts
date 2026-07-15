@@ -99,12 +99,12 @@ export class ClaudeCodeSession implements AgentSession {
   // `engine` is the test seam (like Codex's thread swap / MIRAFOLD_GEMINI_BIN):
   // query() spawns the real CLI at construction, so tests must inject a
   // scripted stand-in here — there is no later moment to swap it.
-  constructor(opts?: { workspaceDir?: string; model?: string; engine?: typeof query }) {
-    const workspaceDir = path.resolve(opts?.workspaceDir ?? "workspace");
+  constructor(opts: { workspaceDir: string; model?: string; engine?: typeof query }) {
+    const workspaceDir = path.resolve(opts.workspaceDir);
     mkdirSync(workspaceDir, { recursive: true }); // spawn fails on a missing cwd
-    const model = opts?.model ?? process.env.DEFAULT_MODEL;
+    const model = opts.model ?? process.env.DEFAULT_MODEL;
     this.modelLabel = model ?? "default";
-    this.q = (opts?.engine ?? query)({
+    this.q = (opts.engine ?? query)({
       prompt: this.promptStream(),
       options: {
         model,
