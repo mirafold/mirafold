@@ -7,13 +7,13 @@ import type { query, Options } from "@anthropic-ai/claude-agent-sdk";
 import type { WireMsg } from "../protocol";
 import { ClaudeCodeSession } from "./claude-code";
 
-// L.2e: the Claude Code SDK-message→WireMsg mapping and the turn grammar, on
+// The Claude Code SDK-message→WireMsg mapping and the turn grammar, on
 // synthetic SDKMessages — no CLI, no network. The session is real; only the
 // engine is swapped via the constructor's `engine` seam for a stub that
 // consumes the real promptStream and replays scripted turns, so the whole
 // pushPrompt → queue → pump → emit path runs as shipped. `canUseTool` is
 // captured off the real options, so the permission plumbing is the shipped
-// makeCanUseTool → ask → resolvePermission chain too.
+// makeCanUseTool → ask → resolvePermission chain too (L.2e).
 
 type Any = WireMsg & Record<string, any>;
 type SDKMsg = Record<string, unknown>;

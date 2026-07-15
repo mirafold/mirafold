@@ -6,10 +6,10 @@ import path from "node:path";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { startDaemon, type Daemon } from "./itest-harness";
 
-// L.2c: Tier-3 E2E, opt-in (`yarn test:e2e` — needs google-chrome and a fresh
+// Tier-3 E2E, opt-in (`yarn test:e2e` — needs google-chrome and a fresh
 // `yarn build`, which the script runs first: the daemon serves ./dist, and a
 // stale build fails silently). Real browser, real typing, the daemon from the
-// Tier-2 harness (credentials forced empty → MockSession).
+// Tier-2 harness (credentials forced empty → MockSession) (L.2c).
 
 const TOKEN = "e2e-token-9c2f";
 const CHROME = process.env.CHROME_BIN ?? "/usr/bin/google-chrome";
@@ -47,8 +47,8 @@ test("?token= mints the cookie, cleans the URL, boots the shell", async () => {
 
 test("onboarding → a full mock turn renders in the DOM", async () => {
   // An empty registry opens straight into "choose your agent".
-  // R.4b: every credential-less row carries its one-line fix on the picker
-  // itself (the harness forces all three agents credential-less).
+  // Every credential-less row carries its one-line fix on the picker
+  // itself (the harness forces all three agents credential-less) (R.4b).
   await page.waitForSelector(".onb-agent-hint");
   assert.equal(await page.locator(".onb-agent-hint").count(), 3);
   const claudeRow = page.locator(".onb-agent", { hasText: "Claude Code" });
@@ -57,14 +57,14 @@ test("onboarding → a full mock turn renders in the DOM", async () => {
     await page.locator(".onb-agent", { hasText: "Codex" }).innerText(),
     /codex login/,
   );
-  // R.4k: the local/open-model path is named on the picker screen itself.
+  // The local/open-model path is named on the picker screen itself (R.4k).
   assert.match(await page.locator(".onb-local-note").innerText(), /local\/open model/i);
 
   await claudeRow.click();
   await page.waitForURL(/\/s\/[\w-]+/);
 
-  // R.4b: the shell-drawn demo banner is up before anything else paints — a
-  // mock session is unmistakably labeled, with the concrete fix named.
+  // The shell-drawn demo banner is up before anything else paints — a
+  // mock session is unmistakably labeled, with the concrete fix named (R.4b).
   await page.waitForSelector(".demo-banner");
   const banner = await page.locator(".demo-banner").innerText();
   assert.match(banner, /demo/i);
@@ -150,7 +150,7 @@ test("a demo turn shows tokens but never a fabricated dollar cost (R.4b)", async
   await page.waitForSelector(".sb-usage", { timeout: 30_000 });
   const bar = await page.locator(".status-bar").innerText();
   assert.ok(!bar.includes("$"), `status bar shows a dollar cost in a demo session: ${bar}`);
-  // R.4g: the daemon version is visible in the status bar.
+  // The daemon version is visible in the status bar (R.4g).
   assert.match(bar, /v\d+\.\d+\.\d+/);
 });
 

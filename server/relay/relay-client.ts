@@ -59,12 +59,12 @@ type Remote = {
  * Connection, the same code path as a local WebSocket, so 4.2 fan-out,
  * replay, and 4.4 resume work unchanged.
  *
- * R.3: the relay never sees the pairing code (only its derived pairId rides
+ * The relay never sees the pairing code (only its derived pairId rides
  * the dial URL) and never sees a plaintext frame. Each viewport must open
  * with a valid E2E handshake under the code-derived key; every later frame
  * is AES-GCM under that channel's fresh directional keys. Anything that
  * fails to authenticate — wrong code, tampered, replayed — drops the
- * viewport: fail closed, never fail open.
+ * viewport: fail closed, never fail open (R.3).
  */
 export function startRelayClient(opts: {
   url: string;

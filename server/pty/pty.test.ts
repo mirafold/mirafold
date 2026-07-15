@@ -24,9 +24,9 @@ test("leaves plain text untouched", () => {
   assert.equal(cleanPtyOutput("hello world"), "hello world");
 });
 
-// R.4f: `!` must not kill the daemon — the shell is picked per platform
+// `!` must not kill the daemon — the shell is picked per platform
 // (win32 never tries /bin/bash) and a missing shell throws a clean Error
-// the bang handler can catch, instead of two platform-specific failures.
+// the bang handler can catch, instead of two platform-specific failures (R.4f).
 
 test("bangShell on unix honors SHELL with a /bin/bash fallback", () => {
   const zsh = bangShell("linux", { SHELL: "/bin/zsh" });

@@ -49,8 +49,8 @@ test("denies reading the daemon .env through any auto-allowed reader", async () 
   assert.equal((await call("Read", { file_path: ".env.local" })).behavior, "deny");
 });
 
-// Q.5 — the guard resolves the target with path.resolve, so these routes to the
-// SAME daemon file must also deny, not just the bare relative string.
+// The guard resolves the target with path.resolve, so these routes to the
+// SAME daemon file must also deny, not just the bare relative string (Q.5).
 
 test("Q.5 denies an absolute path to the daemon .env, through every reader", async () => {
   const { call } = harness(true);

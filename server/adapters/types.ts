@@ -18,9 +18,9 @@ export interface AgentSession {
   interrupt(): void;
   /** The browser's answer to a permission_request (Phase T.3). */
   resolvePermission(id: string, allow: boolean): void;
-  /** #6: current best-known model label, for the fleet row / status bar. Known
+  /** Current best-known model label, for the fleet row / status bar. Known
    *  at construction from config/DEFAULT_MODEL; may refine after the first turn
-   *  for agents whose real model only appears mid-stream (Claude, Gemini). */
+   *  for agents whose real model only appears mid-stream (Claude, Gemini) (#6). */
   readonly modelName: string;
   close(): void;
 }
@@ -34,9 +34,9 @@ export interface AgentSession {
  */
 export type Backend = {
   agent: AgentName;
-  // R.4i: which kind of credential drives this session — the input to the
+  // Which kind of credential drives this session — the input to the
   // per-provider relay policy (`provider-policy.ts`). Read by the relay gate to
-  // refuse subscription-backed sessions over the paid path.
+  // refuse subscription-backed sessions over the paid path (R.4i).
   kind: CredentialKind;
   live: boolean;
   model?: string;

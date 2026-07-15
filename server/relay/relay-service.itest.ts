@@ -19,12 +19,12 @@ import {
   MIN_PAIR_ID_LENGTH as SERVICE_MIN_PAIR_ID_LENGTH,
 } from "../../../genui-relay/src/contract";
 
-// R.2: the DEPLOYED relay service, verified against the real daemon locally —
+// The DEPLOYED relay service, verified against the real daemon locally —
 // sourced from the sibling `genui-relay` repo, the relay's single home since
 // Phase G retired the vendored `relay-service/` copy. The R.3 crypto path and
 // byte-for-byte parity are already proven against the stub (relay.itest.ts);
 // here we prove the grown-up service is a faithful forwarder AND that its
-// production hardening (caps, rate limit, health) actually refuses abuse.
+// production hardening (caps, rate limit, health) actually refuses abuse (R.2).
 
 type Any = WireMsg & Record<string, any>;
 const CODE = "service-itest-code-7b21e4";

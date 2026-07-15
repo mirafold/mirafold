@@ -10,9 +10,9 @@ import {
   toB64u,
 } from "./relay-crypto";
 
-// R.3: the E2E layer's guarantees, exercised directly — everything that must
+// The E2E layer's guarantees, exercised directly — everything that must
 // fail does fail (tamper, replay, reorder, wrong key, role reflection), and
-// nothing the relay sees reveals the pairing code or a plaintext frame.
+// nothing the relay sees reveals the pairing code or a plaintext frame (R.3).
 
 const CODE = "test-pairing-code-8c1d2e3f";
 

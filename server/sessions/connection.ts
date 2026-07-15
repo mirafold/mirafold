@@ -14,20 +14,20 @@ import { VERSION } from "../version";
 // injection so one verbose command can't eat the model's window.
 const BANG_CONTEXT_CAP = Number(process.env.BANG_CONTEXT_CAP ?? 16_000);
 
-// R.4d: how much of a `!` command's output reaches the wire — and therefore
+// How much of a `!` command's output reaches the wire — and therefore
 // the replay ring — per command (head-kept, honest marker; mirrors the
 // TOOL_OUTPUT_CAP_BYTES pattern). Without it one runaway `!yes` floods every
 // viewport, is replayed in full to each new tab, and its chunks evict the
 // real transcript from the ring. The PTY keeps running past the cap and the
-// agent-context tail above keeps accumulating — only the broadcast stops.
+// agent-context tail above keeps accumulating — only the broadcast stops (R.4d).
 const BANG_OUTPUT_CAP_BYTES = Number(process.env.BANG_OUTPUT_CAP_BYTES ?? 262_144);
 
 /**
- * Step 4.9: prompts carry any finished-since-last-turn `!` transcripts as
+ * Prompts carry any finished-since-last-turn `!` transcripts as
  * leading context — terminal-faithful (the model sees what you ran), and
  * agent-neutral: it consumes only the AgentSession seam's pushPrompt, so
  * every engine gets it without per-adapter code. The user_prompt broadcast
- * stays the raw typed text; only the engine sees the injected block.
+ * stays the raw typed text; only the engine sees the injected block (4.9).
  */
 const pushWithBangContext = (entry: SessionEntry, text: string) => {
   const blocks = entry.pendingBang.splice(0);
@@ -37,17 +37,17 @@ const pushWithBangContext = (entry: SessionEntry, text: string) => {
 };
 
 /**
- * Step 4.9: run one `!` command in the session's PTY and drive its whole
+ * Run one `!` command in the session's PTY and drive its whole
  * lifecycle — the bang_start/…/bang_end grammar, the head-kept wire budget
  * (what viewports and the replay ring see, R.4d), and the tail-kept context
- * accumulator that rides into the agent's next prompt.
+ * accumulator that rides into the agent's next prompt (4.9).
  */
 const startBang = (registry: SessionRegistry, e: SessionEntry, command: string, id: string) => {
   // Tail-kept accumulator, capped as data arrives — a long-running
   // command (`!yes`) must not grow server memory until exit.
   let output = "";
   let elided = 0;
-  // R.4d: per-command wire budget (bytes broadcast / bytes withheld).
+  // Per-command wire budget (bytes broadcast / bytes withheld) (R.4d).
   let wireSent = 0;
   let wireElided = 0;
   registry.broadcast(e, { type: "bang_start", command, id });
@@ -61,9 +61,9 @@ const startBang = (registry: SessionRegistry, e: SessionEntry, command: string, 
           elided += output.length - BANG_CONTEXT_CAP;
           output = output.slice(-BANG_CONTEXT_CAP);
         }
-        // R.4d: head-kept wire cap. Past it nothing is broadcast (so
+        // Head-kept wire cap. Past it nothing is broadcast (so
         // nothing enters the ring); the marker announces the cut the
-        // moment it happens, and the exit path reports the total.
+        // moment it happens, and the exit path reports the total (R.4d).
         const bytes = Buffer.byteLength(data, "utf8");
         const room = BANG_OUTPUT_CAP_BYTES - wireSent;
         if (room > 0) {
@@ -141,12 +141,12 @@ export function openConnection(
   registry: SessionRegistry,
   viewport: (msg: WireMsg) => void,
   label = "ws",
-  // R.4: pairing info for the "connect a device" QR. The local WS path passes
-  // it; the relay path never does — the code must not cross the relay.
+  // Pairing info for the "connect a device" QR. The local WS path passes
+  // it; the relay path never does — the code must not cross the relay (R.4).
   relay?: { url: string; code: string },
-  // R.4i: true for a viewport arriving over the paid relay (relay-client passes
+  // True for a viewport arriving over the paid relay (relay-client passes
   // it). The relay gate refuses to attach such a viewport to a subscription-
-  // backed session; local viewports are never gated.
+  // backed session; local viewports are never gated (R.4i).
   remote = false,
 ): Connection {
   // A connection is a viewport onto one registry session (Step 4.2) — or,
@@ -158,14 +158,14 @@ export function openConnection(
   // a valid afterSeq turns the replay into a tail-only resume — the client
   // is told via `resumed` so it keeps its state instead of repainting.
   const attachTo = (e: SessionEntry, afterSeq?: number, fallback = false) => {
-    // R.4i: the relay gate. A remote viewport may not drive a subscription-
+    // The relay gate. A remote viewport may not drive a subscription-
     // backed session — charging for remote access to it trips the closed-model
     // providers' reselling clauses (provider-policy.ts). Refuse WITHOUT
     // attaching, and leave `entry` as it was so the viewport keeps whatever it
     // legitimately watched. Local viewports are never gated. (A remote CREATE
     // that lands here leaves the just-created session unattached; it's idle-
     // reaped — the important case this closes is a phone attaching to a
-    // subscription session a local tab started.)
+    // subscription session a local tab started.) (R.4i)
     if (remote && !allowedOverRelay(e.kind)) {
       viewport({
         type: "refused",
@@ -186,8 +186,8 @@ export function openConnection(
       agent: e.agent,
       ...(resumed ? { resumed: true } : {}),
       ...(e.live ? {} : { demo: true }),
-      // R.4c: the caller asked for a session that no longer exists and got a
-      // fresh one — the shell shows a notice instead of a silent swap.
+      // The caller asked for a session that no longer exists and got a
+      // fresh one — the shell shows a notice instead of a silent swap (R.4c).
       ...(fallback ? { fallback: true } : {}),
     });
     registry.attach(e, viewport, resumed ? afterSeq : undefined);
@@ -196,10 +196,10 @@ export function openConnection(
     );
   };
 
-  // P.4: advertise which agents this daemon offers + which are live, so the
-  // onboarding picker can render before any session exists. No agent assumed.
-  // 4.8: also where the daemon was launched — the default cwd for new
-  // sessions — plus home, so the client can show paths in ~-form.
+  // Advertise which agents this daemon offers + which are live, so the
+  // onboarding picker can render before any session exists. No agent assumed (P.4).
+  // Also where the daemon was launched — the default cwd for new
+  // sessions — plus home, so the client can show paths in ~-form (4.8).
   viewport({
     type: "agents",
     agents: availableAgents(),
@@ -210,15 +210,15 @@ export function openConnection(
     ...(relay ? { relay } : {}),
   });
 
-  // R.4g: a viewport-scoped error reaches the terminal too — the browser may
-  // be a stranger's; the terminal log is what lands in a bug report.
+  // A viewport-scoped error reaches the terminal too — the browser may
+  // be a stranger's; the terminal log is what lands in a bug report (R.4g).
   const sendError = (message: string) => {
     console.error(`[${new Date().toISOString()}] [${label}] error: ${message}`);
     viewport({ type: "error", message });
   };
 
-  // R.4g: the client announces its build on attach/create; a skewed pair is
-  // the first thing to know about a weird bug report, so log it here.
+  // The client announces its build on attach/create; a skewed pair is
+  // the first thing to know about a weird bug report, so log it here (R.4g).
   const noteClientVersion = (v: unknown) => {
     if (typeof v === "string" && v && v !== VERSION) {
       console.warn(
@@ -322,7 +322,7 @@ export function openConnection(
         viewport({ type: "pong" });
         break;
       case "watch_sessions":
-        // 4.6: this connection is the fleet page — snapshots, not a session.
+        // This connection is the fleet page — snapshots, not a session (4.6).
         if (entry) {
           registry.detach(entry, viewport);
           entry = null;
@@ -336,8 +336,8 @@ export function openConnection(
         }
         break;
       case "end_session":
-        // #11: usable from a session viewport or a fleet watcher — the registry
-        // tears the session down and signals any attached viewports.
+        // Usable from a session viewport or a fleet watcher — the registry
+        // tears the session down and signals any attached viewports (#11).
         if (typeof msg.sessionId === "string") {
           registry.end(msg.sessionId);
           console.log(`[${label}] end_session → ${msg.sessionId}`);
@@ -352,7 +352,7 @@ export function openConnection(
         }
         break;
       case "action": {
-        // Step 2.3: every component action is mediated here and logged.
+        // Every component action is mediated here and logged (2.3).
         if (!entry || typeof msg.action !== "object" || msg.action === null) break;
         const src = typeof msg.sourceId === "string" ? msg.sourceId : "?";
         if (msg.action.kind === "prompt" && typeof msg.action.text === "string") {

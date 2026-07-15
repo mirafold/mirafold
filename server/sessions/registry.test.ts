@@ -31,11 +31,11 @@ test("resolveCwd throws when the path is a file, not a directory", () => {
   assert.throws(() => resolveCwd(file), /not a directory/);
 });
 
-// Q.3 — ring-buffer eviction and the resume boundary, unit-tested directly
+// Ring-buffer eviction and the resume boundary, unit-tested directly
 // against SessionRegistry with a mock backend (live:false → the inert
 // MockSession; no daemon, no network, and nothing emitted until a prompt is
 // pushed, so the ring holds exactly what we broadcast). We drive
-// broadcast()/canResume()/attach() by hand and inspect the ring.
+// broadcast()/canResume()/attach() by hand and inspect the ring (Q.3).
 const MOCK_BACKEND: Backend = { agent: "claude-code", kind: "none", live: false };
 // Mirror of BUFFER_CAP in registry.ts (module-private, so not importable). Kept
 // in sync by hand — a cap change must update this, which is deliberate: pinning

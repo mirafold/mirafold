@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 import type { WireMsg } from "../protocol";
 import { startDaemon, createSession, TestClient, type Daemon } from "../testing/itest-harness";
 
-// L.2b: the `!` passthrough (4.9) over a real PTY — and its core security
+// The `!` passthrough (4.9) over a real PTY — and its core security
 // promise: bang_input is EPHEMERAL. Data written to a running command's stdin
 // must never appear in any viewport's stream, the session ring buffer, or the
-// server logs, while the command's own output flows normally.
+// server logs, while the command's own output flows normally (L.2b).
 
 type Any = WireMsg & Record<string, any>;
 
@@ -143,7 +143,7 @@ test("a failing shell spawn errors the session, never the daemon (R.4f)", async 
   const end = (await client.type("bang_end")) as Any;
   assert.equal(end.id, "bf");
   assert.equal(end.exitCode, null);
-  // R.4g: session-stream errors are mirrored to the daemon log, timestamped.
+  // session-stream errors are mirrored to the daemon log, timestamped (R.4g).
   assert.match(bad.logs(), /Z\] \[session \w+\] error: ! failed to start/);
 
   // The daemon survived the keystroke: the same session still runs a full

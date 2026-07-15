@@ -13,7 +13,7 @@ import { AsyncQueue, CLOSE } from "./async-queue";
 const RENDER_MCP = renderMcpCommand();
 // Gemini names MCP tools `mcp_<server>_<tool>`; ours therefore start with this.
 const MCP_PREFIX = `mcp_${MIRAFOLD_MCP}_`;
-// F.4: how much of a failed turn's stderr rides into the surfaced error.
+// How much of a failed turn's stderr rides into the surfaced error (F.4).
 const STDERR_TAIL_CAP = 4000;
 // Resolved per spawn: MIRAFOLD_GEMINI_BIN overrides (an operator knob, and the
 // seam the adapter tests use to substitute a scripted stub), else the copy
@@ -56,8 +56,8 @@ export class GeminiCliSession implements AgentSession {
   private model?: string;
   private workspaceDir: string;
 
-  // F.3: `modelLabel` may be "auto" until a turn resolves the concrete model;
-  // honestModel() refines the status line per turn. The fleet uses this label.
+  // `modelLabel` may be "auto" until a turn resolves the concrete model;
+  // honestModel() refines the status line per turn. The fleet uses this label (F.3).
   get modelName(): string {
     return this.modelLabel;
   }
@@ -148,10 +148,10 @@ export class GeminiCliSession implements AgentSession {
 
       let buf = "";
       let ended = false;
-      // F.4: whether any stdout event parsed this turn, and a capped stderr
+      // Whether any stdout event parsed this turn, and a capped stderr
       // tail — so a stderr-only non-zero exit (the trust-folder trap: Gemini
       // writes the error to stderr, exits 55, and emits NOTHING on stdout)
-      // surfaces as an error instead of a silent "thinking…" then nothing.
+      // surfaces as an error instead of a silent "thinking…" then nothing (F.4).
       let sawEvent = false;
       let stderrTail = "";
       const end = () => {
@@ -193,9 +193,9 @@ export class GeminiCliSession implements AgentSession {
       child.on("close", (code: number | null) => {
         if (buf) consume(buf);
         if (this.child === child) this.child = undefined;
-        // F.4: a non-zero exit that produced no stdout events, with something
+        // A non-zero exit that produced no stdout events, with something
         // on stderr, is a silent failure — surface it (code null = a signal
-        // kill/interrupt, not this case).
+        // kill/interrupt, not this case) (F.4).
         if (!this.closed && !sawEvent && code != null && code !== 0 && stderrTail.trim()) {
           this.emit({ type: "error", message: `gemini exited ${code}: ${stderrTail.trim()}` });
         }
@@ -208,10 +208,10 @@ export class GeminiCliSession implements AgentSession {
     });
   }
 
-  // F.3: init.model can be the literal "auto" (router mode) while the real
+  // init.model can be the literal "auto" (router mode) while the real
   // model(s) the router actually used show up only in result.stats.models.
   // Prefer those concrete names when the init label is a placeholder — the
-  // status bar should name what ran, like the terminal's own status line.
+  // status bar should name what ran, like the terminal's own status line (F.3).
   private honestModel(models: unknown): string {
     const vague = !this.modelLabel || this.modelLabel === "auto" || this.modelLabel === "gemini";
     if (!vague) return this.modelLabel;

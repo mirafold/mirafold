@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import type { WireMsg } from "../protocol";
 import { startDaemon, createSession, TestClient, type Daemon } from "../testing/itest-harness";
 
-// L.2b: the session registry over the real socket — fan-out, ring-buffer
+// The session registry over the real socket — fan-out, ring-buffer
 // replay, 4.4 tail resume vs full replay, stale-id fallback, the fleet
-// watcher (4.6), and the idle timeout (short override).
+// watcher (4.6), and the idle timeout (short override) (L.2b).
 
 type Any = WireMsg & Record<string, any>;
 

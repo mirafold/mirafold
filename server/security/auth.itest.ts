@@ -2,8 +2,8 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { startDaemon, TestClient, type Daemon } from "../testing/itest-harness";
 
-// L.2b: the 4.5 auth gate over real HTTP and a real ws handshake. The token
-// gates both surfaces; `?token=` mints the SameSite cookie then redirects.
+// The 4.5 auth gate over real HTTP and a real ws handshake. The token
+// gates both surfaces; `?token=` mints the SameSite cookie then redirects (L.2b).
 
 const TOKEN = "itest-token-4a1b";
 let d: Daemon;
