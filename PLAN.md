@@ -599,7 +599,7 @@ clarify). No web/src folder reshuffle (one component per file already reads).
     159/159, 74/74, 20/20 — the Tier-3 suites drive attach/resume/replay and
     the R.4c notice through the extracted bus unchanged.
 
-- [ ] **Step H.10 — `Shell.tsx`: group the state**
+- [x] **Step H.10 — `Shell.tsx`: group the state**
   - Goal: the wall of ~13 independent `useState` hooks reads as a handful of
     concerns a newcomer can count on one hand.
   - Build: group related state without changing behavior — the natural
@@ -612,6 +612,18 @@ clarify). No web/src folder reshuffle (one component per file already reads).
   - Files: `web/src/Shell.tsx`.
   - Done when: the ritual passes in full with exact count parity, and the
     file's state section fits on one screen with its comments intact.
+  - Status: **DONE 2026-07-15.** Thirteen hooks now read as five banner'd
+    ideas: **the turn** (busy + asks, kept as separate hooks — they update
+    independently on nearly every wire branch), **the session + daemon**
+    (connected, meta, usage, and `daemonInfo` — the old `agents` + `daemon`
+    hooks merged into one object, natural because every field arrives on the
+    same `agents` hello), **the dismissable notices** (one object:
+    session/refused/onboarding, replacing three hooks), **the `!` command**
+    (one object: my + tail, replacing two), and **the theme**. Every
+    constraint comment moved onto its field. Cohesive objects over a reducer
+    — the update sites are one-field spreads and a reducer would add
+    indirection without removing any. Ritual green with exact parity:
+    typecheck, 159/159, 74/74, 20/20; no test edited.
 
 - [ ] **Step H.11 — Comment legibility pass, server side**
   - Goal: every comment stands alone for a reader who has never seen this
