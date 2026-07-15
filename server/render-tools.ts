@@ -9,7 +9,7 @@ import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import type { WireMsg } from "./protocol";
 import { registryShapes, type ComponentName } from "./registry-spec";
-import { actionToolNames } from "./actions";
+import { actionToolNames } from "./sessions/actions";
 
 const idParam = {
   id: z

@@ -285,7 +285,7 @@ The invariants, and where each is enforced today:
 - **Tool use is gated server-side** (`server/permissions.ts`, see §5.3);
   anything outside the auto-allowed set pauses the turn on a shell-drawn
   permission bar in the browser, deny by default (T.3).
-- **Component actions are mediated server-side** (`server/actions.ts`, see
+- **Component actions are mediated server-side** (`server/sessions/actions.ts`, see
   §5.4): the client never makes an arbitrary call; `tool` actions run against
   an explicit allowlist with validated args, and every action is logged.
 - **WebSocket hijacking guard**: browser connections must present a loopback
@@ -352,14 +352,15 @@ server/            the local daemon (Node, run with tsx)
   adapters/          one AgentSession per agent: claude-code.ts, codex.ts,
                      gemini-cli.ts, mock.ts (+ index.ts seam, types.ts,
                      async-queue.ts, render-mcp-cmd.ts, *.spike.md probe notes)
-  registry.ts        SessionRegistry: sessions decoupled from connections (4.2)
-  actions.ts         Phase 2 mediation: allowlisted tools component actions may run
   permissions.ts     canUseTool policy: workspace gating + browser prompts (T.3)
   auth.ts            the 4.5 auth predicates (token cookie, loopback Origin) —
                      pure functions; index.ts wires them into HTTP + WS
   pty.ts             the `!` passthrough's PTY runner (node-pty, 4.9)
-  connection.ts      one viewport's server side, transport-agnostic (R.1) —
-                     shared verbatim by local sockets and relay viewports
+  sessions/          the session state core (H.4):
+    registry.ts        SessionRegistry: sessions decoupled from connections (4.2)
+    connection.ts      one viewport's server side, transport-agnostic (R.1) —
+                       shared verbatim by local sockets and relay viewports
+    actions.ts         Phase 2 mediation: allowlisted tools component actions may run
   relay/             the remote-viewport path (H.2/H.3):
     relay-protocol.ts  the relay envelope + pairing-code mint (R.1/R.3)
     relay-crypto.ts    per-pair E2E encryption, WebCrypto-only — the same file

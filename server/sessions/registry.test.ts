@@ -4,8 +4,8 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { resolveCwd, SessionRegistry } from "./registry";
-import type { Backend } from "./adapters";
-import type { WireMsg } from "./protocol";
+import type { Backend } from "../adapters";
+import type { WireMsg } from "../protocol";
 
 test("resolveCwd defaults to the process cwd", () => {
   assert.equal(resolveCwd(undefined), process.cwd());

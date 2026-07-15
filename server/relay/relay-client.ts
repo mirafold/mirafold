@@ -1,6 +1,6 @@
 import WebSocket from "ws";
-import type { SessionRegistry } from "../registry";
-import { openConnection, type Connection } from "../connection";
+import type { SessionRegistry } from "../sessions/registry";
+import { openConnection, type Connection } from "../sessions/connection";
 import {
   DAEMON_PATH,
   HANDSHAKE_TIMEOUT_MS,

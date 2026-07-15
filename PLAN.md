@@ -473,7 +473,7 @@ clarify). No web/src folder reshuffle (one component per file already reads).
     PLAN-ARCHIVE.md. The relay family is now fully assembled in
     `server/relay/` — ten files, nothing relay-named left at the root.
 
-- [ ] **Step H.4 — Carve out `server/sessions/`, part 1: the state core**
+- [x] **Step H.4 — Carve out `server/sessions/`, part 1: the state core**
   - Goal: the session registry and the viewport/connection machinery read as
     the product's core subsystem.
   - Build: `git mv` into `server/sessions/`: `registry.ts` + its test +
@@ -481,6 +481,16 @@ clarify). No web/src folder reshuffle (one component per file already reads).
     the moved paths.
   - Files: the six moved files, their importers, `README.md`.
   - Done when: the ritual passes in full with exact count parity.
+  - Status: **DONE 2026-07-15.** Six files `git mv`'d into `server/sessions/`
+    (registry + test + itest, connection, actions + test); the moved files'
+    root-relative imports gained a `../` (protocol, adapters, provider-policy,
+    pty, version, itest-harness), and the three external importers repointed
+    (`index.ts`, `render-tools.ts`, `relay/relay-client.ts`). README updated:
+    the tree gains the `sessions/` block and §4's `server/actions.ts` citation
+    moved. The old-path grep finds only dated `[x]` status notes in PLAN.md
+    (Q.3/Q.4 history) and PLAN-ARCHIVE.md; `registry-spec.ts` stays at root
+    (the contract), untouched. Ritual green with exact parity: typecheck,
+    159/159, 74/74, 20/20.
 
 - [ ] **Step H.5 — Carve out `server/sessions/`, part 2: liveness + the
   session itests**
