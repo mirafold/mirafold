@@ -12,7 +12,7 @@ import {
   type Backend,
 } from "../adapters";
 import type { CredentialKind } from "../provider-policy";
-import type { BangProc } from "../pty";
+import type { BangProc } from "../pty/pty";
 
 // Replay depth: enough to reconstruct a long working session; beyond it the
 // oldest messages fall off and a late viewport sees a truncated head.
