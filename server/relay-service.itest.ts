@@ -11,19 +11,19 @@ import {
   PAIR_PARAM,
   MIN_PAIR_ID_LENGTH,
 } from "./relay-protocol";
-import { startRelay, type Relay } from "../relay-service/src/relay";
+import { startRelay, type Relay } from "../../genui-relay/src/relay";
 import {
   CLOSE_OVERLOADED,
   CLOSE_RATE_LIMITED,
   SHARED_CONTRACT,
   MIN_PAIR_ID_LENGTH as SERVICE_MIN_PAIR_ID_LENGTH,
-} from "../relay-service/src/contract";
+} from "../../genui-relay/src/contract";
 
-// R.2: the DEPLOYABLE relay service (relay-service/), verified against the real
-// daemon locally — the "write + verify against the daemon's full test posture"
-// half of the step, before any Fly.io/domain exists. The R.3 crypto path and
+// R.2: the DEPLOYED relay service, verified against the real daemon locally —
+// sourced from the sibling `genui-relay` repo, the relay's single home since
+// Phase G retired the vendored `relay-service/` copy. The R.3 crypto path and
 // byte-for-byte parity are already proven against the stub (relay.itest.ts);
-// here we prove the grown-up service is a faithful forwarder AND that its new
+// here we prove the grown-up service is a faithful forwarder AND that its
 // production hardening (caps, rate limit, health) actually refuses abuse.
 
 type Any = WireMsg & Record<string, any>;
@@ -47,7 +47,7 @@ after(async () => {
   await relay.close();
 });
 
-test("the vendored routing contract matches the daemon's relay-protocol", () => {
+test("the relay's routing contract matches the daemon's relay-protocol", () => {
   // The whole open-core split rests on these staying byte-identical; drift
   // would silently break pairing in production. Fail loudly the moment it does.
   assert.equal(SHARED_CONTRACT.DAEMON_PATH, DAEMON_PATH);

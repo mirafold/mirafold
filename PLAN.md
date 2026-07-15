@@ -239,7 +239,7 @@ public-clone story (a bare public `genui-shell` clone won't have the sibling
 which the leaning-open direction makes largely moot and which is a launch-time
 detail, not this phase's concern.
 
-- [ ] **Step G.1 — Retire the vendored `relay-service/` copy; `genui-relay`
+- [x] **Step G.1 — Retire the vendored `relay-service/` copy; `genui-relay`
   becomes the single source of truth**
   - Goal: one home for the relay service. No more byte-identical second copy
     kept in lockstep; the maintainability burden is gone.
@@ -271,6 +271,23 @@ detail, not this phase's concern.
     the sole source, the real-daemon relay itest passes in `genui-shell`
     sourcing from the sibling, and the sync scripts are gone with no doc still
     telling a reader to run them.
+  - Status: **DONE 2026-07-15.** The pre-retirement diff confirmed the two
+    `src/` trees byte-identical, then `relay-service/` was collapsed to a
+    pointer README (src/, Dockerfile, fly.toml, package/tsconfig all removed);
+    `relay-service.itest.ts` now imports `startRelay` + the contract from the
+    sibling `../../genui-relay/src/`, and the sync script + `sync`/`sync:check`
+    npm scripts are deleted. Docs updated in the same pass: this repo's README
+    (§tree + §8), `genui-relay`'s README/ARCHITECTURE §6/DEPLOY §5, and the
+    umbrella CLAUDE.md (sync section → sibling-itest section). Verified both
+    repos: genui-shell typecheck + 159/159 unit + 74/74 itest (the 9 relay
+    itests against the REAL daemon, sourced from the sibling); genui-relay
+    typecheck + 20/20 standalone. One find along the way: `npm run smoke`
+    could no longer pass against the deployed relay — the live
+    `RELAY_ALLOWED_ORIGINS` gate (on since the 07-13 static-origin work)
+    refuses its origin-less viewports (4006). The smoke script now takes the
+    allowed origin as a second argument, presents it on every viewport, and
+    asserts the gate refuses an origin-less viewport; `npm run smoke --
+    wss://relay.mirafold.sh https://app.mirafold.com` PASSes all six checks.
 
 ---
 
@@ -609,9 +626,9 @@ notifications are **not** part of the launch and are not sold until built.
     session through the deployed relay, and the relay's logs show it
     learned nothing but connection metadata.
   - Status: **DEPLOYED and verified in production; the box stays open only on
-    non-code items.** The service (`relay-service/` — the vendored dev
-    source-of-truth; the standalone private `genui-relay` repo is what deploys,
-    kept in sync via `npm run sync`/`sync:check`) is a dependency-light (`ws`
+    non-code items.** The service (the standalone private `genui-relay` repo —
+    the single source of truth since G.1, 2026-07-15, retired the vendored
+    `relay-service/` dev copy and its sync scripts) is a dependency-light (`ws`
     only) portable Node process: a PURE forwarder that parses no frames, stores
     nothing, and serves NO app bundle. Hardening in place — global + per-pair +
     per-IP connection caps (`RELAY_MAX_CONNECTIONS_PER_IP`, `fly-client-ip`),
