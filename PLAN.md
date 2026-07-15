@@ -658,7 +658,7 @@ clarify). No web/src folder reshuffle (one component per file already reads).
     comment lines opening with a bare id under `web/src/`; typecheck +
     159/159 Tier 1 green.
 
-- [ ] **Step H.13 — Docs re-synced to the new shape + final full sweep**
+- [x] **Step H.13 — Docs re-synced to the new shape + final full sweep**
   - Goal: the README's map matches reality, a newcomer's first two minutes
     are scripted, and nothing anywhere cites a pre-H path.
   - Build: (a) redraw README's annotated tree to the target tree above,
@@ -676,6 +676,17 @@ clarify). No web/src folder reshuffle (one component per file already reads).
     grep across the whole repo (docs included) is clean, and the phase's
     origin test passes in the only way that matters: the tree alone tells a
     newcomer where each subsystem lives.
+  - Status: **DONE 2026-07-15 — PHASE H COMPLETE.** (a) README's tree redrawn
+    spine-first: the root reads as entry points (with the never-move note) +
+    contracts (`provider-policy.ts` was missing — added), each subsystem
+    folder annotated, `ws-liveness.ts` surfaced in `sessions/`, Shell.tsx's
+    stale "the message bus" line now says it consumes the session bus.
+    (b) The six-line "start here" spine opens §1. (c) Open-step sweep: Q.1's
+    `server/app.e2e.ts` → `server/testing/app.e2e.ts` (the only open-step
+    citation; everything else is dated history). (d) CLAUDE.md, docs/, and
+    .github/ grep clean of every pre-H path. (e) Full suite at recorded
+    parity: typecheck, 159/159, 74/74, 20/20. The whole phase ran
+    2026-07-15 in one sitting, H.1→H.13, each step its own verified commit.
 
 ---
 
@@ -1279,7 +1290,8 @@ anywhere; each is independent.
     todo-list block in the DOM; a pin e2e: pin a component, drive an update
     (dock copy repaints), reload mid-session (pin survives the replay),
     unpin returns it to the transcript.
-  - Files: `server/adapters/mock.ts` (malformed hook), `server/app.e2e.ts`.
+  - Files: `server/adapters/mock.ts` (malformed hook),
+    `server/testing/app.e2e.ts`.
   - Done when: malformed instructions visibly degrade instead of crashing in
     a real browser, the five-frame checklist paints one block not five, and a
     pinned widget stays live across an update and a reload.

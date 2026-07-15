@@ -65,6 +65,19 @@ codebase. Companion documents:
 
 ## 1. The one-paragraph mental model
 
+**Start here — the spine in six lines (H.13):**
+
+- `server/protocol.ts` is THE contract: every message between server and
+  browser is a `WireMsg`/`ClientMsg` defined there, and nothing else crosses.
+- `server/index.ts` and `web/src/main.tsx` are the two entry points.
+- `server/adapters/` normalizes each terminal agent (Claude Code, Codex,
+  Gemini CLI, mock) into that one protocol — one adapter each, none privileged.
+- `web/src/Shell.tsx` is the TRUSTED shell: prompt, permissions, status —
+  agent output can never paint or intercept it.
+- `web/src/RenderZone.tsx` paints: a pure interpreter of the wire messages.
+- `web/src/registry/` is the generative-UI component vocabulary
+  (`server/registry-spec.ts` is its schema side).
+
 The server holds **warm agent sessions** in a registry — each adapter keeps
 its agent warm its own way: Claude Code is one long-lived `query()` from
 `@anthropic-ai/claude-agent-sdk` fed prompts through an async generator (so
@@ -345,24 +358,35 @@ artifact's "sandboxed" chrome, and the status bar are all drawn this way.
 
 ```
 server/            the local daemon (Node, run with tsx)
+                   — the ROOT is the spine: entry points + shared contracts.
+                   index.ts and render-mcp.ts never move (installed daemons
+                   resolve them by path); each subsystem below is a folder.
+  index.ts           ENTRY POINT: Express + ws server; connections attach as
+                     viewports
+  render-mcp.ts      ENTRY POINT: the render_* tools as a standalone stdio
+                     MCP subprocess (Codex/Gemini adapters spawn it)
+  render-tools.ts    render_* tools as an in-process MCP server (Claude
+                     adapter) + RENDER_GUIDANCE
   protocol.ts        WireMsg/ClientMsg/Action — the shared wire contract
   registry-spec.ts   zod shapes per component — spec = tool schema = validation
-  render-tools.ts    render_* tools as an in-process MCP server (Claude adapter) + RENDER_GUIDANCE
-  render-mcp.ts      the same render_* tools as a standalone stdio MCP server (Codex/Gemini)
+  provider-policy.ts the dated per-provider credential-policy matrix (R.4i) —
+                     cited by path from CLAUDE.md/BUSINESS.md; stays at root
+  version.ts         reads package.json's version at build time (R.4g)
   adapters/          one AgentSession per agent: claude-code.ts, codex.ts,
                      gemini-cli.ts, mock.ts (+ index.ts seam, types.ts,
                      async-queue.ts, render-mcp-cmd.ts, *.spike.md probe notes)
+  sessions/          the session state core (H.4/H.5):
+    registry.ts        SessionRegistry: sessions decoupled from connections (4.2)
+    connection.ts      one viewport's server side, transport-agnostic (R.1) —
+                       shared verbatim by local sockets and relay viewports
+    actions.ts         Phase 2 mediation: allowlisted tools component actions may run
+    ws-liveness.ts     heartbeat sweep shared by the local and relay socket paths
   security/          the two trust gates (H.6):
     auth.ts            the 4.5 auth predicates (token cookie, loopback Origin) —
                        pure functions; index.ts wires them into HTTP + WS
     permissions.ts     canUseTool policy: workspace gating + browser prompts (T.3)
   pty/               the `!` passthrough (H.7):
     pty.ts             the PTY runner (node-pty, 4.9)
-  sessions/          the session state core (H.4):
-    registry.ts        SessionRegistry: sessions decoupled from connections (4.2)
-    connection.ts      one viewport's server side, transport-agnostic (R.1) —
-                       shared verbatim by local sockets and relay viewports
-    actions.ts         Phase 2 mediation: allowlisted tools component actions may run
   relay/             the remote-viewport path (H.2/H.3):
     relay-protocol.ts  the relay envelope + pairing-code mint (R.1/R.3)
     relay-crypto.ts    per-pair E2E encryption, WebCrypto-only — the same file
@@ -375,13 +399,11 @@ server/            the local daemon (Node, run with tsx)
   testing/           cross-cutting test infrastructure (H.8): itest-harness.ts
                      (spawns the real daemon for Tier 2/3) + the whole-product
                      e2e suites (app, launcher, phone, resilience)
-  version.ts         reads package.json's version at build time (R.4g)
-  index.ts           Express + ws server; connections attach as viewports
 web/               the browser app (React 19 + Vite)
   index.html         entry html
   src/main.tsx       mounts <Shell/>, imports global CSS + highlight theme
-  src/Shell.tsx      TRUSTED SHELL: socket + prompt box + permission bar +
-                     status bar; the message bus
+  src/Shell.tsx      TRUSTED SHELL: prompt box + permission bar + notices +
+                     status bar; consumes the session bus (H.9)
   src/Onboarding.tsx first-run card: pick the agent + working directory (P.4/4.8)
   src/PromptBox.tsx  the command bar (auto-grows to 8 lines; Enter sends)
   src/RenderZone.tsx OUTPUT ZONE: WireMsg interpreter → entries + status line,
