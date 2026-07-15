@@ -391,7 +391,7 @@ the transcript-entry union and its renderer; splitting it would scatter, not
 clarify). No web/src folder reshuffle (one component per file already reads).
 `adapters/` and `web/src/registry/` are untouched. No renames anywhere.
 
-- [ ] **Step H.1 — Sweep the legacy `workspace/` scratch directory**
+- [x] **Step H.1 — Sweep the legacy `workspace/` scratch directory**
   - Goal: the stale pre-4.8 session-scratch dirs stop making the checkout
     look messier than the repo is.
   - Build: verify first — grep proves no code creates or resolves a literal
@@ -405,6 +405,21 @@ clarify). No web/src folder reshuffle (one component per file already reads).
   - Done when: a fresh clone and the local checkout show no `workspace/`,
     nothing recreates it across a full `yarn test:server && yarn test:e2e`
     run, and the ritual passes.
+  - Status: **DONE 2026-07-15.** Contents inspected first (23 files, 184K of
+    old agent-session scratch — throwaway confirmed), then deleted; the
+    `workspace/` gitignore line and both README mentions (tree line + §8's
+    "safe to delete" aside) removed. Ritual green with exact parity: typecheck,
+    159/159 unit, 74/74 itest, 20/20 e2e, and no `workspace/` reappeared after
+    the full Tier-2 + Tier-3 run. One finding beyond the 07-14 audit's "only
+    two comments": the three live adapters' constructors still carry a dormant
+    `workspaceDir ?? "workspace"` default (claude-code.ts:103, codex.ts:76,
+    gemini-cli.ts:70) that would mkdir `./workspace` if ever constructed bare —
+    but no call site omits the option (`createSession` always passes
+    `opts.cwd`; every test passes a tmp dir), so it is provably unexercised,
+    and removing a default is a logic change Phase H forbids. Left in place,
+    noted here; a later pass may drop the default or make the option required.
+    The two explanatory comments in `registry.ts`/`permissions.ts` stay, per
+    the step.
 
 - [ ] **Step H.2 — Carve out `server/relay/` (the non-aliased files)**
   - Goal: the eight-file relay family reads as one subsystem.
