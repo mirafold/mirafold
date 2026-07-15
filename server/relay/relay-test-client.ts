@@ -15,7 +15,7 @@ import {
   randomBytes,
   sealHandshake,
   type FrameCipher,
-} from "../relay-crypto";
+} from "./relay-crypto";
 
 type Any = WireMsg & Record<string, any>;
 

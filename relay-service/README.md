@@ -17,6 +17,6 @@ unaffected.
 
 The daemon-side halves of the relay conversation live in the daemon's own
 relay subsystem: `server/relay/relay-protocol.ts` (routing contract),
-`server/relay-crypto.ts` (E2E encryption), `server/relay/relay-client.ts` (the
+`server/relay/relay-crypto.ts` (E2E encryption), `server/relay/relay-client.ts` (the
 daemon's dial-out). The itest asserts the routing contract in both repos
 stays in agreement.

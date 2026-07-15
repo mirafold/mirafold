@@ -15,7 +15,7 @@
     "paths": {
       "@protocol": ["./server/protocol.ts"],
       "@registry-spec": ["./server/registry-spec.ts"],
-      "@relay-crypto": ["./server/relay-crypto.ts"]
+      "@relay-crypto": ["./server/relay/relay-crypto.ts"]
     }
   },
   "include": ["server", "web/src", "vite.config.ts"]

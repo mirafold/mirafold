@@ -453,7 +453,7 @@ clarify). No web/src folder reshuffle (one component per file already reads).
     PLAN.md's own step text and PLAN-ARCHIVE.md. `relay-crypto.ts` + test
     stay at root for H.3.
 
-- [ ] **Step H.3 — Move `relay-crypto` + repoint the `@relay-crypto` alias**
+- [x] **Step H.3 — Move `relay-crypto` + repoint the `@relay-crypto` alias**
   - Goal: the aliased file joins its family, with the alias change isolated
     so any failure is unambiguous.
   - Build: `git mv` `relay-crypto.ts` + `relay-crypto.test.ts` into
@@ -462,6 +462,16 @@ clarify). No web/src folder reshuffle (one component per file already reads).
   - Files: the two moved files, `tsconfig.json`, `vite.config.ts`.
   - Done when: the ritual passes in full — `yarn test:e2e`'s rebuild is the
     proof the Vite side of the alias is right, typecheck proves the tsc side.
+  - Status: **DONE 2026-07-15.** `relay-crypto.ts` + test `git mv`'d into
+    `server/relay/`; the `@relay-crypto` path repointed in `tsconfig.json`
+    AND `vite.config.ts` in the same commit (landmine 2); the four in-family
+    `../relay-crypto` imports (incl. the dynamic one) became `./relay-crypto`.
+    Docs swept: README tree (relay-crypto joins the `relay/` block), the
+    `relay-service/` pointer README, and `genui-relay`'s README/ARCHITECTURE
+    citations. Ritual green with exact parity: typecheck, 159/159, 74/74,
+    20/20 (the e2e rebuild proving the Vite alias); old-path grep finds only
+    PLAN-ARCHIVE.md. The relay family is now fully assembled in
+    `server/relay/` — ten files, nothing relay-named left at the root.
 
 - [ ] **Step H.4 — Carve out `server/sessions/`, part 1: the state core**
   - Goal: the session registry and the viewport/connection machinery read as

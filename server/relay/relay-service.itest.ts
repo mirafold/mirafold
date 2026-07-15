@@ -106,7 +106,7 @@ test("the relay refuses a short/guessable pair id and a second daemon on a taken
   assert.equal(await closeCode(short), CLOSE_CODE_TAKEN);
 
   // Second daemon on the SAME id as the running one → refused.
-  const { derivePair } = await import("../relay-crypto");
+  const { derivePair } = await import("./relay-crypto");
   const pairId = (await derivePair(CODE)).id;
   const dup = new WebSocket(`ws://127.0.0.1:${relay.port}${DAEMON_PATH}?${PAIR_PARAM}=${pairId}`);
   assert.equal(await closeCode(dup), CLOSE_CODE_TAKEN);

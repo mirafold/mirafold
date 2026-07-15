@@ -9,7 +9,7 @@ export default defineConfig({
     alias: {
       "@protocol": path.resolve(import.meta.dirname, "server/protocol.ts"),
       "@registry-spec": path.resolve(import.meta.dirname, "server/registry-spec.ts"),
-      "@relay-crypto": path.resolve(import.meta.dirname, "server/relay-crypto.ts"),
+      "@relay-crypto": path.resolve(import.meta.dirname, "server/relay/relay-crypto.ts"),
     },
   },
   server: {
