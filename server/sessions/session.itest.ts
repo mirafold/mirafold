@@ -1,7 +1,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import type { WireMsg } from "./protocol";
-import { startDaemon, createSession, TestClient, type Daemon } from "./itest-harness";
+import type { WireMsg } from "../protocol";
+import { startDaemon, createSession, TestClient, type Daemon } from "../itest-harness";
 
 // L.2b: the mock-turn contract — every scripted MockSession hook drives the
 // full wire path (adapter → registry broadcast → real socket), plus the DoS

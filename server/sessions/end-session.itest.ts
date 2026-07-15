@@ -1,7 +1,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import type { WireMsg } from "./protocol";
-import { startDaemon, createSession, TestClient, type Daemon } from "./itest-harness";
+import type { WireMsg } from "../protocol";
+import { startDaemon, createSession, TestClient, type Daemon } from "../itest-harness";
 
 // #11, Tier-2: explicit "end session" over the real socket. Ending tears the
 // session down (kills PTY, closes the engine), signals attached viewports with
