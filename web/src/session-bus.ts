@@ -65,8 +65,8 @@ export function createSessionBus(): SessionBus {
       }
     }
     if (m.type === "session_ended") {
-      // #11: the session is gone (ended here, from the fleet, or another tab)
-      // — leave to mission control; there's nothing left to attach to.
+      // The session is gone (ended here, from the fleet, or another tab)
+      // — leave to mission control; there's nothing left to attach to (#11).
       location.assign("/");
       return;
     }
@@ -85,10 +85,10 @@ export function createSessionBus(): SessionBus {
         connListeners.delete(cb);
       };
     },
-    // P.4: the user picked an agent at onboarding — create a session on it.
-    // session_created sets `sessionId`, so a later reconnect re-attaches.
-    // 4.8: `cwd` is the working dir typed at the picker; omitted → the
-    // daemon's launch dir.
+    // The user picked an agent at onboarding — create a session on it.
+    // session_created sets `sessionId`, so a later reconnect re-attaches (P.4).
+    // `cwd` is the working dir typed at the picker; omitted → the
+    // daemon's launch dir (4.8).
     createSession(agent: AgentName, cwd?: string) {
       socket.send({ type: "create", agent, cwd });
     },
@@ -97,8 +97,8 @@ export function createSessionBus(): SessionBus {
       // viewport (including this one), so all tabs stay identical.
       socket.send({ type: "prompt", text });
     },
-    // 4.9: run a shell command in the session's cwd (the `!` path). The id
-    // is minted here so this viewport can correlate the broadcast stream.
+    // Run a shell command in the session's cwd (the `!` path). The id
+    // is minted here so this viewport can correlate the broadcast stream (4.9).
     sendBang(command: string): string {
       const id = `bang-${Math.random().toString(36).slice(2, 10)}`;
       socket.send({ type: "bang", command, id });
@@ -118,8 +118,8 @@ export function createSessionBus(): SessionBus {
     answerPermission(id: string, allow: boolean) {
       socket.send({ type: "permission_response", id, allow });
     },
-    // #11: end this session — the server tears it down and replies
-    // session_ended, which routes this viewport back to mission control.
+    // End this session — the server tears it down and replies
+    // session_ended, which routes this viewport back to mission control (#11).
     endSession() {
       if (sessionId) socket.send({ type: "end_session", sessionId });
     },

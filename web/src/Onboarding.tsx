@@ -2,16 +2,16 @@ import { useEffect, useState } from "react";
 import type { AgentName } from "@protocol";
 import { agentLabel, blockedHint, connectHint } from "./agents-meta";
 
-// P.4: the shell-owned onboarding picker. No agent is assumed — first run is
+// The shell-owned onboarding picker. No agent is assumed — first run is
 // "choose your agent." Credentials never reach the browser; the server tells us
 // only which agents are `live` (have creds). A non-live agent still runs, in the
-// API-free mock, so dev and demos work without keys.
-// 4.8: a working-directory field beside the picker — prefilled with the dir the
+// API-free mock, so dev and demos work without keys (P.4).
+// A working-directory field beside the picker — prefilled with the dir the
 // daemon was launched from (terminal parity), editable to point a session
 // anywhere. The server rejects a path that doesn't exist; `error` is that
-// rejection, shown here so the user can fix the path and retry.
-// R.4b: a credential-less row carries the one-line fix (login command or env
-// var) instead of a bare badge — the picker itself says what to set or run.
+// rejection, shown here so the user can fix the path and retry (4.8).
+// A credential-less row carries the one-line fix (login command or env
+// var) instead of a bare badge — the picker itself says what to set or run (R.4b).
 
 export function Onboarding({
   agents,
@@ -58,10 +58,10 @@ export function Onboarding({
             <div className="onb-connecting">connecting…</div>
           ) : (
             agents.map(({ agent, live, blocked, detail }) => {
-              // R.4i: three states. live → ready. blocked → a prohibited
+              // Three states. live → ready. blocked → a prohibited
               // subscription is present; say so and name the API-key fix (still
               // clickable — it runs the demo, like any non-live agent). none →
-              // no credentials · demo.
+              // no credentials · demo (R.4i).
               const hint = blocked ? blockedHint(agent) : !live ? connectHint(agent) : undefined;
               const statusText = live
                 ? "ready"

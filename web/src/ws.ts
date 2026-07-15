@@ -80,7 +80,7 @@ function relayTargetFromPage(): { code: string; ws: string | null } | null {
  * sends the hello (attach/create, Step 4.2) so the connection is a viewport
  * on the right session before anything else flows.
  *
- * Step 4.4: tracks the last broadcast `seq` seen so the hello can ask for a
+ * Tracks the last broadcast `seq` seen so the hello can ask for a
  * tail-only resume, heartbeats to catch half-open sockets, and backs off
  * between attempts (with instant retry when the network returns).
  *
@@ -89,7 +89,7 @@ function relayTargetFromPage(): { code: string; ws: string | null } | null {
  * ciphertext frames. Each (re)connect performs the handshake before the
  * hello, and any frame that fails to authenticate closes the socket (fail
  * closed → normal reconnect → fresh handshake). A local page has no code and
- * none of this engages.
+ * none of this engages (4.4).
  */
 export class SocketClient {
   private ws?: WebSocket;
@@ -317,8 +317,8 @@ export class SocketClient {
     };
   }
 
-  // R.4g: attach/create announce this bundle's build (additive field) so the
-  // daemon can log a skewed pair — one choke point, no caller threads it.
+  // attach/create announce this bundle's build (additive field) so the
+  // daemon can log a skewed pair — one choke point, no caller threads it (R.4g).
   private stamp(msg: ClientMsg): ClientMsg {
     return msg.type === "attach" || msg.type === "create"
       ? { ...msg, clientVersion: CLIENT_VERSION }

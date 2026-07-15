@@ -1,7 +1,7 @@
 import type { ComponentProps } from "@registry-spec";
 
-// T2.5: the terminal's live task list as a component. Synthesized server-side
-// from TodoWrite and re-sent under one id per turn, so it updates in place.
+// The terminal's live task list as a component. Synthesized server-side
+// from TodoWrite and re-sent under one id per turn, so it updates in place (T2.5).
 const MARK = {
   completed: "✓",
   in_progress: "◐",

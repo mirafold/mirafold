@@ -1,8 +1,8 @@
 import { useLayoutEffect, useRef, useState } from "react";
 
-// R.4: the desktop placeholder is keyboard lore that wraps to three ugly
+// The desktop placeholder is keyboard lore that wraps to three ugly
 // lines on a phone — narrow viewports get the short form. Checked once at
-// module load: a mid-session resize isn't worth a listener.
+// module load: a mid-session resize isn't worth a listener (R.4).
 const PLACEHOLDER = window.matchMedia?.("(max-width: 640px)")?.matches
   ? "Message · !cmd runs in your shell"
   : "Enter to send · Shift+Enter for newline · !cmd runs in your shell";
@@ -16,9 +16,9 @@ export function PromptBox({
   onSend: (text: string) => void;
   busy: boolean;
   onInterrupt: () => void;
-  // 4.8: the session's working dir, shown at the prompt like a terminal's
+  // The session's working dir, shown at the prompt like a terminal's
   // `~/Projects/foo ❯`. Shell-owned — rendered here, never by agent output,
-  // so it can't be spoofed.
+  // so it can't be spoofed (4.8).
   cwd?: string;
 }) {
   const [text, setText] = useState("");

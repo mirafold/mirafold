@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import qrcode from "qrcode-generator";
 
-// R.4: the shell-owned "connect a device" affordance. The daemon hands local
+// The shell-owned "connect a device" affordance. The daemon hands local
 // viewports the relay's HTTP origin + the pairing code (agents hello); this
 // renders them as a QR of the pairing URL — the fragment form, so the code
 // never appears in any HTTP request, only on this screen and the phone's.
-// Trusted-shell surface end to end: agent output can never paint or read it.
+// Trusted-shell surface end to end: agent output can never paint or read it (R.4).
 
 // `ws` (static-origin serving): the relay's ws(s) origin, present when `url`
 // is a separate static app origin — it rides the QR fragment so the loaded

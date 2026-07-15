@@ -33,8 +33,8 @@ export function FleetView() {
   const [showNew, setShowNew] = useState(false);
   const [onbError, setOnbError] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
-  // #11: sessionId whose "end" button is armed (first click); a second click
-  // ends it. Auto-disarms after a few seconds.
+  // SessionId whose "end" button is armed (first click); a second click
+  // ends it. Auto-disarms after a few seconds (#11).
   const [confirmEnd, setConfirmEnd] = useState<string | null>(null);
   const [, setTick] = useState(0); // re-render so the "ago" labels stay honest
 
