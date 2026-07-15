@@ -4,8 +4,8 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import WebSocket from "ws";
-import type { WireMsg } from "./protocol";
-import { startDaemon, TestClient, type Daemon } from "./itest-harness";
+import type { WireMsg } from "../protocol";
+import { startDaemon, TestClient, type Daemon } from "../itest-harness";
 import { startRelayStub, type RelayStub } from "./relay-stub";
 import {
   CLOSE_BAD_CODE,
@@ -14,7 +14,7 @@ import {
   PAIR_PARAM,
   VIEWPORT_PATH,
 } from "./relay-protocol";
-import { derivePair } from "./relay-crypto";
+import { derivePair } from "../relay-crypto";
 import { RemoteClient, broadcasts, waitForLog as waitForLogH } from "./relay-test-client";
 
 // R.1 + R.3: the relay seam over real processes — the daemon (child) dials

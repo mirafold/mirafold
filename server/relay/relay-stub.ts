@@ -40,7 +40,7 @@ export type RelayTap = {
 
 export function startRelayStub(opts: { port?: number; tap?: RelayTap } = {}): Promise<RelayStub> {
   const app = express();
-  const DIST = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "dist");
+  const DIST = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "dist");
   app.use(express.static(DIST));
   app.get("/s/:id", (_req, res) => res.sendFile(path.join(DIST, "index.html")));
 
@@ -131,7 +131,7 @@ export function startRelayStub(opts: { port?: number; tap?: RelayTap } = {}): Pr
   });
 }
 
-// Runnable standalone for dev: `node --import tsx server/relay-stub.ts`.
+// Runnable standalone for dev: `node --import tsx server/relay/relay-stub.ts`.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   startRelayStub({ port: Number(process.env.PORT ?? 9100) }).then(({ url }) =>
     console.log(`[relay-stub] on ${url} — point the daemon at MIRAFOLD_RELAY_URL=${url}`),

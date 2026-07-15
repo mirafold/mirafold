@@ -1,6 +1,6 @@
 import WebSocket from "ws";
-import type { SessionRegistry } from "./registry";
-import { openConnection, type Connection } from "./connection";
+import type { SessionRegistry } from "../registry";
+import { openConnection, type Connection } from "../connection";
 import {
   DAEMON_PATH,
   HANDSHAKE_TIMEOUT_MS,
@@ -16,7 +16,7 @@ import {
   sealHandshake,
   type FrameCipher,
   type PairSecret,
-} from "./relay-crypto";
+} from "../relay-crypto";
 
 // Dial-out backoff: a down relay is routine (offline laptop, relay deploy) —
 // it must cost nothing but a quiet, widening retry.

@@ -163,7 +163,7 @@ existing shapes never change.** That's what makes every phase additive and
 keeps old clients from breaking. The union above is complete for everything
 shipped. The Phase R relay proves the rule from below: it carries these same
 frames as **opaque, end-to-end-encrypted payloads** inside its own tiny
-envelope (`server/relay-protocol.ts` — a transport layer under `WireMsg`,
+envelope (`server/relay/relay-protocol.ts` — a transport layer under `WireMsg`,
 not new message types), and R.4 added exactly one optional field
 (`agents.relay`, the pairing info for the connect-a-device QR — sent to
 local viewports only, never across the relay).
@@ -314,7 +314,7 @@ The invariants, and where each is enforced today:
   concurrent sessions are capped (`MAX_SESSIONS`, 100) so a runaway or hostile
   local client can't exhaust memory/PTYs. The shell page also ships
   defense-in-depth headers (CSP, `nosniff`, `X-Frame-Options: DENY`).
-- **The relay is untrusted for resource pressure too** (`server/relay-client.ts`):
+- **The relay is untrusted for resource pressure too** (`server/relay/relay-client.ts`):
   viewport announcements past `MAX_REMOTE_VIEWPORTS` (16) are refused, and a
   handshaken viewport with no authenticated frame for `RELAY_VIEWPORT_IDLE_MS`
   (90 s) is dropped — so a hostile relay (or a replayed handshake hello, which
@@ -360,14 +360,15 @@ server/            the local daemon (Node, run with tsx)
   pty.ts             the `!` passthrough's PTY runner (node-pty, 4.9)
   connection.ts      one viewport's server side, transport-agnostic (R.1) —
                      shared verbatim by local sockets and relay viewports
-  relay-protocol.ts  the relay envelope + pairing-code mint (R.1/R.3)
   relay-crypto.ts    per-pair E2E encryption, WebCrypto-only — the same file
                      runs in the browser via the @relay-crypto alias (R.3)
-  relay-client.ts    daemon dial-out: no listening port for remote access (R.1)
-  relay-stub.ts      in-repo dumb-forwarder stub for dev + tests
-  relay-test-client.ts  shared RemoteClient test helper (the browser side of
-                     the encrypted relay channel) used by relay.itest.ts and
-                     relay-service.itest.ts
+  relay/             the remote-viewport path (H.2):
+    relay-protocol.ts  the relay envelope + pairing-code mint (R.1/R.3)
+    relay-client.ts    daemon dial-out: no listening port for remote access (R.1)
+    relay-stub.ts      in-repo dumb-forwarder stub for dev + tests
+    relay-test-client.ts  shared RemoteClient test helper (the browser side of
+                       the encrypted relay channel) used by relay.itest.ts and
+                       relay-service.itest.ts
   version.ts         reads package.json's version at build time (R.4g)
   index.ts           Express + ws server; connections attach as viewports
 web/               the browser app (React 19 + Vite)
@@ -407,9 +408,9 @@ docs/              ADAPTERS.md — the normative adapter specification (§2.2);
 relay-service/     pointer README only (Phase G): the hosted relay lives in
                    the private sibling repo `genui-relay`, the single source
                    of truth since its first deploy. The real-daemon itest
-                   (server/relay-service.itest.ts) imports the relay under
+                   (server/relay/relay-service.itest.ts) imports the relay under
                    test from ../genui-relay/src/ and guards the routing
-                   contract against server/relay-protocol.ts
+                   contract against server/relay/relay-protocol.ts
 dist/              built front end (vite build output; served by Express)
 dist-server/       esbuild server bundles (4.10): index.js + render-mcp.js —
                    what the installed `mirafold` actually runs; gitignored
@@ -846,7 +847,7 @@ only credential and a guessable one is remote shell access),
 will hold, default 16), and `RELAY_VIEWPORT_IDLE_MS` (a handshaken remote
 viewport that sends no authenticated frame for this long is dropped,
 default 90 s — the web client heartbeats every 25 s, so only a dead or fake
-peer goes quiet that long). For dev, `node --import tsx server/relay-stub.ts`
+peer goes quiet that long). For dev, `node --import tsx server/relay/relay-stub.ts`
 runs the in-repo stub relay on `:9100`.
 
 **Fully local, no API key:** a session is local when the *agent* behind it

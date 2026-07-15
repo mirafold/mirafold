@@ -8,8 +8,8 @@ import type { WireMsg } from "./protocol";
 import { SessionRegistry } from "./registry";
 import { openConnection } from "./connection";
 import { sweepLiveness } from "./ws-liveness";
-import { startRelayClient } from "./relay-client";
-import { MIN_PAIRING_CODE_LENGTH, resolvePairingCode } from "./relay-protocol";
+import { startRelayClient } from "./relay/relay-client";
+import { MIN_PAIRING_CODE_LENGTH, resolvePairingCode } from "./relay/relay-protocol";
 import { COOKIE_NAME, cookieToken, isLoopbackOrigin, tokensMatch, verifyToken } from "./auth";
 import { VERSION } from "./version";
 

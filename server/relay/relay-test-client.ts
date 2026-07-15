@@ -5,8 +5,8 @@
 // so both drive the real crypto path a phone would.
 
 import WebSocket from "ws";
-import type { ClientMsg, WireMsg } from "./protocol";
-import type { Daemon } from "./itest-harness";
+import type { ClientMsg, WireMsg } from "../protocol";
+import type { Daemon } from "../itest-harness";
 import { PAIR_PARAM, VIEWPORT_PATH } from "./relay-protocol";
 import {
   derivePair,
@@ -15,7 +15,7 @@ import {
   randomBytes,
   sealHandshake,
   type FrameCipher,
-} from "./relay-crypto";
+} from "../relay-crypto";
 
 type Any = WireMsg & Record<string, any>;
 

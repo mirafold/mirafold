@@ -423,7 +423,7 @@ clarify). No web/src folder reshuffle (one component per file already reads).
     (159/74/20). The two explanatory comments in `registry.ts`/`permissions.ts`
     stay, per the step.
 
-- [ ] **Step H.2 — Carve out `server/relay/` (the non-aliased files)**
+- [x] **Step H.2 — Carve out `server/relay/` (the non-aliased files)**
   - Goal: the eight-file relay family reads as one subsystem.
   - Build: `git mv` into `server/relay/`: `relay-client.ts`,
     `relay-protocol.ts` + its test, `relay-stub.ts`, `relay-test-client.ts`,
@@ -436,6 +436,22 @@ clarify). No web/src folder reshuffle (one component per file already reads).
   - Files: the seven moved files, their importers, `README.md`.
   - Done when: the ritual passes in full (all three tiers with exact count
     parity), and the old-path grep is clean.
+  - Status: **DONE 2026-07-15.** Eight files `git mv`'d (the seven listed plus
+    `relay-protocol.test.ts`, which the step's count folded into "+ its
+    test"). Import fixes: root-relative paths gained a `../` inside the moved
+    files, `index.ts`/`phone.e2e.ts` repointed, the sibling `genui-relay`
+    import in `relay-service.itest.ts` gained a third `../`, and one dynamic
+    `await import("./relay-crypto")` at relay-service.itest.ts:109 was caught
+    by typecheck. One non-import landmine found and fixed in the same move:
+    `relay-stub.ts` resolves the web `dist/` **relative to its own file**
+    (`import.meta.url`), so its `".."` became `"..", ".."` — Tier 3 (which
+    serves the bundle through the stub in the phone/relay suites) is the
+    proof. Docs swept in the same step: README (tree + §2.2/§5/§8 citations),
+    the `relay-service/` pointer README, `genui-relay`'s README +
+    ARCHITECTURE, and the umbrella CLAUDE.md. Ritual green with exact parity:
+    typecheck, 159/159 unit, 74/74 itest, 20/20 e2e; old-path grep finds only
+    PLAN.md's own step text and PLAN-ARCHIVE.md. `relay-crypto.ts` + test
+    stay at root for H.3.
 
 - [ ] **Step H.3 — Move `relay-crypto` + repoint the `@relay-crypto` alias**
   - Goal: the aliased file joins its family, with the alias change isolated
