@@ -404,14 +404,12 @@ bin/               mirafold launcher (4.10): spawns dist-server, opens browser
 demo/              the M1 demo GIF embedded at the top of this README
 docs/              ADAPTERS.md — the normative adapter specification (§2.2);
                    local-models.md — running against Ollama/LM Studio/vLLM (§8)
-relay-service/     the DEPLOYABLE hosted relay (PLAN R.2) — a separate,
-                   dependency-light Node+ws package (own package.json/
-                   tsconfig, builds independently); the seed of the
-                   standalone private `genui-relay` repo. Its routing
-                   contract (src/contract.ts) is vendored from
-                   server/relay-protocol.ts with a sync-guard test
-                   (server/relay-service.itest.ts) — not part of the
-                   npm-published package (not in `files` above)
+relay-service/     pointer README only (Phase G): the hosted relay lives in
+                   the private sibling repo `genui-relay`, the single source
+                   of truth since its first deploy. The real-daemon itest
+                   (server/relay-service.itest.ts) imports the relay under
+                   test from ../genui-relay/src/ and guards the routing
+                   contract against server/relay-protocol.ts
 dist/              built front end (vite build output; served by Express)
 dist-server/       esbuild server bundles (4.10): index.js + render-mcp.js —
                    what the installed `mirafold` actually runs; gitignored
@@ -898,9 +896,9 @@ registry replay/resume, the bang-secrets invariant, the stdio render-MCP
 stub's ack contract over a real MCP handshake, the relay path over the
 in-repo stub: byte-for-byte local/remote mirror, a ciphertext-only tap audit
 of what the relay can observe, fail-closed tamper/wrong-code, daemon re-dial,
-and — against the actual DEPLOYABLE `relay-service/` package (not just the
-stub) — its own caps/rate-limit/health-check hardening and a routing-contract
-sync-guard), and `*.e2e.ts` (Tier 3 — token→cookie boot, a full turn
+and — against the actual DEPLOYED relay's code, imported from the sibling
+`genui-relay` checkout (not just the stub) — its own caps/rate-limit/
+health-check hardening and a routing-contract guard), and `*.e2e.ts` (Tier 3 — token→cookie boot, a full turn
 rendering in the DOM, the artifact iframe executing under the CSP with a
 hostile-artifact containment proof (each defense verified by flipping it),
 a second browser mirrored through the relay stub, a killed-mid-turn daemon
