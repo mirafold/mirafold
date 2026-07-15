@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { query, type Query, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { WireMsg } from "../protocol";
-import { makeCanUseTool } from "../permissions";
+import { makeCanUseTool } from "../security/permissions";
 import { makeRenderServer, RENDER_GUIDANCE } from "../render-tools";
 import {
   type AgentSession,
