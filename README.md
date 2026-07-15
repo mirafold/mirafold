@@ -46,11 +46,16 @@ codebase. Companion documents:
 - **[PLAN.md](PLAN.md)** — the phased build plan. Every step has
   Goal / Build / Files / Done-when. Shipped so far: **Phases 0, 1, T, 2, 3, T2,
   and P** (three faithful agent skins — Claude Code, Codex, Gemini CLI), all
-  of Phase 4, L.1, and the buildable core of **Phase R** (the hosted relay:
+  of Phase 4, L.1, and the working core of **Phase R** (the hosted relay:
   R.1 dial-out + envelope, R.3 per-pair E2E encryption, R.4's QR pairing +
-  phone layout — all verified against the in-repo stub). What remains is the
-  relay *deploy* (R.2, Fly.io), billing (R.5), and launch day (R.6), plus
-  demand-gated Phase L ergonomics. PLAN.md is the source of truth for what
+  phone layout, and R.2's relay **deployed** on Fly.io — a real daemon has
+  driven a full turn through it). What remains before launch: billing
+  (R.5, reworked around a merchant of record by Phase K.4), the written
+  release order (R.5b), a user-testing round (R.5c), launch prep (R.6),
+  and launch day itself (R.7) — all gated by **Phase K**, the legal &
+  compliance readiness phase (entity, ToS/privacy, billing vendor,
+  provider-terms verification) opened 2026-07-15. Demand-gated Phase L
+  ergonomics follow post-launch. PLAN.md is the source of truth for what
   comes next; completed phases are archived in
   **[PLAN-ARCHIVE.md](PLAN-ARCHIVE.md)**.
 - **[BUSINESS.md](BUSINESS.md)** — positioning, wedges, pricing, and the
@@ -436,8 +441,9 @@ demo/              the M1 demo GIF embedded at the top of this README
 docs/              ADAPTERS.md — the normative adapter specification (§2.2);
                    local-models.md — running against Ollama/LM Studio/vLLM (§8)
 relay-service/     pointer README only (Phase G): the hosted relay lives in
-                   the private sibling repo `genui-relay`, the single source
-                   of truth since its first deploy. The real-daemon itest
+                   the sibling repo `genui-relay` (MIT since K.1; still
+                   private, flips public at launch per R.5b), the single
+                   source of truth since its first deploy. The real-daemon itest
                    (server/relay/relay-service.itest.ts) imports the relay under
                    test from ../genui-relay/src/ and guards the routing
                    contract against server/relay/relay-protocol.ts
@@ -445,8 +451,13 @@ dist/              built front end (vite build output; served by Express)
 dist-server/       esbuild server bundles (4.10): index.js + render-mcp.js —
                    what the installed `mirafold` actually runs; gitignored
 PLAN.md            the phased build plan (source of truth for next steps)
-PLAN-ARCHIVE.md    completed phases (0, T, 1, 2, 3, T2, P) with their status notes
+PLAN-ARCHIVE.md    completed phases (0, T, 1, 2, 3, T2, P, G, H) with their
+                   status notes
 BUSINESS.md        strategy; gates that sequence the plan
+CONTRIBUTING.md    contributor guide: DCO sign-off (`git commit -s`) + the
+                   test-tier and non-negotiable rules (K.9)
+SECURITY.md        private vulnerability-disclosure channel + response
+                   promise (K.7)
 vite.config.ts     web root, @protocol/@relay-crypto aliases, /ws proxy → :3000
 tsconfig.json      one tsconfig for both sides; @protocol/@relay-crypto paths
 .env.example       MIRAFOLD_AGENT + per-agent credentials/models (ANTHROPIC_API_KEY /
@@ -1052,12 +1063,22 @@ Read PLAN.md for the real thing; the shape in one breath:
   the relay, and no subscription is driven over the paid relay at all — while
   API keys and local/BYO endpoints run everywhere. Verified across all three
   tiers; docs + BUSINESS.md reconciled to match.
-- **Now:** finishing **Phase R** — R.2's deploy (needs Kyle: a Fly.io
-  account + a domain; the code is ready) and entitlement/billing (R.5,
-  Stripe), then launch as one event: demo post, repo public, `npm publish`,
-  and a purchasable Pro tier on the same day (PLAN Phase R, BUSINESS.md §9
-  pivot note). True multi-user isolation (the part of 4.5 deliberately
-  deferred) lands here, when viewports actually become remote.
+- **Also shipped (2026-07-12):** **R.2's deploy** — the relay runs hosted
+  on Fly.io (`relay.mirafold.sh`), and a real daemon has driven a full turn
+  through it; the box stays open only on a cellular-phone pass and baking
+  the default relay URL.
+- **Now (as of 2026-07-15):** finishing **Phase R**, gated by **Phase K —
+  legal & compliance readiness** (PLAN Phase K): the entity, the ToS/privacy
+  pair, the billing vendor (K.4 replaced R.5's Stripe plan with a merchant
+  of record — Paddle recommended), the provider-terms re-verification (done;
+  the dated matrix is `server/provider-policy.ts`), and the K.1 reversal
+  that made the relay MIT alongside the shell. The build steps that remain:
+  entitlement/billing (R.5), the written release order (R.5b), a
+  user-testing round (R.5c), launch prep (R.6), then launch as one event —
+  demo post, repo public, `npm publish`, and a purchasable Pro tier on the
+  same day (R.7; BUSINESS.md §9 pivot note). True multi-user isolation (the
+  part of 4.5 deliberately deferred) lands here, when viewports actually
+  become remote.
 - **Post-launch, demand-gated:** `--local` easy mode (L.2), per-session
   provider mix (L.3), push notifications, and further agent adapters as
   users ask.
@@ -1110,6 +1131,9 @@ the M2 launch trigger. Keep every seam agent-neutral and compatible with that.
 - **`dist/` is gitignored build output** served by Express; rebuild with
   `yarn build` when the front end changes and you're testing the one-port
   path.
+- **Contributions are DCO-signed** (K.9): `git commit -s` appends the
+  `Signed-off-by` line — see CONTRIBUTING.md. The GitHub DCO status check
+  turns on when the repo goes public (R.5b mechanics).
 - **PLAN.md step hygiene:** work steps in order, don't start one until the
   previous step's "Done when" is satisfied, and check items off as you go.
 

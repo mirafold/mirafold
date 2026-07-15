@@ -103,102 +103,23 @@ before Phase T, and design every seam so the daemon stays local-first.
 - **UI verification:** every front-end step is verified in headless Chrome via
   `playwright-core` (drives real typing/clicks against the system browser).
 
-## Design identity (locked during Phase 0)
+## Design identity · security model · wire protocol (locked — live in README)
 
-Mirafold is a **terminal successor, not a chat app** — the design signals
-terminal lineage on the input side and web richness on the output side.
+These three load-bearing references were seeded here in Phase 0 and grew
+richer, maintained copies in README; the duplicates were retired 2026-07-15
+to end the drift risk of two copies. The locked content, and where it lives:
 
-**Visibility superset (locked 2026-07-05):** Mirafold is a different skin
-on the same terminal agent, and it must never show *less* than the terminal
-does — richness is added on top of raw visibility, never traded against it.
-Anything a terminal Claude Code user can see in the stream (thinking text,
-full tool arguments and diffs, subagent progress, todo checklists, output
-depth, cost/context meters) must eventually be surfaced here, because any
-line the terminal shows and we hide is a reason for a terminal user to go
-back. Phase T was the *capability* cut of parity (act, interrupt, approve);
-**Phase T2** below tracks the remaining *visibility* gaps.
-
-The offer, in one sentence: **total faithfulness to the terminal and its
-abilities, with a much better view and far more functionality, because the
-full power of HTML/CSS/JS is available to the output.** And fidelity costs
-nothing here precisely because of that power — the standard pattern for any
-stream that would muddy the transcript (thinking, verbose tool detail,
-subagent churn) is: render it live while the turn runs, then fold it to a
-dim one-liner (click to expand) once the final response lands. Collapsed-by-
-default is fine — invisible is not. The web skin gets to do what the
-terminal can't: keep every line AND keep the transcript clean.
-
-- Full-width canvas; no centered column. If long prose lines ever itch, cap
-  prose only (`max-width: 80ch`) — never tables, code, or components.
-- User input renders as a **command strip**: tinted full-width band, green
-  `❯` glyph, monospace, left-aligned. No bubbles. Strips segment the
-  scrollback; everything between strips is agent output.
-- Input is a slim command bar (glyph + monospace textarea). Enter sends,
-  Shift+Enter newlines. No send button.
-- Agent output stays proportional type + rich markdown. The mono-in /
-  rich-out contrast **is** the visual identity.
-- Status is a dim monospace activity line (`✳ thinking…` / `⚙ Bash`), not a pill.
-- Future: slim status bar (model, connection, session) fits the workbench
-  feel; any side panels must be emergent/collapsible (see Step 1.6).
-
-## The core security model (do not violate)
-
-Two zones, hard boundary between them:
-
-```
-┌─ OUTPUT ZONE — agent-controlled, sandboxed ──────────┐
-│   Level 1: styled markdown                            │
-│   Level 2: registry components                        │
-│   Level 3: sandboxed-iframe artifacts                 │
-├─ SHELL — TRUSTED, never re-rendered by the agent ─────┤
-│   prompt box · WebSocket client · all credentials     │
-└────────────────────────────────────────────────────────┘
-```
-
-- The prompt box, the socket, and the API key live in the **shell**. The agent
-  can never touch, re-render, or read them.
-- The agent only ever emits content into the **output zone**.
-- The API key never reaches the browser. It lives in the server process only.
-- Anything the agent generates that executes (Level 3) runs in a sandboxed
-  iframe with no access to the shell's scope, talking back only through the
-  mediated action bridge (Phase 2).
-
-## The wire protocol (the spine everything hangs off)
-
-A tiny envelope sent server→browser over the WebSocket. Seeded in Phase 0 with
-the minimum; later phases **add message types**, never reshape the existing
-ones.
-
-```ts
-type WireMsg =
-  | { type: "text_delta"; text: string }                 // Level 1
-  | { type: "status"; state: "thinking" | "tool"; label?: string }
-  | { type: "turn_end" }
-  | { type: "error"; message: string }
-  | { type: "render"; component: string; props: object; id: string }
-  //                (shipped in 1.1–1.3; re-sending an id updates that
-  //                 component's props in place — this is what makes pinned
-  //                 widgets live, see Step 1.6)
-  // Phase T adds:  { type: "tool_output"; ... } and { type: "permission_request"; ... }
-  // Phase 2 adds:  action descriptors carried inside render props
-  // Phase 3 adds:  { type: "artifact"; html: string; id: string }
-  // Phase 4 adds:  { type: "session_created"; sessionId: string; cwd: string }
-  //                and session metadata for the fleet view (Step 4.6)
-  // Phase T2 adds: { type: "thinking_delta"; text: string }, optional fields
-  //                widening tool_use (full input) / tool_result (truncation),
-  //                subagent attribution, and { type: "usage"; ... } for the
-  //                status bar — all additive; optional fields old clients
-  //                simply ignore.
-  // Step 4.9 adds: bang_start / bang_output / bang_end (the `!` PTY stream;
-  //                up: bang / bang_input (ephemeral stdin) / bang_kill).
-```
-
-Browser→server is just `{ type: "prompt"; text: string }` plus
-`{ type: "interrupt" }` / `{ type: "permission_response"; ... }` (Phase T),
-`{ type: "action"; ... }` (Phase 2), and
-`{ type: "attach"; sessionId }` / `{ type: "create"; cwd? }` (Phase 4 —
-connections become viewports onto registry sessions). The output zone is an **interpreter** for
-`WireMsg`; building new UI capability = adding a message type + a handler.
+- **Design identity** → README §7 — terminal successor, not a chat app:
+  mono-in / rich-out, no bubbles ever, and the **visibility superset +
+  collapse-on-finalize** rule (never show less than the terminal; noisy
+  streams render live, then fold to a dim expandable line).
+- **The core security model** → README §3 — trusted shell vs. sandboxed
+  output zone; the boundary is inviolable, and the API key never reaches
+  the browser.
+- **The wire protocol** → README §2.1 — `server/protocol.ts` is the one
+  shared contract, and **later phases ADD message types (or optional
+  fields), never reshape existing ones** — every step below relies on that
+  rule.
 
 ## How to use this plan
 
@@ -210,8 +131,10 @@ until the previous step's "Done when" is satisfied. Check items off as you go.
 
 ## Completed phases (archived)
 
-Phases 0, T, 1, 2, 3, T2, and P are **done** — their steps and full dated status
-notes now live in **PLAN-ARCHIVE.md** (moved out to keep this document focused).
+Phases 0, T, 1, 2, 3, T2, P, G, and H are **done** — their steps and full dated
+status notes now live in **PLAN-ARCHIVE.md** (moved out to keep this document
+focused). Phases G (relay dedup — the sibling repo became the single source)
+and H (human legibility) completed 2026-07-15 and were archived the same day.
 Phase 4's completed steps (4.1–4.6, 4.8–4.10) joined them 2026-07-08; its
 header stays below with the 4.7 → Phase R pointer. **2026-07-10:** the
 fully-complete steps of Phases R, F, and L (R.1, R.3, R.4b–R.4k, F.1, F.3, F.4,
@@ -219,486 +142,6 @@ L.1) were archived the same way to lean this file out — each keeps a one-line
 `[x]` pointer inline; the full Goal/Build/Files/Status is in PLAN-ARCHIVE.md
 ("Phase R / F / L — completed steps"). Only OPEN steps carry their full body
 here. Everything below marked `[ ]` is the remaining work.
-
----
-
-## Phase G — Collapse the relay duplication (do before Phase H)
-
-Origin: same 2026-07-14 review. The relay's shared source is vendored
-byte-identically in TWO places — `genui-shell/relay-service/` and
-`genui-relay/src/` — held in lockstep by a sync script; Kyle called the
-"keep two copies consistent" arrangement a maintainability wart. It was always
-explicitly temporary: `relay-service/` was the dev source of truth *only until
-the relay's first deploy* (the umbrella `genui/CLAUDE.md` + DEPLOY.md §5),
-after which `genui-relay` becomes canonical and `relay-service/` "retires to a
-pointer." The relay is now deployed and live (`relay.mirafold.sh`), so that
-condition is met and this cleanup is simply due.
-
-**Why it is its own phase, sequenced strictly before Phase H:** it is NOT a
-behavior-preserving move like Phase H's steps — it flips the cross-repo source
-of truth, rewires a Tier-2 test, and retires the sync mechanism, with
-verification owed in BOTH repos. Keeping it out of Phase H protects that
-phase's clean "behavior-preserving, exact-count" invariant. And doing it first
-means Phase H reorganizes the settled, smaller relay surface once, instead of
-carefully preserving (via `sync:check`) a duplication it would then dismantle.
-
-**Scope decision (2026-07-14):** do the license-independent core now. Kyle is
-leaning heavily toward making everything open (MIT) and has explicitly set the
-git-history question aside — so there is NO history scrub in this phase and no
-gating on the MIT-vs-private call. The one thing deferred is the eventual
-public-clone story (a bare public `genui-shell` clone won't have the sibling
-`genui-relay`, so the real-daemon relay itest becomes sibling-dependent) —
-which the leaning-open direction makes largely moot and which is a launch-time
-detail, not this phase's concern.
-
-- [x] **Step G.1 — Retire the vendored `relay-service/` copy; `genui-relay`
-  becomes the single source of truth**
-  - Goal: one home for the relay service. No more byte-identical second copy
-    kept in lockstep; the maintainability burden is gone.
-  - Build: make `genui-relay/src/` the canonical source. In `genui-shell`,
-    reduce the top-level `relay-service/` from a full vendored copy to a thin
-    pointer (a short README stating the relay now lives in the `genui-relay`
-    repo and how the local itest sources it) — keeping NO duplicated `src/`,
-    `Dockerfile`, or `fly.toml` in `genui-shell`. Rewire the real-daemon relay
-    test `server/relay-service.itest.ts` to obtain the relay under test from
-    the canonical sibling `genui-relay` (the sibling-directory relationship the
-    umbrella already relies on) instead of the vendored copy. Retire the now-
-    unnecessary sync machinery: `genui-relay/scripts/sync-from-genui-shell.sh`
-    and the `sync` / `sync:check` npm scripts (nothing to keep in sync once
-    there is a single copy). Update every doc that describes the sync
-    arrangement (this repo's README + DEPLOY.md §5, `genui-relay`'s README +
-    ARCHITECTURE.md, and the umbrella `genui/CLAUDE.md` sync section).
-  - Cross-repo — verify in BOTH: with `genui-relay` as the source of truth, its
-    standalone suite is green (`npm test`, `npm run typecheck`); and from
-    `genui-shell`, `yarn test:server` is green — specifically
-    `relay-service.itest.ts` still verifies the relay against a REAL daemon, now
-    sourced from the sibling. `npm run smoke` (against the deployed relay) still
-    passes.
-  - Files: `genui-shell/relay-service/` (collapsed to a pointer),
-    `server/relay-service.itest.ts` (rewired), `README.md`, `DEPLOY.md`;
-    `genui-relay/scripts/`, its `package.json`, README + ARCHITECTURE.md; the
-    umbrella `genui/CLAUDE.md`.
-  - Done when: no byte-identical relay duplication remains (a diff confirms
-    `genui-shell` holds no second copy of the relay `src/`), `genui-relay` is
-    the sole source, the real-daemon relay itest passes in `genui-shell`
-    sourcing from the sibling, and the sync scripts are gone with no doc still
-    telling a reader to run them.
-  - Status: **DONE 2026-07-15.** The pre-retirement diff confirmed the two
-    `src/` trees byte-identical, then `relay-service/` was collapsed to a
-    pointer README (src/, Dockerfile, fly.toml, package/tsconfig all removed);
-    `relay-service.itest.ts` now imports `startRelay` + the contract from the
-    sibling `../../genui-relay/src/`, and the sync script + `sync`/`sync:check`
-    npm scripts are deleted. Docs updated in the same pass: this repo's README
-    (§tree + §8), `genui-relay`'s README/ARCHITECTURE §6/DEPLOY §5, and the
-    umbrella CLAUDE.md (sync section → sibling-itest section). Verified both
-    repos: genui-shell typecheck + 159/159 unit + 74/74 itest (the 9 relay
-    itests against the REAL daemon, sourced from the sibling); genui-relay
-    typecheck + 20/20 standalone. One find along the way: `npm run smoke`
-    could no longer pass against the deployed relay — the live
-    `RELAY_ALLOWED_ORIGINS` gate (on since the 07-13 static-origin work)
-    refuses its origin-less viewports (4006). The smoke script now takes the
-    allowed origin as a second argument, presents it on every viewport, and
-    asserts the gate refuses an origin-less viewport; `npm run smoke --
-    wss://relay.mirafold.sh https://app.mirafold.com` PASSes all six checks.
-
----
-
-## Phase H — Human legibility (opened 2026-07-14; the immediate next work)
-
-Origin: Kyle read the codebase cold (2026-07-14) and found it hard to enter —
-a flat 47-file `server/`, no obvious way in, `Shell.tsx` dense to the point of
-illegibility, plan-step shorthand in comments that assumes this document, and
-a stale legacy `workspace/` directory. The requirement, in his words: **the
-repo must be maintainable by a human with no assistant** — if all LLMs stop
-working tomorrow, work continues. Structure should carry "what lives where,"
-names should carry "what each thing is for," and the README shrinks toward
-the things structure *cannot* express (the contracts, the security model,
-the why).
-
-**Sequencing:** this phase executes before any further Phase R build step.
-R.4l's *intake* (writing findings down) continues in parallel — it changes
-docs, not code — but no other build work starts until H.13 closes.
-
-**Hard rules for every step in this phase:**
-
-- **Behavior-preserving only.** No logic changes, no renames of files or
-  exported symbols (folder context does the disambiguating — e.g.
-  `sessions/registry.ts` no longer collides mentally with `registry-spec.ts`),
-  no protocol changes, no dependency changes. The one exception is H.9/H.10,
-  which restructure `Shell.tsx` internals without changing what it does.
-- **Smaller over larger.** If a step turns out to hide two ideas, split it and
-  add the letter (H.4b style) rather than pushing through.
-- **Moves use `git mv`** so history and blame survive.
-- **The H verification ritual** (referenced by every step as "the ritual"):
-  1. Record the test counts each tier prints *before* starting the step.
-  2. After the step: `yarn typecheck && yarn test` — counts must match the
-     recorded ones EXACTLY (a dropped file passes silently otherwise; the
-     recursive `server/**` globs should make moves invisible, and count
-     parity is the proof).
-  3. Steps that touch server runtime files or `Shell.tsx` (H.2–H.10) also run
-     `yarn test:server && yarn test:e2e` (e2e rebuilds `dist`, so it also
-     proves the build).
-  4. Phase G already retired the `relay-service/` sync, so there is no
-     `sync:check` to run here; the relay-adjacent steps (H.2, H.3) instead
-     confirm the real-daemon relay itest (part of `yarn test:server`) stays
-     green.
-  5. A repo-wide grep for each old path finds only PLAN-ARCHIVE.md and git
-     history — README/docs mentions of a moved file are updated **in the same
-     step**, so the repo is fully consistent at every step boundary.
-
-**Known landmines (verified 2026-07-14 — each is pinned to a step):**
-
-1. **Entry points stay at the server root, permanently.** `bin/mirafold.js`
-   hardcodes `dist-server/index.js`, and `server/adapters/render-mcp-cmd.ts`
-   resolves the MCP subprocess by *runtime* relative path (`../render-mcp.ts`
-   in dev; `render-mcp.js` beside the bundle when packaged). The esbuild
-   `build:server` output layout follows its entry paths. Moving `index.ts` or
-   `render-mcp.ts` breaks installed daemons — so they don't move, ever, and
-   the target tree below documents root = entry points + shared contracts.
-2. **The `@relay-crypto` alias is declared in BOTH `tsconfig.json` and
-   `vite.config.ts`** and must change in both in the same commit (H.3).
-   `@protocol` and `@registry-spec` point at files that do not move.
-3. **`relay-service/` (top-level) was collapsed to a pointer by Phase G** —
-   `genui-relay` is now the sole source of the relay, with no byte-identical
-   copy or `sync:check` left to guard. Phase H does not touch the pointer; the
-   real-daemon relay itest (`relay-service.itest.ts`, now sourcing from the
-   sibling `genui-relay`) staying green is the proof.
-4. **`server/provider-policy.ts` is cited by that literal path** in both
-   CLAUDE.md files, BUSINESS.md, README, and the umbrella docs — it stays at
-   the root so no citation goes stale.
-5. **Open PLAN steps name file paths** (e.g. Q.1's `server/app.e2e.ts`) —
-   H.13 sweeps this document's open steps for moved paths.
-
-**Target tree (the deliverable, drawn in full so every step knows its end
-state — annotations become the README tree in H.13):**
-
-```
-server/
-  index.ts              entry point: the daemon (HTTP + WS)   [root: landmine 1]
-  render-mcp.ts         entry point: the stdio render-MCP subprocess [root: landmine 1]
-  render-tools.ts       the render_* tool definitions that subprocess serves
-  protocol.ts (+test)   THE WIRE CONTRACT (@protocol)         [root: contract]
-  registry-spec.ts (+test)  generative-UI component schemas (@registry-spec) [root: contract]
-  provider-policy.ts (+test) the dated credential-policy matrix [root: landmine 4]
-  version.ts (+test)    build-time version resolution
-  adapters/             (unchanged) one engine adapter per agent + the mock
-  relay/                the remote-viewport path: relay-client, relay-crypto
-                        (@relay-crypto), relay-protocol, relay-stub,
-                        relay-test-client + relay/relay-service itests, relay e2e
-  sessions/             the registry + viewport machinery: registry, connection,
-                        actions, ws-liveness + their tests and the session/
-                        end-session/hostile-client itests
-  security/             auth (token gate) + permissions (canUseTool policy) + tests
-  pty/                  the `!` passthrough: pty.ts + bang itest
-  testing/              itest-harness + the whole-product e2e suites
-                        (app, launcher, phone, resilience) — subsystem-specific
-                        tests live beside their subsystem, not here
-web/src/
-  session-bus.ts        NEW (H.9): the socket + message bus extracted from Shell
-  (everything else unchanged in place; registry/ already reads well)
-```
-
-**Non-goals, deliberate:** `RenderZone.tsx` stays whole (one cohesive job —
-the transcript-entry union and its renderer; splitting it would scatter, not
-clarify). No web/src folder reshuffle (one component per file already reads).
-`adapters/` and `web/src/registry/` are untouched. No renames anywhere.
-
-- [x] **Step H.1 — Sweep the legacy `workspace/` scratch directory**
-  - Goal: the stale pre-4.8 session-scratch dirs stop making the checkout
-    look messier than the repo is.
-  - Build: verify first — grep proves no code creates or resolves a literal
-    `./workspace` path anymore (as of 2026-07-14 only two comments in
-    `registry.ts`/`permissions.ts` mention the old behavior; keep those,
-    they explain history). Then delete the directory from disk, remove the
-    `workspace/` line from `.gitignore`, and update README's tree line that
-    documents it ("legacy scratch dirs"). If the grep finds a live writer,
-    stop, keep the gitignore line, and record why here instead.
-  - Files: `workspace/` (deleted), `.gitignore`, `README.md`.
-  - Done when: a fresh clone and the local checkout show no `workspace/`,
-    nothing recreates it across a full `yarn test:server && yarn test:e2e`
-    run, and the ritual passes.
-  - Status: **DONE 2026-07-15.** Contents inspected first (23 files, 184K of
-    old agent-session scratch — throwaway confirmed), then deleted; the
-    `workspace/` gitignore line and both README mentions (tree line + §8's
-    "safe to delete" aside) removed. Ritual green with exact parity: typecheck,
-    159/159 unit, 74/74 itest, 20/20 e2e, and no `workspace/` reappeared after
-    the full Tier-2 + Tier-3 run. One finding beyond the 07-14 audit's "only
-    two comments": the three live adapters' constructors still carry a dormant
-    `workspaceDir ?? "workspace"` default (claude-code.ts:103, codex.ts:76,
-    gemini-cli.ts:70) that would mkdir `./workspace` if ever constructed bare —
-    but no call site omits the option (`createSession` always passes
-    `opts.cwd`; every test passes a tmp dir), so it was provably unexercised.
-    **Addressed same day (Kyle: no deferrals of known weirdness):**
-    `workspaceDir` is now a required constructor option in all three adapters —
-    the literal `"workspace"` fallback is gone entirely, typecheck enforces
-    every call site, and all three tiers re-ran green with exact parity
-    (159/74/20). The two explanatory comments in `registry.ts`/`permissions.ts`
-    stay, per the step.
-
-- [x] **Step H.2 — Carve out `server/relay/` (the non-aliased files)**
-  - Goal: the eight-file relay family reads as one subsystem.
-  - Build: `git mv` into `server/relay/`: `relay-client.ts`,
-    `relay-protocol.ts` + its test, `relay-stub.ts`, `relay-test-client.ts`,
-    `relay.itest.ts`, `relay-service.itest.ts`, `relay.e2e.ts`. Fix imports
-    (typecheck enforces completeness). Update the README/docs mentions of the
-    moved paths (README cites `server/relay-protocol.ts`,
-    `server/relay-client.ts`, `server/relay-stub.ts`,
-    `server/relay-service.itest.ts`). `relay-crypto` waits for H.3 — this
-    step deliberately touches no alias.
-  - Files: the seven moved files, their importers, `README.md`.
-  - Done when: the ritual passes in full (all three tiers with exact count
-    parity), and the old-path grep is clean.
-  - Status: **DONE 2026-07-15.** Eight files `git mv`'d (the seven listed plus
-    `relay-protocol.test.ts`, which the step's count folded into "+ its
-    test"). Import fixes: root-relative paths gained a `../` inside the moved
-    files, `index.ts`/`phone.e2e.ts` repointed, the sibling `genui-relay`
-    import in `relay-service.itest.ts` gained a third `../`, and one dynamic
-    `await import("./relay-crypto")` at relay-service.itest.ts:109 was caught
-    by typecheck. One non-import landmine found and fixed in the same move:
-    `relay-stub.ts` resolves the web `dist/` **relative to its own file**
-    (`import.meta.url`), so its `".."` became `"..", ".."` — Tier 3 (which
-    serves the bundle through the stub in the phone/relay suites) is the
-    proof. Docs swept in the same step: README (tree + §2.2/§5/§8 citations),
-    the `relay-service/` pointer README, `genui-relay`'s README +
-    ARCHITECTURE, and the umbrella CLAUDE.md. Ritual green with exact parity:
-    typecheck, 159/159 unit, 74/74 itest, 20/20 e2e; old-path grep finds only
-    PLAN.md's own step text and PLAN-ARCHIVE.md. `relay-crypto.ts` + test
-    stay at root for H.3.
-
-- [x] **Step H.3 — Move `relay-crypto` + repoint the `@relay-crypto` alias**
-  - Goal: the aliased file joins its family, with the alias change isolated
-    so any failure is unambiguous.
-  - Build: `git mv` `relay-crypto.ts` + `relay-crypto.test.ts` into
-    `server/relay/`; update the `@relay-crypto` path in **both**
-    `tsconfig.json` and `vite.config.ts` (landmine 2) in the same commit.
-  - Files: the two moved files, `tsconfig.json`, `vite.config.ts`.
-  - Done when: the ritual passes in full — `yarn test:e2e`'s rebuild is the
-    proof the Vite side of the alias is right, typecheck proves the tsc side.
-  - Status: **DONE 2026-07-15.** `relay-crypto.ts` + test `git mv`'d into
-    `server/relay/`; the `@relay-crypto` path repointed in `tsconfig.json`
-    AND `vite.config.ts` in the same commit (landmine 2); the four in-family
-    `../relay-crypto` imports (incl. the dynamic one) became `./relay-crypto`.
-    Docs swept: README tree (relay-crypto joins the `relay/` block), the
-    `relay-service/` pointer README, and `genui-relay`'s README/ARCHITECTURE
-    citations. Ritual green with exact parity: typecheck, 159/159, 74/74,
-    20/20 (the e2e rebuild proving the Vite alias); old-path grep finds only
-    PLAN-ARCHIVE.md. The relay family is now fully assembled in
-    `server/relay/` — ten files, nothing relay-named left at the root.
-
-- [x] **Step H.4 — Carve out `server/sessions/`, part 1: the state core**
-  - Goal: the session registry and the viewport/connection machinery read as
-    the product's core subsystem.
-  - Build: `git mv` into `server/sessions/`: `registry.ts` + its test +
-    itest, `connection.ts`, `actions.ts` + test. Fix imports; sweep docs for
-    the moved paths.
-  - Files: the six moved files, their importers, `README.md`.
-  - Done when: the ritual passes in full with exact count parity.
-  - Status: **DONE 2026-07-15.** Six files `git mv`'d into `server/sessions/`
-    (registry + test + itest, connection, actions + test); the moved files'
-    root-relative imports gained a `../` (protocol, adapters, provider-policy,
-    pty, version, itest-harness), and the three external importers repointed
-    (`index.ts`, `render-tools.ts`, `relay/relay-client.ts`). README updated:
-    the tree gains the `sessions/` block and §4's `server/actions.ts` citation
-    moved. The old-path grep finds only dated `[x]` status notes in PLAN.md
-    (Q.3/Q.4 history) and PLAN-ARCHIVE.md; `registry-spec.ts` stays at root
-    (the contract), untouched. Ritual green with exact parity: typecheck,
-    159/159, 74/74, 20/20.
-
-- [x] **Step H.5 — Carve out `server/sessions/`, part 2: liveness + the
-  session itests**
-  - Goal: finish the sessions folder — the cross-cutting session integration
-    tests live with the subsystem they exercise.
-  - Build: `git mv` into `server/sessions/`: `ws-liveness.ts` + test + itest,
-    `session.itest.ts`, `end-session.itest.ts`, `hostile-client.itest.ts`.
-    Fix imports (these lean on `itest-harness.ts`, still at root until H.8 —
-    relative paths change, typecheck enforces).
-  - Files: the seven moved files, their importers.
-  - Done when: the ritual passes in full with exact count parity.
-  - Status: **DONE 2026-07-15.** Six files `git mv`'d (`ws-liveness.ts` + test
-    + itest, `session.itest.ts`, `end-session.itest.ts`,
-    `hostile-client.itest.ts` — the step's "seven" counted the harness path
-    fix, which turned out to be just the four itests' `../itest-harness`).
-    `index.ts` repointed for `sweepLiveness`. No doc cites the moved files
-    outside dated `[x]` history. Ritual: typecheck + 159/159 + 20/20 e2e; one
-    Tier-2 run flaked 66/74 (parallel real-daemon contention right after a
-    full-suite back-to-back — not the move; the failures didn't name the moved
-    files' subjects) and three consecutive re-runs are 74/74 clean. (The
-    flake recurred during H.7 with roving relay-itest timeouts;
-    `test:server` now runs `--test-concurrency=1` like `test:e2e` — see
-    H.7's status.)
-
-- [x] **Step H.6 — Carve out `server/security/`**
-  - Goal: the two trust gates — who may connect (`auth`) and what a tool may
-    do (`permissions`) — are findable as one subsystem.
-  - Build: `git mv` into `server/security/`: `auth.ts` + test + itest,
-    `permissions.ts` + test. Fix imports; update README's §5 mentions of
-    `server/permissions.ts` and `server/auth.ts`.
-  - Files: the five moved files, their importers, `README.md`.
-  - Done when: the ritual passes in full with exact count parity.
-  - Status: **DONE 2026-07-15.** Five files `git mv`'d into `server/security/`
-    (auth + test + itest, permissions + test); importers repointed
-    (`index.ts` for the auth predicates, `adapters/claude-code.ts` for
-    `makeCanUseTool`), `auth.itest.ts`'s harness import gained a `../`.
-    README updated: §4/§5 citations now `server/security/…` and the tree
-    gains the `security/` block. Old-path grep: only RENAME.md + dated `[x]`
-    PLAN history. Ritual green with exact parity: typecheck, 159/159, 74/74,
-    20/20.
-
-- [x] **Step H.7 — Carve out `server/pty/`**
-  - Goal: the `!` passthrough machinery is one folder.
-  - Build: `git mv` into `server/pty/`: `pty.ts` + test, `bang.itest.ts`.
-    Fix imports; sweep docs.
-  - Files: the three moved files, their importers.
-  - Done when: the ritual passes in full with exact count parity.
-  - Status: **DONE 2026-07-15.** Three files `git mv`'d into `server/pty/`;
-    `sessions/registry.ts` + `sessions/connection.ts` repointed to
-    `../pty/pty`, `bang.itest.ts`'s root imports gained a `../`; README tree
-    gains the `pty/` block. Ritual green with exact parity: typecheck,
-    159/159, 74/74, 20/20. **Plus one ritual-infrastructure fix that this
-    step's runs forced:** H.5's Tier-2 flake recurred here (twice in a row,
-    roving timeouts across the parallel relay itests — each itest file spawns
-    real daemons, and the per-CPU default occasionally starves a handshake
-    past its timeout; every failing test passes in isolation, no leaked
-    processes involved). `test:server` now runs `--test-concurrency=1`,
-    matching the choice `test:e2e` already made for the same reason — the
-    ritual's Tier-2 gate must be deterministic for the rest of Phase H to
-    lean on it. Cost: ~2-3 min instead of ~40 s. Two consecutive serialized
-    runs: 74/74, 74/74.
-
-- [x] **Step H.8 — Carve out `server/testing/`**
-  - Goal: cross-cutting test infrastructure stops crowding the root; what
-    remains at `server/` root is exactly the spine (entry points + contracts).
-  - Build: `git mv` into `server/testing/`: `itest-harness.ts` and the four
-    whole-product e2e suites (`app.e2e.ts`, `launcher.e2e.ts`, `phone.e2e.ts`,
-    `resilience.e2e.ts`). Fix the harness imports across every itest (all
-    folders). Note for H.13: open step Q.1 cites `server/app.e2e.ts`.
-  - Files: the five moved files, every itest that imports the harness.
-  - Done when: the ritual passes in full with exact count parity, and
-    `ls server/*.ts` shows only the documented root spine.
-  - Status: **DONE 2026-07-15.** Five files `git mv`'d into `server/testing/`;
-    eleven importers across sessions/, relay/, security/, pty/ repointed to
-    `../testing/itest-harness`. Two `import.meta.url`-relative ROOT
-    computations deepened one level (`itest-harness.ts` — it spawns the
-    daemon from ROOT — and `launcher.e2e.ts`); Tier 2 + Tier 3 passing is the
-    proof both resolve. `ls server/*.ts` is exactly the root spine: the two
-    entry points (`index.ts`, `render-mcp.ts` + its itest beside it,
-    `render-tools.ts`) and the contracts (`protocol`, `registry-spec`,
-    `provider-policy`, `version`, each with its test). Q.1's
-    `server/app.e2e.ts` citation stays for H.13's sweep, per this step's
-    note. Ritual green with exact parity: typecheck, 159/159, 74/74, 20/20.
-
-- [x] **Step H.9 — `Shell.tsx`: extract the session bus**
-  - Goal: the hand-rolled socket + pub/sub machinery — the single most
-    disorienting block in the file — becomes its own named module beside
-    `ws.ts`, so `Shell.tsx` stops embedding a messaging system mid-component.
-  - Build: lift the `useMemo` bus (SocketClient construction, listener sets,
-    hello/attach logic, the `session_created` URL handling, `sendAction`/
-    `sendPrompt` senders) into `web/src/session-bus.ts` with an explicit
-    interface; `Shell.tsx` consumes it. Pure extraction — identical wire
-    behavior, identical reconnect/resume semantics (the 4.4 tail-resume path
-    and the R.4c fresh-session notice hook must come through untouched).
-  - Files: `web/src/session-bus.ts` (new), `web/src/Shell.tsx`.
-  - Done when: the ritual passes in full — Tier 3 is the real gate here
-    (attach/resume/replay are all driven in headless Chrome by the existing
-    suites), with exact count parity and no test edited to accommodate.
-  - Status: **DONE 2026-07-15.** The whole `useMemo` bus body moved verbatim
-    (comments included) into `web/src/session-bus.ts` as `createSessionBus()`
-    behind an explicit `SessionBus` interface; `Shell.tsx` now holds one line
-    (`useMemo(() => createSessionBus(), [])`). `ZoneMsg` lives with the bus
-    and is re-exported from `Shell.tsx`, so `RenderZone`'s import site is
-    untouched — zero files beyond the two named ones changed, no test edited.
-    Shell.tsx: 503 → 406 lines. Ritual green with exact parity: typecheck,
-    159/159, 74/74, 20/20 — the Tier-3 suites drive attach/resume/replay and
-    the R.4c notice through the extracted bus unchanged.
-
-- [x] **Step H.10 — `Shell.tsx`: group the state**
-  - Goal: the wall of ~13 independent `useState` hooks reads as a handful of
-    concerns a newcomer can count on one hand.
-  - Build: group related state without changing behavior — the natural
-    clusters are the dismissable notices (`sessionNotice`, `refusedNotice`,
-    `onbError`), the bang pair (`myBang`, `bangTail`), and session/daemon
-    metadata; a small reducer or cohesive state objects, whichever reads
-    better in place. Each hook's existing constraint comment moves with its
-    field. Judgment is allowed on the exact grouping; the test is that the
-    declarations read as ~5 ideas, not 13.
-  - Files: `web/src/Shell.tsx`.
-  - Done when: the ritual passes in full with exact count parity, and the
-    file's state section fits on one screen with its comments intact.
-  - Status: **DONE 2026-07-15.** Thirteen hooks now read as five banner'd
-    ideas: **the turn** (busy + asks, kept as separate hooks — they update
-    independently on nearly every wire branch), **the session + daemon**
-    (connected, meta, usage, and `daemonInfo` — the old `agents` + `daemon`
-    hooks merged into one object, natural because every field arrives on the
-    same `agents` hello), **the dismissable notices** (one object:
-    session/refused/onboarding, replacing three hooks), **the `!` command**
-    (one object: my + tail, replacing two), and **the theme**. Every
-    constraint comment moved onto its field. Cohesive objects over a reducer
-    — the update sites are one-field spreads and a reducer would add
-    indirection without removing any. Ritual green with exact parity:
-    typecheck, 159/159, 74/74, 20/20; no test edited.
-
-- [x] **Step H.11 — Comment legibility pass, server side**
-  - Goal: every comment stands alone for a reader who has never seen this
-    document — the plan-step code becomes a suffix, never the substance.
-  - Build: sweep `server/` (adapters and relay included) for comments whose
-    meaning depends on a bare step id ("R.4c:", "T2.4:", "4.9:") and reword
-    each to state the constraint in full with the id as a trailing
-    parenthetical — the existing best examples (e.g. connection.ts's fuller
-    notes) are the template. Zero code changes; comment-only diff.
-  - Files: `server/**/*.ts` (comments only).
-  - Done when: a grep for comment lines *opening* with a bare step id finds
-    none under `server/`, and the ritual's typecheck + Tier 1 pass (a
-    comment-only diff needs no Tier 2/3).
-  - Status: **DONE 2026-07-15.** ~95 comment sites across 31 files: each
-    leading id ("R.4c:", "T2.4:", "#11:", "Step 4.9:") demoted to a trailing
-    parenthetical at the end of its comment block — the substance was already
-    in the text, so rewording was mostly position + capitalization, with a
-    handful of true rewrites (protocol.ts's interior "T2.4:" cross-reference,
-    the `/** #6 */` JSDoc shape). The whole diff verified comment-only (a
-    grep over changed lines finds nothing but comment lines). The Done-when
-    grep finds zero comment lines opening with a bare id under `server/`;
-    typecheck + 159/159 Tier 1 green.
-
-- [x] **Step H.12 — Comment legibility pass, web side**
-  - Goal: same standard as H.11 across the browser code.
-  - Build: same sweep over `web/src/` (registry included).
-  - Files: `web/src/**/*.ts(x)` (comments only).
-  - Done when: same as H.11, for `web/`.
-  - Status: **DONE 2026-07-15.** Same transform as H.11 over `web/src/`
-    (registry included): ~40 sites across 14 files, ids demoted to trailing
-    parentheticals. Diff verified comment-only; the Done-when grep finds zero
-    comment lines opening with a bare id under `web/src/`; typecheck +
-    159/159 Tier 1 green.
-
-- [x] **Step H.13 — Docs re-synced to the new shape + final full sweep**
-  - Goal: the README's map matches reality, a newcomer's first two minutes
-    are scripted, and nothing anywhere cites a pre-H path.
-  - Build: (a) redraw README's annotated tree to the target tree above,
-    folding in each folder's one-line purpose; (b) add a short "start here"
-    orientation at the top of the architecture section — the spine in six
-    lines: `protocol.ts` is the contract, `index.ts`/`main.tsx` are the entry
-    points, `adapters/` normalizes each agent, `Shell` is trusted,
-    `RenderZone` paints, `registry/` is the component vocabulary; (c) sweep
-    THIS document's open steps for moved paths (Q.1 at minimum); (d) sweep
-    CLAUDE.md, docs/, and .github/ for stale paths; (e) run everything one
-    last time: `yarn typecheck && yarn test && yarn test:server &&
-    yarn test:e2e` (Phase G already retired the cross-repo `sync:check`).
-  - Files: `README.md`, `PLAN.md`, `CLAUDE.md`, `docs/*` as found.
-  - Done when: every suite is green at recorded-count parity, the old-path
-    grep across the whole repo (docs included) is clean, and the phase's
-    origin test passes in the only way that matters: the tree alone tells a
-    newcomer where each subsystem lives.
-  - Status: **DONE 2026-07-15 — PHASE H COMPLETE.** (a) README's tree redrawn
-    spine-first: the root reads as entry points (with the never-move note) +
-    contracts (`provider-policy.ts` was missing — added), each subsystem
-    folder annotated, `ws-liveness.ts` surfaced in `sessions/`, Shell.tsx's
-    stale "the message bus" line now says it consumes the session bus.
-    (b) The six-line "start here" spine opens §1. (c) Open-step sweep: Q.1's
-    `server/app.e2e.ts` → `server/testing/app.e2e.ts` (the only open-step
-    citation; everything else is dated history). (d) CLAUDE.md, docs/, and
-    .github/ grep clean of every pre-H path. (e) Full suite at recorded
-    parity: typecheck, 159/159, 74/74, 20/20. The whole phase ran
-    2026-07-15 in one sitting, H.1→H.13, each step its own verified commit.
 
 ---
 
@@ -945,6 +388,15 @@ on this plan's summary alone.
     Paddle account + site verification (sandbox account can start any
     time) → R.5 build. Start the Paddle signup early; verification takes
     days, not minutes.
+  - **Amendment (2026-07-15, compliance sweep):** the FTC Negative-Option
+    ("click-to-cancel") Rule this step's goal cites was **vacated in its
+    entirety by the Eighth Circuit 2025-07-08** (the FTC restarted the
+    rulemaking with a 2026-03 ANPRM). Conclusion unchanged, citation
+    corrected: the same disclosure/consent/easy-cancel mechanics remain
+    required by **ROSCA** (the underlying federal statute, still enforced)
+    and state auto-renewal laws (California's ARL et al.), and they remain
+    the MoR's job — Paddle's trial-compliance handling covers the statutes
+    that survive, not just the vacated rule.
 
 - [ ] **Step K.5 — Terms of Service + Privacy Policy (from a written data
   inventory)**
@@ -977,6 +429,30 @@ on this plan's summary alone.
   - Done when: both pages are live (or staged into the R.5b release order),
     every sentence in them traces to the inventory, and the K.2 entity is
     the named party.
+  - **Amendment (2026-07-15, compliance sweep — four additions):** (a) the
+    ToS acceptable-use clause states explicitly: **pair with and control
+    only systems you own or are authorized to access** — the CFAA-adjacent
+    line; the pairing architecture already enforces it, the words make it
+    contractual. (b) Naming subprocessors in the policy is not the GDPR
+    Art. 28 instrument — **execute the self-serve DPAs** with Fly.io
+    (pre-signed, fly.io/documents) and Cloudflare
+    (cloudflare.com/cloudflare-customer-dpa) under the entity's accounts
+    (Kyle's hands, minutes, free; both vendors are Data Privacy Framework
+    certified, which settles EU→US transfers). (c) **Paddle is named as an
+    independent controller**, not a subprocessor — as merchant of record
+    the buyer contracts with Paddle, and its standard Data Sharing Addendum
+    governs the controller-to-controller leg; no processor DPA exists or is
+    needed there. (d) A one-page **breach-notification plan** drafted from
+    the inventory (GDPR's 72-hour authority clock + US state statutes;
+    realistic breach surface = relay/hosting metadata or Paddle-side data —
+    plaintext content cannot breach server-side because it never exists
+    there). Note: the dated inventory doubles as the GDPR Art. 30 record of
+    processing — keep it current and one artifact serves both. Code-verified
+    same day for the inventory's benefit: the relay process holds client IPs
+    in memory only (per-IP caps) and writes none to its logs — IP retention
+    exists only at the Fly.io proxy layer; no telemetry/analytics anywhere
+    in shell, site, or relay; mirafold.com sets no cookies (strict CSP,
+    self-hosted assets only), so no ePrivacy consent banner is owed.
 
 - [ ] **Step K.6 — Claim accuracy + third-party trademark hygiene**
   *(executes in the site repo — site PLAN S.7; this step is the contract)*
@@ -1008,6 +484,14 @@ on this plan's summary alone.
     dated audits + fixes in PLAN-ARCHIVE.md intact: they are the
     reasonable-care evidence if a claim ever lands.
   - Done when: both files exist and the contact address routes to Kyle.
+  - Status (2026-07-15): 🟡 files written — `SECURITY.md` in both repos
+    (contact `security@mirafold.com`; 7-day acknowledgment promise; no
+    bounty; latest-release-only support; each file points researchers at
+    its repo's real attack surface — trusted-shell boundary for the shell,
+    E2E blindness + metadata for the relay). **Box stays open on exactly
+    one thing: Kyle creating the address** (Cloudflare Email Routing,
+    `security@mirafold.com` → his inbox — Step 5 of the Phase-K brief) and
+    confirming a test email lands.
 
 - [x] **Step K.8 — Dependency license scan** — done 2026-07-15 (status
   note below) *(assistant)*
@@ -1036,7 +520,8 @@ on this plan's summary alone.
     throughout. Still owed (to K.2, not this step): swap both LICENSE
     copyright lines from Kyle personally to the entity once it exists.
 
-- [ ] **Step K.9 — Contributor policy, decided before the repos go public**
+- [x] **Step K.9 — Contributor policy, decided before the repos go public**
+  — done 2026-07-15 (status note below)
   - Goal: incoming-contribution IP settled before contributor #1 — adding a
     CLA after contributors exist is nearly impossible.
   - Decide: DCO vs. CLA. Recommended: **DCO** — with K.1, everything is MIT
@@ -1046,6 +531,15 @@ on this plan's summary alone.
     `CONTRIBUTING.md` to both public-bound repos noting it.
   - Done when: the decision is written in R.5b and CONTRIBUTING.md exists in
     both repos.
+  - Status (2026-07-15): DONE — **DCO adopted** per this step's own
+    recommendation (everything is MIT with no relicensing intent, which
+    removes a CLA's main benefit; DCO documents provenance at near-zero
+    contributor friction). Recorded in R.5b's decide-list (new item (e)).
+    `CONTRIBUTING.md` landed in both repos, each in its own voice: the
+    shell's covers `git commit -s`, the three test tiers, and the CLAUDE.md
+    non-negotiables; the relay's pins the caps-and-refusals suite and the
+    stays-deliberately-dumb rule. The GitHub DCO status check itself is
+    enabled as part of the public flip (R.5b/R.7 mechanics, not before).
 
 - [ ] **Step K.10 — Mirafold trademark filing** *(Kyle's hands; NOT
   launch-gating; assistant: investigate first)*
@@ -1060,8 +554,27 @@ on this plan's summary alone.
     registration; ® only after.
   - Done when: the brief is delivered (assistant half) and the application
     is filed (Kyle's half — before or shortly after launch both work).
+  - Status (2026-07-15): 🟡 **assistant half DONE — filing brief delivered**
+    (written into Step 6 of the Phase-K brief document,
+    `~/mirafold-phase-k-your-steps.html`); box open on Kyle's filing.
+    Findings, verified against the USPTO's current (post-Jan-2025) fee
+    structure: **base application $350/class** (the old TEAS Plus/Standard
+    split is gone — one base fee for all §1 and §44 filings); classes
+    confirmed **9** (downloadable software — the npm-distributed client)
+    **+ 42** (software as a service — the hosted relay) = **$700 up front**;
+    **avoid the $200/class free-form-description surcharge** by picking
+    pre-approved entries from the Trademark ID Manual inside the filing UI;
+    basis **§1(b) intent-to-use** recommended (locks priority pre-launch;
+    no specimens at filing), which owes a **$150/class Statement of Use**
+    (~$300) with specimens once sales are real ($125/class per 6-month
+    extension if needed; windows run from the Notice of Allowance, up to
+    36 months). Realistic all-in for both classes: ≈$1,000. Alternative
+    recorded: file §1(a) use-based at launch instead — saves the SOU fees
+    but gives up the pre-launch priority date, which defeats this step's
+    purpose (the GENUI® lesson). Applicant must be the K.2 entity.
 
-- [ ] **Step K.11 — Export-control sanity note** *(assistant; expected
+- [x] **Step K.11 — Export-control sanity note** — done 2026-07-15 (status
+  note below) *(assistant; expected
   conclusion: no action required)*
   - Goal: a written, dated paragraph closing the question instead of leaving
     it ambient.
@@ -1073,10 +586,98 @@ on this plan's summary alone.
     the repo (docs/ or this step's status). Optional belt-and-suspenders: the
     five-minute BIS/NSA notification email with the public repo URL at R.7.
   - Done when: the dated note exists with the conclusion.
+  - Status (2026-07-15): DONE — the dated note, verified against the
+    current eCFR text of 15 CFR §742.15(b): **no action required.** The
+    E2E layer calls platform WebCrypto exclusively
+    (`server/relay/relay-crypto.ts`: AES-256-GCM + HKDF-SHA-256 via
+    `crypto.subtle`; the entitlement token is standard Ed25519
+    verification) — *standard cryptography* in the EAR's sense, nothing
+    homegrown. BIS's 2021-03-29 final rule eliminated the email
+    notification for publicly available encryption source code using
+    standard cryptography: such code is released from the EAR the moment
+    it is published online (the crypt@bis.doc.gov / enc@nsa.gov notice
+    survives only for *non-standard* cryptography). So the R.5b/R.7 public
+    flip itself completes the compliance story; the optional
+    belt-and-suspenders email adds nothing and is skipped. Revisit only if
+    the crypto ever stops being platform-standard — which the architecture
+    forbids anyway.
+
+- [x] **Step K.12 — Compliance closure notes (from the 2026-07-15 sweep)**
+  — done 2026-07-15 (status note below)
+  *(assistant; expected conclusion for each: no action required — write it
+  down, dated, so the questions stop being ambient)*
+  - Origin: a 2026-07-15 second-pass compliance sweep (GDPR operational
+    mechanics + the adjacent EU regimes), verified against current primary
+    sources and the actual code, all four test tiers green the same day.
+    The actionable findings landed elsewhere: dated amendments on K.4 (FTC
+    rule vacated → ROSCA/state-ARL citation) and K.5 (AUP line, the two
+    subprocessor DPAs, Paddle-as-independent-controller, breach one-pager);
+    the EU/UK representative bundle is parked below with a revenue trigger.
+    This step closes the checked-and-clear regimes in writing.
+  - Build: one dated note (docs/ or this step's status), a short paragraph
+    each: **EU AI Act** — Mirafold is neither provider nor deployer of the
+    model (the user runs their own agent locally on their own credentials;
+    Mirafold ships an open-source UI and sells transport of ciphertext);
+    coding assistance is not an Annex III high-risk use; the faithful-skin
+    rule means no rebranding, so no Art. 25 requalification into provider.
+    **European Accessibility Act** — the service-provider microenterprise
+    exemption (<10 persons and ≤€2M turnover) covers the entity; the
+    checkout UI is Paddle's; revisit trigger = outgrowing either bound.
+    **ePrivacy/cookies** — verified 2026-07-15: no cookies, no external
+    loads, no analytics anywhere; browser storage is strictly-necessary
+    functional state (theme, relay session code); no consent banner owed.
+    Plus one-liners closing: ECPA/wiretap (the relay carries the user's own
+    traffic with their consent, E2E-encrypted), OFAC (Paddle screens
+    payments as MoR; the free product is publicly available open source),
+    and money-transmission/telecom licensing (no funds handled; no
+    interpersonal communications service — single-user device pairing).
+  - Done when: the dated note exists and each paragraph states its basis.
+  - Status (2026-07-15): DONE — this status note IS the dated closure note;
+    each conclusion states its basis. **EU AI Act — no obligations.**
+    Mirafold is neither provider nor deployer of an AI system in the Act's
+    regulated sense: the user runs their own agent, locally, on their own
+    credentials; Mirafold ships an open-source UI and sells transport of
+    ciphertext. Coding assistance is not an Annex III high-risk use, GPAI
+    obligations sit with Anthropic/OpenAI/Google as model providers, and
+    the faithful-skin rule (no rebranding, ever) is precisely the conduct
+    that avoids Art. 25 requalification into a provider. **European
+    Accessibility Act — exempt.** The EAA (in force for services
+    2025-06-28) covers e-commerce services, but its microenterprise
+    exemption (<10 persons AND ≤€2M turnover, Art. 3(23); services only)
+    covers the entity; the checkout UI is Paddle's, carrying Paddle's own
+    duty. Revisit trigger: outgrowing either bound. **ePrivacy/cookies —
+    nothing owed.** Verified in code and live 2026-07-15: mirafold.com
+    sets no cookies (no `set-cookie`; strict CSP `default-src 'none'`;
+    all assets self-hosted; the only JS is a clipboard handler), no
+    telemetry or analytics exists anywhere in shell, site, or relay, and
+    the app's browser storage (theme in localStorage, relay session code
+    in sessionStorage) is strictly-necessary functional state — no consent
+    banner, no cookie policy needed beyond a truthful sentence in the K.5
+    privacy policy. **One-liners:** ECPA/wiretap — the relay carries the
+    user's own traffic between their own devices with their consent,
+    E2E-encrypted (no interception exposure); OFAC — Paddle screens
+    payments as merchant of record, and the free product is publicly
+    available open source (same public-availability logic as K.11);
+    money-transmission/telecom licensing — not applicable (no funds
+    handled; single-user device pairing is not an interpersonal
+    communications service).
 
 **Phase K parking lot (post-launch, revenue-triggered — explicitly NOT R.7
 gates):** cyber/E&O insurance once real revenue exists; CCPA formalities at
-its thresholds (far off at launch scale).
+its thresholds (far off at launch scale); **the EU/UK formalities bundle**
+(parked 2026-07-15, Kyle's call — a deliberate, written deferral): the GDPR
+Art. 27 EU representative, the separate UK representative + ICO
+data-protection fee (Tier 1, £40/yr), and the DSA Art. 13 legal
+representative for the relay (a mere-conduit-shaped service; no
+small-company exemption on paper) are owed only while actually serving
+EU/UK residents, and enforcement at launch scale is a paper risk, not a
+practical one. **Trigger to act: a meaningful EU/UK customer base — ≈ the
+first $1k of EU-sourced revenue or ~10 EU customers. Then: appoint a
+bundled EU+UK+DSA representative service under the K.2 entity (a few
+hundred dollars/yr) and pay the ICO fee — an afternoon, funded by the
+revenue that triggered it.** Until then: sell everywhere via Paddle (VAT
+collection is theirs regardless), and this written deferral is the record
+that the posture is deliberate.
 
 ---
 
@@ -1453,7 +1054,11 @@ with it. Both sequence BEFORE R.5.**
     lands — see R.2), `mirafold-site` (checkout button flip, demo swap); (c)
     **rollback / kill-switch** for each (the relay gate and per-daemon relay
     URL are the levers); (d) how the codebase/npm/GitHub rename (R.2) is
-    sequenced into all of the above.
+    sequenced into all of the above; (e) *already decided 2026-07-15
+    (K.9): contributor policy is **DCO**, not CLA* — `Signed-off-by` per
+    commit, CONTRIBUTING.md landed in both repos that day; what remains
+    for this step is only the mechanics: enable the GitHub DCO status
+    check on both repos as part of the public flip.
   - Done when: a written release-sequence exists that R.6 and R.7 just
     follow, with no open "how do we actually ship this" questions.
 
