@@ -23,6 +23,7 @@ const ZERO_USAGE: Usage = { turnIn: 0, turnOut: 0, sumIn: 0, sumOut: 0, cost: 0 
  * the session identity (/s/<id>) — refresh-safe and shareable across tabs.
  */
 export function Shell() {
+  // ── The turn ──────────────────────────────────────────────────────────
   // Whether a turn is in flight — drives the stop affordance and Esc.
   // Derived entirely from the wire: user_prompt sets it, turn_end clears it,
   // and a replayed in-flight turn therefore restores it correctly.
@@ -30,7 +31,8 @@ export function Shell() {
   // Pending permission prompts, oldest first; the bar shows one at a time.
   // SHELL-OWNED UI: the agent can paint nothing here, so it can't fake it.
   const [asks, setAsks] = useState<{ tool: string; detail: string; id: string }[]>([]);
-  // Status-bar state (T2.6) — all shell-owned, none paintable by the agent.
+
+  // ── The session + daemon (status-bar state, T2.6 — all shell-owned) ─────
   const [connected, setConnected] = useState(false);
   const [meta, setMeta] = useState<{
     sessionId?: string;
@@ -39,42 +41,51 @@ export function Shell() {
     demo?: boolean;
   }>({});
   const [usage, setUsage] = useState<Usage>(ZERO_USAGE);
-  // P.4 onboarding: which agents the daemon offers, and whether we're still at
-  // the picker. A URL that already names a session skips onboarding (it attaches).
-  const [agents, setAgents] = useState<
-    { agent: AgentName; live: boolean; blocked?: boolean; detail?: string }[] | null
-  >(null);
-  // 4.8: where the daemon was launched (the default session cwd) + home for
-  // ~-abbreviation, both off the agents hello; and the last create error so
-  // the onboarding card can show a rejected working dir. R.4 adds the
-  // pairing info for the "connect a device" QR (local viewports only).
-  const [daemon, setDaemon] = useState<{
+  // Everything the daemon's `agents` hello carries, kept together: which
+  // agents it offers (P.4 onboarding; a URL that already names a session
+  // skips the picker), where it was launched (4.8 — the default session cwd)
+  // + home for ~-abbreviation, the pairing info for the "connect a device"
+  // QR (R.4, local viewports only), and its build version.
+  const [daemonInfo, setDaemonInfo] = useState<{
+    agents: { agent: AgentName; live: boolean; blocked?: boolean; detail?: string }[] | null;
     cwd?: string;
     home?: string;
     relay?: { url: string; code: string; ws?: string };
     version?: string;
-  }>({});
-  const [onbError, setOnbError] = useState<string | null>(null);
-  // R.4c: the server took the attach-fallback branch — the session this tab
-  // asked for is gone (daemon restart, expiry) and this is a FRESH one. A
-  // silent URL swap over a blank transcript reads as data loss with no
-  // explanation; this shell-drawn notice says what happened. Cleared on
-  // dismiss or on the first prompt into the new session.
-  const [sessionNotice, setSessionNotice] = useState(false);
-  // R.4i: the daemon refused this REMOTE viewport because the session runs on a
-  // subscription login, which can't be driven over the paid relay. Shell-owned
-  // (the agent paints nothing), shown until dismissed.
-  const [refusedNotice, setRefusedNotice] = useState<string | null>(null);
-  // 4.9: the `!` command THIS viewport issued, if still running — only the
-  // issuer gets the stdin affordance (a sudo prompt must never fan out to a
-  // second tab or, later, a phone via the relay). Lost on refresh: Tier 1.
-  const [myBang, setMyBang] = useState<{ id: string; command: string } | null>(null);
-  // Tail of the running command's output — drives the password-prompt
-  // detection that masks the stdin field. One bang per session, so untagged.
-  const [bangTail, setBangTail] = useState("");
+  }>({ agents: null });
+
+  // ── The dismissable notices (all SHELL-OWNED — the agent paints none) ───
+  const [notices, setNotices] = useState<{
+    // R.4c: the server took the attach-fallback branch — the session this tab
+    // asked for is gone (daemon restart, expiry) and this is a FRESH one. A
+    // silent URL swap over a blank transcript reads as data loss with no
+    // explanation; this shell-drawn notice says what happened. Cleared on
+    // dismiss or on the first prompt into the new session.
+    session: boolean;
+    // R.4i: the daemon refused this REMOTE viewport because the session runs
+    // on a subscription login, which can't be driven over the paid relay.
+    // Shown until dismissed.
+    refused: string | null;
+    // The last create error, so the onboarding card can show a rejected
+    // working dir (4.8).
+    onboarding: string | null;
+  }>({ session: false, refused: null, onboarding: null });
+
+  // ── The `!` command (4.9) ───────────────────────────────────────────────
+  const [bang, setBang] = useState<{
+    // The bang THIS viewport issued, if still running — only the issuer gets
+    // the stdin affordance (a sudo prompt must never fan out to a second tab
+    // or, later, a phone via the relay). Lost on refresh: Tier 1.
+    my: { id: string; command: string } | null;
+    // Tail of the running command's output — drives the password-prompt
+    // detection that masks the stdin field. One bang per session, so untagged.
+    tail: string;
+  }>({ my: null, tail: "" });
+
   const hasUrlSession = useMemo(() => /^\/s\/[\w-]+/.test(location.pathname), []);
 
-  // 4.3: theme is shell-owned UI state. Dark is the default and the identity;
+  // ── The theme (4.3) ─────────────────────────────────────────────────────
+  // Theme is shell-owned UI state. Dark is the default and the identity;
   // index.html applies the stored choice before first paint (no flash) and
   // this keeps the attribute + storage in sync on toggle.
   const [theme, setTheme] = useState<"dark" | "light">(() =>
@@ -94,7 +105,8 @@ export function Shell() {
       bus.subscribe((m) => {
         if (m.type === "user_prompt") {
           setBusy(true);
-          setSessionNotice(false); // they've moved on in the new session
+          // They've moved on in the new session — the R.4c notice is done.
+          setNotices((n) => (n.session ? { ...n, session: false } : n));
         } else if (
           m.type === "status" ||
           m.type === "thinking_delta" ||
@@ -111,28 +123,35 @@ export function Shell() {
         } else if (m.type === "permission_request") {
           setAsks((a) => [...a, { tool: m.tool, detail: m.detail, id: m.id }]);
         } else if (m.type === "agents") {
-          setAgents(m.agents);
-          setDaemon({ cwd: m.cwd, home: m.home, relay: m.relay, version: m.version });
+          setDaemonInfo({
+            agents: m.agents,
+            cwd: m.cwd,
+            home: m.home,
+            relay: m.relay,
+            version: m.version,
+          });
         } else if (m.type === "session_created") {
           setMeta({ sessionId: m.sessionId, cwd: m.cwd, agent: m.agent, demo: m.demo });
-          setOnbError(null);
-          if (m.fallback) setSessionNotice(true);
+          setNotices((n) => ({
+            ...n,
+            onboarding: null,
+            ...(m.fallback ? { session: true } : {}),
+          }));
         } else if (m.type === "refused") {
           // R.4i: no session — the relay refused this subscription-backed
           // attach. Show the reason (also surfaced at onboarding if we're there).
-          setRefusedNotice(m.message);
-          setOnbError(m.message);
+          setNotices((n) => ({ ...n, refused: m.message, onboarding: m.message }));
         } else if (m.type === "error") {
           // Only the onboarding card consumes this; in-session errors already
           // render in the output zone.
-          setOnbError(m.message);
+          setNotices((n) => ({ ...n, onboarding: m.message }));
         } else if (m.type === "bang_start") {
-          setBangTail("");
+          setBang((b) => ({ ...b, tail: "" }));
         } else if (m.type === "bang_output") {
           // Only the tail matters (prompt detection) — keep it tiny.
-          setBangTail((t) => (t + m.data).slice(-400));
+          setBang((b) => ({ ...b, tail: (b.tail + m.data).slice(-400) }));
         } else if (m.type === "bang_end") {
-          setMyBang((b) => (b && b.id === m.id ? null : b));
+          setBang((b) => (b.my && b.my.id === m.id ? { ...b, my: null } : b));
         } else if (m.type === "usage") {
           // Tokens are per-turn → sum for the session total. Cost is already
           // the session-cumulative figure → take it as-is, never add (T2.6).
@@ -217,8 +236,7 @@ export function Shell() {
     const m = text.match(/^!\s*(.+)$/s);
     if (m) {
       const command = m[1].trim();
-      setMyBang({ id: bus.sendBang(command), command });
-      setBangTail("");
+      setBang({ my: { id: bus.sendBang(command), command }, tail: "" });
     } else {
       bus.sendPrompt(text);
     }
@@ -232,16 +250,16 @@ export function Shell() {
     <div className="shell">
       {showOnboarding && (
         <Onboarding
-          agents={agents}
-          defaultCwd={tildify(daemon.cwd, daemon.home)}
-          error={onbError}
+          agents={daemonInfo.agents}
+          defaultCwd={tildify(daemonInfo.cwd, daemonInfo.home)}
+          error={notices.onboarding}
           onPick={(agent, cwd) => {
-            setOnbError(null);
+            setNotices((n) => ({ ...n, onboarding: null }));
             bus.createSession(agent, cwd);
           }}
         />
       )}
-      {sessionNotice && (
+      {notices.session && (
         // R.4c: SHELL-OWNED notice — honest about the swap the server made.
         <div className="session-notice">
           <span className="session-notice-text">
@@ -250,20 +268,20 @@ export function Shell() {
           </span>
           <button
             className="session-notice-dismiss"
-            onClick={() => setSessionNotice(false)}
+            onClick={() => setNotices((n) => ({ ...n, session: false }))}
             title="Dismiss"
           >
             ✕
           </button>
         </div>
       )}
-      {refusedNotice && (
+      {notices.refused && (
         // R.4i: SHELL-OWNED — the relay refused a subscription-backed session.
         <div className="session-notice">
-          <span className="session-notice-text">{refusedNotice}</span>
+          <span className="session-notice-text">{notices.refused}</span>
           <button
             className="session-notice-dismiss"
-            onClick={() => setRefusedNotice(null)}
+            onClick={() => setNotices((n) => ({ ...n, refused: null }))}
             title="Dismiss"
           >
             ✕
@@ -302,19 +320,19 @@ export function Shell() {
           </button>
         </div>
       )}
-      {myBang && (
+      {bang.my && (
         <BangBar
-          command={myBang.command}
-          tail={bangTail}
-          onInput={(data) => bus.sendBangInput(myBang.id, data)}
-          onKill={() => bus.killBang(myBang.id)}
+          command={bang.my.command}
+          tail={bang.tail}
+          onInput={(data) => bus.sendBangInput(bang.my!.id, data)}
+          onKill={() => bus.killBang(bang.my!.id)}
         />
       )}
       <PromptBox
         onSend={send}
         busy={busy}
         onInterrupt={bus.interrupt}
-        cwd={tildify(meta.cwd, daemon.home)}
+        cwd={tildify(meta.cwd, daemonInfo.home)}
       />
       <StatusBar
         connected={connected}
@@ -325,8 +343,8 @@ export function Shell() {
         theme={theme}
         onToggleTheme={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
         onEndSession={meta.sessionId ? bus.endSession : undefined}
-        relay={daemon.relay}
-        version={daemon.version}
+        relay={daemonInfo.relay}
+        version={daemonInfo.version}
       />
     </div>
   );
