@@ -210,6 +210,325 @@ here. Everything below marked `[ ]` is the remaining work.
 
 ---
 
+## Phase G — Collapse the relay duplication (do before Phase H)
+
+Origin: same 2026-07-14 review. The relay's shared source is vendored
+byte-identically in TWO places — `genui-shell/relay-service/` and
+`genui-relay/src/` — held in lockstep by a sync script; Kyle called the
+"keep two copies consistent" arrangement a maintainability wart. It was always
+explicitly temporary: `relay-service/` was the dev source of truth *only until
+the relay's first deploy* (the umbrella `genui/CLAUDE.md` + DEPLOY.md §5),
+after which `genui-relay` becomes canonical and `relay-service/` "retires to a
+pointer." The relay is now deployed and live (`relay.mirafold.sh`), so that
+condition is met and this cleanup is simply due.
+
+**Why it is its own phase, sequenced strictly before Phase H:** it is NOT a
+behavior-preserving move like Phase H's steps — it flips the cross-repo source
+of truth, rewires a Tier-2 test, and retires the sync mechanism, with
+verification owed in BOTH repos. Keeping it out of Phase H protects that
+phase's clean "behavior-preserving, exact-count" invariant. And doing it first
+means Phase H reorganizes the settled, smaller relay surface once, instead of
+carefully preserving (via `sync:check`) a duplication it would then dismantle.
+
+**Scope decision (2026-07-14):** do the license-independent core now. Kyle is
+leaning heavily toward making everything open (MIT) and has explicitly set the
+git-history question aside — so there is NO history scrub in this phase and no
+gating on the MIT-vs-private call. The one thing deferred is the eventual
+public-clone story (a bare public `genui-shell` clone won't have the sibling
+`genui-relay`, so the real-daemon relay itest becomes sibling-dependent) —
+which the leaning-open direction makes largely moot and which is a launch-time
+detail, not this phase's concern.
+
+- [ ] **Step G.1 — Retire the vendored `relay-service/` copy; `genui-relay`
+  becomes the single source of truth**
+  - Goal: one home for the relay service. No more byte-identical second copy
+    kept in lockstep; the maintainability burden is gone.
+  - Build: make `genui-relay/src/` the canonical source. In `genui-shell`,
+    reduce the top-level `relay-service/` from a full vendored copy to a thin
+    pointer (a short README stating the relay now lives in the `genui-relay`
+    repo and how the local itest sources it) — keeping NO duplicated `src/`,
+    `Dockerfile`, or `fly.toml` in `genui-shell`. Rewire the real-daemon relay
+    test `server/relay-service.itest.ts` to obtain the relay under test from
+    the canonical sibling `genui-relay` (the sibling-directory relationship the
+    umbrella already relies on) instead of the vendored copy. Retire the now-
+    unnecessary sync machinery: `genui-relay/scripts/sync-from-genui-shell.sh`
+    and the `sync` / `sync:check` npm scripts (nothing to keep in sync once
+    there is a single copy). Update every doc that describes the sync
+    arrangement (this repo's README + DEPLOY.md §5, `genui-relay`'s README +
+    ARCHITECTURE.md, and the umbrella `genui/CLAUDE.md` sync section).
+  - Cross-repo — verify in BOTH: with `genui-relay` as the source of truth, its
+    standalone suite is green (`npm test`, `npm run typecheck`); and from
+    `genui-shell`, `yarn test:server` is green — specifically
+    `relay-service.itest.ts` still verifies the relay against a REAL daemon, now
+    sourced from the sibling. `npm run smoke` (against the deployed relay) still
+    passes.
+  - Files: `genui-shell/relay-service/` (collapsed to a pointer),
+    `server/relay-service.itest.ts` (rewired), `README.md`, `DEPLOY.md`;
+    `genui-relay/scripts/`, its `package.json`, README + ARCHITECTURE.md; the
+    umbrella `genui/CLAUDE.md`.
+  - Done when: no byte-identical relay duplication remains (a diff confirms
+    `genui-shell` holds no second copy of the relay `src/`), `genui-relay` is
+    the sole source, the real-daemon relay itest passes in `genui-shell`
+    sourcing from the sibling, and the sync scripts are gone with no doc still
+    telling a reader to run them.
+
+---
+
+## Phase H — Human legibility (opened 2026-07-14; the immediate next work)
+
+Origin: Kyle read the codebase cold (2026-07-14) and found it hard to enter —
+a flat 47-file `server/`, no obvious way in, `Shell.tsx` dense to the point of
+illegibility, plan-step shorthand in comments that assumes this document, and
+a stale legacy `workspace/` directory. The requirement, in his words: **the
+repo must be maintainable by a human with no assistant** — if all LLMs stop
+working tomorrow, work continues. Structure should carry "what lives where,"
+names should carry "what each thing is for," and the README shrinks toward
+the things structure *cannot* express (the contracts, the security model,
+the why).
+
+**Sequencing:** this phase executes before any further Phase R build step.
+R.4l's *intake* (writing findings down) continues in parallel — it changes
+docs, not code — but no other build work starts until H.13 closes.
+
+**Hard rules for every step in this phase:**
+
+- **Behavior-preserving only.** No logic changes, no renames of files or
+  exported symbols (folder context does the disambiguating — e.g.
+  `sessions/registry.ts` no longer collides mentally with `registry-spec.ts`),
+  no protocol changes, no dependency changes. The one exception is H.9/H.10,
+  which restructure `Shell.tsx` internals without changing what it does.
+- **Smaller over larger.** If a step turns out to hide two ideas, split it and
+  add the letter (H.4b style) rather than pushing through.
+- **Moves use `git mv`** so history and blame survive.
+- **The H verification ritual** (referenced by every step as "the ritual"):
+  1. Record the test counts each tier prints *before* starting the step.
+  2. After the step: `yarn typecheck && yarn test` — counts must match the
+     recorded ones EXACTLY (a dropped file passes silently otherwise; the
+     recursive `server/**` globs should make moves invisible, and count
+     parity is the proof).
+  3. Steps that touch server runtime files or `Shell.tsx` (H.2–H.10) also run
+     `yarn test:server && yarn test:e2e` (e2e rebuilds `dist`, so it also
+     proves the build).
+  4. Phase G already retired the `relay-service/` sync, so there is no
+     `sync:check` to run here; the relay-adjacent steps (H.2, H.3) instead
+     confirm the real-daemon relay itest (part of `yarn test:server`) stays
+     green.
+  5. A repo-wide grep for each old path finds only PLAN-ARCHIVE.md and git
+     history — README/docs mentions of a moved file are updated **in the same
+     step**, so the repo is fully consistent at every step boundary.
+
+**Known landmines (verified 2026-07-14 — each is pinned to a step):**
+
+1. **Entry points stay at the server root, permanently.** `bin/mirafold.js`
+   hardcodes `dist-server/index.js`, and `server/adapters/render-mcp-cmd.ts`
+   resolves the MCP subprocess by *runtime* relative path (`../render-mcp.ts`
+   in dev; `render-mcp.js` beside the bundle when packaged). The esbuild
+   `build:server` output layout follows its entry paths. Moving `index.ts` or
+   `render-mcp.ts` breaks installed daemons — so they don't move, ever, and
+   the target tree below documents root = entry points + shared contracts.
+2. **The `@relay-crypto` alias is declared in BOTH `tsconfig.json` and
+   `vite.config.ts`** and must change in both in the same commit (H.3).
+   `@protocol` and `@registry-spec` point at files that do not move.
+3. **`relay-service/` (top-level) was collapsed to a pointer by Phase G** —
+   `genui-relay` is now the sole source of the relay, with no byte-identical
+   copy or `sync:check` left to guard. Phase H does not touch the pointer; the
+   real-daemon relay itest (`relay-service.itest.ts`, now sourcing from the
+   sibling `genui-relay`) staying green is the proof.
+4. **`server/provider-policy.ts` is cited by that literal path** in both
+   CLAUDE.md files, BUSINESS.md, README, and the umbrella docs — it stays at
+   the root so no citation goes stale.
+5. **Open PLAN steps name file paths** (e.g. Q.1's `server/app.e2e.ts`) —
+   H.13 sweeps this document's open steps for moved paths.
+
+**Target tree (the deliverable, drawn in full so every step knows its end
+state — annotations become the README tree in H.13):**
+
+```
+server/
+  index.ts              entry point: the daemon (HTTP + WS)   [root: landmine 1]
+  render-mcp.ts         entry point: the stdio render-MCP subprocess [root: landmine 1]
+  render-tools.ts       the render_* tool definitions that subprocess serves
+  protocol.ts (+test)   THE WIRE CONTRACT (@protocol)         [root: contract]
+  registry-spec.ts (+test)  generative-UI component schemas (@registry-spec) [root: contract]
+  provider-policy.ts (+test) the dated credential-policy matrix [root: landmine 4]
+  version.ts (+test)    build-time version resolution
+  adapters/             (unchanged) one engine adapter per agent + the mock
+  relay/                the remote-viewport path: relay-client, relay-crypto
+                        (@relay-crypto), relay-protocol, relay-stub,
+                        relay-test-client + relay/relay-service itests, relay e2e
+  sessions/             the registry + viewport machinery: registry, connection,
+                        actions, ws-liveness + their tests and the session/
+                        end-session/hostile-client itests
+  security/             auth (token gate) + permissions (canUseTool policy) + tests
+  pty/                  the `!` passthrough: pty.ts + bang itest
+  testing/              itest-harness + the whole-product e2e suites
+                        (app, launcher, phone, resilience) — subsystem-specific
+                        tests live beside their subsystem, not here
+web/src/
+  session-bus.ts        NEW (H.9): the socket + message bus extracted from Shell
+  (everything else unchanged in place; registry/ already reads well)
+```
+
+**Non-goals, deliberate:** `RenderZone.tsx` stays whole (one cohesive job —
+the transcript-entry union and its renderer; splitting it would scatter, not
+clarify). No web/src folder reshuffle (one component per file already reads).
+`adapters/` and `web/src/registry/` are untouched. No renames anywhere.
+
+- [ ] **Step H.1 — Sweep the legacy `workspace/` scratch directory**
+  - Goal: the stale pre-4.8 session-scratch dirs stop making the checkout
+    look messier than the repo is.
+  - Build: verify first — grep proves no code creates or resolves a literal
+    `./workspace` path anymore (as of 2026-07-14 only two comments in
+    `registry.ts`/`permissions.ts` mention the old behavior; keep those,
+    they explain history). Then delete the directory from disk, remove the
+    `workspace/` line from `.gitignore`, and update README's tree line that
+    documents it ("legacy scratch dirs"). If the grep finds a live writer,
+    stop, keep the gitignore line, and record why here instead.
+  - Files: `workspace/` (deleted), `.gitignore`, `README.md`.
+  - Done when: a fresh clone and the local checkout show no `workspace/`,
+    nothing recreates it across a full `yarn test:server && yarn test:e2e`
+    run, and the ritual passes.
+
+- [ ] **Step H.2 — Carve out `server/relay/` (the non-aliased files)**
+  - Goal: the eight-file relay family reads as one subsystem.
+  - Build: `git mv` into `server/relay/`: `relay-client.ts`,
+    `relay-protocol.ts` + its test, `relay-stub.ts`, `relay-test-client.ts`,
+    `relay.itest.ts`, `relay-service.itest.ts`, `relay.e2e.ts`. Fix imports
+    (typecheck enforces completeness). Update the README/docs mentions of the
+    moved paths (README cites `server/relay-protocol.ts`,
+    `server/relay-client.ts`, `server/relay-stub.ts`,
+    `server/relay-service.itest.ts`). `relay-crypto` waits for H.3 — this
+    step deliberately touches no alias.
+  - Files: the seven moved files, their importers, `README.md`.
+  - Done when: the ritual passes in full (all three tiers with exact count
+    parity), and the old-path grep is clean.
+
+- [ ] **Step H.3 — Move `relay-crypto` + repoint the `@relay-crypto` alias**
+  - Goal: the aliased file joins its family, with the alias change isolated
+    so any failure is unambiguous.
+  - Build: `git mv` `relay-crypto.ts` + `relay-crypto.test.ts` into
+    `server/relay/`; update the `@relay-crypto` path in **both**
+    `tsconfig.json` and `vite.config.ts` (landmine 2) in the same commit.
+  - Files: the two moved files, `tsconfig.json`, `vite.config.ts`.
+  - Done when: the ritual passes in full — `yarn test:e2e`'s rebuild is the
+    proof the Vite side of the alias is right, typecheck proves the tsc side.
+
+- [ ] **Step H.4 — Carve out `server/sessions/`, part 1: the state core**
+  - Goal: the session registry and the viewport/connection machinery read as
+    the product's core subsystem.
+  - Build: `git mv` into `server/sessions/`: `registry.ts` + its test +
+    itest, `connection.ts`, `actions.ts` + test. Fix imports; sweep docs for
+    the moved paths.
+  - Files: the six moved files, their importers, `README.md`.
+  - Done when: the ritual passes in full with exact count parity.
+
+- [ ] **Step H.5 — Carve out `server/sessions/`, part 2: liveness + the
+  session itests**
+  - Goal: finish the sessions folder — the cross-cutting session integration
+    tests live with the subsystem they exercise.
+  - Build: `git mv` into `server/sessions/`: `ws-liveness.ts` + test + itest,
+    `session.itest.ts`, `end-session.itest.ts`, `hostile-client.itest.ts`.
+    Fix imports (these lean on `itest-harness.ts`, still at root until H.8 —
+    relative paths change, typecheck enforces).
+  - Files: the seven moved files, their importers.
+  - Done when: the ritual passes in full with exact count parity.
+
+- [ ] **Step H.6 — Carve out `server/security/`**
+  - Goal: the two trust gates — who may connect (`auth`) and what a tool may
+    do (`permissions`) — are findable as one subsystem.
+  - Build: `git mv` into `server/security/`: `auth.ts` + test + itest,
+    `permissions.ts` + test. Fix imports; update README's §5 mentions of
+    `server/permissions.ts` and `server/auth.ts`.
+  - Files: the five moved files, their importers, `README.md`.
+  - Done when: the ritual passes in full with exact count parity.
+
+- [ ] **Step H.7 — Carve out `server/pty/`**
+  - Goal: the `!` passthrough machinery is one folder.
+  - Build: `git mv` into `server/pty/`: `pty.ts` + test, `bang.itest.ts`.
+    Fix imports; sweep docs.
+  - Files: the three moved files, their importers.
+  - Done when: the ritual passes in full with exact count parity.
+
+- [ ] **Step H.8 — Carve out `server/testing/`**
+  - Goal: cross-cutting test infrastructure stops crowding the root; what
+    remains at `server/` root is exactly the spine (entry points + contracts).
+  - Build: `git mv` into `server/testing/`: `itest-harness.ts` and the four
+    whole-product e2e suites (`app.e2e.ts`, `launcher.e2e.ts`, `phone.e2e.ts`,
+    `resilience.e2e.ts`). Fix the harness imports across every itest (all
+    folders). Note for H.13: open step Q.1 cites `server/app.e2e.ts`.
+  - Files: the five moved files, every itest that imports the harness.
+  - Done when: the ritual passes in full with exact count parity, and
+    `ls server/*.ts` shows only the documented root spine.
+
+- [ ] **Step H.9 — `Shell.tsx`: extract the session bus**
+  - Goal: the hand-rolled socket + pub/sub machinery — the single most
+    disorienting block in the file — becomes its own named module beside
+    `ws.ts`, so `Shell.tsx` stops embedding a messaging system mid-component.
+  - Build: lift the `useMemo` bus (SocketClient construction, listener sets,
+    hello/attach logic, the `session_created` URL handling, `sendAction`/
+    `sendPrompt` senders) into `web/src/session-bus.ts` with an explicit
+    interface; `Shell.tsx` consumes it. Pure extraction — identical wire
+    behavior, identical reconnect/resume semantics (the 4.4 tail-resume path
+    and the R.4c fresh-session notice hook must come through untouched).
+  - Files: `web/src/session-bus.ts` (new), `web/src/Shell.tsx`.
+  - Done when: the ritual passes in full — Tier 3 is the real gate here
+    (attach/resume/replay are all driven in headless Chrome by the existing
+    suites), with exact count parity and no test edited to accommodate.
+
+- [ ] **Step H.10 — `Shell.tsx`: group the state**
+  - Goal: the wall of ~13 independent `useState` hooks reads as a handful of
+    concerns a newcomer can count on one hand.
+  - Build: group related state without changing behavior — the natural
+    clusters are the dismissable notices (`sessionNotice`, `refusedNotice`,
+    `onbError`), the bang pair (`myBang`, `bangTail`), and session/daemon
+    metadata; a small reducer or cohesive state objects, whichever reads
+    better in place. Each hook's existing constraint comment moves with its
+    field. Judgment is allowed on the exact grouping; the test is that the
+    declarations read as ~5 ideas, not 13.
+  - Files: `web/src/Shell.tsx`.
+  - Done when: the ritual passes in full with exact count parity, and the
+    file's state section fits on one screen with its comments intact.
+
+- [ ] **Step H.11 — Comment legibility pass, server side**
+  - Goal: every comment stands alone for a reader who has never seen this
+    document — the plan-step code becomes a suffix, never the substance.
+  - Build: sweep `server/` (adapters and relay included) for comments whose
+    meaning depends on a bare step id ("R.4c:", "T2.4:", "4.9:") and reword
+    each to state the constraint in full with the id as a trailing
+    parenthetical — the existing best examples (e.g. connection.ts's fuller
+    notes) are the template. Zero code changes; comment-only diff.
+  - Files: `server/**/*.ts` (comments only).
+  - Done when: a grep for comment lines *opening* with a bare step id finds
+    none under `server/`, and the ritual's typecheck + Tier 1 pass (a
+    comment-only diff needs no Tier 2/3).
+
+- [ ] **Step H.12 — Comment legibility pass, web side**
+  - Goal: same standard as H.11 across the browser code.
+  - Build: same sweep over `web/src/` (registry included).
+  - Files: `web/src/**/*.ts(x)` (comments only).
+  - Done when: same as H.11, for `web/`.
+
+- [ ] **Step H.13 — Docs re-synced to the new shape + final full sweep**
+  - Goal: the README's map matches reality, a newcomer's first two minutes
+    are scripted, and nothing anywhere cites a pre-H path.
+  - Build: (a) redraw README's annotated tree to the target tree above,
+    folding in each folder's one-line purpose; (b) add a short "start here"
+    orientation at the top of the architecture section — the spine in six
+    lines: `protocol.ts` is the contract, `index.ts`/`main.tsx` are the entry
+    points, `adapters/` normalizes each agent, `Shell` is trusted,
+    `RenderZone` paints, `registry/` is the component vocabulary; (c) sweep
+    THIS document's open steps for moved paths (Q.1 at minimum); (d) sweep
+    CLAUDE.md, docs/, and .github/ for stale paths; (e) run everything one
+    last time: `yarn typecheck && yarn test && yarn test:server &&
+    yarn test:e2e` (Phase G already retired the cross-repo `sync:check`).
+  - Files: `README.md`, `PLAN.md`, `CLAUDE.md`, `docs/*` as found.
+  - Done when: every suite is green at recorded-count parity, the old-path
+    grep across the whole repo (docs included) is clean, and the phase's
+    origin test passes in the only way that matters: the tree alone tells a
+    newcomer where each subsystem lives.
+
+---
+
 ## Phase 4 — Product hardening (the "others would want it" path)
 
 Goal of the phase: persistence, multiple sessions, polish, robust resume, and
