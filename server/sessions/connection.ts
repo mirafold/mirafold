@@ -5,7 +5,7 @@ import type { SessionEntry, SessionRegistry } from "./registry";
 import { runActionTool } from "./actions";
 import { availableAgents, defaultAgent } from "../adapters";
 import { allowedOverRelay } from "../provider-policy";
-import { spawnBang } from "../pty";
+import { spawnBang } from "../pty/pty";
 import { VERSION } from "../version";
 
 // How much of a `!` command's output rides into the agent's context with the

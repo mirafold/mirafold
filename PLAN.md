@@ -510,9 +510,10 @@ clarify). No web/src folder reshuffle (one component per file already reads).
     outside dated `[x]` history. Ritual: typecheck + 159/159 + 20/20 e2e; one
     Tier-2 run flaked 66/74 (parallel real-daemon contention right after a
     full-suite back-to-back — not the move; the failures didn't name the moved
-    files' subjects) and three consecutive re-runs are 74/74 clean. Worth an
-    eye: if Tier-2 flakes under load again, a `--test-concurrency` cap for
-    `test:server` is the likely fix (R.4l-adjacent, not this phase).
+    files' subjects) and three consecutive re-runs are 74/74 clean. (The
+    flake recurred during H.7 with roving relay-itest timeouts;
+    `test:server` now runs `--test-concurrency=1` like `test:e2e` — see
+    H.7's status.)
 
 - [x] **Step H.6 — Carve out `server/security/`**
   - Goal: the two trust gates — who may connect (`auth`) and what a tool may
@@ -531,12 +532,26 @@ clarify). No web/src folder reshuffle (one component per file already reads).
     PLAN history. Ritual green with exact parity: typecheck, 159/159, 74/74,
     20/20.
 
-- [ ] **Step H.7 — Carve out `server/pty/`**
+- [x] **Step H.7 — Carve out `server/pty/`**
   - Goal: the `!` passthrough machinery is one folder.
   - Build: `git mv` into `server/pty/`: `pty.ts` + test, `bang.itest.ts`.
     Fix imports; sweep docs.
   - Files: the three moved files, their importers.
   - Done when: the ritual passes in full with exact count parity.
+  - Status: **DONE 2026-07-15.** Three files `git mv`'d into `server/pty/`;
+    `sessions/registry.ts` + `sessions/connection.ts` repointed to
+    `../pty/pty`, `bang.itest.ts`'s root imports gained a `../`; README tree
+    gains the `pty/` block. Ritual green with exact parity: typecheck,
+    159/159, 74/74, 20/20. **Plus one ritual-infrastructure fix that this
+    step's runs forced:** H.5's Tier-2 flake recurred here (twice in a row,
+    roving timeouts across the parallel relay itests — each itest file spawns
+    real daemons, and the per-CPU default occasionally starves a handshake
+    past its timeout; every failing test passes in isolation, no leaked
+    processes involved). `test:server` now runs `--test-concurrency=1`,
+    matching the choice `test:e2e` already made for the same reason — the
+    ritual's Tier-2 gate must be deterministic for the rest of Phase H to
+    lean on it. Cost: ~2-3 min instead of ~40 s. Two consecutive serialized
+    runs: 74/74, 74/74.
 
 - [ ] **Step H.8 — Carve out `server/testing/`**
   - Goal: cross-cutting test infrastructure stops crowding the root; what

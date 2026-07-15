@@ -43,7 +43,7 @@
     "prepack": "yarn build",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test \"server/**/*.test.ts\" \"web/src/**/*.test.ts\"",
-    "test:server": "node --import tsx --test \"server/**/*.itest.ts\"",
+    "test:server": "node --import tsx --test --test-concurrency=1 \"server/**/*.itest.ts\"",
     "test:e2e": "yarn build && node --import tsx --test --test-concurrency=1 \"server/**/*.e2e.ts\""
   },
   "dependencies": {

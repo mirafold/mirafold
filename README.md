@@ -356,7 +356,8 @@ server/            the local daemon (Node, run with tsx)
     auth.ts            the 4.5 auth predicates (token cookie, loopback Origin) —
                        pure functions; index.ts wires them into HTTP + WS
     permissions.ts     canUseTool policy: workspace gating + browser prompts (T.3)
-  pty.ts             the `!` passthrough's PTY runner (node-pty, 4.9)
+  pty/               the `!` passthrough (H.7):
+    pty.ts             the PTY runner (node-pty, 4.9)
   sessions/          the session state core (H.4):
     registry.ts        SessionRegistry: sessions decoupled from connections (4.2)
     connection.ts      one viewport's server side, transport-agnostic (R.1) —
@@ -879,7 +880,9 @@ exists beside the code, tsx + TS source in dev.
 ```sh
 yarn typecheck    # tsc --noEmit over server + web + vite config (tests included)
 yarn test         # Tier 1 — pure/unit, node:test + tsx, ~3s, run on every commit
-yarn test:server  # Tier 2 — spawns the real daemon (mock-forced), drives real ws sockets, ~45s
+yarn test:server  # Tier 2 — spawns the real daemon (mock-forced), drives real ws sockets, ~2-3min
+                  # (serialized like Tier 3: parallel itest files starve each other's
+                  # daemon handshakes into flaky timeouts)
 yarn test:e2e     # Tier 3 — yarn build + headless Chrome (playwright-core), opt-in, ~75s
                   #   (files run sequentially — parallel Chrome suites flake on modest hardware)
 ```
