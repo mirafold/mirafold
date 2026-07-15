@@ -1,7 +1,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import type { WireMsg } from "../protocol";
-import { startDaemon, createSession, TestClient, type Daemon } from "../itest-harness";
+import { startDaemon, createSession, TestClient, type Daemon } from "../testing/itest-harness";
 
 // L.2b: the `!` passthrough (4.9) over a real PTY — and its core security
 // promise: bang_input is EPHEMERAL. Data written to a running command's stdin

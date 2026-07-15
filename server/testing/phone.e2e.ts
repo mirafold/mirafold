@@ -2,7 +2,7 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
 import { startDaemon, type Daemon } from "./itest-harness";
-import { startRelayStub, type RelayStub } from "./relay/relay-stub";
+import { startRelayStub, type RelayStub } from "../relay/relay-stub";
 
 // R.4, the locally-verifiable slice: a phone-sized browser pairs through the
 // relay stub, drives a full session comfortably (prompt → stream → rendered

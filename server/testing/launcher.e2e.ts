@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 // first on PATH records where its stdio really points and whether it was
 // detached into its own session.
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const LAUNCHER = path.join(ROOT, "bin", "mirafold.js");
 const DAEMON = path.join(ROOT, "dist-server", "index.js");
 

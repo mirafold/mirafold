@@ -1,7 +1,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import type { WireMsg } from "../protocol";
-import { startDaemon, createSession, TestClient, type Daemon } from "../itest-harness";
+import { startDaemon, createSession, TestClient, type Daemon } from "../testing/itest-harness";
 
 // #10 (viewport leak), Tier-2: the real daemon reaps a HALF-OPEN local viewport
 // — a socket that stops responding but never sends `close` (tab navigated away,

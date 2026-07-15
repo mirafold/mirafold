@@ -1,7 +1,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import type { WireMsg } from "../protocol";
-import { startDaemon, TestClient, type Daemon } from "../itest-harness";
+import { startDaemon, TestClient, type Daemon } from "../testing/itest-harness";
 import { RemoteClient, broadcasts, waitForLog as waitForLogH } from "./relay-test-client";
 import {
   CLOSE_CODE_TAKEN,
