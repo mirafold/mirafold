@@ -28,6 +28,7 @@ export function StatusBar({
   usage,
   theme,
   onToggleTheme,
+  onOpenSettings,
   onEndSession,
   relay,
   version,
@@ -40,6 +41,9 @@ export function StatusBar({
   // Shell-owned theme toggle — dark is the default and the identity (4.3).
   theme: "dark" | "light";
   onToggleTheme: () => void;
+  // Opens the settings card (S.4) — the gear beside the pill. The card
+  // itself mounts in Shell; this bar only carries the button.
+  onOpenSettings?: () => void;
   // End this session (absent when there's no session yet). Two-click
   // confirm lives in this shell-owned control, never in agent output (#11).
   onEndSession?: () => void;
@@ -125,6 +129,13 @@ export function StatusBar({
           }}
         >
           {confirmEnd ? "end?" : "end"}
+        </button>
+      )}
+      {/* Settings gear (S.4) — beside the pill, never past home (⌂ stays the
+          far-right control). The pill below is LOCKED unchanged (Phase S). */}
+      {onOpenSettings && (
+        <button className="sb-settings" onClick={onOpenSettings} title="Settings">
+          ⚙
         </button>
       )}
       {/* Segmented switch: both modes visible, the current one lit — nothing
