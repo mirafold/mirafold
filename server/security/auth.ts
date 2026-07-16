@@ -40,6 +40,17 @@ export function cookieToken(cookieHeader?: string): string | undefined {
 }
 
 /**
+ * Where the post-token redirect may send the browser. A request path always
+ * starts with "/", but one starting with "//" (or "/\", which browsers treat
+ * the same) becomes a protocol-relative Location header — an off-machine
+ * redirect. Only someone who already holds the token can trigger it, so this
+ * is principle, not a live hole (2026-07-15 audit #4).
+ */
+export function safeRedirectPath(path: string): string {
+  return path.startsWith("//") || path.startsWith("/\\") ? "/" : path;
+}
+
+/**
  * Cross-site WebSocket hijacking guard: a browser always sends Origin on a WS
  * handshake, so we require it to be a loopback host. Non-browser clients (wscat,
  * tests) send no Origin and are allowed through — they can't be weaponized by a

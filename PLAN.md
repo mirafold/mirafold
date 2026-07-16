@@ -846,6 +846,10 @@ with it. Both sequence BEFORE R.5.**
     commit, CONTRIBUTING.md landed in both repos that day; what remains
     for this step is only the mechanics: enable the GitHub DCO status
     check on both repos as part of the public flip.
+  - **Gate on the relay flip (2026-07-15 audit):** before `genui-relay` goes
+    public in (b), run a dedicated security-audit pass over that repo — the
+    shell got its own on 2026-07-15; public security-marketed code gets
+    adversarial readers on day one, so the relay flips only after its pass.
   - Done when: a written release-sequence exists that R.6 and R.7 just
     follow, with no open "how do we actually ship this" questions.
 
@@ -957,6 +961,12 @@ with it. Both sequence BEFORE R.5.**
     its caveat drop; signs of enforcement (the Anthropic pattern:
     server-side blocks first, docs later) mean flipping it to blocked —
     one line, the copy sits ready.
+  - **Tracked-docs & history disclosure review (2026-07-15 audit):** before
+    "repo public", read what actually goes public — the full git history plus
+    tracked candor docs (`BUSINESS.md`, `PLAN.md`/archive: pricing strategy,
+    provider-policy legal reasoning, negotiation-sensitive detail). Decide
+    keep / trim / move-private for each; no secrets exist in history
+    (verified 2026-07-15), this is a business-disclosure call, not a leak hunt.
   - Build, same day, in order: repo public → `npm publish` over the 0.0.1
     placeholder → verify `npx mirafold` against the real registry (the
     one check that's unverifiable until publish) → post (X + Show HN +
@@ -1255,6 +1265,13 @@ has a home in this plan, the entry points there instead of duplicating it.
 
 - [ ] **Skills as buttons** — surface the agent's skills / slash commands as
   clickable shell affordances instead of typed invocations.
+
+- [ ] **Action-button transparency** (2026-07-15 audit #5, optional
+  hardening) — a question/card button's visible label can differ from the
+  text it sends as the user's turn (both model-authored). Backstops exist
+  (the sent text echoes visibly; consequential tools still ask), so this is
+  comfort, not a hole: show the exact to-be-sent text on hover (title
+  attribute) so a user can inspect before clicking.
 
 - [ ] **Archived-session fleetview** — a fleetview over ended sessions, to
   find and resume old ones.

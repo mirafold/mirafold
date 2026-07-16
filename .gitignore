@@ -1,6 +1,8 @@
 node_modules/
 dist/
 .env
+# permissions.ts guards .env.local as a secret file — keep git out of it too
+.env.local
 *.log
 .claude/
 dist-server/

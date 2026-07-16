@@ -10,7 +10,7 @@ import { openConnection } from "./sessions/connection";
 import { sweepLiveness } from "./sessions/ws-liveness";
 import { startRelayClient } from "./relay/relay-client";
 import { MIN_PAIRING_CODE_LENGTH, resolvePairingCode } from "./relay/relay-protocol";
-import { COOKIE_NAME, cookieToken, isLoopbackOrigin, tokensMatch, verifyToken } from "./security/auth";
+import { COOKIE_NAME, cookieToken, isLoopbackOrigin, safeRedirectPath, tokensMatch, verifyToken } from "./security/auth";
 import { VERSION } from "./version";
 
 // Last-gasp handlers — a crash stays loud and exits nonzero, it just
@@ -114,7 +114,7 @@ if (AUTH_ENABLED) {
     if (tokensMatch(cookieToken(req.headers.cookie), AUTH_TOKEN)) return next();
     if (typeof req.query.token === "string" && tokensMatch(req.query.token, AUTH_TOKEN)) {
       res.cookie(COOKIE_NAME, AUTH_TOKEN, { httpOnly: true, sameSite: "strict", path: "/" });
-      return res.redirect(req.path);
+      return res.redirect(safeRedirectPath(req.path));
     }
     // A bare denial is a dead end — name the recovery. The right URL
     // (with ?token=…) is in the terminal that launched mirafold (R.4b).

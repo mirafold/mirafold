@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cookieToken, isLoopbackOrigin, verifyToken } from "./auth";
+import { cookieToken, isLoopbackOrigin, safeRedirectPath, verifyToken } from "./auth";
 
 test("cookieToken extracts the mirafold_token value", () => {
   assert.equal(cookieToken("mirafold_token=abc"), "abc");
@@ -43,4 +43,11 @@ test("verifyToken rejects a wrong or missing token when enabled", () => {
 test("verifyToken always passes when auth is disabled", () => {
   assert.equal(verifyToken({ headers: {} }, "", false), true);
   assert.equal(verifyToken({ headers: {}, url: "/ws" }, "", false), true);
+});
+
+test("safeRedirectPath: ordinary paths pass, protocol-relative escapes collapse to /", () => {
+  assert.equal(safeRedirectPath("/"), "/");
+  assert.equal(safeRedirectPath("/s/abc-123"), "/s/abc-123");
+  assert.equal(safeRedirectPath("//evil.example.com"), "/");
+  assert.equal(safeRedirectPath("/\\evil.example.com"), "/"); // browsers treat /\ like //
 });
