@@ -23,6 +23,8 @@ export const THEMES: ThemeEntry[] = [
   { id: "light", displayName: "Light", appearance: "light" },
   { id: "solarized-light", displayName: "Solarized Light", appearance: "light" },
   { id: "solarized-dark", displayName: "Solarized Dark", appearance: "dark" },
+  { id: "gruvbox-dark", displayName: "Gruvbox Dark", appearance: "dark" },
+  { id: "dracula", displayName: "Dracula", appearance: "dark" },
 ];
 
 // Two-slot storage (S.3): the mode key predates slots and keeps its exact
