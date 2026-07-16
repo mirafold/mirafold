@@ -213,6 +213,9 @@ export function Shell() {
     if (!ctx) return;
     ctx.beginPath();
     ctx.arc(16, 16, 10, 0, Math.PI * 2);
+    // Literal colors (S.1 exception): a canvas favicon can't consume CSS
+    // vars, and the tab icon isn't part of the themed page — these mirror
+    // the dark palette's --warn-fg/--info/--accent by value.
     ctx.fillStyle =
       state === "permission" ? "#d4a852" : state === "busy" ? "#7ab8ff" : "#4ade80";
     ctx.fill();
