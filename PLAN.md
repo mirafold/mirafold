@@ -1222,18 +1222,29 @@ borrowed themes prove it.
 - [ ] **Step S.4 — Settings button + theme picker UI (shell-owned)**
   - Goal: a **new settings button** in the shell chrome — the one new
     affordance this phase adds (the pill is locked, see charter) — opening
-    the theme picker: grouped "Light themes" / "Dark themes", a small
-    multi-chip color swatch per row so in-between palettes sell themselves
-    visually.
+    the settings card with the theme picker.
+  - **Design locked (Kyle approved 2026-07-16):** a small **gear button
+    beside the pill** opens a **centered modal card** over the translucent
+    `--overlay` scrim — the same idiom as the pairing/onboarding cards
+    (`--shadow-card`, same border/radius language), NOT a popover or drawer.
+    The card is titled "Settings" with an × close; one section today,
+    **Theme**: two labeled groups, "Light themes" / "Dark themes", each row
+    = theme displayName + a short strip of color chips (bg, surface, accent,
+    fg) rendered from the manifest, with a check on the row occupying each
+    slot. Clicking a row repaints the app instantly behind the scrim (live
+    preview — the translucent scrim is the point), moves the check, writes
+    the slot; no confirm/apply. Clicking a theme of the other appearance
+    also flips the active mode to show it (picking is seeing). Esc, scrim
+    click, or × closes. Built to grow more sections later (R.4l's settings
+    surface); works identically on desktop and the phone viewport.
   - Build: picker renders purely from the manifest; clicking a row applies
-    the theme immediately (live preview, no confirm) and writes it into its
-    appearance side's slot. Shell-owned affordances (button + picker) —
-    agent output can never render, wrap, or intercept them (trusted-shell
-    boundary). The pill is not touched, restyled, or repositioned by this
-    step.
+    the theme immediately and writes it into its appearance side's slot.
+    Shell-owned affordances (button + card) — agent output can never
+    render, wrap, or intercept them (trusted-shell boundary). The pill is
+    not touched, restyled, or repositioned by this step.
   - Files: `web/src/components/Shell.tsx` (or a new `ThemePicker.tsx`),
     `web/src/styles.css`.
-  - Done when: Tier-3 drives a real click on the settings button → picker
+  - Done when: Tier-3 drives a real click on the settings button → card
     opens; a real click on a dark-labeled theme → it paints immediately,
     `data-theme` updates, the pill's dark side now means that theme, and
     the light side is untouched — with the pill's own rendering unchanged.
