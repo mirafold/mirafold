@@ -131,107 +131,22 @@ until the previous step's "Done when" is satisfied. Check items off as you go.
 
 ## Completed phases (archived)
 
-Phases 0, T, 1, 2, 3, T2, P, G, and H are **done** — their steps and full dated
+Phases 0, T, 1, 2, 3, T2, P, G, H, and H2 are **done** — their steps and full dated
 status notes now live in **PLAN-ARCHIVE.md** (moved out to keep this document
 focused). Phases G (relay dedup — the sibling repo became the single source)
 and H (human legibility) completed 2026-07-15 and were archived the same day.
+Phase H2 (legibility follow-ups: `web/src/components/` + the root-doc tidy)
+completed and was archived 2026-07-15 as well.
 Phase 4's completed steps (4.1–4.6, 4.8–4.10) joined them 2026-07-08; its
 header stays below with the 4.7 → Phase R pointer. **2026-07-10:** the
 fully-complete steps of Phases R, F, and L (R.1, R.3, R.4b–R.4k, F.1, F.3, F.4,
 L.1) were archived the same way to lean this file out — each keeps a one-line
 `[x]` pointer inline; the full Goal/Build/Files/Status is in PLAN-ARCHIVE.md
-("Phase R / F / L — completed steps"). Only OPEN steps carry their full body
+("Phase R / F / L — completed steps"). **2026-07-15 (second pass):** the done
+steps of Phases K, F, and Q (K.1, K.3, K.8, K.9, K.11, K.12, F.2, Q.2–Q.5)
+were archived the same way ("Phase K / Q — completed steps" + the R/F/L
+section for F.2). Only OPEN steps carry their full body
 here. Everything below marked `[ ]` is the remaining work.
-
----
-
-## Phase H2 — Legibility follow-ups (opened 2026-07-15; the immediate next work)
-
-Origin: a fresh cold read of the post-Phase-H repo (2026-07-15) judged the
-structure sound and surfaced two remaining deviations from common practice —
-`web/src/` mixes PascalCase components with camelCase modules at one flat
-level, and two internal working documents sit at the repo root unannounced.
-Kyle scheduled both immediately. Sequencing: H2 executes before any further
-Phase R build step; Phase K's paper work continues in parallel (it changes
-documents, not code).
-
-**Hard rules, inherited verbatim from Phase H:** behavior-preserving only (no
-logic changes, no renames of files or exported symbols — folder context does
-the disambiguating), moves use `git mv` so history and blame survive, and
-every step runs the H verification ritual: record each tier's test counts
-before the step, then after it `yarn typecheck && yarn test` at EXACT count
-parity; steps that touch runtime files also run `yarn test:server &&
-yarn test:e2e` (e2e rebuilds `dist`, proving the build); a repo-wide grep for
-each old path finds only PLAN-ARCHIVE.md, dated history, and the accepted
-hits named in the step.
-
-- [x] **Step H2.1 — Group the shell-owned components into `web/src/components/`**
-  - Goal: `web/src/` stops mixing component files and plumbing modules at one
-    flat level, and the folder split makes the trust boundary visible in the
-    tree — shell-owned components in `components/`, the agent-paintable
-    vocabulary staying its sibling in `registry/` — the same root-as-spine
-    convention `server/` already follows.
-  - Build: `git mv` the ten shell-owned components and their tests into
-    `web/src/components/`: `Shell.tsx`, `Onboarding.tsx`, `PromptBox.tsx`,
-    `RenderZone.tsx`, `ToolBlock.tsx` (+test), `StatusBar.tsx` (+test),
-    `PinDock.tsx`, `Artifact.tsx` (+test), `FleetView.tsx`,
-    `ConnectDevice.tsx`. Everything else stays at the src root deliberately:
-    `main.tsx` (`web/index.html` hardcodes `/src/main.tsx`), `version.ts`
-    (imported by `server/version.test.ts` as `../web/src/version`), the
-    plumbing modules (`ws.ts` +test, `session-bus.ts`, `agents-meta.ts`
-    +test, `tildify.ts` +test), `styles.css`, `vite-env.d.ts`. `registry/`
-    does not move and does NOT go under `components/` — keeping it a sibling
-    is what makes the trusted/agent-paintable split legible. Fix relative
-    imports only (moved components reach root modules and `../registry/` one
-    level up; `main.tsx` reaches `./components/`); the aliases don't change
-    (`@protocol`/`@registry-spec`/`@relay-crypto` all point at server files).
-    Update README §4's tree and §6's walkthrough paths in the same step.
-  - Known accepted grep hit: `server/adapters/mock.ts` contains the literal
-    string `web/src/RenderZone.tsx` as scripted demo content — it is fake
-    output, not a path; leave it (changing it would change mock bytes).
-  - Files: `web/src/**` (moves + import lines), `README.md`, docs as found.
-  - Done when: the ritual passes at exact count parity across all three
-    tiers, and the old-path grep across the whole repo (docs included) finds
-    only PLAN-ARCHIVE.md history and the mock's demo string.
-  - Status: **DONE 2026-07-15.** Ten components + three tests `git mv`'d
-    (all rename-detected); import fixes exactly as drawn (root modules and
-    `../registry/` one level up; `main.tsx` → `./components/`); no alias or
-    config change needed. README updated in the same step: §1 spine + §3
-    Artifact citation + §4 tree redrawn with the nested `components/` block
-    and its trusted-vs-registry annotation. Ritual green at exact parity
-    159/74/20 (Tier 3 rebuilt dist). Old-path grep across the whole umbrella
-    finds exactly the accepted hits: this step's own note, F.2's dated `[x]`
-    status history (PLAN.md line ~1288 — history stays verbatim, same
-    convention as PLAN-ARCHIVE), and the mock's demo string.
-
-- [x] **Step H2.2 — Root markdown tidy: working docs move under `docs/`**
-  - Goal: the repo root shows only load-bearing documents (README, CLAUDE,
-    PLAN, PLAN-ARCHIVE, BUSINESS, CONTRIBUTING, SECURITY, LICENSE) — internal
-    working notes stop greeting a stranger's first `ls` when the repo goes
-    public at R.7.
-  - Build: `git mv RENAME.md docs/RENAME.md` and
-    `git mv USER-TESTING-FEEDBACK.md docs/USER-TESTING-FEEDBACK.md`. Update
-    RENAME.md's one self-reference and README §4's `docs/` annotation to name
-    both (RENAME.md still deletes itself when R.2 completes; the feedback log
-    remains R.4l/R.5c's intake surface — both keep their roles, only the path
-    changes). Reference sweep verified 2026-07-15 across the umbrella, both
-    repos, and .github: nothing else cites either path; PLAN-ARCHIVE.md
-    mentions are dated history — accepted.
-  - Files: `RENAME.md` → `docs/RENAME.md`, `USER-TESTING-FEEDBACK.md` →
-    `docs/USER-TESTING-FEEDBACK.md`, `README.md`.
-  - Done when: root `ls` shows no working docs, the old-path grep is clean
-    (PLAN-ARCHIVE.md excepted), and `yarn typecheck && yarn test` pass (a
-    docs-only diff needs no Tier 2/3).
-  - Status: **DONE 2026-07-15**, with one discovery the draft missed:
-    `USER-TESTING-FEEDBACK.md` was never tracked — it is gitignored on
-    purpose (private raw intake; clones never see it), so it moved with a
-    plain `mv` and the `.gitignore` line now reads
-    `docs/USER-TESTING-FEEDBACK.md`. Consequently README's `docs/`
-    annotation names only RENAME.md (README must not list a file absent
-    from clones); the feedback log keeps its R.4l/R.5c intake role at the
-    new path. RENAME.md moved via `git mv` (rename-detected), its
-    self-reference updated. Old-path grep clean (the only hits are the H2
-    texts describing the move itself); typecheck + 159/159 Tier 1 green.
 
 ---
 
@@ -304,32 +219,7 @@ same file. Steps marked *(assistant: investigate)* need thorough
 re-verification against current primary sources before acting — do not act
 on this plan's summary alone.
 
-- [x] **Step K.1 — Open the relay (decision executed)** — done 2026-07-15
-  (status note below)
-  - Goal: `genui-relay` becomes public MIT alongside the shell — one
-    licensing story across the product, and "fully open source" becomes a
-    true marketing claim.
-  - Build: swap the relay's `UNLICENSED` for MIT (LICENSE file +
-    `package.json` `license` field; copyright line = the K.2 entity once it
-    exists, Kyle personally until then); a README pass removing the
-    closed-source framing; the repo flips public **per R.5b's written
-    release order**, not ad hoc. When the flip lands, update the umbrella
-    docs (`../CLAUDE.md` open-core paragraph, `../ROADMAP.md`) — dated
-    amendments already mark the decision there. Until the flip, the repo
-    stays private and the existing don't-leak-relay-specifics rule holds.
-  - Done when: the relay repo carries MIT, R.5b's release sequence names the
-    moment it goes public, and no doc still claims the open-core split.
-  - Status (2026-07-15): DONE. `genui-relay` relicensed — `LICENSE` (MIT,
-    same copyright line as the shell's; entity swap owed to K.2/K.8) +
-    `package.json` `license: "MIT"` (`private: true` kept — it's the
-    don't-publish-to-npm flag, orthogonal to source license); README
-    blockquote + ARCHITECTURE.md §6 rewritten for the open state (self-host
-    expected; sold thing = the hosted instance). Shell-side docs reconciled:
-    R.2's "closed source" build text amended, BUSINESS.md §5/§6 updated
-    (§6(2)(c) "relay naturally closed" reversed), and **the public-flip
-    moment is seeded into R.5b's decide-list (b)** — the flip itself
-    executes there, not here. Relay standalone suite 20/20 after the
-    package.json edit. The repo REMAINS PRIVATE until R.5b/R.7 flips it.
+- [x] **Step K.1 — Open the relay (decision executed)** — done 2026-07-15; genui-relay relicensed MIT (LICENSE + package.json), READMEs rewritten for the open state, shell/BUSINESS docs reconciled, the public-flip moment seeded into R.5b(b); repo stays private until that flip lands. → PLAN-ARCHIVE.md.
 
 - [ ] **Step K.2 — Legal entity before the first charge** *(Kyle's hands —
   external filings; ~a week of lead time, start early)*
@@ -347,72 +237,7 @@ on this plan's summary alone.
     created under it — a **hard prerequisite**: no live checkout under a
     personal account, ever.
 
-- [x] **Step K.3 — Provider-terms re-verification** — done 2026-07-15
-  (status note below) *(assistant:
-  investigate — thoroughly, against current primary sources)*
-  - Goal: every row of `server/provider-policy.ts` cites a current, quotable
-    document before launch; the code matches the verified matrix.
-  - The known wrinkle (found 2026-07-15): the matrix's OpenAI row rests on
-    "OpenAI publicly permits ChatGPT accounts in third-party harnesses"
-    (free LOCAL use), but OpenAI's current plan/help pages say reselling
-    access or "using ChatGPT to power third-party services" is prohibited on
-    the paid tiers. There is a defensible reading (a local re-skin driving
-    OpenAI's own Codex CLI is the user using Codex, not a third-party
-    service powered by ChatGPT), but the gap between "publicly permits" and
-    the terms text is wide. Investigate: locate the specific, current OpenAI
-    document permitting Codex/ChatGPT sign-in in third-party harnesses. If
-    it can't be pinned verbatim, flip `SUBSCRIPTION_LOCAL_OK.codex` to
-    `false` — fail closed, the same principle the relay gate already
-    encodes — and update the R.4k onboarding disclosure ("could change" →
-    "changed"). Also re-verify the Anthropic row (re-confirmed 2026-07-15:
-    the Feb 2026 consumer-terms clarification stands) and the Google row;
-    re-date the file's header comment either way.
-  - Done when: each row cites a named, dated source; the code matches; and a
-    launch-week matrix re-check is an explicit line item on R.7 (all three
-    providers moved within six months — assume they move again).
-  - Status (2026-07-15): DONE — investigated against primary sources, and
-    **the OpenAI row FLIPPED to prohibited (fail closed)**. Findings, per row:
-    **Anthropic** — ban re-confirmed, now pinned verbatim to the Claude Code
-    docs "Legal and compliance" page ("Anthropic does not permit third-party
-    developers to offer Claude.ai login or to route requests through Free,
-    Pro, or Max plan credentials on behalf of their users"). **Google** —
-    stronger than a terms question now: Gemini CLI stopped serving individual
-    accounts (free/AI Pro/AI Ultra) 2026-06-18 per the official
-    google-gemini/gemini-cli discussion #28017; API-key use continues under
-    the Gemini API ToS. Side-finding logged into R.6: **Antigravity CLI**
-    announced as Gemini CLI's successor — adapter-impact check added there.
-    **OpenAI** — no written general permission exists: the Codex auth docs
-    are silent, a Codex maintainer deferred to the general ToS when asked
-    directly (openai/codex discussion #8338), and the ChatGPT plan pages
-    prohibit "using ChatGPT to power third-party services"; the permissive
-    evidence (Altman's 2026-05-02 OpenClaw sign-in tweet, reported
-    non-enforcement) is posture, not permission → per this step's rule,
-    `SUBSCRIPTION_LOCAL_OK.codex` flipped to `false`. Code + copy landed:
-    `provider-policy.ts` (header rewritten with per-row citations + the
-    flip), its test, `agents-meta.ts` (codex CONNECT_HINT drops `codex
-    login`; new codex BLOCKED_HINT), adapter comments, e2e expectation;
-    R.4k's "could change" disclosure retired (it changed). Docs reconciled:
-    PLAN Auth decision + R.4l(4), CLAUDE.md (both repos' + umbrella),
-    BUSINESS.md §2 passage, `.env.example`, site FAQ ("Mostly no" → "No") +
-    site CLAUDE copy rule. R.7 gained the launch-week matrix re-check; R.6
-    gained the Antigravity succession check. Verified: `yarn typecheck` +
-    Tier 1 (159) + Tier 2 (74) + Tier 3 (20), all green; site re-rendered
-    headless at 1280w. Flip-back condition documented in the policy header:
-    a written, general OpenAI allowance.
-  - **Amendment (2026-07-15, same day — Kyle's call): the codex row
-    re-flipped to ALLOWED locally, as a disclosed gray area.** Kyle weighed
-    the fail-closed outcome against OpenAI's demonstrated posture and chose
-    permissive-with-full-disclosure, locking it as the standing
-    **disclosed-uncertainty rule** (see the phase header + the canonical
-    statement in `server/provider-policy.ts`). The two clean-making
-    conditions hold in code: (1) the codex CONNECT_HINT states uncertainty,
-    never permission ("not clearly permitted by OpenAI's terms, tolerated
-    in practice; your account, your call") — unit + e2e tests pin both the
-    caveat and the absence of any "OpenAI permits" claim; (2) graceful
-    degradation stays ready — the codex BLOCKED_HINT is kept current though
-    unused, so enforcement is a one-line policy flip. The relay refusal is
-    untouched (absolute bound). All docs re-reconciled to the amended state;
-    all four tiers re-verified green (typecheck, 159/74/20).
+- [x] **Step K.3 — Provider-terms re-verification** — done 2026-07-15 (+ same-day amendment); every row pinned to a dated primary source: the Anthropic ban verbatim, Gemini individual-account service ended 2026-06-18 (API keys continue; Antigravity succession check → R.6), and the codex row first flipped to blocked (no written permission exists), then re-flipped by Kyle to allowed-locally as a disclosed gray area — locking the standing **disclosed-uncertainty rule** (canonical statement in `server/provider-policy.ts`). All four tiers green, twice. → PLAN-ARCHIVE.md.
 
 - [ ] **Step K.4 — Merchant-of-record billing** *(decision 2026-07-15:
   outsource tax/compliance)* — 🟡 investigation done 2026-07-15, **Paddle
@@ -583,53 +408,9 @@ on this plan's summary alone.
     `security@mirafold.com` → his inbox — Step 5 of the Phase-K brief) and
     confirming a test email lands.
 
-- [x] **Step K.8 — Dependency license scan** — done 2026-07-15 (status
-  note below) *(assistant)*
-  - Goal: nothing copyleft ships in either repo's distributed artifacts.
-  - Build: run a license scan (`npx license-checker --production` or
-    equivalent) over both repos; record the dated output in this step's
-    status note; fix or replace anything GPL/AGPL-shaped in a shipped path
-    (the React/Vite ecosystem is near-uniformly MIT/Apache — this is a
-    ten-minute verification, but verify). Confirm both LICENSE files carry
-    the K.2 entity's copyright line once it exists.
-  - Done when: the recorded scan shows permissive-only production trees.
-  - Status (2026-07-15): DONE — **no copyleft in either production tree.**
-    `license-checker --production` results: **genui-shell** — 86 MIT, 7 ISC,
-    3 Apache-2.0, 2 BSD-3-Clause, 1 BSD-2-Clause, plus 3 flagged "Custom"
-    that are the Anthropic Agent SDK and its two platform sub-packages
-    (`@anthropic-ai/claude-agent-sdk*@0.3.201`): **proprietary** — "© 
-    Anthropic PBC. All rights reserved. Use is subject to the Legal
-    Agreements…" — not copyleft, consumed as an ordinary npm dependency,
-    never vendored or modified; fine to depend on, but MIT doesn't cover it,
-    so README §12 (new) states the engine-license picture plainly
-    (`@openai/codex-sdk` = Apache-2.0; Gemini CLI = not a dependency, the
-    adapter spawns the user's own `gemini` binary). **genui-relay** — `ws`
-    (MIT) is the entire production tree; the scan's UNLICENSED hit was the
-    repo's own stale `package-lock.json` root metadata from before K.1's
-    relicense — resynced via `npm install --package-lock-only`, now MIT
-    throughout. Still owed (to K.2, not this step): swap both LICENSE
-    copyright lines from Kyle personally to the entity once it exists.
+- [x] **Step K.8 — Dependency license scan** — done 2026-07-15; no copyleft in either production tree (shell: MIT/ISC/Apache/BSD + the proprietary Anthropic Agent SDK, stated plainly in README §12; relay: just `ws`, MIT — stale lockfile metadata resynced). Copyright-line swap to the entity stays owed to K.2. → PLAN-ARCHIVE.md.
 
-- [x] **Step K.9 — Contributor policy, decided before the repos go public**
-  — done 2026-07-15 (status note below)
-  - Goal: incoming-contribution IP settled before contributor #1 — adding a
-    CLA after contributors exist is nearly impossible.
-  - Decide: DCO vs. CLA. Recommended: **DCO** — with K.1, everything is MIT
-    with no relicensing intent, which removes a CLA's main benefit; the DCO
-    (`Signed-off-by` + the GitHub DCO check) documents provenance at
-    near-zero contributor friction. Record the choice in R.5b; add
-    `CONTRIBUTING.md` to both public-bound repos noting it.
-  - Done when: the decision is written in R.5b and CONTRIBUTING.md exists in
-    both repos.
-  - Status (2026-07-15): DONE — **DCO adopted** per this step's own
-    recommendation (everything is MIT with no relicensing intent, which
-    removes a CLA's main benefit; DCO documents provenance at near-zero
-    contributor friction). Recorded in R.5b's decide-list (new item (e)).
-    `CONTRIBUTING.md` landed in both repos, each in its own voice: the
-    shell's covers `git commit -s`, the three test tiers, and the CLAUDE.md
-    non-negotiables; the relay's pins the caps-and-refusals suite and the
-    stays-deliberately-dumb rule. The GitHub DCO status check itself is
-    enabled as part of the public flip (R.5b/R.7 mechanics, not before).
+- [x] **Step K.9 — Contributor policy** — done 2026-07-15; **DCO adopted** over CLA, recorded in R.5b(e); CONTRIBUTING.md in both repos; the GitHub DCO check turns on at the public flip (R.5b/R.7 mechanics). → PLAN-ARCHIVE.md.
 
 - [ ] **Step K.10 — Mirafold trademark filing** *(Kyle's hands; NOT
   launch-gating; assistant: investigate first)*
@@ -663,94 +444,9 @@ on this plan's summary alone.
     but gives up the pre-launch priority date, which defeats this step's
     purpose (the GENUI® lesson). Applicant must be the K.2 entity.
 
-- [x] **Step K.11 — Export-control sanity note** — done 2026-07-15 (status
-  note below) *(assistant; expected
-  conclusion: no action required)*
-  - Goal: a written, dated paragraph closing the question instead of leaving
-    it ambient.
-  - Investigate: the shell's E2E layer calls platform WebCrypto rather than
-    implementing cryptography, and publicly available open-source software
-    using standard crypto sits in the EAR's publicly-available carve-out
-    (post-2021, generally without even the old BIS email notification).
-    Verify that reading is current; write the one-paragraph conclusion into
-    the repo (docs/ or this step's status). Optional belt-and-suspenders: the
-    five-minute BIS/NSA notification email with the public repo URL at R.7.
-  - Done when: the dated note exists with the conclusion.
-  - Status (2026-07-15): DONE — the dated note, verified against the
-    current eCFR text of 15 CFR §742.15(b): **no action required.** The
-    E2E layer calls platform WebCrypto exclusively
-    (`server/relay/relay-crypto.ts`: AES-256-GCM + HKDF-SHA-256 via
-    `crypto.subtle`; the entitlement token is standard Ed25519
-    verification) — *standard cryptography* in the EAR's sense, nothing
-    homegrown. BIS's 2021-03-29 final rule eliminated the email
-    notification for publicly available encryption source code using
-    standard cryptography: such code is released from the EAR the moment
-    it is published online (the crypt@bis.doc.gov / enc@nsa.gov notice
-    survives only for *non-standard* cryptography). So the R.5b/R.7 public
-    flip itself completes the compliance story; the optional
-    belt-and-suspenders email adds nothing and is skipped. Revisit only if
-    the crypto ever stops being platform-standard — which the architecture
-    forbids anyway.
+- [x] **Step K.11 — Export-control sanity note** — done 2026-07-15; platform WebCrypto only = *standard* cryptography, so the public flip itself completes EAR compliance (15 CFR §742.15(b), post-2021 rule — no BIS notice owed). → PLAN-ARCHIVE.md.
 
-- [x] **Step K.12 — Compliance closure notes (from the 2026-07-15 sweep)**
-  — done 2026-07-15 (status note below)
-  *(assistant; expected conclusion for each: no action required — write it
-  down, dated, so the questions stop being ambient)*
-  - Origin: a 2026-07-15 second-pass compliance sweep (GDPR operational
-    mechanics + the adjacent EU regimes), verified against current primary
-    sources and the actual code, all four test tiers green the same day.
-    The actionable findings landed elsewhere: dated amendments on K.4 (FTC
-    rule vacated → ROSCA/state-ARL citation) and K.5 (AUP line, the two
-    subprocessor DPAs, Paddle-as-independent-controller, breach one-pager);
-    the EU/UK representative bundle is parked below with a revenue trigger.
-    This step closes the checked-and-clear regimes in writing.
-  - Build: one dated note (docs/ or this step's status), a short paragraph
-    each: **EU AI Act** — Mirafold is neither provider nor deployer of the
-    model (the user runs their own agent locally on their own credentials;
-    Mirafold ships an open-source UI and sells transport of ciphertext);
-    coding assistance is not an Annex III high-risk use; the faithful-skin
-    rule means no rebranding, so no Art. 25 requalification into provider.
-    **European Accessibility Act** — the service-provider microenterprise
-    exemption (<10 persons and ≤€2M turnover) covers the entity; the
-    checkout UI is Paddle's; revisit trigger = outgrowing either bound.
-    **ePrivacy/cookies** — verified 2026-07-15: no cookies, no external
-    loads, no analytics anywhere; browser storage is strictly-necessary
-    functional state (theme, relay session code); no consent banner owed.
-    Plus one-liners closing: ECPA/wiretap (the relay carries the user's own
-    traffic with their consent, E2E-encrypted), OFAC (Paddle screens
-    payments as MoR; the free product is publicly available open source),
-    and money-transmission/telecom licensing (no funds handled; no
-    interpersonal communications service — single-user device pairing).
-  - Done when: the dated note exists and each paragraph states its basis.
-  - Status (2026-07-15): DONE — this status note IS the dated closure note;
-    each conclusion states its basis. **EU AI Act — no obligations.**
-    Mirafold is neither provider nor deployer of an AI system in the Act's
-    regulated sense: the user runs their own agent, locally, on their own
-    credentials; Mirafold ships an open-source UI and sells transport of
-    ciphertext. Coding assistance is not an Annex III high-risk use, GPAI
-    obligations sit with Anthropic/OpenAI/Google as model providers, and
-    the faithful-skin rule (no rebranding, ever) is precisely the conduct
-    that avoids Art. 25 requalification into a provider. **European
-    Accessibility Act — exempt.** The EAA (in force for services
-    2025-06-28) covers e-commerce services, but its microenterprise
-    exemption (<10 persons AND ≤€2M turnover, Art. 3(23); services only)
-    covers the entity; the checkout UI is Paddle's, carrying Paddle's own
-    duty. Revisit trigger: outgrowing either bound. **ePrivacy/cookies —
-    nothing owed.** Verified in code and live 2026-07-15: mirafold.com
-    sets no cookies (no `set-cookie`; strict CSP `default-src 'none'`;
-    all assets self-hosted; the only JS is a clipboard handler), no
-    telemetry or analytics exists anywhere in shell, site, or relay, and
-    the app's browser storage (theme in localStorage, relay session code
-    in sessionStorage) is strictly-necessary functional state — no consent
-    banner, no cookie policy needed beyond a truthful sentence in the K.5
-    privacy policy. **One-liners:** ECPA/wiretap — the relay carries the
-    user's own traffic between their own devices with their consent,
-    E2E-encrypted (no interception exposure); OFAC — Paddle screens
-    payments as merchant of record, and the free product is publicly
-    available open source (same public-availability logic as K.11);
-    money-transmission/telecom licensing — not applicable (no funds
-    handled; single-user device pairing is not an interpersonal
-    communications service).
+- [x] **Step K.12 — Compliance closure notes** — done 2026-07-15; dated closures, each with its basis: EU AI Act (neither provider nor deployer; faithful-skin rule avoids Art. 25 requalification), EAA (microenterprise exemption; checkout UI is Paddle's), ePrivacy (no cookies/telemetry anywhere — verified in code and live), plus ECPA/OFAC/money-transmission one-liners. → PLAN-ARCHIVE.md.
 
 **Phase K parking lot (post-launch, revenue-triggered — explicitly NOT R.7
 gates):** cyber/E&O insurance once real revenue exists; CCPA formalities at
@@ -1287,30 +983,7 @@ fix restores what that agent's *terminal* user already sees — nothing invented
 
 - [x] **Step F.1 — Slash-command output renders** — done 2026-07-08; buffered assistant text (e.g. `/context`) paints exactly once without double-rendering a streamed turn. → PLAN-ARCHIVE.md.
 
-- [x] **Step F.2 — System-notice line (the UI must not lie in degraded service)**
-  — done 2026-07-12. One additive `WireMsg`, `notice { text, kind? }` (kind ∈
-  `retry | compaction | rate_limit | refusal`), mapped in the claude adapter's
-  `pump()` from five SDK events: `system/api_retry` → "API error — retrying
-  (attempt n/m)…" (retry), `system/compact_boundary` → auto/manual compaction
-  line (compaction), `system/model_refusal_fallback` → "declined — retried on
-  <model>" and `model_refusal_no_fallback` → "declined to complete this
-  request" (refusal), and top-level `rate_limit_event` → surfaced ONLY on
-  `allowed_warning`/`rejected` (the constant plain `allowed` stays silent, so
-  the "not rare" event doesn't spam). The `system/init` model-resolve (F.3) is
-  now gated on `subtype === "init"` so the new subtypes don't disturb it.
-  RenderZone draws a dim persistent `.notice-line` (thinking-block family,
-  per-kind glyph ↻/⊙/⚠, amber for rate_limit/refusal via `--warn-fg`) — it does
-  NOT fold thinking or close the streaming block, since a status aside isn't the
-  turn's real output. Verified: 4 new scripted-engine tests in
-  `claude-code.test.ts` map each event (and the silent-`allowed` case) to the
-  right `notice` while the turn still completes (Tier-1, 146 pass); `yarn
-  typecheck` + `yarn build` clean. Files: `server/protocol.ts`,
-  `server/adapters/claude-code.ts`, `web/src/RenderZone.tsx`,
-  `web/src/styles.css`, `server/adapters/claude-code.test.ts`.
-  Note: the browser render is exercised by build/typecheck and mirrors the
-  proven thinking-block branch — a *live* notice wasn't driven in Chrome
-  because the mock adapter has no notice path (out of F.2's file scope); the
-  scripted mapping is the plan's named Done-when and is green.
+- [x] **Step F.2 — System-notice line (the UI must not lie in degraded service)** — done 2026-07-12; one additive `notice` WireMsg (retry | compaction | rate_limit | refusal) mapped from five SDK events in the claude adapter, drawn as a dim persistent notice line in RenderZone (silent on plain rate-limit `allowed`, so no spam). → PLAN-ARCHIVE.md.
 
 - [x] **Step F.3 — Honest model label in the status bar** — done 2026-07-08; the adapters read the engine-resolved model (`system/init`, gemini `result.stats.models`) into `usage.model` instead of "default"/"auto". → PLAN-ARCHIVE.md.
 
@@ -1399,81 +1072,13 @@ anywhere; each is independent.
     a real browser, the five-frame checklist paints one block not five, and a
     pinned widget stays live across an update and a reload.
 
-- [x] **Step Q.2 — Freeze the wire protocol in executable form** — done
-  2026-07-12. `server/protocol.test.ts`: a mapped-type golden-fixtures test with
-  two teeth. COMPILE-TIME (the `yarn typecheck` commit gate) — `WIRE` and
-  `CLIENT` are `{ [T in WireMsg["type"]]: Extract<WireMsg, { type: T }> }` maps,
-  so they require exactly one fixture per `type` discriminant: 22 WireMsg + 13
-  ClientMsg variants, plus standalone `SessionMeta` and all three `Action`
-  fixtures. RUNTIME (`yarn test`) — every fixture round-trips through
-  JSON.stringify→parse byte-for-byte (no undefined/function drift), its runtime
-  `type` matches its key, and the nested/security-sensitive shapes (agents row,
-  relay block, SessionMeta key set, permission_response, the ephemeral
-  bang_input) are pinned by deepEqual. **Both teeth verified by experiment:**
-  adding a new WireMsg type without a fixture → `TS2741 Property … missing in
-  WireByType`; renaming `text_delta.text`→`content` → loud errors across every
-  adapter and the fixture. So adding a message type forces a NEW fixture and
-  touches no existing one; reshaping an existing frame can't pass the build.
-  Complement to R.4h (which pins how the ends treat UNKNOWN messages) — this
-  pins the exact shape of the known ones. 150 Tier-1 tests pass; typecheck
-  clean. Files: `server/protocol.test.ts` (new).
+- [x] **Step Q.2 — Freeze the wire protocol in executable form** — done 2026-07-12; mapped-type golden fixtures for every WireMsg/ClientMsg variant: a missing fixture fails typecheck, a reshaped frame fails loudly — both teeth verified by experiment. → PLAN-ARCHIVE.md.
 
-- [x] **Step Q.3 — Ring-buffer eviction and the resume boundary** — done
-  2026-07-12. Five Tier-1 tests in `server/registry.test.ts`, driven directly
-  against `SessionRegistry` with a `live:false` mock backend (the inert
-  MockSession — no daemon, no network, nothing emitted until a prompt), calling
-  `broadcast`/`canResume`/`attach` by hand. Pinned: (1) after `PUSH = cap+500`
-  broadcasts the ring is bounded at EXACTLY `BUFFER_CAP` (absolute value
-  asserted, not derived — a ±1 fails) and holds the newest window, contiguous by
-  seq, oldest evicted; (2) a late attach with no `afterSeq` replays exactly that
-  window in order; (3) `canResume` is true at `firstBuffered-1` and false at
-  `firstBuffered-2` — the exact evicted edge — plus range guards (saw-latest,
-  never-issued, negative, non-integer); (4) a post-eviction tail resume replays
-  exactly the seqs `> afterSeq` from both the edge and mid-window; (5) an
-  un-evicted small buffer resumes from seq 0. **Verified the assertions bite by
-  mutation:** `canResume` edge → `firstBuffered` (too strict) and
-  `firstBuffered-2` (too lenient), and the eviction splice keeping `cap+1`, each
-  fail the matching test; all revert green (155 Tier-1 pass, typecheck clean).
-  `BUFFER_CAP` (module-private) is mirrored in the test with a sync note — the
-  mirror is what lets a cap off-by-one fail. Files: `server/registry.test.ts`
-  (extended; was `resolveCwd`-only).
+- [x] **Step Q.3 — Ring-buffer eviction and the resume boundary** — done 2026-07-12; five Tier-1 tests pin the exact eviction window and the `canResume` edge, verified to bite by mutation. → PLAN-ARCHIVE.md.
 
-- [x] **Step Q.4 — Hostile-client sweep of `connection.ts`** — done 2026-07-12.
-  New `server/hostile-client.itest.ts` (2 Tier-2 tests, real daemon + real
-  sockets): every `ClientMsg` case swept with wrong-typed/missing fields and raw
-  garbage, mid-session, with a SECOND viewport on the same session asserting no
-  garbage frame leaks a broadcast; then a valid turn completes (socket survived,
-  session not torn down by the end_session garbage). A sentinel `ping`/`pong`
-  after the barrage proves every frame was processed; the daemon log is asserted
-  free of the last-gasp crash line. **The sweep found two real bugs, both
-  fixed in `connection.ts` (the one product change this step needed):** (1) a
-  raw frame parsing to `null` (or a bare number/string) has no `.type`, and
-  `null.type` THREW — on the local WS path (`index.ts` wraps `handleMessage` in
-  no try/catch) that hit the uncaughtException handler and `process.exit(1)`,
-  so any local viewport could crash the whole daemon; added a non-object guard
-  mirroring the malformed-JSON reply (the relay path already had a try/catch, so
-  only the local path was exposed). (2) the bang-id guard used
-  `!/…/.test(String(msg.id))`, coercing a missing/numeric id (`"undefined"`,
-  `"123"`) into a value that passed the regex and LAUNCHED a bang with a bad
-  correlation id — tightened to require `typeof msg.id === "string"` first. Both
-  fixes verified to bite by reverting each (null → daemon crash fails the sweep;
-  bang-id → missing-id bang leaks a `bang_start` to the 2nd viewport). Full
-  suites green: Tier 1 155, Tier 2 74; typecheck clean. Files:
-  `server/hostile-client.itest.ts` (new), `server/connection.ts` (two guards).
+- [x] **Step Q.4 — Hostile-client sweep of `connection.ts`** — done 2026-07-12; a real-daemon garbage sweep of every ClientMsg case found + fixed two real bugs (a null frame could crash the whole daemon on the local path; the bang-id guard coerced non-strings into launching bangs). → PLAN-ARCHIVE.md.
 
-- [x] **Step Q.5 — Pin the `.env` guard's edges** — done 2026-07-12. Three
-  Tier-1 tests added to `server/permissions.test.ts`, each across all four
-  guarded readers (Read/NotebookRead/Grep/Glob): (1) an absolute path to the
-  daemon's `.env`/`.env.local` denies; (2) a `sub/deeper/../../.env` traversal
-  that resolves onto `<cwd>/.env` denies; (3) cross-cwd (session running in a
-  different dir than the daemon launched) — both an absolute path and a relative
-  traversal back to the daemon's env deny, while the session's OWN dir `.env`
-  stays out of scope (allowed), pinning that the guard protects the daemon's
-  secrets specifically. Verified non-vacuous: weakening the guard to a naive
-  raw-string match (dropping `path.resolve`) fails the traversal and cross-cwd
-  tests. 158 Tier-1 pass, typecheck clean. (Symlink bypass remains the
-  documented accepted residual — out of scope.) Files:
-  `server/permissions.test.ts`.
+- [x] **Step Q.5 — Pin the `.env` guard's edges** — done 2026-07-12; traversal + cross-cwd denials pinned across all four guarded readers, non-vacuous by weakening the guard. (Symlink bypass stays the documented accepted residual.) → PLAN-ARCHIVE.md.
 
 ---
 
