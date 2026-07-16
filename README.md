@@ -414,7 +414,8 @@ server/            the local daemon (Node, run with tsx)
                      e2e suites (app, launcher, phone, resilience)
 web/               the browser app (React 19 + Vite)
   index.html         entry html
-  src/main.tsx       mounts <Shell/>, imports global CSS + highlight theme
+  src/main.tsx       mounts <Shell/>, imports highlight theme + every theme
+                     palette (glob) + structural CSS
   src/components/    the shell-owned components — trusted UI, every file here
                      (H2.1); the agent-paintable vocabulary is its SIBLING,
                      registry/, so the trust split reads in the tree
@@ -433,6 +434,8 @@ web/               the browser app (React 19 + Vite)
                        new-session affordance; routing lives in main.tsx
     ConnectDevice.tsx  shell-owned "⧉ pair" affordance: QR of the pairing
                        URL, status bar + fleet header (R.4)
+    ThemePicker.tsx    shell-owned settings card (S.4): theme list grouped by
+                       appearance, swatch chips, live apply into the slots
   src/registry/      Card, List, Table, LinkGroup, Chart, TodoList, Md +
                      RenderBlock (validate → fallback → error boundary) +
                      ActionRow/context
@@ -446,7 +449,11 @@ web/               the browser app (React 19 + Vite)
                      reached only via agentLabel()/connectHint() so an
                      unknown agent name degrades to its raw string (R.4h)
   src/version.ts     the web bundle's own build version (R.4g)
-  src/styles.css     the design identity in CSS (see §7)
+  src/styles.css     structural CSS only — every color via var(...) (see §7)
+  src/themes/        the palettes (Phase S): base.css (pinned code/diff
+                     tokens) + one self-contained file per theme; manifest.ts
+                     is the single source (THEMES, the token contract, the
+                     Base16 porting recipe); themes.test.ts guards it all
 bin/               mirafold launcher (4.10): spawns dist-server, opens browser
 demo/              the M1 demo GIF embedded at the top of this README
 docs/              ADAPTERS.md — the normative adapter specification (§2.2);
@@ -790,17 +797,24 @@ knowing because it constrains future UI work:
   proportional type with rich markdown. No bubbles, ever.
 - Status is a dim, pulsing monospace activity line — not a spinner, not a
   pill.
-- The palette is a semantic token system in `styles.css` (Step 4.3): one set
-  of `--fg/--surface/--border/--accent`-family custom properties, two themes.
-  **Dark is the default and the identity**; the light theme is a TRUE, unified
-  light theme — the whole UI, terminal chrome included (prompt box, command
-  strips, bang/permission/status bars, onboarding), flips to the light palette.
+- The palette is a semantic token system (Step 4.3; grown into Phase S's
+  theme system): one set of `--fg/--surface/--border/--accent`-family custom
+  properties consumed by structural CSS, defined per theme in
+  `web/src/themes/` — **six themes ship** (Light, Dark, Solarized Light,
+  Solarized Dark, Gruvbox Dark, Dracula), each one self-contained file
+  held to the manifest's token contract by Tier-1 guards. **Dark is the
+  default and the identity**; every light theme is a TRUE, unified light
+  theme — the whole UI, terminal chrome included (prompt box, command
+  strips, bang/permission/status bars, onboarding), flips with it.
   Faithful re-skin: a real terminal switched to light mode has a light input, so
   ours follows suit — the input stays distinctly an input via border/inset/
   monospace, not a dark block. Code surfaces (`--code-*`, `--diff-*`, hljs
-  github-dark) are pinned dark in both themes, so code reads as a terminal
-  window on any canvas. Toggle: the ☾/☀ button in the status bar (persisted to
-  localStorage, applied pre-paint in index.html).
+  github-dark) are pinned dark in EVERY theme (`themes/base.css`), so code
+  reads as a terminal window on any canvas. Switching: the ☾/☀ pill in the
+  status bar flips between the user's chosen light and dark themes (the
+  two-slot model, S.3); the ⚙ settings card beside it picks which theme
+  fills each slot, live-applied. Persisted to localStorage, applied
+  pre-paint in index.html.
 - Motion: transcript entries mount with a 160ms rise; theme switches fade;
   all of it is disabled under `prefers-reduced-motion`.
 - Side surfaces are emergent/collapsible — the pin dock only exists while

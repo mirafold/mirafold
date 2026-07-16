@@ -967,6 +967,15 @@ with it. Both sequence BEFORE R.5.**
     provider-policy legal reasoning, negotiation-sensitive detail). Decide
     keep / trim / move-private for each; no secrets exist in history
     (verified 2026-07-15), this is a business-disclosure call, not a leak hunt.
+  - **Theme guards: constrain token VALUES before accepting community theme
+    PRs (2026-07-16 audit):** the Tier-1 guards pin token names exactly but
+    not values — a contributed theme file could carry a working-but-weird
+    value (e.g. `url(...)` in a color slot). The shell CSP already blocks
+    the fetch at runtime and a reviewer sees the diff, so this is
+    belt-and-suspenders: add a guard asserting values parse as
+    colors/alpha-colors/shadow lists, so `yarn test` rejects it
+    mechanically. Matters only once the repo is public and taking PRs —
+    land it with (or before) the public flip.
   - Build, same day, in order: repo public → `npm publish` over the 0.0.1
     placeholder → verify `npx mirafold` against the real registry (the
     one check that's unverifiable until publish) → post (X + Show HN +
