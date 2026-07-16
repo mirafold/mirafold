@@ -64,8 +64,8 @@ when the rename is done and verified.
 BUSINESS.md, PLAN.md, CLAUDE.md, relay-service/README.md, the issue template,
 and both adapter spikes now name the product **Mirafold**. Deliberately KEPT as
 `genui-shell`: repo/folder/path refs, GitHub URLs, PLAN.md's rename-record lines
-+ the rejected `genui-shell.com` domain, RENAME.md itself, and PLAN-ARCHIVE.md
-(history).
++ the rejected `genui-shell.com` domain, this file (docs/RENAME.md, at the
+repo root until H2.2), and PLAN-ARCHIVE.md (history).
 
 ## npm — DONE (2026-07-11)
 
