@@ -14,6 +14,15 @@ const unwrapParagraph = {
   p: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
 };
 
+/** The muted secondary line several components attach under an entry. */
+export function MdDetail({ text }: { text: string }) {
+  return (
+    <div className="rc-detail">
+      <Md text={text} inline />
+    </div>
+  );
+}
+
 /**
  * Markdown for component prop text. `inline` unwraps the paragraph so the
  * text flows inside list items, table cells, and other tight slots.
