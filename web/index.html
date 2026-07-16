@@ -8,8 +8,16 @@
     <script>
       // Apply the stored theme before first paint so a light-theme user
       // never sees a dark flash (4.3). Shell keeps it in sync after mount.
-      document.documentElement.dataset.theme =
-        localStorage.getItem("mirafold-theme") === "light" ? "light" : "dark";
+      // Two-slot model (S.3): mode key -> that side's slot key -> theme id.
+      // Key names + fallback mirror themes/manifest.ts by value (no imports
+      // here); an unknown slot id stamps harmlessly — no theme file matches,
+      // so bare :root (dark) applies until Shell re-stamps the resolved id.
+      (function () {
+        var mode =
+          localStorage.getItem("mirafold-theme") === "light" ? "light" : "dark";
+        document.documentElement.dataset.theme =
+          localStorage.getItem("mirafold-theme-" + mode) || mode;
+      })();
     </script>
   </head>
   <body>

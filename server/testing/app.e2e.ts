@@ -200,6 +200,49 @@ test("theme is a segmented sun|moon switch; home is the far-right control", asyn
   );
 });
 
+test("two-slot model: each pill side paints its slot's theme; choices survive reload (S.3)", async () => {
+  const darkOpt = page.locator(".sb-theme-opt", { hasText: "☾" });
+  const lightOpt = page.locator(".sb-theme-opt", { hasText: "☀" });
+  const dataTheme = () => page.locator("html").getAttribute("data-theme");
+  try {
+    // Seed the dark slot with the only other manifest id ("light" — the
+    // picker enforces appearance fit at write time; resolution is by id).
+    await page.evaluate(() => localStorage.setItem("mirafold-theme-dark", "light"));
+    await page.reload();
+    await page.waitForSelector(".sb-theme");
+    // Mode survived the reload as dark — the pill shows the MODE, unchanged
+    // in rendering — while the paint followed the dark slot's theme.
+    assert.match((await darkOpt.getAttribute("class")) ?? "", /is-active/);
+    assert.equal(await lightOpt.count(), 1); // pill rendering: both sides, as ever
+    assert.equal(await dataTheme(), "light");
+    // Still true on a second reload: both keys persist.
+    await page.reload();
+    await page.waitForSelector(".sb-theme");
+    assert.equal(await dataTheme(), "light");
+    // Flipping the pill switches slots: light side = the light slot's
+    // default, dark side = the seeded slot theme.
+    await lightOpt.click();
+    assert.equal(await dataTheme(), "light");
+    await darkOpt.click();
+    assert.equal(await dataTheme(), "light"); // dark MODE, slot-resolved theme
+    // A stale/unknown slot id falls back to the side's built-in default.
+    await page.evaluate(() => localStorage.setItem("mirafold-theme-dark", "no-such-theme"));
+    await page.reload();
+    await page.waitForSelector(".sb-theme");
+    assert.equal(await dataTheme(), "dark");
+  } finally {
+    // Clean slate for later tests: default slots, dark mode.
+    await page.evaluate(() => {
+      localStorage.removeItem("mirafold-theme-dark");
+      localStorage.removeItem("mirafold-theme-light");
+      localStorage.setItem("mirafold-theme", "dark");
+    });
+    await page.reload();
+    await page.waitForSelector(".sb-theme");
+  }
+  assert.equal(await dataTheme(), "dark");
+});
+
 test("sandboxed artifact: scripts run inside the iframe under the shell CSP", async () => {
   await page.locator("textarea").click();
   await page.keyboard.type("show me an artifact");

@@ -23,6 +23,24 @@ export const THEMES: ThemeEntry[] = [
   { id: "light", displayName: "Light", appearance: "light" },
 ];
 
+// Two-slot storage (S.3): the mode key predates slots and keeps its exact
+// meaning — "light" | anything-else→dark, which side of the pill is active.
+// Each side resolves to a theme id through its slot key. index.html's
+// pre-paint script mirrors these key names by value (it can't import).
+export const MODE_STORAGE_KEY = "mirafold-theme";
+export function slotStorageKey(appearance: ThemeAppearance): string {
+  return `mirafold-theme-${appearance}`;
+}
+
+/** The theme id a pill side resolves to: the stored slot choice when it
+    names a manifest theme, else the side's built-in default (whose id
+    equals the appearance label). Appearance fit is enforced where slots
+    are WRITTEN (the picker); an unknown/stale stored id falls back rather
+    than painting nothing. */
+export function resolveSlot(appearance: ThemeAppearance, storedId: string | null): string {
+  return THEMES.some((t) => t.id === storedId) ? (storedId as string) : appearance;
+}
+
 // The token contract: every theme file defines EXACTLY these custom
 // properties — no missing, no strays — enforced by themes.test.ts. Grouped
 // as in the theme files. Structural CSS consumes only these names (plus the

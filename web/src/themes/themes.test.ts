@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { THEMES, THEME_TOKENS, PINNED_TOKENS } from "./manifest";
+import { THEMES, THEME_TOKENS, PINNED_TOKENS, resolveSlot, slotStorageKey } from "./manifest";
 
 const themesDir = dirname(fileURLToPath(import.meta.url));
 
@@ -111,6 +111,22 @@ test("contrast floor: --fg on --bg is at least 4.5:1 in every theme", () => {
       `${t.id}: --fg on --bg contrast is ${ratio.toFixed(2)}:1, below the 4.5:1 floor`,
     );
   }
+});
+
+test("resolveSlot: stored manifest ids win, anything else falls back to the side's default", () => {
+  // S.3 two-slot model. The built-in defaults' ids equal the appearance
+  // labels — the fallback leans on that.
+  assert.equal(resolveSlot("dark", null), "dark");
+  assert.equal(resolveSlot("light", null), "light");
+  assert.equal(resolveSlot("dark", "light"), "light"); // existence, not appearance — write side enforces fit
+  assert.equal(resolveSlot("dark", "no-such-theme"), "dark");
+  assert.equal(resolveSlot("light", ""), "light");
+  for (const t of THEMES) assert.equal(resolveSlot(t.appearance, t.id), t.id);
+});
+
+test("slot storage keys derive from the mode key's namespace", () => {
+  assert.equal(slotStorageKey("light"), "mirafold-theme-light");
+  assert.equal(slotStorageKey("dark"), "mirafold-theme-dark");
 });
 
 test("appearance labels match the palette: --bg is dark for dark themes, light for light", () => {
