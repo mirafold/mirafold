@@ -77,9 +77,9 @@ codebase. Companion documents:
 - `server/index.ts` and `web/src/main.tsx` are the two entry points.
 - `server/adapters/` normalizes each terminal agent (Claude Code, Codex,
   Gemini CLI, mock) into that one protocol — one adapter each, none privileged.
-- `web/src/Shell.tsx` is the TRUSTED shell: prompt, permissions, status —
+- `web/src/components/Shell.tsx` is the TRUSTED shell: prompt, permissions, status —
   agent output can never paint or intercept it.
-- `web/src/RenderZone.tsx` paints: a pure interpreter of the wire messages.
+- `web/src/components/RenderZone.tsx` paints: a pure interpreter of the wire messages.
 - `web/src/registry/` is the generative-UI component vocabulary
   (`server/registry-spec.ts` is its schema side).
 
@@ -342,7 +342,7 @@ The invariants, and where each is enforced today:
   guessable one would be brute-forceable remote shell access.
 
 Agent-authored executable UI (Phase 3, shipped) runs only inside
-`web/src/Artifact.tsx`'s sandboxed iframe: `allow-scripts` without
+`web/src/components/Artifact.tsx`'s sandboxed iframe: `allow-scripts` without
 `allow-same-origin` gives the content an opaque origin (cookies, storage, and
 the parent DOM are structurally unreachable), and an injected
 `default-src 'none'` CSP cuts every network path — verified against a hostile
@@ -407,24 +407,27 @@ server/            the local daemon (Node, run with tsx)
 web/               the browser app (React 19 + Vite)
   index.html         entry html
   src/main.tsx       mounts <Shell/>, imports global CSS + highlight theme
-  src/Shell.tsx      TRUSTED SHELL: prompt box + permission bar + notices +
-                     status bar; consumes the session bus (H.9)
-  src/Onboarding.tsx first-run card: pick the agent + working directory (P.4/4.8)
-  src/PromptBox.tsx  the command bar (auto-grows to 8 lines; Enter sends)
-  src/RenderZone.tsx OUTPUT ZONE: WireMsg interpreter → entries + status line,
-                     incl. thinking blocks, artifacts, and subagent grouping
-  src/ToolBlock.tsx  tool-call records: collapsed row, expands to input diff +
-                     output with elision marker (T.1/T2.2/T2.3)
-  src/StatusBar.tsx  workbench strip: model · session · cwd · conn · usage (T2.6)
-  src/PinDock.tsx    right-side dock for pinned components (live via entries)
-  src/Artifact.tsx   Level 3 host: sandboxed iframe for agent-authored UI (Phase 3)
+  src/components/    the shell-owned components — trusted UI, every file here
+                     (H2.1); the agent-paintable vocabulary is its SIBLING,
+                     registry/, so the trust split reads in the tree
+    Shell.tsx          TRUSTED SHELL: prompt box + permission bar + notices +
+                       status bar; consumes the session bus (H.9)
+    Onboarding.tsx     first-run card: pick the agent + working directory (P.4/4.8)
+    PromptBox.tsx      the command bar (auto-grows to 8 lines; Enter sends)
+    RenderZone.tsx     OUTPUT ZONE: WireMsg interpreter → entries + status line,
+                       incl. thinking blocks, artifacts, and subagent grouping
+    ToolBlock.tsx      tool-call records: collapsed row, expands to input diff +
+                       output with elision marker (T.1/T2.2/T2.3)
+    StatusBar.tsx      workbench strip: model · session · cwd · conn · usage (T2.6)
+    PinDock.tsx        right-side dock for pinned components (live via entries)
+    Artifact.tsx       Level 3 host: sandboxed iframe for agent-authored UI (Phase 3)
+    FleetView.tsx      mission control at / (4.6): live session list, rename,
+                       new-session affordance; routing lives in main.tsx
+    ConnectDevice.tsx  shell-owned "⧉ pair" affordance: QR of the pairing
+                       URL, status bar + fleet header (R.4)
   src/registry/      Card, List, Table, LinkGroup, Chart, TodoList, Md +
                      RenderBlock (validate → fallback → error boundary) +
                      ActionRow/context
-  src/FleetView.tsx  mission control at / (4.6): live session list, rename,
-                     new-session affordance; routing lives in main.tsx
-  src/ConnectDevice.tsx  shell-owned "⧉ pair" affordance: QR of the pairing
-                     URL, status bar + fleet header (R.4)
   src/session-bus.ts the shell's message bus (H.9): one SocketClient + the
                      pub/sub fan-out and senders Shell.tsx consumes
   src/ws.ts          SocketClient: typed send/onMessage, hello, seq cursor,

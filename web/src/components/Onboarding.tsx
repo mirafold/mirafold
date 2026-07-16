@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { AgentName } from "@protocol";
-import { agentLabel, blockedHint, connectHint } from "./agents-meta";
+import { agentLabel, blockedHint, connectHint } from "../agents-meta";
 
 // The shell-owned onboarding picker. No agent is assumed — first run is
 // "choose your agent." Credentials never reach the browser; the server tells us

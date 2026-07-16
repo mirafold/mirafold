@@ -1,5 +1,5 @@
 import type { Action } from "@protocol";
-import { RenderBlock } from "./registry/RenderBlock";
+import { RenderBlock } from "../registry/RenderBlock";
 import { Artifact } from "./Artifact";
 
 // The dock renders the same entry objects the transcript holds, so a

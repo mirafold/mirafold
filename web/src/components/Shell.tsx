@@ -4,13 +4,13 @@ import { Onboarding } from "./Onboarding";
 import { PromptBox } from "./PromptBox";
 import { RenderZone } from "./RenderZone";
 import { StatusBar, type Usage } from "./StatusBar";
-import { createSessionBus } from "./session-bus";
-import { tildify } from "./tildify";
-import { agentLabel, connectHint } from "./agents-meta";
+import { createSessionBus } from "../session-bus";
+import { tildify } from "../tildify";
+import { agentLabel, connectHint } from "../agents-meta";
 
 // The zone-message type lives with the bus (H.9); re-exported so consumers
 // of the shell's contract (RenderZone) keep their import site.
-export type { ZoneMsg } from "./session-bus";
+export type { ZoneMsg } from "../session-bus";
 
 const ZERO_USAGE: Usage = { turnIn: 0, turnOut: 0, sumIn: 0, sumOut: 0, cost: 0 };
 

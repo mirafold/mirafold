@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from
 import type { AgentName, SessionMeta } from "@protocol";
 import { Onboarding } from "./Onboarding";
 import { ConnectDevice } from "./ConnectDevice";
-import { SocketClient } from "./ws";
-import { tildify } from "./tildify";
+import { SocketClient } from "../ws";
+import { tildify } from "../tildify";
 
 // 4.6 Mission control: the root page is an ambient supervision surface —
 // every live session in the registry with name, cwd, coarse status, and last
