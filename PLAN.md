@@ -145,6 +145,76 @@ here. Everything below marked `[ ]` is the remaining work.
 
 ---
 
+## Phase H2 — Legibility follow-ups (opened 2026-07-15; the immediate next work)
+
+Origin: a fresh cold read of the post-Phase-H repo (2026-07-15) judged the
+structure sound and surfaced two remaining deviations from common practice —
+`web/src/` mixes PascalCase components with camelCase modules at one flat
+level, and two internal working documents sit at the repo root unannounced.
+Kyle scheduled both immediately. Sequencing: H2 executes before any further
+Phase R build step; Phase K's paper work continues in parallel (it changes
+documents, not code).
+
+**Hard rules, inherited verbatim from Phase H:** behavior-preserving only (no
+logic changes, no renames of files or exported symbols — folder context does
+the disambiguating), moves use `git mv` so history and blame survive, and
+every step runs the H verification ritual: record each tier's test counts
+before the step, then after it `yarn typecheck && yarn test` at EXACT count
+parity; steps that touch runtime files also run `yarn test:server &&
+yarn test:e2e` (e2e rebuilds `dist`, proving the build); a repo-wide grep for
+each old path finds only PLAN-ARCHIVE.md, dated history, and the accepted
+hits named in the step.
+
+- [ ] **Step H2.1 — Group the shell-owned components into `web/src/components/`**
+  - Goal: `web/src/` stops mixing component files and plumbing modules at one
+    flat level, and the folder split makes the trust boundary visible in the
+    tree — shell-owned components in `components/`, the agent-paintable
+    vocabulary staying its sibling in `registry/` — the same root-as-spine
+    convention `server/` already follows.
+  - Build: `git mv` the ten shell-owned components and their tests into
+    `web/src/components/`: `Shell.tsx`, `Onboarding.tsx`, `PromptBox.tsx`,
+    `RenderZone.tsx`, `ToolBlock.tsx` (+test), `StatusBar.tsx` (+test),
+    `PinDock.tsx`, `Artifact.tsx` (+test), `FleetView.tsx`,
+    `ConnectDevice.tsx`. Everything else stays at the src root deliberately:
+    `main.tsx` (`web/index.html` hardcodes `/src/main.tsx`), `version.ts`
+    (imported by `server/version.test.ts` as `../web/src/version`), the
+    plumbing modules (`ws.ts` +test, `session-bus.ts`, `agents-meta.ts`
+    +test, `tildify.ts` +test), `styles.css`, `vite-env.d.ts`. `registry/`
+    does not move and does NOT go under `components/` — keeping it a sibling
+    is what makes the trusted/agent-paintable split legible. Fix relative
+    imports only (moved components reach root modules and `../registry/` one
+    level up; `main.tsx` reaches `./components/`); the aliases don't change
+    (`@protocol`/`@registry-spec`/`@relay-crypto` all point at server files).
+    Update README §4's tree and §6's walkthrough paths in the same step.
+  - Known accepted grep hit: `server/adapters/mock.ts` contains the literal
+    string `web/src/RenderZone.tsx` as scripted demo content — it is fake
+    output, not a path; leave it (changing it would change mock bytes).
+  - Files: `web/src/**` (moves + import lines), `README.md`, docs as found.
+  - Done when: the ritual passes at exact count parity across all three
+    tiers, and the old-path grep across the whole repo (docs included) finds
+    only PLAN-ARCHIVE.md history and the mock's demo string.
+
+- [ ] **Step H2.2 — Root markdown tidy: working docs move under `docs/`**
+  - Goal: the repo root shows only load-bearing documents (README, CLAUDE,
+    PLAN, PLAN-ARCHIVE, BUSINESS, CONTRIBUTING, SECURITY, LICENSE) — internal
+    working notes stop greeting a stranger's first `ls` when the repo goes
+    public at R.7.
+  - Build: `git mv RENAME.md docs/RENAME.md` and
+    `git mv USER-TESTING-FEEDBACK.md docs/USER-TESTING-FEEDBACK.md`. Update
+    RENAME.md's one self-reference and README §4's `docs/` annotation to name
+    both (RENAME.md still deletes itself when R.2 completes; the feedback log
+    remains R.4l/R.5c's intake surface — both keep their roles, only the path
+    changes). Reference sweep verified 2026-07-15 across the umbrella, both
+    repos, and .github: nothing else cites either path; PLAN-ARCHIVE.md
+    mentions are dated history — accepted.
+  - Files: `RENAME.md` → `docs/RENAME.md`, `USER-TESTING-FEEDBACK.md` →
+    `docs/USER-TESTING-FEEDBACK.md`, `README.md`.
+  - Done when: root `ls` shows no working docs, the old-path grep is clean
+    (PLAN-ARCHIVE.md excepted), and `yarn typecheck && yarn test` pass (a
+    docs-only diff needs no Tier 2/3).
+
+---
+
 ## Phase 4 — Product hardening (the "others would want it" path)
 
 Goal of the phase: persistence, multiple sessions, polish, robust resume, and
@@ -1494,6 +1564,89 @@ parse into the Step 1.4 raw-props fallback — legible, and the designed path.
     `footer`; follows the dataviz stat-tile guidance.
   - Done when: a mock turn renders the tile, it pins to the dock, and an
     update-in-place re-send (same wire id) changes the value live.
+
+---
+
+## Post-release ideas (intake opened 2026-07-15 — unordered; organize after R.7)
+
+Feature ideas parked for after launch. This is deliberately an unordered
+intake — the reordering/organizing pass happens when we get there,
+post-R.7 — and none of these gates a Phase R step. Where an idea already
+has a home in this plan, the entry points there instead of duplicating it.
+
+- [ ] **Desktop app** — the first follower after release. An Electron shell
+  so running Mirafold needs no terminal/Node/npm: a thin, separate repo that
+  consumes the published `mirafold` package (which ships daemon + built
+  client together, so there's no UI or server duplication) and opens the
+  daemon's URL in its window. Shell-side seam to cut first: export a
+  programmatic entry (`startDaemon(opts) → { url, close }`) beside the CLI.
+  Known lifts beyond packaging: a folder picker replaces "run in the current
+  directory," macOS launched-from-Finder PATH resolution, and
+  signing/notarization + auto-update CI per platform.
+
+- [ ] **Phone apps** — distant followers, behind the desktop app. The phone
+  is a viewport, never the daemon host — the relay path (R.2–R.4) already
+  *is* the phone architecture. Two stages: **(1) PWA** — manifest + service
+  worker + mobile polish on the deployed app-origin bundle; near-free, no
+  store, no new repo. **(2) Native store wrapper** (Capacitor-class, its own
+  thin repo) only when push notifications / store presence earn the review
+  and revenue-cut bureaucracy; push must stay content-free pings so the
+  relay's E2E-blind story survives.
+
+- [ ] **Subscriptions + metered model access (paid tier #2)** — sell
+  Mirafold-provisioned, metered access to open models, so a subscriber gets
+  a working model with zero key management. **Launch ships with the relay as
+  the only paid product (locked 2026-07-15); this comes after.** Shape
+  (from the 2026-07-15 design discussion): provision a scoped, spend-limited
+  per-user key on an existing metered inference provider (OpenRouter-class)
+  and bill from the provider's usage reports — the daemon talks to the
+  provider **directly**, so Mirafold is never in the inference path and
+  never sees a prompt (the no-proxy and E2E trust stories survive intact).
+  Rides the agents' own custom-endpoint support (Anthropic-compatible
+  endpoints, Codex custom providers) — no homegrown loop. Grows R.5's
+  checkout + token-minting backend (the private billing service) with key
+  provisioning, usage reconciliation, and a quota endpoint — **no new
+  repo**. Enforcement is server-side only: open client code may *display*
+  quota, never enforce it. Clean under the provider credential policy — this
+  is the API-key path, no subscription-ToS exposure. Store-distribution
+  caveat when it reaches phones: in-app purchase rules (15–30% cut, no true
+  metered billing — credit packs/tiers instead); the PWA path avoids them.
+
+- [ ] **Cockpit fleetview** — grow FleetView (4.6) into a true cockpit:
+  at-a-glance live state of every session, and acting on sessions from the
+  grid rather than only entering them.
+
+- [ ] **Folder & file & diff view** — shell-owned project browsing: the
+  working tree, file contents, and diffs of what the agent changed.
+
+- [ ] **Multiuser chat** — multiple people in one session's conversation;
+  rides Phase 4's multi-user seam (Locked decisions: "architected so
+  multi-user is additive later").
+
+- [ ] **Input augment** — drag & drop and paste (files, images) into the
+  prompt box; eventually voice input. All shell-owned — the trusted-shell
+  boundary is untouched.
+
+- [ ] **Skills as buttons** — surface the agent's skills / slash commands as
+  clickable shell affordances instead of typed invocations.
+
+- [ ] **Archived-session fleetview** — a fleetview over ended sessions, to
+  find and resume old ones.
+
+- [ ] **Visibility** — usage and metrics surfaced in the shell (tokens,
+  cost, per-session and fleet-level), and more over time.
+
+- [ ] **Live preview** — display the project while the agent builds it
+  (e.g. the project's dev server rendered beside the session).
+
+- [ ] **Grok agent** — a fourth adapter behind the `AgentSession` seam, same
+  rules as Phase P (faithful skin, no agent privileged); demand-gated on
+  xAI's agent tooling maturing.
+
+- [ ] **More protocol components** — already started: the Stretch goals
+  above (S.1 pie, S.2 stacked/horizontal, S.3 stat tile) are the first
+  concrete batch; keep extending the registry additively (add message
+  types/kinds, never reshape) as session needs surface.
 
 ---
 
