@@ -1201,7 +1201,23 @@ borrowed themes prove it.
     stray token, a manifest/file mismatch, or an unreadable fg/bg pair —
     verified by deliberately breaking each once.
 
-- [ ] **Step S.3 — Two-slot switching (the pill itself does NOT change)**
+- [x] **Step S.3 — Two-slot switching (the pill itself does NOT change)** —
+  done 2026-07-16. `manifest.ts` gained the storage vocabulary
+  (`MODE_STORAGE_KEY` = the pre-existing `mirafold-theme`, unchanged
+  meaning; `slotStorageKey(appearance)` = `mirafold-theme-light/-dark`) and
+  `resolveSlot()` (stored id wins if it names a manifest theme, else the
+  side's default — existence check, not appearance: fit is enforced where
+  slots are written, S.4's picker). Shell.tsx stamps
+  `resolveSlot(mode, slot)` instead of the mode; the pill, its props, and
+  StatusBar are untouched. index.html's pre-paint script mirrors the
+  resolution by value (unknown id stamps harmlessly → bare `:root` dark
+  until Shell re-stamps). Migration: no migration — the mode key keeps its
+  exact meaning, absent slot keys mean defaults, which is byte-identical
+  behavior. Proven in Tier-3 (`app.e2e.ts`): seeded dark slot paints its
+  theme while the pill shows dark mode with unchanged rendering, both keys
+  survive two reloads, each side follows its own slot on pill flips,
+  unknown slot id falls back, and the pre-existing pill test passes
+  untouched (default-slot identity). Tiers 178/74/22 green.
   - Goal: generalize the backing state of today's binary toggle
     (`Shell.tsx`, localStorage key `mirafold-theme`) to the two-slot model
     with **zero change to the pill** — per the charter's locked decision:

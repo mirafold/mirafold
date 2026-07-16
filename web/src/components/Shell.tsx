@@ -5,6 +5,7 @@ import { PromptBox } from "./PromptBox";
 import { RenderZone } from "./RenderZone";
 import { StatusBar, type Usage } from "./StatusBar";
 import { createSessionBus } from "../session-bus";
+import { MODE_STORAGE_KEY, resolveSlot, slotStorageKey } from "../themes/manifest";
 import { tildify } from "../tildify";
 import { agentLabel, connectHint } from "../agents-meta";
 
@@ -84,16 +85,23 @@ export function Shell() {
 
   const hasUrlSession = useMemo(() => /^\/s\/[\w-]+/.test(location.pathname), []);
 
-  // ── The theme (4.3) ─────────────────────────────────────────────────────
+  // ── The theme (4.3; two-slot model S.3) ─────────────────────────────────
   // Theme is shell-owned UI state. Dark is the default and the identity;
   // index.html applies the stored choice before first paint (no flash) and
-  // this keeps the attribute + storage in sync on toggle.
+  // this keeps the attribute + storage in sync on toggle. `theme` is the
+  // MODE — which side of the pill is active — and each side resolves to a
+  // theme id through its settings slot (defaults: the built-in pair, which
+  // makes this byte-identical to the pre-slot behavior). The pill itself is
+  // LOCKED unchanged (Phase S charter): two positions, mode in, mode out.
   const [theme, setTheme] = useState<"dark" | "light">(() =>
-    localStorage.getItem("mirafold-theme") === "light" ? "light" : "dark",
+    localStorage.getItem(MODE_STORAGE_KEY) === "light" ? "light" : "dark",
   );
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    localStorage.setItem("mirafold-theme", theme);
+    document.documentElement.dataset.theme = resolveSlot(
+      theme,
+      localStorage.getItem(slotStorageKey(theme)),
+    );
+    localStorage.setItem(MODE_STORAGE_KEY, theme);
   }, [theme]);
 
   // The socket + pub/sub live in session-bus.ts (H.9); one bus per mount,
