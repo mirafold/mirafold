@@ -1093,7 +1093,7 @@ anywhere; each is independent.
 
 ---
 
-## Phase S — Theme system: six themes at launch (opened 2026-07-15; next up — pre-launch polish, ships in the launch build before R.7)
+## Phase S — Theme system: six themes at launch (opened 2026-07-15; ✅ COMPLETE 2026-07-16 — all six steps done in one day, ships in the launch build before R.7)
 
 Goal of the phase: grow from the two hand-built themes (Light, Dark) to **six**
 — adding Solarized Light, Solarized Dark, Gruvbox Dark, and Dracula — on
@@ -1315,15 +1315,22 @@ borrowed themes prove it.
   - Done when: both pass the S.2 guards, both survive the QA walk with
     notes resolved, and each is selectable + persistent end-to-end.
 
-- [ ] **Step S.6 — Themes 5 + 6: Gruvbox Dark, Dracula**
-  - Goal: two dark singletons with huge terminal followings — same recipe,
-    same bar.
-  - Build: identical to S.5 for `gruvbox-dark` and `dracula`.
-  - Files: `web/src/themes/gruvbox-dark.css`, `web/src/themes/dracula.css`,
-    `web/src/themes/manifest.ts`.
-  - Done when: same bar as S.5; with these landed the picker shows six
-    themes (2 light, 4 dark) and adding a seventh is demonstrably one new
-    file + one manifest row + the QA walk.
+- [x] **Step S.6 — Themes 5 + 6: Gruvbox Dark, Dracula** — done 2026-07-16.
+  **Phase S complete: six themes at launch.** Gruvbox Dark transcribed from
+  the canonical Base16 "gruvbox dark, medium" scheme (Dawid Kurek / Pavel
+  Pertsev); Dracula deliberately from the OFFICIAL draculatheme.com palette
+  instead of the base16-dracula scheme file, whose slot shuffle (pink in
+  the red slot, lime in the green slot) would have broken the recipe's
+  "semantic, not syntax" accent rule — the deviation is documented in the
+  theme file's header. Recipe mixes computed by script; contrast floors
+  8.59 (gruvbox) / 13.36 (dracula). Screenshot QA walk (template turn,
+  checklist, permission bar, settings card; Dracula reached through the
+  real picker with the card open) — both legible, identities unmistakable,
+  no hand-tunes. The picker now shows 2 light + 4 dark; the one-file
+  promise is proven by construction: S.5/S.6 added four themes and none
+  touched anything but its own CSS file + one manifest row (loading is
+  glob'd, swatches parse the file, guards sweep the directory). Tiers
+  178/74/24 green.
 
 ---
 

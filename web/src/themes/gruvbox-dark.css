@@ -1,0 +1,57 @@
+/* ---- Gruvbox Dark (S.6) -----------------------------------------------------
+   Transcribed from the canonical Base16 "Gruvbox dark, medium" scheme (Dawid
+   Kurek; gruvbox palette by Pavel Pertsev, MIT) via the S.2 recipe in
+   manifest.ts. Warm grays, low-contrast borders, and the signature
+   green-yellow accent are the theme — derived tiers are the recipe's mixes,
+   hand-tunes from the QA walk noted inline. */
+
+:root[data-theme="gruvbox-dark"] {
+  color-scheme: dark;
+  /* surfaces */
+  --bg: #282828;
+  --bg-inset: #1e1e1e;
+  --surface: #32302f;
+  --surface-2: #3c3836;
+  --surface-3: #373433;
+  --surface-hover: #3e3a38;
+  --inline-code-bg: #373433;
+  /* text */
+  --fg: #d5c4a1;
+  --fg-strong: #ebdbb2;
+  --fg-body: #dbcaa5;
+  --fg-mid: #c9b99a;
+  --fg-dim: #bdae93;
+  --fg-dimmer: #928574;
+  --fg-faint: #665c54;
+  /* accents */
+  --accent: #b8bb26;
+  --info: #83a598;
+  --warn-fg: #fabd2f;
+  --error: #fb4934;
+  /* borders */
+  --border: #32302f;
+  --border-2: #343231;
+  --border-mid: #393634;
+  --border-hover: #403c39;
+  --border-faint: #2e2d2d;
+  --border-ghost: #2d2c2c;
+  /* accent-tinted families */
+  --ok-bg: #393a28;
+  --ok-border: #505127;
+  --ok-border-strong: #696a27;
+  --err-bg: #412c29;
+  --err-border: #63312b;
+  --err-border-strong: #87372d;
+  --info-bg: #333735;
+  --info-border: #414b47;
+  --info-border-strong: #51605a;
+  --warn-bg: #3d3729;
+  --warn-bg-2: #373228;
+  --warn-border: #67552a;
+  --warn-border-2: #78612b;
+  /* misc */
+  --overlay: rgba(18, 17, 15, 0.82);
+  --selection: rgba(184, 187, 38, 0.25);
+  --shadow-pop: 0 4px 14px rgba(0, 0, 0, 0.18);
+  --shadow-card: 0 18px 60px rgba(0, 0, 0, 0.5);
+}

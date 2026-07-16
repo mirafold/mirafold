@@ -1,0 +1,59 @@
+/* ---- Dracula (S.6) ----------------------------------------------------------
+   Transcribed from the OFFICIAL Dracula palette (draculatheme.com, Zeno
+   Rocha, MIT) via the S.2 recipe in manifest.ts — deliberately NOT the
+   base16-dracula scheme file, whose slot shuffle (pink in the red slot, lime
+   in the green slot) would break the recipe's "semantic, not syntax" accent
+   rule. Semantic accents: green #50fa7b, cyan #8be9fd (info), yellow
+   #f1fa8c (warn), red #ff5555 (error); the comment blue #6272a4 anchors the
+   faint end of the text ramp. Hand-tunes from the QA walk noted inline. */
+
+:root[data-theme="dracula"] {
+  color-scheme: dark;
+  /* surfaces */
+  --bg: #282a36;
+  --bg-inset: #1e2029;
+  --surface: #2e313e;
+  --surface-2: #343746;
+  --surface-3: #313442;
+  --surface-hover: #363948;
+  --inline-code-bg: #313442;
+  /* text */
+  --fg: #f8f8f2;
+  --fg-strong: #ffffff;
+  --fg-body: #fafaf5;
+  --fg-mid: #d3d7df;
+  --fg-dim: #adb5cb;
+  --fg-dimmer: #8894b8;
+  --fg-faint: #6272a4;
+  /* accents */
+  --accent: #50fa7b;
+  --info: #8be9fd;
+  --warn-fg: #f1fa8c;
+  --error: #ff5555;
+  /* borders */
+  --border: #2f313f;
+  --border-2: #303341;
+  --border-mid: #343645;
+  --border-hover: #393b4c;
+  --border-faint: #2c2f3c;
+  --border-ghost: #2c2e3b;
+  /* accent-tinted families */
+  --ok-bg: #2d433e;
+  --ok-border: #336449;
+  --ok-border-strong: #3a8855;
+  --err-bg: #422f3a;
+  --err-border: #64363f;
+  --err-border-strong: #893d44;
+  --info-bg: #34414e;
+  --info-border: #445f6e;
+  --info-border-strong: #558090;
+  --warn-bg: #3c3f3f;
+  --warn-bg-2: #36393c;
+  --warn-border: #646850;
+  --warn-border-2: #747957;
+  /* misc */
+  --overlay: rgba(15, 16, 22, 0.82);
+  --selection: rgba(80, 250, 123, 0.25);
+  --shadow-pop: 0 4px 14px rgba(0, 0, 0, 0.18);
+  --shadow-card: 0 18px 60px rgba(0, 0, 0, 0.5);
+}
