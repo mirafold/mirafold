@@ -1,5 +1,5 @@
 import type { ComponentProps } from "@registry-spec";
-import { Md } from "./Md";
+import { MdDetail } from "./Md";
 
 export function Progress({ label, percent, detail }: ComponentProps<"progress">) {
   const pct = Math.max(0, Math.min(100, percent));
@@ -12,11 +12,7 @@ export function Progress({ label, percent, detail }: ComponentProps<"progress">)
       <div className="rc-progress-track">
         <div className="rc-progress-fill" style={{ width: `${pct}%` }} />
       </div>
-      {detail && (
-        <div className="rc-detail">
-          <Md text={detail} inline />
-        </div>
-      )}
+      {detail && <MdDetail text={detail} />}
     </div>
   );
 }

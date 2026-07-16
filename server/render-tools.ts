@@ -7,6 +7,7 @@
 import { randomUUID } from "node:crypto";
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
+import { renderToolEntries, type RenderToolName } from "./adapters/render-mcp-cmd";
 import type { WireMsg } from "./protocol";
 import { registryShapes, type ComponentName } from "./registry-spec";
 import { actionToolNames } from "./sessions/actions";
@@ -19,6 +20,33 @@ const idParam = {
       "Omit to render a new component. Pass an id returned by a previous " +
         "render_* call to update that component in place instead.",
     ),
+};
+
+// This server's voice for each tool in the shared vocabulary
+// (RENDER_TOOL_COMPONENT). The strings are model-visible prompt surface —
+// change them deliberately, never as a side effect.
+const TOOL_DESCRIPTIONS: Record<RenderToolName, string> = {
+  render_card:
+    "Show a card in the output zone: a single highlight, summary, or verdict set off from the prose.",
+  render_list:
+    "Show a list component in the output zone. Use instead of a markdown bullet/numbered list.",
+  render_table: "Show a table component in the output zone. Use instead of a markdown table.",
+  render_chart:
+    "Show a chart in the output zone: line for trends over an ordered axis, bar for category comparisons. Use for ANY plot/graph — never hand-write SVG or ASCII charts.",
+  render_links:
+    "Show a group of links in the output zone. Use for any collection of URLs worth clicking.",
+  render_keyvalue:
+    "Show a two-column key/value fact sheet in the output zone. Use for config dumps, environment summaries, or any set of name→value facts.",
+  render_progress:
+    "Show a progress bar for long-running work. Re-call with the returned id to advance the bar in place instead of stacking bars.",
+  render_timeline:
+    "Show an ordered timeline in the output zone. Use when the sequence of events or stages is itself the point (chronology, plan, release history).",
+  render_filetree:
+    "Show a file/directory tree in the output zone. Use for ANY file-structure picture — never hand-draw ASCII trees.",
+  render_question:
+    "Ask the user a structured question with 2–4 clickable options. Clicking one sends its text as the user's next turn. Use when the next step is the user's call between concrete alternatives; never for open-ended questions.",
+  render_diff:
+    "Show a red/green line diff of a code change, made or proposed. Per file, pass the relevant lines as they were (before) and as they are/would be (after) — verbatim code, no +/- prefixes; the client computes the diff. Use instead of hand-written diff code fences.",
 };
 
 /** Appended to the claude_code system-prompt preset (Session options). */
@@ -79,71 +107,16 @@ export function makeRenderServer(emit: (msg: WireMsg) => void) {
     name: "ui",
     version: "1.0.0",
     tools: [
-      tool(
-        "render_card",
-        "Show a card in the output zone: a single highlight, summary, or verdict set off from the prose.",
-        { ...registryShapes.card, ...idParam },
-        async ({ id, ...props }) => emitRender("card", id, props),
-      ),
-      tool(
-        "render_list",
-        "Show a list component in the output zone. Use instead of a markdown bullet/numbered list.",
-        { ...registryShapes.list, ...idParam },
-        async ({ id, ...props }) => emitRender("list", id, props),
-      ),
-      tool(
-        "render_table",
-        "Show a table component in the output zone. Use instead of a markdown table.",
-        { ...registryShapes.table, ...idParam },
-        async ({ id, ...props }) => emitRender("table", id, props),
-      ),
-      tool(
-        "render_chart",
-        "Show a chart in the output zone: line for trends over an ordered axis, bar for category comparisons. Use for ANY plot/graph — never hand-write SVG or ASCII charts.",
-        { ...registryShapes.chart, ...idParam },
-        async ({ id, ...props }) => emitRender("chart", id, props),
-      ),
-      tool(
-        "render_links",
-        "Show a group of links in the output zone. Use for any collection of URLs worth clicking.",
-        { ...registryShapes["link-group"], ...idParam },
-        async ({ id, ...props }) => emitRender("link-group", id, props),
-      ),
-      tool(
-        "render_keyvalue",
-        "Show a two-column key/value fact sheet in the output zone. Use for config dumps, environment summaries, or any set of name→value facts.",
-        { ...registryShapes["key-value"], ...idParam },
-        async ({ id, ...props }) => emitRender("key-value", id, props),
-      ),
-      tool(
-        "render_progress",
-        "Show a progress bar for long-running work. Re-call with the returned id to advance the bar in place instead of stacking bars.",
-        { ...registryShapes.progress, ...idParam },
-        async ({ id, ...props }) => emitRender("progress", id, props),
-      ),
-      tool(
-        "render_timeline",
-        "Show an ordered timeline in the output zone. Use when the sequence of events or stages is itself the point (chronology, plan, release history).",
-        { ...registryShapes.timeline, ...idParam },
-        async ({ id, ...props }) => emitRender("timeline", id, props),
-      ),
-      tool(
-        "render_filetree",
-        "Show a file/directory tree in the output zone. Use for ANY file-structure picture — never hand-draw ASCII trees.",
-        { ...registryShapes["file-tree"], ...idParam },
-        async ({ id, ...props }) => emitRender("file-tree", id, props),
-      ),
-      tool(
-        "render_question",
-        "Ask the user a structured question with 2–4 clickable options. Clicking one sends its text as the user's next turn. Use when the next step is the user's call between concrete alternatives; never for open-ended questions.",
-        { ...registryShapes.question, ...idParam },
-        async ({ id, ...props }) => emitRender("question", id, props),
-      ),
-      tool(
-        "render_diff",
-        "Show a red/green line diff of a code change, made or proposed. Per file, pass the relevant lines as they were (before) and as they are/would be (after) — verbatim code, no +/- prefixes; the client computes the diff. Use instead of hand-written diff code fences.",
-        { ...registryShapes.diff, ...idParam },
-        async ({ id, ...props }) => emitRender("diff", id, props),
+      // Handler args collapse to a union across shapes; the id is all the
+      // shared handler reads, and the engine validates props per schema.
+      ...renderToolEntries.map(([name, component]) =>
+        tool(
+          name,
+          TOOL_DESCRIPTIONS[name],
+          { ...registryShapes[component], ...idParam },
+          (async ({ id, ...props }: { id?: string }) =>
+            emitRender(component, id, props)) as never,
+        ),
       ),
       tool(
         "emit_artifact",

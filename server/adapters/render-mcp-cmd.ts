@@ -10,8 +10,11 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
  *  their event streams recognize our tool calls among the agent's own. */
 export const MIRAFOLD_MCP = "mirafold";
 
-/** render_* tool name → the registry component a call to it paints. */
-export const RENDER_TOOL_COMPONENT: Record<string, ComponentName> = {
+/** render_* tool name → the registry component a call to it paints — the ONE
+ *  list of the agent-authorable vocabulary. Both tool servers (render-tools.ts
+ *  in-process, render-mcp.ts stdio) derive their registrations from it, so a
+ *  new component can't land in one transport and not the other. */
+export const RENDER_TOOL_COMPONENT = {
   render_card: "card",
   render_list: "list",
   render_table: "table",
@@ -23,7 +26,14 @@ export const RENDER_TOOL_COMPONENT: Record<string, ComponentName> = {
   render_filetree: "file-tree",
   render_question: "question",
   render_diff: "diff",
-};
+} as const satisfies Record<string, ComponentName>;
+
+export type RenderToolName = keyof typeof RENDER_TOOL_COMPONENT;
+
+export const renderToolEntries = Object.entries(RENDER_TOOL_COMPONENT) as [
+  RenderToolName,
+  ComponentName,
+][];
 
 /** Matches the component id inside the render-MCP stub's ack text
  *  ("Rendered card (id: …)") — the fallback channel when an engine drops
@@ -51,7 +61,7 @@ export function generativeUIMsg(
       title: typeof props["title"] === "string" ? (props["title"] as string) : undefined,
     };
   }
-  const component = RENDER_TOOL_COMPONENT[tool];
+  const component = (RENDER_TOOL_COMPONENT as Record<string, ComponentName | undefined>)[tool];
   return component ? { type: "render", component, props, id } : null;
 }
 

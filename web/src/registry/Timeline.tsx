@@ -1,5 +1,5 @@
 import type { ComponentProps } from "@registry-spec";
-import { Md } from "./Md";
+import { Md, MdDetail } from "./Md";
 
 export function Timeline({ title, items }: ComponentProps<"timeline">) {
   return (
@@ -14,11 +14,7 @@ export function Timeline({ title, items }: ComponentProps<"timeline">) {
                 <Md text={item.label} inline />
                 {item.time && <span className="rc-timeline-time">{item.time}</span>}
               </div>
-              {item.detail && (
-                <div className="rc-detail">
-                  <Md text={item.detail} inline />
-                </div>
-              )}
+              {item.detail && <MdDetail text={item.detail} />}
             </div>
           </li>
         ))}

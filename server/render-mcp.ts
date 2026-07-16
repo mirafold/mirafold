@@ -21,7 +21,8 @@ import { randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { registryShapes, type ComponentName } from "./registry-spec";
+import { renderToolEntries, type RenderToolName } from "./adapters/render-mcp-cmd";
+import { registryShapes } from "./registry-spec";
 
 const idParam = {
   id: z
@@ -47,73 +48,41 @@ function ack(kind: string, id: string | undefined) {
   };
 }
 
-function registerRender(tool: string, component: ComponentName, description: string) {
+// This server's voice for each tool in the shared vocabulary
+// (RENDER_TOOL_COMPONENT). The strings are model-visible prompt surface —
+// change them deliberately, never as a side effect.
+const TOOL_DESCRIPTIONS: Record<RenderToolName, string> = {
+  render_card:
+    "Show a card: a single highlight, summary, or verdict set off from the prose. " +
+    "Prefer this to a bold paragraph when one point deserves a frame.",
+  render_list: "Show a list component instead of a markdown bullet/numbered list.",
+  render_table: "Show a table component instead of a markdown table.",
+  render_chart:
+    "Show a chart for ANY plot/graph: line for trends over an ordered axis, bar " +
+    "for category comparisons. Never hand-write SVG or ASCII charts — use this.",
+  render_links: "Show a group of links instead of a bare pile of URLs.",
+  render_keyvalue:
+    "Show a two-column key/value fact sheet: config, environment, any name→value facts.",
+  render_progress:
+    "Show a progress bar for long-running work. Re-call with the same id to advance it in place.",
+  render_timeline:
+    "Show an ordered timeline of events or stages — use when the sequence itself is the point.",
+  render_filetree: "Show a file/directory tree. Never hand-draw ASCII trees — use this.",
+  render_question:
+    "Ask a structured question with 2–4 clickable options; a click sends that option as the user's next turn. Not for open-ended questions.",
+  render_diff:
+    "Show a red/green line diff of a code change. Per file, pass the relevant before and after lines verbatim (no +/- prefixes); the client computes the diff.",
+};
+
+for (const [name, component] of renderToolEntries) {
   server.registerTool(
-    tool,
-    { description, inputSchema: { ...registryShapes[component], ...idParam } },
-    // arg types collapse to a union across components via the helper; the id is
-    // all we read here, and the engine already validated props against the schema.
+    name,
+    { description: TOOL_DESCRIPTIONS[name], inputSchema: { ...registryShapes[component], ...idParam } },
+    // arg types collapse to a union across components; the id is all we read
+    // here, and the engine already validated props against the schema.
     (async (args: { id?: string }) => ack(component, args.id)) as never,
   );
 }
-
-registerRender(
-  "render_card",
-  "card",
-  "Show a card: a single highlight, summary, or verdict set off from the prose. " +
-    "Prefer this to a bold paragraph when one point deserves a frame.",
-);
-registerRender(
-  "render_list",
-  "list",
-  "Show a list component instead of a markdown bullet/numbered list.",
-);
-registerRender(
-  "render_table",
-  "table",
-  "Show a table component instead of a markdown table.",
-);
-registerRender(
-  "render_chart",
-  "chart",
-  "Show a chart for ANY plot/graph: line for trends over an ordered axis, bar " +
-    "for category comparisons. Never hand-write SVG or ASCII charts — use this.",
-);
-registerRender(
-  "render_links",
-  "link-group",
-  "Show a group of links instead of a bare pile of URLs.",
-);
-registerRender(
-  "render_keyvalue",
-  "key-value",
-  "Show a two-column key/value fact sheet: config, environment, any name→value facts.",
-);
-registerRender(
-  "render_progress",
-  "progress",
-  "Show a progress bar for long-running work. Re-call with the same id to advance it in place.",
-);
-registerRender(
-  "render_timeline",
-  "timeline",
-  "Show an ordered timeline of events or stages — use when the sequence itself is the point.",
-);
-registerRender(
-  "render_filetree",
-  "file-tree",
-  "Show a file/directory tree. Never hand-draw ASCII trees — use this.",
-);
-registerRender(
-  "render_question",
-  "question",
-  "Ask a structured question with 2–4 clickable options; a click sends that option as the user's next turn. Not for open-ended questions.",
-);
-registerRender(
-  "render_diff",
-  "diff",
-  "Show a red/green line diff of a code change. Per file, pass the relevant before and after lines verbatim (no +/- prefixes); the client computes the diff.",
-);
 
 server.registerTool(
   "emit_artifact",
