@@ -1,0 +1,58 @@
+/* ---- Solarized Light (S.5) --------------------------------------------------
+   Transcribed from the canonical Base16 "Solarized Light" scheme (palette by
+   Ethan Schoonover, https://ethanschoonover.com/solarized/ — scheme file MIT)
+   via the S.2 recipe in manifest.ts. Light scheme: surfaces go LIGHTER than
+   the cream --bg ("follow the spirit, not the arithmetic sign"). Accents stay
+   canonical; hand-tunes from the QA walk are noted inline. Code/diff surfaces
+   stay pinned dark via base.css, as in every theme. */
+
+:root[data-theme="solarized-light"] {
+  color-scheme: light;
+  /* surfaces */
+  --bg: #fdf6e3;
+  --bg-inset: #f8f1de;
+  --surface: #fefbf2;
+  --surface-2: #eee8d5;
+  --surface-3: #f5eedb;
+  --surface-hover: #f6f0dd;
+  --inline-code-bg: #f4eedb;
+  /* text */
+  --fg: #586e75;
+  --fg-strong: #073642;
+  --fg-body: #446068;
+  --fg-mid: #5f757c;
+  --fg-dim: #657b83;
+  --fg-dimmer: #74888d;
+  --fg-faint: #839496;
+  /* accents */
+  --accent: #859900;
+  --info: #268bd2;
+  --warn-fg: #b58900;
+  --error: #dc322f;
+  /* borders */
+  --border: #d8d8cc;
+  --border-2: #d0d2c7;
+  --border-mid: #c3c7bf;
+  --border-hover: #aeb6b2;
+  --border-faint: #e3e1d3;
+  --border-ghost: #e6e3d4;
+  /* accent-tinted families */
+  --ok-bg: #f1edcc;
+  --ok-border: #dfdfaa;
+  --ok-border-strong: #cbcf84;
+  --err-bg: #fae2d1;
+  --err-border: #f5c5b6;
+  --err-border-strong: #efa497;
+  --info-bg: #e8ebe1;
+  --info-border: #c7dbdf;
+  --info-border-strong: #a3c9dc;
+  --warn-bg: #f7eccf;
+  --warn-bg-2: #f7eccf;
+  --warn-border: #e9d7a3;
+  --warn-border-2: #e3cf91;
+  /* misc — dark scrim + stock shadows, as everywhere */
+  --overlay: rgba(0, 16, 21, 0.82);
+  --selection: rgba(133, 153, 0, 0.2);
+  --shadow-pop: 0 4px 14px rgba(0, 0, 0, 0.18);
+  --shadow-card: 0 18px 60px rgba(0, 0, 0, 0.5);
+}
