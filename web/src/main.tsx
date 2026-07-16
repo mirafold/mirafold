@@ -1,6 +1,6 @@
 import { createRoot } from "react-dom/client";
-import { Shell } from "./Shell";
-import { FleetView } from "./FleetView";
+import { Shell } from "./components/Shell";
+import { FleetView } from "./components/FleetView";
 import "highlight.js/styles/github-dark.css";
 import "./styles.css";
 

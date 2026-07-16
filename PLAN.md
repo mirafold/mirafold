@@ -165,7 +165,7 @@ yarn test:e2e` (e2e rebuilds `dist`, proving the build); a repo-wide grep for
 each old path finds only PLAN-ARCHIVE.md, dated history, and the accepted
 hits named in the step.
 
-- [ ] **Step H2.1 — Group the shell-owned components into `web/src/components/`**
+- [x] **Step H2.1 — Group the shell-owned components into `web/src/components/`**
   - Goal: `web/src/` stops mixing component files and plumbing modules at one
     flat level, and the folder split makes the trust boundary visible in the
     tree — shell-owned components in `components/`, the agent-paintable
@@ -193,6 +193,16 @@ hits named in the step.
   - Done when: the ritual passes at exact count parity across all three
     tiers, and the old-path grep across the whole repo (docs included) finds
     only PLAN-ARCHIVE.md history and the mock's demo string.
+  - Status: **DONE 2026-07-15.** Ten components + three tests `git mv`'d
+    (all rename-detected); import fixes exactly as drawn (root modules and
+    `../registry/` one level up; `main.tsx` → `./components/`); no alias or
+    config change needed. README updated in the same step: §1 spine + §3
+    Artifact citation + §4 tree redrawn with the nested `components/` block
+    and its trusted-vs-registry annotation. Ritual green at exact parity
+    159/74/20 (Tier 3 rebuilt dist). Old-path grep across the whole umbrella
+    finds exactly the accepted hits: this step's own note, F.2's dated `[x]`
+    status history (PLAN.md line ~1288 — history stays verbatim, same
+    convention as PLAN-ARCHIVE), and the mock's demo string.
 
 - [ ] **Step H2.2 — Root markdown tidy: working docs move under `docs/`**
   - Goal: the repo root shows only load-bearing documents (README, CLAUDE,
