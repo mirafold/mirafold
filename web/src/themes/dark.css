@@ -1,0 +1,56 @@
+/* ---- Dark (Step 4.3; split out in S.1) -------------------------------------
+   One semantic palette per theme file; structural CSS (styles.css) consumes
+   only var(...). Dark is the default and the identity — it owns bare :root,
+   so an unset/unknown data-theme falls back here. Pinned code/diff tokens
+   live in base.css, not per theme. */
+
+:root {
+  color-scheme: dark;
+  /* surfaces */
+  --bg: #101319;
+  --bg-inset: #10151f;
+  --surface: #141a26;
+  --surface-2: #18202e;
+  --surface-3: #161c28;
+  --surface-hover: #1b2434;
+  --inline-code-bg: #1b2130;
+  /* text */
+  --fg: #e6e9ef;
+  --fg-strong: #eef2f8;
+  --fg-body: #d4dae4;
+  --fg-mid: #a8b2c2;
+  --fg-dim: #8b96a8;
+  --fg-dimmer: #6b7488;
+  --fg-faint: #55617a;
+  /* accents */
+  --accent: #4ade80;
+  --info: #7ab8ff;
+  --warn-fg: #d4a852;
+  --error: #e66767;
+  /* borders */
+  --border: #232a38;
+  --border-2: #262f42;
+  --border-mid: #313b4e;
+  --border-hover: #3a4a68;
+  --border-faint: #1d2434;
+  --border-ghost: #1c2331;
+  /* accent-tinted families */
+  --ok-bg: #16281c;
+  --ok-border: #234a32;
+  --ok-border-strong: #2f6a45;
+  --err-bg: #281a1e;
+  --err-border: #4a2a33;
+  --err-border-strong: #6a3a45;
+  --info-bg: #16202e;
+  --info-border: #26364e;
+  --info-border-strong: #3a5a86;
+  --warn-bg: #1a1810;
+  --warn-bg-2: #16130d;
+  --warn-border: #4a3d1e;
+  --warn-border-2: #574727;
+  /* misc */
+  --overlay: rgba(8, 11, 16, 0.82);
+  --selection: rgba(74, 222, 128, 0.25);
+  --shadow-pop: 0 4px 14px rgba(0, 0, 0, 0.18);
+  --shadow-card: 0 18px 60px rgba(0, 0, 0, 0.5);
+}

@@ -36,6 +36,8 @@ function QrSvg({ text }: { text: string }) {
       role="img"
       aria-label="pairing QR code"
     >
+      {/* Literal black-on-white (S.1 exception): QR modules are for camera
+          scanners, not the theme — max contrast in every theme, never var(). */}
       <rect x={-2} y={-2} width={count + 4} height={count + 4} fill="#ffffff" />
       <path d={d} fill="#000000" />
     </svg>

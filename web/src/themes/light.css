@@ -1,0 +1,61 @@
+/* ---- Light (Step 4.3; split out in S.1) ------------------------------------
+   A TRUE, unified light theme — the whole UI, chrome included (prompt box,
+   command strips, bang/permission/status bars, onboarding), flips to the
+   light palette. Faithful re-skin: a real terminal switched to light mode has
+   a light input, so ours follows suit — the earlier "chrome stays dark /
+   mono-in-rich-out" split contradicted that founding principle and was
+   reversed (USER-TESTING-FEEDBACK.md #8). The input stays distinctly an input
+   via light-palette cues (inset surface, border, monospace), not a dark
+   block. Code/diff surfaces stay pinned dark via base.css. */
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  /* surfaces */
+  --bg: #f5f7fa;
+  --bg-inset: #eef1f6;
+  --surface: #ffffff;
+  --surface-2: #eaeef4;
+  --surface-3: #eef1f6;
+  --surface-hover: #eef2f7;
+  --inline-code-bg: #e8edf4;
+  /* text */
+  --fg: #26303f;
+  --fg-strong: #111927;
+  --fg-body: #2d3a4d;
+  --fg-mid: #45556c;
+  --fg-dim: #5b6a80;
+  --fg-dimmer: #7b879c;
+  --fg-faint: #97a2b4;
+  /* accents */
+  --accent: #189c51;
+  --info: #2b6cd4;
+  --warn-fg: #9c6d12;
+  --error: #c8404f;
+  /* borders */
+  --border: #dde3eb;
+  --border-2: #d6dde7;
+  --border-mid: #c6d0dc;
+  --border-hover: #9db1cc;
+  --border-faint: #e9edf3;
+  --border-ghost: #e6ebf1;
+  /* accent-tinted families */
+  --ok-bg: #e9f7ee;
+  --ok-border: #b5dfc5;
+  --ok-border-strong: #7fc79c;
+  --err-bg: #fbeff1;
+  --err-border: #edccd3;
+  --err-border-strong: #d99aa8;
+  --info-bg: #e9f1fb;
+  --info-border: #c3d5ec;
+  --info-border-strong: #85aad8;
+  --warn-bg: #faf5e6;
+  --warn-bg-2: #faf5e6;
+  --warn-border: #e3cf9e;
+  --warn-border-2: #d9bd82;
+  /* misc — overlay + shadows deliberately keep the dark values: a modal
+     scrim over a light UI is still a dark scrim, and shadows are shadows. */
+  --overlay: rgba(8, 11, 16, 0.82);
+  --selection: rgba(24, 156, 81, 0.2);
+  --shadow-pop: 0 4px 14px rgba(0, 0, 0, 0.18);
+  --shadow-card: 0 18px 60px rgba(0, 0, 0, 0.5);
+}

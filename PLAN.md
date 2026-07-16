@@ -1129,7 +1129,22 @@ borrowed themes prove it.
   swap per theme). The contract records them as pinned; a per-theme override
   door stays open in the design but is NOT exercised in this phase.
 
-- [ ] **Step S.1 — Token audit + file split (zero visual change)**
+- [x] **Step S.1 — Token audit + file split (zero visual change)** — done
+  2026-07-16. Palettes now live in `web/src/themes/`: `base.css` (the pinned
+  `--code-*`/`--diff-*` tokens, the charter's shared base block), `dark.css`
+  (bare `:root` — dark stays the fallback identity), `light.css`
+  (`:root[data-theme="light"]`, now token-complete: `--overlay` + the shadows
+  are stated explicitly with the dark values rather than inherited silently);
+  import order set in `main.tsx` (base → themes → structure). The audit found
+  only three literals in structural CSS — three `box-shadow`s — hoisted as
+  `--shadow-pop` (chart tooltip) and `--shadow-card` (onboarding/pair cards),
+  same values both themes. `styles.css` is grep-clean of color literals.
+  Deliberate non-CSS exceptions, each noted in-file: the QR's black-on-white
+  (scanner contrast, `ConnectDevice.tsx`), the canvas favicon (can't consume
+  CSS vars, `Shell.tsx`), the artifact iframe's dark base (opaque origin
+  can't read shell vars, `Artifact.tsx`), and Chart's fixed CVD-safe series
+  palette (data-viz, not theme). Verified: typecheck + all three tiers green
+  untouched (168 unit / 74 itest / 21 e2e).
   - Goal: complete the tokens-vs-structure separation that `styles.css`
     already has in embryo (lines 1–112 are palette; ~2,400 lines are
     structure), so a theme is one self-contained file.
