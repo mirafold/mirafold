@@ -1159,7 +1159,22 @@ borrowed themes prove it.
     modulo deliberate exceptions noted in-file), and the app is visually
     unchanged in both themes — `yarn test:e2e` passes untouched.
 
-- [ ] **Step S.2 — Theme contract, manifest, and Tier-1 guards**
+- [x] **Step S.2 — Theme contract, manifest, and Tier-1 guards** — done
+  2026-07-16. `web/src/themes/manifest.ts` is the single source: `THEMES`
+  (`{ id, displayName, appearance }` — ids stamp `data-theme`, nothing else
+  in the app names a theme), the 41-token `THEME_TOKENS` contract, the
+  7-token `PINNED_TOKENS` set (base.css only), and the Base16 slot→token
+  porting recipe as the closing doc comment (S.5/S.6 transcribe from it;
+  syntax slots beyond the four semantic accents deliberately unused — code
+  is pinned + hljs-owned). `themes.test.ts` adds 8 Tier-1 guards: manifest
+  sanity, ids↔files bijection, per-theme selector scoping (dark owns bare
+  `:root`, every other theme scopes to its own `data-theme`), exact contract
+  token set (missing AND strays), base.css = exactly the pinned set,
+  contract/pinned disjoint, fg/bg contrast ≥ 4.5:1, and appearance label ↔
+  actual `--bg` lightness. Done-when proven live: each of the four failure
+  modes (missing token, stray token, manifest/file mismatch, unreadable
+  fg/bg) was broken once and failed exactly its guard, then restored.
+  Verified: typecheck + all tiers green (176 unit / 74 itest / 21 e2e).
   - Goal: the fixed token contract every theme must satisfy, the single
     source the picker renders from, and the tests that keep 6 (then 16)
     themes from silently drifting.
