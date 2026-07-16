@@ -12,7 +12,7 @@ import {
   PINNED_TOKENS,
   resolveSlot,
   slotStorageKey,
-  parseThemeTokens as parseTokens,
+  parseThemeTokens,
 } from "./manifest";
 
 const themesDir = dirname(fileURLToPath(import.meta.url));
@@ -78,7 +78,7 @@ test("each theme file scopes itself to its own data-theme (dark owns bare :root)
 
 test("every theme defines exactly the contract's tokens", () => {
   for (const t of THEMES) {
-    const declared = new Set(parseTokens(themeCss(t.id)).keys());
+    const declared = new Set(parseThemeTokens(themeCss(t.id)).keys());
     const contract = new Set<string>(THEME_TOKENS);
     const missing = [...contract].filter((k) => !declared.has(k));
     const strays = [...declared].filter((k) => !contract.has(k));
@@ -88,7 +88,7 @@ test("every theme defines exactly the contract's tokens", () => {
 });
 
 test("base.css defines exactly the pinned tokens", () => {
-  const declared = [...parseTokens(readFileSync(join(themesDir, "base.css"), "utf8")).keys()].sort();
+  const declared = [...parseThemeTokens(readFileSync(join(themesDir, "base.css"), "utf8")).keys()].sort();
   assert.deepEqual(declared, [...PINNED_TOKENS].sort());
 });
 
@@ -99,7 +99,7 @@ test("contract and pinned token lists don't overlap", () => {
 
 test("contrast floor: --fg on --bg is at least 4.5:1 in every theme", () => {
   for (const t of THEMES) {
-    const tokens = parseTokens(themeCss(t.id));
+    const tokens = parseThemeTokens(themeCss(t.id));
     const ratio = contrast(tokens.get("--fg")!, tokens.get("--bg")!);
     assert.ok(
       ratio >= 4.5,
@@ -126,7 +126,7 @@ test("slot storage keys derive from the mode key's namespace", () => {
 
 test("appearance labels match the palette: --bg is dark for dark themes, light for light", () => {
   for (const t of THEMES) {
-    const [r, g, b] = hexToRgb(parseTokens(themeCss(t.id)).get("--bg")!);
+    const [r, g, b] = hexToRgb(parseThemeTokens(themeCss(t.id)).get("--bg")!);
     const perceived = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
     if (t.appearance === "dark") {
       assert.ok(perceived < 0.5, `${t.id} is labeled dark but --bg is light (${perceived.toFixed(2)})`);

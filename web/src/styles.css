@@ -2249,9 +2249,11 @@ html {
   padding: 24px;
 }
 
-.pair-card {
+/* The pairing and settings cards share one modal idiom (S.4): same card
+   shell, head, title, and close — only the width differs. */
+.pair-card,
+.settings-card {
   width: 100%;
-  max-width: 380px;
   background: var(--surface);
   border: 1px solid var(--border-2);
   border-radius: 12px;
@@ -2259,7 +2261,16 @@ html {
   box-shadow: var(--shadow-card);
 }
 
-.pair-head {
+.pair-card {
+  max-width: 380px;
+}
+
+.settings-card {
+  max-width: 420px;
+}
+
+.pair-head,
+.settings-head {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -2267,12 +2278,14 @@ html {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
-.pair-title {
+.pair-title,
+.settings-title {
   color: var(--fg-strong);
   font-size: 0.95em;
 }
 
-.pair-close {
+.pair-close,
+.settings-close {
   margin-left: auto;
   background: transparent;
   border: 0;
@@ -2282,7 +2295,8 @@ html {
   padding: 4px 8px;
 }
 
-.pair-close:hover {
+.pair-close:hover,
+.settings-close:hover {
   color: var(--fg);
 }
 
@@ -2355,43 +2369,6 @@ html {
 .sb-settings:hover {
   color: var(--fg);
   border-color: var(--border-hover);
-}
-
-.settings-card {
-  width: 100%;
-  max-width: 420px;
-  background: var(--surface);
-  border: 1px solid var(--border-2);
-  border-radius: 12px;
-  padding: 20px;
-  box-shadow: var(--shadow-card);
-}
-
-.settings-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 14px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-}
-
-.settings-title {
-  color: var(--fg-strong);
-  font-size: 0.95em;
-}
-
-.settings-close {
-  margin-left: auto;
-  background: transparent;
-  border: 0;
-  color: var(--fg-dimmer);
-  font: inherit;
-  cursor: pointer;
-  padding: 4px 8px;
-}
-
-.settings-close:hover {
-  color: var(--fg);
 }
 
 .settings-section-title {
