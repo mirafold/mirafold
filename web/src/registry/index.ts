@@ -10,6 +10,12 @@ import { Table } from "./Table";
 import { LinkGroup } from "./LinkGroup";
 import { Chart } from "./Chart";
 import { TodoList } from "./TodoList";
+import { KeyValue } from "./KeyValue";
+import { Progress } from "./Progress";
+import { Timeline } from "./Timeline";
+import { FileTree } from "./FileTree";
+import { Question } from "./Question";
+import { Diff } from "./Diff";
 
 export const registry: { [N in ComponentName]: ComponentType<ComponentProps<N>> } = {
   card: Card,
@@ -18,4 +24,10 @@ export const registry: { [N in ComponentName]: ComponentType<ComponentProps<N>> 
   "link-group": LinkGroup,
   chart: Chart,
   "todo-list": TodoList,
+  "key-value": KeyValue,
+  progress: Progress,
+  timeline: Timeline,
+  "file-tree": FileTree,
+  question: Question,
+  diff: Diff,
 };

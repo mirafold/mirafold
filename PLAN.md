@@ -1273,6 +1273,29 @@ has a home in this plan, the entry points there instead of duplicating it.
   above (S.1 pie, S.2 stacked/horizontal, S.3 stat tile) are the first
   concrete batch; keep extending the registry additively (add message
   types/kinds, never reshape) as session needs surface.
+  - ✅ 2026-07-15 — first batch landed: four new registry components
+    (`key-value`, `progress`, `timeline`, `file-tree` — flat paths on the
+    wire, nested client-side) plus an additive `kind` callout tint on `card`
+    (info/success/warning/error). Each rides the full seam: registry-spec
+    schema, render tool in BOTH servers (render-tools.ts + render-mcp.ts),
+    RENDER_TOOL_COMPONENT entry, React component + registry entry, guidance
+    line, mock payloads. All three test tiers green; observed rendering
+    against the mock in headless Chrome.
+  - ✅ 2026-07-15 — `question` registry component (`render_question`): a
+    structured 2–4-option fork; clicking an option sends its text as the
+    user's next turn over the existing Phase-2 prompt-action path, and the
+    clicked copy locks (chosen marked, buttons disabled). Same full seam as
+    the batch above, plus a deterministic mock hook (`playQuestion`,
+    /question|choose|decide/) and a Tier-3 e2e driving the real click →
+    user-turn round trip. All three tiers green (e2e 21/21).
+  - ✅ 2026-07-15 — `diff` registry component (`render_diff`): red/green
+    line diff of a made/proposed change, one entry per file. Schema takes
+    BEFORE/AFTER SNIPPETS, never unified-patch text (models botch @@ line
+    math; snippets need no bookkeeping) — the client diffs them via
+    `web/src/diff.ts`, the LCS differ hoisted out of ToolBlock so
+    agent-painted diffs and Edit/Write tool diffs render identically.
+    Empty before = new file (pure +), empty after = deletion (pure −).
+    Same full seam; all three tiers green.
 
 ---
 

@@ -84,6 +84,36 @@ registerRender(
   "link-group",
   "Show a group of links instead of a bare pile of URLs.",
 );
+registerRender(
+  "render_keyvalue",
+  "key-value",
+  "Show a two-column key/value fact sheet: config, environment, any name→value facts.",
+);
+registerRender(
+  "render_progress",
+  "progress",
+  "Show a progress bar for long-running work. Re-call with the same id to advance it in place.",
+);
+registerRender(
+  "render_timeline",
+  "timeline",
+  "Show an ordered timeline of events or stages — use when the sequence itself is the point.",
+);
+registerRender(
+  "render_filetree",
+  "file-tree",
+  "Show a file/directory tree. Never hand-draw ASCII trees — use this.",
+);
+registerRender(
+  "render_question",
+  "question",
+  "Ask a structured question with 2–4 clickable options; a click sends that option as the user's next turn. Not for open-ended questions.",
+);
+registerRender(
+  "render_diff",
+  "diff",
+  "Show a red/green line diff of a code change. Per file, pass the relevant before and after lines verbatim (no +/- prefixes); the client computes the diff.",
+);
 
 server.registerTool(
   "emit_artifact",

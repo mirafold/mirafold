@@ -309,6 +309,79 @@ export const MOCK_RENDERS: (() => { component: string; props: Record<string, unk
       ],
     },
   }),
+  () => ({
+    component: "card",
+    props: {
+      title: `Regression in ${pick(SERVICES)}`,
+      body: `**2 tests failing** since the last deploy. ${sentence()}`,
+      kind: pick(["info", "success", "warning", "error"] as const),
+      footer: "mock callout card",
+    },
+  }),
+  () => ({
+    component: "key-value",
+    props: {
+      title: `Environment — ${pick(PROJECTS)}`,
+      pairs: [
+        { key: "node", value: "`v22.11.0`" },
+        { key: "package manager", value: "yarn 4" },
+        { key: "typecheck", value: pick(["**clean**", "2 errors"]) },
+        { key: "coverage", value: `${randInt(62, 97)}%` },
+      ],
+    },
+  }),
+  () => ({
+    component: "progress",
+    props: {
+      label: `Running test suite — ${pick(PROJECTS)}`,
+      percent: randInt(5, 95),
+      detail: `tier 1 · \`${pick(SERVICES)}\``,
+    },
+  }),
+  () => ({
+    component: "timeline",
+    props: {
+      title: "Rollout",
+      items: [
+        { label: "Canary deployed", time: "09:12" },
+        { label: `\`${pick(SERVICES)}\` at 50%`, time: "09:40", detail: sentence() },
+        { label: "Full fleet", time: "10:05" },
+      ],
+    },
+  }),
+  () => ({
+    component: "diff",
+    props: {
+      title: `Proposed fix — ${pick(SERVICES)}`,
+      files: [
+        {
+          path: "src/cache/store.ts",
+          before: "const cached = this.cache.get(key);\nif (cached) return cached;",
+          after:
+            "const cached = await this.cache.getOrLock(key);\nif (cached !== undefined) return cached;",
+        },
+        {
+          path: "src/cache/store.test.ts",
+          before: "",
+          after: "it('locks concurrent gets', async () => {\n  await hammer(store);\n});",
+          note: "new file",
+        },
+      ],
+    },
+  }),
+  () => ({
+    component: "file-tree",
+    props: {
+      title: `Touched files — ${pick(PROJECTS)}`,
+      paths: [
+        { path: "src/api/router.ts", note: "modified" },
+        { path: "src/api/handlers/auth.ts", note: "new" },
+        { path: "src/lib/tokens.ts" },
+        { path: "test/fixtures/" },
+        { path: "test/auth.test.ts", note: "new" },
+      ],
+    },
+  }),
 ];
 
 // The hostile-artifact fixture. Each escape attempt writes its outcome
@@ -384,6 +457,7 @@ export class MockSession implements AgentSession {
       return this.playBridgeArtifact();
     }
     if (/dangerous|sudo|rm -rf/i.test(text)) return this.playPermissionAsk();
+    if (/question|choose|decide/i.test(text)) return this.playQuestion();
     this.playTemplateTurn(text);
   }
 
@@ -410,6 +484,39 @@ export class MockSession implements AgentSession {
               {
                 label: "List workspace",
                 action: { kind: "tool", name: "workspace_ls" },
+              },
+            ],
+          },
+          id: randomUUID(),
+        }),
+      delay,
+    );
+    this.schedule(() => this.emit({ type: "turn_end" }), delay + 40);
+  }
+
+  /** Deterministic hook: a question component, so the option-click →
+   *  prompt-turn loop runs API-free. */
+  private playQuestion() {
+    this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+    let delay = this.streamText("Two viable paths here — pick one and I'll take it.", 350);
+    delay += 350;
+    this.schedule(
+      () =>
+        this.emit({
+          type: "render",
+          component: "question",
+          props: {
+            question: `How should I roll out \`${pick(SERVICES)}\`?`,
+            options: [
+              {
+                label: "Canary first",
+                text: "Do a canary rollout first.",
+                detail: "5% for an hour, then fleet-wide",
+              },
+              {
+                label: "Straight to fleet",
+                text: "Roll out to the whole fleet now.",
+                detail: "faster, riskier",
               },
             ],
           },

@@ -576,7 +576,9 @@ mediation path (§5.4).
   anything the user's own rules don't already decide.
 - **Generative UI (Phase 1):** the session mounts an in-process MCP server
   (`server/render-tools.ts`) exposing side-effect-free `render_card` /
-  `render_list` / `render_table` / `render_chart` / `render_links` tools
+  `render_list` / `render_table` / `render_chart` / `render_links` /
+  `render_keyvalue` / `render_progress` / `render_timeline` /
+  `render_filetree` / `render_question` / `render_diff` tools
   whose input schemas are the registry spec (`server/registry-spec.ts`) plus
   an optional `id` for update-in-place. Calling one emits a `render` WireMsg
   at that point in the stream and returns the id to the model.

@@ -44,6 +44,19 @@ test("every schema rejects wrong-shaped payloads, not just card", () => {
     ["chart", { kind: "pie", x: ["a"], series: [{ name: "s", values: [1] }] }], // enum
     ["chart", { kind: "line", x: ["a"], series: [] }], // min(1) series
     ["todo-list", { todos: [{ content: "x", status: "bogus" }] }], // status enum
+    ["card", { title: "t", body: "b", kind: "loud" }], // kind enum
+    ["key-value", { pairs: [] }], // min(1)
+    ["progress", { label: "x", percent: 101 }], // 0–100
+    ["progress", { label: "x", percent: -1 }], // 0–100
+    ["timeline", { items: [] }], // min(1)
+    ["file-tree", { paths: [] }], // min(1)
+    ["question", { question: "q?", options: [{ label: "only one" }] }], // min(2)
+    [
+      "question",
+      { question: "q?", options: Array(5).fill({ label: "x" }) },
+    ], // max(4)
+    ["diff", { files: [] }], // min(1)
+    ["diff", { files: [{ path: "a.ts", before: "x" }] }], // after required
   ];
   for (const [component, props] of bad) {
     assert.equal(
@@ -57,6 +70,31 @@ test("every schema rejects wrong-shaped payloads, not just card", () => {
     ["table", { columns: ["a"], rows: [["x", 1]] }],
     ["chart", { kind: "line", x: ["a"], series: [{ name: "s", values: [1] }] }],
     ["todo-list", { todos: [{ content: "x", status: "pending" }] }],
+    ["card", { title: "t", body: "b", kind: "success" }],
+    ["key-value", { pairs: [{ key: "k", value: "v" }] }],
+    ["progress", { label: "x", percent: 40 }],
+    ["timeline", { items: [{ label: "x", time: "09:00" }] }],
+    ["file-tree", { paths: [{ path: "src/a.ts", note: "new" }] }],
+    [
+      "question",
+      {
+        question: "Canary or fleet?",
+        options: [
+          { label: "Canary", text: "Do a canary rollout.", detail: "slower, safer" },
+          { label: "Fleet" },
+        ],
+      },
+    ],
+    [
+      "diff",
+      {
+        title: "Fix",
+        files: [
+          { path: "a.ts", before: "old line", after: "new line" },
+          { path: "b.ts", before: "", after: "added file", note: "new file" },
+        ],
+      },
+    ],
   ];
   for (const [component, props] of good) {
     assert.equal(
