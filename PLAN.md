@@ -1093,6 +1093,130 @@ anywhere; each is independent.
 
 ---
 
+## Phase S — Theme system: six themes at launch (opened 2026-07-15; next up — pre-launch polish, ships in the launch build before R.7)
+
+Goal of the phase: grow from the two hand-built themes (Light, Dark) to **six**
+— adding Solarized Light, Solarized Dark, Gruvbox Dark, and Dracula — on
+plumbing that makes every later theme a one-file, one-manifest-row,
+one-eyeball-pass addition. The real deliverable is the plumbing; the four
+borrowed themes prove it.
+
+**Decisions locked 2026-07-15 (this phase's charter):**
+
+- **Native CSS only.** No CSS framework, library, or preprocessor — CSS custom
+  properties are the purpose-built runtime theming mechanism, and the repo's
+  zero-dependency posture holds.
+- **Semantic tokens stay the vocabulary.** The existing ~45 purpose-named
+  custom properties (`--surface-2`, `--fg-dim`, `--warn-border`, …) remain
+  what structural CSS consumes. We do NOT adopt Base16 slot names
+  (`--base0A`) — too coarse (16 slots can't express our 7 text tiers / 6
+  border weights) and illegible to a human maintainer.
+- **Base16 is the porting recipe, not the vocabulary.** Each borrowed theme is
+  transcribed from its canonical published Base16 scheme through a
+  documented slot→token mapping written once in S.2. Palettes aren't
+  copyrightable and the source projects are MIT; each theme file carries a
+  source-attribution comment anyway.
+- **Every theme is standalone, labeled `light` or `dark` behind the scenes.**
+  Themes never come in pairs and never have variants; the label only answers
+  "which side of the toggle selects this." Families (Solarized) ship as two
+  unrelated sibling entries. The user's settings hold two slots — a chosen
+  light theme and a chosen dark theme (defaults: Light, Dark) — and the
+  existing toggle picks the active slot, so it stays meaningful after
+  someone adopts a fancy theme. Picking a theme from the list applies it
+  immediately and fills its side's slot; users never manage slots explicitly.
+- **Code/diff surfaces stay pinned dark universally** (the standing
+  USER-TESTING-FEEDBACK.md #8-adjacent decision: `--code-*`/`--diff-*` don't
+  swap per theme). The contract records them as pinned; a per-theme override
+  door stays open in the design but is NOT exercised in this phase.
+
+- [ ] **Step S.1 — Token audit + file split (zero visual change)**
+  - Goal: complete the tokens-vs-structure separation that `styles.css`
+    already has in embryo (lines 1–112 are palette; ~2,400 lines are
+    structure), so a theme is one self-contained file.
+  - Build: sweep the structural rules for literal colors (hex/rgb/hsl) and
+    hoist each into a semantic token; move the palettes out to
+    `web/src/themes/dark.css` and `web/src/themes/light.css` (pinned
+    `--code-*`/`--diff-*` tokens live in a shared base block — exact layout
+    decided in-step); `styles.css` keeps only structural rules referencing
+    `var(...)`. Import order via `web/src/main.tsx`.
+  - Files: `web/src/styles.css`, `web/src/themes/` (new), `web/src/main.tsx`.
+  - Done when: no color literal remains outside `web/src/themes/` (grep-clean,
+    modulo deliberate exceptions noted in-file), and the app is visually
+    unchanged in both themes — `yarn test:e2e` passes untouched.
+
+- [ ] **Step S.2 — Theme contract, manifest, and Tier-1 guards**
+  - Goal: the fixed token contract every theme must satisfy, the single
+    source the picker renders from, and the tests that keep 6 (then 16)
+    themes from silently drifting.
+  - Build: `web/src/themes/manifest.ts` — the canonical token-name list plus
+    a `{ id, displayName, appearance: "light" | "dark" }` entry per theme
+    (ids stamp `data-theme` and persist in settings; nothing else in the app
+    ever names a theme). Write the Base16 slot→token mapping recipe as a
+    comment/doc alongside. Tier-1 tests: every theme file defines exactly
+    the contract's tokens (no missing, no strays); manifest ids ↔ theme
+    files are a bijection; contrast floor — `--fg` vs `--bg` computes ≥
+    4.5:1 per theme, so a mangled palette fails before a human looks.
+  - Files: `web/src/themes/manifest.ts` (new), `web/src/themes/themes.test.ts`
+    (new).
+  - Done when: `yarn test` fails loudly on a theme file missing a token, a
+    stray token, a manifest/file mismatch, or an unreadable fg/bg pair —
+    verified by deliberately breaking each once.
+
+- [ ] **Step S.3 — Two-slot switching + Auto**
+  - Goal: generalize today's binary toggle (`Shell.tsx`, localStorage key
+    `mirafold-theme`) to the two-slot model without changing what a
+    fresh user sees.
+  - Build: persist `lightTheme` / `darkTheme` slot choices (defaults `light`
+    / `dark`) alongside the existing mode; the toggle becomes tri-state
+    Light / Dark / **Auto**, where Auto follows `prefers-color-scheme` to
+    pick the active slot. Active theme id stamps `:root[data-theme]`.
+    Migration: existing stored `mirafold-theme` values keep meaning what
+    they meant.
+  - Files: `web/src/components/Shell.tsx`, `web/src/themes/manifest.ts`.
+  - Done when: Tier-3 proves toggle flips between the two slot themes,
+    Auto tracks an emulated OS preference change live, and choices survive
+    reload.
+
+- [ ] **Step S.4 — Theme picker UI (shell-owned)**
+  - Goal: the settings affordance that exposes the theme list — grouped
+    "Light themes" / "Dark themes", a small multi-chip color swatch per row
+    so in-between palettes sell themselves visually.
+  - Build: picker renders purely from the manifest; clicking a row applies
+    the theme immediately (live preview, no confirm) and writes it into its
+    appearance side's slot. Shell-owned affordance — agent output can never
+    render, wrap, or intercept it (trusted-shell boundary).
+  - Files: `web/src/components/Shell.tsx` (or a new `ThemePicker.tsx`),
+    `web/src/styles.css`.
+  - Done when: Tier-3 drives a real click on a dark-labeled theme → it
+    paints immediately, `data-theme` updates, the toggle's dark side now
+    means that theme, and the light side is untouched.
+
+- [ ] **Step S.5 — Themes 3 + 4: Solarized Light, Solarized Dark**
+  - Goal: the first borrowed pair — the canonical light theme and its
+    famous sibling — shipped as two standalone manifest entries.
+  - Build: transcribe each from its canonical Base16 scheme via the S.2
+    recipe into one theme file each (+ attribution comment), then the
+    eyeball QA walk per theme: terminal output, tool blocks, diffs (pinned
+    dark — confirm they still sit right), permission bar, onboarding,
+    generative-UI components; hand-tune derived tiers where the recipe's
+    output misses.
+  - Files: `web/src/themes/solarized-light.css`,
+    `web/src/themes/solarized-dark.css`, `web/src/themes/manifest.ts`.
+  - Done when: both pass the S.2 guards, both survive the QA walk with
+    notes resolved, and each is selectable + persistent end-to-end.
+
+- [ ] **Step S.6 — Themes 5 + 6: Gruvbox Dark, Dracula**
+  - Goal: two dark singletons with huge terminal followings — same recipe,
+    same bar.
+  - Build: identical to S.5 for `gruvbox-dark` and `dracula`.
+  - Files: `web/src/themes/gruvbox-dark.css`, `web/src/themes/dracula.css`,
+    `web/src/themes/manifest.ts`.
+  - Done when: same bar as S.5; with these landed the picker shows six
+    themes (2 light, 4 dark) and adding a seventh is demonstrably one new
+    file + one manifest row + the QA walk.
+
+---
+
 ## Phase L — Local models: zero-friction (ergonomics on top of Phase P)
 
 Goal of the phase: someone running a local LLM uses their agent in Mirafold
