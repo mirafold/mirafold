@@ -1124,6 +1124,15 @@ borrowed themes prove it.
   existing toggle picks the active slot, so it stays meaningful after
   someone adopts a fancy theme. Picking a theme from the list applies it
   immediately and fills its side's slot; users never manage slots explicitly.
+- **The light/dark pill does not change AT ALL — LOCKED (Kyle, stated
+  multiple times; re-affirmed emphatically 2026-07-16 after an "Auto" third
+  state was misrecorded into S.3's original text).** Same look, same two
+  positions, same behavior — no tri-state, no Auto, no `prefers-color-scheme`
+  following, no visual tweak of any kind. Its two positions simply select the
+  two slots, which with default slots is indistinguishable from today. The
+  ONE new affordance this phase adds to the chrome is a **settings button**
+  (S.4) that opens the theme picker. Any future change to the pill requires a
+  new, explicit decision from Kyle — never infer one from adjacent work.
 - **Code/diff surfaces stay pinned dark universally** (the standing
   USER-TESTING-FEEDBACK.md #8-adjacent decision: `--code-*`/`--diff-*` don't
   swap per theme). The contract records them as pinned; a per-theme override
@@ -1192,34 +1201,42 @@ borrowed themes prove it.
     stray token, a manifest/file mismatch, or an unreadable fg/bg pair —
     verified by deliberately breaking each once.
 
-- [ ] **Step S.3 — Two-slot switching + Auto**
-  - Goal: generalize today's binary toggle (`Shell.tsx`, localStorage key
-    `mirafold-theme`) to the two-slot model without changing what a
-    fresh user sees.
+- [ ] **Step S.3 — Two-slot switching (the pill itself does NOT change)**
+  - Goal: generalize the backing state of today's binary toggle
+    (`Shell.tsx`, localStorage key `mirafold-theme`) to the two-slot model
+    with **zero change to the pill** — per the charter's locked decision:
+    same look, same two positions, same behavior; the original text of this
+    step added an "Auto" third state, which misrecorded Kyle's decision and
+    was struck 2026-07-16. Do not reintroduce it.
   - Build: persist `lightTheme` / `darkTheme` slot choices (defaults `light`
-    / `dark`) alongside the existing mode; the toggle becomes tri-state
-    Light / Dark / **Auto**, where Auto follows `prefers-color-scheme` to
-    pick the active slot. Active theme id stamps `:root[data-theme]`.
-    Migration: existing stored `mirafold-theme` values keep meaning what
-    they meant.
+    / `dark`) alongside the existing mode; the pill's two positions select
+    the active slot — with default slots this is behavior-identical to
+    today. Active theme id stamps `:root[data-theme]`. Migration: existing
+    stored `mirafold-theme` values keep meaning what they meant (the
+    index.html pre-paint script included).
   - Files: `web/src/components/Shell.tsx`, `web/src/themes/manifest.ts`.
-  - Done when: Tier-3 proves toggle flips between the two slot themes,
-    Auto tracks an emulated OS preference change live, and choices survive
-    reload.
+  - Done when: Tier-3 proves the pill flips between the two slot themes,
+    choices survive reload, and with default slots the pill's rendered UI
+    and behavior are exactly today's.
 
-- [ ] **Step S.4 — Theme picker UI (shell-owned)**
-  - Goal: the settings affordance that exposes the theme list — grouped
-    "Light themes" / "Dark themes", a small multi-chip color swatch per row
-    so in-between palettes sell themselves visually.
+- [ ] **Step S.4 — Settings button + theme picker UI (shell-owned)**
+  - Goal: a **new settings button** in the shell chrome — the one new
+    affordance this phase adds (the pill is locked, see charter) — opening
+    the theme picker: grouped "Light themes" / "Dark themes", a small
+    multi-chip color swatch per row so in-between palettes sell themselves
+    visually.
   - Build: picker renders purely from the manifest; clicking a row applies
     the theme immediately (live preview, no confirm) and writes it into its
-    appearance side's slot. Shell-owned affordance — agent output can never
-    render, wrap, or intercept it (trusted-shell boundary).
+    appearance side's slot. Shell-owned affordances (button + picker) —
+    agent output can never render, wrap, or intercept them (trusted-shell
+    boundary). The pill is not touched, restyled, or repositioned by this
+    step.
   - Files: `web/src/components/Shell.tsx` (or a new `ThemePicker.tsx`),
     `web/src/styles.css`.
-  - Done when: Tier-3 drives a real click on a dark-labeled theme → it
-    paints immediately, `data-theme` updates, the toggle's dark side now
-    means that theme, and the light side is untouched.
+  - Done when: Tier-3 drives a real click on the settings button → picker
+    opens; a real click on a dark-labeled theme → it paints immediately,
+    `data-theme` updates, the pill's dark side now means that theme, and
+    the light side is untouched — with the pill's own rendering unchanged.
 
 - [ ] **Step S.5 — Themes 3 + 4: Solarized Light, Solarized Dark**
   - Goal: the first borrowed pair — the canonical light theme and its
