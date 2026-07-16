@@ -204,7 +204,7 @@ hits named in the step.
     status history (PLAN.md line ~1288 — history stays verbatim, same
     convention as PLAN-ARCHIVE), and the mock's demo string.
 
-- [ ] **Step H2.2 — Root markdown tidy: working docs move under `docs/`**
+- [x] **Step H2.2 — Root markdown tidy: working docs move under `docs/`**
   - Goal: the repo root shows only load-bearing documents (README, CLAUDE,
     PLAN, PLAN-ARCHIVE, BUSINESS, CONTRIBUTING, SECURITY, LICENSE) — internal
     working notes stop greeting a stranger's first `ls` when the repo goes
@@ -222,6 +222,16 @@ hits named in the step.
   - Done when: root `ls` shows no working docs, the old-path grep is clean
     (PLAN-ARCHIVE.md excepted), and `yarn typecheck && yarn test` pass (a
     docs-only diff needs no Tier 2/3).
+  - Status: **DONE 2026-07-15**, with one discovery the draft missed:
+    `USER-TESTING-FEEDBACK.md` was never tracked — it is gitignored on
+    purpose (private raw intake; clones never see it), so it moved with a
+    plain `mv` and the `.gitignore` line now reads
+    `docs/USER-TESTING-FEEDBACK.md`. Consequently README's `docs/`
+    annotation names only RENAME.md (README must not list a file absent
+    from clones); the feedback log keeps its R.4l/R.5c intake role at the
+    new path. RENAME.md moved via `git mv` (rename-detected), its
+    self-reference updated. Old-path grep clean (the only hits are the H2
+    texts describing the move itself); typecheck + 159/159 Tier 1 green.
 
 ---
 

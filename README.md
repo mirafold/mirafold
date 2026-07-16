@@ -442,7 +442,9 @@ web/               the browser app (React 19 + Vite)
 bin/               mirafold launcher (4.10): spawns dist-server, opens browser
 demo/              the M1 demo GIF embedded at the top of this README
 docs/              ADAPTERS.md — the normative adapter specification (§2.2);
-                   local-models.md — running against Ollama/LM Studio/vLLM (§8)
+                   local-models.md — running against Ollama/LM Studio/vLLM (§8);
+                   RENAME.md — the genui-shell → Mirafold rename checklist
+                   (working doc, deletes itself when R.2 completes)
 relay-service/     pointer README only (Phase G): the hosted relay lives in
                    the sibling repo `genui-relay` (MIT since K.1; still
                    private, flips public at launch per R.5b), the single
