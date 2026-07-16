@@ -88,6 +88,25 @@ test("onboarding → a full mock turn renders in the DOM", async () => {
   await page.waitForSelector("text=Plan complete — all four steps done.", { timeout: 30_000 });
 });
 
+test("question component: clicking an option sends it as the user's next turn", async () => {
+  await page.locator("textarea").click();
+  await page.keyboard.type("question: canary or fleet?");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector(".rc-question", { timeout: 15_000 });
+  const opts = page.locator(".rc-question-opt");
+  assert.equal(await opts.count(), 2);
+  await opts.first().click();
+  // The option's full text (not its label) echoes back as a real user turn…
+  await page.waitForSelector("text=Do a canary rollout first.", { timeout: 15_000 });
+  // …the clicked copy locks: the choice is marked, both buttons disabled.
+  assert.equal(await page.locator(".rc-question-chosen").count(), 1);
+  assert.equal(await opts.first().isDisabled(), true);
+  assert.equal(await opts.nth(1).isDisabled(), true);
+  // …and the follow-up template turn runs to completion (usage lands at its
+  // end — first usage of the session, so this is a real end-of-turn signal).
+  await page.waitForSelector(".sb-usage", { timeout: 30_000 });
+});
+
 test("R.4i: a subscription-only Claude shows a BLOCKED row with the API-key fix, not a demo", async () => {
   // A daemon whose only Claude credential is a subscription login (a
   // .credentials.json, no API key) — Anthropic's terms don't allow that in a

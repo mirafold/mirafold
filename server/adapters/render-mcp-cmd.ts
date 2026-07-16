@@ -17,6 +17,12 @@ export const RENDER_TOOL_COMPONENT: Record<string, ComponentName> = {
   render_table: "table",
   render_chart: "chart",
   render_links: "link-group",
+  render_keyvalue: "key-value",
+  render_progress: "progress",
+  render_timeline: "timeline",
+  render_filetree: "file-tree",
+  render_question: "question",
+  render_diff: "diff",
 };
 
 /** Matches the component id inside the render-MCP stub's ack text

@@ -161,7 +161,7 @@ ever grows an approval callback, capture it before wiring `permission_request`.
 
 ## 5. Generative UI: the MCP contract
 
-The render tools (`render_card/list/table/chart/links`, `emit_artifact`) are
+The render tools (`render_card/list/table/chart/links/keyvalue/progress/timeline/filetree/question/diff`, `emit_artifact`) are
 defined once — schemas in `server/registry-spec.ts` — and delivered two ways:
 
 - **In-process** (Claude only): `server/render-tools.ts` handed to `query()`.

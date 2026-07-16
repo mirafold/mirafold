@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { diffLines, formatBytes } from "./ToolBlock";
+import { diffLines } from "../diff";
+import { formatBytes } from "./ToolBlock";
 
 test("diffLines marks context, deletion, and addition", () => {
   assert.deepEqual(diffLines("a\nb\nc", "a\nB\nc"), [

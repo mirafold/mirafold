@@ -32,8 +32,20 @@ components freely.
 
 - Prefer render_table to a markdown table, render_list to a markdown bullet or
   numbered list, render_links to a bare pile of links, render_card for a
-  single highlight, verdict, or summary worth setting off from the prose, and
+  single highlight, verdict, or summary worth setting off from the prose (its
+  optional \`kind\` tints it as an info/success/warning/error callout), and
   render_chart for ANY plot or graph (line for trends, bar for comparisons).
+- Also: render_keyvalue for a name→value fact sheet (config, environment),
+  render_timeline when the sequence of events or stages is the point,
+  render_filetree for ANY file/directory structure (never ASCII trees), and
+  render_progress — repainted via its id — for long-running work.
+- render_question when the next step is genuinely the user's call between
+  2–4 concrete options: clicking one sends it as their next turn. Prefer it
+  to ending prose with "should I do A or B?". Never use it for open-ended
+  questions — those stay prose.
+- render_diff when you present a code change, made or proposed: per file,
+  the relevant before/after snippet — never a hand-written ±-prefixed code
+  fence. Plain code blocks stay right for showing code that isn't a change.
 - Raw HTML or SVG in your text renders as literal code, never as visuals.
   Never hand-write markup for something a render tool covers. When something
   genuinely needs custom visuals or interactivity that NO render_* component
@@ -96,6 +108,42 @@ export function makeRenderServer(emit: (msg: WireMsg) => void) {
         "Show a group of links in the output zone. Use for any collection of URLs worth clicking.",
         { ...registryShapes["link-group"], ...idParam },
         async ({ id, ...props }) => emitRender("link-group", id, props),
+      ),
+      tool(
+        "render_keyvalue",
+        "Show a two-column key/value fact sheet in the output zone. Use for config dumps, environment summaries, or any set of name→value facts.",
+        { ...registryShapes["key-value"], ...idParam },
+        async ({ id, ...props }) => emitRender("key-value", id, props),
+      ),
+      tool(
+        "render_progress",
+        "Show a progress bar for long-running work. Re-call with the returned id to advance the bar in place instead of stacking bars.",
+        { ...registryShapes.progress, ...idParam },
+        async ({ id, ...props }) => emitRender("progress", id, props),
+      ),
+      tool(
+        "render_timeline",
+        "Show an ordered timeline in the output zone. Use when the sequence of events or stages is itself the point (chronology, plan, release history).",
+        { ...registryShapes.timeline, ...idParam },
+        async ({ id, ...props }) => emitRender("timeline", id, props),
+      ),
+      tool(
+        "render_filetree",
+        "Show a file/directory tree in the output zone. Use for ANY file-structure picture — never hand-draw ASCII trees.",
+        { ...registryShapes["file-tree"], ...idParam },
+        async ({ id, ...props }) => emitRender("file-tree", id, props),
+      ),
+      tool(
+        "render_question",
+        "Ask the user a structured question with 2–4 clickable options. Clicking one sends its text as the user's next turn. Use when the next step is the user's call between concrete alternatives; never for open-ended questions.",
+        { ...registryShapes.question, ...idParam },
+        async ({ id, ...props }) => emitRender("question", id, props),
+      ),
+      tool(
+        "render_diff",
+        "Show a red/green line diff of a code change, made or proposed. Per file, pass the relevant lines as they were (before) and as they are/would be (after) — verbatim code, no +/- prefixes; the client computes the diff. Use instead of hand-written diff code fences.",
+        { ...registryShapes.diff, ...idParam },
+        async ({ id, ...props }) => emitRender("diff", id, props),
       ),
       tool(
         "emit_artifact",

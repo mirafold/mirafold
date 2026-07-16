@@ -61,6 +61,13 @@ export const registryShapes = {
       .string()
       .optional()
       .describe("Small muted footer line, e.g. a source, timestamp, or caveat."),
+    kind: z
+      .enum(["info", "success", "warning", "error"])
+      .optional()
+      .describe(
+        "Optional callout tint: success for good verdicts, warning for " +
+          "cautions, error for failures, info for neutral notices. Omit for a plain card.",
+      ),
     actions: actionsProp,
   },
 
@@ -137,6 +144,133 @@ export const registryShapes = {
       )
       .min(1)
       .describe("The links, in display order."),
+  },
+
+  "key-value": {
+    title: z.string().optional().describe("Optional heading above the facts."),
+    pairs: z
+      .array(
+        z.object({
+          key: z.string().describe("The fact's name, 1–4 words."),
+          value: markdown("The fact's value, one short line."),
+        }),
+      )
+      .min(1)
+      .describe(
+        "The facts, in display order — a two-column name→value sheet " +
+          "(config, environment details, detected settings).",
+      ),
+  },
+
+  progress: {
+    label: z.string().describe("What's in progress, a few words, e.g. 'Running test suite'."),
+    percent: z
+      .number()
+      .min(0)
+      .max(100)
+      .describe("Completion, 0–100. Re-call with the same id to move the bar."),
+    detail: markdown("Optional status line under the bar, e.g. current step or ETA.").optional(),
+  },
+
+  timeline: {
+    title: z.string().optional().describe("Optional heading above the timeline."),
+    items: z
+      .array(
+        z.object({
+          label: markdown("The event or step, one line."),
+          detail: markdown("Optional second line, smaller and muted.").optional(),
+          time: z
+            .string()
+            .optional()
+            .describe(
+              "Optional short marker shown beside the entry: a timestamp, version, or stage.",
+            ),
+        }),
+      )
+      .min(1)
+      .describe("The entries in sequence order (chronology, plan stages, release history)."),
+  },
+
+  "file-tree": {
+    title: z.string().optional().describe("Optional heading above the tree."),
+    paths: z
+      .array(
+        z.object({
+          path: z
+            .string()
+            .describe(
+              "Slash-separated relative path, e.g. 'src/registry/Card.tsx'. " +
+                "End with '/' to show a directory with no listed children.",
+            ),
+          note: z
+            .string()
+            .optional()
+            .describe("Optional short annotation shown muted beside the entry."),
+        }),
+      )
+      .min(1)
+      .describe(
+        "Flat list of paths; the client nests them into a tree. Include only " +
+          "paths worth showing — an editorial picture, not a full listing.",
+      ),
+  },
+
+  question: {
+    question: markdown("The question itself, one line."),
+    options: z
+      .array(
+        z.object({
+          label: z.string().describe("Button text, 1–5 words."),
+          text: z
+            .string()
+            .optional()
+            .describe("The full user turn sent when this option is clicked. Defaults to the label."),
+          detail: markdown("Optional one-line explanation shown muted under the label.").optional(),
+        }),
+      )
+      .min(2)
+      .max(4)
+      .describe(
+        "2–4 mutually exclusive choices. Clicking one sends its text as the " +
+          "user's next turn — you answer it in this same session.",
+      ),
+  },
+
+  // before/after snippets, NOT unified-patch text: models routinely get @@
+  // line math wrong, while both sides of a snippet need no bookkeeping and
+  // the client diffs them precisely (same differ as ToolBlock's Edit view).
+  diff: {
+    title: z.string().optional().describe("Optional heading above the diff."),
+    files: z
+      .array(
+        z.object({
+          path: z
+            .string()
+            .describe("File path shown as this block's header, e.g. 'src/api/router.ts'."),
+          before: z
+            .string()
+            .describe(
+              "The relevant lines as they were. Empty string for a new file. " +
+                "Verbatim code — no +/- prefixes, no markdown.",
+            ),
+          after: z
+            .string()
+            .describe(
+              "The same lines as they are now (or as proposed). Empty string " +
+                "for a deleted file. Verbatim code — no +/- prefixes, no markdown.",
+            ),
+          note: z
+            .string()
+            .optional()
+            .describe("Optional short annotation beside the path, e.g. 'new file' or 'proposed'."),
+        }),
+      )
+      .min(1)
+      .describe(
+        "One entry per file, in display order. Show only the relevant snippet " +
+          "per file, not whole files; the client renders a red/green line diff " +
+          "of before → after.",
+      ),
   },
 
   // NOT agent-authored — there is no render tool for this. The server
