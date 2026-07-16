@@ -26,7 +26,7 @@ export function StatusBar({
   sessionId,
   cwd,
   usage,
-  theme,
+  mode,
   onToggleTheme,
   onOpenSettings,
   onEndSession,
@@ -39,7 +39,9 @@ export function StatusBar({
   cwd?: string;
   usage: Usage;
   // Shell-owned theme toggle — dark is the default and the identity (4.3).
-  theme: "dark" | "light";
+  // The pill shows the MODE (which side is active); the theme id behind
+  // each side lives in Shell's slots (S.3).
+  mode: "dark" | "light";
   onToggleTheme: () => void;
   // Opens the settings card (S.4) — the gear beside the pill. The card
   // itself mounts in Shell; this bar only carries the button.
@@ -142,18 +144,18 @@ export function StatusBar({
           to decode as "state or action". Clicking the other side switches. */}
       <div className="sb-theme" role="group" aria-label="theme">
         <button
-          className={"sb-theme-opt" + (theme === "light" ? " is-active" : "")}
-          onClick={() => theme !== "light" && onToggleTheme()}
+          className={"sb-theme-opt" + (mode === "light" ? " is-active" : "")}
+          onClick={() => mode !== "light" && onToggleTheme()}
           title="Light theme"
-          aria-pressed={theme === "light"}
+          aria-pressed={mode === "light"}
         >
           ☀
         </button>
         <button
-          className={"sb-theme-opt" + (theme === "dark" ? " is-active" : "")}
-          onClick={() => theme !== "dark" && onToggleTheme()}
+          className={"sb-theme-opt" + (mode === "dark" ? " is-active" : "")}
+          onClick={() => mode !== "dark" && onToggleTheme()}
           title="Dark theme"
-          aria-pressed={theme === "dark"}
+          aria-pressed={mode === "dark"}
         >
           ☾
         </button>

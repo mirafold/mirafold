@@ -201,10 +201,22 @@ test("theme is a segmented sun|moon switch; home is the far-right control", asyn
   );
 });
 
+// Shared theme-test helpers (S.3–S.5): the active theme id, and the reset
+// that leaves later tests on default slots + dark mode.
+const dataTheme = () => page.locator("html").getAttribute("data-theme");
+const resetThemeState = async () => {
+  await page.evaluate(() => {
+    localStorage.removeItem("mirafold-theme-dark");
+    localStorage.removeItem("mirafold-theme-light");
+    localStorage.setItem("mirafold-theme", "dark");
+  });
+  await page.reload();
+  await page.waitForSelector(".sb-theme");
+};
+
 test("two-slot model: each pill side paints its slot's theme; choices survive reload (S.3)", async () => {
   const darkOpt = page.locator(".sb-theme-opt", { hasText: "☾" });
   const lightOpt = page.locator(".sb-theme-opt", { hasText: "☀" });
-  const dataTheme = () => page.locator("html").getAttribute("data-theme");
   try {
     // Seed the dark slot with the only other manifest id ("light" — the
     // picker enforces appearance fit at write time; resolution is by id).
@@ -232,14 +244,7 @@ test("two-slot model: each pill side paints its slot's theme; choices survive re
     await page.waitForSelector(".sb-theme");
     assert.equal(await dataTheme(), "dark");
   } finally {
-    // Clean slate for later tests: default slots, dark mode.
-    await page.evaluate(() => {
-      localStorage.removeItem("mirafold-theme-dark");
-      localStorage.removeItem("mirafold-theme-light");
-      localStorage.setItem("mirafold-theme", "dark");
-    });
-    await page.reload();
-    await page.waitForSelector(".sb-theme");
+    await resetThemeState();
   }
   assert.equal(await dataTheme(), "dark");
 });
@@ -252,7 +257,6 @@ const themeRow = (name: string) =>
     .filter({ has: page.locator(".theme-row-name", { hasText: new RegExp(`^${name}$`) }) });
 
 test("settings card: gear opens it, picking applies live and writes the slot (S.4)", async () => {
-  const dataTheme = () => page.locator("html").getAttribute("data-theme");
   // The gear sits in the bar; home keeps the far-right slot (pill's world
   // is undisturbed — its own test above still pins its rendering).
   assert.equal(await page.locator(".sb-settings").count(), 1);
@@ -314,7 +318,6 @@ test("settings card: gear opens it, picking applies live and writes the slot (S.
 });
 
 test("a borrowed theme is selectable, actually painted, and persistent (S.5)", async () => {
-  const dataTheme = () => page.locator("html").getAttribute("data-theme");
   const bodyBg = () =>
     page.locator("body").evaluate((el) => getComputedStyle(el).backgroundColor);
   const defaultDarkBg = await bodyBg();
@@ -345,13 +348,7 @@ test("a borrowed theme is selectable, actually painted, and persistent (S.5)", a
     assert.equal(await dataTheme(), "solarized-dark");
     assert.equal(await bodyBg(), "rgb(0, 43, 54)"); // fresh load: no animation
   } finally {
-    await page.evaluate(() => {
-      localStorage.removeItem("mirafold-theme-dark");
-      localStorage.removeItem("mirafold-theme-light");
-      localStorage.setItem("mirafold-theme", "dark");
-    });
-    await page.reload();
-    await page.waitForSelector(".sb-theme");
+    await resetThemeState();
   }
   assert.equal(await dataTheme(), "dark");
 });

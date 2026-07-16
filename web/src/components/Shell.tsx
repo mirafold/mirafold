@@ -5,7 +5,13 @@ import { PromptBox } from "./PromptBox";
 import { RenderZone } from "./RenderZone";
 import { StatusBar, type Usage } from "./StatusBar";
 import { createSessionBus } from "../session-bus";
-import { MODE_STORAGE_KEY, THEMES, resolveSlot, slotStorageKey } from "../themes/manifest";
+import {
+  MODE_STORAGE_KEY,
+  THEMES,
+  resolveSlot,
+  slotStorageKey,
+  type ThemeAppearance,
+} from "../themes/manifest";
 import { ThemePicker } from "./ThemePicker";
 import { tildify } from "../tildify";
 import { agentLabel, connectHint } from "../agents-meta";
@@ -89,24 +95,24 @@ export function Shell() {
   // ── The theme (4.3; two-slot model S.3) ─────────────────────────────────
   // Theme is shell-owned UI state. Dark is the default and the identity;
   // index.html applies the stored choice before first paint (no flash) and
-  // this keeps the attribute + storage in sync on toggle. `theme` is the
-  // MODE — which side of the pill is active — and each side resolves to a
-  // theme id through its settings slot (defaults: the built-in pair, which
-  // makes this byte-identical to the pre-slot behavior). The pill itself is
-  // LOCKED unchanged (Phase S charter): two positions, mode in, mode out.
-  const [theme, setTheme] = useState<"dark" | "light">(() =>
+  // this keeps the attribute + storage in sync on toggle. The mode is which
+  // side of the pill is active; each side resolves to a theme id through
+  // its settings slot (defaults: the built-in pair, which makes this
+  // byte-identical to the pre-slot behavior). The pill itself is LOCKED
+  // unchanged (Phase S charter): two positions, mode in, mode out.
+  const [mode, setMode] = useState<ThemeAppearance>(() =>
     localStorage.getItem(MODE_STORAGE_KEY) === "light" ? "light" : "dark",
   );
-  const [slots, setSlots] = useState<Record<"light" | "dark", string>>(() => ({
+  const [slots, setSlots] = useState<Record<ThemeAppearance, string>>(() => ({
     light: resolveSlot("light", localStorage.getItem(slotStorageKey("light"))),
     dark: resolveSlot("dark", localStorage.getItem(slotStorageKey("dark"))),
   }));
   useEffect(() => {
-    document.documentElement.dataset.theme = slots[theme];
-    localStorage.setItem(MODE_STORAGE_KEY, theme);
+    document.documentElement.dataset.theme = slots[mode];
+    localStorage.setItem(MODE_STORAGE_KEY, mode);
     localStorage.setItem(slotStorageKey("light"), slots.light);
     localStorage.setItem(slotStorageKey("dark"), slots.dark);
-  }, [theme, slots]);
+  }, [mode, slots]);
   // Settings card (S.4). Picking a theme fills its appearance side's slot
   // and switches to that side so the pick paints immediately — picking is
   // seeing. Appearance fit is enforced here, the one place slots are written.
@@ -115,7 +121,7 @@ export function Shell() {
     const entry = THEMES.find((t) => t.id === id);
     if (!entry) return;
     setSlots((s) => ({ ...s, [entry.appearance]: id }));
-    setTheme(entry.appearance);
+    setMode(entry.appearance);
   };
 
   // The socket + pub/sub live in session-bus.ts (H.9); one bus per mount,
@@ -365,8 +371,8 @@ export function Shell() {
         sessionId={meta.sessionId}
         cwd={meta.cwd}
         usage={usage}
-        theme={theme}
-        onToggleTheme={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+        mode={mode}
+        onToggleTheme={() => setMode((m) => (m === "dark" ? "light" : "dark"))}
         onOpenSettings={() => setSettingsOpen(true)}
         onEndSession={meta.sessionId ? bus.endSession : undefined}
         relay={daemonInfo.relay}

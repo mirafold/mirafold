@@ -17,12 +17,14 @@ const rawThemeCss = import.meta.glob("../themes/*.css", {
 }) as Record<string, string>;
 
 // bg, surface, accent, fg — enough chips to sell a palette at a glance.
+// Parsed once: the raw CSS is fixed at build time.
 const CHIP_TOKENS = ["--bg", "--surface", "--accent", "--fg"];
-
-function chipColors(id: string): string[] {
-  const tokens = parseThemeTokens(rawThemeCss[`../themes/${id}.css`] ?? "");
-  return CHIP_TOKENS.map((t) => tokens.get(t) ?? "transparent");
-}
+const chipColorsById = new Map(
+  THEMES.map((t) => {
+    const tokens = parseThemeTokens(rawThemeCss[`../themes/${t.id}.css`] ?? "");
+    return [t.id, CHIP_TOKENS.map((k) => tokens.get(k) ?? "transparent")] as const;
+  }),
+);
 
 const GROUPS: { label: string; appearance: ThemeAppearance }[] = [
   { label: "Light themes", appearance: "light" },
@@ -71,7 +73,7 @@ export function ThemePicker({
                   onClick={() => onPick(t.id)}
                 >
                   <span className="theme-chips" aria-hidden="true">
-                    {chipColors(t.id).map((c, i) => (
+                    {chipColorsById.get(t.id)!.map((c, i) => (
                       <span key={i} className="theme-chip" style={{ background: c }} />
                     ))}
                   </span>
