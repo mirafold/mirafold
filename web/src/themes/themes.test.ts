@@ -6,21 +6,16 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { THEMES, THEME_TOKENS, PINNED_TOKENS, resolveSlot, slotStorageKey } from "./manifest";
+import {
+  THEMES,
+  THEME_TOKENS,
+  PINNED_TOKENS,
+  resolveSlot,
+  slotStorageKey,
+  parseThemeTokens as parseTokens,
+} from "./manifest";
 
 const themesDir = dirname(fileURLToPath(import.meta.url));
-
-// A theme file is flat `--token: value;` declarations — this parser is the
-// contract's reach, so anything fancier (nesting, @media) lands as a stray
-// or a miss and forces a deliberate loosening here.
-function parseTokens(css: string): Map<string, string> {
-  const noComments = css.replace(/\/\*[\s\S]*?\*\//g, "");
-  const tokens = new Map<string, string>();
-  for (const m of noComments.matchAll(/(--[\w-]+)\s*:\s*([^;}]+)[;}]/g)) {
-    tokens.set(m[1], m[2].trim());
-  }
-  return tokens;
-}
 
 function themeCss(id: string): string {
   return readFileSync(join(themesDir, `${id}.css`), "utf8");

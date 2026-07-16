@@ -5,7 +5,8 @@ import { PromptBox } from "./PromptBox";
 import { RenderZone } from "./RenderZone";
 import { StatusBar, type Usage } from "./StatusBar";
 import { createSessionBus } from "../session-bus";
-import { MODE_STORAGE_KEY, resolveSlot, slotStorageKey } from "../themes/manifest";
+import { MODE_STORAGE_KEY, THEMES, resolveSlot, slotStorageKey } from "../themes/manifest";
+import { ThemePicker } from "./ThemePicker";
 import { tildify } from "../tildify";
 import { agentLabel, connectHint } from "../agents-meta";
 
@@ -96,13 +97,26 @@ export function Shell() {
   const [theme, setTheme] = useState<"dark" | "light">(() =>
     localStorage.getItem(MODE_STORAGE_KEY) === "light" ? "light" : "dark",
   );
+  const [slots, setSlots] = useState<Record<"light" | "dark", string>>(() => ({
+    light: resolveSlot("light", localStorage.getItem(slotStorageKey("light"))),
+    dark: resolveSlot("dark", localStorage.getItem(slotStorageKey("dark"))),
+  }));
   useEffect(() => {
-    document.documentElement.dataset.theme = resolveSlot(
-      theme,
-      localStorage.getItem(slotStorageKey(theme)),
-    );
+    document.documentElement.dataset.theme = slots[theme];
     localStorage.setItem(MODE_STORAGE_KEY, theme);
-  }, [theme]);
+    localStorage.setItem(slotStorageKey("light"), slots.light);
+    localStorage.setItem(slotStorageKey("dark"), slots.dark);
+  }, [theme, slots]);
+  // Settings card (S.4). Picking a theme fills its appearance side's slot
+  // and switches to that side so the pick paints immediately — picking is
+  // seeing. Appearance fit is enforced here, the one place slots are written.
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const pickTheme = (id: string) => {
+    const entry = THEMES.find((t) => t.id === id);
+    if (!entry) return;
+    setSlots((s) => ({ ...s, [entry.appearance]: id }));
+    setTheme(entry.appearance);
+  };
 
   // The socket + pub/sub live in session-bus.ts (H.9); one bus per mount,
   // exactly as the inline useMemo built it.
@@ -353,10 +367,14 @@ export function Shell() {
         usage={usage}
         theme={theme}
         onToggleTheme={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+        onOpenSettings={() => setSettingsOpen(true)}
         onEndSession={meta.sessionId ? bus.endSession : undefined}
         relay={daemonInfo.relay}
         version={daemonInfo.version}
       />
+      {settingsOpen && (
+        <ThemePicker slots={slots} onPick={pickTheme} onClose={() => setSettingsOpen(false)} />
+      )}
     </div>
   );
 }

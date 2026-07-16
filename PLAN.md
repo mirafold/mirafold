@@ -1235,7 +1235,24 @@ borrowed themes prove it.
     choices survive reload, and with default slots the pill's rendered UI
     and behavior are exactly today's.
 
-- [ ] **Step S.4 — Settings button + theme picker UI (shell-owned)**
+- [x] **Step S.4 — Settings button + theme picker UI (shell-owned)** — done
+  2026-07-16, built exactly to the locked design. New `ThemePicker.tsx` =
+  the centered settings card (pair-card idiom: shared backdrop rule,
+  `--shadow-card`, ❯-glyph head, Esc/scrim/✕ close); gear button
+  (`.sb-settings`) rides StatusBar as a plain optional-prop button placed
+  before the pill (home ⌂ keeps far right; the pill and its test are
+  untouched). Shell owns the state: slots lifted into React state so a pick
+  repaints live; `pickTheme` enforces appearance fit at the one write site
+  and flips mode to the picked side (picking is seeing). Swatch chips read
+  each theme's real colors by importing `themes/*.css` as raw text
+  (`import.meta.glob` — Vite-only, so the card mounts from Shell and must
+  never be imported from Tier-1-tested modules; noted in-file) through the
+  now-shared `parseThemeTokens` in manifest.ts — a new theme's swatch costs
+  zero wiring. Tier-3 proves: gear→card, groups+rows from the manifest,
+  chips carry non-transparent computed colors in the built bundle, current
+  slots checked, live apply on pick (data-theme + pill side + slot key,
+  card stays open), other slot untouched, Esc and scrim-click close.
+  Tiers 178/74/23 green.
   - Goal: a **new settings button** in the shell chrome — the one new
     affordance this phase adds (the pill is locked, see charter) — opening
     the settings card with the theme picker.

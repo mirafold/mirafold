@@ -41,6 +41,20 @@ export function resolveSlot(appearance: ThemeAppearance, storedId: string | null
   return THEMES.some((t) => t.id === storedId) ? (storedId as string) : appearance;
 }
 
+/** Extract a theme file's `--token: value` declarations. A theme file is
+    flat declarations — this parser is the contract's reach, shared by the
+    Tier-1 guards and the picker's swatch chips: anything fancier (nesting,
+    @media) lands as a stray or a miss and forces a deliberate loosening
+    here. */
+export function parseThemeTokens(css: string): Map<string, string> {
+  const noComments = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  const tokens = new Map<string, string>();
+  for (const m of noComments.matchAll(/(--[\w-]+)\s*:\s*([^;}]+)[;}]/g)) {
+    tokens.set(m[1], m[2].trim());
+  }
+  return tokens;
+}
+
 // The token contract: every theme file defines EXACTLY these custom
 // properties — no missing, no strays — enforced by themes.test.ts. Grouped
 // as in the theme files. Structural CSS consumes only these names (plus the

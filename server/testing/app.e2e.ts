@@ -243,6 +243,68 @@ test("two-slot model: each pill side paints its slot's theme; choices survive re
   assert.equal(await dataTheme(), "dark");
 });
 
+test("settings card: gear opens it, picking applies live and writes the slot (S.4)", async () => {
+  const dataTheme = () => page.locator("html").getAttribute("data-theme");
+  // The gear sits in the bar; home keeps the far-right slot (pill's world
+  // is undisturbed — its own test above still pins its rendering).
+  assert.equal(await page.locator(".sb-settings").count(), 1);
+  assert.match(
+    (await page.locator(".status-bar > *:last-child").getAttribute("class")) ?? "",
+    /sb-home/,
+  );
+  await page.locator(".sb-settings").click();
+  await page.waitForSelector(".settings-card");
+  // Both groups render from the manifest: one light row, one dark row today.
+  assert.equal(await page.locator(".theme-group").count(), 2);
+  assert.equal(await page.locator(".theme-row").count(), 2);
+  // Swatch chips carry real colors parsed from the theme files (raw-CSS
+  // import path) — a broken glob would leave them transparent.
+  const chipBg = await page
+    .locator(".theme-row .theme-chip")
+    .first()
+    .evaluate((el) => getComputedStyle(el).backgroundColor);
+  assert.notEqual(chipBg, "rgba(0, 0, 0, 0)");
+  // Current slots are checked: the dark row (we're in default dark mode).
+  assert.match(
+    (await page.locator(".theme-row", { hasText: "Dark" }).getAttribute("class")) ?? "",
+    /is-slotted/,
+  );
+  // Picking the light-labeled row applies immediately — picking is seeing:
+  // mode flips to its appearance side, data-theme paints, slot is written,
+  // the card stays open (live preview), and the pill's light side is lit.
+  await page.locator(".theme-row", { hasText: "Light" }).click();
+  assert.equal(await dataTheme(), "light");
+  assert.equal(await page.locator(".settings-card").count(), 1);
+  assert.match(
+    (await page.locator(".sb-theme-opt", { hasText: "☀" }).getAttribute("class")) ?? "",
+    /is-active/,
+  );
+  assert.equal(
+    await page.evaluate(() => localStorage.getItem("mirafold-theme-light")),
+    "light",
+  );
+  // Picking the dark-labeled row: paints immediately, dark slot now means
+  // that theme, and the light slot is untouched.
+  await page.locator(".theme-row", { hasText: "Dark" }).click();
+  assert.equal(await dataTheme(), "dark");
+  assert.equal(
+    await page.evaluate(() => localStorage.getItem("mirafold-theme-dark")),
+    "dark",
+  );
+  assert.equal(
+    await page.evaluate(() => localStorage.getItem("mirafold-theme-light")),
+    "light",
+  );
+  // Esc closes; scrim click closes too.
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator(".settings-card").count(), 0);
+  await page.locator(".sb-settings").click();
+  await page.waitForSelector(".settings-card");
+  await page.locator(".settings-backdrop").click({ position: { x: 8, y: 8 } });
+  assert.equal(await page.locator(".settings-card").count(), 0);
+  assert.equal(await dataTheme(), "dark"); // ends where the suite expects
+});
+
 test("sandboxed artifact: scripts run inside the iframe under the shell CSP", async () => {
   await page.locator("textarea").click();
   await page.keyboard.type("show me an artifact");

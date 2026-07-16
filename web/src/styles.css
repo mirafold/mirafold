@@ -2236,7 +2236,8 @@ html {
   font-size: 0.85em;
 }
 
-.pair-backdrop {
+.pair-backdrop,
+.settings-backdrop {
   position: fixed;
   inset: 0;
   z-index: 60;
@@ -2334,6 +2335,131 @@ html {
 
 .pair-copy:hover {
   background: var(--ok-bg);
+}
+
+/* ---- Settings card (S.4) ----------------------------------------------------
+   Shell-owned, same modal idiom as the pairing card. One section today
+   (Theme); built to grow more sections. The gear (.sb-settings) sits beside
+   the pill in the status bar; the pill itself is locked unchanged. */
+
+.sb-settings {
+  padding: 1px 8px;
+  font-size: 0.82em;
+  color: var(--fg-dimmer);
+  background: transparent;
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.sb-settings:hover {
+  color: var(--fg);
+  border-color: var(--border-hover);
+}
+
+.settings-card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--surface);
+  border: 1px solid var(--border-2);
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: var(--shadow-card);
+}
+
+.settings-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.settings-title {
+  color: var(--fg-strong);
+  font-size: 0.95em;
+}
+
+.settings-close {
+  margin-left: auto;
+  background: transparent;
+  border: 0;
+  color: var(--fg-dimmer);
+  font: inherit;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+
+.settings-close:hover {
+  color: var(--fg);
+}
+
+.settings-section-title {
+  font-size: 0.85em;
+  font-weight: 600;
+  color: var(--fg-mid);
+  margin-bottom: 10px;
+}
+
+.theme-group + .theme-group {
+  margin-top: 12px;
+}
+
+.theme-group-label {
+  font-size: 0.74em;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-dimmer);
+  margin-bottom: 6px;
+}
+
+.theme-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 0.9em;
+  color: var(--fg-body);
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.theme-row:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-faint);
+}
+
+.theme-row.is-slotted {
+  border-color: var(--border-mid);
+  background: var(--surface-2);
+}
+
+.theme-chips {
+  display: inline-flex;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.theme-chip {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  border: 1px solid var(--border-mid);
+}
+
+.theme-row-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.theme-row-check {
+  color: var(--accent);
+  flex-shrink: 0;
 }
 
 /* ---- Phone-width pass (Step R.4) -------------------------------------------
