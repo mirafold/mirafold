@@ -1,0 +1,57 @@
+/* ---- Solarized Dark (S.5) ---------------------------------------------------
+   Transcribed from the canonical Base16 "Solarized Dark" scheme (palette by
+   Ethan Schoonover, https://ethanschoonover.com/solarized/ — scheme file MIT)
+   via the S.2 recipe in manifest.ts. Derived tiers are the recipe's mixes;
+   hand-tunes from the QA walk are noted inline. Accents stay canonical —
+   Solarized's famously soft contrast IS the theme. */
+
+:root[data-theme="solarized-dark"] {
+  color-scheme: dark;
+  /* surfaces */
+  --bg: #002b36;
+  --bg-inset: #002029;
+  --surface: #04313c;
+  --surface-2: #073642;
+  --surface-3: #05333f;
+  --surface-hover: #113d48;
+  --inline-code-bg: #05333f;
+  /* text */
+  --fg: #93a1a1;
+  --fg-strong: #eee8d5;
+  --fg-body: #aab3ae;
+  --fg-mid: #8b9b9c;
+  --fg-dim: #839496;
+  --fg-dimmer: #74888d;
+  --fg-faint: #657b83;
+  /* accents */
+  --accent: #859900;
+  --info: #268bd2;
+  --warn-fg: #b58900;
+  --error: #dc322f;
+  /* borders */
+  --border: #163c46;
+  --border-2: #1a3f49;
+  --border-mid: #254750;
+  --border-hover: #35535c;
+  --border-faint: #0e3640;
+  --border-ghost: #0b343e;
+  /* accent-tinted families */
+  --ok-bg: #103830;
+  --ok-border: #254a27;
+  --ok-border-strong: #3c5d1e;
+  --err-bg: #1a2c35;
+  --err-border: #3e2d34;
+  --err-border-strong: #632e33;
+  --info-bg: #053749;
+  --info-border: #0b4662;
+  --info-border-strong: #11567c;
+  --warn-bg: #123431;
+  --warn-bg-2: #0d3232;
+  --warn-border: #364726;
+  --warn-border-2: #454f21;
+  /* misc */
+  --overlay: rgba(0, 16, 21, 0.82);
+  --selection: rgba(133, 153, 0, 0.25);
+  --shadow-pop: 0 4px 14px rgba(0, 0, 0, 0.18);
+  --shadow-card: 0 18px 60px rgba(0, 0, 0, 0.5);
+}

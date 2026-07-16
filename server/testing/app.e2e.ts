@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { startDaemon, type Daemon } from "./itest-harness";
+import { THEMES } from "../../web/src/themes/manifest";
 
 // Tier-3 E2E, opt-in (`yarn test:e2e` — needs google-chrome and a fresh
 // `yarn build`, which the script runs first: the daemon serves ./dist, and a
@@ -243,6 +244,13 @@ test("two-slot model: each pill side paints its slot's theme; choices survive re
   assert.equal(await dataTheme(), "dark");
 });
 
+// A picker row by its exact display name — "Dark" must not match
+// "Solarized Dark".
+const themeRow = (name: string) =>
+  page
+    .locator(".theme-row")
+    .filter({ has: page.locator(".theme-row-name", { hasText: new RegExp(`^${name}$`) }) });
+
 test("settings card: gear opens it, picking applies live and writes the slot (S.4)", async () => {
   const dataTheme = () => page.locator("html").getAttribute("data-theme");
   // The gear sits in the bar; home keeps the far-right slot (pill's world
@@ -254,9 +262,9 @@ test("settings card: gear opens it, picking applies live and writes the slot (S.
   );
   await page.locator(".sb-settings").click();
   await page.waitForSelector(".settings-card");
-  // Both groups render from the manifest: one light row, one dark row today.
+  // Both groups render from the manifest — every manifest theme has a row.
   assert.equal(await page.locator(".theme-group").count(), 2);
-  assert.equal(await page.locator(".theme-row").count(), 2);
+  assert.equal(await page.locator(".theme-row").count(), THEMES.length);
   // Swatch chips carry real colors parsed from the theme files (raw-CSS
   // import path) — a broken glob would leave them transparent.
   const chipBg = await page
@@ -266,13 +274,13 @@ test("settings card: gear opens it, picking applies live and writes the slot (S.
   assert.notEqual(chipBg, "rgba(0, 0, 0, 0)");
   // Current slots are checked: the dark row (we're in default dark mode).
   assert.match(
-    (await page.locator(".theme-row", { hasText: "Dark" }).getAttribute("class")) ?? "",
+    (await themeRow("Dark").getAttribute("class")) ?? "",
     /is-slotted/,
   );
   // Picking the light-labeled row applies immediately — picking is seeing:
   // mode flips to its appearance side, data-theme paints, slot is written,
   // the card stays open (live preview), and the pill's light side is lit.
-  await page.locator(".theme-row", { hasText: "Light" }).click();
+  await themeRow("Light").click();
   assert.equal(await dataTheme(), "light");
   assert.equal(await page.locator(".settings-card").count(), 1);
   assert.match(
@@ -285,7 +293,7 @@ test("settings card: gear opens it, picking applies live and writes the slot (S.
   );
   // Picking the dark-labeled row: paints immediately, dark slot now means
   // that theme, and the light slot is untouched.
-  await page.locator(".theme-row", { hasText: "Dark" }).click();
+  await themeRow("Dark").click();
   assert.equal(await dataTheme(), "dark");
   assert.equal(
     await page.evaluate(() => localStorage.getItem("mirafold-theme-dark")),
@@ -303,6 +311,49 @@ test("settings card: gear opens it, picking applies live and writes the slot (S.
   await page.locator(".settings-backdrop").click({ position: { x: 8, y: 8 } });
   assert.equal(await page.locator(".settings-card").count(), 0);
   assert.equal(await dataTheme(), "dark"); // ends where the suite expects
+});
+
+test("a borrowed theme is selectable, actually painted, and persistent (S.5)", async () => {
+  const dataTheme = () => page.locator("html").getAttribute("data-theme");
+  const bodyBg = () =>
+    page.locator("body").evaluate((el) => getComputedStyle(el).backgroundColor);
+  const defaultDarkBg = await bodyBg();
+  try {
+    await page.locator(".sb-settings").click();
+    await page.waitForSelector(".settings-card");
+    await themeRow("Solarized Dark").click();
+    assert.equal(await dataTheme(), "solarized-dark");
+    // The theme's CSS is really LOADED and painting — not just stamped and
+    // silently falling back to bare :root (the S.5 QA walk caught exactly
+    // that: theme files must ride main.tsx's glob into the bundle). Theme
+    // flips animate (body rides the 0.22s background transition), so wait
+    // for the paint to settle rather than racing it.
+    await page.waitForFunction(
+      () => getComputedStyle(document.body).backgroundColor === "rgb(0, 43, 54)", // solarized base00
+      { timeout: 3000 },
+    );
+    assert.notEqual(await bodyBg(), defaultDarkBg);
+    // The pick landed in the dark slot; the light slot is untouched.
+    assert.equal(
+      await page.evaluate(() => localStorage.getItem("mirafold-theme-dark")),
+      "solarized-dark",
+    );
+    // Survives a reload end-to-end.
+    await page.keyboard.press("Escape");
+    await page.reload();
+    await page.waitForSelector(".sb-theme");
+    assert.equal(await dataTheme(), "solarized-dark");
+    assert.equal(await bodyBg(), "rgb(0, 43, 54)"); // fresh load: no animation
+  } finally {
+    await page.evaluate(() => {
+      localStorage.removeItem("mirafold-theme-dark");
+      localStorage.removeItem("mirafold-theme-light");
+      localStorage.setItem("mirafold-theme", "dark");
+    });
+    await page.reload();
+    await page.waitForSelector(".sb-theme");
+  }
+  assert.equal(await dataTheme(), "dark");
 });
 
 test("sandboxed artifact: scripts run inside the iframe under the shell CSP", async () => {

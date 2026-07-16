@@ -21,6 +21,8 @@ export interface ThemeEntry {
 export const THEMES: ThemeEntry[] = [
   { id: "dark", displayName: "Dark", appearance: "dark" },
   { id: "light", displayName: "Light", appearance: "light" },
+  { id: "solarized-light", displayName: "Solarized Light", appearance: "light" },
+  { id: "solarized-dark", displayName: "Solarized Dark", appearance: "dark" },
 ];
 
 // Two-slot storage (S.3): the mode key predates slots and keeps its exact

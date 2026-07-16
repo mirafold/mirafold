@@ -1282,7 +1282,26 @@ borrowed themes prove it.
     `data-theme` updates, the pill's dark side now means that theme, and
     the light side is untouched — with the pill's own rendering unchanged.
 
-- [ ] **Step S.5 — Themes 3 + 4: Solarized Light, Solarized Dark**
+- [x] **Step S.5 — Themes 3 + 4: Solarized Light, Solarized Dark** — done
+  2026-07-16. Both transcribed from the canonical Base16 schemes (palette
+  by Ethan Schoonover; attribution comments in-file) via the S.2 recipe,
+  with the mixes computed by script rather than eyeballed; accents kept
+  canonical — Solarized's famously soft contrast is the theme (fg/bg floors
+  pass at 5.61 / 4.99). QA walk done by screenshot in headless Chrome over
+  onboarding, a template turn, the live checklist, the permission bar, and
+  the settings card, in both themes — all legible, pinned-dark code/diff
+  sit right on both, no hand-tunes needed. **The walk caught one real bug:
+  theme files never entered the bundle** (main.tsx imported dark/light
+  explicitly; stamping an unloaded id silently falls back to bare `:root`
+  dark) — fixed by loading `themes/*.css` via `import.meta.glob(eager)`,
+  which also makes "one file + one manifest row" literally true for
+  loading, swatches, and guards alike. Chased a scary-looking follow-up
+  (runtime swaps "not repainting") to ground: it was the app's own 0.22s
+  background transition animating theme flips — by design, not a bug;
+  probes deleted. Tier-3 now proves a borrowed theme end-to-end with a
+  computed-color assertion (settled post-animation) that would catch any
+  future unloaded-theme regression, plus reload persistence. Tiers
+  178/74/24 green.
   - Goal: the first borrowed pair — the canonical light theme and its
     famous sibling — shipped as two standalone manifest entries.
   - Build: transcribe each from its canonical Base16 scheme via the S.2
