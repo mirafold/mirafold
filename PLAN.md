@@ -220,6 +220,16 @@ same file. Steps marked *(assistant: investigate)* need thorough
 re-verification against current primary sources before acting — do not act
 on this plan's summary alone.
 
+**Sequencing amendment (2026-07-16):** a load-bearing premise was reversed
+after verifying Paddle's onboarding directly — **a registered entity is NOT
+required to sell.** Individuals/sole traders open *live* Paddle accounts with
+identity verification only (no business verification). So **K.2 (the LLC) is
+deferred to a revenue trigger** — 50 paying customers or ~$500/mo recurring
+revenue, whichever first — alongside K.10, and **R.7 may now launch with both
+K.2 and K.10 still open**; the interim seller is Kyle as a sole proprietor
+(Kyle Serrecchia d/b/a Mirafold). What still gates R.7: K.5's pages (now live)
+and K.6's site pass. Detail in the K.2 / K.4 / K.5 / K.7 notes below.
+
 - [x] **Step K.1 — Open the relay (decision executed)** — done 2026-07-15; genui-relay relicensed MIT (LICENSE + package.json), READMEs rewritten for the open state, shell/BUSINESS docs reconciled, the public-flip moment seeded into R.5b(b); repo stays private until that flip lands. → PLAN-ARCHIVE.md.
 
 - [ ] **Step K.2 — Legal entity before the first charge** *(Kyle's hands —
@@ -237,6 +247,22 @@ on this plan's summary alone.
   - Done when: the entity exists and K.4/R.5's live payment configuration is
     created under it — a **hard prerequisite**: no live checkout under a
     personal account, ever.
+  - **Amendment (2026-07-16 — the "hard prerequisite" is WITHDRAWN, deferral
+    decided).** Verified against Paddle's own docs that a registered entity is
+    NOT required to go live — individuals/sole traders create live accounts
+    with identity verification only. That was the sole hard reason to form the
+    entity before launch, so it's gone. K.2 is now **deferred to a revenue
+    trigger: 50 paying customers or ~$500/mo recurring revenue, whichever
+    first** (Kyle's call — California's flat $800/yr LLC franchise tax isn't
+    worth spending before the idea earns). **Interim posture:** sell as a sole
+    proprietor; Kyle Serrecchia d/b/a Mirafold is the named party in K.5's ToS
+    and the site; validation-window personal liability is accepted, shielded by
+    K.5's ToS liability cap + consequential-damages exclusion. **When the
+    trigger fires:** form the CA single-member LLC (~$70 + $800/yr franchise
+    tax), EIN (free), business bank account, **convert the Paddle account from
+    individual to business** (supported flow via `sellers@paddle.com` — a
+    re-verification cycle, not a rebuild), swap the entity name into ToS / site
+    footer / both LICENSE lines, and file the trademark (K.10) under the LLC.
 
 - [x] **Step K.3 — Provider-terms re-verification** — done 2026-07-15 (+ same-day amendment); every row pinned to a dated primary source: the Anthropic ban verbatim, Gemini individual-account service ended 2026-06-18 (API keys continue; Antigravity succession check → R.6), and the codex row first flipped to blocked (no written permission exists), then re-flipped by Kyle to allowed-locally as a disclosed gray area — locking the standing **disclosed-uncertainty rule** (canonical statement in `server/provider-policy.ts`). All four tiers green, twice. → PLAN-ARCHIVE.md.
 
@@ -313,6 +339,17 @@ on this plan's summary alone.
     and state auto-renewal laws (California's ARL et al.), and they remain
     the MoR's job — Paddle's trial-compliance handling covers the statutes
     that survive, not just the vacated rule.
+  - **Update (2026-07-16): Paddle account CREATED — as an individual/sole
+    trader, NOT under an entity** (K.2 deferred; see its 2026-07-16
+    amendment). Pick confirmed: Paddle. Signed up as individual/sole trader
+    (identity verification only — no business verification for sole traders);
+    Kyle's ID verification in progress on Paddle's side. **Sequencing
+    corrected — entity is no longer a prerequisite:** the order is now K.5
+    pages live (✅ done) → Paddle **website verification** (next action:
+    Checkout → Website approval, submit mirafold.com; review expects
+    ToS/privacy/refund/contact/pricing pages — all now live) → R.5 build.
+    Remaining for K.4: pass website verification, then the R.5
+    checkout → webhook → entitlement-minting build.
 
 - [ ] **Step K.5 — Terms of Service + Privacy Policy (from a written data
   inventory)**
@@ -369,6 +406,24 @@ on this plan's summary alone.
     exists only at the Fly.io proxy layer; no telemetry/analytics anywhere
     in shell, site, or relay; mirafold.com sets no cookies (strict CSP,
     self-hosted assets only), so no ePrivacy consent banner is owed.
+  - **Status (2026-07-16): PAGES LIVE on mirafold.com.** Four pages published
+    (site PLAN S.6, extended beyond ToS+Privacy to add **contact + refund**
+    pages Paddle's website verification requires): `/terms`, `/privacy`,
+    `/refunds`, `/contact` — all 200, footer legal-link row on every page.
+    Privacy Policy written from the real data inventory (E2E-blind relay; the
+    relay holds client IPs in memory only and writes none to its logs; no
+    cookies/analytics; **Paddle named as an independent controller**, not a
+    subprocessor). Named party: **Kyle Serrecchia d/b/a Mirafold** (pre-LLC);
+    governing law California. ToS carries the warranty disclaimer, fees-paid
+    liability cap + consequential-damages exclusion, the "only systems you own
+    or are authorized to access" acceptable-use line, and the trial/cancel
+    mechanics. **Lawyer review DEFERRED** to the same 50-customer / ~$500-mo
+    trigger as K.2 (Kyle's explicit call 2026-07-16 — validation-phase risk
+    accepted; the ToS caps do the shielding until then). Contact page shows a
+    **temporary personal phone**; swap to a Google Voice number once its ID
+    check clears. **Still owed:** lawyer review + entity-name swap at the K.2
+    trigger; the two subprocessor DPAs (Fly.io, Cloudflare — self-serve, free);
+    a DMARC record for mirafold.com (email hygiene).
 
 - [ ] **Step K.6 — Claim accuracy + third-party trademark hygiene**
   *(executes in the site repo — site PLAN S.7; this step is the contract)*
@@ -389,8 +444,8 @@ on this plan's summary alone.
   - Done when: the site pass ships (verified per the site's own
     conventions) and the README carries the same non-affiliation line.
 
-- [ ] **Step K.7 — SECURITY.md + vulnerability-disclosure contact (both
-  repos)**
+- [x] **Step K.7 — SECURITY.md + vulnerability-disclosure contact (both
+  repos)** — done 2026-07-16 (files 07-15; address live + tested 07-16).
   - Goal: researchers have a private channel that isn't a public issue —
     expected for this product category, cheap, and part of the
     reasonable-care record.
@@ -404,10 +459,16 @@ on this plan's summary alone.
     (contact `security@mirafold.com`; 7-day acknowledgment promise; no
     bounty; latest-release-only support; each file points researchers at
     its repo's real attack surface — trusted-shell boundary for the shell,
-    E2E blindness + metadata for the relay). **Box stays open on exactly
-    one thing: Kyle creating the address** (Cloudflare Email Routing,
-    `security@mirafold.com` → his inbox — Step 5 of the Phase-K brief) and
-    confirming a test email lands.
+    E2E blindness + metadata for the relay).
+  - **DONE (2026-07-16): the address is live.** Cloudflare Email Routing
+    enabled on mirafold.com (this required removing leftover **Namecheap**
+    forwarding MX/SPF records first — they conflicted with Email Routing's own
+    MX); `security@mirafold.com` **and** `support@mirafold.com` now forward to
+    a verified destination (`mirafoldhq@gmail.com`, a dedicated Google account).
+    End-to-end tested — mail arrives; a Gmail "never send to spam" filter was
+    applied for both addresses (forwarded mail from a brand-new domain lands in
+    spam by default). SECURITY.md in both repos already points at
+    `security@mirafold.com`.
 
 - [x] **Step K.8 — Dependency license scan** — done 2026-07-15; no copyleft in either production tree (shell: MIT/ISC/Apache/BSD + the proprietary Anthropic Agent SDK, stated plainly in README §12; relay: just `ws`, MIT — stale lockfile metadata resynced). Copyright-line swap to the entity stays owed to K.2. → PLAN-ARCHIVE.md.
 
