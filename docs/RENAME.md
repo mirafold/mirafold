@@ -31,10 +31,10 @@ when the rename is done and verified.
   into the DEPLOYED relay's key derivation. Changing it breaks every pairing and
   forces a lockstep redeploy. It's a protocol version, not a brand. **Untouched.**
 - **Repo / folder / GitHub names**: `genui-shell`, `genui-relay`.
-- **Fly app** `genui-relay` and `relay-service`'s package name (matches the
-  private repo + deploy target).
-- **Cross-repo sync scripts** (`sync-from-genui-shell.sh`) — key off the sibling
-  `genui-shell/` dir.
+- **Fly app** `genui-relay` and the relay's package name (matches the
+  private repo + deploy target). *(The `relay-service/` dev copy and the
+  cross-repo sync scripts this list once covered were retired 2026-07-15 —
+  Phase G, then H2.3 removed the pointer directory.)*
 - **Wire protocol** — never reshaped.
 - **`PLAN-ARCHIVE.md`** — historical record, left as-is.
 - **Test temp-dir prefixes** (`genui-cwd-`, `genui-act-`, …) — throwaway, no
@@ -61,7 +61,8 @@ when the rename is done and verified.
 
 ## Docs — DONE (product refs → Mirafold, commands → mirafold)
 
-BUSINESS.md, PLAN.md, CLAUDE.md, relay-service/README.md, the issue template,
+BUSINESS.md, PLAN.md, CLAUDE.md, the relay-service pointer README (since
+removed, H2.3), the issue template,
 and both adapter spikes now name the product **Mirafold**. Deliberately KEPT as
 `genui-shell`: repo/folder/path refs, GitHub URLs, PLAN.md's rename-record lines
 + the rejected `genui-shell.com` domain, this file (docs/RENAME.md, at the

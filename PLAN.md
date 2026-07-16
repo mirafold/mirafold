@@ -135,8 +135,9 @@ Phases 0, T, 1, 2, 3, T2, P, G, H, and H2 are **done** — their steps and full 
 status notes now live in **PLAN-ARCHIVE.md** (moved out to keep this document
 focused). Phases G (relay dedup — the sibling repo became the single source)
 and H (human legibility) completed 2026-07-15 and were archived the same day.
-Phase H2 (legibility follow-ups: `web/src/components/` + the root-doc tidy)
-completed and was archived 2026-07-15 as well.
+Phase H2 (legibility follow-ups: `web/src/components/` + the root-doc tidy +
+H2.3's removal of the `relay-service/` pointer directory) completed and was
+archived 2026-07-15 as well.
 Phase 4's completed steps (4.1–4.6, 4.8–4.10) joined them 2026-07-08; its
 header stays below with the 4.7 → Phase R pointer. **2026-07-10:** the
 fully-complete steps of Phases R, F, and L (R.1, R.3, R.4b–R.4k, F.1, F.3, F.4,

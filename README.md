@@ -401,6 +401,14 @@ server/            the local daemon (Node, run with tsx)
     relay-test-client.ts  shared RemoteClient test helper (the browser side of
                        the encrypted relay channel) used by relay.itest.ts and
                        relay-service.itest.ts
+                     NOTE: the hosted relay itself lives in the SIBLING repo
+                     `genui-relay` (its single source of truth; MIT since K.1,
+                     private until the R.5b/R.7 flip). relay-service.itest.ts
+                     (Tier 2) imports the relay under test from
+                     ../genui-relay/src/ and guards the routing contract
+                     against relay-protocol.ts — clone genui-relay next to
+                     this repo + `npm install` inside it to run that test;
+                     without the sibling, the rest of Tier 2 is unaffected
   testing/           cross-cutting test infrastructure (H.8): itest-harness.ts
                      (spawns the real daemon for Tier 2/3) + the whole-product
                      e2e suites (app, launcher, phone, resilience)
@@ -445,13 +453,6 @@ docs/              ADAPTERS.md — the normative adapter specification (§2.2);
                    local-models.md — running against Ollama/LM Studio/vLLM (§8);
                    RENAME.md — the genui-shell → Mirafold rename checklist
                    (working doc, deletes itself when R.2 completes)
-relay-service/     pointer README only (Phase G): the hosted relay lives in
-                   the sibling repo `genui-relay` (MIT since K.1; still
-                   private, flips public at launch per R.5b), the single
-                   source of truth since its first deploy. The real-daemon itest
-                   (server/relay/relay-service.itest.ts) imports the relay under
-                   test from ../genui-relay/src/ and guards the routing
-                   contract against server/relay/relay-protocol.ts
 dist/              built front end (vite build output; served by Express)
 dist-server/       esbuild server bundles (4.10): index.js + render-mcp.js —
                    what the installed `mirafold` actually runs; gitignored
@@ -1054,7 +1055,8 @@ Read PLAN.md for the real thing; the shape in one breath:
   no longer leaves a fake "still working" state (R.4c); and the artifact
   sandbox's containment properties are now proven by tests that fail when
   each defense is flipped (R.4e). Also: **R.2's code half** — the
-  deployable `relay-service/` package, hardened (caps, rate limit, health
+  deployable relay service (the sibling `genui-relay` repo), hardened (caps,
+  rate limit, health
   check) and verified against the real daemon, with the "no app bundle
   served" trust decision made and documented; and three **Phase F** fidelity
   fixes — slash-command output renders (F.1), the status bar shows the

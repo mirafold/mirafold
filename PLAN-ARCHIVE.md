@@ -1714,6 +1714,34 @@ hits named in the step.
     self-reference updated. Old-path grep clean (the only hits are the H2
     texts describing the move itself); typecheck + 159/159 Tier 1 green.
 
+- [x] **Step H2.3 — Retire the `relay-service/` pointer directory** *(added
+  2026-07-15, after H2.1/H2.2 shipped — Kyle spotted the leftover)*
+  - Goal: the Phase G transition aid finishes its job and disappears — the
+    repo root stops carrying a directory whose only content is "this moved."
+  - Build: `git rm -r relay-service/`. Fold the pointer's operational content
+    into README §4's `server/relay/` annotation (where the relay lives, the
+    sibling-checkout import, how to run `relay-service.itest.ts`, and that
+    the rest of Tier 2 is unaffected without the sibling) and drop the
+    `relay-service/` block from the tree. Touch up the docs that described
+    the pointer as current state: README §10's R.2 narrative, two stale
+    bullets in `docs/RENAME.md` (the dev copy's package name + the retired
+    sync scripts), the umbrella `CLAUDE.md` sibling-itest paragraph, and
+    `genui-relay/DEPLOY.md` §5's dated bullet (amended in its own repo).
+    Dated history (PLAN/PLAN-ARCHIVE/ROADMAP records, the relay repo's
+    past-tense README/ARCHITECTURE notes) stays verbatim; the itest KEEPS
+    its `relay-service.itest.ts` name (it tests the relay service — the
+    name describes the subject, not a path).
+  - Files: `relay-service/` (deleted), `README.md`, `docs/RENAME.md`,
+    `../CLAUDE.md`, `../ROADMAP.md`, `../genui-relay/DEPLOY.md`.
+  - Done when: the directory is gone, no live doc claims it exists, the
+    sibling-itest instructions survive in README §4, and typecheck + Tier 1
+    pass (docs + deletion only).
+  - Status: **DONE 2026-07-15.** Directory removed; README §4 carries the
+    relocated sibling-itest note in the `relay/` annotation; all five live
+    references updated (everything else verified to be dated history). The
+    real-daemon itest itself was already proven green against the sibling
+    earlier the same day. Typecheck + 159/159 Tier 1 green.
+
 
 ## Phase R / F / L — completed steps (moved 2026-07-10 to lean out PLAN.md)
 
