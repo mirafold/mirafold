@@ -76,6 +76,12 @@ test("onboarding → a full mock turn renders in the DOM", async () => {
   assert.match(banner, /no real agent/);
   assert.match(banner, /ANTHROPIC_API_KEY|`claude`/);
 
+  // Status bar: agent then model, and the model is there from the FIRST
+  // paint (session_created carries it) — no turn has run yet (2026-07-17).
+  await page.waitForSelector(".sb-model");
+  assert.equal(await page.locator(".sb-agent").innerText(), "claude-code");
+  assert.equal(await page.locator(".sb-model").innerText(), "mock-sonnet");
+
   // Real typing into the real prompt box; the checklist hook is deterministic.
   await page.locator("textarea").click();
   await page.keyboard.type("plan it step by step");
@@ -473,6 +479,12 @@ test("fleet: the cwd is the row's hover tooltip; clicking outside the new-sessio
   assert.match(
     (await page.locator(".fleet-row").first().getAttribute("title")) ?? "",
     /\//,
+  );
+  // Row order matches the status bar: agent, then model (2026-07-17).
+  const rowText = await page.locator(".fleet-row").first().innerText();
+  assert.ok(
+    rowText.indexOf("claude-code") < rowText.indexOf("mock-sonnet"),
+    `agent should precede model in: ${rowText}`,
   );
   // "+ new session" opens the picker; a backdrop click (outside the card)
   // changes your mind — possible only because a fleet exists behind it.

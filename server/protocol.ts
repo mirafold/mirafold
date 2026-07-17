@@ -93,6 +93,10 @@ type WireMsgBody =
       sessionId: string;
       cwd: string;
       agent?: AgentName;
+      // The engine's model label as known at attach time ("default" until a
+      // configured/reported name exists) — the status bar shows it from the
+      // first paint, not only after the first turn's usage message.
+      model?: string;
       resumed?: boolean;
       demo?: boolean;
       fallback?: boolean;
