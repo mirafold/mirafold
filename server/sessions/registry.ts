@@ -76,6 +76,9 @@ export type SessionEntry = {
   // The one running `!` command, if any (one at a time per session,
   // like a terminal). The proc itself never leaves the server (4.9).
   bang?: { id: string; proc: BangProc };
+  // When the last `!` command started — the burst throttle in connection.ts
+  // (each bang costs a model turn, so bursts burn tokens).
+  lastBangAt?: number;
 };
 
 /**
