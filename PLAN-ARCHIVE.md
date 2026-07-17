@@ -3071,3 +3071,683 @@ list; the full chronological deploy log is preserved verbatim below.
     no async gap, and send-on-closing is silent in ws — checked the source).
     All suites re-green: 13/13 standalone, 9/9 relay-service.itest, typecheck
     both repos.
+
+---
+
+## Moved 2026-07-17 (third lean-out pass — verbatim originals)
+
+Each block below is the full PLAN.md text as it stood 2026-07-17, moved
+whole. In the live plan, done steps keep a one-line `[x]` pointer and
+still-open steps (K.4, R.2, R.4) keep a compact stub with their open
+items — this section holds their full bodies and status histories.
+
+### Step 4.11 — Cockpit polish batch (done 2026-07-16)
+
+- [x] **Step 4.11 — Cockpit polish batch (unplanned, Kyle-driven)** — done
+  2026-07-16, all e2e-covered (suite grew 24→26). Status bar regrouped: home ⌂
+  + end anchor the far LEFT as the session-lifecycle pair (leave it / kill it),
+  the connection dot stays glued to the agent text, settings/theme cluster
+  keeps the right; gear and end sized to match the pill/home (34px). The
+  prompt-bar cwd is collapsible: click the path → just the ❯ caret; the caret
+  toggles it back; persisted (`mirafold-prompt-cwd`); the left-side ellipsis
+  behavior kept. Fleet rows dropped the cwd column for breathing room — it
+  survives as the row's native hover tooltip — and the new-session card
+  dismisses on backdrop click / Esc, only when a fleet exists behind it (first
+  run keeps the picker, it IS the page). Theme pill untouched (LOCKED).
+
+### Step K.4 — Merchant-of-record billing (still OPEN — full body + status history)
+
+- [ ] **Step K.4 — Merchant-of-record billing** *(decision 2026-07-15:
+  outsource tax/compliance)* — 🟡 investigation done 2026-07-15, **Paddle
+  recommended** (checklist in the status note); box open only on Kyle's
+  account creation (under the K.2 entity) + his confirm of the pick
+  - Goal: US state sales tax, EU VAT (which applies from the **first** B2C
+    euro for a non-EU seller — no threshold), the FTC Negative-Option
+    ("click-to-cancel") disclosure/consent/reminder mechanics, and the EU
+    14-day withdrawal-right waiver all become the vendor's problem, traded
+    for a bigger per-transaction fee.
+  - Investigate: Paddle vs. Lemon Squeezy (Stripe + Stripe Tax stays the
+    fallback if no MoR meets requirements). Hard requirements from BUSINESS
+    §7 + R.5, each verified in writing against the vendor's current docs:
+    card-required 7-day trial; cancel-at-period-end with no refund path;
+    $12/mo · $99/yr pricing; a subscription-lifecycle webhook the minting
+    backend can consume to mint/expire the Ed25519 entitlement token;
+    checkout linkable from a static page; trial-conversion reminder and
+    easy-as-signup cancellation handled by the vendor.
+  - Then: rework R.5's build half (checkout → webhook → minting) for the
+    chosen vendor — the relay-side entitlement check is untouched — and
+    re-point the site PLAN's checkout-button blocker.
+  - Done when: vendor chosen with the requirement checklist recorded, R.5's
+    body rewritten for it, and the account exists under the K.2 entity.
+  - **Status (2026-07-15): INVESTIGATION DONE — recommendation: PADDLE.**
+    Only the account creation remains (Kyle, under the K.2 entity — the box
+    stays open on that alone). The requirement checklist, verified against
+    Paddle's current docs:
+    - card-required 7-day free trial: ✅ native (Paddle's "card-required
+      free" trial type; their help center explicitly covers trial
+      compliance — the FTC negative-option disclosure/consent/reminder
+      mechanics are the MoR's job);
+    - cancel-at-period-end, no refund: ✅ native (a scheduled change; the
+      Paddle-sent emails carry a cancellation link and access holds through
+      the paid period — exactly BUSINESS §7's design);
+    - $12/mo · $99/yr: ✅ arbitrary monthly + annual prices;
+    - lifecycle webhooks for entitlement minting: ✅ signed webhooks
+      (`subscription.trialing` / `.activated` / `.updated` / `.canceled`),
+      and Paddle's subscription statuses are literally `trialing`/`active` —
+      the R.5 entitlement rule ("admit when trialing OR active") maps
+      verbatim;
+    - checkout from a static page: ✅ hosted checkout links + a Paddle.js
+      overlay (works on the no-build mirafold.com);
+    - tax: ✅ merchant of record — global VAT/sales-tax collection and
+      remittance are Paddle's, which is the entire point (K.4's premise:
+      EU VAT applies from the first B2C sale).
+    Fees: 5% + 50¢ — the "small fee for convenience" trade, accepted.
+    The rest of the 2026 field, and why not them: **Lemon Squeezy** is in
+    migration limbo (Stripe acquired it; users being funneled to Stripe
+    Managed Payments) — excluded. **Stripe Managed Payments** (Stripe's own
+    MoR) is still beta/invite-only in mid-2026 and effectively ~6.4% + 30¢
+    all-in — can't launch on a beta; noted as a possible future migration
+    since its transaction-level MoR is attractive and the entitlement design
+    is vendor-agnostic. **Polar** is the runner-up (developer-first, open
+    source, card-captured trials with auto-conversion + reminders, clean
+    signed webhooks) but repriced to ~5% + 50¢ in 2026 — fee parity with
+    Paddle — and is a much younger company with reported EU DPA gaps;
+    for the revenue-critical path, Paddle's decade of MoR track record wins
+    at the same price. **Creem** (3.9% + 40¢ sticker) is the youngest —
+    excluded for the same reason.
+    **Sequencing note (important):** Paddle verifies the merchant's website
+    before allowing live sales, and that review expects ToS/privacy/pricing
+    pages — so the order is K.2 (entity) → K.5 pages live on mirafold.com →
+    Paddle account + site verification (sandbox account can start any
+    time) → R.5 build. Start the Paddle signup early; verification takes
+    days, not minutes.
+  - **Amendment (2026-07-15, compliance sweep):** the FTC Negative-Option
+    ("click-to-cancel") Rule this step's goal cites was **vacated in its
+    entirety by the Eighth Circuit 2025-07-08** (the FTC restarted the
+    rulemaking with a 2026-03 ANPRM). Conclusion unchanged, citation
+    corrected: the same disclosure/consent/easy-cancel mechanics remain
+    required by **ROSCA** (the underlying federal statute, still enforced)
+    and state auto-renewal laws (California's ARL et al.), and they remain
+    the MoR's job — Paddle's trial-compliance handling covers the statutes
+    that survive, not just the vacated rule.
+  - **Update (2026-07-16): Paddle account CREATED — as an individual/sole
+    trader, NOT under an entity** (K.2 deferred; see its 2026-07-16
+    amendment). Pick confirmed: Paddle. Signed up as individual/sole trader
+    (identity verification only — no business verification for sole traders);
+    Kyle's ID verification in progress on Paddle's side. **Sequencing
+    corrected — entity is no longer a prerequisite:** the order is now K.5
+    pages live (✅ done) → Paddle **website verification** (next action:
+    Checkout → Website approval, submit mirafold.com; review expects
+    ToS/privacy/refund/contact/pricing pages — all now live) → R.5 build.
+    Remaining for K.4: pass website verification, then the R.5
+    checkout → webhook → entitlement-minting build.
+  - **Update (2026-07-17): website verification SUBMITTED; account
+    verification found NOT STARTED.** `mirafold.com` submitted under
+    Checkout → Website approval (bare domain; the form rejects a
+    scheme-prefixed URL as "invalid domain name") — dashboard-verified
+    showing **Pending** at `/request-domain-approval`. **Correction to the
+    2026-07-16 note above:** the dashboard shows account verification
+    (Paddle's KYC — personal details incl. DOB/home address, business
+    details, website link, product descriptions; ~10 min form) as **Not
+    started** — no ID verification was actually in progress from signup.
+    Its website-readiness checklist is already met (ToS/privacy/refunds
+    live, contact reachable, on-site pricing). **Account verification
+    COMPLETED + submitted same day** (sole proprietorship, trading name
+    Mirafold, business start 2026-07-11, home = business address, no VAT
+    number — Paddle handles tax as MoR; pricing URL is the homepage anchor
+    `mirafold.com/#pricing`, no standalone page; underwriting questions all
+    truthfully No) — dashboard shows **in review**. K.4's box now waits
+    only on Paddle's two reviews (domain + account), then the R.5 build;
+    payout/bank details remain an anytime-before-revenue dashboard item.
+
+### Step K.5 — ToS + Privacy Policy (done except the K.2-trigger tail)
+
+- [ ] **Step K.5 — Terms of Service + Privacy Policy (from a written data
+  inventory)**
+  - Goal: the two user-facing legal documents exist, are published, and are
+    *true* — which for this product is a strength: the honest answer is
+    "almost nothing," so write it down and lean into it.
+  - Build, in order: (1) a **data inventory** — exactly what the relay, the
+    site, and the billing vendor see and retain, and for how long (relay:
+    IPs, pairing ids, connection timing, byte counts — never plaintext
+    content; site: Cloudflare logs; billing: vendor-held card/name data).
+    Deliberately minimize relay/site logging and write the retention down —
+    what isn't retained can't be breached or subpoenaed. The inventory feeds
+    both documents AND K.6's marketing wording. (2) **ToS**: warranty
+    disclaimer; liability cap at fees paid + exclusion of consequential
+    damages (the primary shield for the remote-execution liability);
+    acceptable use; a user-responsibility-for-provider-terms clause (pairs
+    with K.3 — Mirafold enforces known restrictions but doesn't warrant the
+    user's standing with any provider, and where terms are uncertain the
+    disclosed-uncertainty rule applies: the product disclosed it, the user
+    chose it); age line (18+, or 13+ with capacity
+    to contract); governing law; the K.4 trial/cancellation mechanics.
+    (3) **Privacy policy**: the inventory verbatim, subprocessors named
+    (Fly.io, Cloudflare, the billing vendor), GDPR-shaped rights handling
+    (an IP address alone is personal data — one EU customer makes us a
+    controller; minimal data keeps the document short, not optional).
+    Publish both as pages on mirafold.com (site PLAN S.6), linked from the
+    footer and the checkout flow. Kyle's call: 1–2 hours of a real lawyer's
+    review before launch (recommended — this step and K.2 are the one place
+    it's worth buying); a quality startup-standard template is the floor.
+  - Done when: both pages are live (or staged into the R.5b release order),
+    every sentence in them traces to the inventory, and the K.2 entity is
+    the named party.
+  - **Amendment (2026-07-15, compliance sweep — four additions):** (a) the
+    ToS acceptable-use clause states explicitly: **pair with and control
+    only systems you own or are authorized to access** — the CFAA-adjacent
+    line; the pairing architecture already enforces it, the words make it
+    contractual. (b) Naming subprocessors in the policy is not the GDPR
+    Art. 28 instrument — **execute the self-serve DPAs** with Fly.io
+    (pre-signed, fly.io/documents) and Cloudflare
+    (cloudflare.com/cloudflare-customer-dpa) under the entity's accounts
+    (Kyle's hands, minutes, free; both vendors are Data Privacy Framework
+    certified, which settles EU→US transfers). (c) **Paddle is named as an
+    independent controller**, not a subprocessor — as merchant of record
+    the buyer contracts with Paddle, and its standard Data Sharing Addendum
+    governs the controller-to-controller leg; no processor DPA exists or is
+    needed there. (d) A one-page **breach-notification plan** drafted from
+    the inventory (GDPR's 72-hour authority clock + US state statutes;
+    realistic breach surface = relay/hosting metadata or Paddle-side data —
+    plaintext content cannot breach server-side because it never exists
+    there). Note: the dated inventory doubles as the GDPR Art. 30 record of
+    processing — keep it current and one artifact serves both. Code-verified
+    same day for the inventory's benefit: the relay process holds client IPs
+    in memory only (per-IP caps) and writes none to its logs — IP retention
+    exists only at the Fly.io proxy layer; no telemetry/analytics anywhere
+    in shell, site, or relay; mirafold.com sets no cookies (strict CSP,
+    self-hosted assets only), so no ePrivacy consent banner is owed.
+  - **Status (2026-07-16): PAGES LIVE on mirafold.com.** Four pages published
+    (site PLAN S.6, extended beyond ToS+Privacy to add **contact + refund**
+    pages Paddle's website verification requires): `/terms`, `/privacy`,
+    `/refunds`, `/contact` — all 200, footer legal-link row on every page.
+    Privacy Policy written from the real data inventory (E2E-blind relay; the
+    relay holds client IPs in memory only and writes none to its logs; no
+    cookies/analytics; **Paddle named as an independent controller**, not a
+    subprocessor). Named party: **Kyle Serrecchia d/b/a Mirafold** (pre-LLC);
+    governing law California. ToS carries the warranty disclaimer, fees-paid
+    liability cap + consequential-damages exclusion, the "only systems you own
+    or are authorized to access" acceptable-use line, and the trial/cancel
+    mechanics. **Lawyer review DEFERRED** to the same 50-customer / ~$500-mo
+    trigger as K.2 (Kyle's explicit call 2026-07-16 — validation-phase risk
+    accepted; the ToS caps do the shielding until then). Contact page shows a
+    **temporary personal phone**; swap to a Google Voice number once its ID
+    check clears. **Still owed:** lawyer review + entity-name swap at the K.2
+    trigger; ~~the two subprocessor DPAs (Fly.io, Cloudflare — self-serve,
+    free); a DMARC record for mirafold.com (email hygiene)~~ (both closed
+    2026-07-17, next bullet).
+  - **Update (2026-07-17): the DMARC record and both subprocessor DPAs are
+    DONE.** (1) **DMARC live**: `_dmarc.mirafold.com` TXT
+    `v=DMARC1; p=reject; rua=mailto:security@mirafold.com` (Cloudflare DNS;
+    verified resolving; `p=reject` is correct because nothing legitimately
+    sends as @mirafold.com — K.7 is inbound forwarding only, Kyle replies
+    from his own address; revisit the policy before ever configuring
+    send-as). K.7's SPF record confirmed still in place alongside it.
+    (2) **Fly.io DPA executed** via Fly's Dropbox Sign flow from
+    fly.io/documents (note: fly.io/legal 403s for everyone — /documents is
+    the entry). Signed: company "Mirafold" (their field rejects the full
+    d/b/a string), Kyle Serrecchia, Owner; Annex transfer description +
+    "continuous" frequency written from the K.5 data inventory verbatim.
+    Executed copy in Kyle's legal folder (outside the repos).
+    (3) **Cloudflare DPA — nothing to sign, verified in force**: the
+    Self-Serve Subscription Agreement §6.1 incorporates the DPA (v6.4,
+    effective 2026-04-03) by reference for all self-serve accounts; dated
+    copies of both documents archived beside the Fly DPA.
+    **K.5's only remaining tail:** lawyer review + entity-name swap,
+    both at the K.2 revenue trigger.
+
+### Step K.7 — SECURITY.md + disclosure contact (done 2026-07-16)
+
+- [x] **Step K.7 — SECURITY.md + vulnerability-disclosure contact (both
+  repos)** — done 2026-07-16 (files 07-15; address live + tested 07-16).
+  - Goal: researchers have a private channel that isn't a public issue —
+    expected for this product category, cheap, and part of the
+    reasonable-care record.
+  - Build: `SECURITY.md` in genui-shell and genui-relay — supported
+    versions, a private contact address on the entity's domain, a response
+    promise Kyle can actually keep, no bounty implied. Keep the existing
+    dated audits + fixes in PLAN-ARCHIVE.md intact: they are the
+    reasonable-care evidence if a claim ever lands.
+  - Done when: both files exist and the contact address routes to Kyle.
+  - Status (2026-07-15): 🟡 files written — `SECURITY.md` in both repos
+    (contact `security@mirafold.com`; 7-day acknowledgment promise; no
+    bounty; latest-release-only support; each file points researchers at
+    its repo's real attack surface — trusted-shell boundary for the shell,
+    E2E blindness + metadata for the relay).
+  - **DONE (2026-07-16): the address is live.** Cloudflare Email Routing
+    enabled on mirafold.com (this required removing leftover **Namecheap**
+    forwarding MX/SPF records first — they conflicted with Email Routing's own
+    MX); `security@mirafold.com` **and** `support@mirafold.com` now forward to
+    a verified destination (`mirafoldhq@gmail.com`, a dedicated Google account).
+    End-to-end tested — mail arrives; a Gmail "never send to spam" filter was
+    applied for both addresses (forwarded mail from a brand-new domain lands in
+    spam by default). SECURITY.md in both repos already points at
+    `security@mirafold.com`.
+
+### Step R.2 — The relay service, deployed (still OPEN — full body + status history)
+
+- [ ] **Step R.2 — The relay service, deployed** *(needs Kyle: Fly.io
+  account + a domain — start both signups now; the code half is buildable
+  before either exists)*
+  - Goal: the dumb forwarder, running in the world.
+  - Build: per the locked relay-architecture decision (2026-07-07, above) —
+    a portable Node.js + `ws` service in a new **private repo**
+    (`genui-relay`, closed source per the settled MIT open-core call —
+    *2026-07-15: superseded by Phase K.1, the relay is MIT and flips public
+    at launch; the repo separation itself stands*):
+    accepts daemon dial-ins and browser connections, matches them by pair
+    id, shuttles opaque frames. No frame parsing, no storage. Connection
+    caps + rate limits + idle reaping (DoS posture same as the daemon's).
+    Deploy: Fly.io single instance, TLS via the platform, behind our own
+    domain (the indirection that keeps the host replaceable). Sequencing:
+    (a) write + verify the service locally against the daemon's full test
+    posture (doable now), (b) Kyle's signups, (c) deploy + point domain.
+    From the 2026-07-07 security audit, two items owed to this step:
+    (1) if the relay serves the shell page, it must send the daemon's same
+    security-header set (the `SHELL_CSP` block in `server/index.ts`) — the
+    stub serves `dist/` bare; (2) make the "who serves the app JS" trust
+    call explicit in the R.2 write-up: E2E encryption stops the relay
+    *reading* traffic, but a relay that serves tampered page JS could steal
+    the pairing code from the fragment — the honest asterisk on the E2E
+    story (industry-standard for web E2E; decide serve-from-relay vs.
+    separate static origin, and word the marketing accordingly). The
+    2026-07-08 contract design review adds a third argument to that same
+    call: if the app bundle is fetched THROUGH the daemon (relay tunnels
+    HTTP), client and daemon are always the same version — the trust
+    question and the version-skew problem collapse into one choice; if the
+    relay serves its own bundle, permanent skew is a commitment and R.4h's
+    tolerant schemas become mandatory, not prudent. Also note: a future
+    relay-protocol version bump presents to the user as "wrong pairing
+    code" (the v1 string is baked into key derivation — a clean break by
+    construction) — worth one line in the relay's error surface.
+    (Daemon-side guards from the same audit already landed, 2026-07-07:
+    weak pinned MIRAFOLD_RELAY_CODE refused at startup — min 16 chars, minted
+    fallback — and relay-client caps + idle-reaps remote viewports:
+    `MAX_REMOTE_VIEWPORTS`, `RELAY_VIEWPORT_IDLE_MS`.)
+  - Done when: a phone on cellular (not the home wifi) drives a home mock
+    session through the deployed relay, and the relay's logs show it
+    learned nothing but connection metadata.
+  - Status: **DEPLOYED and verified in production; the box stays open only on
+    non-code items.** The service (the standalone private `genui-relay` repo —
+    the single source of truth since G.1, 2026-07-15, retired the vendored
+    `relay-service/` dev copy and its sync scripts) is a dependency-light (`ws`
+    only) portable Node process: a PURE forwarder that parses no frames, stores
+    nothing, and serves NO app bundle. Hardening in place — global + per-pair +
+    per-IP connection caps (`RELAY_MAX_CONNECTIONS_PER_IP`, `fly-client-ip`),
+    frame rate limit, heartbeat reaper, max payload, `/health` + 404-everything.
+    **Trust decision (documented in the relay README):** a pure forwarder can't
+    inject page JS that steals the pairing code from the URL fragment, so the
+    phone loads the app from a SEPARATE static origin (R.5's landing host) and
+    only then opens the encrypted socket. **Live:** deployed to
+    **`genui-relay.fly.dev`** (Fly.io, single instance via `fly scale count 1`,
+    platform TLS); `npm run smoke` PASSes against it and a real daemon streamed a
+    full remote turn while `fly logs` showed only connection metadata — the
+    "learned nothing" Done-when, observed in production. Verified:
+    `server/relay-service.itest.ts` (9, Tier 2, real daemon ↔ real service) + the
+    standalone 13-test suite + the live smoke.
+  - **Owed to close the box (all non-code, Kyle's):** (1) a credit card on Fly —
+    the trial stops machines after ~5 min idle; **DONE 2026-07-11: card added;
+    the `genui-relay` machine was restarted and is `started`/health-passing.**
+    (2) an owned domain + `fly certs add relay.<domain>` +
+    `MIRAFOLD_RELAY_URL=wss://relay.<domain>` — launch-gating, since installed
+    daemons must bake OUR name, never `fly.dev`. **DONE 2026-07-11 (infra):
+    `relay.mirafold.sh` is LIVE — A/AAAA at Namecheap → Fly, cert Issued, and
+    `scripts/smoke.mjs wss://relay.mirafold.sh` PASSES the full protocol (dial-in,
+    pair, byte-identical forward, 4003 refuse).** STILL OPEN (code, part of the
+    rename/R.5): nothing bakes a default relay URL yet — `server/index.ts` reads
+    `process.env.MIRAFOLD_RELAY_URL` and the relay is OFF when unset, so shipped
+    daemons don't yet point at `wss://relay.mirafold.sh` by default. Baking that
+    default is the intended design (daemon always knows the relay; the relay
+    enforces entitlement, R.5) but it turns the relay ON for everyone until R.5
+    gates it — do it as part of the rename + R.5, not a standalone hardcode.
+    **PRODUCT RENAMED 2026-07-11: genui-shell → `Mirafold`.** Domains
+    `mirafold.com` + `mirafold.sh` BOUGHT (Namecheap; `.com` canonical, `.sh`
+    for the `curl mirafold.sh | sh` install one-liner + `relay.mirafold.sh`).
+    The earlier `genui-shell.com` choice (2026-07-10) is SUPERSEDED: on review,
+    GENUI® being a live registered mark (General UI, LLC, USPTO ser. 88100880)
+    in the *agentic-coding software* field — Kyle's own catch — made the
+    same-industry relatedness too strong to keep any `genui`-led name; the
+    downside (a launch-timed C&D / npm-or-domain dispute, cost asymmetric and
+    correlated with success) outweighed the descriptive-use defense. `Mirafold`
+    is a coined word (mira = look/marvel; -fold = manifold/shaping) → clean
+    trademark slate (knockout search 2026-07-11: no registered/pending mark,
+    no competing product; only an unrelated origami-facade research project
+    and different-class marks Mifold/MiracleFold). Available on every channel
+    (.com/.sh/.dev/.io/.app, npm `mirafold`, GitHub `mirafold`/`mirafold-sh`).
+    **Still owed for the rename:** codebase/repo/npm/GitHub-org rename
+    genui-shell → mirafold; the vendored relay app is still `genui-relay` on
+    Fly (internal name — rename optional, not launch-gating).
+    (3) the cellular-phone Done-when (an R.6 real-hardware check; also needs
+    R.5's static origin). Deferred security-audit items: Finding #2 (viewport
+    `Origin` allowlist) → R.5 (needs its domain); Finding #3 (pairId squat) → no
+    action (128-bit codes). Full deploy-day history (the two Fly gotchas), the
+    pre-deploy `ws` crash fix, and the audit detail are in PLAN-ARCHIVE.md.
+
+### Step R.4 — Remote viewport UX (still OPEN — full body + status history)
+
+- [ ] **Step R.4 — Remote viewport UX (the phone experience)**
+  - Goal: connecting from a phone is one scan, and driving a session there
+    is genuinely pleasant — this is the thing people pay for.
+  - Build: shell-owned "connect a device" affordance (QR of the pairing
+    URL); a phone-width layout pass over the transcript/prompt/status
+    surfaces (the design identity holds — command strips, mono-in/rich-out);
+    mobile-network resilience reuses the 4.4 machinery (seq resume +
+    heartbeat) over the relay path. The `bang_input` ephemeral path stays
+    viewport-scoped (a `sudo` prompt must never fan out — the 4.9 invariant,
+    now load-bearing).
+  - Done when: a real phone pairs by QR, drives a full session (prompt,
+    render components, permission answer, interrupt) comfortably, and
+    survives a network flip (wifi→LTE) mid-turn without losing the
+    transcript.
+  - Status: **built + verified locally (2026-07-07); the box stays open for
+    the real-phone pass, which needs the R.2 deployed relay.** What shipped:
+    (a) the shell-owned pairing affordance — `⧉ pair` in the status bar and
+    fleet header opens a QR of `http(s)://<relay>/#code=<code>`
+    (`ConnectDevice.tsx`; `qrcode-generator` devDep rendered as an inline
+    SVG path, black-on-white in both themes; copyable URL; Esc/backdrop
+    closes). The pairing info rides a new optional `relay` field on the
+    `agents` hello, sent to LOCAL viewports only — the code never crosses
+    the relay path, even encrypted. (b) A phone-width CSS pass
+    (`@media (max-width: 640px)`): tighter shell padding, wrapping
+    status/perm bars, ≥40px tap targets on allow/deny/stop/kill, markdown
+    tables scroll in place, fleet rows rewrap (id/tab-count hidden, cwd on
+    its own line), pin dock hidden (desktop affordance), short prompt
+    placeholder. (c) Resilience needed no new code — 4.4 seq-resume +
+    heartbeat just work over the relay, now proven. Verified — Tier-3
+    `phone.e2e.ts` (4 tests, 390×844 touch context through the stub): QR
+    affordance (session + fleet, exact pairing URL, Esc); pair-by-URL →
+    tap into session → checklist turn with a rendered component, no
+    sideways scroll at any point; permission answered by thumb (button
+    height asserted); **offline→online flip mid-turn resumes the stream —
+    pre-blip DOM node still connected (tail resume, not repaint)**.
+    Tier-2 additions: the relay-path hello omits the pairing info, and a
+    sudo-style password typed from the remote viewport reaches the PTY
+    only (no viewport stream, no replay, no relay frame — the 4.9
+    invariant, now load-bearing, plus ciphertext-tap audit). Screenshots
+    eyeballed (phone dark/light, perm bar, pair overlay). Also:
+    `test:e2e` now runs files sequentially (`--test-concurrency=1`) —
+    three concurrent Chrome+daemon suites flaked on modest hardware.
+    Owed to launch (R.6 checklist): scan the QR with a real phone through
+    the deployed relay, drive a session, and flip wifi→LTE mid-turn.
+
+### Steps F.7 + F.8 — Codex resolved-model label; `!` terminal parity (done)
+
+- [x] **Step F.7 — Codex resolved-model label (closes F.3's codex gap)** — done
+  2026-07-16 (Kyle: "show the model for codex just like you do for claude").
+  The Codex SDK's exec stream never names the model, so the adapter reads it
+  from Codex's own session record: the rollout file
+  (`<CODEX_HOME>/sessions/YYYY/MM/DD/rollout-…-<threadId>.jsonl`, local start
+  date), whose `turn_context` line carries `payload.model`. Keyed by
+  `thread.started`'s id; bounded poll (20×500ms — the line lands ~3s in) with
+  a turn-end re-kick; failure-silent (the "codex" stand-in remains); never
+  runs when a model was configured (`CODEX_MODEL` wins). Tier-1 fixture tests
+  + live-verified. **Side-finding worth knowing:** the label flipped to
+  `gpt-5.5`, not the terminal's `gpt-5.6-sol` — the SDK vendors its own codex
+  binary (0.142.5, default gpt-5.5) while Kyle's terminal codex is 0.144.5
+  (default gpt-5.6-sol), so SDK-driven sessions run an older default than the
+  user's terminal. F.5's app-server migration (driving the system codex)
+  would close that divergence too; until then `CODEX_MODEL` is the lever.
+
+- [x] **Step F.8 — `!` terminal parity + hardening** — done 2026-07-17 (Kyle:
+  "we must never hide ANYTHING"; found via `! cd ..` showing nothing where
+  the terminal shows three things). Three behaviors, all shell-owned and
+  agent-neutral: (1) **`cd` persists** across `!` commands via an EXIT-trap
+  cwd handoff (known POSIX shells only; win32/exotic shells skip
+  gracefully), confined to the workspace + children — an escape resets with
+  the terminal's own "Shell cwd was reset to …" notice; (2) **silent success
+  is said** — "(completed with no output)" under the bang strip; (3) the
+  **transcript reaches the agent immediately as its own turn** (was: parked
+  until the next typed prompt), with `cwd`/`cwd-after` attributes since the
+  engine's internal shell can't follow a bang `cd` (SDK boundary — the one
+  disclosed divergence). Same-day audit hardening: handoff files in a
+  0700 `mkdtemp` dir (not bare /tmp), lstat regular-file+size gate (FIFO
+  swap can't stall the event loop), `</bash-` closing-fence escaping in
+  transcripts, and a per-session 400ms bang throttle
+  (`BANG_MIN_INTERVAL_MS`) since each bang now costs a model turn. A
+  SECURITY.md disclosure note is queued under R.7. Also same day, F.3
+  extended: `session_created` carries the model label so the status bar
+  shows agent → model from first paint (no longer waiting on the first
+  turn's `usage`), and the fleet row matches that order. Tests in all
+  three tiers (fence unit test; cwd-persist/escape-notice, FIFO-stall, and
+  throttle itests; a real-typing `! cd ..` e2e watching all three behaviors).
+
+### Phase S — Theme system: six themes at launch (✅ COMPLETE 2026-07-16 — full phase)
+
+## Phase S — Theme system: six themes at launch (opened 2026-07-15; ✅ COMPLETE 2026-07-16 — all six steps done in one day, ships in the launch build before R.7)
+
+Goal of the phase: grow from the two hand-built themes (Light, Dark) to **six**
+— adding Solarized Light, Solarized Dark, Gruvbox Dark, and Dracula — on
+plumbing that makes every later theme a one-file, one-manifest-row,
+one-eyeball-pass addition. The real deliverable is the plumbing; the four
+borrowed themes prove it.
+
+**Decisions locked 2026-07-15 (this phase's charter):**
+
+- **Native CSS only.** No CSS framework, library, or preprocessor — CSS custom
+  properties are the purpose-built runtime theming mechanism, and the repo's
+  zero-dependency posture holds.
+- **Semantic tokens stay the vocabulary.** The existing ~45 purpose-named
+  custom properties (`--surface-2`, `--fg-dim`, `--warn-border`, …) remain
+  what structural CSS consumes. We do NOT adopt Base16 slot names
+  (`--base0A`) — too coarse (16 slots can't express our 7 text tiers / 6
+  border weights) and illegible to a human maintainer.
+- **Base16 is the porting recipe, not the vocabulary.** Each borrowed theme is
+  transcribed from its canonical published Base16 scheme through a
+  documented slot→token mapping written once in S.2. Palettes aren't
+  copyrightable and the source projects are MIT; each theme file carries a
+  source-attribution comment anyway.
+- **Every theme is standalone, labeled `light` or `dark` behind the scenes.**
+  Themes never come in pairs and never have variants; the label only answers
+  "which side of the toggle selects this." Families (Solarized) ship as two
+  unrelated sibling entries. The user's settings hold two slots — a chosen
+  light theme and a chosen dark theme (defaults: Light, Dark) — and the
+  existing toggle picks the active slot, so it stays meaningful after
+  someone adopts a fancy theme. Picking a theme from the list applies it
+  immediately and fills its side's slot; users never manage slots explicitly.
+- **The light/dark pill does not change AT ALL — LOCKED (Kyle, stated
+  multiple times; re-affirmed emphatically 2026-07-16 after an "Auto" third
+  state was misrecorded into S.3's original text).** Same look, same two
+  positions, same behavior — no tri-state, no Auto, no `prefers-color-scheme`
+  following, no visual tweak of any kind. Its two positions simply select the
+  two slots, which with default slots is indistinguishable from today. The
+  ONE new affordance this phase adds to the chrome is a **settings button**
+  (S.4) that opens the theme picker. Any future change to the pill requires a
+  new, explicit decision from Kyle — never infer one from adjacent work.
+- **Code/diff surfaces stay pinned dark universally** (the standing
+  USER-TESTING-FEEDBACK.md #8-adjacent decision: `--code-*`/`--diff-*` don't
+  swap per theme). The contract records them as pinned; a per-theme override
+  door stays open in the design but is NOT exercised in this phase.
+
+- [x] **Step S.1 — Token audit + file split (zero visual change)** — done
+  2026-07-16. Palettes now live in `web/src/themes/`: `base.css` (the pinned
+  `--code-*`/`--diff-*` tokens, the charter's shared base block), `dark.css`
+  (bare `:root` — dark stays the fallback identity), `light.css`
+  (`:root[data-theme="light"]`, now token-complete: `--overlay` + the shadows
+  are stated explicitly with the dark values rather than inherited silently);
+  import order set in `main.tsx` (base → themes → structure). The audit found
+  only three literals in structural CSS — three `box-shadow`s — hoisted as
+  `--shadow-pop` (chart tooltip) and `--shadow-card` (onboarding/pair cards),
+  same values both themes. `styles.css` is grep-clean of color literals.
+  Deliberate non-CSS exceptions, each noted in-file: the QR's black-on-white
+  (scanner contrast, `ConnectDevice.tsx`), the canvas favicon (can't consume
+  CSS vars, `Shell.tsx`), the artifact iframe's dark base (opaque origin
+  can't read shell vars, `Artifact.tsx`), and Chart's fixed CVD-safe series
+  palette (data-viz, not theme). Verified: typecheck + all three tiers green
+  untouched (168 unit / 74 itest / 21 e2e).
+  - Goal: complete the tokens-vs-structure separation that `styles.css`
+    already has in embryo (lines 1–112 are palette; ~2,400 lines are
+    structure), so a theme is one self-contained file.
+  - Build: sweep the structural rules for literal colors (hex/rgb/hsl) and
+    hoist each into a semantic token; move the palettes out to
+    `web/src/themes/dark.css` and `web/src/themes/light.css` (pinned
+    `--code-*`/`--diff-*` tokens live in a shared base block — exact layout
+    decided in-step); `styles.css` keeps only structural rules referencing
+    `var(...)`. Import order via `web/src/main.tsx`.
+  - Files: `web/src/styles.css`, `web/src/themes/` (new), `web/src/main.tsx`.
+  - Done when: no color literal remains outside `web/src/themes/` (grep-clean,
+    modulo deliberate exceptions noted in-file), and the app is visually
+    unchanged in both themes — `yarn test:e2e` passes untouched.
+
+- [x] **Step S.2 — Theme contract, manifest, and Tier-1 guards** — done
+  2026-07-16. `web/src/themes/manifest.ts` is the single source: `THEMES`
+  (`{ id, displayName, appearance }` — ids stamp `data-theme`, nothing else
+  in the app names a theme), the 41-token `THEME_TOKENS` contract, the
+  7-token `PINNED_TOKENS` set (base.css only), and the Base16 slot→token
+  porting recipe as the closing doc comment (S.5/S.6 transcribe from it;
+  syntax slots beyond the four semantic accents deliberately unused — code
+  is pinned + hljs-owned). `themes.test.ts` adds 8 Tier-1 guards: manifest
+  sanity, ids↔files bijection, per-theme selector scoping (dark owns bare
+  `:root`, every other theme scopes to its own `data-theme`), exact contract
+  token set (missing AND strays), base.css = exactly the pinned set,
+  contract/pinned disjoint, fg/bg contrast ≥ 4.5:1, and appearance label ↔
+  actual `--bg` lightness. Done-when proven live: each of the four failure
+  modes (missing token, stray token, manifest/file mismatch, unreadable
+  fg/bg) was broken once and failed exactly its guard, then restored.
+  Verified: typecheck + all tiers green (176 unit / 74 itest / 21 e2e).
+  - Goal: the fixed token contract every theme must satisfy, the single
+    source the picker renders from, and the tests that keep 6 (then 16)
+    themes from silently drifting.
+  - Build: `web/src/themes/manifest.ts` — the canonical token-name list plus
+    a `{ id, displayName, appearance: "light" | "dark" }` entry per theme
+    (ids stamp `data-theme` and persist in settings; nothing else in the app
+    ever names a theme). Write the Base16 slot→token mapping recipe as a
+    comment/doc alongside. Tier-1 tests: every theme file defines exactly
+    the contract's tokens (no missing, no strays); manifest ids ↔ theme
+    files are a bijection; contrast floor — `--fg` vs `--bg` computes ≥
+    4.5:1 per theme, so a mangled palette fails before a human looks.
+  - Files: `web/src/themes/manifest.ts` (new), `web/src/themes/themes.test.ts`
+    (new).
+  - Done when: `yarn test` fails loudly on a theme file missing a token, a
+    stray token, a manifest/file mismatch, or an unreadable fg/bg pair —
+    verified by deliberately breaking each once.
+
+- [x] **Step S.3 — Two-slot switching (the pill itself does NOT change)** —
+  done 2026-07-16. `manifest.ts` gained the storage vocabulary
+  (`MODE_STORAGE_KEY` = the pre-existing `mirafold-theme`, unchanged
+  meaning; `slotStorageKey(appearance)` = `mirafold-theme-light/-dark`) and
+  `resolveSlot()` (stored id wins if it names a manifest theme, else the
+  side's default — existence check, not appearance: fit is enforced where
+  slots are written, S.4's picker). Shell.tsx stamps
+  `resolveSlot(mode, slot)` instead of the mode; the pill, its props, and
+  StatusBar are untouched. index.html's pre-paint script mirrors the
+  resolution by value (unknown id stamps harmlessly → bare `:root` dark
+  until Shell re-stamps). Migration: no migration — the mode key keeps its
+  exact meaning, absent slot keys mean defaults, which is byte-identical
+  behavior. Proven in Tier-3 (`app.e2e.ts`): seeded dark slot paints its
+  theme while the pill shows dark mode with unchanged rendering, both keys
+  survive two reloads, each side follows its own slot on pill flips,
+  unknown slot id falls back, and the pre-existing pill test passes
+  untouched (default-slot identity). Tiers 178/74/22 green.
+  - Goal: generalize the backing state of today's binary toggle
+    (`Shell.tsx`, localStorage key `mirafold-theme`) to the two-slot model
+    with **zero change to the pill** — per the charter's locked decision:
+    same look, same two positions, same behavior; the original text of this
+    step added an "Auto" third state, which misrecorded Kyle's decision and
+    was struck 2026-07-16. Do not reintroduce it.
+  - Build: persist `lightTheme` / `darkTheme` slot choices (defaults `light`
+    / `dark`) alongside the existing mode; the pill's two positions select
+    the active slot — with default slots this is behavior-identical to
+    today. Active theme id stamps `:root[data-theme]`. Migration: existing
+    stored `mirafold-theme` values keep meaning what they meant (the
+    index.html pre-paint script included).
+  - Files: `web/src/components/Shell.tsx`, `web/src/themes/manifest.ts`.
+  - Done when: Tier-3 proves the pill flips between the two slot themes,
+    choices survive reload, and with default slots the pill's rendered UI
+    and behavior are exactly today's.
+
+- [x] **Step S.4 — Settings button + theme picker UI (shell-owned)** — done
+  2026-07-16, built exactly to the locked design. New `ThemePicker.tsx` =
+  the centered settings card (pair-card idiom: shared backdrop rule,
+  `--shadow-card`, ❯-glyph head, Esc/scrim/✕ close); gear button
+  (`.sb-settings`) rides StatusBar as a plain optional-prop button placed
+  before the pill (home ⌂ keeps far right; the pill and its test are
+  untouched). Shell owns the state: slots lifted into React state so a pick
+  repaints live; `pickTheme` enforces appearance fit at the one write site
+  and flips mode to the picked side (picking is seeing). Swatch chips read
+  each theme's real colors by importing `themes/*.css` as raw text
+  (`import.meta.glob` — Vite-only, so the card mounts from Shell and must
+  never be imported from Tier-1-tested modules; noted in-file) through the
+  now-shared `parseThemeTokens` in manifest.ts — a new theme's swatch costs
+  zero wiring. Tier-3 proves: gear→card, groups+rows from the manifest,
+  chips carry non-transparent computed colors in the built bundle, current
+  slots checked, live apply on pick (data-theme + pill side + slot key,
+  card stays open), other slot untouched, Esc and scrim-click close.
+  Tiers 178/74/23 green.
+  - Goal: a **new settings button** in the shell chrome — the one new
+    affordance this phase adds (the pill is locked, see charter) — opening
+    the settings card with the theme picker.
+  - **Design locked (Kyle approved 2026-07-16):** a small **gear button
+    beside the pill** opens a **centered modal card** over the translucent
+    `--overlay` scrim — the same idiom as the pairing/onboarding cards
+    (`--shadow-card`, same border/radius language), NOT a popover or drawer.
+    The card is titled "Settings" with an × close; one section today,
+    **Theme**: two labeled groups, "Light themes" / "Dark themes", each row
+    = theme displayName + a short strip of color chips (bg, surface, accent,
+    fg) rendered from the manifest, with a check on the row occupying each
+    slot. Clicking a row repaints the app instantly behind the scrim (live
+    preview — the translucent scrim is the point), moves the check, writes
+    the slot; no confirm/apply. Clicking a theme of the other appearance
+    also flips the active mode to show it (picking is seeing). Esc, scrim
+    click, or × closes. Built to grow more sections later (R.4l's settings
+    surface); works identically on desktop and the phone viewport.
+  - Build: picker renders purely from the manifest; clicking a row applies
+    the theme immediately and writes it into its appearance side's slot.
+    Shell-owned affordances (button + card) — agent output can never
+    render, wrap, or intercept them (trusted-shell boundary). The pill is
+    not touched, restyled, or repositioned by this step.
+  - Files: `web/src/components/Shell.tsx` (or a new `ThemePicker.tsx`),
+    `web/src/styles.css`.
+  - Done when: Tier-3 drives a real click on the settings button → card
+    opens; a real click on a dark-labeled theme → it paints immediately,
+    `data-theme` updates, the pill's dark side now means that theme, and
+    the light side is untouched — with the pill's own rendering unchanged.
+
+- [x] **Step S.5 — Themes 3 + 4: Solarized Light, Solarized Dark** — done
+  2026-07-16. Both transcribed from the canonical Base16 schemes (palette
+  by Ethan Schoonover; attribution comments in-file) via the S.2 recipe,
+  with the mixes computed by script rather than eyeballed; accents kept
+  canonical — Solarized's famously soft contrast is the theme (fg/bg floors
+  pass at 5.61 / 4.99). QA walk done by screenshot in headless Chrome over
+  onboarding, a template turn, the live checklist, the permission bar, and
+  the settings card, in both themes — all legible, pinned-dark code/diff
+  sit right on both, no hand-tunes needed. **The walk caught one real bug:
+  theme files never entered the bundle** (main.tsx imported dark/light
+  explicitly; stamping an unloaded id silently falls back to bare `:root`
+  dark) — fixed by loading `themes/*.css` via `import.meta.glob(eager)`,
+  which also makes "one file + one manifest row" literally true for
+  loading, swatches, and guards alike. Chased a scary-looking follow-up
+  (runtime swaps "not repainting") to ground: it was the app's own 0.22s
+  background transition animating theme flips — by design, not a bug;
+  probes deleted. Tier-3 now proves a borrowed theme end-to-end with a
+  computed-color assertion (settled post-animation) that would catch any
+  future unloaded-theme regression, plus reload persistence. Tiers
+  178/74/24 green.
+  - Goal: the first borrowed pair — the canonical light theme and its
+    famous sibling — shipped as two standalone manifest entries.
+  - Build: transcribe each from its canonical Base16 scheme via the S.2
+    recipe into one theme file each (+ attribution comment), then the
+    eyeball QA walk per theme: terminal output, tool blocks, diffs (pinned
+    dark — confirm they still sit right), permission bar, onboarding,
+    generative-UI components; hand-tune derived tiers where the recipe's
+    output misses.
+  - Files: `web/src/themes/solarized-light.css`,
+    `web/src/themes/solarized-dark.css`, `web/src/themes/manifest.ts`.
+  - Done when: both pass the S.2 guards, both survive the QA walk with
+    notes resolved, and each is selectable + persistent end-to-end.
+
+- [x] **Step S.6 — Themes 5 + 6: Gruvbox Dark, Dracula** — done 2026-07-16.
+  **Phase S complete: six themes at launch.** Gruvbox Dark transcribed from
+  the canonical Base16 "gruvbox dark, medium" scheme (Dawid Kurek / Pavel
+  Pertsev); Dracula deliberately from the OFFICIAL draculatheme.com palette
+  instead of the base16-dracula scheme file, whose slot shuffle (pink in
+  the red slot, lime in the green slot) would have broken the recipe's
+  "semantic, not syntax" accent rule — the deviation is documented in the
+  theme file's header. Recipe mixes computed by script; contrast floors
+  8.59 (gruvbox) / 13.36 (dracula). Screenshot QA walk (template turn,
+  checklist, permission bar, settings card; Dracula reached through the
+  real picker with the card open) — both legible, identities unmistakable,
+  no hand-tunes. The picker now shows 2 light + 4 dark; the one-file
+  promise is proven by construction: S.5/S.6 added four themes and none
+  touched anything but its own CSS file + one manifest row (loading is
+  glob'd, swatches parse the file, guards sweep the directory). Tiers
+  178/74/24 green.

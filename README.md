@@ -46,18 +46,21 @@ codebase. Companion documents:
 - **[PLAN.md](PLAN.md)** — the phased build plan. Every step has
   Goal / Build / Files / Done-when. Shipped so far: **Phases 0, 1, T, 2, 3, T2,
   and P** (three faithful agent skins — Claude Code, Codex, Gemini CLI), all
-  of Phase 4, L.1, and the working core of **Phase R** (the hosted relay:
-  R.1 dial-out + envelope, R.3 per-pair E2E encryption, R.4's QR pairing +
-  phone layout, and R.2's relay **deployed** on Fly.io — a real daemon has
-  driven a full turn through it). What remains before launch: billing
-  (R.5, reworked around a merchant of record by Phase K.4), the written
-  release order (R.5b), a user-testing round (R.5c), launch prep (R.6),
-  and launch day itself (R.7) — all gated by **Phase K**, the legal &
-  compliance readiness phase (entity, ToS/privacy, billing vendor,
-  provider-terms verification) opened 2026-07-15. Demand-gated Phase L
-  ergonomics follow post-launch. PLAN.md is the source of truth for what
-  comes next; completed phases are archived in
-  **[PLAN-ARCHIVE.md](PLAN-ARCHIVE.md)**.
+  of Phase 4, **G/H/H2** (the 2026-07-15 maintainability restructure this
+  document's layout reflects), **S** (six themes at launch), L.1, most of
+  the Phase F fidelity fixes, and the working core of **Phase R** (the
+  hosted relay: R.1 dial-out + envelope, R.3 per-pair E2E encryption,
+  R.4's QR pairing + phone layout — proven on a real phone — and R.2's
+  relay **deployed** on Fly.io). What remains before launch: the R.4l
+  polish/fidelity intake, billing (R.5, on a merchant of record — Paddle —
+  per Phase K.4), the written release order (R.5b), a user-testing round
+  (R.5c), launch prep (R.6), and launch day itself (R.7). **Phase K**, the
+  legal & compliance readiness phase opened 2026-07-15, is largely closed
+  as of 2026-07-17 — remaining: the billing vendor's account reviews and
+  the revenue-triggered items (LLC, trademark filing, lawyer review).
+  Demand-gated Phase L ergonomics follow post-launch. PLAN.md is the
+  source of truth for what comes next; completed phases and full status
+  histories are archived in **[PLAN-ARCHIVE.md](PLAN-ARCHIVE.md)**.
 - **[BUSINESS.md](BUSINESS.md)** — positioning, wedges, pricing, and the
   milestone gates that sequence the plan. The two build-relevant conclusions:
   ship the Phase 1 demo before Phase T, and keep every seam local-first.
@@ -133,7 +136,9 @@ type WireMsg =
   | { type: "permission_request"; tool: string; detail: string; id: string } // T.3
   | { type: "user_prompt"; text: string }              // 4.2: server-echoed user turn
   | { type: "session_created"; sessionId: string; cwd: string;    // 4.2: attach reply
-      agent?: AgentName; resumed?: boolean }       // (P.4: + agent; 4.4: + resumed —
+      agent?: AgentName; model?: string;           // (P.4: + agent; F.3/F.8: + model —
+      resumed?: boolean }                          //  the status bar shows it from first
+                                                   //  paint; 4.4: + resumed —
                                                    //  true ⇒ tail replay, don't reset)
   | { type: "agents"; agents: { agent: AgentName; live: boolean }[]; // P.4: onboarding
       default: AgentName; cwd?: string; home?: string;             //   (4.8: + cwd/home)
@@ -433,7 +438,9 @@ web/               the browser app (React 19 + Vite)
                        incl. thinking blocks, artifacts, and subagent grouping
     ToolBlock.tsx      tool-call records: collapsed row, expands to input diff +
                        output with elision marker (T.1/T2.2/T2.3)
-    StatusBar.tsx      workbench strip: model · session · cwd · conn · usage (T2.6)
+    StatusBar.tsx      workbench strip (T2.6; regrouped 4.11): home ⌂ + end
+                       session controls far left, conn dot, agent · model ·
+                       session · cwd · usage · version, ⚙ settings, theme pill
     PinDock.tsx        right-side dock for pinned components (live via entries)
     Artifact.tsx       Level 3 host: sandboxed iframe for agent-authored UI (Phase 3)
     FleetView.tsx      mission control at / (4.6): live session list, rename,
@@ -447,6 +454,13 @@ web/               the browser app (React 19 + Vite)
                      ActionRow/context
   src/session-bus.ts the shell's message bus (H.9): one SocketClient + the
                      pub/sub fan-out and senders Shell.tsx consumes
+  src/tab-status.ts  the tab status light: brand-M favicon + corner badge
+                     (busy / permission) and title, painted from wire state
+  src/use-escape.ts  useEscapeKey — the one Esc idiom behind every overlay
+                     and the busy interrupt
+  src/diff.ts        the LCS line differ shared by ToolBlock's Edit/Write
+                     diffs and the `diff` registry component
+  src/tildify.ts     ~-abbreviation for cwd display (prompt + status bar)
   src/ws.ts          SocketClient: typed send/onMessage, hello, seq cursor,
                      heartbeat (half-open detection) + capped backoff (4.4);
                      on a relay page (#code= fragment) it handshakes and
@@ -470,8 +484,9 @@ dist/              built front end (vite build output; served by Express)
 dist-server/       esbuild server bundles (4.10): index.js + render-mcp.js —
                    what the installed `mirafold` actually runs; gitignored
 PLAN.md            the phased build plan (source of truth for next steps)
-PLAN-ARCHIVE.md    completed phases (0, T, 1, 2, 3, T2, P, G, H) with their
-                   status notes
+PLAN-ARCHIVE.md    completed phases (0, T, 1, 2, 3, T2, P, G, H, H2, S) and
+                   the done steps + status histories of the open phases
+                   (4, R, F, L, K, Q), all verbatim
 BUSINESS.md        strategy; gates that sequence the plan
 CONTRIBUTING.md    contributor guide: DCO sign-off (`git commit -s`) + the
                    test-tier and non-negotiable rules (K.9)
@@ -1097,18 +1112,30 @@ Read PLAN.md for the real thing; the shape in one breath:
   on Fly.io (`relay.mirafold.sh`), and a real daemon has driven a full turn
   through it; the box stays open only on a cellular-phone pass and baking
   the default relay URL.
-- **Now (as of 2026-07-15):** finishing **Phase R**, gated by **Phase K —
-  legal & compliance readiness** (PLAN Phase K): the entity, the ToS/privacy
-  pair, the billing vendor (K.4 replaced R.5's Stripe plan with a merchant
-  of record — Paddle recommended), the provider-terms re-verification (done;
-  the dated matrix is `server/provider-policy.ts`), and the K.1 reversal
-  that made the relay MIT alongside the shell. The build steps that remain:
-  entitlement/billing (R.5), the written release order (R.5b), a
-  user-testing round (R.5c), launch prep (R.6), then launch as one event —
-  demo post, repo public, `npm publish`, and a purchasable Pro tier on the
-  same day (R.7; BUSINESS.md §9 pivot note). True multi-user isolation (the
-  part of 4.5 deliberately deferred) lands here, when viewports actually
-  become remote.
+- **Also shipped (2026-07-14 → 17):** the **maintainability restructure**
+  (Phases G/H/H2 — the sibling `genui-relay` repo became the relay's single
+  source of truth, and the server/web layout §4 describes is H's work);
+  **Phase S** — six themes at launch on one-file-per-theme plumbing (§7);
+  the cockpit polish batch (4.11) and two more fidelity fixes — the codex
+  resolved-model label (F.7) and full `!` terminal parity with same-day
+  hardening (F.8); and most of **Phase K** — the relay relicensed MIT
+  (K.1), the provider-terms matrix re-verified with the
+  disclosed-uncertainty rule (K.3), four legal pages live on mirafold.com
+  from a real data inventory plus DPAs and DMARC (K.5), SECURITY.md + a
+  live security@ contact (K.7), the license scan (K.8), DCO contributor
+  policy (K.9), and the export/compliance closure notes (K.11/K.12). The
+  LLC and trademark filing are deliberately revenue-triggered, not
+  launch-gating.
+- **Now (as of 2026-07-17):** finishing **Phase R**. The billing vendor is
+  locked (Paddle, as merchant of record; account created, its two
+  verification reviews pending). The build steps that remain: the R.4l
+  polish + fidelity intake (enumeration in progress), entitlement/billing
+  (R.5), the written release order (R.5b), a user-testing round (R.5c),
+  launch prep (R.6), then launch as one event — demo post, repo public,
+  `npm publish`, and a purchasable Pro tier on the same day (R.7;
+  BUSINESS.md §9 pivot note). True multi-user isolation (the part of 4.5
+  deliberately deferred) lands here, when viewports actually become
+  remote.
 - **Post-launch, demand-gated:** `--local` easy mode (L.2), per-session
   provider mix (L.3), push notifications, and further agent adapters as
   users ask.
