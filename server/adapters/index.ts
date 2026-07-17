@@ -6,7 +6,7 @@ import { CodexSession } from "./codex";
 import { GeminiCliSession } from "./gemini-cli";
 import { MockSession } from "./mock";
 import type { AgentName, AgentSession, Backend } from "./types";
-import type { AgentBackend } from "../protocol";
+import type { AgentBackend, AgentInfo } from "../protocol";
 import { allowedLocally, type CredentialKind } from "../provider-policy";
 import { cachedLocalServers, hostKey, type LocalDialect, type LocalServer } from "../local-models";
 
@@ -205,13 +205,7 @@ function advertisedBackends(agent: AgentName): AgentBackend[] {
  * second-step menu (omitted when empty: the row is a plain demo/credential
  * story and the picker needs no second step).
  */
-export function availableAgents(): {
-  agent: AgentName;
-  live: boolean;
-  blocked?: boolean;
-  detail?: string;
-  backends?: AgentBackend[];
-}[] {
+export function availableAgents(): AgentInfo[] {
   return ADAPTER_AGENTS.map((agent) => {
     const kind = credentialKind(agent);
     const live = allowedLocally(agent, kind);

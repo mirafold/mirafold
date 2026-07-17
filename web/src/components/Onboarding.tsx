@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { AgentBackend, AgentName, BackendChoice } from "@protocol";
+import type { AgentBackend, AgentInfo, AgentName, BackendChoice } from "@protocol";
 import {
   agentLabel,
   backendLabel,
@@ -21,23 +21,11 @@ import { useEscapeKey } from "../use-escape";
 // rejection, shown here so the user can fix the path and retry (4.8).
 // A credential-less row carries the one-line fix (login command or env
 // var) instead of a bare badge — the picker itself says what to set or run (R.4b).
-// N.4: the SECOND STEP. When a clicked agent has a genuine choice of backing
-// (two credentials, or a discovered local server whose model must be picked),
-// the card flips to that agent's backend menu instead of creating immediately:
-// usable options as buttons, a present-but-prohibited subscription VISIBLE but
-// gray with the why (never hidden), the codex subscription with its
-// disclosed-uncertainty caveat inline, and each discovered local server with
-// its model catalog — picking a model picks the backend. While the card is
-// open, `onRefresh` polls the daemon (refresh_agents → re-probe → fresh
-// hello), so a just-started local server appears without a reload.
-
-type AgentRow = {
-  agent: AgentName;
-  live: boolean;
-  blocked?: boolean;
-  detail?: string;
-  backends?: AgentBackend[];
-};
+// N.4: the SECOND STEP (BackendMenu below). When a clicked agent has a genuine
+// choice of backing, the card flips to that agent's backend menu instead of
+// creating immediately. While the card is open, `onRefresh` polls the daemon
+// (refresh_agents → re-probe → fresh hello), so a just-started local server
+// appears without a reload.
 
 // How often the open picker asks the daemon to re-probe local servers (N.3's
 // refresh_agents; server-side throttled independently).
@@ -46,7 +34,7 @@ const REFRESH_POLL_MS = 3_000;
 /** A second step only when there's a genuine choice: more than one usable way
  *  to run, or a discovered server whose model must be picked. A single usable
  *  backend (or none — the demo path) keeps today's one-click create. */
-export function needsSecondStep(row: AgentRow): boolean {
+export function needsSecondStep(row: AgentInfo): boolean {
   const usable = (row.backends ?? []).filter((b) => b.usable);
   return usable.length > 1 || usable.some((b) => (b.models?.length ?? 0) > 0);
 }
@@ -70,6 +58,67 @@ function hostOf(endpoint: string): string {
   }
 }
 
+/** N.4's second step: how the picked agent is backed. Usable credentials as
+ *  buttons (the codex subscription with its disclosed-uncertainty caveat
+ *  inline), a present-but-prohibited subscription VISIBLE but gray with the
+ *  why (never hidden), and each discovered local server with its model
+ *  catalog — picking a model picks the backend. */
+function BackendMenu({
+  row,
+  onBack,
+  onChoose,
+}: {
+  row: AgentInfo;
+  onBack: () => void;
+  onChoose: (backend: BackendChoice) => void;
+}) {
+  const backends = row.backends ?? [];
+  return (
+    <div className="onb-backends">
+      <button className="onb-back" onClick={onBack}>
+        ← all agents
+      </button>
+      {backends.map((b, i) =>
+        b.models?.length ? (
+          // A discovered local server: its catalog IS the buttons —
+          // picking a model picks the backend.
+          <div className="onb-server" key={`s${i}`}>
+            <span className="onb-server-name">
+              {b.runtime ?? "local server"} · {b.endpoint ? hostOf(b.endpoint) : "local"}
+            </span>
+            <div className="onb-models">
+              {b.models.map((m) => (
+                <button key={m} className="onb-model" onClick={() => onChoose(choiceOf(b, m))}>
+                  {m}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          // A credential (or env-endpoint) row. Prohibited subscriptions
+          // stay VISIBLE but gray with the why — never hidden (R.4l (c)).
+          <button
+            key={`b${i}`}
+            className={`onb-backend${b.usable ? "" : " onb-backend-blocked"}`}
+            disabled={!b.usable}
+            onClick={() => onChoose(choiceOf(b))}
+          >
+            <span className="onb-backend-name">{backendLabel(row.agent, b.kind)}</span>
+            {b.detail && <span className="onb-backend-detail">{b.detail}</span>}
+            {b.usable && b.kind === "subscription" && subscriptionCaveat(row.agent) && (
+              <span className="onb-backend-caveat">{subscriptionCaveat(row.agent)}</span>
+            )}
+            {!b.usable && <span className="onb-backend-caveat">{blockedHint(row.agent)}</span>}
+          </button>
+        ),
+      )}
+      {localCapable(row.agent) && !backends.some((b) => b.models?.length) && (
+        <p className="onb-live-hint">{LOCAL_LIVE_HINT}</p>
+      )}
+    </div>
+  );
+}
+
 export function Onboarding({
   agents,
   defaultCwd,
@@ -78,7 +127,7 @@ export function Onboarding({
   onRefresh,
   onDismiss,
 }: {
-  agents: AgentRow[] | null;
+  agents: AgentInfo[] | null;
   defaultCwd?: string;
   error?: string | null;
   onPick: (agent: AgentName, cwd?: string, backend?: BackendChoice) => void;
@@ -146,59 +195,11 @@ export function Onboarding({
         />
         {error && <div className="onb-error">{error}</div>}
         {pickingRow ? (
-          <div className="onb-backends">
-            <button className="onb-back" onClick={() => setPicking(null)}>
-              ← all agents
-            </button>
-            {(pickingRow.backends ?? []).map((b, i) =>
-              b.models?.length ? (
-                // A discovered local server: its catalog IS the buttons —
-                // picking a model picks the backend.
-                <div className="onb-server" key={`s${i}`}>
-                  <span className="onb-server-name">
-                    {b.runtime ?? "local server"} · {b.endpoint ? hostOf(b.endpoint) : "local"}
-                  </span>
-                  <div className="onb-models">
-                    {b.models.map((m) => (
-                      <button
-                        key={m}
-                        className="onb-model"
-                        onClick={() => pick(pickingRow.agent, choiceOf(b, m))}
-                      >
-                        {m}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                // A credential (or env-endpoint) row. Prohibited subscriptions
-                // stay VISIBLE but gray with the why — never hidden (R.4l (c)).
-                <button
-                  key={`b${i}`}
-                  className={`onb-backend${b.usable ? "" : " onb-backend-blocked"}`}
-                  disabled={!b.usable}
-                  onClick={() => pick(pickingRow.agent, choiceOf(b))}
-                >
-                  <span className="onb-backend-name">
-                    {backendLabel(pickingRow.agent, b.kind)}
-                  </span>
-                  {b.detail && <span className="onb-backend-detail">{b.detail}</span>}
-                  {b.usable && b.kind === "subscription" && subscriptionCaveat(pickingRow.agent) && (
-                    <span className="onb-backend-caveat">
-                      {subscriptionCaveat(pickingRow.agent)}
-                    </span>
-                  )}
-                  {!b.usable && (
-                    <span className="onb-backend-caveat">{blockedHint(pickingRow.agent)}</span>
-                  )}
-                </button>
-              ),
-            )}
-            {localCapable(pickingRow.agent) &&
-              !(pickingRow.backends ?? []).some((b) => b.models?.length) && (
-                <p className="onb-live-hint">{LOCAL_LIVE_HINT}</p>
-              )}
-          </div>
+          <BackendMenu
+            row={pickingRow}
+            onBack={() => setPicking(null)}
+            onChoose={(backend) => pick(pickingRow.agent, backend)}
+          />
         ) : (
           <div className="onb-list">
             {agents === null ? (

@@ -32,6 +32,12 @@ const PROBE_TIMEOUT_MS = 500;
 const MAX_MODELS = 128;
 const MAX_NAME_LENGTH = 120;
 
+// The probe budget bounds TIME; this bounds SIZE (2026-07-17 audit). Over
+// loopback a hostile local listener can push hundreds of MB inside 500ms,
+// and parsing that would spike the daemon's memory — a real catalog is a few
+// KB, so anything past this is refused, not read.
+const MAX_PROBE_BODY_BYTES = 1_000_000;
+
 const WELL_KNOWN: { origin: string; runtime: string }[] = [
   { origin: "http://127.0.0.1:11434", runtime: "ollama" },
   { origin: "http://127.0.0.1:1234", runtime: "lm-studio" },
@@ -81,13 +87,29 @@ export function hostKey(url: string): string | undefined {
   }
 }
 
-/** GET a JSON body inside the probe budget; undefined on ANY failure
- *  (refused, timeout, non-2xx, malformed) — discovery is failure-silent. */
+/** GET a JSON body inside the probe budget and the size cap; undefined on ANY
+ *  failure (refused, timeout, non-2xx, oversized, malformed) — discovery is
+ *  failure-silent. Reads the body in chunks so an oversized response is
+ *  abandoned at the cap, never buffered whole. */
 async function fetchJson(url: string): Promise<unknown> {
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
-    if (!res.ok) return undefined;
-    return (await res.json()) as unknown;
+    if (!res.ok || !res.body) return undefined;
+    if (Number(res.headers.get("content-length")) > MAX_PROBE_BODY_BYTES) return undefined;
+    const reader = res.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_PROBE_BODY_BYTES) {
+        void reader.cancel();
+        return undefined;
+      }
+      chunks.push(value);
+    }
+    return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
   } catch {
     return undefined;
   }

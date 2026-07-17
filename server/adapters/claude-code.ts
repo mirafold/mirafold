@@ -9,7 +9,7 @@ import {
   type AgentSession,
   type TodoItem,
   capOutput,
-  definedEnv,
+  envWithout,
   joinTextBlocks,
   toolDetail,
   PERMISSION_TIMEOUT_MS,
@@ -129,14 +129,13 @@ export class ClaudeCodeSession implements AgentSession {
         ...(opts.kind === "local" && opts.endpoint
           ? {
               env: {
-                ...definedEnv(),
+                ...envWithout("ANTHROPIC_API_KEY"),
                 ANTHROPIC_BASE_URL: opts.endpoint,
-                ANTHROPIC_API_KEY: undefined,
                 ANTHROPIC_AUTH_TOKEN: process.env.ANTHROPIC_AUTH_TOKEN ?? "ollama",
               },
             }
           : opts.kind === "api-key"
-            ? { env: { ...definedEnv(), ANTHROPIC_BASE_URL: undefined } }
+            ? { env: envWithout("ANTHROPIC_BASE_URL") }
             : {}),
         canUseTool: makeCanUseTool(workspaceDir, this.ask),
         // settingSources is intentionally UNSET so it matches the CLI default

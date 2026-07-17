@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { startDaemon, type Daemon } from "./itest-harness";
+import { startOllamaFixture } from "./ollama-fixture";
 import { THEMES } from "../../web/src/themes/manifest";
 
 // Tier-3 E2E, opt-in (`yarn test:e2e` — needs google-chrome and a fresh
@@ -197,23 +198,8 @@ test("N.4: a genuine choice opens the second step; a local server appears LIVE; 
   // subscription login. A fixture "ollama" starts DOWN and comes up while
   // the picker is open — the live-appear promise. Display-only: no create is
   // ever clicked here (live credentials would spawn a real engine).
-  const http = await import("node:http");
-  let up = false;
-  const fixture = http.createServer((req, res) => {
-    if (!up || req.url !== "/api/tags") {
-      res.statusCode = 404;
-      res.end();
-      return;
-    }
-    res.setHeader("content-type", "application/json");
-    res.end(JSON.stringify({ models: [{ name: "llama3.2:3b" }] }));
-  });
-  const origin = await new Promise<string>((resolve) => {
-    fixture.listen(0, "127.0.0.1", () => {
-      const addr = fixture.address() as { port: number };
-      resolve(`http://127.0.0.1:${addr.port}`);
-    });
-  });
+  const fixture = await startOllamaFixture(["llama3.2:3b"]);
+  fixture.setUp(false);
   const codexDir = mkdtempSync(path.join(os.tmpdir(), "genui-n4-codex-"));
   writeFileSync(path.join(codexDir, "auth.json"), "{}");
   const claudeDir = mkdtempSync(path.join(os.tmpdir(), "genui-n4-claude-"));
@@ -226,7 +212,7 @@ test("N.4: a genuine choice opens the second step; a local server appears LIVE; 
     ANTHROPIC_API_KEY: "dummy",
     ANTHROPIC_BASE_URL: "http://localhost:9999", // an env endpoint the probe won't find
     CLAUDE_CONFIG_DIR: claudeDir,
-    MIRAFOLD_LOCAL_ENDPOINTS: origin,
+    MIRAFOLD_LOCAL_ENDPOINTS: fixture.origin,
     REFRESH_MIN_INTERVAL_MS: "50",
   });
   const page2 = await browser.newPage();
@@ -249,7 +235,7 @@ test("N.4: a genuine choice opens the second step; a local server appears LIVE; 
 
     // Start the fixture "ollama" NOW, picker open — it must appear without a
     // reload (the refresh_agents poll re-probes every ~3s).
-    up = true;
+    fixture.setUp(true);
     await page2.waitForSelector(".onb-server", { timeout: 15_000 });
     assert.match(await page2.locator(".onb-server-name").innerText(), /ollama/);
     assert.equal(await page2.locator(".onb-model").innerText(), "llama3.2:3b");

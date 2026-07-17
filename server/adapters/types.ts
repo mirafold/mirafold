@@ -45,13 +45,15 @@ export type Backend = {
   endpoint?: string;
 };
 
-/** process.env with the undefined slots dropped — the base for a per-session
- *  engine env override (both SDKs stop inheriting once `env` is passed, so
- *  the override must carry the full environment, minus the credential being
- *  withheld) (N.5). */
-export function definedEnv(): Record<string, string> {
+/** process.env minus `keys` (and minus undefined slots) — the per-session
+ *  engine env override that WITHHOLDS a credential (N.5). Both SDKs stop
+ *  inheriting once `env` is passed, so the override must carry the full
+ *  environment, not just the changed vars. */
+export function envWithout(...keys: string[]): Record<string, string> {
   return Object.fromEntries(
-    Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined),
+    Object.entries(process.env).filter(
+      (e): e is [string, string] => e[1] !== undefined && !keys.includes(e[0]),
+    ),
   );
 }
 

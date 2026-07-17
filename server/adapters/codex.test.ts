@@ -415,10 +415,18 @@ test("N.5: no choice keeps the pre-N default — apiKey iff the env var is set, 
 });
 
 test("N.5: a discovered-endpoint choice injects the documented provider recipe, keeping the MCP config", () => {
-  const o = capturedCodexOptions({
-    kind: "local",
-    endpoint: "http://127.0.0.1:11434",
-    model: "qwen3-coder",
+  let o!: CodexOptions;
+  withOpenAiKey("sk-env", () => {
+    o = capturedCodexOptions({
+      kind: "local",
+      endpoint: "http://127.0.0.1:11434",
+      model: "qwen3-coder",
+    });
+    // 2026-07-17 audit: the key is withheld from a local-endpoint engine —
+    // same posture as the claude adapter's local branch.
+    assert.ok(o.env);
+    assert.ok(!("OPENAI_API_KEY" in o.env!));
+    assert.equal(o.apiKey, undefined);
   });
   const config = o.config as {
     model_provider?: string;

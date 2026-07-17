@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { AgentBackend, AgentName } from "@protocol";
+import type { AgentInfo, AgentName } from "@protocol";
 import { Onboarding } from "./Onboarding";
 import { PromptBox } from "./PromptBox";
 import { RenderZone } from "./RenderZone";
@@ -58,9 +58,7 @@ export function Shell() {
   // + home for ~-abbreviation, the pairing info for the "connect a device"
   // QR (R.4, local viewports only), and its build version.
   const [daemonInfo, setDaemonInfo] = useState<{
-    agents:
-      | { agent: AgentName; live: boolean; blocked?: boolean; detail?: string; backends?: AgentBackend[] }[]
-      | null;
+    agents: AgentInfo[] | null;
     cwd?: string;
     home?: string;
     relay?: { url: string; code: string; ws?: string };
