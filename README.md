@@ -186,15 +186,21 @@ not new message types), and R.4 added exactly one optional field
 (`agents.relay`, the pairing info for the connect-a-device QR — sent to
 local viewports only, never across the relay).
 
-**The `!` passthrough (Step 4.9).** A prompt starting with `!` never reaches
-the model: the trusted shell intercepts it and the server runs the rest in a
-**real PTY** (`node-pty`) in the session's cwd — so unlike the terminal
-agents' own pipe-based `!`, interactive programs work: `sudo` prompts,
-`ssh` host-key questions, y/n confirms. Output streams to every viewport and
-the replay ring like anything else; the finished transcript
-(`<bash-input>`/`<bash-output>`) is injected into the agent's context with
-the next prompt, so the model sees what you ran (agent-neutrally, via
-`pushPrompt` — no per-adapter code). Stdin is the one **ephemeral** path:
+**The `!` passthrough (Step 4.9).** A prompt starting with `!` is
+intercepted by the trusted shell and the server runs the rest in a
+**real PTY** (`node-pty`) — so unlike the terminal agents' own pipe-based
+`!`, interactive programs work: `sudo` prompts, `ssh` host-key questions,
+y/n confirms. It runs in the session's bang cwd: `cd` **persists** across
+`!` commands, confined to the workspace and its children — an escape is
+undone and announced ("Shell cwd was reset to …"), terminal-harness
+parity. Output streams to every viewport and the replay ring like anything
+else (a silent success is said out loud: "(completed with no output)");
+the finished transcript (`<bash-input cwd>`/`<bash-output>`, closing-fence
+escaped so output can't fake its way out of the block) goes to the agent
+**immediately as its own turn**, so the model sees what you ran and
+answers, exactly as the terminal does (agent-neutrally, via `pushPrompt` —
+no per-adapter code; a per-session 400ms throttle keeps a hostile client
+from burning tokens with bang bursts). Stdin is the one **ephemeral** path:
 only the issuing viewport gets the input bar (it auto-masks on password
 prompts), and `bang_input` goes straight to the PTY — never broadcast,
 buffered, or logged, so a password can't reach the ring or a second tab.

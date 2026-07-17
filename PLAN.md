@@ -1058,6 +1058,14 @@ with it. Both sequence BEFORE R.5.**
     colors/alpha-colors/shadow lists, so `yarn test` rejects it
     mechanically. Matters only once the repo is public and taking PRs —
     land it with (or before) the public flip.
+  - **SECURITY.md: name the `!`-output → model path (2026-07-17 audit):**
+    before the repo goes public, add one short note: a finished `!`
+    command's transcript is fed to the agent as its own turn (terminal
+    parity), so untrusted text a command fetches (e.g. a curl'd page) can
+    try to steer the agent — the permission prompts are the backstop, and
+    the fence escaping in `server/sessions/connection.ts` keeps output from
+    faking its way out of its transcript block. Public-repo readers should
+    find this stated, not discover it.
   - Build, same day, in order: repo public → `npm publish` over the 0.0.1
     placeholder → verify `npx mirafold` against the real registry (the
     one check that's unverifiable until publish) → post (X + Show HN +
@@ -1106,6 +1114,29 @@ fix restores what that agent's *terminal* user already sees — nothing invented
   (default gpt-5.6-sol), so SDK-driven sessions run an older default than the
   user's terminal. F.5's app-server migration (driving the system codex)
   would close that divergence too; until then `CODEX_MODEL` is the lever.
+
+- [x] **Step F.8 — `!` terminal parity + hardening** — done 2026-07-17 (Kyle:
+  "we must never hide ANYTHING"; found via `! cd ..` showing nothing where
+  the terminal shows three things). Three behaviors, all shell-owned and
+  agent-neutral: (1) **`cd` persists** across `!` commands via an EXIT-trap
+  cwd handoff (known POSIX shells only; win32/exotic shells skip
+  gracefully), confined to the workspace + children — an escape resets with
+  the terminal's own "Shell cwd was reset to …" notice; (2) **silent success
+  is said** — "(completed with no output)" under the bang strip; (3) the
+  **transcript reaches the agent immediately as its own turn** (was: parked
+  until the next typed prompt), with `cwd`/`cwd-after` attributes since the
+  engine's internal shell can't follow a bang `cd` (SDK boundary — the one
+  disclosed divergence). Same-day audit hardening: handoff files in a
+  0700 `mkdtemp` dir (not bare /tmp), lstat regular-file+size gate (FIFO
+  swap can't stall the event loop), `</bash-` closing-fence escaping in
+  transcripts, and a per-session 400ms bang throttle
+  (`BANG_MIN_INTERVAL_MS`) since each bang now costs a model turn. A
+  SECURITY.md disclosure note is queued under R.7. Also same day, F.3
+  extended: `session_created` carries the model label so the status bar
+  shows agent → model from first paint (no longer waiting on the first
+  turn's `usage`), and the fleet row matches that order. Tests in all
+  three tiers (fence unit test; cwd-persist/escape-notice, FIFO-stall, and
+  throttle itests; a real-typing `! cd ..` e2e watching all three behaviors).
 
 - [ ] **Step F.5 — Codex app-server migration (approvals, streaming, visible
   reasoning)** *(post-launch, demand-gated — the big one)*
