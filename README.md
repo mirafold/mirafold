@@ -432,7 +432,9 @@ web/               the browser app (React 19 + Vite)
                      registry/, so the trust split reads in the tree
     Shell.tsx          TRUSTED SHELL: prompt box + permission bar + notices +
                        status bar; consumes the session bus (H.9)
-    Onboarding.tsx     first-run card: pick the agent + working directory (P.4/4.8)
+    Onboarding.tsx     first-run card: pick the agent + working directory, then
+                       how it's backed when there's a choice — detected
+                       credentials + discovered local model servers (P.4/4.8/N.4)
     PromptBox.tsx      the command bar (auto-grows to 8 lines; Enter sends)
     RenderZone.tsx     OUTPUT ZONE: WireMsg interpreter → entries + status line,
                        incl. thinking blocks, artifacts, and subagent grouping
@@ -911,7 +913,11 @@ is `server/provider-policy.ts`. The env file is
 loaded with `process.loadEnvFile()` and is optional by design. Also settable
 there: `MIRAFOLD_AGENT` (the default agent offered at onboarding), the per-agent
 model overrides `DEFAULT_MODEL` / `CODEX_MODEL` / `GEMINI_MODEL` (unset →
-that agent's own default), `PORT`, and these tuning knobs:
+that agent's own default), `PORT`, the local-server discovery knobs
+`MIRAFOLD_LOCAL_ENDPOINTS` / `MIRAFOLD_LOCAL_DISCOVERY` (Phase N — the
+onboarding picker probes localhost's well-known runtime ports and offers a
+running Ollama/LM Studio/vLLM per session; see `docs/local-models.md`), and
+these tuning knobs:
 `SESSION_IDLE_TIMEOUT_MS` (unattended-session lifetime),
 `PERMISSION_TIMEOUT_MS` (how long a permission prompt waits before denying),
 `TOOL_OUTPUT_CAP_BYTES` (per-result output cap before the elision marker,

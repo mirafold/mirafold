@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { availableAgents } from "./index";
+import { availableAgents, backendOptions, mergeBackends, resolveChosenBackend } from "./index";
+import type { LocalServer } from "../local-models";
 
 // The per-provider policy, at the detection layer. This REVERSES the R.4b
 // behavior (a Claude subscription login used to count as live): Anthropic's
@@ -18,6 +19,11 @@ const ENV_KEYS = [
   "ANTHROPIC_BASE_URL",
   "CLAUDE_CONFIG_DIR",
   "DEFAULT_MODEL",
+  "OPENAI_API_KEY",
+  "CODEX_HOME",
+  "CODEX_MODEL",
+  "GEMINI_API_KEY",
+  "GOOGLE_API_KEY",
 ] as const;
 
 const claude = () => availableAgents().find((a) => a.agent === "claude-code")!;
@@ -129,5 +135,250 @@ test("R.4k: no detail on a non-live agent", () => {
     withEnv({ CLAUDE_CONFIG_DIR: empty }, () => {
       assert.equal(claude().detail, undefined);
     });
+  });
+});
+
+// N.1 — backendOptions(): every detected credential listed independently, no
+// precedence collapse. The precedence in credentialKind() (BASE_URL > key >
+// login; OPENAI_API_KEY > auth.json) must NOT hide the other options here —
+// that silent collapse is exactly the confusion Phase N exists to end.
+
+test("N.1 codex: API key AND a subscription login → TWO options, both usable", () => {
+  withTempDir((dir) => {
+    writeFileSync(path.join(dir, "auth.json"), "{}");
+    withEnv({ OPENAI_API_KEY: "x", CODEX_HOME: dir }, () => {
+      const opts = backendOptions("codex");
+      assert.deepEqual(
+        opts.map((o) => o.kind),
+        ["api-key", "subscription"],
+      );
+      // The subscription is the disclosed gray area (provider-policy): usable
+      // locally, never blocked — its caveat is picker copy, not a policy gate.
+      assert.ok(opts.every((o) => o.usable));
+      assert.ok(opts.every((o) => o.blocked !== true));
+    });
+  });
+});
+
+test("N.1 claude-code: endpoint + key + login → THREE options; subscription blocked but VISIBLE", () => {
+  withTempDir((dir) => {
+    writeFileSync(path.join(dir, ".credentials.json"), "{}");
+    withEnv(
+      {
+        CLAUDE_CONFIG_DIR: dir,
+        ANTHROPIC_BASE_URL: "http://localhost:11434",
+        ANTHROPIC_API_KEY: "x",
+      },
+      () => {
+        const opts = backendOptions("claude-code");
+        assert.deepEqual(
+          opts.map((o) => o.kind),
+          ["local", "api-key", "subscription"],
+        );
+        const [local, key, sub] = opts;
+        assert.equal(local.usable, true);
+        assert.match(String(local.detail), /localhost:11434/);
+        assert.equal(key.usable, true);
+        assert.equal(sub.usable, false, "an Anthropic subscription must not run — written terms");
+        assert.equal(sub.blocked, true, "and it's listed blocked, never hidden");
+      },
+    );
+  });
+});
+
+test("N.1: no credentials at all → an empty menu (the demo path is the agent row's job)", () => {
+  withTempDir((empty) => {
+    withEnv({ CLAUDE_CONFIG_DIR: empty, CODEX_HOME: empty }, () => {
+      assert.deepEqual(backendOptions("claude-code"), []);
+      assert.deepEqual(backendOptions("codex"), []);
+      assert.deepEqual(backendOptions("gemini-cli"), []);
+    });
+  });
+});
+
+test("N.1 gemini-cli: an API key is the one and only option (either env name)", () => {
+  for (const key of ["GEMINI_API_KEY", "GOOGLE_API_KEY"]) {
+    withEnv({ [key]: "x" }, () => {
+      const opts = backendOptions("gemini-cli");
+      assert.equal(opts.length, 1, key);
+      assert.equal(opts[0].kind, "api-key");
+      assert.equal(opts[0].usable, true);
+    });
+  }
+});
+
+test("N.1: configured model rides as the api-key option's detail (per-agent env)", () => {
+  withTempDir((empty) => {
+    withEnv({ CODEX_HOME: empty, OPENAI_API_KEY: "x", CODEX_MODEL: "gpt-5.6-sol" }, () => {
+      assert.equal(backendOptions("codex")[0].detail, "gpt-5.6-sol");
+    });
+  });
+});
+
+// N.3 — mergeBackends(): dialect filtering + the env-endpoint dedupe. Servers
+// are passed in (pure); the live cache binding is advertisedBackends'.
+
+const OLLAMA: LocalServer = {
+  endpoint: "http://127.0.0.1:11434",
+  runtime: "ollama",
+  dialects: ["anthropic", "openai"],
+  models: ["llama3.2:3b"],
+};
+const LM_STUDIO: LocalServer = {
+  endpoint: "http://127.0.0.1:1234",
+  runtime: "lm-studio",
+  dialects: ["openai"],
+  models: ["qwen/qwen3-8b"],
+};
+
+test("N.3: dialect filter — ollama lists under BOTH claude-code and codex; openai-only under codex; gemini never", () => {
+  withEnv({}, () => {
+    const servers = [OLLAMA, LM_STUDIO];
+    const forClaude = mergeBackends("claude-code", [], servers);
+    assert.deepEqual(
+      forClaude.map((b) => b.runtime),
+      ["ollama"],
+    );
+    assert.deepEqual(forClaude[0].models, ["llama3.2:3b"]);
+    assert.equal(forClaude[0].usable, true);
+    assert.deepEqual(
+      mergeBackends("codex", [], servers).map((b) => b.runtime),
+      ["ollama", "lm-studio"],
+    );
+    assert.deepEqual(mergeBackends("gemini-cli", [], servers), []);
+  });
+});
+
+test("N.3: credential options ride ahead of discovered servers in one menu", () => {
+  withEnv({}, () => {
+    const merged = mergeBackends("codex", backendOptionsFixture(), [LM_STUDIO]);
+    assert.deepEqual(
+      merged.map((b) => b.kind),
+      ["api-key", "subscription", "local"],
+    );
+  });
+
+  function backendOptionsFixture() {
+    return [
+      { kind: "api-key" as const, usable: true },
+      { kind: "subscription" as const, usable: true },
+    ];
+  }
+});
+
+test("N.3: an env ANTHROPIC_BASE_URL naming a discovered server dedupes to the richer discovered row (localhost ≡ 127.0.0.1)", () => {
+  withTempDir((empty) => {
+    withEnv(
+      { CLAUDE_CONFIG_DIR: empty, ANTHROPIC_BASE_URL: "http://localhost:11434" },
+      () => {
+        const merged = mergeBackends("claude-code", backendOptions("claude-code"), [OLLAMA]);
+        // ONE local row — the discovered one, carrying the model catalog.
+        assert.deepEqual(
+          merged.map((b) => b.kind),
+          ["local"],
+        );
+        assert.equal(merged[0].runtime, "ollama");
+        assert.deepEqual(merged[0].models, ["llama3.2:3b"]);
+      },
+    );
+  });
+});
+
+// N.5 — resolveChosenBackend(): the never-trust-the-client gate. Servers are
+// injected (pure); the connection binds it to the live cache.
+
+test("N.5 resolve: a forged or malformed choice refuses", () => {
+  withEnv({}, () => {
+    for (const bad of [null, 42, {}, { kind: "root" }, { kind: 7 }]) {
+      const r = resolveChosenBackend("codex", bad, []);
+      assert.ok("error" in r, JSON.stringify(bad));
+    }
+  });
+});
+
+test("N.5 resolve: a prohibited claude subscription REFUSES; the codex gray-area subscription resolves", () => {
+  withTempDir((dir) => {
+    writeFileSync(path.join(dir, ".credentials.json"), "{}");
+    writeFileSync(path.join(dir, "auth.json"), "{}");
+    withEnv({ CLAUDE_CONFIG_DIR: dir, CODEX_HOME: dir }, () => {
+      const claude = resolveChosenBackend("claude-code", { kind: "subscription" }, []);
+      assert.ok("error" in claude, "Anthropic's written prohibition must hold at create");
+      const codex = resolveChosenBackend("codex", { kind: "subscription" }, []);
+      assert.ok(!("error" in codex));
+      assert.equal(codex.kind, "subscription");
+      assert.equal(codex.live, true);
+    });
+  });
+});
+
+test("N.5 resolve: an absent credential refuses (nothing detected to back it)", () => {
+  withTempDir((empty) => {
+    withEnv({ CODEX_HOME: empty }, () => {
+      const r = resolveChosenBackend("codex", { kind: "api-key" }, []);
+      assert.ok("error" in r);
+    });
+  });
+});
+
+test("N.5 resolve: a discovered endpoint is validated against the live list — ok / gone / wrong dialect / model not served", () => {
+  withEnv({}, () => {
+    const ok = resolveChosenBackend(
+      "codex",
+      { kind: "local", endpoint: LM_STUDIO.endpoint, model: "qwen/qwen3-8b" },
+      [LM_STUDIO],
+    );
+    assert.ok(!("error" in ok));
+    assert.equal(ok.kind, "local");
+    assert.equal(ok.endpoint, LM_STUDIO.endpoint);
+    assert.equal(ok.model, "qwen/qwen3-8b");
+
+    const gone = resolveChosenBackend(
+      "codex",
+      { kind: "local", endpoint: "http://127.0.0.1:9", model: "x" },
+      [LM_STUDIO],
+    );
+    assert.ok("error" in gone, "a stopped server must refuse, not silently fall back");
+
+    const wrongDialect = resolveChosenBackend(
+      "claude-code",
+      { kind: "local", endpoint: LM_STUDIO.endpoint },
+      [LM_STUDIO],
+    );
+    assert.ok("error" in wrongDialect, "an openai-only server can't back claude-code");
+
+    const staleModel = resolveChosenBackend(
+      "codex",
+      { kind: "local", endpoint: LM_STUDIO.endpoint, model: "not-served" },
+      [LM_STUDIO],
+    );
+    assert.ok("error" in staleModel);
+  });
+});
+
+test("N.5 resolve: the env-configured endpoint (local, no endpoint named) resolves off detection", () => {
+  withTempDir((empty) => {
+    withEnv({ CLAUDE_CONFIG_DIR: empty, ANTHROPIC_BASE_URL: "http://localhost:9999" }, () => {
+      const r = resolveChosenBackend("claude-code", { kind: "local" }, []);
+      assert.ok(!("error" in r));
+      assert.equal(r.kind, "local");
+      assert.equal(r.endpoint, undefined); // the adapter inherits the env URL
+    });
+  });
+});
+
+test("N.3: an env endpoint the probe did NOT find stays its own row", () => {
+  withTempDir((empty) => {
+    withEnv(
+      { CLAUDE_CONFIG_DIR: empty, ANTHROPIC_BASE_URL: "http://localhost:9999" },
+      () => {
+        const merged = mergeBackends("claude-code", backendOptions("claude-code"), [OLLAMA]);
+        assert.deepEqual(
+          merged.map((b) => b.kind),
+          ["local", "local"],
+        );
+        assert.match(String(merged[0].detail), /localhost:9999/); // the env row
+        assert.equal(merged[1].runtime, "ollama"); // the discovered row
+      },
+    );
   });
 });

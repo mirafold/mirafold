@@ -5,8 +5,9 @@ import path from "node:path";
 import type { AgentName, ClientMsg, WireMsg } from "../protocol";
 import type { SessionEntry, SessionRegistry } from "./registry";
 import { runActionTool } from "./actions";
-import { availableAgents, defaultAgent } from "../adapters";
+import { availableAgents, defaultAgent, resolveChosenBackend, type Backend } from "../adapters";
 import { allowedOverRelay } from "../provider-policy";
+import { probeLocalServers } from "../local-models";
 import { spawnBang } from "../pty/pty";
 import { VERSION } from "../version";
 
@@ -33,6 +34,11 @@ const BANG_MIN_INTERVAL_MS = Number(process.env.BANG_MIN_INTERVAL_MS ?? 400);
 // A handoff file bigger than the longest legal path was not written by the
 // trap in pty.ts — refuse it (finding 3).
 const CWD_HANDOFF_MAX_BYTES = 4096;
+
+// Minimum gap between refresh_agents-triggered probe sweeps per connection
+// (N.3). The picker polls every few seconds; anything faster serves the
+// cached answer instead of re-probing localhost.
+const REFRESH_MIN_INTERVAL_MS = Number(process.env.REFRESH_MIN_INTERVAL_MS ?? 1_000);
 
 /**
  * The transcript is fenced by <bash-input>/<bash-output>; output that itself
@@ -238,6 +244,11 @@ export function openConnection(
   // since 4.6, a fleet watcher observing the registry itself.
   let entry: SessionEntry | null = null;
   let watching = false;
+  let closed = false;
+  // refresh_agents throttle (N.3): the picker polls on a slow interval, but a
+  // hostile client could spam — bound the probe rate per connection. A
+  // throttled refresh still answers, from the cache.
+  let lastProbeAt = 0;
 
   // Identity first, then the replayed history, then the live stream. 4.4:
   // a valid afterSeq turns the replay into a tail-only resume — the client
@@ -286,15 +297,19 @@ export function openConnection(
   // onboarding picker can render before any session exists. No agent assumed (P.4).
   // Also where the daemon was launched — the default cwd for new
   // sessions — plus home, so the client can show paths in ~-form (4.8).
-  viewport({
-    type: "agents",
-    agents: availableAgents(),
-    default: defaultAgent(),
-    cwd: process.cwd(),
-    home: os.homedir(),
-    version: VERSION,
-    ...(relay ? { relay } : {}),
-  });
+  // Re-sent whole on refresh_agents (N.3) — availableAgents() reads the live
+  // probe cache, so a re-send after a re-probe carries newly started servers.
+  const sendAgents = () =>
+    viewport({
+      type: "agents",
+      agents: availableAgents(),
+      default: defaultAgent(),
+      cwd: process.cwd(),
+      home: os.homedir(),
+      version: VERSION,
+      ...(relay ? { relay } : {}),
+    });
+  sendAgents();
 
   // A viewport-scoped error reaches the terminal too — the browser may
   // be a stranger's; the terminal log is what lands in a bug report (R.4g).
@@ -332,22 +347,43 @@ export function openConnection(
       return;
     }
     switch (msg.type) {
-      case "create":
+      case "create": {
         // A bad cwd (typo'd path) rejects the create rather than silently
         // working somewhere else — the viewport stays unattached and the
         // onboarding card shows the error (Step 4.8).
         noteClientVersion(msg.clientVersion);
+        // N.5: the picker's backend choice is validated HERE, against current
+        // detection + provider policy — never trusted. A refused choice is a
+        // create error (the picker shows it); honoring it only with a valid
+        // agent keeps a choice from riding an unknown-agent fallback.
+        const agent = asAgent(msg.agent);
+        let backend: Backend | undefined;
+        if (agent && msg.backend !== undefined) {
+          const resolved = resolveChosenBackend(agent, msg.backend);
+          if ("error" in resolved) {
+            sendError(resolved.error);
+            break;
+          }
+          backend = resolved;
+          console.log(
+            `[${label}] create → ${agent} on chosen backend ${backend.kind}` +
+              (backend.endpoint ? ` @ ${backend.endpoint}` : "") +
+              (backend.model ? ` (${backend.model})` : ""),
+          );
+        }
         try {
           attachTo(
             registry.create({
               cwd: typeof msg.cwd === "string" ? msg.cwd : undefined,
-              agent: asAgent(msg.agent),
+              agent,
+              backend,
             }),
           );
         } catch (err) {
           sendError(err instanceof Error ? err.message : String(err));
         }
         break;
+      }
       case "attach": {
         // A stale/unknown id (old bookmark, server restart) gets a fresh
         // session rather than an error page — unless the session cap rejects
@@ -473,10 +509,26 @@ export function openConnection(
         // state actions never reach the server; anything else is ignored.
         break;
       }
+      case "refresh_agents":
+        // Re-probe local model servers, then re-send the hello — the picker's
+        // "start it and it appears here" promise, live (N.3). Inside the
+        // throttle window the cached answer goes back instead (still a reply:
+        // the client's poll must never just vanish). The async resend checks
+        // `closed` — the socket may be gone by the time the probe lands.
+        if (Date.now() - lastProbeAt < REFRESH_MIN_INTERVAL_MS) {
+          sendAgents();
+          break;
+        }
+        lastProbeAt = Date.now();
+        void probeLocalServers().then(() => {
+          if (!closed) sendAgents();
+        });
+        break;
     }
   };
 
   const close = () => {
+    closed = true;
     if (entry) {
       registry.detach(entry, viewport);
       console.log(`[${label}] viewport detached ← session ${entry.id}`);

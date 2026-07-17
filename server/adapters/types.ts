@@ -40,7 +40,20 @@ export type Backend = {
   kind: CredentialKind;
   live: boolean;
   model?: string;
+  // N.5: the chosen DISCOVERED local server (picker second step). Absent for
+  // kind `local` means the env-configured endpoint, exactly as before.
+  endpoint?: string;
 };
+
+/** process.env with the undefined slots dropped — the base for a per-session
+ *  engine env override (both SDKs stop inheriting once `env` is passed, so
+ *  the override must carry the full environment, minus the credential being
+ *  withheld) (N.5). */
+export function definedEnv(): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined),
+  );
+}
 
 // How long a permission prompt waits for the browser before denying.
 // Overridable for tests; deny-by-default is the security posture. Neutral

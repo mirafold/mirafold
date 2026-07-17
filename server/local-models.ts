@@ -1,0 +1,157 @@
+// Local model server discovery (Phase N.2). HTTP probing ONLY — never
+// filesystem scanning: per-tool model storage layouts are unstable, and an
+// unserved model is unusable anyway (the Phase N charter decision). Probes go
+// to localhost's well-known runtime ports plus MIRAFOLD_LOCAL_ENDPOINTS —
+// nothing else is ever probed.
+//
+// Dialect is the compatibility key (not the model): Ollama answers its native
+// /api/tags and speaks BOTH the Anthropic-shaped and OpenAI-shaped APIs, so
+// its models can back Claude Code and Codex; everything else that answers
+// GET /v1/models (the de facto standard catalog endpoint) is OpenAI-shaped
+// only. Listing needs no model loaded in memory — the catalog is bookkeeping.
+
+export type LocalDialect = "anthropic" | "openai";
+
+export type LocalServer = {
+  /** Origin the agent would be pointed at, e.g. "http://127.0.0.1:11434". */
+  endpoint: string;
+  /** Best-effort runtime name — from /api/tags (ollama) or the port's default. */
+  runtime: string;
+  dialects: LocalDialect[];
+  models: string[];
+};
+
+// Per-probe budget. Localhost answers in single-digit ms when a server is up;
+// the budget exists so a hung socket can never stall the caller — probes are
+// parallel, so this also bounds the whole sweep.
+const PROBE_TIMEOUT_MS = 500;
+
+// Bloat insurance where engine-external data first enters our process (the
+// R.6 model-label-cap philosophy): a corrupt catalog must not balloon the
+// hello frame N.3 puts it on.
+const MAX_MODELS = 128;
+const MAX_NAME_LENGTH = 120;
+
+const WELL_KNOWN: { origin: string; runtime: string }[] = [
+  { origin: "http://127.0.0.1:11434", runtime: "ollama" },
+  { origin: "http://127.0.0.1:1234", runtime: "lm-studio" },
+  { origin: "http://127.0.0.1:8000", runtime: "vllm" },
+  { origin: "http://127.0.0.1:8080", runtime: "llama.cpp" },
+];
+
+/** The probe list: the well-known localhost ports + env-listed extras (the
+ *  nonstandard-port escape hatch). Exported pure so tests can pin the env
+ *  parsing without touching real ports. Invalid URLs are dropped silently —
+ *  never echoed into an error a viewer could see raw env input in.
+ *  `MIRAFOLD_LOCAL_DISCOVERY=off` skips the well-known ports (a no-probing
+ *  opt-out; env-listed extras are still honored — the user asked for those).
+ *  The itest harness forces it off so a dev machine's real Ollama can never
+ *  leak into a Tier-2 assertion. */
+export function probeTargets(): { origin: string; runtime: string }[] {
+  const wellKnown = process.env.MIRAFOLD_LOCAL_DISCOVERY === "off" ? [] : WELL_KNOWN;
+  const extras = (process.env.MIRAFOLD_LOCAL_ENDPOINTS ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .flatMap((raw) => {
+      try {
+        return [{ origin: new URL(raw).origin, runtime: "custom" }];
+      } catch {
+        return [];
+      }
+    });
+  const seen = new Set<string>();
+  return [...wellKnown, ...extras].filter(({ origin }) => {
+    if (seen.has(origin)) return false;
+    seen.add(origin);
+    return true;
+  });
+}
+
+/** "host:port" with localhost normalized to 127.0.0.1 — the key that says two
+ *  URLs name the same local server (an env-configured ANTHROPIC_BASE_URL and
+ *  a probe hit differ exactly this way). Undefined on a malformed URL. */
+export function hostKey(url: string): string | undefined {
+  try {
+    const u = new URL(url);
+    const host = u.hostname === "localhost" ? "127.0.0.1" : u.hostname;
+    return `${host}:${u.port || (u.protocol === "https:" ? "443" : "80")}`;
+  } catch {
+    return undefined;
+  }
+}
+
+/** GET a JSON body inside the probe budget; undefined on ANY failure
+ *  (refused, timeout, non-2xx, malformed) — discovery is failure-silent. */
+async function fetchJson(url: string): Promise<unknown> {
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
+    if (!res.ok) return undefined;
+    return (await res.json()) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+function capNames(names: string[]): string[] {
+  return names.slice(0, MAX_MODELS).map((n) => n.slice(0, MAX_NAME_LENGTH));
+}
+
+/** Ollama's native catalog: `{ models: [{ name }] }`. */
+function parseTags(body: unknown): string[] | undefined {
+  const models = (body as { models?: unknown } | undefined)?.models;
+  if (!Array.isArray(models)) return undefined;
+  const names = models
+    .map((m) => (m as { name?: unknown })?.name)
+    .filter((n): n is string => typeof n === "string" && n.length > 0);
+  return names.length ? capNames(names) : undefined;
+}
+
+/** The OpenAI-shaped catalog: `{ data: [{ id }] }`. */
+function parseV1Models(body: unknown): string[] | undefined {
+  const data = (body as { data?: unknown } | undefined)?.data;
+  if (!Array.isArray(data)) return undefined;
+  const ids = data
+    .map((m) => (m as { id?: unknown })?.id)
+    .filter((n): n is string => typeof n === "string" && n.length > 0);
+  return ids.length ? capNames(ids) : undefined;
+}
+
+async function probeOrigin(origin: string, runtimeGuess: string): Promise<LocalServer | undefined> {
+  // Both endpoints in parallel inside one budget. /api/tags answering is the
+  // Ollama fingerprint (and unlocks the anthropic dialect); otherwise a
+  // /v1/models answer means an OpenAI-dialect server of whatever runtime.
+  const [tags, v1] = await Promise.all([
+    fetchJson(`${origin}/api/tags`),
+    fetchJson(`${origin}/v1/models`),
+  ]);
+  const tagModels = parseTags(tags);
+  if (tagModels)
+    return { endpoint: origin, runtime: "ollama", dialects: ["anthropic", "openai"], models: tagModels };
+  const v1Models = parseV1Models(v1);
+  if (v1Models)
+    return { endpoint: origin, runtime: runtimeGuess, dialects: ["openai"], models: v1Models };
+  return undefined;
+}
+
+let cache: LocalServer[] = [];
+
+/** The last probe's result, synchronously — what hello-building reads. Empty
+ *  until the first probe lands; the daemon never waits on discovery. */
+export function cachedLocalServers(): LocalServer[] {
+  return cache;
+}
+
+/**
+ * Sweep the targets (defaults to probeTargets()) in parallel and refresh the
+ * cache. Bounded by PROBE_TIMEOUT_MS regardless of hung sockets; never
+ * throws. Callers fire-and-forget at startup and re-run on N.3's
+ * `refresh_agents` — a probe must never delay startup or error a session.
+ */
+export async function probeLocalServers(
+  targets: { origin: string; runtime: string }[] = probeTargets(),
+): Promise<LocalServer[]> {
+  const results = await Promise.all(targets.map((t) => probeOrigin(t.origin, t.runtime)));
+  cache = results.filter((r): r is LocalServer => r !== undefined);
+  return cache;
+}

@@ -59,3 +59,41 @@ export function connectHint(agent: string): string | undefined {
 export function blockedHint(agent: string): string | undefined {
   return (BLOCKED_HINT as Record<string, string | undefined>)[agent];
 }
+
+// ── The second-step backend picker's copy (N.4) ──────────────────────────
+
+/** Row label for a backend kind. Subscriptions carry the provider's own
+ *  product name — "subscription" alone doesn't tell a two-credential user
+ *  which login it means. */
+export function backendLabel(agent: string, kind: "api-key" | "subscription" | "local"): string {
+  if (kind === "api-key") return "API key";
+  if (kind === "local") return "local endpoint";
+  if (agent === "codex") return "ChatGPT subscription";
+  if (agent === "claude-code") return "Claude subscription";
+  if (agent === "gemini-cli") return "Gemini subscription";
+  return "subscription";
+}
+
+/** The disclosed-uncertainty caveat riding the codex subscription OPTION
+ *  (K.3 rule: state UNCERTAINTY, never permission — same bound as the
+ *  CONNECT_HINT wording above). Other agents' subscriptions are blocked
+ *  outright and carry BLOCKED_HINT instead. */
+export function subscriptionCaveat(agent: string): string | undefined {
+  return agent === "codex"
+    ? "not clearly permitted by OpenAI's terms, tolerated in practice — your account, your call"
+    : undefined;
+}
+
+/** Display-side mirror of the server's dialect map: which agents can run on
+ *  a local model server at all (the hint below shows only for these). Gemini
+ *  has no BYO-endpoint path. */
+export function localCapable(agent: string): boolean {
+  return agent === "claude-code" || agent === "codex";
+}
+
+/** The live local-model promise (N.3 keeps it literal: the picker re-probes
+ *  while open). Worded so an Ollama user — whose server idles perpetually as
+ *  a background service — isn't told to do a step they don't have. */
+export const LOCAL_LIVE_HINT =
+  "Running a local/open model? Anything your server (Ollama, LM Studio, vLLM) is " +
+  "serving shows up here automatically — start it if it isn't running.";

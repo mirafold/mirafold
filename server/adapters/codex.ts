@@ -5,13 +5,14 @@ import { readdir, readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import {
   Codex,
+  type CodexOptions,
   type McpToolCallItem,
   type Thread,
   type ThreadEvent,
   type ThreadItem,
 } from "@openai/codex-sdk";
 import type { WireMsg } from "../protocol";
-import { type AgentSession, type TodoItem, capOutput, joinTextBlocks } from "./types";
+import { type AgentSession, type TodoItem, capOutput, definedEnv, joinTextBlocks } from "./types";
 import { MIRAFOLD_MCP, RENDER_ID_RE, generativeUIMsg, renderMcpCommand } from "./render-mcp-cmd";
 import { AsyncQueue, CLOSE } from "./async-queue";
 
@@ -141,14 +142,38 @@ export class CodexSession implements AgentSession {
     return this.modelLabel;
   }
 
-  constructor(opts: { workspaceDir: string; model?: string }) {
+  // N.5: `kind`/`endpoint` carry the onboarding picker's backend choice;
+  // undefined = the pre-N default (apiKey iff the env var is set, everything
+  // inherited). `makeCodex` is the constructor-options test seam (the analog
+  // of Claude's `engine` — the options must be capturable at construction).
+  constructor(opts: {
+    workspaceDir: string;
+    model?: string;
+    kind?: "api-key" | "subscription" | "local";
+    endpoint?: string;
+    makeCodex?: (options: CodexOptions) => Codex;
+  }) {
     const workspaceDir = path.resolve(opts.workspaceDir);
     mkdirSync(workspaceDir, { recursive: true });
     this.modelLabel = opts.model ?? MODEL_STAND_IN;
-    // No `env`: the SDK then inherits process.env, so the CLI finds the user's
-    // ~/.codex auth + config. No `apiKey` unless one is set (ChatGPT login path).
-    const codex = new Codex({
-      ...(process.env.OPENAI_API_KEY ? { apiKey: process.env.OPENAI_API_KEY } : {}),
+    // The chosen backend, enforced per-session (N.5):
+    //   api-key (or no choice with the env var set) → pass the key.
+    //   subscription → NO apiKey, and an env override WITHOUT the env key, so
+    //     the CLI resolves ~/.codex/auth.json — the explicit choice must win
+    //     over the env var's usual precedence.
+    //   local endpoint (a discovered server) → the documented custom-provider
+    //     recipe (docs/local-models.md Path B), injected per-session: the
+    //     server's /v1 as a Responses-API provider, made the default.
+    //   Default: inherit process.env, so the CLI finds the user's own auth +
+    //     config, exactly as before.
+    const kind = opts.kind ?? (process.env.OPENAI_API_KEY ? "api-key" : undefined);
+    const codex = (opts.makeCodex ?? ((o: CodexOptions) => new Codex(o)))({
+      ...(kind === "api-key" && process.env.OPENAI_API_KEY
+        ? { apiKey: process.env.OPENAI_API_KEY }
+        : {}),
+      ...(kind === "subscription"
+        ? { env: (({ OPENAI_API_KEY: _, ...rest }) => rest)(definedEnv()) }
+        : {}),
       // Inject Mirafold's generative-UI tools as a stdio MCP server. Codex
       // calls them like any tool; the adapter turns those calls into render/
       // artifact WireMsgs below (it never reaches back into this subprocess).
@@ -164,6 +189,18 @@ export class CodexSession implements AgentSession {
             default_tools_approval_mode: "approve",
           },
         },
+        ...(kind === "local" && opts.endpoint
+          ? {
+              model_provider: "mirafold_local",
+              model_providers: {
+                mirafold_local: {
+                  name: "Mirafold-discovered local server",
+                  base_url: `${opts.endpoint}/v1`,
+                  wire_api: "responses",
+                },
+              },
+            }
+          : {}),
       },
     });
     this.thread = codex.startThread({

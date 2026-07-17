@@ -191,6 +191,103 @@ test("R.4k: a local-endpoint daemon shows the endpoint on the picker row", async
   }
 });
 
+test("N.4: a genuine choice opens the second step; a local server appears LIVE; blocked stays visible-but-gray", async () => {
+  // A machine with real choices: codex has BOTH an API key and a ChatGPT
+  // login; claude has an API key, a local endpoint, AND a prohibited
+  // subscription login. A fixture "ollama" starts DOWN and comes up while
+  // the picker is open — the live-appear promise. Display-only: no create is
+  // ever clicked here (live credentials would spawn a real engine).
+  const http = await import("node:http");
+  let up = false;
+  const fixture = http.createServer((req, res) => {
+    if (!up || req.url !== "/api/tags") {
+      res.statusCode = 404;
+      res.end();
+      return;
+    }
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify({ models: [{ name: "llama3.2:3b" }] }));
+  });
+  const origin = await new Promise<string>((resolve) => {
+    fixture.listen(0, "127.0.0.1", () => {
+      const addr = fixture.address() as { port: number };
+      resolve(`http://127.0.0.1:${addr.port}`);
+    });
+  });
+  const codexDir = mkdtempSync(path.join(os.tmpdir(), "genui-n4-codex-"));
+  writeFileSync(path.join(codexDir, "auth.json"), "{}");
+  const claudeDir = mkdtempSync(path.join(os.tmpdir(), "genui-n4-claude-"));
+  writeFileSync(path.join(claudeDir, ".credentials.json"), "{}");
+  const token = "e2e-n4-9c2f";
+  const d2 = await startDaemon({
+    MIRAFOLD_TOKEN: token,
+    OPENAI_API_KEY: "dummy",
+    CODEX_HOME: codexDir,
+    ANTHROPIC_API_KEY: "dummy",
+    ANTHROPIC_BASE_URL: "http://localhost:9999", // an env endpoint the probe won't find
+    CLAUDE_CONFIG_DIR: claudeDir,
+    MIRAFOLD_LOCAL_ENDPOINTS: origin,
+    REFRESH_MIN_INTERVAL_MS: "50",
+  });
+  const page2 = await browser.newPage();
+  try {
+    await page2.goto(`http://127.0.0.1:${d2.port}/?token=${token}`);
+
+    // Codex: two usable credentials → the second step, not an instant create.
+    await page2.locator(".onb-agent", { hasText: "Codex" }).click();
+    await page2.waitForSelector(".onb-backends");
+    assert.equal(await page2.locator(".onb-backend").count(), 2);
+    const subRow = page2.locator(".onb-backend", { hasText: "ChatGPT subscription" });
+    // The disclosed-uncertainty caveat rides the OPTION (K.3: uncertainty,
+    // never permission), and the row is a live choice, not blocked.
+    assert.match(await subRow.innerText(), /not clearly permitted/);
+    assert.match(await subRow.innerText(), /your account, your call/);
+    assert.equal(await page2.locator(".onb-backend-blocked").count(), 0);
+    // No server discovered yet → the live hint, no server row.
+    assert.equal(await page2.locator(".onb-server").count(), 0);
+    assert.match(await page2.locator(".onb-live-hint").innerText(), /shows up here/);
+
+    // Start the fixture "ollama" NOW, picker open — it must appear without a
+    // reload (the refresh_agents poll re-probes every ~3s).
+    up = true;
+    await page2.waitForSelector(".onb-server", { timeout: 15_000 });
+    assert.match(await page2.locator(".onb-server-name").innerText(), /ollama/);
+    assert.equal(await page2.locator(".onb-model").innerText(), "llama3.2:3b");
+
+    // Back to the agent list (the second step steps back, not out).
+    await page2.locator(".onb-back").click();
+    await page2.waitForSelector(".onb-list");
+
+    // Claude: two usable (env endpoint + API key) + ollama speaks anthropic
+    // too, and the prohibited subscription is VISIBLE but gray with the why.
+    await page2.locator(".onb-agent", { hasText: "Claude Code" }).click();
+    await page2.waitForSelector(".onb-backends");
+    assert.equal(await page2.locator(".onb-server").count(), 1); // dialect-filtered in
+    const blocked = page2.locator(".onb-backend-blocked");
+    assert.equal(await blocked.count(), 1);
+    assert.ok(await blocked.isDisabled(), "a prohibited subscription must not be clickable");
+    assert.match(await blocked.innerText(), /Claude subscription/);
+    assert.match(await blocked.innerText(), /third-party apps/);
+    // The env endpoint the probe never found keeps its own row.
+    assert.match(
+      await page2.locator(".onb-backend", { hasText: "local endpoint" }).innerText(),
+      /localhost:9999/,
+    );
+
+    // Gemini: no credentials, no dialect → no second step; the click-through
+    // demo create still works one-click (and proves the panel isn't sticky).
+    await page2.locator(".onb-back").click();
+    await page2.locator(".onb-agent", { hasText: "Gemini" }).click();
+    await page2.waitForURL(/\/s\/[\w-]+/, { timeout: 15_000 });
+  } finally {
+    await page2.close();
+    await d2.stop();
+    fixture.close();
+    rmSync(codexDir, { recursive: true, force: true });
+    rmSync(claudeDir, { recursive: true, force: true });
+  }
+});
+
 test("a demo turn shows tokens but never a fabricated dollar cost (R.4b)", async () => {
   // The checklist hook emits no usage — run a template turn, which does.
   await page.locator("textarea").click();

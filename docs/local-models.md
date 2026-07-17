@@ -11,12 +11,41 @@ Two of the three supported agents have a real local path today:
 
 | Agent | Local path | How |
 |---|---|---|
-| **Claude Code** | ✅ Ollama (v0.14+) | Ollama speaks Anthropic's Messages API — two env vars |
-| **Codex** | ✅ Ollama / LM Studio / vLLM | a custom provider in `~/.codex/config.toml` |
+| **Claude Code** | ✅ Ollama (v0.14+) | Ollama speaks Anthropic's Messages API |
+| **Codex** | ✅ Ollama / LM Studio / vLLM | an OpenAI-compatible provider (auto-configured, or `~/.codex/config.toml`) |
 | **Gemini CLI** | ❌ none | the CLI only talks to Google's endpoints — no supported local path |
 
 Both paths assume a local server that already has a model pulled. All examples
 below use [Ollama](https://ollama.com); LM Studio and vLLM notes follow.
+
+---
+
+## The zero-config path — discovery (start here)
+
+**If your local server is running, there is nothing to configure.** The
+daemon probes the well-known localhost ports at startup and while the
+onboarding picker is open — Ollama (11434), LM Studio (1234), vLLM (8000),
+llama.cpp (8080) — and any server that answers appears in the picker with
+its model list, under every agent that can drive it (Ollama under Claude
+Code *and* Codex; OpenAI-dialect-only servers under Codex). Pick a model
+and the session is configured automatically, per-session: Claude Code gets
+the endpoint through the documented env recipe, Codex gets a custom
+provider injected — no env vars, no `config.toml` edit, no dummy API key.
+Start your server while the picker is open and it appears within a few
+seconds, no reload.
+
+Two knobs, both optional:
+
+- `MIRAFOLD_LOCAL_ENDPOINTS` — comma-separated URLs to probe *in addition*
+  to the well-known ports (a server on a nonstandard port).
+- `MIRAFOLD_LOCAL_DISCOVERY=off` — disable the well-known-port probing
+  entirely (env-listed endpoints are still honored).
+
+Discovery only finds a *running* server — model files on disk with no
+server serving them are invisible (and unusable anyway). The two paths
+below remain fully supported: they are the way to make a local endpoint an
+agent's *default* (terminal parity — your terminal agent uses the same
+config), and the fallback for setups discovery can't see.
 
 ---
 
@@ -97,8 +126,9 @@ For LM Studio, use `base_url = "http://localhost:1234/v1"`; for vLLM,
 Responses API for your model).
 
 2. Tell Mirafold the agent is configured. Mirafold decides live-vs-mock
-   for Codex by looking for an `OPENAI_API_KEY` or a `codex login` — it can't
-   yet see a config-file-only local provider — so give it any non-empty key:
+   for Codex by looking for an `OPENAI_API_KEY` or a `codex login` — it
+   can't see a config-file-only local provider — so give it any non-empty
+   key:
 
 ```sh
 export OPENAI_API_KEY=local
@@ -107,8 +137,9 @@ mirafold
 
 The value never reaches your local server (Codex ignores OpenAI auth once
 `model_provider` points elsewhere); it only flips Mirafold's "configured"
-signal. This wart is scheduled to disappear in PLAN Step L.2 (`--local`
-detection).
+signal. *(This dummy-key wart applies only to this config-file route: a
+**running** server needs none of it — discovery finds it and a picked model
+configures the session automatically; see the zero-config path above.)*
 
 3. Verify in the terminal first if anything misbehaves: plain `codex` in the
    same directory should chat with your local model. If it does and Mirafold

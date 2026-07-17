@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
-import type { AgentName, SessionMeta } from "@protocol";
+import type { AgentBackend, AgentName, SessionMeta } from "@protocol";
 import { Onboarding } from "./Onboarding";
 import { ConnectDevice } from "./ConnectDevice";
 import { SocketClient } from "../ws";
@@ -23,7 +23,9 @@ const STATUS_LABEL = { idle: "idle", working: "working", permission: "needs you"
 
 export function FleetView() {
   const [sessions, setSessions] = useState<SessionMeta[] | null>(null);
-  const [agents, setAgents] = useState<{ agent: AgentName; live: boolean }[] | null>(null);
+  const [agents, setAgents] = useState<
+    { agent: AgentName; live: boolean; blocked?: boolean; detail?: string; backends?: AgentBackend[] }[] | null
+  >(null);
   const [daemon, setDaemon] = useState<{
     cwd?: string;
     home?: string;
@@ -88,10 +90,11 @@ export function FleetView() {
           agents={agents}
           defaultCwd={tildify(daemon.cwd, daemon.home)}
           error={onbError}
-          onPick={(agent, cwd) => {
+          onPick={(agent, cwd, backend) => {
             setOnbError(null);
-            socket.send({ type: "create", agent, cwd });
+            socket.send({ type: "create", agent, cwd, ...(backend ? { backend } : {}) });
           }}
+          onRefresh={() => socket.send({ type: "refresh_agents" })}
           // Dismissible only when a fleet exists behind it — on first run
           // (no sessions) the picker IS the page, so it stays.
           onDismiss={
