@@ -22,7 +22,20 @@ export function PromptBox({
   cwd?: string;
 }) {
   const [text, setText] = useState("");
+  // The cwd is collapsible down to just the ❯ caret — reader's choice,
+  // persisted (2026-07-16). The status bar still carries the folder leaf,
+  // so a collapsed prompt never hides which project this is.
+  const [cwdShown, setCwdShown] = useState(
+    () => localStorage.getItem("mirafold-prompt-cwd") !== "hidden",
+  );
   const ref = useRef<HTMLTextAreaElement>(null);
+
+  const toggleCwd = () => {
+    setCwdShown((shown) => {
+      localStorage.setItem("mirafold-prompt-cwd", shown ? "hidden" : "shown");
+      return !shown;
+    });
+  };
 
   // Auto-grow: track content height up to the CSS max-height, after which
   // the textarea scrolls internally (the scrollbar is the "there's more" cue).
@@ -42,14 +55,30 @@ export function PromptBox({
 
   return (
     <div className="prompt-box">
-      {cwd && (
-        <span className="prompt-cwd" title={cwd}>
-          {/* LRM sentinels: the span is direction:rtl for a left-side
+      {cwd && cwdShown && (
+        <button
+          type="button"
+          className="prompt-cwd"
+          title={`${cwd} \u2014 click to hide (the caret brings it back)`}
+          onClick={toggleCwd}
+        >
+          {/* LRM sentinels: the button is direction:rtl for a left-side
               ellipsis; these keep the path itself in LTR order. */}
           {"\u200E" + cwd + "\u200E"}
-        </span>
+        </button>
       )}
-      <span className="glyph">❯</span>
+      {cwd ? (
+        <button
+          type="button"
+          className="glyph prompt-caret"
+          title={cwdShown ? "Hide the working directory" : `${cwd} — click to show`}
+          onClick={toggleCwd}
+        >
+          ❯
+        </button>
+      ) : (
+        <span className="glyph">❯</span>
+      )}
       <textarea
         ref={ref}
         value={text}
