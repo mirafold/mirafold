@@ -203,6 +203,43 @@ test("bang `cd` persists inside the workspace, escapes reset with the terminal's
   await bd.stop();
 });
 
+test("a command that swaps the cwd handoff for a FIFO can't stall the daemon (audit f.3)", async () => {
+  const bd = await startDaemon();
+  const { client } = await createSession(bd.port);
+  // Clear our EXIT trap, replace the handoff file with a FIFO: without the
+  // lstat gate the daemon's readFileSync would block its whole event loop.
+  client.send({
+    type: "bang",
+    id: "fifo1",
+    command: 'trap - EXIT; rm -f "$MIRAFOLD_BANG_CWD_FILE"; mkfifo "$MIRAFOLD_BANG_CWD_FILE"; echo swapped',
+  } as never);
+  await client.waitFor((m) => m.type === "bang_end" && (m as Any).id === "fifo1", "fifo1 end", 20_000);
+  // bang_end broadcasts BEFORE the handoff read — a stalled loop shows up
+  // here as an unanswered ping.
+  client.send({ type: "ping" } as never);
+  await client.type("pong", 5_000);
+  client.close();
+  await bd.stop();
+});
+
+test("bang burst throttle: a too-fast second bang is refused with a clean end (audit f.5)", async () => {
+  const bd = await startDaemon({ BANG_MIN_INTERVAL_MS: "60000" });
+  const { client } = await createSession(bd.port);
+  client.send({ type: "bang", id: "r1", command: "true" } as never);
+  await client.waitFor((m) => m.type === "bang_end" && (m as Any).id === "r1", "r1 end", 20_000);
+  client.send({ type: "bang", id: "r2", command: "true" } as never);
+  const err = (await client.type("error")) as Any;
+  assert.match(err.message, /too fast/);
+  // The refusal pairs a bang_end so every viewport's bang bar clears.
+  const end = (await client.waitFor(
+    (m) => m.type === "bang_end" && (m as Any).id === "r2",
+    "r2 end",
+  )) as Any;
+  assert.equal(end.exitCode, null);
+  client.close();
+  await bd.stop();
+});
+
 test("one bang at a time; bang_kill ends it with a null exit code", async () => {
   c.send({ type: "bang", id: "b2", command: "sleep 30" } as never);
   await c.type("bang_start");

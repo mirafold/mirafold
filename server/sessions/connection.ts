@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { existsSync, lstatSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { AgentName, ClientMsg, WireMsg } from "../protocol";
@@ -24,6 +24,37 @@ const BANG_CONTEXT_CAP = Number(process.env.BANG_CONTEXT_CAP ?? 16_000);
 // agent-context tail above keeps accumulating — only the broadcast stops (R.4d).
 const BANG_OUTPUT_CAP_BYTES = Number(process.env.BANG_OUTPUT_CAP_BYTES ?? 262_144);
 
+// Minimum gap between `!` commands per session (2026-07-17 audit, finding 5):
+// each bang now costs a model turn, so a hostile client bursting bangs is a
+// token-burn vector, not just PTY churn. Humans never trip 400ms — the same
+// threshold the action bridge uses.
+const BANG_MIN_INTERVAL_MS = Number(process.env.BANG_MIN_INTERVAL_MS ?? 400);
+
+// A handoff file bigger than the longest legal path was not written by the
+// trap in pty.ts — refuse it (finding 3).
+const CWD_HANDOFF_MAX_BYTES = 4096;
+
+/**
+ * The transcript is fenced by <bash-input>/<bash-output>; output that itself
+ * contains a closing fence could fake the block's end and smuggle what looks
+ * like user text into the agent's turn (2026-07-17 audit, finding 4).
+ * Neutralize exactly that sequence — everything else reaches the model
+ * verbatim. Exported for the Tier-1 test.
+ */
+export const escapeTranscriptFence = (s: string) => s.replaceAll("</bash-", "<\\/bash-");
+
+// Handoff files live in a daemon-owned 0700 directory (mkdtemp's mode), not
+// bare shared /tmp — on a multi-user machine no other user can pre-place,
+// replace, or read them (2026-07-17 audit, finding 1). Lazy so a daemon that
+// never runs a bang never creates it; individual files are removed per
+// command, the dir itself lives as long as the daemon.
+let bangTmpDir: string | undefined;
+const newCwdHandoffFile = () =>
+  path.join(
+    (bangTmpDir ??= mkdtempSync(path.join(os.tmpdir(), "mirafold-bang-"))),
+    `cwd-${randomUUID().slice(0, 8)}`,
+  );
+
 /**
  * Read where the shell ended up (the EXIT-trap handoff in pty.ts) and apply
  * the terminal harness's rule: `cd` persists across `!` commands, but only
@@ -39,9 +70,17 @@ const applyCwdHandoff = (
 ) => {
   let landed: string | undefined;
   try {
-    // realpath also drops a trailing newline's worth of ambiguity: the
-    // captured path must exist NOW or it can't become the next spawn cwd.
-    landed = realpathSync(readFileSync(cwdFile, "utf8").trim());
+    // Only a small regular file — the one thing the trap writes. A FIFO the
+    // command swapped in would stall readFileSync (and with it the whole
+    // daemon's event loop); a symlink could point the read elsewhere; an
+    // oversized file was never a path (2026-07-17 audit, finding 3). lstat
+    // never follows or blocks, so it's the safe gate.
+    const st = lstatSync(cwdFile);
+    if (st.isFile() && st.size <= CWD_HANDOFF_MAX_BYTES) {
+      // realpath also drops a trailing newline's worth of ambiguity: the
+      // captured path must exist NOW or it can't become the next spawn cwd.
+      landed = realpathSync(readFileSync(cwdFile, "utf8").trim());
+    }
   } catch {
     /* no capture for this shell/command */
   }
@@ -84,10 +123,11 @@ const startBang = (registry: SessionRegistry, e: SessionEntry, command: string, 
   // then deleted) — fall back to the workspace root, not a failed spawn.
   if (!existsSync(e.bangCwd)) e.bangCwd = e.cwd;
   const runCwd = e.bangCwd;
-  // Out-of-band cwd handoff file (pty.ts) — never part of the PTY stream.
-  const cwdFile = path.join(os.tmpdir(), `mirafold-bang-cwd-${randomUUID().slice(0, 8)}`);
   registry.broadcast(e, { type: "bang_start", command, id });
   try {
+    // Out-of-band cwd handoff file (pty.ts) — never part of the PTY stream.
+    // Inside the try: a failing mkdtemp must error the session, not the daemon.
+    const cwdFile = newCwdHandoffFile();
     const proc = spawnBang(
       command,
       runCwd,
@@ -143,7 +183,8 @@ const startBang = (registry: SessionRegistry, e: SessionEntry, command: string, 
         const tail = elided > 0 ? `(… ${elided} chars elided …)\n` + output : output;
         const after = e.bangCwd !== runCwd ? ` cwd-after="${e.bangCwd}"` : "";
         e.session.pushPrompt(
-          `<bash-input cwd="${runCwd}">${command}</bash-input>\n<bash-output exit-code="${exitCode ?? "killed"}"${after}>\n${tail}</bash-output>`,
+          `<bash-input cwd="${runCwd}">${escapeTranscriptFence(command)}</bash-input>\n` +
+            `<bash-output exit-code="${exitCode ?? "killed"}"${after}>\n${escapeTranscriptFence(tail)}</bash-output>`,
         );
       },
       cwdFile,
@@ -350,6 +391,16 @@ export function openConnection(
           sendError("a ! command is already running (stop it first)");
           break;
         }
+        // The burst throttle (finding 5) — checked only when nothing is
+        // running, so the already-running refusal above keeps its message.
+        // The paired bang_end keeps every viewport's grammar clean (the
+        // issuer's bang bar clears, like the spawn-failure path).
+        if (entry.lastBangAt !== undefined && Date.now() - entry.lastBangAt < BANG_MIN_INTERVAL_MS) {
+          sendError("! commands are arriving too fast — wait a moment");
+          registry.broadcast(entry, { type: "bang_end", id: msg.id, exitCode: null });
+          break;
+        }
+        entry.lastBangAt = Date.now();
         startBang(registry, entry, msg.command, msg.id);
         break;
       case "bang_input":
