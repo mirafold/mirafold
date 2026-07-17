@@ -50,7 +50,7 @@ export function Onboarding({
   return (
     <div className="onb-overlay" onClick={onDismiss}>
       <div className="onb-card" onClick={(e) => e.stopPropagation()}>
-        <div className="onb-glyph">❯</div>
+        <img className="onb-glyph" src="/logo.svg" alt="Mirafold" />
         <h1 className="onb-title">Choose your agent</h1>
         <p className="onb-sub">
           Mirafold re-skins the terminal agent you already use — faithfully, with

@@ -1,0 +1,14 @@
+<!-- Large-format Mirafold mark: bracket-M with the >_ shell prompt inside
+     (traced 2026-07-17 from Kyle's reference; thin strokes — the large mark
+     reads at the favicon's apparent weight, not its literal stroke ratio).
+     Shown on the onboarding card, and the source for the apple-touch icon
+     (scripts/make-icons.sh). The browser-tab favicon stays the simplified
+     M-only favicon.svg — the >_ detail is illegible at 16px. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="13" fill="#0a0d13"/>
+  <g fill="none" stroke="#40d17f" stroke-linecap="round" stroke-linejoin="round">
+    <polyline stroke-width="3" points="18,49 13.5,49 13.5,15 18.5,15 32,31.5 45.5,15 50.5,15 50.5,49 46,49"/>
+    <polyline stroke-width="2.2" points="19,35 25,39.2 19,43.4"/>
+    <line stroke-width="2.2" x1="27" y1="43.6" x2="33" y2="43.6"/>
+  </g>
+</svg>
