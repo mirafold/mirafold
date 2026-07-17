@@ -7,6 +7,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 import type { WireMsg } from "./protocol";
 import { SessionRegistry } from "./sessions/registry";
 import { openConnection } from "./sessions/connection";
+import { probeLocalServers } from "./local-models";
 import { sweepLiveness } from "./sessions/ws-liveness";
 import { startRelayClient } from "./relay/relay-client";
 import { MIN_PAIRING_CODE_LENGTH, resolvePairingCode } from "./relay/relay-protocol";
@@ -154,6 +155,11 @@ wss.on("error", (err: NodeJS.ErrnoException) => {
 });
 
 const registry = new SessionRegistry();
+
+// Local model server discovery (N.3): fire-and-forget so a server already
+// running lands in the first hello's `backends`; never awaited — startup
+// must not wait on a probe. The picker's refresh_agents re-probes after.
+void probeLocalServers();
 
 // Relay config (Phase R). The pairing code is minted once per launch (or
 // pinned via MIRAFOLD_RELAY_CODE); its HTTP twin of MIRAFOLD_RELAY_URL is what a

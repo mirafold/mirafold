@@ -1,4 +1,4 @@
-import type { Action, AgentName, WireMsg } from "@protocol";
+import type { Action, AgentName, BackendChoice, WireMsg } from "@protocol";
 import { SocketClient } from "./ws";
 
 /**
@@ -19,7 +19,9 @@ export interface SessionBus {
   subscribe(l: (m: ZoneMsg) => void): () => void;
   /** Socket up/down; returns the unsubscribe. */
   onConnection(cb: (c: boolean) => void): () => void;
-  createSession(agent: AgentName, cwd?: string): void;
+  createSession(agent: AgentName, cwd?: string, backend?: BackendChoice): void;
+  /** Ask the daemon to re-probe local servers and re-send the agents hello (N.3). */
+  refreshAgents(): void;
   sendPrompt(text: string): void;
   /** Returns the minted bang id so the issuing viewport can correlate. */
   sendBang(command: string): string;
@@ -88,9 +90,13 @@ export function createSessionBus(): SessionBus {
     // The user picked an agent at onboarding — create a session on it.
     // session_created sets `sessionId`, so a later reconnect re-attaches (P.4).
     // `cwd` is the working dir typed at the picker; omitted → the
-    // daemon's launch dir (4.8).
-    createSession(agent: AgentName, cwd?: string) {
-      socket.send({ type: "create", agent, cwd });
+    // daemon's launch dir (4.8). `backend` is the second-step choice (N.4);
+    // omitted → the daemon's credential-precedence default.
+    createSession(agent: AgentName, cwd?: string, backend?: BackendChoice) {
+      socket.send({ type: "create", agent, cwd, ...(backend ? { backend } : {}) });
+    },
+    refreshAgents() {
+      socket.send({ type: "refresh_agents" });
     },
     sendPrompt(text: string) {
       // No local echo — the server broadcasts the user_prompt to every

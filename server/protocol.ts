@@ -126,9 +126,21 @@ type WireMsgBody =
   // see `live: false`. Step R.4k adds `detail` (optional/additive): a "what's
   // behind this row" label for a LIVE agent — its local endpoint or configured
   // model — so a local-model user sees their setup was picked up.
+  // Step N.3 adds `backends` per agent entry (optional/additive): EVERY way
+  // that agent could run — each detected credential (no precedence collapse)
+  // plus each running local model server the agent's API dialect can drive,
+  // discovered by probe. The N.4 second-step picker's source; re-sent whole
+  // on `refresh_agents` so a just-started local server appears live. Old
+  // clients strip it and keep today's one-row-per-agent picker.
   | {
       type: "agents";
-      agents: { agent: AgentName; live: boolean; blocked?: boolean; detail?: string }[];
+      agents: {
+        agent: AgentName;
+        live: boolean;
+        blocked?: boolean;
+        detail?: string;
+        backends?: AgentBackend[];
+      }[];
       default: AgentName;
       cwd?: string;
       home?: string;
@@ -192,6 +204,34 @@ type WireMsgBody =
   // control; never buffered or sequenced (#11).
   | { type: "session_ended"; sessionId: string };
 
+/**
+ * One way an agent could run (N.3) — a row in the second-step picker. A
+ * detected credential (`api-key` / `subscription`) or a local endpoint:
+ * env-configured, or a probe-discovered running server (then `endpoint` /
+ * `runtime` / `models` are set — pick a model to pick the backend). `usable`
+ * is provider-policy's verdict; `blocked` marks a present-but-prohibited
+ * subscription, listed visible-but-gray, never hidden. Never carries a
+ * secret — kinds and labels only.
+ */
+export type AgentBackend = {
+  kind: "api-key" | "subscription" | "local";
+  usable: boolean;
+  blocked?: boolean;
+  detail?: string;
+  endpoint?: string;
+  runtime?: string;
+  models?: string[];
+};
+
+/** The onboarding picker's backend choice (N.4), riding `create`. `endpoint`
+ *  names a discovered local server (absent = the env-configured one for kind
+ *  `local`); `model` is the picked catalog entry. Labels only — never a secret. */
+export type BackendChoice = {
+  kind: "api-key" | "subscription" | "local";
+  endpoint?: string;
+  model?: string;
+};
+
 /** One fleet row (4.6). `lastActivity` is epoch ms of the last broadcast. */
 export type SessionMeta = {
   sessionId: string;
@@ -237,7 +277,18 @@ export type ClientMsg =
   | { type: "attach"; sessionId: string; afterSeq?: number; clientVersion?: string }
   // Phase P.4: `agent` names which terminal agent to run (chosen at onboarding);
   // omitted → the daemon's default. Credentials stay server-side, never sent.
-  | { type: "create"; cwd?: string; agent?: AgentName; clientVersion?: string }
+  // N.4 adds `backend` (optional/additive): the second-step picker's choice —
+  // which of the advertised backends to run on. Omitted → the daemon's
+  // credential-precedence default (every pre-N client). The server treats it
+  // as a REQUEST: N.5 re-validates against detection + provider-policy and
+  // refuses a forged/prohibited choice — the client is never trusted.
+  | {
+      type: "create";
+      cwd?: string;
+      agent?: AgentName;
+      clientVersion?: string;
+      backend?: BackendChoice;
+    }
   // Phase 2: a component interaction, attributed to the render block
   // (sourceId = its render id) that emitted it.
   | { type: "action"; action: Action; sourceId: string }
@@ -262,4 +313,9 @@ export type ClientMsg =
   // Explicitly end a session — kill its PTY, close the engine, drop it from
   // the fleet, and kick any attached viewports back to mission control. Usable
   // from a session viewport or a fleet watcher (#11).
-  | { type: "end_session"; sessionId: string };
+  | { type: "end_session"; sessionId: string }
+  // Re-probe local model servers and re-send the `agents` hello (N.3). The
+  // onboarding picker sends this on a slow interval while open, so the
+  // "start your local server and it appears here" promise is live — no
+  // reload. Server-side throttled; a burst degrades to the cached answer.
+  | { type: "refresh_agents" };

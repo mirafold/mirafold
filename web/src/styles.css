@@ -1837,6 +1837,128 @@ body {
   letter-spacing: 0.02em;
 }
 
+/* ---- N.4: the second step — how the picked agent is backed -------------- */
+
+.onb-backends {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.onb-back {
+  align-self: flex-start;
+  padding: 4px 2px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--fg-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+}
+.onb-back:hover {
+  color: var(--fg-strong);
+}
+
+/* A backend row shares the agent row's look, one size down. */
+.onb-backend {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 14px 17px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-mid);
+  border-radius: 9px;
+  cursor: pointer;
+  color: var(--fg-strong);
+  font-size: 15px;
+  text-align: left;
+  transition: border-color 0.12s ease, background 0.12s ease, transform 0.06s ease;
+}
+.onb-backend:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--surface-hover);
+}
+.onb-backend:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.onb-backend-name {
+  font-weight: 600;
+}
+
+.onb-backend-detail {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  color: var(--accent);
+  opacity: 0.85;
+}
+
+/* The disclosed-uncertainty caveat (codex subscription), and the why on a
+   blocked row — dim monospace, same voice as the agent-row hints. */
+.onb-backend-caveat {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--fg-dim);
+}
+
+/* R.4l (c): unavailable stays VISIBLE but clearly unavailable — gray, no
+   hover invitation, warn-toned name so the why draws the eye. */
+.onb-backend-blocked {
+  cursor: default;
+  opacity: 0.6;
+}
+.onb-backend-blocked .onb-backend-name {
+  color: var(--warn-fg);
+}
+
+/* A discovered local server: header line + its model catalog as buttons. */
+.onb-server {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 17px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-mid);
+  border-radius: 9px;
+}
+
+.onb-server-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  color: var(--accent);
+}
+
+.onb-models {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.onb-model {
+  padding: 7px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border-mid);
+  border-radius: 7px;
+  cursor: pointer;
+  color: var(--fg-strong);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.onb-model:hover {
+  border-color: var(--accent);
+  background: var(--surface-hover);
+}
+
+/* The live "start it and it appears here" promise inside the second step. */
+.onb-live-hint {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--fg-dim);
+}
+
 .onb-live {
   color: var(--accent);
 }

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import os from "node:os";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
-import type { ThreadEvent } from "@openai/codex-sdk";
+import type { Codex, CodexOptions, ThreadEvent } from "@openai/codex-sdk";
 import type { WireMsg } from "../protocol";
 import { CodexSession, resolveRolloutModel, rolloutDateDir } from "./codex";
 import { MIRAFOLD_MCP } from "./render-mcp-cmd";
@@ -348,4 +348,85 @@ test("a configured model is the label — the rollout lookup never overrides it"
   await new Promise((r) => setTimeout(r, 50));
   assert.equal(s.modelName, "o3-configured");
   s.close();
+});
+
+// ── N.5: the chosen backend reaches the ENGINE's construction options —
+// captured via the makeCodex seam (the SDK object is never built here).
+
+function capturedCodexOptions(opts: {
+  kind?: "api-key" | "subscription" | "local";
+  endpoint?: string;
+  model?: string;
+}): CodexOptions {
+  let captured: CodexOptions | undefined;
+  const s = new CodexSession({
+    workspaceDir: tmp,
+    ...opts,
+    makeCodex: (o) => {
+      captured = o;
+      return { startThread: () => ({}) } as unknown as Codex;
+    },
+  });
+  s.close();
+  assert.ok(captured, "makeCodex seam was not invoked");
+  return captured;
+}
+
+function withOpenAiKey(value: string | undefined, fn: () => void) {
+  const saved = process.env.OPENAI_API_KEY;
+  try {
+    if (value === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = value;
+    fn();
+  } finally {
+    if (saved === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = saved;
+  }
+}
+
+test("N.5: a subscription choice withholds the env API key — the explicit pick beats env precedence", () => {
+  withOpenAiKey("sk-env", () => {
+    const o = capturedCodexOptions({ kind: "subscription" });
+    assert.equal(o.apiKey, undefined);
+    assert.ok(o.env, "subscription must pass an env override");
+    assert.ok(!("OPENAI_API_KEY" in o.env!), "the env key must not reach the engine");
+  });
+});
+
+test("N.5: an api-key choice passes the key, no env override (auth.json stays reachable but unused)", () => {
+  withOpenAiKey("sk-env", () => {
+    const o = capturedCodexOptions({ kind: "api-key" });
+    assert.equal(o.apiKey, "sk-env");
+    assert.equal(o.env, undefined);
+  });
+});
+
+test("N.5: no choice keeps the pre-N default — apiKey iff the env var is set, nothing else", () => {
+  withOpenAiKey("sk-env", () => {
+    const o = capturedCodexOptions({});
+    assert.equal(o.apiKey, "sk-env");
+    assert.equal(o.env, undefined);
+  });
+  withOpenAiKey(undefined, () => {
+    const o = capturedCodexOptions({});
+    assert.equal(o.apiKey, undefined);
+    assert.equal(o.env, undefined);
+  });
+});
+
+test("N.5: a discovered-endpoint choice injects the documented provider recipe, keeping the MCP config", () => {
+  const o = capturedCodexOptions({
+    kind: "local",
+    endpoint: "http://127.0.0.1:11434",
+    model: "qwen3-coder",
+  });
+  const config = o.config as {
+    model_provider?: string;
+    model_providers?: Record<string, { base_url?: string; wire_api?: string }>;
+    mcp_servers?: Record<string, unknown>;
+  };
+  assert.equal(config.model_provider, "mirafold_local");
+  assert.equal(config.model_providers?.mirafold_local.base_url, "http://127.0.0.1:11434/v1");
+  assert.equal(config.model_providers?.mirafold_local.wire_api, "responses"); // docs Path B
+  assert.ok(config.mcp_servers?.[MIRAFOLD_MCP], "the render MCP server must survive the merge");
 });

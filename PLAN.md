@@ -550,6 +550,11 @@ with it. Both sequence BEFORE R.5.**
        new vs. today: a model-selection step (today model comes from
        DEFAULT_MODEL/agent config, not the onboarding UI). Next action:
        a dedicated design discussion with Kyle BEFORE any build.
+       **Status (2026-07-17): the design discussion HAPPENED and the build
+       is scheduled — this item's outcome is Phase N** (the two-step
+       agent → backing picker with probed local-server discovery; the four
+       hard requirements carried into Phase N's charter verbatim). This
+       item closes when Phase N ships; items 1–3 remain open intake.
   - Done when: each item above is enumerated concretely with Kyle,
     triaged (fix now / R.6 pre-release blocker / post-launch), and either
     fixed or explicitly scheduled — and the permissions fidelity item has
@@ -765,6 +770,14 @@ with it. Both sequence BEFORE R.5.**
       philosophy as R.4d's `!`-output cap. React escaping already makes a
       hostile string inert (verified); this is bloat insurance only.
   - **Real-hardware checks** (need R.2 deployed; none need the registry):
+    - Local-model turn COMPLETION (Phase N.6 residual, 2026-07-17): the
+      discovery→pick→configure path is fully verified (the picked model's
+      prompt observed arriving inside Ollama), but the only model on the
+      dev machine (1.7B, CPU) can't prefill an agent-sized prompt before
+      the SDK request timeout. Drive one full turn through a
+      picker-chosen local model on realistic hardware or with a
+      realistically-sized model (docs table: qwen3-coder-class) —
+      claude→ollama and codex→ollama both.
     - Scan the QR with a real phone through the deployed relay, drive a
       session, flip wifi→LTE mid-turn (owed by R.4 — now listed, not just
       owed).
@@ -834,6 +847,282 @@ with it. Both sequence BEFORE R.5.**
   - Done when: a stranger can watch the GIF, install cold, run their own
     agent, pay, and drive it from their phone — all within the launch
     hour. Signals per BUSINESS.md §9 read concurrently from here.
+
+---
+
+## Phase N — Onboarding backend picker (opened 2026-07-17; the R.4l item-4 redesign, executed)
+
+Origin: the dedicated design discussion R.4l item 4 called for happened
+2026-07-17 (Kyle + assistant), triggered by a real confusion on Kyle's own
+machine: with BOTH an OpenAI API key and a ChatGPT subscription configured,
+clicking Codex gives no indication of which credential the session will use
+(today: the API key silently wins — hardcoded precedence in
+`credentialKind()`), and pointing Claude Code at a local model is possible
+only via pre-launch env config (`ANTHROPIC_BASE_URL`), outside the flow.
+Kyle's bar, verbatim in spirit: "this should be obvious and easy from this
+flow in the ui, i shouldn't have to go anywhere else or do anything else
+provided i have the setup for these already handled."
+
+**The locked design (Kyle, 2026-07-17):** a **two-step selection**. Step one
+is the existing agent picker. Step two — shown only when an agent has more
+than one way to run — lists **how it's backed**, built from what's already
+configured on the machine: detected credentials (API key, subscription where
+policy allows) plus **every compatible local model server currently
+running**, discovered by probing. R.4l item 4's four hard requirements carry
+over unchanged: (a) simple af; (b) surface what the user ALREADY HAS; (c)
+unavailable options stay VISIBLE but clearly unavailable (gray, never
+hidden); (d) each unavailable option carries how-to-get-it inline.
+
+Design decisions settled in the 2026-07-17 discussion:
+
+- **Local discovery is HTTP probing, never filesystem scanning.** Probe the
+  well-known localhost ports (Ollama 11434, LM Studio 1234, vLLM 8000,
+  llama.cpp 8080) with `GET /v1/models` — the de facto standard every local
+  runtime serves; a server that answers hands back its downloaded-model
+  catalog (no model need be loaded in memory). Model files on disk with no
+  server running are deliberately invisible: per-tool storage layouts are
+  unstable, and an unserved model is unusable anyway. Nonstandard ports get
+  an env escape hatch, not a flow.
+- **Dialect filtering per agent.** What determines compatibility is the API
+  dialect the server speaks, not the model: Ollama speaks both the
+  Anthropic-shaped and OpenAI-shaped APIs → its models list under Claude
+  Code AND Codex; LM Studio/vLLM/llama.cpp are OpenAI-shaped only → Codex
+  only; Gemini CLI has no BYO-endpoint path → never shows local options. No
+  agent's list ever contains an option it can't actually drive.
+- **The "it will show here" promise is live.** Under each local-capable
+  agent, a hint line: start your local server and it appears here (worded so
+  Ollama users — whose server idles perpetually as a background service —
+  aren't told to do a step they don't have). The daemon re-probes while the
+  picker is open and pushes updates, so the promise is literal — no reload.
+- **Provider policy governs choosability, verbatim.** The second step
+  re-stages `provider-policy.ts` per option, and improves its presentation: a
+  blocked Claude/Gemini subscription becomes one grayed row with the why +
+  API-key fix (instead of tainting the whole agent tile), and the Codex
+  subscription option carries the disclosed-uncertainty caveat
+  (uncertainty stated, never permission — the K.3 rule). The server NEVER
+  trusts the client's choice: every `create` re-validates against detection
+  + policy server-side.
+- **Explicit choice replaces silent precedence.** Once this phase lands, a
+  user with multiple credentials picks; the daemon never again silently
+  prefers one. Single-option agents skip step two entirely (simple af).
+
+Out of scope, unchanged: the relay bound (NO subscription ever rides the
+paid relay — R.5's gate is untouched); L.2's `--local` CLI easy-mode (this
+phase lands the detection substrate L.2 will reuse; the one-command CLI
+flow stays demand-gated); model *download* management (we list what a
+server offers, we never pull models).
+
+Sequencing: prioritized by Kyle 2026-07-17 as the next build work. Not
+formally an R.7 gate, but land it before R.5c's user-testing round so
+testers meet the real flow. Wire rule throughout: additive only (new
+optional fields / message types), per the locked protocol contract.
+
+- [x] **Step N.1 — Enumerate configured backends (server-side truth)**
+  — done 2026-07-17: `backendOptions(agent)` + exported `BackendOption`
+  beside `credentialKind()` (which keeps its single-answer precedence as
+  the default until N.5); five Tier-1 tests pin codex key+login → two
+  usable options, claude endpoint+key+login → three with the subscription
+  blocked-but-visible, empty menus, gemini's single option, and the model
+  detail. Tier-1 189/189, Tier-2 77/77.
+  - Goal: the daemon knows EVERY way each agent could run on this machine,
+    instead of collapsing to one credential via hardcoded precedence.
+  - Build: beside `credentialKind()` in `server/adapters/index.ts`, a
+    `backendOptions(agent)` that returns ALL detected options, each
+    `{ kind, usable, detail?, blocked? }`: codex with both `OPENAI_API_KEY`
+    and `~/.codex/auth.json` present → two options (api-key AND
+    subscription); claude-code with `ANTHROPIC_BASE_URL` and/or
+    `ANTHROPIC_API_KEY` and/or `~/.claude/.credentials.json` → each present
+    one listed (subscription marked blocked-but-visible per policy);
+    gemini-cli → api-key only. `usable` comes from `allowedLocally()` —
+    policy consumed, never re-encoded. Existing `credentialKind()` /
+    `availableAgents()` behavior and the wire stay untouched this step.
+  - Files: `server/adapters/index.ts` (+ `index.test.ts`).
+  - Done when: Tier-1 tests pin the both-present cases (codex key+login →
+    two options; claude endpoint+key+login → three, subscription blocked)
+    and every existing suite stays green.
+
+- [x] **Step N.2 — Local model server discovery (the probe)**
+  — done 2026-07-17: `server/local-models.ts` (probeTargets / probeLocalServers /
+  cachedLocalServers; 500ms per-probe budget, parallel, failure-silent,
+  fire-and-forget cache; /api/tags answering = the Ollama fingerprint →
+  anthropic+openai dialects, /v1/models alone → openai; model-count/name
+  caps as bloat insurance). Six Tier-1 fixture tests: ollama shape,
+  openai-only shape, dead port, malformed/empty catalogs, hung-socket
+  bound, env escape-hatch parsing (pure — real ports never probed in
+  tests). Tier-1 195/195; Tier-2 untouched by design (no callers yet —
+  N.3 wires it).
+  - Goal: a running Ollama / LM Studio / vLLM / llama.cpp shows up with its
+    model catalog, automatically, without config.
+  - Build: new `server/local-models.ts`: probe the four default localhost
+    ports with a short per-probe timeout; parse `GET /v1/models` (all
+    runtimes) and Ollama's richer native `/api/tags`; tag each found server
+    with the dialects it speaks (Ollama: anthropic+openai; others: openai).
+    `MIRAFOLD_LOCAL_ENDPOINTS` (comma-separated URLs) adds nonstandard
+    ports. Async and failure-silent — a probe must never delay daemon
+    startup or error a session; results cached with an on-demand re-probe
+    function (N.3 drives it). Localhost + env-listed endpoints only —
+    nothing else is ever probed.
+  - Files: `server/local-models.ts` (+ test against fixture HTTP servers on
+    ephemeral ports — found / absent / malformed / slow).
+  - Done when: Tier-1 fixture tests prove discovery, dialect tagging, the
+    env escape hatch, and the never-blocks property; suites green.
+
+- [x] **Step N.3 — Advertise backends on the wire (additive) + live re-probe**
+  — done 2026-07-17: additive `backends?: AgentBackend[]` per agents-hello
+  row (credential options + dialect-filtered discovered servers, merged in
+  `mergeBackends()` — an env ANTHROPIC_BASE_URL naming a discovered server
+  dedupes to the richer discovered row, localhost≡127.0.0.1) + additive
+  `refresh_agents` ClientMsg (per-connection probe throttle,
+  `REFRESH_MIN_INTERVAL_MS`, throttled hits answer from cache; async resend
+  guards a closed socket). Startup fire-and-forget probe in index.ts.
+  `MIRAFOLD_LOCAL_DISCOVERY=off` skips the well-known ports (privacy
+  opt-out + what keeps itests hermetic — forced in the harness so a dev
+  machine's real Ollama can't leak into assertions). Q.2 fixtures updated;
+  `web/src/ws.ts` needed NO change (types flow via @protocol; unknown
+  fields pass through). New Tier-2 `agents-refresh.itest.ts`: fixture
+  ollama appears dialect-filtered (claude+codex yes, gemini no) and
+  disappears on refresh after the server stops. Tier-1 201/201, Tier-2
+  78/78.
+  - Goal: the browser learns each agent's full option list, and the list
+    stays current while the picker is open.
+  - Build: an additive optional `backends` field on the agents hello — per
+    agent, the N.1 credential options plus N.2's local servers filtered to
+    that agent's dialect (endpoint host + model names; never a secret —
+    the secrets-stay-server-side rule). A re-probe path: an additive
+    `refresh_agents` ClientMsg the picker sends periodically while open
+    (server re-probes, re-sends the hello). Update Q.2's golden fixtures
+    for the new field; the R.4h tolerant client schemas make old clients
+    strip it silently.
+  - Files: `server/protocol.ts`, `server/sessions/connection.ts`,
+    `server/adapters/index.ts`, protocol fixtures, `web/src/ws.ts`.
+  - Done when: Tier-2 (real daemon) shows a fixture local server appearing
+    in the hello and appearing/disappearing across a `refresh_agents`
+    round-trip; protocol-freeze and compat tests green.
+
+- [x] **Step N.4 — The second-step picker UI**
+  — done 2026-07-17: Onboarding grows the second panel (both mounts —
+  Shell and FleetView — get it, with a 3s refresh_agents poll while the
+  card is open); rows per the charter: usable credentials as buttons, the
+  codex subscription with the K.3 caveat inline, blocked subscriptions
+  visible-but-gray (disabled) with the why, discovered servers as
+  runtime·host headers whose model catalog is the buttons, the live hint
+  when no server; Esc/backdrop steps BACK from the panel before
+  dismissing the card. Second step appears only for a genuine choice
+  (>1 usable, or a model to pick); single-usable/demo keep one-click.
+  Deviations, both deliberate: (1) create's `backend` field pulled
+  forward from N.5 (additive; the client sends the choice now, the
+  server validates + honors it in N.5); (2) the e2e drives the panel
+  display-only — clicking a live-credential row would spawn a real
+  engine, so create-through-choice is proven in N.5's Tier-2 and N.6's
+  live pass. New e2e: two-cred codex panel + caveat, fixture ollama
+  appearing LIVE mid-open via the poll, dialect row under claude, gray
+  disabled blocked row, env-endpoint row kept distinct, gemini
+  one-click demo create. Tier-1 201/201, Tier-3 28/28 (Tier-2
+  untouched since N.3's 78/78 — type-only protocol additions).
+  - Goal: click an agent → see how it can be backed; obvious and easy, no
+    docs detour, per Kyle's (a)–(d).
+  - Build: `Onboarding.tsx` grows the second panel, shown only when the
+    clicked agent has >1 option (otherwise straight through, exactly
+    today's behavior). Rows: usable options first (API key · detail,
+    subscription with the codex caveat inline, each local server with its
+    models — picking a model picks the backend); unavailable options
+    grayed but VISIBLE with the existing how-to-get-it copy re-staged
+    (`agents-meta.ts` hints become per-option, not per-agent); the live
+    "start it and it appears here" line under local-capable agents (its
+    arrival animates in via N.3's refresh — replaces the current
+    `onb-local-note` footnote and its docs pointer); back/Esc returns to
+    the agent list; `onPick` carries the chosen backend.
+  - Files: `web/src/components/Onboarding.tsx`, `web/src/agents-meta.ts`,
+    `web/src/styles.css`.
+  - Done when: Tier-3 headless-Chrome e2e drives agent-click → backend
+    list → pick against fixture data, including a grayed blocked row
+    (visible, unclickable-to-create, hint shown) and a local server
+    appearing live mid-open; single-option agents still create in one
+    click.
+
+- [x] **Step N.5 — Session creation honors the choice**
+  — done 2026-07-17: `resolveChosenBackend()` (adapters/index.ts) is the
+  never-trust-the-client gate — validates kind against live detection +
+  provider policy, a discovered endpoint against the probe cache (dialect
+  + model-in-catalog; stale/gone refuses with a re-pick message), runs in
+  connection.ts's create case (registry only ever sees a pre-validated
+  Backend). Adapters enforce per-session through each SDK's own env/config,
+  never a process.env mutation: claude — discovered endpoint gets the
+  docs/local-models.md recipe (BASE_URL + dummy AUTH_TOKEN, real key
+  WITHHELD), api-key choice strips a global BASE_URL, no choice inherits
+  (pre-N byte-identical); codex — subscription choice withholds the env
+  key (explicit pick beats env precedence), api-key passes it, discovered
+  endpoint injects the documented custom-provider config
+  (`mirafold_local`, wire_api "responses") merged with the MCP config.
+  Proofs: 12 new Tier-1 (engine-options capture via claude's `engine` +
+  a new codex `makeCodex` seam; resolve validation matrix) + 4 new Tier-2
+  (opposite codex choices logged as resolved; forged prohibited refuses
+  with no session; a discovered-server pick's model label arrives on
+  session_created — wire-observable; stale pick refuses). Tier-1 213/213,
+  Tier-2 82/82, Tier-3 fail 0.
+  - Goal: the picked backend is what the session actually runs on — silent
+    precedence is gone for good.
+  - Build: the `create` ClientMsg gains an optional backend choice
+    `{ kind, endpoint?, model? }` (additive). The server RE-VALIDATES it
+    against current detection + `provider-policy.ts` — a forged, stale, or
+    prohibited choice is refused down the existing error path (the client
+    is never trusted). `createSession`/adapters configure per-session:
+    codex passes `apiKey` only when api-key was chosen and withholds the
+    env var from the engine when subscription was chosen; claude-code sets
+    the base URL per-session (SDK env/options, NOT global `process.env`
+    mutation); local picks pass the chosen model. Fleet + status bar show
+    the backing via the existing model-label machinery.
+  - Files: `server/protocol.ts`, `server/adapters/index.ts`, the three
+    adapters as touched, `server/sessions/connection.ts`, fixtures + tests
+    in Tiers 1–2.
+  - Done when: Tier-2, with both codex credentials present in a fixture
+    env, two sessions created with opposite choices provably configure the
+    engine differently; a forged prohibited choice is refused; all tiers
+    green.
+
+- [x] **Step N.6 — Live verification + docs reconciliation**
+  — done 2026-07-17, on Kyle's real machine (real .env key, real codex
+  login, real claude login, real running Ollama). **Verified live:** the
+  hello shows exactly the expected menu (claude: api-key +
+  blocked-subscription + ollama·qwen3-1.7b-32k; codex: subscription +
+  ollama; gemini: api-key only); **codex on the ChatGPT subscription drove
+  a real turn (5.1s, "ok")** and **claude on the API key drove a real turn
+  (5.0s, "ok")**, each with its resolved-backend log line. **Honest
+  finding on the local paths:** the pick is demonstrably honored — the
+  codex pick delivered its 8,035-token agent prompt INTO Ollama (observed
+  in the runner's slot state: our injected provider config end-to-end) and
+  the claude pick spawned the runner with the per-session env — but a
+  1.7B thinking model on CPU cannot PREFILL an agent-sized prompt before
+  the SDK's own request timeout, so the turn retries forever (tried up to
+  25 min; 4 honest retry notices — the F.2 machinery working as designed).
+  Not a code defect: the docs' own model table calls sub-8B models below
+  the agent-work floor. Local turn COMPLETION re-verify with a realistic
+  model/hardware added to R.6's real-hardware checks. **Docs:**
+  local-models.md now leads with the zero-config discovery path (dummy-key
+  wart scoped to config-file-only setups), .env.example documents
+  MIRAFOLD_LOCAL_ENDPOINTS / MIRAFOLD_LOCAL_DISCOVERY, README component
+  map + env-knob list updated.
+
+**Phase N is COMPLETE (2026-07-17)** — all six steps shipped in one day;
+final suite state Tier-1 213/213, Tier-2 82/82, Tier-3 28/28. One
+residual rides R.6 (local-turn completion on realistic hardware). One
+cosmetic note for a polish pass (R.4l intake): a credential-less agent
+with a discovered local server still shows "no credentials · demo" on its
+AGENT row while its second step correctly offers the usable local pick —
+the row label could acknowledge the discovered backing.
+  - Goal: the flow proven against real backends (the test suite never
+    reaches a real model — this is the manual pass), and the docs tell the
+    same story the UI now shows.
+  - Build: on Kyle's real setup (OpenAI key + ChatGPT login + a local
+    model server), verify every path end-to-end: each Codex choice drives
+    a real turn on the right credential, a discovered local model drives
+    Claude Code and/or Codex, the live-appear hint works with a real
+    server start. Reconcile `docs/local-models.md` (auto-discovery
+    exists; env config becomes the fallback), README's onboarding blurb,
+    and `.env.example`.
+  - Done when: Kyle's actual machine shows every expected option, each
+    picked backend demonstrably runs on what was picked, and no doc
+    describes the old single-credential behavior as current.
 
 ---
 
@@ -1020,6 +1309,10 @@ shows which matter — not a launch prerequisite.
   - Build: `npx mirafold --local` detects a running Ollama/LM Studio, lists
     installed models, and configures a local-capable agent to use it with sane
     defaults (no proxy). Status bar shows the active agent/model.
+  - Note (2026-07-17): Phase N lands the detection substrate this step
+    reuses (`server/local-models.ts` — the probe, dialect tagging, model
+    catalogs) and the in-UI picker; what remains of L.2 is only the CLI
+    flag ergonomics, still demand-gated.
   - Done when: on a machine with Ollama + a supported model, `--local` cold
     start reaches a working session with zero manual config.
 
@@ -1037,6 +1330,10 @@ shows which matter — not a launch prerequisite.
     local/open-source models first-class; let Codex pick subscription vs API
     key) — which folds into L.2/L.3, since it needs exactly this per-session
     provider/model choice.
+  - Note (2026-07-17): **Phase N delivers most of this** — per-session
+    backend choice at onboarding (N.5 is exactly the "registry passes
+    per-session env/config" build). What remains of L.3 afterward is only
+    whatever mixing ergonomics Phase N's shipped form still leaves wanting.
 
 ---
 

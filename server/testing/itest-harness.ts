@@ -44,6 +44,11 @@ export function startDaemon(env: Record<string, string> = {}): Promise<Daemon> {
       MIRAFOLD_TOKEN: "",
       MIRAFOLD_RELAY_URL: "", // no dial-out unless a relay test asks for it
       MIRAFOLD_RELAY_CODE: "",
+      // N.3: never probe the real well-known ports — a dev machine's actual
+      // Ollama must not leak into an itest's `backends`. A discovery test
+      // passes its fixture server via MIRAFOLD_LOCAL_ENDPOINTS.
+      MIRAFOLD_LOCAL_DISCOVERY: "off",
+      MIRAFOLD_LOCAL_ENDPOINTS: "",
       // Random base + the daemon's own EADDRINUSE walk absorbs collisions
       // between parallel test files; the real port is read off stdout.
       PORT: String(3900 + Math.floor(Math.random() * 90)),

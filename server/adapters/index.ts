@@ -6,7 +6,9 @@ import { CodexSession } from "./codex";
 import { GeminiCliSession } from "./gemini-cli";
 import { MockSession } from "./mock";
 import type { AgentName, AgentSession, Backend } from "./types";
+import type { AgentBackend } from "../protocol";
 import { allowedLocally, type CredentialKind } from "../provider-policy";
+import { cachedLocalServers, hostKey, type LocalDialect, type LocalServer } from "../local-models";
 
 export type { AgentName, AgentSession, Backend } from "./types";
 
@@ -90,28 +92,137 @@ export function resolveBackendFor(agent: AgentName): Backend {
 // Agents with a landed adapter — the onboarding picker's universe.
 const ADAPTER_AGENTS: AgentName[] = ["claude-code", "codex", "gemini-cli"];
 
+/** One way an agent could run on this machine. `usable` is provider-policy's
+ *  verdict; a present-but-prohibited subscription rides as `blocked` —
+ *  listed visible, never hidden (Kyle's requirement (c), Phase N charter). */
+export type BackendOption = {
+  kind: Exclude<CredentialKind, "none">;
+  usable: boolean;
+  blocked?: boolean;
+  detail?: string;
+};
+
+/**
+ * EVERY way the named agent could run — one entry per detected credential,
+ * no precedence collapse (N.1). `credentialKind()` stays the single-answer
+ * view (its precedence order remains the default until N.5 lets a session
+ * carry an explicit choice); this is the full menu the N.4 picker offers.
+ * Order is the picker's display order: local endpoint, API key, subscription.
+ */
+export function backendOptions(agent: AgentName): BackendOption[] {
+  const options: BackendOption[] = [];
+  const add = (kind: Exclude<CredentialKind, "none">, detail?: string) => {
+    const usable = allowedLocally(agent, kind);
+    options.push({
+      kind,
+      usable,
+      ...(kind === "subscription" && !usable ? { blocked: true } : {}),
+      ...(detail ? { detail } : {}),
+    });
+  };
+  switch (agent) {
+    case "claude-code": {
+      if (process.env.ANTHROPIC_BASE_URL) {
+        const host = endpointHost(agent);
+        add("local", host ? `local endpoint · ${host}` : "local endpoint");
+      }
+      if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN)
+        add("api-key", modelFor(agent));
+      if (loginFileExists(process.env.CLAUDE_CONFIG_DIR, ".claude", ".credentials.json"))
+        add("subscription");
+      break;
+    }
+    case "codex": {
+      if (process.env.OPENAI_API_KEY) add("api-key", modelFor(agent));
+      if (loginFileExists(process.env.CODEX_HOME, ".codex", "auth.json")) add("subscription");
+      break;
+    }
+    case "gemini-cli":
+      if (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY)
+        add("api-key", modelFor(agent));
+      break;
+  }
+  return options;
+}
+
+// Which local-server API dialect each agent can drive (N.3): compatibility is
+// the DIALECT, never the model — Ollama speaks the Anthropic shape (and the
+// OpenAI one), LM Studio/vLLM/llama.cpp only the OpenAI one, and Gemini CLI
+// has no BYO-endpoint path at all.
+const AGENT_DIALECT: Record<AgentName, LocalDialect | null> = {
+  "claude-code": "anthropic",
+  codex: "openai",
+  "gemini-cli": null,
+};
+
+/**
+ * The full second-step menu for one agent (N.3): the N.1 credential options
+ * plus every discovered local server the agent's dialect can drive. Pure —
+ * `advertisedBackends` binds it to the live probe cache. When the
+ * env-configured local endpoint (claude's ANTHROPIC_BASE_URL) names the same
+ * host:port as a discovered compatible server, the discovered row wins — it
+ * carries the model catalog; two rows for one server would be the kind of
+ * confusion this phase exists to end.
+ */
+export function mergeBackends(
+  agent: AgentName,
+  options: BackendOption[],
+  servers: LocalServer[],
+): AgentBackend[] {
+  const dialect = AGENT_DIALECT[agent];
+  const discovered = dialect ? servers.filter((s) => s.dialects.includes(dialect)) : [];
+  const discoveredHosts = new Set(
+    discovered.map((s) => hostKey(s.endpoint)).filter((h): h is string => h !== undefined),
+  );
+  const envUrl = agent === "claude-code" ? process.env.ANTHROPIC_BASE_URL : undefined;
+  const envHost = envUrl ? hostKey(envUrl) : undefined;
+  const creds = options.filter(
+    (o) => !(o.kind === "local" && envHost !== undefined && discoveredHosts.has(envHost)),
+  );
+  return [
+    ...creds,
+    ...discovered.map((s) => ({
+      kind: "local" as const,
+      usable: true,
+      endpoint: s.endpoint,
+      runtime: s.runtime,
+      models: s.models,
+    })),
+  ];
+}
+
+/** mergeBackends against the live probe cache — what the hello advertises. */
+function advertisedBackends(agent: AgentName): AgentBackend[] {
+  return mergeBackends(agent, backendOptions(agent), cachedLocalServers());
+}
+
 /**
  * What onboarding advertises: each offerable agent, whether it's `live` (usable
  * locally now), and whether it's `blocked` — a prohibited subscription is
  * present, so the picker shows the API-key fix instead of a demo or a dead badge
  * (R.4i). `blocked` is additive/optional on the wire; old clients see `live:
- * false` and degrade to the demo path.
+ * false` and degrade to the demo path. N.3 adds `backends` — the full
+ * second-step menu (omitted when empty: the row is a plain demo/credential
+ * story and the picker needs no second step).
  */
 export function availableAgents(): {
   agent: AgentName;
   live: boolean;
   blocked?: boolean;
   detail?: string;
+  backends?: AgentBackend[];
 }[] {
   return ADAPTER_AGENTS.map((agent) => {
     const kind = credentialKind(agent);
     const live = allowedLocally(agent, kind);
     const detail = live ? agentDetail(agent, kind) : undefined;
+    const backends = advertisedBackends(agent);
     return {
       agent,
       live,
       ...(kind === "subscription" && !live ? { blocked: true } : {}),
       ...(detail ? { detail } : {}),
+      ...(backends.length ? { backends } : {}),
     };
   });
 }
@@ -166,17 +277,75 @@ function modelFor(agent: AgentName): string | undefined {
 }
 
 /**
+ * Validate the onboarding picker's backend choice against CURRENT detection +
+ * provider policy, and resolve it to a Backend (N.5). The client is NEVER
+ * trusted: a forged kind, a prohibited subscription, a server that stopped
+ * since the pick, or a model not in its catalog all refuse with a human
+ * message down the existing create-error path — the picker shows it and the
+ * user re-picks. `servers` defaults to the live probe cache (injectable for
+ * tests).
+ */
+export function resolveChosenBackend(
+  agent: AgentName,
+  choice: unknown,
+  servers: LocalServer[] = cachedLocalServers(),
+): Backend | { error: string } {
+  const c = (typeof choice === "object" && choice !== null ? choice : {}) as {
+    kind?: unknown;
+    endpoint?: unknown;
+    model?: unknown;
+  };
+  const kind = c.kind;
+  if (kind !== "api-key" && kind !== "subscription" && kind !== "local")
+    return { error: "unknown backend choice" };
+  const endpoint = typeof c.endpoint === "string" ? c.endpoint : undefined;
+  const model = typeof c.model === "string" ? c.model : undefined;
+  if (kind === "local" && endpoint) {
+    // A discovered server: must still be running, dialect-compatible, and
+    // serving the named model — the pick may be stale (picker raced a stop).
+    const dialect = AGENT_DIALECT[agent];
+    const server = dialect
+      ? servers.find((s) => s.endpoint === endpoint && s.dialects.includes(dialect))
+      : undefined;
+    if (!server)
+      return { error: "that local server is no longer running — start it and pick again" };
+    if (model && !server.models.includes(model))
+      return { error: "that model is no longer served — refresh and pick again" };
+    return { agent, kind: "local", live: true, model, endpoint };
+  }
+  // A credential (or the env-configured endpoint): must be detected right now
+  // AND usable under provider policy — a blocked subscription refuses here.
+  const usable = backendOptions(agent).some((o) => o.kind === kind && o.usable);
+  if (!usable) return { error: `that ${kind} option isn't available for this agent` };
+  return { agent, kind, live: true, model: model ?? modelFor(agent) };
+}
+
+/**
  * Build the session for a backend. The one seam where "which agent" becomes a
  * concrete engine: each real agent drives its own loop and normalizes to
- * `WireMsg`; a backend with no credentials falls back to the mock.
+ * `WireMsg`; a backend with no credentials falls back to the mock. `kind` +
+ * `endpoint` carry a chosen backend into the adapter (N.5); a default-resolved
+ * backend passes its precedence kind, which the adapters treat exactly as the
+ * pre-N behavior.
  */
 export function createSession(backend: Backend, opts: { cwd: string }): AgentSession {
   if (!backend.live) return new MockSession();
+  const kind = backend.kind === "none" ? undefined : backend.kind;
   switch (backend.agent) {
     case "claude-code":
-      return new ClaudeCodeSession({ workspaceDir: opts.cwd, model: backend.model });
+      return new ClaudeCodeSession({
+        workspaceDir: opts.cwd,
+        model: backend.model,
+        kind,
+        endpoint: backend.endpoint,
+      });
     case "codex":
-      return new CodexSession({ workspaceDir: opts.cwd, model: backend.model });
+      return new CodexSession({
+        workspaceDir: opts.cwd,
+        model: backend.model,
+        kind,
+        endpoint: backend.endpoint,
+      });
     case "gemini-cli":
       return new GeminiCliSession({ workspaceDir: opts.cwd, model: backend.model });
   }

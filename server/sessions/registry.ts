@@ -95,15 +95,18 @@ export class SessionRegistry {
   // config (Phase P.1). The agent is chosen here, not hardcoded downstream.
   constructor(private backend: Backend = resolveBackend()) {}
 
-  create(opts?: { cwd?: string; agent?: AgentName }): SessionEntry {
+  create(opts?: { cwd?: string; agent?: AgentName; backend?: Backend }): SessionEntry {
     if (this.entries.size >= MAX_SESSIONS) {
       throw new Error(`session limit reached (${MAX_SESSIONS})`);
     }
     const id = randomUUID().slice(0, 8);
     // Which agent this session runs (P.4): the caller's choice at onboarding,
     // resolved to a fresh backend here; no choice → the daemon default. Secrets
-    // stay server-side — the client only ever names the agent.
-    const backend = opts?.agent ? resolveBackendFor(opts.agent) : this.backend;
+    // stay server-side — the client only ever names the agent. N.5: a chosen
+    // backend arrives PRE-VALIDATED (connection.ts ran resolveChosenBackend —
+    // this registry never sees raw client input) and wins over precedence.
+    const backend =
+      opts?.backend ?? (opts?.agent ? resolveBackendFor(opts.agent) : this.backend);
     // cwd is whatever the caller chose; the default is the directory the
     // daemon was launched from — the terminal's own model (Step 4.8; the
     // earlier workspace/<id> scratch default was itself a parity gap). Any

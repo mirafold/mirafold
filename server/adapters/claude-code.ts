@@ -9,6 +9,7 @@ import {
   type AgentSession,
   type TodoItem,
   capOutput,
+  definedEnv,
   joinTextBlocks,
   toolDetail,
   PERMISSION_TIMEOUT_MS,
@@ -99,7 +100,15 @@ export class ClaudeCodeSession implements AgentSession {
   // `engine` is the test seam (like Codex's thread swap / MIRAFOLD_GEMINI_BIN):
   // query() spawns the real CLI at construction, so tests must inject a
   // scripted stand-in here — there is no later moment to swap it.
-  constructor(opts: { workspaceDir: string; model?: string; engine?: typeof query }) {
+  // N.5: `kind`/`endpoint` carry the onboarding picker's backend choice.
+  // Undefined = the pre-N default (inherit the process env untouched).
+  constructor(opts: {
+    workspaceDir: string;
+    model?: string;
+    kind?: "api-key" | "subscription" | "local";
+    endpoint?: string;
+    engine?: typeof query;
+  }) {
     const workspaceDir = path.resolve(opts.workspaceDir);
     mkdirSync(workspaceDir, { recursive: true }); // spawn fails on a missing cwd
     const model = opts.model ?? process.env.DEFAULT_MODEL;
@@ -109,6 +118,26 @@ export class ClaudeCodeSession implements AgentSession {
       options: {
         model,
         cwd: workspaceDir,
+        // The chosen backend, enforced per-session through the SDK's own env
+        // (never a process.env mutation — sessions on different backends
+        // coexist in one daemon). A DISCOVERED endpoint gets the documented
+        // Ollama recipe (docs/local-models.md: BASE_URL + a required-but-
+        // ignored auth token; the real API key is withheld — it has no
+        // business reaching a local server). An explicit api-key choice
+        // strips a globally-set BASE_URL so the session truly runs on the
+        // key. No choice (or the env-endpoint local) inherits, as always.
+        ...(opts.kind === "local" && opts.endpoint
+          ? {
+              env: {
+                ...definedEnv(),
+                ANTHROPIC_BASE_URL: opts.endpoint,
+                ANTHROPIC_API_KEY: undefined,
+                ANTHROPIC_AUTH_TOKEN: process.env.ANTHROPIC_AUTH_TOKEN ?? "ollama",
+              },
+            }
+          : opts.kind === "api-key"
+            ? { env: { ...definedEnv(), ANTHROPIC_BASE_URL: undefined } }
+            : {}),
         canUseTool: makeCanUseTool(workspaceDir, this.ask),
         // settingSources is intentionally UNSET so it matches the CLI default
         // (user + project + local). Mirafold is a different *view* of the

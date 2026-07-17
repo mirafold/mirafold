@@ -472,3 +472,73 @@ test("close() is quiet: no error from the ending stream, later prompts are dropp
   assert.deepEqual(msgs, []);
   assert.equal(captured.interrupts, 1); // close interrupts the engine
 });
+
+// ── N.5: the chosen backend reaches the ENGINE env (per-session, never a
+// process.env mutation) — captured off the real options via the engine seam.
+
+function capturedEnv(opts: {
+  kind?: "api-key" | "subscription" | "local";
+  endpoint?: string;
+}): Record<string, string | undefined> | undefined {
+  let env: Record<string, string | undefined> | undefined;
+  let sawOptions = false;
+  const engine = ((args: { prompt: AsyncIterable<unknown>; options: Options }) => {
+    sawOptions = true;
+    env = (args.options as { env?: Record<string, string | undefined> }).env;
+    const gen = (async function* () {
+      for await (const _p of args.prompt) {
+        /* consume */
+      }
+    })();
+    return Object.assign(gen, { interrupt: async () => {} });
+  }) as unknown as typeof query;
+  const s = new ClaudeCodeSession({ workspaceDir: tmp, model: "m", engine, ...opts });
+  s.close();
+  assert.ok(sawOptions, "engine stub was not invoked");
+  return env;
+}
+
+function withAnthropicEnv(patch: Record<string, string | undefined>, fn: () => void) {
+  const keys = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL"];
+  const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+  try {
+    for (const k of keys) delete process.env[k];
+    for (const [k, v] of Object.entries(patch)) if (v !== undefined) process.env[k] = v;
+    fn();
+  } finally {
+    for (const k of keys) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  }
+}
+
+test("N.5: a discovered-endpoint choice sets BASE_URL + the dummy auth token and WITHHOLDS the real key", () => {
+  withAnthropicEnv({ ANTHROPIC_API_KEY: "real-key" }, () => {
+    const env = capturedEnv({ kind: "local", endpoint: "http://127.0.0.1:11434" });
+    assert.ok(env, "a local choice must pass a per-session env");
+    assert.equal(env.ANTHROPIC_BASE_URL, "http://127.0.0.1:11434");
+    assert.equal(env.ANTHROPIC_API_KEY, undefined, "the real key must not reach a local server");
+    assert.equal(env.ANTHROPIC_AUTH_TOKEN, "ollama"); // required-but-ignored (docs recipe)
+  });
+});
+
+test("N.5: an explicit api-key choice strips a globally-set BASE_URL — the session truly runs on the key", () => {
+  withAnthropicEnv(
+    { ANTHROPIC_API_KEY: "real-key", ANTHROPIC_BASE_URL: "http://localhost:11434" },
+    () => {
+      const env = capturedEnv({ kind: "api-key" });
+      assert.ok(env);
+      assert.equal(env.ANTHROPIC_BASE_URL, undefined);
+      assert.equal(env.ANTHROPIC_API_KEY, "real-key");
+    },
+  );
+});
+
+test("N.5: no choice → no env override at all (inherit — the pre-N default, byte-identical)", () => {
+  withAnthropicEnv({ ANTHROPIC_BASE_URL: "http://localhost:11434" }, () => {
+    assert.equal(capturedEnv({}), undefined);
+    // The env-configured local kind (no discovered endpoint) also inherits.
+    assert.equal(capturedEnv({ kind: "local" }), undefined);
+  });
+});

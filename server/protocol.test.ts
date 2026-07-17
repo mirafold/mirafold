@@ -89,7 +89,26 @@ const WIRE: WireByType = {
   },
   agents: {
     type: "agents",
-    agents: [{ agent: "claude-code", live: true, blocked: false, detail: "claude-sonnet-5" }],
+    agents: [
+      {
+        agent: "claude-code",
+        live: true,
+        blocked: false,
+        detail: "claude-sonnet-5",
+        // N.3: the second-step menu — one of each backend flavor.
+        backends: [
+          { kind: "api-key", usable: true, detail: "claude-sonnet-5" },
+          { kind: "subscription", usable: false, blocked: true },
+          {
+            kind: "local",
+            usable: true,
+            endpoint: "http://127.0.0.1:11434",
+            runtime: "ollama",
+            models: ["llama3.2:3b"],
+          },
+        ],
+      },
+    ],
     default: "claude-code",
     cwd: "/home/u/proj",
     home: "/home/u",
@@ -119,7 +138,13 @@ const CLIENT: ClientByType = {
   interrupt: { type: "interrupt" },
   permission_response: { type: "permission_response", id: "p1", allow: true },
   attach: { type: "attach", sessionId: "s1", afterSeq: 42, clientVersion: "0.0.1" },
-  create: { type: "create", cwd: "/home/u/proj", agent: "gemini-cli", clientVersion: "0.0.1" },
+  create: {
+    type: "create",
+    cwd: "/home/u/proj",
+    agent: "gemini-cli",
+    clientVersion: "0.0.1",
+    backend: { kind: "local", endpoint: "http://127.0.0.1:11434", model: "llama3.2:3b" },
+  },
   action: { type: "action", action: { kind: "prompt", text: "go" }, sourceId: "r1" },
   bang: { type: "bang", command: "ls", id: "b1" },
   bang_input: { type: "bang_input", data: "hunter2\n", id: "b1" },
@@ -128,6 +153,7 @@ const CLIENT: ClientByType = {
   watch_sessions: { type: "watch_sessions" },
   rename: { type: "rename", sessionId: "s1", name: "renamed" },
   end_session: { type: "end_session", sessionId: "s1" },
+  refresh_agents: { type: "refresh_agents" },
 };
 
 // seq is the registry's additive per-broadcast stamp (4.4) — assignable onto
@@ -161,6 +187,17 @@ test("Q.2 nested shapes carry their exact field names", () => {
     live: true,
     blocked: false,
     detail: "claude-sonnet-5",
+    backends: [
+      { kind: "api-key", usable: true, detail: "claude-sonnet-5" },
+      { kind: "subscription", usable: false, blocked: true },
+      {
+        kind: "local",
+        usable: true,
+        endpoint: "http://127.0.0.1:11434",
+        runtime: "ollama",
+        models: ["llama3.2:3b"],
+      },
+    ],
   });
   assert.deepEqual(WIRE.agents.relay, { url: "wss://relay.mirafold.sh", code: "abc123def456ghij" });
   // SessionMeta — the fleet row's exact key set.
