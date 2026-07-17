@@ -18,11 +18,17 @@ export function Onboarding({
   defaultCwd,
   error,
   onPick,
+  onDismiss,
 }: {
   agents: { agent: AgentName; live: boolean; blocked?: boolean; detail?: string }[] | null;
   defaultCwd?: string;
   error?: string | null;
   onPick: (agent: AgentName, cwd?: string) => void;
+  // Present only when there's something to go back to (an existing fleet) —
+  // then a click outside the card, or Esc, changes your mind (2026-07-16).
+  // Absent on first run / a sessionless shell, where dismissing would leave
+  // a dead page.
+  onDismiss?: () => void;
 }) {
   const [cwd, setCwd] = useState("");
   // The daemon cwd arrives async (agents hello) — prefill once, but never
@@ -31,9 +37,19 @@ export function Onboarding({
     if (defaultCwd) setCwd((c) => c || defaultCwd);
   }, [defaultCwd]);
 
+  // Same dismiss idiom as the settings card: backdrop click + Escape.
+  useEffect(() => {
+    if (!onDismiss) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onDismiss();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onDismiss]);
+
   return (
-    <div className="onb-overlay">
-      <div className="onb-card">
+    <div className="onb-overlay" onClick={onDismiss}>
+      <div className="onb-card" onClick={(e) => e.stopPropagation()}>
         <div className="onb-glyph">❯</div>
         <h1 className="onb-title">Choose your agent</h1>
         <p className="onb-sub">

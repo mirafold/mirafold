@@ -1,5 +1,7 @@
 import path from "node:path";
+import os from "node:os";
 import { mkdirSync } from "node:fs";
+import { readdir, readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import {
   Codex,
@@ -23,6 +25,59 @@ const RENDER_MCP = renderMcpCommand();
 export function mcpText(content: unknown): string {
   if (!Array.isArray(content)) return content == null ? "" : String(content);
   return joinTextBlocks(content);
+}
+
+/**
+ * The model Codex ACTUALLY resolved for a thread (the analog of Claude's
+ * system/init model, F.3): the SDK's event stream never names it, but Codex's
+ * own session record does — the rollout file at
+ * `<codexHome>/sessions/YYYY/MM/DD/rollout-…-<threadId>.jsonl`, whose
+ * turn_context line carries `payload.model` (e.g. "gpt-5.6-sol", exactly what
+ * the terminal's own header shows). Read-only, local, and failure-silent:
+ * any miss returns undefined and the label stays the "codex" stand-in.
+ * The date dir is the session's LOCAL start date — today is checked first,
+ * yesterday too for a session straddling midnight.
+ */
+export async function resolveRolloutModel(
+  threadId: string,
+  codexHome: string,
+): Promise<string | undefined> {
+  const dateDir = (d: Date) =>
+    path.join(
+      codexHome,
+      "sessions",
+      String(d.getFullYear()),
+      String(d.getMonth() + 1).padStart(2, "0"),
+      String(d.getDate()).padStart(2, "0"),
+    );
+  const today = new Date();
+  const yesterday = new Date(today.getTime() - 86_400_000);
+  for (const dir of [dateDir(today), dateDir(yesterday)]) {
+    let names: string[];
+    try {
+      names = await readdir(dir);
+    } catch {
+      continue; // no sessions that day
+    }
+    const file = names.find((n) => n.endsWith(`-${threadId}.jsonl`));
+    if (!file) continue;
+    let text: string;
+    try {
+      text = await readFile(path.join(dir, file), "utf8");
+    } catch {
+      continue;
+    }
+    for (const line of text.split("\n")) {
+      if (!line.includes('"model"')) continue;
+      try {
+        const model = (JSON.parse(line) as { payload?: { model?: unknown } }).payload?.model;
+        if (typeof model === "string" && model) return model;
+      } catch {
+        // a torn line mid-write — the retry loop will see it whole
+      }
+    }
+  }
+  return undefined;
 }
 
 // The component id the render-mcp stub assigned (structuredContent is the
@@ -67,6 +122,11 @@ export class CodexSession implements AgentSession {
   // One live checklist per turn (T2.5), reset each turn so it re-anchors.
   private todoRenderId?: string;
   private modelLabel: string;
+  // Where Codex keeps auth/config/sessions — the CLI's own CODEX_HOME rule.
+  // A field (not read at call time) so tests can point it at a fixture.
+  private codexHome = process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex");
+  private lookupThreadId?: string;
+  private lookupRunning = false;
 
   get modelName(): string {
     return this.modelLabel;
@@ -192,6 +252,9 @@ export class CodexSession implements AgentSession {
           inputTokens: u.input_tokens,
           outputTokens: u.output_tokens + u.reasoning_output_tokens,
         });
+        // A lookup that ran out its window mid-turn gets another chance now —
+        // by turn end the rollout file certainly has its turn_context line.
+        if (this.modelLabel === "codex") void this.learnModel();
         end();
         break;
       }
@@ -203,8 +266,39 @@ export class CodexSession implements AgentSession {
         this.emit({ type: "error", message: ev.message });
         end();
         break;
-      // thread.started carries the resume id; the persistent Thread already
-      // holds warmth, so nothing to emit.
+      case "thread.started":
+        // Carries the resume id; the persistent Thread already holds warmth,
+        // so nothing to emit — but the id names the rollout file, the one
+        // place Codex records the model it actually resolved. Learn it there
+        // (fleet/status-bar parity with Claude's system/init, F.3), unless a
+        // model was configured — then the label already tells the truth.
+        if (this.modelLabel === "codex") {
+          this.lookupThreadId = ev.thread_id;
+          void this.learnModel();
+        }
+        break;
+    }
+  }
+
+  /** Poll the rollout file for the resolved model. Its turn_context line is
+      written when the first turn's context is assembled — measured ~3s after
+      thread.started reaches us — so the window is a generous 20 × 500ms;
+      turn.completed re-kicks a missed lookup. Silent on failure: the "codex"
+      stand-in is still honest, just less specific. */
+  private async learnModel() {
+    if (this.lookupRunning || !this.lookupThreadId) return;
+    this.lookupRunning = true;
+    try {
+      for (let attempt = 0; attempt < 20 && !this.closed && this.modelLabel === "codex"; attempt++) {
+        const model = await resolveRolloutModel(this.lookupThreadId, this.codexHome);
+        if (model) {
+          this.modelLabel = model;
+          return;
+        }
+        await new Promise((r) => setTimeout(r, 500));
+      }
+    } finally {
+      this.lookupRunning = false;
     }
   }
 

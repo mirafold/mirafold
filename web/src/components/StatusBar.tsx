@@ -82,6 +82,29 @@ export function StatusBar({
 
   return (
     <div className="status-bar">
+      {/* Home (⌂ → mission control) is the outermost far-LEFT control —
+          moved from the far right 2026-07-16 (Kyle); the dot stays glued to
+          the agent text it reports on. */}
+      <a className="sb-home" href="/" title="All sessions (mission control)">
+        ⌂
+      </a>
+      {/* End (#11) lives with home on the left: the session-lifecycle pair,
+          apart from the settings/theme cluster on the right (2026-07-16). */}
+      {onEndSession && (
+        <button
+          className={"sb-end" + (confirmEnd ? " sb-end-armed" : "")}
+          title={confirmEnd ? "Click again to end this session" : "End this session"}
+          onClick={() => {
+            if (confirmEnd) onEndSession();
+            else {
+              setConfirmEnd(true);
+              setTimeout(() => setConfirmEnd(false), 3000);
+            }
+          }}
+        >
+          {confirmEnd ? "end?" : "end"}
+        </button>
+      )}
       <button className="sb-toggle" onClick={() => setOpen(false)} title="Hide status">
         {dot}
       </button>
@@ -118,23 +141,9 @@ export function StatusBar({
         </span>
       )}
       <ConnectDevice relay={relay} />
-      {onEndSession && (
-        <button
-          className={"sb-end" + (confirmEnd ? " sb-end-armed" : "")}
-          title={confirmEnd ? "Click again to end this session" : "End this session"}
-          onClick={() => {
-            if (confirmEnd) onEndSession();
-            else {
-              setConfirmEnd(true);
-              setTimeout(() => setConfirmEnd(false), 3000);
-            }
-          }}
-        >
-          {confirmEnd ? "end?" : "end"}
-        </button>
-      )}
-      {/* Settings gear (S.4) — beside the pill, never past home (⌂ stays the
-          far-right control). The pill below is LOCKED unchanged (Phase S). */}
+      {/* Settings gear (S.4) — beside the pill, which is now the far-right
+          control (home moved to the far left). The pill below is LOCKED
+          unchanged (Phase S). */}
       {onOpenSettings && (
         <button className="sb-settings" onClick={onOpenSettings} title="Settings">
           ⚙
@@ -160,9 +169,6 @@ export function StatusBar({
           ☾
         </button>
       </div>
-      <a className="sb-home" href="/" title="All sessions (mission control)">
-        ⌂
-      </a>
     </div>
   );
 }

@@ -108,6 +108,25 @@ test("question component: clicking an option sends it as the user's next turn", 
   await page.waitForSelector(".sb-usage", { timeout: 30_000 });
 });
 
+test("prompt cwd collapses to the caret, expands back, and the choice survives reload (4.8)", async () => {
+  await page.waitForSelector(".prompt-cwd");
+  // Clicking the path hides it; the caret is all that's left of the prompt.
+  await page.locator(".prompt-cwd").click();
+  assert.equal(await page.locator(".prompt-cwd").count(), 0);
+  // The caret brings it back…
+  await page.locator(".prompt-caret").click();
+  assert.equal(await page.locator(".prompt-cwd").count(), 1);
+  // …and toggles it off again; collapsed persists across a reload.
+  await page.locator(".prompt-caret").click();
+  assert.equal(await page.locator(".prompt-cwd").count(), 0);
+  await page.reload();
+  await page.waitForSelector(".prompt-caret");
+  assert.equal(await page.locator(".prompt-cwd").count(), 0);
+  // Restore the default (shown) for the tests that follow.
+  await page.locator(".prompt-caret").click();
+  assert.equal(await page.locator(".prompt-cwd").count(), 1);
+});
+
 test("R.4i: a subscription-only Claude shows a BLOCKED row with the API-key fix, not a demo", async () => {
   // A daemon whose only Claude credential is a subscription login (a
   // .credentials.json, no API key) — Anthropic's terms don't allow that in a
@@ -178,7 +197,7 @@ test("a demo turn shows tokens but never a fabricated dollar cost (R.4b)", async
   assert.match(bar, /v\d+\.\d+\.\d+/);
 });
 
-test("theme is a segmented sun|moon switch; home is the far-right control", async () => {
+test("theme is a segmented sun|moon switch; home is the far-left control", async () => {
   const lightOpt = page.locator(".sb-theme-opt", { hasText: "☀" });
   const darkOpt = page.locator(".sb-theme-opt", { hasText: "☾" });
   // Both modes visible at once; dark (the default identity) is lit.
@@ -194,9 +213,10 @@ test("theme is a segmented sun|moon switch; home is the far-right control", asyn
   assert.equal(await page.locator("html").getAttribute("data-theme"), "light");
   await darkOpt.click(); // restore the default for later tests
   assert.equal(await page.locator("html").getAttribute("data-theme"), "dark");
-  // Home (⌂ → mission control) sits at the status bar's far right.
+  // Home (⌂ → mission control) is the status bar's outermost far-left
+  // control; the connection-dot toggle sits between it and the agent text.
   assert.match(
-    (await page.locator(".status-bar > *:last-child").getAttribute("class")) ?? "",
+    (await page.locator(".status-bar > *:first-child").getAttribute("class")) ?? "",
     /sb-home/,
   );
 });
@@ -257,11 +277,12 @@ const themeRow = (name: string) =>
     .filter({ has: page.locator(".theme-row-name", { hasText: new RegExp(`^${name}$`) }) });
 
 test("settings card: gear opens it, picking applies live and writes the slot (S.4)", async () => {
-  // The gear sits in the bar; home keeps the far-right slot (pill's world
-  // is undisturbed — its own test above still pins its rendering).
+  // The gear sits in the bar; home keeps its outermost far-left slot
+  // (pill's world is undisturbed — its own test above still pins its
+  // rendering).
   assert.equal(await page.locator(".sb-settings").count(), 1);
   assert.match(
-    (await page.locator(".status-bar > *:last-child").getAttribute("class")) ?? "",
+    (await page.locator(".status-bar > *:first-child").getAttribute("class")) ?? "",
     /sb-home/,
   );
   await page.locator(".sb-settings").click();
@@ -442,4 +463,29 @@ test("navigating artifact is blanked into the navigation-blocked fallback (R.4e)
   // and shows the fallback with the source.
   await page.waitForSelector("text=navigation blocked", { timeout: 30_000 });
   await page.waitForSelector("text=tried to navigate away", { timeout: 5_000 });
+});
+
+test("fleet: the cwd is the row's hover tooltip; clicking outside the new-session card dismisses it", async () => {
+  await page.goto(`${base}/`);
+  await page.waitForSelector(".fleet-row");
+  // The cwd left the row proper (clutter) — it survives as the row's
+  // native-delay hover tooltip.
+  assert.match(
+    (await page.locator(".fleet-row").first().getAttribute("title")) ?? "",
+    /\//,
+  );
+  // "+ new session" opens the picker; a backdrop click (outside the card)
+  // changes your mind — possible only because a fleet exists behind it.
+  await page.locator(".fleet-new").click();
+  await page.waitForSelector(".onb-card");
+  await page.locator(".onb-overlay").click({ position: { x: 5, y: 5 } });
+  assert.equal(await page.locator(".onb-overlay").count(), 0);
+  // A click INSIDE the card must not dismiss it…
+  await page.locator(".fleet-new").click();
+  await page.waitForSelector(".onb-card");
+  await page.locator(".onb-title").click();
+  assert.equal(await page.locator(".onb-overlay").count(), 1);
+  // …and Esc closes it, same idiom as the settings card.
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator(".onb-overlay").count(), 0);
 });

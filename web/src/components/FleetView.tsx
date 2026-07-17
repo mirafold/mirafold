@@ -92,6 +92,16 @@ export function FleetView() {
             setOnbError(null);
             socket.send({ type: "create", agent, cwd });
           }}
+          // Dismissible only when a fleet exists behind it — on first run
+          // (no sessions) the picker IS the page, so it stays.
+          onDismiss={
+            sessions && sessions.length > 0
+              ? () => {
+                  setShowNew(false);
+                  setOnbError(null);
+                }
+              : undefined
+          }
         />
       )}
       <header className="fleet-head">
@@ -114,7 +124,14 @@ export function FleetView() {
             setRenaming(s.sessionId);
           };
           return (
-            <a key={s.sessionId} className="fleet-row" href={`/s/${s.sessionId}`}>
+            // The cwd left the row proper (clutter) — it survives as the
+            // row's hover tooltip, on the browser's native ~1s delay.
+            <a
+              key={s.sessionId}
+              className="fleet-row"
+              href={`/s/${s.sessionId}`}
+              title={tildify(s.cwd, daemon.home)}
+            >
               <span className={`fleet-dot fleet-dot-${s.status}`} title={STATUS_LABEL[s.status]} />
               {renaming === s.sessionId ? (
                 <input
@@ -141,9 +158,6 @@ export function FleetView() {
                 {s.model}
               </span>
               <span className="fleet-agent">{s.agent}</span>
-              <span className="fleet-cwd" title={s.cwd}>
-                {tildify(s.cwd, daemon.home)}
-              </span>
               <span className="fleet-spacer" />
               <span className="fleet-id" title="session id">
                 {s.sessionId}

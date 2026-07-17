@@ -1257,8 +1257,14 @@ body {
 
 /* The session's working dir at the prompt (Step 4.8) — dim, mono, terminal-
    prompt style: `~/Projects/foo ❯`. Ellipsizes from the left so the leaf
-   (the part that identifies the project) always stays visible. */
+   (the part that identifies the project) always stays visible. Collapsible
+   down to just the caret — click the path to hide it, the caret to bring it
+   back; the choice persists (2026-07-16). */
 .prompt-cwd {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.85em;
   line-height: 1.76; /* baseline-align with the 0.95em textarea text */
@@ -1272,6 +1278,23 @@ body {
   direction: rtl;
   text-align: left;
   flex-shrink: 0;
+}
+
+.prompt-cwd:hover {
+  color: var(--fg-dim);
+}
+
+/* The caret doubles as the cwd toggle when a cwd exists — same glyph look,
+   plus the interactive handshake on hover. */
+.prompt-caret {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.prompt-caret:hover {
+  filter: brightness(1.25);
 }
 
 .prompt-box textarea {
@@ -1891,10 +1914,13 @@ html {
 /* #11: in-session "end" — a shell-owned control in the status bar, two-click
    (end → end?) with a danger tone when armed. */
 .sb-end {
+  display: inline-flex;
+  align-items: center;
+  height: 34px; /* matches the computed height of .sb-home / .sb-theme */
   background: transparent;
   border: 1px solid var(--border-2);
   border-radius: 7px;
-  padding: 6px 10px;
+  padding: 0 12px;
   color: var(--fg-mid);
   font: inherit;
   font-size: 13px;
@@ -1916,7 +1942,8 @@ html {
 }
 
 /* #9: mission-control home — an <a> styled as an icon button, the status
-   bar's far-right control. */
+   bar's outermost far-LEFT control (moved from the far right 2026-07-16);
+   the connection dot sits between it and the agent text. */
 .sb-home {
   display: inline-flex;
   align-items: center;
@@ -2117,7 +2144,6 @@ html {
 .fleet-id,
 .fleet-model,
 .fleet-agent,
-.fleet-cwd,
 .fleet-ago {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.78em;
@@ -2128,7 +2154,7 @@ html {
   flex-shrink: 0;
 }
 
-/* #6: the model the session runs, read left of the agent (model → agent → cwd). */
+/* #6: the model the session runs, read left of the agent (model → agent). */
 .fleet-model {
   color: var(--fg-dim);
   white-space: nowrap;
@@ -2139,14 +2165,6 @@ html {
   color: var(--accent);
   white-space: nowrap;
   flex-shrink: 0;
-}
-
-.fleet-cwd {
-  color: var(--fg-dim);
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  min-width: 0;
 }
 
 .fleet-status {
@@ -2357,12 +2375,17 @@ html {
    the pill in the status bar; the pill itself is locked unchanged. */
 
 .sb-settings {
-  padding: 1px 8px;
-  font-size: 0.82em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  padding: 6px 10px;
+  font-size: 20px;
+  line-height: 1;
   color: var(--fg-dimmer);
   background: transparent;
   border: 1px solid var(--border-2);
-  border-radius: 6px;
+  border-radius: 7px;
   cursor: pointer;
 }
 
@@ -2506,11 +2529,6 @@ html {
   .fleet-id,
   .fleet-sep {
     display: none;
-  }
-
-  .fleet-cwd {
-    flex-basis: 100%;
-    order: 6;
   }
 
   .onb-card {

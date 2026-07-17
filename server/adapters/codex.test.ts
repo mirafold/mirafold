@@ -2,10 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import os from "node:os";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import type { ThreadEvent } from "@openai/codex-sdk";
 import type { WireMsg } from "../protocol";
-import { CodexSession } from "./codex";
+import { CodexSession, resolveRolloutModel } from "./codex";
 import { MIRAFOLD_MCP } from "./render-mcp-cmd";
 
 // L.2b2: the Codex event→WireMsg mapping and the turn grammar, on synthetic
@@ -278,5 +278,79 @@ test("interrupt: aborts silently — one turn_end, no error", async () => {
   await awaitTurnEnd();
   assert.equal(turnEnds(), 1);
   assert.ok(!msgs.some((m) => m.type === "error"));
+  s.close();
+});
+
+// ---- Resolved-model lookup (fleet/status-bar parity with Claude, F.3) ------
+// The SDK stream never names the model; the rollout file's turn_context does.
+
+const rolloutFixture = (threadId: string, lines: string[]) => {
+  const home = mkdtempSync(path.join(os.tmpdir(), "codex-home-test-"));
+  const d = new Date();
+  const day = path.join(
+    home,
+    "sessions",
+    String(d.getFullYear()),
+    String(d.getMonth() + 1).padStart(2, "0"),
+    String(d.getDate()).padStart(2, "0"),
+  );
+  mkdirSync(day, { recursive: true });
+  writeFileSync(
+    path.join(day, `rollout-2026-07-16T21-58-26-${threadId}.jsonl`),
+    lines.join("\n") + "\n",
+  );
+  return home;
+};
+
+const META_LINE = JSON.stringify({
+  type: "session_meta",
+  payload: { session_id: "t-1", model_provider: "openai" },
+});
+const CONTEXT_LINE = JSON.stringify({
+  type: "turn_context",
+  payload: { model: "gpt-5.6-sol", settings: { model: "gpt-5.6-sol" } },
+});
+
+test("resolveRolloutModel: reads the model from the thread's turn_context line", async () => {
+  const home = rolloutFixture("t-1", [META_LINE, "not json {", CONTEXT_LINE]);
+  assert.equal(await resolveRolloutModel("t-1", home), "gpt-5.6-sol");
+  // An unknown thread, or a record with no model yet, resolves to nothing.
+  assert.equal(await resolveRolloutModel("t-other", home), undefined);
+  const bare = rolloutFixture("t-2", [META_LINE]);
+  assert.equal(await resolveRolloutModel("t-2", bare), undefined);
+});
+
+test("thread.started triggers the lookup: modelName goes from the stand-in to the truth", async () => {
+  const home = rolloutFixture("t-3", [META_LINE, CONTEXT_LINE]);
+  const { s, awaitTurnEnd } = makeSession([
+    ev({ type: "thread.started", thread_id: "t-3" }),
+    ev({ type: "turn.started" }),
+    ev({ type: "turn.completed", usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1, reasoning_output_tokens: 0 } }),
+  ]);
+  (s as unknown as { codexHome: string }).codexHome = home;
+  assert.equal(s.modelName, "codex"); // the stand-in, pre-turn
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  // The lookup is async beside the turn — give its first attempt a beat.
+  const t0 = Date.now();
+  while (s.modelName === "codex" && Date.now() - t0 < 3_000)
+    await new Promise((r) => setTimeout(r, 10));
+  assert.equal(s.modelName, "gpt-5.6-sol");
+  s.close();
+});
+
+test("a configured model is the label — the rollout lookup never overrides it", async () => {
+  const home = rolloutFixture("t-4", [CONTEXT_LINE]);
+  const { s, awaitTurnEnd } = makeSession([
+    ev({ type: "thread.started", thread_id: "t-4" }),
+    ev({ type: "turn.started" }),
+    ev({ type: "turn.completed", usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1, reasoning_output_tokens: 0 } }),
+  ]);
+  (s as unknown as { codexHome: string }).codexHome = home;
+  (s as unknown as { modelLabel: string }).modelLabel = "o3-configured";
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  await new Promise((r) => setTimeout(r, 50));
+  assert.equal(s.modelName, "o3-configured");
   s.close();
 });
