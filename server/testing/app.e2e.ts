@@ -489,3 +489,32 @@ test("fleet: the cwd is the row's hover tooltip; clicking outside the new-sessio
   await page.keyboard.press("Escape");
   assert.equal(await page.locator(".onb-overlay").count(), 0);
 });
+
+test("! cd .. — silent success says so, the escape is announced, and the agent answers unprompted (terminal parity)", async () => {
+  // Back into a session created earlier in this file.
+  await page.locator(".fleet-row").first().click();
+  await page.waitForURL(/\/s\/[\w-]+/);
+  await page.waitForSelector("textarea");
+
+  await page.locator("textarea").click();
+  await page.keyboard.type("! cd ..");
+  await page.keyboard.press("Enter");
+
+  // The strip echoes the command; a no-output success is SAID, not blank…
+  await page.waitForSelector(".bang-block");
+  assert.match(await page.locator(".bang-block").last().innerText(), /cd \.\./);
+  await page.waitForSelector(".bang-no-output");
+  assert.equal(
+    await page.locator(".bang-no-output").last().innerText(),
+    "(completed with no output)",
+  );
+  // …the cwd-guard reset is announced, like the terminal harness…
+  await page
+    .locator(".notice-line", { hasText: "Shell cwd was reset to" })
+    .last()
+    .waitFor({ timeout: 15_000 });
+  // …and the agent answers the transcript with NO typed prompt: an assistant
+  // turn lands AFTER the bang block (sibling order = transcript order, so
+  // replayed turns from earlier tests can't satisfy this).
+  await page.waitForSelector(".bang-block ~ .turn-assistant", { timeout: 30_000 });
+});
