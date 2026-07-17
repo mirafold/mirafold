@@ -163,7 +163,8 @@ signal).
 
 Steps 4.1–4.6 and 4.8–4.10 are **done** — moved to **PLAN-ARCHIVE.md**
 2026-07-08 with their full dated status notes (same convention as the
-earlier phases). Only 4.7 remains below, as the pointer to Phase R.
+earlier phases). Only 4.7 remains below (the pointer to Phase R), plus dated
+records of later unplanned polish batches.
 
 - [ ] **Step 4.7 — Hosted relay seam (the paid tier)** → **expanded into
   Phase R below** (launch-complete pivot, 2026-07-07). The original scope —
@@ -173,6 +174,18 @@ earlier phases). Only 4.7 remains below, as the pointer to Phase R.
   before charging — is unchanged; it's now sized into R.1–R.7 and sequenced
   *before* launch instead of behind the M2 signal. Check this box when
   Phase R ships.
+
+- [x] **Step 4.11 — Cockpit polish batch (unplanned, Kyle-driven)** — done
+  2026-07-16, all e2e-covered (suite grew 24→26). Status bar regrouped: home ⌂
+  + end anchor the far LEFT as the session-lifecycle pair (leave it / kill it),
+  the connection dot stays glued to the agent text, settings/theme cluster
+  keeps the right; gear and end sized to match the pill/home (34px). The
+  prompt-bar cwd is collapsible: click the path → just the ❯ caret; the caret
+  toggles it back; persisted (`mirafold-prompt-cwd`); the left-side ellipsis
+  behavior kept. Fleet rows dropped the cwd column for breathing room — it
+  survives as the row's native hover tooltip — and the new-session card
+  dismisses on backdrop click / Esc, only when a fleet exists behind it (first
+  run keeps the picker, it IS the page). Theme pill untouched (LOCKED).
 
 ---
 
@@ -983,6 +996,14 @@ with it. Both sequence BEFORE R.5.**
       anything flagged in `express`, `ws`, `react-markdown`, the agent
       SDKs, etc. (2026-07-08 security audit: the one item that can't be
       cleared offline; a known-vuln transitive dep is a real ship risk).
+    - [ ] Cap the model-label length where it enters the wire (2026-07-16
+      audit, hardening tier — no live risk): the label comes from
+      engine-controlled sources (Claude `system/init`, the Codex rollout
+      file, Gemini stats) with no length bound, so a corrupt source could
+      bloat every `sessions` broadcast and the status bar. One `slice()` at
+      the registry/usage emission covers all adapters at once — same
+      philosophy as R.4d's `!`-output cap. React escaping already makes a
+      hostile string inert (verified); this is bloat insurance only.
   - **Real-hardware checks** (need R.2 deployed; none need the registry):
     - Scan the QR with a real phone through the deployed relay, drive a
       session, flip wifi→LTE mid-turn (owed by R.4 — now listed, not just
@@ -1070,6 +1091,22 @@ fix restores what that agent's *terminal* user already sees — nothing invented
 
 - [x] **Step F.4 — Gemini honesty pass** — done 2026-07-08; a stderr-only non-zero exit surfaces as an `error` WireMsg instead of a silent turn. → PLAN-ARCHIVE.md.
 
+- [x] **Step F.7 — Codex resolved-model label (closes F.3's codex gap)** — done
+  2026-07-16 (Kyle: "show the model for codex just like you do for claude").
+  The Codex SDK's exec stream never names the model, so the adapter reads it
+  from Codex's own session record: the rollout file
+  (`<CODEX_HOME>/sessions/YYYY/MM/DD/rollout-…-<threadId>.jsonl`, local start
+  date), whose `turn_context` line carries `payload.model`. Keyed by
+  `thread.started`'s id; bounded poll (20×500ms — the line lands ~3s in) with
+  a turn-end re-kick; failure-silent (the "codex" stand-in remains); never
+  runs when a model was configured (`CODEX_MODEL` wins). Tier-1 fixture tests
+  + live-verified. **Side-finding worth knowing:** the label flipped to
+  `gpt-5.5`, not the terminal's `gpt-5.6-sol` — the SDK vendors its own codex
+  binary (0.142.5, default gpt-5.5) while Kyle's terminal codex is 0.144.5
+  (default gpt-5.6-sol), so SDK-driven sessions run an older default than the
+  user's terminal. F.5's app-server migration (driving the system codex)
+  would close that divergence too; until then `CODEX_MODEL` is the lever.
+
 - [ ] **Step F.5 — Codex app-server migration (approvals, streaming, visible
   reasoning)** *(post-launch, demand-gated — the big one)*
   - Goal: close the three live-confirmed divergences from terminal Codex, all
@@ -1081,6 +1118,10 @@ fix restores what that agent's *terminal* user already sees — nothing invented
     path). (2) **No streaming** — the reply lands as one buffered
     `item.completed` lump. (3) **Reasoning can be entirely absent** — observed:
     79 reasoning tokens spent, no `reasoning` item emitted at all.
+    (4, added 2026-07-16 via F.7) **the SDK vendors its own codex binary**, so
+    sessions can run an older default model than the user's terminal codex —
+    observed: vendored 0.142.5 → gpt-5.5 vs terminal 0.144.5 → gpt-5.6-sol;
+    the app-server surface drives the system codex and closes this too.
   - Build: drive Codex's **app-server** (JSON-RPC 2.0, the surface behind the
     VS Code extension — see codex.spike.md's original event table):
     `requestApproval` → `permission_request` (the browser bar + wire machinery

@@ -311,6 +311,16 @@ const CONTEXT_LINE = JSON.stringify({
   payload: { model: "gpt-5.6-sol", settings: { model: "gpt-5.6-sol" } },
 });
 
+/** The minimal turn whose thread.started kicks off the model lookup. */
+const lookupTurn = (threadId: string): ThreadEvent[] => [
+  ev({ type: "thread.started", thread_id: threadId }),
+  ev({ type: "turn.started" }),
+  ev({
+    type: "turn.completed",
+    usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1, reasoning_output_tokens: 0 },
+  }),
+];
+
 test("resolveRolloutModel: reads the model from the thread's turn_context line", async () => {
   const home = rolloutFixture("t-1", [META_LINE, "not json {", CONTEXT_LINE]);
   assert.equal(await resolveRolloutModel("t-1", home), "gpt-5.6-sol");
@@ -322,11 +332,7 @@ test("resolveRolloutModel: reads the model from the thread's turn_context line",
 
 test("thread.started triggers the lookup: modelName goes from the stand-in to the truth", async () => {
   const home = rolloutFixture("t-3", [META_LINE, CONTEXT_LINE]);
-  const { s, awaitTurnEnd } = makeSession([
-    ev({ type: "thread.started", thread_id: "t-3" }),
-    ev({ type: "turn.started" }),
-    ev({ type: "turn.completed", usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1, reasoning_output_tokens: 0 } }),
-  ]);
+  const { s, awaitTurnEnd } = makeSession(lookupTurn("t-3"));
   (s as unknown as { codexHome: string }).codexHome = home;
   assert.equal(s.modelName, "codex"); // the stand-in, pre-turn
   s.pushPrompt("go");
@@ -341,11 +347,7 @@ test("thread.started triggers the lookup: modelName goes from the stand-in to th
 
 test("a configured model is the label — the rollout lookup never overrides it", async () => {
   const home = rolloutFixture("t-4", [CONTEXT_LINE]);
-  const { s, awaitTurnEnd } = makeSession([
-    ev({ type: "thread.started", thread_id: "t-4" }),
-    ev({ type: "turn.started" }),
-    ev({ type: "turn.completed", usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1, reasoning_output_tokens: 0 } }),
-  ]);
+  const { s, awaitTurnEnd } = makeSession(lookupTurn("t-4"));
   (s as unknown as { codexHome: string }).codexHome = home;
   (s as unknown as { modelLabel: string }).modelLabel = "o3-configured";
   s.pushPrompt("go");
