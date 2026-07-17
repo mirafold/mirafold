@@ -671,7 +671,8 @@ transcript before a replay repaints it (fired on a non-resumed
 The shell also owns two pieces of shell-drawn UI the agent can't fake: the
 **permission bar** (pending `permission_request`s, oldest first, allow/deny —
 requests that outlive their turn are voided) and the **tab status light**
-(title + favicon reflect idle/busy/permission, so a row of tabs reads as a
+(title + favicon reflect idle/busy/permission — the brand-M favicon gains a
+colored corner badge when busy or awaiting permission, so a row of tabs reads as a
 fleet view). Busy state is derived entirely from the wire — `user_prompt`
 sets it, `turn_end` clears it — so a replayed in-flight turn restores it
 correctly.
