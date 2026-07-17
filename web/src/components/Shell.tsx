@@ -225,8 +225,9 @@ export function Shell() {
     return () => window.removeEventListener("keydown", onKey);
   }, [busy, bus]);
 
-  // The browser tab is a status light: title + favicon reflect session state
-  // so a row of tabs reads as a fleet view (Step 4.2).
+  // The browser tab is a status light layered on the brand mark: the M
+  // favicon always shows, with a corner badge when the session is busy or
+  // waiting on permission, so a row of tabs reads as a fleet view (Step 4.2).
   useEffect(() => {
     const state = asks.length > 0 ? "permission" : busy ? "busy" : "idle";
     document.title =
@@ -236,24 +237,54 @@ export function Shell() {
           ? "✳ working — Mirafold"
           : "Mirafold";
     const canvas = document.createElement("canvas");
-    canvas.width = canvas.height = 32;
+    canvas.width = canvas.height = 64;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
+    // Literal geometry + colors (S.1 exception): a canvas favicon can't load
+    // the SVG file or consume CSS vars — the rounded surface, polyline, and
+    // #40d17f mirror web/public/favicon.svg by value, the badge colors the
+    // dark palette's --info/--warn-fg.
     ctx.beginPath();
-    ctx.arc(16, 16, 10, 0, Math.PI * 2);
-    // Literal colors (S.1 exception): a canvas favicon can't consume CSS
-    // vars, and the tab icon isn't part of the themed page — these mirror
-    // the dark palette's --warn-fg/--info/--accent by value.
-    ctx.fillStyle =
-      state === "permission" ? "#d4a852" : state === "busy" ? "#7ab8ff" : "#4ade80";
+    ctx.roundRect(0, 0, 64, 64, 13);
+    ctx.fillStyle = "#0a0d13";
     ctx.fill();
-    let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
-    if (!link) {
-      link = document.createElement("link");
-      link.rel = "icon";
-      document.head.appendChild(link);
+    const m: [number, number][] = [
+      [24, 47], [18, 47], [18, 17], [32, 36], [46, 17], [46, 47], [40, 47],
+    ];
+    ctx.beginPath();
+    ctx.moveTo(m[0][0], m[0][1]);
+    for (const [x, y] of m.slice(1)) ctx.lineTo(x, y);
+    ctx.strokeStyle = "#40d17f";
+    ctx.lineWidth = 6;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.stroke();
+    if (state !== "idle") {
+      // A background-colored halo so the badge reads against the M itself.
+      ctx.beginPath();
+      ctx.arc(46, 46, 18, 0, Math.PI * 2);
+      ctx.fillStyle = "#0a0d13";
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(46, 46, 14, 0, Math.PI * 2);
+      ctx.fillStyle = state === "permission" ? "#d4a852" : "#7ab8ff";
+      ctx.fill();
     }
-    link.href = canvas.toDataURL("image/png");
+    const href = canvas.toDataURL("image/png");
+    const links = document.querySelectorAll<HTMLLinkElement>('link[rel="icon"]');
+    if (links.length === 0) {
+      const link = document.createElement("link");
+      link.rel = "icon";
+      link.href = href;
+      document.head.appendChild(link);
+      return;
+    }
+    // Overwrite every icon candidate — with the SVG + PNG fallbacks all
+    // pointing at one image, the browser's pick doesn't matter.
+    for (const link of links) {
+      link.type = "image/png";
+      link.href = href;
+    }
   }, [busy, asks.length]);
 
   const answer = (id: string, allow: boolean) => {
