@@ -134,13 +134,7 @@ type WireMsgBody =
   // clients strip it and keep today's one-row-per-agent picker.
   | {
       type: "agents";
-      agents: {
-        agent: AgentName;
-        live: boolean;
-        blocked?: boolean;
-        detail?: string;
-        backends?: AgentBackend[];
-      }[];
+      agents: AgentInfo[];
       default: AgentName;
       cwd?: string;
       home?: string;
@@ -203,6 +197,16 @@ type WireMsgBody =
   // tab). A per-viewport control signal — an attached viewport leaves to mission
   // control; never buffered or sequenced (#11).
   | { type: "session_ended"; sessionId: string };
+
+/** One agent's row in the `agents` hello — what the onboarding picker renders
+ *  (P.4 tri-state via `live`/`blocked`, R.4k `detail`, N.3 `backends`). */
+export type AgentInfo = {
+  agent: AgentName;
+  live: boolean;
+  blocked?: boolean;
+  detail?: string;
+  backends?: AgentBackend[];
+};
 
 /**
  * One way an agent could run (N.3) — a row in the second-step picker. A

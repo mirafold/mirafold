@@ -12,7 +12,7 @@ import {
   type ThreadItem,
 } from "@openai/codex-sdk";
 import type { WireMsg } from "../protocol";
-import { type AgentSession, type TodoItem, capOutput, definedEnv, joinTextBlocks } from "./types";
+import { type AgentSession, type TodoItem, capOutput, envWithout, joinTextBlocks } from "./types";
 import { MIRAFOLD_MCP, RENDER_ID_RE, generativeUIMsg, renderMcpCommand } from "./render-mcp-cmd";
 import { AsyncQueue, CLOSE } from "./async-queue";
 
@@ -171,8 +171,12 @@ export class CodexSession implements AgentSession {
       ...(kind === "api-key" && process.env.OPENAI_API_KEY
         ? { apiKey: process.env.OPENAI_API_KEY }
         : {}),
-      ...(kind === "subscription"
-        ? { env: (({ OPENAI_API_KEY: _, ...rest }) => rest)(definedEnv()) }
+      // subscription: the explicit pick must beat the env var's precedence.
+      // local: the key has no business in a process pointed at a local server
+      // (Codex ignores it once model_provider points elsewhere, but withhold
+      // it anyway — symmetry with the claude adapter; 2026-07-17 audit).
+      ...(kind === "subscription" || kind === "local"
+        ? { env: envWithout("OPENAI_API_KEY") }
         : {}),
       // Inject Mirafold's generative-UI tools as a stdio MCP server. Codex
       // calls them like any tool; the adapter turns those calls into render/

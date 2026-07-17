@@ -90,6 +90,15 @@ test("N.2: nothing listening → empty result, no throw", async () => {
   assert.deepEqual(await probeLocalServers([{ origin, runtime: "vllm" }]), []);
 });
 
+test("2026-07-17 audit: an oversized body is refused at the cap, never parsed", async () => {
+  // ~2 MB of valid JSON — a hostile local listener, not a catalog. The chunked
+  // reader must abandon it at the 1 MB cap instead of buffering + parsing.
+  const huge = `{"models":[{"name":"${"x".repeat(2_000_000)}"}]}`;
+  await withServer({ "/api/tags": () => huge, "/v1/models": () => huge }, async (origin) => {
+    assert.deepEqual(await probeLocalServers([{ origin, runtime: "custom" }]), []);
+  });
+});
+
 test("N.2: malformed and empty catalogs are skipped silently", async () => {
   await withServer(
     { "/v1/models": "definitely not json", "/api/tags": JSON.stringify({ models: [] }) },

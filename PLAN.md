@@ -1103,6 +1103,24 @@ optional fields / message types), per the locked protocol contract.
   MIRAFOLD_LOCAL_ENDPOINTS / MIRAFOLD_LOCAL_DISCOVERY, README component
   map + env-knob list updated.
 
+**Phase N security audit (2026-07-17, same day) — clean, three hardenings
+landed immediately** (Kyle's standing rule, recorded here: a theoretical
+finding whose fix is minimal with no downside gets fixed NOW, not
+roadmapped): (1) the probe caps response SIZE (1 MB, chunked read) not just
+time — a hostile local listener can no longer memory-spike the daemon;
+(2) the codex local-endpoint branch withholds OPENAI_API_KEY from the
+engine env (symmetry with claude's local branch — no key near a local
+server); (3) SECURITY.md gained a "Known trust decisions" section
+disclosing that local servers can't be authenticated (spoofing on shared
+machines) with the guards + the discovery off-switch named. Verified: the
+client can never steer an agent at an arbitrary URL (endpoint validated
+against the daemon's own probe cache), no secrets ride the new wire
+fields, and the relay's no-subscription gate carries through chosen
+backends. No-action findings (recorded): backends list reaches paired
+remote viewports (paired-device trust); per-connection probe throttle
+amplification (gated + negligible). The R.7 `!`-output SECURITY.md note
+still rides R.7 as planned.
+
 **Phase N is COMPLETE (2026-07-17)** — all six steps shipped in one day;
 final suite state Tier-1 213/213, Tier-2 82/82, Tier-3 28/28. One
 residual rides R.6 (local-turn completion on realistic hardware). One
