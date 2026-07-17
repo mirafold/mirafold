@@ -228,6 +228,7 @@ export function openConnection(
       sessionId: e.id,
       cwd: e.cwd,
       agent: e.agent,
+      model: e.session.modelName,
       ...(resumed ? { resumed: true } : {}),
       ...(e.live ? {} : { demo: true }),
       // The caller asked for a session that no longer exists and got a

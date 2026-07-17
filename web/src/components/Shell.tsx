@@ -46,6 +46,7 @@ export function Shell() {
     sessionId?: string;
     cwd?: string;
     agent?: AgentName;
+    model?: string;
     demo?: boolean;
   }>({});
   const [usage, setUsage] = useState<Usage>(ZERO_USAGE);
@@ -159,7 +160,7 @@ export function Shell() {
             version: m.version,
           });
         } else if (m.type === "session_created") {
-          setMeta({ sessionId: m.sessionId, cwd: m.cwd, agent: m.agent, demo: m.demo });
+          setMeta({ sessionId: m.sessionId, cwd: m.cwd, agent: m.agent, model: m.model, demo: m.demo });
           setNotices((n) => ({
             ...n,
             onboarding: null,
@@ -400,6 +401,9 @@ export function Shell() {
       <StatusBar
         connected={connected}
         agent={meta.agent}
+        // The engine's live report (usage) wins once a turn has run; until
+        // then, what the daemon knew at attach ("default" beats nothing).
+        model={usage.model ?? meta.model}
         sessionId={meta.sessionId}
         cwd={meta.cwd}
         usage={usage}

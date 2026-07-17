@@ -154,10 +154,11 @@ export function FleetView() {
                   </button>
                 </span>
               )}
+              {/* Agent before model, matching the in-session status bar (2026-07-17, Kyle). */}
+              <span className="fleet-agent">{s.agent}</span>
               <span className="fleet-model" title="model">
                 {s.model}
               </span>
-              <span className="fleet-agent">{s.agent}</span>
               <span className="fleet-spacer" />
               <span className="fleet-id" title="session id">
                 {s.sessionId}

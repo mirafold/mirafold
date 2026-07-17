@@ -23,6 +23,7 @@ export function tokens(n: number): string {
 export function StatusBar({
   connected,
   agent,
+  model,
   sessionId,
   cwd,
   usage,
@@ -35,6 +36,9 @@ export function StatusBar({
 }: {
   connected: boolean;
   agent?: string;
+  // Shown whenever known — session_created carries the attach-time label
+  // ("default", "codex", …) and the usage stream refines it (2026-07-17, Kyle).
+  model?: string;
   sessionId?: string;
   cwd?: string;
   usage: Usage;
@@ -109,10 +113,9 @@ export function StatusBar({
         {dot}
       </button>
       {agent && <span className="sb-item sb-agent" title="the terminal agent behind this session">{agent}</span>}
-      {/* Model only when it adds something beyond the agent name (e.g. codex→codex is redundant). */}
-      {usage.model && usage.model !== agent && (
-        <span className="sb-item sb-model sb-sep">{usage.model}</span>
-      )}
+      {/* Agent then model, left to right — model shown whenever known, even
+          when imperfect ("default", agent-named) (2026-07-17, Kyle). */}
+      {model && <span className="sb-item sb-model sb-sep" title="model">{model}</span>}
       {sessionId && <span className="sb-item sb-sep">{sessionId}</span>}
       {showCwd && (
         <span className="sb-item sb-sep sb-cwd" title={cwd}>
