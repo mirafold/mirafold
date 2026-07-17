@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { existsSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import os from "node:os";
+import path from "node:path";
 import type { AgentName, ClientMsg, WireMsg } from "../protocol";
 import type { SessionEntry, SessionRegistry } from "./registry";
 import { runActionTool } from "./actions";
@@ -23,17 +25,45 @@ const BANG_CONTEXT_CAP = Number(process.env.BANG_CONTEXT_CAP ?? 16_000);
 const BANG_OUTPUT_CAP_BYTES = Number(process.env.BANG_OUTPUT_CAP_BYTES ?? 262_144);
 
 /**
- * Prompts carry any finished-since-last-turn `!` transcripts as
- * leading context — terminal-faithful (the model sees what you ran), and
- * agent-neutral: it consumes only the AgentSession seam's pushPrompt, so
- * every engine gets it without per-adapter code. The user_prompt broadcast
- * stays the raw typed text; only the engine sees the injected block (4.9).
+ * Read where the shell ended up (the EXIT-trap handoff in pty.ts) and apply
+ * the terminal harness's rule: `cd` persists across `!` commands, but only
+ * within the workspace and its children — an escape is undone and announced
+ * with the same notice the terminal shows. A missing handoff file (exotic
+ * shell, the command `exec`'d away, win32) means the cwd didn't move.
  */
-const pushWithBangContext = (entry: SessionEntry, text: string) => {
-  const blocks = entry.pendingBang.splice(0);
-  entry.session.pushPrompt(
-    blocks.length ? `${blocks.join("\n")}\n${text}` : text,
-  );
+const applyCwdHandoff = (
+  registry: SessionRegistry,
+  e: SessionEntry,
+  runCwd: string,
+  cwdFile: string,
+) => {
+  let landed: string | undefined;
+  try {
+    // realpath also drops a trailing newline's worth of ambiguity: the
+    // captured path must exist NOW or it can't become the next spawn cwd.
+    landed = realpathSync(readFileSync(cwdFile, "utf8").trim());
+  } catch {
+    /* no capture for this shell/command */
+  }
+  try {
+    rmSync(cwdFile, { force: true });
+  } catch {
+    /* never let tmpfile cleanup escape into the PTY exit path */
+  }
+  if (!landed || landed === runCwd) return;
+  let root = e.cwd;
+  try {
+    root = realpathSync(e.cwd); // symlinked workspace: compare realpath to realpath
+  } catch {
+    /* keep the un-resolved root */
+  }
+  const rel = path.relative(root, landed);
+  if (rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel))) {
+    e.bangCwd = landed;
+  } else {
+    e.bangCwd = e.cwd;
+    registry.broadcast(e, { type: "notice", text: `Shell cwd was reset to ${e.cwd}` });
+  }
 };
 
 /**
@@ -50,11 +80,17 @@ const startBang = (registry: SessionRegistry, e: SessionEntry, command: string, 
   // Per-command wire budget (bytes broadcast / bytes withheld) (R.4d).
   let wireSent = 0;
   let wireElided = 0;
+  // The bang cwd can vanish between commands (we cd'd somewhere the agent
+  // then deleted) — fall back to the workspace root, not a failed spawn.
+  if (!existsSync(e.bangCwd)) e.bangCwd = e.cwd;
+  const runCwd = e.bangCwd;
+  // Out-of-band cwd handoff file (pty.ts) — never part of the PTY stream.
+  const cwdFile = path.join(os.tmpdir(), `mirafold-bang-cwd-${randomUUID().slice(0, 8)}`);
   registry.broadcast(e, { type: "bang_start", command, id });
   try {
     const proc = spawnBang(
       command,
-      e.cwd,
+      runCwd,
       (data) => {
         output += data;
         if (output.length > BANG_CONTEXT_CAP) {
@@ -95,14 +131,22 @@ const startBang = (registry: SessionRegistry, e: SessionEntry, command: string, 
           });
         }
         registry.broadcast(e, { type: "bang_end", id, exitCode });
-        // Queue the transcript for the agent's next turn. Tail-kept cap;
+        applyCwdHandoff(registry, e, runCwd, cwdFile);
+        // The transcript goes to the agent NOW, as its own turn — the
+        // terminal answers a `!` immediately, not at the next typed prompt.
+        // Agent-neutral (only the pushPrompt seam), and no user_prompt
+        // broadcast: the bang strip itself is the visible trigger. The cwd
+        // attributes keep the agent oriented — its own tools' shell is a
+        // separate process and does NOT follow a bang `cd`. Tail-kept cap;
         // echo-off input (passwords) was never in the PTY output, so it
         // can't leak into context here either.
         const tail = elided > 0 ? `(… ${elided} chars elided …)\n` + output : output;
-        e.pendingBang.push(
-          `<bash-input>${command}</bash-input>\n<bash-output exit-code="${exitCode ?? "killed"}">\n${tail}</bash-output>`,
+        const after = e.bangCwd !== runCwd ? ` cwd-after="${e.bangCwd}"` : "";
+        e.session.pushPrompt(
+          `<bash-input cwd="${runCwd}">${command}</bash-input>\n<bash-output exit-code="${exitCode ?? "killed"}"${after}>\n${tail}</bash-output>`,
         );
       },
+      cwdFile,
     );
     e.bang = { id, proc };
   } catch (err) {
@@ -289,12 +333,12 @@ export function openConnection(
           // Echo the user turn through the session stream so every viewport
           // (and the replay buffer) renders the command strip.
           registry.broadcast(entry, { type: "user_prompt", text: msg.text });
-          pushWithBangContext(entry, msg.text);
+          entry.session.pushPrompt(msg.text);
         }
         break;
       case "bang":
-        // The `!` passthrough (4.9): run it in a PTY in the session's cwd —
-        // instant, zero tokens, never routed through the model.
+        // The `!` passthrough (4.9): run it in a PTY in the session's bang
+        // cwd; the finished transcript reaches the agent as its own turn.
         if (!entry || typeof msg.command !== "string" || !msg.command.trim()) break;
         // `id` is a client-minted string (ClientMsg). Validate the RAW value —
         // String(msg.id) would coerce a missing/numeric id ("undefined", "123")
@@ -358,7 +402,7 @@ export function openConnection(
         if (msg.action.kind === "prompt" && typeof msg.action.text === "string") {
           console.log(`[action] prompt from render ${src}`);
           registry.broadcast(entry, { type: "user_prompt", text: msg.action.text });
-          pushWithBangContext(entry, msg.action.text);
+          entry.session.pushPrompt(msg.action.text);
         } else if (msg.action.kind === "tool" && typeof msg.action.name === "string") {
           const id = `action-${randomUUID().slice(0, 8)}`;
           registry.broadcast(entry, {

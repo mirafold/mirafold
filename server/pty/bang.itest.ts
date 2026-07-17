@@ -1,5 +1,8 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, realpathSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import type { WireMsg } from "../protocol";
 import { startDaemon, createSession, TestClient, type Daemon } from "../testing/itest-harness";
 
@@ -153,6 +156,51 @@ test("a failing shell spawn errors the session, never the daemon (R.4f)", async 
 
   client.close();
   await bad.stop();
+});
+
+test("bang `cd` persists inside the workspace, escapes reset with the terminal's notice, and every transcript triggers an agent turn", async () => {
+  const bd = await startDaemon();
+  // realpath'd up front: the daemon realpaths the captured cwd, so the
+  // assertions must compare like with like (macOS /tmp is a symlink).
+  const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), "mirafold-bang-cwd-")));
+  mkdirSync(path.join(root, "child"));
+  const client = new TestClient(bd.port);
+  await client.opened();
+  await client.type("agents");
+  client.send({ type: "create", agent: "claude-code", cwd: root } as never);
+  await client.type("session_created");
+
+  const bang = async (id: string, command: string) => {
+    client.send({ type: "bang", id, command } as never);
+    await client.waitFor((m) => m.type === "bang_end" && (m as Any).id === id, `bang_end ${id}`, 20_000);
+  };
+  const outputOf = (id: string) =>
+    (client.received as Any[])
+      .filter((m) => m.type === "bang_output" && m.id === id)
+      .map((m) => m.data)
+      .join("");
+
+  // `cd child` sticks: the NEXT command runs there. And though no prompt is
+  // ever typed in this test, a turn follows each bang — the transcript
+  // reached the agent immediately (the mock answers every pushPrompt).
+  await bang("cwd1", "cd child");
+  await client.type("turn_end", 30_000);
+  await bang("cwd2", "pwd");
+  assert.ok(outputOf("cwd2").includes(path.join(root, "child")), "cd did not persist");
+  await client.type("turn_end", 30_000);
+
+  // Escaping above the workspace is undone and announced, like the terminal.
+  await bang("cwd3", "cd ../..");
+  const notice = (await client.type("notice", 20_000)) as Any;
+  assert.equal(notice.text, `Shell cwd was reset to ${root}`);
+  await client.type("turn_end", 30_000);
+  await bang("cwd4", "pwd");
+  const back = outputOf("cwd4");
+  assert.ok(back.includes(root), "cwd lost entirely after the reset");
+  assert.ok(!back.includes(path.join(root, "child")), "reset did not land on the root");
+
+  client.close();
+  await bd.stop();
 });
 
 test("one bang at a time; bang_kill ends it with a null exit code", async () => {

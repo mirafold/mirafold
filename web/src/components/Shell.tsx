@@ -293,7 +293,8 @@ export function Shell() {
   };
 
   // A leading `!` is intercepted by the trusted shell and runs as a real
-  // shell command — instant, zero tokens, never routed through the model (4.9).
+  // shell command (4.9); the finished transcript then reaches the agent as
+  // its own turn, exactly as the terminal harness does.
   const send = (text: string) => {
     const m = text.match(/^!\s*(.+)$/s);
     if (m) {

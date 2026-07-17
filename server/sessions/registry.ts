@@ -49,6 +49,10 @@ export function resolveCwd(cwd?: string): string {
 export type SessionEntry = {
   id: string;
   cwd: string;
+  // Where the next `!` command runs. `cd` in a bang persists here, confined
+  // to cwd and its children (the escape guard in connection.ts resets it) —
+  // cwd itself stays the immutable workspace root for everything else.
+  bangCwd: string;
   agent: AgentName;
   // False ⇒ the agent had no credentials and `session` is the scripted
   // mock — carried to the shell as session_created.demo so the banner draws (R.4b).
@@ -72,9 +76,6 @@ export type SessionEntry = {
   // The one running `!` command, if any (one at a time per session,
   // like a terminal). The proc itself never leaves the server (4.9).
   bang?: { id: string; proc: BangProc };
-  // Finished `!` transcripts waiting to ride into the agent's context with
-  // the next prompt — terminal-faithful: the model sees what you ran.
-  pendingBang: string[];
 };
 
 /**
@@ -116,6 +117,7 @@ export class SessionRegistry {
     const entry: SessionEntry = {
       id,
       cwd: dir,
+      bangCwd: dir,
       agent: backend.agent,
       live: backend.live,
       kind: backend.kind,
@@ -126,7 +128,6 @@ export class SessionRegistry {
       name: path.basename(dir) || dir,
       status: "idle",
       lastActivity: Date.now(),
-      pendingBang: [],
     };
     session.onMessage((msg) => this.broadcast(entry, msg));
     this.entries.set(id, entry);

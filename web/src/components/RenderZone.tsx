@@ -471,6 +471,11 @@ export function RenderZone({
                   )}
                 </div>
                 {entry.output && <pre className="bang-output">{entry.output}</pre>}
+                {entry.done && entry.exitCode === 0 && !entry.output && (
+                  // Silent success must still SAY so — an empty block reads
+                  // as the command having vanished (terminal parity).
+                  <div className="bang-no-output">(completed with no output)</div>
+                )}
               </div>
             );
           }

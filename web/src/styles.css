@@ -1335,6 +1335,14 @@ body {
   color: var(--error);
 }
 
+.bang-no-output {
+  margin: 0 0 4px;
+  padding: 2px 14px 6px 30px;
+  font-size: 0.85em;
+  font-style: italic;
+  color: var(--fg-faint);
+}
+
 .bang-output {
   margin: 0 0 4px;
   padding: 8px 14px 10px 30px;
