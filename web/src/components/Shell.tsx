@@ -15,6 +15,8 @@ import {
 import { ThemePicker } from "./ThemePicker";
 import { tildify } from "../tildify";
 import { agentLabel, connectHint } from "../agents-meta";
+import { paintTabStatus } from "../tab-status";
+import { useEscapeKey } from "../use-escape";
 
 // The zone-message type lives with the bus (H.9); re-exported so consumers
 // of the shell's contract (RenderZone) keep their import site.
@@ -217,75 +219,11 @@ export function Shell() {
   );
 
   // Esc interrupts from anywhere in the page, not just the textarea.
-  useEffect(() => {
-    if (!busy) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") bus.interrupt();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [busy, bus]);
+  useEscapeKey(busy ? () => bus.interrupt() : undefined);
 
-  // The browser tab is a status light layered on the brand mark: the M
-  // favicon always shows, with a corner badge when the session is busy or
-  // waiting on permission, so a row of tabs reads as a fleet view (Step 4.2).
+  // Tab title + favicon status light (Step 4.2) — painter in tab-status.ts.
   useEffect(() => {
-    const state = asks.length > 0 ? "permission" : busy ? "busy" : "idle";
-    document.title =
-      state === "permission"
-        ? "⚠ permission — Mirafold"
-        : state === "busy"
-          ? "✳ working — Mirafold"
-          : "Mirafold";
-    const canvas = document.createElement("canvas");
-    canvas.width = canvas.height = 64;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    // Literal geometry + colors (S.1 exception): a canvas favicon can't load
-    // the SVG file or consume CSS vars — the rounded surface, polyline, and
-    // #40d17f mirror web/public/favicon.svg by value, the badge colors the
-    // dark palette's --info/--warn-fg.
-    ctx.beginPath();
-    ctx.roundRect(0, 0, 64, 64, 13);
-    ctx.fillStyle = "#0a0d13";
-    ctx.fill();
-    const m: [number, number][] = [
-      [24, 47], [18, 47], [18, 17], [32, 36], [46, 17], [46, 47], [40, 47],
-    ];
-    ctx.beginPath();
-    ctx.moveTo(m[0][0], m[0][1]);
-    for (const [x, y] of m.slice(1)) ctx.lineTo(x, y);
-    ctx.strokeStyle = "#40d17f";
-    ctx.lineWidth = 6;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    ctx.stroke();
-    if (state !== "idle") {
-      // A background-colored halo so the badge reads against the M itself.
-      ctx.beginPath();
-      ctx.arc(46, 46, 18, 0, Math.PI * 2);
-      ctx.fillStyle = "#0a0d13";
-      ctx.fill();
-      ctx.beginPath();
-      ctx.arc(46, 46, 14, 0, Math.PI * 2);
-      ctx.fillStyle = state === "permission" ? "#d4a852" : "#7ab8ff";
-      ctx.fill();
-    }
-    const href = canvas.toDataURL("image/png");
-    const links = document.querySelectorAll<HTMLLinkElement>('link[rel="icon"]');
-    if (links.length === 0) {
-      const link = document.createElement("link");
-      link.rel = "icon";
-      link.href = href;
-      document.head.appendChild(link);
-      return;
-    }
-    // Overwrite every icon candidate — with the SVG + PNG fallbacks all
-    // pointing at one image, the browser's pick doesn't matter.
-    for (const link of links) {
-      link.type = "image/png";
-      link.href = href;
-    }
+    paintTabStatus(asks.length > 0 ? "permission" : busy ? "busy" : "idle");
   }, [busy, asks.length]);
 
   const answer = (id: string, allow: boolean) => {

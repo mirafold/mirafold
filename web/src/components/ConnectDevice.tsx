@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import qrcode from "qrcode-generator";
+import { useEscapeKey } from "../use-escape";
 
 // The shell-owned "connect a device" affordance. The daemon hands local
 // viewports the relay's HTTP origin + the pairing code (agents hello); this
@@ -48,14 +49,7 @@ export function ConnectDevice({ relay }: { relay?: RelayInfo }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open]);
+  useEscapeKey(open ? () => setOpen(false) : undefined);
 
   if (!relay) return null;
   const href = `${relay.url}/#code=${relay.code}${

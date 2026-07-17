@@ -1,5 +1,5 @@
-import { useEffect } from "react";
 import { THEMES, parseThemeTokens, type ThemeAppearance } from "../themes/manifest";
+import { useEscapeKey } from "../use-escape";
 
 // The settings card (S.4) — SHELL-OWNED UI, the one new chrome affordance of
 // Phase S (the pill is locked unchanged). Centered modal over the scrim,
@@ -42,13 +42,7 @@ export function ThemePicker({
   onPick: (id: string) => void;
   onClose: () => void;
 }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEscapeKey(onClose);
 
   return (
     <div className="settings-backdrop" onClick={onClose}>

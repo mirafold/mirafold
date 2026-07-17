@@ -43,21 +43,25 @@ export function mcpText(content: unknown): string {
  * The date dir is the session's LOCAL start date — today is checked first,
  * yesterday too for a session straddling midnight.
  */
+/** `<codexHome>/sessions/YYYY/MM/DD` — the CLI's rollout layout, LOCAL date.
+ *  Exported for the test fixture (the bangShell pattern), so the layout is
+ *  written down exactly once. */
+export const rolloutDateDir = (codexHome: string, d: Date) =>
+  path.join(
+    codexHome,
+    "sessions",
+    String(d.getFullYear()),
+    String(d.getMonth() + 1).padStart(2, "0"),
+    String(d.getDate()).padStart(2, "0"),
+  );
+
 export async function resolveRolloutModel(
   threadId: string,
   codexHome: string,
 ): Promise<string | undefined> {
-  const dateDir = (d: Date) =>
-    path.join(
-      codexHome,
-      "sessions",
-      String(d.getFullYear()),
-      String(d.getMonth() + 1).padStart(2, "0"),
-      String(d.getDate()).padStart(2, "0"),
-    );
   const today = new Date();
   const yesterday = new Date(today.getTime() - 86_400_000);
-  for (const dir of [dateDir(today), dateDir(yesterday)]) {
+  for (const dir of [rolloutDateDir(codexHome, today), rolloutDateDir(codexHome, yesterday)]) {
     let names: string[];
     try {
       names = await readdir(dir);
