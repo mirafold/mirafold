@@ -5,7 +5,7 @@ import os from "node:os";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import type { ThreadEvent } from "@openai/codex-sdk";
 import type { WireMsg } from "../protocol";
-import { CodexSession, resolveRolloutModel } from "./codex";
+import { CodexSession, resolveRolloutModel, rolloutDateDir } from "./codex";
 import { MIRAFOLD_MCP } from "./render-mcp-cmd";
 
 // L.2b2: the Codex event→WireMsg mapping and the turn grammar, on synthetic
@@ -286,14 +286,7 @@ test("interrupt: aborts silently — one turn_end, no error", async () => {
 
 const rolloutFixture = (threadId: string, lines: string[]) => {
   const home = mkdtempSync(path.join(os.tmpdir(), "codex-home-test-"));
-  const d = new Date();
-  const day = path.join(
-    home,
-    "sessions",
-    String(d.getFullYear()),
-    String(d.getMonth() + 1).padStart(2, "0"),
-    String(d.getDate()).padStart(2, "0"),
-  );
+  const day = rolloutDateDir(home, new Date());
   mkdirSync(day, { recursive: true });
   writeFileSync(
     path.join(day, `rollout-2026-07-16T21-58-26-${threadId}.jsonl`),

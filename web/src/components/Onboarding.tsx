@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { AgentName } from "@protocol";
 import { agentLabel, blockedHint, connectHint } from "../agents-meta";
+import { useEscapeKey } from "../use-escape";
 
 // The shell-owned onboarding picker. No agent is assumed — first run is
 // "choose your agent." Credentials never reach the browser; the server tells us
@@ -38,14 +39,7 @@ export function Onboarding({
   }, [defaultCwd]);
 
   // Same dismiss idiom as the settings card: backdrop click + Escape.
-  useEffect(() => {
-    if (!onDismiss) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onDismiss();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onDismiss]);
+  useEscapeKey(onDismiss);
 
   return (
     <div className="onb-overlay" onClick={onDismiss}>
