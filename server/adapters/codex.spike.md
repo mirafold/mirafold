@@ -170,7 +170,11 @@ was being handed to Codex, which 400s ("model not supported when using Codex
 with a ChatGPT account"). Fixed per inherit-don't-invent: model is now
 agent-specific (`modelFor()` — `DEFAULT_MODEL` for claude, `CODEX_MODEL`/
 `GEMINI_MODEL` for the others); unset → adapter passes no model → Codex inherits
-its own config default. This is why usage shows `model=codex`.
+its own config default. This is why usage showed `model=codex` at spike time.
+*(Superseded 2026-07-16, PLAN F.7: the adapter now reads the resolved model
+from Codex's own rollout record — `turn_context.payload.model` — so usage
+shows the real name, e.g. `gpt-5.5`; "codex" remains only as the pre-first-turn
+stand-in.)*
 
 **Two environment constraints (both faithful/expected, neither a code defect):**
 1. **Codex's bwrap sandbox can't build on this Ubuntu 24.04 box** —

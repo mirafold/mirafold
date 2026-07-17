@@ -22,6 +22,11 @@ import { AsyncQueue, CLOSE } from "./async-queue";
 // it: tsx + TS source in dev, node + the esbuild twin in the packaged install.
 const RENDER_MCP = renderMcpCommand();
 
+// The model label until the real one is known: no model configured means
+// Codex resolves its own default, which the rollout lookup below then names.
+// Comparisons against this are "is the label still the stand-in?" checks.
+const MODEL_STAND_IN = "codex";
+
 export function mcpText(content: unknown): string {
   if (!Array.isArray(content)) return content == null ? "" : String(content);
   return joinTextBlocks(content);
@@ -135,7 +140,7 @@ export class CodexSession implements AgentSession {
   constructor(opts: { workspaceDir: string; model?: string }) {
     const workspaceDir = path.resolve(opts.workspaceDir);
     mkdirSync(workspaceDir, { recursive: true });
-    this.modelLabel = opts.model ?? "codex";
+    this.modelLabel = opts.model ?? MODEL_STAND_IN;
     // No `env`: the SDK then inherits process.env, so the CLI finds the user's
     // ~/.codex auth + config. No `apiKey` unless one is set (ChatGPT login path).
     const codex = new Codex({
@@ -254,7 +259,7 @@ export class CodexSession implements AgentSession {
         });
         // A lookup that ran out its window mid-turn gets another chance now —
         // by turn end the rollout file certainly has its turn_context line.
-        if (this.modelLabel === "codex") void this.learnModel();
+        if (this.modelLabel === MODEL_STAND_IN) void this.learnModel();
         end();
         break;
       }
@@ -272,7 +277,7 @@ export class CodexSession implements AgentSession {
         // place Codex records the model it actually resolved. Learn it there
         // (fleet/status-bar parity with Claude's system/init, F.3), unless a
         // model was configured — then the label already tells the truth.
-        if (this.modelLabel === "codex") {
+        if (this.modelLabel === MODEL_STAND_IN) {
           this.lookupThreadId = ev.thread_id;
           void this.learnModel();
         }
@@ -289,7 +294,7 @@ export class CodexSession implements AgentSession {
     if (this.lookupRunning || !this.lookupThreadId) return;
     this.lookupRunning = true;
     try {
-      for (let attempt = 0; attempt < 20 && !this.closed && this.modelLabel === "codex"; attempt++) {
+      for (let attempt = 0; attempt < 20 && !this.closed && this.modelLabel === MODEL_STAND_IN; attempt++) {
         const model = await resolveRolloutModel(this.lookupThreadId, this.codexHome);
         if (model) {
           this.modelLabel = model;

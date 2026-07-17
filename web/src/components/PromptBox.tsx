@@ -7,6 +7,9 @@ const PLACEHOLDER = window.matchMedia?.("(max-width: 640px)")?.matches
   ? "Message · !cmd runs in your shell"
   : "Enter to send · Shift+Enter for newline · !cmd runs in your shell";
 
+// Persists the collapsible-cwd choice; anything but "hidden" means shown.
+const CWD_SHOWN_KEY = "mirafold-prompt-cwd";
+
 export function PromptBox({
   onSend,
   busy,
@@ -26,13 +29,13 @@ export function PromptBox({
   // persisted (2026-07-16). The status bar still carries the folder leaf,
   // so a collapsed prompt never hides which project this is.
   const [cwdShown, setCwdShown] = useState(
-    () => localStorage.getItem("mirafold-prompt-cwd") !== "hidden",
+    () => localStorage.getItem(CWD_SHOWN_KEY) !== "hidden",
   );
   const ref = useRef<HTMLTextAreaElement>(null);
 
   const toggleCwd = () => {
     setCwdShown((shown) => {
-      localStorage.setItem("mirafold-prompt-cwd", shown ? "hidden" : "shown");
+      localStorage.setItem(CWD_SHOWN_KEY, shown ? "hidden" : "shown");
       return !shown;
     });
   };
