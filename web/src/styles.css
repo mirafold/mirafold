@@ -1681,10 +1681,8 @@ body {
 }
 
 .onb-glyph {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 28px;
-  color: var(--accent);
-  line-height: 1;
+  width: 80px;
+  height: 80px;
 }
 
 .onb-title {
