@@ -49,7 +49,10 @@ const TOOL_DESCRIPTIONS: Record<RenderToolName, string> = {
     "Show a red/green line diff of a code change, made or proposed. Per file, pass the relevant lines as they were (before) and as they are/would be (after) — verbatim code, no +/- prefixes; the client computes the diff. Use instead of hand-written diff code fences.",
 };
 
-/** Appended to the claude_code system-prompt preset (Session options). */
+/** The generative-UI tool-preference nudge, shared across all three adapters:
+ *  Claude appends it to the claude_code system-prompt preset (Session
+ *  options); Codex and Gemini have no system-prompt hook (V.2), so their
+ *  adapters prepend it ahead of the first user turn instead. */
 export const RENDER_GUIDANCE = `
 ## Generative UI
 

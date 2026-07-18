@@ -19,13 +19,16 @@ type Turn = ThreadEvent[] | ((signal: AbortSignal) => AsyncGenerator<ThreadEvent
 const tmp = mkdtempSync(path.join(os.tmpdir(), "mcp-codex-test-"));
 const ev = (e: Record<string, unknown>) => e as unknown as ThreadEvent;
 
-/** A CodexSession on a stubbed thread; each pushPrompt consumes the next turn. */
+/** A CodexSession on a stubbed thread; each pushPrompt consumes the next turn.
+ *  `prompts` records the exact text each turn sent to the engine (V.2). */
 function makeSession(...turns: Turn[]) {
   const s = new CodexSession({ workspaceDir: tmp });
   const msgs: Any[] = [];
+  const prompts: string[] = [];
   s.onMessage((m) => msgs.push(m as Any));
   (s as unknown as { thread: unknown }).thread = {
-    runStreamed: async (_text: string, opts: { signal: AbortSignal }) => {
+    runStreamed: async (text: string, opts: { signal: AbortSignal }) => {
+      prompts.push(text);
       const turn = turns.shift() ?? [];
       return {
         events:
@@ -51,7 +54,7 @@ function makeSession(...turns: Turn[]) {
         }
       }, 5);
     });
-  return { s, msgs, turnEnds, awaitTurnEnd };
+  return { s, msgs, prompts, turnEnds, awaitTurnEnd };
 }
 
 const HAPPY: ThreadEvent[] = [
@@ -142,6 +145,166 @@ test("happy stream: full event→WireMsg mapping, exactly one turn_end", async (
 
   assert.equal(turnEnds(), 1);
   assert.equal(msgs[msgs.length - 1].type, "turn_end");
+  s.close();
+});
+
+test("first turn carries RENDER_GUIDANCE + the deferred-tools addendum; later turns are bare (V.2)", async () => {
+  const doneTurn = [
+    ev({ type: "turn.completed", usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1, reasoning_output_tokens: 0 } }),
+  ];
+  const { s, prompts, awaitTurnEnd } = makeSession(doneTurn, doneTurn);
+  s.pushPrompt("first ask");
+  await awaitTurnEnd(1);
+  s.pushPrompt("second ask");
+  await awaitTurnEnd(2);
+
+  assert.equal(prompts.length, 2);
+  // The guidance block, the deferral instruction, and the user's own text.
+  assert.ok(prompts[0].includes("## Generative UI"));
+  assert.ok(prompts[0].includes("DEFERRED"));
+  assert.ok(prompts[0].includes("tool search"));
+  assert.ok(prompts[0].endsWith("first ask"));
+  // Later turns ride the warm thread — no re-injection.
+  assert.equal(prompts[1], "second ask");
+  s.close();
+});
+
+test("agent_message with a mermaid xychart paints a chart component; prose stays text (V.2)", async () => {
+  const fence =
+    "Here you go:\n\n```mermaid\nxychart-beta\n  title \"Revenue\"\n  x-axis [Jan, Feb]\n  y-axis \"USD\" 0 --> 20\n  bar [10, 15]\n```\n\nDone.";
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ev({ type: "item.completed", item: { type: "agent_message", id: "m1", text: fence } }),
+    ev({ type: "turn.completed", usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1, reasoning_output_tokens: 0 } }),
+  ]);
+  s.pushPrompt("chart please");
+  await awaitTurnEnd();
+
+  const renders = msgs.filter((m) => m.type === "render" && m.component === "chart");
+  assert.equal(renders.length, 1);
+  assert.deepEqual(renders[0].props, {
+    title: "Revenue",
+    kind: "bar",
+    x: ["Jan", "Feb"],
+    series: [{ name: "USD", values: [10, 15] }],
+    yLabel: "USD",
+  });
+  assert.ok(typeof renders[0].id === "string" && renders[0].id.length > 0);
+  const texts = msgs.filter((m) => m.type === "text_delta").map((m) => m.text);
+  assert.ok(texts.some((t) => t.includes("Here you go:")));
+  assert.ok(texts.some((t) => t.includes("Done.")));
+  assert.ok(texts.every((t) => !t.includes("xychart")));
+  s.close();
+});
+
+// V.2 /model: a session with injectable model list + a makeCodex stub that
+// records thread construction, so switches are observable without an engine.
+function makeModelSession(listModels: () => Promise<any[]>) {
+  const calls: { kind: "start" | "resume"; id?: string; options: any }[] = [];
+  const prompts: string[] = [];
+  const fakeThread = () => ({
+    runStreamed: async (text: string) => {
+      prompts.push(text);
+      return {
+        events: (async function* () {
+          yield ev({ type: "turn.completed", usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1, reasoning_output_tokens: 0 } });
+        })(),
+      };
+    },
+  });
+  const s = new CodexSession({
+    workspaceDir: tmp,
+    listModels,
+    makeCodex: () =>
+      ({
+        startThread: (options: any) => {
+          calls.push({ kind: "start", options });
+          return fakeThread();
+        },
+        resumeThread: (id: string, options: any) => {
+          calls.push({ kind: "resume", id, options });
+          return fakeThread();
+        },
+      }) as any,
+  });
+  const msgs: Any[] = [];
+  s.onMessage((m) => msgs.push(m as Any));
+  const awaitTurnEnd = (count = 1, timeoutMs = 5_000) =>
+    new Promise<void>((resolve, reject) => {
+      const t0 = Date.now();
+      const poll = setInterval(() => {
+        if (msgs.filter((m) => m.type === "turn_end").length >= count) {
+          clearInterval(poll);
+          resolve();
+        } else if (Date.now() - t0 > timeoutMs) {
+          clearInterval(poll);
+          reject(new Error(`no turn_end #${count}; seen: ${msgs.map((m) => m.type).join(",")}`));
+        }
+      }, 5);
+    });
+  return { s, msgs, calls, prompts, awaitTurnEnd };
+}
+
+const CATALOG = [
+  { id: "gpt-9-sol", displayName: "GPT-9-Sol", description: "frontier", isDefault: true },
+  { id: "gpt-9-terra", displayName: "GPT-9-Terra", description: "balanced", isDefault: false },
+  { id: "gpt-9-luna", displayName: "GPT-9-Luna", description: "fast", isDefault: false },
+];
+
+test("bare /model paints the picker from codex's own catalog; no engine turn runs (V.2)", async () => {
+  const { s, msgs, prompts, awaitTurnEnd } = makeModelSession(async () => CATALOG);
+  s.pushPrompt("/model");
+  await awaitTurnEnd();
+
+  const q = msgs.find((m) => m.type === "render" && m.component === "question")!;
+  assert.ok(q, "picker question rendered");
+  const opts = (q.props as any).options;
+  assert.deepEqual(
+    opts.map((o: any) => o.text),
+    ["/model gpt-9-sol", "/model gpt-9-terra", "/model gpt-9-luna"],
+  );
+  // Default is current while the label is still the stand-in.
+  assert.equal(opts[0].label, "GPT-9-Sol (current)");
+  assert.equal(opts[1].label, "GPT-9-Terra");
+  assert.equal(opts[0].detail, "frontier");
+  assert.equal(prompts.length, 0); // never reached the engine
+  s.close();
+});
+
+test("/model <id>: unstarted session restarts the thread; started session resumes it (V.2)", async () => {
+  const { s, msgs, calls, awaitTurnEnd } = makeModelSession(async () => CATALOG);
+  assert.equal(calls.length, 1); // the constructor's startThread
+  s.pushPrompt("/model gpt-9-terra");
+  await awaitTurnEnd();
+  assert.deepEqual(calls[1], {
+    kind: "start", // no thread.started seen yet → nothing to resume
+    options: { workingDirectory: tmp, skipGitRepoCheck: true, model: "gpt-9-terra" },
+  });
+  assert.equal(s.modelName, "gpt-9-terra");
+  assert.ok(msgs.some((m) => m.type === "text_delta" && m.text.includes("gpt-9-terra")));
+
+  // Now with a live thread id: the switch must RESUME (history intact).
+  (s as any).threadId = "t-123";
+  s.pushPrompt("/model gpt-9-luna");
+  await awaitTurnEnd(2);
+  assert.deepEqual(calls[2], {
+    kind: "resume",
+    id: "t-123",
+    options: { workingDirectory: tmp, skipGitRepoCheck: true, model: "gpt-9-luna" },
+  });
+  assert.equal(s.modelName, "gpt-9-luna");
+  s.close();
+});
+
+test("/model failure paths: unreadable catalog errors honestly; extra words get usage (V.2)", async () => {
+  const { s, msgs, awaitTurnEnd } = makeModelSession(async () => {
+    throw new Error("spawn ENOENT");
+  });
+  s.pushPrompt("/model");
+  await awaitTurnEnd();
+  assert.ok(msgs.some((m) => m.type === "error" && m.message.includes("spawn ENOENT")));
+  s.pushPrompt("/model two words");
+  await awaitTurnEnd(2);
+  assert.ok(msgs.some((m) => m.type === "text_delta" && m.text.includes("Usage:")));
   s.close();
 });
 
