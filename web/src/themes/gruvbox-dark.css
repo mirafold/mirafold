@@ -4,29 +4,30 @@
    manifest.ts. Warm grays, low-contrast borders, and the signature
    green-yellow accent are the theme — derived tiers are the recipe's mixes,
    hand-tunes from the QA walk noted inline.
-   V.1 contrast retune (2026-07-18): fg/strong/body lifted a step past the
-   canonical fg1/fg2 grays, dimmer/faint lifted well clear of the surfaces
-   (faint was 1.7:1 worst-case), error brightened to clear 4.5:1 on --bg.
-   Hues unchanged. */
+   V.1 contrast retune (2026-07-18, two rounds — terminal-grade floors): the
+   background adopts the canonical HARD variant (bg0_h #1d2021, a real
+   gruvbox contrast option) with the surface stack a tight envelope of it;
+   the whole fg ramp lifted past the canonical grays (faint was 1.7:1
+   worst-case), error brightened to clear 4.5:1 on --bg. Hues unchanged. */
 
 :root[data-theme="gruvbox-dark"] {
   color-scheme: dark;
   /* surfaces */
-  --bg: #282828;
-  --bg-inset: #1e1e1e;
-  --surface: #32302f;
-  --surface-2: #3c3836;
-  --surface-3: #373433;
-  --surface-hover: #3e3a38;
-  --inline-code-bg: #373433;
+  --bg: #1d2021;
+  --bg-inset: #131515;
+  --surface: #232627;
+  --surface-2: #282b2c;
+  --surface-3: #26292a;
+  --surface-hover: #2b2e2f;
+  --inline-code-bg: #272a2b;
   /* text */
-  --fg: #dbcdaf;
-  --fg-strong: #eee1be;
-  --fg-body: #ddcda9;
-  --fg-mid: #c9b99a;
-  --fg-dim: #bdae93;
-  --fg-dimmer: #a69b8d;
-  --fg-faint: #92857a;
+  --fg: #eee8d9;
+  --fg-strong: #f7f2e2;
+  --fg-body: #ece3ce;
+  --fg-mid: #d8cdb6;
+  --fg-dim: #c7baa3;
+  --fg-dimmer: #afa699;
+  --fg-faint: #a0958b;
   /* accents */
   --accent: #b8bb26;
   --info: #83a598;

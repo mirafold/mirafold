@@ -5,28 +5,31 @@
    in the green slot) would break the recipe's "semantic, not syntax" accent
    rule. Semantic accents: green #50fa7b, cyan #8be9fd (info), yellow
    #f1fa8c (warn), red #ff5555 (error); the comment blue #6272a4 anchors the
-   faint end of the text ramp (lifted to #7785b0 in the V.1 contrast retune,
-   2026-07-18 — same hue, readable floor). Hand-tunes from the QA walk noted
-   inline. */
+   faint end of the text ramp (lifted well up-ramp in the V.1 contrast
+   retune, 2026-07-18, two rounds — same hue, terminal-grade floor). Same
+   retune: --bg darkened a step off the canonical #282a36 (same hue) —
+   pure-white --fg-strong couldn't clear 12:1 on the canonical canvas — and
+   the surface stack regenerated tight around it. Hand-tunes from the QA
+   walk noted inline. */
 
 :root[data-theme="dracula"] {
   color-scheme: dark;
   /* surfaces */
-  --bg: #282a36;
-  --bg-inset: #1e2029;
-  --surface: #2e313e;
-  --surface-2: #343746;
-  --surface-3: #313442;
-  --surface-hover: #363948;
-  --inline-code-bg: #313442;
+  --bg: #232530;
+  --bg-inset: #17181f;
+  --surface: #292b36;
+  --surface-2: #2e303a;
+  --surface-3: #2c2e38;
+  --surface-hover: #31333d;
+  --inline-code-bg: #2d2f39;
   /* text */
   --fg: #f8f8f2;
   --fg-strong: #ffffff;
   --fg-body: #fafaf5;
   --fg-mid: #d3d7df;
-  --fg-dim: #adb5cb;
-  --fg-dimmer: #8f9bbc;
-  --fg-faint: #7785b0;
+  --fg-dim: #bdc4d5;
+  --fg-dimmer: #a4aec8;
+  --fg-faint: #919dbf;
   /* accents */
   --accent: #50fa7b;
   --info: #8be9fd;

@@ -97,11 +97,14 @@ test("contract and pinned token lists don't overlap", () => {
   assert.deepEqual(overlap, []);
 });
 
-// V.1 contrast floors (2026-07-18). The old guard checked one pair (--fg on
-// --bg, 4.5:1 — the WCAG legal minimum); Kyle's finding was that every theme
-// strained the eyes anyway, because the other six text tiers had no floor at
-// all and text doesn't only sit on --bg. Every tier now clears a floor sized
-// to its actual role, against the WORST of the surfaces text really sits on.
+// V.1 contrast floors (2026-07-18, raised same day after Kyle's second
+// round: WCAG-shaped floors still strained his eyes). The benchmark is a
+// stock terminal — near-white on near-black at 15:1+ for EVERYTHING — so
+// primary text must clear 11:1 and even the faintest tier clears 4.5:1 (the
+// old legal minimum is now the placeholder floor). Dark themes keep their
+// surface stacks in a tight envelope of --bg so the worst-case backdrop
+// stays near the canvas; every tier is checked against the WORST of the
+// surfaces text really sits on.
 const TEXT_SURFACES = [
   "--bg",
   "--surface",
@@ -111,19 +114,20 @@ const TEXT_SURFACES = [
   "--inline-code-bg",
 ] as const;
 
-// Floors by role: fg/strong/body are full-session reading text (well above
-// the 4.5 legal minimum); mid is secondary prose; dim is metadata that's
-// still read (timestamps, card footers, the F.2 notice line); dimmer is
+// Floors by role: fg/strong/body are full-session reading text
+// (terminal-grade); mid is secondary prose; dim is metadata that's still
+// read (timestamps, card footers, the F.2 notice line); dimmer is
 // read-for-content too (thinking block, status bar, tool detail); faint is
-// placeholders/carets/decorations (3:1, the WCAG UI-component floor).
+// placeholders/carets/decorations — even those clear the old body-text
+// minimum.
 const TEXT_TIER_FLOORS: Record<string, number> = {
-  "--fg-strong": 8.5,
-  "--fg": 7,
-  "--fg-body": 7,
-  "--fg-mid": 5.5,
-  "--fg-dim": 4.5,
-  "--fg-dimmer": 4,
-  "--fg-faint": 3,
+  "--fg-strong": 12,
+  "--fg": 11,
+  "--fg-body": 10.5,
+  "--fg-mid": 8.5,
+  "--fg-dim": 7,
+  "--fg-dimmer": 5.5,
+  "--fg-faint": 4.5,
 };
 
 test("contrast floors: every text tier clears its floor on every text surface, in every theme", () => {
@@ -160,9 +164,9 @@ test("accent text clears 4.5:1 on --bg in every theme", () => {
 test("pinned code/diff text clears its floors", () => {
   const base = parseThemeTokens(readFileSync(join(themesDir, "base.css"), "utf8"));
   const pairs: Array<[string, string, number]> = [
-    ["--code-fg", "--code-bg", 7],
-    ["--diff-add-fg", "--diff-add-bg", 4.5],
-    ["--diff-del-fg", "--diff-del-bg", 4.5],
+    ["--code-fg", "--code-bg", 11],
+    ["--diff-add-fg", "--diff-add-bg", 6],
+    ["--diff-del-fg", "--diff-del-bg", 6],
   ];
   for (const [fg, bg, floor] of pairs) {
     const ratio = contrast(base.get(fg)!, base.get(bg)!);

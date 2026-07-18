@@ -1155,21 +1155,29 @@ R.5c/R.6/R.7 as launch-blocking; that call is Kyle's once each step below
 is scoped further.
 
 - [ ] **Step V.1 — Theme contrast pass (all six themes)** — *engineering
-  landed 2026-07-18; open only on Kyle's side-by-side confirmation.* The
-  audit measured every text tier against the worst of the six surfaces text
-  actually sits on (--bg, --surface/-2/-3, --surface-hover,
-  --inline-code-bg) and confirmed the diagnosis: only --fg/--bg had a floor,
-  and the read-for-content dim tiers (--fg-dim: timestamps/footers/notice
-  line; --fg-dimmer: thinking block, status bar, tool detail) shipped as low
-  as 3.0–3.4:1 everywhere; Solarized Dark's PRIMARY --fg was 4.4:1
-  worst-case, Solarized Light's accents ~3:1 as text, Gruvbox --fg-faint
-  1.7:1. Landed: per-tier floors in themes.test.ts (worst-case-surface:
-  strong ≥8.5, fg/body ≥7, mid ≥5.5, dim ≥4.5, dimmer ≥4, faint ≥3; accents
-  as text ≥4.5 on --bg; pinned code/diff floors too) + re-tuned tokens in
-  all six theme files — hue/saturation preserved everywhere, only lightness
-  moved (retunes noted in each file's header; Solarized's canonical soft
-  contrast deliberately overridden — Kyle's readability call wins). All
-  tiers green 219/82/28.
+  landed 2026-07-18 in TWO rounds; open only on Kyle's side-by-side
+  confirmation.* Round 1 confirmed the diagnosis (only --fg/--bg had a
+  floor; the read-for-content dim tiers — --fg-dim
+  timestamps/footers/notice line, --fg-dimmer thinking block/status
+  bar/tool detail — shipped at 3.0–3.4:1; Solarized Dark's PRIMARY --fg was
+  4.4:1 worst-case; Gruvbox --fg-faint 1.7:1) but its WCAG-shaped floors
+  (fg ≥7, dim ≥4.5) still strained Kyle's eyes. Round 2 rebenchmarked on
+  what Kyle actually named — a stock terminal, near-white on near-black at
+  15:1+ for everything: floors are now terminal-grade
+  (worst-case-surface: strong ≥12, fg ≥11, body ≥10.5, mid ≥8.5, dim ≥7,
+  dimmer ≥5.5, faint ≥4.5 — the faintest tier now clears the old
+  body-text minimum; accents ≥4.5 on --bg; pinned code-fg ≥11, diffs ≥6),
+  dark themes' surface stacks are regenerated as tight envelopes of --bg
+  so no backdrop eats the ratio, Gruvbox adopts its canonical HARD
+  background (#1d2021), and Dracula's canvas darkens a step (same hue) —
+  white text physically couldn't clear 12:1 on the canonical #282a36.
+  Hue/saturation preserved everywhere; deviations noted per file header.
+  Verified by screenshot walk of a real mock session in all six themes
+  (real build, headless Chrome), not just the guard test. All tiers green
+  219/82/28. Side-finding, flagged to Kyle: the picker showing two ✓ at
+  once is the S.3 two-slot design (one pick per pill side), not a V.1
+  regression. Watch item: one Tier-3 flake in ~4 runs (name uncaptured,
+  green on all reruns) — same profile as the 2026-07-17 Tier-2 flake.
   - Goal: Kyle, 2026-07-17: "every single style doesn't have enough
     contrast and strains the eyes to look at... this is something that
     regular terminals DO NOT have a problem with and it almost completely

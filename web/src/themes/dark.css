@@ -8,20 +8,20 @@
   color-scheme: dark;
   /* surfaces */
   --bg: #101319;
-  --bg-inset: #10151f;
-  --surface: #141a26;
-  --surface-2: #18202e;
-  --surface-3: #161c28;
-  --surface-hover: #1b2434;
-  --inline-code-bg: #1b2130;
+  --bg-inset: #0a0c10;
+  --surface: #171a1f;
+  --surface-2: #1c1f25;
+  --surface-3: #1a1c22;
+  --surface-hover: #1f2227;
+  --inline-code-bg: #1b1e23;
   /* text */
   --fg: #e6e9ef;
   --fg-strong: #eef2f8;
   --fg-body: #d4dae4;
-  --fg-mid: #a8b2c2;
-  --fg-dim: #8b96a8;
-  --fg-dimmer: #7b8497;
-  --fg-faint: #62708c;
+  --fg-mid: #b7c0cd;
+  --fg-dim: #a6afbc;
+  --fg-dimmer: #939aaa;
+  --fg-faint: #7e8ba5;
   /* accents */
   --accent: #4ade80;
   --info: #7ab8ff;
