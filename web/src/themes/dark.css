@@ -26,7 +26,9 @@
   --fg-dimmer: #939aaa;
   --fg-faint: #7e8ba5;
   /* accents */
-  --accent: #4ade80;
+  /* the brand mark's canonical green (favicon.svg/logo.svg) — aligned from
+     #4ade80 when the mark became the home glyph (2026-07-18) */
+  --accent: #40d17f;
   --info: #7ab8ff;
   --warn-fg: #d4a852;
   --error: #e66767;
@@ -53,7 +55,7 @@
   --warn-border-2: #574727;
   /* misc */
   --overlay: rgba(8, 11, 16, 0.82);
-  --selection: rgba(74, 222, 128, 0.25);
+  --selection: rgba(64, 209, 127, 0.25);
   --shadow-pop: 0 4px 14px rgba(0, 0, 0, 0.18);
   --shadow-card: 0 18px 60px rgba(0, 0, 0, 0.5);
 }
