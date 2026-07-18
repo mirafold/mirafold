@@ -1,8 +1,11 @@
-/* ---- Dark (Step 4.3; split out in S.1) -------------------------------------
+/* ---- Mirafold (Step 4.3; split out in S.1; display name "Dark" → "Mirafold"
+   2026-07-18, when the designed Light was dropped — the house theme carries
+   the house name, and nothing implies a missing "Light" twin) ---------------
    One semantic palette per theme file; structural CSS (styles.css) consumes
-   only var(...). Dark is the default and the identity — it owns bare :root,
-   so an unset/unknown data-theme falls back here. Pinned code/diff tokens
-   live in base.css, not per theme. */
+   only var(...). This is the default and the identity — it owns bare :root,
+   so an unset/unknown data-theme falls back here, and its id stays `dark`
+   (ids are load-bearing appearance-label fallbacks, never shown to users).
+   Pinned code/diff tokens live in base.css, not per theme. */
 
 :root {
   color-scheme: dark;

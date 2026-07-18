@@ -47,7 +47,7 @@ codebase. Companion documents:
   Goal / Build / Files / Done-when. Shipped so far: **Phases 0, 1, T, 2, 3, T2,
   and P** (three faithful agent skins — Claude Code, Codex, Gemini CLI), all
   of Phase 4, **G/H/H2** (the 2026-07-15 maintainability restructure this
-  document's layout reflects), **S** (the theme system; eight themes at launch), L.1, most of
+  document's layout reflects), **S** (the theme system; seven themes at launch), L.1, most of
   the Phase F fidelity fixes, and the working core of **Phase R** (the
   hosted relay: R.1 dial-out + envelope, R.3 per-pair E2E encryption,
   R.4's QR pairing + phone layout — proven on a real phone — and R.2's
@@ -825,7 +825,7 @@ knowing because it constrains future UI work:
 - The palette is a semantic token system (Step 4.3; grown into Phase S's
   theme system): one set of `--fg/--surface/--border/--accent`-family custom
   properties consumed by structural CSS, defined per theme in
-  `web/src/themes/` — **eight themes ship** (Dark, Standard, Light, Standard
+  `web/src/themes/` — **seven themes ship** (Mirafold, Standard, Standard
   Light, Solarized Light, Solarized Dark, Gruvbox Dark, Dracula), each one self-contained file
   held to the manifest's token contract by Tier-1 guards. **Dark is the
   default and the identity**; every light theme is a TRUE, unified light
@@ -1125,7 +1125,7 @@ Read PLAN.md for the real thing; the shape in one breath:
   (Phases G/H/H2 — the sibling `genui-relay` repo became the relay's single
   source of truth, and the server/web layout §4 describes is H's work);
   **Phase S** — the launch theme set on one-file-per-theme plumbing (§7,
-  eight themes since V.1 added the Standard pair);
+  seven themes after V.1's Standard pair + light consolidation);
   the cockpit polish batch (4.11) and two more fidelity fixes — the codex
   resolved-model label (F.7) and full `!` terminal parity with same-day
   hardening (F.8); and most of **Phase K** — the relay relicensed MIT

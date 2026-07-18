@@ -19,10 +19,13 @@ export interface ThemeEntry {
 }
 
 export const THEMES: ThemeEntry[] = [
-  { id: "dark", displayName: "Dark", appearance: "dark" },
+  // "Mirafold" is the house theme (the dark default; id stays `dark` — ids
+  // are load-bearing fallbacks, display names are free). The light default
+  // is Standard Light, which took over the `light` id when the original
+  // designed Light was dropped (2026-07-18 — see light.css header).
+  { id: "dark", displayName: "Mirafold", appearance: "dark" },
   { id: "standard", displayName: "Standard", appearance: "dark" },
-  { id: "light", displayName: "Light", appearance: "light" },
-  { id: "standard-light", displayName: "Standard Light", appearance: "light" },
+  { id: "light", displayName: "Standard Light", appearance: "light" },
   { id: "solarized-light", displayName: "Solarized Light", appearance: "light" },
   { id: "solarized-dark", displayName: "Solarized Dark", appearance: "dark" },
   { id: "gruvbox-dark", displayName: "Gruvbox Dark", appearance: "dark" },
