@@ -358,12 +358,19 @@ test("two-slot model: each pill side paints its slot's theme; choices survive re
   assert.equal(await dataTheme(), "dark");
 });
 
-// A picker row by its exact display name (anchored — "Standard" must
-// not match "Standard Light").
-const themeRow = (name: string) =>
-  page
+// A picker row by its exact display name (anchored), optionally scoped to a
+// group — "Standard" appears in BOTH groups (one concept, both pill sides),
+// so Standard picks must say which side they mean.
+const themeRow = (name: string, group?: "Light themes" | "Dark themes") => {
+  const scope = group
+    ? page
+        .locator(".theme-group")
+        .filter({ has: page.locator(".theme-group-label", { hasText: group }) })
+    : page;
+  return scope
     .locator(".theme-row")
     .filter({ has: page.locator(".theme-row-name", { hasText: new RegExp(`^${name}$`) }) });
+};
 
 test("settings card: gear opens it, picking applies live and writes the slot (S.4)", async () => {
   // The gear sits in the bar; home keeps its outermost far-left slot
@@ -394,7 +401,7 @@ test("settings card: gear opens it, picking applies live and writes the slot (S.
   // Picking the light-labeled row applies immediately — picking is seeing:
   // mode flips to its appearance side, data-theme paints, slot is written,
   // the card stays open (live preview), and the pill's light side is lit.
-  await themeRow("Standard Light").click();
+  await themeRow("Standard", "Light themes").click();
   assert.equal(await dataTheme(), "light");
   assert.equal(await page.locator(".settings-card").count(), 1);
   assert.match(

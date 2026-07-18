@@ -1,4 +1,6 @@
-/* ---- Standard Light (V.1, 2026-07-18) ---------------------------------------
+/* ---- Standard, light side (V.1, 2026-07-18; display name is just
+   "Standard" — one concept on both pill sides, the group headers
+   disambiguate; prose lists the pair as "Standard (dark and light)") --------
    The plain-terminal theme's light twin, and the LIGHT-SIDE DEFAULT: black
    text on a pure white canvas, the way xterm and Terminal.app actually ship
    by default. Neutral gray text ramp with no hue; accents are the NORMAL
