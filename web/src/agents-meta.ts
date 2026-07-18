@@ -21,9 +21,9 @@ export const LABEL: Record<AgentName, string> = {
 // as supported, not absent.
 export const CONNECT_HINT: Record<AgentName, string> = {
   "claude-code":
-    "set ANTHROPIC_API_KEY (get one at console.anthropic.com) — or point ANTHROPIC_BASE_URL at a local model (Ollama)",
+    "set ANTHROPIC_API_KEY (get one at console.anthropic.com) — or point ANTHROPIC_BASE_URL at a local model (Ollama) or a hosted open-model API (DeepSeek, Kimi) with that provider's key",
   codex:
-    "run `codex login` (ChatGPT subscription — not clearly permitted by OpenAI's terms, tolerated in practice; your account, your call) or set OPENAI_API_KEY (platform.openai.com/api-keys) — or point Codex at a local model (Ollama/LM Studio/vLLM)",
+    "run `codex login` (ChatGPT subscription — not clearly permitted by OpenAI's terms, tolerated in practice; your account, your call) or set OPENAI_API_KEY (platform.openai.com/api-keys) — or point Codex at a local model (Ollama/LM Studio/vLLM) or any OpenAI-compatible provider via ~/.codex/config.toml",
   "gemini-cli":
     "set GEMINI_API_KEY (free key at aistudio.google.com/apikey) — Gemini has no local path",
 };
@@ -92,8 +92,34 @@ export function localCapable(agent: string): boolean {
 }
 
 /** The live local-model promise (N.3 keeps it literal: the picker re-probes
- *  while open). Worded so an Ollama user — whose server idles perpetually as
- *  a background service — isn't told to do a step they don't have. */
-export const LOCAL_LIVE_HINT =
-  "Running a local/open model? Anything your server (Ollama, LM Studio, vLLM) is " +
-  "serving shows up here automatically — start it if it isn't running.";
+ *  while open), plus the hosted-open-model route — same BYO mechanism, but
+ *  per-agent because the knob differs: Claude Code's env endpoint appears in
+ *  this menu, Codex's config.toml provider does not (we can't see it — it
+ *  shows as the API-key row per docs/local-models.md). Worded so an Ollama
+ *  user — whose server idles perpetually as a background service — isn't
+ *  told to do a step they don't have. */
+export function localLiveHint(agent?: string): string {
+  const base =
+    "Running a local/open model? Anything your server (Ollama, LM Studio, vLLM) is " +
+    "serving shows up here automatically — start it if it isn't running.";
+  if (agent === "claude-code")
+    return (
+      base +
+      " Bought API access to a hosted open model (DeepSeek, Kimi, …)? Point " +
+      "ANTHROPIC_BASE_URL at its Anthropic-compatible API with that provider's " +
+      "key, and it appears here as a custom endpoint."
+    );
+  if (agent === "codex")
+    return (
+      base +
+      " Bought API access to a hosted open model? Add it as an OpenAI-compatible " +
+      "provider in ~/.codex/config.toml — same recipe as a local server."
+    );
+  // No agent picked yet (the step-one footer), or an agent this bundle doesn't
+  // know: the promise stays generic — no agent-specific knobs.
+  return (
+    base +
+    " Hosted open models you've bought API access to (DeepSeek, Kimi, …) work " +
+    "the same way — point the agent at the provider's endpoint with your key."
+  );
+}
