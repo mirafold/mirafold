@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import type { WireMsg } from "../protocol";
+import { RENDER_GUIDANCE } from "../render-tools";
 import { type AgentSession, capOutput, toolDetail } from "./types";
 import { MIRAFOLD_MCP, RENDER_ID_RE, generativeUIMsg, renderMcpCommand } from "./render-mcp-cmd";
 import { AsyncQueue, CLOSE } from "./async-queue";
@@ -134,7 +135,12 @@ export class GeminiCliSession implements AgentSession {
 
   private runTurn(text: string): Promise<void> {
     return new Promise((resolve) => {
-      const args = ["-p", text, "-o", "stream-json", "--allowed-mcp-server-names", MIRAFOLD_MCP];
+      // V.2: the headless stream-json surface has no system-prompt/instructions
+      // hook (unlike Claude's `systemPrompt.append`), so RENDER_GUIDANCE rides
+      // ahead of the first turn instead — the only injection point this engine
+      // has. `this.started` is still false here — check it before it flips below.
+      const prompt = this.started ? text : `${RENDER_GUIDANCE}\n\n---\n\n${text}`;
+      const args = ["-p", prompt, "-o", "stream-json", "--allowed-mcp-server-names", MIRAFOLD_MCP];
       if (this.model) args.push("-m", this.model);
       args.push(this.started ? "--resume" : "--session-id", this.sessionId);
       this.started = true;

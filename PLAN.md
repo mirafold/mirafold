@@ -1159,9 +1159,9 @@ Sequencing: opened as the next work after Phase N. Not yet graded against
 R.5c/R.6/R.7 as launch-blocking; that call is Kyle's once each step below
 is scoped further.
 
-- [ ] **Step V.1 — Theme contrast pass (all six themes)** — *engineering
-  landed 2026-07-18 in TWO rounds; open only on Kyle's side-by-side
-  confirmation.* Round 1 confirmed the diagnosis (only --fg/--bg had a
+- [x] **Step V.1 — Theme contrast pass (all six themes)** — *done 2026-07-18:
+  Kyle confirmed the themes are fine side-by-side; closed as-is, no further
+  round.* Engineering landed 2026-07-18 in TWO rounds. Round 1 confirmed the diagnosis (only --fg/--bg had a
   floor; the read-for-content dim tiers — --fg-dim
   timestamps/footers/notice line, --fg-dimmer thinking block/status
   bar/tool detail — shipped at 3.0–3.4:1; Solarized Dark's PRIMARY --fg was
@@ -1251,7 +1251,138 @@ is scoped further.
     eyes, and the widened contrast-floor test is green for every theme.
 
 - [ ] **Step V.2 — Codex (and Gemini, untested) rendering/command fidelity
-  gaps**
+  gaps** *(opened 2026-07-18, now the active step)*
+  - **2026-07-18 live-probe findings (both root-caused, no fix landed yet):**
+    - *(status note: the chart half AND the `/model` half of V.2 are both
+      resolved below; Gemini remains unprobed — Kyle will say when he has a
+      `GEMINI_API_KEY`; do not work the Gemini half until then.)*
+    - **`/model` — SOLVED 2026-07-18 (late evening), without waiting for
+      F.5:** the interactive picker itself is TUI chrome the headless SDK
+      can't reach, but the LIST it shows comes from the binary's own
+      `app-server` JSON-RPC surface — `model/list` (initialize handshake →
+      request → answer; newline-delimited JSON-RPC per
+      `codex-rs/app-server/README.md`). Verified live: the user's own
+      `codex` binary answers with exactly the terminal picker's four rows
+      (gpt-5.6-sol default/current, -terra, -luna, gpt-5.5 — same order,
+      same descriptions, plus per-model reasoning-effort options).
+      Deliberate binary choice: the PATH `codex` (the user's install, the
+      `MIRAFOLD_CODEX_BIN` seam), NOT the SDK's bundled one — the catalog
+      is server-filtered per client version (the SDK's 0.142.5 cache shows
+      only gpt-5.5 as listable; the user's 0.144.5 shows all four), and
+      parity means the user's version's answer. Landed:
+      - `server/adapters/codex-model-list.ts` — one-shot spawn, handshake,
+        `model/list`, kill; rejects on spawn failure/protocol error/timeout
+        (the adapter surfaces an honest error, never a made-up list).
+      - `codex.ts` — `/model` intercepted in the worker loop (serialized
+        with turns): bare `/model` renders the catalog as a `question`
+        component — label = displayName + "(current)" marker, click sends
+        `/model <id>` back through the same path, description as the detail
+        line (a `list` fallback if the catalog ever leaves the 2–4 option
+        range); `/model <id>` switches by RESUMING the warm thread with the
+        new model (`codex.resumeThread(threadId, …)` — public SDK API,
+        history intact, exactly what the terminal picker does to a
+        session), or restarting the unstarted thread pre-first-turn.
+        Unlisted slugs still apply — terminal Codex accepts any
+        `-m <model_name>` (its own picker hints exactly that for legacy
+        models), so refusing would be less faithful. modelLabel becomes
+        configured-truth immediately.
+      - **Live-verified end-to-end on the shipped `CodexSession`:** bare
+        `/model` painted the picker with the real four models and the
+        correct "(current)" marker; `/model gpt-5.6-luna` switched; the
+        next real turn's model was read back from **Codex's own rollout
+        file** (engine-side truth, not our label): `gpt-5.6-luna`. ✓
+      - Tests: 6 new Tier-1 (picker from a stubbed catalog + no engine turn
+        consumed; restart-vs-resume switch mechanics + label; honest
+        error/usage paths; the app-server exchange against a stub binary
+        incl. hidden-model filtering, exit-before-answer, timeout).
+      - Known remaining delta, deliberate: the terminal picker is "Select
+        Model and Effort" — the effort half (per-model reasoning levels,
+        which the catalog answer already carries) is NOT re-skinned yet;
+        model only. Small follow-up if Kyle wants it: the SDK supports
+        `modelReasoningEffort` per thread, so it's the same resume
+        mechanism plus a second question.
+      - **All tiers green: 234/82/28** (no flake on this round), typecheck
+        clean.
+    - **`/model`, CONFIRMED:** drove real terminal `codex` through a pty
+      (pyte-rendered screen) — `/model` opens an interactive picker: 4
+      selectable models (gpt-5.6-sol/terra/luna, gpt-5.5) each with a
+      description, "current" marked, legacy-models hint. Then drove
+      `@openai/codex-sdk` directly (the exact call `codex.ts` makes) with the
+      literal prompt `"/model"` — no picker; the SDK just answers it as a
+      chat message: `"GPT-5 Codex."` (terse, and not even the real resolved
+      model id). Confirms the standing diagnosis: the SDK's headless `exec`
+      surface has no interactive round-trip, so there is no cheap in-adapter
+      parse-and-render fix — `codex-sdk`'s public types expose no
+      instructions/system-prompt override either, so this is F.5's
+      app-server-migration territory, not a patch.
+    - **chart-degrades-to-table — SOLVED 2026-07-18 (evening), root cause
+      found in codex-rs source, fix live-verified 8/8 (baseline 0/9):**
+      - The failure history, briefly: baseline 0/3 (mermaid block, or a
+        "here's your chart" claim with nothing painted); prepending
+        `RENDER_GUIDANCE` to the first turn 0/3; a "you MUST call this
+        tool" `render_chart` description 0/3. Yet an explicit "call the
+        mirafold render_chart tool now" worked instantly — with a ~28k
+        input-token jump, the clue that cracked it.
+      - **The real root cause (from `openai/codex` codex-rs source, not
+        guesswork): Codex defers ALL MCP tools behind its tool-search
+        mechanism.** `tool_search_always_defer_mcp_tools` is a
+        graduated/hardcoded feature ("MCP tools are always deferred when
+        tool_search is available"); `search_tool_enabled` =
+        `model_info.supports_search_tool && provider.namespace_tools`, both
+        true for gpt-5.6 on the OpenAI provider, neither user-overridable
+        (the feature flag is a compiled no-op — verified live: the config
+        override changes nothing). Probed the model's own tool list to
+        confirm: **no mirafold tool appears in it at all**, only
+        `tool_search.tool_search_tool`. So every prior prompt fix failed
+        for the same reason — the model was told to prefer a tool it could
+        not see, concluded it didn't exist ("I don't have the render_chart
+        tool available", verbatim, one trial), and improvised. Tool search
+        IS OpenAI's sanctioned path to those tools; the guidance just had
+        to say so.
+      - **Fix 1 (the cure), landed in `codex.ts`:**
+        `CODEX_DEFERRED_TOOLS_ADDENDUM` — appended to `RENDER_GUIDANCE` on
+        the first turn — names the deferral: the render tools do NOT appear
+        in the direct tool list but ARE available via tool search; never
+        conclude one is unavailable without searching; render_chart is
+        mandatory for chart requests. **Result: 8/8 render_chart calls
+        across every configuration tried** — 3/3 standalone-guidance
+        trials, 2/2 with the full production-composed guidance, 1/1 on the
+        SECOND turn of a thread (guidance persists in thread context), and
+        2/2 end-to-end through the SHIPPED `CodexSession` (real SDK, real
+        `render-mcp.ts` subprocess, real model → `render`/`chart` WireMsg
+        with correct props observed on the adapter's output).
+      - **Fix 2 (the deterministic backstop), landed:** new
+        `server/adapters/mermaid-chart.ts` — if the model ever still
+        hand-writes a ```mermaid xychart-beta``` fence, `codex.ts`'s
+        `agent_message` handler converts it into the real `chart`
+        component (title/x-axis/y-axis/bar/line parsed; the observed
+        duplicate line+bar collapse handled; series named from the y-axis
+        label). **Fail-open everywhere**: any fence outside the parseable
+        subset (numeric-range axes, length mismatches, non-numeric values,
+        non-xychart mermaid) passes through as the literal text the model
+        wrote. So chart delivery is: instructed-native call (8/8 observed)
+        → mermaid conversion (deterministic) → verbatim text (never
+        silently wrong).
+      - Tests: 8 new Tier-1 tests (`mermaid-chart.test.ts` pins the live
+        fence shapes + fail-open boundary; `codex.test.ts` pins the
+        first-turn-only injection and the fence→chart WireMsg path).
+        **All tiers green: 228/82/28**, typecheck clean. Gemini keeps the
+        plain `RENDER_GUIDANCE` prepend (Gemini CLI has no tool-search
+        deferral; live-verify still owed on the API-key question below).
+        Watch-item note: the Tier-2/Tier-3 flake hit a THIRD time during
+        this verification (Tier-2 81/82 → 82/82 on immediate rerun — same
+        green-on-rerun profile as 2026-07-17/18; the failing test's name
+        wasn't captured this time, the run's output filter kept only the
+        tally).
+    - **Gemini: NOT live-probed.** `GeminiCliSession` requires
+      `GEMINI_API_KEY`; the only Gemini auth on this machine is
+      `oauth-personal` (`~/.gemini/settings.json`), which the provider
+      credential policy (`server/provider-policy.ts`, CLAUDE.md) prohibits
+      Mirafold from using — a subscription login is a hard block, not a gray
+      area, so this wasn't routed around. By code inspection,
+      `gemini-cli.ts` has the identical structural gap (no `RENDER_GUIDANCE`
+      equivalent, no `/model` interception) but that's unconfirmed live.
+      Needs a `GEMINI_API_KEY` to close out per V.2's own "Done when" bar.
   - Goal: Kyle, 2026-07-17: Codex's `/model` in Mirafold does not show the
     full list the same command shows in a real terminal, and a requested
     chart/graph sometimes renders as a plain table instead — both are

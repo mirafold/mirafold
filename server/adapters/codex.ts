@@ -12,8 +12,11 @@ import {
   type ThreadItem,
 } from "@openai/codex-sdk";
 import type { WireMsg } from "../protocol";
+import { RENDER_GUIDANCE } from "../render-tools";
 import { type AgentSession, type TodoItem, capOutput, envWithout, joinTextBlocks } from "./types";
 import { MIRAFOLD_MCP, RENDER_ID_RE, generativeUIMsg, renderMcpCommand } from "./render-mcp-cmd";
+import { convertMermaidCharts } from "./mermaid-chart";
+import { listCodexModels, type CodexModel } from "./codex-model-list";
 import { AsyncQueue, CLOSE } from "./async-queue";
 
 // The generative-UI MCP server injected into Codex (P.3). Codex loads MCP
@@ -27,6 +30,27 @@ const RENDER_MCP = renderMcpCommand();
 // Codex resolves its own default, which the rollout lookup below then names.
 // Comparisons against this are "is the label still the stand-in?" checks.
 const MODEL_STAND_IN = "codex";
+
+/**
+ * V.2: Codex defers ALL MCP tools behind its tool-search mechanism
+ * (`tool_search_always_defer_mcp_tools`, hardcoded on in codex-rs — the
+ * render tools never appear in the model's direct tool list). Without being
+ * told, the model concludes render_chart doesn't exist and hand-writes
+ * mermaid/ASCII instead (observed 0/9 render calls live). This addendum to
+ * RENDER_GUIDANCE names the deferral and instructs the model to load the
+ * tools via tool search — with it, 6/6 live trials called render_chart,
+ * including on later turns of the same thread.
+ */
+export const CODEX_DEFERRED_TOOLS_ADDENDUM = `
+## Tool availability note (important)
+
+The render_* tools and emit_artifact above live on the \`${MIRAFOLD_MCP}\` MCP
+server and are DEFERRED: they do NOT appear in your direct tool list, but
+they ARE available — use tool search to load them, then call them. Never
+conclude a render tool is unavailable without searching for it first. For
+ANY chart/plot/graph request you MUST load and call render_chart —
+hand-written mermaid, ASCII, or SVG charts render as plain code here, never
+as visuals.`;
 
 export function mcpText(content: unknown): string {
   if (!Array.isArray(content)) return content == null ? "" : String(content);
@@ -124,6 +148,14 @@ export class CodexSession implements AgentSession {
   private queue = new AsyncQueue<string | typeof CLOSE>();
   private listeners = new Set<(msg: WireMsg) => void>();
   private thread: Thread;
+  // Retained for the V.2 /model switch: a mid-session model change is
+  // `codex.resumeThread(threadId, {...threadOpts, model})` — a fresh Thread
+  // on the same warm conversation, so the engine and start options must
+  // outlive the constructor.
+  private codex: Codex;
+  private threadOpts: { workingDirectory: string; skipGitRepoCheck: true; model?: string };
+  private threadId?: string;
+  private listModels: () => Promise<CodexModel[]>;
   private closed = false;
   private currentAbort?: AbortController;
   // Tool item ids announced on the wire, so a completion doesn't paint an
@@ -137,6 +169,11 @@ export class CodexSession implements AgentSession {
   private codexHome = process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex");
   private lookupThreadId?: string;
   private lookupRunning = false;
+  // V.2: the SDK exposes no system-prompt/instructions hook (unlike Claude's
+  // `systemPrompt.append`), so RENDER_GUIDANCE + the deferred-tools addendum
+  // ride ahead of the first user turn instead — the only injection point this
+  // engine has. The thread carries them for the rest of the session.
+  private firstTurn = true;
 
   get modelName(): string {
     return this.modelLabel;
@@ -152,6 +189,7 @@ export class CodexSession implements AgentSession {
     kind?: "api-key" | "subscription" | "local";
     endpoint?: string;
     makeCodex?: (options: CodexOptions) => Codex;
+    listModels?: () => Promise<CodexModel[]>;
   }) {
     const workspaceDir = path.resolve(opts.workspaceDir);
     mkdirSync(workspaceDir, { recursive: true });
@@ -207,13 +245,16 @@ export class CodexSession implements AgentSession {
           : {}),
       },
     });
-    this.thread = codex.startThread({
+    this.codex = codex;
+    this.listModels = opts.listModels ?? listCodexModels;
+    this.threadOpts = {
       workingDirectory: workspaceDir,
       skipGitRepoCheck: true, // workspace dirs aren't git repos
       ...(opts.model ? { model: opts.model } : {}),
       // sandboxMode / approvalPolicy intentionally UNSET — inherited from the
       // user's own Codex config (faithful skin; see the class doc).
-    });
+    };
+    this.thread = codex.startThread(this.threadOpts);
     void this.worker();
   }
 
@@ -246,12 +287,102 @@ export class CodexSession implements AgentSession {
     for (const cb of this.listeners) cb(msg);
   }
 
-  /** Serial turn loop — Codex runs one turn per prompt on the warm thread. */
+  /** Serial turn loop — Codex runs one turn per prompt on the warm thread.
+   *  `/model` is handled here, between turns, so a switch queued behind a
+   *  running turn applies in order like any other input. */
   private async worker() {
     while (!this.closed) {
       const item = await this.queue.next();
       if (item === CLOSE) return;
-      await this.runTurn(item);
+      const trimmed = item.trim();
+      if (trimmed === "/model" || trimmed.startsWith("/model ")) {
+        await this.runModelCommand(trimmed.slice("/model".length).trim());
+      } else {
+        await this.runTurn(item);
+      }
+    }
+  }
+
+  /**
+   * V.2 /model parity. Terminal Codex's /model opens an interactive picker —
+   * TUI chrome the headless SDK has no round-trip for (the engine, sent the
+   * literal text, just chats back). So the shell re-skins the picker: the
+   * LIST is Codex's own catalog (codex-model-list.ts — the same app-server
+   * answer the terminal picker shows), rendered as a `question` component
+   * whose click sends `/model <id>` back through this same path. A switch
+   * resumes the warm thread with the new model — history intact, exactly
+   * what the terminal picker does to a session.
+   *
+   * Bare slugs the catalog doesn't list still apply: terminal Codex accepts
+   * any `-m <model_name>` (its picker hints exactly that for legacy models),
+   * so refusing here would be less faithful, not more.
+   */
+  private async runModelCommand(arg: string) {
+    this.emit({ type: "status", state: "thinking" });
+    try {
+      if (arg === "") {
+        let models: CodexModel[];
+        try {
+          models = await this.listModels();
+        } catch (err) {
+          this.emit({
+            type: "error",
+            message: `Could not read the model list from codex: ${err instanceof Error ? err.message : String(err)}`,
+          });
+          return;
+        }
+        const current = (m: CodexModel) =>
+          this.modelLabel === MODEL_STAND_IN ? m.isDefault : this.modelLabel === m.id;
+        if (models.length >= 2 && models.length <= 4) {
+          this.emit({
+            type: "render",
+            component: "question",
+            props: {
+              question: "Select a model",
+              options: models.map((m) => ({
+                label: current(m) ? `${m.displayName} (current)` : m.displayName,
+                text: `/model ${m.id}`,
+                detail: m.description,
+              })),
+            },
+            id: randomUUID(),
+          });
+        } else {
+          // Catalog outgrew the 4-option picker (or shrank below 2): the
+          // honest fallback is the plain list + the switch instruction.
+          this.emit({
+            type: "render",
+            component: "list",
+            props: {
+              title: "Models",
+              items: models.map((m) => ({
+                text: `**${m.displayName}**${current(m) ? " (current)" : ""} — \`${m.id}\``,
+                detail: m.description,
+              })),
+            },
+            id: randomUUID(),
+          });
+          this.emit({ type: "text_delta", text: "Send `/model <model-id>` to switch." });
+        }
+        this.emit({
+          type: "text_delta",
+          text: "\nLegacy models can be set directly with `/model <model_name>`.",
+        });
+      } else if (/\s/.test(arg)) {
+        this.emit({ type: "text_delta", text: "Usage: `/model` to pick, or `/model <model-id>`." });
+      } else {
+        // Apply: resume the warm thread under the new model (or restart the
+        // unstarted one). The label becomes configured-truth immediately —
+        // same as constructing with opts.model.
+        this.thread = this.threadId
+          ? this.codex.resumeThread(this.threadId, { ...this.threadOpts, model: arg })
+          : this.codex.startThread({ ...this.threadOpts, model: arg });
+        this.threadOpts = { ...this.threadOpts, model: arg };
+        this.modelLabel = arg;
+        this.emit({ type: "text_delta", text: `Model set to ${arg}.` });
+      }
+    } finally {
+      this.emit({ type: "turn_end" });
     }
   }
 
@@ -266,7 +397,11 @@ export class CodexSession implements AgentSession {
       this.emit({ type: "turn_end" });
     };
     try {
-      const { events } = await this.thread.runStreamed(text, { signal: abort.signal });
+      const prompt = this.firstTurn
+        ? `${RENDER_GUIDANCE}\n${CODEX_DEFERRED_TOOLS_ADDENDUM}\n\n---\n\n${text}`
+        : text;
+      this.firstTurn = false;
+      const { events } = await this.thread.runStreamed(prompt, { signal: abort.signal });
       for await (const ev of events) this.handleEvent(ev, end);
     } catch (err) {
       if (!this.closed && !abort.signal.aborted) {
@@ -318,10 +453,12 @@ export class CodexSession implements AgentSession {
         break;
       case "thread.started":
         // Carries the resume id; the persistent Thread already holds warmth,
-        // so nothing to emit — but the id names the rollout file, the one
-        // place Codex records the model it actually resolved. Learn it there
+        // so nothing to emit — but the id is kept for the /model switch
+        // (resumeThread), and it names the rollout file, the one place Codex
+        // records the model it actually resolved. Learn it there
         // (fleet/status-bar parity with Claude's system/init, F.3), unless a
         // model was configured — then the label already tells the truth.
+        this.threadId = ev.thread_id;
         if (this.modelLabel === MODEL_STAND_IN) {
           this.lookupThreadId = ev.thread_id;
           void this.learnModel();
@@ -356,7 +493,21 @@ export class CodexSession implements AgentSession {
   private onItem(item: ThreadItem, phase: "started" | "updated" | "completed") {
     switch (item.type) {
       case "agent_message":
-        if (phase === "completed") this.emit({ type: "text_delta", text: item.text });
+        // Any mermaid xychart the model still hand-wrote becomes the real
+        // chart component (the V.2 backstop — see mermaid-chart.ts); all
+        // other text passes through verbatim.
+        if (phase === "completed") {
+          for (const seg of convertMermaidCharts(item.text)) {
+            if ("text" in seg) this.emit({ type: "text_delta", text: seg.text });
+            else
+              this.emit({
+                type: "render",
+                component: "chart",
+                props: seg.chart as unknown as Record<string, unknown>,
+                id: randomUUID(),
+              });
+          }
+        }
         break;
       case "reasoning":
         if (phase === "completed") {
