@@ -825,8 +825,8 @@ knowing because it constrains future UI work:
 - The palette is a semantic token system (Step 4.3; grown into Phase S's
   theme system): one set of `--fg/--surface/--border/--accent`-family custom
   properties consumed by structural CSS, defined per theme in
-  `web/src/themes/` — **seven themes ship** (Mirafold, Standard, Standard
-  Light, Solarized Light, Solarized Dark, Gruvbox Dark, Dracula), each one self-contained file
+  `web/src/themes/` — **seven themes ship** (Mirafold, Standard (dark and
+  light), Solarized Light, Solarized Dark, Gruvbox Dark, Dracula), each one self-contained file
   held to the manifest's token contract by Tier-1 guards. **Dark is the
   default and the identity**; every light theme is a TRUE, unified light
   theme — the whole UI, terminal chrome included (prompt box, command
