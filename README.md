@@ -479,7 +479,8 @@ web/               the browser app (React 19 + Vite)
 bin/               mirafold launcher (4.10): spawns dist-server, opens browser
 demo/              the M1 demo GIF embedded at the top of this README
 docs/              ADAPTERS.md — the normative adapter specification (§2.2);
-                   local-models.md — running against Ollama/LM Studio/vLLM (§8);
+                   local-models.md — running against Ollama/LM Studio/vLLM,
+                   or a hosted open-model API you pay for (§8);
                    RENAME.md — the genui-shell → Mirafold rename checklist
                    (working doc, deletes itself when R.2 completes)
 dist/              built front end (vite build output; served by Express)
@@ -945,7 +946,9 @@ runs the in-repo stub relay on `:9100`.
 points at a local inference server — Claude Code against Ollama's Anthropic
 endpoint, or Codex against Ollama/LM Studio/vLLM. The recipe (two env vars, or
 one `config.toml` block) is **[docs/local-models.md](docs/local-models.md)**,
-with an honest model/hardware table.
+with an honest model/hardware table — and the same doc covers the hosted
+variant: an open model behind an API key you bought (DeepSeek, Kimi), same
+knobs pointed at the provider instead of localhost.
 
 Individual processes: `yarn dev:server` / `yarn dev:web`.
 
