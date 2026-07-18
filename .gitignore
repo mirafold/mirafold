@@ -9,3 +9,4 @@ dist-server/
 
 # Local-only, candid user-testing notes — never publish to this public repo.
 docs/USER-TESTING-FEEDBACK.md
+.gemini/

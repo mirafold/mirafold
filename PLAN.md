@@ -823,12 +823,17 @@ with it. Both sequence BEFORE R.5.**
     keep / trim / move-private for each; no secrets exist in history
     (verified 2026-07-15), this is a business-disclosure call, not a leak hunt.
   - **Theme guards: constrain token VALUES before accepting community theme
-    PRs (2026-07-16 audit):** the Tier-1 guards pin token names exactly but
-    not values — a contributed theme file could carry a working-but-weird
-    value (e.g. `url(...)` in a color slot). The shell CSP already blocks
+    PRs (2026-07-16 audit; partially closed by V.1, 2026-07-18):** the
+    Tier-1 guards pin token names exactly but not all values — a
+    contributed theme file could carry a working-but-weird value (e.g.
+    `url(...)` in a color slot). *V.1's contrast floors now force every
+    text tier, accent, and surface token (~18/theme) to parse as plain
+    6-digit hex, so the remaining gap is only borders, the tinted
+    families, and the misc tokens (overlay/selection/shadows, which
+    legitimately use rgba()/shadow lists).* The shell CSP already blocks
     the fetch at runtime and a reviewer sees the diff, so this is
-    belt-and-suspenders: add a guard asserting values parse as
-    colors/alpha-colors/shadow lists, so `yarn test` rejects it
+    belt-and-suspenders: add a guard asserting the REMAINING values parse
+    as colors/alpha-colors/shadow lists, so `yarn test` rejects it
     mechanically. Matters only once the repo is public and taking PRs —
     land it with (or before) the public flip.
   - **SECURITY.md: name the `!`-output → model path (2026-07-17 audit):**
