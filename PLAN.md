@@ -1201,12 +1201,15 @@ is scoped further.
   Dark, Dracula — the light-side Standard dropped its "Light" suffix
   same day (Kyle: the suffix made it read like Solarized Light at a
   glance; group headers carry the side). All tiers green 219/82/28.
-  And the status bar's home glyph became the brand M mark (`b7a1d47`,
-  Kyle's call — logo-as-home over nameplate/center placements): inline
-  SVG of favicon.svg's polyline on currentColor, colored var(--accent)
-  (green in every theme); the Mirafold theme accent aligned to the
-  mark's canonical green (#4ade80 → #40d17f) so the house theme shows
-  the exact brand color. Shared screenshots now self-attribute.
+  And the brand mark found its in-app home (`b7a1d47` → `bbd6ca9`,
+  Kyle's calls): an M-as-home-button experiment was tried and REVERTED
+  same day (⌂ reads instantly); the FULL logo.svg mark (bracket-M with
+  the >_ prompt) now heads the empty-session welcome instead — inline
+  strokes minus the dark tile, riding var(--accent) so all seven themes
+  color it and Mirafold shows exact brand green (its accent aligned to
+  the mark's canonical #40d17f, kept through the revert since it serves
+  the new placement). The welcome block sized up a step. Known cost,
+  accepted: active-session screenshots carry no brand mark.
   - Goal: Kyle, 2026-07-17: "every single style doesn't have enough
     contrast and strains the eyes to look at... this is something that
     regular terminals DO NOT have a problem with and it almost completely
