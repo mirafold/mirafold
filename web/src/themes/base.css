@@ -6,9 +6,10 @@
    design but is deliberately not exercised (PLAN Phase S charter). */
 
 :root {
-  /* code — pinned, no per-theme override */
+  /* code — pinned, no per-theme override. code-fg lifted to terminal-grade
+     contrast in the V.1 retune (2026-07-18): code is primary reading text. */
   --code-bg: #0d1117;
-  --code-fg: #a8b2c2;
+  --code-fg: #c0c8d3;
   /* diffs — pinned (they sit on --code-bg) */
   --diff-add-bg: #13341f;
   --diff-add-fg: #7ee2a8;

@@ -3,29 +3,32 @@
    Ethan Schoonover, https://ethanschoonover.com/solarized/ — scheme file MIT)
    via the S.2 recipe in manifest.ts. Derived tiers are the recipe's mixes;
    hand-tunes from the QA walk are noted inline.
-   V.1 contrast retune (2026-07-18): the whole fg ramp + info/error lifted off
-   the canonical values — Solarized's famously soft contrast failed the
-   readability floors (fg was 4.4:1 worst-case; Kyle: every theme strained his
-   eyes). Hues stay Solarized; only lightness moved. */
+   V.1 contrast retune (2026-07-18, two rounds — terminal-grade floors): the
+   whole fg ramp + info/error lifted far off the canonical values, and the
+   surface stack regenerated as a tight envelope of --bg — Solarized's
+   famously soft contrast failed the readability floors outright (fg was
+   4.4:1 worst-case; Kyle: every theme strained his eyes, terminals don't).
+   What survives of Solarized: the base03 canvas, the hue family, the four
+   canonical-hued accents. Only lightness moved. */
 
 :root[data-theme="solarized-dark"] {
   color-scheme: dark;
   /* surfaces */
   --bg: #002b36;
-  --bg-inset: #002029;
-  --surface: #04313c;
-  --surface-2: #073642;
-  --surface-3: #05333f;
-  --surface-hover: #113d48;
-  --inline-code-bg: #05333f;
+  --bg-inset: #001c23;
+  --surface: #07313c;
+  --surface-2: #0d3640;
+  --surface-3: #0a333e;
+  --surface-hover: #103842;
+  --inline-code-bg: #0b353f;
   /* text */
-  --fg: #c3cbcb;
-  --fg-strong: #eee8d5;
-  --fg-body: #c4cbc7;
-  --fg-mid: #aab6b6;
-  --fg-dim: #97a5a7;
-  --fg-dimmer: #8b9ca0;
-  --fg-faint: #6f8890;
+  --fg: #eff2f2;
+  --fg-strong: #fcfbf7;
+  --fg-body: #eaedeb;
+  --fg-mid: #d1d8d8;
+  --fg-dim: #bbc5c6;
+  --fg-dimmer: #a3b0b3;
+  --fg-faint: #8da1a7;
   /* accents */
   --accent: #859900;
   --info: #3496da;

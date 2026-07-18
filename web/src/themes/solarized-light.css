@@ -5,10 +5,11 @@
    the cream --bg ("follow the spirit, not the arithmetic sign"). Accents stay
    canonical; hand-tunes from the QA walk are noted inline. Code/diff surfaces
    stay pinned dark via base.css, as in every theme.
-   V.1 contrast retune (2026-07-18): the whole fg ramp + all four accents
-   darkened off the canonical values — the soft Solarized contrast failed the
-   readability floors (fg was 4.4:1 worst-case, accent/warn ~3:1 as text).
-   Hues stay Solarized; only lightness moved. */
+   V.1 contrast retune (2026-07-18, two rounds — terminal-grade floors): the
+   whole fg ramp + all four accents darkened far off the canonical values —
+   the soft Solarized contrast failed the readability floors outright (fg
+   was 4.4:1 worst-case, accent/warn ~3:1 as text). What survives: the cream
+   base3 canvas and the hue family. Only lightness moved. */
 
 :root[data-theme="solarized-light"] {
   color-scheme: light;
@@ -21,13 +22,13 @@
   --surface-hover: #f6f0dd;
   --inline-code-bg: #f4eedb;
   /* text */
-  --fg: #3e4d52;
-  --fg-strong: #073642;
-  --fg-body: #384e55;
-  --fg-mid: #4b5d63;
-  --fg-dim: #576a71;
-  --fg-dimmer: #617176;
-  --fg-faint: #738588;
+  --fg: #262f33;
+  --fg-strong: #062b35;
+  --fg-body: #253337;
+  --fg-mid: #344045;
+  --fg-dim: #3f4d52;
+  --fg-dimmer: #4f5c60;
+  --fg-faint: #5b696c;
   /* accents */
   --accent: #677600;
   --info: #2074b0;
