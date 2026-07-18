@@ -1201,15 +1201,19 @@ is scoped further.
   Dark, Dracula — the light-side Standard dropped its "Light" suffix
   same day (Kyle: the suffix made it read like Solarized Light at a
   glance; group headers carry the side). All tiers green 219/82/28.
-  And the brand mark found its in-app home (`b7a1d47` → `bbd6ca9`,
-  Kyle's calls): an M-as-home-button experiment was tried and REVERTED
-  same day (⌂ reads instantly); the FULL logo.svg mark (bracket-M with
-  the >_ prompt) now heads the empty-session welcome instead — inline
-  strokes minus the dark tile, riding var(--accent) so all seven themes
-  color it and Mirafold shows exact brand green (its accent aligned to
-  the mark's canonical #40d17f, kept through the revert since it serves
-  the new placement). The welcome block sized up a step. Known cost,
-  accepted: active-session screenshots carry no brand mark.
+  And the brand mark found its in-app home (`b7a1d47` → `bbd6ca9` →
+  `dc844e9`, Kyle's calls through live mock iteration): an
+  M-as-home-button experiment was tried and REVERTED same day (⌂ reads
+  instantly); a centered mark over the greeting read as a splash screen;
+  tiled-centered and ghost-watermark variants were mocked and rejected.
+  Settled form: the FULL logo.svg mark — tile included, >_ prompt
+  legible at 45px — sits INLINE beside the greeting ("Hello!" — the
+  bare word read corporate, the 👋 boxed the text in; the exclamation
+  is the warmth). Fixed asset colors: pops on light canvases, subtle
+  well on dark, gone on Standard's pure black (strokes carry it —
+  accepted). Mirafold theme accent stays aligned to the mark's
+  canonical #40d17f. Known cost, accepted: active-session screenshots
+  carry no brand mark.
   - Goal: Kyle, 2026-07-17: "every single style doesn't have enough
     contrast and strains the eyes to look at... this is something that
     regular terminals DO NOT have a problem with and it almost completely
