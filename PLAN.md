@@ -1197,8 +1197,10 @@ is scoped further.
   fallback); and the dark default's display name became **"Mirafold"**
   (house theme, house name — already the product's face in every demo;
   id stays `dark`, ids are fallback machinery). **Seven themes ship:**
-  Mirafold, Standard, Standard Light, Solarized Light/Dark, Gruvbox
-  Dark, Dracula. All tiers green 219/82/28.
+  Mirafold, Standard (dark and light), Solarized Light/Dark, Gruvbox
+  Dark, Dracula — the light-side Standard dropped its "Light" suffix
+  same day (Kyle: the suffix made it read like Solarized Light at a
+  glance; group headers carry the side). All tiers green 219/82/28.
   - Goal: Kyle, 2026-07-17: "every single style doesn't have enough
     contrast and strains the eyes to look at... this is something that
     regular terminals DO NOT have a problem with and it almost completely
