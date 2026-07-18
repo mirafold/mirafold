@@ -86,24 +86,13 @@ export function StatusBar({
 
   return (
     <div className="status-bar">
-      {/* Home is the outermost far-LEFT control — moved from the far right
-          2026-07-16 (Kyle); the dot stays glued to the agent text it reports
-          on. The glyph is the brand M mark (⌂ → M 2026-07-18, Kyle):
-          logo-as-home, the one accent-colored brand pixel in the session —
-          also what makes shared screenshots self-attributing. Geometry
-          mirrors favicon.svg's polyline; stroke rides currentColor so the
-          CSS accent color themes it. */}
+      {/* Home (⌂ → mission control) is the outermost far-LEFT control —
+          moved from the far right 2026-07-16 (Kyle); the dot stays glued to
+          the agent text it reports on. (A brand-M-as-home experiment lived
+          here for part of 2026-07-18 — reverted, Kyle's call; the brand mark
+          moved to the empty-session welcome in RenderZone instead.) */}
       <a className="sb-home" href="/" title="All sessions (mission control)">
-        <svg className="sb-home-mark" viewBox="14 13 36 38" aria-hidden="true">
-          <polyline
-            points="24,47 18,47 18,17 32,36 46,17 46,47 40,47"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="6"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
+        ⌂
       </a>
       {/* End (#11) lives with home on the left: the session-lifecycle pair,
           apart from the settings/theme cluster on the right (2026-07-16). */}
