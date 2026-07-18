@@ -1201,6 +1201,12 @@ is scoped further.
   Dark, Dracula — the light-side Standard dropped its "Light" suffix
   same day (Kyle: the suffix made it read like Solarized Light at a
   glance; group headers carry the side). All tiers green 219/82/28.
+  And the status bar's home glyph became the brand M mark (`b7a1d47`,
+  Kyle's call — logo-as-home over nameplate/center placements): inline
+  SVG of favicon.svg's polyline on currentColor, colored var(--accent)
+  (green in every theme); the Mirafold theme accent aligned to the
+  mark's canonical green (#4ade80 → #40d17f) so the house theme shows
+  the exact brand color. Shared screenshots now self-attribute.
   - Goal: Kyle, 2026-07-17: "every single style doesn't have enough
     contrast and strains the eyes to look at... this is something that
     regular terminals DO NOT have a problem with and it almost completely
