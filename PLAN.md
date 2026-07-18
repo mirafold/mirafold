@@ -1303,6 +1303,14 @@ is scoped further.
         mechanism plus a second question.
       - **All tiers green: 234/82/28** (no flake on this round), typecheck
         clean.
+      - Same-day close-out: a behavior-preserving refactor of the session's
+        code (lookupThreadId dedup, picker extraction, shared test waiter,
+        converter regex localized, typed parse boundary — re-verified
+        234/82/28) and a scoped security audit — **no real or ship-time
+        findings**; two cheap hardenings landed on approval (SIGKILL
+        fallback for a SIGTERM-ignoring app-server child; hyphen-leading
+        `/model` names rejected in the adapter rather than trusting the
+        CLI parser to refuse them).
     - **`/model`, CONFIRMED:** drove real terminal `codex` through a pty
       (pyte-rendered screen) — `/model` opens an interactive picker: 4
       selectable models (gpt-5.6-sol/terra/luna, gpt-5.5) each with a

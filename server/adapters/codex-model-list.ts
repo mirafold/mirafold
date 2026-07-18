@@ -23,6 +23,15 @@ export interface CodexModel {
   isDefault: boolean;
 }
 
+/** The subset of an app-server `model/list` row this module reads. */
+interface RawModelRow {
+  id: unknown;
+  displayName?: unknown;
+  description?: unknown;
+  hidden?: unknown;
+  isDefault?: unknown;
+}
+
 /** Resolved per call: MIRAFOLD_CODEX_BIN overrides (operator knob + the test
  *  seam, like MIRAFOLD_GEMINI_BIN), else the copy beside node (nvm global
  *  installs land there), else PATH. */
@@ -46,6 +55,9 @@ export function listCodexModels(timeoutMs = 10_000): Promise<CodexModel[]> {
       settled = true;
       clearTimeout(timer);
       child.kill();
+      // A child that ignores SIGTERM still dies; unref so the timer never
+      // holds the daemon open (2026-07-18 audit).
+      setTimeout(() => child.kill("SIGKILL"), 2_000).unref();
       if (err) reject(err);
       else resolve(models ?? []);
     };
@@ -62,7 +74,7 @@ export function listCodexModels(timeoutMs = 10_000): Promise<CodexModel[]> {
         const line = buf.slice(0, nl).trim();
         buf = buf.slice(nl + 1);
         if (!line) continue;
-        let msg: { id?: unknown; result?: any; error?: { message?: string } };
+        let msg: { id?: unknown; result?: { data?: unknown }; error?: { message?: string } };
         try {
           msg = JSON.parse(line);
         } catch {
@@ -81,9 +93,9 @@ export function listCodexModels(timeoutMs = 10_000): Promise<CodexModel[]> {
           }
           finish(
             null,
-            data
-              .filter((m: any) => !m.hidden)
-              .map((m: any) => ({
+            (data as RawModelRow[])
+              .filter((m) => !m.hidden)
+              .map((m) => ({
                 id: String(m.id),
                 displayName: String(m.displayName ?? m.id),
                 description: String(m.description ?? ""),

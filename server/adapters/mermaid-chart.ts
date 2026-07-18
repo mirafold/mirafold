@@ -25,8 +25,6 @@ export interface ChartProps {
 /** A run of ordinary text, or one converted chart, in document order. */
 export type TextOrChart = { text: string } | { chart: ChartProps };
 
-const FENCE_RE = /```mermaid[^\S\n]*\n([\s\S]*?)```/g;
-
 /** Strip one layer of matched quotes. */
 const unquote = (s: string) => {
   const t = s.trim();
@@ -113,21 +111,19 @@ export function xychartToChart(body: string): ChartProps | undefined {
  * A message with nothing to convert comes back as one text segment.
  */
 export function convertMermaidCharts(text: string): TextOrChart[] {
+  const fence = /```mermaid[^\S\n]*\n([\s\S]*?)```/g;
   const out: TextOrChart[] = [];
   let cursor = 0;
-  let pendingText = "";
-  FENCE_RE.lastIndex = 0;
-  for (let m = FENCE_RE.exec(text); m; m = FENCE_RE.exec(text)) {
+  for (let m = fence.exec(text); m; m = fence.exec(text)) {
     const chart = xychartToChart(m[1]);
     if (!chart) continue; // not ours — stays in the surrounding text
-    pendingText += text.slice(cursor, m.index);
-    if (pendingText.trim()) out.push({ text: pendingText });
-    pendingText = "";
+    const before = text.slice(cursor, m.index);
+    if (before.trim()) out.push({ text: before });
     out.push({ chart });
     cursor = m.index + m[0].length;
   }
-  pendingText += text.slice(cursor);
   if (out.length === 0) return [{ text }]; // nothing converted: hand back verbatim
-  if (pendingText.trim()) out.push({ text: pendingText });
+  const after = text.slice(cursor);
+  if (after.trim()) out.push({ text: after });
   return out;
 }

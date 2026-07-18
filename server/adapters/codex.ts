@@ -167,7 +167,6 @@ export class CodexSession implements AgentSession {
   // Where Codex keeps auth/config/sessions — the CLI's own CODEX_HOME rule.
   // A field (not read at call time) so tests can point it at a fixture.
   private codexHome = process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex");
-  private lookupThreadId?: string;
   private lookupRunning = false;
   // V.2: the SDK exposes no system-prompt/instructions hook (unlike Claude's
   // `systemPrompt.append`), so RENDER_GUIDANCE + the deferred-tools addendum
@@ -331,44 +330,11 @@ export class CodexSession implements AgentSession {
           });
           return;
         }
-        const current = (m: CodexModel) =>
-          this.modelLabel === MODEL_STAND_IN ? m.isDefault : this.modelLabel === m.id;
-        if (models.length >= 2 && models.length <= 4) {
-          this.emit({
-            type: "render",
-            component: "question",
-            props: {
-              question: "Select a model",
-              options: models.map((m) => ({
-                label: current(m) ? `${m.displayName} (current)` : m.displayName,
-                text: `/model ${m.id}`,
-                detail: m.description,
-              })),
-            },
-            id: randomUUID(),
-          });
-        } else {
-          // Catalog outgrew the 4-option picker (or shrank below 2): the
-          // honest fallback is the plain list + the switch instruction.
-          this.emit({
-            type: "render",
-            component: "list",
-            props: {
-              title: "Models",
-              items: models.map((m) => ({
-                text: `**${m.displayName}**${current(m) ? " (current)" : ""} — \`${m.id}\``,
-                detail: m.description,
-              })),
-            },
-            id: randomUUID(),
-          });
-          this.emit({ type: "text_delta", text: "Send `/model <model-id>` to switch." });
-        }
-        this.emit({
-          type: "text_delta",
-          text: "\nLegacy models can be set directly with `/model <model_name>`.",
-        });
-      } else if (/\s/.test(arg)) {
+        this.emitModelPicker(models);
+      } else if (/\s/.test(arg) || arg.startsWith("-")) {
+        // Hyphen-leading names are rejected HERE rather than trusting the
+        // codex CLI's parser to refuse a flag-shaped --model value
+        // (2026-07-18 audit): the safety stays local, the error stays clear.
         this.emit({ type: "text_delta", text: "Usage: `/model` to pick, or `/model <model-id>`." });
       } else {
         // Apply: resume the warm thread under the new model (or restart the
@@ -384,6 +350,47 @@ export class CodexSession implements AgentSession {
     } finally {
       this.emit({ type: "turn_end" });
     }
+  }
+
+  /** The catalog as a clickable picker (a click sends `/model <id>` back
+   *  through runModelCommand), or a plain list when the catalog leaves the
+   *  question component's 2–4 option range. */
+  private emitModelPicker(models: CodexModel[]) {
+    const current = (m: CodexModel) =>
+      this.modelLabel === MODEL_STAND_IN ? m.isDefault : this.modelLabel === m.id;
+    if (models.length >= 2 && models.length <= 4) {
+      this.emit({
+        type: "render",
+        component: "question",
+        props: {
+          question: "Select a model",
+          options: models.map((m) => ({
+            label: current(m) ? `${m.displayName} (current)` : m.displayName,
+            text: `/model ${m.id}`,
+            detail: m.description,
+          })),
+        },
+        id: randomUUID(),
+      });
+    } else {
+      this.emit({
+        type: "render",
+        component: "list",
+        props: {
+          title: "Models",
+          items: models.map((m) => ({
+            text: `**${m.displayName}**${current(m) ? " (current)" : ""} — \`${m.id}\``,
+            detail: m.description,
+          })),
+        },
+        id: randomUUID(),
+      });
+      this.emit({ type: "text_delta", text: "Send `/model <model-id>` to switch." });
+    }
+    this.emit({
+      type: "text_delta",
+      text: "\nLegacy models can be set directly with `/model <model_name>`.",
+    });
   }
 
   private async runTurn(text: string) {
@@ -459,10 +466,7 @@ export class CodexSession implements AgentSession {
         // (fleet/status-bar parity with Claude's system/init, F.3), unless a
         // model was configured — then the label already tells the truth.
         this.threadId = ev.thread_id;
-        if (this.modelLabel === MODEL_STAND_IN) {
-          this.lookupThreadId = ev.thread_id;
-          void this.learnModel();
-        }
+        if (this.modelLabel === MODEL_STAND_IN) void this.learnModel();
         break;
     }
   }
@@ -473,11 +477,11 @@ export class CodexSession implements AgentSession {
       turn.completed re-kicks a missed lookup. Silent on failure: the "codex"
       stand-in is still honest, just less specific. */
   private async learnModel() {
-    if (this.lookupRunning || !this.lookupThreadId) return;
+    if (this.lookupRunning || !this.threadId) return;
     this.lookupRunning = true;
     try {
       for (let attempt = 0; attempt < 20 && !this.closed && this.modelLabel === MODEL_STAND_IN; attempt++) {
-        const model = await resolveRolloutModel(this.lookupThreadId, this.codexHome);
+        const model = await resolveRolloutModel(this.threadId, this.codexHome);
         if (model) {
           this.modelLabel = model;
           return;
