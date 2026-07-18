@@ -55,28 +55,31 @@ body {
   flex-direction: column;
   align-items: center;
   text-align: center;
-  gap: 10px;
+  gap: 12px;
   padding: 24px;
   color: var(--fg-dim);
   animation: rise 0.2s ease-out both;
 }
 
 .zone-empty-glyph {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 42px;
-  line-height: 1;
   color: var(--accent);
 }
 
+.zone-empty-mark {
+  width: 76px;
+  height: auto;
+  display: block;
+}
+
 .zone-empty-title {
-  font-size: 22px;
+  font-size: 26px;
   font-weight: 650;
   color: var(--fg-strong);
 }
 
 .zone-empty-sub {
   max-width: 44ch;
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.55;
 }
 
@@ -2087,15 +2090,6 @@ html {
   line-height: 1;
   cursor: pointer;
   text-decoration: none;
-  /* The brand M rides the accent — the identity slot, green in every theme
-     (and the exact brand green in Mirafold). */
-  color: var(--accent);
-}
-
-.sb-home-mark {
-  width: 15px;
-  height: 16px;
-  display: block;
 }
 
 .sb-home:hover {

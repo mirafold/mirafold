@@ -405,7 +405,28 @@ export function RenderZone({
           // A fresh session (no transcript yet) shows an inviting welcome
           // instead of raw emptiness. Shell-owned and agent-neutral (#12).
           <div className="zone-empty">
-            <div className="zone-empty-glyph">❯</div>
+            {/* The full brand mark (❯ → logo 2026-07-18, Kyle): inline copy
+                of logo.svg's strokes — bracket-M with the >_ prompt — minus
+                the dark tile (a fixed tile reads as a sticker on light
+                themes); currentColor rides the accent so all seven themes
+                color it, and Mirafold shows the exact brand green. */}
+            <div className="zone-empty-glyph" aria-hidden="true">
+              <svg className="zone-empty-mark" viewBox="12 13.5 41 37.5">
+                <g
+                  fill="none"
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <polyline
+                    strokeWidth="3"
+                    points="18,49 13.5,49 13.5,15 18.5,15 32,31.5 45.5,15 50.5,15 50.5,49 46,49"
+                  />
+                  <polyline strokeWidth="2.2" points="19,35 25,39.2 19,43.4" />
+                  <line strokeWidth="2.2" x1="27" y1="43.6" x2="33" y2="43.6" />
+                </g>
+              </svg>
+            </div>
             <div className="zone-empty-title">Hello 👋</div>
             <div className="zone-empty-sub">
               You're in a Mirafold session. Type a prompt below to get started.
