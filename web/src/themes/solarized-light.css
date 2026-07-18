@@ -4,7 +4,11 @@
    via the S.2 recipe in manifest.ts. Light scheme: surfaces go LIGHTER than
    the cream --bg ("follow the spirit, not the arithmetic sign"). Accents stay
    canonical; hand-tunes from the QA walk are noted inline. Code/diff surfaces
-   stay pinned dark via base.css, as in every theme. */
+   stay pinned dark via base.css, as in every theme.
+   V.1 contrast retune (2026-07-18): the whole fg ramp + all four accents
+   darkened off the canonical values — the soft Solarized contrast failed the
+   readability floors (fg was 4.4:1 worst-case, accent/warn ~3:1 as text).
+   Hues stay Solarized; only lightness moved. */
 
 :root[data-theme="solarized-light"] {
   color-scheme: light;
@@ -17,18 +21,18 @@
   --surface-hover: #f6f0dd;
   --inline-code-bg: #f4eedb;
   /* text */
-  --fg: #586e75;
+  --fg: #3e4d52;
   --fg-strong: #073642;
-  --fg-body: #446068;
-  --fg-mid: #5f757c;
-  --fg-dim: #657b83;
-  --fg-dimmer: #74888d;
-  --fg-faint: #839496;
+  --fg-body: #384e55;
+  --fg-mid: #4b5d63;
+  --fg-dim: #576a71;
+  --fg-dimmer: #617176;
+  --fg-faint: #738588;
   /* accents */
-  --accent: #859900;
-  --info: #268bd2;
-  --warn-fg: #b58900;
-  --error: #dc322f;
+  --accent: #677600;
+  --info: #2074b0;
+  --warn-fg: #8d6a00;
+  --error: #d72724;
   /* borders */
   --border: #d8d8cc;
   --border-2: #d0d2c7;
@@ -52,7 +56,7 @@
   --warn-border-2: #e3cf91;
   /* misc — dark scrim + stock shadows, as everywhere */
   --overlay: rgba(0, 16, 21, 0.82);
-  --selection: rgba(133, 153, 0, 0.2);
+  --selection: rgba(103, 118, 0, 0.2);
   --shadow-pop: 0 4px 14px rgba(0, 0, 0, 0.18);
   --shadow-card: 0 18px 60px rgba(0, 0, 0, 0.5);
 }

@@ -1154,7 +1154,22 @@ Sequencing: opened as the next work after Phase N. Not yet graded against
 R.5c/R.6/R.7 as launch-blocking; that call is Kyle's once each step below
 is scoped further.
 
-- [ ] **Step V.1 — Theme contrast pass (all six themes)**
+- [ ] **Step V.1 — Theme contrast pass (all six themes)** — *engineering
+  landed 2026-07-18; open only on Kyle's side-by-side confirmation.* The
+  audit measured every text tier against the worst of the six surfaces text
+  actually sits on (--bg, --surface/-2/-3, --surface-hover,
+  --inline-code-bg) and confirmed the diagnosis: only --fg/--bg had a floor,
+  and the read-for-content dim tiers (--fg-dim: timestamps/footers/notice
+  line; --fg-dimmer: thinking block, status bar, tool detail) shipped as low
+  as 3.0–3.4:1 everywhere; Solarized Dark's PRIMARY --fg was 4.4:1
+  worst-case, Solarized Light's accents ~3:1 as text, Gruvbox --fg-faint
+  1.7:1. Landed: per-tier floors in themes.test.ts (worst-case-surface:
+  strong ≥8.5, fg/body ≥7, mid ≥5.5, dim ≥4.5, dimmer ≥4, faint ≥3; accents
+  as text ≥4.5 on --bg; pinned code/diff floors too) + re-tuned tokens in
+  all six theme files — hue/saturation preserved everywhere, only lightness
+  moved (retunes noted in each file's header; Solarized's canonical soft
+  contrast deliberately overridden — Kyle's readability call wins). All
+  tiers green 219/82/28.
   - Goal: Kyle, 2026-07-17: "every single style doesn't have enough
     contrast and strains the eyes to look at... this is something that
     regular terminals DO NOT have a problem with and it almost completely

@@ -3,7 +3,11 @@
    Kurek; gruvbox palette by Pavel Pertsev, MIT) via the S.2 recipe in
    manifest.ts. Warm grays, low-contrast borders, and the signature
    green-yellow accent are the theme — derived tiers are the recipe's mixes,
-   hand-tunes from the QA walk noted inline. */
+   hand-tunes from the QA walk noted inline.
+   V.1 contrast retune (2026-07-18): fg/strong/body lifted a step past the
+   canonical fg1/fg2 grays, dimmer/faint lifted well clear of the surfaces
+   (faint was 1.7:1 worst-case), error brightened to clear 4.5:1 on --bg.
+   Hues unchanged. */
 
 :root[data-theme="gruvbox-dark"] {
   color-scheme: dark;
@@ -16,18 +20,18 @@
   --surface-hover: #3e3a38;
   --inline-code-bg: #373433;
   /* text */
-  --fg: #d5c4a1;
-  --fg-strong: #ebdbb2;
-  --fg-body: #dbcaa5;
+  --fg: #dbcdaf;
+  --fg-strong: #eee1be;
+  --fg-body: #ddcda9;
   --fg-mid: #c9b99a;
   --fg-dim: #bdae93;
-  --fg-dimmer: #928574;
-  --fg-faint: #665c54;
+  --fg-dimmer: #a69b8d;
+  --fg-faint: #92857a;
   /* accents */
   --accent: #b8bb26;
   --info: #83a598;
   --warn-fg: #fabd2f;
-  --error: #fb4934;
+  --error: #fb5844;
   /* borders */
   --border: #32302f;
   --border-2: #343231;

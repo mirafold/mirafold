@@ -5,7 +5,9 @@
    in the green slot) would break the recipe's "semantic, not syntax" accent
    rule. Semantic accents: green #50fa7b, cyan #8be9fd (info), yellow
    #f1fa8c (warn), red #ff5555 (error); the comment blue #6272a4 anchors the
-   faint end of the text ramp. Hand-tunes from the QA walk noted inline. */
+   faint end of the text ramp (lifted to #7785b0 in the V.1 contrast retune,
+   2026-07-18 — same hue, readable floor). Hand-tunes from the QA walk noted
+   inline. */
 
 :root[data-theme="dracula"] {
   color-scheme: dark;
@@ -23,8 +25,8 @@
   --fg-body: #fafaf5;
   --fg-mid: #d3d7df;
   --fg-dim: #adb5cb;
-  --fg-dimmer: #8894b8;
-  --fg-faint: #6272a4;
+  --fg-dimmer: #8f9bbc;
+  --fg-faint: #7785b0;
   /* accents */
   --accent: #50fa7b;
   --info: #8be9fd;
