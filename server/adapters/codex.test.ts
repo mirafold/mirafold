@@ -19,6 +19,21 @@ type Turn = ThreadEvent[] | ((signal: AbortSignal) => AsyncGenerator<ThreadEvent
 const tmp = mkdtempSync(path.join(os.tmpdir(), "mcp-codex-test-"));
 const ev = (e: Record<string, unknown>) => e as unknown as ThreadEvent;
 
+/** Poll the message log until the Nth turn_end lands (worker turns are async). */
+const waitForTurnEnds = (msgs: Any[], count = 1, timeoutMs = 5_000) =>
+  new Promise<void>((resolve, reject) => {
+    const t0 = Date.now();
+    const poll = setInterval(() => {
+      if (msgs.filter((m) => m.type === "turn_end").length >= count) {
+        clearInterval(poll);
+        resolve();
+      } else if (Date.now() - t0 > timeoutMs) {
+        clearInterval(poll);
+        reject(new Error(`no turn_end #${count}; seen: ${msgs.map((m) => m.type).join(",")}`));
+      }
+    }, 5);
+  });
+
 /** A CodexSession on a stubbed thread; each pushPrompt consumes the next turn.
  *  `prompts` records the exact text each turn sent to the engine (V.2). */
 function makeSession(...turns: Turn[]) {
@@ -41,19 +56,7 @@ function makeSession(...turns: Turn[]) {
     },
   };
   const turnEnds = () => msgs.filter((m) => m.type === "turn_end").length;
-  const awaitTurnEnd = (count = 1, timeoutMs = 5_000) =>
-    new Promise<void>((resolve, reject) => {
-      const t0 = Date.now();
-      const poll = setInterval(() => {
-        if (turnEnds() >= count) {
-          clearInterval(poll);
-          resolve();
-        } else if (Date.now() - t0 > timeoutMs) {
-          clearInterval(poll);
-          reject(new Error(`no turn_end #${count}; seen: ${msgs.map((m) => m.type).join(",")}`));
-        }
-      }, 5);
-    });
+  const awaitTurnEnd = (count = 1) => waitForTurnEnds(msgs, count);
   return { s, msgs, prompts, turnEnds, awaitTurnEnd };
 }
 
@@ -228,19 +231,7 @@ function makeModelSession(listModels: () => Promise<any[]>) {
   });
   const msgs: Any[] = [];
   s.onMessage((m) => msgs.push(m as Any));
-  const awaitTurnEnd = (count = 1, timeoutMs = 5_000) =>
-    new Promise<void>((resolve, reject) => {
-      const t0 = Date.now();
-      const poll = setInterval(() => {
-        if (msgs.filter((m) => m.type === "turn_end").length >= count) {
-          clearInterval(poll);
-          resolve();
-        } else if (Date.now() - t0 > timeoutMs) {
-          clearInterval(poll);
-          reject(new Error(`no turn_end #${count}; seen: ${msgs.map((m) => m.type).join(",")}`));
-        }
-      }, 5);
-    });
+  const awaitTurnEnd = (count = 1) => waitForTurnEnds(msgs, count);
   return { s, msgs, calls, prompts, awaitTurnEnd };
 }
 
@@ -305,6 +296,9 @@ test("/model failure paths: unreadable catalog errors honestly; extra words get 
   s.pushPrompt("/model two words");
   await awaitTurnEnd(2);
   assert.ok(msgs.some((m) => m.type === "text_delta" && m.text.includes("Usage:")));
+  s.pushPrompt("/model --sneaky-flag");
+  await awaitTurnEnd(3);
+  assert.equal(msgs.filter((m) => m.type === "text_delta" && m.text.includes("Usage:")).length, 2);
   s.close();
 });
 
