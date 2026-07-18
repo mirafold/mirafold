@@ -61,14 +61,16 @@ body {
   animation: rise 0.2s ease-out both;
 }
 
-.zone-empty-glyph {
-  color: var(--accent);
+.zone-empty-hello {
+  display: flex;
+  align-items: center;
+  gap: 14px;
 }
 
 .zone-empty-mark {
-  width: 76px;
-  height: auto;
-  display: block;
+  width: 45px;
+  height: 45px;
+  border-radius: 10px; /* clips the tile's corners; no outline by design */
 }
 
 .zone-empty-title {
