@@ -55,33 +55,36 @@ body {
   flex-direction: column;
   align-items: center;
   text-align: center;
-  gap: 12px;
+  gap: 15px;
   padding: 24px;
   color: var(--fg-dim);
   animation: rise 0.2s ease-out both;
 }
 
 .zone-empty-hello {
-  display: flex;
-  align-items: center;
-  gap: 14px;
+  position: relative; /* anchors the hanging mark */
 }
 
 .zone-empty-mark {
-  width: 45px;
-  height: 45px;
-  border-radius: 10px; /* clips the tile's corners; no outline by design */
+  width: 56px;
+  height: 56px;
+  border-radius: 12px; /* clips the tile's corners; no outline by design */
+  position: absolute;
+  right: 100%; /* hangs left of the title so the TEXT owns the centerline */
+  margin-right: 18px;
+  top: 50%;
+  transform: translateY(-50%);
 }
 
 .zone-empty-title {
-  font-size: 26px;
+  font-size: 33px;
   font-weight: 650;
   color: var(--fg-strong);
 }
 
 .zone-empty-sub {
   max-width: 44ch;
-  font-size: 15px;
+  font-size: 19px;
   line-height: 1.55;
 }
 
