@@ -418,7 +418,17 @@ export function RenderZone({
                 the warmth: "Hello" alone read corporate, and the 👋 boxed
                 the text in from the right. */}
             <div className="zone-empty-hello">
-              <svg className="zone-empty-mark" viewBox="0 0 64 64" aria-hidden="true">
+              {/* Optical centering (settled 2026-07-18, final round): the
+                  TITLE sits on the true page centerline — shared with the
+                  subtitle — and the mark HANGS off its left (absolute,
+                  right:100%). Centering icon+title as one flex box pushed
+                  the text ~30px right of the subtitle's axis and the whole
+                  welcome read as leaning right (Kyle). */}
+              <svg
+                className="zone-empty-mark"
+                viewBox="0 0 64 64"
+                aria-hidden="true"
+              >
                 <rect width="64" height="64" rx="13" fill="#0a0d13" />
                 <g
                   fill="none"
