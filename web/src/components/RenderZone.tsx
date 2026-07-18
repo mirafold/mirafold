@@ -405,25 +405,19 @@ export function RenderZone({
           // A fresh session (no transcript yet) shows an inviting welcome
           // instead of raw emptiness. Shell-owned and agent-neutral (#12).
           <div className="zone-empty">
-            {/* The greeting lockup (settled 2026-07-18 after live iteration
-                with Kyle): the FULL brand mark — logo.svg verbatim, tile
-                included, the >_ prompt legible at 45px — inline beside
-                "Hello!", not stacked above it (centered logo-over-greeting
-                read as a splash screen; big/untiled/watermark variants all
-                rejected on sight). Asset colors stay FIXED: as an app-icon
-                object the tile carries its own background on any canvas —
-                it pops on light themes and recedes to a subtle well on dark
-                ones (vanishing entirely on Standard's pure black, where the
-                strokes alone carry it — accepted). The bare exclamation is
-                the warmth: "Hello" alone read corporate, and the 👋 boxed
-                the text in from the right. */}
+            {/* The greeting lockup (settled 2026-07-18 after live mock
+                iteration with Kyle — don't relitigate): the FULL brand mark,
+                a hand-kept copy of logo.svg pinned by brand-mark.test.ts,
+                HANGS off the title's left so title and subtitle share the
+                true page centerline (centering icon+title as one flex box
+                leaned the text right; centered-above read as a splash
+                screen; untiled/watermark/45px-inline variants and the 👋
+                were all tried and rejected — the bare exclamation is the
+                warmth). Asset colors stay FIXED: an app-icon object carries
+                its own background on any canvas — it pops on light themes,
+                recedes to a subtle well on dark ones, and on Standard's
+                pure black the strokes alone carry it (accepted). */}
             <div className="zone-empty-hello">
-              {/* Optical centering (settled 2026-07-18, final round): the
-                  TITLE sits on the true page centerline — shared with the
-                  subtitle — and the mark HANGS off its left (absolute,
-                  right:100%). Centering icon+title as one flex box pushed
-                  the text ~30px right of the subtitle's axis and the whole
-                  welcome read as leaning right (Kyle). */}
               <svg
                 className="zone-empty-mark"
                 viewBox="0 0 64 64"
