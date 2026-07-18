@@ -1144,6 +1144,82 @@ the row label could acknowledge the discovered backing.
 
 ---
 
+## Phase V — Visual + fidelity gaps flagged by Kyle (opened 2026-07-17)
+
+Origin: two deficiencies Kyle flagged directly from using the shipped
+product. Ordered here in the **reverse** of how he raised them (his
+explicit instruction) — contrast first, Codex/Gemini fidelity second —
+because the contrast problem cuts at the project's core justification.
+Sequencing: opened as the next work after Phase N. Not yet graded against
+R.5c/R.6/R.7 as launch-blocking; that call is Kyle's once each step below
+is scoped further.
+
+- [ ] **Step V.1 — Theme contrast pass (all six themes)**
+  - Goal: Kyle, 2026-07-17: "every single style doesn't have enough
+    contrast and strains the eyes to look at... this is something that
+    regular terminals DO NOT have a problem with and it almost completely
+    removes the entire justification for this project." A terminal
+    successor that's harder to read than the terminal it replaces defeats
+    Mirafold's stated identity (README §7: more pleasing to look at, not
+    just better-formatted).
+  - Diagnosis so far: `themes.test.ts` enforces a 4.5:1 WCAG-AA floor, but
+    only on the single `--fg`/`--bg` pair — every other text tier
+    (`--fg-mid`, `--fg-dim`, `--fg-dimmer`, `--fg-faint`, muted labels, the
+    F.2 dim notice line, secondary/timestamp text) ships with **no**
+    contrast floor at all, and 4.5:1 itself is the legal minimum for body
+    text, not a comfortable target for a screen someone reads for a full
+    session — most terminal color schemes aim well above it.
+  - Build: audit real contrast ratios for every semantic token actually
+    used as text, against its actual backdrop, in all six shipped themes;
+    widen the floor test to cover every `--fg-*` tier (not just `--fg`),
+    and re-tune token values where a theme fails a more honest bar. Sanity
+    check against Kyle's own terminal color scheme as the comparison point
+    he named.
+  - Files: `web/src/themes/*.css`, `web/src/themes/manifest.ts`,
+    `web/src/themes/themes.test.ts`.
+  - Done when: Kyle confirms, side-by-side with his regular terminal, that
+    reading a real session in each of the six themes no longer strains his
+    eyes, and the widened contrast-floor test is green for every theme.
+
+- [ ] **Step V.2 — Codex (and Gemini, untested) rendering/command fidelity
+  gaps**
+  - Goal: Kyle, 2026-07-17: Codex's `/model` in Mirafold does not show the
+    full list the same command shows in a real terminal, and a requested
+    chart/graph sometimes renders as a plain table instead — both are
+    faithful-skin violations (CLAUDE.md non-negotiable: a Codex user gets
+    Codex, nothing degraded). Kyle suspects Gemini has the same class of
+    problem but has not yet tested it. Kyle's read: Claude was prioritized
+    early in the project and Codex (and likely Gemini) fidelity lagged.
+  - Diagnosis so far: no dedicated `/model` handling exists in
+    `server/adapters/codex.ts` — slash commands ride the general F.1
+    buffered-text path, so an interactive terminal picker likely degrades
+    to whatever static text the SDK's headless `exec` surface emits, which
+    may not carry Codex's full profile/model list. This is plausibly the
+    same root cause F.5 already named (the Codex SDK drives a headless
+    `exec` surface with no interactive round-trip) rather than a distinct
+    bug — F.5's app-server migration may be the real fix, not a patch
+    bolted onto `exec`. The chart-degrades-to-table symptom needs its own
+    trace: whether the model itself is choosing `table` under Codex (a
+    prompting/tool-description gap) or the adapter/registry is mis-mapping
+    a `chart` instruction.
+  - Build: live-probe terminal Codex's `/model` output vs. Mirafold's,
+    side-by-side, and trace exactly where the list gets truncated;
+    live-probe a chart-triggering prompt in terminal Codex vs. Mirafold and
+    trace whether the model or the render path is responsible; run the
+    same two probes against Gemini CLI once Codex is diagnosed, since Kyle
+    flagged it as an open question, not a confirmed second bug. Fold
+    findings into F.5 (Codex) / F.6 (Gemini) if root-caused there, or open
+    new steps if not.
+  - Files: `server/adapters/codex.ts`, `server/adapters/gemini.ts`,
+    `server/render-tools.ts`, `server/render-mcp.ts` (chart tool
+    description), PLAN.md F.5/F.6.
+  - Done when: Codex's `/model` in Mirafold shows the same list terminal
+    Codex shows, a chart prompt renders a chart (not a table) in Codex, and
+    Gemini has been live-probed for both classes of gap with the result
+    recorded here (confirmed-affected, or cleared).
+
+---
+
 ## Phase F — Fidelity gap-close (from the 2026-07-07 parity evaluation)
 
 Source: a parity evaluation of each adapter against its engine's **full** event
