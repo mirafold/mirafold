@@ -1,61 +1,68 @@
-/* ---- Light (Step 4.3; split out in S.1) ------------------------------------
-   A TRUE, unified light theme — the whole UI, chrome included (prompt box,
-   command strips, bang/permission/status bars, onboarding), flips to the
-   light palette. Faithful re-skin: a real terminal switched to light mode has
-   a light input, so ours follows suit — the earlier "chrome stays dark /
-   mono-in-rich-out" split contradicted that founding principle and was
-   reversed (USER-TESTING-FEEDBACK.md #8). The input stays distinctly an input
-   via light-palette cues (inset surface, border, monospace), not a dark
-   block. Code/diff surfaces stay pinned dark via base.css. */
+/* ---- Standard Light (V.1, 2026-07-18) ---------------------------------------
+   The plain-terminal theme's light twin, and the LIGHT-SIDE DEFAULT: black
+   text on a pure white canvas, the way xterm and Terminal.app actually ship
+   by default. Neutral gray text ramp with no hue; accents are the NORMAL
+   (dark) ANSI variants — Standard's bright four are unreadable on white, so
+   this is classic green/blue/olive/red3. Not a Base16 port; the reference is
+   the stock black-on-white terminal itself. Code/diff surfaces stay pinned
+   dark via base.css, as in every theme.
+
+   Why this file is light.css: the id `light` is load-bearing — it's the
+   built-in fallback the pill's light side resolves to when a stored slot is
+   stale (resolveSlot leans on "the default's id equals the appearance
+   label"). The original designed Light theme was DROPPED 2026-07-18 (Kyle's
+   call): the V.1 terminal-grade floors removed lightness as a design
+   dimension and left the two light themes near-indistinguishable — one had
+   to go, and the stock terminal is the one with the unambiguous identity.
+   This palette (born as standard-light.css the same day) took over the id. */
 
 :root[data-theme="light"] {
   color-scheme: light;
   /* surfaces */
-  --bg: #f5f7fa;
-  --bg-inset: #eef1f6;
-  --surface: #ffffff;
-  --surface-2: #eaeef4;
-  --surface-3: #eef1f6;
-  --surface-hover: #eef2f7;
-  --inline-code-bg: #e8edf4;
+  --bg: #ffffff;
+  --bg-inset: #f4f4f4;
+  --surface: #f7f7f7;
+  --surface-2: #f0f0f0;
+  --surface-3: #f3f3f3;
+  --surface-hover: #ededed;
+  --inline-code-bg: #f2f2f2;
   /* text */
-  --fg: #26303f;
-  --fg-strong: #111927;
-  --fg-body: #293446;
-  --fg-mid: #354254;
-  --fg-dim: #434e5f;
-  --fg-dimmer: #535d6e;
-  --fg-faint: #5c6a81;
-  /* accents */
-  --accent: #148043;
-  --info: #2b6cd4;
-  --warn-fg: #946711;
-  --error: #c8404f;
+  --fg: #1a1a1a;
+  --fg-strong: #000000;
+  --fg-body: #262626;
+  --fg-mid: #3d3d3d;
+  --fg-dim: #4b4b4b;
+  --fg-dimmer: #5c5c5c;
+  --fg-faint: #696969;
+  /* accents — the classic normal (dark) ANSI four */
+  --accent: #008000;
+  --info: #0000cd;
+  --warn-fg: #737300;
+  --error: #cd0000;
   /* borders */
-  --border: #dde3eb;
-  --border-2: #d6dde7;
-  --border-mid: #c6d0dc;
-  --border-hover: #9db1cc;
-  --border-faint: #e9edf3;
-  --border-ghost: #e6ebf1;
+  --border: #dcdcdc;
+  --border-2: #d5d5d5;
+  --border-mid: #c9c9c9;
+  --border-hover: #a8a8a8;
+  --border-faint: #e8e8e8;
+  --border-ghost: #ebebeb;
   /* accent-tinted families */
-  --ok-bg: #e9f7ee;
-  --ok-border: #b5dfc5;
-  --ok-border-strong: #7fc79c;
-  --err-bg: #fbeff1;
-  --err-border: #edccd3;
-  --err-border-strong: #d99aa8;
-  --info-bg: #e9f1fb;
-  --info-border: #c3d5ec;
-  --info-border-strong: #85aad8;
-  --warn-bg: #faf5e6;
-  --warn-bg-2: #faf5e6;
-  --warn-border: #e3cf9e;
-  --warn-border-2: #d9bd82;
-  /* misc — overlay + shadows deliberately keep the dark values: a modal
-     scrim over a light UI is still a dark scrim, and shadows are shadows. */
-  --overlay: rgba(8, 11, 16, 0.82);
-  --selection: rgba(20, 128, 67, 0.2);
+  --ok-bg: #e6f2e6;
+  --ok-border: #bfdfbf;
+  --ok-border-strong: #94c994;
+  --err-bg: #fae6e6;
+  --err-border: #f2bfbf;
+  --err-border-strong: #ea9494;
+  --info-bg: #e6e6fa;
+  --info-border: #bfbff2;
+  --info-border-strong: #9494ea;
+  --warn-bg: #f1f1e6;
+  --warn-bg-2: #f5f5ed;
+  --warn-border: #d8d8b8;
+  --warn-border-2: #cfcfa8;
+  /* misc — dark scrim + stock shadows, as everywhere */
+  --overlay: rgba(0, 0, 0, 0.82);
+  --selection: rgba(0, 128, 0, 0.2);
   --shadow-pop: 0 4px 14px rgba(0, 0, 0, 0.18);
   --shadow-card: 0 18px 60px rgba(0, 0, 0, 0.5);
 }

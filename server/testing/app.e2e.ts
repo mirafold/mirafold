@@ -358,8 +358,8 @@ test("two-slot model: each pill side paints its slot's theme; choices survive re
   assert.equal(await dataTheme(), "dark");
 });
 
-// A picker row by its exact display name — "Dark" must not match
-// "Solarized Dark".
+// A picker row by its exact display name (anchored — "Standard" must
+// not match "Standard Light").
 const themeRow = (name: string) =>
   page
     .locator(".theme-row")
@@ -388,13 +388,13 @@ test("settings card: gear opens it, picking applies live and writes the slot (S.
   assert.notEqual(chipBg, "rgba(0, 0, 0, 0)");
   // Current slots are checked: the dark row (we're in default dark mode).
   assert.match(
-    (await themeRow("Dark").getAttribute("class")) ?? "",
+    (await themeRow("Mirafold").getAttribute("class")) ?? "",
     /is-slotted/,
   );
   // Picking the light-labeled row applies immediately — picking is seeing:
   // mode flips to its appearance side, data-theme paints, slot is written,
   // the card stays open (live preview), and the pill's light side is lit.
-  await themeRow("Light").click();
+  await themeRow("Standard Light").click();
   assert.equal(await dataTheme(), "light");
   assert.equal(await page.locator(".settings-card").count(), 1);
   assert.match(
@@ -407,7 +407,7 @@ test("settings card: gear opens it, picking applies live and writes the slot (S.
   );
   // Picking the dark-labeled row: paints immediately, dark slot now means
   // that theme, and the light slot is untouched.
-  await themeRow("Dark").click();
+  await themeRow("Mirafold").click();
   assert.equal(await dataTheme(), "dark");
   assert.equal(
     await page.evaluate(() => localStorage.getItem("mirafold-theme-dark")),
