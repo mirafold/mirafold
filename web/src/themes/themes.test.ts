@@ -97,14 +97,76 @@ test("contract and pinned token lists don't overlap", () => {
   assert.deepEqual(overlap, []);
 });
 
-test("contrast floor: --fg on --bg is at least 4.5:1 in every theme", () => {
+// V.1 contrast floors (2026-07-18). The old guard checked one pair (--fg on
+// --bg, 4.5:1 — the WCAG legal minimum); Kyle's finding was that every theme
+// strained the eyes anyway, because the other six text tiers had no floor at
+// all and text doesn't only sit on --bg. Every tier now clears a floor sized
+// to its actual role, against the WORST of the surfaces text really sits on.
+const TEXT_SURFACES = [
+  "--bg",
+  "--surface",
+  "--surface-2",
+  "--surface-3",
+  "--surface-hover",
+  "--inline-code-bg",
+] as const;
+
+// Floors by role: fg/strong/body are full-session reading text (well above
+// the 4.5 legal minimum); mid is secondary prose; dim is metadata that's
+// still read (timestamps, card footers, the F.2 notice line); dimmer is
+// read-for-content too (thinking block, status bar, tool detail); faint is
+// placeholders/carets/decorations (3:1, the WCAG UI-component floor).
+const TEXT_TIER_FLOORS: Record<string, number> = {
+  "--fg-strong": 8.5,
+  "--fg": 7,
+  "--fg-body": 7,
+  "--fg-mid": 5.5,
+  "--fg-dim": 4.5,
+  "--fg-dimmer": 4,
+  "--fg-faint": 3,
+};
+
+test("contrast floors: every text tier clears its floor on every text surface, in every theme", () => {
   for (const t of THEMES) {
     const tokens = parseThemeTokens(themeCss(t.id));
-    const ratio = contrast(tokens.get("--fg")!, tokens.get("--bg")!);
-    assert.ok(
-      ratio >= 4.5,
-      `${t.id}: --fg on --bg contrast is ${ratio.toFixed(2)}:1, below the 4.5:1 floor`,
-    );
+    for (const [tier, floor] of Object.entries(TEXT_TIER_FLOORS)) {
+      for (const surface of TEXT_SURFACES) {
+        const ratio = contrast(tokens.get(tier)!, tokens.get(surface)!);
+        assert.ok(
+          ratio >= floor,
+          `${t.id}: ${tier} on ${surface} is ${ratio.toFixed(2)}:1, below the ${floor}:1 floor`,
+        );
+      }
+    }
+  }
+});
+
+test("accent text clears 4.5:1 on --bg in every theme", () => {
+  // Accents render as real text (links, error prose, warn notices, status
+  // words). Floor on --bg; the tinted-family backgrounds carry their own
+  // borders and never host these as body text.
+  for (const t of THEMES) {
+    const tokens = parseThemeTokens(themeCss(t.id));
+    for (const accent of ["--accent", "--info", "--warn-fg", "--error"]) {
+      const ratio = contrast(tokens.get(accent)!, tokens.get("--bg")!);
+      assert.ok(
+        ratio >= 4.5,
+        `${t.id}: ${accent} on --bg is ${ratio.toFixed(2)}:1, below the 4.5:1 floor`,
+      );
+    }
+  }
+});
+
+test("pinned code/diff text clears its floors", () => {
+  const base = parseThemeTokens(readFileSync(join(themesDir, "base.css"), "utf8"));
+  const pairs: Array<[string, string, number]> = [
+    ["--code-fg", "--code-bg", 7],
+    ["--diff-add-fg", "--diff-add-bg", 4.5],
+    ["--diff-del-fg", "--diff-del-bg", 4.5],
+  ];
+  for (const [fg, bg, floor] of pairs) {
+    const ratio = contrast(base.get(fg)!, base.get(bg)!);
+    assert.ok(ratio >= floor, `${fg} on ${bg} is ${ratio.toFixed(2)}:1, below ${floor}:1`);
   }
 });
 

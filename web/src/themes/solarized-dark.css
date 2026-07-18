@@ -2,8 +2,11 @@
    Transcribed from the canonical Base16 "Solarized Dark" scheme (palette by
    Ethan Schoonover, https://ethanschoonover.com/solarized/ — scheme file MIT)
    via the S.2 recipe in manifest.ts. Derived tiers are the recipe's mixes;
-   hand-tunes from the QA walk are noted inline. Accents stay canonical —
-   Solarized's famously soft contrast IS the theme. */
+   hand-tunes from the QA walk are noted inline.
+   V.1 contrast retune (2026-07-18): the whole fg ramp + info/error lifted off
+   the canonical values — Solarized's famously soft contrast failed the
+   readability floors (fg was 4.4:1 worst-case; Kyle: every theme strained his
+   eyes). Hues stay Solarized; only lightness moved. */
 
 :root[data-theme="solarized-dark"] {
   color-scheme: dark;
@@ -16,18 +19,18 @@
   --surface-hover: #113d48;
   --inline-code-bg: #05333f;
   /* text */
-  --fg: #93a1a1;
+  --fg: #c3cbcb;
   --fg-strong: #eee8d5;
-  --fg-body: #aab3ae;
-  --fg-mid: #8b9b9c;
-  --fg-dim: #839496;
-  --fg-dimmer: #74888d;
-  --fg-faint: #657b83;
+  --fg-body: #c4cbc7;
+  --fg-mid: #aab6b6;
+  --fg-dim: #97a5a7;
+  --fg-dimmer: #8b9ca0;
+  --fg-faint: #6f8890;
   /* accents */
   --accent: #859900;
-  --info: #268bd2;
+  --info: #3496da;
   --warn-fg: #b58900;
-  --error: #dc322f;
+  --error: #e56865;
   /* borders */
   --border: #163c46;
   --border-2: #1a3f49;
