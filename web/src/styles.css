@@ -2087,6 +2087,15 @@ html {
   line-height: 1;
   cursor: pointer;
   text-decoration: none;
+  /* The brand M rides the accent — the identity slot, green in every theme
+     (and the exact brand green in Mirafold). */
+  color: var(--accent);
+}
+
+.sb-home-mark {
+  width: 15px;
+  height: 16px;
+  display: block;
 }
 
 .sb-home:hover {
