@@ -1176,8 +1176,11 @@ is scoped further.
   (real build, headless Chrome), not just the guard test. All tiers green
   219/82/28. Side-finding, flagged to Kyle: the picker showing two ✓ at
   once is the S.3 two-slot design (one pick per pill side), not a V.1
-  regression. Watch item: one Tier-3 flake in ~4 runs (name uncaptured,
-  green on all reruns) — same profile as the 2026-07-17 Tier-2 flake.
+  regression. Watch item: a Tier-3 flake seen twice across ~8 runs
+  (green on every rerun) — second occurrence CAPTURED the name: "typing
+  in the remote browser drives the session; both transcripts mirror"
+  (the remote-viewport mirror test). Same profile as the 2026-07-17
+  Tier-2 flake.
   Same-day follow-up (Kyle: round 2 "is better"): the **Standard pair** —
   two stock-terminal themes, not Base16 ports; the reference is the
   terminal itself. **Standard** (`standard.css`): pure black canvas,
@@ -1206,10 +1209,12 @@ is scoped further.
   M-as-home-button experiment was tried and REVERTED same day (⌂ reads
   instantly); a centered mark over the greeting read as a splash screen;
   tiled-centered and ghost-watermark variants were mocked and rejected.
-  Settled form: the FULL logo.svg mark — tile included, >_ prompt
-  legible at 45px — sits INLINE beside the greeting ("Hello!" — the
-  bare word read corporate, the 👋 boxed the text in; the exclamation
-  is the warmth). Fixed asset colors: pops on light canvases, subtle
+  Settled form (`96ed6f7`, after a further 1.25× + centering round):
+  the FULL logo.svg mark — tile included, >_ prompt legible at 56px —
+  HANGS off the left of the greeting ("Hello!" at 33px — the bare word
+  read corporate, the 👋 boxed the text in; the exclamation is the
+  warmth), with title and subtitle sharing the true page centerline
+  (centering icon+title as one box had read as leaning right). Fixed asset colors: pops on light canvases, subtle
   well on dark, gone on Standard's pure black (strokes carry it —
   accepted). Mirafold theme accent stays aligned to the mark's
   canonical #40d17f. Known cost, accepted: active-session screenshots
