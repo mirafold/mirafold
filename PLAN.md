@@ -1188,7 +1188,17 @@ is scoped further.
   four (green/blue/olive/red3 — the bright set is unreadable on white).
   Each was one CSS file + one manifest row; guards pass unchanged (the
   contract + floors machinery is exactly what made them one-file adds);
-  both screenshot-verified; all tiers green 219/82/28.
+  both screenshot-verified; all tiers green 219/82/28. Then the
+  consolidation (`7b35c3f`, Kyle's calls): the floors had left the
+  designed Light near-indistinguishable from Standard Light (lightness
+  is no longer a design dimension on the light side) — a curation flaw,
+  so the designed Light was DROPPED and Standard Light took over
+  light.css + the load-bearing `light` id (the pill's light-side
+  fallback); and the dark default's display name became **"Mirafold"**
+  (house theme, house name — already the product's face in every demo;
+  id stays `dark`, ids are fallback machinery). **Seven themes ship:**
+  Mirafold, Standard, Standard Light, Solarized Light/Dark, Gruvbox
+  Dark, Dracula. All tiers green 219/82/28.
   - Goal: Kyle, 2026-07-17: "every single style doesn't have enough
     contrast and strains the eyes to look at... this is something that
     regular terminals DO NOT have a problem with and it almost completely
