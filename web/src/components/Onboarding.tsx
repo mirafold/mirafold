@@ -7,7 +7,7 @@ import {
   connectHint,
   localCapable,
   subscriptionCaveat,
-  LOCAL_LIVE_HINT,
+  localLiveHint,
 } from "../agents-meta";
 import { useEscapeKey } from "../use-escape";
 
@@ -103,8 +103,15 @@ function BackendMenu({
             disabled={!b.usable}
             onClick={() => onChoose(choiceOf(b))}
           >
-            <span className="onb-backend-name">{backendLabel(row.agent, b.kind)}</span>
-            {b.detail && <span className="onb-backend-detail">{b.detail}</span>}
+            {/* The env-endpoint row's detail IS its full label ("local
+                endpoint · host" / "custom endpoint · host") — one span, no
+                kind-name duplicate beside it. */}
+            <span className="onb-backend-name">
+              {b.kind === "local" && b.detail ? b.detail : backendLabel(row.agent, b.kind)}
+            </span>
+            {b.kind !== "local" && b.detail && (
+              <span className="onb-backend-detail">{b.detail}</span>
+            )}
             {b.usable && b.kind === "subscription" && subscriptionCaveat(row.agent) && (
               <span className="onb-backend-caveat">{subscriptionCaveat(row.agent)}</span>
             )}
@@ -113,7 +120,7 @@ function BackendMenu({
         ),
       )}
       {localCapable(row.agent) && !backends.some((b) => b.models?.length) && (
-        <p className="onb-live-hint">{LOCAL_LIVE_HINT}</p>
+        <p className="onb-live-hint">{localLiveHint(row.agent)}</p>
       )}
     </div>
   );
@@ -252,7 +259,7 @@ export function Onboarding({
         {/* R.4k/N.4: local/open models are a first-class choice, not a fourth
             agent — they're a mode of Claude Code or Codex, and since N.3 a
             running server is DISCOVERED and appears in the picker live. */}
-        {!pickingRow && <p className="onb-local-note">{LOCAL_LIVE_HINT}</p>}
+        {!pickingRow && <p className="onb-local-note">{localLiveHint()}</p>}
       </div>
     </div>
   );

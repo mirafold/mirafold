@@ -110,6 +110,21 @@ test("R.4k: a local endpoint shows its host as the picker detail", () => {
   });
 });
 
+test("a remote BYO endpoint (hosted open model) is labeled custom, not local", () => {
+  withTempDir((empty) => {
+    withEnv({ CLAUDE_CONFIG_DIR: empty, ANTHROPIC_BASE_URL: "https://api.deepseek.com/anthropic" }, () => {
+      const c = claude();
+      assert.equal(c.live, true);
+      assert.match(String(c.detail), /custom endpoint/);
+      assert.match(String(c.detail), /api\.deepseek\.com/);
+      assert.doesNotMatch(String(c.detail), /local endpoint/);
+      // The second-step row carries the same honest label.
+      const row = backendOptions("claude-code").find((o) => o.kind === "local")!;
+      assert.match(String(row.detail), /custom endpoint · api\.deepseek\.com/);
+    });
+  });
+});
+
 test("R.4k: a malformed local endpoint falls back to a plain label, not a raw echo", () => {
   withTempDir((empty) => {
     withEnv({ CLAUDE_CONFIG_DIR: empty, ANTHROPIC_BASE_URL: "not-a-valid-url" }, () => {

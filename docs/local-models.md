@@ -145,6 +145,42 @@ configures the session automatically; see the zero-config path above.)*
    same directory should chat with your local model. If it does and Mirafold
    doesn't, that's a Mirafold bug — please report it.
 
+## Hosted open models — the same knobs, pointed at a provider you pay
+
+Not local — inference runs on that provider's servers and is billed to your
+key there — but it's the *same mechanism* as the two paths above, so it lives
+in this doc: if you've bought API access to a hosted open model, point the
+agent at it exactly like a local server, with the provider's real URL and key.
+Nothing subscription-shaped is involved — you pay the provider per token,
+like an Anthropic API key.
+
+**Claude Code** works with any Anthropic-compatible API. Two providers that
+publish one:
+
+```sh
+# DeepSeek (maps claude-* model names to its own automatically)
+export ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic
+export ANTHROPIC_AUTH_TOKEN=sk-...        # your DeepSeek API key
+mirafold
+```
+
+```sh
+# Kimi (Moonshot)
+export ANTHROPIC_BASE_URL=https://api.moonshot.ai/anthropic
+export ANTHROPIC_AUTH_TOKEN=sk-...        # your Moonshot API key
+export DEFAULT_MODEL=kimi-k2.7-code
+mirafold
+```
+
+The onboarding picker shows this as **custom endpoint · \<host\>** (a
+loopback URL shows as *local endpoint* instead).
+
+**Codex** takes a hosted provider the same way as Path B — an entry in
+`~/.codex/config.toml` with the provider's `base_url` and your key — with the
+same constraint: Codex speaks only the Responses API, and many hosted
+providers serve only Chat Completions, so confirm yours offers
+`/v1/responses` before pointing Codex at it.
+
 ## Choosing a model
 
 Local coding agents live and die on two axes: **tool-calling reliability** and
@@ -206,4 +242,6 @@ model list; this table is guidance from what we've seen work.
 Sources: [Ollama × Claude Code](https://docs.ollama.com/api/anthropic-compatibility) ·
 [Ollama × Codex](https://docs.ollama.com/integrations/codex) ·
 [Codex config reference](https://developers.openai.com/codex/config-reference) ·
-[LM Studio × Codex](https://lmstudio.ai/docs/integrations/codex)
+[LM Studio × Codex](https://lmstudio.ai/docs/integrations/codex) ·
+[DeepSeek Anthropic API](https://api-docs.deepseek.com/guides/anthropic_api/) ·
+[Kimi × Claude Code](https://platform.kimi.ai/docs/guide/agent-support)

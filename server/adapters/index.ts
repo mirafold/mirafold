@@ -122,10 +122,7 @@ export function backendOptions(agent: AgentName): BackendOption[] {
   };
   switch (agent) {
     case "claude-code": {
-      if (process.env.ANTHROPIC_BASE_URL) {
-        const host = endpointHost(agent);
-        add("local", host ? `local endpoint · ${host}` : "local endpoint");
-      }
+      if (process.env.ANTHROPIC_BASE_URL) add("local", endpointDetail(agent));
       if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN)
         add("api-key", modelFor(agent));
       if (loginFileExists(process.env.CLAUDE_CONFIG_DIR, ".claude", ".credentials.json"))
@@ -230,27 +227,30 @@ export function availableAgents(): AgentInfo[] {
  * this is the CONFIGURED target, which is exactly what was invisible before (R.4k).
  */
 function agentDetail(agent: AgentName, kind: CredentialKind): string | undefined {
-  if (kind === "local") {
-    const host = endpointHost(agent);
-    return host ? `local endpoint · ${host}` : "local endpoint";
-  }
+  if (kind === "local") return endpointDetail(agent);
   return modelFor(agent) || undefined;
 }
 
-/** The host of an agent's env-configured local/BYO endpoint, if any. Only
- *  claude-code carries one at the env level (`ANTHROPIC_BASE_URL`); a local
- *  Codex lives in `~/.codex/config.toml`, which we don't parse here. */
-function endpointHost(agent: AgentName): string | undefined {
-  if (agent !== "claude-code") return undefined;
-  const url = process.env.ANTHROPIC_BASE_URL;
-  if (!url) return undefined;
-  try {
-    return new URL(url).host;
-  } catch {
-    // Malformed value: don't echo raw env input onto the wire — agentDetail
-    // falls back to a plain "local endpoint" label with no host.
-    return undefined;
+/** Picker label for the agent's env-configured BYO endpoint. Only claude-code
+ *  carries one at the env level (`ANTHROPIC_BASE_URL`); a local Codex lives in
+ *  `~/.codex/config.toml`, which we don't parse here. The `local` credential
+ *  kind covers any BYO endpoint, so the label says where it actually points:
+ *  "local endpoint" for a loopback host (Ollama), "custom endpoint" for a
+ *  remote one (a hosted open-model API, e.g. DeepSeek). A malformed value
+ *  falls back to the plain label — never echo raw env input onto the wire. */
+function endpointDetail(agent: AgentName): string {
+  const url = agent === "claude-code" ? process.env.ANTHROPIC_BASE_URL : undefined;
+  if (url) {
+    try {
+      const u = new URL(url);
+      const loopback =
+        u.hostname === "localhost" || u.hostname === "[::1]" || u.hostname.startsWith("127.");
+      return `${loopback ? "local" : "custom"} endpoint · ${u.host}`;
+    } catch {
+      // fall through to the plain label
+    }
   }
+  return "local endpoint";
 }
 
 /**
