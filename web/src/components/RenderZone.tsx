@@ -405,16 +405,24 @@ export function RenderZone({
           // A fresh session (no transcript yet) shows an inviting welcome
           // instead of raw emptiness. Shell-owned and agent-neutral (#12).
           <div className="zone-empty">
-            {/* The full brand mark (❯ → logo 2026-07-18, Kyle): inline copy
-                of logo.svg's strokes — bracket-M with the >_ prompt — minus
-                the dark tile (a fixed tile reads as a sticker on light
-                themes); currentColor rides the accent so all seven themes
-                color it, and Mirafold shows the exact brand green. */}
-            <div className="zone-empty-glyph" aria-hidden="true">
-              <svg className="zone-empty-mark" viewBox="12 13.5 41 37.5">
+            {/* The greeting lockup (settled 2026-07-18 after live iteration
+                with Kyle): the FULL brand mark — logo.svg verbatim, tile
+                included, the >_ prompt legible at 45px — inline beside
+                "Hello!", not stacked above it (centered logo-over-greeting
+                read as a splash screen; big/untiled/watermark variants all
+                rejected on sight). Asset colors stay FIXED: as an app-icon
+                object the tile carries its own background on any canvas —
+                it pops on light themes and recedes to a subtle well on dark
+                ones (vanishing entirely on Standard's pure black, where the
+                strokes alone carry it — accepted). The bare exclamation is
+                the warmth: "Hello" alone read corporate, and the 👋 boxed
+                the text in from the right. */}
+            <div className="zone-empty-hello">
+              <svg className="zone-empty-mark" viewBox="0 0 64 64" aria-hidden="true">
+                <rect width="64" height="64" rx="13" fill="#0a0d13" />
                 <g
                   fill="none"
-                  stroke="currentColor"
+                  stroke="#40d17f"
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 >
@@ -426,8 +434,8 @@ export function RenderZone({
                   <line strokeWidth="2.2" x1="27" y1="43.6" x2="33" y2="43.6" />
                 </g>
               </svg>
+              <div className="zone-empty-title">Hello!</div>
             </div>
-            <div className="zone-empty-title">Hello 👋</div>
             <div className="zone-empty-sub">
               You're in a Mirafold session. Type a prompt below to get started.
             </div>
