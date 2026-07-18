@@ -1,0 +1,59 @@
+/* ---- Standard (V.1, 2026-07-18) ---------------------------------------------
+   The plain-terminal theme, added at Kyle's request: styled the way a typical
+   terminal is styled — pure black canvas, white/neutral-gray text, the classic
+   bright ANSI accent colors (green/cyan/yellow/red). Not a Base16 port; the
+   reference is the stock black-on-white-inverted terminal itself. Surfaces
+   are the standard tight envelope of --bg (the V.1 recipe); the neutral gray
+   text ramp carries no hue at all. Contrast is the point: every tier clears
+   the V.1 terminal-grade floors with room to spare (ceiling on black = 21:1). */
+
+:root[data-theme="standard"] {
+  color-scheme: dark;
+  /* surfaces */
+  --bg: #000000;
+  --bg-inset: #000000;
+  --surface: #070707;
+  --surface-2: #0d0d0d;
+  --surface-3: #0a0a0a;
+  --surface-hover: #101010;
+  --inline-code-bg: #0b0b0b;
+  /* text */
+  --fg: #e8e8e8;
+  --fg-strong: #ffffff;
+  --fg-body: #dedede;
+  --fg-mid: #c4c4c4;
+  --fg-dim: #adadad;
+  --fg-dimmer: #979797;
+  --fg-faint: #858585;
+  /* accents — the classic bright ANSI four */
+  --accent: #55ff55;
+  --info: #55ffff;
+  --warn-fg: #ffff55;
+  --error: #ff5555;
+  /* borders */
+  --border: #232323;
+  --border-2: #282828;
+  --border-mid: #333333;
+  --border-hover: #454545;
+  --border-faint: #1a1a1a;
+  --border-ghost: #171717;
+  /* accent-tinted families */
+  --ok-bg: #0a1f0a;
+  --ok-border: #184718;
+  --ok-border-strong: #267326;
+  --err-bg: #1f0a0a;
+  --err-border: #471818;
+  --err-border-strong: #732626;
+  --info-bg: #0a1f1f;
+  --info-border: #184747;
+  --info-border-strong: #267373;
+  --warn-bg: #1a1a09;
+  --warn-bg-2: #121206;
+  --warn-border: #4d4d1a;
+  --warn-border-2: #5c5c1f;
+  /* misc */
+  --overlay: rgba(0, 0, 0, 0.82);
+  --selection: rgba(85, 255, 85, 0.25);
+  --shadow-pop: 0 4px 14px rgba(0, 0, 0, 0.18);
+  --shadow-card: 0 18px 60px rgba(0, 0, 0, 0.5);
+}
