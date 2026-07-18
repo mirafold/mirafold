@@ -1178,13 +1178,17 @@ is scoped further.
   once is the S.3 two-slot design (one pick per pill side), not a V.1
   regression. Watch item: one Tier-3 flake in ~4 runs (name uncaptured,
   green on all reruns) — same profile as the 2026-07-17 Tier-2 flake.
-  Same-day follow-up (Kyle: round 2 "is better"): a SEVENTH theme,
-  **Standard** (`standard.css`) — the plain-terminal theme, pure black
-  canvas, neutral white/gray text ramp (no hue), the classic bright ANSI
-  accent four (green/cyan/yellow/red); not a Base16 port, the reference
-  is the stock terminal itself. Guards pass unchanged (the contract +
-  floors machinery is exactly what made a 7th theme a one-file add);
-  screenshot-verified; all tiers green 219/82/28.
+  Same-day follow-up (Kyle: round 2 "is better"): the **Standard pair** —
+  two stock-terminal themes, not Base16 ports; the reference is the
+  terminal itself. **Standard** (`standard.css`): pure black canvas,
+  neutral white/gray ramp (no hue), the classic BRIGHT ANSI accent four
+  (green/cyan/yellow/red). **Standard Light** (`standard-light.css`,
+  Kyle: "complete the pair"): black-on-pure-white the way xterm and
+  Terminal.app actually ship by default, with the NORMAL (dark) ANSI
+  four (green/blue/olive/red3 — the bright set is unreadable on white).
+  Each was one CSS file + one manifest row; guards pass unchanged (the
+  contract + floors machinery is exactly what made them one-file adds);
+  both screenshot-verified; all tiers green 219/82/28.
   - Goal: Kyle, 2026-07-17: "every single style doesn't have enough
     contrast and strains the eyes to look at... this is something that
     regular terminals DO NOT have a problem with and it almost completely

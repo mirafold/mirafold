@@ -22,6 +22,7 @@ export const THEMES: ThemeEntry[] = [
   { id: "dark", displayName: "Dark", appearance: "dark" },
   { id: "standard", displayName: "Standard", appearance: "dark" },
   { id: "light", displayName: "Light", appearance: "light" },
+  { id: "standard-light", displayName: "Standard Light", appearance: "light" },
   { id: "solarized-light", displayName: "Solarized Light", appearance: "light" },
   { id: "solarized-dark", displayName: "Solarized Dark", appearance: "dark" },
   { id: "gruvbox-dark", displayName: "Gruvbox Dark", appearance: "dark" },
