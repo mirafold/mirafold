@@ -12,9 +12,8 @@
 // gating reads workspace settings + env), read the answer, and kill it — so
 // the list is exactly what THEIR terminal would show, never a hardcoded copy.
 
-import { spawn } from "node:child_process";
-import path from "node:path";
-import { existsSync } from "node:fs";
+import { agentBin } from "./types";
+import { jsonRpcOneShot } from "./jsonrpc-oneshot";
 
 export interface GeminiModel {
   id: string;
@@ -34,13 +33,8 @@ interface RawModelRow {
   description?: unknown;
 }
 
-/** Resolved per call: MIRAFOLD_GEMINI_BIN overrides (the same operator knob +
- *  test seam the adapter uses), else the copy beside node, else PATH. */
-const geminiBin = () => {
-  if (process.env.MIRAFOLD_GEMINI_BIN) return process.env.MIRAFOLD_GEMINI_BIN;
-  const beside = path.join(path.dirname(process.execPath), "gemini");
-  return existsSync(beside) ? beside : "gemini";
-};
+/** Also the adapter's spawn resolver — one definition for both spawns. */
+export const geminiBin = () => agentBin("MIRAFOLD_GEMINI_BIN", "gemini");
 
 /**
  * Ask the user's gemini binary for its model catalog. Rejects on spawn
@@ -48,81 +42,52 @@ const geminiBin = () => {
  * (the adapter surfaces an honest error, never a made-up list).
  */
 export function listGeminiModels(workspaceDir: string, timeoutMs = 15_000): Promise<GeminiModelCatalog> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(geminiBin(), ["--acp"], {
-      cwd: workspaceDir,
-      stdio: ["pipe", "pipe", "ignore"],
-    });
-    let settled = false;
-    const finish = (err: Error | null, catalog?: GeminiModelCatalog) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      child.kill();
-      // A child that ignores SIGTERM still dies; unref so the timer never
-      // holds the daemon open (the codex-model-list hardening).
-      setTimeout(() => child.kill("SIGKILL"), 2_000).unref();
-      if (err) reject(err);
-      else resolve(catalog!);
-    };
-    const timer = setTimeout(() => finish(new Error("gemini --acp: timed out")), timeoutMs);
-    child.on("error", (err) => finish(err));
-    child.on("exit", () => finish(new Error("gemini --acp: exited before answering")));
-
-    const send = (obj: object) => child.stdin.write(`${JSON.stringify(obj)}\n`);
-    let buf = "";
-    child.stdout.on("data", (chunk: Buffer) => {
-      buf += chunk.toString();
-      let nl: number;
-      while ((nl = buf.indexOf("\n")) >= 0) {
-        const line = buf.slice(0, nl).trim();
-        buf = buf.slice(nl + 1);
-        if (!line) continue;
-        let msg: {
-          id?: unknown;
-          result?: { models?: { availableModels?: unknown; currentModelId?: unknown } };
-          error?: { message?: string };
-        };
-        try {
-          msg = JSON.parse(line);
-        } catch {
-          continue; // stray non-JSON noise on stdout
+  return jsonRpcOneShot<GeminiModelCatalog>({
+    command: geminiBin(),
+    args: ["--acp"],
+    cwd: workspaceDir,
+    timeoutMs,
+    label: "gemini --acp",
+    start: (send) =>
+      send({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: {
+          protocolVersion: 1,
+          clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
+        },
+      }),
+    onMessage: (raw, send, finish) => {
+      const msg = raw as {
+        id?: unknown;
+        result?: { models?: { availableModels?: unknown; currentModelId?: unknown } };
+        error?: { message?: string };
+      };
+      if (msg.error && (msg.id === 1 || msg.id === 2)) {
+        finish(new Error(`gemini --acp: ${msg.error.message ?? "request failed"}`));
+      } else if (msg.id === 1) {
+        send({
+          jsonrpc: "2.0",
+          id: 2,
+          method: "session/new",
+          params: { cwd: workspaceDir, mcpServers: [] },
+        });
+      } else if (msg.id === 2) {
+        const models = msg.result?.models;
+        if (!models || !Array.isArray(models.availableModels)) {
+          finish(new Error("gemini --acp: malformed session/new response"));
+          return;
         }
-        if (msg.error && (msg.id === 1 || msg.id === 2)) {
-          finish(new Error(`gemini --acp: ${msg.error.message ?? "request failed"}`));
-        } else if (msg.id === 1) {
-          send({
-            jsonrpc: "2.0",
-            id: 2,
-            method: "session/new",
-            params: { cwd: workspaceDir, mcpServers: [] },
-          });
-        } else if (msg.id === 2) {
-          const models = msg.result?.models;
-          if (!models || !Array.isArray(models.availableModels)) {
-            finish(new Error("gemini --acp: malformed session/new response"));
-            return;
-          }
-          finish(null, {
-            models: (models.availableModels as RawModelRow[]).map((m) => ({
-              id: String(m.modelId),
-              displayName: String(m.name ?? m.modelId),
-              description: String(m.description ?? ""),
-            })),
-            currentModelId: String(models.currentModelId ?? ""),
-          });
-        }
+        finish(null, {
+          models: (models.availableModels as RawModelRow[]).map((m) => ({
+            id: String(m.modelId),
+            displayName: String(m.name ?? m.modelId),
+            description: String(m.description ?? ""),
+          })),
+          currentModelId: String(models.currentModelId ?? ""),
+        });
       }
-    });
-
-    send({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "initialize",
-      params: {
-        protocolVersion: 1,
-        clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
-      },
-    });
+    },
   });
 }

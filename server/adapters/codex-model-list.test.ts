@@ -59,6 +59,39 @@ test("happy exchange: handshake, parse, hidden models filtered", async () => {
   }
 });
 
+test("stray scalar/null stdout lines are skipped — never a daemon crash (2026-07-19 audit)", async () => {
+  // A bare `null` line used to throw inside the stdout listener and take the
+  // whole process down (reproduced live); the one-shot must shrug it off and
+  // still complete the exchange.
+  process.env.MIRAFOLD_CODEX_BIN = stubBin(
+    "codex-noisy",
+    `
+process.stdout.write("null\\n42\\n\\"stray string\\"\\n");
+const rl = require("node:readline").createInterface({ input: process.stdin });
+rl.on("line", (line) => {
+  if (!line.trim()) return;
+  const msg = JSON.parse(line);
+  if (msg.method === "initialize") {
+    process.stdout.write(JSON.stringify({ id: msg.id, result: { userAgent: "stub" } }) + "\\n");
+  } else if (msg.method === "model/list") {
+    process.stdout.write(
+      JSON.stringify({
+        id: msg.id,
+        result: { data: [{ id: "m-a", displayName: "Model A", description: "", hidden: false, isDefault: true }] },
+      }) + "\\n",
+    );
+  }
+});
+`,
+  );
+  try {
+    const models = await listCodexModels(5_000);
+    assert.deepEqual(models.map((m) => m.id), ["m-a"]);
+  } finally {
+    delete process.env.MIRAFOLD_CODEX_BIN;
+  }
+});
+
 test("binary that exits without answering rejects (never a made-up list)", async () => {
   process.env.MIRAFOLD_CODEX_BIN = stubBin("codex-dead", "process.exit(1);\n");
   try {

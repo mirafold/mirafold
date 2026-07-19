@@ -6,7 +6,8 @@ import type { WireMsg } from "../protocol";
 import { RENDER_GUIDANCE } from "../render-tools";
 import { type AgentSession, capOutput, toolDetail } from "./types";
 import { MIRAFOLD_MCP, RENDER_ID_RE, generativeUIMsg, renderMcpCommand } from "./render-mcp-cmd";
-import { listGeminiModels, type GeminiModel, type GeminiModelCatalog } from "./gemini-model-list";
+import { geminiBin, listGeminiModels, type GeminiModelCatalog } from "./gemini-model-list";
+import { emitModelPicker } from "./model-picker";
 import { AsyncQueue, CLOSE } from "./async-queue";
 
 // Same generative-UI stdio MCP server the Codex adapter injects (P.3). Gemini
@@ -17,14 +18,6 @@ const RENDER_MCP = renderMcpCommand();
 const MCP_PREFIX = `mcp_${MIRAFOLD_MCP}_`;
 // How much of a failed turn's stderr rides into the surfaced error (F.4).
 const STDERR_TAIL_CAP = 4000;
-// Resolved per spawn: MIRAFOLD_GEMINI_BIN overrides (an operator knob, and the
-// seam the adapter tests use to substitute a scripted stub), else the copy
-// installed beside node (nvm global installs land there), else PATH.
-const geminiBin = () => {
-  if (process.env.MIRAFOLD_GEMINI_BIN) return process.env.MIRAFOLD_GEMINI_BIN;
-  const beside = path.join(path.dirname(process.execPath), "gemini");
-  return existsSync(beside) ? beside : "gemini";
-};
 
 /** The component id the render-mcp stub returned, parsed from its output text. */
 export function parseRenderId(output: unknown): string {
@@ -181,7 +174,17 @@ export class GeminiCliSession implements AgentSession {
           });
           return;
         }
-        this.emitModelPicker(catalog);
+        // `this.model` is configured truth once the user has switched; before
+        // that the engine's own answer says what a fresh turn would use.
+        const currentId = this.model ?? catalog.currentModelId;
+        emitModelPicker(
+          (msg) => this.emit(msg),
+          catalog.models.map((m) => ({ ...m, current: m.id === currentId })),
+          {
+            clickText: (id) => `/model set ${id}`, // Gemini's own switch syntax
+            switchHint: "Send `/model set <model-id>` to switch.",
+          },
+        );
         return;
       }
       const parts = arg.slice("set".length).trim().split(/\s+/).filter(Boolean);
@@ -200,45 +203,6 @@ export class GeminiCliSession implements AgentSession {
       this.emit({ type: "text_delta", text: `Model set to ${name}.${persistNote}` });
     } finally {
       this.emit({ type: "turn_end" });
-    }
-  }
-
-  /** The catalog as a clickable picker (a click sends `/model set <id>` back
-   *  through runModelCommand), or a plain list when the catalog leaves the
-   *  question component's 2–4 option range. */
-  private emitModelPicker({ models, currentModelId }: GeminiModelCatalog) {
-    // `this.model` is configured truth once the user has switched; before
-    // that the engine's own answer says what a fresh turn would use.
-    const currentId = this.model ?? currentModelId;
-    const current = (m: GeminiModel) => m.id === currentId;
-    if (models.length >= 2 && models.length <= 4) {
-      this.emit({
-        type: "render",
-        component: "question",
-        props: {
-          question: "Select a model",
-          options: models.map((m) => ({
-            label: current(m) ? `${m.displayName} (current)` : m.displayName,
-            text: `/model set ${m.id}`,
-            detail: m.description,
-          })),
-        },
-        id: randomUUID(),
-      });
-    } else {
-      this.emit({
-        type: "render",
-        component: "list",
-        props: {
-          title: "Models",
-          items: models.map((m) => ({
-            text: `**${m.displayName}**${current(m) ? " (current)" : ""} — \`${m.id}\``,
-            detail: m.description,
-          })),
-        },
-        id: randomUUID(),
-      });
-      this.emit({ type: "text_delta", text: "Send `/model set <model-id>` to switch." });
     }
   }
 

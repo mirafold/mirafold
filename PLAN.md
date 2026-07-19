@@ -1613,6 +1613,22 @@ is scoped further.
     order/gating/wire/dedupe/resolve), codex (provider forcing via the
     makeCodex seam; model-axis swap, failure, explicit-win, no-swap cases).
   - **All tiers green: 277/82/28**, typecheck clean.
+  - Same-day close-out (2026-07-19, evening): a behavior-preserving refactor
+    of the two sessions' work — the one-shot JSON-RPC plumbing shared by both
+    model-list modules (`jsonrpc-oneshot.ts`), the /model picker rendering
+    shared by both adapters (`model-picker.ts`), one `agentBin` resolver
+    (was 3 copies), `setThreadModel` dedup + `providerBinding` extraction in
+    codex.ts, flag renamed `needsEngineDefaultModel` — net −125 lines,
+    emitted strings pinned unchanged by existing tests. Scoped security
+    audit: no real or ship-time findings; one theoretical hardening landed
+    on approval — a bare scalar/`null` stdout line from a spawned binary
+    crashed the whole daemon (reproduced live, pre-existing shape faithfully
+    preserved by the refactor) → guarded in the shared one-shot + Tier-1 pin
+    (Tier-1 now 278). Audit also verified clean: client-forged picks refused,
+    no secrets on the wire, arg-array spawns only, spawn-failure rejects
+    cleanly, relay policy holds post-V.3. Watch-item note: the Tier-2/3
+    flake hit a FIFTH time during refactor verification (Tier-3 27/28 →
+    28/28 on rerun; failing test's name again not captured).
 
 ---
 

@@ -1,7 +1,20 @@
+import path from "node:path";
+import { existsSync } from "node:fs";
 import type { AgentName, WireMsg } from "../protocol";
 import type { CredentialKind } from "../provider-policy";
 
 export type { AgentName } from "../protocol";
+
+/** Resolve which `name`d agent binary to spawn: the env override wins (an
+ *  operator knob, and the seam the adapter tests use to substitute a scripted
+ *  stub), else the copy installed beside node (nvm global installs land
+ *  there), else PATH. Resolved per call so a test can flip the env var. */
+export function agentBin(envVar: string, name: string): string {
+  const override = process.env[envVar];
+  if (override) return override;
+  const beside = path.join(path.dirname(process.execPath), name);
+  return existsSync(beside) ? beside : name;
+}
 
 /**
  * The agent-adapter seam. Mirafold re-skins whichever terminal coding
