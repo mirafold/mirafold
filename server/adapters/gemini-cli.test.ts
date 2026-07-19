@@ -2,9 +2,10 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import os from "node:os";
-import { chmodSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import type { WireMsg } from "../protocol";
 import { GeminiCliSession } from "./gemini-cli";
+import type { GeminiModelCatalog } from "./gemini-model-list";
 
 // L.2b2: the Gemini JSONL→WireMsg mapping and the turn grammar. The real
 // adapter spawns a real child — a scripted stub substituted via
@@ -24,7 +25,9 @@ before(() => {
     stub,
     // `exec` so SIGTERM hits the sleeping process itself — a forked sleep
     // would hold the stdout pipe open and the adapter's `close` never fires.
-    '#!/usr/bin/env bash\n[ -n "$FAKE_EVENTS" ] && cat "$FAKE_EVENTS"\n[ -n "$FAKE_STDERR" ] && echo "$FAKE_STDERR" >&2\n[ -n "$FAKE_HANG" ] && exec sleep 30\nexit "${FAKE_EXIT:-0}"\n',
+    // FAKE_ARGS_LOG records the latest spawn's argv (one arg per ---ARG---
+    // separator) for the -m / guidance-injection assertions.
+    '#!/usr/bin/env bash\n[ -n "$FAKE_ARGS_LOG" ] && printf \'%s\\n---ARG---\\n\' "$@" > "$FAKE_ARGS_LOG"\n[ -n "$FAKE_EVENTS" ] && cat "$FAKE_EVENTS"\n[ -n "$FAKE_STDERR" ] && echo "$FAKE_STDERR" >&2\n[ -n "$FAKE_HANG" ] && exec sleep 30\nexit "${FAKE_EXIT:-0}"\n',
   );
   chmodSync(stub, 0o755);
   process.env.MIRAFOLD_GEMINI_BIN = stub;
@@ -35,11 +38,12 @@ after(() => {
   delete process.env.FAKE_HANG;
   delete process.env.FAKE_EXIT;
   delete process.env.FAKE_STDERR;
+  delete process.env.FAKE_ARGS_LOG;
   rmSync(tmp, { recursive: true, force: true });
 });
 
-function makeSession() {
-  const s = new GeminiCliSession({ workspaceDir: mkdtempSync(path.join(tmp, "ws-")) });
+function makeSession(opts: Partial<ConstructorParameters<typeof GeminiCliSession>[0]> = {}) {
+  const s = new GeminiCliSession({ workspaceDir: mkdtempSync(path.join(tmp, "ws-")), ...opts });
   const msgs: Any[] = [];
   s.onMessage((m) => msgs.push(m as Any));
   const turnEnds = () => msgs.filter((m) => m.type === "turn_end").length;
@@ -257,5 +261,164 @@ test("interrupt kills the child: exactly one turn_end, session takes the next tu
   await awaitTurnEnd(2);
   assert.equal(turnEnds(), 2);
   assert.ok(msgs.some((m) => m.type === "usage"));
+  s.close();
+});
+
+// ---- V.2 /model parity (Gemini half) ----------------------------------------
+
+const catalog = (n: number): GeminiModelCatalog => ({
+  models: [
+    { id: "auto", displayName: "Auto", description: "Let Gemini CLI decide" },
+    ...Array.from({ length: n - 1 }, (_, i) => ({
+      id: `gemini-m${i}`,
+      displayName: `gemini-m${i}`,
+      description: "",
+    })),
+  ],
+  currentModelId: "auto",
+});
+
+/** The latest spawn's argv, as recorded by the stub via FAKE_ARGS_LOG. */
+function spawnArgs(log: string): string[] {
+  const parts = readFileSync(log, "utf8").split("\n---ARG---\n");
+  parts.pop(); // trailing separator
+  return parts;
+}
+
+test("bare /model paints the picker from the catalog — no engine spawn", async () => {
+  // A missing binary would surface "gemini spawn failed" — its absence proves
+  // the picker consumed no engine turn.
+  process.env.MIRAFOLD_GEMINI_BIN = path.join(tmp, "does-not-exist");
+  const { s, msgs, turnEnds, awaitTurnEnd } = makeSession({ listModels: async () => catalog(4) });
+  s.pushPrompt("/model");
+  await awaitTurnEnd();
+  process.env.MIRAFOLD_GEMINI_BIN = stub;
+
+  assert.ok(!msgs.some((m) => m.type === "error"));
+  const q = msgs.find((m) => m.type === "render")!;
+  assert.equal(q.component, "question"); // 4 options fit the question range
+  const opts = q.props.options as { label: string; text: string; detail?: string }[];
+  assert.equal(opts.length, 4);
+  assert.equal(opts[0].label, "Auto (current)"); // engine's currentModelId marks
+  assert.equal(opts[0].text, "/model set auto"); // click = Gemini's own syntax
+  assert.equal(opts[0].detail, "Let Gemini CLI decide");
+  assert.equal(opts[1].label, "gemini-m0");
+  assert.equal(turnEnds(), 1);
+  s.close();
+});
+
+test("a catalog past the question range degrades to a list + switch hint", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession({ listModels: async () => catalog(6) });
+  s.pushPrompt("/model manage"); // terminal's dialog verb routes here too
+  await awaitTurnEnd();
+  const r = msgs.find((m) => m.type === "render")!;
+  assert.equal(r.component, "list");
+  assert.equal((r.props.items as unknown[]).length, 6);
+  assert.match((r.props.items as { text: string }[])[0].text, /\(current\)/);
+  const text = msgs.filter((m) => m.type === "text_delta").map((m) => m.text).join("");
+  assert.match(text, /\/model set <model-id>/);
+  s.close();
+});
+
+test("a configured model wins the (current) marker over the engine default", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession({
+    model: "gemini-m1",
+    listModels: async () => catalog(4),
+  });
+  s.pushPrompt("/model");
+  await awaitTurnEnd();
+  const opts = msgs.find((m) => m.type === "render")!.props.options as { label: string }[];
+  assert.deepEqual(
+    opts.map((o) => o.label),
+    ["Auto", "gemini-m0", "gemini-m1 (current)", "gemini-m2"],
+  );
+  s.close();
+});
+
+test("/model set switches: label immediately, -m on the next spawn", async () => {
+  const argsLog = path.join(tmp, "args-switch.log");
+  process.env.FAKE_ARGS_LOG = argsLog;
+  fixture("switch.jsonl", [{ type: "result", stats: { input_tokens: 1, output_tokens: 1 } }]);
+  const { s, msgs, turnEnds, awaitTurnEnd } = makeSession();
+  s.pushPrompt("/model set gemini-9");
+  await awaitTurnEnd();
+  delete process.env.FAKE_ARGS_LOG;
+
+  assert.equal(turnEnds(), 1); // the switch is its own turn, engine-free
+  assert.equal(s.modelName, "gemini-9");
+  const text = msgs.filter((m) => m.type === "text_delta").map((m) => m.text).join("");
+  assert.match(text, /Model set to gemini-9\./);
+
+  process.env.FAKE_ARGS_LOG = argsLog;
+  s.pushPrompt("hi");
+  await awaitTurnEnd(2);
+  delete process.env.FAKE_ARGS_LOG;
+  const args = spawnArgs(argsLog);
+  assert.equal(args[args.indexOf("-m") + 1], "gemini-9");
+  s.close();
+});
+
+test("/model set without a name (or flag-shaped names) shows the usage line", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession();
+  s.pushPrompt("/model set --persist");
+  await awaitTurnEnd();
+  assert.equal(s.modelName, "gemini"); // nothing switched
+  const text = msgs.filter((m) => m.type === "text_delta").map((m) => m.text).join("");
+  assert.match(text, /Usage: `\/model set <model-name> \[--persist\]`/);
+  s.close();
+});
+
+test("/model set --persist applies the switch with an honest scope note", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession();
+  s.pushPrompt("/model set gemini-9 --persist");
+  await awaitTurnEnd();
+  assert.equal(s.modelName, "gemini-9");
+  const text = msgs.filter((m) => m.type === "text_delta").map((m) => m.text).join("");
+  assert.match(text, /lasts this session/);
+  s.close();
+});
+
+test("a failed catalog read surfaces an honest error, never a made-up list", async () => {
+  const { s, msgs, turnEnds, awaitTurnEnd } = makeSession({
+    listModels: async () => {
+      throw new Error("acp exploded");
+    },
+  });
+  s.pushPrompt("/model");
+  await awaitTurnEnd();
+  assert.ok(!msgs.some((m) => m.type === "render"));
+  assert.match(msgs.find((m) => m.type === "error")!.message, /acp exploded/);
+  assert.equal(turnEnds(), 1);
+  s.close();
+});
+
+test("guidance skips slash-leading turns and rides the first prose turn instead", async () => {
+  // Headless Gemini only recognizes a slash command at position 0 — a
+  // guidance-prefixed "/stats" would demote it to chat (observed live
+  // 2026-07-19). The prose turn that follows still gets the one-time prepend.
+  const argsLog = path.join(tmp, "args-guidance.log");
+  process.env.FAKE_ARGS_LOG = argsLog;
+  fixture("guidance.jsonl", [{ type: "result", stats: { input_tokens: 1, output_tokens: 1 } }]);
+  const { s, awaitTurnEnd } = makeSession();
+  try {
+    s.pushPrompt("/stats");
+    await awaitTurnEnd(1);
+    let args = spawnArgs(argsLog);
+    assert.equal(args[args.indexOf("-p") + 1], "/stats"); // verbatim, command intact
+
+    s.pushPrompt("hello");
+    await awaitTurnEnd(2);
+    args = spawnArgs(argsLog);
+    const prompt = args[args.indexOf("-p") + 1];
+    assert.match(prompt, /## Generative UI/);
+    assert.match(prompt, /hello$/);
+
+    s.pushPrompt("again");
+    await awaitTurnEnd(3);
+    args = spawnArgs(argsLog);
+    assert.equal(args[args.indexOf("-p") + 1], "again"); // one-time prepend
+  } finally {
+    delete process.env.FAKE_ARGS_LOG;
+  }
   s.close();
 });

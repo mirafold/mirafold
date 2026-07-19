@@ -6,6 +6,7 @@ import type { WireMsg } from "../protocol";
 import { RENDER_GUIDANCE } from "../render-tools";
 import { type AgentSession, capOutput, toolDetail } from "./types";
 import { MIRAFOLD_MCP, RENDER_ID_RE, generativeUIMsg, renderMcpCommand } from "./render-mcp-cmd";
+import { listGeminiModels, type GeminiModel, type GeminiModelCatalog } from "./gemini-model-list";
 import { AsyncQueue, CLOSE } from "./async-queue";
 
 // Same generative-UI stdio MCP server the Codex adapter injects (P.3). Gemini
@@ -53,9 +54,15 @@ export class GeminiCliSession implements AgentSession {
   private child?: ChildProcessWithoutNullStreams;
   private sessionId = randomUUID();
   private started = false; // first turn creates the session, later turns resume
+  // RENDER_GUIDANCE rides ahead of the first NON-slash turn (V.2): headless
+  // Gemini only recognizes a slash command at position 0 of the prompt, so
+  // prepending to a slash turn would silently turn it into chat (observed
+  // live 2026-07-19). Tracked apart from `started` for exactly that case.
+  private guidanceInjected = false;
   private modelLabel: string;
   private model?: string;
   private workspaceDir: string;
+  private listModels: () => Promise<GeminiModelCatalog>;
 
   // `modelLabel` may be "auto" until a turn resolves the concrete model;
   // honestModel() refines the status line per turn. The fleet uses this label (F.3).
@@ -67,11 +74,16 @@ export class GeminiCliSession implements AgentSession {
   private announced = new Set<string>();
   private pendingRenders = new Map<string, { tool: string; params: Record<string, unknown> }>();
 
-  constructor(opts: { workspaceDir: string; model?: string }) {
+  constructor(opts: {
+    workspaceDir: string;
+    model?: string;
+    listModels?: () => Promise<GeminiModelCatalog>;
+  }) {
     this.workspaceDir = path.resolve(opts.workspaceDir);
     mkdirSync(this.workspaceDir, { recursive: true });
     this.model = opts.model;
     this.modelLabel = opts.model ?? "gemini";
+    this.listModels = opts.listModels ?? (() => listGeminiModels(this.workspaceDir));
     this.writeProjectSettings();
     void this.worker();
   }
@@ -125,11 +137,108 @@ export class GeminiCliSession implements AgentSession {
     for (const cb of this.listeners) cb(msg);
   }
 
+  /** Serial turn loop. `/model` is handled here, between turns, so a switch
+   *  queued behind a running turn applies in order like any other input. */
   private async worker() {
     while (!this.closed) {
       const item = await this.queue.next();
       if (item === CLOSE) return;
-      await this.runTurn(item);
+      const trimmed = item.trim();
+      if (trimmed === "/model" || trimmed.startsWith("/model ")) {
+        await this.runModelCommand(trimmed.slice("/model".length).trim());
+      } else {
+        await this.runTurn(item);
+      }
+    }
+  }
+
+  /**
+   * V.2 /model parity, Gemini half. Terminal Gemini's /model opens a picker
+   * dialog — TUI chrome headless can't reach (a headless bare /model is a
+   * fatal "dialog not supported" exit that surfaces here as a silent empty
+   * turn; observed live 2026-07-19). So the shell re-skins it: the LIST is
+   * Gemini's own catalog (gemini-model-list.ts — the same access-gated rows
+   * the terminal dialog builds), rendered as a `question` component whose
+   * click sends `/model set <id>` back through this same path — Gemini's own
+   * switch syntax. A switch changes the `-m` the next spawn passes; the
+   * resumed session keeps its history, exactly what the terminal dialog does.
+   *
+   * Terminal fidelity on the verbs: `/model set <name> [--persist]` switches,
+   * anything else (`/model`, `/model manage`, stray args — the terminal
+   * ignores args and opens the dialog) shows the picker.
+   */
+  private async runModelCommand(arg: string) {
+    this.emit({ type: "status", state: "thinking" });
+    try {
+      if (arg !== "set" && !arg.startsWith("set ")) {
+        let catalog: GeminiModelCatalog;
+        try {
+          catalog = await this.listModels();
+        } catch (err) {
+          this.emit({
+            type: "error",
+            message: `Could not read the model list from gemini: ${err instanceof Error ? err.message : String(err)}`,
+          });
+          return;
+        }
+        this.emitModelPicker(catalog);
+        return;
+      }
+      const parts = arg.slice("set".length).trim().split(/\s+/).filter(Boolean);
+      // Flag-shaped tokens are never a model name — the same hyphen-leading
+      // hardening as the codex adapter, so `-m` can't be handed a flag.
+      const name = parts.find((p) => !p.startsWith("-"));
+      if (!name) {
+        this.emit({ type: "text_delta", text: "Usage: `/model set <model-name> [--persist]`" });
+        return;
+      }
+      this.model = name;
+      this.modelLabel = name; // configured-truth immediately; honestModel refines "auto"
+      const persistNote = parts.includes("--persist")
+        ? " (--persist writes the terminal's own settings file — here the switch lasts this session)"
+        : "";
+      this.emit({ type: "text_delta", text: `Model set to ${name}.${persistNote}` });
+    } finally {
+      this.emit({ type: "turn_end" });
+    }
+  }
+
+  /** The catalog as a clickable picker (a click sends `/model set <id>` back
+   *  through runModelCommand), or a plain list when the catalog leaves the
+   *  question component's 2–4 option range. */
+  private emitModelPicker({ models, currentModelId }: GeminiModelCatalog) {
+    // `this.model` is configured truth once the user has switched; before
+    // that the engine's own answer says what a fresh turn would use.
+    const currentId = this.model ?? currentModelId;
+    const current = (m: GeminiModel) => m.id === currentId;
+    if (models.length >= 2 && models.length <= 4) {
+      this.emit({
+        type: "render",
+        component: "question",
+        props: {
+          question: "Select a model",
+          options: models.map((m) => ({
+            label: current(m) ? `${m.displayName} (current)` : m.displayName,
+            text: `/model set ${m.id}`,
+            detail: m.description,
+          })),
+        },
+        id: randomUUID(),
+      });
+    } else {
+      this.emit({
+        type: "render",
+        component: "list",
+        props: {
+          title: "Models",
+          items: models.map((m) => ({
+            text: `**${m.displayName}**${current(m) ? " (current)" : ""} — \`${m.id}\``,
+            detail: m.description,
+          })),
+        },
+        id: randomUUID(),
+      });
+      this.emit({ type: "text_delta", text: "Send `/model set <model-id>` to switch." });
     }
   }
 
@@ -138,8 +247,12 @@ export class GeminiCliSession implements AgentSession {
       // V.2: the headless stream-json surface has no system-prompt/instructions
       // hook (unlike Claude's `systemPrompt.append`), so RENDER_GUIDANCE rides
       // ahead of the first turn instead — the only injection point this engine
-      // has. `this.started` is still false here — check it before it flips below.
-      const prompt = this.started ? text : `${RENDER_GUIDANCE}\n\n---\n\n${text}`;
+      // has. Slash-leading turns are skipped: headless Gemini only recognizes
+      // a slash command at position 0, so the prepend would demote the user's
+      // command to chat; the guidance waits for the first prose turn.
+      const inject = !this.guidanceInjected && !text.trimStart().startsWith("/");
+      if (inject) this.guidanceInjected = true;
+      const prompt = inject ? `${RENDER_GUIDANCE}\n\n---\n\n${text}` : text;
       const args = ["-p", prompt, "-o", "stream-json", "--allowed-mcp-server-names", MIRAFOLD_MCP];
       if (this.model) args.push("-m", this.model);
       args.push(this.started ? "--resume" : "--session-id", this.sessionId);
