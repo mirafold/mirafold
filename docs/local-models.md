@@ -125,21 +125,13 @@ For LM Studio, use `base_url = "http://localhost:1234/v1"`; for vLLM,
 `base_url = "http://localhost:8000/v1"` (and confirm your vLLM serves the
 Responses API for your model).
 
-2. Tell Mirafold the agent is configured. Mirafold decides live-vs-mock
-   for Codex by looking for an `OPENAI_API_KEY` or a `codex login` — it
-   can't see a config-file-only local provider — so give it any non-empty
-   key:
-
-```sh
-export OPENAI_API_KEY=local
-mirafold
-```
-
-The value never reaches your local server (Codex ignores OpenAI auth once
-`model_provider` points elsewhere); it only flips Mirafold's "configured"
-signal. *(This dummy-key wart applies only to this config-file route: a
-**running** server needs none of it — discovery finds it and a picked model
-configures the session automatically; see the zero-config path above.)*
+2. That's the whole setup — launch Mirafold. It reads the default
+   `model_provider` from `~/.codex/config.toml` (honoring `CODEX_HOME`, like
+   the CLI) and offers it at onboarding as its own endpoint row — **local
+   endpoint · localhost:11434** here. No key, no extra env. *(Older Mirafold
+   versions couldn't see a config-file provider and needed a dummy
+   `export OPENAI_API_KEY=local` to flip the "configured" signal; that wart
+   is gone — an existing dummy key is harmless and can be deleted.)*
 
 3. Verify in the terminal first if anything misbehaves: plain `codex` in the
    same directory should chat with your local model. If it does and Mirafold
@@ -180,6 +172,31 @@ loopback URL shows as *local endpoint* instead).
 same constraint: Codex speaks only the Responses API, and many hosted
 providers serve only Chat Completions, so confirm yours offers
 `/v1/responses` before pointing Codex at it.
+
+[OpenRouter](https://openrouter.ai) — one key for most open models behind an
+OpenAI-compatible API, Responses API included — is the worked example:
+
+```toml
+model = "qwen/qwen3-coder"
+model_provider = "openrouter"
+
+[model_providers.openrouter]
+name = "OpenRouter"
+base_url = "https://openrouter.ai/api/v1"
+env_key = "OPENROUTER_API_KEY"
+wire_api = "responses"
+```
+
+```sh
+export OPENROUTER_API_KEY=sk-or-...    # your key, from openrouter.ai/settings/keys
+mirafold
+```
+
+No `OPENAI_API_KEY` is involved: Mirafold sees the config.toml provider and
+the onboarding picker offers it as **custom endpoint · openrouter.ai**. The
+key can also live in the `.env` where you launch Mirafold instead of an
+`export` — the daemon loads it, and Codex reads whichever variable your
+`env_key` names.
 
 ## Choosing a model
 

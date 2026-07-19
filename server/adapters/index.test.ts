@@ -299,6 +299,79 @@ test("N.3: an env ANTHROPIC_BASE_URL naming a discovered server dedupes to the r
   });
 });
 
+// A default model_provider in ~/.codex/config.toml is codex's BYO-endpoint
+// analog of claude's ANTHROPIC_BASE_URL: detected as `local`, live on its own —
+// which retires the dummy OPENAI_API_KEY=local recipe (docs/local-models.md).
+
+const codexAgent = () => availableAgents().find((a) => a.agent === "codex")!;
+
+const OPENROUTER_TOML =
+  'model_provider = "openrouter"\n' +
+  "[model_providers.openrouter]\n" +
+  'base_url = "https://openrouter.ai/api/v1"\n' +
+  'wire_api = "responses"\n';
+
+test("codex: a config.toml default provider ALONE is live — no dummy key needed", () => {
+  withTempDir((dir) => {
+    writeFileSync(path.join(dir, "config.toml"), OPENROUTER_TOML);
+    withEnv({ CODEX_HOME: dir }, () => {
+      const c = codexAgent();
+      assert.equal(c.live, true);
+      assert.match(String(c.detail), /custom endpoint/);
+      assert.match(String(c.detail), /openrouter\.ai/);
+      const opts = backendOptions("codex");
+      assert.deepEqual(
+        opts.map((o) => o.kind),
+        ["local"],
+      );
+      assert.equal(opts[0].usable, true);
+    });
+  });
+});
+
+test("codex: config provider + API key + login → THREE options, nothing collapsed (N.1)", () => {
+  withTempDir((dir) => {
+    writeFileSync(path.join(dir, "config.toml"), OPENROUTER_TOML);
+    writeFileSync(path.join(dir, "auth.json"), "{}");
+    withEnv({ CODEX_HOME: dir, OPENAI_API_KEY: "x" }, () => {
+      assert.deepEqual(
+        backendOptions("codex").map((o) => o.kind),
+        ["local", "api-key", "subscription"],
+      );
+    });
+  });
+});
+
+test("codex: a config provider naming a discovered server dedupes to the richer discovered row", () => {
+  withTempDir((dir) => {
+    writeFileSync(
+      path.join(dir, "config.toml"),
+      'model_provider = "ollama"\n[model_providers.ollama]\nbase_url = "http://localhost:11434/v1"\n',
+    );
+    withEnv({ CODEX_HOME: dir }, () => {
+      const merged = mergeBackends("codex", backendOptions("codex"), [OLLAMA]);
+      assert.deepEqual(
+        merged.map((b) => b.kind),
+        ["local"],
+      );
+      assert.equal(merged[0].runtime, "ollama");
+    });
+  });
+});
+
+test("codex: a config-provider pick resolves as `local` with NO endpoint — the adapter inherits the config", () => {
+  withTempDir((dir) => {
+    writeFileSync(path.join(dir, "config.toml"), OPENROUTER_TOML);
+    withEnv({ CODEX_HOME: dir }, () => {
+      const r = resolveChosenBackend("codex", { kind: "local" }, []);
+      assert.ok(!("error" in r), JSON.stringify(r));
+      assert.equal(r.kind, "local");
+      assert.equal(r.live, true);
+      assert.equal(r.endpoint, undefined);
+    });
+  });
+});
+
 // N.5 — resolveChosenBackend(): the never-trust-the-client gate. Servers are
 // injected (pure); the connection binds it to the live cache.
 

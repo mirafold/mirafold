@@ -26,19 +26,23 @@ test("an unknown agent name falls back to its raw string, hint-less", () => {
 });
 
 // Hosted open models ride the same BYO mechanism as local ones; the copy must
-// say so — and stay per-agent truthful: only Claude Code's env endpoint
-// actually appears in the picker menu, so only its hint may promise that.
+// say so — and stay per-agent truthful. Both agents' configured endpoints now
+// appear in the picker menu (claude's env ANTHROPIC_BASE_URL; codex's
+// config.toml default provider, read by the daemon's codex-config.ts), so
+// both hints promise it — and both name where the recipe lives.
 test("connect hints name the hosted open-model route", () => {
   assert.match(connectHint("claude-code")!, /ANTHROPIC_BASE_URL/);
   assert.match(connectHint("claude-code")!, /DeepSeek/);
   assert.match(connectHint("codex")!, /config\.toml/);
+  assert.match(connectHint("codex")!, /docs\/local-models\.md/);
 });
 
 test("the live hint's hosted clause is agent-specific and truthful", () => {
   assert.match(localLiveHint("claude-code"), /ANTHROPIC_BASE_URL/);
   assert.match(localLiveHint("claude-code"), /custom endpoint/);
   assert.match(localLiveHint("codex"), /config\.toml/);
-  assert.doesNotMatch(localLiveHint("codex"), /appears here/);
+  assert.match(localLiveHint("codex"), /appears here/);
+  assert.match(localLiveHint("codex"), /docs\/local-models\.md/);
   // An unknown agent gets the base promise only — no agent-specific knobs.
   assert.doesNotMatch(localLiveHint("aider"), /ANTHROPIC_BASE_URL|config\.toml/);
 });

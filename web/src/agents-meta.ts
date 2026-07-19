@@ -23,7 +23,7 @@ export const CONNECT_HINT: Record<AgentName, string> = {
   "claude-code":
     "set ANTHROPIC_API_KEY (get one at console.anthropic.com) — or point ANTHROPIC_BASE_URL at a local model (Ollama) or a hosted open-model API (DeepSeek, Kimi) with that provider's key",
   codex:
-    "run `codex login` (ChatGPT subscription — not clearly permitted by OpenAI's terms, tolerated in practice; your account, your call) or set OPENAI_API_KEY (platform.openai.com/api-keys) — or point Codex at a local model (Ollama/LM Studio/vLLM) or any OpenAI-compatible provider via ~/.codex/config.toml",
+    "run `codex login` (ChatGPT subscription — not clearly permitted by OpenAI's terms, tolerated in practice; your account, your call) or set OPENAI_API_KEY (platform.openai.com/api-keys) — or point Codex at a local model (Ollama/LM Studio/vLLM) or any OpenAI-compatible provider (e.g. OpenRouter) via ~/.codex/config.toml (recipe: docs/local-models.md)",
   "gemini-cli":
     "set GEMINI_API_KEY (free key at aistudio.google.com/apikey) — Gemini has no local path",
 };
@@ -93,9 +93,10 @@ export function localCapable(agent: string): boolean {
 
 /** The live local-model promise (N.3 keeps it literal: the picker re-probes
  *  while open), plus the hosted-open-model route — same BYO mechanism, but
- *  per-agent because the knob differs: Claude Code's env endpoint appears in
- *  this menu, Codex's config.toml provider does not (we can't see it — it
- *  shows as the API-key row per docs/local-models.md). Worded so an Ollama
+ *  per-agent because the knob differs: Claude Code's endpoint is env-level
+ *  (ANTHROPIC_BASE_URL), Codex's is a config.toml default provider — and BOTH
+ *  now appear in this menu as endpoint rows (the daemon reads config.toml;
+ *  codex-config.ts), so both hints may promise it. Worded so an Ollama
  *  user — whose server idles perpetually as a background service — isn't
  *  told to do a step they don't have. */
 export function localLiveHint(agent?: string): string {
@@ -112,8 +113,9 @@ export function localLiveHint(agent?: string): string {
   if (agent === "codex")
     return (
       base +
-      " Bought API access to a hosted open model? Add it as an OpenAI-compatible " +
-      "provider in ~/.codex/config.toml — same recipe as a local server."
+      " Bought API access to a hosted open model (e.g. OpenRouter)? Add it as an " +
+      "OpenAI-compatible provider in ~/.codex/config.toml — recipe in " +
+      "docs/local-models.md — and it appears here as a custom endpoint."
     );
   // No agent picked yet (the step-one footer), or an agent this bundle doesn't
   // know: the promise stays generic — no agent-specific knobs.

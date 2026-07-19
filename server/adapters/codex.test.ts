@@ -595,3 +595,25 @@ test("N.5: a discovered-endpoint choice injects the documented provider recipe, 
   assert.equal(config.model_providers?.mirafold_local.wire_api, "responses"); // docs Path B
   assert.ok(config.mcp_servers?.[MIRAFOLD_MCP], "the render MCP server must survive the merge");
 });
+
+test("a config.toml-provider choice (kind local, NO endpoint) injects nothing — the config default wins", () => {
+  let o!: CodexOptions;
+  withOpenAiKey("sk-env", () => {
+    o = capturedCodexOptions({ kind: "local" });
+    // Same withholding posture as the discovered-endpoint branch: the key has
+    // no business in a process pointed away from OpenAI.
+    assert.ok(o.env);
+    assert.ok(!("OPENAI_API_KEY" in o.env!));
+    assert.equal(o.apiKey, undefined);
+  });
+  const config = o.config as {
+    model_provider?: string;
+    model_providers?: Record<string, unknown>;
+    mcp_servers?: Record<string, unknown>;
+  };
+  // No override: Codex must resolve the user's own config.toml default
+  // provider (faithful skin — inherit, not invent).
+  assert.equal(config.model_provider, undefined);
+  assert.equal(config.model_providers, undefined);
+  assert.ok(config.mcp_servers?.[MIRAFOLD_MCP], "the render MCP server still rides along");
+});
