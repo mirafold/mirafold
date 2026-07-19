@@ -44,6 +44,7 @@ function choiceOf(b: AgentBackend, model?: string): BackendChoice {
   return {
     kind: b.kind,
     ...(b.endpoint ? { endpoint: b.endpoint } : {}),
+    ...(b.provider ? { provider: b.provider } : {}),
     ...(model ? { model } : {}),
   };
 }
@@ -115,7 +116,12 @@ function BackendMenu({
             {b.usable && b.kind === "subscription" && subscriptionCaveat(row.agent) && (
               <span className="onb-backend-caveat">{subscriptionCaveat(row.agent)}</span>
             )}
-            {!b.usable && <span className="onb-backend-caveat">{blockedHint(row.agent)}</span>}
+            {/* The row's own hint wins (a declared provider missing its env
+                key names the exact variable); the per-agent hint covers the
+                prohibited-subscription rows it was written for. */}
+            {!b.usable && (
+              <span className="onb-backend-caveat">{b.hint ?? blockedHint(row.agent)}</span>
+            )}
           </button>
         ),
       )}

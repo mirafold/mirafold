@@ -225,14 +225,22 @@ export type AgentBackend = {
   endpoint?: string;
   runtime?: string;
   models?: string[];
+  // A provider the user declared in their agent's own config (codex's
+  // `[model_providers.<id>]`) — its id, so a pick can name it exactly.
+  provider?: string;
+  // Why an unusable row is unusable, when the generic per-agent hint would be
+  // wrong (e.g. a declared provider whose env_key variable isn't set).
+  hint?: string;
 };
 
 /** The onboarding picker's backend choice (N.4), riding `create`. `endpoint`
  *  names a discovered local server (absent = the env-configured one for kind
- *  `local`); `model` is the picked catalog entry. Labels only — never a secret. */
+ *  `local`); `provider` names a config-declared provider row; `model` is the
+ *  picked catalog entry. Labels only — never a secret. */
 export type BackendChoice = {
   kind: "api-key" | "subscription" | "local";
   endpoint?: string;
+  provider?: string;
   model?: string;
 };
 

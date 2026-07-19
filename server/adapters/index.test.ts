@@ -20,6 +20,8 @@ const ENV_KEYS = [
   "CLAUDE_CONFIG_DIR",
   "DEFAULT_MODEL",
   "OPENAI_API_KEY",
+  "OPENROUTER_API_KEY",
+  "DEEPSEEK_API_KEY",
   "CODEX_HOME",
   "CODEX_MODEL",
   "GEMINI_API_KEY",
@@ -355,6 +357,114 @@ test("codex: a config provider naming a discovered server dedupes to the richer 
         ["local"],
       );
       assert.equal(merged[0].runtime, "ollama");
+    });
+  });
+});
+
+// Full optionality (2026-07-19): one row PER declared provider, key-gated,
+// terminal-default first — and a pick that names its provider exactly, so the
+// session can force what the label promised.
+
+const TWO_PROVIDER_TOML =
+  'model_provider = "openrouter"\n' +
+  "[model_providers.openrouter]\n" +
+  'name = "OpenRouter"\n' +
+  'base_url = "https://openrouter.ai/api/v1"\n' +
+  'env_key = "OPENROUTER_API_KEY"\n' +
+  "[model_providers.deepseek]\n" +
+  'base_url = "https://api.deepseek.com/v1"\n' +
+  'env_key = "DEEPSEEK_API_KEY"\n';
+
+test("codex: one row per declared provider — default first, first-party rows between", () => {
+  withTempDir((dir) => {
+    writeFileSync(path.join(dir, "config.toml"), TWO_PROVIDER_TOML);
+    writeFileSync(path.join(dir, "auth.json"), "{}");
+    withEnv(
+      { CODEX_HOME: dir, OPENAI_API_KEY: "x", OPENROUTER_API_KEY: "y", DEEPSEEK_API_KEY: "z" },
+      () => {
+        const opts = backendOptions("codex");
+        assert.deepEqual(
+          opts.map((o) => [o.kind, o.provider]),
+          [
+            ["local", "openrouter"], // the terminal's own default leads
+            ["api-key", undefined],
+            ["subscription", undefined],
+            ["local", "deepseek"], // declared but not default — after first-party
+          ],
+        );
+        assert.equal(opts[0].detail, "OpenRouter · openrouter.ai");
+        assert.equal(opts[3].detail, "deepseek · api.deepseek.com");
+        assert.ok(opts.every((o) => o.usable));
+      },
+    );
+  });
+});
+
+test("codex: a provider whose env_key variable is missing rows as unusable, fix named", () => {
+  withTempDir((dir) => {
+    writeFileSync(path.join(dir, "config.toml"), TWO_PROVIDER_TOML);
+    withEnv({ CODEX_HOME: dir, OPENROUTER_API_KEY: "y" }, () => {
+      const opts = backendOptions("codex");
+      const deepseek = opts.find((o) => o.provider === "deepseek")!;
+      assert.equal(deepseek.usable, false);
+      assert.match(String(deepseek.hint), /DEEPSEEK_API_KEY/);
+      const openrouter = opts.find((o) => o.provider === "openrouter")!;
+      assert.equal(openrouter.usable, true);
+      assert.equal(openrouter.hint, undefined);
+    });
+  });
+});
+
+test("codex: provider rows ride the wire with provider+hint but never endpointUrl", () => {
+  withTempDir((dir) => {
+    writeFileSync(path.join(dir, "config.toml"), TWO_PROVIDER_TOML);
+    withEnv({ CODEX_HOME: dir, OPENROUTER_API_KEY: "y" }, () => {
+      const merged = mergeBackends("codex", backendOptions("codex"), []);
+      for (const row of merged) {
+        assert.ok(!("endpointUrl" in row), "endpointUrl is server-side only");
+      }
+      assert.equal(merged[0].provider, "openrouter");
+      assert.match(String(merged.find((r) => r.provider === "deepseek")!.hint), /DEEPSEEK/);
+    });
+  });
+});
+
+test("codex: a NON-default provider row also dedupes against the discovered server it names", () => {
+  withTempDir((dir) => {
+    writeFileSync(
+      path.join(dir, "config.toml"),
+      "[model_providers.myollama]\n" + 'base_url = "http://localhost:11434/v1"\n',
+    );
+    withEnv({ CODEX_HOME: dir }, () => {
+      const merged = mergeBackends("codex", backendOptions("codex"), [OLLAMA]);
+      assert.deepEqual(
+        merged.map((b) => [b.kind, b.provider, b.runtime]),
+        [["local", undefined, "ollama"]], // the richer discovered row won
+      );
+    });
+  });
+});
+
+test("codex: a provider pick resolves with its id; a missing key or unknown id refuses", () => {
+  withTempDir((dir) => {
+    writeFileSync(path.join(dir, "config.toml"), TWO_PROVIDER_TOML);
+    withEnv({ CODEX_HOME: dir, OPENROUTER_API_KEY: "y" }, () => {
+      const ok = resolveChosenBackend("codex", { kind: "local", provider: "openrouter" }, []);
+      assert.ok(!("error" in ok), JSON.stringify(ok));
+      assert.equal(ok.kind, "local");
+      assert.equal(ok.provider, "openrouter");
+      assert.equal(ok.live, true);
+
+      const noKey = resolveChosenBackend("codex", { kind: "local", provider: "deepseek" }, []);
+      assert.ok("error" in noKey);
+      assert.match(noKey.error, /DEEPSEEK_API_KEY/);
+
+      const unknown = resolveChosenBackend("codex", { kind: "local", provider: "nope" }, []);
+      assert.ok("error" in unknown);
+
+      // The first-party id can't be smuggled through the provider path.
+      const forged = resolveChosenBackend("codex", { kind: "local", provider: "openai" }, []);
+      assert.ok("error" in forged);
     });
   });
 });

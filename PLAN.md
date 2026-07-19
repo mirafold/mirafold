@@ -1250,12 +1250,16 @@ is scoped further.
     reading a real session in each of the six themes no longer strains his
     eyes, and the widened contrast-floor test is green for every theme.
 
-- [ ] **Step V.2 — Codex (and Gemini, untested) rendering/command fidelity
-  gaps** *(opened 2026-07-18, now the active step)*
+- [x] **Step V.2 — Codex (and Gemini) rendering/command fidelity gaps**
+  *(opened 2026-07-18; done 2026-07-19 — Codex halves landed 2026-07-18,
+  Gemini half live-probed and closed 2026-07-19: charts cleared as-is,
+  /model interception + engine-answered picker landed; every clause of the
+  "Done when" observed live. One deliberate small follow-up remains open on
+  the Codex side: the reasoning-effort half of its picker, noted below.)*
   - **2026-07-18 live-probe findings (both root-caused, no fix landed yet):**
     - *(status note: the chart half AND the `/model` half of V.2 are both
-      resolved below; Gemini remains unprobed — Kyle will say when he has a
-      `GEMINI_API_KEY`; do not work the Gemini half until then.)*
+      resolved below for Codex; the Gemini half was live-probed and closed
+      2026-07-19 — see the Gemini block at the bottom of this step.)*
     - **`/model` — SOLVED 2026-07-18 (late evening), without waiting for
       F.5:** the interactive picker itself is TUI chrome the headless SDK
       can't reach, but the LIST it shows comes from the binary's own
@@ -1382,15 +1386,133 @@ is scoped further.
         green-on-rerun profile as 2026-07-17/18; the failing test's name
         wasn't captured this time, the run's output filter kept only the
         tally).
-    - **Gemini: NOT live-probed.** `GeminiCliSession` requires
-      `GEMINI_API_KEY`; the only Gemini auth on this machine is
-      `oauth-personal` (`~/.gemini/settings.json`), which the provider
-      credential policy (`server/provider-policy.ts`, CLAUDE.md) prohibits
-      Mirafold from using — a subscription login is a hard block, not a gray
-      area, so this wasn't routed around. By code inspection,
-      `gemini-cli.ts` has the identical structural gap (no `RENDER_GUIDANCE`
-      equivalent, no `/model` interception) but that's unconfirmed live.
-      Needs a `GEMINI_API_KEY` to close out per V.2's own "Done when" bar.
+    - **Gemini: live-probed and CLOSED 2026-07-19** (Kyle funded a
+      `GEMINI_API_KEY`; all probes ran API-key auth per the credential
+      policy — the oauth-personal path is now dead upstream anyway: Google
+      answers it with an IneligibleTierError pointing at Antigravity).
+      - **Charts: CLEARED, no fix needed.** Gemini CLI has no Codex-style
+        tool-search deferral — the MCP render tools are directly visible —
+        and the V.2 first-turn `RENDER_GUIDANCE` prepend (landed 2026-07-18)
+        was verified live through the shipped `GeminiCliSession`: 3/3 native
+        render calls (bar chart with correct props; a second-turn line chart
+        proving the guidance persists through `--resume` history; plus an
+        unprompted `render_card` on a plain prose question). The mermaid
+        backstop was deliberately NOT ported: Gemini streams text in chunks
+        (fence reassembly would mean buffering the delta stream), no mermaid
+        fallback was ever observed here, and the failure mode it guards was
+        Codex's deferral — insurance without an observed risk isn't worth
+        reshaping the streaming path.
+      - **/model: same class of gap as Codex, root-caused and FIXED.**
+        Terminal Gemini's `/model` opens a picker dialog (Auto + Manual →
+        concrete models, access-gated by the binary; `/model set
+        <model-name> [--persist]` switches directly). Headless (read from
+        the installed 0.49.0 bundle, then observed live): a bare `/model`
+        hits gemini's own headless slash parser and dies with a fatal
+        "dialog … not supported in non-interactive mode" — surfacing in
+        Mirafold as a silent zero-stat turn — and an executed `/model set`
+        only mutates that single per-turn process AND still forwards the
+        raw slash text to the model as chat. Worse, on a FIRST turn the
+        `RENDER_GUIDANCE` prepend un-slashed the prompt (headless only
+        recognizes a command at position 0), so the model just chatted
+        about it (~112k input tokens of it exploring, observed). Landed,
+        mirroring the Codex V.2 pattern:
+        - `server/adapters/gemini-model-list.ts` — the catalog asked of the
+          user's own binary via its ACP surface (`gemini --acp`, JSON-RPC
+          `initialize` → `session/new`, whose response carries
+          `models.availableModels` + `currentModelId` — the same
+          access-gated rows the terminal dialog builds, computed in the
+          session's workspace). One-shot spawn, kill after the answer,
+          SIGKILL fallback; rejects honestly on spawn failure / protocol
+          error / timeout.
+        - `gemini-cli.ts` — `/model` intercepted in the worker loop
+          (serialized with turns, engine-free): bare `/model` (and
+          `/model manage`, and stray args — the terminal ignores args and
+          opens the dialog) renders the catalog as a `question` picker
+          whose click sends `/model set <id>` (Gemini's own syntax) back
+          through the same path, with the `list` fallback outside the 2–4
+          option range — this key's catalog is 6 rows (Auto + 5), so it
+          takes the list; `/model set <name>` switches by changing the
+          `-m` the next spawn passes (history intact via `--resume` —
+          exactly the terminal dialog's effect), label configured-truth
+          immediately, flag-shaped names rejected (the codex hardening),
+          `--persist` applied as a session switch with an honest scope
+          note. Guidance injection is now a separate `guidanceInjected`
+          flag: slash-leading turns are passed to the engine verbatim and
+          the one-time prepend waits for the first prose turn.
+        - **Live-verified end-to-end on the shipped session:** bare
+          `/model` painted the real 6-row engine catalog (Auto marked
+          current, engine `currentModelId`); `/model set gemini-3.5-flash`
+          switched instantly with no engine turn; the next real turn's
+          usage stats — **the engine's own answer** — reported
+          `gemini-3.5-flash`. ✓
+        - Tests: 12 new Tier-1 (`gemini-model-list.test.ts`: stub-binary
+          ACP exchange, error response, exit-before-answer, timeout;
+          `gemini-cli.test.ts`: picker with no engine spawn, list
+          fallback + hint, configured-model current marker, switch
+          mechanics incl. `-m` on the next spawn, usage line, persist
+          note, honest catalog-read error, and the slash-skip/one-time
+          guidance injection — the stub bin now records argv for those).
+      - **Probe footnote (not a product bug):** a session workspace
+        OUTSIDE the user's trusted-folder tree loses the per-session
+        `.gemini/settings.json` entirely (auth choice AND our MCP server) —
+        that's Gemini's own untrusted-workspace safe mode, F.4 already
+        surfaces the resulting stderr honestly, and real Mirafold cwds are
+        the user's own (trusted) directories. Known and accepted.
+      - **All tiers green: 246/82/28** (no flake this round), typecheck
+        clean.
+    - **2026-07-19 (afternoon) amendment — the OpenRouter/custom-provider
+      probe (Kyle configured `model_provider = "openrouter"` +
+      `qwen/qwen3-coder:free` in `~/.codex/config.toml`):**
+      - **Setup findings:** the `.env` key was named `OPEN_ROUTER_API_KEY`
+        while config.toml declares `env_key = "OPENROUTER_API_KEY"` —
+        renamed in `.env` to match (the standard name). The `:free` slug is
+        dead upstream (OpenRouter 404s it, pointing at the paid
+        `qwen/qwen3-coder`); config.toml is Kyle's file, he updates the
+        slug. OpenRouter's `responses` wire API works with codex.
+      - **/model under a custom provider: parity met by construction,
+        nothing landed.** Terminal codex (pty-probed) shows the stock
+        OpenAI `model/list` catalog even with openrouter active — the
+        current qwen model isn't listed and no row is marked current — and
+        our re-skin asks the same surface, so it shows the same rows.
+        (0.144.6 answers 7 rows, so the picker takes the ≥5 list fallback
+        now; version-driven, faithful either way.)
+      - **The deferred-tools addendum was WRONG for tools-visible configs,
+        reworded (the one landed change).** Deferral is per-provider/
+        per-model (`supports_search_tool` falls back FALSE for unknown
+        slugs like qwen — codex-rs fallback metadata), so under a custom
+        provider the render tools sit directly in the tool list and the old
+        unconditional "they do NOT appear in your direct tool list" sent
+        qwen hunting: two failed MCP discovery calls
+        (list_mcp_resource_templates/list_mcp_resources), ~35s and ~2x
+        tokens before rendering (124k vs 52k input, raw-SDK A/B). New
+        conditional wording ("if they appear, call them directly; if not,
+        they are deferred behind tool search…") verified live on BOTH
+        paths: qwen/OpenRouter 3/3 direct render_chart calls, no
+        meta-tool thrash, tokens halved; gpt-5.5 on the builtin openai
+        provider (the deferral path, ChatGPT auth) 3/3. The existing
+        Tier-1 injection pin ("tool search" substring) still holds.
+      - **Registry/chart fidelity on qwen: 6/7 native render calls**
+        through shipped-session + raw trials combined. The one miss was
+        NOT model behavior: every `mirafold.*` call in that session
+        answered "unsupported call" for the whole turn (the same bare-name
+        call succeeded in every other trial) — a rare render-MCP startup
+        race, new watch item below. No mermaid fence was produced (the
+        backstop had nothing to catch; it stays as-is).
+      - **Watch items:** (1) render-MCP registration race — one occurrence
+        in ~20 codex sessions across two days; if it recurs, look at
+        whether codex builds the turn's tool list before the stdio server
+        finishes initializing. (2) The Tier-2/3 flake hit a FOURTH time
+        (Tier-3 27/28 → 28/28 on immediate rerun; failing test's name
+        again not captured — output was filtered to the tally).
+      - **Findings reported to Kyle, no action taken (his calls):** the
+        onboarding row still labels codex "subscription" with the ChatGPT
+        gray-area disclosure while sessions actually ride the OpenRouter
+        key (we deliberately don't parse config.toml; inaccurate in the
+        harmless direction — the actual run is cleaner than disclosed);
+        and the stale `:free` slug in config.toml. Side effect owned: a
+        pty probe accidentally accepted codex's own update prompt —
+        binary repaired via clean reinstall, now 0.144.6 (was 0.144.5).
+      - **All tiers green: 246/82/28**, typecheck clean.
   - Goal: Kyle, 2026-07-17: Codex's `/model` in Mirafold does not show the
     full list the same command shows in a real terminal, and a requested
     chart/graph sometimes renders as a plain table instead — both are
@@ -1425,6 +1547,72 @@ is scoped further.
     Codex shows, a chart prompt renders a chart (not a table) in Codex, and
     Gemini has been live-probed for both classes of gap with the result
     recorded here (confirmed-affected, or cleared).
+
+- [x] **Step V.3 — Truthful full-optionality Codex backend picker (provider
+  binding)** *(Kyle's design, approved and built 2026-07-19)*
+  - Goal: Kyle caught onboarding lying — a machine with `auth.json` + a
+    config.toml OpenRouter default showed the codex row as "subscription"
+    (gray-area disclosure and all) while sessions actually rode the
+    OpenRouter API key. His design bar: transparency, simplicity, full
+    optionality — every way codex could run is a row derived from ground
+    truth, every pick is enforced so the label can never be false, and the
+    first row is what terminal codex itself would run.
+  - Base (landed same morning by a parallel session, commit 90117f6):
+    `codex-config.ts` scans the config.toml DEFAULT provider; that detects
+    as the `local` kind, rows in the picker, retires the dummy-key recipe.
+  - Built on top (this step):
+    - `codex-config.ts` now scans ALL `[model_providers.<id>]` entries
+      (id, name, base_url, env_key) plus the top-level `model`;
+      `parseCodexDefaultProvider` re-derived from the full scan (no drift).
+    - **Rows:** one per declared provider (`backendOptions` codex case) —
+      terminal default first, first-party api-key/subscription rows between,
+      non-default providers after; label "`<name> · <host>`"; usable only
+      when the provider's `env_key` variable is present (missing key rows
+      show `hint` naming the exact variable — visible, never dead-on-turn-1);
+      first-party `openai` id never rows (api-key/subscription own it);
+      dedupe vs discovered servers generalized per-row (server-side
+      `endpointUrl`, stripped before the wire). Wire additions all additive:
+      `AgentBackend.provider`/`hint`, `BackendChoice.provider`,
+      `Backend.provider`.
+    - **Enforcement (the point):** `resolveChosenBackend` validates a
+      provider pick against a fresh config scan + key presence;
+      `CodexSession` forces `model_provider` per pick — a provider pick
+      forces its id (declaration stays the user's own table), api-key and
+      subscription picks force `openai` (a no-op unless a custom default
+      exists — exactly the lying case). An old client's bare local pick
+      still injects nothing (config default wins, as before).
+    - **Model axis (found live — the subscription pick 400'd carrying the
+      OpenRouter-scoped `model = qwen/…`):** a forced-openai pick with a
+      custom config default + top-level model resolves the ENGINE binary's
+      own catalog default (app-server `model/list` against the SDK's
+      resolved `executablePath`; answered `gpt-5.5` on the vendored
+      0.142.5) before the first turn and restarts the unstarted thread
+      under it — version-correct, never a hardcoded slug; explicit models
+      (opts/`/model`) win outright; catalog failure or a no-default catalog
+      = honest error + `/model` hint, the foreign model never reaches the
+      engine. Known bound, documented: a NON-default custom-provider pick
+      inherits the config model (no knowable per-provider default exists);
+      a mismatch errors visibly and `/model <slug>` fixes it.
+    - Client: picker rows pass `provider` through the choice; a row's own
+      `hint` wins over the generic blocked hint.
+  - **Live-verified on Kyle's machine:** advertised rows exactly truthful
+    (OpenRouter · openrouter.ai usable + subscription; no phantom api-key
+    row); OpenRouter pick → real turn on `qwen/qwen3-coder`; subscription
+    pick → `gpt-5.5` per the engine's OWN usage stats (before the model-axis
+    fix this 400'd — the enforcement is observable). 8 consecutive clean
+    runs to close.
+  - **Watch item (upstream, intermittent):** twice in a ~13-minute window
+    the 0.142.5 engine ran the turn under `thinkingmachines/inkling` — a
+    slug present NOWHERE on the machine (not config, caches, or either
+    binary); the rollout's turn_context shows codex's own
+    collaboration_mode settings carrying it, i.e. a server-fed override.
+    8 subsequent runs clean. If it recurs: rollout
+    `2026-07-19T07-31-45-…56573b2f733b.jsonl` is the specimen; it also
+    motivated the no-default-catalog hardening (never guess row 0).
+  - Tests: +23 Tier-1 across codex-config (full scan shapes), index (row
+    order/gating/wire/dedupe/resolve), codex (provider forcing via the
+    makeCodex seam; model-axis swap, failure, explicit-win, no-swap cases).
+  - **All tiers green: 277/82/28**, typecheck clean.
 
 ---
 
