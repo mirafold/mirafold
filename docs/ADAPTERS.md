@@ -199,7 +199,8 @@ The proven sequence (used for both Codex and Gemini; keep it):
    (subprocess SDK) or `gemini-cli.ts` (headless CLI). Honor every rule in §3.
 4. **Wire the seam** — exactly five touchpoints, all in two files:
    - `protocol.ts`: add the name to the `AgentName` union (additive).
-   - `adapters/index.ts`: `agentHasCredentials()` case (what counts as live),
+   - `adapters/index.ts`: `credentialKind()` case (what counts as live) and
+     `backendOptions()` case (the picker's menu of ways it can run),
      `modelFor()` case (its own env var, never a shared one), `ADAPTER_AGENTS`
      entry (onboarding offers it), `createSession()` case.
 5. **Verify**: `yarn typecheck`; normalization unit tests beside the mapping

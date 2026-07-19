@@ -201,7 +201,10 @@ test("agent_message with a mermaid xychart paints a chart component; prose stays
 
 // V.2 /model: a session with injectable model list + a makeCodex stub that
 // records thread construction, so switches are observable without an engine.
-function makeModelSession(listModels: () => Promise<any[]>) {
+/** A makeCodex stub whose threads run one empty turn and record every
+ *  start/resume + prompt — the engine-free harness both the /model and the
+ *  provider-binding suites observe switches through. */
+function recordingCodex() {
   const calls: { kind: "start" | "resume"; id?: string; options: any }[] = [];
   const prompts: string[] = [];
   const fakeThread = () => ({
@@ -214,21 +217,23 @@ function makeModelSession(listModels: () => Promise<any[]>) {
       };
     },
   });
-  const s = new CodexSession({
-    workspaceDir: tmp,
-    listModels,
-    makeCodex: () =>
-      ({
-        startThread: (options: any) => {
-          calls.push({ kind: "start", options });
-          return fakeThread();
-        },
-        resumeThread: (id: string, options: any) => {
-          calls.push({ kind: "resume", id, options });
-          return fakeThread();
-        },
-      }) as any,
-  });
+  const makeCodex = () =>
+    ({
+      startThread: (options: any) => {
+        calls.push({ kind: "start", options });
+        return fakeThread();
+      },
+      resumeThread: (id: string, options: any) => {
+        calls.push({ kind: "resume", id, options });
+        return fakeThread();
+      },
+    }) as any;
+  return { calls, prompts, makeCodex };
+}
+
+function makeModelSession(listModels: () => Promise<any[]>) {
+  const { calls, prompts, makeCodex } = recordingCodex();
+  const s = new CodexSession({ workspaceDir: tmp, listModels, makeCodex });
   const msgs: Any[] = [];
   s.onMessage((m) => msgs.push(m as Any));
   const awaitTurnEnd = (count = 1) => waitForTurnEnds(msgs, count);
@@ -678,37 +683,13 @@ function makeBindingSession(configToml: string | undefined, opts: {
 }) {
   const home = mkdtempSync(path.join(tmp, "codex-home-"));
   if (configToml !== undefined) writeFileSync(path.join(home, "config.toml"), configToml);
-  const calls: { kind: "start" | "resume"; options: any }[] = [];
-  const prompts: string[] = [];
-  const fakeThread = () => ({
-    runStreamed: async (text: string) => {
-      prompts.push(text);
-      return {
-        events: (async function* () {
-          yield ev({ type: "turn.completed", usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1, reasoning_output_tokens: 0 } });
-        })(),
-      };
-    },
-  });
+  const { calls, prompts, makeCodex } = recordingCodex();
+  // CODEX_HOME only matters at construction (the config scan runs there).
   const saved = process.env.CODEX_HOME;
   process.env.CODEX_HOME = home;
   let s: CodexSession;
   try {
-    s = new CodexSession({
-      workspaceDir: tmp,
-      ...opts,
-      makeCodex: () =>
-        ({
-          startThread: (options: any) => {
-            calls.push({ kind: "start", options });
-            return fakeThread();
-          },
-          resumeThread: (_id: string, options: any) => {
-            calls.push({ kind: "resume", options });
-            return fakeThread();
-          },
-        }) as any,
-    });
+    s = new CodexSession({ workspaceDir: tmp, ...opts, makeCodex });
   } finally {
     if (saved === undefined) delete process.env.CODEX_HOME;
     else process.env.CODEX_HOME = saved;

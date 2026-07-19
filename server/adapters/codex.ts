@@ -17,6 +17,7 @@ import { type AgentSession, type TodoItem, capOutput, envWithout, joinTextBlocks
 import { MIRAFOLD_MCP, RENDER_ID_RE, generativeUIMsg, renderMcpCommand } from "./render-mcp-cmd";
 import { convertMermaidCharts } from "./mermaid-chart";
 import { listCodexModels, type CodexModel } from "./codex-model-list";
+import { emitModelPicker } from "./model-picker";
 import { codexProviders } from "./codex-config";
 import { AsyncQueue, CLOSE } from "./async-queue";
 
@@ -138,6 +139,32 @@ export function extractRenderId(item: McpToolCallItem): string {
   return typeof argId === "string" ? argId : randomUUID();
 }
 
+/** The provider half of a pick's enforcement (see the constructor comment):
+ *  which `model_provider` the session's config forces — a discovered server's
+ *  injected recipe, a config-declared provider's id, the first-party `openai`
+ *  for the api-key/subscription kinds, or nothing for the inherit paths. */
+function providerBinding(
+  kind: "api-key" | "subscription" | "local" | undefined,
+  endpoint: string | undefined,
+  provider: string | undefined,
+): Record<string, unknown> {
+  if (kind === "local" && endpoint) {
+    return {
+      model_provider: "mirafold_local",
+      model_providers: {
+        mirafold_local: {
+          name: "Mirafold-discovered local server",
+          base_url: `${endpoint}/v1`,
+          wire_api: "responses",
+        },
+      },
+    };
+  }
+  if (kind === "local" && provider) return { model_provider: provider };
+  if (kind === "api-key" || kind === "subscription") return { model_provider: "openai" };
+  return {};
+}
+
 /**
  * The Codex adapter: OpenAI's Codex, driven through its own `@openai/codex-sdk`
  * engine. One `Thread` lives for the object's lifetime and carries the warm
@@ -192,7 +219,7 @@ export class CodexSession implements AgentSession {
   // catalog and restarts the unstarted thread under it — version-correct by
   // construction, never a hardcoded slug. An explicit model (opts.model, a
   // /model switch) always wins and clears this.
-  private resolveEngineDefaultModel = false;
+  private needsEngineDefaultModel = false;
   private listEngineModels: () => Promise<CodexModel[]>;
 
   get modelName(): string {
@@ -263,22 +290,7 @@ export class CodexSession implements AgentSession {
             default_tools_approval_mode: "approve",
           },
         },
-        ...(kind === "local" && opts.endpoint
-          ? {
-              model_provider: "mirafold_local",
-              model_providers: {
-                mirafold_local: {
-                  name: "Mirafold-discovered local server",
-                  base_url: `${opts.endpoint}/v1`,
-                  wire_api: "responses",
-                },
-              },
-            }
-          : kind === "local" && opts.provider
-            ? { model_provider: opts.provider }
-            : kind === "api-key" || kind === "subscription"
-              ? { model_provider: "openai" }
-              : {}),
+        ...providerBinding(kind, opts.endpoint, opts.provider),
       },
     });
     this.codex = codex;
@@ -295,7 +307,7 @@ export class CodexSession implements AgentSession {
     // ride along wrongly. An explicit model override wins outright.
     if ((kind === "api-key" || kind === "subscription") && !opts.model) {
       const cfg = codexProviders();
-      this.resolveEngineDefaultModel =
+      this.needsEngineDefaultModel =
         cfg.defaultProvider !== undefined && cfg.defaultProvider !== "openai" && cfg.model !== undefined;
     }
     this.threadOpts = {
@@ -382,22 +394,29 @@ export class CodexSession implements AgentSession {
           });
           return;
         }
-        this.emitModelPicker(models);
+        // The trailing legacy-models hint mirrors the terminal picker's own
+        // footer; it rides after either picker form.
+        const current = (m: CodexModel) =>
+          this.modelLabel === MODEL_STAND_IN ? m.isDefault : this.modelLabel === m.id;
+        emitModelPicker(
+          (msg) => this.emit(msg),
+          models.map((m) => ({ ...m, current: current(m) })),
+          {
+            clickText: (id) => `/model ${id}`,
+            switchHint: "Send `/model <model-id>` to switch.",
+          },
+        );
+        this.emit({
+          type: "text_delta",
+          text: "\nLegacy models can be set directly with `/model <model_name>`.",
+        });
       } else if (/\s/.test(arg) || arg.startsWith("-")) {
         // Hyphen-leading names are rejected HERE rather than trusting the
         // codex CLI's parser to refuse a flag-shaped --model value
         // (2026-07-18 audit): the safety stays local, the error stays clear.
         this.emit({ type: "text_delta", text: "Usage: `/model` to pick, or `/model <model-id>`." });
       } else {
-        // Apply: resume the warm thread under the new model (or restart the
-        // unstarted one). The label becomes configured-truth immediately —
-        // same as constructing with opts.model.
-        this.thread = this.threadId
-          ? this.codex.resumeThread(this.threadId, { ...this.threadOpts, model: arg })
-          : this.codex.startThread({ ...this.threadOpts, model: arg });
-        this.threadOpts = { ...this.threadOpts, model: arg };
-        this.modelLabel = arg;
-        this.resolveEngineDefaultModel = false; // an explicit choice wins outright
+        this.setThreadModel(arg);
         this.emit({ type: "text_delta", text: `Model set to ${arg}.` });
       }
     } finally {
@@ -405,45 +424,18 @@ export class CodexSession implements AgentSession {
     }
   }
 
-  /** The catalog as a clickable picker (a click sends `/model <id>` back
-   *  through runModelCommand), or a plain list when the catalog leaves the
-   *  question component's 2–4 option range. */
-  private emitModelPicker(models: CodexModel[]) {
-    const current = (m: CodexModel) =>
-      this.modelLabel === MODEL_STAND_IN ? m.isDefault : this.modelLabel === m.id;
-    if (models.length >= 2 && models.length <= 4) {
-      this.emit({
-        type: "render",
-        component: "question",
-        props: {
-          question: "Select a model",
-          options: models.map((m) => ({
-            label: current(m) ? `${m.displayName} (current)` : m.displayName,
-            text: `/model ${m.id}`,
-            detail: m.description,
-          })),
-        },
-        id: randomUUID(),
-      });
-    } else {
-      this.emit({
-        type: "render",
-        component: "list",
-        props: {
-          title: "Models",
-          items: models.map((m) => ({
-            text: `**${m.displayName}**${current(m) ? " (current)" : ""} — \`${m.id}\``,
-            detail: m.description,
-          })),
-        },
-        id: randomUUID(),
-      });
-      this.emit({ type: "text_delta", text: "Send `/model <model-id>` to switch." });
-    }
-    this.emit({
-      type: "text_delta",
-      text: "\nLegacy models can be set directly with `/model <model_name>`.",
-    });
+  /** Point the warm conversation at `model`: resume the started thread
+   *  (history intact — exactly what the terminal picker does to a session)
+   *  or restart the unstarted one. The label becomes configured-truth
+   *  immediately — same as constructing with opts.model — and any pending
+   *  engine-default resolution is superseded. */
+  private setThreadModel(model: string) {
+    this.threadOpts = { ...this.threadOpts, model };
+    this.thread = this.threadId
+      ? this.codex.resumeThread(this.threadId, this.threadOpts)
+      : this.codex.startThread(this.threadOpts);
+    this.modelLabel = model;
+    this.needsEngineDefaultModel = false;
   }
 
   /** The model half of provider binding: swap the foreign config.toml model
@@ -452,18 +444,14 @@ export class CodexSession implements AgentSession {
    *  False = resolution failed; the honest error is already emitted and the
    *  turn must not reach the engine under the foreign model. */
   private async applyEngineDefaultModel(): Promise<boolean> {
-    this.resolveEngineDefaultModel = false;
+    this.needsEngineDefaultModel = false;
     try {
       const models = await this.listEngineModels();
       // Only a row the engine itself marks default — guessing (e.g. row 0 of
       // an unmarked catalog) risks running a model the user never chose.
       const def = models.find((m) => m.isDefault);
       if (!def) throw new Error("the engine's catalog marks no default model");
-      this.threadOpts = { ...this.threadOpts, model: def.id };
-      this.thread = this.threadId
-        ? this.codex.resumeThread(this.threadId, this.threadOpts)
-        : this.codex.startThread(this.threadOpts);
-      this.modelLabel = def.id;
+      this.setThreadModel(def.id);
       return true;
     } catch (err) {
       this.emit({
@@ -488,7 +476,7 @@ export class CodexSession implements AgentSession {
       this.emit({ type: "turn_end" });
     };
     try {
-      if (this.resolveEngineDefaultModel && !(await this.applyEngineDefaultModel())) return;
+      if (this.needsEngineDefaultModel && !(await this.applyEngineDefaultModel())) return;
       const prompt = this.firstTurn
         ? `${RENDER_GUIDANCE}\n${CODEX_DEFERRED_TOOLS_ADDENDUM}\n\n---\n\n${text}`
         : text;
