@@ -9,6 +9,7 @@ import type { AgentName, AgentSession, Backend } from "./types";
 import type { AgentBackend, AgentInfo } from "../protocol";
 import { allowedLocally, type CredentialKind } from "../provider-policy";
 import { cachedLocalServers, hostKey, type LocalDialect, type LocalServer } from "../local-models";
+import { codexConfigProvider } from "./codex-config";
 
 export type { AgentName, AgentSession, Backend } from "./types";
 
@@ -25,9 +26,9 @@ function loginFileExists(envDir: string | undefined, subdir: string, file: strin
  * per-provider policy (R.4i). We detect the kind so the policy can decide
  * whether it's usable at all: an Anthropic/Gemini subscription is DETECTED here
  * (so onboarding can say why it won't run) but treated as prohibited by
- * `provider-policy.ts`. A local/BYO endpoint (ANTHROPIC_BASE_URL) is its own
- * kind — the user pointed elsewhere, so first-party terms don't apply and
- * anything goes.
+ * `provider-policy.ts`. A local/BYO endpoint (claude's ANTHROPIC_BASE_URL,
+ * codex's config.toml default provider) is its own kind — the user pointed
+ * elsewhere, so first-party terms don't apply and anything goes.
  */
 function credentialKind(agent: AgentName): CredentialKind {
   switch (agent) {
@@ -46,6 +47,13 @@ function credentialKind(agent: AgentName): CredentialKind {
         return "subscription";
       return "none";
     case "codex":
+      // BYO provider first, symmetric with claude's BASE_URL rule above: a
+      // default `model_provider` in ~/.codex/config.toml (Ollama, OpenRouter —
+      // docs/local-models.md) means the user pointed Codex elsewhere, and the
+      // terminal `codex` would use it regardless of any OPENAI_API_KEY — the
+      // env key only authenticates the first-party provider it's not using.
+      // Detecting it here is what retires the dummy-key recipe.
+      if (codexConfigProvider()) return "local";
       // OpenAI API key → api-key. A `codex login` (ChatGPT subscription) writes
       // ~/.codex/auth.json → subscription: allowed for LOCAL use as a disclosed
       // gray area (provider-policy's disclosed-uncertainty rule, K.3 amendment
@@ -130,6 +138,7 @@ export function backendOptions(agent: AgentName): BackendOption[] {
       break;
     }
     case "codex": {
+      if (codexConfigProvider()) add("local", endpointDetail(agent));
       if (process.env.OPENAI_API_KEY) add("api-key", modelFor(agent));
       if (loginFileExists(process.env.CODEX_HOME, ".codex", "auth.json")) add("subscription");
       break;
@@ -155,11 +164,11 @@ const AGENT_DIALECT: Record<AgentName, LocalDialect | null> = {
 /**
  * The full second-step menu for one agent (N.3): the N.1 credential options
  * plus every discovered local server the agent's dialect can drive. Pure —
- * `advertisedBackends` binds it to the live probe cache. When the
- * env-configured local endpoint (claude's ANTHROPIC_BASE_URL) names the same
- * host:port as a discovered compatible server, the discovered row wins — it
- * carries the model catalog; two rows for one server would be the kind of
- * confusion this phase exists to end.
+ * `advertisedBackends` binds it to the live probe cache. When the configured
+ * BYO endpoint (claude's ANTHROPIC_BASE_URL, codex's config.toml provider)
+ * names the same host:port as a discovered compatible server, the discovered
+ * row wins — it carries the model catalog; two rows for one server would be
+ * the kind of confusion this phase exists to end.
  */
 export function mergeBackends(
   agent: AgentName,
@@ -171,7 +180,7 @@ export function mergeBackends(
   const discoveredHosts = new Set(
     discovered.map((s) => hostKey(s.endpoint)).filter((h): h is string => h !== undefined),
   );
-  const envUrl = agent === "claude-code" ? process.env.ANTHROPIC_BASE_URL : undefined;
+  const envUrl = byoEndpointUrl(agent);
   const envHost = envUrl ? hostKey(envUrl) : undefined;
   const creds = options.filter(
     (o) => !(o.kind === "local" && envHost !== undefined && discoveredHosts.has(envHost)),
@@ -231,15 +240,25 @@ function agentDetail(agent: AgentName, kind: CredentialKind): string | undefined
   return modelFor(agent) || undefined;
 }
 
-/** Picker label for the agent's env-configured BYO endpoint. Only claude-code
- *  carries one at the env level (`ANTHROPIC_BASE_URL`); a local Codex lives in
- *  `~/.codex/config.toml`, which we don't parse here. The `local` credential
- *  kind covers any BYO endpoint, so the label says where it actually points:
- *  "local endpoint" for a loopback host (Ollama), "custom endpoint" for a
- *  remote one (a hosted open-model API, e.g. DeepSeek). A malformed value
- *  falls back to the plain label — never echo raw env input onto the wire. */
+/** The agent's configured BYO endpoint URL, when it carries one: claude-code's
+ *  is env-level (`ANTHROPIC_BASE_URL`); codex's is the default provider's
+ *  `base_url` in `~/.codex/config.toml` (read by codex-config.ts — a provider
+ *  declared without one, e.g. the built-in `oss`, yields no URL and just the
+ *  plain label below). */
+function byoEndpointUrl(agent: AgentName): string | undefined {
+  if (agent === "claude-code") return process.env.ANTHROPIC_BASE_URL;
+  if (agent === "codex") return codexConfigProvider()?.baseUrl;
+  return undefined;
+}
+
+/** Picker label for the agent's configured BYO endpoint. The `local`
+ *  credential kind covers any BYO endpoint, so the label says where it
+ *  actually points: "local endpoint" for a loopback host (Ollama), "custom
+ *  endpoint" for a remote one (a hosted open-model API, e.g. DeepSeek or
+ *  OpenRouter). A malformed value falls back to the plain label — never echo
+ *  raw config input onto the wire. */
 function endpointDetail(agent: AgentName): string {
-  const url = agent === "claude-code" ? process.env.ANTHROPIC_BASE_URL : undefined;
+  const url = byoEndpointUrl(agent);
   if (url) {
     try {
       const u = new URL(url);

@@ -32,25 +32,36 @@ const RENDER_MCP = renderMcpCommand();
 const MODEL_STAND_IN = "codex";
 
 /**
- * V.2: Codex defers ALL MCP tools behind its tool-search mechanism
- * (`tool_search_always_defer_mcp_tools`, hardcoded on in codex-rs — the
- * render tools never appear in the model's direct tool list). Without being
- * told, the model concludes render_chart doesn't exist and hand-writes
- * mermaid/ASCII instead (observed 0/9 render calls live). This addendum to
- * RENDER_GUIDANCE names the deferral and instructs the model to load the
- * tools via tool search — with it, 6/6 live trials called render_chart,
- * including on later turns of the same thread.
+ * V.2: on OpenAI-provider models, Codex defers ALL MCP tools behind its
+ * tool-search mechanism (`tool_search_always_defer_mcp_tools`, hardcoded on
+ * in codex-rs — the render tools never appear in the model's direct tool
+ * list). Without being told, the model concludes render_chart doesn't exist
+ * and hand-writes mermaid/ASCII instead (observed 0/9 render calls live).
+ * This addendum to RENDER_GUIDANCE names the deferral and instructs the
+ * model to load the tools via tool search — with it, 6/6 live trials called
+ * render_chart, including on later turns of the same thread.
+ *
+ * The claim is CONDITIONAL ("if they do not appear") because deferral is
+ * per-provider/per-model, not universal: a custom provider (config.toml
+ * model_provider, e.g. OpenRouter, or a Mirafold-injected local server) has
+ * no tool search, so the tools sit directly in the tool list — and the old
+ * unconditional "they do NOT appear" sent such models hunting for a search
+ * mechanism that doesn't exist (observed live 2026-07-19: qwen3-coder via
+ * OpenRouter burned two failed MCP discovery calls and ~2x the tokens
+ * before rendering; with conditional wording it calls render_chart
+ * directly). One wording, true in both configurations — the adapter can't
+ * cheaply know which one a session is in.
  */
 export const CODEX_DEFERRED_TOOLS_ADDENDUM = `
 ## Tool availability note (important)
 
 The render_* tools and emit_artifact above live on the \`${MIRAFOLD_MCP}\` MCP
-server and are DEFERRED: they do NOT appear in your direct tool list, but
-they ARE available — use tool search to load them, then call them. Never
-conclude a render tool is unavailable without searching for it first. For
-ANY chart/plot/graph request you MUST load and call render_chart —
-hand-written mermaid, ASCII, or SVG charts render as plain code here, never
-as visuals.`;
+server. If they appear in your tool list, just call them directly. If they
+do NOT appear, they are DEFERRED behind tool search: use tool search to load
+them, then call them. Never conclude a render tool is unavailable without
+checking your tool list and searching first. For ANY chart/plot/graph
+request you MUST call render_chart — hand-written mermaid, ASCII, or SVG
+charts render as plain code here, never as visuals.`;
 
 export function mcpText(content: unknown): string {
   if (!Array.isArray(content)) return content == null ? "" : String(content);
@@ -198,9 +209,12 @@ export class CodexSession implements AgentSession {
     //   subscription → NO apiKey, and an env override WITHOUT the env key, so
     //     the CLI resolves ~/.codex/auth.json — the explicit choice must win
     //     over the env var's usual precedence.
-    //   local endpoint (a discovered server) → the documented custom-provider
-    //     recipe (docs/local-models.md Path B), injected per-session: the
-    //     server's /v1 as a Responses-API provider, made the default.
+    //   local endpoint WITH `endpoint` (a discovered server) → the documented
+    //     custom-provider recipe (docs/local-models.md Path B), injected
+    //     per-session: the server's /v1 as a Responses-API provider, made the
+    //     default. WITHOUT one (the user's own config.toml default provider,
+    //     detected by codex-config.ts) → inject nothing: that provider is
+    //     already the config default (faithful skin — inherit, not invent).
     //   Default: inherit process.env, so the CLI finds the user's own auth +
     //     config, exactly as before.
     const kind = opts.kind ?? (process.env.OPENAI_API_KEY ? "api-key" : undefined);
