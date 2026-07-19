@@ -42,13 +42,16 @@ const codexBin = () => {
 };
 
 /**
- * Ask the user's codex binary for its model catalog. Rejects on spawn
- * failure, protocol error, or timeout — the caller decides how to degrade
- * (the adapter surfaces an honest error, never a made-up list).
+ * Ask a codex binary for its model catalog — the user's own by default
+ * (terminal parity for the /model picker), or an explicit `bin` (the SDK's
+ * vendored engine binary, whose version-correct default the provider-binding
+ * path needs). Rejects on spawn failure, protocol error, or timeout — the
+ * caller decides how to degrade (the adapter surfaces an honest error, never
+ * a made-up list).
  */
-export function listCodexModels(timeoutMs = 10_000): Promise<CodexModel[]> {
+export function listCodexModels(timeoutMs = 10_000, bin?: string): Promise<CodexModel[]> {
   return new Promise((resolve, reject) => {
-    const child = spawn(codexBin(), ["app-server"], { stdio: ["pipe", "pipe", "ignore"] });
+    const child = spawn(bin ?? codexBin(), ["app-server"], { stdio: ["pipe", "pipe", "ignore"] });
     let settled = false;
     const finish = (err: Error | null, models?: CodexModel[]) => {
       if (settled) return;

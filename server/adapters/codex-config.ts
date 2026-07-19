@@ -3,25 +3,44 @@ import os from "node:os";
 import { readFileSync } from "node:fs";
 
 /**
- * Reads the ONE fact Mirafold needs from the user's own Codex config
- * (`~/.codex/config.toml`, honoring `CODEX_HOME` like the CLI): whether a
- * default `model_provider` other than OpenAI is configured, and where it
- * points. That's how a config-file BYO provider (Ollama made the default, or
- * a hosted open-model API like OpenRouter — docs/local-models.md) becomes
- * visible to onboarding, so it can count as configured on its own — the old
- * recipe needed a dummy `OPENAI_API_KEY=local` purely to flip that signal.
+ * Reads the facts Mirafold needs from the user's own Codex config
+ * (`~/.codex/config.toml`, honoring `CODEX_HOME` like the CLI): which
+ * `model_provider` is the default, and every `[model_providers.<id>]` entry
+ * the user has declared — id, display name, where it points (`base_url`),
+ * and which environment variable authenticates it (`env_key`). That's how
+ * config-file BYO providers (Ollama made the default, or hosted open-model
+ * APIs like OpenRouter — docs/local-models.md) become visible to onboarding:
+ * each is its own backend row, present only because the user themselves
+ * declared it, usable only when its named key is actually present.
  *
  * Deliberately NOT a TOML parser (zero deps, same as the rest of the server):
- * a line scan for the two keys involved — the top-level `model_provider`, and
- * that provider's `base_url` inside its `[model_providers.<name>]` table.
- * Anything it can't read scans as "no provider", which degrades to the
- * pre-existing behavior (key/login detection) — never a crash, never a
- * false positive.
+ * a line scan for the handful of keys involved. Anything it can't read scans
+ * as "not declared", which degrades to the pre-existing behavior (key/login
+ * detection) — never a crash, never a false positive.
  */
 
 export type CodexConfigProvider = {
   provider: string;
   baseUrl?: string;
+};
+
+/** One `[model_providers.<id>]` declaration, as far as Mirafold reads it. */
+export type CodexProviderEntry = {
+  id: string;
+  name?: string;
+  baseUrl?: string;
+  envKey?: string;
+};
+
+export type CodexProviders = {
+  /** The top-level `model_provider` — what terminal codex runs by default.
+   *  Absent means codex's own built-in default (the first-party `openai`). */
+  defaultProvider?: string;
+  /** The top-level `model` — chosen by the user FOR the default provider
+   *  above; foreign to any other provider a session might force. */
+  model?: string;
+  /** Every declared `[model_providers.<id>]` table, in file order. */
+  entries: CodexProviderEntry[];
 };
 
 // `key = "value"` (or single quotes), optionally followed by a comment.
@@ -39,45 +58,82 @@ function tableName(raw: string): string {
     .join(".");
 }
 
-/** The pure scan (the testable half): the default non-OpenAI provider named
- *  by this config text, with its `base_url` when declared. `model_provider`
- *  counts only at the TOP level — inside a `[profiles.x]` table it's a
- *  profile Mirafold never activates (we pass no `--profile`). */
-export function parseCodexDefaultProvider(toml: string): CodexConfigProvider | undefined {
+/** The pure scan (the testable half): the default provider plus every
+ *  declared `[model_providers.<id>]` entry. `model_provider` counts only at
+ *  the TOP level — inside a `[profiles.x]` table it's a profile Mirafold
+ *  never activates (we pass no `--profile`). */
+export function parseCodexProviders(toml: string): CodexProviders {
   let table: string | undefined;
-  let provider: string | undefined;
-  const baseUrls = new Map<string, string>();
+  let defaultProvider: string | undefined;
+  let model: string | undefined;
+  const entries = new Map<string, CodexProviderEntry>();
+  const entryFor = (id: string): CodexProviderEntry => {
+    const existing = entries.get(id);
+    if (existing) return existing;
+    const fresh: CodexProviderEntry = { id };
+    entries.set(id, fresh);
+    return fresh;
+  };
   for (const line of toml.split("\n")) {
     const t = line.match(TABLE_RE);
     if (t) {
       table = tableName(t[1]);
+      // Naming the table declares the provider even before (or without) any
+      // keys inside it — file order is display order downstream.
+      if (table.startsWith("model_providers.")) entryFor(table.slice("model_providers.".length));
       continue;
     }
     const kv = line.match(KV_RE);
     if (!kv) continue;
     const [, key, dq, sq] = kv;
     const value = dq ?? sq;
-    if (key === "model_provider" && table === undefined) provider = value;
-    else if (key === "base_url" && table?.startsWith("model_providers."))
-      baseUrls.set(table.slice("model_providers.".length), value);
+    if (table === undefined) {
+      if (key === "model_provider") defaultProvider = value;
+      else if (key === "model") model = value;
+    } else if (table.startsWith("model_providers.")) {
+      const entry = entryFor(table.slice("model_providers.".length));
+      if (key === "name") entry.name = value;
+      else if (key === "base_url") entry.baseUrl = value;
+      else if (key === "env_key") entry.envKey = value;
+    }
   }
-  // `openai` is the built-in first-party default — that's the api-key world,
-  // not a BYO endpoint.
-  if (!provider || provider === "openai") return undefined;
-  const baseUrl = baseUrls.get(provider);
-  return { provider, ...(baseUrl ? { baseUrl } : {}) };
+  return {
+    ...(defaultProvider ? { defaultProvider } : {}),
+    ...(model ? { model } : {}),
+    entries: [...entries.values()],
+  };
+}
+
+/** The default non-OpenAI provider with its `base_url` — the single-answer
+ *  view credentialKind uses ("did the user point codex elsewhere?"). Derived
+ *  from the full scan so the two can't drift. `openai` is the built-in
+ *  first-party default — that's the api-key world, not a BYO endpoint. */
+export function parseCodexDefaultProvider(toml: string): CodexConfigProvider | undefined {
+  const { defaultProvider, entries } = parseCodexProviders(toml);
+  if (!defaultProvider || defaultProvider === "openai") return undefined;
+  const baseUrl = entries.find((e) => e.id === defaultProvider)?.baseUrl;
+  return { provider: defaultProvider, ...(baseUrl ? { baseUrl } : {}) };
+}
+
+function readConfig(): string | undefined {
+  const dir = process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex");
+  try {
+    return readFileSync(path.join(dir, "config.toml"), "utf8");
+  } catch {
+    return undefined;
+  }
 }
 
 /** The I/O half: the user's actual Codex config, `CODEX_HOME` honored (it's
  *  also the itest harness's seam for forcing a clean machine). Missing or
  *  unreadable file → no provider, same as the CLI's own default. */
 export function codexConfigProvider(): CodexConfigProvider | undefined {
-  const dir = process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex");
-  let text: string;
-  try {
-    text = readFileSync(path.join(dir, "config.toml"), "utf8");
-  } catch {
-    return undefined;
-  }
-  return parseCodexDefaultProvider(text);
+  const text = readConfig();
+  return text === undefined ? undefined : parseCodexDefaultProvider(text);
+}
+
+/** All declared providers + the default, from the user's actual config. */
+export function codexProviders(): CodexProviders {
+  const text = readConfig();
+  return text === undefined ? { entries: [] } : parseCodexProviders(text);
 }

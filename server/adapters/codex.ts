@@ -17,6 +17,7 @@ import { type AgentSession, type TodoItem, capOutput, envWithout, joinTextBlocks
 import { MIRAFOLD_MCP, RENDER_ID_RE, generativeUIMsg, renderMcpCommand } from "./render-mcp-cmd";
 import { convertMermaidCharts } from "./mermaid-chart";
 import { listCodexModels, type CodexModel } from "./codex-model-list";
+import { codexProviders } from "./codex-config";
 import { AsyncQueue, CLOSE } from "./async-queue";
 
 // The generative-UI MCP server injected into Codex (P.3). Codex loads MCP
@@ -184,6 +185,15 @@ export class CodexSession implements AgentSession {
   // ride ahead of the first user turn instead — the only injection point this
   // engine has. The thread carries them for the rest of the session.
   private firstTurn = true;
+  // Provider binding, model axis (2026-07-19): a forced-openai pick must not
+  // inherit a top-level config.toml `model` that was chosen FOR a custom
+  // default provider (OpenAI 400s the foreign slug). When set, the first
+  // engine turn first resolves the ENGINE binary's own default model from its
+  // catalog and restarts the unstarted thread under it — version-correct by
+  // construction, never a hardcoded slug. An explicit model (opts.model, a
+  // /model switch) always wins and clears this.
+  private resolveEngineDefaultModel = false;
+  private listEngineModels: () => Promise<CodexModel[]>;
 
   get modelName(): string {
     return this.modelLabel;
@@ -198,23 +208,32 @@ export class CodexSession implements AgentSession {
     model?: string;
     kind?: "api-key" | "subscription" | "local";
     endpoint?: string;
+    provider?: string;
     makeCodex?: (options: CodexOptions) => Codex;
     listModels?: () => Promise<CodexModel[]>;
+    listEngineModels?: () => Promise<CodexModel[]>;
   }) {
     const workspaceDir = path.resolve(opts.workspaceDir);
     mkdirSync(workspaceDir, { recursive: true });
     this.modelLabel = opts.model ?? MODEL_STAND_IN;
-    // The chosen backend, enforced per-session (N.5):
-    //   api-key (or no choice with the env var set) → pass the key.
-    //   subscription → NO apiKey, and an env override WITHOUT the env key, so
-    //     the CLI resolves ~/.codex/auth.json — the explicit choice must win
-    //     over the env var's usual precedence.
-    //   local endpoint WITH `endpoint` (a discovered server) → the documented
+    // The chosen backend, enforced per-session (N.5; provider binding 2026-07-19):
+    // every pick forces the provider its label promised, because a config.toml
+    // `model_provider` default would otherwise silently redirect a session the
+    // user was told runs elsewhere — the onboarding row must never lie.
+    //   api-key (or no choice with the env var set) → pass the key AND force
+    //     the first-party `openai` provider (a no-op unless a custom config
+    //     default exists — exactly the case that made the label false).
+    //   subscription → NO apiKey, env override WITHOUT the env key so the CLI
+    //     resolves ~/.codex/auth.json, and the `openai` provider forced for
+    //     the same reason.
+    //   local WITH `endpoint` (a discovered server) → the documented
     //     custom-provider recipe (docs/local-models.md Path B), injected
     //     per-session: the server's /v1 as a Responses-API provider, made the
-    //     default. WITHOUT one (the user's own config.toml default provider,
-    //     detected by codex-config.ts) → inject nothing: that provider is
-    //     already the config default (faithful skin — inherit, not invent).
+    //     default. WITH `provider` (a config-declared provider row) → force
+    //     that provider id; its definition (base_url, env_key, wire_api) stays
+    //     the user's own config.toml table — inherit the declaration, select
+    //     it explicitly. With NEITHER (an old client's bare local pick) →
+    //     inject nothing: the config default wins, as before.
     //   Default: inherit process.env, so the CLI finds the user's own auth +
     //     config, exactly as before.
     const kind = opts.kind ?? (process.env.OPENAI_API_KEY ? "api-key" : undefined);
@@ -255,11 +274,30 @@ export class CodexSession implements AgentSession {
                 },
               },
             }
-          : {}),
+          : kind === "local" && opts.provider
+            ? { model_provider: opts.provider }
+            : kind === "api-key" || kind === "subscription"
+              ? { model_provider: "openai" }
+              : {}),
       },
     });
     this.codex = codex;
     this.listModels = opts.listModels ?? listCodexModels;
+    // The ENGINE's catalog — asked of the binary the SDK actually spawns
+    // (reached through its resolved executablePath; falls back to the PATH
+    // binary if the SDK's internals ever reshape). Distinct from listModels,
+    // which asks the USER's binary for terminal-parity picker rows.
+    const engineBin = (codex as unknown as { exec?: { executablePath?: string } }).exec
+      ?.executablePath;
+    this.listEngineModels = opts.listEngineModels ?? (() => listCodexModels(undefined, engineBin));
+    // Model-axis neutralization: only when the pick forces the first-party
+    // provider away from a CUSTOM config default whose top-level model would
+    // ride along wrongly. An explicit model override wins outright.
+    if ((kind === "api-key" || kind === "subscription") && !opts.model) {
+      const cfg = codexProviders();
+      this.resolveEngineDefaultModel =
+        cfg.defaultProvider !== undefined && cfg.defaultProvider !== "openai" && cfg.model !== undefined;
+    }
     this.threadOpts = {
       workingDirectory: workspaceDir,
       skipGitRepoCheck: true, // workspace dirs aren't git repos
@@ -359,6 +397,7 @@ export class CodexSession implements AgentSession {
           : this.codex.startThread({ ...this.threadOpts, model: arg });
         this.threadOpts = { ...this.threadOpts, model: arg };
         this.modelLabel = arg;
+        this.resolveEngineDefaultModel = false; // an explicit choice wins outright
         this.emit({ type: "text_delta", text: `Model set to ${arg}.` });
       }
     } finally {
@@ -407,6 +446,37 @@ export class CodexSession implements AgentSession {
     });
   }
 
+  /** The model half of provider binding: swap the foreign config.toml model
+   *  for the ENGINE binary's own default (its catalog's isDefault row) and
+   *  restart the thread under it — the same switch mechanics as /model.
+   *  False = resolution failed; the honest error is already emitted and the
+   *  turn must not reach the engine under the foreign model. */
+  private async applyEngineDefaultModel(): Promise<boolean> {
+    this.resolveEngineDefaultModel = false;
+    try {
+      const models = await this.listEngineModels();
+      // Only a row the engine itself marks default — guessing (e.g. row 0 of
+      // an unmarked catalog) risks running a model the user never chose.
+      const def = models.find((m) => m.isDefault);
+      if (!def) throw new Error("the engine's catalog marks no default model");
+      this.threadOpts = { ...this.threadOpts, model: def.id };
+      this.thread = this.threadId
+        ? this.codex.resumeThread(this.threadId, this.threadOpts)
+        : this.codex.startThread(this.threadOpts);
+      this.modelLabel = def.id;
+      return true;
+    } catch (err) {
+      this.emit({
+        type: "error",
+        message:
+          "This backend runs OpenAI's own provider, but its default model could not be " +
+          `resolved: ${err instanceof Error ? err.message : String(err)}. ` +
+          "Send `/model <model-id>` to set one.",
+      });
+      return false;
+    }
+  }
+
   private async runTurn(text: string) {
     const abort = new AbortController();
     this.currentAbort = abort;
@@ -418,6 +488,7 @@ export class CodexSession implements AgentSession {
       this.emit({ type: "turn_end" });
     };
     try {
+      if (this.resolveEngineDefaultModel && !(await this.applyEngineDefaultModel())) return;
       const prompt = this.firstTurn
         ? `${RENDER_GUIDANCE}\n${CODEX_DEFERRED_TOOLS_ADDENDUM}\n\n---\n\n${text}`
         : text;

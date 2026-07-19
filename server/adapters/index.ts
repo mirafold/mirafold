@@ -9,7 +9,7 @@ import type { AgentName, AgentSession, Backend } from "./types";
 import type { AgentBackend, AgentInfo } from "../protocol";
 import { allowedLocally, type CredentialKind } from "../provider-policy";
 import { cachedLocalServers, hostKey, type LocalDialect, type LocalServer } from "../local-models";
-import { codexConfigProvider } from "./codex-config";
+import { codexConfigProvider, codexProviders, type CodexProviderEntry } from "./codex-config";
 
 export type { AgentName, AgentSession, Backend } from "./types";
 
@@ -102,12 +102,18 @@ const ADAPTER_AGENTS: AgentName[] = ["claude-code", "codex", "gemini-cli"];
 
 /** One way an agent could run on this machine. `usable` is provider-policy's
  *  verdict; a present-but-prohibited subscription rides as `blocked` —
- *  listed visible, never hidden (Kyle's requirement (c), Phase N charter). */
+ *  listed visible, never hidden (Kyle's requirement (c), Phase N charter).
+ *  `provider`/`hint` ride to the wire (a config-declared provider row and
+ *  why it's unusable); `endpointUrl` is server-side only — mergeBackends
+ *  dedupes on it against discovered servers, then strips it. */
 export type BackendOption = {
   kind: Exclude<CredentialKind, "none">;
   usable: boolean;
   blocked?: boolean;
   detail?: string;
+  provider?: string;
+  hint?: string;
+  endpointUrl?: string;
 };
 
 /**
@@ -138,9 +144,15 @@ export function backendOptions(agent: AgentName): BackendOption[] {
       break;
     }
     case "codex": {
-      if (codexConfigProvider()) add("local", endpointDetail(agent));
+      // Full optionality, terminal-default first: one row per provider the
+      // user's own config.toml declares, ordered so the first row is what
+      // terminal codex itself would run — the custom default provider when
+      // one is set, else the first-party rows.
+      const { defaultRow, otherRows } = codexProviderRows();
+      if (defaultRow) options.push(defaultRow);
       if (process.env.OPENAI_API_KEY) add("api-key", modelFor(agent));
       if (loginFileExists(process.env.CODEX_HOME, ".codex", "auth.json")) add("subscription");
+      options.push(...otherRows);
       break;
     }
     case "gemini-cli":
@@ -149,6 +161,54 @@ export function backendOptions(agent: AgentName): BackendOption[] {
       break;
   }
   return options;
+}
+
+/**
+ * One picker row per provider the user declared in `~/.codex/config.toml`,
+ * plus an undeclared custom default (e.g. the built-in `oss` made default
+ * without its own table). The first-party `openai` id never rows here — the
+ * api-key/subscription rows own that world. A row is usable only when the
+ * provider's `env_key` variable is actually present (or it declares none —
+ * a keyless local server); a missing key shows the row with the exact fix,
+ * never a session that dies on its first turn.
+ */
+function codexProviderRows(): { defaultRow?: BackendOption; otherRows: BackendOption[] } {
+  const { defaultProvider, entries } = codexProviders();
+  const all: CodexProviderEntry[] = [...entries];
+  if (defaultProvider && defaultProvider !== "openai" && !entries.some((e) => e.id === defaultProvider))
+    all.unshift({ id: defaultProvider });
+  const rows = new Map<string, BackendOption>();
+  for (const e of all) {
+    if (e.id === "openai") continue;
+    const keyMissing = e.envKey !== undefined && !process.env[e.envKey];
+    rows.set(e.id, {
+      kind: "local",
+      usable: allowedLocally("codex", "local") && !keyMissing,
+      provider: e.id,
+      detail: providerRowDetail(e),
+      ...(e.baseUrl ? { endpointUrl: e.baseUrl } : {}),
+      ...(keyMissing ? { hint: `set ${e.envKey} in the daemon environment to use this provider` } : {}),
+    });
+  }
+  const defaultRow =
+    defaultProvider && defaultProvider !== "openai" ? rows.get(defaultProvider) : undefined;
+  return { defaultRow, otherRows: [...rows.values()].filter((r) => r !== defaultRow) };
+}
+
+/** A provider row's full label: the display name the user gave it (else its
+ *  id), plus the host it points at when a `base_url` is declared — same
+ *  local/custom distinction as endpointDetail. Malformed URLs fall back to
+ *  the bare name — never echo raw config input onto the wire. */
+function providerRowDetail(e: CodexProviderEntry): string {
+  const name = e.name ?? e.id;
+  if (e.baseUrl) {
+    try {
+      return `${name} · ${new URL(e.baseUrl).host}`;
+    } catch {
+      // fall through to the bare name
+    }
+  }
+  return name;
 }
 
 // Which local-server API dialect each agent can drive (N.3): compatibility is
@@ -180,11 +240,16 @@ export function mergeBackends(
   const discoveredHosts = new Set(
     discovered.map((s) => hostKey(s.endpoint)).filter((h): h is string => h !== undefined),
   );
-  const envUrl = byoEndpointUrl(agent);
-  const envHost = envUrl ? hostKey(envUrl) : undefined;
-  const creds = options.filter(
-    (o) => !(o.kind === "local" && envHost !== undefined && discoveredHosts.has(envHost)),
-  );
+  const creds = options
+    .filter((o) => {
+      if (o.kind !== "local") return true;
+      // A provider row knows its own URL; claude's env row falls back to the
+      // agent-level lookup (its option carries no endpointUrl).
+      const url = o.endpointUrl ?? byoEndpointUrl(agent);
+      const host = url ? hostKey(url) : undefined;
+      return !(host !== undefined && discoveredHosts.has(host));
+    })
+    .map(({ endpointUrl: _endpointUrl, ...wire }) => wire);
   return [
     ...creds,
     ...discovered.map((s) => ({
@@ -306,13 +371,30 @@ export function resolveChosenBackend(
   const c = (typeof choice === "object" && choice !== null ? choice : {}) as {
     kind?: unknown;
     endpoint?: unknown;
+    provider?: unknown;
     model?: unknown;
   };
   const kind = c.kind;
   if (kind !== "api-key" && kind !== "subscription" && kind !== "local")
     return { error: "unknown backend choice" };
   const endpoint = typeof c.endpoint === "string" ? c.endpoint : undefined;
+  const provider = typeof c.provider === "string" ? c.provider : undefined;
   const model = typeof c.model === "string" ? c.model : undefined;
+  if (kind === "local" && provider) {
+    // A config-declared provider: must still be in the user's config.toml
+    // (they may have edited it since the hello), and its env key — the pick's
+    // whole promise — must actually be present right now.
+    if (agent !== "codex") return { error: "unknown backend choice" };
+    const { defaultProvider, entries } = codexProviders();
+    const entry =
+      entries.find((e) => e.id === provider) ??
+      (provider === defaultProvider ? { id: provider } : undefined);
+    if (!entry || provider === "openai")
+      return { error: "that provider is no longer in the codex config — pick again" };
+    if (entry.envKey && !process.env[entry.envKey])
+      return { error: `that provider needs ${entry.envKey} set in the daemon environment` };
+    return { agent, kind: "local", live: true, model, provider };
+  }
   if (kind === "local" && endpoint) {
     // A discovered server: must still be running, dialect-compatible, and
     // serving the named model — the pick may be stale (picker raced a stop).
@@ -358,6 +440,7 @@ export function createSession(backend: Backend, opts: { cwd: string }): AgentSes
         model: backend.model,
         kind,
         endpoint: backend.endpoint,
+        provider: backend.provider,
       });
     case "gemini-cli":
       return new GeminiCliSession({ workspaceDir: opts.cwd, model: backend.model });

@@ -513,6 +513,7 @@ test("a configured model is the label — the rollout lookup never overrides it"
 function capturedCodexOptions(opts: {
   kind?: "api-key" | "subscription" | "local";
   endpoint?: string;
+  provider?: string;
   model?: string;
 }): CodexOptions {
   let captured: CodexOptions | undefined;
@@ -616,4 +617,197 @@ test("a config.toml-provider choice (kind local, NO endpoint) injects nothing �
   assert.equal(config.model_provider, undefined);
   assert.equal(config.model_providers, undefined);
   assert.ok(config.mcp_servers?.[MIRAFOLD_MCP], "the render MCP server still rides along");
+});
+
+// ── Provider binding (2026-07-19): every pick forces the provider its label
+// promised, so a config.toml custom default can't silently redirect a session
+// the user was told runs elsewhere.
+
+type CapturedConfig = {
+  model_provider?: string;
+  model_providers?: Record<string, unknown>;
+  mcp_servers?: Record<string, unknown>;
+};
+
+test("provider binding: a named config-provider pick forces that id, declaration inherited", () => {
+  let o!: CodexOptions;
+  withOpenAiKey("sk-env", () => {
+    o = capturedCodexOptions({ kind: "local", provider: "openrouter" });
+    assert.ok(o.env);
+    assert.ok(!("OPENAI_API_KEY" in o.env!));
+    assert.equal(o.apiKey, undefined);
+  });
+  const config = o.config as CapturedConfig;
+  assert.equal(config.model_provider, "openrouter");
+  // The provider's DEFINITION (base_url, env_key, wire_api) stays the user's
+  // own [model_providers.openrouter] table — nothing injected over it.
+  assert.equal(config.model_providers, undefined);
+  assert.ok(config.mcp_servers?.[MIRAFOLD_MCP]);
+});
+
+test("provider binding: api-key and subscription picks force the first-party provider", () => {
+  withOpenAiKey("sk-env", () => {
+    const apiKey = capturedCodexOptions({ kind: "api-key" }).config as CapturedConfig;
+    assert.equal(apiKey.model_provider, "openai");
+    const sub = capturedCodexOptions({ kind: "subscription" }).config as CapturedConfig;
+    assert.equal(sub.model_provider, "openai");
+  });
+});
+
+test("provider binding: NO explicit pick still injects no provider — inherit stays inherit", () => {
+  withOpenAiKey(undefined, () => {
+    const config = capturedCodexOptions({}).config as CapturedConfig;
+    assert.equal(config.model_provider, undefined);
+  });
+});
+
+// ── Provider binding, model axis: a forced-openai pick must not inherit a
+// config.toml `model` chosen for a CUSTOM default provider — the first engine
+// turn swaps in the ENGINE's own catalog default instead.
+
+const FOREIGN_MODEL_TOML =
+  'model = "qwen/qwen3-coder"\nmodel_provider = "openrouter"\n' +
+  '[model_providers.openrouter]\nbase_url = "https://openrouter.ai/api/v1"\n';
+
+/** makeModelSession, plus a CODEX_HOME fixture (read at construction only)
+ *  and the engine-catalog seam. */
+function makeBindingSession(configToml: string | undefined, opts: {
+  kind?: "api-key" | "subscription";
+  model?: string;
+  listEngineModels?: () => Promise<any[]>;
+}) {
+  const home = mkdtempSync(path.join(tmp, "codex-home-"));
+  if (configToml !== undefined) writeFileSync(path.join(home, "config.toml"), configToml);
+  const calls: { kind: "start" | "resume"; options: any }[] = [];
+  const prompts: string[] = [];
+  const fakeThread = () => ({
+    runStreamed: async (text: string) => {
+      prompts.push(text);
+      return {
+        events: (async function* () {
+          yield ev({ type: "turn.completed", usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1, reasoning_output_tokens: 0 } });
+        })(),
+      };
+    },
+  });
+  const saved = process.env.CODEX_HOME;
+  process.env.CODEX_HOME = home;
+  let s: CodexSession;
+  try {
+    s = new CodexSession({
+      workspaceDir: tmp,
+      ...opts,
+      makeCodex: () =>
+        ({
+          startThread: (options: any) => {
+            calls.push({ kind: "start", options });
+            return fakeThread();
+          },
+          resumeThread: (_id: string, options: any) => {
+            calls.push({ kind: "resume", options });
+            return fakeThread();
+          },
+        }) as any,
+    });
+  } finally {
+    if (saved === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = saved;
+  }
+  const msgs: Any[] = [];
+  s.onMessage((m) => msgs.push(m as Any));
+  return { s, msgs, calls, prompts, awaitTurnEnd: (count = 1) => waitForTurnEnds(msgs, count) };
+}
+
+test("model axis: the engine's catalog default replaces the foreign config model on the first turn", async () => {
+  const { s, calls, prompts, awaitTurnEnd } = makeBindingSession(FOREIGN_MODEL_TOML, {
+    kind: "subscription",
+    listEngineModels: async () => CATALOG,
+  });
+  s.pushPrompt("hi");
+  await awaitTurnEnd();
+  // Constructor start (no model), then the pre-turn restart under the default.
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].options.model, undefined);
+  assert.deepEqual([calls[1].kind, calls[1].options.model], ["start", "gpt-9-sol"]);
+  assert.equal(s.modelName, "gpt-9-sol");
+  assert.equal(prompts.length, 1); // the turn still ran, once, after the swap
+  s.close();
+});
+
+test("model axis: catalog failure = honest error, the foreign model never reaches the engine", async () => {
+  const { s, msgs, prompts, awaitTurnEnd } = makeBindingSession(FOREIGN_MODEL_TOML, {
+    kind: "subscription",
+    listEngineModels: async () => {
+      throw new Error("engine catalog exploded");
+    },
+  });
+  s.pushPrompt("hi");
+  await awaitTurnEnd();
+  assert.match(msgs.find((m) => m.type === "error")!.message, /default model could not be resolved/);
+  assert.equal(prompts.length, 0);
+  s.close();
+});
+
+test("model axis: a catalog with NO default row is a failure, never a guess", async () => {
+  // Observed live 2026-07-19: an unmarked catalog row ('thinkingmachines/
+  // inkling') is exactly the kind of thing a row-0 guess would run.
+  const { s, msgs, prompts, awaitTurnEnd } = makeBindingSession(FOREIGN_MODEL_TOML, {
+    kind: "subscription",
+    listEngineModels: async () => CATALOG.map((m) => ({ ...m, isDefault: false })),
+  });
+  s.pushPrompt("hi");
+  await awaitTurnEnd();
+  assert.match(msgs.find((m) => m.type === "error")!.message, /marks no default model/);
+  assert.equal(prompts.length, 0);
+  s.close();
+});
+
+test("model axis: an explicit model (construction or /model) wins — no resolution", async () => {
+  const viaOpts = makeBindingSession(FOREIGN_MODEL_TOML, {
+    kind: "subscription",
+    model: "gpt-9-luna",
+    listEngineModels: async () => {
+      throw new Error("must not be asked");
+    },
+  });
+  viaOpts.s.pushPrompt("hi");
+  await viaOpts.awaitTurnEnd();
+  assert.equal(viaOpts.prompts.length, 1);
+  assert.equal(viaOpts.s.modelName, "gpt-9-luna");
+  viaOpts.s.close();
+
+  const viaSwitch = makeBindingSession(FOREIGN_MODEL_TOML, {
+    kind: "subscription",
+    listEngineModels: async () => {
+      throw new Error("must not be asked");
+    },
+  });
+  viaSwitch.s.pushPrompt("/model gpt-9-terra");
+  viaSwitch.s.pushPrompt("hi");
+  await viaSwitch.awaitTurnEnd(2);
+  assert.equal(viaSwitch.prompts.length, 1);
+  assert.equal(viaSwitch.s.modelName, "gpt-9-terra");
+  viaSwitch.s.close();
+});
+
+test("model axis: no foreign model (or no custom default) = no swap at all", async () => {
+  for (const toml of [
+    // custom default, but no top-level model — the engine default applies naturally
+    'model_provider = "openrouter"\n[model_providers.openrouter]\n',
+    // top-level model, but the default provider IS openai — the model is native
+    'model = "gpt-9-terra"\n',
+    undefined, // no config at all
+  ]) {
+    const { s, calls, prompts, awaitTurnEnd } = makeBindingSession(toml, {
+      kind: "subscription",
+      listEngineModels: async () => {
+        throw new Error("must not be asked");
+      },
+    });
+    s.pushPrompt("hi");
+    await awaitTurnEnd();
+    assert.equal(calls.length, 1, `no restart for config: ${String(toml)}`);
+    assert.equal(prompts.length, 1);
+    s.close();
+  }
 });

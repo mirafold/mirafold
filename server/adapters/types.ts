@@ -43,6 +43,9 @@ export type Backend = {
   // N.5: the chosen DISCOVERED local server (picker second step). Absent for
   // kind `local` means the env-configured endpoint, exactly as before.
   endpoint?: string;
+  // The chosen config-declared provider (codex `[model_providers.<id>]`) —
+  // the adapter forces it per-session so the pick's label stays true.
+  provider?: string;
 };
 
 /** process.env minus `keys` (and minus undefined slots) — the per-session
