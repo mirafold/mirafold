@@ -48,28 +48,41 @@ export class RemoteClient {
       c.ws.on("error", rej);
     });
     const nonceC = randomBytes(32);
+    // The permanent listener goes on BEFORE our handshake frame is sent, and
+    // every frame rides the serialized recvChain — the first one completes the
+    // handshake, the rest decrypt in arrival order. This mirrors ws.ts's
+    // structure exactly, and the parity is load-bearing: the daemon sends its
+    // handshake reply and the encrypted hello back-to-back, and a once()+
+    // late-listener shape loses any frame that lands during the key
+    // derivation awaits (the "seen: (empty)" Tier-2 flake, reproduced under
+    // CPU load 2026-07-19).
+    let hsRes!: () => void;
+    let hsRej!: (e: Error) => void;
     const hsDone = new Promise<void>((res, rej) => {
-      const t = setTimeout(() => rej(new Error("handshake timed out")), 10_000);
-      c.ws.on("close", () => {
-        clearTimeout(t);
-        rej(new Error("closed during handshake")); // no-op if already settled
-      });
-      c.ws.once("message", async (data) => {
-        try {
-          const nonceD = await openHandshake(pair, "d", String(data));
-          c.cipher = await frameCiphers(pair, nonceC, nonceD, "c");
-          c.ws.on("message", (data2) => {
-            c.recvChain = c.recvChain.then(async () => {
-              c.received.push(JSON.parse(await c.cipher.open(String(data2))) as WireMsg);
-              for (const w of c.wake.splice(0)) w();
-            });
-          });
-          clearTimeout(t);
-          res();
-        } catch (err) {
-          clearTimeout(t);
-          rej(err as Error);
+      hsRes = res;
+      hsRej = rej;
+    });
+    const t = setTimeout(() => hsRej(new Error("handshake timed out")), 10_000);
+    c.ws.on("close", () => {
+      clearTimeout(t);
+      hsRej(new Error("closed during handshake")); // no-op if already settled
+    });
+    c.ws.on("message", (data) => {
+      c.recvChain = c.recvChain.then(async () => {
+        if (!c.cipher) {
+          try {
+            const nonceD = await openHandshake(pair, "d", String(data));
+            c.cipher = await frameCiphers(pair, nonceC, nonceD, "c");
+            clearTimeout(t);
+            hsRes();
+          } catch (err) {
+            clearTimeout(t);
+            hsRej(err as Error);
+          }
+          return;
         }
+        c.received.push(JSON.parse(await c.cipher.open(String(data))) as WireMsg);
+        for (const w of c.wake.splice(0)) w();
       });
     });
     c.ws.send(await sealHandshake(pair, "c", nonceC));

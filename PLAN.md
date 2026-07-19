@@ -1629,6 +1629,29 @@ is scoped further.
     cleanly, relay policy holds post-V.3. Watch-item note: the Tier-2/3
     flake hit a FIFTH time during refactor verification (Tier-3 27/28 →
     28/28 on rerun; failing test's name again not captured).
+  - **2026-07-19 (evening) — the Tier-2 flake ROOT-CAUSED and fixed** (test
+    harness, not product). Hunt: 8 full-suite + 20 isolated runs all green;
+    full-core CPU load reproduced it 7/8 rounds with the signature captured
+    at last — `timed out waiting for agents; seen:` EMPTY (hello never
+    arrived after a good handshake). Cause: `relay-test-client.ts` consumed
+    the handshake reply in an async `once("message")` and installed the
+    permanent listener only after two crypto awaits — a frame landing in
+    that gap (the daemon sends handshake reply + encrypted hello
+    back-to-back) was emitted to no listener and silently lost. The REAL
+    client (`ws.ts`) never had the gap (permanent handler installed before
+    the handshake, serialized recvChain) — and proved it: Tier-3 real-client
+    rounds passed 5/5 under the same saturation. Fix: the test client now
+    mirrors ws.ts structurally (listener first, handshake resolves in the
+    chain; parity comment marked load-bearing) + the mirror test's
+    `.at(-1)!` on an empty list became a named assertion (no more TypeError
+    cascade). Proof: 8 post-fix rounds under identical load — hello-drop
+    signature ZERO, every mirror/handshake test green (remaining loaded
+    failures are cap/idle-reap tests that can't open N sockets on a
+    saturated machine — never flaked organically). All tiers re-verified
+    278/82/28. RESIDUAL: the lone organic Tier-3 sighting (the e2e settle
+    test, 2026-07-18) is a different shape, never reproduced even under
+    saturation — likely a timeout graze under full-suite load; watch item
+    stays open at reduced severity for that one shape only.
 
 ---
 

@@ -80,7 +80,9 @@ test("local and remote viewports mirror the stream byte for byte (replay + live)
 
   // Replay: the local late-joiner must reconstruct exactly what streamed to
   // the remote viewport live, through the encrypted path.
-  const remoteTail = broadcasts(remote).at(-1)!.seq;
+  const remoteSeen = broadcasts(remote);
+  assert.ok(remoteSeen.length > 0, "remote viewport saw no broadcasts (prior turn never streamed?)");
+  const remoteTail = remoteSeen.at(-1)!.seq;
   await local.waitFor((m) => (m as Any).seq === remoteTail, "replay tail");
   assert.deepEqual(broadcasts(local), broadcasts(remote));
 
