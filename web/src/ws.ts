@@ -62,16 +62,16 @@ export function relayTargetFromFragment(hash: string): { code: string; ws: strin
 function relayTargetFromPage(): { code: string; ws: string | null } | null {
   const target = relayTargetFromFragment(location.hash);
   if (target) {
-    sessionStorage.setItem("genui-relay-code", target.code);
+    sessionStorage.setItem("mirafold-relay-code", target.code);
     // A fresh #code with no relay param must also CLEAR a stale stored origin —
     // the new pairing decides where to dial, not a leftover from the last one.
-    if (target.ws) sessionStorage.setItem("genui-relay-ws", target.ws);
-    else sessionStorage.removeItem("genui-relay-ws");
+    if (target.ws) sessionStorage.setItem("mirafold-relay-ws", target.ws);
+    else sessionStorage.removeItem("mirafold-relay-ws");
     history.replaceState(null, "", location.pathname + location.search);
     return target;
   }
-  const code = sessionStorage.getItem("genui-relay-code");
-  return code ? { code, ws: sessionStorage.getItem("genui-relay-ws") } : null;
+  const code = sessionStorage.getItem("mirafold-relay-code");
+  return code ? { code, ws: sessionStorage.getItem("mirafold-relay-ws") } : null;
 }
 
 /**

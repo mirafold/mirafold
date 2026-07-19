@@ -19,7 +19,7 @@ import { VERSION } from "./version";
 const lastGasp = (kind: string) => (err: unknown) => {
   console.error(`[mirafold] v${VERSION} crashed (${kind}):`, err);
   console.error(
-    "[mirafold] please report this at https://github.com/kserrec/genui-shell/issues " +
+    "[mirafold] please report this at https://github.com/mirafold/mirafold/issues " +
       "(include the two lines above; never paste the ?token= URL or a pairing code)",
   );
   process.exit(1);

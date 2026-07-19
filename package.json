@@ -7,11 +7,11 @@
   "author": "Kyle Serrecchia (https://github.com/kserrec)",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kserrec/genui-shell.git"
+    "url": "git+https://github.com/mirafold/mirafold.git"
   },
-  "homepage": "https://github.com/kserrec/genui-shell#readme",
+  "homepage": "https://github.com/mirafold/mirafold#readme",
   "bugs": {
-    "url": "https://github.com/kserrec/genui-shell/issues"
+    "url": "https://github.com/mirafold/mirafold/issues"
   },
   "keywords": [
     "claude-code",
