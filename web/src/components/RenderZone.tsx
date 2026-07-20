@@ -418,6 +418,9 @@ export function RenderZone({
         aria-label="Conversation transcript"
         ref={tail.scrollerRef}
         onScroll={tail.onScroll}
+        onWheel={tail.onWheel}
+        onTouchStart={tail.onTouchStart}
+        onTouchMove={tail.onTouchMove}
       >
         {entries.length === 0 && !status && (
           // A fresh session (no transcript yet) shows an inviting welcome
