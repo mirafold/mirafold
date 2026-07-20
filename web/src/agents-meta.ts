@@ -67,12 +67,22 @@ export function blockedHint(agent: string): string | undefined {
  *  That was already true of subscriptions ("Claude subscription" vs
  *  "ChatGPT subscription"); it became true of API keys the moment a
  *  config-declared provider row could be key-based too, since an OpenRouter
- *  row is every bit as much "an API key" as the first-party one (2026-07-20). */
+ *  row is every bit as much "an API key" as the first-party one (2026-07-20).
+ *
+ *  Each name is the VENDOR'S own name for the thing you buy, not our
+ *  paraphrase (2026-07-20): Google sells the Gemini Developer API and titles
+ *  its docs "Get a Gemini API key" — "Google API key" is the generic Cloud
+ *  term for hundreds of APIs, and we only ever said it because GOOGLE_API_KEY
+ *  is an accepted env var (that one is the Vertex path, a different product).
+ *  Anthropic's is the Claude API, renamed from "Anthropic API". OpenAI's stays
+ *  "OpenAI API key" — ChatGPT is their SUBSCRIPTION brand and they keep the
+ *  two apart, which is why the subscription labels below don't match these
+ *  one-for-one. That asymmetry is theirs, and inheriting it is the point. */
 export function backendLabel(agent: string, kind: "api-key" | "subscription" | "local"): string {
   if (kind === "api-key") {
     if (agent === "codex") return "OpenAI API key";
-    if (agent === "claude-code") return "Anthropic API key";
-    if (agent === "gemini-cli") return "Google API key";
+    if (agent === "claude-code") return "Claude API key";
+    if (agent === "gemini-cli") return "Gemini API key";
     return "API key";
   }
   if (kind === "local") return "local endpoint";
@@ -80,6 +90,31 @@ export function backendLabel(agent: string, kind: "api-key" | "subscription" | "
   if (agent === "claude-code") return "Claude subscription";
   if (agent === "gemini-cli") return "Gemini subscription";
   return "subscription";
+}
+
+/** A `local` row's label. Its `detail` is already a full label of its own
+ *  ("local endpoint · localhost:11434", "OpenRouter · openrouter.ai" — the
+ *  server composes it), so it REPLACES the generic name rather than being
+ *  appended to it. Both surfaces that name a backing need this rule. */
+export function localBackendLabel(agent: string, detail: string | undefined): string {
+  return detail ?? backendLabel(agent, "local");
+}
+
+/** What a LIVE picker row runs on, as one line: the backing named first, the
+ *  server's `detail` after it. A single usable backend starts on one click and
+ *  never shows the second step — so without this the row read "Gemini CLI ·
+ *  ready" and nothing else, and the user never learned an API key was the
+ *  thing being used (2026-07-20). Same vocabulary as the second step, so both
+ *  routes name the backing identically. */
+export function backingLine(
+  agent: string,
+  kind: "api-key" | "subscription" | "local" | undefined,
+  detail: string | undefined,
+): string | undefined {
+  if (!kind) return detail;
+  if (kind === "local") return localBackendLabel(agent, detail);
+  const label = backendLabel(agent, kind);
+  return detail ? `${label} · ${detail}` : label;
 }
 
 /** The disclosed-uncertainty caveat riding the codex subscription OPTION

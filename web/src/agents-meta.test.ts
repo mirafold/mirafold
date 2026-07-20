@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { agentLabel, connectHint, localLiveHint } from "./agents-meta";
+import { agentLabel, backingLine, connectHint, localLiveHint } from "./agents-meta";
 
 // "add an agent" must stay additive for old clients. A newer daemon can
 // announce an agent name this bundle has never heard of; it must display as
@@ -45,4 +45,19 @@ test("the live hint's hosted clause is agent-specific and truthful", () => {
   assert.match(localLiveHint("codex"), /docs\/local-models\.md/);
   // An unknown agent gets the base promise only — no agent-specific knobs.
   assert.doesNotMatch(localLiveHint("aider"), /ANTHROPIC_BASE_URL|config\.toml/);
+});
+
+// The one-click row must NAME its backing (2026-07-20). A single usable
+// backend skips the second step — where the credential used to be named — so
+// the row itself has to say it, in the second step's own vocabulary.
+test("backingLine names the credential a one-click row would use", () => {
+  assert.equal(backingLine("gemini-cli", "api-key", undefined), "Gemini API key");
+  assert.equal(backingLine("claude-code", "api-key", "claude-sonnet-5"), "Claude API key · claude-sonnet-5");
+  assert.equal(backingLine("codex", "subscription", undefined), "ChatGPT subscription");
+  // A local detail already leads with its own label — never prefixed twice.
+  assert.equal(backingLine("claude-code", "local", "local endpoint · localhost:11434"), "local endpoint · localhost:11434");
+  assert.equal(backingLine("claude-code", "local", undefined), "local endpoint");
+  // An older daemon sends no kind: the detail rides alone, exactly as before.
+  assert.equal(backingLine("gemini-cli", undefined, "gemini-2.5-pro"), "gemini-2.5-pro");
+  assert.equal(backingLine("gemini-cli", undefined, undefined), undefined);
 });

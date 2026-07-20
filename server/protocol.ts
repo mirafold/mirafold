@@ -215,11 +215,16 @@ type WireMsgBody =
   | { type: "session_ended"; sessionId: string };
 
 /** One agent's row in the `agents` hello — what the onboarding picker renders
- *  (P.4 tri-state via `live`/`blocked`, R.4k `detail`, N.3 `backends`). */
+ *  (P.4 tri-state via `live`/`blocked`, R.4k `detail`, N.3 `backends`).
+ *  `kind` is the backing a one-click create would use — set only when `live`,
+ *  so the row can NAME what it's about to run on (2026-07-20). A single usable
+ *  backend skips the second step, which is where that name used to appear;
+ *  skipping the menu must not mean skipping the disclosure. */
 export type AgentInfo = {
   agent: AgentName;
   live: boolean;
   blocked?: boolean;
+  kind?: "api-key" | "subscription" | "local";
   detail?: string;
   backends?: AgentBackend[];
 };
