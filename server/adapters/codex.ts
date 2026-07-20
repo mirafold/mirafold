@@ -781,7 +781,11 @@ export class CodexSession implements AgentSession {
         // end the turn (`turn.failed`, the stream's `error` event). Rendering
         // this one red said "your session died" over an advisory as ordinary
         // as "no metadata for qwen3:1.7b" (2026-07-20).
-        if (phase === "completed") this.emit({ type: "notice", text: item.message, kind: "warning" });
+        // `source` because the text is codex's own, verbatim: the dim system
+        // line is otherwise Mirafold's voice, and unattributed engine words
+        // there can pose as ours (2026-07-20 audit).
+        if (phase === "completed")
+          this.emit({ type: "notice", text: item.message, kind: "warning", source: "codex" });
         break;
     }
   }

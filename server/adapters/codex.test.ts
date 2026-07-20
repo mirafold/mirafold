@@ -497,6 +497,9 @@ test("a non-fatal error ITEM is a warning notice, and the turn keeps going", asy
   const notice = msgs.find((m) => m.type === "notice")!;
   assert.equal(notice.kind, "warning");
   assert.match(notice.text, /Model metadata/);
+  // The text is codex's own, so it must be attributed: unbadged, the dim
+  // system line is Mirafold's voice (2026-07-20 audit).
+  assert.equal(notice.source, "codex");
   assert.ok(!msgs.some((m) => m.type === "error"), "a non-fatal item must not render as an error");
   // The advisory did not eat the turn: the reply still arrived, after it.
   const types = msgs.map((m) => m.type);

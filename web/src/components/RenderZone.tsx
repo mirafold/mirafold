@@ -55,6 +55,8 @@ type Entry =
       id: number;
       text: string;
       noticeKind?: string;
+      // The engine whose own words these are; absent = Mirafold's own voice.
+      source?: string;
     }
   | {
       kind: "bang"; // a `!` shell command (4.9): its strip + live PTY output
@@ -311,7 +313,7 @@ export function RenderZone({
             const id = nextId++;
             setEntries((es) => [
               ...es,
-              { kind: "notice", id, text: msg.text, noticeKind: msg.kind },
+              { kind: "notice", id, text: msg.text, noticeKind: msg.kind, source: msg.source },
             ]);
             break;
           }
@@ -500,9 +502,22 @@ export function RenderZone({
                 : entry.noticeKind === "compaction"
                   ? "⊙"
                   : "⚠"; // rate_limit / refusal / unknown
+            // An engine's own words are BADGED and set apart (2026-07-20
+            // audit): unbadged, this dim line is Mirafold speaking, and text
+            // chosen by a model — or by whatever a model just read — must
+            // never be able to pass for that.
             return (
-              <div key={entry.id} className="notice-line" data-kind={entry.noticeKind}>
-                <span className="notice-glyph">{glyph}</span>
+              <div
+                key={entry.id}
+                className="notice-line"
+                data-kind={entry.noticeKind}
+                data-source={entry.source}
+              >
+                {entry.source ? (
+                  <span className="notice-source">{entry.source}</span>
+                ) : (
+                  <span className="notice-glyph">{glyph}</span>
+                )}
                 <span>{entry.text}</span>
               </div>
             );

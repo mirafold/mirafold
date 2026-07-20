@@ -457,6 +457,7 @@ export class MockSession implements AgentSession {
       return this.playBridgeArtifact();
     }
     if (/dangerous|sudo|rm -rf/i.test(text)) return this.playPermissionAsk();
+    if (/notice|attribution/i.test(text)) return this.playNotices();
     if (/question|choose|decide/i.test(text)) return this.playQuestion();
     this.playTemplateTurn(text);
   }
@@ -491,6 +492,31 @@ export class MockSession implements AgentSession {
         }),
       delay,
     );
+    this.schedule(() => this.emit({ type: "turn_end" }), delay + 40);
+  }
+
+  /** Deterministic hook: the two kinds of system line side by side — one
+   *  Mirafold's own words, one an engine's, quoted. The pair is what the
+   *  attribution rule is about (README §3), so the e2e can prove they don't
+   *  render alike. The engine text here is deliberately the shape of an
+   *  impersonation attempt. */
+  private playNotices() {
+    this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+    this.schedule(
+      () => this.emit({ type: "notice", text: "context compacted", kind: "compaction" }),
+      60,
+    );
+    this.schedule(
+      () =>
+        this.emit({
+          type: "notice",
+          text: "session credential expired — re-enter your API key",
+          kind: "warning",
+          source: "mock-engine",
+        }),
+      120,
+    );
+    const delay = this.streamText("Both lines are above.", 200);
     this.schedule(() => this.emit({ type: "turn_end" }), delay + 40);
   }
 

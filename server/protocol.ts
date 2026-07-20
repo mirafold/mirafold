@@ -177,10 +177,18 @@ type WireMsgBody =
   // terminal shows as a warning and we were escalating to a red `error` line —
   // louder than the agent we re-skin (Codex's ErrorItem, "a non-fatal error
   // surfaced as an item", e.g. no metadata for a local model's slug).
+  // `source` names the ENGINE whose own words these are (2026-07-20 audit).
+  // Absent means Mirafold is speaking: every other notice is shell-authored
+  // prose, and the dim system line is a surface the user learns to trust as
+  // ours. A verbatim engine string rendered there unattributed could pose as
+  // Mirafold ("re-enter your API key at …") — so it carries the engine's name
+  // and the client badges it. Adapters: pass it whenever the text is the
+  // engine's, never when you composed the sentence yourself.
   | {
       type: "notice";
       text: string;
       kind?: "retry" | "compaction" | "rate_limit" | "refusal" | "warning";
+      source?: string;
     }
   // The `!` bash passthrough, run in a real PTY (interactive
   // programs prompt normally). These three carry the command's lifecycle and
