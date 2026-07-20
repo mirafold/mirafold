@@ -797,69 +797,80 @@ function makeBindingSession(configToml: string | undefined, opts: {
   return { s, msgs, calls, prompts, awaitTurnEnd: (count = 1) => waitForTurnEnds(msgs, count) };
 }
 
-test("model axis: the engine's catalog default replaces the foreign config model on the first turn", async () => {
-  const { s, calls, prompts, awaitTurnEnd } = makeBindingSession(FOREIGN_MODEL_TOML, {
-    kind: "subscription",
-    listEngineModels: async () => CATALOG,
+// The model axis runs for BOTH first-party kinds. They aren't two code paths:
+// providerBinding forces `openai` from a single `api-key || subscription`
+// branch, and firstPartyOpenAI derives from that — so a regression would hit
+// both at once. Parameterized anyway (2026-07-20) because the api-key path is
+// the one that can't be exercised live without buying a key, which makes this
+// the only thing pinning it.
+for (const kind of ["subscription", "api-key"] as const) {
+  test(`model axis (${kind}): the engine's catalog default replaces the foreign config model on the first turn`, async () => {
+    const { s, calls, prompts, awaitTurnEnd } = makeBindingSession(FOREIGN_MODEL_TOML, {
+      kind,
+      listEngineModels: async () => CATALOG,
+    });
+    s.pushPrompt("hi");
+    await awaitTurnEnd();
+    // Constructor start (no model), then the pre-turn restart under the default.
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].options.model, undefined);
+    assert.deepEqual([calls[1].kind, calls[1].options.model], ["start", "gpt-9-sol"]);
+    assert.equal(s.modelName, "gpt-9-sol");
+    assert.equal(prompts.length, 1); // the turn still ran, once, after the swap
+    s.close();
   });
-  s.pushPrompt("hi");
-  await awaitTurnEnd();
-  // Constructor start (no model), then the pre-turn restart under the default.
-  assert.equal(calls.length, 2);
-  assert.equal(calls[0].options.model, undefined);
-  assert.deepEqual([calls[1].kind, calls[1].options.model], ["start", "gpt-9-sol"]);
-  assert.equal(s.modelName, "gpt-9-sol");
-  assert.equal(prompts.length, 1); // the turn still ran, once, after the swap
-  s.close();
-});
 
-test("model axis: a provider-foreign default is refused, never sent to a ChatGPT account", async () => {
-  // The 2026-07-20 bug, live: the catalog answered `meituan/longcat-2.0` —
-  // row 1 of OpenRouter's list, reached because the binary shares one
-  // models_cache.json across providers — and a ChatGPT account 400s on it.
-  // A `vendor/model` slug can never be first-party OpenAI, so it stops here.
-  const { s, msgs, prompts, awaitTurnEnd } = makeBindingSession(FOREIGN_MODEL_TOML, {
-    kind: "subscription",
-    listEngineModels: async () => [
-      { id: "meituan/longcat-2.0", displayName: "LongCat", description: "", isDefault: true },
-    ],
+  test(`model axis (${kind}): a provider-foreign default is refused, never sent to a first-party account`, async () => {
+    // The 2026-07-20 bug, live: the catalog answered `meituan/longcat-2.0` —
+    // row 1 of OpenRouter's list, reached because the binary shares one
+    // models_cache.json across providers — and a ChatGPT account 400s on it.
+    // A `vendor/model` slug can never be first-party OpenAI, so it stops here.
+    const { s, msgs, prompts, awaitTurnEnd } = makeBindingSession(FOREIGN_MODEL_TOML, {
+      kind,
+      listEngineModels: async () => [
+        { id: "meituan/longcat-2.0", displayName: "LongCat", description: "", isDefault: true },
+      ],
+    });
+    s.pushPrompt("hi");
+    await awaitTurnEnd();
+    const err = msgs.find((m) => m.type === "error")!.message;
+    assert.match(err, /meituan\/longcat-2\.0/);
+    assert.match(err, /can't run/);
+    assert.equal(prompts.length, 0, "the foreign model must never reach the engine");
+    s.close();
   });
-  s.pushPrompt("hi");
-  await awaitTurnEnd();
-  const err = msgs.find((m) => m.type === "error")!.message;
-  assert.match(err, /meituan\/longcat-2\.0/);
-  assert.match(err, /can't run/);
-  assert.equal(prompts.length, 0, "the foreign model must never reach the engine");
-  s.close();
-});
 
-test("model axis: catalog failure = honest error, the foreign model never reaches the engine", async () => {
-  const { s, msgs, prompts, awaitTurnEnd } = makeBindingSession(FOREIGN_MODEL_TOML, {
-    kind: "subscription",
-    listEngineModels: async () => {
-      throw new Error("engine catalog exploded");
-    },
+  test(`model axis (${kind}): catalog failure = honest error, the foreign model never reaches the engine`, async () => {
+    const { s, msgs, prompts, awaitTurnEnd } = makeBindingSession(FOREIGN_MODEL_TOML, {
+      kind,
+      listEngineModels: async () => {
+        throw new Error("engine catalog exploded");
+      },
+    });
+    s.pushPrompt("hi");
+    await awaitTurnEnd();
+    assert.match(
+      msgs.find((m) => m.type === "error")!.message,
+      /default model could not be resolved/,
+    );
+    assert.equal(prompts.length, 0);
+    s.close();
   });
-  s.pushPrompt("hi");
-  await awaitTurnEnd();
-  assert.match(msgs.find((m) => m.type === "error")!.message, /default model could not be resolved/);
-  assert.equal(prompts.length, 0);
-  s.close();
-});
 
-test("model axis: a catalog with NO default row is a failure, never a guess", async () => {
-  // Observed live 2026-07-19: an unmarked catalog row ('thinkingmachines/
-  // inkling') is exactly the kind of thing a row-0 guess would run.
-  const { s, msgs, prompts, awaitTurnEnd } = makeBindingSession(FOREIGN_MODEL_TOML, {
-    kind: "subscription",
-    listEngineModels: async () => CATALOG.map((m) => ({ ...m, isDefault: false })),
+  test(`model axis (${kind}): a catalog with NO default row is a failure, never a guess`, async () => {
+    // Observed live 2026-07-19: an unmarked catalog row ('thinkingmachines/
+    // inkling') is exactly the kind of thing a row-0 guess would run.
+    const { s, msgs, prompts, awaitTurnEnd } = makeBindingSession(FOREIGN_MODEL_TOML, {
+      kind,
+      listEngineModels: async () => CATALOG.map((m) => ({ ...m, isDefault: false })),
+    });
+    s.pushPrompt("hi");
+    await awaitTurnEnd();
+    assert.match(msgs.find((m) => m.type === "error")!.message, /marks no default model/);
+    assert.equal(prompts.length, 0);
+    s.close();
   });
-  s.pushPrompt("hi");
-  await awaitTurnEnd();
-  assert.match(msgs.find((m) => m.type === "error")!.message, /marks no default model/);
-  assert.equal(prompts.length, 0);
-  s.close();
-});
+}
 
 test("model axis: an explicit model (construction or /model) wins — no resolution", async () => {
   const viaOpts = makeBindingSession(FOREIGN_MODEL_TOML, {
