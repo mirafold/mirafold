@@ -46,6 +46,48 @@ rl.on("line", (line) => {
 `,
 );
 
+// Answers with its own argv as the catalog — so a test can read exactly what
+// reached the spawn.
+const ARGV_BIN = stubBin(
+  "codex-argv",
+  `
+const rl = require("node:readline").createInterface({ input: process.stdin });
+rl.on("line", (line) => {
+  if (!line.trim()) return;
+  const msg = JSON.parse(line);
+  if (msg.method === "initialize") {
+    process.stdout.write(JSON.stringify({ id: msg.id, result: {} }) + "\\n");
+  } else if (msg.method === "model/list") {
+    const data = process.argv.slice(2).map((a) => ({ id: a, hidden: false, isDefault: false }));
+    process.stdout.write(JSON.stringify({ id: msg.id, result: { data } }) + "\\n");
+  }
+});
+`,
+);
+
+test("config overrides ride as -c key=value, nested tables flattened (2026-07-20)", async () => {
+  // The pin that keeps a catalog question on the asker's own provider.
+  const models = await listCodexModels(5_000, ARGV_BIN, {
+    model_provider: "openai",
+    model_providers: { mirafold_local: { base_url: "http://127.0.0.1:11434/v1" } },
+  });
+  assert.deepEqual(
+    models.map((m) => m.id),
+    [
+      "app-server",
+      "-c",
+      'model_provider="openai"',
+      "-c",
+      'model_providers.mirafold_local.base_url="http://127.0.0.1:11434/v1"',
+    ],
+  );
+});
+
+test("no config = no -c args (the unpinned call is unchanged)", async () => {
+  const models = await listCodexModels(5_000, ARGV_BIN);
+  assert.deepEqual(models.map((m) => m.id), ["app-server"]);
+});
+
 test("happy exchange: handshake, parse, hidden models filtered", async () => {
   process.env.MIRAFOLD_CODEX_BIN = HAPPY_BIN;
   try {
