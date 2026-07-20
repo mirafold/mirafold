@@ -1138,6 +1138,13 @@ uncharacterized sighting of the Tier-2 per-pair viewport-cap test.
     branch. Node 22 + yarn; confirm whether `ubuntu-latest`'s preinstalled
     Chrome sits at the default path or `CHROME_BIN` needs setting. Turn on
     the DCO check at the same time (owed from K.9, gated on the public flip).
+    **Tier 4 (`test:live`) never runs in CI, and no provider credential is
+    ever added to repo secrets** (2026-07-20 audit): it drives real binaries,
+    and one of its tests deliberately uses a real `OPENROUTER_API_KEY` against
+    openrouter.ai. In CI that means real spend on every run, third-party
+    requests attributed to the key from GitHub's runners, and — once the repo
+    is public at R.7 — a secret reachable by anyone who can get a workflow to
+    run. It stays a local, hand-run tier.
     CD (deploy) is a separate question — the relay's deploy path and the
     site's Cloudflare Pages build are already their own mechanisms.
   - Files: `.github/workflows/` in each repo as scoped.

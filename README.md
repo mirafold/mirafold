@@ -119,7 +119,9 @@ type WireMsg =
   | { type: "turn_end" }                                           // finalize the turn
   | { type: "error"; message: string }
   | { type: "notice"; text: string;                                // F.2: degraded-service
-      kind?: "retry" | "compaction" | "rate_limit" | "refusal" }   //   status line (dim)
+      kind?: "retry" | "compaction" | "rate_limit"                 //   status line (dim)
+          | "refusal" | "warning";
+      source?: string }                                            //   engine's own words → badged
   | { type: "render"; component: string; props: Record<string, unknown>; id: string }
     // ^ Phase 1: "mount registry component X with props P". Re-sending an id
     //   updates that component in place (the live-pinned-widget mechanism).
@@ -311,6 +313,21 @@ The invariants, and where each is enforced today:
   smuggle script or markup (same rule in the registry's `Md` component).
   Links are forced to `target="_blank" rel="noopener noreferrer"`. The one
   place agent HTML executes is `Artifact.tsx`'s opaque-origin iframe.
+- **The shell's voice is the shell's alone** (2026-07-20 audit). Shell-owned
+  surfaces are the ones a user learns to trust as *Mirafold* speaking — the
+  dim `notice` line most of all, since the rest of its family (retry,
+  compaction, rate limit, refusal) is shell-authored prose. So any string
+  taken **verbatim from an engine** and rendered on such a surface must be
+  attributed to that engine, visibly, or it can pose as us: a model — or
+  whatever a model just read in some repo — could emit "session credential
+  expired, re-enter your key at …" and have it render as a system line.
+  Today exactly one string qualifies: Codex's non-fatal `ErrorItem`, which
+  rides `notice.source: "codex"` and renders badged behind a dashed rule
+  instead of the shell glyph. Anything engine-supplied that already sits in an
+  agent-attributed frame (assistant turns, tool blocks, the permission bar,
+  which announces itself as the agent asking) needs nothing further. **Adding
+  an adapter: compose the sentence yourself and it's ours; pass the engine's
+  own words through and it must carry `source`.**
 - **Tool use is gated server-side** (`server/security/permissions.ts`, see §5.3);
   anything outside the auto-allowed set pauses the turn on a shell-drawn
   permission bar in the browser, deny by default (T.3).
@@ -771,6 +788,9 @@ subscription handles each `ZoneMsg`:
   rate-limit / refusal — the events the terminal shows in degraded service).
   Unlike real output it does *not* fold the thinking block or close the
   streaming text block; a status aside isn't the turn's content starting.
+  A notice carrying `source` is the ENGINE's own words and renders badged
+  with its name behind a dashed rule instead of the shell glyph — see the
+  attribution rule in §3.
 - `zone_reset` → clear everything; the replay that follows repaints it.
 
 **Actions (Phase 2):** `RenderBlock` wraps each rendered component in an
