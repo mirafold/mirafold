@@ -17,14 +17,21 @@ export type ModelPickerRow = {
 export function emitModelPicker(
   emit: (msg: WireMsg) => void,
   rows: ModelPickerRow[],
-  opts: { clickText: (id: string) => string; switchHint: string },
+  opts: {
+    clickText: (id: string) => string;
+    switchHint: string;
+    // What's being picked, for the picker's heading. Defaults preserve the
+    // original model wording; the /effort re-skin passes effort labels.
+    question?: string;
+    title?: string;
+  },
 ) {
   if (rows.length >= 2 && rows.length <= 4) {
     emit({
       type: "render",
       component: "question",
       props: {
-        question: "Select a model",
+        question: opts.question ?? "Select a model",
         options: rows.map((m) => ({
           label: m.current ? `${m.displayName} (current)` : m.displayName,
           text: opts.clickText(m.id),
@@ -38,7 +45,7 @@ export function emitModelPicker(
       type: "render",
       component: "list",
       props: {
-        title: "Models",
+        title: opts.title ?? "Models",
         items: rows.map((m) => ({
           text: `**${m.displayName}**${m.current ? " (current)" : ""} — \`${m.id}\``,
           detail: m.description,
