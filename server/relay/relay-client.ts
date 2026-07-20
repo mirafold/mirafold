@@ -2,6 +2,9 @@ import WebSocket from "ws";
 import type { SessionRegistry } from "../sessions/registry";
 import { openConnection, type Connection } from "../sessions/connection";
 import {
+  CLOSE_CODE_TAKEN,
+  CLOSE_OVERLOADED,
+  CLOSE_UNENTITLED,
   DAEMON_PATH,
   HANDSHAKE_TIMEOUT_MS,
   PAIR_PARAM,
@@ -22,6 +25,30 @@ import {
 // it must cost nothing but a quiet, widening retry.
 const RECONNECT_MIN_MS = 1_000;
 const RECONNECT_MAX_MS = 30_000;
+// The relay refuses AFTER accepting the WS upgrade (a cap/entitlement close
+// arrives ms after 'open'), so a healthy pairing is "opened and NOT immediately
+// closed". We confirm success — the "paired" log AND the backoff reset — only
+// after staying open this long; an early refusal close cancels it, so a refused
+// dial-out neither claims to be paired nor resets its backoff (it keeps widening
+// against a wall it can't beat, e.g. a bad token).
+const PAIR_CONFIRM_MS = 400;
+
+/** A relay dial-out close code that means the connection was REFUSED (not a
+ *  routine drop), mapped to an actionable line for the user's terminal. null =
+ *  not a known refusal → treat as an ordinary connection loss. Exported for the
+ *  unit test; the daemon never SENDS these, only interprets them. */
+export function relayRefusalReason(code: number): string | null {
+  switch (code) {
+    case CLOSE_UNENTITLED:
+      return "remote access needs a valid subscription (entitlement missing or expired)";
+    case CLOSE_OVERLOADED:
+      return "the relay is at capacity";
+    case CLOSE_CODE_TAKEN:
+      return "this pairing is already held by another daemon";
+    default:
+      return null;
+  }
+}
 // Inbound envelope cap: one client frame (bounded by the same ceiling as the
 // local socket), sealed (~4/3 base64) plus envelope overhead — same
 // no-unbounded-allocation posture.
@@ -91,6 +118,7 @@ export function startRelayClient(opts: {
     });
     sock = ws;
     let wasOpen = false;
+    let confirmTimer: ReturnType<typeof setTimeout> | undefined;
     const sendEnv = (env: DaemonToRelay) => {
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(env));
     };
@@ -109,8 +137,13 @@ export function startRelayClient(opts: {
     };
     ws.on("open", () => {
       wasOpen = true;
-      backoff = RECONNECT_MIN_MS;
-      console.log(`[relay] paired with ${opts.url}`);
+      // Success is confirmed only by staying open (see PAIR_CONFIRM_MS): a
+      // refusal close cancels this, so neither the "paired" log nor the backoff
+      // reset fires for a dial-out the relay turned away.
+      confirmTimer = setTimeout(() => {
+        backoff = RECONNECT_MIN_MS;
+        console.log(`[relay] paired with ${opts.url}`);
+      }, PAIR_CONFIRM_MS);
     });
     ws.on("message", (data) => {
       let env: RelayToDaemon;
@@ -189,12 +222,15 @@ export function startRelayClient(opts: {
     });
     // Frame contents are never logged on this path — only connection state.
     ws.on("error", () => {});
-    ws.on("close", () => {
+    ws.on("close", (code: number) => {
       if (sock !== ws) return;
       sock = null;
+      clearTimeout(confirmTimer); // a close before confirm ⇒ this was never a healthy pairing
       dropAll();
       if (stopped) return;
-      if (wasOpen) console.log(`[relay] connection lost — retrying`);
+      const refusal = relayRefusalReason(code);
+      if (refusal) console.log(`[relay] refused: ${refusal} — retrying`);
+      else if (wasOpen) console.log(`[relay] connection lost — retrying`);
       const t = setTimeout(() => dial(pair), backoff);
       t.unref();
       backoff = Math.min(backoff * 2, RECONNECT_MAX_MS);

@@ -32,6 +32,12 @@ export const PAIR_PARAM = "pair";
 // Application close codes (4xxx range is ours to define).
 export const CLOSE_CODE_TAKEN = 4002; // a daemon already holds that pair id
 export const CLOSE_BAD_CODE = 4003; // no daemon paired under that id
+// Dial-out REFUSAL codes the relay sends the daemon (mirrors the relay's
+// contract). The daemon only INTERPRETS these — to tell the user WHY a dial-out
+// was refused, not treat it as a routine drop. (CLOSE_FORBIDDEN_ORIGIN 4006 is
+// viewport-only; a daemon carries no Origin and never receives it.)
+export const CLOSE_OVERLOADED = 4004; // relay at a capacity cap
+export const CLOSE_UNENTITLED = 4007; // dial-in without a valid entitlement token
 
 // A pair id shorter than this is refused outright — a guessable dev value
 // must never silently work against a relay. (Real ids are 22 chars.)
