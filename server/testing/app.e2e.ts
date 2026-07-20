@@ -646,3 +646,85 @@ test("! cd .. — silent success says so, the escape is announced, and the agent
   // replayed turns from earlier tests can't satisfy this).
   await page.waitForSelector(".bang-block ~ .turn-assistant", { timeout: 30_000 });
 });
+
+test("entering a session puts the caret in the prompt box — no click first", async () => {
+  await page.goto(`${base}/`);
+  await page.waitForSelector(".fleet-row");
+  await page.locator(".fleet-row").first().click();
+  await page.waitForURL(/\/s\/[\w-]+/);
+  await page.waitForSelector("textarea");
+  assert.equal(await page.evaluate(() => document.activeElement?.tagName), "TEXTAREA");
+  // The real proof: typing with nothing clicked lands in the box.
+  await page.keyboard.type("straight in");
+  assert.equal(await page.locator("textarea").inputValue(), "straight in");
+  await page.locator("textarea").fill("");
+  // Same on a reload of the session URL.
+  await page.reload();
+  await page.waitForSelector("textarea");
+  assert.equal(await page.evaluate(() => document.activeElement?.tagName), "TEXTAREA");
+});
+
+test("status bar: new sits beside home, end is the far-right control, ?new opens the picker", async () => {
+  const cls = async (sel: string) => (await page.locator(sel).getAttribute("class")) ?? "";
+  assert.match(await cls(".status-bar > *:first-child"), /sb-home/);
+  assert.match(await cls(".status-bar > *:nth-child(2)"), /sb-new/);
+  assert.match(await cls(".status-bar > *:last-child"), /sb-end/);
+  // It opens a NEW tab on the startup screen — the whole point of the button.
+  assert.equal(await page.locator(".sb-new").getAttribute("target"), "_blank");
+  const href = (await page.locator(".sb-new").getAttribute("href")) ?? "";
+  assert.match(href, /^\/\?new/);
+  // …and that URL lands on the agent picker even though a fleet exists.
+  const fresh = await browser.newPage();
+  await fresh.context().addCookies([{ name: "mirafold_token", value: TOKEN, url: base }]);
+  await fresh.goto(`${base}${href}`);
+  await fresh.waitForSelector(".onb-card");
+  await fresh.close();
+});
+
+test("streaming holds a scrolled-up reader in place, and re-follows once back at the bottom", async () => {
+  await page.locator("textarea").click();
+  await page.keyboard.type("plan it step by step");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector("text=Read the current implementation", { timeout: 15_000 });
+
+  const zone = page.locator(".render-zone");
+  const geom = () =>
+    zone.evaluate((el) => ({ top: el.scrollTop, h: el.scrollHeight, view: el.clientHeight }));
+
+  // A real wheel, up, over the transcript — the reader going back to look at
+  // something while the agent is still talking. Several notches: landing
+  // within the follow slack of the bottom would prove nothing, since that
+  // position is *supposed* to keep following.
+  await zone.hover();
+  for (let i = 0; i < 4; i++) {
+    await page.mouse.wheel(0, -600);
+    await page.waitForTimeout(150);
+  }
+  await page.waitForTimeout(400);
+  const before = await geom();
+  assert.ok(
+    before.h - before.top - before.view > 200,
+    "the wheel must land well clear of the bottom for this test to mean anything",
+  );
+
+  // Position holds for as long as output keeps landing below.
+  let grew = false;
+  for (let i = 0; i < 20 && !grew; i++) {
+    await page.waitForTimeout(500);
+    const now = await geom();
+    assert.ok(
+      Math.abs(now.top - before.top) <= 1,
+      `streaming moved a scrolled-up reader: ${before.top} → ${now.top}`,
+    );
+    grew = now.h > before.h;
+  }
+  assert.ok(grew, "no output painted during the hold window — the assertion proved nothing");
+
+  // Back to the bottom re-arms follow, with no toggle to press.
+  await zone.evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+  await page.waitForSelector("text=Plan complete — all four steps done.", { timeout: 30_000 });
+  await page.waitForTimeout(1200);
+  const end = await geom();
+  const gap = end.h - end.top - end.view;
+  assert.ok(gap <= 60, `expected to be following the tail again, sat ${gap}px above it`);
+});

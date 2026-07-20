@@ -123,6 +123,13 @@ export function RenderZone({
   const [pinned, setPinned] = useState<string[]>([]);
   const [dockCollapsed, setDockCollapsed] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const zoneRef = useRef<HTMLDivElement>(null);
+  // Follow-the-tail is CONDITIONAL, the way a terminal's scrollback is
+  // (2026-07-20, Kyle): streamed output scrolls you down only while you're
+  // already at the bottom. Scroll up and the view freezes where you put it —
+  // tokens keep landing below, out of sight — until you come back down.
+  const follow = useRef(true);
+  const lastTop = useRef(0);
   // The text block currently receiving deltas. Kept in a ref so a user prompt
   // sent mid-stream can't detach the tail of the reply.
   const streamingId = useRef<number | null>(null);
@@ -153,6 +160,9 @@ export function RenderZone({
         }
         switch (msg.type) {
           case "user_prompt": {
+            // Sending re-arms follow: typing a message says you're back in
+            // the conversation, so jump to the tail even if you'd scrolled up.
+            follow.current = true;
             const id = nextId++;
             setEntries((es) => [
               ...es,
@@ -343,6 +353,8 @@ export function RenderZone({
             // A (re)attach replays the session's history from scratch.
             streamingId.current = null;
             thinkingId.current = null;
+            follow.current = true; // a replayed transcript lands at its end
+            lastTop.current = 0;
             setStatus(null);
             setEntries([]);
             // pinned renderIds survive — the replayed render entries carry
@@ -355,8 +367,24 @@ export function RenderZone({
   );
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (follow.current) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [entries, status]);
+
+  // Detaching keys off DIRECTION, not "am I at the bottom": our own smooth
+  // auto-scroll fires scroll events from positions that aren't the bottom
+  // yet, and a bottom test would read those as the user leaving. Only an
+  // upward move is the user; reaching the bottom re-arms.
+  const onScroll = () => {
+    const el = zoneRef.current;
+    if (!el) return;
+    const top = el.scrollTop;
+    if (top < lastTop.current - 1) follow.current = false;
+    // A line or two of slack: pixel-exact bottom is unreachable with
+    // fractional scroll heights, and one stray trackpad nudge shouldn't
+    // detach follow for good.
+    if (el.scrollHeight - top - el.clientHeight <= 48) follow.current = true;
+    lastTop.current = top;
+  };
 
   const togglePin = (renderId: string) =>
     setPinned((p) =>
@@ -404,7 +432,14 @@ export function RenderZone({
           can navigate it; aria-live is explicitly OFF because log's implicit
           "polite" would re-read the transcript on every streamed token. The
           spoken half lives in Announcer.tsx (A.1). */}
-      <div className="render-zone" role="log" aria-live="off" aria-label="Conversation transcript">
+      <div
+        className="render-zone"
+        role="log"
+        aria-live="off"
+        aria-label="Conversation transcript"
+        ref={zoneRef}
+        onScroll={onScroll}
+      >
         {entries.length === 0 && !status && (
           // A fresh session (no transcript yet) shows an inviting welcome
           // instead of raw emptiness. Shell-owned and agent-neutral (#12).

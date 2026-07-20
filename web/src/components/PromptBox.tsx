@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 // The desktop placeholder is keyboard lore that wraps to three ugly
 // lines on a phone — narrow viewports get the short form. Checked once at
@@ -39,6 +39,28 @@ export function PromptBox({
       return !shown;
     });
   };
+
+  // The caret starts in the prompt box, so entering a session (new or
+  // existing) means you can just type — no click first (2026-07-20, Kyle).
+  // Guarded on the document still being unfocused: an overlay that grabbed
+  // focus first (onboarding, settings, connect-device) keeps it, since
+  // yanking focus out of a modal is worse than the click it saves.
+  useEffect(() => {
+    const active = document.activeElement;
+    if (!active || active === document.body) ref.current?.focus();
+  }, []);
+
+  // A turn ending unmounts whatever the user last clicked (the stop button,
+  // a permission answer), dropping focus to the body — pull it back so the
+  // next message needs no click either. Never while a selection is live:
+  // focusing a textarea collapses it, and copying out of the transcript is
+  // the exact thing you'd be doing mid-turn.
+  useEffect(() => {
+    if (busy) return;
+    if (document.activeElement !== document.body) return;
+    if (window.getSelection()?.isCollapsed === false) return;
+    ref.current?.focus();
+  }, [busy]);
 
   // Auto-grow: track content height up to the CSS max-height, after which
   // the textarea scrolls internally (the scrollbar is the "there's more" cue).
