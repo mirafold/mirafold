@@ -696,12 +696,22 @@ test("streaming holds a scrolled-up reader in place, and re-follows once back at
   // within the follow slack of the bottom would prove nothing, since that
   // position is *supposed* to keep following.
   await zone.hover();
+  const atWheel = await geom();
   for (let i = 0; i < 4; i++) {
     await page.mouse.wheel(0, -600);
     await page.waitForTimeout(150);
   }
   await page.waitForTimeout(400);
   const before = await geom();
+  // The wheel must actually have moved the reader UP. Without this the test
+  // can pass vacuously in the exact state that motivated it: a permanently
+  // in-flight smooth scroll owning scrollTop, wheel deltas overwritten before
+  // they become scroll events, the reader carried along the whole time
+  // (2026-07-20 — the trace that produced this assertion).
+  assert.ok(
+    before.top < atWheel.top - 100,
+    `the wheel did not scroll the reader up: ${atWheel.top} → ${before.top}`,
+  );
   assert.ok(
     before.h - before.top - before.view > 200,
     "the wheel must land well clear of the bottom for this test to mean anything",
