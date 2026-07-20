@@ -1,5 +1,6 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
+import { generateKeyPairSync } from "node:crypto";
 import type { WireMsg } from "../protocol";
 import { startDaemon, TestClient, type Daemon } from "../testing/itest-harness";
 import { RemoteClient, broadcasts, waitForLog as waitForLogH } from "./relay-test-client";
@@ -206,6 +207,34 @@ test("the heartbeat reaper does not kill a healthy connection", async () => {
   } finally {
     await dd.stop();
     await r.close();
+  }
+});
+
+// The real-daemon proof of tonight's dial-out refusal handling: the relay's own
+// tests cover the gate at the raw-WS level, but only a REAL daemon exercises
+// relay-client.ts. With the entitlement gate ON and a daemon that sends no
+// token (the R.5 token-send isn't built yet), this IS the paying-user-with-a-
+// bad-token path — and it must read as an actionable refusal, never a false
+// "paired" then a silent retry loop.
+test("an unentitled real daemon: refused (4007), surfaces WHY, and never claims to be paired", async () => {
+  const { publicKey } = generateKeyPairSync("ed25519");
+  const pubB64 = publicKey.export({ format: "der", type: "spki" }).toString("base64");
+  const gated = await startRelay({ host: "127.0.0.1", entitlementPublicKey: pubB64 });
+  const ud = await startDaemon({
+    MIRAFOLD_RELAY_URL: `ws://127.0.0.1:${gated.port}`,
+    MIRAFOLD_RELAY_CODE: "unentitled-service-itest-code-9f3a2b",
+  });
+  try {
+    // relay-client interpreted CLOSE_UNENTITLED into the actionable line.
+    await waitForLog(/refused: remote access needs a valid subscription/, 10_000, ud);
+    // The confirm-timer held: a refused dial-out never logged a false "paired"
+    // (the refusal close cancels PAIR_CONFIRM_MS before it can fire).
+    assert.ok(!ud.logs().includes("[relay] paired with"), "must not falsely claim to be paired");
+    // The gate held server-side: no daemon was ever tracked.
+    assert.equal(gated.connections(), 0);
+  } finally {
+    await ud.stop();
+    await gated.close();
   }
 });
 
