@@ -68,23 +68,21 @@ test("typing in the remote browser drives the session; both transcripts mirror",
   await remote.waitForSelector("text=hello from the far side of the relay", { timeout: 15_000 });
   await local.waitForSelector("text=hello from the far side of the relay", { timeout: 15_000 });
 
-  // …and once the turn settles, the two output zones are character-identical:
-  // both render nothing but the same broadcast WireMsg stream.
+  // Wait for the turn to actually FINISH on both viewports, THEN compare — the
+  // mock ends every turn with turn_end, which clears busy and removes the stop
+  // button. (Was: poll until both zones were equal AND unchanged across one
+  // 500ms sample. Under CPU load a mid-stream pause longer than 500ms faked
+  // that stability, so the loop exited early with only a partial turn's frames
+  // through the tap — the "saw 40" flake, reproduced 2/20 under saturation
+  // 2026-07-19. The streaming mirror itself was never wrong; keying on turn
+  // completion is deterministic.)
   const zone = (p: Page) => p.locator(".render-zone").innerText();
-  const deadline = Date.now() + 30_000;
-  let prev = "";
-  let a = "";
-  let b = "";
-  // Settled = both zones equal AND unchanged since the last sample (the mock
-  // streams for a few seconds; equality mid-stream would be a lucky race).
-  do {
-    await new Promise((r) => setTimeout(r, 500));
-    prev = a;
-    [a, b] = await Promise.all([zone(local), zone(remote)]);
-  } while (
-    Date.now() < deadline &&
-    !(a === b && a === prev && a.includes("hello from the far side of the relay"))
-  );
+  await remote.waitForSelector(".stop-btn", { timeout: 15_000 }); // the turn is running…
+  await Promise.all([
+    remote.waitForSelector(".stop-btn", { state: "detached", timeout: 30_000 }),
+    local.waitForSelector(".stop-btn", { state: "detached", timeout: 30_000 }),
+  ]); // …and has ended on both viewports (turn_end → busy clears)
+  const [a, b] = await Promise.all([zone(local), zone(remote)]);
   assert.ok(a.includes("hello from the far side of the relay"), "turn is in the transcript");
   assert.equal(b, a, "remote and local transcripts are identical");
 
