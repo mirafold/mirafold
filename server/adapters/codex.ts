@@ -461,18 +461,23 @@ export class CodexSession implements AgentSession {
     }
   }
 
-  /** Point the warm conversation at `model`: resume the started thread
-   *  (history intact — exactly what the terminal picker does to a session)
-   *  or restart the unstarted one. The label becomes configured-truth
+  /** Switch the warm thread onto `model`. The label becomes configured-truth
    *  immediately — same as constructing with opts.model — and any pending
    *  engine-default resolution is superseded. */
   private setThreadModel(model: string) {
     this.threadOpts = { ...this.threadOpts, model };
+    this.restartThread();
+    this.modelLabel = model;
+    this.needsEngineDefaultModel = false;
+  }
+
+  /** Re-point the warm conversation at the current threadOpts: resume the
+   *  started thread (history intact — exactly what the terminal picker does to
+   *  a session) or restart the one not yet started. */
+  private restartThread() {
     this.thread = this.threadId
       ? this.codex.resumeThread(this.threadId, this.threadOpts)
       : this.codex.startThread(this.threadOpts);
-    this.modelLabel = model;
-    this.needsEngineDefaultModel = false;
   }
 
   /**
@@ -516,14 +521,11 @@ export class CodexSession implements AgentSession {
     }
   }
 
-  /** Point the warm conversation at `effort`: resume the started thread
-   *  (history intact) or restart the unstarted one — the same switch mechanics
-   *  as setThreadModel, on the reasoning-effort axis. */
+  /** The reasoning-effort analog of setThreadModel: switch the warm thread onto
+   *  the new effort, history intact. */
   private setThreadEffort(effort: ModelReasoningEffort) {
     this.threadOpts = { ...this.threadOpts, modelReasoningEffort: effort };
-    this.thread = this.threadId
-      ? this.codex.resumeThread(this.threadId, this.threadOpts)
-      : this.codex.startThread(this.threadOpts);
+    this.restartThread();
     this.effortLabel = effort;
   }
 

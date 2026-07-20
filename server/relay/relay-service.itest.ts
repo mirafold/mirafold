@@ -244,5 +244,3 @@ async function closeCode(ws: import("ws").WebSocket): Promise<number> {
     ws.on("error", () => res(-1));
   });
 }
-
-void CLOSE_OVERLOADED; // asserted indirectly via assert.rejects on capped connects
