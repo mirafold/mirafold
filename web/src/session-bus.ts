@@ -17,8 +17,9 @@ export type ZoneMsg = WireMsg | { type: "zone_reset" };
 export interface SessionBus {
   /** Output-zone subscription; returns the unsubscribe. */
   subscribe(l: (m: ZoneMsg) => void): () => void;
-  /** Socket up/down; returns the unsubscribe. */
-  onConnection(cb: (c: boolean) => void): () => void;
+  /** Socket up/down; `refusal` is a short reason on a relay-refused close
+   *  (down only), undefined for an ordinary drop or when up. Returns unsubscribe. */
+  onConnection(cb: (c: boolean, refusal?: string) => void): () => void;
   createSession(agent: AgentName, cwd?: string, backend?: BackendChoice): void;
   /** Ask the daemon to re-probe local servers and re-send the agents hello (N.3). */
   refreshAgents(): void;
@@ -36,7 +37,7 @@ export interface SessionBus {
 export function createSessionBus(): SessionBus {
   const socket = new SocketClient();
   const listeners = new Set<(m: ZoneMsg) => void>();
-  const connListeners = new Set<(c: boolean) => void>();
+  const connListeners = new Set<(c: boolean, refusal?: string) => void>();
   // The URL carries the session identity; no id yet means "create one".
   let sessionId = location.pathname.match(/^\/s\/([\w-]+)/)?.[1] ?? null;
   // Attach to a known session; otherwise send nothing and wait at onboarding
@@ -50,8 +51,8 @@ export function createSessionBus(): SessionBus {
   socket.onOpen(() => {
     for (const c of connListeners) c(true);
   });
-  socket.onClose(() => {
-    for (const c of connListeners) c(false);
+  socket.onClose((refusal) => {
+    for (const c of connListeners) c(false, refusal);
   });
   socket.onMessage((m) => {
     if (m.type === "session_created") {
@@ -81,7 +82,7 @@ export function createSessionBus(): SessionBus {
         listeners.delete(l);
       };
     },
-    onConnection(cb: (c: boolean) => void): () => void {
+    onConnection(cb: (c: boolean, refusal?: string) => void): () => void {
       connListeners.add(cb);
       return () => {
         connListeners.delete(cb);

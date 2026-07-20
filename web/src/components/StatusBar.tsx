@@ -22,6 +22,7 @@ export function tokens(n: number): string {
 
 export function StatusBar({
   connected,
+  connectionNote,
   agent,
   model,
   sessionId,
@@ -35,6 +36,9 @@ export function StatusBar({
   version,
 }: {
   connected: boolean;
+  // Why the socket is down, when the relay refused it (no daemon / at capacity /
+  // origin) — shown in the indicator instead of a bare "reconnecting…".
+  connectionNote?: string;
   agent?: string;
   // Shown whenever known — session_created carries the attach-time label
   // ("default", "codex", …) and the usage stream refines it (2026-07-17, Kyle).
@@ -66,7 +70,7 @@ export function StatusBar({
   const dot = (
     <span
       className={`sb-dot ${connected ? "sb-dot-on" : "sb-dot-off"}`}
-      title={connected ? "connected" : "reconnecting…"}
+      title={connected ? "connected" : (connectionNote ?? "reconnecting…")}
     />
   );
 

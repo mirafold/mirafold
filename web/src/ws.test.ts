@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   SocketClient,
   relayTargetFromFragment,
+  viewportRefusalReason,
   PING_INTERVAL_MS,
   PONG_DEADLINE_MS,
   BACKOFF_MIN_MS,
@@ -25,7 +26,7 @@ class FakeWS {
   sent: string[] = [];
   onopen: (() => void) | null = null;
   onmessage: ((e: { data: string }) => void) | null = null;
-  onclose: (() => void) | null = null;
+  onclose: ((ev?: { code?: number }) => void) | null = null;
   constructor(public url: string) {
     FakeWS.instances.push(this);
   }
@@ -47,9 +48,9 @@ class FakeWS {
   receive(msg: unknown) {
     this.onmessage?.({ data: JSON.stringify(msg) });
   }
-  finishClose() {
+  finishClose(code?: number) {
     this.readyState = FakeWS.CLOSED;
-    this.onclose?.();
+    this.onclose?.(code === undefined ? undefined : { code });
   }
   parsedSent(): { type: string }[] {
     return this.sent.map((s) => JSON.parse(s) as { type: string });
@@ -137,6 +138,31 @@ test("a null hello sends nothing but still flushes the queue (P.4 onboarding)", 
     sock().parsedSent().map((m) => m.type),
     ["prompt"],
   );
+});
+
+test("viewportRefusalReason maps relay refusal codes; ordinary drops are undefined", () => {
+  assert.match(viewportRefusalReason(4003)!, /Desktop not reachable/); // CLOSE_BAD_CODE
+  assert.match(viewportRefusalReason(4004)!, /capacity/); // CLOSE_OVERLOADED
+  assert.match(viewportRefusalReason(4006)!, /allowed to connect/); // CLOSE_FORBIDDEN_ORIGIN
+  assert.equal(viewportRefusalReason(1000), undefined); // normal close
+  assert.equal(viewportRefusalReason(1006), undefined); // transport drop
+  assert.equal(viewportRefusalReason(undefined), undefined); // no-code close (browsers omit it, the mock does too)
+});
+
+test("a relay-refusal close code reaches onClose as a reason; a plain drop passes undefined", (t) => {
+  const { client, sock } = setup(t);
+  const refusals: (string | undefined)[] = [];
+  client.onClose((r) => refusals.push(r));
+
+  sock().open();
+  sock().finishClose(4003); // relay: no daemon paired under this id
+  assert.deepEqual(refusals, ["Desktop not reachable — is Mirafold running there?"]);
+
+  // The reconnect that a refusal schedules, then an ordinary drop → undefined.
+  t.mock.timers.tick(BACKOFF_MAX_MS);
+  sock().open();
+  sock().finishClose(); // no code — an ordinary transport drop
+  assert.equal(refusals.at(-1), undefined);
 });
 
 test("overlapping reconnect triggers supersede a CLOSING socket — at most one live socket", (t) => {

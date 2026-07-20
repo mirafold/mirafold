@@ -12,6 +12,35 @@ import {
 
 type Listener = (msg: WireMsg) => void;
 
+// The relay's stable close codes a VIEWPORT can be refused with. A small
+// hand-mirror of server/relay/relay-protocol.ts (pinned there against the
+// relay's own contract by the contract-guard itest) — relay-protocol.ts pulls
+// in node:crypto and can't cross into the web bundle, so these three codes are
+// duplicated with this note rather than shared through a module.
+const VIEWPORT_CLOSE = {
+  NO_DAEMON: 4003, // CLOSE_BAD_CODE — no daemon paired under this id
+  OVERLOADED: 4004, // CLOSE_OVERLOADED — relay or this pair at capacity
+  FORBIDDEN_ORIGIN: 4006, // CLOSE_FORBIDDEN_ORIGIN — this page's origin isn't allowed
+} as const;
+
+/** A relay close code that means this viewport was REFUSED (not a routine
+ *  drop), mapped to a short line for the connection indicator. undefined = an
+ *  ordinary disconnect → the plain "reconnecting…". Exported for the unit test.
+ *  (Wording is provisional — surfaced only in the status dot's tooltip today;
+ *  a phone-visible presentation is a separate design pass.) */
+export function viewportRefusalReason(code: number | undefined): string | undefined {
+  switch (code) {
+    case VIEWPORT_CLOSE.NO_DAEMON:
+      return "Desktop not reachable — is Mirafold running there?";
+    case VIEWPORT_CLOSE.OVERLOADED:
+      return "Relay at capacity — retrying";
+    case VIEWPORT_CLOSE.FORBIDDEN_ORIGIN:
+      return "This page isn't allowed to connect to the relay";
+    default:
+      return undefined;
+  }
+}
+
 // Heartbeat (4.4): a wifi blip with no FIN leaves the socket half-open and
 // silently dead — the browser would wait forever. Ping on an interval and
 // treat any inbound traffic as life; a ping that goes unanswered past the
@@ -95,7 +124,7 @@ export class SocketClient {
   private ws?: WebSocket;
   private listeners = new Set<Listener>();
   private openListeners = new Set<() => void>();
-  private closeListeners = new Set<() => void>();
+  private closeListeners = new Set<(refusal?: string) => void>();
   private pending: ClientMsg[] = [];
   private closedByUs = false;
   private backoff = BACKOFF_MIN_MS;
@@ -228,11 +257,15 @@ export class SocketClient {
         }
       });
     };
-    sock.onclose = () => {
+    sock.onclose = (ev?: CloseEvent) => {
       if (this.ws !== sock) return;
       this.ready = false;
       this.stopHeartbeat();
-      for (const cb of this.closeListeners) cb();
+      // A relay refusal (no daemon / at capacity / origin) arrives as a close
+      // CODE — surface WHY, so a refused viewport isn't an endless mystery
+      // "reconnecting…". Anything else stays an ordinary drop (undefined).
+      const refusal = viewportRefusalReason(ev?.code);
+      for (const cb of this.closeListeners) cb(refusal);
       if (!this.closedByUs) {
         this.reconnectTimer = setTimeout(() => this.connect(), this.backoff);
         this.backoff = Math.min(this.backoff * 2, BACKOFF_MAX_MS);
@@ -303,7 +336,7 @@ export class SocketClient {
     };
   }
 
-  onClose(cb: () => void): () => void {
+  onClose(cb: (refusal?: string) => void): () => void {
     this.closeListeners.add(cb);
     return () => {
       this.closeListeners.delete(cb);

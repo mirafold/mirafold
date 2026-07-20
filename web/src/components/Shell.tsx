@@ -44,6 +44,9 @@ export function Shell() {
 
   // ── The session + daemon (status-bar state, T2.6 — all shell-owned) ─────
   const [connected, setConnected] = useState(false);
+  // A relay refusal reason while disconnected (R.4: no daemon / at capacity /
+  // origin), surfaced in the status indicator; undefined = an ordinary drop.
+  const [connNote, setConnNote] = useState<string | undefined>(undefined);
   const [meta, setMeta] = useState<{
     sessionId?: string;
     cwd?: string;
@@ -207,8 +210,9 @@ export function Shell() {
 
   useEffect(
     () =>
-      bus.onConnection((c) => {
+      bus.onConnection((c, refusal) => {
         setConnected(c);
+        setConnNote(c ? undefined : refusal);
         // A dropped socket can't be mid-turn from this viewport's point
         // of view — clear the working state and the ■ esc stop affordance so
         // a dead daemon doesn't look like an agent still thinking. Replay (or
@@ -339,6 +343,7 @@ export function Shell() {
       />
       <StatusBar
         connected={connected}
+        connectionNote={connNote}
         agent={meta.agent}
         // The engine's live report (usage) wins once a turn has run; until
         // then, what the daemon knew at attach ("default" beats nothing).
