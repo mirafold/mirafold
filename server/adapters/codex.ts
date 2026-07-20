@@ -7,6 +7,7 @@ import {
   Codex,
   type CodexOptions,
   type McpToolCallItem,
+  type ModelReasoningEffort,
   type Thread,
   type ThreadEvent,
   type ThreadItem,
@@ -32,6 +33,32 @@ const RENDER_MCP = renderMcpCommand();
 // Codex resolves its own default, which the rollout lookup below then names.
 // Comparisons against this are "is the label still the stand-in?" checks.
 const MODEL_STAND_IN = "codex";
+
+// The reasoning-effort axis of Codex's /model picker (V-thread follow-up). The
+// SDK's own union, in the terminal picker's order. SCAFFOLD (2026-07-19): a
+// standalone `/effort` re-skin built against the mock; two fidelity questions
+// stay open for a live pass against real Codex, and until then all five are
+// offered unfiltered:
+//   1. Per-model availability — the terminal picker shows only the efforts a
+//      given model supports; app-server model/list may or may not carry that.
+//   2. Flow shape — terminal folds effort in as step 2 of `/model`; whether to
+//      chain the model pick into this picker (vs. keep it standalone) is that
+//      pass's call.
+const EFFORTS: readonly ModelReasoningEffort[] = ["minimal", "low", "medium", "high", "xhigh"];
+// Short Mirafold-side descriptions (NOT claimed to mirror the terminal's copy).
+const EFFORT_DESC: Record<ModelReasoningEffort, string> = {
+  minimal: "Least reasoning, fastest",
+  low: "Light reasoning",
+  medium: "Balanced reasoning",
+  high: "Deep reasoning",
+  xhigh: "Maximum reasoning, slowest",
+};
+// "We have not overridden effort" — the config/model default is in force. We
+// can't name it (app-server doesn't surface the resolved effort), so like
+// MODEL_STAND_IN this is an is-it-still-unset sentinel, never sent to Codex.
+const EFFORT_STAND_IN = "default";
+const isEffort = (s: string): s is ModelReasoningEffort =>
+  (EFFORTS as readonly string[]).includes(s);
 
 /**
  * V.2: on OpenAI-provider models, Codex defers ALL MCP tools behind its
@@ -192,7 +219,12 @@ export class CodexSession implements AgentSession {
   // on the same warm conversation, so the engine and start options must
   // outlive the constructor.
   private codex: Codex;
-  private threadOpts: { workingDirectory: string; skipGitRepoCheck: true; model?: string };
+  private threadOpts: {
+    workingDirectory: string;
+    skipGitRepoCheck: true;
+    model?: string;
+    modelReasoningEffort?: ModelReasoningEffort;
+  };
   private threadId?: string;
   private listModels: () => Promise<CodexModel[]>;
   private closed = false;
@@ -203,6 +235,9 @@ export class CodexSession implements AgentSession {
   // One live checklist per turn (T2.5), reset each turn so it re-anchors.
   private todoRenderId?: string;
   private modelLabel: string;
+  // The reasoning-effort label, EFFORT_STAND_IN until a /effort pick overrides
+  // it (mirrors modelLabel). Config/model default stays in force until then.
+  private effortLabel: string = EFFORT_STAND_IN;
   // Where Codex keeps auth/config/sessions — the CLI's own CODEX_HOME rule.
   // A field (not read at call time) so tests can point it at a fixture.
   private codexHome = process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex");
@@ -360,6 +395,8 @@ export class CodexSession implements AgentSession {
       const trimmed = item.trim();
       if (trimmed === "/model" || trimmed.startsWith("/model ")) {
         await this.runModelCommand(trimmed.slice("/model".length).trim());
+      } else if (trimmed === "/effort" || trimmed.startsWith("/effort ")) {
+        await this.runEffortCommand(trimmed.slice("/effort".length).trim());
       } else {
         await this.runTurn(item);
       }
@@ -436,6 +473,58 @@ export class CodexSession implements AgentSession {
       : this.codex.startThread(this.threadOpts);
     this.modelLabel = model;
     this.needsEngineDefaultModel = false;
+  }
+
+  /**
+   * The reasoning-effort axis of the /model picker (SCAFFOLD — see EFFORTS).
+   * Mirrors runModelCommand: bare `/effort` paints the picker (a click sends
+   * `/effort <level>`), `/effort <level>` applies it, anything else is a usage
+   * line. The catalog is the SDK's ModelReasoningEffort union rather than an
+   * app-server round-trip — Codex has no `effort/list`, and these five are the
+   * engine's own type. Per-model availability is NOT yet filtered.
+   */
+  private async runEffortCommand(arg: string) {
+    this.emit({ type: "status", state: "thinking" });
+    try {
+      if (arg === "") {
+        emitModelPicker(
+          (msg) => this.emit(msg),
+          EFFORTS.map((e) => ({
+            id: e,
+            displayName: e,
+            description: EFFORT_DESC[e],
+            current: this.effortLabel === e,
+          })),
+          {
+            clickText: (id) => `/effort ${id}`,
+            switchHint: "Send `/effort <level>` to set the reasoning effort.",
+            question: "Select reasoning effort",
+            title: "Reasoning effort",
+          },
+        );
+      } else if (isEffort(arg)) {
+        this.setThreadEffort(arg);
+        this.emit({ type: "text_delta", text: `Reasoning effort set to ${arg}.` });
+      } else {
+        this.emit({
+          type: "text_delta",
+          text: `Usage: \`/effort\` to pick, or \`/effort <level>\` (${EFFORTS.join(", ")}).`,
+        });
+      }
+    } finally {
+      this.emit({ type: "turn_end" });
+    }
+  }
+
+  /** Point the warm conversation at `effort`: resume the started thread
+   *  (history intact) or restart the unstarted one — the same switch mechanics
+   *  as setThreadModel, on the reasoning-effort axis. */
+  private setThreadEffort(effort: ModelReasoningEffort) {
+    this.threadOpts = { ...this.threadOpts, modelReasoningEffort: effort };
+    this.thread = this.threadId
+      ? this.codex.resumeThread(this.threadId, this.threadOpts)
+      : this.codex.startThread(this.threadOpts);
+    this.effortLabel = effort;
   }
 
   /** The model half of provider binding: swap the foreign config.toml model

@@ -307,6 +307,73 @@ test("/model failure paths: unreadable catalog errors honestly; extra words get 
   s.close();
 });
 
+// V-thread /effort scaffold: the reasoning-effort axis of the /model picker.
+// Five efforts (> the question component's 4-option range) → the list form +
+// a switch hint; a pick resumes/restarts the warm thread carrying
+// modelReasoningEffort, exactly like /model carries model.
+test("bare /effort paints the effort picker (list form); no engine turn runs", async () => {
+  const { s, msgs, prompts, awaitTurnEnd } = makeModelSession(async () => CATALOG);
+  s.pushPrompt("/effort");
+  await awaitTurnEnd();
+
+  const list = msgs.find((m) => m.type === "render" && m.component === "list")!;
+  assert.ok(list, "effort picker list rendered");
+  assert.equal((list.props as any).title, "Reasoning effort");
+  const items = (list.props as any).items as { text: string }[];
+  // All five efforts, in the engine's order; none marked current (untouched).
+  assert.deepEqual(
+    items.map((i) => i.text.match(/`([a-z]+)`/)![1]),
+    ["minimal", "low", "medium", "high", "xhigh"],
+  );
+  assert.ok(!items.some((i) => i.text.includes("(current)")), "nothing current before a pick");
+  assert.ok(msgs.some((m) => m.type === "text_delta" && m.text.includes("/effort <level>")));
+  assert.equal(prompts.length, 0); // never reached the engine
+  s.close();
+});
+
+test("/effort <level>: unstarted restarts, started resumes; threadOpts carries the effort", async () => {
+  const { s, msgs, calls, awaitTurnEnd } = makeModelSession(async () => CATALOG);
+  assert.equal(calls.length, 1); // constructor's startThread
+  s.pushPrompt("/effort high");
+  await awaitTurnEnd();
+  assert.deepEqual(calls[1], {
+    kind: "start", // no thread.started yet → nothing to resume
+    options: { workingDirectory: tmp, skipGitRepoCheck: true, modelReasoningEffort: "high" },
+  });
+  assert.ok(msgs.some((m) => m.type === "text_delta" && m.text.includes("effort set to high")));
+
+  // A pick now marks itself current in a fresh picker.
+  s.pushPrompt("/effort");
+  await awaitTurnEnd(2);
+  const list = msgs.filter((m) => m.type === "render" && m.component === "list").at(-1)!;
+  const hi = ((list.props as any).items as { text: string }[]).find((i) => i.text.includes("`high`"))!;
+  assert.ok(hi.text.includes("(current)"), "the set effort reads back as current");
+
+  // With a live thread id the switch RESUMES (history intact), and a prior
+  // model override on threadOpts is preserved alongside the effort.
+  (s as any).threadId = "t-eff";
+  (s as any).threadOpts.model = "gpt-9-luna";
+  s.pushPrompt("/effort low");
+  await awaitTurnEnd(3);
+  assert.deepEqual(calls.at(-1), {
+    kind: "resume",
+    id: "t-eff",
+    options: { workingDirectory: tmp, skipGitRepoCheck: true, model: "gpt-9-luna", modelReasoningEffort: "low" },
+  });
+  s.close();
+});
+
+test("/effort <bad>: an unknown level gets a usage line, never reaches the engine", async () => {
+  const { s, msgs, prompts, awaitTurnEnd } = makeModelSession(async () => CATALOG);
+  s.pushPrompt("/effort turbo");
+  await awaitTurnEnd();
+  const usage = msgs.find((m) => m.type === "text_delta" && m.text.includes("Usage:"))!;
+  assert.ok(usage, "usage line emitted");
+  assert.ok(usage.text.includes("minimal, low, medium, high, xhigh"), "lists the valid levels");
+  assert.equal(prompts.length, 0);
+  s.close();
+});
+
 test("failed command: isError; completion without a start still announces", async () => {
   const { s, msgs, awaitTurnEnd } = makeSession([
     ev({
