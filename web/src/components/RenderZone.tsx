@@ -9,6 +9,7 @@ import { safeAnchor } from "../registry/Md";
 import { PinDock } from "./PinDock";
 import { ToolBlock } from "./ToolBlock";
 import { Artifact } from "./Artifact";
+import { useFollowTail } from "../use-follow-tail";
 
 // The scrollback is a flat list of entries: text blocks and rendered
 // components, in the exact order they arrived on the wire.
@@ -122,14 +123,9 @@ export function RenderZone({
   // order. The dock only exists while something is pinned (PLAN Step 1.6).
   const [pinned, setPinned] = useState<string[]>([]);
   const [dockCollapsed, setDockCollapsed] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const zoneRef = useRef<HTMLDivElement>(null);
-  // Follow-the-tail is CONDITIONAL, the way a terminal's scrollback is
-  // (2026-07-20, Kyle): streamed output scrolls you down only while you're
-  // already at the bottom. Scroll up and the view freezes where you put it —
-  // tokens keep landing below, out of sight — until you come back down.
-  const follow = useRef(true);
-  const lastTop = useRef(0);
+  // Streamed output scrolls you down only while you're already at the bottom
+  // (2026-07-20, Kyle) — terminal-scrollback behavior, in use-follow-tail.ts.
+  const tail = useFollowTail();
   // The text block currently receiving deltas. Kept in a ref so a user prompt
   // sent mid-stream can't detach the tail of the reply.
   const streamingId = useRef<number | null>(null);
@@ -162,7 +158,7 @@ export function RenderZone({
           case "user_prompt": {
             // Sending re-arms follow: typing a message says you're back in
             // the conversation, so jump to the tail even if you'd scrolled up.
-            follow.current = true;
+            tail.armFollow();
             const id = nextId++;
             setEntries((es) => [
               ...es,
@@ -353,8 +349,7 @@ export function RenderZone({
             // A (re)attach replays the session's history from scratch.
             streamingId.current = null;
             thinkingId.current = null;
-            follow.current = true; // a replayed transcript lands at its end
-            lastTop.current = 0;
+            tail.resetTail(); // a replayed transcript lands at its end
             setStatus(null);
             setEntries([]);
             // pinned renderIds survive — the replayed render entries carry
@@ -366,25 +361,7 @@ export function RenderZone({
     [subscribe],
   );
 
-  useEffect(() => {
-    if (follow.current) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [entries, status]);
-
-  // Detaching keys off DIRECTION, not "am I at the bottom": our own smooth
-  // auto-scroll fires scroll events from positions that aren't the bottom
-  // yet, and a bottom test would read those as the user leaving. Only an
-  // upward move is the user; reaching the bottom re-arms.
-  const onScroll = () => {
-    const el = zoneRef.current;
-    if (!el) return;
-    const top = el.scrollTop;
-    if (top < lastTop.current - 1) follow.current = false;
-    // A line or two of slack: pixel-exact bottom is unreachable with
-    // fractional scroll heights, and one stray trackpad nudge shouldn't
-    // detach follow for good.
-    if (el.scrollHeight - top - el.clientHeight <= 48) follow.current = true;
-    lastTop.current = top;
-  };
+  useEffect(tail.followTail, [entries, status]);
 
   const togglePin = (renderId: string) =>
     setPinned((p) =>
@@ -437,8 +414,8 @@ export function RenderZone({
         role="log"
         aria-live="off"
         aria-label="Conversation transcript"
-        ref={zoneRef}
-        onScroll={onScroll}
+        ref={tail.scrollerRef}
+        onScroll={tail.onScroll}
       >
         {entries.length === 0 && !status && (
           // A fresh session (no transcript yet) shows an inviting welcome
@@ -652,7 +629,7 @@ export function RenderZone({
             {status.state === "tool" ? `⚙ ${status.label ?? "tool"}` : "✳ thinking…"}
           </div>
         )}
-        <div ref={bottomRef} />
+        <div ref={tail.tailRef} />
       </div>
       {pinned.length > 0 &&
         (dockCollapsed ? (

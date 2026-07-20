@@ -2086,42 +2086,14 @@ html {
   }
 }
 
-/* #11: in-session "end" — a shell-owned control in the status bar, two-click
-   (end → end?) with a danger tone when armed. */
+/* The status bar's two word-pills — "new" (#new session, an <a> to the startup
+   screen) and "end" (#11, two-click end → end?). One shape, opposite hover
+   intents: neutral for new, danger for end. */
+.sb-new,
 .sb-end {
   display: inline-flex;
   align-items: center;
   height: 34px; /* matches the computed height of .sb-home / .sb-theme */
-  background: transparent;
-  border: 1px solid var(--border-2);
-  border-radius: 7px;
-  padding: 0 12px;
-  color: var(--fg-mid);
-  font: inherit;
-  font-size: 13px;
-  line-height: 1;
-  cursor: pointer;
-  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
-}
-
-.sb-end:hover {
-  color: var(--error);
-  border-color: var(--err-border-strong);
-}
-
-.sb-end-armed,
-.sb-end-armed:hover {
-  color: var(--error);
-  border-color: var(--err-border-strong);
-  background: var(--err-bg);
-}
-
-/* "new" — beside home, an <a> styled to match .sb-end's pill so the two
-   session-lifecycle controls read as one family across the bar. */
-.sb-new {
-  display: inline-flex;
-  align-items: center;
-  height: 34px;
   background: transparent;
   border: 1px solid var(--border-2);
   border-radius: 7px;
@@ -2139,6 +2111,18 @@ html {
   color: var(--fg);
   border-color: var(--border-hover);
   background: var(--surface-hover);
+}
+
+.sb-end:hover {
+  color: var(--error);
+  border-color: var(--err-border-strong);
+}
+
+.sb-end-armed,
+.sb-end-armed:hover {
+  color: var(--error);
+  border-color: var(--err-border-strong);
+  background: var(--err-bg);
 }
 
 /* #9: mission-control home — an <a> styled as an icon button, the status
