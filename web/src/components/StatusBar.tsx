@@ -104,23 +104,19 @@ export function StatusBar({
       <a className="sb-home" href="/" title="All sessions (mission control)">
         ⌂
       </a>
-      {/* End (#11) lives with home on the left: the session-lifecycle pair,
-          apart from the settings/theme cluster on the right (2026-07-16). */}
-      {onEndSession && (
-        <button
-          className={"sb-end" + (confirmEnd ? " sb-end-armed" : "")}
-          title={confirmEnd ? "Click again to end this session" : "End this session"}
-          onClick={() => {
-            if (confirmEnd) onEndSession();
-            else {
-              setConfirmEnd(true);
-              setTimeout(() => setConfirmEnd(false), 3000);
-            }
-          }}
-        >
-          {confirmEnd ? "end?" : "end"}
-        </button>
-      )}
+      {/* "new" sits beside home (2026-07-20, Kyle): a new browser tab on the
+          startup screen, so a session can be spun up from inside any session.
+          ?new opens mission control with the picker already up. End moved to
+          the far right, past the theme pill. */}
+      <a
+        className="sb-new"
+        href="/?new=1"
+        target="_blank"
+        rel="noopener"
+        title="New session (opens a new tab)"
+      >
+        new
+      </a>
       <button
         className="sb-toggle"
         onClick={() => setOpen(false)}
@@ -189,6 +185,23 @@ export function StatusBar({
           ☾
         </button>
       </div>
+      {/* End (#11) is the outermost far-RIGHT control, past the theme pill
+          (2026-07-20, Kyle) — two-click confirm, shell-owned. */}
+      {onEndSession && (
+        <button
+          className={"sb-end" + (confirmEnd ? " sb-end-armed" : "")}
+          title={confirmEnd ? "Click again to end this session" : "End this session"}
+          onClick={() => {
+            if (confirmEnd) onEndSession();
+            else {
+              setConfirmEnd(true);
+              setTimeout(() => setConfirmEnd(false), 3000);
+            }
+          }}
+        >
+          {confirmEnd ? "end?" : "end"}
+        </button>
+      )}
     </div>
   );
 }
