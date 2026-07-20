@@ -170,13 +170,20 @@ test("R.4i: a subscription-only Claude shows a BLOCKED row with the API-key fix,
   }
 });
 
-test("R.4k: a local-endpoint daemon shows the endpoint on the picker row", async () => {
+test("R.4k: a live picker row names its backing — the endpoint, or the credential", async () => {
   // Point Claude Code at a local endpoint (ANTHROPIC_BASE_URL) → kind `local`,
   // live, and the picker must show the endpoint so the local-model user sees
   // their setup was picked up (not a bare "ready"). The URL need not resolve —
   // we only read onboarding, never drive a turn.
   const token = "e2e-local-9c2f";
-  const d2 = await startDaemon({ MIRAFOLD_TOKEN: token, ANTHROPIC_BASE_URL: "http://localhost:11434" });
+  const d2 = await startDaemon({
+    MIRAFOLD_TOKEN: token,
+    ANTHROPIC_BASE_URL: "http://localhost:11434",
+    // Gemini is the one-click case: an API key is its ONLY backing, so the
+    // second step never opens and the row itself must name the credential
+    // (2026-07-20). Display only — no create is clicked, so no engine spawns.
+    GEMINI_API_KEY: "e2e-not-a-real-key",
+  });
   const page2 = await browser.newPage();
   try {
     await page2.goto(`http://127.0.0.1:${d2.port}/?token=${token}`);
@@ -186,6 +193,9 @@ test("R.4k: a local-endpoint daemon shows the endpoint on the picker row", async
     const detail = await claudeRow.locator(".onb-agent-detail").innerText();
     assert.match(detail, /local endpoint/);
     assert.match(detail, /localhost:11434/);
+    const geminiRow = page2.locator(".onb-agent", { hasText: "Gemini CLI" });
+    assert.match(await geminiRow.locator(".onb-agent-status").innerText(), /ready/);
+    assert.match(await geminiRow.locator(".onb-agent-detail").innerText(), /Gemini API key/);
   } finally {
     await page2.close();
     await d2.stop();

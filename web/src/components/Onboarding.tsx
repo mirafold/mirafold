@@ -3,8 +3,10 @@ import type { AgentBackend, AgentInfo, AgentName, BackendChoice } from "@protoco
 import {
   agentLabel,
   backendLabel,
+  backingLine,
   blockedHint,
   connectHint,
+  localBackendLabel,
   localCapable,
   subscriptionCaveat,
   localLiveHint,
@@ -64,7 +66,8 @@ function hostOf(endpoint: string): string {
  *  openrouter.ai"); everything else gets the credential's product name. */
 function backendName(agent: AgentName, b: AgentBackend): string {
   if (b.endpoint) return `${b.runtime ?? "local server"} · ${hostOf(b.endpoint)}`;
-  return b.kind === "local" && b.detail ? b.detail : backendLabel(agent, b.kind);
+  if (b.kind === "local") return localBackendLabel(agent, b.detail);
+  return backendLabel(agent, b.kind);
 }
 
 /** Does this row run on the user's own machine (2026-07-20)? Rows are one per
@@ -283,7 +286,7 @@ export function Onboarding({
               <div className="onb-connecting">connecting…</div>
             ) : (
               agents.map((row) => {
-                const { agent, live, blocked, detail } = row;
+                const { agent, live, blocked, kind, detail } = row;
                 // Three states. live → ready. blocked → a prohibited
                 // subscription is present; say so and name the API-key fix (still
                 // clickable — it runs the demo, like any non-live agent). none →
@@ -295,6 +298,7 @@ export function Onboarding({
                     ? "subscription not supported"
                     : "no credentials · demo";
                 const statusClass = live ? "onb-live" : blocked ? "onb-blocked" : "onb-demo";
+                const backing = backingLine(agent, kind, detail);
                 return (
                   <button
                     key={agent}
@@ -318,8 +322,11 @@ export function Onboarding({
                     </span>
                     {/* R.4k: a live agent shows what's behind it (local endpoint
                         or configured model), so a local-model user isn't left
-                        guessing whether their setup was picked up. */}
-                    {live && detail && <span className="onb-agent-detail">{detail}</span>}
+                        guessing whether their setup was picked up. 2026-07-20:
+                        it NAMES the credential too — the row is a decision made
+                        for the user when only one backend is usable, and a
+                        decision made for you still has to be stated. */}
+                    {live && backing && <span className="onb-agent-detail">{backing}</span>}
                     {hint && <span className="onb-agent-hint">{hint}</span>}
                   </button>
                 );

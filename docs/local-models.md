@@ -144,7 +144,7 @@ key there — but it's the *same mechanism* as the two paths above, so it lives
 in this doc: if you've bought API access to a hosted open model, point the
 agent at it exactly like a local server, with the provider's real URL and key.
 Nothing subscription-shaped is involved — you pay the provider per token,
-like an Anthropic API key.
+like a Claude API key.
 
 **Claude Code** works with any Anthropic-compatible API. Two providers that
 publish one:

@@ -155,6 +155,28 @@ test("R.4k: no detail on a non-live agent", () => {
   });
 });
 
+// 2026-07-20: the row carries the KIND behind it, so a one-click create (single
+// usable backend — Gemini is always that) can NAME what it runs on. Gemini with
+// only an API key used to advertise `live` and nothing else: no detail (no model
+// override) and no second step, so the credential was never stated anywhere.
+test("a live agent advertises the kind behind it", () => {
+  withTempDir((empty) => {
+    withEnv({ CLAUDE_CONFIG_DIR: empty, GEMINI_API_KEY: "x" }, () => {
+      const gemini = availableAgents().find((a) => a.agent === "gemini-cli")!;
+      assert.equal(gemini.live, true);
+      assert.equal(gemini.kind, "api-key");
+      assert.equal(gemini.detail, undefined); // no model override — the kind stands alone
+    });
+    withEnv({ CLAUDE_CONFIG_DIR: empty, ANTHROPIC_BASE_URL: "http://localhost:11434" }, () => {
+      assert.equal(claude().kind, "local");
+    });
+    // Not live → no kind: there is no backing to name, only the fix to offer.
+    withEnv({ CLAUDE_CONFIG_DIR: empty }, () => {
+      assert.equal(claude().kind, undefined);
+    });
+  });
+});
+
 // N.1 — backendOptions(): every detected credential listed independently, no
 // precedence collapse. The precedence in credentialKind() (BASE_URL > key >
 // login; OPENAI_API_KEY > auth.json) must NOT hide the other options here —

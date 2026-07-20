@@ -299,6 +299,10 @@ export function availableAgents(): AgentInfo[] {
       agent,
       live,
       ...(kind === "subscription" && !live ? { blocked: true } : {}),
+      // The KIND rides as a fact; the client owns its wording (agents-meta's
+      // backendLabel), so the one-click row and the second step say the same
+      // words about the same backing.
+      ...(live && kind !== "none" ? { kind } : {}),
       ...(detail ? { detail } : {}),
       ...(backends.length ? { backends } : {}),
     };
