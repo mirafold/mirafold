@@ -1054,6 +1054,26 @@ body {
   border-left-color: var(--warn-fg);
 }
 
+/* An engine's OWN words, badged with its name (2026-07-20 audit). Unbadged,
+   this line is Mirafold speaking; a verbatim model-chosen string must not be
+   able to pass for that. The badge replaces the glyph rather than joining it,
+   so the two cases can't be confused at a glance, and the dashed rule marks
+   the whole line as quoted from elsewhere. */
+.notice-line[data-source] {
+  border-left-style: dashed;
+}
+
+.notice-source {
+  flex: none;
+  align-self: center;
+  padding: 1px 6px;
+  border: 1px solid var(--border-2);
+  border-radius: 4px;
+  color: var(--fg-dimmer);
+  font-size: 0.85em;
+  letter-spacing: 0.02em;
+}
+
 /* ---- Tool calls (Phase T.1) ---------------------------------------------
    Terminal-style records of what the agent actually did: one dim monospace
    row per call, collapsed by default; errors arrive expanded. Negative

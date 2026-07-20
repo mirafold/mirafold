@@ -233,7 +233,7 @@ test("N.4: a genuine choice opens the second step; a local server appears LIVE; 
     // Every row names the model it runs — the line that makes rows comparable
     // (2026-07-20). The api-key row's is the env override.
     assert.equal(
-      await page2.locator(".onb-backend", { hasText: "API key" })
+      await page2.locator(".onb-backend", { hasText: "OpenAI API key" })
         .locator(".onb-backend-model")
         .innerText(),
       "gpt-5.6-sol",
@@ -727,4 +727,36 @@ test("streaming holds a scrolled-up reader in place, and re-follows once back at
   const end = await geom();
   const gap = end.h - end.top - end.view;
   assert.ok(gap <= 60, `expected to be following the tail again, sat ${gap}px above it`);
+});
+
+test("a notice in the engine's own words is badged; the shell's own words aren't", async () => {
+  await page.locator("textarea").click();
+  await page.keyboard.type("show me a notice");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector(".notice-line[data-source]", { timeout: 15_000 });
+
+  // The engine's line carries its name and no shell glyph…
+  const engine = page.locator(".notice-line[data-source]").last();
+  assert.equal(await engine.getAttribute("data-source"), "mock-engine");
+  assert.equal(await engine.locator(".notice-source").innerText(), "mock-engine");
+  assert.equal(await engine.locator(".notice-glyph").count(), 0);
+  assert.match(await engine.innerText(), /re-enter your API key/);
+
+  // …and Mirafold's own line carries the glyph and no badge, so the two can't
+  // be confused: an engine string can't render as the shell speaking (2026-07-20).
+  const shell = page
+    .locator(".notice-line:not([data-source])")
+    .filter({ hasText: "context compacted" })
+    .last();
+  assert.equal(await shell.locator(".notice-source").count(), 0);
+  assert.equal(await shell.locator(".notice-glyph").count(), 1);
+  // The difference is visible, not just structural.
+  assert.equal(
+    await engine.evaluate((el) => getComputedStyle(el).borderLeftStyle),
+    "dashed",
+  );
+  assert.equal(
+    await shell.evaluate((el) => getComputedStyle(el).borderLeftStyle),
+    "solid",
+  );
 });

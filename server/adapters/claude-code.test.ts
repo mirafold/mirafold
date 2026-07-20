@@ -316,6 +316,9 @@ test("F.2 api_retry: a scripted retry surfaces as a notice, not a silent stall",
   const notice = msgs.find((m) => m.type === "notice")!;
   assert.equal(notice.kind, "retry");
   assert.match(notice.text, /retrying \(attempt 2\/5\)/);
+  // The other side of the attribution rule (2026-07-20 audit): this sentence
+  // is Mirafold's own, so it carries no engine badge.
+  assert.equal(notice.source, undefined);
   assert.equal(turnEnds(), 1); // the retry is not an error — the turn completes
   assert.ok(!msgs.some((m) => m.type === "error"));
   s.close();
