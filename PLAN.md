@@ -1183,6 +1183,57 @@ uncharacterized sighting of the Tier-2 per-pair viewport-cap test.
 
 ---
 
+## Phase D — Decompose the Codex adapter (opened 2026-07-20; **next up**)
+
+`server/adapters/codex.ts` is **824 lines** and carries at least five separable
+concerns. For scale, the other two real adapters are 499 (`claude-code.ts`) and
+382 (`gemini-cli.ts`) — it isn't merely the biggest, it's nearly the other two
+combined, and it grew again on 2026-07-20 (provider binding + the notice fix).
+Size alone wouldn't justify a step; the reason it's worth doing **now** is that
+two separate 2026-07-20 bugs both lived in the seams between those concerns —
+the engine-default lookup didn't know what the provider binding had decided,
+and a non-fatal engine item was classified where the fatal ones are handled.
+Concerns that can't see each other's decisions are exactly what splitting makes
+visible.
+
+Do it now, before Phase F widens the adapter's event vocabulary further: every
+type added to `handleEvent`/`onItem` afterwards makes the split more expensive.
+
+**This is a pure refactor — zero functional change.** It is well protected:
+298 Tier-1 tests, the Tier-2 and Tier-3 suites, and the Tier-4 live tier, all
+green as of 2026-07-20.
+
+- [ ] **Step D.1 — Split `codex.ts` along its existing seams**
+  - Goal: no file over ~400 lines, each concern findable by name, and
+    `CodexSession`'s public surface (the `AgentSession` contract) unchanged.
+  - Build: extract along the seams already visible in the file —
+    1. **Provider + model binding** — `providerBinding`, `firstPartyOpenAI`,
+       `needsEngineDefaultModel`, `applyEngineDefaultModel`. This is the
+       cluster that produced the 2026-07-20 model-binding bug; it deserves to
+       be one named unit with its own tests.
+    2. **The slash-command surface** — `runModelCommand`, `runEffortCommand`,
+       `setThreadModel`, `setThreadEffort`, `restartThread`, plus the `EFFORTS`
+       / `EFFORT_DESC` tables.
+    3. **Event → WireMsg mapping** — `handleEvent` / `onItem`, the largest
+       single block and the one Phase F will grow.
+    4. **The rollout model lookup** — `resolveRolloutModel` + `rolloutDateDir`,
+       already standalone exported functions with no `this`, so this one is a
+       move rather than an extraction.
+    5. **Prompt constants** — `CODEX_DEFERRED_TOOLS_ADDENDUM` and friends.
+  - Keep `codex.ts` as the class + its lifecycle; the extracted units should be
+    importable and testable without constructing a session where possible.
+  - Files: `server/adapters/codex.ts` → new siblings (`codex-binding.ts`,
+    `codex-commands.ts`, `codex-events.ts`, `codex-rollout.ts` or as the seams
+    suggest); `server/adapters/codex.test.ts` imports follow.
+  - Done when: `yarn typecheck` clean; `yarn test` still **298 pass / 0 fail**
+    with no test rewritten to accommodate the move (import paths may change,
+    assertions may not); `yarn test:server` and `yarn test:e2e` unchanged;
+    `yarn test:live` still 2 pass / 1 skip; and one real subscription turn plus
+    one real OpenRouter turn verified by hand, since those are the paths the
+    binding cluster governs and no mock covers them.
+
+---
+
 ## Phase F — Fidelity gap-close (from the 2026-07-07 parity evaluation)
 
 Source: a parity evaluation of each adapter against its engine's **full** event

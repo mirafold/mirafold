@@ -6,7 +6,7 @@
 // reason instead of failing on a machine that simply doesn't have Ollama.
 
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -33,8 +33,10 @@ export async function ollamaModels(): Promise<string[]> {
 }
 
 /**
- * A throwaway CODEX_HOME, populated with `configToml` (or left bare). Two jobs,
- * both load-bearing for this tier:
+ * Run `fn` against a throwaway CODEX_HOME populated with `configToml` (or left
+ * bare), restoring the previous value and deleting the directory afterward.
+ * Three jobs, all load-bearing for this tier — which is why they live here
+ * once rather than in each test:
  *
  *  - **Hermetic**: the real binary writes state into its home — most
  *    importantly `models_cache.json`, the one-cache-for-all-providers file
@@ -42,11 +44,25 @@ export async function ollamaModels(): Promise<string[]> {
  *    scribble on the developer's own `~/.codex`.
  *  - **Credential-free**: no `auth.json` is ever written here, so a first-party
  *    hosted call is impossible even if a test asks for one by mistake.
+ *  - **Contained**: the restore keeps a temp home from leaking into every test
+ *    that follows, and the cleanup keeps the tier from littering /tmp. Both
+ *    run on the failure path too.
  */
-export function tempCodexHome(configToml?: string): string {
+export async function withCodexHome<T>(
+  configToml: string | undefined,
+  fn: (home: string) => Promise<T>,
+): Promise<T> {
   const home = mkdtempSync(path.join(os.tmpdir(), "mirafold-live-codex-"));
   if (configToml !== undefined) writeFileSync(path.join(home, "config.toml"), configToml);
-  return home;
+  const saved = process.env.CODEX_HOME;
+  process.env.CODEX_HOME = home;
+  try {
+    return await fn(home);
+  } finally {
+    if (saved === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = saved;
+    rmSync(home, { recursive: true, force: true });
+  }
 }
 
 /** Every credential env var forced empty, for the duration of `fn`. Tier 4's
