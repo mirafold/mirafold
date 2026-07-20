@@ -1307,12 +1307,19 @@ is scoped further.
         consumed; restart-vs-resume switch mechanics + label; honest
         error/usage paths; the app-server exchange against a stub binary
         incl. hidden-model filtering, exit-before-answer, timeout).
-      - Known remaining delta, deliberate: the terminal picker is "Select
-        Model and Effort" — the effort half (per-model reasoning levels,
-        which the catalog answer already carries) is NOT re-skinned yet;
-        model only. Small follow-up if Kyle wants it: the SDK supports
-        `modelReasoningEffort` per thread, so it's the same resume
-        mechanism plus a second question.
+      - ~~Known remaining delta: the effort half not re-skinned~~ **SCAFFOLD
+        landed 2026-07-19** (mock-built, live-verify pending): a standalone
+        `/effort` path in codex.ts mirroring `/model` — bare `/effort` paints
+        the five `ModelReasoningEfforts` (list form; a click sends `/effort
+        <level>`), a pick resumes/restarts the warm thread carrying
+        `modelReasoningEffort` via the shared `restartThread()`, an unknown
+        level gets a usage line. +3 Tier-1. TWO fidelity questions deferred to
+        a live pass on real Codex: (1) per-model effort availability (the
+        terminal picker filters to a model's supported levels; app-server
+        `model/list` may not carry that — until confirmed, all five are offered
+        unfiltered); (2) flow shape (terminal folds effort in as step 2 of
+        `/model` — chain the model pick into this picker, or keep `/effort`
+        standalone? that pass's call).
       - **All tiers green: 234/82/28** (no flake on this round), typecheck
         clean.
       - Same-day close-out: a behavior-preserving refactor of the session's
