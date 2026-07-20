@@ -476,6 +476,34 @@ test("turn.failed: error before the single turn_end", async () => {
   s.close();
 });
 
+test("a non-fatal error ITEM is a warning notice, and the turn keeps going", async () => {
+  // The SDK types ErrorItem "a non-fatal error surfaced as an item" — Codex's
+  // own advisory (no metadata for a local model's slug, say). Rendering it as
+  // an `error` was louder than the terminal we re-skin (2026-07-20).
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ev({ type: "turn.started" }),
+    ev({
+      type: "item.completed",
+      item: { type: "error", id: "e1", message: "Model metadata for `qwen3:1.7b` not found." },
+    }),
+    ev({ type: "item.completed", item: { type: "agent_message", id: "m1", text: "the reply" } }),
+    ev({
+      type: "turn.completed",
+      usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1, reasoning_output_tokens: 0 },
+    }),
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const notice = msgs.find((m) => m.type === "notice")!;
+  assert.equal(notice.kind, "warning");
+  assert.match(notice.text, /Model metadata/);
+  assert.ok(!msgs.some((m) => m.type === "error"), "a non-fatal item must not render as an error");
+  // The advisory did not eat the turn: the reply still arrived, after it.
+  const types = msgs.map((m) => m.type);
+  assert.ok(types.indexOf("notice") < types.indexOf("text_delta"));
+  s.close();
+});
+
 test("a stream that throws mid-turn: error, then exactly one turn_end", async () => {
   const { s, msgs, turnEnds, awaitTurnEnd } = makeSession(() =>
     (async function* (): AsyncGenerator<ThreadEvent> {
@@ -779,6 +807,26 @@ test("model axis: the engine's catalog default replaces the foreign config model
   assert.deepEqual([calls[1].kind, calls[1].options.model], ["start", "gpt-9-sol"]);
   assert.equal(s.modelName, "gpt-9-sol");
   assert.equal(prompts.length, 1); // the turn still ran, once, after the swap
+  s.close();
+});
+
+test("model axis: a provider-foreign default is refused, never sent to a ChatGPT account", async () => {
+  // The 2026-07-20 bug, live: the catalog answered `meituan/longcat-2.0` —
+  // row 1 of OpenRouter's list, reached because the binary shares one
+  // models_cache.json across providers — and a ChatGPT account 400s on it.
+  // A `vendor/model` slug can never be first-party OpenAI, so it stops here.
+  const { s, msgs, prompts, awaitTurnEnd } = makeBindingSession(FOREIGN_MODEL_TOML, {
+    kind: "subscription",
+    listEngineModels: async () => [
+      { id: "meituan/longcat-2.0", displayName: "LongCat", description: "", isDefault: true },
+    ],
+  });
+  s.pushPrompt("hi");
+  await awaitTurnEnd();
+  const err = msgs.find((m) => m.type === "error")!.message;
+  assert.match(err, /meituan\/longcat-2\.0/);
+  assert.match(err, /can't run/);
+  assert.equal(prompts.length, 0, "the foreign model must never reach the engine");
   s.close();
 });
 

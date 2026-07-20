@@ -35,15 +35,39 @@ interface RawModelRow {
 
 const codexBin = () => agentBin("MIRAFOLD_CODEX_BIN", "codex");
 
+/** `-c key=value` args for the spawn, values TOML-quoted. Nested tables
+ *  flatten to dotted keys, the same form the codex CLI takes. */
+function configArgs(config: Record<string, unknown>, prefix = ""): string[] {
+  return Object.entries(config).flatMap(([k, v]) => {
+    const key = prefix ? `${prefix}.${k}` : k;
+    return typeof v === "object" && v !== null
+      ? configArgs(v as Record<string, unknown>, key)
+      : ["-c", `${key}=${JSON.stringify(v)}`];
+  });
+}
+
 /**
  * Ask a codex binary for its model catalog. Rejects on spawn failure,
  * protocol error, or timeout — the caller decides how to degrade (the
  * adapter surfaces an honest error, never a made-up list).
+ *
+ * `config` pins the question to the provider the ASKER means (2026-07-20).
+ * Without it the binary answers through whatever `model_provider` the user's
+ * config.toml names — so a session bound to first-party OpenAI was being
+ * handed OpenRouter's catalog, and its "default" model, which a ChatGPT
+ * account then refuses. The binary also keeps ONE global
+ * `$CODEX_HOME/models_cache.json` across providers, so the wrong answer is
+ * intermittent rather than reliable; pass the session's own binding here and
+ * verify what comes back.
  */
-export function listCodexModels(timeoutMs = 10_000, bin?: string): Promise<CodexModel[]> {
+export function listCodexModels(
+  timeoutMs = 10_000,
+  bin?: string,
+  config: Record<string, unknown> = {},
+): Promise<CodexModel[]> {
   return jsonRpcOneShot<CodexModel[]>({
     command: bin ?? codexBin(),
-    args: ["app-server"],
+    args: ["app-server", ...configArgs(config)],
     timeoutMs,
     label: "codex app-server",
     start: (send) =>

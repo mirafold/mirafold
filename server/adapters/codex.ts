@@ -255,6 +255,10 @@ export class CodexSession implements AgentSession {
   // construction, never a hardcoded slug. An explicit model (opts.model, a
   // /model switch) always wins and clears this.
   private needsEngineDefaultModel = false;
+  /** Does this session run on OpenAI's first-party provider (an API key or a
+   *  ChatGPT login)? Those accounts serve first-party model ids only, which is
+   *  what makes a foreign id detectable below. */
+  private firstPartyOpenAI = false;
   private listEngineModels: () => Promise<CodexModel[]>;
 
   get modelName(): string {
@@ -299,6 +303,11 @@ export class CodexSession implements AgentSession {
     //   Default: inherit process.env, so the CLI finds the user's own auth +
     //     config, exactly as before.
     const kind = opts.kind ?? (process.env.OPENAI_API_KEY ? "api-key" : undefined);
+    // The session's provider binding, kept so every catalog question is asked
+    // of the SAME provider the turns run on (2026-07-20). Asking unpinned let
+    // the user's config.toml answer for us.
+    const binding = providerBinding(kind, opts.endpoint, opts.provider);
+    this.firstPartyOpenAI = binding["model_provider"] === "openai";
     const codex = (opts.makeCodex ?? ((o: CodexOptions) => new Codex(o)))({
       ...(kind === "api-key" && process.env.OPENAI_API_KEY
         ? { apiKey: process.env.OPENAI_API_KEY }
@@ -325,18 +334,22 @@ export class CodexSession implements AgentSession {
             default_tools_approval_mode: "approve",
           },
         },
-        ...providerBinding(kind, opts.endpoint, opts.provider),
+        ...binding,
       },
     });
     this.codex = codex;
-    this.listModels = opts.listModels ?? listCodexModels;
+    // Both catalogs carry the binding: a picker row you can't run, or an
+    // engine default from a provider this session isn't using, is worse than
+    // no answer at all.
+    this.listModels = opts.listModels ?? (() => listCodexModels(undefined, undefined, binding));
     // The ENGINE's catalog — asked of the binary the SDK actually spawns
     // (reached through its resolved executablePath; falls back to the PATH
     // binary if the SDK's internals ever reshape). Distinct from listModels,
     // which asks the USER's binary for terminal-parity picker rows.
     const engineBin = (codex as unknown as { exec?: { executablePath?: string } }).exec
       ?.executablePath;
-    this.listEngineModels = opts.listEngineModels ?? (() => listCodexModels(undefined, engineBin));
+    this.listEngineModels =
+      opts.listEngineModels ?? (() => listCodexModels(undefined, engineBin, binding));
     // Model-axis neutralization: only when the pick forces the first-party
     // provider away from a CUSTOM config default whose top-level model would
     // ride along wrongly. An explicit model override wins outright.
@@ -542,6 +555,13 @@ export class CodexSession implements AgentSession {
       // an unmarked catalog) risks running a model the user never chose.
       const def = models.find((m) => m.isDefault);
       if (!def) throw new Error("the engine's catalog marks no default model");
+      // Belt and braces over the `-c` pin (2026-07-20): the binary shares one
+      // models_cache.json across providers, so a stale OpenRouter fetch can
+      // still surface here. A `vendor/model` slug is a third-party
+      // namespace — first-party OpenAI ids never carry a slash — and sending
+      // one to a ChatGPT account is the 400 this whole path exists to prevent.
+      if (this.firstPartyOpenAI && def.id.includes("/"))
+        throw new Error(`the catalog answered with \`${def.id}\`, which OpenAI's provider can't run`);
       this.setThreadModel(def.id);
       return true;
     } catch (err) {
@@ -755,7 +775,13 @@ export class CodexSession implements AgentSession {
         this.emitChecklist(item.items);
         break;
       case "error":
-        if (phase === "completed") this.emit({ type: "error", message: item.message });
+        // A NOTICE, not an error: the SDK types this item "a non-fatal error
+        // surfaced as an item" — the turn keeps running, and Codex's own TUI
+        // shows it as a warning. The fatal channels are elsewhere and still
+        // end the turn (`turn.failed`, the stream's `error` event). Rendering
+        // this one red said "your session died" over an advisory as ordinary
+        // as "no metadata for qwen3:1.7b" (2026-07-20).
+        if (phase === "completed") this.emit({ type: "notice", text: item.message, kind: "warning" });
         break;
     }
   }
