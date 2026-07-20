@@ -13,6 +13,10 @@ import { useEscapeKey } from "../use-escape";
 // page knows where to dial. Absent = the page dials its own host.
 export type RelayInfo = { url: string; code: string; ws?: string };
 
+// Names the dialog for a screen reader (A.2). A constant is safe: the card is
+// mounted only while open, and one status bar means one of these.
+const TITLE_ID = "pair-card-title";
+
 function QrSvg({ text }: { text: string }) {
   // Error level M and auto type-number; modules become one <path>, drawn
   // black-on-white in BOTH themes — scanners want contrast, not theming.
@@ -66,12 +70,30 @@ export function ConnectDevice({ relay }: { relay?: RelayInfo }) {
         ⧉ pair
       </button>
       {open && (
+        // Backdrop click-to-dismiss stays a plain div on purpose (A.2) — the
+        // keyboard equivalents are Escape (above) and the ✕ below; a
+        // page-sized control would just clutter the tab order.
         <div className="pair-backdrop" onClick={() => setOpen(false)}>
-          <div className="pair-card" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="pair-card"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={TITLE_ID}
+          >
             <div className="pair-head">
-              <span className="glyph">❯</span>
-              <span className="pair-title">connect a device</span>
-              <button className="pair-close" onClick={() => setOpen(false)} title="Close (Esc)">
+              <span className="glyph" aria-hidden="true">
+                ❯
+              </span>
+              <span className="pair-title" id={TITLE_ID}>
+                connect a device
+              </span>
+              <button
+                className="pair-close"
+                onClick={() => setOpen(false)}
+                title="Close (Esc)"
+                aria-label="Close connect a device"
+              >
                 ✕
               </button>
             </div>

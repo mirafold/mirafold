@@ -892,6 +892,251 @@ Full bodies + dated status in PLAN-ARCHIVE.md ("Moved 2026-07-19").
 - [x] **V.2 — Codex (and Gemini) rendering + command fidelity** — done 2026-07-19; Codex chart-degradation root-caused (Codex hides MCP tools behind tool-search) and fixed (deferred-tools addendum + a deterministic mermaid backstop); `/model` re-skinned for BOTH Codex and Gemini from each binary's own catalog (Codex app-server JSON-RPC / Gemini ACP); Codex-on-OpenRouter probed. **Follow-up:** the `/effort` reasoning-effort scaffold landed 2026-07-19 (mock-built; TWO fidelity questions — per-model effort availability, and fold-into-`/model`-vs-standalone — pending a live Codex pass). → PLAN-ARCHIVE.md.
 - [x] **V.3 — Truthful full-optionality Codex backend picker** — done 2026-07-19; every way codex can run is a picker row from config.toml ground truth (all `[model_providers]`), key-gated, provider carried on the wire, per-session enforced. → PLAN-ARCHIVE.md.
 
+## Phase A — Accessibility (opened 2026-07-20; Kyle-directed, pre-launch)
+
+Kyle's directive, verbatim: *"i want mirafold to be friendly to all people
+capable of using it and to be ada compliant."* The ADA itself specifies no
+technical standard for software, so the operative target — the one the DOJ
+and effectively every settlement agreement point to — is **WCAG 2.1 Level
+AA**. That is this phase's bar.
+
+Starting position, from a 2026-07-20 read of `web/src/`:
+
+- **Contrast (1.4.3 / 1.4.11) is already the strongest thing here** — V.1's
+  terminal-grade floors (strong ≥12 · fg ≥11 · body ≥10.5 · mid ≥8.5 ·
+  dim ≥7 · dimmer ≥5.5 · faint ≥4.5 · accents ≥4.5) clear AA's 4.5:1 by
+  roughly double at the *faintest* tier, on all seven themes, enforced by a
+  Tier-1 guard. Nothing owed. Do not re-open it.
+- Also already present: `prefers-reduced-motion` (2.3.3) at
+  `web/src/styles.css:2041`, a global `:focus-visible` rule (2.4.7) at
+  `styles.css:2027`, `lang="en"` (3.1.1) in `web/index.html`.
+- The gap is **programmatic semantics**: the whole app carries 4
+  `aria-hidden`, 3 `role=`, 3 `aria-label`, 2 `aria-pressed` — and zero
+  `aria-live`.
+
+Primary users served: screen-reader users (Orca / NVDA / JAWS / VoiceOver)
+and keyboard-only users (motor impairment — tremor, RSI, paralysis, limb
+difference). Sequence A.1 → A.2 → A.3; A.4 is written last, after the others,
+because it is a public conformance claim and must describe the real state.
+
+The automated regression guard for all of this is **Step C.2**, deliberately
+placed in the CI/CD phase below.
+
+**⚑ KYLE'S HANDS — the screen-reader walk.** One item in this phase cannot be
+done by the assistant at all: actually *listening* to Mirafold with a screen
+reader. Everything else here is verifiable from code, the accessibility tree,
+or an axe run; whether the result is comprehensible to a human ear is not.
+When A.1–A.3 are code-complete, Kyle runs **Orca** (GNOME's screen reader,
+`Super+Alt+S` toggles it on this Linux box) and walks: onboarding → a full
+prompt→response turn → a tool call → a permission prompt → the settings card
+→ connect-a-device → fleet view. What to listen for: does the response
+actually get read once and whole; does anything read twice, flood, or cut
+itself off; is any control announced as just "button" with no name; does
+focus ever land somewhere invisible. Findings come back here as new steps.
+A.1 and A.3 stay unchecked until this walk happens — their "done when"
+clauses are written in terms of it deliberately.
+
+- [ ] **Step A.1 — Live regions: streaming agent output is announced**
+  - Goal: the fatal gap. A screen-reader user sends a prompt and hears
+    *nothing back* — text that appears without focus moving to it is never
+    announced. WCAG 4.1.3 (Status Messages). This one step is worth more
+    than the rest of the phase combined.
+  - Build: the design decision first — **announcement granularity**.
+    Token-by-token `aria-live="polite"` on the transcript is unusable
+    (a screen reader restarts or floods on every mutation); the shape that
+    works is announcing at semantic boundaries — turn start, each completed
+    assistant message/tool block, turn end — with the streaming text itself
+    in a non-live container the user reads on demand by navigating to it.
+    Then: a polite live region for turn/tool status, an assertive one
+    reserved for errors and permission prompts (shell-owned, so the
+    trusted-shell boundary is unaffected), and `role="log"` on the
+    transcript. Status-bar state changes (busy, connection, agent) announce
+    politely. Verify with a real screen reader, not by inspection.
+  - Files: `web/src/components/RenderZone.tsx`,
+    `web/src/components/Shell.tsx`, `web/src/components/StatusBar.tsx`,
+    `web/src/components/ToolBlock.tsx`.
+  - Done when: with a screen reader running, a full prompt→response turn is
+    comprehensible start to finish without sighted assistance — turn start,
+    tool activity, and completion each announce once, and no announcement
+    floods or interrupts mid-sentence.
+  - Status 2026-07-20: **code landed, box stays open on the screen-reader
+    pass.** New `web/src/components/Announcer.tsx` — two visually-hidden
+    regions (polite `role="status"`, assertive `role="alert"`) plus a
+    two-slot alternation so a repeated message still counts as a DOM change
+    and re-announces. Granularity as designed: the transcript is
+    `role="log"` + **`aria-live="off"`** (log's implicit "polite" would
+    re-read on every token), and Shell announces at boundaries off frames it
+    already subscribes to — `user_prompt` → "Sent. Working…", `tool_use` →
+    "Running {name}." (name only, never the arguments), `turn_end` → the
+    turn's prose banked from `text_delta`, capped by `turnResponse()` at
+    4000 chars with a pointer to the transcript, falling back to "Turn
+    complete." for a tool-only turn. Assertive: `permission_request`,
+    `error`, `refused`, and a real disconnect transition (guarded so the
+    mount-time `connected=true` doesn't announce "Reconnected"). StatusBar's
+    dot is now `aria-hidden` (a coloured circle reads as nothing) with its
+    state moved onto the toggle buttons' `aria-label`. `.sr-only` added to
+    styles.css using `clip-path`, NOT `display:none` — the latter drops the
+    element from the accessibility tree and would silence the regions. +4
+    Tier-1 on `turnResponse` (**290 green**, typecheck clean). Tier 3 NOT
+    run: `server/testing/app.e2e.ts` had another session's uncommitted
+    edits, and `test:e2e` rebuilds shared `dist/`. Owed before checking the
+    box: the Orca walk, and a Tier-3 assertion that the regions exist and
+    the transcript is `aria-live="off"`.
+
+- [ ] **Step A.2 — Every control is a real control**
+  - Goal: six `onClick` handlers sit on `div`/`span` elements — unreachable
+    by Tab, unannounced as controls. WCAG 2.1.1 (Keyboard) and 4.1.2 (Name,
+    Role, Value).
+  - Build: convert each to a real `<button>` (or give it `role` + `tabIndex`
+    + key handling where the styling genuinely can't survive the swap —
+    prefer the swap). Audit accessible *names* while in each file: an
+    icon-only control needs an `aria-label` that says what it does, and
+    decorative glyphs need `aria-hidden="true"` so they aren't read aloud.
+    Theme pill markup is LOCKED — semantics/labels only, no visual or
+    behavioral change.
+  - Files: `web/src/components/ConnectDevice.tsx`,
+    `web/src/components/Onboarding.tsx`,
+    `web/src/components/ThemePicker.tsx`.
+  - Done when: every interactive element in those three files is reachable
+    and operable by Tab + Enter/Space, announces a meaningful name and role,
+    and nothing about the rendered appearance changed.
+  - Status 2026-07-20: **two of three files done** (`ThemePicker.tsx`,
+    `ConnectDevice.tsx`); `Onboarding.tsx` deferred — another session had it
+    open with ~183 uncommitted lines. **The step's framing was wrong and is
+    corrected here:** the six `div`/`span` `onClick` handlers are NOT
+    disguised buttons. Four are the backdrop-click-to-dismiss + card
+    `stopPropagation` pair in the two overlays, and one more of each in
+    Onboarding. A backdrop already has keyboard equivalents (Escape via
+    `useEscapeKey`, plus an explicit ✕), so 2.1.1 is satisfied and promoting
+    it to a control would park a page-sized meaningless stop in the tab
+    order — left as plain divs, each with a comment saying why. The real gap
+    in those files was **dialog semantics and names**: neither overlay had
+    `role="dialog"`, `aria-modal`, or an accessible name, so a screen-reader
+    user got no signal a modal had opened. Both cards now carry all three
+    (`aria-labelledby` → the existing title span). Also: `❯` glyphs and the
+    slotted-row `✓` marked `aria-hidden` (decorative), both ✕ buttons given
+    real `aria-label`s instead of relying on `title` alone, theme groups
+    wrapped in `role="group"` + `aria-label`, and each theme row given
+    `aria-pressed` — the `✓` was previously the *only* thing marking the
+    slotted row. Visual output unchanged; the LOCKED status-bar pill was not
+    touched. Typecheck clean, Tier-1 **290 green**.
+
+- [ ] **Step A.2b — Onboarding's share of A.2** *(blocked as of 2026-07-20)*
+  - Goal: the same treatment for `Onboarding.tsx` — dialog/step semantics,
+    accessible names on icon-only controls, decorative glyphs hidden, and
+    its two backdrop/stopPropagation divs commented like the others.
+  - Blocked on: another session's in-flight onboarding work landing. Do this
+    the moment that commits, and re-read the file first — its structure will
+    have changed.
+
+- [ ] **Step A.3 — Focus management + the manual keyboard pass**
+  - Goal: Escape is already handled uniformly — `useEscapeKey`
+    (`web/src/use-escape.ts`) is used by all three overlays
+    (`ThemePicker.tsx:45`, `ConnectDevice.tsx:52`, `Onboarding.tsx:217`), so
+    2.1.2 (No Keyboard Trap) is likely already satisfied. What is missing is
+    *focus*: an opening overlay leaves focus behind it, Tab then walks the
+    page underneath, and closing loses focus entirely. The app's only
+    `.focus()` call is the prompt autofocus at `Shell.tsx:396`. WCAG 2.4.3
+    (Focus Order).
+  - Build: one `useFocusTrap` hook mirroring `useEscapeKey`'s shape — on
+    open, record `document.activeElement` and move focus into the container;
+    cycle Tab within it; on close, restore focus to the opener. Apply to the
+    same three overlays. Assess `FleetView.tsx:145` (it already has its own
+    `onKeyDown`) for whether the session list should become a roving-tabindex
+    widget, and give `PinDock.tsx` (66 lines) the same look. Then the part no
+    grep substitutes for: **a manual pass through the whole app** with
+    keyboard only, then again with a real screen reader (Orca locally;
+    VoiceOver if a Mac is available) — onboarding, a full session, the
+    picker, connect-device, fleet view.
+  - Files: new `web/src/use-focus-trap.ts`;
+    `web/src/components/{ThemePicker,ConnectDevice,Onboarding,FleetView,PinDock}.tsx`.
+  - Done when: every overlay takes focus on open and returns it on close, the
+    entire app is operable mouse-free end to end, and the manual
+    screen-reader walk is recorded here with what it found.
+
+- [ ] **Step A.4 — Public accessibility statement** *(write LAST)*
+  - Goal: a dated, public, specific conformance claim, plus a way to report
+    problems. Not a WCAG requirement — a launch artifact, and the honest
+    counterpart to the work above. Same precedent as K.5: the document is
+    planned here, the page ships in the `mirafold-site` repo alongside
+    `terms.html` / `privacy.html` / `refunds.html` (same stylesheet, no
+    build step).
+  - Build: the standard four parts — the standard targeted (WCAG 2.1 AA),
+    the real current conformance status, known limitations stated plainly,
+    and a contact path (reuse `support@mirafold.com`, live since K.7). Then
+    a footer link and a `sitemap.xml` entry. **Specific and honest beats
+    broad**: "conforms except X and Y" is defensible and useful; a blanket
+    "fully accessible" claim contradicted by one axe run is worse than
+    publishing nothing. Must not be written before A.1–A.3 land.
+  - Files: `mirafold-site/public/accessibility.html`, plus that repo's
+    footer partial (shared CSS already covers all pages) and `sitemap.xml`.
+  - Done when: the page is live, linked from the footer of every site page,
+    in the sitemap, and every claim on it is one someone could verify.
+
+---
+
+## Phase C — CI/CD (opened 2026-07-20; pre-launch)
+
+Kyle is standing up CI/CD shortly. As of 2026-07-20 there is **none** in any
+of the three repos: `genui-shell/.github/` holds only an issue template, there
+are no workflows and no git hooks, and neither `genui-relay` nor
+`mirafold-site` has a `.github/` at all. Verification today is Kyle running
+`yarn test` / `test:server` / `test:e2e` by hand — a good habit, but a habit.
+
+Sizing note from the 2026-07-20 read: **Tier 3 is unusually CI-ready.** The
+browser path is already an env override (`process.env.CHROME_BIN ??
+"/usr/bin/google-chrome"`, e.g. `server/testing/app.e2e.ts:17`), Playwright
+launches headless by default (no virtual display needed), and the harness
+forces credentials empty → `MockSession`, so there are **no secrets to
+provision, no API spend, and no live-model flakiness**. Both previously-named
+flakes were root-caused and fixed 2026-07-19 (`9de5bc1` Tier-2 handshake
+listener, `60b8307` Tier-3 settle); the only residual is a single
+uncharacterized sighting of the Tier-2 per-pair viewport-cap test.
+
+- [ ] **Step C.1 — Stand up CI** *(Kyle's call on scope)*
+  - Goal: the test suite runs itself on every push, so nothing load-bearing
+    depends on remembering.
+  - Build: GitHub Actions. Decide the tier schedule — Tier 1 on every push
+    is seconds; Tier 2 and Tier 3 are minutes (`test:e2e` runs `yarn build`
+    first), so the normal split is those on pull requests and on the default
+    branch. Node 22 + yarn; confirm whether `ubuntu-latest`'s preinstalled
+    Chrome sits at the default path or `CHROME_BIN` needs setting. Turn on
+    the DCO check at the same time (owed from K.9, gated on the public flip).
+    CD (deploy) is a separate question — the relay's deploy path and the
+    site's Cloudflare Pages build are already their own mechanisms.
+  - Files: `.github/workflows/` in each repo as scoped.
+  - Done when: a pushed commit gets a pass/fail mark automatically, a
+    deliberately broken test turns it red, and a green run means the same
+    thing a local full-suite run means.
+
+- [ ] **Step C.2 — Automated accessibility check (axe-core) in Tier 3**
+  - Goal: the regression guard for Phase A. Accessibility decays silently —
+    a refactor swapping a `<button>` for a styled `<div>`, or dropping an
+    `aria-label`, looks and behaves identically to a sighted mouse user and
+    is a wall to a screen-reader user. The theme contrast floors are the
+    proof the pattern works: they hold across two new themes and multiple
+    rounds of edits because a test remembers them. Nothing else in the UI has
+    that memory. Note the scope honestly: automated scanning catches roughly
+    a third of WCAG issues — the machine-checkable subset. It does not
+    replace A.3's manual pass.
+  - Build: **Tier 3, not Tier 1.** Web unit tests render no React at all
+    (`node:test` over pure functions — see `web/src/components/ToolBlock.test.ts`);
+    there is no jsdom, happy-dom, or Testing Library anywhere, and the
+    zero-test-deps rule says keep it that way. Tier 3 already drives real
+    Chromium against the real app. So: add `axe-core` as a dependency, inject
+    its source into the page, run it via `page.evaluate`, and assert zero
+    violations at `serious` and `critical`. The real cost is **triage of the
+    first run** — every codebase's first scan reports findings; each becomes
+    a fix or a documented exception. This step does **not** depend on C.1 —
+    the check is just a test, so it can (and should) land first and be
+    triaged to green locally; CI then picks it up for free.
+  - Files: `server/testing/app.e2e.ts`, `package.json`.
+  - Done when: `yarn test:e2e` fails on an introduced accessibility
+    regression (verified by deliberately breaking one), passes clean
+    otherwise, and every accepted exception is written down with its reason.
+
+---
+
 ## Phase F — Fidelity gap-close (from the 2026-07-07 parity evaluation)
 
 Source: a parity evaluation of each adapter against its engine's **full** event

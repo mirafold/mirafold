@@ -2023,6 +2023,21 @@ body,
   background: var(--selection);
 }
 
+/* Available to screen readers, invisible on screen (A.1). Not `display:none`
+   or `visibility:hidden` — both remove the element from the accessibility
+   tree, which would silence the live regions this exists for. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 /* Keyboard focus gets a visible ring; pointer clicks stay quiet. */
 :focus-visible {
   outline: 2px solid var(--border-hover);

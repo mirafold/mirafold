@@ -67,16 +67,22 @@ export function StatusBar({
   // First click arms, second click ends — guards against a stray click
   // killing a session. Disarms itself after a few seconds (#11).
   const [confirmEnd, setConfirmEnd] = useState(false);
+  // The dot is a coloured circle — meaningless read aloud, so it's hidden
+  // from the accessibility tree and its meaning rides on the button's label
+  // instead (A.1). Live transitions are announced by Shell's Announcer.
+  const dotState = connected ? "connected" : (connectionNote ?? "reconnecting…");
   const dot = (
-    <span
-      className={`sb-dot ${connected ? "sb-dot-on" : "sb-dot-off"}`}
-      title={connected ? "connected" : (connectionNote ?? "reconnecting…")}
-    />
+    <span className={`sb-dot ${connected ? "sb-dot-on" : "sb-dot-off"}`} title={dotState} aria-hidden="true" />
   );
 
   if (!open) {
     return (
-      <button className="status-bar status-bar-collapsed" onClick={() => setOpen(true)} title="Show status">
+      <button
+        className="status-bar status-bar-collapsed"
+        onClick={() => setOpen(true)}
+        title="Show status"
+        aria-label={`Show status — ${dotState}`}
+      >
         {dot}
       </button>
     );
@@ -115,7 +121,12 @@ export function StatusBar({
           {confirmEnd ? "end?" : "end"}
         </button>
       )}
-      <button className="sb-toggle" onClick={() => setOpen(false)} title="Hide status">
+      <button
+        className="sb-toggle"
+        onClick={() => setOpen(false)}
+        title="Hide status"
+        aria-label={`Hide status — ${dotState}`}
+      >
         {dot}
       </button>
       {agent && <span className="sb-item sb-agent" title="the terminal agent behind this session">{agent}</span>}

@@ -26,6 +26,10 @@ const chipColorsById = new Map(
   }),
 );
 
+// Names the dialog for a screen reader (A.2). A constant is safe: only one
+// settings card is ever mounted.
+const TITLE_ID = "settings-card-title";
+
 const GROUPS: { label: string; appearance: ThemeAppearance }[] = [
   { label: "Light themes", appearance: "light" },
   { label: "Dark themes", appearance: "dark" },
@@ -45,18 +49,32 @@ export function ThemePicker({
   useEscapeKey(onClose);
 
   return (
+    // Backdrop click-to-dismiss is a MOUSE convenience and deliberately stays
+    // a plain div (A.2): the keyboard equivalents already exist — Escape
+    // above, and the ✕ below — so making this a control would only park a
+    // page-sized, meaningless stop in the tab order.
     <div className="settings-backdrop" onClick={onClose}>
-      <div className="settings-card" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="settings-card"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={TITLE_ID}
+      >
         <div className="settings-head">
-          <span className="glyph">❯</span>
-          <span className="settings-title">settings</span>
-          <button className="settings-close" onClick={onClose} title="Close (Esc)">
+          <span className="glyph" aria-hidden="true">
+            ❯
+          </span>
+          <span className="settings-title" id={TITLE_ID}>
+            settings
+          </span>
+          <button className="settings-close" onClick={onClose} title="Close (Esc)" aria-label="Close settings">
             ✕
           </button>
         </div>
         <div className="settings-section-title">Theme</div>
         {GROUPS.map(({ label, appearance }) => (
-          <div key={appearance} className="theme-group">
+          <div key={appearance} className="theme-group" role="group" aria-label={label}>
             <div className="theme-group-label">{label}</div>
             {THEMES.filter((t) => t.appearance === appearance).map((t) => {
               const slotted = slots[appearance] === t.id;
@@ -65,6 +83,10 @@ export function ThemePicker({
                   key={t.id}
                   className={"theme-row" + (slotted ? " is-slotted" : "")}
                   onClick={() => onPick(t.id)}
+                  // The ✓ is the only thing marking the slotted row on screen;
+                  // aria-pressed is its text-free equivalent (same idiom as the
+                  // status-bar pill, which is LOCKED and untouched).
+                  aria-pressed={slotted}
                 >
                   <span className="theme-chips" aria-hidden="true">
                     {chipColorsById.get(t.id)!.map((c, i) => (
@@ -72,7 +94,11 @@ export function ThemePicker({
                     ))}
                   </span>
                   <span className="theme-row-name">{t.displayName}</span>
-                  {slotted && <span className="theme-row-check">✓</span>}
+                  {slotted && (
+                    <span className="theme-row-check" aria-hidden="true">
+                      ✓
+                    </span>
+                  )}
                 </button>
               );
             })}
