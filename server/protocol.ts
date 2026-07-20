@@ -173,7 +173,15 @@ type WireMsgBody =
   // continues (retry/compaction) or ends honestly (refusal, alongside the
   // result). Drawn as a dim persistent system line, never agent markdown.
   // `kind` lets the client tag it; old clients ignore it and show the text.
-  | { type: "notice"; text: string; kind?: "retry" | "compaction" | "rate_limit" | "refusal" }
+  // 2026-07-20 adds `warning`: an engine's own non-fatal advisory, which the
+  // terminal shows as a warning and we were escalating to a red `error` line —
+  // louder than the agent we re-skin (Codex's ErrorItem, "a non-fatal error
+  // surfaced as an item", e.g. no metadata for a local model's slug).
+  | {
+      type: "notice";
+      text: string;
+      kind?: "retry" | "compaction" | "rate_limit" | "refusal" | "warning";
+    }
   // The `!` bash passthrough, run in a real PTY (interactive
   // programs prompt normally). These three carry the command's lifecycle and
   // its OUTPUT stream — broadcast and replay-buffered like everything else;
@@ -225,6 +233,13 @@ export type AgentBackend = {
   endpoint?: string;
   runtime?: string;
   models?: string[];
+  // The single model this row will run, when config/env determines it — the
+  // env override for a credential row, the config's own `model` for a declared
+  // provider row. Display only (the pick sends no model; the agent resolves it
+  // exactly as it would in a terminal). Absent when only the engine's own
+  // default applies, which we don't know without asking it. A row with a
+  // `models` catalog has no single answer — you pick one.
+  model?: string;
   // A provider the user declared in their agent's own config (codex's
   // `[model_providers.<id>]`) — its id, so a pick can name it exactly.
   provider?: string;

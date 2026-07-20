@@ -59,75 +59,128 @@ function hostOf(endpoint: string): string {
   }
 }
 
-/** N.4's second step: how the picked agent is backed. Usable credentials as
- *  buttons (the codex subscription with its disclosed-uncertainty caveat
- *  inline), a present-but-prohibited subscription VISIBLE but gray with the
- *  why (never hidden), and each discovered local server with its model
- *  catalog — picking a model picks the backend. */
+/** One row's headline. A discovered server names its runtime and host; a BYO
+ *  endpoint / declared-provider row's `detail` IS its full label ("OpenRouter ·
+ *  openrouter.ai"); everything else gets the credential's product name. */
+function backendName(agent: AgentName, b: AgentBackend): string {
+  if (b.endpoint) return `${b.runtime ?? "local server"} · ${hostOf(b.endpoint)}`;
+  return b.kind === "local" && b.detail ? b.detail : backendLabel(agent, b.kind);
+}
+
+/** Does this row run on the user's own machine (2026-07-20)? Rows are one per
+ *  DISCOVERED server, so the answer can't live in a row's name — with Ollama
+ *  and LM Studio both up you'd have two rows each claiming to be "local
+ *  models". It's a per-row tag instead, and it's the honest reading of the
+ *  endpoint: `MIRAFOLD_LOCAL_ENDPOINTS` can point the probe at a box down the
+ *  hall, which is not the free-and-private promise this tag makes. Same
+ *  loopback test the server's endpointDetail() uses for BYO env rows. */
+function runsOnThisMachine(b: AgentBackend): boolean {
+  if (!b.endpoint) return false;
+  try {
+    const { hostname } = new URL(b.endpoint);
+    return hostname === "localhost" || hostname === "[::1]" || hostname.startsWith("127.");
+  } catch {
+    return false;
+  }
+}
+
+/** What model this row runs — the line that makes the rows comparable
+ *  (2026-07-20). A discovered server offers a catalog, so it promises the
+ *  count and defers the choice one click; every other row runs exactly one
+ *  model and must say which, or say nothing when only the agent's own
+ *  default applies. */
+function modelLine(b: AgentBackend): string | undefined {
+  const n = b.models?.length ?? 0;
+  if (n) return `${n} model${n === 1 ? "" : "s"} — choose →`;
+  return b.model;
+}
+
+/** N.4's second step: how the picked agent is backed — one uniform row per
+ *  way to run, each naming its model. Usable credentials as buttons (the
+ *  codex subscription with its disclosed-uncertainty caveat inline), a
+ *  present-but-prohibited subscription VISIBLE but gray with the why (never
+ *  hidden), and each discovered local server as ONE row that opens its
+ *  catalog (the third step below). Before 2026-07-20 a server splayed its
+ *  models inline while every other row hid its own — three rows that looked
+ *  like three unrelated kinds of thing. */
 function BackendMenu({
   row,
   onBack,
   onChoose,
+  expanded,
+  onExpand,
 }: {
   row: AgentInfo;
   onBack: () => void;
   onChoose: (backend: BackendChoice) => void;
+  // The endpoint of the server whose catalog is open, if any. Held by the
+  // parent so Esc/backdrop steps back through it (and keyed by endpoint, not
+  // index, so the open poll's re-send can't swap which server you're in).
+  expanded: string | null;
+  onExpand: (endpoint: string | null) => void;
 }) {
   const backends = row.backends ?? [];
+  // A server that stopped mid-step falls back to the list — never a dead pane.
+  const server = backends.find((b) => b.endpoint === expanded && b.models?.length);
+  if (server) {
+    return (
+      <div className="onb-backends">
+        <button className="onb-back" onClick={() => onExpand(null)}>
+          ← all backends
+        </button>
+        <span className="onb-server-name">{backendName(row.agent, server)}</span>
+        <div className="onb-models">
+          {server.models?.map((m) => (
+            <button key={m} className="onb-model" onClick={() => onChoose(choiceOf(server, m))}>
+              {m}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="onb-backends">
       <button className="onb-back" onClick={onBack}>
         ← all agents
       </button>
-      {backends.map((b, i) =>
-        b.models?.length ? (
-          // A discovered local server: its catalog IS the buttons —
-          // picking a model picks the backend.
-          <div className="onb-server" key={`s${i}`}>
-            <span className="onb-server-name">
-              {b.runtime ?? "local server"} · {b.endpoint ? hostOf(b.endpoint) : "local"}
-            </span>
-            <div className="onb-models">
-              {b.models.map((m) => (
-                <button key={m} className="onb-model" onClick={() => onChoose(choiceOf(b, m))}>
-                  {m}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : (
-          // A credential (or env-endpoint) row. Prohibited subscriptions
-          // stay VISIBLE but gray with the why — never hidden (R.4l (c)).
-          <button
-            key={`b${i}`}
-            className={`onb-backend${b.usable ? "" : " onb-backend-blocked"}`}
-            disabled={!b.usable}
-            onClick={() => onChoose(choiceOf(b))}
-          >
-            {/* The env-endpoint row's detail IS its full label ("local
-                endpoint · host" / "custom endpoint · host") — one span, no
-                kind-name duplicate beside it. */}
-            <span className="onb-backend-name">
-              {b.kind === "local" && b.detail ? b.detail : backendLabel(row.agent, b.kind)}
-            </span>
-            {b.kind !== "local" && b.detail && (
-              <span className="onb-backend-detail">{b.detail}</span>
-            )}
-            {b.usable && b.kind === "subscription" && subscriptionCaveat(row.agent) && (
-              <span className="onb-backend-caveat">{subscriptionCaveat(row.agent)}</span>
-            )}
-            {/* The row's own hint wins (a declared provider missing its env
-                key names the exact variable); the per-agent hint covers the
-                prohibited-subscription rows it was written for. */}
-            {!b.usable && (
-              <span className="onb-backend-caveat">{b.hint ?? blockedHint(row.agent)}</span>
-            )}
-          </button>
-        ),
-      )}
-      {localCapable(row.agent) && !backends.some((b) => b.models?.length) && (
-        <p className="onb-live-hint">{localLiveHint(row.agent)}</p>
-      )}
+      {backends.map((b, i) => (
+        // Prohibited subscriptions stay VISIBLE but gray with the why —
+        // never hidden (R.4l (c)).
+        <button
+          key={`b${i}`}
+          className={`onb-backend${b.usable ? "" : " onb-backend-blocked"}`}
+          disabled={!b.usable}
+          onClick={() =>
+            b.models?.length && b.endpoint ? onExpand(b.endpoint) : onChoose(choiceOf(b))
+          }
+        >
+          {/* Name + tag, the agent row's idiom one size down. */}
+          <span className="onb-backend-row">
+            <span className="onb-backend-name">{backendName(row.agent, b)}</span>
+            {runsOnThisMachine(b) && <span className="onb-backend-tag">local</span>}
+          </span>
+          {b.kind !== "local" && b.detail && <span className="onb-backend-detail">{b.detail}</span>}
+          {modelLine(b) && <span className="onb-backend-model">{modelLine(b)}</span>}
+          {b.usable && b.kind === "subscription" && subscriptionCaveat(row.agent) && (
+            <span className="onb-backend-caveat">{subscriptionCaveat(row.agent)}</span>
+          )}
+          {/* The row's own hint wins (a declared provider missing its env
+              key names the exact variable); the per-agent hint covers the
+              prohibited-subscription rows it was written for. */}
+          {!b.usable && (
+            <span className="onb-backend-caveat">{b.hint ?? blockedHint(row.agent)}</span>
+          )}
+        </button>
+      ))}
+      {/* The "configure a BYO endpoint and it shows up here" promise — shown
+          only when nothing on screen already IS one. Telling a user to add
+          OpenRouter to config.toml while their OpenRouter row sits directly
+          above it was the single most confusing thing in this menu. */}
+      {localCapable(row.agent) &&
+        !backends.some((b) => b.models?.length || b.provider || b.endpoint) && (
+          <p className="onb-live-hint">{localLiveHint(row.agent)}</p>
+        )}
     </div>
   );
 }
@@ -156,6 +209,9 @@ export function Onboarding({
   const [cwd, setCwd] = useState("");
   // Which agent's backend menu is open (the second step), if any.
   const [picking, setPicking] = useState<AgentName | null>(null);
+  // Which discovered server's model catalog is open (the third step) — its
+  // endpoint, or null.
+  const [expanded, setExpanded] = useState<string | null>(null);
   // The daemon cwd arrives async (agents hello) — prefill once, but never
   // clobber something the user already typed.
   useEffect(() => {
@@ -171,10 +227,14 @@ export function Onboarding({
   }, [onRefresh]);
 
   // Same dismiss idiom as the settings card: backdrop click + Escape — but
-  // with the second step open, Esc/backdrop first steps back to the agent
-  // list (dismissing the whole card from there would eat the "wrong agent"
-  // correction).
-  const stepBack = picking ? () => setPicking(null) : onDismiss;
+  // with a later step open, Esc/backdrop first walks back one step (model
+  // catalog → backends → agents; dismissing the whole card from there would
+  // eat the "wrong agent" correction).
+  const stepBack = expanded
+    ? () => setExpanded(null)
+    : picking
+      ? () => setPicking(null)
+      : onDismiss;
   useEscapeKey(stepBack);
 
   const pickingRow = picking ? agents?.find((a) => a.agent === picking) : undefined;
@@ -186,7 +246,9 @@ export function Onboarding({
       <div className="onb-card" onClick={(e) => e.stopPropagation()}>
         <img className="onb-glyph" src="/logo.svg" alt="Mirafold" />
         <h1 className="onb-title">
-          {pickingRow ? `${agentLabel(pickingRow.agent)} — pick its backing` : "Choose your agent"}
+          {pickingRow
+            ? `${agentLabel(pickingRow.agent)} — ${expanded ? "pick a model" : "pick its backing"}`
+            : "Choose your agent"}
         </h1>
         {!pickingRow && (
           <p className="onb-sub">
@@ -212,6 +274,8 @@ export function Onboarding({
             row={pickingRow}
             onBack={() => setPicking(null)}
             onChoose={(backend) => pick(pickingRow.agent, backend)}
+            expanded={expanded}
+            onExpand={setExpanded}
           />
         ) : (
           <div className="onb-list">
@@ -240,6 +304,7 @@ export function Onboarding({
                       // step; a single usable backend (or the demo path)
                       // creates in one click, exactly as before.
                       if (needsSecondStep(row)) {
+                        setExpanded(null);
                         setPicking(agent);
                         return;
                       }

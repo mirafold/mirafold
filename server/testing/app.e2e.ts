@@ -208,6 +208,7 @@ test("N.4: a genuine choice opens the second step; a local server appears LIVE; 
   const d2 = await startDaemon({
     MIRAFOLD_TOKEN: token,
     OPENAI_API_KEY: "dummy",
+    CODEX_MODEL: "gpt-5.6-sol", // never spawned here — only read for the row's model line
     CODEX_HOME: codexDir,
     ANTHROPIC_API_KEY: "dummy",
     ANTHROPIC_BASE_URL: "http://localhost:9999", // an env endpoint the probe won't find
@@ -229,18 +230,43 @@ test("N.4: a genuine choice opens the second step; a local server appears LIVE; 
     assert.match(await subRow.innerText(), /not clearly permitted/);
     assert.match(await subRow.innerText(), /your account, your call/);
     assert.equal(await page2.locator(".onb-backend-blocked").count(), 0);
-    // No server discovered yet → the live hint, no server row.
-    assert.equal(await page2.locator(".onb-server").count(), 0);
+    // Every row names the model it runs — the line that makes rows comparable
+    // (2026-07-20). The api-key row's is the env override.
+    assert.equal(
+      await page2.locator(".onb-backend", { hasText: "API key" })
+        .locator(".onb-backend-model")
+        .innerText(),
+      "gpt-5.6-sol",
+    );
+    // No server discovered yet → the live hint, and no catalog anywhere.
     assert.match(await page2.locator(".onb-live-hint").innerText(), /shows up here/);
+    assert.equal(await page2.locator(".onb-model").count(), 0);
 
     // Start the fixture "ollama" NOW, picker open — it must appear without a
     // reload (the refresh_agents poll re-probes every ~3s).
     fixture.setUp(true);
-    await page2.waitForSelector(".onb-server", { timeout: 15_000 });
+    const ollamaRow = page2.locator(".onb-backend", { hasText: "ollama" });
+    await ollamaRow.waitFor({ timeout: 15_000 });
+    // It's ONE row like every other, promising a catalog rather than splaying
+    // it inline — and the hint that told you to go configure one is gone.
+    assert.equal(await page2.locator(".onb-backend").count(), 3);
+    assert.match(await ollamaRow.innerText(), /1 model — choose/);
+    assert.equal(await page2.locator(".onb-model").count(), 0);
+    assert.equal(await page2.locator(".onb-live-hint").count(), 0);
+    // "runs on your machine" is a per-row tag, and ONLY the discovered
+    // loopback server carries it — never the paid remote credential rows.
+    assert.equal(await page2.locator(".onb-backend-tag").count(), 1);
+    assert.equal(await ollamaRow.locator(".onb-backend-tag").innerText(), "local");
+
+    // The third step: the catalog, one click deeper.
+    await ollamaRow.click();
+    await page2.waitForSelector(".onb-server-name");
     assert.match(await page2.locator(".onb-server-name").innerText(), /ollama/);
     assert.equal(await page2.locator(".onb-model").innerText(), "llama3.2:3b");
 
-    // Back to the agent list (the second step steps back, not out).
+    // Esc walks back one step at a time: catalog → backends → agents.
+    await page2.keyboard.press("Escape");
+    await page2.waitForSelector(".onb-backend");
     await page2.locator(".onb-back").click();
     await page2.waitForSelector(".onb-list");
 
@@ -248,7 +274,7 @@ test("N.4: a genuine choice opens the second step; a local server appears LIVE; 
     // too, and the prohibited subscription is VISIBLE but gray with the why.
     await page2.locator(".onb-agent", { hasText: "Claude Code" }).click();
     await page2.waitForSelector(".onb-backends");
-    assert.equal(await page2.locator(".onb-server").count(), 1); // dialect-filtered in
+    assert.equal(await page2.locator(".onb-backend", { hasText: "ollama" }).count(), 1); // dialect-filtered in
     const blocked = page2.locator(".onb-backend-blocked");
     assert.equal(await blocked.count(), 1);
     assert.ok(await blocked.isDisabled(), "a prohibited subscription must not be clickable");

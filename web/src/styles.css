@@ -1891,8 +1891,30 @@ body {
   transform: translateY(1px);
 }
 
+.onb-backend-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .onb-backend-name {
   font-weight: 600;
+}
+
+/* "runs on your machine" — the free/private distinction between a discovered
+   server and a paid remote endpoint, which the host alone only tells you if
+   you read 127.0.0.1 as loopback. A quiet tag, not a status: it states a fact
+   about the row, it isn't asking to be clicked. */
+.onb-backend-tag {
+  flex: none;
+  padding: 2px 7px;
+  border: 1px solid var(--border-mid);
+  border-radius: 999px;
+  color: var(--fg-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  letter-spacing: 0.04em;
 }
 
 .onb-backend-detail {
@@ -1900,6 +1922,15 @@ body {
   font-size: 13px;
   color: var(--accent);
   opacity: 0.85;
+}
+
+/* The model this row runs — every row carries one, so it's the line the eye
+   compares down the column. Dimmer than the accent detail: it answers "which
+   model", it isn't the row's identity. */
+.onb-backend-model {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  color: var(--fg-dim);
 }
 
 /* The disclosed-uncertainty caveat (codex subscription), and the why on a
@@ -1921,18 +1952,11 @@ body {
   color: var(--warn-fg);
 }
 
-/* A discovered local server: header line + its model catalog as buttons. */
-.onb-server {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 14px 17px;
-  background: var(--surface-2);
-  border: 1px solid var(--border-mid);
-  border-radius: 9px;
-}
-
+/* The third step: which server's catalog you're in, above its models. */
 .onb-server-name {
+  align-self: flex-start;
+  padding: 0 2px;
+  text-align: left;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 13px;
   color: var(--accent);
@@ -2090,6 +2114,31 @@ html {
   color: var(--error);
   border-color: var(--err-border-strong);
   background: var(--err-bg);
+}
+
+/* "new" — beside home, an <a> styled to match .sb-end's pill so the two
+   session-lifecycle controls read as one family across the bar. */
+.sb-new {
+  display: inline-flex;
+  align-items: center;
+  height: 34px;
+  background: transparent;
+  border: 1px solid var(--border-2);
+  border-radius: 7px;
+  padding: 0 12px;
+  color: var(--fg-mid);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  text-decoration: none;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+
+.sb-new:hover {
+  color: var(--fg);
+  border-color: var(--border-hover);
+  background: var(--surface-hover);
 }
 
 /* #9: mission-control home — an <a> styled as an icon button, the status
