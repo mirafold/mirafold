@@ -1053,6 +1053,42 @@ clauses are written in terms of it deliberately.
   - Done when: every overlay takes focus on open and returns it on close, the
     entire app is operable mouse-free end to end, and the manual
     screen-reader walk is recorded here with what it found.
+  - Status 2026-07-20: **hook built and wired to the two free overlays.**
+    New `web/src/use-focus-trap.ts` — `useFocusTrap(ref, active)`, the same
+    shape as `useEscapeKey` (inactive ⇒ no listener) and deliberately
+    separate from it so an overlay can take one without the other. Does the
+    three things the browser won't: focus in on open, Tab cycles inside,
+    focus restored to the opener on close. One non-obvious bit worth keeping:
+    visibility is tested with `getClientRects().length`, not `offsetParent`,
+    which is null for `position: fixed` — and these cards are fixed, so the
+    usual check would have matched nothing. Listener is capture-phase so the
+    trap wins before anything inside reacts to Tab. Wired into
+    `ThemePicker` (always active — mounted only while open) and
+    `ConnectDevice` (tracks `open`; returns focus to the ⧉ pair button).
+    `PinDock` had no trap to add (not a modal) but did have unnamed
+    controls: the `<aside>` landmark is now labelled and both icon-only
+    buttons carry `aria-label`. Typecheck clean, Tier-1 **291 green**.
+    Still owed: `Onboarding.tsx` (see A.2b — same blocker), the FleetView
+    decision below, and the Orca walk.
+
+- [ ] **Step A.3b — FleetView rows: nested interactive controls** *(needs
+  Kyle — this one changes behavior, not just semantics)*
+  - Finding (2026-07-20): the plan guessed FleetView needed a roving
+    tabindex. It doesn't — `FleetView.tsx:145` is just the rename input's
+    Enter/Escape handling, which is fine. The real problem is structural:
+    each session row is an `<a href="/s/…">` with **two `<button>`s nested
+    inside it** (`fleet-edit` ✎ at :153, `fleet-end` at :174). Interactive
+    content inside an anchor is invalid HTML, handled inconsistently across
+    screen readers, and it makes the link's accessible name swallow the
+    entire row — name, agent, model, session id, status, relative time, and
+    the word "end" all read as one enormous link label.
+  - Why it's Kyle's call: the fix is to stop the row being one big anchor —
+    e.g. the row becomes a plain container, the session *name* becomes the
+    link, and the two buttons become siblings rather than children. That
+    changes whether clicking anywhere on the row navigates, which is a
+    deliberate UX choice, not a semantics detail. Not doing it unasked.
+  - Files: `web/src/components/FleetView.tsx` (+ likely `styles.css` for
+    the row layout).
 
 - [ ] **Step A.4 — Public accessibility statement** *(write LAST)*
   - Goal: a dated, public, specific conformance claim, plus a way to report
