@@ -62,11 +62,19 @@ export function blockedHint(agent: string): string | undefined {
 
 // ── The second-step backend picker's copy (N.4) ──────────────────────────
 
-/** Row label for a backend kind. Subscriptions carry the provider's own
- *  product name — "subscription" alone doesn't tell a two-credential user
- *  which login it means. */
+/** Row label for a backend kind. Credentials carry the provider's own name —
+ *  the bare kind doesn't tell a multi-credential user WHICH one it means.
+ *  That was already true of subscriptions ("Claude subscription" vs
+ *  "ChatGPT subscription"); it became true of API keys the moment a
+ *  config-declared provider row could be key-based too, since an OpenRouter
+ *  row is every bit as much "an API key" as the first-party one (2026-07-20). */
 export function backendLabel(agent: string, kind: "api-key" | "subscription" | "local"): string {
-  if (kind === "api-key") return "API key";
+  if (kind === "api-key") {
+    if (agent === "codex") return "OpenAI API key";
+    if (agent === "claude-code") return "Anthropic API key";
+    if (agent === "gemini-cli") return "Google API key";
+    return "API key";
+  }
   if (kind === "local") return "local endpoint";
   if (agent === "codex") return "ChatGPT subscription";
   if (agent === "claude-code") return "Claude subscription";
