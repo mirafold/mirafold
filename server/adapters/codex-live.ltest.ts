@@ -6,12 +6,7 @@ import path from "node:path";
 import type { WireMsg } from "../protocol";
 import { CodexSession } from "./codex";
 import { listCodexModels } from "./codex-model-list";
-import {
-  codexInstalled,
-  ollamaModels,
-  tempCodexHome,
-  withoutCredentials,
-} from "../testing/live-probe";
+import { codexInstalled, ollamaModels, withCodexHome, withoutCredentials } from "../testing/live-probe";
 
 // Tier 4 — the REAL codex binary, asked real questions.
 //
@@ -50,11 +45,8 @@ const OPENROUTER_DEFAULT_TOML =
 test(
   "the real binary answers a PINNED catalog question with first-party models only",
   { skip: HAVE_CODEX ? false : "codex is not installed", timeout: 120_000 },
-  async () => {
-    const home = tempCodexHome(OPENROUTER_DEFAULT_TOML);
-    const saved = process.env.CODEX_HOME;
-    process.env.CODEX_HOME = home;
-    try {
+  () =>
+    withCodexHome(OPENROUTER_DEFAULT_TOML, async () => {
       const models = await withoutCredentials(() =>
         listCodexModels(60_000, undefined, { model_provider: "openai" }),
       );
@@ -64,15 +56,14 @@ test(
       // one appearing here means the question was answered by the config's
       // provider instead of the one we pinned.
       const foreign = models.filter((m) => m.id.includes("/"));
-      assert.deepEqual(foreign, [], `provider-foreign rows in a pinned catalog: ${foreign.map((m) => m.id)}`);
+      assert.deepEqual(
+        foreign,
+        [],
+        `provider-foreign rows in a pinned catalog: ${foreign.map((m) => m.id)}`,
+      );
       // The adapter's engine-default path depends on exactly one marked row.
       assert.equal(models.filter((m) => m.isDefault).length, 1);
-    } finally {
-      if (saved === undefined) delete process.env.CODEX_HOME;
-      else process.env.CODEX_HOME = saved;
-      rmSync(home, { recursive: true, force: true });
-    }
-  },
+    }),
 );
 
 test(
@@ -92,11 +83,8 @@ test(
         : false,
     timeout: 120_000,
   },
-  async () => {
-    const home = tempCodexHome(OPENROUTER_DEFAULT_TOML);
-    const saved = process.env.CODEX_HOME;
-    process.env.CODEX_HOME = home;
-    try {
+  () =>
+    withCodexHome(OPENROUTER_DEFAULT_TOML, async () => {
       // Deliberately NOT credential-free: the key is the point. A catalog
       // fetch costs nothing — no inference happens on this path.
       const models = await listCodexModels(60_000, undefined, { model_provider: "openai" });
@@ -106,12 +94,7 @@ test(
         [],
         `the pin leaked: OpenRouter's catalog answered a first-party question — ${foreign.map((m) => m.id)}`,
       );
-    } finally {
-      if (saved === undefined) delete process.env.CODEX_HOME;
-      else process.env.CODEX_HOME = saved;
-      rmSync(home, { recursive: true, force: true });
-    }
-  },
+    }),
 );
 
 test(
@@ -124,50 +107,45 @@ test(
         : false,
     timeout: 300_000,
   },
-  async () => {
-    const home = tempCodexHome();
-    const workspace = mkdtempSync(path.join(os.tmpdir(), "mirafold-live-ws-"));
-    const saved = process.env.CODEX_HOME;
-    process.env.CODEX_HOME = home;
-    try {
-      await withoutCredentials(async () => {
-        const msgs: WireMsg[] = [];
-        const s = new CodexSession({
-          workspaceDir: workspace,
-          kind: "local",
-          endpoint: "http://127.0.0.1:11434",
-          model: LOCAL_MODELS[0],
-        });
-        const done = new Promise<void>((resolve) => {
-          s.onMessage((m) => {
-            msgs.push(m);
-            if (m.type === "turn_end") resolve();
+  () =>
+    withCodexHome(undefined, async () => {
+      const workspace = mkdtempSync(path.join(os.tmpdir(), "mirafold-live-ws-"));
+      try {
+        await withoutCredentials(async () => {
+          const msgs: WireMsg[] = [];
+          const s = new CodexSession({
+            workspaceDir: workspace,
+            kind: "local",
+            endpoint: "http://127.0.0.1:11434",
+            model: LOCAL_MODELS[0],
           });
-        });
-        s.pushPrompt("Reply with exactly: ok");
-        await done;
-        s.close();
+          const done = new Promise<void>((resolve) => {
+            s.onMessage((m) => {
+              msgs.push(m);
+              if (m.type === "turn_end") resolve();
+            });
+          });
+          s.pushPrompt("Reply with exactly: ok");
+          await done;
+          s.close();
 
-        const errors = msgs.filter((m) => m.type === "error");
-        assert.deepEqual(errors, [], `a local turn must not error: ${JSON.stringify(errors)}`);
-        assert.equal(msgs.filter((m) => m.type === "turn_end").length, 1);
-        const text = msgs
-          .filter((m): m is Extract<WireMsg, { type: "text_delta" }> => m.type === "text_delta")
-          .map((m) => m.text)
-          .join("");
-        assert.ok(text.trim().length > 0, "the model must actually say something");
-        // Codex has no metadata for a local model's slug and says so. That is
-        // an advisory the terminal shows as a warning — a NOTICE here, never
-        // the red error line it used to render as (2026-07-20).
-        for (const n of msgs.filter((m) => m.type === "notice")) {
-          assert.ok(n.kind !== undefined, "a notice must be tagged so the UI can style it");
-        }
-      });
-    } finally {
-      if (saved === undefined) delete process.env.CODEX_HOME;
-      else process.env.CODEX_HOME = saved;
-      rmSync(home, { recursive: true, force: true });
-      rmSync(workspace, { recursive: true, force: true });
-    }
-  },
+          const errors = msgs.filter((m) => m.type === "error");
+          assert.deepEqual(errors, [], `a local turn must not error: ${JSON.stringify(errors)}`);
+          assert.equal(msgs.filter((m) => m.type === "turn_end").length, 1);
+          const text = msgs
+            .filter((m): m is Extract<WireMsg, { type: "text_delta" }> => m.type === "text_delta")
+            .map((m) => m.text)
+            .join("");
+          assert.ok(text.trim().length > 0, "the model must actually say something");
+          // Codex has no metadata for a local model's slug and says so. That is
+          // an advisory the terminal shows as a warning — a NOTICE here, never
+          // the red error line it used to render as (2026-07-20).
+          for (const n of msgs.filter((m) => m.type === "notice")) {
+            assert.ok(n.kind !== undefined, "a notice must be tagged so the UI can style it");
+          }
+        });
+      } finally {
+        rmSync(workspace, { recursive: true, force: true });
+      }
+    }),
 );
