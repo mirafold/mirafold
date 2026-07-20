@@ -1,5 +1,7 @@
+import { useRef } from "react";
 import { THEMES, parseThemeTokens, type ThemeAppearance } from "../themes/manifest";
 import { useEscapeKey } from "../use-escape";
+import { useFocusTrap } from "../use-focus-trap";
 
 // The settings card (S.4) — SHELL-OWNED UI, the one new chrome affordance of
 // Phase S (the pill is locked unchanged). Centered modal over the scrim,
@@ -47,6 +49,9 @@ export function ThemePicker({
   onClose: () => void;
 }) {
   useEscapeKey(onClose);
+  // Mounted only while open, so the trap is always active (A.3).
+  const card = useRef<HTMLDivElement>(null);
+  useFocusTrap(card, true);
 
   return (
     // Backdrop click-to-dismiss is a MOUSE convenience and deliberately stays
@@ -60,6 +65,8 @@ export function ThemePicker({
         role="dialog"
         aria-modal="true"
         aria-labelledby={TITLE_ID}
+        ref={card}
+        tabIndex={-1}
       >
         <div className="settings-head">
           <span className="glyph" aria-hidden="true">

@@ -21,10 +21,11 @@ export function PinDock({
   onAction: (action: Action, sourceId: string) => void;
 }) {
   return (
-    <aside className="pin-dock">
+    // A landmark needs a name to be worth navigating to (A.3).
+    <aside className="pin-dock" aria-label="Pinned">
       <div className="pin-dock-head">
         <span className="pin-dock-title">Pinned</span>
-        <button className="dock-btn" onClick={onCollapse} title="Collapse dock">
+        <button className="dock-btn" onClick={onCollapse} title="Collapse dock" aria-label="Collapse dock">
           ⇥
         </button>
       </div>
@@ -36,6 +37,7 @@ export function PinDock({
                 className="pin-btn is-pinned"
                 onClick={() => onUnpin(item.renderId)}
                 title="Unpin — return to its place in the transcript"
+                aria-label={`Unpin ${item.component}`}
               >
                 ✕
               </button>

@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import qrcode from "qrcode-generator";
 import { useEscapeKey } from "../use-escape";
+import { useFocusTrap } from "../use-focus-trap";
 
 // The shell-owned "connect a device" affordance. The daemon hands local
 // viewports the relay's HTTP origin + the pairing code (agents hello); this
@@ -54,6 +55,10 @@ export function ConnectDevice({ relay }: { relay?: RelayInfo }) {
   const [copied, setCopied] = useState(false);
 
   useEscapeKey(open ? () => setOpen(false) : undefined);
+  // The card exists only while open, so the trap tracks `open` (A.3); on
+  // close it hands focus back to the ⧉ pair button that opened it.
+  const card = useRef<HTMLDivElement>(null);
+  useFocusTrap(card, open);
 
   if (!relay) return null;
   const href = `${relay.url}/#code=${relay.code}${
@@ -80,6 +85,8 @@ export function ConnectDevice({ relay }: { relay?: RelayInfo }) {
             role="dialog"
             aria-modal="true"
             aria-labelledby={TITLE_ID}
+            ref={card}
+            tabIndex={-1}
           >
             <div className="pair-head">
               <span className="glyph" aria-hidden="true">
