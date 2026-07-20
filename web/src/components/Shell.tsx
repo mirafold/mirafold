@@ -17,6 +17,7 @@ import { tildify } from "../tildify";
 import { agentLabel, connectHint } from "../agents-meta";
 import { paintTabStatus } from "../tab-status";
 import { useEscapeKey } from "../use-escape";
+import { Announcer, turnResponse, useAnnouncer } from "./Announcer";
 
 // The zone-message type lives with the bus (H.9); re-exported so consumers
 // of the shell's contract (RenderZone) keep their import site.
@@ -134,11 +135,24 @@ export function Shell() {
   // exactly as the inline useMemo built it.
   const bus = useMemo(() => createSessionBus(), []);
 
+  // Screen-reader announcements (A.1) — see Announcer.tsx for why the
+  // transcript itself stays silent and these speak at turn boundaries.
+  const { message: announcement, announce } = useAnnouncer();
+  // The turn's prose, accumulated from text_delta so turn_end can announce
+  // the response once, whole. A ref (not state): nothing renders from it, and
+  // it must not re-run the subscription on every token.
+  const turnText = useRef("");
+  // Only announce connection TRANSITIONS — onConnection fires true on mount,
+  // and "Reconnected" on page load is a lie.
+  const wasConnected = useRef<boolean | null>(null);
+
   useEffect(
     () =>
       bus.subscribe((m) => {
         if (m.type === "user_prompt") {
           setBusy(true);
+          turnText.current = "";
+          announce("Sent. Working…");
           // They've moved on in the new session — the R.4c notice is done.
           setNotices((n) => (n.session ? { ...n, session: false } : n));
         } else if (
@@ -151,11 +165,21 @@ export function Shell() {
           // user_prompt — a tail resume mid-turn replays none of the turn's
           // opening frames, and busy was cleared on the disconnect (R.4c).
           setBusy(true);
+          // A.1: the response is announced once at turn_end, so the prose is
+          // banked here rather than spoken per token.
+          if (m.type === "text_delta") turnText.current += m.text;
+          // Tool activity is the other thing a sighted user reads off the
+          // transcript mid-turn; announce the name, not the arguments.
+          if (m.type === "tool_use") announce(`Running ${m.name}.`);
         } else if (m.type === "turn_end") {
           setBusy(false);
           setAsks([]); // a request that outlived its turn is void (server denies)
+          announce(turnResponse(turnText.current));
+          turnText.current = "";
         } else if (m.type === "permission_request") {
           setAsks((a) => [...a, { tool: m.tool, detail: m.detail, id: m.id }]);
+          // Assertive: this one blocks the turn until answered.
+          announce(`Permission needed: ${m.tool}. ${m.detail}`, true);
         } else if (m.type === "agents") {
           setDaemonInfo({
             agents: m.agents,
@@ -175,10 +199,12 @@ export function Shell() {
           // No session — the relay refused this subscription-backed
           // attach. Show the reason (also surfaced at onboarding if we're there) (R.4i).
           setNotices((n) => ({ ...n, refused: m.message, onboarding: m.message }));
+          announce(m.message, true);
         } else if (m.type === "error") {
           // Only the onboarding card consumes this; in-session errors already
           // render in the output zone.
           setNotices((n) => ({ ...n, onboarding: m.message }));
+          announce(m.message, true);
         } else if (m.type === "bang_start") {
           setBang((b) => ({ ...b, tail: "" }));
         } else if (m.type === "bang_output") {
@@ -203,9 +229,10 @@ export function Shell() {
           setBusy(false);
           setAsks([]);
           setUsage(ZERO_USAGE);
+          turnText.current = "";
         }
       }),
-    [bus],
+    [bus, announce],
   );
 
   useEffect(
@@ -213,13 +240,20 @@ export function Shell() {
       bus.onConnection((c, refusal) => {
         setConnected(c);
         setConnNote(c ? undefined : refusal);
+        // A.1: losing the socket is silent on screen except for a dot
+        // changing colour — assertive, and only on a real transition.
+        if (wasConnected.current !== null && wasConnected.current !== c) {
+          if (c) announce("Reconnected.");
+          else announce(refusal ?? "Disconnected — reconnecting.", true);
+        }
+        wasConnected.current = c;
         // A dropped socket can't be mid-turn from this viewport's point
         // of view — clear the working state and the ■ esc stop affordance so
         // a dead daemon doesn't look like an agent still thinking. Replay (or
         // the turn-activity frames above) re-derives busy after reconnect (R.4c).
         if (!c) setBusy(false);
       }),
-    [bus],
+    [bus, announce],
   );
 
   // Esc interrupts from anywhere in the page, not just the textarea.
@@ -254,6 +288,7 @@ export function Shell() {
 
   return (
     <div className="shell">
+      <Announcer message={announcement} />
       {showOnboarding && (
         <Onboarding
           agents={daemonInfo.agents}

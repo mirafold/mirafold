@@ -400,7 +400,11 @@ export function RenderZone({
 
   return (
     <div className="zone-row">
-      <div className="render-zone">
+      {/* role="log" names this as the running conversation so a screen reader
+          can navigate it; aria-live is explicitly OFF because log's implicit
+          "polite" would re-read the transcript on every streamed token. The
+          spoken half lives in Announcer.tsx (A.1). */}
+      <div className="render-zone" role="log" aria-live="off" aria-label="Conversation transcript">
         {entries.length === 0 && !status && (
           // A fresh session (no transcript yet) shows an inviting welcome
           // instead of raw emptiness. Shell-owned and agent-neutral (#12).
