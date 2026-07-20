@@ -28,7 +28,12 @@ sequence, lives in **BUSINESS.md** (milestone gates).
 - **Trusted-shell boundary**: agent output never renders, wraps, or
   intercepts the prompt box, the socket, credentials, or shell-owned
   affordances (permission prompts, pin UI). No raw agent HTML outside the
-  Phase 3 sandboxed iframe.
+  Phase 3 sandboxed iframe. And the shell's VOICE is shell-owned too: a
+  string taken verbatim from an engine, rendered on a surface the user reads
+  as Mirafold speaking (the dim `notice` line), must be attributed to that
+  engine — `notice.source` badges it. Compose the sentence yourself and it's
+  ours; pass the engine's words through and it carries `source`
+  (README §3, 2026-07-20 audit).
 - **Secrets stay server-side** — never serialize one into a `WireMsg`.
 - **Faithful skin per agent** (identity + core requirement, PLAN Phase P):
   Mirafold re-skins each terminal agent faithfully — a Codex user gets Codex,
