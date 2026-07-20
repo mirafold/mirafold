@@ -6,6 +6,8 @@ import { RemoteClient, broadcasts, waitForLog as waitForLogH } from "./relay-tes
 import {
   CLOSE_CODE_TAKEN,
   CLOSE_BAD_CODE,
+  CLOSE_OVERLOADED as PROTO_CLOSE_OVERLOADED,
+  CLOSE_UNENTITLED as PROTO_CLOSE_UNENTITLED,
   DAEMON_PATH,
   VIEWPORT_PATH,
   PAIR_PARAM,
@@ -15,6 +17,7 @@ import { startRelay, type Relay } from "../../../genui-relay/src/relay";
 import {
   CLOSE_OVERLOADED,
   CLOSE_RATE_LIMITED,
+  CLOSE_UNENTITLED,
   SHARED_CONTRACT,
   MIN_PAIR_ID_LENGTH as SERVICE_MIN_PAIR_ID_LENGTH,
 } from "../../../genui-relay/src/contract";
@@ -56,6 +59,10 @@ test("the relay's routing contract matches the daemon's relay-protocol", () => {
   assert.equal(SHARED_CONTRACT.CLOSE_CODE_TAKEN, CLOSE_CODE_TAKEN);
   assert.equal(SHARED_CONTRACT.CLOSE_BAD_CODE, CLOSE_BAD_CODE);
   assert.equal(SERVICE_MIN_PAIR_ID_LENGTH, MIN_PAIR_ID_LENGTH);
+  // The refusal codes the daemon now INTERPRETS to explain a turned-away
+  // dial-out (relay-client.ts): they must match the values the relay SENDS.
+  assert.equal(CLOSE_OVERLOADED, PROTO_CLOSE_OVERLOADED);
+  assert.equal(CLOSE_UNENTITLED, PROTO_CLOSE_UNENTITLED);
 });
 
 test("GET /health answers ok; other HTTP is 404", async () => {
