@@ -976,6 +976,8 @@ yarn test:server  # Tier 2 — spawns the real daemon (mock-forced), drives real
                   # daemon handshakes into flaky timeouts)
 yarn test:e2e     # Tier 3 — yarn build + headless Chrome (playwright-core), opt-in, ~75s
                   #   (files run sequentially — parallel Chrome suites flake on modest hardware)
+yarn test:live    # Tier 4 — the REAL agent binary + a real LOCAL model, opt-in, ~2.5min
+                  #   (skips per test when codex/Ollama isn't installed)
 ```
 
 The suite is **`node:test` + `tsx`, zero test-framework dependencies** — the
@@ -1005,10 +1007,29 @@ user's terminal), and the phone suite:
 390×844 touch pairing, thumb permissions, offline→online mid-turn resume;
 needs `google-chrome`, path overridable via `CHROME_BIN`).
 
-Two rules the suite is built on: **no test may reach a real model** — Tier 2/3
-spawn the daemon with every provider credential forced empty (a set env var
-beats `.env`), so everything runs on the `MockSession`; and **Tier 3 rebuilds
-first** because the daemon serves `./dist` and a stale build fails silently.
+`*.ltest.ts` is **Tier 4** (2026-07-20) — the one tier that asks the REAL
+agent binary real questions. Tiers 1-3 answer entirely with fixtures (a
+synthetic event stream, or a credential-starved daemon on the `MockSession`),
+which is right for what they test but means nothing proves what the binary
+itself *does*: what its catalog contains, whose provider answers it, whether
+it accepts the flags we pass. The model-binding bug lived exactly there — we
+asked codex for "its default model", the user's `config.toml` answered through
+OpenRouter, and a ChatGPT-account session was handed `meituan/longcat-2.0`
+with every mock green. Today it covers a pinned catalog question (first-party
+ids only, exactly one default row), the same question in the configuration
+that actually broke (skipped without an `OPENROUTER_API_KEY`), and a full turn
+driven through a real local model. Each test skips with a reason when its tool
+isn't installed, so a bare machine stays green.
+
+Three rules the suite is built on: **no test may reach a metered model** —
+Tier 2/3 spawn the daemon with every provider credential forced empty (a set
+env var beats `.env`), so everything runs on the `MockSession`, and Tier 4
+strips credentials and points `CODEX_HOME` at a throwaway with no `auth.json`,
+so its one real model is Ollama's — local, free, and unmetered; **Tier 4 never
+touches your own `~/.codex`**, because the binary writes state there
+(`models_cache.json`, one cache shared across providers, is what made the
+model-binding bug intermittent); and **Tier 3 rebuilds first** because the
+daemon serves `./dist` and a stale build fails silently.
 
 The project's broader verification convention (from PLAN.md) still applies:
 every front-end step is verified end-to-end in headless Chrome via
