@@ -781,21 +781,29 @@ with it. Both sequence BEFORE R.5.**
     - Scan the QR with a real phone through the deployed relay, drive a
       session, flip wifi→LTE mid-turn (owed by R.4 — now listed, not just
       owed).
-    - Relay cap sanity under real load (from the 2026-07-08 security audit,
-      finding #1 follow-up): the per-IP / global / pair caps ship as reasoned
-      defaults (`RELAY_MAX_CONNECTIONS_PER_IP=64`, 2000/1000); once the relay
-      is on real hardware behind Fly, confirm the numbers against actual
-      resource use and a NAT'd-office case (many legit users, one IP) before
-      relying on them — tune via env, no redeploy. Confirm `fly-client-ip`
-      reaches the process (the per-IP cap keys on it, not Fly's proxy IP).
-    - Pre-handshake flood hardening (2026-07-12 audit, B3): every relay cap
-      (global / per-IP / pair) is checked *after* the WebSocket handshake, so raw
-      TCP / half-open HTTP connections that never upgrade are bounded only by
-      Node's defaults and Fly's edge — fine on Fly, but the DEPLOY.md self-host/
-      VPS path has no such floor. Set `server.headersTimeout` / `requestTimeout` /
-      `maxConnections` explicitly in `relay.ts` (cheap, local) and fold a
-      slowloris-style connection flood into this step's load-test, not just the
-      frame/connection caps.
+    - ~~Relay cap sanity under real load~~ **✅ done 2026-07-19 (evening).**
+      Per-IP cap (64) verified on the LIVE relay behind Fly — holds at exactly
+      64, logs `per-IP cap reached (64) — refusing one source`, which also
+      **confirms `fly-client-ip` reaches the process** (fired on the real
+      client IP, not Fly's proxy IP). Global cap verified locally (holds at
+      cap, reclaims on close). All read SERVER-SIDE (relay logs +
+      `connections()`); a client-side harness was unreliable for the
+      refuse-after-handshake pattern (relay `close(4004)`s just after the WS
+      `open`, so the client briefly sees "open"). Side effect: the live relay
+      was **redeployed to current code** (had been v4/Jul-13 — all Phase-G+
+      work was unshipped; now current + health-verified). Still NOT done (not
+      blockers): the NAT'd-office many-users-one-IP case; a daemon-side check
+      that a client cleanly surfaces the 4004 refusal (fold into R.4).
+    - ~~Pre-handshake flood hardening (2026-07-12 audit, B3)~~ **✅ done
+      2026-07-19 (evening).** `server.headersTimeout`/`requestTimeout`/
+      `maxConnections` are set explicitly in `relay.ts` (were already wired as
+      `createServer` options). Slowloris load-test PASSED against a local relay
+      with dialed-down knobs: a frozen handshake is cut by `headersTimeout`, a
+      *dribbling* one (writes a header byte every 400ms to defeat the headers
+      timeout) is cut by `requestTimeout` at the total-request bound, while a
+      real upgrade opens in ~40ms amid the flood and survives past both
+      timeouts (they clear on upgrade), and the socket floor (`maxConnections`)
+      bounds raw half-open sockets.
     - macOS and Windows cold-installs from the tarball; on the Windows
       pass, run `!dir` (the R.4f fix's real-hardware check).
     - The real `!sudo -v` password entry (Kyle — verified through the
