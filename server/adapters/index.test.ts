@@ -224,10 +224,36 @@ test("N.1 gemini-cli: an API key is the one and only option (either env name)", 
   }
 });
 
-test("N.1: configured model rides as the api-key option's detail (per-agent env)", () => {
+// 2026-07-20: the model moved off `detail` onto its own `model` field — every
+// row names the model it runs, in one place the picker renders uniformly.
+test("N.1: configured model rides as the api-key option's model (per-agent env)", () => {
   withTempDir((empty) => {
     withEnv({ CODEX_HOME: empty, OPENAI_API_KEY: "x", CODEX_MODEL: "gpt-5.6-sol" }, () => {
-      assert.equal(backendOptions("codex")[0].detail, "gpt-5.6-sol");
+      const [row] = backendOptions("codex");
+      assert.equal(row.model, "gpt-5.6-sol");
+      assert.equal(row.detail, undefined);
+    });
+  });
+});
+
+test("a declared provider row names the model codex would resolve for it", () => {
+  withTempDir((home) => {
+    writeFileSync(
+      path.join(home, "config.toml"),
+      [
+        'model = "qwen/qwen3-coder"',
+        'model_provider = "openrouter"',
+        "[model_providers.openrouter]",
+        'name = "OpenRouter"',
+        'base_url = "https://openrouter.ai/api/v1"',
+        'env_key = "OPENROUTER_API_KEY"',
+      ].join("\n"),
+    );
+    withEnv({ CODEX_HOME: home, OPENROUTER_API_KEY: "x" }, () => {
+      const row = backendOptions("codex").find((o) => o.provider === "openrouter");
+      assert.equal(row?.usable, true);
+      assert.equal(row?.detail, "OpenRouter · openrouter.ai");
+      assert.equal(row?.model, "qwen/qwen3-coder");
     });
   });
 });

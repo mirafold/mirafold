@@ -111,6 +111,7 @@ export type BackendOption = {
   usable: boolean;
   blocked?: boolean;
   detail?: string;
+  model?: string;
   provider?: string;
   hint?: string;
   endpointUrl?: string;
@@ -122,23 +123,30 @@ export type BackendOption = {
  * view (its precedence order remains the default until N.5 lets a session
  * carry an explicit choice); this is the full menu the N.4 picker offers.
  * Order is the picker's display order: local endpoint, API key, subscription.
+ * Every row carries the `model` it would run when config/env determines it —
+ * a row must never commit the user to a model it didn't name.
  */
 export function backendOptions(agent: AgentName): BackendOption[] {
   const options: BackendOption[] = [];
+  // A credential row's model is the agent's own env override; with none set
+  // the agent resolves its own default and the row stays silent rather than
+  // guess. (Codex's config `model` is deliberately NOT it: a pick that forces
+  // the first-party provider neutralizes that model — codex.ts.)
   const add = (kind: Exclude<CredentialKind, "none">, detail?: string) => {
     const usable = allowedLocally(agent, kind);
+    const model = modelFor(agent);
     options.push({
       kind,
       usable,
       ...(kind === "subscription" && !usable ? { blocked: true } : {}),
       ...(detail ? { detail } : {}),
+      ...(model ? { model } : {}),
     });
   };
   switch (agent) {
     case "claude-code": {
       if (process.env.ANTHROPIC_BASE_URL) add("local", endpointDetail(agent));
-      if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN)
-        add("api-key", modelFor(agent));
+      if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) add("api-key");
       if (loginFileExists(process.env.CLAUDE_CONFIG_DIR, ".claude", ".credentials.json"))
         add("subscription");
       break;
@@ -150,14 +158,13 @@ export function backendOptions(agent: AgentName): BackendOption[] {
       // one is set, else the first-party rows.
       const { defaultRow, otherRows } = codexProviderRows();
       if (defaultRow) options.push(defaultRow);
-      if (process.env.OPENAI_API_KEY) add("api-key", modelFor(agent));
+      if (process.env.OPENAI_API_KEY) add("api-key");
       if (loginFileExists(process.env.CODEX_HOME, ".codex", "auth.json")) add("subscription");
       options.push(...otherRows);
       break;
     }
     case "gemini-cli":
-      if (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY)
-        add("api-key", modelFor(agent));
+      if (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY) add("api-key");
       break;
   }
   return options;
@@ -171,9 +178,14 @@ export function backendOptions(agent: AgentName): BackendOption[] {
  * provider's `env_key` variable is actually present (or it declares none —
  * a keyless local server); a missing key shows the row with the exact fix,
  * never a session that dies on its first turn.
+ *
+ * Each row also names the model it will run: a provider pick forces the
+ * provider id and passes NO model, so Codex resolves the config's own
+ * top-level `model` — which is what the user would get in a terminal, and
+ * what the row was hiding before (2026-07-20).
  */
 function codexProviderRows(): { defaultRow?: BackendOption; otherRows: BackendOption[] } {
-  const { defaultProvider, entries } = codexProviders();
+  const { defaultProvider, model, entries } = codexProviders();
   const all: CodexProviderEntry[] = [...entries];
   if (defaultProvider && defaultProvider !== "openai" && !entries.some((e) => e.id === defaultProvider))
     all.unshift({ id: defaultProvider });
@@ -186,6 +198,7 @@ function codexProviderRows(): { defaultRow?: BackendOption; otherRows: BackendOp
       usable: allowedLocally("codex", "local") && !keyMissing,
       provider: e.id,
       detail: providerRowDetail(e),
+      ...(model ? { model } : {}),
       ...(e.baseUrl ? { endpointUrl: e.baseUrl } : {}),
       ...(keyMissing ? { hint: `set ${e.envKey} in the daemon environment to use this provider` } : {}),
     });
