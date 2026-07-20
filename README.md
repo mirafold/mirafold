@@ -813,7 +813,11 @@ blocks live for free.
 Assistant turns render through `react-markdown` + `remark-gfm` (tables,
 task lists) + `rehype-highlight` (fenced code), with links forced to open
 safely in a new tab. Auto-scroll keeps the bottom in view as content
-streams.
+streams — but **conditionally**, the way a terminal's scrollback behaves:
+scroll up and the view holds where you put it while output lands below,
+until you come back to the bottom. It scrolls **instantly**, never smoothly
+(`web/src/use-follow-tail.ts` — a smooth animation is permanently in flight
+during streaming and makes the reader's own wheel inert; see V.4).
 
 Adding UI capability = adding a `case` here for a new message type (plus, in
 Phase 1, dispatching `render` messages into a component registry). That's
