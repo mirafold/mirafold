@@ -30,7 +30,9 @@ export function FleetView() {
     relay?: { url: string; code: string };
   }>({});
   const [connected, setConnected] = useState(false);
-  const [showNew, setShowNew] = useState(false);
+  // ?new=1 lands straight on the picker — that's the URL the in-session "new"
+  // button opens in a fresh tab (2026-07-20, Kyle).
+  const [showNew, setShowNew] = useState(() => new URLSearchParams(location.search).has("new"));
   const [onbError, setOnbError] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   // SessionId whose "end" button is armed (first click); a second click
@@ -100,6 +102,8 @@ export function FleetView() {
               ? () => {
                   setShowNew(false);
                   setOnbError(null);
+                  // Drop ?new so a reload doesn't reopen the picker.
+                  history.replaceState(null, "", location.pathname);
                 }
               : undefined
           }
