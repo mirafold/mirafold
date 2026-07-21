@@ -25,6 +25,14 @@ on:
     branches: [main]
   pull_request:
 
+# Least privilege for the auto-provisioned GITHUB_TOKEN: these jobs only read
+# the code and run tests — they never push, comment, or release. Read-only
+# matters most once the repo is public (R.7), when any fork PR runs on the
+# runner: a malicious dependency install-script then can't use the token to
+# write to the repo.
+permissions:
+  contents: read
+
 # A newer push to the same branch/PR supersedes an in-flight run.
 concurrency:
   group: ci-${{ github.ref }}
