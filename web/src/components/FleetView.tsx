@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { AgentInfo, SessionMeta } from "@protocol";
 import { Onboarding } from "./Onboarding";
 import { ConnectDevice } from "./ConnectDevice";
@@ -109,98 +109,107 @@ export function FleetView() {
           }
         />
       )}
-      <header className="fleet-head">
-        <span className="glyph">❯</span>
-        <h1 className="fleet-title">Mirafold</h1>
-        <span className={`sb-dot ${connected ? "sb-dot-on" : "sb-dot-off"}`} />
-        <span className="fleet-count">
-          {sessions === null ? "connecting…" : `${sessions.length} session${sessions.length === 1 ? "" : "s"}`}
-        </span>
-        <span className="fleet-spacer" />
-        <ConnectDevice relay={daemon.relay} />
-        <button className="fleet-new" onClick={() => setShowNew(true)}>
-          + new session
-        </button>
-      </header>
-      <div className="fleet-list">
-        {(sessions ?? []).map((s) => {
-          const startRename = (e: ReactMouseEvent) => {
-            e.preventDefault();
-            setRenaming(s.sessionId);
-          };
-          return (
-            // The cwd left the row proper (clutter) — it survives as the
-            // row's hover tooltip, on the browser's native ~1s delay.
-            <a
-              key={s.sessionId}
-              className="fleet-row"
-              href={`/s/${s.sessionId}`}
-              title={tildify(s.cwd, daemon.home)}
-            >
-              <span className={`fleet-dot fleet-dot-${s.status}`} title={STATUS_LABEL[s.status]} />
-              {renaming === s.sessionId ? (
-                <input
-                  className="fleet-rename"
-                  defaultValue={s.name}
-                  autoFocus
-                  spellCheck={false}
-                  onClick={(e) => e.preventDefault()}
-                  onBlur={(e) => commitRename(s.sessionId, e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") commitRename(s.sessionId, e.currentTarget.value);
-                    else if (e.key === "Escape") setRenaming(null);
-                  }}
-                />
-              ) : (
-                <span className="fleet-name">
-                  {s.name}
-                  <button className="fleet-edit" title="Rename this session" onClick={startRename}>
-                    ✎
-                  </button>
+      <div className="behind-dialog" inert={onboarding || undefined}>
+        <header className="fleet-head">
+          <span className="glyph">❯</span>
+          <h1 className="fleet-title">Mirafold</h1>
+          <span className={`sb-dot ${connected ? "sb-dot-on" : "sb-dot-off"}`} />
+          <span className="fleet-count">
+            {sessions === null ? "connecting…" : `${sessions.length} session${sessions.length === 1 ? "" : "s"}`}
+          </span>
+          <span className="fleet-spacer" />
+          <ConnectDevice relay={daemon.relay} />
+          <button className="fleet-new" onClick={() => setShowNew(true)}>
+            + new session
+          </button>
+        </header>
+        <div className="fleet-list">
+          {(sessions ?? []).map((s) => {
+            return (
+              // A.3b: the row is a plain container, NOT an anchor — buttons
+              // inside a link are invalid HTML and made screen readers read the
+              // whole row (id, status, "end") as one link label. The session
+              // NAME is the link; its stretched overlay (.fleet-link::after)
+              // keeps click-anywhere-to-open for mouse users, and the real
+              // controls ride above the overlay.
+              // The cwd left the row proper (clutter) — it survives as the
+              // row's hover tooltip, on the browser's native ~1s delay.
+              <div key={s.sessionId} className="fleet-row" title={tildify(s.cwd, daemon.home)}>
+                <span className={`fleet-dot fleet-dot-${s.status}`} title={STATUS_LABEL[s.status]} />
+                {renaming === s.sessionId ? (
+                  <input
+                    className="fleet-rename"
+                    defaultValue={s.name}
+                    autoFocus
+                    spellCheck={false}
+                    onBlur={(e) => commitRename(s.sessionId, e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") commitRename(s.sessionId, e.currentTarget.value);
+                      else if (e.key === "Escape") setRenaming(null);
+                    }}
+                  />
+                ) : (
+                  <span className="fleet-name">
+                    <a className="fleet-link" href={`/s/${s.sessionId}`}>
+                      {s.name}
+                    </a>
+                    <button
+                      className="fleet-edit"
+                      title="Rename this session"
+                      aria-label={`Rename session ${s.name}`}
+                      onClick={() => setRenaming(s.sessionId)}
+                    >
+                      ✎
+                    </button>
+                  </span>
+                )}
+                {/* Agent before model, matching the in-session status bar (2026-07-17, Kyle). */}
+                <span className="fleet-agent">{s.agent}</span>
+                <span className="fleet-model" title="model">
+                  {s.model}
                 </span>
-              )}
-              {/* Agent before model, matching the in-session status bar (2026-07-17, Kyle). */}
-              <span className="fleet-agent">{s.agent}</span>
-              <span className="fleet-model" title="model">
-                {s.model}
-              </span>
-              <span className="fleet-spacer" />
-              <span className="fleet-id" title="session id">
-                {s.sessionId}
-              </span>
-              <span className="fleet-sep" aria-hidden="true">
-                —
-              </span>
-              <span className={`fleet-status fleet-status-${s.status}`}>
-                {STATUS_LABEL[s.status]}
-              </span>
-              <span className="fleet-ago">{ago(s.lastActivity)}</span>
-              <button
-                className={"fleet-end" + (confirmEnd === s.sessionId ? " fleet-end-armed" : "")}
-                title={
-                  confirmEnd === s.sessionId
-                    ? "Click again to end this session"
-                    : "End this session"
-                }
-                onClick={(e) => {
-                  e.preventDefault();
-                  if (confirmEnd === s.sessionId) {
-                    socket.send({ type: "end_session", sessionId: s.sessionId });
-                    setConfirmEnd(null);
-                  } else {
-                    setConfirmEnd(s.sessionId);
-                    setTimeout(
-                      () => setConfirmEnd((c) => (c === s.sessionId ? null : c)),
-                      3000,
-                    );
+                <span className="fleet-spacer" />
+                <span className="fleet-id" title="session id">
+                  {s.sessionId}
+                </span>
+                <span className="fleet-sep" aria-hidden="true">
+                  —
+                </span>
+                <span className={`fleet-status fleet-status-${s.status}`}>
+                  {STATUS_LABEL[s.status]}
+                </span>
+                <span className="fleet-ago">{ago(s.lastActivity)}</span>
+                <button
+                  className={"fleet-end" + (confirmEnd === s.sessionId ? " fleet-end-armed" : "")}
+                  title={
+                    confirmEnd === s.sessionId
+                      ? "Click again to end this session"
+                      : "End this session"
                   }
-                }}
-              >
-                {confirmEnd === s.sessionId ? "end?" : "end"}
-              </button>
-            </a>
-          );
-        })}
+                  aria-label={
+                    confirmEnd === s.sessionId
+                      ? `Click again to end session ${s.name}`
+                      : `End session ${s.name}`
+                  }
+                  onClick={() => {
+                    if (confirmEnd === s.sessionId) {
+                      socket.send({ type: "end_session", sessionId: s.sessionId });
+                      setConfirmEnd(null);
+                    } else {
+                      setConfirmEnd(s.sessionId);
+                      setTimeout(
+                        () => setConfirmEnd((c) => (c === s.sessionId ? null : c)),
+                        3000,
+                      );
+                    }
+                  }}
+                >
+                  {confirmEnd === s.sessionId ? "end?" : "end"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

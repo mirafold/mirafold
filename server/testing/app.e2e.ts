@@ -96,6 +96,33 @@ test("onboarding → a full mock turn renders in the DOM", async () => {
   await page.waitForSelector("text=Plan complete — all four steps done.", { timeout: 30_000 });
 });
 
+test("A.1: announcer regions exist, spoke the turn, and the transcript is silent", async () => {
+  // The two shell-owned announcer regions (Announcer.tsx): polite for turn
+  // progress, assertive reserved for errors/permissions. `.sr-only` hides
+  // them with clip-path, NOT display:none — the latter would drop them from
+  // the accessibility tree and silence every announcement.
+  const polite = page.locator('[role="status"][aria-live="polite"]');
+  const alert = page.locator('[role="alert"][aria-live="assertive"]');
+  assert.equal(await polite.count(), 1);
+  assert.equal(await alert.count(), 1);
+  // The finished mock turn was announced once, whole: its banked prose lands
+  // in the polite region at turn_end (may trail the transcript paint the
+  // previous test waited on, hence the poll).
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('[role="status"]')
+        ?.textContent?.includes("Plan complete — all four steps done."),
+    undefined,
+    { timeout: 15_000 },
+  );
+  // The transcript is navigable but silent: role="log" with aria-live
+  // explicitly OFF — log's implicit "polite" would re-read every token.
+  const log = page.locator('[role="log"]');
+  assert.equal(await log.count(), 1);
+  assert.equal(await log.getAttribute("aria-live"), "off");
+});
+
 test("question component: clicking an option sends it as the user's next turn", async () => {
   await page.locator("textarea").click();
   await page.keyboard.type("question: canary or fleet?");
@@ -626,6 +653,33 @@ test("fleet: the cwd is the row's hover tooltip; clicking outside the new-sessio
   // …and Esc closes it, same idiom as the settings card.
   await page.keyboard.press("Escape");
   assert.equal(await page.locator(".onb-overlay").count(), 0);
+});
+
+test("A.3b: the session name is the row's one link; buttons ride above the stretched overlay", async () => {
+  await page.goto(`${base}/`);
+  await page.waitForSelector(".fleet-row");
+  const row = page.locator(".fleet-row").first();
+  // The row is a container, not an anchor — buttons inside a link are
+  // invalid HTML, and a screen reader read every column of the row (id,
+  // status, the word "end") as one enormous link label.
+  assert.equal(await row.evaluate((el) => el.tagName), "DIV");
+  // Exactly one link per row — the session name.
+  assert.equal(await row.locator("a").count(), 1);
+  assert.ok(((await row.locator(".fleet-link").innerText()) ?? "").length > 0);
+  // The real controls sit ABOVE the click-anywhere overlay (z-index — if the
+  // layering breaks, the overlay intercepts these clicks and they navigate):
+  // "end" arms in place (end → end?)…
+  await row.locator(".fleet-end").click();
+  assert.equal(await row.locator(".fleet-end").innerText(), "end?");
+  assert.equal(page.url(), `${base}/`);
+  // …and ✎ opens the rename input in place; Escape cancels it.
+  await row.locator(".fleet-edit").click();
+  assert.equal(page.url(), `${base}/`);
+  await page.waitForSelector(".fleet-rename");
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator(".fleet-rename").count(), 0);
+  // (Click-anywhere-on-the-row still opening the session is proven by the
+  // next two tests, which click the row body, and by the phone tap.)
 });
 
 test("! cd .. — silent success says so, the escape is announced, and the agent answers unprompted (terminal parity)", async () => {

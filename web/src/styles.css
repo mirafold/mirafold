@@ -1692,6 +1692,13 @@ body {
   font-weight: 600;
 }
 
+/* Transparent wrapper so `inert` can hide everything behind an open dialog
+   from the accessibility tree without touching flex/grid layout — aria-modal
+   alone doesn't stop Orca's Browse-mode cursor from reading into it (2026-07-20). */
+.behind-dialog {
+  display: contents;
+}
+
 /* ---- Onboarding: shell-owned agent picker (P.4) ------------------------- */
 .onb-overlay {
   position: fixed;
@@ -2267,6 +2274,8 @@ html {
 }
 
 .fleet-row {
+  /* A.3b: anchors .fleet-link's stretched overlay below. */
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -2310,6 +2319,29 @@ html {
   font-weight: 600;
   color: var(--fg-strong);
   white-space: nowrap;
+}
+
+/* A.3b: the session name is the row's ONE link (a screen reader hears
+   "<name>, link" — not the whole row's columns as one label); the overlay
+   stretches its hit area over the row so a mouse still opens the session
+   from anywhere, exactly as when the row itself was an anchor. */
+.fleet-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.fleet-link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+/* The row's real controls (and the rename input) ride above the overlay. */
+.fleet-edit,
+.fleet-end,
+.fleet-rename {
+  position: relative;
+  z-index: 1;
 }
 
 /* #6: the rename pencil is always visible (was opacity:0, hover-only — Kyle
