@@ -12,6 +12,13 @@ name: CI
 # provision, no API spend, and no live-model flakiness (PLAN Phase C sizing).
 # The DCO sign-off check is owed too (K.9) but is gated on the public flip; add
 # it when the repo goes public (R.7).
+#
+# ONE cross-repo caveat: server/relay/relay-service.itest.ts imports the relay
+# from the SIBLING ../genui-relay checkout, which isn't present here (and the
+# relay repo is private pre-launch, so cloning it would need a secret). So CI
+# typechecks via tsconfig.ci.json (excludes that file) and filters it out of
+# Tier 2. Local runs still cover it. Remove both exclusions when the relay goes
+# public (K.1/R.7) and add a sibling checkout — see tsconfig.ci.json's note.
 
 on:
   push:
@@ -34,7 +41,8 @@ jobs:
           node-version: 22
           cache: yarn
       - run: yarn install --frozen-lockfile
-      - run: yarn typecheck
+      # tsconfig.ci.json == tsconfig.json minus the cross-repo sibling itest.
+      - run: yarn tsc -p tsconfig.ci.json --noEmit
       - run: yarn test
 
   integration:
@@ -60,5 +68,10 @@ jobs:
           fi
           echo "CHROME_BIN=$BIN" >> "$GITHUB_ENV"
           "$BIN" --version
-      - run: yarn test:server
+      # Tier 2, minus the cross-repo sibling itest (see header). All other
+      # itests are self-contained (relay.itest.ts uses the in-repo relay-stub).
+      - name: Tier 2 (integration, real daemon + sockets)
+        run: |
+          node --import tsx --test --test-concurrency=1 \
+            $(find server -name '*.itest.ts' ! -name 'relay-service.itest.ts')
       - run: yarn test:e2e
