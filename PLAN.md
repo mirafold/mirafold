@@ -989,8 +989,26 @@ clauses are written in terms of it deliberately.
     edits, and `test:e2e` rebuilds shared `dist/`. Owed before checking the
     box: the Orca walk, and a Tier-3 assertion that the regions exist and
     the transcript is `aria-live="off"`.
+  - Status update 2026-07-20 (later session): **the Tier-3 half is paid.**
+    The blocking uncommitted work landed (`2274d23`), so `test:e2e` could
+    run: new assertion test in `server/testing/app.e2e.ts` — both announcer
+    regions present (one polite `role="status"`, one assertive
+    `role="alert"`), the polite region actually *spoke* the finished mock
+    turn (polls for the turn's closing prose in its text — announcement
+    trails the transcript paint, hence the poll, not a snapshot), and the
+    transcript is `role="log"` + `aria-live="off"`. Full suite **33 e2e
+    green**; Tier-1 **300 green**. The box now waits on exactly one thing:
+    the Orca walk (⚑ KYLE'S HANDS above).
+  - Status update 2026-07-20 (Orca walk, first slice): a real prompt→response
+    turn was watched live with Orca — "Sent. Working…" announced once at
+    send, the finished reply spoken once and whole (no per-token flooding).
+    That's the fatal-gap case this step exists for, confirmed working. Not
+    yet watched: a tool-call announcement, a permission prompt, or an error —
+    box stays open until those are seen too (see A.3's status update for the
+    rest of tonight's walk and why the box isn't closing yet).
 
-- [ ] **Step A.2 — Every control is a real control**
+- [x] **Step A.2 — Every control is a real control** — done 2026-07-20
+  (third file closed by A.2b below, same day)
   - Goal: six `onClick` handlers sit on `div`/`span` elements — unreachable
     by Tab, unannounced as controls. WCAG 2.1.1 (Keyboard) and 4.1.2 (Name,
     Role, Value).
@@ -1028,13 +1046,24 @@ clauses are written in terms of it deliberately.
     slotted row. Visual output unchanged; the LOCKED status-bar pill was not
     touched. Typecheck clean, Tier-1 **290 green**.
 
-- [ ] **Step A.2b — Onboarding's share of A.2** *(blocked as of 2026-07-20)*
+- [x] **Step A.2b — Onboarding's share of A.2** — done 2026-07-20
   - Goal: the same treatment for `Onboarding.tsx` — dialog/step semantics,
     accessible names on icon-only controls, decorative glyphs hidden, and
     its two backdrop/stopPropagation divs commented like the others.
-  - Blocked on: another session's in-flight onboarding work landing. Do this
-    the moment that commits, and re-read the file first — its structure will
-    have changed.
+  - Was blocked on another session's in-flight onboarding work; that landed
+    as `2274d23` and this went in the same day. The card now carries
+    `role="dialog"` + `aria-modal` + `aria-labelledby` → the existing
+    `<h1>` (which already renames itself per step — "pick its backing" /
+    "pick a model" — so the dialog's accessible name tracks the step for
+    free). The logo `<img>` is decorative beside that heading and went
+    `alt=""` + `aria-hidden` (the brand is still spoken — the subtitle
+    says "Mirafold re-skins…"); the two `←` back-button glyphs are
+    `aria-hidden` spans so a reader says "all backends", not "leftwards
+    arrow all backends". Backdrop div commented with the ThemePicker
+    rationale (Escape already walks the steps back). No other unnamed
+    controls existed — every row was already a real `<button>`. Onboarding's
+    focus trap went in under A.3 the same sitting. Visual output unchanged.
+    Typecheck clean, Tier-1 300 green, Tier-3 33 green.
 
 - [ ] **Step A.3 — Focus management + the manual keyboard pass**
   - Goal: Escape is already handled uniformly — `useEscapeKey`
@@ -1077,9 +1106,48 @@ clauses are written in terms of it deliberately.
     buttons carry `aria-label`. Typecheck clean, Tier-1 **291 green**.
     Still owed: `Onboarding.tsx` (see A.2b — same blocker), the FleetView
     decision below, and the Orca walk.
+  - Status update 2026-07-20 (later session): **Onboarding wired** — the
+    third overlay took the trap once `2274d23` landed (always-active, same
+    as ThemePicker: Shell mounts it only while shown). All three overlays
+    now trap. Remaining before the box closes: the A.3b FleetView decision
+    (below), and the Orca walk.
+  - Status update 2026-07-20 (Orca walk, first slice — laptop died mid-walk
+    last session, resumed here): walked onboarding and a chat turn with Orca
+    for real, after fixing an environment gap first — GNOME's
+    `screen-reader-enabled` gsettings key was off (launching the bare `orca`
+    binary, unlike the Settings toggle, doesn't set it), so Chrome's
+    accessibility bridge never activated; nothing was reachable until that
+    was flipped. **Real bug found and fixed:** `useFocusTrap` correctly traps
+    Tab, but nothing hid the rest of the page from the accessibility tree, so
+    Orca's Browse-mode cursor (not just Tab) could still read straight into
+    the session sidebar behind the "Choose your agent" dialog — confirmed by
+    landing on `genui-shell visited link` / `Rename session` mid-walk with
+    the dialog still open. `aria-modal="true"` alone doesn't stop this on
+    Chrome+Orca; the APG's documented fallback is hiding siblings from the
+    tree outright. Fix: new `.behind-dialog { display: contents }` in
+    `styles.css` (transparent to flex/grid layout) wraps everything except
+    the dialog in both mount points (`FleetView.tsx`, `Shell.tsx`) with
+    `inert={<dialog open>}`. Verified three ways: `yarn typecheck` clean;
+    DOM-level (`.focus()` called directly on a background button while the
+    dialog was open did not move focus); and a second live Orca pass — Tab
+    now cycles only the dialog's own four elements and wraps, zero sidebar
+    leakage. Tier-1 **300 green**, Tier-3 **34 green**. One earlier finding
+    from this same walk ("streaming status text updates too fast to be
+    usable") was investigated and retracted — it was Claude Code CLI's own
+    terminal status animation bleeding into the same Orca debug log, not
+    anything Mirafold renders; grepped the whole repo to confirm no such
+    title/live-region logic exists.
+  - **Box stays open.** KYLE'S HANDS above lists the full walk: onboarding →
+    a full turn → a tool call → a permission prompt → settings → connect-a-
+    device → fleet view. Tonight only covered the first two and the
+    onboarding dialog's focus containment. Still unwalked: a tool call, a
+    permission prompt, the settings/theme card, connect-device, and the
+    fleet session list/sidebar's own keyboard behavior (ironically the same
+    surface the dialog was just leaking focus into). Pick up there next
+    session.
 
-- [ ] **Step A.3b — FleetView rows: nested interactive controls** *(needs
-  Kyle — this one changes behavior, not just semantics)*
+- [x] **Step A.3b — FleetView rows: nested interactive controls** — done
+  2026-07-20 (resolved by Kyle's standing rule, same day)
   - Finding (2026-07-20): the plan guessed FleetView needed a roving
     tabindex. It doesn't — `FleetView.tsx:145` is just the rename input's
     Enter/Escape handling, which is fine. The real problem is structural:
@@ -1089,13 +1157,33 @@ clauses are written in terms of it deliberately.
     screen readers, and it makes the link's accessible name swallow the
     entire row — name, agent, model, session id, status, relative time, and
     the word "end" all read as one enormous link label.
-  - Why it's Kyle's call: the fix is to stop the row being one big anchor —
-    e.g. the row becomes a plain container, the session *name* becomes the
-    link, and the two buttons become siblings rather than children. That
-    changes whether clicking anywhere on the row navigates, which is a
-    deliberate UX choice, not a semantics detail. Not doing it unasked.
-  - Files: `web/src/components/FleetView.tsx` (+ likely `styles.css` for
-    the row layout).
+  - This was flagged as Kyle's call because the obvious fix (name becomes
+    the link) loses click-anywhere-to-open. **Kyle's answer became a
+    standing rule**, verbatim: *"i'm down with EVERY standard pattern for
+    accessibility we can add so long as it doesn't change the interface or
+    functionality for non-disabled users, only then do i want to be
+    consulted."* The **stretched-link card pattern** satisfies exactly that
+    bar, so consultation dissolved: the row is now a plain `div`, the
+    session *name* is the row's one `<a>` (`.fleet-link`), and its `::after`
+    overlay stretches the link's hit area over the whole row — a mouse
+    still opens the session from anywhere, a screen reader hears
+    "*name*, link" instead of the whole row. The ✎/end buttons (and the
+    rename input) ride above the overlay via `position:relative; z-index:1`,
+    and both buttons gained `aria-label`s that name their session ("End
+    session *name*") — the visible "end"/"✎" alone doesn't say which. The
+    buttons' `preventDefault()` calls (there only to stop the old anchor
+    navigating) are gone. One knowingly-accepted micro-change: mid-rename
+    the name link is unmounted, so clicking row background during a rename
+    commits the rename (blur) but no longer ALSO navigates — the old
+    behavior was closer to a bug.
+  - Files: `web/src/components/FleetView.tsx`, `web/src/styles.css`
+    (overlay + z-index), `server/testing/app.e2e.ts`.
+  - Verified: new Tier-3 test — row is a `div`, exactly one link per row,
+    and the buttons genuinely sit above the overlay (Playwright's hit-target
+    check fails the click if the overlay intercepts): "end" arms in place,
+    ✎ opens the rename in place, neither navigates; click-anywhere is
+    proven by the two pre-existing row-body clicks and the phone tap.
+    Typecheck clean, Tier-1 **300 green**, Tier-3 **34 green**.
 
 - [ ] **Step A.4 — Public accessibility statement** *(write LAST)*
   - Goal: a dated, public, specific conformance claim, plus a way to report

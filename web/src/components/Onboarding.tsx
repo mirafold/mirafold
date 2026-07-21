@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { AgentBackend, AgentInfo, AgentName, BackendChoice } from "@protocol";
 import {
   agentLabel,
@@ -12,6 +12,7 @@ import {
   localLiveHint,
 } from "../agents-meta";
 import { useEscapeKey } from "../use-escape";
+import { useFocusTrap } from "../use-focus-trap";
 
 // The shell-owned onboarding picker. No agent is assumed — first run is
 // "choose your agent." Credentials never reach the browser; the server tells us
@@ -32,6 +33,10 @@ import { useEscapeKey } from "../use-escape";
 // How often the open picker asks the daemon to re-probe local servers (N.3's
 // refresh_agents; server-side throttled independently).
 const REFRESH_POLL_MS = 3_000;
+
+// Names the dialog for a screen reader (A.2b). A constant is safe: only one
+// onboarding card is ever mounted.
+const TITLE_ID = "onb-card-title";
 
 /** A second step only when there's a genuine choice: more than one usable way
  *  to run, or a discovered server whose model must be picked. A single usable
@@ -129,7 +134,7 @@ function BackendMenu({
     return (
       <div className="onb-backends">
         <button className="onb-back" onClick={() => onExpand(null)}>
-          ← all backends
+          <span aria-hidden="true">← </span>all backends
         </button>
         <span className="onb-server-name">{backendName(row.agent, server)}</span>
         <div className="onb-models">
@@ -145,7 +150,7 @@ function BackendMenu({
   return (
     <div className="onb-backends">
       <button className="onb-back" onClick={onBack}>
-        ← all agents
+        <span aria-hidden="true">← </span>all agents
       </button>
       {backends.map((b, i) => (
         // Prohibited subscriptions stay VISIBLE but gray with the why —
@@ -210,6 +215,10 @@ export function Onboarding({
   onDismiss?: () => void;
 }) {
   const [cwd, setCwd] = useState("");
+  // Mounted only while shown (Shell gates on showOnboarding), so the trap is
+  // always active (A.3).
+  const card = useRef<HTMLDivElement>(null);
+  useFocusTrap(card, true);
   // Which agent's backend menu is open (the second step), if any.
   const [picking, setPicking] = useState<AgentName | null>(null);
   // Which discovered server's model catalog is open (the third step) — its
@@ -245,10 +254,23 @@ export function Onboarding({
     onPick(agent, cwd.trim() || undefined, backend);
 
   return (
+    // Backdrop click-to-dismiss (when dismissable at all — see onDismiss) is a
+    // MOUSE convenience and deliberately stays a plain div (A.2b): the keyboard
+    // equivalent already exists — Escape walks back the same steps — so making
+    // this a control would only park a page-sized, meaningless stop in the tab
+    // order.
     <div className="onb-overlay" onClick={stepBack}>
-      <div className="onb-card" onClick={(e) => e.stopPropagation()}>
-        <img className="onb-glyph" src="/logo.svg" alt="Mirafold" />
-        <h1 className="onb-title">
+      <div
+        className="onb-card"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={TITLE_ID}
+        ref={card}
+        tabIndex={-1}
+      >
+        <img className="onb-glyph" src="/logo.svg" alt="" aria-hidden="true" />
+        <h1 className="onb-title" id={TITLE_ID}>
           {pickingRow
             ? `${agentLabel(pickingRow.agent)} — ${expanded ? "pick a model" : "pick its backing"}`
             : "Choose your agent"}

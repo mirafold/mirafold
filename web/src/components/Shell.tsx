@@ -301,101 +301,103 @@ export function Shell() {
           onRefresh={() => bus.refreshAgents()}
         />
       )}
-      {notices.session && (
-        // SHELL-OWNED notice — honest about the swap the server made (R.4c).
-        <div className="session-notice">
-          <span className="session-notice-text">
-            that session ended — started a new one (the daemon restarted or the
-            session expired; the previous transcript wasn't saved)
-          </span>
-          <button
-            className="session-notice-dismiss"
-            onClick={() => setNotices((n) => ({ ...n, session: false }))}
-            title="Dismiss"
-          >
-            ✕
-          </button>
-        </div>
-      )}
-      {notices.refused && (
-        // SHELL-OWNED — the relay refused a subscription-backed session (R.4i).
-        <div className="session-notice">
-          <span className="session-notice-text">{notices.refused}</span>
-          <button
-            className="session-notice-dismiss"
-            onClick={() => setNotices((n) => ({ ...n, refused: null }))}
-            title="Dismiss"
-          >
-            ✕
-          </button>
-        </div>
-      )}
-      {meta.demo && (
-        // SHELL-OWNED banner — the agent paints nothing here, so a demo
-        // session is unmistakably labeled and the label can't be faked or
-        // cleared (same trust rule as the permission bar) (R.4b).
-        <div className="demo-banner">
-          <span className="demo-banner-badge">demo</span>
-          <span className="demo-banner-text">
-            scripted replies — no real agent is running
-            {meta.agent && connectHint(meta.agent) && (
-              <>
-                {" · to connect "}
-                {agentLabel(meta.agent)}: {connectHint(meta.agent)}, then restart Mirafold
-              </>
-            )}
-          </span>
-        </div>
-      )}
-      <RenderZone subscribe={bus.subscribe} sendAction={bus.sendAction} />
-      {asks.length > 0 && (
-        <div className="perm-bar">
-          <span className="perm-badge">permission</span>
-          <span className="perm-tool">{asks[0].tool}</span>
-          <code className="perm-detail">{asks[0].detail}</code>
-          {asks.length > 1 && <span className="perm-more">+{asks.length - 1}</span>}
-          <button className="perm-allow" onClick={() => answer(asks[0].id, true)}>
-            allow
-          </button>
-          <button className="perm-deny" onClick={() => answer(asks[0].id, false)}>
-            deny
-          </button>
-        </div>
-      )}
-      {bang.my && (
-        <BangBar
-          command={bang.my.command}
-          tail={bang.tail}
-          onInput={(data) => bus.sendBangInput(bang.my!.id, data)}
-          onKill={() => bus.killBang(bang.my!.id)}
+      <div className="behind-dialog" inert={showOnboarding || undefined}>
+        {notices.session && (
+          // SHELL-OWNED notice — honest about the swap the server made (R.4c).
+          <div className="session-notice">
+            <span className="session-notice-text">
+              that session ended — started a new one (the daemon restarted or the
+              session expired; the previous transcript wasn't saved)
+            </span>
+            <button
+              className="session-notice-dismiss"
+              onClick={() => setNotices((n) => ({ ...n, session: false }))}
+              title="Dismiss"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+        {notices.refused && (
+          // SHELL-OWNED — the relay refused a subscription-backed session (R.4i).
+          <div className="session-notice">
+            <span className="session-notice-text">{notices.refused}</span>
+            <button
+              className="session-notice-dismiss"
+              onClick={() => setNotices((n) => ({ ...n, refused: null }))}
+              title="Dismiss"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+        {meta.demo && (
+          // SHELL-OWNED banner — the agent paints nothing here, so a demo
+          // session is unmistakably labeled and the label can't be faked or
+          // cleared (same trust rule as the permission bar) (R.4b).
+          <div className="demo-banner">
+            <span className="demo-banner-badge">demo</span>
+            <span className="demo-banner-text">
+              scripted replies — no real agent is running
+              {meta.agent && connectHint(meta.agent) && (
+                <>
+                  {" · to connect "}
+                  {agentLabel(meta.agent)}: {connectHint(meta.agent)}, then restart Mirafold
+                </>
+              )}
+            </span>
+          </div>
+        )}
+        <RenderZone subscribe={bus.subscribe} sendAction={bus.sendAction} />
+        {asks.length > 0 && (
+          <div className="perm-bar">
+            <span className="perm-badge">permission</span>
+            <span className="perm-tool">{asks[0].tool}</span>
+            <code className="perm-detail">{asks[0].detail}</code>
+            {asks.length > 1 && <span className="perm-more">+{asks.length - 1}</span>}
+            <button className="perm-allow" onClick={() => answer(asks[0].id, true)}>
+              allow
+            </button>
+            <button className="perm-deny" onClick={() => answer(asks[0].id, false)}>
+              deny
+            </button>
+          </div>
+        )}
+        {bang.my && (
+          <BangBar
+            command={bang.my.command}
+            tail={bang.tail}
+            onInput={(data) => bus.sendBangInput(bang.my!.id, data)}
+            onKill={() => bus.killBang(bang.my!.id)}
+          />
+        )}
+        <PromptBox
+          onSend={send}
+          busy={busy}
+          onInterrupt={bus.interrupt}
+          cwd={tildify(meta.cwd, daemonInfo.home)}
         />
-      )}
-      <PromptBox
-        onSend={send}
-        busy={busy}
-        onInterrupt={bus.interrupt}
-        cwd={tildify(meta.cwd, daemonInfo.home)}
-      />
-      <StatusBar
-        connected={connected}
-        connectionNote={connNote}
-        agent={meta.agent}
-        // The engine's live report (usage) wins once a turn has run; until
-        // then, what the daemon knew at attach ("default" beats nothing).
-        model={usage.model ?? meta.model}
-        sessionId={meta.sessionId}
-        cwd={meta.cwd}
-        usage={usage}
-        mode={mode}
-        onToggleTheme={() => setMode((m) => (m === "dark" ? "light" : "dark"))}
-        onOpenSettings={() => setSettingsOpen(true)}
-        onEndSession={meta.sessionId ? bus.endSession : undefined}
-        relay={daemonInfo.relay}
-        version={daemonInfo.version}
-      />
-      {settingsOpen && (
-        <ThemePicker slots={slots} onPick={pickTheme} onClose={() => setSettingsOpen(false)} />
-      )}
+        <StatusBar
+          connected={connected}
+          connectionNote={connNote}
+          agent={meta.agent}
+          // The engine's live report (usage) wins once a turn has run; until
+          // then, what the daemon knew at attach ("default" beats nothing).
+          model={usage.model ?? meta.model}
+          sessionId={meta.sessionId}
+          cwd={meta.cwd}
+          usage={usage}
+          mode={mode}
+          onToggleTheme={() => setMode((m) => (m === "dark" ? "light" : "dark"))}
+          onOpenSettings={() => setSettingsOpen(true)}
+          onEndSession={meta.sessionId ? bus.endSession : undefined}
+          relay={daemonInfo.relay}
+          version={daemonInfo.version}
+        />
+        {settingsOpen && (
+          <ThemePicker slots={slots} onPick={pickTheme} onClose={() => setSettingsOpen(false)} />
+        )}
+      </div>
     </div>
   );
 }
