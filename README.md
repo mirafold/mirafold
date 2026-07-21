@@ -477,6 +477,13 @@ web/               the browser app (React 19 + Vite)
                      (busy / permission) and title, painted from wire state
   src/use-escape.ts  useEscapeKey — the one Esc idiom behind every overlay
                      and the busy interrupt
+  src/use-focus-trap.ts  useFocusTrap — focus in on open, Tab cycles inside,
+                     restored to the opener on close; wired into all three
+                     overlays (A.3). Traps Tab but doesn't hide the rest of
+                     the page from the accessibility tree by itself — that's
+                     `.behind-dialog { display: contents }` + `inert` in
+                     styles.css, applied around everything but the open
+                     dialog in Shell.tsx/FleetView.tsx (A.3, Orca walk)
   src/diff.ts        the LCS line differ shared by ToolBlock's Edit/Write
                      diffs and the `diff` registry component
   src/tildify.ts     ~-abbreviation for cwd display (prompt + status bar)
