@@ -1850,7 +1850,6 @@ body {
   font-size: 13px;
   line-height: 1.45;
   color: var(--accent);
-  opacity: 0.85;
 }
 
 /* R.4k: the local-model signpost under the picker — dim, one notch above the

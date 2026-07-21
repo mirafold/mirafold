@@ -145,18 +145,29 @@ test("contrast floors: every text tier clears its floor on every text surface, i
   }
 });
 
-test("accent text clears 4.5:1 on --bg in every theme", () => {
+test("accent text clears 4.5:1 on every real text surface, in every theme", () => {
   // Accents render as real text (links, error prose, warn notices, status
-  // words). Floor on --bg; the tinted-family backgrounds carry their own
-  // borders and never host these as body text.
+  // words) — and, per a 2026-07-21 axe-core sweep, on the SAME card/badge
+  // surfaces body text does (.onb-blocked, .demo-banner-badge on
+  // --surface-2; .onb-agent-detail on --bg via a since-removed opacity
+  // dim). Checking only --bg missed all three: each cleared 4.5:1 there but
+  // fell short — 4.4, 4.41, 3.57 — on the surface actually rendered on.
+  // Same TEXT_SURFACES list the tier floors use, for the same reason. The
+  // same extension caught six more real gaps this same day, all fixed:
+  // light/solarized-light's accent set nudged darker (2-7%), and
+  // solarized-dark's accent set + dracula/gruvbox-dark's --error nudged
+  // BRIGHTER (7-14%) — dark themes need the opposite direction, light text
+  // moving further from a dark background, not closer to it.
   for (const t of THEMES) {
     const tokens = parseThemeTokens(themeCss(t.id));
     for (const accent of ["--accent", "--info", "--warn-fg", "--error"]) {
-      const ratio = contrast(tokens.get(accent)!, tokens.get("--bg")!);
-      assert.ok(
-        ratio >= 4.5,
-        `${t.id}: ${accent} on --bg is ${ratio.toFixed(2)}:1, below the 4.5:1 floor`,
-      );
+      for (const surface of TEXT_SURFACES) {
+        const ratio = contrast(tokens.get(accent)!, tokens.get(surface)!);
+        assert.ok(
+          ratio >= 4.5,
+          `${t.id}: ${accent} on ${surface} is ${ratio.toFixed(2)}:1, below the 4.5:1 floor`,
+        );
+      }
     }
   }
 });

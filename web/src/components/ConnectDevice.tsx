@@ -110,7 +110,9 @@ export function ConnectDevice({ relay }: { relay?: RelayInfo }) {
               reaches the relay, and every frame is end-to-end encrypted.
             </div>
             <div className="pair-url-row">
-              <code className="pair-url">{href}</code>
+              <code className="pair-url" tabIndex={0}>
+                {href}
+              </code>
               <button
                 className="pair-copy"
                 onClick={() => {

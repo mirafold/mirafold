@@ -30,10 +30,10 @@
   --fg-dimmer: #a3b0b3;
   --fg-faint: #8da1a7;
   /* accents */
-  --accent: #859900;
-  --info: #3496da;
-  --warn-fg: #b58900;
-  --error: #e56865;
+  --accent: #94a61f;
+  --info: #4ea4df;
+  --warn-fg: #be981f;
+  --error: #e97d7a;
   /* borders */
   --border: #163c46;
   --border-2: #1a3f49;
