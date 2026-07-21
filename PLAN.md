@@ -689,6 +689,19 @@ with it. Both sequence BEFORE R.5.**
     commit, CONTRIBUTING.md landed in both repos that day; what remains
     for this step is only the mechanics: enable the GitHub DCO status
     check on both repos as part of the public flip.
+  - **CI hardening at the flip (from the 2026-07-21 audit of the C.1 work):**
+    once a repo is public, any fork PR's test suite runs on the CI runner, so
+    the CI's trust posture matters. Already in place from C.1: the token is
+    `permissions: contents: read` (read-only — a malicious dependency install
+    script can't push to the repo) and no secrets are used (Tier 4 excluded,
+    credentials forced empty). Do AT the flip: (i) re-enable the cross-repo
+    relay itest now that `genui-relay` is public and checkout-able — drop the
+    `tsconfig.ci.json` exclusion + the Tier-2 `find` filter and add a sibling
+    checkout (see C.1's note + `tsconfig.ci.json`); (ii) optionally SHA-pin the
+    `actions/checkout` / `actions/setup-node` steps (they're pinned to `@v4`
+    tags today — fine for GitHub's own official actions, stricter as a full
+    commit SHA). No secret was ever added, and none should be — the "no
+    provider credential in repo secrets" bound (C.1) is absolute.
   - **Gate on the relay flip (2026-07-15 audit):** before `genui-relay` goes
     public in (b), run a dedicated security-audit pass over that repo — the
     shell got its own on 2026-07-15; public security-marketed code gets
@@ -929,21 +942,29 @@ because it is a public conformance claim and must describe the real state.
 The automated regression guard for all of this is **Step C.2**, deliberately
 placed in the CI/CD phase below.
 
-**⚑ KYLE'S HANDS — the screen-reader walk.** One item in this phase cannot be
-done by the assistant at all: actually *listening* to Mirafold with a screen
-reader. Everything else here is verifiable from code, the accessibility tree,
-or an axe run; whether the result is comprehensible to a human ear is not.
-When A.1–A.3 are code-complete, Kyle runs **Orca** (GNOME's screen reader,
-`Super+Alt+S` toggles it on this Linux box) and walks: onboarding → a full
-prompt→response turn → a tool call → a permission prompt → the settings card
-→ connect-a-device → fleet view. What to listen for: does the response
-actually get read once and whole; does anything read twice, flood, or cut
-itself off; is any control announced as just "button" with no name; does
-focus ever land somewhere invisible. Findings come back here as new steps.
-A.1 and A.3 stay unchecked until this walk happens — their "done when"
-clauses are written in terms of it deliberately.
+**⚑ The screen-reader walk — RESOLVED 2026-07-21: it is fully automatable
+on this box after all.** This note originally read "one item in this phase
+cannot be done by the assistant at all: actually *listening* to Mirafold
+with a screen reader." That turned out to be wrong. The assistant now runs
+the whole walk end to end without a human ear: Orca with `--debug-file`
+gives its speech as readable text; the claude-in-chrome extension drives the
+page over CDP (the only input path that reaches native-Wayland Chrome);
+foregrounding the extension's tab via its AT-SPI `doDefault` action makes it
+simultaneously CDP-drivable and Orca's focus locus; and the CLI terminal-title
+flood is filtered out of the log rather than fought. The full recipe lives in
+[[orca-testing-mirafold]] (memory). Both A.1 and A.3 were closed this way on
+2026-07-21 — onboarding → a full prompt→response turn → tool calls → a
+permission prompt → an error → settings/theme → connect-a-device → fleet
+view, each heard live. What was checked, in the walk's own terms: the
+response read once and whole (not per-token); nothing read twice or flooded;
+every control announced with a real name + role (never a bare "button");
+focus never landed on an invisible element; every overlay trapped focus and
+restored it on close. One human-judgment residue remains only if desired: a
+person confirming the TTS *sounds* right subjectively — but comprehensibility,
+naming, ordering, and no-flood are all now proven from the assistant side.
 
-- [ ] **Step A.1 — Live regions: streaming agent output is announced**
+- [x] **Step A.1 — Live regions: streaming agent output is announced** —
+  done 2026-07-21 (full live Orca walk, run autonomously; see closing note)
   - Goal: the fatal gap. A screen-reader user sends a prompt and hears
     *nothing back* — text that appears without focus moving to it is never
     announced. WCAG 4.1.3 (Status Messages). This one step is worth more
@@ -1036,6 +1057,60 @@ clauses are written in terms of it deliberately.
     announcement (attempted the same night via the `!` bang-concurrency
     error, but drowned out by the same terminal-noise problem — see A.3's
     closing note).
+  - **Box CLOSED 2026-07-21 (later, autonomous walk).** The environment
+    fight that blocked the live listens was solved from the assistant side,
+    end to end, so every A.1 announcement was finally heard live — no human
+    ear needed. The method (recorded in full in [[orca-testing-mirafold]]):
+    Chrome is native-Wayland, so synthetic keys (XTEST/AT-SPI
+    `generate_keyboard_event`) never reach it — only CDP does, which the
+    claude-in-chrome extension speaks. The extension's tab is a background
+    tab in a real window; activating it via its AT-SPI `doDefault` page-tab
+    action foregrounds it (visible + focused), and then it is *both*
+    CDP-drivable *and* Orca's focus locus at once. Orca runs with
+    `--debug-file`; the terminal-title flood is not fought but *filtered* —
+    a parser keeps only `SPEECH OUTPUT` lines emitted while Google Chrome is
+    the active app and drops the CDP-attach infobar. Every announcement type
+    was then confirmed live, spoken once, in order:
+    - `user_prompt` → **"Sent. Working…"** (polite, once).
+    - `tool_use` → **"Running Write." / "Running Grep." / "Running Bash."**
+      (polite, name only — no arguments), one per tool.
+    - `turn_end` → the whole response, once (polite).
+    - `permission_request` (mock `dangerous` trigger) → **"Permission
+      needed: Bash. rm -rf /var/cache/app && systemctl restart app"**
+      (assertive) — and the `allow`/`deny` buttons are real, Tab-reachable
+      controls.
+    - `error` (the `!sleep 5` then `!echo hi` concurrency guard) → **"a !
+      command is already running (stop it first)"** (assertive) — the last
+      genuinely-open A.1 item, now heard clean.
+    Independently cross-checked with a DOM `MutationObserver` on the live
+    regions: the polite `role=status` fired exactly once per boundary, and
+    the transcript `role=log` stayed `aria-live="off"` (zero per-token
+    announcements) — the no-flood design, proven from both ends.
+  - **One real finding from the walk, fixed the same sitting.** The
+    `turn_end` announcement spoke the response's **raw markdown** — a
+    screen reader voiced "pound pound Code review", "bar bar", "backtick",
+    every list dash, every `- [x]`. The rendered transcript is clean, but
+    the announcement used the banked `text_delta` source verbatim
+    (`turnResponse` returned it untouched). Fix: new `speechFromMarkdown()`
+    in `Announcer.tsx` strips markdown syntax to the prose it wraps
+    (headings, emphasis, inline code, code fences, blockquotes, list/task
+    markers, tables → comma-joined cells, links/images → their text, rules
+    dropped) *before* the 4000-char cap, so the cap counts spoken length.
+    The region is `.sr-only`, so this is invisible to sighted users and
+    strictly better for screen-reader users — a standard pattern,
+    pre-approved under [[a11y-standing-rule]], and it fulfils this step's
+    own stated intent ("the turn's **prose**"). +7 Tier-1 on
+    `speechFromMarkdown`/`turnResponse` (**307 green**), typecheck clean.
+    Verified live: the same markdown-heavy mock reply now narrates as clean
+    prose — no `##`, backticks, `|`, or `>`.
+  - **One observation left for Kyle (not changed — a real UX trade-off).**
+    When a `permission_request` appears, focus stays on the prompt box; it
+    does not move to the permission bar. The assertive announcement tells a
+    screen-reader user what's being asked, and `allow`/`deny` are reachable
+    by Tab, so nothing is unreachable — but auto-moving focus to the bar
+    would change keyboard behavior for sighted users too (focus would jump
+    on every permission prompt). Per [[a11y-standing-rule]] that makes it
+    Kyle's call, not a silent fix. Flagged, not acted on.
 
 - [x] **Step A.2 — Every control is a real control** — done 2026-07-20
   (third file closed by A.2b below, same day)
@@ -1095,7 +1170,9 @@ clauses are written in terms of it deliberately.
     focus trap went in under A.3 the same sitting. Visual output unchanged.
     Typecheck clean, Tier-1 300 green, Tier-3 33 green.
 
-- [ ] **Step A.3 — Focus management + the manual keyboard pass**
+- [x] **Step A.3 — Focus management + the manual keyboard pass** — done
+  2026-07-21 (whole app walked keyboard-only + screen reader, autonomously;
+  see closing note)
   - Goal: Escape is already handled uniformly — `useEscapeKey`
     (`web/src/use-escape.ts`) is used by all three overlays
     (`ThemePicker.tsx:45`, `ConnectDevice.tsx:52`, `Onboarding.tsx:217`), so
@@ -1229,6 +1306,35 @@ clauses are written in terms of it deliberately.
       save actual ears for one clean pass with the CLI fully closed, not
       just idle, whenever that's convenient — not urgent, since no real
       user will ever have this terminal open.
+  - **Box CLOSED 2026-07-21 (later, autonomous walk).** The "one clean
+    pass" above turned out not to need the CLI closed at all — the terminal
+    flood is filtered out of the debug log instead of silenced (method in
+    [[orca-testing-mirafold]] and A.1's closing note). Every overlay's focus
+    behavior was verified live, mouse-free, with real Orca audio:
+    - **Onboarding** — Tab cycles cwd entry → Claude Code / Codex / Gemini
+      cards and wraps; each announced with a real name + "push button" /
+      "entry" role; the trap holds (confirmed via DOM `activeElement` on
+      each Tab + Orca speech on each).
+    - **Connect-device** (the item that never got its live walk before) —
+      open moves focus into the dialog ("Close connect a device push
+      button"); Tab cycles Close → the pairing-URL scroll box (announced
+      with the full URL + "clickable" — the axe-sweep `tabIndex={0}` fix,
+      confirmed reachable live) → "copy push button" → wraps; **Escape
+      closes it and restores focus to the `⧉ pair` opener** (`sb-pair`) —
+      the `useFocusTrap` restore-on-close, proven live.
+    - **Settings / theme card** — "Close settings push button", then theme
+      rows as "Standard toggle button pressed." / "Solarized Light toggle
+      button not pressed." (name + `aria-pressed` state) — re-confirmed.
+    - **Fleet session list** — re-confirmed from the 2026-07-21 earlier
+      note (each row's Rename/End buttons named per session, the A.3b
+      stretched-link fix).
+    No focus ever landed on an invisible element, nothing read twice or
+    flooded, no control announced as a bare "button". The remaining
+    live-audio gaps this step and A.1 had both been carried on
+    ("the CLI must be closed", "Kyle's real keypresses") are retired: the
+    walk is fully automatable on this box. `.behind-dialog`/`inert`
+    sibling-hiding from the earlier session held throughout — no Browse-mode
+    leakage into any dialog.
 
 - [x] **Step A.3b — FleetView rows: nested interactive controls** — done
   2026-07-20 (resolved by Kyle's standing rule, same day)
@@ -1269,7 +1375,8 @@ clauses are written in terms of it deliberately.
     proven by the two pre-existing row-body clicks and the phone tap.
     Typecheck clean, Tier-1 **300 green**, Tier-3 **34 green**.
 
-- [ ] **Step A.4 — Public accessibility statement** *(write LAST)*
+- [x] **Step A.4 — Public accessibility statement** *(write LAST)* — drafted
+  and wired 2026-07-21; goes live with the site when the blackout lifts
   - Goal: a dated, public, specific conformance claim, plus a way to report
     problems. Not a WCAG requirement — a launch artifact, and the honest
     counterpart to the work above. Same precedent as K.5: the document is
@@ -1287,6 +1394,47 @@ clauses are written in terms of it deliberately.
     footer partial (shared CSS already covers all pages) and `sitemap.xml`.
   - Done when: the page is live, linked from the footer of every site page,
     in the sitemap, and every claim on it is one someone could verify.
+  - Status 2026-07-21: **written and wired in the site repo's `staged/`**
+    (the real pages all live there during the pre-launch blackout; `public/`
+    is a holding page). New `mirafold-site/staged/accessibility.html` — same
+    stylesheet, no build step, mirroring `refunds.html`'s structure. The four
+    standard parts, kept specific and honest per this step's own rule: the
+    target (WCAG 2.1 AA, and why — the DOJ/ADA reference); the real status
+    (**partially conformant**, self-assessed, not third-party audited — the
+    honest label, not "fully accessible"); what's actually done (keyboard
+    operation, focus management, the A.1 live-region announcements, the
+    double-AA contrast floor, reduced-motion, focus indicator, `lang`); and
+    known limitations stated plainly (no independent audit; Orca/Chrome is
+    the most-tested combo; the pairing QR is visual but has a focusable
+    text-URL + copy alternative; agent-rendered UI readability depends partly
+    on the connected agent; automated scanning is only ~⅓ of WCAG). Contact:
+    `support@mirafold.com`, five-business-day aim, degrade-gracefully promise.
+    Footer `accessibility` link added to all five pages (terms, privacy,
+    refunds, contact, index) and a `/accessibility` entry added to
+    `sitemap.xml`. Rendered at 1280 and 390 widths — clean, on-brand.
+  - **Not "live" yet, and one finding it surfaced is Kyle's call.** The page
+    only goes public when the site blackout lifts (same gate as terms/privacy/
+    refunds, which are also staged-only) — so the "live" half of Done-when is
+    pending the restore, not this step. Dogfooding the whole site through
+    axe-core (the C.2 tooling, pointed at `staged/`) turned up **two real
+    WCAG-AA colour-contrast failures on the marketing site itself** — and one
+    of them is on the accessibility page's own footer, so it matters for the
+    claim:
+    - `footer > p` tagline (**every page**): `--faint #58627a` on `--bg-2
+      #0c1017` = **3.12:1** (needs 4.5). Hue-preserving fix: `--faint` →
+      `#798195` (clears 4.9:1 on the darkest surface it lands on).
+    - the `.copy` button (**index**): `--dim #7b8698` on `--surface-3
+      #1b2230` = **4.32:1**. Fix: `--dim` → `#838d9e` (clears 4.76:1).
+    Both are shared brand tokens on the marketing site, so bumping them is a
+    visible palette change to Kyle's site design — his call, not a silent
+    edit (the standing a11y approval is for changes invisible to sighted
+    users; a token recolour isn't that, and the site's visual design is
+    explicitly Kyle's domain). **Not applied — flagged for his sign-off.**
+    Tracked in `mirafold-site/PLAN.md`. The statement's own text is scoped to
+    "the Mirafold web application" (the product, which scans axe-clean at
+    serious/critical — see C.2), so its claims stand; the site-footer contrast
+    is a separate surface and should be fixed before the site goes live so the
+    page isn't served with a contrast failure on its own footer.
 
 **2026-07-21 — manual axe-core sweep, run ahead of C.2.** Tonight's Orca walk
 kept getting derailed by environment problems, not app bugs (see A.1/A.3's
@@ -1382,7 +1530,8 @@ flakes were root-caused and fixed 2026-07-19 (`9de5bc1` Tier-2 handshake
 listener, `60b8307` Tier-3 settle); the only residual is a single
 uncharacterized sighting of the Tier-2 per-pair viewport-cap test.
 
-- [ ] **Step C.1 — Stand up CI** *(Kyle's call on scope)*
+- [x] **Step C.1 — Stand up CI** *(Kyle's call on scope)* — done 2026-07-21
+  (both CI pipelines green on open PRs, awaiting Kyle's merge)
   - Goal: the test suite runs itself on every push, so nothing load-bearing
     depends on remembering.
   - Build: GitHub Actions. Decide the tier schedule — Tier 1 on every push
@@ -1404,8 +1553,86 @@ uncharacterized sighting of the Tier-2 per-pair viewport-cap test.
   - Done when: a pushed commit gets a pass/fail mark automatically, a
     deliberately broken test turns it red, and a green run means the same
     thing a local full-suite run means.
+  - Status 2026-07-21: **done — GitHub Actions live on both code repos, both
+    green, each on an open PR for Kyle to merge** (`mirafold/mirafold#1`,
+    `mirafold/mirafold-relay#1` — not self-merged; merging to `main` is
+    Kyle's call). Scope taken (the "Kyle's call" flag, exercised with
+    sensible defaults):
+    - **genui-shell** (`.github/workflows/ci.yml`): two jobs on push-to-main
+      + every PR — `unit` (typecheck + `yarn test`, Tier 1, ~2m) and
+      `integration` (Tier 2 real daemon/sockets + Tier 3 headless Chrome,
+      ~5m). Node 22 + yarn. Chrome is resolved on the runner and passed via
+      `CHROME_BIN` (ubuntu-latest ships google-chrome-stable; the "Locate
+      Chrome" step is future-proofed against image changes). **Tier 4
+      excluded** — no provider credential in secrets. Green: unit 2m15s,
+      integration 4m42s.
+    - **genui-relay** (`.github/workflows/ci.yml`): one job (npm, Node 20) —
+      `npm ci` + typecheck + `npm test`. Green in 19s. No browser, no
+      secrets.
+    - **mirafold-site**: no CI added — it has no test suite (static HTML/CSS,
+      no package.json); Cloudflare Pages is already its build/deploy
+      mechanism. Noted, not a gap.
+    - **DCO check**: deferred (K.9, gated on the public flip — repos private
+      today).
+  - **The one thing CI surfaced (a real cross-repo finding):** the shell's
+    first run went red because `server/relay/relay-service.itest.ts` imports
+    the relay under test from the **sibling `../genui-relay` checkout**, which
+    a single-repo CI job doesn't have — and the relay repo is private
+    pre-launch, so cloning it in CI would need a secret (contradicting this
+    phase's no-secrets sizing). This tripped BOTH typecheck (tsconfig includes
+    `server`) and `test:server`. Resolved without a secret: a CI-only
+    `tsconfig.ci.json` (== `tsconfig.json` minus that one file) for typecheck,
+    and a `find … ! -name relay-service.itest.ts` filter for Tier 2. Every
+    other itest is self-contained (`relay.itest.ts` uses the in-repo
+    relay-stub), so coverage loss is exactly that one cross-repo proof, which
+    still runs locally. **Clean upgrade path documented in `tsconfig.ci.json`
+    and the workflow header:** when the relay goes public (K.1/R.7), CI can
+    check it out as a sibling unauthenticated — drop both exclusions and add
+    the checkout, and the cross-repo proof runs in CI too. (Alternative if
+    Kyle wants it in CI sooner: a read-only fine-grained PAT for the relay
+    repo as a secret — a repo-scoped token, not a provider credential, so it
+    doesn't touch the absolute no-subscription bound; his call, not taken.)
+  - Cosmetic: GitHub warns `actions/checkout@v4`/`setup-node@v4` use the
+    deprecated Node-20 action runtime (auto-forced to Node 24) — harmless,
+    bump to `@v5` whenever convenient.
+  - **Security hardening applied 2026-07-21 (from the audit of this C.1 work).**
+    Both workflows now set `permissions: contents: read` — the auto-provisioned
+    `GITHUB_TOKEN` is read-only, so once a repo is public a fork PR's test run
+    (or a malicious dependency install-script) can't use the token to push to
+    the repo. No secrets are used and none should be (the "no provider
+    credential in repo secrets" bound is absolute). Remaining audit items are
+    ship-time and parked on **R.5b** (SHA-pin the official actions at the flip;
+    re-enable the cross-repo relay itest when `genui-relay` is public). The
+    audit found nothing exploitable today; `speechFromMarkdown` was tested
+    against hostile agent output (no XSS — React escapes; no ReDoS — <44 ms on
+    300 k adversarial chars), and axe-core is a devDependency that never ships.
+  - **⚑ OPEN — the Tier-2 integration suite is flaky in CI (Kyle to address
+    next session, 2026-07-21).** Standing up C.1 exposed it: the shell's
+    `integration` job (Tier 2 real daemon/sockets/PTYs) fails a *different*
+    timing-sensitive test on most runs while ~72/73 pass. Observed across
+    reruns of `mirafold/mirafold#1`: `bang.itest.ts` "bang_kill ends it with a
+    null exit code", then `backend-choice.itest.ts` N.5 "discovered-server pick
+    rides to the engine", then N.5 "opposite codex choices are honored" — each
+    a one-off, never the same twice. **It is NOT the security change and NOT
+    any of this session's code:** the branch's FIRST CI run (before the
+    `permissions` commit) was fully green, the exact filtered Tier-2 command
+    passes **73/73 locally**, and a `contents: read` token cannot touch
+    socket/PTY timing. It's pre-launch runner flakiness the plan already half-
+    knew about (the Phase C sizing note's "single uncharacterized sighting of
+    the Tier-2 per-pair viewport-cap test" — it's broader). **Why it matters:**
+    an `integration` job that reds ~1-in-3 on random tests trains everyone to
+    ignore red, defeating C.1. **So the shell PR #1 currently shows a red
+    `integration` check purely from this flake** — the `unit` job and the whole
+    relay PR are green; don't read the red as the CI setup being wrong. Options
+    for Kyle (I did NOT touch the tests): (1) bounded retry on the Tier-2 CI job
+    — cheapest, restores trust, hides root cause; (2) quarantine + fix the
+    specific races (bang-kill timing, N.5 backend-choice concurrency) — the
+    real fix; (3) generous CI-only timeouts (concurrency is already 1);
+    (4) leave it advisory until launch (green locally). Both CI PRs are still
+    open awaiting Kyle's merge regardless.
 
-- [ ] **Step C.2 — Automated accessibility check (axe-core) in Tier 3**
+- [x] **Step C.2 — Automated accessibility check (axe-core) in Tier 3** —
+  done 2026-07-21
   - Goal: the regression guard for Phase A. Accessibility decays silently —
     a refactor swapping a `<button>` for a styled `<div>`, or dropping an
     `aria-label`, looks and behaves identically to a sighted mouse user and
@@ -1430,6 +1657,30 @@ uncharacterized sighting of the Tier-2 per-pair viewport-cap test.
   - Done when: `yarn test:e2e` fails on an introduced accessibility
     regression (verified by deliberately breaking one), passes clean
     otherwise, and every accepted exception is written down with its reason.
+  - Status 2026-07-21: **done, and the "fails on a regression" clause was
+    actually exercised.** `axe-core@4.10.2` added as a devDependency (the
+    same version the 2026-07-21 manual sweep used), injected into the live
+    Playwright page via `addScriptTag({ content: axe.source })` and run with
+    `axe.run` — no jsdom, honoring the zero-web-test-deps rule (the scan runs
+    in real Chromium, not a DOM stand-in). New test "C.2: axe-core finds no
+    serious/critical WCAG violations across the app" (`app.e2e.ts`) stands up
+    its own daemon + relay stub and scans **five surfaces**: onboarding, a
+    live session transcript (with the rendered checklist), the settings/theme
+    dialog, the connect-device dialog (the relay stub is why it's reachable —
+    the pair button renders only with a relay), and mission control/fleet.
+    Fails on `serious` + `critical` only (WCAG 2.0/2.1 A + AA tags);
+    `moderate`/`minor` are left out as noisier and less clearly real.
+    **First run passed clean** — the manual sweep had already fixed every
+    real finding, so there were zero to triage and `AXE_EXCEPTIONS` is empty.
+    Guard proven live: temporarily stripped the settings button's accessible
+    name (gear glyph `aria-hidden`, no title/label) → the scan flagged
+    `button-name` (critical) on the session + fleet states and the suite went
+    red; reverted → green again. Full Tier-3 **36 green**, typecheck clean.
+    Honest scope unchanged: this is the machine-checkable ~third of WCAG; it
+    does not replace A.3's screen-reader pass (now itself automatable — see
+    [[orca-testing-mirafold]]). Note for C.1: `test:e2e` already runs Chrome
+    headless with credentials forced empty, so this needs no secrets in CI —
+    it rides the normal Tier-3 job.
 
 ---
 
