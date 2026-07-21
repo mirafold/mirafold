@@ -1006,6 +1006,36 @@ clauses are written in terms of it deliberately.
     yet watched: a tool-call announcement, a permission prompt, or an error —
     box stays open until those are seen too (see A.3's status update for the
     rest of tonight's walk and why the box isn't closing yet).
+  - Status update 2026-07-21: the tool-call and permission-prompt case is now
+    covered a different way than planned. Kyle's live walk of it went wrong
+    twice in the same sitting — once because the dev server still had a real
+    `ANTHROPIC_API_KEY` in `.env`, so the deterministic mock trigger
+    ("dangerous") silently no-opped against the live agent instead of firing
+    the canned permission prompt; and once because this same Claude Code CLI
+    terminal's animated title was flooding Orca's AT-SPI event queue while
+    background tool calls ran, degrading the audio into something
+    unintelligible. Kyle, reasonably, declined to retrigger the scenario
+    again in any form — the first mixup meant he'd approved a real
+    `rm -rf /var/cache/app && systemctl restart app` believing it was fake.
+    (It was fake; the mock never shells out. But the trust cost of that
+    mixup is the point.) In place of the live listen: a new Tier-3 test
+    (`server/testing/app.e2e.ts`, "A.1: tool_use and permission_request
+    announce") drives the exact same flow headlessly against the
+    itest-harness daemon (credentials always forced empty — no real key can
+    reach it) and asserts the assertive region's actual text —
+    `"Permission needed: Bash. rm -rf /var/cache/app && systemctl restart
+    app"` — plus the polite `"Running Bash."` on allow and the turn's
+    conclusion text, then that the bar clears. **35/35 e2e green,
+    typecheck clean.** This proves the announcement wiring is mechanically
+    correct; it does not prove Orca's TTS renders it comprehensibly, which
+    still needs a human ear — but for this specific case, headless proof is
+    the standing substitute going forward, not another live trigger.
+    Settings/theme card and the fleet session list's keyboard behavior WERE
+    confirmed live later the same session — see A.3's 2026-07-21 status
+    notes below. The one piece of A.1 still genuinely open: an actual error
+    announcement (attempted the same night via the `!` bang-concurrency
+    error, but drowned out by the same terminal-noise problem — see A.3's
+    closing note).
 
 - [x] **Step A.2 — Every control is a real control** — done 2026-07-20
   (third file closed by A.2b below, same day)
@@ -1145,6 +1175,60 @@ clauses are written in terms of it deliberately.
     fleet session list/sidebar's own keyboard behavior (ironically the same
     surface the dialog was just leaking focus into). Pick up there next
     session.
+  - Status update 2026-07-21: **settings/theme card and fleet session list
+    both confirmed live, cleanly, with real audio** (Orca restarted mid-
+    session with `--debug-file` after discovering Chrome's own
+    `chrome://accessibility` showed "Screen reader: disabled" for the tab —
+    Chrome had cached "no AT present" from before Orca registered on the
+    AT-SPI bus, and only a full Chrome relaunch, not a page reload, forced
+    it to re-detect; noted for next time). Theme card: "settings dialog" on
+    open, "theme panel." / "Light themes panel." / "Dark themes panel." as
+    group labels, "Light theme." / "Dark theme." per row — clean, single-
+    utterance, no repeats. Fleet session list: Tab reaches "Rename session
+    {name} push button." and "End session {name} push button." distinctly
+    (the A.3b fix — each button's name, not just "end"/✎ alone) — confirmed
+    twice across two separate walks. Tool call + permission prompt did NOT
+    get a clean live confirmation — see A.1's 2026-07-21 status note for
+    what happened there and why a headless Tier-3 test stands in for it
+    going forward instead of a repeat live trigger.
+  - Closing status, 2026-07-21 (end of session): **two items remain
+    genuinely open, both needing a live walk, neither attempted
+    successfully tonight.**
+    - **An actual error announcement.** Attempted via the `!` passthrough's
+      concurrency guard (`!sleep 5` then a second bang command before it
+      finishes → "a ! command is already running (stop it first)", a real
+      `type: "error"` broadcast — see `server/sessions/connection.ts:427`,
+      adapter-agnostic, no scary content, safe to repeat). Never got a
+      clean listen: by the time it was tried, Orca's speech had been
+      silently toggled off for ~18 minutes (found by grepping the debug
+      log — "Speech disabled." at 05:40:39 — nobody had noticed), and after
+      restarting Orca to fix that, the terminal-title-flooding problem
+      (this session's own recurring finding, see below) was still bad
+      enough that all that came through was the terminal repeating its own
+      status text.
+    - **Connect-device.** The relay stub (`server/relay/relay-stub.ts`) is
+      wired into a dev session via `MIRAFOLD_RELAY_URL=ws://127.0.0.1:9100`,
+      so the `⧉ pair` button exists to walk. It IS verified correct at the
+      DOM/axe level — dialog semantics, focus trap, and a real bug (the
+      pairing-URL scroll box wasn't keyboard-focusable) found and fixed via
+      the axe-core sweep below — but the live audio walk itself never
+      happened; the session went into the contrast-token work instead.
+    - **Root cause behind both misses, worth fixing before trying again**:
+      this Claude Code CLI terminal's own title animates continuously
+      (spinner + elapsed time), even seemingly while idle, and each change
+      fires an AT-SPI event Orca has to process — badly degrading its
+      speech for whatever else has real focus (Chrome, here). Checked for a
+      Claude Code setting to suppress it: none exists. The one documented
+      workaround is running the CLI inside `tmux` with
+      `set -g allow-passthrough off`, which blocks the title-setting escape
+      sequences from ever reaching the terminal — untried this session
+      (means restarting the terminal session, Kyle's call on when). Kyle's
+      2026-07-21 call on the wasted time chasing this: stop fighting the
+      environment, lean on headless/DOM verification for anything
+      mechanically checkable (done — see the axe-core sweep below), and
+      save actual ears for one clean pass with the CLI fully closed, not
+      just idle, whenever that's convenient — not urgent, since no real
+      user will ever have this terminal open.
 
 - [x] **Step A.3b — FleetView rows: nested interactive controls** — done
   2026-07-20 (resolved by Kyle's standing rule, same day)
@@ -1203,6 +1287,80 @@ clauses are written in terms of it deliberately.
     footer partial (shared CSS already covers all pages) and `sitemap.xml`.
   - Done when: the page is live, linked from the footer of every site page,
     in the sitemap, and every claim on it is one someone could verify.
+
+**2026-07-21 — manual axe-core sweep, run ahead of C.2.** Tonight's Orca walk
+kept getting derailed by environment problems, not app bugs (see A.1/A.3's
+notes above): a stray real `ANTHROPIC_API_KEY` in `.env` silently defeated the
+mock's deterministic triggers, and this same Claude Code CLI terminal's own
+title animation flooded Orca's AT-SPI event queue badly enough to make its
+speech unintelligible, even seemingly while idle — cause not fully isolated;
+no Claude Code CLI setting exists to suppress it (checked), only an
+untried external `tmux allow-passthrough off` workaround. Kyle's call
+(2026-07-21): stop burning time on that environment fight tonight — it's
+self-inflicted and irrelevant to real users, who'll never have this terminal
+open. Split the work instead: everything mechanically checkable, do headlessly
+now; the genuinely human-judgment "does it sound right" pieces, save for one
+clean pass with the CLI fully closed (not just idle), on Kyle's own time.
+In that spirit, axe-core 4.10.2 (CDN, not installed as a dependency — a
+one-off gut-check, not yet wired into Tier 3) was run by hand against the
+live dev session across four states: the fleet/landing view, connect-device
+open, onboarding open, and a live session transcript with a rendered
+checklist. Three real, previously-unknown findings, two fixed on the spot as
+standard invisible-to-sighted-users patterns (pre-approved, [[a11y-standing-
+rule]] in memory):
+  - **Fixed:** `.pair-url` (`ConnectDevice.tsx`) — the pairing URL's
+    `overflow-x: auto` scroll box had no `tabindex`, so a keyboard user could
+    never focus it to scroll and read the full URL. Added `tabIndex={0}`.
+    Zero visual change.
+  - **Fixed:** GFM task-list checkboxes (`- [x] thing` in any rendered
+    markdown — the plan-it-step-by-step checklist, any future checklist
+    render) had NO accessible name — axe flagged it `critical`. The label
+    text is a sibling of the `<input>` inside the `<li>`, not a child of it,
+    so the fix lives in a new shared `li` override in
+    `web/src/registry/Md.tsx`'s `safeAnchor` (consumed by both `Md`/
+    `MdDetail` and `RenderZone`'s turn-text rendering): pulls the checkbox
+    out of the item, reads the rest of the `<li>` as its `aria-label`. Zero
+    visual change — the checkboxes are already `disabled` (decorative
+    reflection of markdown state, never real form controls).
+  - **Fixed, Kyle signed off (2026-07-21, "minor changes like that are
+    okay"):** `--warn-fg` in the **light** theme (`#737300` → `#6e6e00`) and
+    `--accent` in **light** (`#008000` → `#007c00`) and **solarized-light**
+    (`#677600` → `#606d00`), plus solarized-light's `--info` and `--error`
+    (both ~7% darker). All were passing the Tier-1 guard's 4.5:1 floor
+    against `--bg` (the only surface it checked) but fell short — as low as
+    3.57:1 — against the actual card/badge surfaces they render on in
+    practice (`.onb-blocked`, `.onb-agent-detail`, `.demo-banner-badge`).
+    Separately, `.onb-agent-detail`'s deliberate `opacity: 0.85` dim
+    (`styles.css`, "reads as confirmation, not a warning") was dropped
+    entirely — full-strength `--accent` lands exactly on this codebase's own
+    stated accent floor (`accents ≥4.5`, this section's intro), no dimming
+    needed. **The guard itself is fixed too**: `themes.test.ts`'s accent
+    contrast test now checks the same `TEXT_SURFACES` list the tier-floor
+    test already used, not just `--bg` — this is what surfaced all of the
+    above, plus more.
+  - **Also fixed, same sign-off, after a caught mistake:** the same guard
+    extension caught six more real gaps — **solarized-dark's entire accent
+    set** (worst case 3.9:1) and **`--error` alone in dracula/gruvbox-dark**
+    (4.0–4.3:1). First pass here got the fix direction wrong: a script
+    computed "darken by ~60%" for all of these without checking that dark
+    themes put LIGHT text on a DARK background, so darkening further would
+    have *reduced* contrast, not fixed it — caught before anything was
+    applied by checking each theme's actual `--bg` value, and corrected to
+    brightening (7–14%, not 60%) for all six. `dark`'s `--error` was
+    misreported as failing in an earlier note here — it was never actually
+    below the floor (4.94:1); no change needed there. Final values: solarized-
+    dark `--accent` `#859900`→`#94a61f`, `--info` `#3496da`→`#4ea4df`,
+    `--warn-fg` `#b58900`→`#be981f`, `--error` `#e56865`→`#e97d7a`; dracula
+    `--error` `#ff5555`→`#ff6e6e`; gruvbox-dark `--error` `#fb5844`→`#fb6552`.
+    Every fix (all 7 themes now) uses the same method: scale RGB channels by
+    a uniform percentage toward white or black as appropriate, which
+    preserves hue exactly — nothing shifted color family, only how far it
+    sits from its background. No debt left; the temporary
+    `ACCENT_SURFACE_CONTRAST_DEBT` allowlist was added then removed the same
+    session once every entry was resolved.
+  - Typecheck clean, Tier-1 **300 green**, Tier-3 **35 green** (includes the
+    new A.1 tool_use/permission_request test from tonight, see A.1's status
+    note above) after all fixes, all 7 themes.
 
 ---
 

@@ -123,6 +123,43 @@ test("A.1: announcer regions exist, spoke the turn, and the transcript is silent
   assert.equal(await log.getAttribute("aria-live"), "off");
 });
 
+test("A.1: tool_use and permission_request announce (assertive interrupts polite)", async () => {
+  const alert = page.locator('[role="alert"][aria-live="assertive"]');
+  await page.locator("textarea").click();
+  await page.keyboard.type("run something dangerous");
+  await page.keyboard.press("Enter");
+  // The mock pauses the turn on a permission_request (Bash, a fake
+  // rm -rf) — assertive, so it must land in the alert region, not status.
+  await page.waitForFunction(
+    () => document.querySelector('[role="alert"]')?.textContent?.includes("Permission needed"),
+    undefined,
+    { timeout: 15_000 },
+  );
+  const alertText = await alert.innerText();
+  assert.match(alertText, /Permission needed: Bash\./);
+  assert.match(alertText, /rm -rf \/var\/cache\/app/);
+  // The permission bar itself is on-screen with the same detail.
+  assert.equal(await page.locator(".perm-tool").innerText(), "Bash");
+  await page.locator(".perm-allow").click();
+  // Allowed → the mock "runs" the command: a tool_use announces at the
+  // polite region ("Running Bash."), then the turn concludes.
+  await page.waitForFunction(
+    () => document.querySelector('[role="status"]')?.textContent?.includes("Running Bash."),
+    undefined,
+    { timeout: 15_000 },
+  );
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('[role="status"]')
+        ?.textContent?.includes("Cache cleared and the service restarted cleanly"),
+    undefined,
+    { timeout: 15_000 },
+  );
+  // The permission bar clears once answered.
+  assert.equal(await page.locator(".perm-bar").count(), 0);
+});
+
 test("question component: clicking an option sends it as the user's next turn", async () => {
   await page.locator("textarea").click();
   await page.keyboard.type("question: canary or fleet?");

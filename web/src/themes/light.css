@@ -37,9 +37,9 @@
   --fg-dimmer: #5c5c5c;
   --fg-faint: #696969;
   /* accents — the classic normal (dark) ANSI four */
-  --accent: #008000;
+  --accent: #007c00;
   --info: #0000cd;
-  --warn-fg: #737300;
+  --warn-fg: #6e6e00;
   --error: #cd0000;
   /* borders */
   --border: #dcdcdc;
