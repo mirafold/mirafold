@@ -61,14 +61,12 @@ export function createEntitlementTokenSource(env: {
 
   const exchange = async (): Promise<void> => {
     lastFetchMs = Date.now();
-    const ctl = new AbortController();
-    const cut = setTimeout(() => ctl.abort(), FETCH_TIMEOUT_MS);
     try {
       const res = await fetch(url, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ licenseKey }),
-        signal: ctl.signal,
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS), // the local-models.ts idiom
       });
       if (res.status === 403) {
         const reason = ((await res.json().catch(() => ({}))) as { reason?: string }).reason;
@@ -94,8 +92,6 @@ export function createEntitlementTokenSource(env: {
       // Endpoint down/unreachable: keep serving the cached token while it's
       // unexpired; otherwise we just have none. Deliberately quiet — the
       // refusal line at dial time is the user-facing signal.
-    } finally {
-      clearTimeout(cut);
     }
   };
 
