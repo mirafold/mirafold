@@ -4,8 +4,10 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { chromium, type Browser, type Page } from "playwright-core";
+import axe from "axe-core";
 import { startDaemon, type Daemon } from "./itest-harness";
 import { startOllamaFixture } from "./ollama-fixture";
+import { startRelayStub } from "../relay/relay-stub";
 import { THEMES } from "../../web/src/themes/manifest";
 
 // Tier-3 E2E, opt-in (`yarn test:e2e` — needs google-chrome and a fresh
@@ -870,4 +872,101 @@ test("a notice in the engine's own words is badged; the shell's own words aren't
     await shell.evaluate((el) => getComputedStyle(el).borderLeftStyle),
     "solid",
   );
+});
+
+// C.2 — the automated regression guard for Phase A. axe-core (4.10.2, injected
+// into the live page, not a jsdom stand-in) scans each surface for the
+// machine-checkable third of WCAG. Honest scope: this does NOT replace A.3's
+// manual/screen-reader pass — it catches the silent decays (a <button> becoming
+// a styled <div>, a dropped aria-label) that look identical to a sighted mouse
+// user. We fail on `serious` + `critical` only; `moderate`/`minor` are noisier
+// and less clearly real, and holding the line on the two impactful tiers is
+// what keeps the Phase A work from rotting. Any accepted exception lives in
+// AXE_EXCEPTIONS below, each with a reason.
+const AXE_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"];
+// Rule IDs to disable, each justified. Empty today — the manual axe sweep
+// (2026-07-21) already fixed every real finding, so the app scans clean.
+const AXE_EXCEPTIONS: { rule: string; why: string }[] = [];
+
+// axe-core's window global and the slice of its run() result we read. Named
+// here so the page-side call below stays legible; types are erased before the
+// evaluate callback is serialized to the browser, so this is compile-time only.
+type AxeViolation = { id: string; impact: string; nodes: unknown[]; help: string };
+type AxePage = { axe: { run: (ctx: Document, opts: unknown) => Promise<{ violations: AxeViolation[] }> } };
+
+async function assertAxeClean(p: Page, label: string): Promise<void> {
+  await p.addScriptTag({ content: axe.source }); // defines window.axe in the page
+  const violations = await p.evaluate(
+    async ([tags, exceptions]) => {
+      const rules: Record<string, { enabled: boolean }> = {};
+      for (const r of exceptions as string[]) rules[r] = { enabled: false };
+      const res = await (window as unknown as AxePage).axe.run(document, {
+        resultTypes: ["violations"],
+        runOnly: { type: "tag", values: tags },
+        rules,
+      });
+      return res.violations
+        .filter((v) => v.impact === "serious" || v.impact === "critical")
+        .map((v) => ({ id: v.id, impact: v.impact, help: v.help, count: v.nodes.length }));
+    },
+    [AXE_TAGS, AXE_EXCEPTIONS.map((e) => e.rule)] as const,
+  );
+  assert.deepEqual(
+    violations,
+    [],
+    `axe serious/critical violations on ${label}: ${JSON.stringify(violations, null, 2)}`,
+  );
+}
+
+test("C.2: axe-core finds no serious/critical WCAG violations across the app", async () => {
+  // Own daemon + relay stub so every surface (including connect-device, which
+  // renders only with a relay) is reachable and the state is controlled.
+  const relay = await startRelayStub({});
+  const token = "e2e-axe-9c2f";
+  const dax = await startDaemon({
+    MIRAFOLD_TOKEN: token,
+    MIRAFOLD_RELAY_URL: relay.url,
+    MIRAFOLD_RELAY_CODE: "e2e-axe-pairing-code-1a2b",
+  });
+  const p = await browser.newPage();
+  try {
+    const baseAx = `http://127.0.0.1:${dax.port}`;
+    await p.goto(`${baseAx}/?token=${token}`);
+
+    // 1) Onboarding ("choose your agent") — empty registry opens here.
+    await p.waitForSelector(".onb-agent");
+    await assertAxeClean(p, "onboarding");
+
+    // 2) A live session with a rendered transcript + checklist.
+    await p.locator(".onb-agent", { hasText: "Claude Code" }).click();
+    await p.waitForURL(/\/s\/[\w-]+/);
+    await p.waitForSelector(".demo-banner");
+    await p.locator("textarea").click();
+    await p.keyboard.type("plan it step by step");
+    await p.keyboard.press("Enter");
+    await p.waitForSelector("text=Plan complete — all four steps done.", { timeout: 30_000 });
+    await assertAxeClean(p, "session transcript");
+
+    // 3) Settings / theme card (a dialog).
+    await p.locator(".sb-settings").click();
+    await p.waitForSelector("[role=dialog]");
+    await assertAxeClean(p, "settings dialog");
+    await p.keyboard.press("Escape");
+
+    // 4) Connect-device (a dialog; needs the relay above).
+    await p.locator(".sb-pair").click();
+    await p.waitForSelector(".pair-card");
+    await assertAxeClean(p, "connect-device dialog");
+    await p.keyboard.press("Escape");
+
+    // 5) Mission control (fleet) — now has one session in the list.
+    await p.goto(`${baseAx}/`);
+    await p.waitForSelector(".fleet-title");
+    await p.waitForSelector(".fleet-link");
+    await assertAxeClean(p, "fleet view");
+  } finally {
+    await p.close();
+    await dax.stop();
+    await relay.stop();
+  }
 });

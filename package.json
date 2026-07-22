@@ -63,6 +63,7 @@
     "@types/react-dom": "^19.2.3",
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^6.0.3",
+    "axe-core": "4.10.2",
     "concurrently": "^10.0.3",
     "esbuild": "^0.28.1",
     "highlight.js": "^11.11.1",
