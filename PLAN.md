@@ -1651,6 +1651,33 @@ uncharacterized sighting of the Tier-2 per-pair viewport-cap test.
     real fix; (3) generous CI-only timeouts (concurrency is already 1);
     (4) leave it advisory until launch (green locally). Both CI PRs are still
     open awaiting Kyle's merge regardless.
+  - **Kyle's calls, 2026-07-22 (all executed same day except the flake fix):**
+    - **Both CI PRs merged** — CI is live on both mains.
+    - **Flake: option (2), quarantine + fix the races** — "i'm okay with more
+      work to get this robust"; retry/timeouts/advisory declined. Work not
+      yet started (awaiting his go after the what-it-entails walk-through):
+      pull the 3 known-flaky tests out of the blocking CI path, root-cause
+      each timing assumption (reproduce under CPU load; replace sleeps and
+      assumed orderings with event waits; if a test is exposing a real
+      product race, fix the product), unquarantine, prove with repeated CI
+      runs.
+    - **Integration job runs on PRs only** (`a771110`) — pushes to main run
+      Tier 1 only; the slow tiers ran on the PR that merged them. Actions
+      bumped to v5 in both repos (deprecation cleared).
+    - **Branch protection: blocked by GitHub's paywall** — classic protection
+      AND rulesets both 403 ("Upgrade to GitHub Pro or make this repository
+      public") on free-plan private repos. Intended solo-dev shape when
+      available: required checks (unit now; integration once the flake is
+      fixed), no review requirement, admin bypass for direct pushes, no
+      force-push/delete. Pay (org → Team) or wait for the public flip
+      (K.1/R.7) — deferred, revisit at R.5b.
+    - **Deployment is manual-dispatch only — standing directive for all CD
+      work in every repo** (his job's `on-prod.yml` pattern: a human clicks
+      Run workflow and picks the ref; nothing ever deploys on push, merge,
+      or schedule). Scaffolded for the relay same day:
+      `genui-relay/.github/workflows/deploy.yml` (`9162fa1`), inert until a
+      `FLY_API_TOKEN` secret exists; the one-time deploy-day steps stay
+      manual per that repo's `DEPLOY.md`.
 
 - [x] **Step C.2 — Automated accessibility check (axe-core) in Tier 3** —
   done 2026-07-21
