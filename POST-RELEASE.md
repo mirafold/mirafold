@@ -88,6 +88,34 @@ has a home in this plan, the entry points there instead of duplicating it.
     v1; the viewport-local stream is the only part that touches a core
     assumption.
 
+- [ ] **Keyboard power-user layer — the "vim guys" keymap** (2026-07-22) —
+  never needing the mouse OR the Tab-slog: fast, discoverable keys plus a
+  prompt box that speaks vim. Same terminal-native persona as the embedded
+  terminal pane above, and they share one design decision (below). The
+  **pre-launch identity slice** (focus-visibility fixes, `?` overlay, command
+  palette, opt-in prompt-box vim mode) is tracked in PLAN.md as **Phase KB**;
+  this entry parks the **post-launch depth**. Two constraints govern the whole
+  thing and point at the *cheapest* build: (1) nothing changes for non-vim
+  users — Kyle's standing A.3 rule — met by making vim mode an opt-in setting
+  (default off = today's exact textarea) and gating global shortcuts to
+  focus-not-in-prompt; (2) mirror how vim users already work in a terminal,
+  which the same focus-state rule delivers (prompt focused = insert mode, `Esc`
+  out = normal mode where shortcuts wake — no invented mode system). Post-launch
+  depth parked here:
+  - **Transcript keyboard navigation** — `j`/`k` + `Ctrl-d`/`Ctrl-u` to move,
+    jump next/prev turn, expand/collapse the focused tool/thinking block, pin
+    the focused block. The real work is a "current entry" cursor that survives
+    streaming (the transcript mutates under you), so it's post-launch, not part
+    of the identity slice. ~3–5 days.
+  - **True app-wide normal mode** (optional, ambitious) — beyond focus-gated
+    shortcuts, a real vim-style normal mode over the whole UI (h/j/k/l +
+    operators). The focus-gated v1 is 80% of the value; only build this on
+    demand.
+  - **Shared decision with the embedded terminal pane** — once keystrokes can
+    reach the prompt, an app shortcut, OR the vim pane, the modal routing
+    (which context owns the key) must be settled once and reused by both. Decide
+    it with whichever of the two ships first.
+
 - [ ] **Multiuser chat** — multiple people in one session's conversation;
   rides Phase 4's multi-user seam (Locked decisions: "architected so
   multi-user is additive later").

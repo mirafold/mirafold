@@ -1364,6 +1364,56 @@ rule]] in memory):
 
 ---
 
+## Phase KB — Keyboard power-user layer (opened 2026-07-22; candidate pre-launch, the vim-user wedge)
+
+Distinct from Phase A: that phase is the *accessibility floor* (WCAG 2.1 AA —
+can you reach everything by Tab). This is the *ceiling* — never needing the
+mouse OR the Tab-slog: fast, discoverable keys plus a prompt box that speaks
+vim. It targets exactly Mirafold's terminal-native wedge, so it reads as
+identity, not polish. Not yet sequenced against C/D/etc.; steps get written
+(Goal/Build/Files/Done-when) when Kyle slots it. Full breakdown + the
+post-launch depth live in **POST-RELEASE.md** ("Keyboard power-user layer");
+this note is the pre-launch pointer.
+
+The two governing constraints (both Kyle's, 2026-07-22) turn out to point at
+the *cheapest* architecture, not a costlier one:
+
+- **Nothing changes for non-vim users** — verbatim Kyle's standing A.3 rule.
+  Satisfied structurally: prompt-box vim mode is an opt-in setting, **default
+  off = today's exact `<textarea>`, element unswapped**; global shortcuts fire
+  **only when focus is not in the prompt**, so a user who lives in the prompt
+  never triggers one.
+- **Mirror how vim users already work in a terminal** — so the decisions are
+  easy. The same focus-state rule *is* the modal mapping: typing a prompt =
+  insert mode, `Esc` out = normal mode where shortcuts wake. ~80% of "modality"
+  falls out of focus state with no mode system invented.
+
+Candidate pre-launch slice (the identity part, ~1.5–2 wks, mostly hung off
+machinery that already exists — the overlay pattern, `useFocusTrap`,
+`useEscapeKey`, and the bus actions `interrupt`/`create`/pin):
+
+- **Focus-visibility fixes** (hours). Reveal-on-hover controls must also reveal
+  on keyboard focus. Confirmed gap: `.pin-btn` is `opacity:0` (styles.css:187)
+  revealed only by `:hover` (styles.css:191) — a keyboard user Tabs onto an
+  invisible button (WCAG 2.4.7). Add a `:focus-within`/`:focus-visible` reveal;
+  sweep for siblings. Invisible to mouse users → under Kyle's standing rule.
+- **`?` shortcuts overlay** (~½ day) — static keymap list, reuses the overlay +
+  focus-trap machinery.
+- **Command palette + core bindings** (~2–4 days) — a shell-owned overlay
+  (leader `:` or Space) calling the existing bus actions; gated to
+  focus-not-in-prompt.
+- **Prompt-box vim mode** (~4–6 days, the long pole and the only real
+  integration risk) — mount CodeMirror-with-vim in place of the textarea *only*
+  when the setting is on, preserving auto-grow, Enter-to-send, the `❯` glyph,
+  and all seven themes.
+
+The ~3 small picks the terminal doesn't answer for you: Enter-in-normal-mode
+(→ always send from the prompt), leader key (`:` vs Space), and focus-gated
+shortcuts (v1) vs a true app-wide normal mode (post-launch). None
+controversial.
+
+---
+
 ## Phase C — CI/CD (opened 2026-07-20; pre-launch)
 
 Kyle is standing up CI/CD shortly. As of 2026-07-20 there is **none** in any
