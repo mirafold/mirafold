@@ -1,10 +1,10 @@
 name: CI
 
-# Runs the test suite on every push to main and on every pull request, so a
-# green check means the same thing a local full-suite run means. Tiers (README
-# §8): Tier 1 (unit) is seconds and gates everything; Tier 2 (real daemon +
-# sockets) and Tier 3 (headless Chrome, rebuilds dist) are minutes and run in a
-# separate job. Tier 4 (`test:live`) NEVER runs here — it drives real binaries
+# Runs the test suite automatically. Tiers (README §8): Tier 1 (unit) is
+# seconds and runs on every push to main and every PR; Tier 2 (real daemon +
+# sockets) and Tier 3 (headless Chrome, rebuilds dist) are minutes and run on
+# PRs only (Kyle's call, 2026-07-22 — the full suite gates a merge, not every
+# push). Tier 4 (`test:live`) NEVER runs here — it drives real binaries
 # and one test spends a real OPENROUTER_API_KEY; no provider credential is ever
 # added to repo secrets (PLAN C.1, 2026-07-20 audit).
 #
@@ -43,8 +43,8 @@ jobs:
     name: typecheck + unit (Tier 1)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: yarn
@@ -55,10 +55,13 @@ jobs:
 
   integration:
     name: integration + e2e (Tier 2 + Tier 3)
+    # PRs only — pushes to main get Tier 1; the slow tiers ran on the PR that
+    # merged them (Kyle's call, 2026-07-22).
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: yarn
