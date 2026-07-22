@@ -1,0 +1,13 @@
+{
+  // CI-only typecheck config. Identical to tsconfig.json except it excludes the
+  // one cross-repo file: server/relay/relay-service.itest.ts imports the relay
+  // under test from the SIBLING ../genui-relay checkout (see README §"sibling
+  // itest"). That sibling isn't present in a single-repo CI checkout, and the
+  // relay repo is private pre-launch so CI can't clone it without a secret.
+  // Local `yarn typecheck` (tsconfig.json) still covers this file. When the
+  // relay repo goes public (product PLAN K.1/R.7), CI can check it out as a
+  // sibling unauthenticated and this exclusion — plus the matching Tier-2
+  // filter in .github/workflows/ci.yml — should be removed.
+  "extends": "./tsconfig.json",
+  "exclude": ["node_modules", "server/relay/relay-service.itest.ts"]
+}

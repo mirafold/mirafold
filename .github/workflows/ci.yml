@@ -1,0 +1,85 @@
+name: CI
+
+# Runs the test suite on every push to main and on every pull request, so a
+# green check means the same thing a local full-suite run means. Tiers (README
+# §8): Tier 1 (unit) is seconds and gates everything; Tier 2 (real daemon +
+# sockets) and Tier 3 (headless Chrome, rebuilds dist) are minutes and run in a
+# separate job. Tier 4 (`test:live`) NEVER runs here — it drives real binaries
+# and one test spends a real OPENROUTER_API_KEY; no provider credential is ever
+# added to repo secrets (PLAN C.1, 2026-07-20 audit).
+#
+# The harness forces credentials empty → MockSession, so there are no secrets to
+# provision, no API spend, and no live-model flakiness (PLAN Phase C sizing).
+# The DCO sign-off check is owed too (K.9) but is gated on the public flip; add
+# it when the repo goes public (R.7).
+#
+# ONE cross-repo caveat: server/relay/relay-service.itest.ts imports the relay
+# from the SIBLING ../genui-relay checkout, which isn't present here (and the
+# relay repo is private pre-launch, so cloning it would need a secret). So CI
+# typechecks via tsconfig.ci.json (excludes that file) and filters it out of
+# Tier 2. Local runs still cover it. Remove both exclusions when the relay goes
+# public (K.1/R.7) and add a sibling checkout — see tsconfig.ci.json's note.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Least privilege for the auto-provisioned GITHUB_TOKEN: these jobs only read
+# the code and run tests — they never push, comment, or release. Read-only
+# matters most once the repo is public (R.7), when any fork PR runs on the
+# runner: a malicious dependency install-script then can't use the token to
+# write to the repo.
+permissions:
+  contents: read
+
+# A newer push to the same branch/PR supersedes an in-flight run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: typecheck + unit (Tier 1)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+      # tsconfig.ci.json == tsconfig.json minus the cross-repo sibling itest.
+      - run: yarn tsc -p tsconfig.ci.json --noEmit
+      - run: yarn test
+
+  integration:
+    name: integration + e2e (Tier 2 + Tier 3)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+      # Tier 3 drives real headless Chrome via playwright-core; the harness
+      # reads CHROME_BIN (default /usr/bin/google-chrome). ubuntu-latest ships
+      # google-chrome-stable — resolve its path and hand it to the suite rather
+      # than assume the default holds across runner image changes.
+      - name: Locate Chrome
+        run: |
+          BIN="$(command -v google-chrome || command -v google-chrome-stable || true)"
+          if [ -z "$BIN" ]; then
+            echo "No Google Chrome on the runner" >&2
+            exit 1
+          fi
+          echo "CHROME_BIN=$BIN" >> "$GITHUB_ENV"
+          "$BIN" --version
+      # Tier 2, minus the cross-repo sibling itest (see header). All other
+      # itests are self-contained (relay.itest.ts uses the in-repo relay-stub).
+      - name: Tier 2 (integration, real daemon + sockets)
+        run: |
+          node --import tsx --test --test-concurrency=1 \
+            $(find server -name '*.itest.ts' ! -name 'relay-service.itest.ts')
+      - run: yarn test:e2e
