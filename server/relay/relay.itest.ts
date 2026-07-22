@@ -228,6 +228,41 @@ test("a weak pinned MIRAFOLD_RELAY_CODE is refused: the daemon mints and the wea
   }
 });
 
+test("R.5: a gated relay refuses a token-less daemon (actionable line) and admits one with MIRAFOLD_ENTITLEMENT_TOKEN", async () => {
+  // The stub's exact-match gate models the real relay's refusal shape (the
+  // real signature check is pinned in genui-relay's own suite + the sibling
+  // service itest). This is the CI-runnable proof of the daemon's SEND path.
+  const TOKEN = "itest-beta-token";
+  const GATED_CODE = "itest-gated-code-8c2e1b";
+  const stub2 = await startRelayStub({ entitlementToken: TOKEN });
+  // No token configured: the dial is refused with the actionable line — and
+  // the daemon keeps serving locally (startDaemon itself proves boot health).
+  const dNo = await startDaemon({ MIRAFOLD_RELAY_URL: stub2.url, MIRAFOLD_RELAY_CODE: GATED_CODE });
+  try {
+    await waitForLog(/entitlement: none configured/, 10_000, dNo);
+    await waitForLog(/refused: remote access needs a valid subscription/, 10_000, dNo);
+    assert.ok(!dNo.logs().includes("[relay] paired"));
+  } finally {
+    await dNo.stop();
+  }
+  // Hand-issued token (the comped-beta path): pairs, and a viewport works.
+  const dYes = await startDaemon({
+    MIRAFOLD_RELAY_URL: stub2.url,
+    MIRAFOLD_RELAY_CODE: GATED_CODE,
+    MIRAFOLD_ENTITLEMENT_TOKEN: TOKEN,
+  });
+  try {
+    await waitForLog(/entitlement: hand-issued token/, 10_000, dYes);
+    await waitForLog(/\[relay\] paired/, 10_000, dYes);
+    const ok = await RemoteClient.connect(stub2.port, GATED_CODE);
+    await ok.type("agents");
+    ok.close();
+  } finally {
+    await dYes.stop();
+    await stub2.stop();
+  }
+});
+
 test("the daemon refuses viewports past MAX_REMOTE_VIEWPORTS and frees slots on close", async () => {
   // Own stub + daemon: the cap is env-tuned to 2 so the test stays cheap. A
   // hostile relay announcing endless viewports must not grow daemon state.

@@ -1,6 +1,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { generateKeyPairSync } from "node:crypto";
+import { createServer } from "node:http";
+import { generateKeyPairSync, sign as signMessage, type KeyObject } from "node:crypto";
 import type { WireMsg } from "../protocol";
 import { startDaemon, TestClient, type Daemon } from "../testing/itest-harness";
 import { RemoteClient, broadcasts, waitForLog as waitForLogH } from "./relay-test-client";
@@ -10,6 +11,7 @@ import {
   CLOSE_OVERLOADED as PROTO_CLOSE_OVERLOADED,
   CLOSE_UNENTITLED as PROTO_CLOSE_UNENTITLED,
   DAEMON_PATH,
+  ENTITLEMENT_HEADER as PROTO_ENTITLEMENT_HEADER,
   VIEWPORT_PATH,
   PAIR_PARAM,
   MIN_PAIR_ID_LENGTH,
@@ -22,6 +24,14 @@ import {
   SHARED_CONTRACT,
   MIN_PAIR_ID_LENGTH as SERVICE_MIN_PAIR_ID_LENGTH,
 } from "../../../genui-relay/src/contract";
+
+// Mints a token the exact way the R.5 billing backend does — the compact
+// "<b64url({exp})>.<b64url(Ed25519 sig)>" the relay verifies offline.
+const mintToken = (priv: KeyObject, expSeconds: number): string => {
+  const seg = Buffer.from(JSON.stringify({ exp: expSeconds })).toString("base64url");
+  const sig = signMessage(null, Buffer.from(seg), priv).toString("base64url");
+  return `${seg}.${sig}`;
+};
 
 // The DEPLOYED relay service, verified against the real daemon locally —
 // sourced from the sibling `genui-relay` repo, the relay's single home since
@@ -64,6 +74,9 @@ test("the relay's routing contract matches the daemon's relay-protocol", () => {
   // dial-out (relay-client.ts): they must match the values the relay SENDS.
   assert.equal(CLOSE_OVERLOADED, PROTO_CLOSE_OVERLOADED);
   assert.equal(CLOSE_UNENTITLED, PROTO_CLOSE_UNENTITLED);
+  // R.5: the daemon SENDS its entitlement token on this header; the relay
+  // READS the same one. Drift = every paid pairing refused in production.
+  assert.equal(SHARED_CONTRACT.ENTITLEMENT_HEADER, PROTO_ENTITLEMENT_HEADER);
 });
 
 test("GET /health answers ok; other HTTP is 404", async () => {
@@ -235,6 +248,102 @@ test("an unentitled real daemon: refused (4007), surfaces WHY, and never claims 
   } finally {
     await ud.stop();
     await gated.close();
+  }
+});
+
+// R.5 positive case: the gate ON and a daemon holding a hand-issued token
+// (MIRAFOLD_ENTITLEMENT_TOKEN — the comped-beta path) pairs for real, and the
+// pairing actually WORKS (viewport drives a turn), not merely connects.
+test("an entitled real daemon (token override): pairs through the gated relay and serves a viewport", async () => {
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+  const pubB64 = publicKey.export({ format: "der", type: "spki" }).toString("base64");
+  const token = mintToken(privateKey, Math.floor(Date.now() / 1000) + 48 * 3600);
+  const gated = await startRelay({ host: "127.0.0.1", entitlementPublicKey: pubB64 });
+  const ed = await startDaemon({
+    MIRAFOLD_RELAY_URL: `ws://127.0.0.1:${gated.port}`,
+    MIRAFOLD_RELAY_CODE: "entitled-service-itest-code-4d8c1e",
+    MIRAFOLD_ENTITLEMENT_TOKEN: token,
+  });
+  try {
+    await waitForLog(/entitlement: hand-issued token/, 10_000, ed);
+    await waitForLog(/\[relay\] paired/, 10_000, ed);
+    const v = await RemoteClient.connect(gated.port, "entitled-service-itest-code-4d8c1e");
+    await v.type("agents");
+    v.close();
+  } finally {
+    await ed.stop();
+    await gated.close();
+  }
+});
+
+// R.5 license-key path, end-to-end with ZERO cloud: a throwaway local HTTP
+// server plays the billing backend's /api/entitlement (minting real signed
+// tokens), the daemon exchanges MIRAFOLD_LICENSE_KEY there, and the gated
+// REAL relay admits the result. This is the whole paying-customer flow minus
+// Paddle/Cloudflare, which the site repo's own tests cover.
+test("license-key exchange: the daemon trades its key for a token and pairs; a lapsed key degrades to the refusal line", async () => {
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+  const pubB64 = publicKey.export({ format: "der", type: "spki" }).toString("base64");
+  let lapsed = false;
+  const seenKeys: string[] = [];
+  const billing = createServer((req, res) => {
+    let body = "";
+    req.on("data", (c) => (body += c));
+    req.on("end", () => {
+      seenKeys.push((JSON.parse(body) as { licenseKey: string }).licenseKey);
+      if (lapsed) {
+        res.writeHead(403, { "content-type": "application/json" });
+        res.end(JSON.stringify({ reason: "subscription lapsed" }));
+      } else {
+        const exp = Math.floor(Date.now() / 1000) + 48 * 3600;
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ token: mintToken(privateKey, exp), exp }));
+      }
+    });
+  });
+  await new Promise<void>((r) => billing.listen(0, "127.0.0.1", r));
+  const billingPort = (billing.address() as { port: number }).port;
+  const gated = await startRelay({ host: "127.0.0.1", entitlementPublicKey: pubB64 });
+
+  // Active subscription: exchange → signed token → pairs → viewport works.
+  const ld = await startDaemon({
+    MIRAFOLD_RELAY_URL: `ws://127.0.0.1:${gated.port}`,
+    MIRAFOLD_RELAY_CODE: "license-service-itest-code-6a9b3f",
+    MIRAFOLD_LICENSE_KEY: "mf_itest_active_key",
+    MIRAFOLD_ENTITLEMENT_URL: `http://127.0.0.1:${billingPort}/api/entitlement`,
+  });
+  try {
+    await waitForLog(/entitlement: license key/, 10_000, ld);
+    await waitForLog(/\[relay\] paired/, 10_000, ld);
+    assert.deepEqual([...new Set(seenKeys)], ["mf_itest_active_key"]);
+    const v = await RemoteClient.connect(gated.port, "license-service-itest-code-6a9b3f");
+    await v.type("agents");
+    v.close();
+  } finally {
+    await ld.stop();
+  }
+
+  // Lapsed subscription: the exchange 403s, the dial carries no token, the
+  // gated relay refuses with the actionable line — and the LOCAL product is
+  // untouched (a local viewport still answers).
+  lapsed = true;
+  const dd = await startDaemon({
+    MIRAFOLD_RELAY_URL: `ws://127.0.0.1:${gated.port}`,
+    MIRAFOLD_RELAY_CODE: "lapsed-service-itest-code-2e7f8a",
+    MIRAFOLD_LICENSE_KEY: "mf_itest_lapsed_key",
+    MIRAFOLD_ENTITLEMENT_URL: `http://127.0.0.1:${billingPort}/api/entitlement`,
+  });
+  try {
+    await waitForLog(/refused: remote access needs a valid subscription/, 10_000, dd);
+    assert.ok(!dd.logs().includes("[relay] paired with"), "no false paired on a lapsed key");
+    const local = new TestClient(dd.port);
+    await local.opened();
+    await local.type("agents"); // local product alive and answering
+    local.close();
+  } finally {
+    await dd.stop();
+    await gated.close();
+    await new Promise<void>((r) => billing.close(() => r()));
   }
 });
 

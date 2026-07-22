@@ -6,6 +6,7 @@ import {
   CLOSE_OVERLOADED,
   CLOSE_UNENTITLED,
   DAEMON_PATH,
+  ENTITLEMENT_HEADER,
   HANDSHAKE_TIMEOUT_MS,
   PAIR_PARAM,
   type DaemonToRelay,
@@ -97,10 +98,18 @@ export function startRelayClient(opts: {
   url: string;
   code: string;
   registry: SessionRegistry;
+  /** R.5 entitlement token source (see entitlement.ts). Resolved fresh per
+   *  dial; `refresh: true` after an unentitled refusal so an expired token is
+   *  re-exchanged before the retry. undefined token = dial with no header (a
+   *  gated relay refuses; an ungated one doesn't care). */
+  token?: (opts: { refresh: boolean }) => Promise<string | undefined>;
 }): RelayClient {
   let stopped = false;
   let backoff = RECONNECT_MIN_MS;
   let sock: WebSocket | null = null;
+  // Set by a CLOSE_UNENTITLED refusal: the next dial force-refreshes its token
+  // first (the cached one just proved stale/refused).
+  let refreshTokenNext = false;
   const remotes = new Map<string, Remote>();
 
   const dropAll = () => {
@@ -111,10 +120,16 @@ export function startRelayClient(opts: {
     remotes.clear();
   };
 
-  const dial = (pair: PairSecret) => {
+  const dial = async (pair: PairSecret) => {
+    if (stopped) return;
+    // Token first (may hit the billing endpoint), socket second — and re-check
+    // stopped across the await so stop() during the fetch never leaks a socket.
+    const token = opts.token ? await opts.token({ refresh: refreshTokenNext }) : undefined;
+    refreshTokenNext = false;
     if (stopped) return;
     const ws = new WebSocket(`${opts.url}${DAEMON_PATH}?${PAIR_PARAM}=${pair.id}`, {
       maxPayload: MAX_ENVELOPE,
+      ...(token ? { headers: { [ENTITLEMENT_HEADER]: token } } : {}),
     });
     sock = ws;
     let wasOpen = false;
@@ -231,13 +246,14 @@ export function startRelayClient(opts: {
       const refusal = relayRefusalReason(code);
       if (refusal) console.log(`[relay] refused: ${refusal} — retrying`);
       else if (wasOpen) console.log(`[relay] connection lost — retrying`);
-      const t = setTimeout(() => dial(pair), backoff);
+      if (code === CLOSE_UNENTITLED) refreshTokenNext = true;
+      const t = setTimeout(() => void dial(pair), backoff);
       t.unref();
       backoff = Math.min(backoff * 2, RECONNECT_MAX_MS);
     });
   };
 
-  void derivePair(opts.code).then((pair) => dial(pair));
+  void derivePair(opts.code).then((pair) => void dial(pair));
   return {
     stop: () => {
       stopped = true;

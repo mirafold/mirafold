@@ -16,7 +16,9 @@ import { WebSocketServer, WebSocket } from "ws";
 import {
   CLOSE_BAD_CODE,
   CLOSE_CODE_TAKEN,
+  CLOSE_UNENTITLED,
   DAEMON_PATH,
+  ENTITLEMENT_HEADER,
   MIN_PAIR_ID_LENGTH,
   PAIR_PARAM,
   VIEWPORT_PATH,
@@ -38,7 +40,17 @@ export type RelayTap = {
   frame?: (dir: "c2d" | "d2c", p: string) => void;
 };
 
-export function startRelayStub(opts: { port?: number; tap?: RelayTap } = {}): Promise<RelayStub> {
+export function startRelayStub(
+  opts: {
+    port?: number;
+    tap?: RelayTap;
+    /** R.5 test knob: when set, a daemon dial-in whose ENTITLEMENT_HEADER is
+     *  not exactly this string is refused CLOSE_UNENTITLED — models the real
+     *  relay's gate without crypto (signature verification is the real relay's
+     *  job and is tested in its own repo + the sibling itest). */
+    entitlementToken?: string;
+  } = {},
+): Promise<RelayStub> {
   const app = express();
   const DIST = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "dist");
   app.use(express.static(DIST));
@@ -56,6 +68,15 @@ export function startRelayStub(opts: { port?: number; tap?: RelayTap } = {}): Pr
     const pairId = url.searchParams.get(PAIR_PARAM) ?? "";
     if (url.pathname === DAEMON_PATH) {
       wss.handleUpgrade(req, socket, head, (ws) => {
+        // R.5 gate (when the test knob is on): exact-match the header, like
+        // the real relay refuses after accepting the upgrade.
+        if (opts.entitlementToken !== undefined) {
+          const h = req.headers[ENTITLEMENT_HEADER];
+          if ((Array.isArray(h) ? h[0] : h) !== opts.entitlementToken) {
+            ws.close(CLOSE_UNENTITLED);
+            return;
+          }
+        }
         // One daemon per pair id, ever — a second dial-in (or a guessably
         // short id) is refused, never silently adopted.
         if (pairId.length < MIN_PAIR_ID_LENGTH || pairs.has(pairId)) {

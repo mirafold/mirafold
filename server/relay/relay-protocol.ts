@@ -39,6 +39,11 @@ export const CLOSE_BAD_CODE = 4003; // no daemon paired under that id
 export const CLOSE_OVERLOADED = 4004; // relay at a capacity cap
 export const CLOSE_UNENTITLED = 4007; // dial-in without a valid entitlement token
 
+// Request header the daemon presents its entitlement token on when dialing in
+// (the paid-tier gate, R.5). Shared contract with the relay's contract.ts —
+// the sibling itest's parity guard pins them equal.
+export const ENTITLEMENT_HEADER = "mirafold-entitlement";
+
 // A pair id shorter than this is refused outright — a guessable dev value
 // must never silently work against a relay. (Real ids are 22 chars.)
 export const MIN_PAIR_ID_LENGTH = 8;

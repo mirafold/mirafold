@@ -10,6 +10,7 @@ import { openConnection } from "./sessions/connection";
 import { probeLocalServers } from "./local-models";
 import { sweepLiveness } from "./sessions/ws-liveness";
 import { startRelayClient } from "./relay/relay-client";
+import { createEntitlementTokenSource } from "./relay/entitlement";
 import { MIN_PAIRING_CODE_LENGTH, resolvePairingCode } from "./relay/relay-protocol";
 import { COOKIE_NAME, cookieToken, isLoopbackOrigin, safeRedirectPath, tokensMatch, verifyToken } from "./security/auth";
 import { VERSION } from "./version";
@@ -259,9 +260,19 @@ listen(basePort);
 // nowhere else — R.3 derives the E2E keys from it, and only its hash reaches
 // the relay. Off unless MIRAFOLD_RELAY_URL is set.
 if (RELAY_URL && RELAY_CODE) {
-  startRelayClient({ url: RELAY_URL, code: RELAY_CODE, registry });
+  // R.5: the entitlement token source — a hand-issued token, a license key
+  // exchanged at the billing backend, or nothing (a gated relay will refuse
+  // the dial with an actionable line; local sessions never depend on this).
+  const entitlement = createEntitlementTokenSource(process.env);
+  startRelayClient({ url: RELAY_URL, code: RELAY_CODE, registry, token: entitlement.get });
+  const modeLine = {
+    "token-override": "entitlement: hand-issued token (MIRAFOLD_ENTITLEMENT_TOKEN)",
+    "license-key": "entitlement: license key (auto-refreshing token)",
+    none: "entitlement: none configured — a gated relay will refuse this daemon",
+  }[entitlement.mode];
   console.log(
     `[relay] dialing ${RELAY_URL} — pairing code: ${RELAY_CODE}\n` +
+      `[relay] ${modeLine}\n` +
       `[relay] KEEP THAT CODE SECRET — it grants remote access to your sessions; ` +
       `never paste this boot output into an issue or chat`,
   );
