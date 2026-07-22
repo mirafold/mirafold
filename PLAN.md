@@ -963,6 +963,18 @@ restored it on close. One human-judgment residue remains only if desired: a
 person confirming the TTS *sounds* right subjectively — but comprehensibility,
 naming, ordering, and no-flood are all now proven from the assistant side.
 
+**Other screen readers — deferred post-launch, Kyle's call 2026-07-22.**
+Every walk above was Orca + Chrome on Linux; NVDA, JAWS (Windows), and
+VoiceOver (macOS/iOS) have not been walked — each needs hardware or a VM we
+don't have running (NVDA is free, a Windows VM is the realistic route; JAWS
+has a 40-minute demo mode; VoiceOver needs Apple hardware). They consume the
+same ARIA semantics the Orca walk verified, so the standard-patterns bet is
+that the results carry — but that's an expectation, not a verification.
+Kyle's call: **save those walks for post-launch polishing** — not a launch
+gate, not owed by A.4 (whose statement already words the scope honestly:
+"most thorough with Orca on Chrome"). When picked up, it's the same
+by-ear pass documented in the walk note above, per reader, on its own OS.
+
 - [x] **Step A.1 — Live regions: streaming agent output is announced** —
   done 2026-07-21 (full live Orca walk, run autonomously; see closing note)
   - Goal: the fatal gap. A screen-reader user sends a prompt and hears
@@ -1111,6 +1123,15 @@ naming, ordering, and no-flood are all now proven from the assistant side.
     would change keyboard behavior for sighted users too (focus would jump
     on every permission prompt). Per [[a11y-standing-rule]] that makes it
     Kyle's call, not a silent fix. Flagged, not acted on.
+  - **RESOLVED 2026-07-22, Kyle's call: focus does NOT move. LOCKED.** His
+    words: *"it violates normal browser behavior - don't do it."* In a
+    browser, focus moves only when the user moves it; an unrequested jump
+    also widens the accident window (an Enter typed in flight would land on
+    a permission control — the one place a stray keystroke is most costly).
+    The current shape — assertive announcement + Tab-reachable
+    `allow`/`deny` — is the final design, not an interim. Don't re-propose
+    focus moves here, including "safe" conditional variants (move-only-when-
+    input-empty, jump-to-bar shortcuts); those were presented and declined.
 
 - [x] **Step A.2 — Every control is a real control** — done 2026-07-20
   (third file closed by A.2b below, same day)
