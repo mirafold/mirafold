@@ -970,7 +970,14 @@ only credential and a guessable one is remote shell access),
 will hold, default 16), and `RELAY_VIEWPORT_IDLE_MS` (a handshaken remote
 viewport that sends no authenticated frame for this long is dropped,
 default 90 s — the web client heartbeats every 25 s, so only a dead or fake
-peer goes quiet that long). For dev, `node --import tsx server/relay/relay-stub.ts`
+peer goes quiet that long). The R.5 entitlement trio (a GATED relay refuses
+daemons without these; an ungated one ignores them): `MIRAFOLD_LICENSE_KEY`
+(the paid tier's permanent key — the daemon quietly exchanges it for
+short-lived signed tokens and sends them on the dial-out),
+`MIRAFOLD_ENTITLEMENT_URL` (the exchange endpoint, default
+`https://mirafold.com/api/entitlement`), and `MIRAFOLD_ENTITLEMENT_TOKEN`
+(a hand-issued token used verbatim — ops/testing; wins over the license
+key). For dev, `node --import tsx server/relay/relay-stub.ts`
 runs the in-repo stub relay on `:9100`.
 
 **Fully local, no API key:** a session is local when the *agent* behind it
