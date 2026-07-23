@@ -2863,8 +2863,9 @@ html {
    canvas — just tighter chrome and comfortable tap targets. Two rules make
    it feel like an app instead of a page: the frame is EXACTLY the visual
    viewport (100dvh, no overscroll — the page never wiggles under a swipe;
-   only the render zone scrolls), and the status bar becomes two deliberate
-   rows (controls, then dim session facts) instead of arbitrary wrapping. */
+   only the render zone scrolls), and the status bar is ONE guaranteed row
+   of thumb-sized controls — session facts live in the settings card's
+   Session section, not in persistent chrome. */
 
 @media (max-width: 640px) {
   /* dvh tracks the browser's collapsing URL bar, so the frame is always
@@ -2927,11 +2928,6 @@ html {
     gap: 8px;
   }
 
-  /* The cwd crumb yields to the typing space on a narrow prompt. */
-  .prompt-cwd {
-    max-width: 34vw;
-  }
-
   /* The ↑ send button — phone's ONE submit gesture (Enter is a newline
      here; PromptBox only renders this at phone width). Inline in the
      prompt row beside the textarea, so it adds no vertical height and can
@@ -2962,12 +2958,11 @@ html {
   /* ── Status bar: ONE row, guaranteed ───────────────────────────────────
        ⌂  new  ● claude-code      [⧉ pair]  ⚙  end
      The dot and the agent name read as one unit (connected — to what);
-     everything else that was on the facts row lives elsewhere on phone
-     (model + folder on the fleet rows, usage nowhere — accepted loss,
-     R.4l 2026-07-22) and the theme pill folds into the settings gear
-     (the picker card switches modes; the pill stays desktop-only per the
-     Phase S lock). nowrap + an ellipsizing agent name means adding the
-     name can never push a control off the row. */
+     everything else that was on the facts row lives in the settings
+     card's Session section (opened by the gear or the agent chip), and
+     the theme pill folds into that card too — it stays desktop-only per
+     the Phase S lock. nowrap + an ellipsizing agent name means the name
+     can never push a control off the row. */
   .status-bar {
     flex-wrap: nowrap;
     column-gap: 5px;
@@ -3057,10 +3052,14 @@ html {
     row-gap: 10px;
   }
 
-  .fleet-count,
+  .fleet-count {
+    white-space: nowrap;
+  }
+
   .fleet-new,
   .fleet-head .sb-pair {
     white-space: nowrap;
+    min-height: 40px;
   }
 
   /* Fleet rows: name + state read first; plumbing columns step back. */
@@ -3072,11 +3071,6 @@ html {
   .fleet-id,
   .fleet-sep {
     display: none;
-  }
-
-  .fleet-new,
-  .fleet-head .sb-pair {
-    min-height: 40px;
   }
 
   .fleet-end {

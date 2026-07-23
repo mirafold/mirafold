@@ -20,6 +20,12 @@ export function tokens(n: number): string {
   return `${(n / 1_000_000).toFixed(1)}M`;
 }
 
+/* Session cost in dollars — sub-dollar amounts keep a third decimal so a
+   cheap session doesn't round to a misleading $0.00. */
+export function cost(usd: number): string {
+  return `$${usd.toFixed(usd < 1 ? 3 : 2)}`;
+}
+
 export function StatusBar({
   connected,
   connectionNote,
@@ -154,15 +160,15 @@ export function StatusBar({
       <span className="sb-spacer" />
       {hasUsage && (
         <>
-          <span className="sb-item sb-usage sb-usage-turn" title="this turn (input / output tokens)">
+          <span className="sb-item sb-usage" title="this turn (input / output tokens)">
             turn ↑{tokens(usage.turnIn)} ↓{tokens(usage.turnOut)}
           </span>
-          <span className="sb-item sb-usage sb-usage-sum sb-sep" title="session total tokens">
+          <span className="sb-item sb-usage sb-sep" title="session total tokens">
             Σ {tokens(usage.sumIn + usage.sumOut)}
           </span>
           {usage.cost > 0 && (
-            <span className="sb-item sb-usage sb-usage-cost sb-sep" title="session cost (USD)">
-              ${usage.cost.toFixed(usage.cost < 1 ? 3 : 2)}
+            <span className="sb-item sb-usage sb-sep" title="session cost (USD)">
+              {cost(usage.cost)}
             </span>
           )}
         </>

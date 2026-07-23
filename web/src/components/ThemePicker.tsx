@@ -2,7 +2,7 @@ import { useRef } from "react";
 import { THEMES, parseThemeTokens, type ThemeAppearance } from "../themes/manifest";
 import { useEscapeKey } from "../use-escape";
 import { useFocusTrap } from "../use-focus-trap";
-import { tokens } from "./StatusBar";
+import { cost, tokens } from "./StatusBar";
 
 // The settings card (S.4) — SHELL-OWNED UI, the one new chrome affordance of
 // Phase S (the pill is locked unchanged). Centered modal over the scrim,
@@ -53,6 +53,26 @@ export type SessionFacts = {
   usage?: { sum: number; cost: number };
 };
 
+function sessionRows(session?: SessionFacts): [label: string, value: string][] {
+  // The daemon's version rides the hello before any session exists — without
+  // a session-identity fact present, the section stays absent entirely.
+  if (!session || !(session.agent || session.model || session.cwd)) return [];
+  const rows: [string, string | undefined][] = [
+    ["agent", session.agent],
+    ["model", session.model],
+    ["folder", session.cwd],
+    [
+      "usage",
+      session.usage &&
+        `Σ ${tokens(session.usage.sum)}` +
+          (session.usage.cost > 0 ? ` · ${cost(session.usage.cost)}` : ""),
+    ],
+    ["session", session.sessionId],
+    ["daemon", session.version && `v${session.version}`],
+  ];
+  return rows.filter((r): r is [string, string] => Boolean(r[1]));
+}
+
 export function ThemePicker({
   slots,
   onPick,
@@ -97,50 +117,16 @@ export function ThemePicker({
             ✕
           </button>
         </div>
-        {session && (session.agent || session.cwd || session.model) && (
+        {sessionRows(session).length > 0 && (
           <>
             <div className="settings-section-title">Session</div>
             <dl className="settings-kv">
-              {session.agent && (
-                <div className="settings-kv-row">
-                  <dt>agent</dt>
-                  <dd>{session.agent}</dd>
+              {sessionRows(session).map(([label, value]) => (
+                <div key={label} className="settings-kv-row">
+                  <dt>{label}</dt>
+                  <dd>{value}</dd>
                 </div>
-              )}
-              {session.model && (
-                <div className="settings-kv-row">
-                  <dt>model</dt>
-                  <dd>{session.model}</dd>
-                </div>
-              )}
-              {session.cwd && (
-                <div className="settings-kv-row">
-                  <dt>folder</dt>
-                  <dd>{session.cwd}</dd>
-                </div>
-              )}
-              {session.usage && (
-                <div className="settings-kv-row">
-                  <dt>usage</dt>
-                  <dd>
-                    Σ {tokens(session.usage.sum)}
-                    {session.usage.cost > 0 &&
-                      ` · $${session.usage.cost.toFixed(session.usage.cost < 1 ? 3 : 2)}`}
-                  </dd>
-                </div>
-              )}
-              {session.sessionId && (
-                <div className="settings-kv-row">
-                  <dt>session</dt>
-                  <dd>{session.sessionId}</dd>
-                </div>
-              )}
-              {session.version && (
-                <div className="settings-kv-row">
-                  <dt>daemon</dt>
-                  <dd>v{session.version}</dd>
-                </div>
-              )}
+              ))}
             </dl>
           </>
         )}

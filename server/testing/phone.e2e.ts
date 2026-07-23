@@ -28,6 +28,13 @@ const noSideScroll = async (p: Page) => {
   assert.ok(over <= 1, `page scrolls sideways by ${over}px`);
 };
 
+// The phone's one submit gesture (Enter is a newline there — see below).
+const sendPrompt = async (p: Page, text: string) => {
+  await p.locator("textarea").tap();
+  await p.keyboard.type(text);
+  await p.locator(".prompt-send").tap();
+};
+
 before(async () => {
   stub = await startRelayStub();
   d = await startDaemon({ MIRAFOLD_TOKEN: "", MIRAFOLD_RELAY_URL: stub.url, MIRAFOLD_RELAY_CODE: CODE });
@@ -92,8 +99,7 @@ test("phone: pairs by URL, opens the session, drives a turn with a rendered comp
   );
 
   await phone.locator("textarea").fill("");
-  await phone.keyboard.type("plan it step by step");
-  await phone.locator(".prompt-send").tap();
+  await sendPrompt(phone, "plan it step by step");
   await phone.waitForSelector("text=Plan complete — all four steps done.", { timeout: 30_000 });
   // The live checklist is a rendered registry component — generative UI on
   // the phone, through the encrypted relay path.
@@ -165,9 +171,7 @@ test("phone: pairs by URL, opens the session, drives a turn with a rendered comp
 });
 
 test("phone: a permission request is answerable by thumb", async () => {
-  await phone.locator("textarea").tap();
-  await phone.keyboard.type("do something dangerous");
-  await phone.locator(".prompt-send").tap();
+  await sendPrompt(phone, "do something dangerous");
   await phone.waitForSelector(".perm-bar", { timeout: 15_000 });
   await noSideScroll(phone);
   const allow = phone.locator(".perm-allow");
@@ -182,9 +186,7 @@ test("phone: a network flip mid-turn resumes the stream without losing the trans
   // handle would be detached afterwards.
   const marker = await phone.waitForSelector(".turn-user");
 
-  await phone.locator("textarea").tap();
-  await phone.keyboard.type("plan it step by step");
-  await phone.locator(".prompt-send").tap();
+  await sendPrompt(phone, "plan it step by step");
   await phone.waitForSelector("text=Read the current implementation", { timeout: 15_000 });
 
   await phoneCtx.setOffline(true); // wifi drops mid-turn…
