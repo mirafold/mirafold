@@ -2,10 +2,12 @@
 // only with a valid signed token on the ENTITLEMENT_HEADER (when its gate is
 // on); this module is where that token comes from. Two supplies:
 //
-//  - MIRAFOLD_ENTITLEMENT_TOKEN: a hand-issued token used verbatim (comped
-//    beta testers, ops smoke tests). When set, the exchange machinery below
-//    never starts — precedence beats mutual exclusion so a tester can override
-//    a broken exchange without unsetting anything.
+//  - MIRAFOLD_ENTITLEMENT_TOKEN: a hand-issued token used verbatim — an
+//    OPS/EMERGENCY path only, never a tester channel (beta testers pay real
+//    subscriptions and get license keys via /pay; Kyle's rule, 2026-07-23).
+//    When set, the exchange machinery below never starts — precedence beats
+//    mutual exclusion so ops can override a broken exchange without
+//    unsetting anything.
 //  - MIRAFOLD_LICENSE_KEY: the paid path. The permanent key a customer gets at
 //    checkout is exchanged at the billing backend (MIRAFOLD_ENTITLEMENT_URL,
 //    default https://mirafold.com/api/entitlement) for a short-lived (~48h)
