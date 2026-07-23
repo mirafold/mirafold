@@ -1,0 +1,397 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 2460" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
+    </marker>
+    <marker id="arrblue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#1d4ed8"/>
+    </marker>
+  </defs>
+  <style>
+    .t1 { font-size: 34px; font-weight: 800; fill: #0f172a; }
+    .t2 { font-size: 15px; font-style: italic; fill: #475569; }
+    .t3 { font-size: 14px; font-weight: 700; fill: #2563eb; }
+    .lt { font-size: 19px; font-weight: 800; fill: #111827; }
+    .ls { font-size: 12.5px; font-weight: 700; fill: #2563eb; }
+    .b  { font-size: 11.5px; fill: #1f2937; }
+    .bs { font-size: 11px; fill: #1f2937; }
+    .m  { font-size: 10.5px; font-family: 'SF Mono', 'Cascadia Code', Consolas, 'Liberation Mono', monospace; fill: #334155; }
+    .m10 { font-size: 10px; font-family: 'SF Mono', 'Cascadia Code', Consolas, 'Liberation Mono', monospace; fill: #334155; }
+    .num { font-size: 20px; font-weight: 800; fill: #ffffff; }
+    .cnum { font-size: 12px; font-weight: 800; fill: #ffffff; }
+    .amber { fill: #b45309; }
+    .green { fill: #15803d; }
+    .bt { font-size: 12px; font-weight: 700; }
+  </style>
+
+  <rect x="0" y="0" width="1200" height="2460" fill="#ffffff"/>
+
+  <!-- ======================= HEADER ======================= -->
+  <text x="470" y="52" text-anchor="middle" class="t1">HOW MIRAFOLD WORKS</text>
+  <text x="470" y="80" text-anchor="middle" class="t2">Browser re-skin of terminal coding agents with generative UI on top</text>
+  <text x="470" y="104" text-anchor="middle" class="t3">Top-to-bottom flow &#8226; 5 layers</text>
+
+  <!-- ======================= RIGHT CALLOUTS ======================= -->
+  <rect x="850" y="18" width="330" height="58" rx="8" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.5"/>
+  <circle cx="872" cy="46" r="10" fill="#1d4ed8"/>
+  <text x="872" y="50" text-anchor="middle" class="cnum">1</text>
+  <text x="892" y="42" class="bt" fill="#1e3a8a">The model writes the props.</text>
+  <text x="892" y="60" font-size="12" fill="#1e3a8a">The pipeline just delivers them.</text>
+
+  <rect x="850" y="84" width="330" height="84" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
+  <circle cx="872" cy="108" r="10" fill="#16a34a"/>
+  <text x="872" y="112" text-anchor="middle" class="cnum">2</text>
+  <text x="892" y="104" font-size="12" fill="#14532d"><tspan font-weight="700">Trust boundary:</tspan> the model's reach ends</text>
+  <text x="892" y="120" font-size="12" fill="#14532d">at the output-zone border; the prompt box,</text>
+  <text x="892" y="136" font-size="12" fill="#14532d">credentials, and socket are structurally</text>
+  <text x="892" y="152" font-size="12" fill="#14532d">out of its reach.</text>
+
+  <rect x="850" y="176" width="330" height="72" rx="8" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5"/>
+  <circle cx="872" cy="200" r="10" fill="#7c3aed"/>
+  <text x="872" y="204" text-anchor="middle" class="cnum">3</text>
+  <text x="892" y="196" font-size="12" fill="#4c1d95"><tspan font-weight="700">Double validation:</tspan> schema-checked at</text>
+  <text x="892" y="212" font-size="12" fill="#4c1d95">the engine (layer 2) and again, tolerantly,</text>
+  <text x="892" y="228" font-size="12" fill="#4c1d95">at the client (layer 5).</text>
+
+  <!-- ======================= LEFT RAIL: layer 1 (provider-hosted) ======================= -->
+  <polyline points="94,134 84,134 84,546 94,546" fill="none" stroke="#d97706" stroke-width="1.5" stroke-dasharray="4 3"/>
+  <text x="42" y="300" text-anchor="middle" font-size="10.5" font-weight="700" class="amber">Hosted at</text>
+  <text x="42" y="315" text-anchor="middle" font-size="10.5" font-weight="700" class="amber">the model</text>
+  <text x="42" y="330" text-anchor="middle" font-size="10.5" font-weight="700" class="amber">provider's</text>
+  <text x="42" y="345" text-anchor="middle" font-size="10.5" font-weight="700" class="amber">API</text>
+  <text x="42" y="364" text-anchor="middle" font-size="9.5" font-style="italic" class="amber">(local models</text>
+  <text x="42" y="377" text-anchor="middle" font-size="9.5" font-style="italic" class="amber">optional)</text>
+
+  <!-- ======================= LEFT RAIL: layers 2-3 (local) ======================= -->
+  <polyline points="94,592 78,592 78,1348 94,1348" fill="none" stroke="#334155" stroke-width="1.8"/>
+  <text x="42" y="905" text-anchor="middle" font-size="16">&#128187;</text>
+  <text x="42" y="932" text-anchor="middle" font-size="12" font-weight="700" fill="#334155">Runs on</text>
+  <text x="42" y="947" text-anchor="middle" font-size="12" font-weight="700" fill="#334155">user's</text>
+  <text x="42" y="962" text-anchor="middle" font-size="12" font-weight="700" fill="#334155">machine</text>
+  <text x="42" y="977" text-anchor="middle" font-size="12" font-weight="700" fill="#334155">(local</text>
+  <text x="42" y="992" text-anchor="middle" font-size="12" font-weight="700" fill="#334155">daemon)</text>
+
+  <!-- ======================= LAYER 1 — THE MODEL ======================= -->
+  <rect x="100" y="130" width="720" height="420" rx="12" fill="#ffffff" stroke="#3b82f6" stroke-width="2"/>
+  <rect x="118" y="148" width="44" height="44" rx="10" fill="#1d4ed8"/>
+  <text x="140" y="177" text-anchor="middle" class="num">1</text>
+  <text x="175" y="168" class="lt">LAYER 1 &#8212; THE MODEL</text>
+  <text x="175" y="188" class="ls">The LLM</text>
+  <text x="175" y="207" font-size="11" font-style="italic" class="amber">Inference happens at the model provider's API &#8212; not on the user's machine</text>
+  <text x="175" y="221" font-size="11" font-style="italic" class="amber">(running a local model is the optional exception).</text>
+
+  <rect x="120" y="240" width="150" height="84" rx="10" fill="#eff6ff" stroke="#60a5fa" stroke-width="1.5"/>
+  <text x="195" y="274" text-anchor="middle" font-size="15" font-weight="700" fill="#111827">Claude / GPT /</text>
+  <text x="195" y="294" text-anchor="middle" font-size="15" font-weight="700" fill="#111827">Gemini</text>
+  <text x="296" y="258" text-anchor="middle" font-size="10" font-style="italic" fill="#475569">Reply is a</text>
+  <text x="296" y="271" text-anchor="middle" font-size="10" font-style="italic" fill="#475569">stream of both</text>
+  <line x1="274" y1="282" x2="330" y2="282" stroke="#334155" stroke-width="1.5" marker-end="url(#arr)"/>
+  <rect x="336" y="236" width="170" height="96" rx="10" fill="none" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <rect x="346" y="244" width="150" height="36" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.2"/>
+  <text x="421" y="266" text-anchor="middle" font-size="12" font-weight="700" fill="#334155">Markdown / prose</text>
+  <rect x="346" y="288" width="150" height="36" rx="8" fill="#fef3c7" stroke="#d97706" stroke-width="1.2"/>
+  <text x="421" y="310" text-anchor="middle" font-size="12.5" font-weight="800" fill="#92400e">TOOL CALLS</text>
+
+  <circle cx="522" cy="244" r="2.2" fill="#1f2937"/>
+  <text x="530" y="248" class="b">Model authors markdown text + tool calls</text>
+  <circle cx="522" cy="265" r="2.2" fill="#1f2937"/>
+  <text x="530" y="269" class="b">All 11 render tools:</text>
+  <text x="530" y="284" class="m10">render_card &#183; render_list &#183; render_table</text>
+  <text x="530" y="298" class="m10">render_chart &#183; render_links &#183; render_keyvalue</text>
+  <text x="530" y="312" class="m10">render_progress &#183; render_timeline</text>
+  <text x="530" y="326" class="m10">render_filetree &#183; render_question &#183; render_diff</text>
+  <circle cx="522" cy="343" r="2.2" fill="#1f2937"/>
+  <text x="530" y="347" class="b">Tool input schema = the matching React</text>
+  <text x="530" y="362" class="b">component's prop schema</text>
+  <circle cx="522" cy="379" r="2.2" fill="#1f2937"/>
+  <text x="530" y="383" class="m10">render_table({ columns:[&#8230;], rows:[&#8230;] })</text>
+  <text x="530" y="398" class="b">&#8594; JSON args are the component props verbatim</text>
+  <circle cx="522" cy="415" r="2.2" fill="#1f2937"/>
+  <text x="530" y="419" class="b"><tspan font-weight="700">emit_artifact</tspan> = LAST RESORT for bespoke</text>
+  <text x="530" y="434" class="b">HTML/JS (sandboxed iframe)</text>
+  <circle cx="522" cy="451" r="2.2" fill="#1f2937"/>
+  <text x="530" y="455" class="b">RENDER_GUIDANCE: prefer render tools over</text>
+  <text x="530" y="470" class="b">markdown tables/lists/ASCII charts</text>
+  <circle cx="522" cy="487" r="2.2" fill="#1f2937"/>
+  <text x="530" y="491" class="b">Re-call with a previous id = update in place</text>
+
+  <rect x="120" y="505" width="680" height="30" rx="6" fill="#fef2f2" stroke="#dc2626" stroke-width="1.2"/>
+  <text x="460" y="524" text-anchor="middle" font-size="12" font-weight="700" fill="#b91c1c">NO DOWNSTREAM LAYER CONVERTS THE JSON &#8212; IT IS DELIVERED VERBATIM.</text>
+
+  <line x1="460" y1="552" x2="460" y2="584" stroke="#334155" stroke-width="2" marker-end="url(#arr)"/>
+
+  <!-- ======================= LAYER 2 — THE AGENT ENGINE ======================= -->
+  <rect x="100" y="590" width="1080" height="400" rx="12" fill="#ffffff" stroke="#3b82f6" stroke-width="2"/>
+  <rect x="118" y="606" width="44" height="44" rx="10" fill="#1d4ed8"/>
+  <text x="140" y="635" text-anchor="middle" class="num">2</text>
+  <text x="175" y="628" class="lt">LAYER 2 &#8212; THE AGENT ENGINE</text>
+  <text x="175" y="648" class="ls">Real, unmodified terminal agent</text>
+  <text x="780" y="628" text-anchor="middle" font-size="13" font-weight="700" fill="#1d4ed8">Two mechanically different paths, same result</text>
+  <polyline points="780,636 583,650 583,658" fill="none" stroke="#1d4ed8" stroke-width="1.5" marker-end="url(#arrblue)"/>
+  <polyline points="780,636 974,650 974,658" fill="none" stroke="#1d4ed8" stroke-width="1.5" marker-end="url(#arrblue)"/>
+
+  <rect x="118" y="660" width="260" height="260" rx="10" fill="#eff6ff" stroke="#60a5fa" stroke-width="1.5"/>
+  <text x="248" y="684" text-anchor="middle" font-size="14" font-weight="700" fill="#111827">Claude Code / Codex /</text>
+  <text x="248" y="702" text-anchor="middle" font-size="14" font-weight="700" fill="#111827">Gemini CLI</text>
+  <circle cx="140" cy="722" r="2.2" fill="#1f2937"/>
+  <text x="148" y="726" class="bs">User picks one per session;</text>
+  <text x="148" y="740" class="bs">none is privileged</text>
+  <circle cx="140" cy="757" r="2.2" fill="#1f2937"/>
+  <text x="148" y="761" class="bs">Runs the agentic loop</text>
+  <circle cx="140" cy="778" r="2.2" fill="#1f2937"/>
+  <text x="148" y="782" class="bs">Sends conversation to the model</text>
+  <circle cx="140" cy="799" r="2.2" fill="#1f2937"/>
+  <text x="148" y="803" class="bs">Receives text + tool calls</text>
+  <circle cx="140" cy="820" r="2.2" fill="#1f2937"/>
+  <text x="148" y="824" class="bs">Validates tool args against schema</text>
+  <circle cx="140" cy="841" r="2.2" fill="#1f2937"/>
+  <text x="148" y="845" class="bs">Executes tools</text>
+  <circle cx="140" cy="862" r="2.2" fill="#1f2937"/>
+  <text x="148" y="866" class="bs">Returns each render call's id</text>
+  <text x="148" y="880" class="bs">to the model</text>
+  <circle cx="140" cy="897" r="2.2" fill="#1f2937"/>
+  <text x="148" y="901" class="bs">Render tools injected via MCP</text>
+
+  <rect x="398" y="660" width="370" height="235" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.8"/>
+  <text x="416" y="684" font-size="13.5" font-weight="800" class="green">PATH A &#8212; Claude Code</text>
+  <circle cx="426" cy="704" r="2.2" fill="#14532d"/>
+  <text x="434" y="708" class="b">Render tools run IN-PROCESS inside the</text>
+  <text x="434" y="723" class="b">Mirafold daemon</text>
+  <circle cx="426" cy="740" r="2.2" fill="#14532d"/>
+  <text x="434" y="744" class="b"><tspan class="m">server/render-tools.ts</tspan> via the</text>
+  <text x="434" y="759" class="b">Claude Agent SDK</text>
+  <circle cx="426" cy="776" r="2.2" fill="#14532d"/>
+  <text x="434" y="780" class="b">Tool handler directly emits the wire</text>
+  <text x="434" y="795" class="b">message into the session stream</text>
+  <circle cx="426" cy="812" r="2.2" fill="#14532d"/>
+  <text x="434" y="816" class="b">Schemas come from the shared registry</text>
+  <text x="434" y="831" class="b">spec &#8212; one source of truth for both paths</text>
+
+  <rect x="788" y="660" width="372" height="235" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="1.8"/>
+  <text x="806" y="684" font-size="13.5" font-weight="800" class="amber">PATH B &#8212; Codex / Gemini CLI</text>
+  <circle cx="816" cy="704" r="2.2" fill="#78350f"/>
+  <text x="824" y="708" class="b">Engine loads MCP servers as subprocesses</text>
+  <circle cx="816" cy="725" r="2.2" fill="#78350f"/>
+  <text x="824" y="729" class="b">Mirafold tool server: <tspan class="m">server/render-mcp.ts</tspan></text>
+  <circle cx="816" cy="746" r="2.2" fill="#78350f"/>
+  <text x="824" y="750" class="b">Grandchild process with NO access to the session</text>
+  <circle cx="816" cy="767" r="2.2" fill="#78350f"/>
+  <text x="824" y="771" class="b">Thin stub: advertises schemas and acks each</text>
+  <text x="824" y="786" class="b">call with an id</text>
+  <circle cx="816" cy="803" r="2.2" fill="#78350f"/>
+  <text x="824" y="807" class="b">Adapter watches the engine's own tool-call</text>
+  <text x="824" y="822" class="b">events (Codex: <tspan class="m">mcp_tool_call</tspan> items; Gemini:</text>
+  <text x="824" y="837" class="b"><tspan class="m">mcp_mirafold_*</tspan> tools), reads the args, and</text>
+  <text x="824" y="852" class="b">synthesizes the identical wire message</text>
+
+  <polyline points="583,897 583,930 688,948" fill="none" stroke="#334155" stroke-width="1.5" marker-end="url(#arr)"/>
+  <polyline points="974,897 974,930 872,948" fill="none" stroke="#334155" stroke-width="1.5" marker-end="url(#arr)"/>
+  <rect x="690" y="934" width="180" height="32" rx="16" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="780" y="954" text-anchor="middle" font-size="12.5" font-weight="700" fill="#1d4ed8">Output stream</text>
+
+  <line x1="640" y1="992" x2="640" y2="1024" stroke="#334155" stroke-width="2" marker-end="url(#arr)"/>
+
+  <!-- ======================= LAYER 3 — THE ADAPTER + DAEMON ======================= -->
+  <rect x="100" y="1030" width="1080" height="320" rx="12" fill="#ffffff" stroke="#3b82f6" stroke-width="2"/>
+  <rect x="118" y="1046" width="44" height="44" rx="10" fill="#1d4ed8"/>
+  <text x="140" y="1075" text-anchor="middle" class="num">3</text>
+  <text x="175" y="1068" class="lt">LAYER 3 &#8212; THE ADAPTER + DAEMON</text>
+  <text x="175" y="1088" class="ls">Local server (Node)</text>
+
+  <rect x="118" y="1104" width="470" height="160" rx="10" fill="#eff6ff" stroke="#60a5fa" stroke-width="1.5"/>
+  <text x="136" y="1128" font-size="13.5" font-weight="700" fill="#1e40af">Mirafold local server</text>
+  <circle cx="146" cy="1148" r="2.2" fill="#1f2937"/>
+  <text x="154" y="1152" class="b">One adapter per engine in <tspan class="m">server/adapters/</tspan>:</text>
+  <text x="154" y="1168" class="m">claude-code.ts &#183; codex.ts &#183; gemini-cli.ts &#183; mock.ts</text>
+  <circle cx="146" cy="1185" r="2.2" fill="#1f2937"/>
+  <text x="154" y="1189" class="b">Drives its engine</text>
+  <circle cx="146" cy="1206" r="2.2" fill="#1f2937"/>
+  <text x="154" y="1210" class="b">Normalizes each engine's native event vocabulary into</text>
+  <text x="154" y="1225" class="b">one shared typed message stream</text>
+  <circle cx="146" cy="1242" r="2.2" fill="#1f2937"/>
+  <text x="154" y="1246" class="b">Fork from Layer 2 merges here</text>
+
+  <rect x="608" y="1104" width="552" height="160" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="1.8"/>
+  <text x="626" y="1128" font-size="13" font-weight="800" class="amber">&#9733; Special case: todo-list has NO render tool</text>
+  <circle cx="636" cy="1148" r="2.2" fill="#78350f"/>
+  <text x="644" y="1152" class="b">The adapter synthesizes the render message from the engine's</text>
+  <text x="644" y="1167" class="b">native plan/todo events</text>
+  <circle cx="636" cy="1184" r="2.2" fill="#78350f"/>
+  <text x="644" y="1188" class="b">Examples: Claude Code's <tspan class="m">TodoWrite</tspan> tool; Codex's <tspan class="m">todo_list</tspan> items</text>
+  <circle cx="636" cy="1205" r="2.2" fill="#78350f"/>
+  <text x="644" y="1209" class="b">The user sees a live task list as a real component</text>
+
+  <rect x="118" y="1284" width="1042" height="34" rx="6" fill="#fef2f2" stroke="#dc2626" stroke-width="1.2"/>
+  <text x="639" y="1306" text-anchor="middle" font-size="12.5" font-weight="700" fill="#b91c1c">&#128274; Secrets stop here and are never serialized onto the wire.</text>
+
+  <line x1="640" y1="1352" x2="640" y2="1384" stroke="#334155" stroke-width="2" marker-end="url(#arr)"/>
+
+  <!-- ======================= LAYER 4 — THE WIRE PROTOCOL ======================= -->
+  <rect x="100" y="1390" width="1080" height="430" rx="12" fill="#ffffff" stroke="#3b82f6" stroke-width="2"/>
+  <rect x="118" y="1406" width="44" height="44" rx="10" fill="#1d4ed8"/>
+  <text x="140" y="1435" text-anchor="middle" class="num">4</text>
+  <text x="175" y="1428" class="lt">LAYER 4 &#8212; THE WIRE PROTOCOL</text>
+  <text x="175" y="1448" class="ls">WebSocket</text>
+  <text x="1160" y="1428" text-anchor="end" font-size="13" font-weight="700" fill="#1d4ed8">One WebSocket carrying typed JSON messages</text>
+
+  <rect x="320" y="1440" width="640" height="34" rx="8" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.2"/>
+  <text x="640" y="1462" text-anchor="middle" font-size="12" font-family="'SF Mono', 'Cascadia Code', Consolas, monospace" fill="#334155">{ type:"render", component:"table", props:{&#8230;}, id:"&#8230;" }</text>
+
+  <rect x="118" y="1490" width="545" height="216" rx="10" fill="#eff6ff" stroke="#60a5fa" stroke-width="1.5"/>
+  <text x="136" y="1514" font-size="12.5" font-weight="700" fill="#1e40af">Server &#8594; client &#8212; the full vocabulary (<tspan class="m">server/protocol.ts</tspan>)</text>
+  <text x="150" y="1538" class="m">text_delta</text>
+  <text x="150" y="1552" class="m">thinking_delta</text>
+  <text x="150" y="1566" class="m" font-weight="700" fill="#b45309">render &#9733;</text>
+  <text x="150" y="1580" class="m">picker</text>
+  <text x="150" y="1594" class="m">status</text>
+  <text x="150" y="1608" class="m">tool_use</text>
+  <text x="150" y="1622" class="m">tool_result</text>
+  <text x="150" y="1636" class="m">permission_request</text>
+  <text x="150" y="1650" class="m">user_prompt</text>
+  <text x="150" y="1664" class="m" font-weight="700" fill="#b45309">artifact &#9733; (sandboxed HTML)</text>
+  <text x="150" y="1678" class="m">usage</text>
+  <text x="150" y="1692" class="m">notice</text>
+  <text x="400" y="1538" class="m">error</text>
+  <text x="400" y="1552" class="m">turn_end</text>
+  <text x="400" y="1566" class="m">session_created</text>
+  <text x="400" y="1580" class="m">agents</text>
+  <text x="400" y="1594" class="m">refused</text>
+  <text x="400" y="1608" class="m">sessions</text>
+  <text x="400" y="1622" class="m">session_ended</text>
+  <text x="400" y="1636" class="m">bang_start</text>
+  <text x="400" y="1650" class="m">bang_output</text>
+  <text x="400" y="1664" class="m">bang_end</text>
+  <text x="400" y="1678" class="m">pong</text>
+  <text x="400" y="1697" font-size="10" font-style="italic" fill="#64748b">&#9733; = the generative-UI pair</text>
+
+  <rect x="683" y="1490" width="477" height="216" rx="10" fill="#eff6ff" stroke="#60a5fa" stroke-width="1.5"/>
+  <text x="701" y="1514" font-size="12.5" font-weight="700" fill="#1e40af">Client &#8594; server &#8212; the full vocabulary</text>
+  <text x="715" y="1538" class="m">prompt</text>
+  <text x="715" y="1552" class="m">interrupt</text>
+  <text x="715" y="1566" class="m">permission_response</text>
+  <text x="715" y="1580" class="m" font-weight="700" fill="#b45309">action &#9733;</text>
+  <text x="715" y="1594" class="m">attach</text>
+  <text x="715" y="1608" class="m">create</text>
+  <text x="715" y="1622" class="m">bang</text>
+  <text x="945" y="1538" class="m">bang_input</text>
+  <text x="945" y="1552" class="m">bang_kill</text>
+  <text x="945" y="1566" class="m">ping</text>
+  <text x="945" y="1580" class="m">watch_sessions</text>
+  <text x="945" y="1594" class="m">rename</text>
+  <text x="945" y="1608" class="m">end_session</text>
+  <text x="945" y="1622" class="m">refresh_agents</text>
+  <text x="715" y="1652" font-size="10.5" font-style="italic" fill="#64748b">&#9733; action = a click inside a rendered component,</text>
+  <text x="715" y="1666" font-size="10.5" font-style="italic" fill="#64748b">attributed to its render id</text>
+
+  <text x="136" y="1734" font-size="11.5" font-style="italic" fill="#475569">Interleaving example (one session):</text>
+  <rect x="340" y="1720" width="96" height="24" rx="12" fill="#f8fafc" stroke="#94a3b8"/>
+  <text x="388" y="1736" text-anchor="middle" class="m">{text_delta}</text>
+  <text x="452" y="1736" text-anchor="middle" fill="#64748b" font-size="12">&#8230;</text>
+  <rect x="468" y="1720" width="76" height="24" rx="12" fill="#fef3c7" stroke="#d97706"/>
+  <text x="506" y="1736" text-anchor="middle" class="m">{render}</text>
+  <text x="560" y="1736" text-anchor="middle" fill="#64748b" font-size="12">&#8230;</text>
+  <rect x="576" y="1720" width="96" height="24" rx="12" fill="#f8fafc" stroke="#94a3b8"/>
+  <text x="624" y="1736" text-anchor="middle" class="m">{text_delta}</text>
+  <text x="688" y="1736" text-anchor="middle" fill="#64748b" font-size="12">&#8230;</text>
+  <rect x="704" y="1720" width="88" height="24" rx="12" fill="#f8fafc" stroke="#94a3b8"/>
+  <text x="748" y="1736" text-anchor="middle" class="m">{turn_end}</text>
+
+  <rect x="118" y="1770" width="1042" height="30" rx="6" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.2"/>
+  <text x="639" y="1789" text-anchor="middle" font-size="12" font-weight="700" fill="#6d28d9">ADDITIVE FOREVER &#8212; new message types may be added; existing shapes are never changed; unknown types are ignored.</text>
+
+  <line x1="640" y1="1822" x2="640" y2="1854" stroke="#334155" stroke-width="2" marker-end="url(#arr)"/>
+
+  <!-- ======================= LAYER 5 — THE WEB CLIENT ======================= -->
+  <rect x="100" y="1860" width="1080" height="490" rx="12" fill="#ffffff" stroke="#3b82f6" stroke-width="2"/>
+  <rect x="118" y="1876" width="44" height="44" rx="10" fill="#1d4ed8"/>
+  <text x="140" y="1905" text-anchor="middle" class="num">5</text>
+  <text x="175" y="1898" class="lt">LAYER 5 &#8212; THE WEB CLIENT</text>
+  <text x="175" y="1918" class="ls">React, in the browser</text>
+  <rect x="980" y="1876" width="180" height="26" rx="13" fill="#dcfce7" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="1070" y="1893" text-anchor="middle" font-size="11.5" font-weight="800" class="green">&#128274; TRUST BOUNDARY</text>
+
+  <rect x="118" y="1934" width="320" height="376" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="136" y="1958" font-size="13" font-weight="700" class="green">App-owned components</text>
+  <text x="140" y="1986" font-size="11" fill="#16a34a">&#10003; <tspan fill="#1f2937">Shell</tspan></text>
+  <text x="140" y="2003" font-size="11" fill="#16a34a">&#10003; <tspan fill="#1f2937">PromptBox</tspan></text>
+  <text x="140" y="2020" font-size="11" fill="#16a34a">&#10003; <tspan fill="#1f2937">StatusBar</tspan></text>
+  <text x="140" y="2037" font-size="11" fill="#16a34a">&#10003; <tspan fill="#1f2937">PinDock</tspan></text>
+  <text x="140" y="2054" font-size="11" fill="#16a34a">&#10003; <tspan fill="#1f2937">Onboarding</tspan></text>
+  <text x="140" y="2071" font-size="11" fill="#16a34a">&#10003; <tspan fill="#1f2937">FleetView</tspan></text>
+  <text x="290" y="1986" font-size="11" fill="#16a34a">&#10003; <tspan fill="#1f2937">ConnectDevice</tspan></text>
+  <text x="290" y="2003" font-size="11" fill="#16a34a">&#10003; <tspan fill="#1f2937">ToolBlock</tspan></text>
+  <text x="290" y="2020" font-size="11" fill="#16a34a">&#10003; <tspan fill="#1f2937">Artifact</tspan></text>
+  <text x="290" y="2037" font-size="11" fill="#16a34a">&#10003; <tspan fill="#1f2937">RenderZone</tspan></text>
+  <text x="290" y="2054" font-size="11" fill="#16a34a">&#10003; <tspan fill="#1f2937">PickerBlock</tspan></text>
+  <text x="290" y="2071" font-size="11" fill="#16a34a">&#10003; <tspan fill="#1f2937">ThemePicker</tspan></text>
+  <text x="140" y="2092" font-size="10" font-style="italic" fill="#64748b">(+ Announcer, ModalCard &#8212; all shell chrome)</text>
+  <text x="140" y="2124" font-size="11.5" fill="#166534">Props come only from app state</text>
+  <text x="140" y="2139" font-size="11.5" fill="#166534">(socket status, keystrokes,</text>
+  <text x="140" y="2154" font-size="11.5" fill="#166534">session list).</text>
+  <text x="140" y="2190" font-size="12" font-weight="700" fill="#14532d">The model has no vocabulary</text>
+  <text x="140" y="2206" font-size="12" font-weight="700" fill="#14532d">that reaches this shell.</text>
+
+  <rect x="458" y="1934" width="702" height="376" rx="10" fill="#f7fef9" stroke="#16a34a" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="700" y="1958" text-anchor="middle" font-size="13" font-weight="700" class="green">INNER &#8212; THE OUTPUT ZONE</text>
+  <rect x="930" y="1942" width="216" height="22" rx="11" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.2"/>
+  <text x="1038" y="1957" text-anchor="middle" font-size="9.5" font-weight="800" fill="#1d4ed8">ONLY MODEL-PAINTABLE REGION</text>
+  <text x="809" y="1984" text-anchor="middle" font-size="12" font-weight="700" font-family="'SF Mono', 'Cascadia Code', Consolas, monospace" fill="#334155">RenderBlock.tsx</text>
+
+  <rect x="478" y="1996" width="200" height="46" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.2"/>
+  <text x="578" y="2014" text-anchor="middle" font-size="10.5" fill="#1f2937">lookup component</text>
+  <text x="578" y="2029" text-anchor="middle" font-size="10.5" fill="#1f2937">by name in registry</text>
+  <line x1="680" y1="2019" x2="698" y2="2019" stroke="#334155" stroke-width="1.5" marker-end="url(#arr)"/>
+  <rect x="700" y="1996" width="200" height="46" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.2"/>
+  <text x="800" y="2014" text-anchor="middle" font-size="10.5" fill="#1f2937">re-validate props</text>
+  <text x="800" y="2029" text-anchor="middle" font-size="10.5" fill="#1f2937">with tolerant schema</text>
+  <line x1="902" y1="2019" x2="920" y2="2019" stroke="#334155" stroke-width="1.5" marker-end="url(#arr)"/>
+  <rect x="922" y="1996" width="200" height="46" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.2"/>
+  <text x="1022" y="2014" text-anchor="middle" font-size="10.5" fill="#1f2937">mount real</text>
+  <text x="1022" y="2029" text-anchor="middle" font-size="10.5" fill="#1f2937">React component</text>
+
+  <rect x="478" y="2062" width="230" height="160" rx="8" fill="#ffffff" stroke="#60a5fa" stroke-width="1.2"/>
+  <text x="494" y="2084" font-size="12" font-weight="700" fill="#1e40af">Component registry &#8212; all 12</text>
+  <text x="500" y="2106" class="m">card</text>
+  <text x="500" y="2123" class="m">list</text>
+  <text x="500" y="2140" class="m">table</text>
+  <text x="500" y="2157" class="m">link-group</text>
+  <text x="500" y="2174" class="m">chart</text>
+  <text x="500" y="2191" class="m">todo-list</text>
+  <text x="605" y="2106" class="m">key-value</text>
+  <text x="605" y="2123" class="m">progress</text>
+  <text x="605" y="2140" class="m">timeline</text>
+  <text x="605" y="2157" class="m">file-tree</text>
+  <text x="605" y="2174" class="m">question</text>
+  <text x="605" y="2191" class="m">diff</text>
+
+  <rect x="728" y="2062" width="240" height="160" rx="8" fill="#ffffff" stroke="#60a5fa" stroke-width="1.2"/>
+  <text x="744" y="2084" font-size="12" font-weight="700" fill="#1e40af">Tolerant-schema guarantees</text>
+  <circle cx="750" cy="2102" r="2" fill="#1f2937"/>
+  <text x="758" y="2106" font-size="10.5" fill="#1f2937">Unknown keys dropped</text>
+  <circle cx="750" cy="2120" r="2" fill="#1f2937"/>
+  <text x="758" y="2124" font-size="10.5" fill="#1f2937">Malformed or unknown input</text>
+  <text x="758" y="2138" font-size="10.5" fill="#1f2937">falls back to raw content</text>
+  <circle cx="750" cy="2156" r="2" fill="#1f2937"/>
+  <text x="758" y="2160" font-size="10.5" fill="#1f2937">Never crashes: the model is</text>
+  <text x="758" y="2174" font-size="10.5" fill="#1f2937">an untrusted author</text>
+
+  <text x="1000" y="2090" font-size="14">&#128433;</text>
+  <text x="994" y="2112" font-size="10.5" font-style="italic" fill="#1f2937">Cards can carry up</text>
+  <text x="994" y="2126" font-size="10.5" font-style="italic" fill="#1f2937">to 3 action buttons;</text>
+  <text x="994" y="2140" font-size="10.5" font-style="italic" fill="#1f2937">clicks go back up the</text>
+  <text x="994" y="2154" font-size="10.5" font-style="italic" fill="#1f2937">same WebSocket as</text>
+  <text x="994" y="2168" font-size="10.5" font-style="italic" fill="#1f2937">action messages,</text>
+  <text x="994" y="2182" font-size="10.5" font-style="italic" fill="#1f2937">attributed to the</text>
+  <text x="994" y="2196" font-size="10.5" font-style="italic" fill="#1f2937">render id</text>
+
+  <!-- ======================= FOOTER ======================= -->
+  <rect x="100" y="2370" width="1080" height="64" rx="10" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.2"/>
+  <line x1="460" y1="2380" x2="460" y2="2424" stroke="#cbd5e1" stroke-width="1"/>
+  <line x1="820" y1="2380" x2="820" y2="2424" stroke="#cbd5e1" stroke-width="1"/>
+  <text x="280" y="2396" text-anchor="middle" font-size="12.5" font-weight="700" fill="#1e3a8a">Model-authored props,</text>
+  <text x="280" y="2414" text-anchor="middle" font-size="12.5" font-weight="700" fill="#1e3a8a">end-to-end</text>
+  <text x="640" y="2396" text-anchor="middle" font-size="12.5" font-weight="700" fill="#15803d">Fork inside layers 2/3,</text>
+  <text x="640" y="2414" text-anchor="middle" font-size="12.5" font-weight="700" fill="#15803d">merged into one normalized stream</text>
+  <text x="1000" y="2396" text-anchor="middle" font-size="12.5" font-weight="700" fill="#6d28d9">Nested trust boundary</text>
+  <text x="1000" y="2414" text-anchor="middle" font-size="12.5" font-weight="700" fill="#6d28d9">in the browser</text>
+</svg>

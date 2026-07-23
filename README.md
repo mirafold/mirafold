@@ -101,6 +101,8 @@ purely an *interpreter* of `WireMsg` — it renders whatever messages arrive
 and has no other inputs. Growing the product = adding message types to the
 wire protocol and handlers to the interpreter. Nothing else changes shape.
 
+![How Mirafold works — the five layers, from the model to the web client](docs/how-mirafold-works.svg)
+
 ## 2. The two load-bearing contracts
 
 Everything in the repo hangs off two interfaces. Internalize these and you
