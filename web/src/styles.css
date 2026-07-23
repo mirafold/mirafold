@@ -2484,9 +2484,25 @@ html {
 .fleet-id,
 .fleet-model,
 .fleet-agent,
+.fleet-cwd,
 .fleet-ago {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.78em;
+}
+
+/* The session's folder — dim, one notch below the model it sits beside.
+   Left-side ellipsis (rtl + the LRM sentinels FleetView adds) keeps the
+   leaf visible; shrinks first so it never pushes the row's controls. */
+.fleet-cwd {
+  color: var(--fg-faint);
+  max-width: 240px;
+  min-width: 0;
+  flex-shrink: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
 }
 
 .fleet-id {
@@ -2877,7 +2893,7 @@ html {
   }
 
   .prompt-box {
-    padding: 10px;
+    padding: 8px 10px;
     margin: 6px 0 8px;
     gap: 8px;
   }
@@ -2887,48 +2903,64 @@ html {
     max-width: 34vw;
   }
 
-  /* ── Status bar: two rows, on purpose ──────────────────────────────────
-     Row 1 — the controls, one even strip of thumb-sized targets:
-       ⌂  new  ●            ⧉ pair  ⚙  ☀|☾  end
-     Row 2 — the session facts, one dim line: agent · model · cwd · Σ · $.
-     The ::after pseudo-element is the line break between the two groups;
-     facts get order 10+ so every control keeps its desktop position. */
+  /* The ↑ send button — phone's ONE submit gesture (Enter is a newline
+     here; PromptBox only renders this at phone width). Inline in the
+     prompt row beside the textarea, so it adds no vertical height and can
+     never sit over typed text; anchored to the box's bottom edge so it
+     stays by the newest line as the box grows. */
+  .prompt-send {
+    flex-shrink: 0;
+    align-self: flex-end;
+    width: 36px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 19px;
+    line-height: 1;
+    color: var(--bg);
+    background: var(--accent);
+    border: none;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+
+  .prompt-send:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+
+  /* ── Status bar: ONE row, guaranteed ───────────────────────────────────
+       ⌂  new  ● claude-code      [⧉ pair]  ⚙  end
+     The dot and the agent name read as one unit (connected — to what);
+     everything else that was on the facts row lives elsewhere on phone
+     (model + folder on the fleet rows, usage nowhere — accepted loss,
+     R.4l 2026-07-22) and the theme pill folds into the settings gear
+     (the picker card switches modes; the pill stays desktop-only per the
+     Phase S lock). nowrap + an ellipsizing agent name means adding the
+     name can never push a control off the row. */
   .status-bar {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     column-gap: 5px;
-    row-gap: 10px;
     margin: 4px 0 0;
     padding: 8px 0 max(8px, env(safe-area-inset-bottom));
     font-size: 0.78em;
   }
 
-  .status-bar::after {
-    content: "";
-    order: 9;
-    flex-basis: 100%;
-    height: 0;
-  }
-
   .sb-agent {
-    order: 10;
-  }
-  .sb-model {
-    order: 11;
-  }
-  .sb-cwd {
-    order: 12;
-  }
-  .sb-usage-sum {
-    order: 13;
-  }
-  .sb-usage-cost {
-    order: 14;
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
-  /* Plumbing that doesn't earn phone space. */
+  /* Everything that doesn't earn phone space (facts + plumbing + the pill). */
   .sb-session,
   .sb-version,
-  .sb-usage-turn {
+  .sb-usage,
+  .sb-model,
+  .sb-cwd,
+  .sb-theme {
     display: none;
   }
 
@@ -2952,15 +2984,6 @@ html {
 
   .sb-pair {
     padding: 0 7px;
-  }
-
-  .sb-theme {
-    height: 40px;
-  }
-
-  .sb-theme-opt {
-    min-width: 37px;
-    padding: 6px 8px;
   }
 
   .sb-toggle {

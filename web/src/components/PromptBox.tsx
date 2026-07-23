@@ -1,10 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
-// The desktop placeholder is keyboard lore that wraps to three ugly
-// lines on a phone — narrow viewports get the short form (bare "Message":
-// anything longer clips mid-word beside the cwd crumb at 16px, R.4l).
-// Checked once at module load: a mid-session resize isn't worth a listener (R.4).
-const PLACEHOLDER = window.matchMedia?.("(max-width: 640px)")?.matches
+// Phone vs. desktop is decided once at module load (a mid-session resize
+// isn't worth a listener, R.4) and drives two deliberate divergences:
+// the placeholder (the desktop keyboard lore wraps to three ugly lines on
+// a phone; anything longer than bare "Message" clips beside the cwd crumb
+// at 16px) and the SUBMIT GESTURE — see the Enter handler below.
+const IS_PHONE = window.matchMedia?.("(max-width: 640px)")?.matches ?? false;
+const PLACEHOLDER = IS_PHONE
   ? "Message"
   : "Enter to send · Shift+Enter for newline · !cmd runs in your shell";
 
@@ -106,16 +108,33 @@ export function PromptBox({
         placeholder={PLACEHOLDER}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === "Enter" && !e.shiftKey) {
+          // Phone: Enter NEVER submits — it inserts a newline (the native
+          // textarea behavior, deliberately left alone) and the ↑ button is
+          // the one way to send, matching every mobile chat app (R.4l,
+          // Kyle 2026-07-22; pinned by phone.e2e.ts). Desktop keeps
+          // Enter-to-send, Shift+Enter for newline.
+          if (e.key === "Enter" && !e.shiftKey && !IS_PHONE) {
             e.preventDefault();
             submit();
           }
         }}
       />
-      {busy && (
+      {busy ? (
         <button className="stop-btn" onClick={onInterrupt} title="Interrupt the turn">
           ■ esc
         </button>
+      ) : (
+        IS_PHONE && (
+          <button
+            className="prompt-send"
+            onClick={submit}
+            disabled={!text.trim()}
+            title="Send"
+            aria-label="Send message"
+          >
+            ↑
+          </button>
+        )
       )}
     </div>
   );

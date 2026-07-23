@@ -72,20 +72,40 @@ test("phone: pairs by URL, opens the session, drives a turn with a rendered comp
   await phone.locator(".fleet-row").first().tap();
   await phone.waitForURL(/\/s\/[\w-]+/);
 
+  // R.4l (Kyle 2026-07-22, "nail this down for sure"): on phone, Enter
+  // NEVER submits — it inserts a newline; the ↑ button is the one way to
+  // send. This assertion exists so a future regression to desktop
+  // Enter-to-send behavior on phone fails loudly here.
   await phone.locator("textarea").tap();
-  await phone.keyboard.type("plan it step by step");
+  await phone.keyboard.type("line one");
   await phone.keyboard.press("Enter");
+  await phone.keyboard.type("line two");
+  assert.equal(
+    await phone.locator("textarea").inputValue(),
+    "line one\nline two",
+    "Enter on phone must insert a newline, never submit",
+  );
+  assert.equal(
+    await phone.locator(".turn-user").count(),
+    0,
+    "Enter on phone submitted a prompt — it must never",
+  );
+
+  await phone.locator("textarea").fill("");
+  await phone.keyboard.type("plan it step by step");
+  await phone.locator(".prompt-send").tap();
   await phone.waitForSelector("text=Plan complete — all four steps done.", { timeout: 30_000 });
   // The live checklist is a rendered registry component — generative UI on
   // the phone, through the encrypted relay path.
   assert.ok(await phone.locator("text=Verify end to end").count());
   await noSideScroll(phone);
 
-  // R.4l: the status bar's controls sit on ONE even row of thumb-sized
-  // targets — a wrapped stray control is the "haphazard" look this pass
-  // removed. (No .sb-pair here: pairing info rides to local viewports only.)
+  // R.4l: the status bar is ONE row of thumb-sized targets — a wrapped
+  // stray control is the "haphazard" look this pass removed. (No .sb-pair
+  // here: pairing info rides to local viewports only. No .sb-theme: the
+  // pill is desktop-only; the settings gear carries theme on phone.)
   const controls = await phone.evaluate(() =>
-    [".sb-home", ".sb-new", ".sb-settings", ".sb-theme", ".sb-end"]
+    [".sb-home", ".sb-new", ".sb-settings", ".sb-end"]
       .map((s) => document.querySelector(`.status-bar ${s}`))
       .filter((el): el is Element => el !== null)
       .map((el) => {
@@ -101,6 +121,27 @@ test("phone: pairs by URL, opens the session, drives a turn with a rendered comp
   );
   for (const c of controls) assert.ok(c.height >= 40, `control is ${c.height}px — too small to tap`);
 
+  // The agent name rides the same single row, beside the dot; the facts
+  // row is gone on phone (model/folder live on the fleet rows instead).
+  // (no inner `const fn = …` here — tsx's keepNames wraps those in a __name
+  // helper that doesn't exist inside page.evaluate)
+  const rowCheck = await phone.evaluate(() => {
+    const agent = document.querySelector(".status-bar .sb-agent")?.getBoundingClientRect();
+    const home = document.querySelector(".status-bar .sb-home")?.getBoundingClientRect();
+    return {
+      agentOffset:
+        agent && home
+          ? Math.abs(agent.top + agent.height / 2 - (home.top + home.height / 2))
+          : NaN,
+      factsHidden: [".sb-model", ".sb-cwd", ".sb-usage", ".sb-theme"].every((s) => {
+        const el = document.querySelector(`.status-bar ${s}`);
+        return !el || getComputedStyle(el).display === "none";
+      }),
+    };
+  });
+  assert.ok(rowCheck.agentOffset < 12, "agent name is not on the control row");
+  assert.ok(rowCheck.factsHidden, "facts/pill still visible on phone");
+
   // R.4l: every focusable input is ≥16px — below that iOS zooms the page on
   // focus and leaves it zoomed, which reads as "the page pans sideways".
   const promptFont = await phone.evaluate(() =>
@@ -112,7 +153,7 @@ test("phone: pairs by URL, opens the session, drives a turn with a rendered comp
 test("phone: a permission request is answerable by thumb", async () => {
   await phone.locator("textarea").tap();
   await phone.keyboard.type("do something dangerous");
-  await phone.keyboard.press("Enter");
+  await phone.locator(".prompt-send").tap();
   await phone.waitForSelector(".perm-bar", { timeout: 15_000 });
   await noSideScroll(phone);
   const allow = phone.locator(".perm-allow");
@@ -129,7 +170,7 @@ test("phone: a network flip mid-turn resumes the stream without losing the trans
 
   await phone.locator("textarea").tap();
   await phone.keyboard.type("plan it step by step");
-  await phone.keyboard.press("Enter");
+  await phone.locator(".prompt-send").tap();
   await phone.waitForSelector("text=Read the current implementation", { timeout: 15_000 });
 
   await phoneCtx.setOffline(true); // wifi drops mid-turn…
