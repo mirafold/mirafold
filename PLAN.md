@@ -882,10 +882,12 @@ with it. Both sequence BEFORE R.5.**
     clusters, so intake here means triaging those clusters as they land,
     not policing a channel. Welcome note drafted (install incl. the
     node-pty/npm-scripts fix, credentials, phone-over-cellular ask, the
-    never-paste-boot-output rule, log-file-is-safe-to-attach). Remaining
-    gate before the first invite: Kyle's call on restoring the blacked-out
-    legal pages — the live `/pay` footer links `/terms` + `/refunds`, both
-    404 today.
+    never-paste-boot-output rule, log-file-is-safe-to-attach). That gate CLEARED
+    same day: Kyle lifted the blackout entirely — the full site is public
+    again, all pages verified 200, and the welcome note now lives on-brand
+    at mirafold.com/beta (noindex, unlinked; testers get the direct link).
+    The tarball was also rebuilt on the @lydell/node-pty swap, so install
+    is two commands with no workaround. NOTHING blocks the first invite.
 
 - [ ] **Step R.5d — Relay staging (nonprod) environment** *(sequenced by
   Kyle 2026-07-22: do AFTER the private release is live, BEFORE the R.7
