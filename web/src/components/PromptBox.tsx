@@ -77,7 +77,11 @@ export function PromptBox({
 
   return (
     <div className="prompt-box">
-      {cwd && cwdShown && (
+      {/* The cwd crumb and its collapse-to-caret trick are desktop-only:
+          on phone it ate a third of the typing width and the caret toggle
+          isn't discoverable by touch — the folder lives in the settings
+          card's Session section there instead (R.4l, Kyle 2026-07-22). */}
+      {cwd && cwdShown && !IS_PHONE && (
         <button
           type="button"
           className="prompt-cwd"
@@ -89,7 +93,7 @@ export function PromptBox({
           {"\u200E" + cwd + "\u200E"}
         </button>
       )}
-      {cwd ? (
+      {cwd && !IS_PHONE ? (
         <button
           type="button"
           className="glyph prompt-caret"

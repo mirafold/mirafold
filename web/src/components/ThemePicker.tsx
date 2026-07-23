@@ -2,10 +2,14 @@ import { useRef } from "react";
 import { THEMES, parseThemeTokens, type ThemeAppearance } from "../themes/manifest";
 import { useEscapeKey } from "../use-escape";
 import { useFocusTrap } from "../use-focus-trap";
+import { tokens } from "./StatusBar";
 
 // The settings card (S.4) — SHELL-OWNED UI, the one new chrome affordance of
 // Phase S (the pill is locked unchanged). Centered modal over the scrim,
-// same idiom as the pairing card; one section today (Theme), built to grow.
+// same idiom as the pairing card. Two sections: Session (R.4l — the facts
+// the phone status bar no longer carries inline: folder, model, usage…;
+// details-on-demand is the phone's one path to them, so this section is
+// load-bearing there and merely redundant on desktop) and Theme.
 //
 // Vite-only module: the swatch chips read each theme's real colors by
 // importing the theme CSS as raw text (import.meta.glob), so a new theme's
@@ -37,16 +41,30 @@ const GROUPS: { label: string; appearance: ThemeAppearance }[] = [
   { label: "Dark themes", appearance: "dark" },
 ];
 
+// The session's facts, as the card shows them. All optional: the card can
+// open before a session exists (fleet-adjacent states) and each row simply
+// doesn't render. Display-ready values — Shell tildifies the cwd.
+export type SessionFacts = {
+  agent?: string;
+  model?: string;
+  cwd?: string;
+  sessionId?: string;
+  version?: string;
+  usage?: { sum: number; cost: number };
+};
+
 export function ThemePicker({
   slots,
   onPick,
   onClose,
+  session,
 }: {
   /** The current slot choices — the checked row per group. */
   slots: Record<ThemeAppearance, string>;
   /** Applies a theme immediately and writes its appearance side's slot. */
   onPick: (id: string) => void;
   onClose: () => void;
+  session?: SessionFacts;
 }) {
   useEscapeKey(onClose);
   // Mounted only while open, so the trap is always active (A.3).
@@ -79,6 +97,53 @@ export function ThemePicker({
             ✕
           </button>
         </div>
+        {session && (session.agent || session.cwd || session.model) && (
+          <>
+            <div className="settings-section-title">Session</div>
+            <dl className="settings-kv">
+              {session.agent && (
+                <div className="settings-kv-row">
+                  <dt>agent</dt>
+                  <dd>{session.agent}</dd>
+                </div>
+              )}
+              {session.model && (
+                <div className="settings-kv-row">
+                  <dt>model</dt>
+                  <dd>{session.model}</dd>
+                </div>
+              )}
+              {session.cwd && (
+                <div className="settings-kv-row">
+                  <dt>folder</dt>
+                  <dd>{session.cwd}</dd>
+                </div>
+              )}
+              {session.usage && (
+                <div className="settings-kv-row">
+                  <dt>usage</dt>
+                  <dd>
+                    Σ {tokens(session.usage.sum)}
+                    {session.usage.cost > 0 &&
+                      ` · $${session.usage.cost.toFixed(session.usage.cost < 1 ? 3 : 2)}`}
+                  </dd>
+                </div>
+              )}
+              {session.sessionId && (
+                <div className="settings-kv-row">
+                  <dt>session</dt>
+                  <dd>{session.sessionId}</dd>
+                </div>
+              )}
+              {session.version && (
+                <div className="settings-kv-row">
+                  <dt>daemon</dt>
+                  <dd>v{session.version}</dd>
+                </div>
+              )}
+            </dl>
+          </>
+        )}
         <div className="settings-section-title">Theme</div>
         {GROUPS.map(({ label, appearance }) => (
           <div key={appearance} className="theme-group" role="group" aria-label={label}>

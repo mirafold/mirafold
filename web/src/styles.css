@@ -1797,6 +1797,21 @@ body {
   font-weight: 600;
 }
 
+/* The chip as a button (R.4l): opens the settings card's Session section —
+   "what is this session?" — with the chip's exact text look preserved. */
+.sb-agent-btn {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sb-agent-btn:hover {
+  filter: brightness(1.25);
+}
+
 /* Transparent wrapper so `inert` can hide everything behind an open dialog
    from the accessibility tree without touching flex/grid layout — aria-modal
    alone doesn't stop Orca's Browse-mode cursor from reading into it (2026-07-20). */
@@ -2484,25 +2499,9 @@ html {
 .fleet-id,
 .fleet-model,
 .fleet-agent,
-.fleet-cwd,
 .fleet-ago {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.78em;
-}
-
-/* The session's folder — dim, one notch below the model it sits beside.
-   Left-side ellipsis (rtl + the LRM sentinels FleetView adds) keeps the
-   leaf visible; shrinks first so it never pushes the row's controls. */
-.fleet-cwd {
-  color: var(--fg-faint);
-  max-width: 240px;
-  min-width: 0;
-  flex-shrink: 1;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  direction: rtl;
-  text-align: left;
 }
 
 .fleet-id {
@@ -2766,6 +2765,36 @@ html {
   font-weight: 600;
   color: var(--fg-mid);
   margin-bottom: 10px;
+}
+
+/* Session facts (R.4l) — the card is the phone's one home for these. */
+.settings-kv {
+  margin: 0 0 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-kv-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.settings-kv dt {
+  flex: none;
+  width: 64px;
+  font-size: 0.78em;
+  color: var(--fg-dim);
+}
+
+.settings-kv dd {
+  margin: 0;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82em;
+  color: var(--fg-body);
+  overflow-wrap: anywhere;
 }
 
 .theme-group + .theme-group {

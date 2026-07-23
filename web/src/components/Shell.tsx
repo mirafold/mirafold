@@ -395,7 +395,25 @@ export function Shell() {
           version={daemonInfo.version}
         />
         {settingsOpen && (
-          <ThemePicker slots={slots} onPick={pickTheme} onClose={() => setSettingsOpen(false)} />
+          <ThemePicker
+            slots={slots}
+            onPick={pickTheme}
+            onClose={() => setSettingsOpen(false)}
+            // The card's Session section (R.4l) — on phone this is THE place
+            // these facts live (the bar carries only the agent name; the
+            // prompt crumb is desktop-only), so it gets everything.
+            session={{
+              agent: meta.agent,
+              model: usage.model ?? meta.model,
+              cwd: tildify(meta.cwd, daemonInfo.home),
+              sessionId: meta.sessionId,
+              version: daemonInfo.version,
+              usage:
+                usage.sumIn + usage.sumOut > 0
+                  ? { sum: usage.sumIn + usage.sumOut, cost: usage.cost }
+                  : undefined,
+            }}
+          />
         )}
       </div>
     </div>

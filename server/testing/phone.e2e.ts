@@ -142,6 +142,20 @@ test("phone: pairs by URL, opens the session, drives a turn with a rendered comp
   assert.ok(rowCheck.agentOffset < 12, "agent name is not on the control row");
   assert.ok(rowCheck.factsHidden, "facts/pill still visible on phone");
 
+  // R.4l: the prompt crumb is desktop-only — on phone the folder (and the
+  // rest of the session's facts) lives in the settings card's Session
+  // section, opened by tapping the agent chip.
+  assert.equal(await phone.locator(".prompt-cwd").count(), 0, "cwd crumb rendered on phone");
+  await phone.locator(".sb-agent").tap();
+  await phone.waitForSelector(".settings-card");
+  const folderRow = await phone
+    .locator(".settings-kv-row", { hasText: "folder" })
+    .locator("dd")
+    .textContent();
+  assert.ok(folderRow && folderRow.includes("/"), `folder fact missing from card: ${folderRow}`);
+  await phone.keyboard.press("Escape");
+  assert.equal(await phone.locator(".settings-card").count(), 0, "Esc closes the card");
+
   // R.4l: every focusable input is ≥16px — below that iOS zooms the page on
   // focus and leaves it zoomed, which reads as "the page pans sideways".
   const promptFont = await phone.evaluate(() =>

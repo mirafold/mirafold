@@ -125,7 +125,23 @@ export function StatusBar({
       >
         {dot}
       </button>
-      {agent && <span className="sb-item sb-agent" title="the terminal agent behind this session">{agent}</span>}
+      {/* The agent chip is the session's identity element — tapping it opens
+          the settings card's Session section ("what is this session?"), the
+          phone's path to the facts the bar no longer carries inline (R.4l). */}
+      {agent &&
+        (onOpenSettings ? (
+          <button
+            className="sb-item sb-agent sb-agent-btn"
+            onClick={onOpenSettings}
+            title="Session details"
+          >
+            {agent}
+          </button>
+        ) : (
+          <span className="sb-item sb-agent" title="the terminal agent behind this session">
+            {agent}
+          </span>
+        ))}
       {/* Agent then model, left to right — model shown whenever known, even
           when imperfect ("default", agent-named) (2026-07-17, Kyle). */}
       {model && <span className="sb-item sb-model sb-sep" title="model">{model}</span>}

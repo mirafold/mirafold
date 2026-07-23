@@ -132,7 +132,11 @@ export function FleetView() {
               // NAME is the link; its stretched overlay (.fleet-link::after)
               // keeps click-anywhere-to-open for mouse users, and the real
               // controls ride above the overlay.
-              <div key={s.sessionId} className="fleet-row">
+              // The cwd stays OFF the row (an on-row column was tried
+              // 2026-07-22 and re-removed the same day as clutter — Kyle):
+              // desktop gets it on hover here; phone gets it in the settings
+              // card's Session section, one tap inside.
+              <div key={s.sessionId} className="fleet-row" title={tildify(s.cwd, daemon.home)}>
                 <span className={`fleet-dot fleet-dot-${s.status}`} title={STATUS_LABEL[s.status]} />
                 {renaming === s.sessionId ? (
                   <input
@@ -165,15 +169,6 @@ export function FleetView() {
                 <span className="fleet-agent">{s.agent}</span>
                 <span className="fleet-model" title="model">
                   {s.model}
-                </span>
-                {/* The session's folder, back on the row (it was tooltip-only
-                    2026-07-17–22) — on phone the in-session facts row is gone,
-                    so fleet is where "which folder was that?" gets answered
-                    (R.4l, Kyle 2026-07-22). LRM sentinels as in .prompt-cwd:
-                    the span is direction:rtl for a left-side ellipsis (the
-                    leaf — the identifying part — always stays visible). */}
-                <span className="fleet-cwd" title={tildify(s.cwd, daemon.home)}>
-                  {"\u200E" + tildify(s.cwd, daemon.home) + "\u200E"}
                 </span>
                 <span className="fleet-spacer" />
                 <span className="fleet-id" title="session id">
