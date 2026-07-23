@@ -148,13 +148,15 @@ type WireMsg =
   | { type: "session_created"; sessionId: string; cwd: string;    // 4.2: attach reply
       agent?: AgentName; model?: string;           // (P.4: + agent; F.3/F.8: + model —
       resumed?: boolean }                          //  the status bar shows it from first
-                                                   //  paint; 4.4: + resumed —
+                                                   //  paint; absent until the engine
+                                                   //  names one — never a stand-in;
+                                                   //  4.4: + resumed —
                                                    //  true ⇒ tail replay, don't reset)
   | { type: "agents"; agents: { agent: AgentName; live: boolean }[]; // P.4: onboarding
       default: AgentName; cwd?: string; home?: string;             //   (4.8: + cwd/home)
       relay?: { url: string; code: string } }        // R.4: pairing info for the QR —
                                                      //   local viewports only
-  | { type: "usage"; model: string; inputTokens: number;           // T2.6: status-bar
+  | { type: "usage"; model?: string; inputTokens: number;          // T2.6: status-bar
       outputTokens: number; costUsd?: number }                     //   accounting
   // 4.9: the `!` passthrough's lifecycle + OUTPUT stream (broadcast, replayed).
   // What the user types into the command goes browser→server only (bang_input).

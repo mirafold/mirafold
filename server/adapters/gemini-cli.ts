@@ -57,14 +57,16 @@ export class GeminiCliSession implements AgentSession {
   // prepending to a slash turn would silently turn it into chat (observed
   // live 2026-07-19). Tracked apart from `started` for exactly that case.
   private guidanceInjected = false;
-  private modelLabel: string;
+  private modelLabel: string | undefined;
   private model?: string;
   private workspaceDir: string;
   private listModels: () => Promise<GeminiModelCatalog>;
 
-  // `modelLabel` may be "auto" until a turn resolves the concrete model;
-  // honestModel() refines the status line per turn. The fleet uses this label (F.3).
-  get modelName(): string {
+  // `modelLabel` is undefined until configured or a turn reports the concrete
+  // model — the UI shows nothing, never a stand-in that reads as a model name
+  // (2026-07-23, Kyle). "auto" is a genuine configured value (router mode);
+  // honestModel() refines it per turn. The fleet uses this label (F.3).
+  get modelName(): string | undefined {
     return this.modelLabel;
   }
   // Non-genui tool ids we announced, and buffered genui render calls awaiting
@@ -80,7 +82,7 @@ export class GeminiCliSession implements AgentSession {
     this.workspaceDir = path.resolve(opts.workspaceDir);
     mkdirSync(this.workspaceDir, { recursive: true });
     this.model = opts.model;
-    this.modelLabel = opts.model ?? "gemini";
+    this.modelLabel = opts.model;
     this.listModels = opts.listModels ?? (() => listGeminiModels(this.workspaceDir));
     this.writeProjectSettings();
     void this.worker();
@@ -313,8 +315,8 @@ export class GeminiCliSession implements AgentSession {
   // model(s) the router actually used show up only in result.stats.models.
   // Prefer those concrete names when the init label is a placeholder — the
   // status bar should name what ran, like the terminal's own status line (F.3).
-  private honestModel(models: unknown): string {
-    const vague = !this.modelLabel || this.modelLabel === "auto" || this.modelLabel === "gemini";
+  private honestModel(models: unknown): string | undefined {
+    const vague = !this.modelLabel || this.modelLabel === "auto";
     if (!vague) return this.modelLabel;
     const names = Array.isArray(models)
       ? models.filter((m): m is string => typeof m === "string")

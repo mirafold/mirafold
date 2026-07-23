@@ -108,9 +108,11 @@ type WireMsgBody =
       sessionId: string;
       cwd: string;
       agent?: AgentName;
-      // The engine's model label as known at attach time ("default" until a
-      // configured/reported name exists) — the status bar shows it from the
-      // first paint, not only after the first turn's usage message.
+      // The engine's model label as known at attach time — the status bar
+      // shows it from the first paint, not only after the first turn's usage
+      // message. Absent while the engine hasn't resolved/reported one yet
+      // (unconfigured sessions before the engine names its default): the bar
+      // shows nothing rather than a stand-in (2026-07-23).
       model?: string;
       resumed?: boolean;
       demo?: boolean;
@@ -171,7 +173,9 @@ type WireMsgBody =
   // session total. Replay-safe — buffered like everything else (T2.6).
   | {
       type: "usage";
-      model: string;
+      // Absent when the engine hasn't reported its resolved model yet — the
+      // status bar shows nothing rather than a stand-in (2026-07-23).
+      model?: string;
       inputTokens: number;
       outputTokens: number;
       costUsd?: number;
@@ -293,9 +297,10 @@ export type SessionMeta = {
   name: string;
   cwd: string;
   agent: AgentName;
-  // The model the session's agent is running (best-known label). Present
-  // even before the first turn (from config/DEFAULT_MODEL); may refine after (#6).
-  model: string;
+  // The model the session's agent is running (best-known label); may refine
+  // after the first turn (#6). Absent when not yet known — the fleet row
+  // shows nothing rather than a stand-in (2026-07-23).
+  model?: string;
   status: "idle" | "working" | "permission";
   lastActivity: number;
   viewports: number;

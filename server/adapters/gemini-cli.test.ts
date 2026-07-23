@@ -463,7 +463,7 @@ test("/model set without a name (or flag-shaped names) shows the usage line", as
   const { s, msgs, awaitTurnEnd } = makeSession();
   s.pushPrompt("/model set --persist");
   await awaitTurnEnd();
-  assert.equal(s.modelName, "gemini"); // nothing switched
+  assert.equal(s.modelName, undefined); // nothing switched — still unknown
   const text = msgs.filter((m) => m.type === "text_delta").map((m) => m.text).join("");
   assert.match(text, /Usage: `\/model set <model-name> \[--persist\]`/);
   s.close();

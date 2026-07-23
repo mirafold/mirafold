@@ -36,9 +36,11 @@ import { AsyncQueue, CLOSE } from "./async-queue";
 // it: tsx + TS source in dev, node + the esbuild twin in the packaged install.
 const RENDER_MCP = renderMcpCommand();
 
-// The model label until the real one is known: no model configured means
+// Internal sentinel for "model not yet known": no model configured means
 // Codex resolves its own default, which the rollout lookup below then names.
 // Comparisons against this are "is the label still the stand-in?" checks.
+// NEVER surfaced — modelName reports undefined instead, so every UI slot
+// (status bar, fleet row, usage) shows nothing rather than a false name.
 const MODEL_STAND_IN = "codex";
 
 // The reasoning-effort axis of Codex's /model picker (V-thread follow-up). The
@@ -268,8 +270,8 @@ export class CodexSession implements AgentSession {
   private firstPartyOpenAI = false;
   private listEngineModels: () => Promise<CodexModel[]>;
 
-  get modelName(): string {
-    return this.modelLabel;
+  get modelName(): string | undefined {
+    return this.modelLabel === MODEL_STAND_IN ? undefined : this.modelLabel;
   }
 
   // N.5: `kind`/`endpoint` carry the onboarding picker's backend choice;
@@ -628,7 +630,7 @@ export class CodexSession implements AgentSession {
         const u = ev.usage;
         this.emit({
           type: "usage",
-          model: this.modelLabel,
+          model: this.modelName,
           // cached_input_tokens is a subset of input_tokens (already counted);
           // reasoning is output-side cost.
           inputTokens: u.input_tokens,

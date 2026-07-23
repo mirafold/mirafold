@@ -93,11 +93,13 @@ export class ClaudeCodeSession implements AgentSession {
   // In-flight permission prompts, keyed by wire id → resolver.
   private pendingAsks = new Map<string, (allow: boolean) => void>();
 
-  // Label shown in the status bar (the SDK falls back to its own
-  // default when `model` is unset, so we keep a readable stand-in) (T2.6).
-  private modelLabel: string;
+  // Label shown in the status bar. Undefined when `model` is unset (the SDK
+  // falls back to its own default) until system/init names the real one — the
+  // UI shows nothing, never a stand-in that reads as a model name
+  // (2026-07-23, Kyle; was the "default" stand-in, T2.6).
+  private modelLabel: string | undefined;
 
-  get modelName(): string {
+  get modelName(): string | undefined {
     return this.modelLabel;
   }
 
@@ -116,7 +118,7 @@ export class ClaudeCodeSession implements AgentSession {
     const workspaceDir = path.resolve(opts.workspaceDir);
     mkdirSync(workspaceDir, { recursive: true }); // spawn fails on a missing cwd
     const model = opts.model ?? process.env.DEFAULT_MODEL;
-    this.modelLabel = model ?? "default";
+    this.modelLabel = model;
     this.q = (opts.engine ?? query)({
       prompt: this.promptStream(),
       options: {

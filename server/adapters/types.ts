@@ -37,9 +37,11 @@ export interface AgentSession {
   /** The browser's answer to a permission_request (Phase T.3). */
   resolvePermission(id: string, allow: boolean): void;
   /** Current best-known model label, for the fleet row / status bar. Known
-   *  at construction from config/DEFAULT_MODEL; may refine after the first turn
-   *  for agents whose real model only appears mid-stream (Claude, Gemini) (#6). */
-  readonly modelName: string;
+   *  at construction only when configured (opts.model/DEFAULT_MODEL); refines
+   *  after the first turn for agents whose real model only appears mid-stream
+   *  (Claude, Gemini, Codex) (#6). `undefined` = not yet known — the UI shows
+   *  nothing, never a stand-in that reads as a model name (2026-07-23, Kyle). */
+  readonly modelName: string | undefined;
   close(): void;
 }
 

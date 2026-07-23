@@ -590,16 +590,17 @@ test("resolveRolloutModel: reads the model from the thread's turn_context line",
   assert.equal(await resolveRolloutModel("t-2", bare), undefined);
 });
 
-test("thread.started triggers the lookup: modelName goes from the stand-in to the truth", async () => {
+test("thread.started triggers the lookup: modelName goes from unknown to the truth", async () => {
   const home = rolloutFixture("t-3", [META_LINE, CONTEXT_LINE]);
   const { s, awaitTurnEnd } = makeSession(lookupTurn("t-3"));
   (s as unknown as { codexHome: string }).codexHome = home;
-  assert.equal(s.modelName, "codex"); // the stand-in, pre-turn
+  // Pre-turn the model is unknown — reported as absent, never a stand-in.
+  assert.equal(s.modelName, undefined);
   s.pushPrompt("go");
   await awaitTurnEnd();
   // The lookup is async beside the turn — give its first attempt a beat.
   const t0 = Date.now();
-  while (s.modelName === "codex" && Date.now() - t0 < 3_000)
+  while (s.modelName === undefined && Date.now() - t0 < 3_000)
     await new Promise((r) => setTimeout(r, 10));
   assert.equal(s.modelName, "gpt-5.6-sol");
   s.close();
