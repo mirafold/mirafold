@@ -44,6 +44,15 @@ export function startDaemon(env: Record<string, string> = {}): Promise<Daemon> {
       MIRAFOLD_TOKEN: "",
       MIRAFOLD_RELAY_URL: "", // no dial-out unless a relay test asks for it
       MIRAFOLD_RELAY_CODE: "",
+      // R.5's paid-tier settings, scrubbed like credentials: a set APP_URL
+      // points pairing QRs at the hosted app instead of the daemon under
+      // test, and license/entitlement config makes the daemon call the real
+      // billing backend. A dev shell exporting these (live-testing the paid
+      // path) must not change what any test observes.
+      MIRAFOLD_APP_URL: "",
+      MIRAFOLD_LICENSE_KEY: "",
+      MIRAFOLD_ENTITLEMENT_TOKEN: "",
+      MIRAFOLD_ENTITLEMENT_URL: "",
       // N.3: never probe the real well-known ports — a dev machine's actual
       // Ollama must not leak into an itest's `backends`. A discovery test
       // passes its fixture server via MIRAFOLD_LOCAL_ENDPOINTS.
