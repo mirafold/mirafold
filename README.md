@@ -458,22 +458,26 @@ web/               the browser app (React 19 + Vite)
     Onboarding.tsx     first-run card: pick the agent + working directory, then
                        how it's backed when there's a choice — detected
                        credentials + discovered local model servers (P.4/4.8/N.4)
-    PromptBox.tsx      the command bar (auto-grows to 8 lines; Enter sends)
+    PromptBox.tsx      the command bar (auto-grows to 8 lines; Enter sends on
+                       desktop — on phone Enter is a newline and the ↑ button
+                       sends, R.4l)
     RenderZone.tsx     OUTPUT ZONE: WireMsg interpreter → entries + status line,
                        incl. thinking blocks, artifacts, and subagent grouping
     ToolBlock.tsx      tool-call records: collapsed row, expands to input diff +
                        output with elision marker (T.1/T2.2/T2.3)
     StatusBar.tsx      workbench strip (T2.6; regrouped 4.11): home ⌂ + end
                        session controls far left, conn dot, agent · model ·
-                       session · cwd · usage · version, ⚙ settings, theme pill
+                       session · cwd · usage · version, ⚙ settings, theme pill;
+                       folds to one row of controls at phone width (R.4l)
     PinDock.tsx        right-side dock for pinned components (live via entries)
     Artifact.tsx       Level 3 host: sandboxed iframe for agent-authored UI (Phase 3)
     FleetView.tsx      mission control at / (4.6): live session list, rename,
                        new-session affordance; routing lives in main.tsx
     ConnectDevice.tsx  shell-owned "⧉ pair" affordance: QR of the pairing
                        URL, status bar + fleet header (R.4)
-    ThemePicker.tsx    shell-owned settings card (S.4): theme list grouped by
-                       appearance, swatch chips, live apply into the slots
+    ThemePicker.tsx    shell-owned settings card (S.4): Session facts section
+                       (R.4l — the phone's home for folder/model/usage) + theme
+                       list grouped by appearance, swatch chips, live apply
   src/registry/      Card, List, Table, LinkGroup, Chart, TodoList, Md +
                      RenderBlock (validate → fallback → error boundary) +
                      ActionRow/context
