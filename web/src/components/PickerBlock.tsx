@@ -40,7 +40,6 @@ export function PickerBlock({
   const pick = (i: number) => {
     if (chosen !== null || dismissed) return;
     setChosen(i);
-    setHighlight(i);
     onPick(rows[i].text);
   };
 
@@ -60,23 +59,16 @@ export function PickerBlock({
       if (e.key === "Enter" && t && rowRefs.current.includes(t as HTMLButtonElement)) return;
       e.preventDefault();
       e.stopPropagation();
-      if (e.key === "ArrowUp") {
+      const move = (delta: number) =>
         setHighlight((h) => {
-          const n = (h + rows.length - 1) % rows.length;
+          const n = (h + delta + rows.length) % rows.length;
           rowRefs.current[n]?.scrollIntoView({ block: "nearest" });
           return n;
         });
-      } else if (e.key === "ArrowDown") {
-        setHighlight((h) => {
-          const n = (h + 1) % rows.length;
-          rowRefs.current[n]?.scrollIntoView({ block: "nearest" });
-          return n;
-        });
-      } else if (e.key === "Enter") {
-        pick(highlight);
-      } else {
-        setDismissed(true);
-      }
+      if (e.key === "ArrowUp") move(-1);
+      else if (e.key === "ArrowDown") move(1);
+      else if (e.key === "Enter") pick(highlight);
+      else setDismissed(true);
     };
     // Capture phase, so the empty prompt box's own Enter handler never runs.
     window.addEventListener("keydown", onKey, true);

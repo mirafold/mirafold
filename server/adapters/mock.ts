@@ -568,7 +568,7 @@ export class MockSession implements AgentSession {
           rows: ["sol", "terra", "luna", "ceres", "vesta", "pallas"].map((n, i) => ({
             label: `mock-9-${n}`,
             detail: `the ${n} tier`,
-            current: i === 1 || undefined,
+            current: i === 1 ? true : undefined,
             text: `Switch to mock-9-${n}.`,
           })),
           hint: "Send `/model <model-id>` to switch.",
