@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import type { WireMsg } from "../protocol";
 import { RENDER_GUIDANCE } from "../render-tools";
-import { type AgentSession, capOutput, toolDetail } from "./types";
+import { type AgentSession, capOutput, errText, toolDetail } from "./types";
 import { MIRAFOLD_MCP, RENDER_ID_RE, generativeUIMsg, renderMcpCommand } from "./render-mcp-cmd";
 import { geminiBin, listGeminiModels, type GeminiModelCatalog } from "./gemini-model-list";
 import { emitModelPicker } from "./model-picker";
@@ -18,6 +18,10 @@ const RENDER_MCP = renderMcpCommand();
 const MCP_PREFIX = `mcp_${MIRAFOLD_MCP}_`;
 // How much of a failed turn's stderr rides into the surfaced error (F.4).
 const STDERR_TAIL_CAP = 4000;
+// Gemini CLI's ExitCodes.FATAL_INPUT_ERROR — the exit for an unusable
+// `--resume`/`--session-id` id, thrown in resolveSessionId() before any
+// stdout event (verified against v0.51.0, 2026-07-23).
+const GEMINI_FATAL_INPUT_ERROR = 42;
 
 /** The component id the render-mcp stub returned, parsed from its output text. */
 export function parseRenderId(output: unknown): string {
@@ -170,7 +174,7 @@ export class GeminiCliSession implements AgentSession {
         } catch (err) {
           this.emit({
             type: "error",
-            message: `Could not read the model list from gemini: ${err instanceof Error ? err.message : String(err)}`,
+            message: `Could not read the model list from gemini: ${errText(err)}`,
           });
           return;
         }
@@ -219,7 +223,10 @@ export class GeminiCliSession implements AgentSession {
       const prompt = inject ? `${RENDER_GUIDANCE}\n\n---\n\n${text}` : text;
       const args = ["-p", prompt, "-o", "stream-json", "--allowed-mcp-server-names", MIRAFOLD_MCP];
       if (this.model) args.push("-m", this.model);
-      args.push(this.started ? "--resume" : "--session-id", this.sessionId);
+      // `resumed` is THIS turn's mode; `started` is optimistic (set before the
+      // child confirms anything) and self-corrected on close below.
+      const resumed = this.started;
+      args.push(resumed ? "--resume" : "--session-id", this.sessionId);
       this.started = true;
       this.emit({ type: "status", state: "thinking" });
 
@@ -281,6 +288,18 @@ export class GeminiCliSession implements AgentSession {
         // kill/interrupt, not this case) (F.4).
         if (!this.closed && !sawEvent && code != null && code !== 0 && stderrTail.trim()) {
           this.emit({ type: "error", message: `gemini exited ${code}: ${stderrTail.trim()}` });
+        }
+        // Self-heal a wrong id mode (2026-07-23). Gemini treats both id-mode
+        // mistakes as FATAL_INPUT_ERROR (42) and exits before emitting any
+        // event: `--resume` with an id it never persisted (a first turn that
+        // failed before the session file was written — bad auth, missing
+        // binary, an early kill), and `--session-id` with an id that already
+        // exists. Without this flip the mistake repeats every turn and the
+        // session is dead forever; with it the next turn runs the other mode,
+        // which the failure itself just proved is the right one ("not found"
+        // ⇒ create, "already exists" ⇒ resume).
+        if (!this.closed && !sawEvent && code === GEMINI_FATAL_INPUT_ERROR) {
+          this.started = !resumed;
         }
         end(); // covers the case where no `result` event arrived (crash/kill)
       });

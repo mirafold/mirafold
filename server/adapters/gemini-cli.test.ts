@@ -244,6 +244,105 @@ test("spawn failure: error WireMsg, then exactly one turn_end", async () => {
   s.close();
 });
 
+test("id-mode self-heal: a fatal --resume flips the next turn back to --session-id", async () => {
+  // The brick sequence (2026-07-23): turn 1 fails before Gemini persists the
+  // session (here: an auth-style exit 41, no stdout), turn 2 then runs
+  // `--resume` against an id that was never saved and Gemini exits 42
+  // (FATAL_INPUT_ERROR) doing nothing. Before the fix every later turn
+  // repeated that doomed --resume forever; now the exit-42-no-events close
+  // flips the mode, so turn 3 creates the session fresh.
+  const argsLog = path.join(tmp, "args-heal.log");
+  delete process.env.FAKE_EVENTS;
+  process.env.FAKE_STDERR = "auth is broken";
+  process.env.FAKE_EXIT = "41";
+  const { s, msgs, awaitTurnEnd } = makeSession();
+  try {
+    s.pushPrompt("one");
+    await awaitTurnEnd(1);
+
+    process.env.FAKE_ARGS_LOG = argsLog;
+    process.env.FAKE_STDERR = "Error resuming session: No previous sessions found for this project.";
+    process.env.FAKE_EXIT = "42";
+    s.pushPrompt("two");
+    await awaitTurnEnd(2);
+    let args = spawnArgs(argsLog);
+    assert.ok(args.includes("--resume"), `turn 2 resumed; argv: ${args.join(" ")}`);
+
+    delete process.env.FAKE_STDERR;
+    delete process.env.FAKE_EXIT;
+    fixture("heal.jsonl", [{ type: "result", stats: { input_tokens: 1, output_tokens: 1 } }]);
+    s.pushPrompt("three");
+    await awaitTurnEnd(3);
+    args = spawnArgs(argsLog);
+    assert.ok(args.includes("--session-id"), `turn 3 healed to create; argv: ${args.join(" ")}`);
+    assert.ok(!args.includes("--resume"));
+    assert.ok(msgs.some((m) => m.type === "usage")); // turn 3 actually ran
+  } finally {
+    delete process.env.FAKE_ARGS_LOG;
+    delete process.env.FAKE_STDERR;
+    delete process.env.FAKE_EXIT;
+  }
+  s.close();
+});
+
+test("id-mode self-heal, mirror image: a fatal --session-id flips the next turn to --resume", async () => {
+  // Gemini's other id fatal: --session-id naming a session that ALREADY
+  // exists (same exit 42, no events). The flip direction reverses.
+  const argsLog = path.join(tmp, "args-heal2.log");
+  delete process.env.FAKE_EVENTS;
+  process.env.FAKE_ARGS_LOG = argsLog;
+  process.env.FAKE_STDERR = 'Error starting session: Session ID "x" already exists.';
+  process.env.FAKE_EXIT = "42";
+  const { s, awaitTurnEnd } = makeSession();
+  try {
+    s.pushPrompt("one");
+    await awaitTurnEnd(1);
+    let args = spawnArgs(argsLog);
+    assert.ok(args.includes("--session-id"), `turn 1 created; argv: ${args.join(" ")}`);
+
+    delete process.env.FAKE_STDERR;
+    delete process.env.FAKE_EXIT;
+    fixture("heal2.jsonl", [{ type: "result", stats: { input_tokens: 1, output_tokens: 1 } }]);
+    s.pushPrompt("two");
+    await awaitTurnEnd(2);
+    args = spawnArgs(argsLog);
+    assert.ok(args.includes("--resume"), `turn 2 healed to resume; argv: ${args.join(" ")}`);
+  } finally {
+    delete process.env.FAKE_ARGS_LOG;
+    delete process.env.FAKE_STDERR;
+    delete process.env.FAKE_EXIT;
+  }
+  s.close();
+});
+
+test("no self-heal when exit 42 arrives after stdout events (a different failure)", async () => {
+  // resolveSessionId's fatals exit before any event, so 42 WITH events is
+  // some other input error — the id mode was fine; don't flip it.
+  const argsLog = path.join(tmp, "args-noheal.log");
+  fixture("noheal.jsonl", [{ type: "message", role: "assistant", content: "partial" }]);
+  process.env.FAKE_EXIT = "0";
+  const { s, awaitTurnEnd } = makeSession();
+  try {
+    s.pushPrompt("one"); // clean first turn → session established
+    await awaitTurnEnd(1);
+
+    process.env.FAKE_EXIT = "42";
+    s.pushPrompt("two"); // 42 but stdout carried events
+    await awaitTurnEnd(2);
+
+    process.env.FAKE_ARGS_LOG = argsLog;
+    delete process.env.FAKE_EXIT;
+    s.pushPrompt("three");
+    await awaitTurnEnd(3);
+    const args = spawnArgs(argsLog);
+    assert.ok(args.includes("--resume"), `still resuming; argv: ${args.join(" ")}`);
+  } finally {
+    delete process.env.FAKE_ARGS_LOG;
+    delete process.env.FAKE_EXIT;
+  }
+  s.close();
+});
+
 test("interrupt kills the child: exactly one turn_end, session takes the next turn", async () => {
   delete process.env.FAKE_EVENTS;
   process.env.FAKE_HANG = "1";
