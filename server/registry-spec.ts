@@ -229,9 +229,9 @@ export const registryShapes = {
         }),
       )
       .min(2)
-      .max(4)
+      .max(6)
       .describe(
-        "2–4 mutually exclusive choices. Clicking one sends its text as the " +
+        "2–6 mutually exclusive choices. Clicking one sends its text as the " +
           "user's next turn — you answer it in this same session.",
       ),
   },

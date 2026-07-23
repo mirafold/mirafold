@@ -53,8 +53,8 @@ test("every schema rejects wrong-shaped payloads, not just card", () => {
     ["question", { question: "q?", options: [{ label: "only one" }] }], // min(2)
     [
       "question",
-      { question: "q?", options: Array(5).fill({ label: "x" }) },
-    ], // max(4)
+      { question: "q?", options: Array(7).fill({ label: "x" }) },
+    ], // max(6)
     ["diff", { files: [] }], // min(1)
     ["diff", { files: [{ path: "a.ts", before: "x" }] }], // after required
   ];
@@ -85,6 +85,11 @@ test("every schema rejects wrong-shaped payloads, not just card", () => {
         ],
       },
     ],
+    [
+      "question",
+      { question: "q?", options: Array(6).fill({ label: "x" }) },
+    ], // max(6) boundary
+
     [
       "diff",
       {

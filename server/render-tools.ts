@@ -44,7 +44,7 @@ const TOOL_DESCRIPTIONS: Record<RenderToolName, string> = {
   render_filetree:
     "Show a file/directory tree in the output zone. Use for ANY file-structure picture — never hand-draw ASCII trees.",
   render_question:
-    "Ask the user a structured question with 2–4 clickable options. Clicking one sends its text as the user's next turn. Use when the next step is the user's call between concrete alternatives; never for open-ended questions.",
+    "Ask the user a structured question with 2–6 clickable options. Clicking one sends its text as the user's next turn. Use when the next step is the user's call between concrete alternatives; never for open-ended questions.",
   render_diff:
     "Show a red/green line diff of a code change, made or proposed. Per file, pass the relevant lines as they were (before) and as they are/would be (after) — verbatim code, no +/- prefixes; the client computes the diff. Use instead of hand-written diff code fences.",
 };
@@ -71,7 +71,7 @@ components freely.
   render_filetree for ANY file/directory structure (never ASCII trees), and
   render_progress — repainted via its id — for long-running work.
 - render_question when the next step is genuinely the user's call between
-  2–4 concrete options: clicking one sends it as their next turn. Prefer it
+  2–6 concrete options: clicking one sends it as their next turn. Prefer it
   to ending prose with "should I do A or B?". Never use it for open-ended
   questions — those stay prose.
 - render_diff when you present a code change, made or proposed: per file,

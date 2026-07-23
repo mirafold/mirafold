@@ -69,7 +69,7 @@ const TOOL_DESCRIPTIONS: Record<RenderToolName, string> = {
     "Show an ordered timeline of events or stages — use when the sequence itself is the point.",
   render_filetree: "Show a file/directory tree. Never hand-draw ASCII trees — use this.",
   render_question:
-    "Ask a structured question with 2–4 clickable options; a click sends that option as the user's next turn. Not for open-ended questions.",
+    "Ask a structured question with 2–6 clickable options; a click sends that option as the user's next turn. Not for open-ended questions.",
   render_diff:
     "Show a red/green line diff of a code change. Per file, pass the relevant before and after lines verbatim (no +/- prefixes); the client computes the diff.",
 };
