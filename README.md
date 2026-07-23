@@ -933,7 +933,7 @@ port. The daemon prints (and opens) a URL carrying a per-launch auth token
 a shared machine off your socket. With `--no-open` or on a headless box, open
 the exact printed URL (it has the token); `MIRAFOLD_TOKEN=""` disables the token
 on a single-user machine. The package ships only the launcher + the two esbuild bundles + the
-built front end (9 files, ~264 KB tarball); agent credentials come from your
+built front end (14 files, ~324 KB tarball); agent credentials come from your
 environment exactly as in a terminal (`ANTHROPIC_API_KEY`, `codex login`,
 `GEMINI_API_KEY`) — none live in the package. **Native-module note:**
 the `!` PTY ships as `@lydell/node-pty` (swapped 2026-07-23) — prebuilt
