@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { diffLines } from "../diff";
+import { DiffLines } from "../registry/Diff";
 
 /**
  * Transcript record of one tool call: a dim monospace row, collapsed by
@@ -75,7 +76,7 @@ function ToolInput({ name, input }: { name: string; input: Record<string, unknow
     return (
       <div className="tool-input">
         {(input["edits"] as Record<string, unknown>[]).map((e, i) => (
-          <Diff key={i} oldText={String(e["old_string"] ?? "")} newText={String(e["new_string"] ?? "")} />
+          <EditDiff key={i} oldText={String(e["old_string"] ?? "")} newText={String(e["new_string"] ?? "")} />
         ))}
       </div>
     );
@@ -83,7 +84,7 @@ function ToolInput({ name, input }: { name: string; input: Record<string, unknow
   if (name === "Edit" && typeof input["old_string"] === "string") {
     return (
       <div className="tool-input">
-        <Diff oldText={String(input["old_string"])} newText={String(input["new_string"] ?? "")} />
+        <EditDiff oldText={String(input["old_string"])} newText={String(input["new_string"] ?? "")} />
       </div>
     );
   }
@@ -101,20 +102,10 @@ function ToolInput({ name, input }: { name: string; input: Record<string, unknow
   );
 }
 
-function Diff({ oldText, newText }: { oldText: string; newText: string }) {
-  const lines = diffLines(oldText, newText);
+function EditDiff({ oldText, newText }: { oldText: string; newText: string }) {
   return (
     <pre className="tool-diff">
-      {lines.map((l, i) => (
-        <div
-          key={i}
-          className={
-            l.sign === "+" ? "diff-add" : l.sign === "-" ? "diff-del" : "diff-ctx"
-          }
-        >
-          {l.sign} {l.text}
-        </div>
-      ))}
+      <DiffLines lines={diffLines(oldText, newText)} />
     </pre>
   );
 }

@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AgentInfo, SessionMeta } from "@protocol";
 import { Onboarding } from "./Onboarding";
 import { ConnectDevice } from "./ConnectDevice";
 import { SocketClient } from "../ws";
 import { tildify } from "../tildify";
+import { useArmedConfirm } from "../use-armed-confirm";
 
 // 4.6 Mission control: the root page is an ambient supervision surface —
 // every live session in the registry with name, cwd, coarse status, and last
@@ -36,8 +37,9 @@ export function FleetView() {
   const [onbError, setOnbError] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   // SessionId whose "end" button is armed (first click); a second click
-  // ends it. Auto-disarms after a few seconds (#11).
-  const [confirmEnd, setConfirmEnd] = useState<string | null>(null);
+  // ends it (#11).
+  const endConfirm = useArmedConfirm<string>();
+  const confirmEnd = endConfirm.armed;
   const [, setTick] = useState(0); // re-render so the "ago" labels stay honest
 
   const socket = useMemo(() => {
@@ -75,6 +77,11 @@ export function FleetView() {
     document.title = "Mirafold — sessions";
   }, []);
 
+  // Stable identity: Onboarding keys its poll interval on this prop, so a
+  // fresh arrow each render would restart the 3s timer instead of letting
+  // it fire.
+  const refreshAgents = useCallback(() => socket.send({ type: "refresh_agents" }), [socket]);
+
   const commitRename = (id: string, name: string) => {
     setRenaming(null);
     if (name.trim()) socket.send({ type: "rename", sessionId: id, name });
@@ -94,7 +101,7 @@ export function FleetView() {
             setOnbError(null);
             socket.send({ type: "create", agent, cwd, ...(backend ? { backend } : {}) });
           }}
-          onRefresh={() => socket.send({ type: "refresh_agents" })}
+          onRefresh={refreshAgents}
           // Dismissible only when a fleet exists behind it — on first run
           // (no sessions) the picker IS the page, so it stays.
           onDismiss={
@@ -196,13 +203,9 @@ export function FleetView() {
                   onClick={() => {
                     if (confirmEnd === s.sessionId) {
                       socket.send({ type: "end_session", sessionId: s.sessionId });
-                      setConfirmEnd(null);
+                      endConfirm.disarm();
                     } else {
-                      setConfirmEnd(s.sessionId);
-                      setTimeout(
-                        () => setConfirmEnd((c) => (c === s.sessionId ? null : c)),
-                        3000,
-                      );
+                      endConfirm.arm(s.sessionId);
                     }
                   }}
                 >

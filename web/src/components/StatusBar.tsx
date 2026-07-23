@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ConnectDevice, type RelayInfo } from "./ConnectDevice";
+import { useArmedConfirm } from "../use-armed-confirm";
 
 // The workbench strip — model, session, cwd, connection, and token/cost
 // usage at a glance. Shell-owned (the agent can't paint here) and collapsible
@@ -71,8 +72,9 @@ export function StatusBar({
 }) {
   const [open, setOpen] = useState(true);
   // First click arms, second click ends — guards against a stray click
-  // killing a session. Disarms itself after a few seconds (#11).
-  const [confirmEnd, setConfirmEnd] = useState(false);
+  // killing a session (#11).
+  const endConfirm = useArmedConfirm<true>();
+  const confirmEnd = endConfirm.armed === true;
   // The dot is a coloured circle — meaningless read aloud, so it's hidden
   // from the accessibility tree and its meaning rides on the button's label
   // instead (A.1). Live transitions are announced by Shell's Announcer.
@@ -215,10 +217,7 @@ export function StatusBar({
           title={confirmEnd ? "Click again to end this session" : "End this session"}
           onClick={() => {
             if (confirmEnd) onEndSession();
-            else {
-              setConfirmEnd(true);
-              setTimeout(() => setConfirmEnd(false), 3000);
-            }
+            else endConfirm.arm(true);
           }}
         >
           {confirmEnd ? "end?" : "end"}

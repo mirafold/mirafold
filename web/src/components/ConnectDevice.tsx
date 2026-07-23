@@ -1,7 +1,6 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import qrcode from "qrcode-generator";
-import { useEscapeKey } from "../use-escape";
-import { useFocusTrap } from "../use-focus-trap";
+import { ModalCard } from "./ModalCard";
 
 // The shell-owned "connect a device" affordance. The daemon hands local
 // viewports the relay's HTTP origin + the pairing code (agents hello); this
@@ -54,12 +53,6 @@ export function ConnectDevice({ relay }: { relay?: RelayInfo }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  useEscapeKey(open ? () => setOpen(false) : undefined);
-  // The card exists only while open, so the trap tracks `open` (A.3); on
-  // close it hands focus back to the ⧉ pair button that opened it.
-  const card = useRef<HTMLDivElement>(null);
-  useFocusTrap(card, open);
-
   if (!relay) return null;
   const href = `${relay.url}/#code=${relay.code}${
     relay.ws ? `&relay=${encodeURIComponent(relay.ws)}` : ""
@@ -75,58 +68,50 @@ export function ConnectDevice({ relay }: { relay?: RelayInfo }) {
         ⧉ pair
       </button>
       {open && (
-        // Backdrop click-to-dismiss stays a plain div on purpose (A.2) — the
-        // keyboard equivalents are Escape (above) and the ✕ below; a
-        // page-sized control would just clutter the tab order.
-        <div className="pair-backdrop" onClick={() => setOpen(false)}>
-          <div
-            className="pair-card"
-            onClick={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={TITLE_ID}
-            ref={card}
-            tabIndex={-1}
-          >
-            <div className="pair-head">
-              <span className="glyph" aria-hidden="true">
-                ❯
-              </span>
-              <span className="pair-title" id={TITLE_ID}>
-                connect a device
-              </span>
-              <button
-                className="pair-close"
-                onClick={() => setOpen(false)}
-                title="Close (Esc)"
-                aria-label="Close connect a device"
-              >
-                ✕
-              </button>
-            </div>
-            <QrSvg text={href} />
-            <div className="pair-hint">
-              Scan from your phone. The pairing code rides the URL fragment — it never
-              reaches the relay, and every frame is end-to-end encrypted.
-            </div>
-            <div className="pair-url-row">
-              <code className="pair-url" tabIndex={0}>
-                {href}
-              </code>
-              <button
-                className="pair-copy"
-                onClick={() => {
-                  void navigator.clipboard?.writeText(href).then(() => {
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 1500);
-                  });
-                }}
-              >
-                {copied ? "copied" : "copy"}
-              </button>
-            </div>
+        <ModalCard
+          overlayClass="pair-backdrop"
+          cardClass="pair-card"
+          titleId={TITLE_ID}
+          onDismiss={() => setOpen(false)}
+        >
+          <div className="pair-head">
+            <span className="glyph" aria-hidden="true">
+              ❯
+            </span>
+            <span className="pair-title" id={TITLE_ID}>
+              connect a device
+            </span>
+            <button
+              className="pair-close"
+              onClick={() => setOpen(false)}
+              title="Close (Esc)"
+              aria-label="Close connect a device"
+            >
+              ✕
+            </button>
           </div>
-        </div>
+          <QrSvg text={href} />
+          <div className="pair-hint">
+            Scan from your phone. The pairing code rides the URL fragment — it never
+            reaches the relay, and every frame is end-to-end encrypted.
+          </div>
+          <div className="pair-url-row">
+            <code className="pair-url" tabIndex={0}>
+              {href}
+            </code>
+            <button
+              className="pair-copy"
+              onClick={() => {
+                void navigator.clipboard?.writeText(href).then(() => {
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 1500);
+                });
+              }}
+            >
+              {copied ? "copied" : "copy"}
+            </button>
+          </div>
+        </ModalCard>
       )}
     </>
   );

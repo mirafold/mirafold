@@ -10,6 +10,7 @@ import {
   type TodoItem,
   capOutput,
   envWithout,
+  errText,
   joinTextBlocks,
   toolDetail,
   PERMISSION_TIMEOUT_MS,
@@ -385,58 +386,9 @@ export class ClaudeCodeSession implements AgentSession {
             }
             break;
           }
-          case "system": {
-            const sub = (msg as { subtype?: unknown }).subtype;
-            if (sub === "init") {
-              // system/init carries the model the engine ACTUALLY resolved
-              // (e.g. "claude-fable-5"), which differs from the configured value
-              // or the "default" placeholder we start with — show the truth in
-              // the status bar, like the terminal's own status line (F.3).
-              const model = (msg as { model?: unknown }).model;
-              if (typeof model === "string" && model) this.modelLabel = model;
-            } else if (sub === "api_retry") {
-              // The terminal shows "retrying (attempt n)…" here; without
-              // this we sit on "thinking…" looking hung through the backoff (F.2).
-              const m = msg as { attempt?: number; max_retries?: number };
-              const n = typeof m.attempt === "number" ? m.attempt : undefined;
-              const max = typeof m.max_retries === "number" ? m.max_retries : undefined;
-              const which = n && max ? ` (attempt ${n}/${max})` : n ? ` (attempt ${n})` : "";
-              this.emit({ type: "notice", text: `API error — retrying${which}…`, kind: "retry" });
-            } else if (sub === "compact_boundary") {
-              // Context silently compacts today — say so (F.2).
-              const trigger = (msg as { compact_metadata?: { trigger?: unknown } }).compact_metadata
-                ?.trigger;
-              this.emit({
-                type: "notice",
-                text:
-                  trigger === "manual"
-                    ? "context compacted"
-                    : "context automatically compacted to free space",
-                kind: "compaction",
-              });
-            } else if (sub === "model_refusal_fallback") {
-              // The model declined and the turn was retried on a fallback —
-              // without this the swap is invisible (F.2).
-              const fb = (msg as { fallback_model?: unknown }).fallback_model;
-              this.emit({
-                type: "notice",
-                text:
-                  typeof fb === "string" && fb
-                    ? `the model declined — retried on ${fb}`
-                    : "the model declined — retried on a fallback model",
-                kind: "refusal",
-              });
-            } else if (sub === "model_refusal_no_fallback") {
-              // No fallback configured — the turn ends as an error (the
-              // result frame carries that); this line says WHY it ended (F.2).
-              this.emit({
-                type: "notice",
-                text: "the model declined to complete this request",
-                kind: "refusal",
-              });
-            }
+          case "system":
+            this.handleSystemMsg(msg);
             break;
-          }
           case "rate_limit_event": {
             // Observed live on ordinary turns, so surface it ONLY when it
             // actually matters — approaching (allowed_warning) or hitting
@@ -489,11 +441,65 @@ export class ClaudeCodeSession implements AgentSession {
       }
     } catch (err) {
       if (!this.closed) {
-        this.emit({ type: "error", message: err instanceof Error ? err.message : String(err) });
+        this.emit({ type: "error", message: errText(err) });
         this.emit({ type: "turn_end" });
       }
     } finally {
       this.dead = true;
+    }
+  }
+
+  /** The engine's out-of-band `system` frames — each subtype an independent
+   *  status-bar/notice composition (F.2/F.3). */
+  private handleSystemMsg(msg: object) {
+    const sub = (msg as { subtype?: unknown }).subtype;
+    if (sub === "init") {
+      // system/init carries the model the engine ACTUALLY resolved
+      // (e.g. "claude-fable-5"), which differs from the configured value
+      // or the "default" placeholder we start with — show the truth in
+      // the status bar, like the terminal's own status line (F.3).
+      const model = (msg as { model?: unknown }).model;
+      if (typeof model === "string" && model) this.modelLabel = model;
+    } else if (sub === "api_retry") {
+      // The terminal shows "retrying (attempt n)…" here; without
+      // this we sit on "thinking…" looking hung through the backoff (F.2).
+      const m = msg as { attempt?: number; max_retries?: number };
+      const n = typeof m.attempt === "number" ? m.attempt : undefined;
+      const max = typeof m.max_retries === "number" ? m.max_retries : undefined;
+      const which = n && max ? ` (attempt ${n}/${max})` : n ? ` (attempt ${n})` : "";
+      this.emit({ type: "notice", text: `API error — retrying${which}…`, kind: "retry" });
+    } else if (sub === "compact_boundary") {
+      // Context silently compacts today — say so (F.2).
+      const trigger = (msg as { compact_metadata?: { trigger?: unknown } }).compact_metadata
+        ?.trigger;
+      this.emit({
+        type: "notice",
+        text:
+          trigger === "manual"
+            ? "context compacted"
+            : "context automatically compacted to free space",
+        kind: "compaction",
+      });
+    } else if (sub === "model_refusal_fallback") {
+      // The model declined and the turn was retried on a fallback —
+      // without this the swap is invisible (F.2).
+      const fb = (msg as { fallback_model?: unknown }).fallback_model;
+      this.emit({
+        type: "notice",
+        text:
+          typeof fb === "string" && fb
+            ? `the model declined — retried on ${fb}`
+            : "the model declined — retried on a fallback model",
+        kind: "refusal",
+      });
+    } else if (sub === "model_refusal_no_fallback") {
+      // No fallback configured — the turn ends as an error (the
+      // result frame carries that); this line says WHY it ended (F.2).
+      this.emit({
+        type: "notice",
+        text: "the model declined to complete this request",
+        kind: "refusal",
+      });
     }
   }
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { AgentBackend, AgentInfo, AgentName, BackendChoice } from "@protocol";
 import {
   agentLabel,
@@ -11,8 +11,7 @@ import {
   subscriptionCaveat,
   localLiveHint,
 } from "../agents-meta";
-import { useEscapeKey } from "../use-escape";
-import { useFocusTrap } from "../use-focus-trap";
+import { ModalCard } from "./ModalCard";
 
 // The shell-owned onboarding picker. No agent is assumed — first run is
 // "choose your agent." Credentials never reach the browser; the server tells us
@@ -41,7 +40,7 @@ const TITLE_ID = "onb-card-title";
 /** A second step only when there's a genuine choice: more than one usable way
  *  to run, or a discovered server whose model must be picked. A single usable
  *  backend (or none — the demo path) keeps today's one-click create. */
-export function needsSecondStep(row: AgentInfo): boolean {
+function needsSecondStep(row: AgentInfo): boolean {
   const usable = (row.backends ?? []).filter((b) => b.usable);
   return usable.length > 1 || usable.some((b) => (b.models?.length ?? 0) > 0);
 }
@@ -215,10 +214,6 @@ export function Onboarding({
   onDismiss?: () => void;
 }) {
   const [cwd, setCwd] = useState("");
-  // Mounted only while shown (Shell gates on showOnboarding), so the trap is
-  // always active (A.3).
-  const card = useRef<HTMLDivElement>(null);
-  useFocusTrap(card, true);
   // Which agent's backend menu is open (the second step), if any.
   const [picking, setPicking] = useState<AgentName | null>(null);
   // Which discovered server's model catalog is open (the third step) — its
@@ -247,120 +242,106 @@ export function Onboarding({
     : picking
       ? () => setPicking(null)
       : onDismiss;
-  useEscapeKey(stepBack);
 
   const pickingRow = picking ? agents?.find((a) => a.agent === picking) : undefined;
   const pick = (agent: AgentName, backend?: BackendChoice) =>
     onPick(agent, cwd.trim() || undefined, backend);
 
   return (
-    // Backdrop click-to-dismiss (when dismissable at all — see onDismiss) is a
-    // MOUSE convenience and deliberately stays a plain div (A.2b): the keyboard
-    // equivalent already exists — Escape walks back the same steps — so making
-    // this a control would only park a page-sized, meaningless stop in the tab
-    // order.
-    <div className="onb-overlay" onClick={stepBack}>
-      <div
-        className="onb-card"
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={TITLE_ID}
-        ref={card}
-        tabIndex={-1}
-      >
-        <img className="onb-glyph" src="/logo.svg" alt="" aria-hidden="true" />
-        <h1 className="onb-title" id={TITLE_ID}>
-          {pickingRow
-            ? `${agentLabel(pickingRow.agent)} — ${expanded ? "pick a model" : "pick its backing"}`
-            : "Choose your agent"}
-        </h1>
-        {!pickingRow && (
-          <p className="onb-sub">
-            Mirafold re-skins the terminal agent you already use — faithfully, with
-            a richer view on top.
-          </p>
-        )}
-        <label className="onb-cwd-label" htmlFor="onb-cwd">
-          working directory
-        </label>
-        <input
-          id="onb-cwd"
-          className="onb-cwd"
-          type="text"
-          value={cwd}
-          spellCheck={false}
-          placeholder={defaultCwd ?? "~/path/to/project"}
-          onChange={(e) => setCwd(e.target.value)}
+    // Esc/backdrop walk back the same steps (stepBack above), so the modal's
+    // one dismiss action is the step-back here.
+    <ModalCard overlayClass="onb-overlay" cardClass="onb-card" titleId={TITLE_ID} onDismiss={stepBack}>
+      <img className="onb-glyph" src="/logo.svg" alt="" aria-hidden="true" />
+      <h1 className="onb-title" id={TITLE_ID}>
+        {pickingRow
+          ? `${agentLabel(pickingRow.agent)} — ${expanded ? "pick a model" : "pick its backing"}`
+          : "Choose your agent"}
+      </h1>
+      {!pickingRow && (
+        <p className="onb-sub">
+          Mirafold re-skins the terminal agent you already use — faithfully, with
+          a richer view on top.
+        </p>
+      )}
+      <label className="onb-cwd-label" htmlFor="onb-cwd">
+        working directory
+      </label>
+      <input
+        id="onb-cwd"
+        className="onb-cwd"
+        type="text"
+        value={cwd}
+        spellCheck={false}
+        placeholder={defaultCwd ?? "~/path/to/project"}
+        onChange={(e) => setCwd(e.target.value)}
+      />
+      {error && <div className="onb-error">{error}</div>}
+      {pickingRow ? (
+        <BackendMenu
+          row={pickingRow}
+          onBack={() => setPicking(null)}
+          onChoose={(backend) => pick(pickingRow.agent, backend)}
+          expanded={expanded}
+          onExpand={setExpanded}
         />
-        {error && <div className="onb-error">{error}</div>}
-        {pickingRow ? (
-          <BackendMenu
-            row={pickingRow}
-            onBack={() => setPicking(null)}
-            onChoose={(backend) => pick(pickingRow.agent, backend)}
-            expanded={expanded}
-            onExpand={setExpanded}
-          />
-        ) : (
-          <div className="onb-list">
-            {agents === null ? (
-              <div className="onb-connecting">connecting…</div>
-            ) : (
-              agents.map((row) => {
-                const { agent, live, blocked, kind, detail } = row;
-                // Three states. live → ready. blocked → a prohibited
-                // subscription is present; say so and name the API-key fix (still
-                // clickable — it runs the demo, like any non-live agent). none →
-                // no credentials · demo (R.4i).
-                const hint = blocked ? blockedHint(agent) : !live ? connectHint(agent) : undefined;
-                const statusText = live
-                  ? "ready"
-                  : blocked
-                    ? "subscription not supported"
-                    : "no credentials · demo";
-                const statusClass = live ? "onb-live" : blocked ? "onb-blocked" : "onb-demo";
-                const backing = backingLine(agent, kind, detail);
-                return (
-                  <button
-                    key={agent}
-                    className="onb-agent"
-                    onClick={() => {
-                      // N.4: a genuine choice of backing opens the second
-                      // step; a single usable backend (or the demo path)
-                      // creates in one click, exactly as before.
-                      if (needsSecondStep(row)) {
-                        setExpanded(null);
-                        setPicking(agent);
-                        return;
-                      }
-                      const only = (row.backends ?? []).find((b) => b.usable);
-                      pick(agent, only ? choiceOf(only) : undefined);
-                    }}
-                  >
-                    <span className="onb-agent-row">
-                      <span className="onb-agent-name">{agentLabel(agent)}</span>
-                      <span className={`onb-agent-status ${statusClass}`}>{statusText}</span>
-                    </span>
-                    {/* R.4k: a live agent shows what's behind it (local endpoint
-                        or configured model), so a local-model user isn't left
-                        guessing whether their setup was picked up. 2026-07-20:
-                        it NAMES the credential too — the row is a decision made
-                        for the user when only one backend is usable, and a
-                        decision made for you still has to be stated. */}
-                    {live && backing && <span className="onb-agent-detail">{backing}</span>}
-                    {hint && <span className="onb-agent-hint">{hint}</span>}
-                  </button>
-                );
-              })
-            )}
-          </div>
-        )}
-        {/* R.4k/N.4: local/open models are a first-class choice, not a fourth
-            agent — they're a mode of Claude Code or Codex, and since N.3 a
-            running server is DISCOVERED and appears in the picker live. */}
-        {!pickingRow && <p className="onb-local-note">{localLiveHint()}</p>}
-      </div>
-    </div>
+      ) : (
+        <div className="onb-list">
+          {agents === null ? (
+            <div className="onb-connecting">connecting…</div>
+          ) : (
+            agents.map((row) => {
+              const { agent, live, blocked, kind, detail } = row;
+              // Three states. live → ready. blocked → a prohibited
+              // subscription is present; say so and name the API-key fix (still
+              // clickable — it runs the demo, like any non-live agent). none →
+              // no credentials · demo (R.4i).
+              const hint = blocked ? blockedHint(agent) : !live ? connectHint(agent) : undefined;
+              const statusText = live
+                ? "ready"
+                : blocked
+                  ? "subscription not supported"
+                  : "no credentials · demo";
+              const statusClass = live ? "onb-live" : blocked ? "onb-blocked" : "onb-demo";
+              const backing = backingLine(agent, kind, detail);
+              return (
+                <button
+                  key={agent}
+                  className="onb-agent"
+                  onClick={() => {
+                    // N.4: a genuine choice of backing opens the second
+                    // step; a single usable backend (or the demo path)
+                    // creates in one click, exactly as before.
+                    if (needsSecondStep(row)) {
+                      setExpanded(null);
+                      setPicking(agent);
+                      return;
+                    }
+                    const only = (row.backends ?? []).find((b) => b.usable);
+                    pick(agent, only ? choiceOf(only) : undefined);
+                  }}
+                >
+                  <span className="onb-agent-row">
+                    <span className="onb-agent-name">{agentLabel(agent)}</span>
+                    <span className={`onb-agent-status ${statusClass}`}>{statusText}</span>
+                  </span>
+                  {/* R.4k: a live agent shows what's behind it (local endpoint
+                      or configured model), so a local-model user isn't left
+                      guessing whether their setup was picked up. 2026-07-20:
+                      it NAMES the credential too — the row is a decision made
+                      for the user when only one backend is usable, and a
+                      decision made for you still has to be stated. */}
+                  {live && backing && <span className="onb-agent-detail">{backing}</span>}
+                  {hint && <span className="onb-agent-hint">{hint}</span>}
+                </button>
+              );
+            })
+          )}
+        </div>
+      )}
+      {/* R.4k/N.4: local/open models are a first-class choice, not a fourth
+          agent — they're a mode of Claude Code or Codex, and since N.3 a
+          running server is DISCOVERED and appears in the picker live. */}
+      {!pickingRow && <p className="onb-local-note">{localLiveHint()}</p>}
+    </ModalCard>
   );
 }

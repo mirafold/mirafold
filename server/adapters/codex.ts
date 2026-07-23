@@ -14,7 +14,14 @@ import {
 } from "@openai/codex-sdk";
 import type { WireMsg } from "../protocol";
 import { RENDER_GUIDANCE } from "../render-tools";
-import { type AgentSession, type TodoItem, capOutput, envWithout, joinTextBlocks } from "./types";
+import {
+  type AgentSession,
+  type TodoItem,
+  capOutput,
+  envWithout,
+  errText,
+  joinTextBlocks,
+} from "./types";
 import { MIRAFOLD_MCP, RENDER_ID_RE, generativeUIMsg, renderMcpCommand } from "./render-mcp-cmd";
 import { convertMermaidCharts } from "./mermaid-chart";
 import { listCodexModels, type CodexModel } from "./codex-model-list";
@@ -440,7 +447,7 @@ export class CodexSession implements AgentSession {
         } catch (err) {
           this.emit({
             type: "error",
-            message: `Could not read the model list from codex: ${err instanceof Error ? err.message : String(err)}`,
+            message: `Could not read the model list from codex: ${errText(err)}`,
           });
           return;
         }
@@ -568,7 +575,7 @@ export class CodexSession implements AgentSession {
         type: "error",
         message:
           "This backend runs OpenAI's own provider, but its default model could not be " +
-          `resolved: ${err instanceof Error ? err.message : String(err)}. ` +
+          `resolved: ${errText(err)}. ` +
           "Send `/model <model-id>` to set one.",
       });
       return false;
@@ -595,7 +602,7 @@ export class CodexSession implements AgentSession {
       for await (const ev of events) this.handleEvent(ev, end);
     } catch (err) {
       if (!this.closed && !abort.signal.aborted) {
-        this.emit({ type: "error", message: err instanceof Error ? err.message : String(err) });
+        this.emit({ type: "error", message: errText(err) });
       }
     } finally {
       end(); // guarantees exactly one turn_end (interrupt, error, or normal)
@@ -708,13 +715,10 @@ export class CodexSession implements AgentSession {
           if (!this.announced.has(item.id))
             this.announceTool(item.id, "Shell", item.command, { command: item.command });
           const capped = capOutput(item.aggregated_output ?? "");
-          this.announced.delete(item.id);
-          this.emit({
-            type: "tool_result",
+          this.finishTool(item.id, {
             output: capped.text,
             truncatedBytes: capped.truncatedBytes,
             isError: item.status === "failed" || (item.exit_code != null && item.exit_code !== 0),
-            id: item.id,
           });
         }
         break;
@@ -723,12 +727,9 @@ export class CodexSession implements AgentSession {
         if (phase !== "completed") break;
         const paths = item.changes.map((c) => `${c.kind} ${c.path}`).join(", ");
         this.announceTool(item.id, "apply_patch", paths, { changes: item.changes });
-        this.announced.delete(item.id);
-        this.emit({
-          type: "tool_result",
+        this.finishTool(item.id, {
           output: paths || "(no changes)",
           isError: item.status === "failed",
-          id: item.id,
         });
         break;
       }
@@ -746,14 +747,11 @@ export class CodexSession implements AgentSession {
         if (phase === "started") this.announceTool(item.id, label, item.tool, item.arguments);
         else if (phase === "completed") {
           if (!this.announced.has(item.id)) this.announceTool(item.id, label, item.tool, item.arguments);
-          this.announced.delete(item.id);
           const capped = capOutput(item.error ? item.error.message : mcpText(item.result?.content));
-          this.emit({
-            type: "tool_result",
+          this.finishTool(item.id, {
             output: capped.text,
             truncatedBytes: capped.truncatedBytes,
             isError: item.status === "failed" || Boolean(item.error),
-            id: item.id,
           });
         }
         break;
@@ -761,11 +759,8 @@ export class CodexSession implements AgentSession {
       case "web_search": {
         if (phase !== "completed") break;
         this.announceTool(item.id, "web_search", item.query, { query: item.query });
-        this.announced.delete(item.id);
-        this.emit({
-          type: "tool_result",
+        this.finishTool(item.id, {
           output: "(results returned to the agent)",
-          id: item.id,
         });
         break;
       }
@@ -799,6 +794,15 @@ export class CodexSession implements AgentSession {
       id,
       input: typeof input === "object" && input !== null ? (input as Record<string, unknown>) : undefined,
     });
+  }
+
+  /** Close out an announced tool row: drop the id, emit its result. */
+  private finishTool(
+    id: string,
+    result: { output: string; isError?: boolean; truncatedBytes?: number },
+  ) {
+    this.announced.delete(id);
+    this.emit({ type: "tool_result", ...result, id });
   }
 
   /** Turn a Mirafold MCP tool call into the render/artifact WireMsg it stands for. */

@@ -16,6 +16,11 @@ export function agentBin(envVar: string, name: string): string {
   return existsSync(beside) ? beside : name;
 }
 
+/** The human-readable message of an unknown catch value. */
+export function errText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 /**
  * The agent-adapter seam. Mirafold re-skins whichever terminal coding
  * agent you already drive; behind this interface each agent runs its **own**

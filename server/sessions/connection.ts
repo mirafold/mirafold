@@ -5,7 +5,14 @@ import path from "node:path";
 import type { AgentName, ClientMsg, WireMsg } from "../protocol";
 import type { SessionEntry, SessionRegistry } from "./registry";
 import { runActionTool } from "./actions";
-import { availableAgents, defaultAgent, resolveChosenBackend, type Backend } from "../adapters";
+import {
+  ADAPTER_AGENTS,
+  availableAgents,
+  defaultAgent,
+  errText,
+  resolveChosenBackend,
+  type Backend,
+} from "../adapters";
 import { allowedOverRelay } from "../provider-policy";
 import { probeLocalServers } from "../local-models";
 import { spawnBang } from "../pty/pty";
@@ -203,7 +210,7 @@ const startBang = (registry: SessionRegistry, e: SessionEntry, command: string, 
     // net, so an escaped throw here would take every session with it.
     registry.broadcast(e, {
       type: "error",
-      message: `! failed to start: ${err instanceof Error ? err.message : String(err)}`,
+      message: `! failed to start: ${errText(err)}`,
     });
     registry.broadcast(e, { type: "bang_end", id, exitCode: null });
   }
@@ -211,7 +218,7 @@ const startBang = (registry: SessionRegistry, e: SessionEntry, command: string, 
 
 // Agents the browser is allowed to name at onboarding (P.4). A create message
 // naming anything else falls back to the daemon default rather than erroring.
-const OFFERABLE = new Set(availableAgents().map((a) => a.agent));
+const OFFERABLE = new Set(ADAPTER_AGENTS);
 const asAgent = (v: unknown): AgentName | undefined =>
   typeof v === "string" && OFFERABLE.has(v as AgentName) ? (v as AgentName) : undefined;
 
@@ -380,7 +387,7 @@ export function openConnection(
             }),
           );
         } catch (err) {
-          sendError(err instanceof Error ? err.message : String(err));
+          sendError(errText(err));
         }
         break;
       }
@@ -402,7 +409,7 @@ export function openConnection(
             typeof msg.sessionId === "string" && !existing,
           );
         } catch (err) {
-          sendError(err instanceof Error ? err.message : String(err));
+          sendError(errText(err));
         }
         break;
       }

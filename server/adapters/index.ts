@@ -12,6 +12,7 @@ import { cachedLocalServers, hostKey, type LocalDialect, type LocalServer } from
 import { codexConfigProvider, codexProviders, type CodexProviderEntry } from "./codex-config";
 
 export type { AgentName, AgentSession, Backend } from "./types";
+export { errText } from "./types";
 
 /** Does `<$envDir | ~/subdir>/file` exist — the shape a terminal login writes
  *  (Claude's `.credentials.json`, Codex's `auth.json`)? `envDir` is each agent's
@@ -98,7 +99,7 @@ export function resolveBackendFor(agent: AgentName): Backend {
 }
 
 // Agents with a landed adapter — the onboarding picker's universe.
-const ADAPTER_AGENTS: AgentName[] = ["claude-code", "codex", "gemini-cli"];
+export const ADAPTER_AGENTS: AgentName[] = ["claude-code", "codex", "gemini-cli"];
 
 /** One way an agent could run on this machine. `usable` is provider-policy's
  *  verdict; a present-but-prohibited subscription rides as `blocked` —

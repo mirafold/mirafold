@@ -478,6 +478,10 @@ web/               the browser app (React 19 + Vite)
     ThemePicker.tsx    shell-owned settings card (S.4): Session facts section
                        (R.4l — the phone's home for folder/model/usage) + theme
                        list grouped by appearance, swatch chips, live apply
+    ModalCard.tsx      the one modal scaffold (2026-07-23 refactor): backdrop
+                       dismiss + dialog ARIA + Escape + focus trap, shared by
+                       ConnectDevice/ThemePicker/Onboarding — mount only while
+                       open
   src/registry/      Card, List, Table, LinkGroup, Chart, TodoList, Md +
                      RenderBlock (validate → fallback → error boundary) +
                      ActionRow/context
@@ -488,14 +492,18 @@ web/               the browser app (React 19 + Vite)
   src/use-escape.ts  useEscapeKey — the one Esc idiom behind every overlay
                      and the busy interrupt
   src/use-focus-trap.ts  useFocusTrap — focus in on open, Tab cycles inside,
-                     restored to the opener on close; wired into all three
-                     overlays (A.3). Traps Tab but doesn't hide the rest of
+                     restored to the opener on close; wired into every
+                     overlay via ModalCard.tsx (A.3). Traps Tab but doesn't hide the rest of
                      the page from the accessibility tree by itself — that's
                      `.behind-dialog { display: contents }` + `inert` in
                      styles.css, applied around everything but the open
                      dialog in Shell.tsx/FleetView.tsx (A.3, Orca walk)
+  src/use-armed-confirm.ts  useArmedConfirm — two-click confirm for a
+                     destructive control (#11): arm, auto-disarm after 3s;
+                     the end-session buttons in StatusBar + FleetView
   src/diff.ts        the LCS line differ shared by ToolBlock's Edit/Write
-                     diffs and the `diff` registry component
+                     diffs and the `diff` registry component (the per-line
+                     JSX lives once, as `DiffLines` in registry/Diff.tsx)
   src/tildify.ts     ~-abbreviation for cwd display (prompt + status bar)
   src/ws.ts          SocketClient: typed send/onMessage, hello, seq cursor,
                      heartbeat (half-open detection) + capped backoff (4.4);
@@ -1272,8 +1280,10 @@ the M2 launch trigger. Keep every seam agent-neutral and compatible with that.
   matched key and updated fields differ; a generic helper reads worse), and
   `mock.ts`'s length (scripted demo content, not tangle). Shared logic that
   IS consolidated lives in `adapters/types.ts` (`capOutput`, `toolDetail`,
-  `joinTextBlocks`) and `adapters/render-mcp-cmd.ts` (`generativeUIMsg`,
-  `RENDER_ID_RE`) — decided at the 2026-07-08 refactor.
+  `joinTextBlocks`, and since 2026-07-23 `errText`) and
+  `adapters/render-mcp-cmd.ts` (`generativeUIMsg`, `RENDER_ID_RE`) — decided
+  at the 2026-07-08 refactor; the 2026-07-23 pass re-affirmed the
+  accepted-duplication list above.
 - **`dist/` is gitignored build output** served by Express; rebuild with
   `yarn build` when the front end changes and you're testing the one-port
   path.

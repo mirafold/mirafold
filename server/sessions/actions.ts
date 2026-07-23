@@ -7,6 +7,7 @@
 import { readdirSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
+import { errText } from "../adapters/types";
 
 type ActionTool = {
   description: string;
@@ -74,7 +75,7 @@ export function runActionTool(
   try {
     return { output: spec.run(parsed.data ?? {}, cwd), isError: false };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errText(err);
     console.warn(`[action] "${name}" failed: ${message}`);
     return { output: message, isError: true };
   }

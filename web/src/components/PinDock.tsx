@@ -5,7 +5,7 @@ import { Artifact } from "./Artifact";
 // The dock renders the same entry objects the transcript holds, so a
 // `render`/`artifact` update-in-place (same wire id) is reflected here for
 // free — pinned blocks are live by construction.
-export type PinnedItem =
+type PinnedItem =
   | { kind: "render"; renderId: string; component: string; props: Record<string, unknown> }
   | { kind: "artifact"; artifactId: string; html: string; title?: string };
 

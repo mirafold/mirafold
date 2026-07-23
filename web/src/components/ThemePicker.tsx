@@ -1,7 +1,5 @@
-import { useRef } from "react";
 import { THEMES, parseThemeTokens, type ThemeAppearance } from "../themes/manifest";
-import { useEscapeKey } from "../use-escape";
-import { useFocusTrap } from "../use-focus-trap";
+import { ModalCard } from "./ModalCard";
 import { cost, tokens } from "./StatusBar";
 
 // The settings card (S.4) — SHELL-OWNED UI, the one new chrome affordance of
@@ -86,83 +84,71 @@ export function ThemePicker({
   onClose: () => void;
   session?: SessionFacts;
 }) {
-  useEscapeKey(onClose);
-  // Mounted only while open, so the trap is always active (A.3).
-  const card = useRef<HTMLDivElement>(null);
-  useFocusTrap(card, true);
+  const rows = sessionRows(session);
 
   return (
-    // Backdrop click-to-dismiss is a MOUSE convenience and deliberately stays
-    // a plain div (A.2): the keyboard equivalents already exist — Escape
-    // above, and the ✕ below — so making this a control would only park a
-    // page-sized, meaningless stop in the tab order.
-    <div className="settings-backdrop" onClick={onClose}>
-      <div
-        className="settings-card"
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={TITLE_ID}
-        ref={card}
-        tabIndex={-1}
-      >
-        <div className="settings-head">
-          <span className="glyph" aria-hidden="true">
-            ❯
-          </span>
-          <span className="settings-title" id={TITLE_ID}>
-            settings
-          </span>
-          <button className="settings-close" onClick={onClose} title="Close (Esc)" aria-label="Close settings">
-            ✕
-          </button>
-        </div>
-        {sessionRows(session).length > 0 && (
-          <>
-            <div className="settings-section-title">Session</div>
-            <dl className="settings-kv">
-              {sessionRows(session).map(([label, value]) => (
-                <div key={label} className="settings-kv-row">
-                  <dt>{label}</dt>
-                  <dd>{value}</dd>
-                </div>
-              ))}
-            </dl>
-          </>
-        )}
-        <div className="settings-section-title">Theme</div>
-        {GROUPS.map(({ label, appearance }) => (
-          <div key={appearance} className="theme-group" role="group" aria-label={label}>
-            <div className="theme-group-label">{label}</div>
-            {THEMES.filter((t) => t.appearance === appearance).map((t) => {
-              const slotted = slots[appearance] === t.id;
-              return (
-                <button
-                  key={t.id}
-                  className={"theme-row" + (slotted ? " is-slotted" : "")}
-                  onClick={() => onPick(t.id)}
-                  // The ✓ is the only thing marking the slotted row on screen;
-                  // aria-pressed is its text-free equivalent (same idiom as the
-                  // status-bar pill, which is LOCKED and untouched).
-                  aria-pressed={slotted}
-                >
-                  <span className="theme-chips" aria-hidden="true">
-                    {chipColorsById.get(t.id)!.map((c, i) => (
-                      <span key={i} className="theme-chip" style={{ background: c }} />
-                    ))}
-                  </span>
-                  <span className="theme-row-name">{t.displayName}</span>
-                  {slotted && (
-                    <span className="theme-row-check" aria-hidden="true">
-                      ✓
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        ))}
+    <ModalCard
+      overlayClass="settings-backdrop"
+      cardClass="settings-card"
+      titleId={TITLE_ID}
+      onDismiss={onClose}
+    >
+      <div className="settings-head">
+        <span className="glyph" aria-hidden="true">
+          ❯
+        </span>
+        <span className="settings-title" id={TITLE_ID}>
+          settings
+        </span>
+        <button className="settings-close" onClick={onClose} title="Close (Esc)" aria-label="Close settings">
+          ✕
+        </button>
       </div>
-    </div>
+      {rows.length > 0 && (
+        <>
+          <div className="settings-section-title">Session</div>
+          <dl className="settings-kv">
+            {rows.map(([label, value]) => (
+              <div key={label} className="settings-kv-row">
+                <dt>{label}</dt>
+                <dd>{value}</dd>
+              </div>
+            ))}
+          </dl>
+        </>
+      )}
+      <div className="settings-section-title">Theme</div>
+      {GROUPS.map(({ label, appearance }) => (
+        <div key={appearance} className="theme-group" role="group" aria-label={label}>
+          <div className="theme-group-label">{label}</div>
+          {THEMES.filter((t) => t.appearance === appearance).map((t) => {
+            const slotted = slots[appearance] === t.id;
+            return (
+              <button
+                key={t.id}
+                className={"theme-row" + (slotted ? " is-slotted" : "")}
+                onClick={() => onPick(t.id)}
+                // The ✓ is the only thing marking the slotted row on screen;
+                // aria-pressed is its text-free equivalent (same idiom as the
+                // status-bar pill, which is LOCKED and untouched).
+                aria-pressed={slotted}
+              >
+                <span className="theme-chips" aria-hidden="true">
+                  {chipColorsById.get(t.id)!.map((c, i) => (
+                    <span key={i} className="theme-chip" style={{ background: c }} />
+                  ))}
+                </span>
+                <span className="theme-row-name">{t.displayName}</span>
+                {slotted && (
+                  <span className="theme-row-check" aria-hidden="true">
+                    ✓
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      ))}
+    </ModalCard>
   );
 }

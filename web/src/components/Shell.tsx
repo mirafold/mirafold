@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentInfo, AgentName } from "@protocol";
 import { Onboarding } from "./Onboarding";
 import { PromptBox } from "./PromptBox";
@@ -256,8 +256,16 @@ export function Shell() {
     [bus, announce],
   );
 
-  // Esc interrupts from anywhere in the page, not just the textarea.
-  useEscapeKey(busy ? () => bus.interrupt() : undefined);
+  // Esc interrupts from anywhere in the page, not just the textarea. Stable
+  // identity — a fresh arrow each render would re-register the window
+  // listener on every re-render of a streaming turn.
+  const interrupt = useCallback(() => bus.interrupt(), [bus]);
+  useEscapeKey(busy ? interrupt : undefined);
+
+  // Stable identity: Onboarding keys its poll interval on this prop, so a
+  // fresh arrow each render would restart the 3s timer instead of letting
+  // it fire.
+  const refreshAgents = useCallback(() => bus.refreshAgents(), [bus]);
 
   // Tab title + favicon status light (Step 4.2) — painter in tab-status.ts.
   useEffect(() => {
@@ -298,7 +306,7 @@ export function Shell() {
             setNotices((n) => ({ ...n, onboarding: null }));
             bus.createSession(agent, cwd, backend);
           }}
-          onRefresh={() => bus.refreshAgents()}
+          onRefresh={refreshAgents}
         />
       )}
       <div className="behind-dialog" inert={showOnboarding || undefined}>

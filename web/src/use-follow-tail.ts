@@ -6,9 +6,10 @@ import { useRef } from "react";
  * at the bottom. Scroll up and the view freezes where they put it — output
  * keeps landing below, out of sight — until they come back down.
  *
- * Wire up all five parts: `scrollerRef` on the scrolling element, `tailRef` on
- * a sentinel as its last child, and `onScroll` / `onWheel` / `onTouchMove` as
- * its handlers. Then call `followTail()` from an effect keyed on whatever
+ * Wire up all six parts: `scrollerRef` on the scrolling element, `tailRef` on
+ * a sentinel as its last child, and `onScroll` / `onWheel` / `onTouchStart` /
+ * `onTouchMove` as its handlers. Then call `followTail()` from an effect keyed
+ * on whatever
  * changes the content, `armFollow()` when the reader is conceptually back at
  * the bottom (they sent a message), and `resetTail()` when the content is
  * replaced wholesale.

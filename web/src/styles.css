@@ -622,10 +622,6 @@ body {
   color: var(--fg-dim);
 }
 
-.rc-diff-body {
-  margin: 0;
-}
-
 /* question — a structured fork; one click sends the choice as the next turn */
 .rc-question {
   max-width: 560px;
