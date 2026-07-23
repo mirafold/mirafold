@@ -874,6 +874,18 @@ with it. Both sequence BEFORE R.5.**
   - Done when: the testing round is complete, every finding is written down,
     and each must-fix item is either fixed or explicitly scheduled as a
     Phase R blocker ahead of R.7.
+  - **Opened 2026-07-23.** Mechanics locked with Kyle: distribution is a
+    hand-sent `npm pack` tarball (v0.1.0, shell @ 50950a7 / relay @ 3f92992
+    deployed) — NOT npm; testers subscribe FOR REAL via the direct `/pay`
+    link (never comped — Kyle's standing rule; 7-day refund is the out);
+    feedback arrives ad hoc in any form — Kyle collects and forwards it in
+    clusters, so intake here means triaging those clusters as they land,
+    not policing a channel. Welcome note drafted (install incl. the
+    node-pty/npm-scripts fix, credentials, phone-over-cellular ask, the
+    never-paste-boot-output rule, log-file-is-safe-to-attach). Remaining
+    gate before the first invite: Kyle's call on restoring the blacked-out
+    legal pages — the live `/pay` footer links `/terms` + `/refunds`, both
+    404 today.
 
 - [ ] **Step R.5d — Relay staging (nonprod) environment** *(sequenced by
   Kyle 2026-07-22: do AFTER the private release is live, BEFORE the R.7
@@ -927,12 +939,13 @@ with it. Both sequence BEFORE R.5.**
       Cloudflare against a Fly origin, and the `clientIpHeader` the rate
       limiter trusts becoming `CF-Connecting-IP` — so it's a config change
       on a shelf, not a mid-incident scramble. Document only; don't build.
-    - The next relay deploy must land before launch and carries the
-      2026-07-23 code: `HEAD /health` answered (uptime monitors probe with
-      HEAD; the current Keyword-monitor workaround stops being load-bearing
-      once deployed) and structured JSON event logging (the README's
-      "What the relay logs" audit surface — worth having live before the
-      repo goes public and people read that section against reality).
+    - [x] ~~The next relay deploy must land before launch~~ **DEPLOYED
+      2026-07-23** — `HEAD /health` + structured JSON event logging live and
+      verified in production (typed refusal events observed; entitled daemon
+      paired post-deploy). The smoke script gained `RELAY_ENTITLEMENT_TOKEN`
+      support the same day (it predated the gate flip and couldn't fully
+      pass against the gated relay; now it passes with a minted token and
+      fails fast + actionable without one).
     - **License-KV re-derivation check (the one piece of state no deploy
       mechanism can restore):** confirm in writing that if the `LICENSES`
       KV namespace were lost or mangled, active customers' records are
@@ -943,6 +956,17 @@ with it. Both sequence BEFORE R.5.**
       `mirafold-site/PLAN.md`'s billing docs. If keys would change on
       re-mint, decide now whether that's acceptable (customers re-claim via
       `/welcome`) or whether a periodic KV export is the cheaper answer.
+  - **npm install-scripts blocking (found 2026-07-23 during the beta
+    cold-install check):** recent npm blocks packages' install scripts by
+    default (supply-chain protection), so `node-pty`'s native build never
+    runs and the daemon CRASHES at boot on `Failed to load native module`.
+    The beta welcome note documents the fix (`npm install-scripts approve
+    node-pty` + `npm rebuild -g node-pty`), but the PUBLIC `npm i -g
+    mirafold` path hits the same wall at launch. Decide the handling before
+    R.7: at minimum the install docs; strongly consider lazy-requiring
+    node-pty so the daemon boots without the `!` PTY and prints the exact
+    fix line instead of dying (first-run crash is the worst possible first
+    impression).
   - **Standing-secrets rotation runbook (from the 2026-07-23 secrets
     review):** the ephemeral secrets (auth token, pairing code, 48h
     entitlement tokens) rotate themselves; the four STANDING ones have no
