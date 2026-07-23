@@ -524,9 +524,7 @@ bin/               mirafold launcher (4.10): spawns dist-server, opens browser
 demo/              the M1 demo GIF embedded at the top of this README
 docs/              ADAPTERS.md — the normative adapter specification (§2.2);
                    local-models.md — running against Ollama/LM Studio/vLLM,
-                   or a hosted open-model API you pay for (§8);
-                   RENAME.md — the genui-shell → Mirafold rename checklist
-                   (working doc, deletes itself when R.2 completes)
+                   or a hosted open-model API you pay for (§8)
 dist/              built front end (vite build output; served by Express)
 dist-server/       esbuild server bundles (4.10): index.js + render-mcp.js —
                    what the installed `mirafold` actually runs; gitignored

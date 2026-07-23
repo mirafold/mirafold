@@ -24,6 +24,9 @@
 //   pairing code later and recorded traffic opens. Codes are per-launch by
 //   default, which bounds that window.
 
+// Key-derivation salt baked into every existing pairing — survived the 2026-07
+// Mirafold rebrand on purpose and must NEVER be renamed: changing it changes
+// every derived key, silently breaking all deployed pairs.
 const VERSION = "genui-relay v1";
 
 // TS ≥5.7 types BufferSource as backed by a real ArrayBuffer; plain
