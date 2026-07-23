@@ -295,28 +295,27 @@ test("bare /model paints the picker from the catalog — no engine spawn", async
   process.env.MIRAFOLD_GEMINI_BIN = stub;
 
   assert.ok(!msgs.some((m) => m.type === "error"));
-  const q = msgs.find((m) => m.type === "render")!;
-  assert.equal(q.component, "question"); // 4 options fit the question range
-  const opts = q.props.options as { label: string; text: string; detail?: string }[];
-  assert.equal(opts.length, 4);
-  assert.equal(opts[0].label, "Auto (current)"); // engine's currentModelId marks
-  assert.equal(opts[0].text, "/model set auto"); // click = Gemini's own syntax
-  assert.equal(opts[0].detail, "Let Gemini CLI decide");
-  assert.equal(opts[1].label, "gemini-m0");
+  const p = msgs.find((m) => m.type === "picker")!;
+  assert.ok(p, "picker rendered");
+  const rows = p.rows as { label: string; text: string; detail?: string; current?: boolean }[];
+  assert.equal(rows.length, 4);
+  assert.equal(rows[0].label, "Auto");
+  assert.equal(rows[0].current, true); // engine's currentModelId marks
+  assert.equal(rows[0].text, "/model set auto"); // pick = Gemini's own syntax
+  assert.equal(rows[0].detail, "Let Gemini CLI decide");
+  assert.equal(rows[1].label, "gemini-m0");
+  assert.ok(p.hint?.includes("/model set <model-id>"));
   assert.equal(turnEnds(), 1);
   s.close();
 });
 
-test("a catalog past the question range degrades to a list + switch hint", async () => {
+test("a large catalog rides the same picker — no row cap, no degraded form", async () => {
   const { s, msgs, awaitTurnEnd } = makeSession({ listModels: async () => catalog(6) });
   s.pushPrompt("/model manage"); // terminal's dialog verb routes here too
   await awaitTurnEnd();
-  const r = msgs.find((m) => m.type === "render")!;
-  assert.equal(r.component, "list");
-  assert.equal((r.props.items as unknown[]).length, 6);
-  assert.match((r.props.items as { text: string }[])[0].text, /\(current\)/);
-  const text = msgs.filter((m) => m.type === "text_delta").map((m) => m.text).join("");
-  assert.match(text, /\/model set <model-id>/);
+  const p = msgs.find((m) => m.type === "picker")!;
+  assert.equal((p.rows as unknown[]).length, 6);
+  assert.equal((p.rows as { current?: boolean }[])[0].current, true);
   s.close();
 });
 
@@ -327,9 +326,12 @@ test("a configured model wins the (current) marker over the engine default", asy
   });
   s.pushPrompt("/model");
   await awaitTurnEnd();
-  const opts = msgs.find((m) => m.type === "render")!.props.options as { label: string }[];
+  const rows = msgs.find((m) => m.type === "picker")!.rows as {
+    label: string;
+    current?: boolean;
+  }[];
   assert.deepEqual(
-    opts.map((o) => o.label),
+    rows.map((r) => r.label + (r.current ? " (current)" : "")),
     ["Auto", "gemini-m0", "gemini-m1 (current)", "gemini-m2"],
   );
   s.close();

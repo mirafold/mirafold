@@ -60,6 +60,13 @@ const WIRE: WireByType = {
   turn_end: { type: "turn_end" },
   error: { type: "error", message: "something broke" },
   render: { type: "render", component: "card", props: { title: "T" }, id: "r1" },
+  picker: {
+    type: "picker",
+    id: "pk1",
+    title: "Select a model",
+    rows: [{ label: "gpt-9-sol", detail: "frontier", current: true, text: "/model gpt-9-sol" }],
+    hint: "Send `/model <model-id>` to switch.",
+  },
   tool_use: {
     type: "tool_use",
     name: "Bash",

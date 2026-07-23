@@ -127,6 +127,12 @@ type WireMsg =
     //   updates that component in place (the live-pinned-widget mechanism).
     //   `component` is a plain string so unknown instructions stay
     //   representable and can degrade gracefully (Step 1.4).
+  | { type: "picker"; id: string; title: string;   // shell-owned selector re-skinning
+      rows: { label: string; detail?: string;      //   terminal chrome (/model, /effort):
+        current?: boolean; text: string }[];       //   arrow-key + click, any row count;
+      hint?: string }                              //   picking sends `text` as the next
+                                                   //   user turn (same path as a
+                                                   //   question click)
   | { type: "artifact"; html: string; id: string; title?: string } // Phase 3: sandboxed UI
   // Tool records (T.1). T2 widened both with OPTIONAL fields old clients
   // ignore: `input` (full args → diffs/code), `parentId` (subagent nesting),
@@ -787,6 +793,16 @@ subscription handles each `ZoneMsg`:
   row in a collapsible `SubagentGroup` ("⚙ subagent · N calls", T2.4).
 - `artifact` → route to `Artifact.tsx` (the sandboxed iframe, Phase 3);
   re-sending an id replaces it in place, same as `render`.
+- `picker` → append a `PickerBlock.tsx` entry: the SHELL-owned selector
+  re-skinning interactive terminal chrome (/model, /effort) — deliberately
+  not a registry component, so the registry's agent-UI constraints (e.g.
+  question's option cap) never bind it. The newest copy is *live* until a
+  later user turn retires it: ArrowUp/ArrowDown/Enter/Escape drive it
+  globally, including from the idle (empty) prompt box — terminal parity
+  with "/model then arrow keys". Picking sends the row's `text` as the
+  user's next turn over the same mediated action path as a question click,
+  and the copy locks. Replayed/stale copies stay click-only. No pin
+  affordance — it's chrome, not content.
 - `status` → set the activity line (`✳ thinking…` / `⚙ Bash`).
 - `turn_end` → mark the streaming block done, finalize any dangling tool
   entries, clear the ref and status.

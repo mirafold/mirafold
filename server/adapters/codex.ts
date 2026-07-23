@@ -445,7 +445,7 @@ export class CodexSession implements AgentSession {
           return;
         }
         // The trailing legacy-models hint mirrors the terminal picker's own
-        // footer; it rides after either picker form.
+        // footer; it rides after the picker.
         const current = (m: CodexModel) =>
           this.modelLabel === MODEL_STAND_IN ? m.isDefault : this.modelLabel === m.id;
         emitModelPicker(
@@ -517,7 +517,6 @@ export class CodexSession implements AgentSession {
             clickText: (id) => `/effort ${id}`,
             switchHint: "Send `/effort <level>` to set the reasoning effort.",
             question: "Select reasoning effort",
-            title: "Reasoning effort",
           },
         );
       } else if (isEffort(arg)) {

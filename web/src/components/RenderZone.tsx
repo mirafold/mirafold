@@ -9,6 +9,7 @@ import { safeAnchor } from "../registry/Md";
 import { PinDock } from "./PinDock";
 import { ToolBlock } from "./ToolBlock";
 import { Artifact } from "./Artifact";
+import { PickerBlock, type PickerRow } from "./PickerBlock";
 import { useFollowTail } from "../use-follow-tail";
 
 // The scrollback is a flat list of entries: text blocks and rendered
@@ -66,6 +67,15 @@ type Entry =
       output: string;
       exitCode?: number | null; // undefined while running; null = killed
       done: boolean;
+    }
+  | {
+      // Shell-owned selector re-skinning terminal chrome (/model, /effort).
+      kind: "picker";
+      id: number;
+      pickerId: string; // wire id — the action's sourceId when a row is picked
+      title: string;
+      rows: PickerRow[];
+      hint?: string;
     };
 type Status = { state: "thinking" | "tool"; label?: string } | null;
 type ToolCall = Extract<Entry, { kind: "tool" }>;
@@ -150,6 +160,7 @@ export function RenderZone({
         if (
           msg.type === "text_delta" ||
           msg.type === "render" ||
+          msg.type === "picker" ||
           msg.type === "tool_use" ||
           msg.type === "artifact" ||
           msg.type === "turn_end"
@@ -225,6 +236,16 @@ export function RenderZone({
                 { kind: "render", id, renderId: msg.id, component: msg.component, props: msg.props },
               ];
             });
+            break;
+          }
+          case "picker": {
+            // Same wire-order rule as `render`: close the streaming block.
+            streamingId.current = null;
+            const id = nextId++;
+            setEntries((es) => [
+              ...es,
+              { kind: "picker", id, pickerId: msg.id, title: msg.title, rows: msg.rows, hint: msg.hint },
+            ]);
             break;
           }
           case "artifact": {
@@ -395,6 +416,14 @@ export function RenderZone({
     return entry && (entry.kind === "render" || entry.kind === "artifact") ? [entry] : [];
   });
 
+  // The ACTIVE picker — the one whose arrow-key capture is live: the newest
+  // copy, and only until the user moves on (a later user turn retires it).
+  let activePickerId: number | null = null;
+  for (const e of entries) {
+    if (e.kind === "picker") activePickerId = e.id;
+    else if (e.kind === "text" && e.role === "user") activePickerId = null;
+  }
+
   // Subagent calls (parentId set) grouped under their Task's wire id (T2.4).
   const childrenByParent = new Map<string, ToolCall[]>();
   for (const e of entries) {
@@ -562,6 +591,20 @@ export function RenderZone({
                   isError={entry.isError}
                 />
                 {children && children.length > 0 && <SubagentGroup calls={children} />}
+              </div>
+            );
+          }
+          if (entry.kind === "picker") {
+            // Shell chrome, not agent content — no pin affordance.
+            return (
+              <div key={entry.id} className="turn turn-render">
+                <PickerBlock
+                  title={entry.title}
+                  rows={entry.rows}
+                  hint={entry.hint}
+                  active={entry.id === activePickerId}
+                  onPick={(text) => handleAction({ kind: "prompt", text }, entry.pickerId)}
+                />
               </div>
             );
           }

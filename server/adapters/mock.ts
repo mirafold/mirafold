@@ -459,6 +459,7 @@ export class MockSession implements AgentSession {
     if (/dangerous|sudo|rm -rf/i.test(text)) return this.playPermissionAsk();
     if (/notice|attribution/i.test(text)) return this.playNotices();
     if (/question|choose|decide/i.test(text)) return this.playQuestion();
+    if (/picker/i.test(text)) return this.playPicker();
     this.playTemplateTurn(text);
   }
 
@@ -551,6 +552,30 @@ export class MockSession implements AgentSession {
       delay,
     );
     this.schedule(() => this.emit({ type: "turn_end" }), delay + 40);
+  }
+
+  /** Deterministic hook: the shell-owned picker (the /model re-skin's wire
+   *  shape), six rows deep so the e2e proves arrow-key selection past the
+   *  question component's option range. */
+  private playPicker() {
+    this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+    this.schedule(
+      () =>
+        this.emit({
+          type: "picker",
+          id: randomUUID(),
+          title: "Select a model",
+          rows: ["sol", "terra", "luna", "ceres", "vesta", "pallas"].map((n, i) => ({
+            label: `mock-9-${n}`,
+            detail: `the ${n} tier`,
+            current: i === 1 || undefined,
+            text: `Switch to mock-9-${n}.`,
+          })),
+          hint: "Send `/model <model-id>` to switch.",
+        }),
+      120,
+    );
+    this.schedule(() => this.emit({ type: "turn_end" }), 160);
   }
 
   /** Deterministic T2.5 hook: a live checklist — one render id, statuses

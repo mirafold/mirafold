@@ -41,6 +41,21 @@ type WireMsgBody =
   // Re-sending an already-seen `id` updates that component's props in place —
   // the mechanism that keeps pinned widgets live (Step 1.6).
   | { type: "render"; component: string; props: Record<string, unknown>; id: string }
+  // A SHELL-owned selector re-skinning interactive terminal chrome (/model,
+  // /effort): arrow-key + click selection over the engine's own catalog, any
+  // row count. Deliberately NOT a registry component — the registry is the
+  // agent's surface and its constraints (e.g. question's option cap) are
+  // discipline on generated UI, which must never bind a shell re-skin.
+  // Choosing a row sends its `text` as the user's next turn over the same
+  // mediated action path as a question click.
+  | {
+      type: "picker";
+      id: string;
+      title: string;
+      rows: { label: string; detail?: string; current?: boolean; text: string }[];
+      // The typed alternative (e.g. "Send `/model <id>` to switch"), shown dim.
+      hint?: string;
+    }
   // Phase T.1: the transcript record of a tool call. `tool_use` announces the
   // call (detail = its one human-salient argument, e.g. the bash command);
   // a later `tool_result` with the same id completes that record.

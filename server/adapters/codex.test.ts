@@ -251,17 +251,20 @@ test("bare /model paints the picker from codex's own catalog; no engine turn run
   s.pushPrompt("/model");
   await awaitTurnEnd();
 
-  const q = msgs.find((m) => m.type === "render" && m.component === "question")!;
-  assert.ok(q, "picker question rendered");
-  const opts = (q.props as any).options;
+  const p = msgs.find((m) => m.type === "picker")!;
+  assert.ok(p, "picker rendered");
+  assert.equal(p.title, "Select a model");
+  const rows = p.rows as any[];
   assert.deepEqual(
-    opts.map((o: any) => o.text),
+    rows.map((r) => r.text),
     ["/model gpt-9-sol", "/model gpt-9-terra", "/model gpt-9-luna"],
   );
   // Default is current while the label is still the stand-in.
-  assert.equal(opts[0].label, "GPT-9-Sol (current)");
-  assert.equal(opts[1].label, "GPT-9-Terra");
-  assert.equal(opts[0].detail, "frontier");
+  assert.equal(rows[0].current, true);
+  assert.equal(rows[1].current, undefined);
+  assert.equal(rows[0].label, "GPT-9-Sol");
+  assert.equal(rows[0].detail, "frontier");
+  assert.ok(p.hint?.includes("/model <model-id>"));
   assert.equal(prompts.length, 0); // never reached the engine
   s.close();
 });
@@ -308,25 +311,29 @@ test("/model failure paths: unreadable catalog errors honestly; extra words get 
 });
 
 // V-thread /effort scaffold: the reasoning-effort axis of the /model picker.
-// Five efforts (> the question component's 4-option range) → the list form +
-// a switch hint; a pick resumes/restarts the warm thread carrying
-// modelReasoningEffort, exactly like /model carries model.
-test("bare /effort paints the effort picker (list form); no engine turn runs", async () => {
+// All five efforts ride the same shell-owned picker as /model (no row cap);
+// a pick resumes/restarts the warm thread carrying modelReasoningEffort,
+// exactly like /model carries model.
+test("bare /effort paints the effort picker; no engine turn runs", async () => {
   const { s, msgs, prompts, awaitTurnEnd } = makeModelSession(async () => CATALOG);
   s.pushPrompt("/effort");
   await awaitTurnEnd();
 
-  const list = msgs.find((m) => m.type === "render" && m.component === "list")!;
-  assert.ok(list, "effort picker list rendered");
-  assert.equal((list.props as any).title, "Reasoning effort");
-  const items = (list.props as any).items as { text: string }[];
+  const p = msgs.find((m) => m.type === "picker")!;
+  assert.ok(p, "effort picker rendered");
+  assert.equal(p.title, "Select reasoning effort");
+  const rows = p.rows as any[];
   // All five efforts, in the engine's order; none marked current (untouched).
   assert.deepEqual(
-    items.map((i) => i.text.match(/`([a-z]+)`/)![1]),
+    rows.map((r) => r.label),
     ["minimal", "low", "medium", "high", "xhigh"],
   );
-  assert.ok(!items.some((i) => i.text.includes("(current)")), "nothing current before a pick");
-  assert.ok(msgs.some((m) => m.type === "text_delta" && m.text.includes("/effort <level>")));
+  assert.deepEqual(
+    rows.map((r) => r.text),
+    ["/effort minimal", "/effort low", "/effort medium", "/effort high", "/effort xhigh"],
+  );
+  assert.ok(!rows.some((r) => r.current), "nothing current before a pick");
+  assert.ok(p.hint?.includes("/effort <level>"));
   assert.equal(prompts.length, 0); // never reached the engine
   s.close();
 });
@@ -345,9 +352,9 @@ test("/effort <level>: unstarted restarts, started resumes; threadOpts carries t
   // A pick now marks itself current in a fresh picker.
   s.pushPrompt("/effort");
   await awaitTurnEnd(2);
-  const list = msgs.filter((m) => m.type === "render" && m.component === "list").at(-1)!;
-  const hi = ((list.props as any).items as { text: string }[]).find((i) => i.text.includes("`high`"))!;
-  assert.ok(hi.text.includes("(current)"), "the set effort reads back as current");
+  const p = msgs.filter((m) => m.type === "picker").at(-1)!;
+  const hi = (p.rows as any[]).find((r) => r.label === "high")!;
+  assert.equal(hi.current, true, "the set effort reads back as current");
 
   // With a live thread id the switch RESUMES (history intact), and a prior
   // model override on threadOpts is preserved alongside the effort.

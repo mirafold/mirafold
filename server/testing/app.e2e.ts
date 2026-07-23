@@ -181,6 +181,27 @@ test("question component: clicking an option sends it as the user's next turn", 
   await page.waitForSelector(".sb-usage", { timeout: 30_000 });
 });
 
+test("shell picker: arrow keys + Enter select a row, terminal-style", async () => {
+  await page.locator("textarea").click();
+  await page.keyboard.type("picker demo");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector(".picker-block", { timeout: 15_000 });
+  const rows = page.locator(".picker-row");
+  // Six rows — past the question component's option cap, one shell picker.
+  assert.equal(await rows.count(), 6);
+  // The highlight starts on the current row (index 1, per the mock)…
+  assert.ok((await rows.nth(1).getAttribute("class"))!.includes("picker-highlight"));
+  // …and arrow keys drive it from the idle prompt box, no click first.
+  await page.keyboard.press("ArrowDown");
+  assert.ok((await rows.nth(2).getAttribute("class"))!.includes("picker-highlight"));
+  await page.keyboard.press("Enter");
+  // The picked row's full text echoes back as a real user turn…
+  await page.waitForSelector("text=Switch to mock-9-luna.", { timeout: 15_000 });
+  // …and the copy locks: the choice is marked, every row disabled.
+  assert.equal(await page.locator(".picker-chosen").count(), 1);
+  assert.equal(await rows.first().isDisabled(), true);
+});
+
 test("prompt cwd collapses to the caret, expands back, and the choice survives reload (4.8)", async () => {
   await page.waitForSelector(".prompt-cwd");
   // Clicking the path hides it; the caret is all that's left of the prompt.
