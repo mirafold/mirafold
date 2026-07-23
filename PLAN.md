@@ -888,6 +888,16 @@ with it. Both sequence BEFORE R.5.**
     at mirafold.com/beta (noindex, unlinked; testers get the direct link).
     The tarball was also rebuilt on the @lydell/node-pty swap, so install
     is two commands with no workaround. NOTHING blocks the first invite.
+  - **First finding, fixed same day (2026-07-23):** Kyle, running Codex via
+    OpenRouter, saw the literal stand-in "codex" in the status bar's model
+    slot (Claude showed "default", Gemini "gemini" — same pattern). Kyle's
+    call: a temporary model name that isn't true is dishonest — show
+    NOTHING until the real one is known. Landed as shell @ 003388c:
+    `modelName` is undefined until configured/engine-reported, the wire's
+    usage + fleet-row `model` fields went optional, and the status bar +
+    fleet row render the slot only when known. Gemini's "auto" stays (a
+    genuine configured router-mode value, still refined per turn). All
+    three tiers verified; tarball rebuilt at that commit.
 
 - [ ] **Step R.5d — Relay staging (nonprod) environment** *(sequenced by
   Kyle 2026-07-22: do AFTER the private release is live, BEFORE the R.7
