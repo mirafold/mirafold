@@ -38,3 +38,22 @@ of the guard: your real API keys are withheld from sessions pointed at
 local servers, the browser can only ever pick endpoints the daemon itself
 discovered, and the agent's permission prompts still gate consequential
 actions. `MIRAFOLD_LOCAL_DISCOVERY=off` disables the probing entirely.
+
+**A `!` command's finished output is fed to the agent.** A `!` (bang)
+command's transcript is delivered to the agent as its own turn once the
+command exits — that's terminal parity: the agent sees what you saw. It
+also means untrusted text a command fetches (a curl'd web page, a piped
+log) can try to steer the agent. The permission prompts are the backstop
+for anything consequential, and the fence escaping in
+`server/sessions/connection.ts` keeps command output from faking its way
+out of its transcript block.
+
+**The `.env` guard is path-based; symlinks are the accepted residual.**
+The daemon denies its auto-allowed read-only tools (Read, NotebookRead,
+Grep, Glob) access to its own `.env`/`.env.local` by resolved path —
+direct paths, `../` traversals, and cross-cwd routes are all denied and
+pinned by tests. A symlink pointing at those files is not caught. The
+guard is defense-in-depth, not the boundary: creating a symlink or running
+`cat .env` takes a tool that prompts (Bash, Write), so the closed routes
+are the zero-click ones. A prompt-free path to the daemon's secrets is a
+vulnerability we want reported.

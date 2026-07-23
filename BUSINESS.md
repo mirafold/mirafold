@@ -4,9 +4,6 @@
 the honest version — assumptions are labeled, risks are ranked, and the
 financial scenarios include the failure case.*
 
-*Readable HTML mirror (redeployed on each revision):
-https://claude.ai/code/artifact/42d3599e-570e-427e-ae4b-0df4e6577a53*
-
 ---
 
 ## 1. One-liner
@@ -384,8 +381,8 @@ The free local skin is the funnel feeding all of it.
    three moved in H1 2026; treat the table as living. This is our reading of
    published terms, not legal advice — but a lawyer is only *warranted* if we
    ever monetize a subscription-dependent path, which the current design avoids
-   (paid = API-key/local only; the tolerated free Codex subscription is a
-   personal-use scope). So it's a conditional pre-launch item, not an
+   (paid = API-key/local only; the free local Codex path is a disclosed
+   gray area at personal-use scope). So it's a conditional pre-launch item, not an
    unconditional blocker (revisit at PLAN R.6 if the design changes).
 
 ## 9. Milestones & validation gates

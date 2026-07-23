@@ -3134,7 +3134,7 @@ items — this section holds their full bodies and status histories.
     is vendor-agnostic. **Polar** is the runner-up (developer-first, open
     source, card-captured trials with auto-conversion + reminders, clean
     signed webhooks) but repriced to ~5% + 50¢ in 2026 — fee parity with
-    Paddle — and is a much younger company with reported EU DPA gaps;
+    Paddle — and is a much younger company;
     for the revenue-critical path, Paddle's decade of MoR track record wins
     at the same price. **Creem** (3.9% + 40¢ sticker) is the youngest —
     excluded for the same reason.

@@ -1036,14 +1036,10 @@ with it. Both sequence BEFORE R.5.**
     as colors/alpha-colors/shadow lists, so `yarn test` rejects it
     mechanically. Matters only once the repo is public and taking PRs —
     land it with (or before) the public flip.
-  - **SECURITY.md: name the `!`-output → model path (2026-07-17 audit):**
-    before the repo goes public, add one short note: a finished `!`
-    command's transcript is fed to the agent as its own turn (terminal
-    parity), so untrusted text a command fetches (e.g. a curl'd page) can
-    try to steer the agent — the permission prompts are the backstop, and
-    the fence escaping in `server/sessions/connection.ts` keeps output from
-    faking its way out of its transcript block. Public-repo readers should
-    find this stated, not discover it.
+  - ~~**SECURITY.md: name the `!`-output → model path (2026-07-17
+    audit)**~~ — **done early, 2026-07-23**: landed in SECURITY.md's
+    "Known trust decisions" section, together with the Q.5 symlink
+    residual of the `.env` guard (also now disclosed there).
   - Build, same day, in order: repo public → `npm publish` over the 0.0.1
     placeholder → verify `npx mirafold` against the real registry (the
     one check that's unverifiable until publish) → post (X + Show HN +
