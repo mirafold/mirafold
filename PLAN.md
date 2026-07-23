@@ -820,7 +820,13 @@ with it. Both sequence BEFORE R.5.**
     entitlement gate flips ON, when the default `MIRAFOLD_RELAY_URL` bake
     lands — see R.2), `mirafold-site` (checkout button flip, demo swap); (c)
     **rollback / kill-switch** for each (the relay gate and per-daemon relay
-    URL are the levers); (d) how the codebase/npm/GitHub rename (R.2) is
+    URL are the levers) — *for the npm package the rollback move is
+    re-pointing the `latest` dist-tag at the previous good version
+    (+ `npm deprecate` on the bad one), never an unpublish (npm barely
+    permits it and installed users aren't affected either way); for the
+    relay it's `fly deploy --image <prev>` (already in
+    `genui-relay/DEPLOY.md`); for the site it's the Pages one-click
+    deployment rollback (KV does NOT roll back with it — see R.6's KV note)*; (d) how the codebase/npm/GitHub rename (R.2) is
     sequenced into all of the above; (e) *already decided 2026-07-15
     (K.9): contributor policy is **DCO**, not CLA* — `Signed-off-by` per
     commit, CONTRIBUTING.md landed in both repos that day; what remains
@@ -903,6 +909,59 @@ with it. Both sequence BEFORE R.5.**
   2026-07-08 — same items, grouped so nothing hides mid-paragraph; nothing
   here requires `npm publish`, most of it requires R.2's deploy)*
   - Goal: on launch morning, R.7 is a three-move sequence, not a scramble.
+  - **Availability posture (from the 2026-07-23 error-monitoring + DDoS
+    review; uptime monitors on `relay.mirafold.sh/health` + `mirafold.com`
+    are already live and tested on Kyle's UptimeRobot account):**
+    - Verify the Cloudflare WAF rate-limiting rule on `/api/*` actually
+      exists in the dashboard — it's step 4 of the billing runbook in
+      `mirafold-site/PLAN.md` and the one item there never check-marked.
+      `/api/entitlement` is the only public surface doing per-request work
+      on attacker-suppliable input; the rule is the throttle in front of it.
+    - Write down the DDoS acceptance + exit path: a volumetric flood on
+      `relay.mirafold.sh` is an ACCEPTED availability risk (the relay is
+      stateless and E2E-blind; local sessions are untouched; daemons
+      reconnect with backoff — blast radius is the remote path's uptime,
+      nothing else). The exit if it ever materializes: front the relay
+      with Cloudflare's proxy (it carries WebSockets; unmetered DDoS
+      absorption). INVESTIGATE and document that path now — wss-through-
+      Cloudflare against a Fly origin, and the `clientIpHeader` the rate
+      limiter trusts becoming `CF-Connecting-IP` — so it's a config change
+      on a shelf, not a mid-incident scramble. Document only; don't build.
+    - The next relay deploy must land before launch and carries the
+      2026-07-23 code: `HEAD /health` answered (uptime monitors probe with
+      HEAD; the current Keyword-monitor workaround stops being load-bearing
+      once deployed) and structured JSON event logging (the README's
+      "What the relay logs" audit surface — worth having live before the
+      repo goes public and people read that section against reality).
+    - **License-KV re-derivation check (the one piece of state no deploy
+      mechanism can restore):** confirm in writing that if the `LICENSES`
+      KV namespace were lost or mangled, active customers' records are
+      re-derivable from Paddle (the source of truth for subscription
+      status) — walk the actual path once (Paddle API → which fields
+      rebuild which KV shape → does `/api/claim`'s idempotent mint re-issue
+      or would keys change?) and write the answer into
+      `mirafold-site/PLAN.md`'s billing docs. If keys would change on
+      re-mint, decide now whether that's acceptable (customers re-claim via
+      `/welcome`) or whether a periodic KV export is the cheaper answer.
+  - **Standing-secrets rotation runbook (from the 2026-07-23 secrets
+    review):** the ephemeral secrets (auth token, pairing code, 48h
+    entitlement tokens) rotate themselves; the four STANDING ones have no
+    written rotation procedure. Write one runbook covering, per secret:
+    where it lives, blast radius if leaked, exact rotation steps IN ORDER,
+    and the expected disruption window. The four: (1)
+    `ENTITLEMENT_PRIVATE_KEY` (Pages secret; leak = free Pro minting, no
+    data exposure — rotation self-heals because daemons already re-exchange
+    on `CLOSE_UNENTITLED`, but the Pages-private/Fly-public swap ORDER sets
+    the refusal-window size; write the correct order and rehearse the swap
+    once against the R.5d staging relay when it exists); (2)
+    `PADDLE_API_KEY` and (3) `PADDLE_WEBHOOK_SECRET` (Pages secrets;
+    regenerate in Paddle → update Pages; note Paddle retries failed webhook
+    deliveries, so the gap is forgiving); (4) the Fly deploy tokens in
+    GitHub Environments. Policy decided at the review: rotate-on-event
+    (suspected exposure), NOT calendar rotation — the runbook is what makes
+    that stance legitimate. Placement: the Pages-secret steps live beside
+    the billing runbook in `mirafold-site/PLAN.md`'s docs; the Fly-side
+    steps in `genui-relay/DEPLOY.md`.
   - **Gemini CLI succession check (from K.3's re-verification, 2026-07-15):**
     Google stopped serving Gemini CLI requests for individual accounts on
     2026-06-18 and announced **Antigravity CLI** as the successor terminal
