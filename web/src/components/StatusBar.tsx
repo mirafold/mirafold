@@ -129,7 +129,7 @@ export function StatusBar({
       {/* Agent then model, left to right — model shown whenever known, even
           when imperfect ("default", agent-named) (2026-07-17, Kyle). */}
       {model && <span className="sb-item sb-model sb-sep" title="model">{model}</span>}
-      {sessionId && <span className="sb-item sb-sep">{sessionId}</span>}
+      {sessionId && <span className="sb-item sb-sep sb-session">{sessionId}</span>}
       {showCwd && (
         <span className="sb-item sb-sep sb-cwd" title={cwd}>
           {cwdLeaf}/
@@ -138,14 +138,14 @@ export function StatusBar({
       <span className="sb-spacer" />
       {hasUsage && (
         <>
-          <span className="sb-item sb-usage" title="this turn (input / output tokens)">
+          <span className="sb-item sb-usage sb-usage-turn" title="this turn (input / output tokens)">
             turn ↑{tokens(usage.turnIn)} ↓{tokens(usage.turnOut)}
           </span>
-          <span className="sb-item sb-usage sb-sep" title="session total tokens">
+          <span className="sb-item sb-usage sb-usage-sum sb-sep" title="session total tokens">
             Σ {tokens(usage.sumIn + usage.sumOut)}
           </span>
           {usage.cost > 0 && (
-            <span className="sb-item sb-usage sb-sep" title="session cost (USD)">
+            <span className="sb-item sb-usage sb-usage-cost sb-sep" title="session cost (USD)">
               ${usage.cost.toFixed(usage.cost < 1 ? 3 : 2)}
             </span>
           )}

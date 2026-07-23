@@ -2,7 +2,13 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover: safe-area env() vars resolve on notched phones;
+         interactive-widget=resizes-content: the on-screen keyboard shrinks the
+         layout viewport instead of covering the prompt box (Android Chrome). -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
+    />
     <title>Mirafold</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
@@ -20,6 +26,19 @@
           localStorage.getItem("mirafold-theme") === "light" ? "light" : "dark";
         document.documentElement.dataset.theme =
           localStorage.getItem("mirafold-theme-" + mode) || mode;
+        // Stamping the theme id isn't enough by itself: until the
+        // stylesheets are fetched and parsed, the document has NO background
+        // and the browser paints its default white — the "white flash" on
+        // every fresh tab (worst in dev, where Vite injects CSS via JS).
+        // Paint the canvas NOW, inline, with the mode's base background
+        // (mirrors themes/{dark,light}.css --bg by value, like the keys
+        // above), and set color-scheme so even the pre-render blank canvas
+        // is dark for a dark-mode user. main.tsx clears both once the real
+        // theme CSS owns the pixels — an inline value left behind would
+        // override runtime theme switches.
+        document.documentElement.style.backgroundColor =
+          mode === "light" ? "#ffffff" : "#101319";
+        document.documentElement.style.colorScheme = mode;
       })();
     </script>
   </head>

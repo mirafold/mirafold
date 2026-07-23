@@ -15,6 +15,16 @@ body,
   height: 100%;
 }
 
+/* The page itself never scrolls or pans sideways — wide content (tables,
+   code, tool output) scrolls inside its own overflow-x box. `clip` rather
+   than `hidden`: it forbids the overflow without creating a scroll
+   container, so vertical page scroll (the fleet) stays native. */
+html,
+body {
+  overflow-x: clip;
+  overscroll-behavior-x: none;
+}
+
 body {
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   background: var(--bg);
@@ -106,6 +116,8 @@ body {
   border-radius: 6px;
   padding: 10px 14px;
   margin-top: 12px;
+  /* a pasted URL/token must wrap, not widen the zone into a sideways scroll */
+  overflow-wrap: anywhere;
 }
 
 .turn-user:first-child {
@@ -670,6 +682,99 @@ body {
 .rc-question-detail {
   font-size: 0.84em;
   color: var(--fg-dim);
+}
+
+/* ---- Shell-owned picker (/model, /effort re-skin) ---------------------------
+   The terminal selector's browser twin: one boxed list, the highlighted row
+   carries the ❯ caret, arrow keys + Enter drive it while it's the newest
+   unanswered copy. Shell chrome — deliberately NOT a registry component. */
+.picker-block {
+  max-width: 560px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-mid);
+  border-radius: 8px;
+}
+
+.picker-block.picker-dismissed {
+  opacity: 0.55;
+}
+
+.picker-title {
+  font-weight: 600;
+  color: var(--fg-strong);
+  margin-bottom: 8px;
+}
+
+.picker-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.picker-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: var(--fg-body);
+  font: inherit;
+  cursor: pointer;
+}
+
+.picker-row:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.picker-row.picker-highlight {
+  background: var(--surface-hover);
+}
+
+.picker-row.picker-chosen {
+  opacity: 1;
+  background: var(--ok-bg);
+}
+
+.picker-row.picker-chosen .picker-caret,
+.picker-row.picker-chosen .picker-label {
+  color: var(--accent);
+}
+
+.picker-caret {
+  flex-shrink: 0;
+  width: 1ch;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--accent);
+  white-space: pre;
+}
+
+.picker-label {
+  font-weight: 500;
+  font-size: 0.92em;
+  color: var(--fg-strong);
+  white-space: nowrap;
+}
+
+.picker-current {
+  font-weight: 400;
+  color: var(--fg-dim);
+}
+
+.picker-detail {
+  font-size: 0.84em;
+  color: var(--fg-dim);
+  min-width: 0;
+}
+
+.picker-hint {
+  margin-top: 8px;
+  font-size: 0.8em;
+  color: var(--fg-dimmer);
 }
 
 /* file tree — flat wire paths, nested only client-side */
@@ -2468,25 +2573,36 @@ html {
    scanners want contrast, not theming. */
 
 .sb-pair {
-  padding: 1px 8px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.74em;
-  color: var(--fg-dimmer);
+  display: inline-flex;
+  align-items: center;
+  height: 34px; /* the status bar's shared control height (.sb-new / .sb-end) */
+  padding: 0 12px;
+  color: var(--fg-mid);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
   background: transparent;
   border: 1px solid var(--border-2);
-  border-radius: 6px;
+  border-radius: 7px;
   cursor: pointer;
   white-space: nowrap;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
 }
 
 .sb-pair:hover {
   color: var(--fg);
   border-color: var(--border-hover);
+  background: var(--surface-hover);
 }
 
+/* In the fleet header the pair button sits beside .fleet-new, not the status
+   bar's 34px row — keep it sized to that neighbour. */
 .fleet-head .sb-pair {
+  height: auto;
   padding: 5px 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.85em;
+  color: var(--fg-dimmer);
 }
 
 .pair-backdrop,
@@ -2697,15 +2813,67 @@ html {
   flex-shrink: 0;
 }
 
-/* ---- Phone-width pass (Step R.4) -------------------------------------------
+/* ---- Phone-width pass (Steps R.4 / R.4l) -----------------------------------
    The identity holds at 390px: command strips, mono-in/rich-out, full-width
-   canvas — just tighter chrome, wrapping bars, and comfortable tap targets.
-   Wide content (tables, code) scrolls inside its own box; the page itself
-   must never scroll horizontally. */
+   canvas — just tighter chrome and comfortable tap targets. Two rules make
+   it feel like an app instead of a page: the frame is EXACTLY the visual
+   viewport (100dvh, no overscroll — the page never wiggles under a swipe;
+   only the render zone scrolls), and the status bar becomes two deliberate
+   rows (controls, then dim session facts) instead of arbitrary wrapping. */
 
 @media (max-width: 640px) {
+  /* dvh tracks the browser's collapsing URL bar, so the frame is always
+     exactly the viewport — 100% is the URL-bar-visible height, and the
+     leftover slack is what let the page drift under a swipe. */
+  html,
+  body,
+  #root {
+    height: 100dvh;
+  }
+
+  body {
+    overscroll-behavior: none; /* no rubber-band / pull-to-refresh wiggle */
+  }
+
   .shell {
-    padding: 0 10px;
+    padding: 0 max(10px, env(safe-area-inset-right)) 0
+      max(10px, env(safe-area-inset-left));
+  }
+
+  /* 16px is the iOS no-auto-zoom threshold: a smaller input font makes
+     Safari zoom the page on focus and LEAVE it zoomed — which reads as
+     "the page pans sideways". Never below 16px on anything focusable. */
+  .prompt-box textarea,
+  .bang-bar-input,
+  .onb-cwd,
+  .fleet-rename {
+    font-size: 16px;
+  }
+
+  button,
+  a {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation; /* no double-tap zoom on controls */
+  }
+
+  .render-zone {
+    padding: 14px 2px;
+    gap: 12px;
+  }
+
+  /* The welcome lockup, scaled to the narrow canvas (same geometry). */
+  .zone-empty-mark {
+    width: 44px;
+    height: 44px;
+    margin-right: 12px;
+  }
+
+  .zone-empty-title {
+    font-size: 26px;
+  }
+
+  .zone-empty-sub {
+    font-size: 16px;
   }
 
   .prompt-box {
@@ -2719,9 +2887,84 @@ html {
     max-width: 34vw;
   }
 
+  /* ── Status bar: two rows, on purpose ──────────────────────────────────
+     Row 1 — the controls, one even strip of thumb-sized targets:
+       ⌂  new  ●            ⧉ pair  ⚙  ☀|☾  end
+     Row 2 — the session facts, one dim line: agent · model · cwd · Σ · $.
+     The ::after pseudo-element is the line break between the two groups;
+     facts get order 10+ so every control keeps its desktop position. */
   .status-bar {
     flex-wrap: wrap;
-    row-gap: 4px;
+    column-gap: 5px;
+    row-gap: 10px;
+    margin: 4px 0 0;
+    padding: 8px 0 max(8px, env(safe-area-inset-bottom));
+    font-size: 0.78em;
+  }
+
+  .status-bar::after {
+    content: "";
+    order: 9;
+    flex-basis: 100%;
+    height: 0;
+  }
+
+  .sb-agent {
+    order: 10;
+  }
+  .sb-model {
+    order: 11;
+  }
+  .sb-cwd {
+    order: 12;
+  }
+  .sb-usage-sum {
+    order: 13;
+  }
+  .sb-usage-cost {
+    order: 14;
+  }
+
+  /* Plumbing that doesn't earn phone space. */
+  .sb-session,
+  .sb-version,
+  .sb-usage-turn {
+    display: none;
+  }
+
+  /* Thumb-sized controls, one consistent 40px height — sized so the whole
+     strip (pair button included, the local-viewport worst case) fits one
+     row at 390px. */
+  .sb-home,
+  .sb-new,
+  .sb-end,
+  .sb-pair,
+  .sb-settings {
+    height: 40px;
+    min-width: 40px;
+    justify-content: center;
+  }
+
+  .sb-new,
+  .sb-end {
+    padding: 0 10px;
+  }
+
+  .sb-pair {
+    padding: 0 7px;
+  }
+
+  .sb-theme {
+    height: 40px;
+  }
+
+  .sb-theme-opt {
+    min-width: 37px;
+    padding: 6px 8px;
+  }
+
+  .sb-toggle {
+    padding: 0 2px;
   }
 
   /* Comfortable thumb targets on the answer-or-act surfaces. */
@@ -2755,6 +2998,19 @@ html {
     padding: 20px 12px;
   }
 
+  /* The header wraps as two deliberate lines — identity first, then the
+     action buttons — instead of the buttons' labels breaking mid-word. */
+  .fleet-head {
+    flex-wrap: wrap;
+    row-gap: 10px;
+  }
+
+  .fleet-count,
+  .fleet-new,
+  .fleet-head .sb-pair {
+    white-space: nowrap;
+  }
+
   /* Fleet rows: name + state read first; plumbing columns step back. */
   .fleet-row {
     flex-wrap: wrap;
@@ -2766,11 +3022,31 @@ html {
     display: none;
   }
 
+  .fleet-new,
+  .fleet-head .sb-pair {
+    min-height: 40px;
+  }
+
+  .fleet-end {
+    min-height: 36px;
+    padding: 5px 12px;
+  }
+
+  .fleet-edit {
+    min-width: 36px;
+    min-height: 36px;
+  }
+
   .onb-card {
     padding: 24px 18px;
   }
 
   .pin-dock {
     display: none; /* supervision dock is a desktop affordance */
+  }
+
+  /* No dock → nothing to pin to; the affordance is hover-only anyway. */
+  .pin-btn {
+    display: none;
   }
 }

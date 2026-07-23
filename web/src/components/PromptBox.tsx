@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 // The desktop placeholder is keyboard lore that wraps to three ugly
-// lines on a phone — narrow viewports get the short form. Checked once at
-// module load: a mid-session resize isn't worth a listener (R.4).
+// lines on a phone — narrow viewports get the short form (bare "Message":
+// anything longer clips mid-word beside the cwd crumb at 16px, R.4l).
+// Checked once at module load: a mid-session resize isn't worth a listener (R.4).
 const PLACEHOLDER = window.matchMedia?.("(max-width: 640px)")?.matches
-  ? "Message · !cmd runs in your shell"
+  ? "Message"
   : "Enter to send · Shift+Enter for newline · !cmd runs in your shell";
 
 // Persists the collapsible-cwd choice; anything but "hidden" means shown.

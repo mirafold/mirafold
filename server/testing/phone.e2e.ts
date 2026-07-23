@@ -80,6 +80,33 @@ test("phone: pairs by URL, opens the session, drives a turn with a rendered comp
   // the phone, through the encrypted relay path.
   assert.ok(await phone.locator("text=Verify end to end").count());
   await noSideScroll(phone);
+
+  // R.4l: the status bar's controls sit on ONE even row of thumb-sized
+  // targets — a wrapped stray control is the "haphazard" look this pass
+  // removed. (No .sb-pair here: pairing info rides to local viewports only.)
+  const controls = await phone.evaluate(() =>
+    [".sb-home", ".sb-new", ".sb-settings", ".sb-theme", ".sb-end"]
+      .map((s) => document.querySelector(`.status-bar ${s}`))
+      .filter((el): el is Element => el !== null)
+      .map((el) => {
+        const r = el.getBoundingClientRect();
+        return { top: Math.round(r.top), height: Math.round(r.height) };
+      }),
+  );
+  assert.ok(controls.length >= 4, "status-bar controls missing");
+  assert.equal(
+    new Set(controls.map((c) => c.top)).size,
+    1,
+    `controls wrapped across rows: ${JSON.stringify(controls)}`,
+  );
+  for (const c of controls) assert.ok(c.height >= 40, `control is ${c.height}px — too small to tap`);
+
+  // R.4l: every focusable input is ≥16px — below that iOS zooms the page on
+  // focus and leaves it zoomed, which reads as "the page pans sideways".
+  const promptFont = await phone.evaluate(() =>
+    parseFloat(getComputedStyle(document.querySelector(".prompt-box textarea")!).fontSize),
+  );
+  assert.ok(promptFont >= 16, `prompt textarea is ${promptFont}px — iOS will zoom on focus`);
 });
 
 test("phone: a permission request is answerable by thumb", async () => {
