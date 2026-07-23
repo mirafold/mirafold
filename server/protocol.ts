@@ -373,4 +373,11 @@ export type ClientMsg =
   // onboarding picker sends this on a slow interval while open, so the
   // "start your local server and it appears here" promise is live — no
   // reload. Server-side throttled; a burst degrades to the cached answer.
-  | { type: "refresh_agents" };
+  | { type: "refresh_agents" }
+  // The browser half's uncaught errors (window "error"/"unhandledrejection"),
+  // forwarded so the daemon's flight-recorder log hears about a front-end
+  // crash — otherwise a "it went blank" bug report arrives with an empty log
+  // (R.4g follow-through, 2026-07-23). Client-clipped and capped per page;
+  // the server re-caps per connection and treats the text as untrusted:
+  // logged only, never broadcast, never echoed back into any surface.
+  | { type: "client_error"; message: string; clientVersion?: string };

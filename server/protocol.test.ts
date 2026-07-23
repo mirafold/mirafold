@@ -161,6 +161,7 @@ const CLIENT: ClientByType = {
   rename: { type: "rename", sessionId: "s1", name: "renamed" },
   end_session: { type: "end_session", sessionId: "s1" },
   refresh_agents: { type: "refresh_agents" },
+  client_error: { type: "client_error", message: "TypeError: x is undefined", clientVersion: "0.0.1" },
 };
 
 // seq is the registry's additive per-broadcast stamp (4.4) — assignable onto

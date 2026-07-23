@@ -12,6 +12,7 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import express from "express";
+import { print } from "../log";
 import { WebSocketServer, WebSocket } from "ws";
 import {
   CLOSE_BAD_CODE,
@@ -155,6 +156,6 @@ export function startRelayStub(
 // Runnable standalone for dev: `node --import tsx server/relay/relay-stub.ts`.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   startRelayStub({ port: Number(process.env.PORT ?? 9100) }).then(({ url }) =>
-    console.log(`[relay-stub] on ${url} — point the daemon at MIRAFOLD_RELAY_URL=${url}`),
+    print(`[relay-stub] on ${url} — point the daemon at MIRAFOLD_RELAY_URL=${url}`),
   );
 }

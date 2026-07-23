@@ -50,6 +50,15 @@ test("supportability: hello carries the version; errors and skew reach the log (
   t.send({ type: "attach", sessionId: "stale-id", clientVersion: "0.0.0-skew" } as never);
   await t.type("session_created"); // stale id → fallback create still works
   assert.match(d.logs(), /version skew: client v0\.0\.0-skew, daemon v\d+\.\d+\.\d+/);
+
+  // A forwarded front-end crash (client_error) lands in the same log, and a
+  // malformed report is dropped without a wobble. ping/pong sequences them:
+  // the pong proves both were processed before the log is read.
+  t.send({ type: "client_error", message: "TypeError: boom in bundle.js:1:2", clientVersion: "0.0.0-skew" } as never);
+  t.send({ type: "client_error", message: 12345 } as never);
+  t.send({ type: "ping" } as never);
+  await t.type("pong");
+  assert.match(d.logs(), /\[ws\] error: client error \(client v0\.0\.0-skew\): TypeError: boom in bundle\.js:1:2/);
   t.close();
 });
 

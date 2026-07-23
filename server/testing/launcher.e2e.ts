@@ -54,6 +54,7 @@ printf 'args=%s\\nfd0=%s\\nfd1=%s\\nfd2=%s\\npid=%s\\nsid=%s\\n' \\
       ...process.env,
       PATH: `${tmp}:${process.env.PATH}`,
       MIRAFOLD_TEST_RECORD: record,
+      MIRAFOLD_LOG_FILE: "", // never write the real flight-recorder file from tests
       // Same forced-empty credentials as the Tier-2 harness: no test may ever
       // reach a metered engine, even though this one never creates a session.
       ANTHROPIC_API_KEY: "",

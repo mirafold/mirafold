@@ -16,6 +16,9 @@ import {
   PERMISSION_TIMEOUT_MS,
 } from "./types";
 import { AsyncQueue, CLOSE } from "./async-queue";
+import { createLogger, verbose } from "../log";
+
+const log = createLogger("claude-code");
 
 // The SDK's session-task-list tools (T2.5) — folded into the live checklist,
 // never shown as raw tool rows. Note the subagent spawner is named "Agent"
@@ -153,12 +156,7 @@ export class ClaudeCodeSession implements AgentSession {
         includePartialMessages: true, // gives us token-level text deltas
         // MIRAFOLD_DEBUG=1 surfaces the engine's own stderr (the SDK
         // swallows it otherwise) — where a bad key or dead CLI explains itself (R.4g).
-        ...(process.env.MIRAFOLD_DEBUG
-          ? {
-              stderr: (data: string) =>
-                console.error(`[${new Date().toISOString()}] [debug claude-code stderr] ${data}`),
-            }
-          : {}),
+        ...(verbose ? { stderr: (data: string) => log.debug(`stderr — ${data}`) } : {}),
         // Opt-in extended thinking; unset leaves the preset's behavior
         // (trigger words like "think hard" still work either way).
         ...(process.env.MAX_THINKING_TOKENS

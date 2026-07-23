@@ -1,5 +1,6 @@
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
+import { CLIENT_VERSION } from "./version";
 import {
   SocketClient,
   relayTargetFromFragment,
@@ -369,4 +370,16 @@ test("fragment parsing: code alone, code+relay, and hostile/malformed relay valu
       hostile,
     );
   }
+});
+
+test("client_error is stamped with the bundle version (one choke point)", (t) => {
+  const { client, sock } = setup(t);
+  client.setHello(() => ({ type: "attach", sessionId: "s1" }));
+  client.send({ type: "client_error", message: "TypeError: boom" });
+  sock().open();
+  const report = sock()
+    .sent.map((m) => JSON.parse(m) as { type: string; clientVersion?: string })
+    .find((m) => m.type === "client_error");
+  assert.ok(report, "queued report leaves on open");
+  assert.equal(report.clientVersion, CLIENT_VERSION);
 });

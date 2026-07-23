@@ -942,6 +942,28 @@ from a tarball. Prerequisites: `yarn` on PATH and a prior `yarn install`,
 because `prepack` runs `yarn build`. Then: `npm pack` in the repo, and
 `npm i -g ./mirafold-*.tgz`.)*
 
+### Logs
+
+All daemon logging goes through one module (`server/log.ts`), which feeds two
+sinks with different rules:
+
+- **Terminal**: `[ISO] [component]` lines, info and up. `--verbose` (or
+  `MIRAFOLD_DEBUG=1` — same switch) adds debug detail: engine stderr, a
+  truncated per-message event trace.
+- **File** — a capped flight recorder at `~/.local/state/mirafold/mirafold.log`
+  (`$XDG_STATE_HOME` respected; `MIRAFOLD_LOG_FILE` moves it, empty disables).
+  Rolls to `.1` at 5 MB, so its footprint is bounded at ~10 MB forever. It
+  captures info+ even when nobody is watching the terminal — "attach your log
+  file" is the whole bug-report instruction.
+
+Two invariants the module enforces by construction, so the file is always safe
+to paste into a public issue: **debug lines never reach the file** (they are
+the only level allowed to carry payload fragments), and **`print()` boot lines
+never reach the file** (they carry the `?token=` URL and the pairing code;
+the file gets sanitized twins with the secrets elided). Errors a user must act
+on are not "in the log" — they surface in the shell UI via `error` wire
+messages; the log carries the detail behind them.
+
 ### Prerequisites (development)
 
 - **Node 22** (any install method; this machine uses nvm with 22 as the

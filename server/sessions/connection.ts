@@ -16,6 +16,7 @@ import {
 import { allowedOverRelay } from "../provider-policy";
 import { probeLocalServers } from "../local-models";
 import { spawnBang } from "../pty/pty";
+import { createLogger } from "../log";
 import { VERSION } from "../version";
 
 // How much of a `!` command's output rides into the agent's context with the
@@ -247,9 +248,13 @@ export function openConnection(
   // backed session; local viewports are never gated (R.4i).
   remote = false,
 ): Connection {
+  const log = createLogger(label);
   // A connection is a viewport onto one registry session (Step 4.2) — or,
   // since 4.6, a fleet watcher observing the registry itself.
   let entry: SessionEntry | null = null;
+  // Per-connection budget for forwarded client_error reports — the client
+  // caps itself too, but a hostile client isn't bound by our bundle.
+  let clientErrorReports = 0;
   let watching = false;
   let closed = false;
   // refresh_agents throttle (N.3): the picker polls on a slow interval, but a
@@ -276,7 +281,7 @@ export function openConnection(
         message:
           "This session runs on a subscription login, which can't be used over the relay. Use an API key to drive an agent remotely.",
       });
-      console.log(`[${label}] refused remote viewport → session ${e.id} (${e.kind})`);
+      log.info(`refused remote viewport → session ${e.id} (${e.kind})`);
       return;
     }
     if (entry) registry.detach(entry, viewport);
@@ -295,8 +300,8 @@ export function openConnection(
       ...(fallback ? { fallback: true } : {}),
     });
     registry.attach(e, viewport, resumed ? afterSeq : undefined);
-    console.log(
-      `[${label}] viewport ${resumed ? `resumed @${afterSeq}` : "attached"} → session ${e.id} (${e.viewports.size} viewport(s))`,
+    log.info(
+      `viewport ${resumed ? `resumed @${afterSeq}` : "attached"} → session ${e.id} (${e.viewports.size} viewport(s))`,
     );
   };
 
@@ -321,7 +326,7 @@ export function openConnection(
   // A viewport-scoped error reaches the terminal too — the browser may
   // be a stranger's; the terminal log is what lands in a bug report (R.4g).
   const sendError = (message: string) => {
-    console.error(`[${new Date().toISOString()}] [${label}] error: ${message}`);
+    log.error(message);
     viewport({ type: "error", message });
   };
 
@@ -329,9 +334,7 @@ export function openConnection(
   // the first thing to know about a weird bug report, so log it here (R.4g).
   const noteClientVersion = (v: unknown) => {
     if (typeof v === "string" && v && v !== VERSION) {
-      console.warn(
-        `[${new Date().toISOString()}] [${label}] version skew: client v${v}, daemon v${VERSION}`,
-      );
+      log.warn(`version skew: client v${v}, daemon v${VERSION}`);
     }
   };
 
@@ -372,8 +375,8 @@ export function openConnection(
             break;
           }
           backend = resolved;
-          console.log(
-            `[${label}] create → ${agent} on chosen backend ${backend.kind}` +
+          log.info(
+            `create → ${agent} on chosen backend ${backend.kind}` +
               (backend.endpoint ? ` @ ${backend.endpoint}` : "") +
               (backend.model ? ` (${backend.model})` : ""),
           );
@@ -479,7 +482,7 @@ export function openConnection(
         // tears the session down and signals any attached viewports (#11).
         if (typeof msg.sessionId === "string") {
           registry.end(msg.sessionId);
-          console.log(`[${label}] end_session → ${msg.sessionId}`);
+          log.info(`end_session → ${msg.sessionId}`);
         }
         break;
       case "interrupt":
@@ -495,7 +498,7 @@ export function openConnection(
         if (!entry || typeof msg.action !== "object" || msg.action === null) break;
         const src = typeof msg.sourceId === "string" ? msg.sourceId : "?";
         if (msg.action.kind === "prompt" && typeof msg.action.text === "string") {
-          console.log(`[action] prompt from render ${src}`);
+          createLogger("action").info(`prompt from render ${src}`);
           registry.broadcast(entry, { type: "user_prompt", text: msg.action.text });
           entry.session.pushPrompt(msg.action.text);
         } else if (msg.action.kind === "tool" && typeof msg.action.name === "string") {
@@ -531,6 +534,19 @@ export function openConnection(
           if (!closed) sendAgents();
         });
         break;
+      case "client_error":
+        // The browser half's uncaught errors, landing in the flight-recorder
+        // log so a front-end crash leaves a trace a bug report can attach.
+        // Untrusted text: type-checked, clipped, counted — logged and nothing
+        // else (never broadcast, never echoed into any surface).
+        if (typeof msg.message === "string" && ++clientErrorReports <= 20) {
+          const skew =
+            typeof msg.clientVersion === "string" && msg.clientVersion !== VERSION
+              ? ` (client v${msg.clientVersion})`
+              : "";
+          log.error(`client error${skew}: ${msg.message.slice(0, 2_000)}`);
+        }
+        break;
     }
   };
 
@@ -538,7 +554,7 @@ export function openConnection(
     closed = true;
     if (entry) {
       registry.detach(entry, viewport);
-      console.log(`[${label}] viewport detached ← session ${entry.id}`);
+      log.info(`viewport detached ← session ${entry.id}`);
     }
     if (watching) registry.unwatch(viewport);
   };

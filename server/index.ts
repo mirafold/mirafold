@@ -13,15 +13,21 @@ import { startRelayClient } from "./relay/relay-client";
 import { createEntitlementTokenSource } from "./relay/entitlement";
 import { MIN_PAIRING_CODE_LENGTH, resolvePairingCode } from "./relay/relay-protocol";
 import { COOKIE_NAME, cookieToken, isLoopbackOrigin, safeRedirectPath, tokensMatch, verifyToken } from "./security/auth";
+import { createLogger, logFile, print } from "./log";
 import { VERSION } from "./version";
 
+const log = createLogger("mirafold");
+
 // Last-gasp handlers — a crash stays loud and exits nonzero, it just
-// signs its name first so a stranger's report contains something actionable (R.4g).
+// signs its name first so a stranger's report contains something actionable
+// (R.4g) — and the flight-recorder file keeps it even if the terminal is gone.
 const lastGasp = (kind: string) => (err: unknown) => {
-  console.error(`[mirafold] v${VERSION} crashed (${kind}):`, err);
-  console.error(
-    "[mirafold] please report this at https://github.com/mirafold/mirafold/issues " +
-      "(include the two lines above; never paste the ?token= URL or a pairing code)",
+  const detail = err instanceof Error ? (err.stack ?? err.message) : String(err);
+  log.error(`v${VERSION} crashed (${kind}): ${detail}`);
+  log.error(
+    "please report this at https://github.com/mirafold/mirafold/issues " +
+      `(include the lines above${logFile ? ` — also in ${logFile}` : ""}; ` +
+      "never paste the ?token= URL or a pairing code)",
   );
   process.exit(1);
 };
@@ -38,8 +44,8 @@ if (typeof process.loadEnvFile === "function") {
     /* no .env yet */
   }
 } else {
-  console.warn(
-    `[mirafold] this Node (${process.version}) can't read .env (needs >= 20.12) — ` +
+  log.warn(
+    `this Node (${process.version}) can't read .env (needs >= 20.12) — ` +
       "credentials set in .env were NOT loaded; export them in the environment or upgrade Node",
   );
 }
@@ -101,8 +107,8 @@ if (!AUTH_ENABLED) {
   // server) can drive this agent: shell + file access as the user. Fine for a
   // single-user dev box (the Vite proxy needs it); a loud line so it's never
   // an accident on a shared machine or a forgotten production setting.
-  console.warn(
-    "[mirafold] AUTH DISABLED (MIRAFOLD_TOKEN=\"\") — any page served from " +
+  log.warn(
+    "AUTH DISABLED (MIRAFOLD_TOKEN=\"\") — any page served from " +
       "localhost can drive this agent (shell + file access). Safe only on a " +
       "single-user machine; never run this way on a shared box or in production.",
   );
@@ -152,7 +158,7 @@ const wss = new WebSocketServer({
 // throws and defeats the EADDRINUSE port walk below. The walk (or the loud
 // rethrow) is handled on the http server — here we only log the rest.
 wss.on("error", (err: NodeJS.ErrnoException) => {
-  if (err.code !== "EADDRINUSE") console.error("[ws]", err);
+  if (err.code !== "EADDRINUSE") log.error(`[ws] ${err.stack ?? String(err)}`);
 });
 
 const registry = new SessionRegistry();
@@ -173,8 +179,8 @@ if (RELAY_URL) {
   if (weakPin) {
     // Refusing beats honoring: a guessable code is remote shell access for
     // whoever guesses it, and the minted fallback keeps the relay usable.
-    console.warn(
-      `[relay] MIRAFOLD_RELAY_CODE is shorter than ${MIN_PAIRING_CODE_LENGTH} chars and was REFUSED — ` +
+    createLogger("relay").warn(
+      `MIRAFOLD_RELAY_CODE is shorter than ${MIN_PAIRING_CODE_LENGTH} chars and was REFUSED — ` +
         `a guessable pairing code hands remote shell access to whoever guesses it. ` +
         `Using a freshly minted code instead (printed below).`,
     );
@@ -236,7 +242,13 @@ const listen = (port: number) => {
     // The token rides the URL so the launcher opens an authenticated page; the
     // browser trades it for the cookie on first load (see the auth block above).
     const url = `http://127.0.0.1:${port}/${AUTH_ENABLED ? `?token=${AUTH_TOKEN}` : ""}`;
-    console.log(`[mirafold] v${VERSION} — server on ${url} (ws at /ws)`);
+    // print(): the launcher greps this stdout line for the URL, and the token
+    // must never reach the log file — its file twin below is sanitized.
+    print(`[mirafold] v${VERSION} — server on ${url} (ws at /ws)`);
+    log.file(
+      `v${VERSION} — server on http://127.0.0.1:${port}/ (ws at /ws; ` +
+        `${AUTH_ENABLED ? "auth token elided" : "auth disabled"})`,
+    );
   };
   const onBusy = (err: NodeJS.ErrnoException) => {
     // The stale "listening" callback must go with the failed attempt, or the
@@ -244,7 +256,7 @@ const listen = (port: number) => {
     // claims "server on" ports we never bound — a line users copy (R.4b).
     server.removeListener("listening", onListening);
     if (err.code === "EADDRINUSE" && port - basePort < 20) {
-      console.log(`[mirafold] :${port} busy — trying :${port + 1}`);
+      log.info(`:${port} busy — trying :${port + 1}`);
       listen(port + 1);
     } else throw err;
   };
@@ -270,10 +282,13 @@ if (RELAY_URL && RELAY_CODE) {
     "license-key": "entitlement: license key (auto-refreshing token)",
     none: "entitlement: none configured — a gated relay will refuse this daemon",
   }[entitlement.mode];
-  console.log(
+  // print(): the pairing code is the root of trust for remote access — it may
+  // reach the user's eyes, never the log file. The file twin elides it.
+  print(
     `[relay] dialing ${RELAY_URL} — pairing code: ${RELAY_CODE}\n` +
       `[relay] ${modeLine}\n` +
       `[relay] KEEP THAT CODE SECRET — it grants remote access to your sessions; ` +
       `never paste this boot output into an issue or chat`,
   );
+  createLogger("relay").file(`dialing ${RELAY_URL} (pairing code elided) — ${modeLine}`);
 }

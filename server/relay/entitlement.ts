@@ -16,6 +16,10 @@
 // the dial-out carries no header — a gated relay refuses it with 4007 and
 // relay-client already prints the actionable line.
 
+import { createLogger } from "../log";
+
+const log = createLogger("relay");
+
 const REFRESH_INTERVAL_MS = 12 * 60 * 60 * 1000; // well inside the 48h token TTL
 const FORCED_REFRESH_MIN_GAP_MS = 60_000; // a lapsed key must not turn dial backoff into an HTTP hammer
 const FETCH_TIMEOUT_MS = 10_000;
@@ -43,8 +47,8 @@ export function createEntitlementTokenSource(env: {
 
   if (override) {
     if (licenseKey) {
-      console.warn(
-        `[relay] both MIRAFOLD_ENTITLEMENT_TOKEN and MIRAFOLD_LICENSE_KEY are set — ` +
+      log.warn(
+        `both MIRAFOLD_ENTITLEMENT_TOKEN and MIRAFOLD_LICENSE_KEY are set — ` +
           `the token override wins; the license key is ignored`,
       );
     }
@@ -71,8 +75,8 @@ export function createEntitlementTokenSource(env: {
       if (res.status === 403) {
         const reason = ((await res.json().catch(() => ({}))) as { reason?: string }).reason;
         if (!denied) {
-          console.warn(
-            `[relay] entitlement refused for license ${mask(licenseKey)}: ` +
+          log.warn(
+            `entitlement refused for license ${mask(licenseKey)}: ` +
               `${reason ?? "subscription lapsed or key invalid"} — remote access will be off ` +
               `until the subscription is active (local sessions are unaffected)`,
           );

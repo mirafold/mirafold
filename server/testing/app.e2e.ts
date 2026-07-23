@@ -991,3 +991,18 @@ test("C.2: axe-core finds no serious/critical WCAG violations across the app", a
     await relay.stop();
   }
 });
+
+test("an uncaught front-end error lands in the daemon's log (client_error path)", async () => {
+  // The shared page still holds a live socket (fleet or session — both run
+  // one). A deferred throw escapes the evaluate call itself and surfaces as
+  // window "error", which ws.ts forwards over the wire.
+  await page.evaluate(() => {
+    setTimeout(() => {
+      throw new Error("e2e-client-error-probe");
+    }, 0);
+  });
+  for (let i = 0; i < 50 && !d.logs().includes("e2e-client-error-probe"); i++) {
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  assert.match(d.logs(), /error: client error: Error: e2e-client-error-probe/);
+});

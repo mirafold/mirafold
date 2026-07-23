@@ -30,11 +30,15 @@ if (process.argv.includes("--help") || process.argv.includes("-h")) {
       `\n` +
       `Options:\n` +
       `  --no-open        don't open the browser (prints the URL only)\n` +
+      `  --verbose        stream debug-level detail (same as MIRAFOLD_DEBUG=1)\n` +
       `  -v, --version    print the version and exit\n` +
       `  -h, --help       show this help and exit\n` +
       `\n` +
       `Config is read from .env in the launch directory (see .env.example) —\n` +
-      `agent credentials, PORT, MIRAFOLD_AGENT, MIRAFOLD_RELAY_URL, MIRAFOLD_DEBUG=1.`,
+      `agent credentials, PORT, MIRAFOLD_AGENT, MIRAFOLD_RELAY_URL, MIRAFOLD_DEBUG=1.\n` +
+      `\n` +
+      `Logs: warnings/errors also land in ~/.local/state/mirafold/mirafold.log\n` +
+      `(size-capped, no session content ever; MIRAFOLD_LOG_FILE moves it, empty disables).`,
   );
   process.exit(0);
 }
@@ -49,8 +53,12 @@ if (!existsSync(daemon)) {
 }
 
 const noOpen = process.argv.includes("--no-open");
+// --verbose rides to the daemon as MIRAFOLD_DEBUG=1 — one debug switch, two spellings.
 const child = spawn(process.execPath, [daemon], {
   stdio: ["inherit", "pipe", "inherit"],
+  env: process.argv.includes("--verbose")
+    ? { ...process.env, MIRAFOLD_DEBUG: "1" }
+    : process.env,
 });
 
 // The daemon prints its final URL (it may walk past a busy port, and it carries

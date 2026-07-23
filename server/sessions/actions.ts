@@ -1,4 +1,7 @@
 // Action mediation (Step 2.3). `tool` actions from components run HERE,
+import { createLogger } from "../log";
+
+const log = createLogger("action");
 // against an explicit allowlist with validated args — the client never
 // calls anything directly, and off-list names are rejected and logged.
 // Results are broadcast as tool_use/tool_result records, so an action's
@@ -63,20 +66,20 @@ export function runActionTool(
 ): ActionResult {
   const spec = ACTION_TOOLS[name];
   if (!spec) {
-    console.warn(`[action] REJECTED off-allowlist tool "${name}"`);
+    log.warn(`REJECTED off-allowlist tool "${name}"`);
     return { output: `Action tool "${name}" is not allowlisted.`, isError: true };
   }
   const parsed = spec.args.safeParse(args);
   if (!parsed.success) {
-    console.warn(`[action] REJECTED bad args for "${name}": ${parsed.error.message}`);
+    log.warn(`REJECTED bad args for "${name}": ${parsed.error.message}`);
     return { output: `Invalid arguments for "${name}".`, isError: true };
   }
-  console.log(`[action] run "${name}" in ${cwd}`);
+  log.info(`run "${name}" in ${cwd}`);
   try {
     return { output: spec.run(parsed.data ?? {}, cwd), isError: false };
   } catch (err) {
     const message = errText(err);
-    console.warn(`[action] "${name}" failed: ${message}`);
+    log.warn(`"${name}" failed: ${message}`);
     return { output: message, isError: true };
   }
 }

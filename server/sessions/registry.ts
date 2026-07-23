@@ -13,6 +13,7 @@ import {
 } from "../adapters";
 import type { CredentialKind } from "../provider-policy";
 import type { BangProc } from "../pty/pty";
+import { createLogger, verbose } from "../log";
 
 // Replay depth: enough to reconstruct a long working session; beyond it the
 // oldest messages fall off and a late viewport sees a truncated head.
@@ -152,19 +153,15 @@ export class SessionRegistry {
     // the browser — mirror them to the terminal, timestamped, because the
     // terminal log is what a stranger pastes into a bug report (R.4g).
     if (msg.type === "error") {
-      console.error(
-        `[${new Date().toISOString()}] [session ${entry.id}] error: ${msg.message}`,
-      );
+      createLogger(`session ${entry.id}`).error(msg.message);
     }
     // MIRAFOLD_DEBUG=1 traces every normalized event on the session
     // stream (bang_input never crosses broadcast, so no secret can land
     // here). One line per WireMsg, payload truncated (R.4g).
-    if (process.env.MIRAFOLD_DEBUG) {
+    if (verbose) {
       const body = JSON.stringify(msg);
-      console.error(
-        `[${new Date().toISOString()}] [debug ${entry.id}] ${msg.type} ${
-          body.length > 300 ? body.slice(0, 300) + "…" : body
-        }`,
+      createLogger(`session ${entry.id}`).debug(
+        `${msg.type} ${body.length > 300 ? body.slice(0, 300) + "…" : body}`,
       );
     }
     // Resume cursor, one stamp for all viewports. Stamped on a shallow

@@ -120,6 +120,40 @@ function relayTargetFromPage(): { code: string; ws: string | null } | null {
  * closed → normal reconnect → fresh handshake). A local page has no code and
  * none of this engages (4.4).
  */
+// Uncaught front-end errors ride the socket into the daemon's flight-recorder
+// log — otherwise a front-end crash dies in the devtools console and the log a
+// bug report attaches says nothing (R.4g follow-through, 2026-07-23).
+// Installed once per page, forwarding through the most recent SocketClient
+// (whose pending queue survives disconnects). Capped so an error loop can't
+// flood the daemon, clipped so one giant message can't bloat a frame — the
+// server re-caps and re-clips, trusting nothing.
+const ERROR_REPORT_MAX = 20;
+const ERROR_REPORT_CLIP = 2_000;
+let errorSocket: SocketClient | null = null;
+let errorReports = 0;
+let errorForwardingInstalled = false;
+
+function installErrorForwarding() {
+  if (errorForwardingInstalled) return;
+  errorForwardingInstalled = true;
+  const forward = (message: string) => {
+    if (!errorSocket || errorReports >= ERROR_REPORT_MAX) return;
+    errorReports++;
+    errorSocket.send({ type: "client_error", message: message.slice(0, ERROR_REPORT_CLIP) });
+  };
+  window.addEventListener("error", (e) =>
+    forward(
+      e.error instanceof Error
+        ? (e.error.stack ?? e.message)
+        : `${e.message} (${e.filename}:${e.lineno})`,
+    ),
+  );
+  window.addEventListener("unhandledrejection", (e) => {
+    const r: unknown = e.reason;
+    forward(`unhandled rejection: ${r instanceof Error ? (r.stack ?? r.message) : String(r)}`);
+  });
+}
+
 export class SocketClient {
   private ws?: WebSocket;
   private listeners = new Set<Listener>();
@@ -145,6 +179,8 @@ export class SocketClient {
   private transmit: (msg: ClientMsg) => void = (m) => this.pending.push(m);
 
   constructor(url?: string) {
+    errorSocket = this;
+    installErrorForwarding();
     // A returning network or a re-focused tab shouldn't wait out the backoff.
     window.addEventListener("online", this.reconnectNow);
     document.addEventListener("visibilitychange", this.onVisible);
@@ -350,10 +386,10 @@ export class SocketClient {
     };
   }
 
-  // attach/create announce this bundle's build (additive field) so the
-  // daemon can log a skewed pair — one choke point, no caller threads it (R.4g).
+  // attach/create/client_error announce this bundle's build (additive field) so
+  // the daemon can log a skewed pair — one choke point, no caller threads it (R.4g).
   private stamp(msg: ClientMsg): ClientMsg {
-    return msg.type === "attach" || msg.type === "create"
+    return msg.type === "attach" || msg.type === "create" || msg.type === "client_error"
       ? { ...msg, clientVersion: CLIENT_VERSION }
       : msg;
   }

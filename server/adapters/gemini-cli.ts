@@ -1,4 +1,5 @@
 import path from "node:path";
+import { createLogger, verbose } from "../log";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
@@ -276,9 +277,7 @@ export class GeminiCliSession implements AgentSession {
       // streams it live (R.4g).
       child.stderr.on("data", (d: Buffer) => {
         stderrTail = (stderrTail + d.toString()).slice(-STDERR_TAIL_CAP);
-        if (process.env.MIRAFOLD_DEBUG) {
-          console.error(`[${new Date().toISOString()}] [debug gemini-cli stderr] ${d}`);
-        }
+        if (verbose) createLogger("gemini-cli").debug(`stderr — ${d}`);
       });
       child.on("close", (code: number | null) => {
         if (buf) consume(buf);

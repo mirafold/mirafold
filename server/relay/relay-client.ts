@@ -1,6 +1,7 @@
 import WebSocket from "ws";
 import type { SessionRegistry } from "../sessions/registry";
 import { openConnection, type Connection } from "../sessions/connection";
+import { createLogger } from "../log";
 import {
   CLOSE_CODE_TAKEN,
   CLOSE_OVERLOADED,
@@ -21,6 +22,8 @@ import {
   type FrameCipher,
   type PairSecret,
 } from "./relay-crypto";
+
+const log = createLogger("relay");
 
 // Dial-out backoff: a down relay is routine (offline laptop, relay deploy) —
 // it must cost nothing but a quiet, widening retry.
@@ -157,7 +160,7 @@ export function startRelayClient(opts: {
       // reset fires for a dial-out the relay turned away.
       confirmTimer = setTimeout(() => {
         backoff = RECONNECT_MIN_MS;
-        console.log(`[relay] paired with ${opts.url}`);
+        log.info(`paired with ${opts.url}`);
       }, PAIR_CONFIRM_MS);
     });
     ws.on("message", (data) => {
@@ -244,8 +247,8 @@ export function startRelayClient(opts: {
       dropAll();
       if (stopped) return;
       const refusal = relayRefusalReason(code);
-      if (refusal) console.log(`[relay] refused: ${refusal} — retrying`);
-      else if (wasOpen) console.log(`[relay] connection lost — retrying`);
+      if (refusal) log.info(`refused: ${refusal} — retrying`);
+      else if (wasOpen) log.info(`connection lost — retrying`);
       if (code === CLOSE_UNENTITLED) refreshTokenNext = true;
       const t = setTimeout(() => void dial(pair), backoff);
       t.unref();
