@@ -213,6 +213,48 @@
   resolved "https://registry.yarnpkg.com/@hono/node-server/-/node-server-2.0.11.tgz#0e947b19fe8602232cf6049feeda8f15dea47569"
   integrity sha512-bjD221KPLoJTWUwso1J6fGKiTXEUFedG/s0visavY4zakFPkeGURMRNly+FhBHs7T8Dz4qHaZIMX9ZoJHSJtKA==
 
+"@lydell/node-pty-darwin-arm64@1.2.0-beta.12":
+  version "1.2.0-beta.12"
+  resolved "https://registry.yarnpkg.com/@lydell/node-pty-darwin-arm64/-/node-pty-darwin-arm64-1.2.0-beta.12.tgz#b5b430eed83d5ac03d32aa04e0a7365cae5a1bd6"
+  integrity sha512-tqaifcY9Cr41SblO1+FLzh8oxxtkNhuW9Dhl22lKme9BreYvKvxEZcdPIXTuqkJc5tagOEC4QHShKmJjLyLXLQ==
+
+"@lydell/node-pty-darwin-x64@1.2.0-beta.12":
+  version "1.2.0-beta.12"
+  resolved "https://registry.yarnpkg.com/@lydell/node-pty-darwin-x64/-/node-pty-darwin-x64-1.2.0-beta.12.tgz#dc332daa1f151242d43282666cfbbdb9f6cee64a"
+  integrity sha512-4LrS5pCJwqHKDVf1zS2gyNV0m4hKAXch+XZNhbZ6LY8uwVL8BhchzQBO40Os5anuRxRCWzHpw4Sp64Ie8q7E4Q==
+
+"@lydell/node-pty-linux-arm64@1.2.0-beta.12":
+  version "1.2.0-beta.12"
+  resolved "https://registry.yarnpkg.com/@lydell/node-pty-linux-arm64/-/node-pty-linux-arm64-1.2.0-beta.12.tgz#c925ff5f1c7b28759647f79f0a00270085ba6ac4"
+  integrity sha512-Sx+A71x5BDGHt9ansfrtGxwq2VFVDWvJUAdlUL0Hv0qeiJUfts+hgopx+CgT4PSwahKjdEgtu0+FAfY9rICKRw==
+
+"@lydell/node-pty-linux-x64@1.2.0-beta.12":
+  version "1.2.0-beta.12"
+  resolved "https://registry.yarnpkg.com/@lydell/node-pty-linux-x64/-/node-pty-linux-x64-1.2.0-beta.12.tgz#b1499439ce38f760c1ec6eabe7681a62d47f388d"
+  integrity sha512-bJzs94njofYhGg/UDqW1nj0dtvvu+2OvxMY+RlLS1T17VgcktKoIR6PuenTwE5HJ/D6StCPADmXcT0nNsCKmIQ==
+
+"@lydell/node-pty-win32-arm64@1.2.0-beta.12":
+  version "1.2.0-beta.12"
+  resolved "https://registry.yarnpkg.com/@lydell/node-pty-win32-arm64/-/node-pty-win32-arm64-1.2.0-beta.12.tgz#ef0ae72aace9327046df6e96c5fe47d96d1d6708"
+  integrity sha512-p7POgjVEiFaBC3/y+AKuV1FzePCsJ6HmZDv2XK+jBZSfwP8+uBAw181ZiKYN1YuRa/XpmBGaWezcI8hZkbW++g==
+
+"@lydell/node-pty-win32-x64@1.2.0-beta.12":
+  version "1.2.0-beta.12"
+  resolved "https://registry.yarnpkg.com/@lydell/node-pty-win32-x64/-/node-pty-win32-x64-1.2.0-beta.12.tgz#fa660c6d7e41cdc25cb19c1fe01369a7704e6587"
+  integrity sha512-IDFa00g7qUDGUYgByrUBJtC+mOjYVt/8KYyWivCg5JjGOHbBUACUQZLl0jTWmnr+tld/UyTpX90a2PY6oTVtRw==
+
+"@lydell/node-pty@^1.2.0-beta.12":
+  version "1.2.0-beta.12"
+  resolved "https://registry.yarnpkg.com/@lydell/node-pty/-/node-pty-1.2.0-beta.12.tgz#1f0d92d345cc12a8524aa9b9087b88df67c6e93b"
+  integrity sha512-qIK890UwPupoj07osVvgOIa++1mxeHbcGry4PKRHhNVNs81V2SCG34eJr46GybiOmBtc8Sj5PB1/GGM5PL549g==
+  optionalDependencies:
+    "@lydell/node-pty-darwin-arm64" "1.2.0-beta.12"
+    "@lydell/node-pty-darwin-x64" "1.2.0-beta.12"
+    "@lydell/node-pty-linux-arm64" "1.2.0-beta.12"
+    "@lydell/node-pty-linux-x64" "1.2.0-beta.12"
+    "@lydell/node-pty-win32-arm64" "1.2.0-beta.12"
+    "@lydell/node-pty-win32-x64" "1.2.0-beta.12"
+
 "@modelcontextprotocol/sdk@^1.29.0":
   version "1.29.0"
   resolved "https://registry.yarnpkg.com/@modelcontextprotocol/sdk/-/sdk-1.29.0.tgz#79786d8b525e269de850ac82b1f1f757f3915f44"
@@ -1750,18 +1792,6 @@ negotiator@^1.0.0:
   version "1.0.0"
   resolved "https://registry.yarnpkg.com/negotiator/-/negotiator-1.0.0.tgz#b6c91bb47172d69f93cfd7c357bbb529019b5f6a"
   integrity sha512-8Ofs/AUQh8MaEcrlq5xOX0CQ9ypTF5dl78mjlMNfOK08fzpgTHQRQPBxcPlEtIw0yRpws+Zo/3r+5WRby7u3Gg==
-
-node-addon-api@^7.1.0:
-  version "7.1.1"
-  resolved "https://registry.yarnpkg.com/node-addon-api/-/node-addon-api-7.1.1.tgz#1aba6693b0f255258a049d621329329322aad558"
-  integrity sha512-5m3bsyrjFWE1xf7nz7YXdN4udnVtXK6/Yfgn5qnahL6bCkf2yKt4k3nuTKAtT4r3IG8JNR2ncsIMdZuAzJjHQQ==
-
-node-pty@^1.1.0:
-  version "1.1.0"
-  resolved "https://registry.yarnpkg.com/node-pty/-/node-pty-1.1.0.tgz#161936d45a47751c2e3b694c365e73017417a887"
-  integrity sha512-20JqtutY6JPXTUnL0ij1uad7Qe1baT46lyolh2sSENDd4sTzKZ4nmAFkeAARDKwmlLjPx6XKRlwRUxwjOy+lUg==
-  dependencies:
-    node-addon-api "^7.1.0"
 
 object-assign@^4:
   version "4.1.1"

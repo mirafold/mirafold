@@ -956,17 +956,18 @@ with it. Both sequence BEFORE R.5.**
       `mirafold-site/PLAN.md`'s billing docs. If keys would change on
       re-mint, decide now whether that's acceptable (customers re-claim via
       `/welcome`) or whether a periodic KV export is the cheaper answer.
-  - **npm install-scripts blocking (found 2026-07-23 during the beta
-    cold-install check):** recent npm blocks packages' install scripts by
-    default (supply-chain protection), so `node-pty`'s native build never
-    runs and the daemon CRASHES at boot on `Failed to load native module`.
-    The beta welcome note documents the fix (`npm install-scripts approve
-    node-pty` + `npm rebuild -g node-pty`), but the PUBLIC `npm i -g
-    mirafold` path hits the same wall at launch. Decide the handling before
-    R.7: at minimum the install docs; strongly consider lazy-requiring
-    node-pty so the daemon boots without the `!` PTY and prints the exact
-    fix line instead of dying (first-run crash is the worst possible first
-    impression).
+  - [x] **npm install-scripts blocking — SOLVED at the root same day
+    (2026-07-23):** recent npm blocks packages' install scripts by default,
+    so upstream `node-pty`'s postinstall compile never ran and the daemon
+    crashed at first boot (found in the beta cold-install check). Fixed by
+    swapping to `@lydell/node-pty` (Kyle's requirement: no breakage, no
+    manual workaround, ever): identical API, prebuilt binaries for six
+    platform/arch combos as `optionalDependencies` — no install script to
+    block, no toolchain needed on any platform. Verified: all tiers green
+    (319/86/38, PTY bang tests included) + a cold tarball install under
+    blocked scripts boots and spawns a real PTY with zero interventions.
+    README native-module note updated; the welcome note's workaround
+    section deleted.
   - **Standing-secrets rotation runbook (from the 2026-07-23 secrets
     review):** the ephemeral secrets (auth token, pairing code, 48h
     entitlement tokens) rotate themselves; the four STANDING ones have no

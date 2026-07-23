@@ -934,10 +934,12 @@ on a single-user machine. The package ships only the launcher + the two esbuild 
 built front end (9 files, ~264 KB tarball); agent credentials come from your
 environment exactly as in a terminal (`ANTHROPIC_API_KEY`, `codex login`,
 `GEMINI_API_KEY`) — none live in the package. **Native-module note:**
-`node-pty` (the `!` PTY, Step 4.9) has prebuilt binaries for macOS and
-Windows; on Linux npm compiles it at install, which needs `make`/`g++`/
-`python3` — the accepted long-tail fallback, not something we engineer
-around. *(Publishing to npm is the M2 launch action — until then, install
+the `!` PTY ships as `@lydell/node-pty` (swapped 2026-07-23) — prebuilt
+binaries for linux/macOS/Windows × x64/arm64 as platform
+`optionalDependencies`, no install scripts. Nothing compiles at install,
+no toolchain is needed, and npm's default install-script blocking (which
+crashed upstream `node-pty`'s postinstall build at first boot) has nothing
+to block. *(Publishing to npm is the M2 launch action — until then, install
 from a tarball. Prerequisites: `yarn` on PATH and a prior `yarn install`,
 because `prepack` runs `yarn build`. Then: `npm pack` in the repo, and
 `npm i -g ./mirafold-*.tgz`.)*

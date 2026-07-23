@@ -1,4 +1,9 @@
-import { spawn, type IPty } from "node-pty";
+// @lydell/node-pty over upstream node-pty (2026-07-23): identical API, but
+// prebuilt binaries ship as platform optionalDependencies (the esbuild
+// pattern) — no install script, so current npm's script-blocking can't
+// break the install, and users need no compiler toolchain. Upstream's
+// postinstall compile crashed the daemon at first boot on default npm.
+import { spawn, type IPty } from "@lydell/node-pty";
 import { existsSync } from "node:fs";
 import { basename, isAbsolute } from "node:path";
 
