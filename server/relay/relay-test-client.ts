@@ -62,6 +62,15 @@ export class RemoteClient {
       hsRes = res;
       hsRej = rej;
     });
+    // Mark hsDone's rejection handled the instant it exists. A wrong-code
+    // connect (assert.rejects) opens then is closed by the relay immediately,
+    // and under CPU load that close can reject hsDone DURING the
+    // `await sealHandshake` below — before `await hsDone` is reached — so the
+    // rejection would otherwise be unhandled and crash the whole test process
+    // (the C.1 relay flake, root-caused 2026-07-23: 22/40 unhandled under
+    // single-core stress, daemon provably not involved). `await hsDone` still
+    // throws for the real caller; this only guarantees a handler always exists.
+    hsDone.catch(() => {});
     const t = setTimeout(() => hsRej(new Error("handshake timed out")), 10_000);
     c.ws.on("close", () => {
       clearTimeout(t);

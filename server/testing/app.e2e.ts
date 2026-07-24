@@ -916,6 +916,19 @@ type AxeViolation = { id: string; impact: string; nodes: unknown[]; help: string
 type AxePage = { axe: { run: (ctx: Document, opts: unknown) => Promise<{ violations: AxeViolation[] }> } };
 
 async function assertAxeClean(p: Page, label: string): Promise<void> {
+  // Settle every animation/transition to its END state before auditing:
+  // fleet rows enter with `rise` (opacity 0→1), and on a loaded CI runner
+  // axe could sample a row mid-rise and read the partial-opacity text as a
+  // color-contrast violation (the C.2 fleet-view flake, root-caused
+  // 2026-07-23). Zeroing durations jumps each animation to its resting
+  // frame — the exact state we mean to audit — without changing any final
+  // style value. Infinite animations (the live-state pulse dot) jump to
+  // their end frame too, harmless for contrast.
+  await p.addStyleTag({
+    content:
+      "*, *::before, *::after { animation-duration: 0s !important; " +
+      "animation-delay: 0s !important; transition-duration: 0s !important; }",
+  });
   await p.addScriptTag({ content: axe.source }); // defines window.axe in the page
   const violations = await p.evaluate(
     async ([tags, exceptions]) => {

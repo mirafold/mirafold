@@ -667,13 +667,13 @@ with it. Both sequence BEFORE R.5.**
     operability review): a stranger-facing top section on README.md itself —
     install, GIF, what it is, then "engineering docs below" — because the
     npm package page renders the README, and today it opens as a 60 KB
-    maintainer doc. And (2026-07-08 competitive scan): before creating the
-    Stripe products, a price/packaging sanity pass against the observed
-    anchors — Happy $0 (free E2E relay, native apps, 22.5k stars),
-    CloudCLI Cloud €7/mo, Omnara $9/mo — the tier is sold as **the genUI
-    experience from any device** (uncontested), never as bare phone access
-    (zero-priced by the market); $12 stands per BUSINESS §7 + the §2 first
-    target unless Kyle recuts it here, eyes open.
+    maintainer doc. And (internal price sanity, 2026-07-08): before creating
+    the Stripe products, a price/packaging pass against the observed market
+    range (bare remote-access offerings run free to ~$7–9/mo — internal
+    anchor only, NEVER surfaced in copy per the no-competitor-mentions lock,
+    2026-07-23) — the tier is sold as **the Mirafold experience from any
+    device**, never as bare phone access; $12 stands per BUSINESS §7 + the
+    §2 first target unless Kyle recuts it here, eyes open.
   - **Relay `Origin` allowlist (from the 2026-07-08 security audit,
     finding #2 — deferred to here because it needs this step's domain).**
     The relay accepts viewport WebSocket upgrades from any web origin (the
@@ -974,16 +974,14 @@ with it. Both sequence BEFORE R.5.**
       `mirafold-site/PLAN.md` and the one item there never check-marked.
       `/api/entitlement` is the only public surface doing per-request work
       on attacker-suppliable input; the rule is the throttle in front of it.
-    - Write down the DDoS acceptance + exit path: a volumetric flood on
-      `relay.mirafold.sh` is an ACCEPTED availability risk (the relay is
-      stateless and E2E-blind; local sessions are untouched; daemons
-      reconnect with backoff — blast radius is the remote path's uptime,
-      nothing else). The exit if it ever materializes: front the relay
-      with Cloudflare's proxy (it carries WebSockets; unmetered DDoS
-      absorption). INVESTIGATE and document that path now — wss-through-
-      Cloudflare against a Fly origin, and the `clientIpHeader` the rate
-      limiter trusts becoming `CF-Connecting-IP` — so it's a config change
-      on a shelf, not a mid-incident scramble. Document only; don't build.
+    - [x] **DDoS acceptance + exit path — DOCUMENTED 2026-07-23** in
+      `genui-relay/DEPLOY.md` §8: the accepted-risk position (stateless,
+      E2E-blind relay; local sessions untouched; blast radius = remote
+      uptime) plus the ready-to-execute Cloudflare-fronting shelf plan —
+      DNS proxied to the Fly origin, `RELAY_CLIENT_IP_HEADER` →
+      `cf-connecting-ip` (env-only, no code change), origin-bypass lockdown
+      so the header can't be spoofed, optional CF rate rule. Document-only,
+      as directed.
     - [x] ~~The next relay deploy must land before launch~~ **DEPLOYED
       2026-07-23** — `HEAD /health` + structured JSON event logging live and
       verified in production (typed refusal events observed; entitled daemon
@@ -991,16 +989,15 @@ with it. Both sequence BEFORE R.5.**
       support the same day (it predated the gate flip and couldn't fully
       pass against the gated relay; now it passes with a minted token and
       fails fast + actionable without one).
-    - **License-KV re-derivation check (the one piece of state no deploy
-      mechanism can restore):** confirm in writing that if the `LICENSES`
-      KV namespace were lost or mangled, active customers' records are
-      re-derivable from Paddle (the source of truth for subscription
-      status) — walk the actual path once (Paddle API → which fields
-      rebuild which KV shape → does `/api/claim`'s idempotent mint re-issue
-      or would keys change?) and write the answer into
-      `mirafold-site/PLAN.md`'s billing docs. If keys would change on
-      re-mint, decide now whether that's acceptable (customers re-claim via
-      `/welcome`) or whether a periodic KV export is the cheaper answer.
+    - [x] **License-KV re-derivation check — ANSWERED 2026-07-23** (full
+      writeup in `mirafold-site/PLAN.md` "KV durability"): license keys are
+      minted random (`crypto.getRandomValues`) and stored ONLY in KV, never
+      pushed to Paddle — so a lost `LICENSES` namespace is NOT re-derivable
+      (status rebuilds from Paddle, but the key↔sub binding is gone, and a
+      support re-mint yields a DIFFERENT key forcing every customer to update
+      `.env`). Decision: a **periodic KV export** is the cheaper mitigation
+      (owed pre-launch, not yet built); Paddle `custom_data` write-back is
+      the noted self-healing upgrade if ever warranted.
   - [x] **npm install-scripts blocking — SOLVED at the root same day
     (2026-07-23):** recent npm blocks packages' install scripts by default,
     so upstream `node-pty`'s postinstall compile never ran and the daemon
@@ -1013,25 +1010,20 @@ with it. Both sequence BEFORE R.5.**
     blocked scripts boots and spawns a real PTY with zero interventions.
     README native-module note updated; the welcome note's workaround
     section deleted.
-  - **Standing-secrets rotation runbook (from the 2026-07-23 secrets
-    review):** the ephemeral secrets (auth token, pairing code, 48h
-    entitlement tokens) rotate themselves; the four STANDING ones have no
-    written rotation procedure. Write one runbook covering, per secret:
-    where it lives, blast radius if leaked, exact rotation steps IN ORDER,
-    and the expected disruption window. The four: (1)
-    `ENTITLEMENT_PRIVATE_KEY` (Pages secret; leak = free Pro minting, no
-    data exposure — rotation self-heals because daemons already re-exchange
-    on `CLOSE_UNENTITLED`, but the Pages-private/Fly-public swap ORDER sets
-    the refusal-window size; write the correct order and rehearse the swap
-    once against the R.5d staging relay when it exists); (2)
-    `PADDLE_API_KEY` and (3) `PADDLE_WEBHOOK_SECRET` (Pages secrets;
-    regenerate in Paddle → update Pages; note Paddle retries failed webhook
-    deliveries, so the gap is forgiving); (4) the Fly deploy tokens in
-    GitHub Environments. Policy decided at the review: rotate-on-event
-    (suspected exposure), NOT calendar rotation — the runbook is what makes
-    that stance legitimate. Placement: the Pages-secret steps live beside
-    the billing runbook in `mirafold-site/PLAN.md`'s docs; the Fly-side
-    steps in `genui-relay/DEPLOY.md`.
+  - [x] **Standing-secrets rotation runbook — WRITTEN 2026-07-23**
+    (rotate-on-event policy, per-secret order + disruption window). The
+    Pages-side three (`ENTITLEMENT_PRIVATE_KEY`, `PADDLE_API_KEY`,
+    `PADDLE_WEBHOOK_SECRET`) are in `mirafold-site/PLAN.md` "Standing-secrets
+    rotation runbook"; the deploy-side two (`FLY_API_TOKEN` per environment,
+    and the relay's `RELAY_ENTITLEMENT_PUBLIC_KEY` half of the coupled
+    entitlement-keypair cutover) are in `genui-relay/DEPLOY.md` §7. Key
+    findings captured: the webhook-secret rotation is zero-downtime (Paddle
+    allows multiple active `h1=` and `verifyWebhookSignature` already loops
+    them); the entitlement-keypair cutover has no overlap window (the relay
+    holds one key) so it MUST be rehearsed on the R.5d staging relay before
+    production, with daemons self-healing via the 4007 refusal. Still owed
+    as a BUILD (not a doc): the periodic KV export from the re-derivation
+    finding above.
   - **Gemini CLI succession check (from K.3's re-verification, 2026-07-15):**
     Google stopped serving Gemini CLI requests for individual accounts on
     2026-06-18 and announced **Antigravity CLI** as the successor terminal
@@ -1040,19 +1032,25 @@ with it. Both sequence BEFORE R.5.**
     on current bits, and write down the Antigravity question (new adapter?
     rename? drop?) as a post-launch decision — the faithful-skin seam means
     it's one adapter either way, not a rewrite.
-  - **Assets & copy** (2026-07-08 competitive scan):
+  - **Assets & copy** — **POSITIONING LOCKED (Kyle, 2026-07-23): NO
+    competitor mentions, anywhere, ever. Act as if they don't exist —
+    because they don't; no one owns this space like we do.** All copy stands
+    on what Mirafold IS, never on a contrast with anyone else. This
+    supersedes the earlier 2026-07-08 "competitive scan" framing below.
     - Refresh the demo GIF with the phone beat (the §6 launch asset as
       originally imagined) — the phone beat must show a RENDERED COMPONENT
       on the phone (live checklist, chart, pinned widget), not a chat
-      transcript on a phone, which is Happy/Omnara/CloudCLI's already-free
-      table stakes.
+      transcript on a phone.
     - Launch copy leads with "your terminal agent with a real UI —
       faithfully, whichever agent you run"; phone second.
-    - Pre-write the honest comparison (vs Happy, CloudCLI, Omnara, Claude
-      Code on the web / Codex cloud — they're good, here's the different
-      bet) as a README/site FAQ section: the Show HN thread will ask "how
-      is this different from Happy" in the first hour and the answer
-      should be ours, not the thread's.
+    - **The README opening paragraph is a crisp, quotable, standalone
+      definition of Mirafold** (it's what AI chatbots draw on when asked
+      what the product is). Written purely as what it is — the faithful
+      per-agent skin + generative UI + your-machine trust story — with zero
+      comparison. NO "honest comparison" / "how is this different from X"
+      FAQ — that item is REMOVED by the locked decision above. If asked "how
+      is this different," the answer is what Mirafold does, stated plainly,
+      not a competitor teardown.
   - **Package & repo hygiene** (2026-07-07 friction log + 2026-07-08
     operability review) — **ALL DONE 2026-07-08:**
     - [x] Pin a `packageManager` field in package.json — `yarn@1.22.22`
@@ -2008,14 +2006,41 @@ uncharacterized sighting of the Tier-2 per-pair viewport-cap test.
     open awaiting Kyle's merge regardless.
   - **Kyle's calls, 2026-07-22 (all executed same day except the flake fix):**
     - **Both CI PRs merged** — CI is live on both mains.
-    - **Flake: option (2), quarantine + fix the races** — "i'm okay with more
-      work to get this robust"; retry/timeouts/advisory declined. Work not
-      yet started (awaiting his go after the what-it-entails walk-through):
-      pull the 3 known-flaky tests out of the blocking CI path, root-cause
-      each timing assumption (reproduce under CPU load; replace sleeps and
-      assumed orderings with event waits; if a test is exposing a real
-      product race, fix the product), unquarantine, prove with repeated CI
-      runs.
+    - **Flake: option (2), fix the races — DONE 2026-07-23** (no quarantine
+      needed; every race was root-caused and fixed at source). The surface
+      was WIDER than the 3 named "so far": **six** flaky tests, three root
+      causes, all reproduced under `taskset -c 0` + CPU stress before fixing
+      (PR `mirafold/mirafold#5`):
+      1. **Log-vs-socket race (4 tests):** backend-choice ×2, bang R.4f,
+         session.itest bad-cwd/skew/client_error asserted `daemon.logs()`
+         immediately after a wire event — but the log rides the child's
+         stdout PIPE while the event rides the socket, independent channels,
+         so under load the event wins. New `Daemon.waitForLog(re)` helper;
+         swept the whole itest suite and converted every instance (the two
+         survivors — auth EADDRINUSE, relay weak-code — read settled startup
+         logs / already gate on waitForLog, verified not racy).
+      2. **bang-kill pre-attach race:** killed `sleep 30` right after
+         bang_start, but a kill before the PTY child attaches can surface as
+         a clean exit not signal death → now `echo up && sleep 30` and waits
+         for output (proof of a live process) before killing.
+      3. **axe animation sampling:** fleet rows enter with `rise` (opacity
+         0→1); on a loaded runner axe sampled mid-animation and read the
+         faded text as a color-contrast violation. `assertAxeClean` now
+         injects a zero-duration style so animations jump to their resting
+         frame (the state we mean to audit) before running.
+      4. **RemoteClient unhandled rejection (the 6th, subtlest):** the
+         wrong-code `assert.rejects` connect opens then is closed immediately
+         by the relay, and under load the close rejects `hsDone` DURING the
+         `await sealHandshake` — before `await hsDone` is reached — so the
+         rejection is unhandled and CRASHES the whole test process (reported
+         as the file failing, though the assert.rejects itself passed).
+         Proven with instrumentation: daemon drop paths logged 0, 22/40
+         unhandled under stress. Fix: `hsDone.catch(()=>{})` the instant it
+         exists. After: 60/60 clean under the same stress.
+      Proven by repeated green CI cycles on the actual runner (the branch was
+      re-run multiple times), not a single pass. NO product code changed —
+      every fix was in test code or test harness; the "flake" was never a
+      real product bug.
     - **Integration job runs on PRs only** (`a771110`) — pushes to main run
       Tier 1 only; the slow tiers ran on the PR that merged them. Actions
       bumped to v5 in both repos (deprecation cleared).
