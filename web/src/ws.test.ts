@@ -4,12 +4,28 @@ import { CLIENT_VERSION } from "./version";
 import {
   SocketClient,
   relayTargetFromFragment,
+  newSessionHref,
   viewportRefusalReason,
   PING_INTERVAL_MS,
   PONG_DEADLINE_MS,
   BACKOFF_MIN_MS,
   BACKOFF_MAX_MS,
 } from "./ws";
+
+/** In-memory Storage stub for newSessionHref (which takes storage injected). */
+function fakeStorage(init: Record<string, string> = {}): Storage {
+  const m = new Map(Object.entries(init));
+  return {
+    getItem: (k: string) => m.get(k) ?? null,
+    setItem: (k: string, v: string) => void m.set(k, String(v)),
+    removeItem: (k: string) => void m.delete(k),
+    clear: () => m.clear(),
+    key: (i: number) => [...m.keys()][i] ?? null,
+    get length() {
+      return m.size;
+    },
+  } as Storage;
+}
 
 // L.2b3: the reconnect state machine, driven through a stubbed WebSocket —
 // no browser, no jsdom. The stub exposes what the client touches (readyState,
@@ -382,4 +398,42 @@ test("client_error is stamped with the bundle version (one choke point)", (t) =>
     .find((m) => m.type === "client_error");
   assert.ok(report, "queued report leaves on open");
   assert.equal(report.clientVersion, CLIENT_VERSION);
+});
+
+// The mobile new-session bug (2026-07-24): the in-session "new" button opens
+// a fresh tab, which inherits neither the URL fragment nor sessionStorage — so
+// on the relay path the new-tab href MUST re-encode the pairing target, or the
+// new tab falls back to a daemon-less local ws and hangs on "connecting".
+test("newSessionHref: local path (no stored code) → plain URL", () => {
+  assert.equal(newSessionHref("/?new=1", fakeStorage()), "/?new=1");
+});
+
+test("newSessionHref: relay path w/ separate app origin → fragment carries code AND relay", () => {
+  const href = newSessionHref(
+    "/?new=1",
+    fakeStorage({
+      "mirafold-relay-code": "pair-code-abc_123",
+      "mirafold-relay-ws": "wss://relay.mirafold.sh",
+    }),
+  );
+  // The invariant that fixes the bug: the fragment parses back to the SAME
+  // target the current tab holds, so the new tab re-hydrates and dials the
+  // relay instead of a dead local ws.
+  const hash = href.slice(href.indexOf("#"));
+  assert.deepEqual(relayTargetFromFragment(hash), {
+    code: "pair-code-abc_123",
+    ws: "wss://relay.mirafold.sh",
+  });
+});
+
+test("newSessionHref: relay path w/ same-origin (no stored ws) → fragment carries code only", () => {
+  const href = newSessionHref(
+    "/?new=1",
+    fakeStorage({ "mirafold-relay-code": "just-a-code_9" }),
+  );
+  assert.equal(href, "/?new=1#code=just-a-code_9");
+  assert.deepEqual(relayTargetFromFragment(href.slice(href.indexOf("#"))), {
+    code: "just-a-code_9",
+    ws: null,
+  });
 });

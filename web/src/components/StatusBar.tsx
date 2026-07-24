@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ConnectDevice, type RelayInfo } from "./ConnectDevice";
 import { useArmedConfirm } from "../use-armed-confirm";
+import { newSessionHref } from "../ws";
 
 // The workbench strip — model, session, cwd, connection, and token/cost
 // usage at a glance. Shell-owned (the agent can't paint here) and collapsible
@@ -115,10 +116,13 @@ export function StatusBar({
       {/* "new" sits beside home (2026-07-20, Kyle): a new browser tab on the
           startup screen, so a session can be spun up from inside any session.
           ?new opens mission control with the picker already up. End moved to
-          the far right, past the theme pill. */}
+          the far right, past the theme pill. On the relay path the href carries
+          the pairing fragment forward — a new tab inherits neither the fragment
+          nor sessionStorage, so without this the new tab has no daemon to reach
+          and hangs on "connecting" (mobile new-session bug, 2026-07-24). */}
       <a
         className="sb-new"
-        href="/?new=1"
+        href={newSessionHref()}
         target="_blank"
         rel="noopener"
         title="New session (opens a new tab)"
