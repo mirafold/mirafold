@@ -2756,7 +2756,27 @@ server sends no timers.
     the daemon still alive; the remote gate refuses prompt/answer on a
     subscription-kind session for a remote-flagged connection. All tiers green.
 
-- [ ] **Step M.3 — The cockpit rows (front end)**
+- [x] **Step M.3 — The cockpit rows (front end)**
+  - Status 2026-07-24: ✅ done, on `feat/cockpit-m`. As specified: enriched
+    rows (activity readout with client-ticked elapsed — 1 s tick only while
+    something is live — compact usage via the cockpit's own formatter),
+    needs-you sub-line with inline allow/deny (buttons disable on click,
+    pruned by the next snapshot), armed two-click stop, per-row
+    quick-prompt expando, grid-act errors on a dismissible header line
+    (picker-open errors keep the onboarding slot, routed via a live ref),
+    sr-only polite needs-you announcement, stable-order sort with the
+    needs-you group first (longest-stalled first — their stalled
+    lastActivity is the wait clock). One structural addition: each session
+    renders as a `.fleet-item` wrapper (row + sub-lines) so the row's
+    stretched click-overlay never covers sub-line controls. New
+    `fleet.e2e.ts` (7 tests): activity live+clears, usage lands, allow
+    runs the tool observed in the session tab, deny doesn't, armed stop
+    interrupts, quick prompt echoes in the session, ordering holds while
+    working and jumps only on needs-you; axe scan with the permission row
+    visible is clean. Tiers: 337 / 94 (unchanged, web-only step) / 45.
+    `assertAxeClean` is deliberately a copy from app.e2e.ts (importing it
+    would re-register that suite's tests) — dedupe when testing helpers
+    get their own module.
   - Goal: the fleet page shows each session's live state and carries the three
     acts — needs-you rows answerable in place — in the enriched-row shape,
     stable-ordered with needs-you first.
