@@ -3404,7 +3404,7 @@ html {
   }
 }
 
-/* ---- Phase M cockpit (M.3): the enriched fleet rows -----------------------
+/* ---- Phase M cockpit: the enriched fleet rows -----------------------------
    All additive — the classic .fleet-row styling above is untouched. Each
    session renders as a .fleet-item: the row plus its cockpit sub-lines
    (pending permission, quick prompt). */
@@ -3415,38 +3415,44 @@ html {
   gap: 4px;
 }
 
-/* The live "what it's doing" readout (✳ thinking · 14s / ⚙ Bash · 2m).
-   Ellipsized: a bang label carries the command's first line. */
-.fleet-activity {
+/* The row's cockpit metadata, in the plumbing columns' mono voice: the live
+   activity readout, tokens · cost, and the open-viewport count. */
+.fleet-activity,
+.fleet-usage,
+.fleet-viewports {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.78em;
-  color: var(--info);
   white-space: nowrap;
+}
+
+/* Ellipsized: a bang label carries the command's first line. */
+.fleet-activity {
+  color: var(--info);
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 30ch;
+  /* The floor: this is the row's only shrinkable column, and without one a
+     full row flex-crushes it to ZERO width — the readout silently vanishes
+     (found as the fleet.e2e ordering flake: Playwright saw the span
+     "hidden" at exactly the content widths a slow run produces). Ellipsize,
+     never disappear. */
+  min-width: 12ch;
 }
 
-/* Session-total tokens · cost, dim like the id cluster it sits beside. */
-.fleet-usage {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.78em;
+.fleet-usage,
+.fleet-viewports {
   color: var(--fg-faint);
-  white-space: nowrap;
   flex-shrink: 0;
 }
 
-/* Row controls added by the cockpit ride above the stretched row-link
-   overlay, exactly like .fleet-edit/.fleet-end. */
+/* The act controls share .fleet-end's shape and ride above the stretched
+   row-link overlay exactly like .fleet-edit/.fleet-end. The stop is
+   warn-toned — it halts a turn, it doesn't kill the session — and two-click
+   armed; the ❯ toggle opens the quick-prompt line. */
 .fleet-stop,
 .fleet-prompt-toggle {
   position: relative;
   z-index: 1;
-}
-
-/* Interrupt: the end button's shape, warn-toned — it halts a turn, it
-   doesn't kill the session. Two-click armed (stop → stop?). */
-.fleet-stop {
   flex-shrink: 0;
   margin-left: 2px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -3470,21 +3476,6 @@ html {
   color: var(--warn-fg);
   border-color: var(--warn-border-2);
   background: var(--warn-bg);
-}
-
-/* The per-row quick-prompt toggle (❯). */
-.fleet-prompt-toggle {
-  flex-shrink: 0;
-  margin-left: 2px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.74em;
-  color: var(--fg-faint);
-  background: none;
-  border: 1px solid var(--border-2);
-  border-radius: 6px;
-  padding: 3px 8px;
-  cursor: pointer;
-  transition: color 0.12s ease, border-color 0.12s ease;
 }
 
 .fleet-prompt-toggle:hover,
@@ -3606,14 +3597,17 @@ html {
   font-size: 1em;
 }
 
-/* ---- Phase M cockpit (M.4): phone-width folding ---------------------------
-   Own additive block. The sub-lines lose their desktop indent (a 390px
-   canvas has no room to spend on hierarchy), the activity readout
-   ellipsizes harder, and every act control is thumb-sized. */
-
+/* Phone width: sub-lines lose the desktop indent (a 390px canvas has no
+   room to spend on hierarchy), plumbing columns step back like .fleet-id
+   above, act controls are thumb-sized, and anything focusable holds the
+   16px iOS no-auto-zoom floor (see the rule atop the main phone block). */
 @media (max-width: 640px) {
   .fleet-activity {
     max-width: 34vw;
+  }
+
+  .fleet-viewports {
+    display: none;
   }
 
   .fleet-perm,
@@ -3645,26 +3639,7 @@ html {
     padding: 5px 12px;
   }
 
-  /* 16px = the iOS no-auto-zoom threshold (see the rule at the top of the
-     phone block above) — anything focusable must never go below it. */
   .fleet-prompt-input {
     font-size: 16px;
-  }
-}
-
-/* ---- Phase M cockpit (M.5): viewport count -------------------------------- */
-
-.fleet-viewports {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.78em;
-  color: var(--fg-faint);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-@media (max-width: 640px) {
-  /* Plumbing column — steps back on phone like .fleet-id above. */
-  .fleet-viewports {
-    display: none;
   }
 }

