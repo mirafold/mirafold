@@ -15,6 +15,12 @@ export type Daemon = {
   port: number;
   /** Everything the daemon wrote to stdout+stderr so far. */
   logs: () => string;
+  /** Wait until the accumulated log matches. Use this instead of asserting
+   *  logs() right after a wire event: the log line rides the child's stdout
+   *  PIPE while the event rides the WebSocket — independent channels, and
+   *  under CPU load the frame routinely beats the pipe chunk into this
+   *  process (the C.1 runner flake, root-caused 2026-07-23). */
+  waitForLog: (re: RegExp, label: string, timeoutMs?: number) => Promise<void>;
   stop: () => Promise<void>;
 };
 
@@ -82,6 +88,19 @@ export function startDaemon(env: Record<string, string> = {}): Promise<Daemon> {
       resolve({
         port: Number(m[1]),
         logs: () => log,
+        waitForLog: (re, label, timeoutMs = 10_000) =>
+          new Promise<void>((res, rej) => {
+            const t0 = Date.now();
+            const check = setInterval(() => {
+              if (re.test(log)) {
+                clearInterval(check);
+                res();
+              } else if (Date.now() - t0 > timeoutMs) {
+                clearInterval(check);
+                rej(new Error(`waitForLog(${label}): no match for ${re} in ${timeoutMs}ms`));
+              }
+            }, 20);
+          }),
         stop: () =>
           new Promise<void>((done) => {
             // SIGKILL fallback: a daemon that shrugs off SIGTERM must not

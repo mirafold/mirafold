@@ -54,12 +54,12 @@ test("N.5: opposite codex choices are honored — the daemon logs each resolved 
   const client = await openClient();
   client.send({ type: "create", agent: "codex", backend: { kind: "subscription" } } as ClientMsg);
   await client.type("session_created");
-  assert.match(daemon.logs(), /create → codex on chosen backend subscription/);
+  await daemon.waitForLog(/create → codex on chosen backend subscription/, "subscription pick logged");
 
   const client2 = await openClient();
   client2.send({ type: "create", agent: "codex", backend: { kind: "api-key" } } as ClientMsg);
   await client2.type("session_created");
-  assert.match(daemon.logs(), /create → codex on chosen backend api-key/);
+  await daemon.waitForLog(/create → codex on chosen backend api-key/, "api-key pick logged");
   client.close();
   client2.close();
 });
@@ -99,7 +99,10 @@ test("N.5: a discovered-server pick rides to the engine — the picked model IS 
   } as ClientMsg);
   const created = (await client.type("session_created")) as WireMsg & { model?: string };
   assert.equal(created.model, "llama3.2:3b"); // wire-observable proof of the pick
-  assert.match(daemon.logs(), new RegExp(`chosen backend local @ ${origin} \\(llama3\\.2:3b\\)`));
+  await daemon.waitForLog(
+    new RegExp(`chosen backend local @ ${origin} \\(llama3\\.2:3b\\)`),
+    "local pick logged",
+  );
   client.close();
 });
 

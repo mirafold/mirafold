@@ -241,8 +241,13 @@ test("bang burst throttle: a too-fast second bang is refused with a clean end (a
 });
 
 test("one bang at a time; bang_kill ends it with a null exit code", async () => {
-  c.send({ type: "bang", id: "b2", command: "sleep 30" } as never);
+  // `echo up` first: bang_start alone doesn't prove the child is attached,
+  // and killing a PTY before its process fully spawns can surface as a clean
+  // exit instead of signal death under CPU load (the C.1 runner flake) —
+  // wait for output, which only a live process can produce.
+  c.send({ type: "bang", id: "b2", command: "echo up && sleep 30" } as never);
   await c.type("bang_start");
+  await c.waitFor((m) => m.type === "bang_output" && /up/.test((m as Any).data), "b2 live");
   c.send({ type: "bang", id: "b3", command: "echo nope" } as never);
   const err = (await c.type("error")) as Any;
   assert.match(err.message, /already running/);
