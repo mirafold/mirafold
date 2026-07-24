@@ -925,9 +925,16 @@ with it. Both sequence BEFORE R.5.**
     genuine configured router-mode value, still refined per turn). All
     three tiers verified; tarball rebuilt at that commit.
 
-- [ ] **Step R.5d — Relay staging (nonprod) environment** *(sequenced by
-  Kyle 2026-07-22: do AFTER the private release is live, BEFORE the R.7
-  public launch)*
+- [x] **Step R.5d — Relay staging (nonprod) environment** — **DONE
+  2026-07-23** (the day the private release went live, per the sequencing).
+  `genui-relay-staging` on Fly from the same Dockerfile via
+  `fly.staging.toml` (auto-stop, idles at zero, ungated); the Deploy
+  workflow gained the environment dropdown (default staging) with
+  per-environment app-scoped FLY_API_TOKENs (staging's token cannot touch
+  production); first staging deploy dispatched through the new path and
+  the full smoke PASSED against `wss://genui-relay-staging.fly.dev`
+  (pairing + byte-identical round-trip + refusals). Runbook: DEPLOY.md §6.
+  *(original step spec follows)*
   - Goal: a legitimate place to test relay changes before production, once
     real users depend on production. The relay is the only component that
     needs this — the shell's "production" is the user's own machine (its
