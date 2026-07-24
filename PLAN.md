@@ -874,6 +874,20 @@ with it. Both sequence BEFORE R.5.**
   - Done when: the testing round is complete, every finding is written down,
     and each must-fix item is either fixed or explicitly scheduled as a
     Phase R blocker ahead of R.7.
+  - Finding #3 (Kyle, 2026-07-24, real phone — SERIOUS): starting a NEW
+    session on mobile hung on "connecting…" forever, picker never showed;
+    desktop fine. Root cause: the in-session "new" button opens a fresh tab
+    (`target="_blank" rel="noopener"`), and a noopener new tab inherits
+    neither the URL fragment nor sessionStorage — so on the relay path the
+    new tab had no pairing code, fell back to a daemon-less local ws://, and
+    hung. Desktop's local fallback IS the daemon (worked); mobile resume
+    worked (fleet links stay in-tab). Diagnosed from the daemon
+    flight-recorder + relay structured logs. Fixed: `newSessionHref()`
+    re-encodes the relay target into the new tab's fragment (PR #6, merged
+    to main; unit 322 + round-trip invariant test). DEPLOYED: the
+    git-integrated Cloudflare Pages project auto-rebuilt on merge —
+    app.mirafold.com now serves the fixed bundle (index-D2UVf2h9.js,
+    confirmed live). Awaiting Kyle's real-phone confirmation.
   - Finding #2 (Kyle, 2026-07-23, his MacBook): the onboarding picker sat
     flush against the browser window's top/bottom on a short viewport (a
     ~600px un-maximized Mac Chrome window) instead of floating as a nested
