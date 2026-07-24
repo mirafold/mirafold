@@ -2008,14 +2008,41 @@ uncharacterized sighting of the Tier-2 per-pair viewport-cap test.
     open awaiting Kyle's merge regardless.
   - **Kyle's calls, 2026-07-22 (all executed same day except the flake fix):**
     - **Both CI PRs merged** — CI is live on both mains.
-    - **Flake: option (2), quarantine + fix the races** — "i'm okay with more
-      work to get this robust"; retry/timeouts/advisory declined. Work not
-      yet started (awaiting his go after the what-it-entails walk-through):
-      pull the 3 known-flaky tests out of the blocking CI path, root-cause
-      each timing assumption (reproduce under CPU load; replace sleeps and
-      assumed orderings with event waits; if a test is exposing a real
-      product race, fix the product), unquarantine, prove with repeated CI
-      runs.
+    - **Flake: option (2), fix the races — DONE 2026-07-23** (no quarantine
+      needed; every race was root-caused and fixed at source). The surface
+      was WIDER than the 3 named "so far": **six** flaky tests, three root
+      causes, all reproduced under `taskset -c 0` + CPU stress before fixing
+      (PR `mirafold/mirafold#5`):
+      1. **Log-vs-socket race (4 tests):** backend-choice ×2, bang R.4f,
+         session.itest bad-cwd/skew/client_error asserted `daemon.logs()`
+         immediately after a wire event — but the log rides the child's
+         stdout PIPE while the event rides the socket, independent channels,
+         so under load the event wins. New `Daemon.waitForLog(re)` helper;
+         swept the whole itest suite and converted every instance (the two
+         survivors — auth EADDRINUSE, relay weak-code — read settled startup
+         logs / already gate on waitForLog, verified not racy).
+      2. **bang-kill pre-attach race:** killed `sleep 30` right after
+         bang_start, but a kill before the PTY child attaches can surface as
+         a clean exit not signal death → now `echo up && sleep 30` and waits
+         for output (proof of a live process) before killing.
+      3. **axe animation sampling:** fleet rows enter with `rise` (opacity
+         0→1); on a loaded runner axe sampled mid-animation and read the
+         faded text as a color-contrast violation. `assertAxeClean` now
+         injects a zero-duration style so animations jump to their resting
+         frame (the state we mean to audit) before running.
+      4. **RemoteClient unhandled rejection (the 6th, subtlest):** the
+         wrong-code `assert.rejects` connect opens then is closed immediately
+         by the relay, and under load the close rejects `hsDone` DURING the
+         `await sealHandshake` — before `await hsDone` is reached — so the
+         rejection is unhandled and CRASHES the whole test process (reported
+         as the file failing, though the assert.rejects itself passed).
+         Proven with instrumentation: daemon drop paths logged 0, 22/40
+         unhandled under stress. Fix: `hsDone.catch(()=>{})` the instant it
+         exists. After: 60/60 clean under the same stress.
+      Proven by repeated green CI cycles on the actual runner (the branch was
+      re-run multiple times), not a single pass. NO product code changed —
+      every fix was in test code or test harness; the "flake" was never a
+      real product bug.
     - **Integration job runs on PRs only** (`a771110`) — pushes to main run
       Tier 1 only; the slow tiers ran on the PR that merged them. Actions
       bumped to v5 in both repos (deprecation cleared).
