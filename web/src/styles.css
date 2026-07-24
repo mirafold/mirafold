@@ -3425,6 +3425,12 @@ html {
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 30ch;
+  /* The floor: this is the row's only shrinkable column, and without one a
+     full row flex-crushes it to ZERO width — the readout silently vanishes
+     (found as the fleet.e2e ordering flake: Playwright saw the span
+     "hidden" at exactly the content widths a slow run produces). Ellipsize,
+     never disappear. */
+  min-width: 12ch;
 }
 
 /* Session-total tokens · cost, dim like the id cluster it sits beside. */
