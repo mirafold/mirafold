@@ -2871,6 +2871,20 @@ server sends no timers.
     (marginal). fleet.e2e.ts covers the title transitions (polled — the
     title rides a React effect) and the count. Tiers 357 / 94 / 47 green.
     **Phase M is complete.**
+  - Post-merge quality passes 2026-07-24 (after PR #8 landed M.1–M.5 on
+    main): (1) a real bug behind the fleet.e2e ordering flake —
+    `.fleet-activity` was the row's only shrinkable column with no floor, so
+    a full row flex-crushed the live readout to invisible; fixed with
+    `min-width: 12ch` (reproduced 8/1 under a 2-core CPU pin, 5/5 green
+    after). (2) A behavior-preserving `/refactor`: FleetView rows decomposed
+    into in-file components (SessionName / ArmedButton / PermissionLine /
+    QuickPromptLine), `captureCockpit` + `actTarget` extracted server-side,
+    the Phase M CSS consolidated to one section. (3) A `/audit` of the delta —
+    one real ship-time finding fixed: the fleet snapshot capped the permission
+    detail to 200 chars while the in-session bar shows it whole, so a grid
+    approver could miss a dangerous tail past a benign head; now carried
+    whole, pinned Tier 1 + Tier 2 (verified the pins fail with the cap
+    restored). These three landed on `feat/cockpit-m` as a second PR after #8.
   - A needs-you signal on the fleet page's TAB: title count ("Mirafold — 1
     needs you") + the corner-badge favicon via `tab-status.ts` (the session
     page's existing mechanism, reused); the row's viewport count (meta already
