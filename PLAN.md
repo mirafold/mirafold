@@ -667,13 +667,13 @@ with it. Both sequence BEFORE R.5.**
     operability review): a stranger-facing top section on README.md itself —
     install, GIF, what it is, then "engineering docs below" — because the
     npm package page renders the README, and today it opens as a 60 KB
-    maintainer doc. And (2026-07-08 competitive scan): before creating the
-    Stripe products, a price/packaging sanity pass against the observed
-    anchors — Happy $0 (free E2E relay, native apps, 22.5k stars),
-    CloudCLI Cloud €7/mo, Omnara $9/mo — the tier is sold as **the genUI
-    experience from any device** (uncontested), never as bare phone access
-    (zero-priced by the market); $12 stands per BUSINESS §7 + the §2 first
-    target unless Kyle recuts it here, eyes open.
+    maintainer doc. And (internal price sanity, 2026-07-08): before creating
+    the Stripe products, a price/packaging pass against the observed market
+    range (bare remote-access offerings run free to ~$7–9/mo — internal
+    anchor only, NEVER surfaced in copy per the no-competitor-mentions lock,
+    2026-07-23) — the tier is sold as **the Mirafold experience from any
+    device**, never as bare phone access; $12 stands per BUSINESS §7 + the
+    §2 first target unless Kyle recuts it here, eyes open.
   - **Relay `Origin` allowlist (from the 2026-07-08 security audit,
     finding #2 — deferred to here because it needs this step's domain).**
     The relay accepts viewport WebSocket upgrades from any web origin (the
@@ -1032,19 +1032,25 @@ with it. Both sequence BEFORE R.5.**
     on current bits, and write down the Antigravity question (new adapter?
     rename? drop?) as a post-launch decision — the faithful-skin seam means
     it's one adapter either way, not a rewrite.
-  - **Assets & copy** (2026-07-08 competitive scan):
+  - **Assets & copy** — **POSITIONING LOCKED (Kyle, 2026-07-23): NO
+    competitor mentions, anywhere, ever. Act as if they don't exist —
+    because they don't; no one owns this space like we do.** All copy stands
+    on what Mirafold IS, never on a contrast with anyone else. This
+    supersedes the earlier 2026-07-08 "competitive scan" framing below.
     - Refresh the demo GIF with the phone beat (the §6 launch asset as
       originally imagined) — the phone beat must show a RENDERED COMPONENT
       on the phone (live checklist, chart, pinned widget), not a chat
-      transcript on a phone, which is Happy/Omnara/CloudCLI's already-free
-      table stakes.
+      transcript on a phone.
     - Launch copy leads with "your terminal agent with a real UI —
       faithfully, whichever agent you run"; phone second.
-    - Pre-write the honest comparison (vs Happy, CloudCLI, Omnara, Claude
-      Code on the web / Codex cloud — they're good, here's the different
-      bet) as a README/site FAQ section: the Show HN thread will ask "how
-      is this different from Happy" in the first hour and the answer
-      should be ours, not the thread's.
+    - **The README opening paragraph is a crisp, quotable, standalone
+      definition of Mirafold** (it's what AI chatbots draw on when asked
+      what the product is). Written purely as what it is — the faithful
+      per-agent skin + generative UI + your-machine trust story — with zero
+      comparison. NO "honest comparison" / "how is this different from X"
+      FAQ — that item is REMOVED by the locked decision above. If asked "how
+      is this different," the answer is what Mirafold does, stated plainly,
+      not a competitor teardown.
   - **Package & repo hygiene** (2026-07-07 friction log + 2026-07-08
     operability review) — **ALL DONE 2026-07-08:**
     - [x] Pin a `packageManager` field in package.json — `yarn@1.22.22`
