@@ -361,6 +361,24 @@ export type SessionMeta = {
   status: "idle" | "working" | "permission";
   lastActivity: number;
   viewports: number;
+  // Phase M cockpit state (all optional/additive — old clients strip them,
+  // R.4h). Derived by the registry from the broadcast stream itself, so every
+  // agent carries them with no adapter cooperation (M.1).
+  // When the session was created — the cockpit's stable sort key (M.3).
+  createdAt?: number;
+  // What the session is doing RIGHT NOW ("thinking", a tool name, "! <cmd>");
+  // `since` is when that label started, so the client ticks elapsed time
+  // locally. Absent when idle. Engine-derived text — the fleet renders it as
+  // inert plain text only, never markdown (the trusted-shell rule).
+  activity?: { label: string; since: number };
+  // The pending-permission queue, oldest first — what the session is blocked
+  // on. Lives exactly as long as the 4.6 status hold: cleared when the stream
+  // moves off "permission". Same inert-text trust rule as `activity`.
+  permissions?: { id: string; tool: string; detail: string }[];
+  // Session-total usage, folded under the status bar's exact rule (T2.6):
+  // per-turn tokens SUMMED; costUsd TAKEN (it arrives session-cumulative),
+  // never summed.
+  usage?: { inputTokens: number; outputTokens: number; costUsd?: number };
 };
 
 /**
@@ -431,6 +449,17 @@ export type ClientMsg =
   // the fleet, and kick any attached viewports back to mission control. Usable
   // from a session viewport or a fleet watcher (#11).
   | { type: "end_session"; sessionId: string }
+  // Phase M cockpit acts (M.2) — sessionId-addressed like end_session, so a
+  // fleet watcher can act on a session without attaching. Acting from the
+  // grid grants nothing a local viewport couldn't do by attaching; the two
+  // acts that DRIVE the model (answer_permission's allow path,
+  // prompt_session) are refused on a REMOTE (relay) connection when the
+  // session's credential can't ride the paid relay — the R.4i gate, same
+  // rule as attach. interrupt_session stays ungated, like end_session
+  // (teardown, not model use). Unknown session ids answer with an `error`.
+  | { type: "answer_permission"; sessionId: string; id: string; allow: boolean }
+  | { type: "interrupt_session"; sessionId: string }
+  | { type: "prompt_session"; sessionId: string; text: string }
   // Re-probe local model servers and re-send the `agents` hello (N.3). The
   // onboarding picker sends this on a slow interval while open, so the
   // "start your local server and it appears here" promise is live — no

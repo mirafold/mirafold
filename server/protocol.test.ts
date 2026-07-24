@@ -190,6 +190,10 @@ const CLIENT: ClientByType = {
   watch_sessions: { type: "watch_sessions" },
   rename: { type: "rename", sessionId: "s1", name: "renamed" },
   end_session: { type: "end_session", sessionId: "s1" },
+  // M.2: the cockpit's sessionId-addressed grid acts (the end_session precedent).
+  answer_permission: { type: "answer_permission", sessionId: "s1", id: "p1", allow: true },
+  interrupt_session: { type: "interrupt_session", sessionId: "s1" },
+  prompt_session: { type: "prompt_session", sessionId: "s1", text: "run the tests" },
   refresh_agents: { type: "refresh_agents" },
   fs_list: { type: "fs_list", id: "f1" },
   fs_read: { type: "fs_read", id: "f2", path: "src/app.ts" },
@@ -257,6 +261,36 @@ test("Q.2 nested shapes carry their exact field names", () => {
     ACTIONS.map((a) => a.kind),
     ["prompt", "tool", "state"],
   );
+});
+
+// M.1: the cockpit's enriched fleet row — every Phase M optional field
+// populated. Pinned as its OWN fixture so SESSION_META above stays minimal
+// and keeps proving the new fields are optional (an old daemon's row still
+// typechecks and round-trips).
+const COCKPIT_META: SessionMeta = {
+  ...SESSION_META,
+  createdAt: 1_719_999_000_000,
+  activity: { label: "Bash", since: 1_720_000_000_500 },
+  permissions: [{ id: "p1", tool: "Bash", detail: "rm -rf build" }],
+  usage: { inputTokens: 1200, outputTokens: 300, costUsd: 0.05 },
+};
+
+test("M.1 the enriched fleet row: exact key set, pure JSON", () => {
+  assert.deepEqual(Object.keys(COCKPIT_META).sort(), [
+    "activity",
+    "agent",
+    "createdAt",
+    "cwd",
+    "lastActivity",
+    "model",
+    "name",
+    "permissions",
+    "sessionId",
+    "status",
+    "usage",
+    "viewports",
+  ]);
+  assert.deepEqual(JSON.parse(JSON.stringify(COCKPIT_META)), COCKPIT_META);
 });
 
 test("Q.2 load-bearing frames keep their exact shape (a rename fails here loudly)", () => {

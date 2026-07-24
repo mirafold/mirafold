@@ -231,6 +231,13 @@ const startBang = (registry: SessionRegistry, e: SessionEntry, command: string, 
   }
 };
 
+// What a remote (relay) connection is told when a cockpit act would drive a
+// subscription-backed session (M.2) — the same reasoning as the attach gate's
+// refusal (R.4i), phrased for an action instead of an attach.
+const RELAY_GATE_REFUSAL =
+  "This session runs on a subscription login, which can't be driven over the relay. " +
+  "Use an API key to drive an agent remotely.";
+
 // Agents the browser is allowed to name at onboarding (P.4). A create message
 // naming anything else falls back to the daemon default rather than erroring.
 const OFFERABLE = new Set(ADAPTER_AGENTS);
@@ -506,6 +513,60 @@ export function openConnection(
           log.info(`end_session → ${msg.sessionId}`);
         }
         break;
+      // ---- Cockpit acts (M.2): sessionId-addressed like end_session, so a
+      // fleet watcher acts without attaching. answer_permission and
+      // prompt_session DRIVE the model, so a remote (relay) connection gets
+      // the same R.4i gate attach applies; interrupt_session stays ungated
+      // like end_session. Unknown ids error, never crash.
+      case "answer_permission": {
+        if (
+          typeof msg.sessionId !== "string" ||
+          typeof msg.id !== "string" ||
+          typeof msg.allow !== "boolean"
+        ) {
+          break;
+        }
+        const target = registry.get(msg.sessionId);
+        if (!target) {
+          sendError(`no such session: ${msg.sessionId}`);
+          break;
+        }
+        if (remote && !allowedOverRelay(target.kind)) {
+          sendError(RELAY_GATE_REFUSAL);
+          break;
+        }
+        registry.answerPermission(msg.sessionId, msg.id, msg.allow);
+        log.info(`answer_permission → session ${msg.sessionId} (${msg.allow ? "allow" : "deny"})`);
+        break;
+      }
+      case "interrupt_session":
+        if (typeof msg.sessionId === "string") {
+          if (registry.interruptSession(msg.sessionId)) {
+            log.info(`interrupt_session → ${msg.sessionId}`);
+          } else {
+            sendError(`no such session: ${msg.sessionId}`);
+          }
+        }
+        break;
+      case "prompt_session": {
+        if (typeof msg.sessionId !== "string" || typeof msg.text !== "string") break;
+        const text = msg.text.trim();
+        // The frame cap already bounds a message; this bounds what one grid
+        // dispatch may push into a model turn.
+        if (!text || text.length > 100_000) break;
+        const target = registry.get(msg.sessionId);
+        if (!target) {
+          sendError(`no such session: ${msg.sessionId}`);
+          break;
+        }
+        if (remote && !allowedOverRelay(target.kind)) {
+          sendError(RELAY_GATE_REFUSAL);
+          break;
+        }
+        registry.promptSession(msg.sessionId, text);
+        log.info(`prompt_session → session ${msg.sessionId}`);
+        break;
+      }
       case "interrupt":
         entry?.session.interrupt();
         break;

@@ -3138,3 +3138,268 @@ html {
     display: none;
   }
 }
+
+/* ---- Phase M cockpit (M.3): the enriched fleet rows -----------------------
+   All additive — the classic .fleet-row styling above is untouched. Each
+   session renders as a .fleet-item: the row plus its cockpit sub-lines
+   (pending permission, quick prompt). */
+
+.fleet-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* The live "what it's doing" readout (✳ thinking · 14s / ⚙ Bash · 2m).
+   Ellipsized: a bang label carries the command's first line. */
+.fleet-activity {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78em;
+  color: var(--info);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 30ch;
+}
+
+/* Session-total tokens · cost, dim like the id cluster it sits beside. */
+.fleet-usage {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78em;
+  color: var(--fg-faint);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Row controls added by the cockpit ride above the stretched row-link
+   overlay, exactly like .fleet-edit/.fleet-end. */
+.fleet-stop,
+.fleet-prompt-toggle {
+  position: relative;
+  z-index: 1;
+}
+
+/* Interrupt: the end button's shape, warn-toned — it halts a turn, it
+   doesn't kill the session. Two-click armed (stop → stop?). */
+.fleet-stop {
+  flex-shrink: 0;
+  margin-left: 2px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.74em;
+  color: var(--fg-faint);
+  background: none;
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+
+.fleet-stop:hover {
+  color: var(--warn-fg);
+  border-color: var(--warn-border-2);
+}
+
+.fleet-stop-armed,
+.fleet-stop-armed:hover {
+  color: var(--warn-fg);
+  border-color: var(--warn-border-2);
+  background: var(--warn-bg);
+}
+
+/* The per-row quick-prompt toggle (❯). */
+.fleet-prompt-toggle {
+  flex-shrink: 0;
+  margin-left: 2px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.74em;
+  color: var(--fg-faint);
+  background: none;
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+
+.fleet-prompt-toggle:hover,
+.fleet-prompt-toggle-open {
+  color: var(--accent);
+  border-color: var(--border-hover);
+}
+
+/* The "act here" sub-line: what the session is blocked on, answerable in
+   place. Warn-tinted like the in-session permission bar's family; the
+   detail is engine text, rendered inert and ellipsized. */
+.fleet-perm {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: 24px;
+  padding: 7px 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8em;
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-border);
+  border-radius: 8px;
+  animation: rise 0.16s ease-out both;
+}
+
+.fleet-perm-detail {
+  color: var(--warn-fg);
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fleet-perm-more {
+  color: var(--fg-faint);
+  flex-shrink: 0;
+}
+
+.fleet-perm-allow,
+.fleet-perm-deny {
+  flex-shrink: 0;
+  font-family: inherit;
+  font-size: 0.92em;
+  color: var(--fg-dim);
+  background: none;
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+
+.fleet-perm-allow:hover:enabled {
+  color: var(--accent);
+  border-color: var(--border-hover);
+}
+
+.fleet-perm-deny:hover:enabled {
+  color: var(--error);
+  border-color: var(--err-border-strong);
+}
+
+.fleet-perm-allow:disabled,
+.fleet-perm-deny:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* The quick-prompt sub-line: one input, Enter sends, Escape closes. */
+.fleet-prompt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 24px;
+  animation: rise 0.16s ease-out both;
+}
+
+.fleet-prompt-input {
+  flex: 1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  color: var(--fg);
+  background: var(--bg-inset);
+  border: 1px solid var(--border-hover);
+  border-radius: 6px;
+  padding: 6px 10px;
+  outline: none;
+}
+
+/* A grid act's error reply (unknown session, relay gate) — dismissible,
+   above the list, never inside the onboarding card's slot. */
+.fleet-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 8px 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82em;
+  color: var(--error);
+  background: var(--err-bg);
+  border: 1px solid var(--err-border-strong);
+  border-radius: 8px;
+}
+
+.fleet-error-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.fleet-error-dismiss {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0 4px;
+  font-size: 1em;
+}
+
+/* ---- Phase M cockpit (M.4): phone-width folding ---------------------------
+   Own additive block. The sub-lines lose their desktop indent (a 390px
+   canvas has no room to spend on hierarchy), the activity readout
+   ellipsizes harder, and every act control is thumb-sized. */
+
+@media (max-width: 640px) {
+  .fleet-activity {
+    max-width: 34vw;
+  }
+
+  .fleet-perm,
+  .fleet-prompt {
+    margin-left: 0;
+  }
+
+  /* Detail on its own full-width (still one ellipsized line), the
+     allow/deny pair wrapping beneath it at thumb size. */
+  .fleet-perm {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+
+  .fleet-perm-detail {
+    flex: 1 1 100%;
+  }
+
+  .fleet-perm-allow,
+  .fleet-perm-deny {
+    min-height: 40px;
+    padding: 5px 16px;
+  }
+
+  /* .fleet-end's phone sizing, matched. */
+  .fleet-stop,
+  .fleet-prompt-toggle {
+    min-height: 36px;
+    padding: 5px 12px;
+  }
+
+  /* 16px = the iOS no-auto-zoom threshold (see the rule at the top of the
+     phone block above) — anything focusable must never go below it. */
+  .fleet-prompt-input {
+    font-size: 16px;
+  }
+}
+
+/* ---- Phase M cockpit (M.5): viewport count -------------------------------- */
+
+.fleet-viewports {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78em;
+  color: var(--fg-faint);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+  /* Plumbing column — steps back on phone like .fleet-id above. */
+  .fleet-viewports {
+    display: none;
+  }
+}

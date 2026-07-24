@@ -2674,7 +2674,17 @@ exact rule (per-turn tokens summed, cost taken cumulative — the same numbers
 the in-session bar shows); elapsed time ticks client-side from `since`, the
 server sends no timers.
 
-- [ ] **Step M.1 — Live cockpit state on the wire (registry-derived, additive SessionMeta)**
+- [x] **Step M.1 — Live cockpit state on the wire (registry-derived, additive SessionMeta)**
+  - Status 2026-07-24: ✅ done as specified, on `feat/cockpit-m`. One
+    placement delta: the deterministic per-transition pins (activity
+    since-reset, queue stickiness, detail cap, summary copies/absence, the
+    `foldUsage` cost-taken rule — unobservable through the costless mock)
+    landed as Tier-1 additions to the existing in-process
+    `registry.test.ts` (its Q.3 pattern), with `fleet-cockpit.itest.ts`
+    keeping the over-the-socket proof (activity across a real mock turn,
+    `dangerous` permission surface + in-session answer clears, usage folded
+    across two turns, stable `createdAt`). Tier 1 330 / Tier 2 89 green,
+    typecheck clean.
   - Goal: a fleet watcher's snapshot says what each session is DOING — current
     activity + since-when, the pending-permission queue, session usage totals,
     and creation time — derived entirely in the registry.
@@ -2702,7 +2712,22 @@ server sends no timers.
     accumulate across two turns with cost taken-not-summed; `createdAt` is
     stable across snapshots. `yarn typecheck` clean; all existing tests green.
 
-- [ ] **Step M.2 — Acting from the grid, server side (sessionId-addressed ClientMsg)**
+- [x] **Step M.2 — Acting from the grid, server side (sessionId-addressed ClientMsg)**
+  - Status 2026-07-24: ✅ done, on `feat/cockpit-m`. Two deliberate deltas
+    from the draft: (1) malformed fields are SILENTLY ignored (the repo's
+    malformed-input convention — rename/permission_response posture); only
+    an unknown sessionId and the relay gate answer with an error reply.
+    (2) The remote-gate proof is Tier-1 in-process (new
+    `fleet-acts.test.ts`, `openConnection` driven with the `remote` flag in
+    hand) rather than a full relay rig in Tier 2; the socket round-trips
+    (grid allow runs the tool / deny runs nothing / interrupt leaves the
+    session warm / prompt_session echoes + runs / unknown-id errors with
+    the daemon alive) are in `fleet-cockpit.itest.ts`. `answer_permission`
+    drops only the answered id from the queue immediately (a concurrent
+    second request stays visible); protocol.test.ts gained the three
+    ClientMsg fixtures + a separate enriched-row fixture so the base
+    SessionMeta keeps proving the M.1 fields optional. All tiers green
+    (337/94/38), typecheck clean.
   - Goal: a fleet watcher can answer a permission, interrupt a turn, and
     dispatch a prompt on any session by id — validated, throw-wrapped,
     relay-gated where it drives the model — without attaching.
@@ -2731,7 +2756,27 @@ server sends no timers.
     the daemon still alive; the remote gate refuses prompt/answer on a
     subscription-kind session for a remote-flagged connection. All tiers green.
 
-- [ ] **Step M.3 — The cockpit rows (front end)**
+- [x] **Step M.3 — The cockpit rows (front end)**
+  - Status 2026-07-24: ✅ done, on `feat/cockpit-m`. As specified: enriched
+    rows (activity readout with client-ticked elapsed — 1 s tick only while
+    something is live — compact usage via the cockpit's own formatter),
+    needs-you sub-line with inline allow/deny (buttons disable on click,
+    pruned by the next snapshot), armed two-click stop, per-row
+    quick-prompt expando, grid-act errors on a dismissible header line
+    (picker-open errors keep the onboarding slot, routed via a live ref),
+    sr-only polite needs-you announcement, stable-order sort with the
+    needs-you group first (longest-stalled first — their stalled
+    lastActivity is the wait clock). One structural addition: each session
+    renders as a `.fleet-item` wrapper (row + sub-lines) so the row's
+    stretched click-overlay never covers sub-line controls. New
+    `fleet.e2e.ts` (7 tests): activity live+clears, usage lands, allow
+    runs the tool observed in the session tab, deny doesn't, armed stop
+    interrupts, quick prompt echoes in the session, ordering holds while
+    working and jumps only on needs-you; axe scan with the permission row
+    visible is clean. Tiers: 337 / 94 (unchanged, web-only step) / 45.
+    `assertAxeClean` is deliberately a copy from app.e2e.ts (importing it
+    would re-register that suite's tests) — dedupe when testing helpers
+    get their own module.
   - Goal: the fleet page shows each session's live state and carries the three
     acts — needs-you rows answerable in place — in the enriched-row shape,
     stable-ordered with needs-you first.
@@ -2765,7 +2810,18 @@ server sends no timers.
     holds its place while another works (no jumping); the axe scan of the
     cockpit with a permission row visible has no serious/critical hits.
 
-- [ ] **Step M.4 — Phone width**
+- [x] **Step M.4 — Phone width**
+  - Status 2026-07-24: ✅ done, on `feat/cockpit-m` (after rebasing the
+    branch over Phase E's merged PR #7 — zero conflicts, the
+    distinct-anchor shared-file discipline held). Own additive media
+    block: sub-lines lose the desktop indent, the permission detail takes
+    a full-width ellipsized line with the allow/deny pair wrapping beneath
+    at ≥40px, stop/prompt-toggle at .fleet-end's 36px parity, the
+    quick-prompt input at the 16px iOS no-zoom floor. One phone test in
+    fleet.e2e.ts (390×844 touch context): activity + permission + usage
+    all visible with noSideScroll clean, thumb targets measured ≥40px,
+    deny and quick-prompt by tap land in the session tab, axe clean.
+    Tiers 357 / 94 / 46 green.
   - Goal: at ≤640 px the cockpit rows fold without side-scroll — the glance
     set survives, targets stay ≥40 px, the second-line controls remain usable.
   - Build: additive media-query CSS for the new row elements (the existing
@@ -2777,7 +2833,17 @@ server sends no timers.
     `noSideScroll` passes with activity + permission + usage visible, the
     quick prompt opens and sends, the axe scan is clean.
 
-- [ ] **Step M.5 — Polish (optional; the cut line)**
+- [x] **Step M.5 — Polish (optional; the cut line)**
+  - Status 2026-07-24: ✅ done (two of three; the cut line used once), on
+    `feat/cockpit-m`. Landed: the fleet TAB as a cockpit signal —
+    `paintTabStatus` badge (amber = needs you, blue = fleet busy) with a
+    fleet-worded title carrying the count ("⚠ 1 needs you — Mirafold");
+    and the per-row viewport count (⧉ N — 0 being the interesting number,
+    an unwatched session still working; hidden at phone width like the id
+    column). Dropped, per the cut line: quick-prompt open-state memory
+    (marginal). fleet.e2e.ts covers the title transitions (polled — the
+    title rides a React effect) and the count. Tiers 357 / 94 / 47 green.
+    **Phase M is complete.**
   - A needs-you signal on the fleet page's TAB: title count ("Mirafold — 1
     needs you") + the corner-badge favicon via `tab-status.ts` (the session
     page's existing mechanism, reused); the row's viewport count (meta already
