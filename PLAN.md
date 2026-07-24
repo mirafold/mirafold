@@ -2709,6 +2709,22 @@ on turn-end. PRs #7 (E.1+E.2, merged), #9 (E.3), #10 (E.4+E.5, stacked).
 Post-v1 depth (editing, fs-watcher, syntax highlighting, changed-files
 grouping) stays parked in POST-RELEASE.md.
 
+*2026-07-24 — post-completion security audit of the whole Phase E delta:
+**no exploitable vulnerability.** The realpath jail, `.env` basename denial,
+`execFile` git calls (no shell), `cleanRelPath` before `git show`, throttles,
+reply caps, and server-side validation of all client input all hold — the
+itests that perform the `../`/absolute/symlink-out/`.env` attacks are the
+demonstration. Two items surfaced: (a) FIXED same session — `listTree`'s walk
+counted only files, so a non-git workspace that's a huge tree of empty
+directories could be walked unbounded and synchronously (the git path is
+bounded by its subprocess limits); a total-node cap (`FS_TREE_MAX_NODES`)
+now bounds the walk, pinned by a non-vacuous Tier-1 test. (b) DOC — the
+Explorer's `.env`-basename read scope matches the existing `Read` tool/`!cat`
+(terminal parity, daemon's own `.env` protected, Explorer narrower); recorded
+in SECURITY.md's known-trust-decisions, not a bug. **Deferred (this item):
+make the non-git walk asynchronous (yield to the event loop) IF the node cap
+ever proves too blunt — evidence-gated, likely unnecessary given the cap.***
+
 ---
 
 ## Phase M — Mission control (opened 2026-07-24; Kyle-directed — the cockpit fleetview, promoted from POST-RELEASE.md)

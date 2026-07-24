@@ -57,3 +57,16 @@ guard is defense-in-depth, not the boundary: creating a symlink or running
 `cat .env` takes a tool that prompts (Bash, Write), so the closed routes
 are the zero-click ones. A prompt-free path to the daemon's secrets is a
 vulnerability we want reported.
+
+The **Explorer's** read-only file browser (`fs_list`/`fs_read`/`fs_diff`,
+Phase E) shares this same guard: it refuses `.env`/`.env.local` *content* by
+basename (the file still appears in the tree — its name isn't secret) and
+jails every path to the session's working directory via realpath containment,
+which — unlike the tool guard above — *does* catch symlinks that escape the
+root. Its read scope otherwise matches the auto-allowed `Read` tool and `!cat`
+(terminal parity): any other file inside the session directory — including a
+project's own `.env.production`, `id_rsa`, etc. — is browsable, exactly as the
+agent could already read it. That's by design (the browser shows you your own
+project); the daemon's own `.env` is the file that's protected, and the
+Explorer is *narrower* than `Read`, since it can't reach outside the session
+directory at all (2026-07-24 audit).
