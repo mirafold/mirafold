@@ -449,6 +449,17 @@ export type ClientMsg =
   // the fleet, and kick any attached viewports back to mission control. Usable
   // from a session viewport or a fleet watcher (#11).
   | { type: "end_session"; sessionId: string }
+  // Phase M cockpit acts (M.2) — sessionId-addressed like end_session, so a
+  // fleet watcher can act on a session without attaching. Acting from the
+  // grid grants nothing a local viewport couldn't do by attaching; the two
+  // acts that DRIVE the model (answer_permission's allow path,
+  // prompt_session) are refused on a REMOTE (relay) connection when the
+  // session's credential can't ride the paid relay — the R.4i gate, same
+  // rule as attach. interrupt_session stays ungated, like end_session
+  // (teardown, not model use). Unknown session ids answer with an `error`.
+  | { type: "answer_permission"; sessionId: string; id: string; allow: boolean }
+  | { type: "interrupt_session"; sessionId: string }
+  | { type: "prompt_session"; sessionId: string; text: string }
   // Re-probe local model servers and re-send the `agents` hello (N.3). The
   // onboarding picker sends this on a slow interval while open, so the
   // "start your local server and it appears here" promise is live — no

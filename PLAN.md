@@ -2712,7 +2712,22 @@ server sends no timers.
     accumulate across two turns with cost taken-not-summed; `createdAt` is
     stable across snapshots. `yarn typecheck` clean; all existing tests green.
 
-- [ ] **Step M.2 — Acting from the grid, server side (sessionId-addressed ClientMsg)**
+- [x] **Step M.2 — Acting from the grid, server side (sessionId-addressed ClientMsg)**
+  - Status 2026-07-24: ✅ done, on `feat/cockpit-m`. Two deliberate deltas
+    from the draft: (1) malformed fields are SILENTLY ignored (the repo's
+    malformed-input convention — rename/permission_response posture); only
+    an unknown sessionId and the relay gate answer with an error reply.
+    (2) The remote-gate proof is Tier-1 in-process (new
+    `fleet-acts.test.ts`, `openConnection` driven with the `remote` flag in
+    hand) rather than a full relay rig in Tier 2; the socket round-trips
+    (grid allow runs the tool / deny runs nothing / interrupt leaves the
+    session warm / prompt_session echoes + runs / unknown-id errors with
+    the daemon alive) are in `fleet-cockpit.itest.ts`. `answer_permission`
+    drops only the answered id from the queue immediately (a concurrent
+    second request stays visible); protocol.test.ts gained the three
+    ClientMsg fixtures + a separate enriched-row fixture so the base
+    SessionMeta keeps proving the M.1 fields optional. All tiers green
+    (337/94/38), typecheck clean.
   - Goal: a fleet watcher can answer a permission, interrupt a turn, and
     dispatch a prompt on any session by id — validated, throw-wrapped,
     relay-gated where it drives the model — without attaching.

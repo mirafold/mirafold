@@ -366,6 +366,44 @@ export class SessionRegistry {
     return true;
   }
 
+  // ---- Cockpit acts (M.2): sessionId-addressed, usable from a fleet watcher
+  // without attaching. Each returns false for an unknown session — the caller
+  // turns that into an error reply, never a crash. The relay gate for the
+  // acts that drive the model lives in connection.ts, beside its attach twin.
+
+  /** Answer a session's pending permission from the grid. The answered id is
+   *  dropped from the queue immediately (honest feedback before the stream
+   *  moves — the allowed tool may take a moment to start); a concurrently
+   *  pending second request stays visible. A stale id is a no-op at the
+   *  adapter, exactly as on the in-session path. */
+  answerPermission(id: string, permissionId: string, allow: boolean): boolean {
+    const entry = this.entries.get(id);
+    if (!entry) return false;
+    entry.session.resolvePermission(permissionId, allow);
+    const before = entry.permissions.length;
+    entry.permissions = entry.permissions.filter((p) => p.id !== permissionId);
+    if (entry.permissions.length !== before) this.notifyWatchers();
+    return true;
+  }
+
+  /** Halt a session's in-flight turn from the grid; the session stays warm. */
+  interruptSession(id: string): boolean {
+    const entry = this.entries.get(id);
+    if (!entry) return false;
+    entry.session.interrupt();
+    return true;
+  }
+
+  /** Dispatch a user turn to a session from the grid — the `prompt` case's
+   *  exact semantics (echo through the stream, then push), addressed by id. */
+  promptSession(id: string, text: string): boolean {
+    const entry = this.entries.get(id);
+    if (!entry) return false;
+    this.broadcast(entry, { type: "user_prompt", text });
+    entry.session.pushPrompt(text);
+    return true;
+  }
+
   /** Push a fresh snapshot to every watcher, coalescing bursts. */
   private notifyWatchers() {
     if (this.watchers.size === 0 || this.notifyTimer) return;

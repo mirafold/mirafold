@@ -127,3 +127,107 @@ test("usage folds across turns: tokens sum, and no cost is invented", async () =
   w.close();
   client.close();
 });
+
+// ---- M.2: acting from the grid — the sessionId-addressed acts over the real
+// socket. (The remote/relay gate is pinned in-process in fleet-acts.test.ts,
+// where the `remote` flag is directly in hand.)
+
+test("grid allow: a watcher's answer_permission lets the tool run", async () => {
+  const { client, sessionId } = await createSession(d.port);
+  const w = await watcher();
+  client.send({ type: "prompt", text: "do something dangerous" });
+  const held = await w.waitFor(
+    (m) => (row(m, sessionId)?.permissions?.length ?? 0) > 0,
+    "pending permission on the row",
+  );
+  const perm = row(held, sessionId)!.permissions![0];
+
+  w.send({ type: "answer_permission", sessionId, id: perm.id, allow: true });
+
+  const tool = (await client.waitFor(
+    (m) => m.type === "tool_use" && (m as Any).name === "Bash",
+    "the allowed tool runs in the session",
+    20_000,
+  )) as Any;
+  assert.ok(tool.detail.includes("rm -rf"), "the mock's dangerous command ran");
+  await client.type("turn_end", 20_000);
+  await w.waitFor(
+    (m) => {
+      const s = row(m, sessionId);
+      return !!s && !s.permissions;
+    },
+    "the row's queue cleared",
+    20_000,
+  );
+  w.close();
+  client.close();
+});
+
+test("grid deny: the command does not run and the turn ends honestly", async () => {
+  const { client, sessionId } = await createSession(d.port);
+  const w = await watcher();
+  client.send({ type: "prompt", text: "do something dangerous" });
+  const held = await w.waitFor(
+    (m) => (row(m, sessionId)?.permissions?.length ?? 0) > 0,
+    "pending permission on the row",
+  );
+  const perm = row(held, sessionId)!.permissions![0];
+
+  const from = client.mark();
+  w.send({ type: "answer_permission", sessionId, id: perm.id, allow: false });
+  await client.type("turn_end", 20_000);
+  assert.ok(
+    !client.received.slice(from).some((m) => m.type === "tool_use"),
+    "denied — no tool ran",
+  );
+  w.close();
+  client.close();
+});
+
+test("grid interrupt halts the turn; the session stays warm for the next prompt", async () => {
+  const { client, sessionId } = await createSession(d.port);
+  const w = await watcher();
+  client.send({ type: "prompt", text: "a long turn to interrupt" });
+  await w.waitFor((m) => row(m, sessionId)?.status === "working", "working on the row");
+
+  w.send({ type: "interrupt_session", sessionId });
+  await client.type("turn_end", 20_000);
+
+  client.send({ type: "prompt", text: "still alive?" });
+  await client.type("turn_end", 20_000);
+  w.close();
+  client.close();
+});
+
+test("prompt_session dispatches a turn from the grid", async () => {
+  const { client, sessionId } = await createSession(d.port);
+  const w = await watcher();
+  w.send({ type: "prompt_session", sessionId, text: "dispatched from the cockpit" });
+  const echo = (await client.waitFor(
+    (m) => m.type === "user_prompt",
+    "the echoed command strip",
+  )) as Any;
+  assert.equal(echo.text, "dispatched from the cockpit");
+  await client.type("turn_end", 20_000);
+  w.close();
+  client.close();
+});
+
+test("unknown-session acts error; malformed acts are ignored; the daemon survives", async () => {
+  const w = await watcher();
+  w.send({ type: "prompt_session", sessionId: "nope", text: "x" });
+  await w.waitFor(
+    (m) => m.type === "error" && (m as Any).message.includes("no such session"),
+    "error for the unknown prompt target",
+  );
+  w.send({ type: "answer_permission", sessionId: "nope", id: "p", allow: true });
+  await w.waitFor((m) => m.type === "error", "error for the unknown answer target");
+  w.send({ type: "interrupt_session", sessionId: "nope" });
+  await w.waitFor((m) => m.type === "error", "error for the unknown interrupt target");
+
+  w.sendRaw(JSON.stringify({ type: "prompt_session", sessionId: 5, text: 7 }));
+  w.sendRaw(JSON.stringify({ type: "answer_permission" }));
+  w.send({ type: "ping" });
+  await w.type("pong");
+  w.close();
+});
