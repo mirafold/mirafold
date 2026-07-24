@@ -2319,6 +2319,22 @@ anywhere; each is independent.
 
 - [x] **Step Q.5 — Pin the `.env` guard's edges** — done 2026-07-12; traversal + cross-cwd denials pinned across all four guarded readers, non-vacuous by weakening the guard. (Symlink bypass stays the documented accepted residual.) → PLAN-ARCHIVE.md.
 
+- **WATCH ITEM (2026-07-24): the follow-tail re-arm race** — seen once on the
+  CI runner (app.e2e.ts "re-follows once back at the bottom", sat 188px above
+  the tail), green on rerun and on every local run; ROOT-CAUSED same day, fix
+  deferred. Mechanism: re-arming depends on `use-follow-tail.ts`'s `onScroll`
+  measuring within `BOTTOM_SLACK_PX` (24) of the bottom, but scroll events
+  fire a frame after the scroll — under load the stream can paint >24px in
+  that gap, so a reader (or the test's single programmatic jump) landing at
+  the bottom mid-stream measures as "not at bottom" and follow never re-arms.
+  A REAL product race, not only test fragility — narrow, and a human recovers
+  by scrolling again, which is why it's a watch item not a blocker. Proposed
+  fix shape when picked up: arm on INTENT like detach already does (a
+  downward wheel/touch ending near the bottom re-arms), so re-arming stops
+  depending on winning a paint race; the hook's two locked decisions
+  (2026-07-20 trace) must be re-read first. The test's single jump + single
+  sample then stops being timing-sensitive on its own.
+
 ---
 
 ## Phase S — Theme system: six themes at launch (✅ COMPLETE 2026-07-16)
