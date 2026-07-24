@@ -155,6 +155,58 @@ test("ordering: rows hold creation order while working; needs-you surfaces to th
   await second.close();
 });
 
+// ---- M.4: phone width — the same cockpit, folded clean and thumb-sized ----
+
+const noSideScroll = async (p: Page) => {
+  const over = await p.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  assert.ok(over <= 1, `page scrolls sideways by ${over}px`);
+};
+
+test("phone: glance set visible with no side-scroll; permission and prompt act by thumb", async () => {
+  const phoneCtx = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    deviceScaleFactor: 3,
+    isMobile: true,
+    hasTouch: true,
+  });
+  const phone = await phoneCtx.newPage();
+  await phone.goto(`${base}/`);
+  await phone.waitForSelector(".fleet-row");
+
+  // Park a permission hold on session 1 — with its usage from the earlier
+  // turns, the row is at its richest: activity + permission + usage at once.
+  await say(session, "do something dangerous");
+  await phone.waitForSelector(".fleet-perm", { timeout: 15_000 });
+  await phone.waitForSelector(".fleet-activity", { timeout: 15_000 });
+  assert.ok(await phone.locator(".fleet-usage").count(), "usage stays visible on phone");
+  await noSideScroll(phone);
+
+  // Thumb targets: the answer pair is ≥40px tall (the R.4l standard).
+  for (const sel of [".fleet-perm-allow", ".fleet-perm-deny"]) {
+    const box = await phone.locator(sel).boundingBox();
+    assert.ok(box && box.height >= 40, `${sel} is ${box?.height ?? 0}px tall — needs ≥40`);
+  }
+  await assertAxeClean(phone, "phone cockpit with a pending permission");
+
+  // Deny by thumb; the hold clears everywhere.
+  await phone.locator(".fleet-perm-deny").tap();
+  await session.waitForSelector("text=I won't run that command", { timeout: 30_000 });
+  await phone.waitForSelector(".fleet-perm", { state: "detached", timeout: 15_000 });
+  await allIdle(2);
+
+  // Quick prompt by thumb: the first row (creation order → session 1, the
+  // tab we're watching) takes a dispatched turn; still no side pan.
+  await phone.locator(".fleet-prompt-toggle").first().tap();
+  await phone.locator(".fleet-prompt-input").fill("phone cockpit prompt");
+  await phone.keyboard.press("Enter");
+  await session.waitForSelector("text=phone cockpit prompt", { timeout: 15_000 });
+  await noSideScroll(phone);
+  await allIdle(2);
+  await phoneCtx.close();
+});
+
 // ---- axe (copy of app.e2e.ts's assertAxeClean — a shared testing helper
 // would force importing that whole suite, which would re-register its tests;
 // dedupe when the helpers move to their own module) ------------------------

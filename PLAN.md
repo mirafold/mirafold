@@ -2810,7 +2810,18 @@ server sends no timers.
     holds its place while another works (no jumping); the axe scan of the
     cockpit with a permission row visible has no serious/critical hits.
 
-- [ ] **Step M.4 — Phone width**
+- [x] **Step M.4 — Phone width**
+  - Status 2026-07-24: ✅ done, on `feat/cockpit-m` (after rebasing the
+    branch over Phase E's merged PR #7 — zero conflicts, the
+    distinct-anchor shared-file discipline held). Own additive media
+    block: sub-lines lose the desktop indent, the permission detail takes
+    a full-width ellipsized line with the allow/deny pair wrapping beneath
+    at ≥40px, stop/prompt-toggle at .fleet-end's 36px parity, the
+    quick-prompt input at the 16px iOS no-zoom floor. One phone test in
+    fleet.e2e.ts (390×844 touch context): activity + permission + usage
+    all visible with noSideScroll clean, thumb targets measured ≥40px,
+    deny and quick-prompt by tap land in the session tab, axe clean.
+    Tiers 357 / 94 / 46 green.
   - Goal: at ≤640 px the cockpit rows fold without side-scroll — the glance
     set survives, targets stay ≥40 px, the second-line controls remain usable.
   - Build: additive media-query CSS for the new row elements (the existing
