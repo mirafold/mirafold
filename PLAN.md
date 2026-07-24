@@ -2833,7 +2833,17 @@ server sends no timers.
     `noSideScroll` passes with activity + permission + usage visible, the
     quick prompt opens and sends, the axe scan is clean.
 
-- [ ] **Step M.5 — Polish (optional; the cut line)**
+- [x] **Step M.5 — Polish (optional; the cut line)**
+  - Status 2026-07-24: ✅ done (two of three; the cut line used once), on
+    `feat/cockpit-m`. Landed: the fleet TAB as a cockpit signal —
+    `paintTabStatus` badge (amber = needs you, blue = fleet busy) with a
+    fleet-worded title carrying the count ("⚠ 1 needs you — Mirafold");
+    and the per-row viewport count (⧉ N — 0 being the interesting number,
+    an unwatched session still working; hidden at phone width like the id
+    column). Dropped, per the cut line: quick-prompt open-state memory
+    (marginal). fleet.e2e.ts covers the title transitions (polled — the
+    title rides a React effect) and the count. Tiers 357 / 94 / 47 green.
+    **Phase M is complete.**
   - A needs-you signal on the fleet page's TAB: title count ("Mirafold — 1
     needs you") + the corner-badge favicon via `tab-status.ts` (the session
     page's existing mechanism, reused); the row's viewport count (meta already

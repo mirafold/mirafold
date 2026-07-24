@@ -155,6 +155,29 @@ test("ordering: rows hold creation order while working; needs-you surfaces to th
   await second.close();
 });
 
+test("M.5: the fleet tab itself signals needs-you (title count), and rows show viewport counts", async () => {
+  // Viewport counts: session 1 has its transcript tab open → ⧉ 1.
+  assert.match(
+    await fleet.locator(".fleet-item").first().locator(".fleet-viewports").innerText(),
+    /⧉ \d+/,
+  );
+  assert.equal(await fleet.title(), "Mirafold — sessions");
+
+  await say(session, "do something dangerous");
+  await fleet.waitForSelector(".fleet-perm", { timeout: 15_000 });
+  // The title rides a React effect (post-paint) — poll, don't sample.
+  await fleet.waitForFunction(() => document.title === "⚠ 1 needs you — Mirafold", undefined, {
+    timeout: 5_000,
+  });
+
+  await fleet.locator(".fleet-perm-deny").click();
+  await fleet.waitForSelector(".fleet-perm", { state: "detached", timeout: 15_000 });
+  await allIdle(2);
+  await fleet.waitForFunction(() => document.title === "Mirafold — sessions", undefined, {
+    timeout: 5_000,
+  });
+});
+
 // ---- M.4: phone width — the same cockpit, folded clean and thumb-sized ----
 
 const noSideScroll = async (p: Page) => {

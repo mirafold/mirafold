@@ -5,6 +5,7 @@ import { ConnectDevice } from "./ConnectDevice";
 import { SocketClient } from "../ws";
 import { tildify } from "../tildify";
 import { useArmedConfirm } from "../use-armed-confirm";
+import { paintTabStatus } from "../tab-status";
 
 // 4.6 Mission control, grown into the Phase M cockpit: every live session in
 // the registry with name, cwd, live activity, pending permission, and usage —
@@ -148,9 +149,19 @@ export function FleetView() {
     return () => clearInterval(timer);
   }, [hasLive]);
 
+  // M.5: the fleet TAB is a cockpit signal too — the same badge grammar as a
+  // session tab (amber = something needs you, blue = fleet busy), title
+  // carrying the needs-you count. paintTabStatus draws the favicon; the
+  // fleet's own title overwrites its session wording.
+  const needsYou = (sessions ?? []).filter((s) => s.status === "permission").length;
+  const fleetBusy = (sessions ?? []).some((s) => s.status === "working");
   useEffect(() => {
-    document.title = "Mirafold — sessions";
-  }, []);
+    paintTabStatus(needsYou > 0 ? "permission" : fleetBusy ? "busy" : "idle");
+    document.title =
+      needsYou > 0
+        ? `⚠ ${needsYou} need${needsYou === 1 ? "s" : ""} you — Mirafold`
+        : "Mirafold — sessions";
+  }, [needsYou, fleetBusy]);
 
   // Stable identity: Onboarding keys its poll interval on this prop, so a
   // fresh arrow each render would restart the 3s timer instead of letting
@@ -177,7 +188,6 @@ export function FleetView() {
   showNewRef.current = onboarding;
 
   const ordered = cockpitOrder(sessions ?? []);
-  const needsYou = ordered.filter((s) => s.status === "permission").length;
 
   return (
     <div className="fleet">
@@ -317,6 +327,11 @@ export function FleetView() {
                     {STATUS_LABEL[s.status]}
                   </span>
                   <span className="fleet-ago">{ago(s.lastActivity)}</span>
+                  {/* M.5: who's watching — 0 is the interesting number (an
+                      unwatched session still working for you). */}
+                  <span className="fleet-viewports" title="open viewports">
+                    ⧉ {s.viewports}
+                  </span>
                   <button
                     className={
                       "fleet-prompt-toggle" + (promptFor === s.sessionId ? " fleet-prompt-toggle-open" : "")

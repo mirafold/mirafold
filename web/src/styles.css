@@ -3386,3 +3386,20 @@ html {
     font-size: 16px;
   }
 }
+
+/* ---- Phase M cockpit (M.5): viewport count -------------------------------- */
+
+.fleet-viewports {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78em;
+  color: var(--fg-faint);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+  /* Plumbing column — steps back on phone like .fleet-id above. */
+  .fleet-viewports {
+    display: none;
+  }
+}
