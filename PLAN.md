@@ -874,6 +874,17 @@ with it. Both sequence BEFORE R.5.**
   - Done when: the testing round is complete, every finding is written down,
     and each must-fix item is either fixed or explicitly scheduled as a
     Phase R blocker ahead of R.7.
+  - Finding #2 (Kyle, 2026-07-23, his MacBook): the onboarding picker sat
+    flush against the browser window's top/bottom on a short viewport (a
+    ~600px un-maximized Mac Chrome window) instead of floating as a nested
+    modal. Root cause: `.onb-card` had `max-width` but no `max-height`, so
+    it overflowed the centered overlay. Fixed same day: `max-height: 100%`
+    + internal scroll as the hard floor (the overlay's 24px gutter is now
+    always visible), plus an `@media (max-height: 700px)` compact layout
+    (44px glyph, tighter paddings) so typical content FITS at ~600px.
+    Verified by computed-style probe at 607px and 769px viewports + all
+    tiers green; worst-case content (3 credential-less agents, longest
+    hints) scrolls internally with the gutter intact at any height.
   - **Opened 2026-07-23.** Mechanics locked with Kyle: distribution is a
     hand-sent `npm pack` tarball (v0.1.0, shell @ 50950a7 / relay @ 3f92992
     deployed) — NOT npm; testers subscribe FOR REAL via the direct `/pay`

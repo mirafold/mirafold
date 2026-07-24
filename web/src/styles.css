@@ -1831,6 +1831,12 @@ body {
 .onb-card {
   width: 100%;
   max-width: 560px;
+  /* Never taller than the overlay's padded box: short viewports (small Mac
+     windows are ~600px) get a nested modal with the 24px gutter intact and
+     the card scrolling internally — never flush edges or clipped content. */
+  max-height: 100%;
+  overflow-y: auto;
+  scrollbar-width: thin;
   background: var(--surface);
   border: 1px solid var(--border-2);
   border-radius: 12px;
@@ -1838,6 +1844,7 @@ body {
   box-shadow: var(--shadow-card);
   text-align: center;
 }
+
 
 .onb-glyph {
   width: 80px;
@@ -1985,6 +1992,38 @@ body {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 13px;
   letter-spacing: 0.02em;
+}
+
+/* Short viewports: compact the card's chrome so the whole picker FITS at
+   ~600px of page height (a small laptop window) without internal scrolling —
+   the max-height above stays as the hard floor beneath this. */
+@media (max-height: 700px) {
+  .onb-card {
+    padding: 20px 24px;
+  }
+  .onb-glyph {
+    width: 44px;
+    height: 44px;
+  }
+  .onb-title {
+    margin: 8px 0 4px;
+    font-size: 20px;
+  }
+  .onb-sub {
+    margin-bottom: 12px;
+    font-size: 14px;
+  }
+  .onb-list {
+    gap: 8px;
+  }
+  .onb-agent {
+    padding: 11px 15px;
+    gap: 4px;
+    font-size: 16px;
+  }
+  .onb-local-note {
+    margin-top: 10px;
+  }
 }
 
 /* ---- N.4: the second step — how the picked agent is backed -------------- */
