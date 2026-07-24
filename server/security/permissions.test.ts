@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import os from "node:os";
 import { mkdtempSync } from "node:fs";
-import { makeCanUseTool, type PermissionAsker } from "./permissions";
+import { isSecretFile, makeCanUseTool, type PermissionAsker } from "./permissions";
 
 // The SDK's canUseTool passes an options object; our policy ignores it, so a
 // minimal-but-complete stub is enough to exercise the callback.
@@ -122,4 +122,13 @@ test("the deny message names the declined tool", async () => {
   const r = await call("Bash", { command: "ls" });
   assert.equal(r.behavior, "deny");
   if (r.behavior === "deny") assert.match(r.message, /Bash/);
+});
+
+test("isSecretFile: basename rule — env files anywhere, nothing else (E.1)", () => {
+  for (const p of ["/x/.env", "/x/deep/nest/.env.local", ".env", "sub/.env"]) {
+    assert.equal(isSecretFile(p), true, `${p} is secret`);
+  }
+  for (const p of ["/x/.envrc", "/x/env", "/x/foo.env", "/x/.env.example", "/x/environment.ts"]) {
+    assert.equal(isSecretFile(p), false, `${p} is not`);
+  }
 });

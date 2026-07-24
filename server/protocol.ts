@@ -221,6 +221,56 @@ type WireMsgBody =
   | { type: "bang_output"; data: string; id: string }
   // exitCode null = killed by signal (user stop, session close).
   | { type: "bang_end"; id: string; exitCode: number | null }
+  // Phase E (Explorer): the shell's read-only file browser. Per-viewport
+  // request/reply — like `pong`/`sessions`, never buffered or sequenced:
+  // current disk state is a query, not session history, so it must not enter
+  // the replay ring. `id` echoes the client's mint so racing replies
+  // correlate. Entry paths are session-root-relative and /-separated (the
+  // client nests them; the wire stays non-recursive, the file-tree rule).
+  // Every request gets exactly one reply — an error rides the reply
+  // (`error` set, other fields best-effort), never silence. `git` is false
+  // until E.2's git layer lands (then: git's view of the tree + `status`
+  // chars on entries). `truncated` marks a capped walk, honestly.
+  | {
+      type: "fs_tree";
+      id: string;
+      root: string;
+      entries: FsEntry[];
+      git: boolean;
+      truncated?: boolean;
+      error?: string;
+    }
+  // One file's content (the fs_read reply). `binary` = NUL-sniffed, content
+  // withheld. `truncatedBytes` mirrors tool_result's honest cap: how many
+  // bytes of the real file were elided after the content cap.
+  | {
+      type: "fs_file";
+      id: string;
+      path: string;
+      content?: string;
+      size?: number;
+      truncatedBytes?: number;
+      binary?: boolean;
+      error?: string;
+    }
+  // The fs_diff reply (E.2): one file's change as BEFORE/AFTER text — never
+  // hunk/patch text (the render_diff lesson: snippets need no bookkeeping;
+  // the client diffs them with the same differ ToolBlock uses). `before` is
+  // HEAD's version (absent in HEAD / unborn HEAD → ""), `after` the working
+  // tree (deleted → ""). Sides are capped independently and honestly;
+  // `binary` on either side withholds both texts. Same per-viewport rules as
+  // fs_tree/fs_file.
+  | {
+      type: "fs_file_diff";
+      id: string;
+      path: string;
+      before?: string;
+      after?: string;
+      beforeTruncatedBytes?: number;
+      afterTruncatedBytes?: number;
+      binary?: boolean;
+      error?: string;
+    }
   // Reply to a client ping — connection liveness only, never
   // buffered or sequenced (4.4).
   | { type: "pong" }
@@ -290,6 +340,13 @@ export type BackendChoice = {
   provider?: string;
   model?: string;
 };
+
+/** One Explorer tree entry (Phase E.1): a FILE, by root-relative /-separated
+ *  path — directories are inferred client-side (git's `ls-files` view has no
+ *  directory rows either, so repo and non-repo trees stay one shape; the
+ *  known cost is that empty directories are invisible). `status` arrives with
+ *  E.2's git layer: a single collapsed change char (M/A/D/U). */
+export type FsEntry = { path: string; status?: string };
 
 /** One fleet row (4.6). `lastActivity` is epoch ms of the last broadcast. */
 export type SessionMeta = {
@@ -379,6 +436,17 @@ export type ClientMsg =
   // "start your local server and it appears here" promise is live — no
   // reload. Server-side throttled; a burst degrades to the cached answer.
   | { type: "refresh_agents" }
+  // Phase E (Explorer): the read-only file browser's per-viewport queries.
+  // `id` is client-minted (the bang-id grammar) so the issuing component can
+  // correlate the one reply each request gets. The path is a REQUEST — the
+  // server jails every resolution to the session root and refuses secret env
+  // files; the client is never trusted with a path. Both types are throttled
+  // per connection (throttled requests still get an error reply).
+  | { type: "fs_list"; id: string }
+  | { type: "fs_read"; id: string; path: string }
+  // E.2: "what changed in this file" — answered as fs_file_diff. Same id
+  // grammar, same jail, same throttle family as fs_read.
+  | { type: "fs_diff"; id: string; path: string }
   // The browser half's uncaught errors (window "error"/"unhandledrejection"),
   // forwarded so the daemon's flight-recorder log hears about a front-end
   // crash — otherwise a "it went blank" bug report arrives with an empty log

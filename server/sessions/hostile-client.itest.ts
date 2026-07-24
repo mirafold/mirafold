@@ -71,6 +71,16 @@ test("Q.4 garbage frames mid-session: daemon survives, 2nd viewport stays quiet,
   // --- end_session: non-string / missing id — MUST NOT tear down the session ---
   a.send({ type: "end_session", sessionId: 12345 } as never);
   a.send({ type: "end_session" } as never);
+  // --- fs_list / fs_read (E.1): a bad id drops the message whole (nothing to
+  //     correlate a reply to); a well-formed id with a bad path is answered
+  //     with an error REPLY on this viewport only — never broadcast, never
+  //     silence ---
+  a.send({ type: "fs_list", id: 7 } as never);
+  a.send({ type: "fs_list", id: "bad id !!" } as never);
+  a.send({ type: "fs_list" } as never);
+  a.send({ type: "fs_read", id: "ok-1", path: 42 } as never);
+  a.send({ type: "fs_read", id: "ok-2" } as never);
+  a.send({ type: "fs_read", id: "ok-3", path: "x".repeat(5_000) } as never);
   // --- raw frames: bad JSON, and the primitives that used to crash the daemon ---
   a.sendRaw("this is not json {{{");
   a.sendRaw("null"); // the crash vector — null.type throws
@@ -88,6 +98,12 @@ test("Q.4 garbage frames mid-session: daemon survives, 2nd viewport stays quiet,
   assert.equal(aTail.filter((m) => m.type === "pong").length, 1);
   const malformed = aTail.filter((m) => m.type === "error" && m.message === "malformed client message");
   assert.equal(malformed.length, 4);
+  // The three valid-id/bad-path fs_reads each got exactly one error reply;
+  // the three bad-id Explorer frames got nothing at all (E.1).
+  const fsFiles = aTail.filter((m) => m.type === "fs_file") as Any[];
+  assert.equal(fsFiles.length, 3);
+  assert.ok(fsFiles.every((m) => typeof m.error === "string"));
+  assert.equal(aTail.filter((m) => m.type === "fs_tree").length, 0);
   // The daemon did NOT crash: no last-gasp line in its log.
   assert.doesNotMatch(d.logs(), /crashed \(uncaughtException\)/);
 
