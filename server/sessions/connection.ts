@@ -5,6 +5,7 @@ import path from "node:path";
 import type { AgentName, ClientMsg, WireMsg } from "../protocol";
 import type { SessionEntry, SessionRegistry } from "./registry";
 import { runActionTool } from "./actions";
+import { listTree, readWorkspaceFile } from "./fs-explorer";
 import {
   ADAPTER_AGENTS,
   availableAgents,
@@ -47,6 +48,17 @@ const CWD_HANDOFF_MAX_BYTES = 4096;
 // (N.3). The picker polls every few seconds; anything faster serves the
 // cached answer instead of re-probing localhost.
 const REFRESH_MIN_INTERVAL_MS = Number(process.env.REFRESH_MIN_INTERVAL_MS ?? 1_000);
+
+// Minimum gap between Explorer requests per connection AND per type (E.1) —
+// fs_list walks the tree, so a hostile client must not turn it into a CPU
+// grinder; the per-type split keeps a legitimate list-then-read pair from
+// tripping it. Throttled requests still get a reply (an error), never
+// silence — the client's request/reply correlation must always resolve.
+const FS_MIN_INTERVAL_MS = Number(process.env.FS_MIN_INTERVAL_MS ?? 250);
+
+// Same shape rule as bang ids: client-minted correlation ids are short and
+// word-safe or the message is dropped whole.
+const FS_ID_RE = /^[\w-]{1,64}$/;
 
 /**
  * The transcript is fenced by <bash-input>/<bash-output>; output that itself
@@ -261,6 +273,9 @@ export function openConnection(
   // hostile client could spam — bound the probe rate per connection. A
   // throttled refresh still answers, from the cache.
   let lastProbeAt = 0;
+  // Explorer throttles (E.1), one clock per request type.
+  let lastFsListAt = 0;
+  let lastFsReadAt = 0;
 
   // Identity first, then the replayed history, then the live stream. 4.4:
   // a valid afterSeq turns the replay into a tail-only resume — the client
@@ -534,6 +549,85 @@ export function openConnection(
           if (!closed) sendAgents();
         });
         break;
+      case "fs_list": {
+        // Explorer tree query (E.1) — answered on THIS connection only, like
+        // pong/sessions: disk state is a query, not session history, so it
+        // must never enter the broadcast stream or the replay ring. A bad id
+        // drops the message whole (nothing to correlate a reply to); every
+        // well-formed request gets exactly one reply.
+        if (typeof msg.id !== "string" || !FS_ID_RE.test(msg.id)) break;
+        const treeErr = (root: string, error: string) =>
+          viewport({ type: "fs_tree", id: msg.id, root, entries: [], git: false, error });
+        if (!entry) {
+          treeErr("", "no session attached");
+          break;
+        }
+        if (Date.now() - lastFsListAt < FS_MIN_INTERVAL_MS) {
+          treeErr(entry.cwd, "requests are arriving too fast — retry shortly");
+          break;
+        }
+        lastFsListAt = Date.now();
+        // try/catch: this runs on the local WS path with no net above it —
+        // an escaped throw exits the daemon (the null-frame lesson).
+        try {
+          const r = listTree(entry.cwd);
+          if ("error" in r) {
+            treeErr(entry.cwd, r.error);
+          } else {
+            viewport({
+              type: "fs_tree",
+              id: msg.id,
+              root: entry.cwd,
+              entries: r.entries,
+              git: false, // E.2 turns this on when the root is a git repo
+              ...(r.truncated ? { truncated: true } : {}),
+            });
+          }
+        } catch (err) {
+          treeErr(entry.cwd, errText(err));
+        }
+        break;
+      }
+      case "fs_read": {
+        // Explorer file read (E.1) — same per-viewport reply rules as
+        // fs_list; the path is validated raw here and jailed in the module.
+        if (typeof msg.id !== "string" || !FS_ID_RE.test(msg.id)) break;
+        const fileErr = (p: string, error: string) =>
+          viewport({ type: "fs_file", id: msg.id, path: p, error });
+        if (typeof msg.path !== "string" || msg.path.length === 0 || msg.path.length > 4_096) {
+          fileErr("", "bad path");
+          break;
+        }
+        if (!entry) {
+          fileErr(msg.path, "no session attached");
+          break;
+        }
+        if (Date.now() - lastFsReadAt < FS_MIN_INTERVAL_MS) {
+          fileErr(msg.path, "requests are arriving too fast — retry shortly");
+          break;
+        }
+        lastFsReadAt = Date.now();
+        try {
+          const r = readWorkspaceFile(entry.cwd, msg.path);
+          if ("error" in r) {
+            fileErr(msg.path, r.error);
+          } else if ("binary" in r) {
+            viewport({ type: "fs_file", id: msg.id, path: msg.path, binary: true, size: r.size });
+          } else {
+            viewport({
+              type: "fs_file",
+              id: msg.id,
+              path: msg.path,
+              content: r.content,
+              size: r.size,
+              ...(r.truncatedBytes ? { truncatedBytes: r.truncatedBytes } : {}),
+            });
+          }
+        } catch (err) {
+          fileErr(msg.path, errText(err));
+        }
+        break;
+      }
       case "client_error":
         // The browser half's uncaught errors, landing in the flight-recorder
         // log so a front-end crash leaves a trace a bug report can attach.

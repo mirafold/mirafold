@@ -135,6 +135,25 @@ const WIRE: WireByType = {
   bang_output: { type: "bang_output", data: "PASS\n", id: "b1" },
   bang_end: { type: "bang_end", id: "b1", exitCode: 0 },
   pong: { type: "pong" },
+  fs_tree: {
+    type: "fs_tree",
+    id: "f1",
+    root: "/home/u/proj",
+    entries: [{ path: "src/app.ts" }, { path: "README.md", status: "M" }],
+    git: false,
+    truncated: true,
+    error: "the session workspace is not readable",
+  },
+  fs_file: {
+    type: "fs_file",
+    id: "f2",
+    path: "src/app.ts",
+    content: "export {};\n",
+    size: 11,
+    truncatedBytes: 0,
+    binary: false,
+    error: "path is outside the session workspace",
+  },
   sessions: { type: "sessions", sessions: [SESSION_META] },
   session_ended: { type: "session_ended", sessionId: "s1" },
 };
@@ -161,6 +180,8 @@ const CLIENT: ClientByType = {
   rename: { type: "rename", sessionId: "s1", name: "renamed" },
   end_session: { type: "end_session", sessionId: "s1" },
   refresh_agents: { type: "refresh_agents" },
+  fs_list: { type: "fs_list", id: "f1" },
+  fs_read: { type: "fs_read", id: "f2", path: "src/app.ts" },
   client_error: { type: "client_error", message: "TypeError: x is undefined", clientVersion: "0.0.1" },
 };
 

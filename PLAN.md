@@ -2447,7 +2447,7 @@ dirs); independently-capped diff sides can overstate changes past the cap
 `role="tree"` arrow-key grammar is deferred to Phase KB territory — buttons
 in nested lists are tabbable and axe-clean.
 
-- [ ] **Step E.1 — Wire contract + server fs module (no git yet)** (~1–1.5 days)
+- [x] **Step E.1 — Wire contract + server fs module (no git yet)**
   - Goal: a viewport can request the working tree's file list and any file's
     content over the existing WS — per-viewport, jailed, secret-safe, capped —
     against any directory, repo or not.
@@ -2483,6 +2483,20 @@ in nested lists are tabbable and axe-clean.
     request with no session attached errors cleanly; a deleted session root
     errors, never crashes. `yarn typecheck` clean; all existing tests green
     (Tier 1 ≥318 / Tier 2 ≥86 / Tier 3 37, counts as of 2026-07-23).
+  - *2026-07-24: DONE, on `feat/explorer-e1`. Shipped as specced with one
+    Build deviation: the read cap is applied via bounded fd reads (own
+    `FS_FILE_CAP_BYTES` knob, same 64 KB default and honesty contract as
+    `capOutput`) instead of calling `capOutput` — that function needs the
+    whole string in memory, so a multi-GB file would have been loaded just to
+    be truncated; the fd path reads at most sniff + cap bytes. Every "Done
+    when" case observed: Tier-1 fs-explorer suite (walk shape/caps, symlink
+    leaf, jail incl. symlink-out, secret basenames, binary sniff, cap math,
+    lossy UTF-8, empty file) + `isSecretFile` pin + the Q.2 protocol fixtures;
+    Tier-2 `fs-explorer.itest.ts` (round-trip, secret/jail refusals as error
+    replies with the daemon proven alive after, throttle answers then
+    recovers, no-session, deleted-root) + 6 hostile Explorer frames in the
+    Q.4 sweep (bad ids dropped whole and leak-checked against viewport B).
+    All tiers green **336 / 91 / 38**.*
 
 - [ ] **Step E.2 — Git layer: tracked tree, change status, per-file diff** (~1 day)
   - Goal: in a repo, the tree is git's view (tracked + untracked-unignored)

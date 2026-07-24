@@ -22,8 +22,9 @@ type ActionTool = {
 // symlinks, so a link planted in the workspace can't point the listing out of
 // it. realpathSync throws on a missing path (nothing to list anyway → treat as
 // outside). `root` is realpath'd too, so the prefix compare is against the
-// canonical base.
-const inside = (root: string, candidate: string): string | null => {
+// canonical base. Exported since E.1: fs-explorer.ts jails every Explorer
+// path through this same guard — one containment rule, no drift.
+export const inside = (root: string, candidate: string): string | null => {
   let real: string;
   let realRoot: string;
   try {
