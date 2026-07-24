@@ -366,6 +366,22 @@ export function openConnection(
     }
   };
 
+  // Resolve a cockpit act's target session (M.2): unknown id → error reply;
+  // and when the act would DRIVE the model, a remote connection gets the
+  // R.4i gate, exactly like attach. Returns undefined when refused.
+  const actTarget = (sessionId: string, drivesModel: boolean): SessionEntry | undefined => {
+    const target = registry.get(sessionId);
+    if (!target) {
+      sendError(`no such session: ${sessionId}`);
+      return undefined;
+    }
+    if (drivesModel && remote && !allowedOverRelay(target.kind)) {
+      sendError(RELAY_GATE_REFUSAL);
+      return undefined;
+    }
+    return target;
+  };
+
   const handleMessage = (raw: string) => {
     let msg: ClientMsg;
     try {
@@ -526,15 +542,7 @@ export function openConnection(
         ) {
           break;
         }
-        const target = registry.get(msg.sessionId);
-        if (!target) {
-          sendError(`no such session: ${msg.sessionId}`);
-          break;
-        }
-        if (remote && !allowedOverRelay(target.kind)) {
-          sendError(RELAY_GATE_REFUSAL);
-          break;
-        }
+        if (!actTarget(msg.sessionId, true)) break;
         registry.answerPermission(msg.sessionId, msg.id, msg.allow);
         log.info(`answer_permission → session ${msg.sessionId} (${msg.allow ? "allow" : "deny"})`);
         break;
@@ -554,15 +562,7 @@ export function openConnection(
         // The frame cap already bounds a message; this bounds what one grid
         // dispatch may push into a model turn.
         if (!text || text.length > 100_000) break;
-        const target = registry.get(msg.sessionId);
-        if (!target) {
-          sendError(`no such session: ${msg.sessionId}`);
-          break;
-        }
-        if (remote && !allowedOverRelay(target.kind)) {
-          sendError(RELAY_GATE_REFUSAL);
-          break;
-        }
+        if (!actTarget(msg.sessionId, true)) break;
         registry.promptSession(msg.sessionId, text);
         log.info(`prompt_session → session ${msg.sessionId}`);
         break;
