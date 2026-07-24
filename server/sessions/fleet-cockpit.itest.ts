@@ -79,6 +79,10 @@ test("a dangerous prompt surfaces the pending permission; the in-session answer 
   // Answer over the existing in-session path; the queue must clear with the hold.
   const req = (await client.type("permission_request")) as Any;
   assert.equal(req.id, r.permissions![0].id, "the row carries the real request id");
+  // The grid approver must see EXACTLY what the in-session bar shows — the
+  // fleet row's detail is the request's detail, byte-for-byte, no cap
+  // (2026-07-24 audit; a truncated tail could hide a dangerous suffix).
+  assert.equal(r.permissions![0].detail, req.detail, "fleet detail == in-session detail, whole");
   client.send({ type: "permission_response", id: req.id, allow: true });
 
   const moved = await w.waitFor(
