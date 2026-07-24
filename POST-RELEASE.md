@@ -54,7 +54,12 @@ has a home in this plan, the entry points there instead of duplicating it.
   grid rather than only entering them.
 
 - [ ] **Folder & file & diff view** — shell-owned project browsing: the
-  working tree, file contents, and diffs of what the agent changed.
+  working tree, file contents, and diffs of what the agent changed. The
+  read-only v1 (file tree, contents, git diffs; desktop collapsible side
+  panel + phone full-screen drill-in) was promoted to active work 2026-07-24
+  and is tracked in PLAN.md as **Phase E**; this entry parks the post-v1
+  depth — editing, a filesystem watcher for live updates, syntax
+  highlighting.
 
 - [ ] **Embedded terminal pane — interactive full-screen programs (vim, top)**
   (2026-07-22) — the deferred **Tier 2** of the `!` passthrough (Step 4.9): a

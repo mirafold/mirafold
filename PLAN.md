@@ -2126,7 +2126,7 @@ uncharacterized sighting of the Tier-2 per-pair viewport-cap test.
 
 ---
 
-## Phase D — Decompose the Codex adapter (opened 2026-07-20; **next up**)
+## Phase D — Decompose the Codex adapter (opened 2026-07-20)
 
 `server/adapters/codex.ts` is **824 lines** and carries at least five separable
 concerns. For scale, the other two real adapters are 499 (`claude-code.ts`) and
@@ -2406,6 +2406,179 @@ shows which matter — not a launch prerequisite.
     backend choice at onboarding (N.5 is exactly the "registry passes
     per-session env/config" build). What remains of L.3 afterward is only
     whatever mixing ergonomics Phase N's shipped form still leaves wanting.
+
+---
+
+## Phase E — Explorer (opened 2026-07-24; Kyle-directed — the folder & file & diff view, promoted from POST-RELEASE.md; **next up**)
+
+The "Folder & file & diff view" intake entry, promoted to active work: a
+shell-owned, **read-only** browser of the session's working tree — the file
+tree, any file's contents, and git diffs of what changed. Design settled with
+Kyle 2026-07-24. The governing principles:
+
+- **Shell-owned and read-only.** The agent paints nothing here — same trust
+  rule as the permission bar. No editing in v1; that persona belongs to the
+  embedded-terminal-pane idea (POST-RELEASE.md).
+- **Wire-native, per-viewport.** New ADDITIVE protocol types over the existing
+  WebSocket (never HTTP — remote/relay viewports have no HTTP path to the
+  daemon, so wire-native means the phone gets this by construction). Replies
+  are per-viewport with a client-minted echoed `id` — the
+  `refresh_agents`→`agents` shape plus the bang-id precedent — never
+  broadcast, never replay-buffered, no `seq`.
+- **Jailed.** Every path resolves through `inside()`'s realpath containment
+  against `entry.cwd` (the immutable session root, never `bangCwd`), with the
+  `.env`/`.env.local` secret denial on top — the file viewer must not become a
+  bypass of the permissions guard.
+- **Diffs are `{before, after}`, diffed client-side.** `before` is
+  `git show HEAD:path`, `after` is the working tree; the client runs the
+  existing `diffLines` LCS differ so Explorer diffs render identically to
+  ToolBlock's Edit/Write diffs and the registry `diff` component. Hunk text
+  never crosses the wire — no `@@` parsing anywhere.
+- **Two presentations, one component set** (Kyle's calls): desktop = a
+  VS Code-style collapsible LEFT side panel; phone (≤640px) = full-screen
+  drill-in layers (GitHub-mobile style: StatusBar affordance → tree → file/diff
+  → back), explicitly NOT a bottom sheet. This claims the split-pane layout
+  slot the embedded terminal pane will later share.
+
+Accepted v1 limits, on purpose: ignored files are invisible in-repo
+(`ls-files --exclude-standard` semantics — they still appear in non-repo
+dirs); independently-capped diff sides can overstate changes past the cap
+(the truncation markers render prominently above the diff); full
+`role="tree"` arrow-key grammar is deferred to Phase KB territory — buttons
+in nested lists are tabbable and axe-clean.
+
+- [ ] **Step E.1 — Wire contract + server fs module (no git yet)** (~1–1.5 days)
+  - Goal: a viewport can request the working tree's file list and any file's
+    content over the existing WS — per-viewport, jailed, secret-safe, capped —
+    against any directory, repo or not.
+  - Build: `protocol.ts` additive types — ClientMsg `fs_list {id}` and
+    `fs_read {id, path}`; WireMsg
+    `fs_tree {id, root, entries, git, truncated?, error?}` and
+    `fs_file {id, path, content?, truncatedBytes?, binary?, size?, error?}`.
+    Wire paths are always root-relative and `/`-normalized (the `buildTree`
+    contract); every request gets exactly one reply — errors ride the reply,
+    never silence. New `server/sessions/fs-explorer.ts`: capped recursive walk
+    (`lstat`, symlinks listed as leaves and never followed as dirs, skip
+    `.git`/`node_modules`, ~4,000-entry AND byte caps with an honest
+    `truncated: true`), file read through `inside()` (exported from
+    `actions.ts`) plus a secret-path predicate exported from `permissions.ts`
+    (deny `.env`/`.env.local` basenames — the tree still LISTS them, only
+    content is refused: honesty over hiding), NUL-sniff binary detection (no
+    content for binaries), `capOutput` reuse for the 64 KB cap +
+    `truncatedBytes`, lossy UTF-8 decode for non-UTF-8 text. `connection.ts`:
+    new switch cases — `entry` guard (fs is session-scoped), input validation
+    (bang-id regex; length-capped path), a per-connection throttle
+    (`FS_MIN_INTERVAL_MS`, throttled requests still answered with an error
+    reply), the `closed` guard on async completions, and every handler
+    throw-wrapped (a sync throw on the local WS path kills the daemon).
+  - Files: `server/protocol.ts`, `server/sessions/fs-explorer.ts` (new),
+    `server/sessions/connection.ts`, `server/sessions/actions.ts` (export
+    `inside`), `server/security/permissions.ts` (export the predicate).
+  - Done when: Tier 1 covers walk caps, symlink-leaf behavior, binary sniff,
+    secret denial, and the UTF-8 fallback; Tier 2 (new `fs-explorer.itest.ts`
+    plus `hostile-client.itest.ts` additions) proves over a real socket:
+    `fs_list`→`fs_tree` round-trips in a temp dir; `../`, absolute-path,
+    planted-symlink-escape, and `.env` reads all come back as error replies
+    with the daemon still alive; a request burst is throttled but answered; a
+    request with no session attached errors cleanly; a deleted session root
+    errors, never crashes. `yarn typecheck` clean; all existing tests green
+    (Tier 1 ≥318 / Tier 2 ≥86 / Tier 3 37, counts as of 2026-07-23).
+
+- [ ] **Step E.2 — Git layer: tracked tree, change status, per-file diff** (~1 day)
+  - Goal: in a repo, the tree is git's view (tracked + untracked-unignored)
+    with per-file change status, and any file answers "what changed" as
+    `{before, after}` — degrading to E.1 behavior when there's no repo, no git
+    binary, or an unborn HEAD, never crashing.
+  - Build: new `server/sessions/git.ts` — promisified
+    `execFile("git", args, { cwd, timeout ~5s, maxBuffer })`, settle-once
+    (jsonrpc-oneshot.ts is the lifecycle model; execFile's built-in
+    timeout/maxBuffer does the work), a typed not-a-repo result instead of a
+    throw, at most one git child in flight per connection (a second request
+    while busy gets an error reply, like the bang already-running refusal).
+    Tree source: `git ls-files --cached --others --exclude-standard -z`
+    (cwd-relative output). Status: `git status --porcelain=v1 -z` — porcelain
+    paths are repo-ROOT-relative, so strip `git rev-parse --show-prefix` (the
+    subdirectory-session trap), and parse `-z` rename records as their TWO
+    NUL-separated fields (a naive split misaligns every later entry; collapse
+    renames to D(old)+A(new) for v1). Deleted files stay listed (status `D`)
+    though absent on disk. Protocol additive: ClientMsg `fs_diff {id, path}` →
+    WireMsg `fs_file_diff {id, path, before?, after?, beforeTruncatedBytes?,
+    afterTruncatedBytes?, binary?, error?}`; `before` = `git show HEAD:./<rel>`
+    (the `./` form is cwd-relative), absent-in-HEAD or unborn HEAD → `""` (the
+    empty-side case the client's `diffSnippet` already handles); both sides
+    independently `capOutput`'d; binary on either side → `binary: true`, no
+    text; submodules degrade to "no diff available".
+  - Files: `server/sessions/git.ts` (new), `server/sessions/fs-explorer.ts`,
+    `server/sessions/connection.ts`, `server/protocol.ts`.
+  - Done when: Tier 1 pins the porcelain parser (rename records, status
+    collapse); Tier 2 in a scripted temp repo (`git init` + commits inside the
+    test): tracked + untracked listed, ignored excluded; modified, added,
+    deleted, and renamed files all diff correctly; a session rooted in a repo
+    SUBDIRECTORY labels statuses correctly; a non-repo dir and an unborn-HEAD
+    repo degrade instead of erroring; all tiers green.
+
+- [ ] **Step E.3 — Desktop: the Files side panel** (~1.5–2 days)
+  - Goal: a collapsible left column beside the transcript — tree → click a
+    file → content or diff — VS Code-shaped, shell-owned, refresh-on-demand.
+  - Build: `session-bus.ts` gains `requestFsList()/requestFsRead(path)/
+    requestFsDiff(path)` — mint and return the id (the `sendBang` shape); the
+    new `fs_*` messages flow to subscribers automatically and RenderZone
+    ignores them (the R.4h ignore-unknown contract). Layout: inside
+    `.behind-dialog`, wrap the existing column in a new flex row with
+    `FilesPanel` as the left child (PinDock's side-by-side styling is the
+    precedent); fixed ~280–320px width, `min-width: 0` on the transcript and a
+    panel `max-width` clamp so panel + PinDock + prompt coexist; collapsed by
+    default (nothing changes for users who don't open it). StatusBar files
+    toggle via the `sb-settings`/`onOpenSettings` prop-threading pattern, with
+    `aria-expanded` and a real `aria-label`. New shell-owned components under
+    `web/src/components/files/` — `FilesPanel.tsx` (request/response state
+    keyed by echoed id; stale replies dropped) and `FileView.tsx` (content:
+    plain `<pre>` with the tool-code styling + `formatBytes(truncatedBytes)`
+    elided marker; diff mode: `diffLines` + `DiffLines`, identical rendering
+    to ToolBlock; binary → a "binary file (N bytes)" stub; denied → the
+    refusal line) — plus `web/src/files-tree.ts`, a shell-owned copy of
+    `buildTree`'s flat→nested approach (never import the registry component —
+    that's agent surface). Guard the O(n·m) LCS client-side: past ~4M cells,
+    skip the diff and show the after side with a "diff too large" note. The
+    diff affordance shows only when the entry has a status char AND
+    `fs_tree.git`. Freshness: a refresh button in the panel header re-sends
+    `fs_list` (and re-requests the open file); opening the panel fires the
+    first `fs_list`; session switch / non-resumed `session_created` clears all
+    panel state and refetches if open.
+  - Files: `web/src/session-bus.ts`, `web/src/components/Shell.tsx`,
+    `web/src/components/StatusBar.tsx`, `web/src/components/files/` (new),
+    `web/src/files-tree.ts` (new), `web/src/styles.css`.
+  - Done when: Tier 1 pins the tree builder, stale-id filtering, and the
+    diff-size guard; Tier 3 (`app.e2e.ts`): the toggle opens the panel, a file
+    created by the mock session appears after refresh, clicking it shows
+    content, the transcript still renders beside it, the prompt box stays
+    visible with the panel AND PinDock both open, and the C.2 axe scan runs
+    with the panel open (a new scanned surface) with no serious/critical hits.
+
+- [ ] **Step E.4 — Phone: full-screen drill-in** (~0.5–1 day)
+  - Goal: at ≤640px the same data presents as stacked full-screen layers —
+    StatusBar affordance → tree → file/diff → back — never a squeezed panel.
+  - Build: branch on the 640px breakpoint with a LIVE matchMedia check (not
+    the module-load constant); each layer is a `ModalCard` (dialog semantics,
+    focus trap, Esc = back — the Phase A discipline for free) with a back
+    button top-left; the tree stays mounted under the file layer so back
+    returns with scroll position intact; reuse E.3's components — only the
+    container differs.
+  - Files: `web/src/components/files/`, `web/src/components/StatusBar.tsx`,
+    `web/src/styles.css`, `server/testing/phone.e2e.ts`.
+  - Done when: `phone.e2e.ts` at phone width: the affordance opens a
+    full-screen tree; tapping a file opens the full-screen view; back returns
+    to the tree; Esc closes the top layer only; `noSideScroll` passes on every
+    layer; focus returns to the opener on final close; the axe scan of the
+    layers is clean.
+
+- [ ] **Step E.5 — Polish (optional; the cut line)** (~0.5 day)
+  - Auto-refresh the open panel on `turn_end` (the server throttle already
+    protects the daemon); changed-files-first grouping in the tree;
+    panel-collapsed/expanded-dirs persistence (localStorage, the theme-key
+    precedent); revisit syntax highlighting (plain v1 is deliberate —
+    consistent with tool-code; highlight.js is already bundled if wanted
+    later). Everything here is safe to drop.
 
 ---
 
