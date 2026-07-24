@@ -2,14 +2,20 @@ import { useEffect, useRef, useState } from "react";
 import type { FsEntry, WireMsg } from "@protocol";
 import type { ZoneMsg } from "../../session-bus";
 import { buildFileTree, type FileNode } from "../../files-tree";
+import { useEscapeKey } from "../../use-escape";
+import { useFocusTrap } from "../../use-focus-trap";
+import { useIsPhone } from "../../use-is-phone";
 import { FileView, type FileViewState } from "./FileView";
 
-// The Explorer's shell-owned panel (E.3): a read-only browser of the
-// session's working tree. Desktop mounts it as a collapsible LEFT column
-// beside the transcript; the phone container (E.4) reuses this same component
-// full-screen. Interaction is drill-in on both — tree, then a file view with
-// a back button — so a narrow column never has to show tree and file at once,
-// and the two platforms differ only in their frame.
+// The Explorer's shell-owned panel (E.3 desktop, E.4 phone): a read-only
+// browser of the session's working tree. Interaction is drill-in on both
+// platforms — the tree, then a file view laid OVER it with a back button —
+// so a narrow surface never shows tree and file at once, the tree stays
+// mounted underneath (its scroll survives a round trip), and the two
+// platforms differ only in the frame: desktop = a docked LEFT column beside
+// the transcript; phone (≤640px) = a full-screen dialog (focus-trapped, Esc
+// = back one layer / close from the tree — the A.3 discipline the other
+// overlays use).
 //
 // SHELL-OWNED: it holds the bus (socket) and the agent paints nothing here.
 // Replies are correlated by the echoed id (a stale reply from a superseded
@@ -60,6 +66,21 @@ export function FilesPanel({
   // and is ignored.
   const listId = useRef<string | null>(null);
   const fileId = useRef<string | null>(null);
+
+  // Phone = a full-screen dialog; desktop = a docked column. Live (not the
+  // module-load constant) so a resize across the breakpoint re-frames it.
+  const phone = useIsPhone();
+  const panelRef = useRef<HTMLDivElement>(null);
+  // Trap focus only while it's an OPEN modal dialog (phone). Gating on `open`
+  // matters: this component is always mounted (it returns null when closed),
+  // so without `open` in the active flag the trap's effect would run once at
+  // mount — closed, a no-op — and never re-fire when the panel actually opens.
+  // On desktop the panel is a docked column beside a usable transcript — no trap.
+  const modal = phone && open;
+  useFocusTrap(panelRef, modal);
+  // Esc on phone drills back one layer, then closes from the tree — the
+  // stacked-layer contract. Desktop leaves Esc to Shell (busy = interrupt).
+  useEscapeKey(modal ? (selected ? () => setSelected(null) : onClose) : undefined);
 
   // Subscribe once; the refs above make the handler care only about the
   // latest request. RenderZone ignores fs_* the same way (unknown to it).
@@ -124,7 +145,15 @@ export function FilesPanel({
   const tree = buildFileTree(entries);
 
   return (
-    <aside className="files-panel" aria-label="Files">
+    <aside
+      className="files-panel"
+      aria-label="Files"
+      ref={panelRef}
+      // Phone frames it as a modal dialog; desktop is a plain docked column.
+      role={phone ? "dialog" : undefined}
+      aria-modal={phone ? true : undefined}
+      tabIndex={phone ? -1 : undefined}
+    >
       <div className="files-head">
         {selected ? (
           <button className="files-back" onClick={() => setSelected(null)} title="Back to files">
@@ -144,34 +173,9 @@ export function FilesPanel({
         </button>
       </div>
 
-      {selected ? (
-        <div className="files-file">
-          <div className="files-file-path">
-            <span className="files-file-name" title={selected.path}>
-              {selected.path}
-            </span>
-            {git && selected.status && (
-              <span className="files-file-tabs">
-                <button
-                  className={"files-tab" + (mode === "content" ? " is-active" : "")}
-                  onClick={() => openFile(selected.path, selected.status, "content")}
-                >
-                  file
-                </button>
-                <button
-                  className={"files-tab" + (mode === "diff" ? " is-active" : "")}
-                  onClick={() => openFile(selected.path, selected.status, "diff")}
-                >
-                  diff
-                </button>
-              </span>
-            )}
-          </div>
-          <div className="files-view">
-            <FileView state={view} />
-          </div>
-        </div>
-      ) : (
+      {/* The tree stays mounted; the file view (when a file is open) is laid
+          over it, so back reveals the tree at its prior scroll (E.4). */}
+      <div className="files-main">
         <div className="files-tree" role="tree" aria-label="Working tree">
           {treeError ? (
             <div className="files-empty files-error">{treeError}</div>
@@ -199,7 +203,36 @@ export function FilesPanel({
             </>
           )}
         </div>
-      )}
+
+        {selected && (
+          <div className="files-file">
+            <div className="files-file-path">
+              <span className="files-file-name" title={selected.path}>
+                {selected.path}
+              </span>
+              {git && selected.status && (
+                <span className="files-file-tabs">
+                  <button
+                    className={"files-tab" + (mode === "content" ? " is-active" : "")}
+                    onClick={() => openFile(selected.path, selected.status, "content")}
+                  >
+                    file
+                  </button>
+                  <button
+                    className={"files-tab" + (mode === "diff" ? " is-active" : "")}
+                    onClick={() => openFile(selected.path, selected.status, "diff")}
+                  >
+                    diff
+                  </button>
+                </span>
+              )}
+            </div>
+            <div className="files-view">
+              <FileView state={view} />
+            </div>
+          </div>
+        )}
+      </div>
     </aside>
   );
 }

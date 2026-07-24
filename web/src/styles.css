@@ -375,6 +375,15 @@ body {
   border-color: var(--border-hover);
 }
 
+/* Tree + file view share this box; the file view overlays the tree (below)
+   so back reveals the tree at its prior scroll. */
+.files-main {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
 .files-tree {
   flex: 1;
   min-height: 0;
@@ -459,9 +468,12 @@ body {
   font-style: italic;
 }
 
+/* Laid over the still-mounted tree (opaque), so it fully covers it on desktop
+   and phone alike; back just unmounts this layer. */
 .files-file {
-  flex: 1;
-  min-height: 0;
+  position: absolute;
+  inset: 0;
+  background: var(--bg);
   display: flex;
   flex-direction: column;
 }
@@ -3401,5 +3413,30 @@ html {
   /* No dock → nothing to pin to; the affordance is hover-only anyway. */
   .pin-btn {
     display: none;
+  }
+
+  /* Explorer on phone (E.4): the docked column becomes a full-screen
+     drill-in layer over everything, GitHub-mobile style. Same component,
+     different frame; the file view still overlays the tree within it. */
+  .files-panel {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    max-width: none;
+    z-index: 55; /* above the transcript + status bar, below the 60 modals */
+    border-right: none;
+    background: var(--bg);
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* Bigger tap targets on the touch surface (the ≥40px rule from the phone
+     pass) without disturbing the desktop density. */
+  .files-row {
+    padding: 9px 8px;
+  }
+
+  .files-head {
+    padding: 14px 12px;
   }
 }

@@ -170,6 +170,50 @@ test("phone: pairs by URL, opens the session, drives a turn with a rendered comp
   assert.ok(promptFont >= 16, `prompt textarea is ${promptFont}px — iOS will zoom on focus`);
 });
 
+test("phone (E.4): the files panel is a full-screen drill-in — tree → file → back → Esc, no side-scroll", async () => {
+  // Open from the status-bar affordance — a full-screen dialog layer, not the
+  // desktop docked column. Activated by keyboard (focus + Enter) rather than
+  // tap: focus-return-on-close is an A.3 KEYBOARD contract, and a touch tap
+  // doesn't move DOM focus to the button, so only the keyboard path has a
+  // meaningful opener to return to.
+  await phone.locator(".sb-files").focus();
+  await phone.keyboard.press("Enter");
+  await phone.waitForSelector(".files-panel[role=dialog]");
+  await noSideScroll(phone);
+  const width = await phone.evaluate(() => {
+    const el = document.querySelector(".files-panel");
+    return el ? Math.round(el.getBoundingClientRect().width) : 0;
+  });
+  assert.ok(width >= 380, `panel is ${width}px wide — not full-screen`);
+
+  // The tree is live git data (the daemon runs in the repo) — drill into a file.
+  const pkg = phone.locator(".files-file-row", { hasText: "package.json" }).first();
+  await pkg.waitFor({ timeout: 15_000 });
+  await pkg.tap();
+  await phone.waitForSelector(".files-view .fv-content");
+  await noSideScroll(phone);
+
+  // Esc drills BACK one layer (to the tree), never straight out — the
+  // stacked-layer contract; the panel stays open.
+  await phone.keyboard.press("Escape");
+  await phone.waitForSelector(".files-tree");
+  assert.equal(
+    await phone.locator(".files-file").count(),
+    0,
+    "Esc from a file must return to the tree, not close the panel",
+  );
+  assert.equal(await phone.locator(".files-panel").count(), 1, "the panel is still open");
+
+  // Esc from the tree closes the panel, and focus returns to the opener.
+  await phone.keyboard.press("Escape");
+  assert.equal(await phone.locator(".files-panel").count(), 0, "Esc from the tree closes the panel");
+  await noSideScroll(phone);
+  const focusedFiles = await phone.evaluate(
+    () => document.activeElement?.classList.contains("sb-files") ?? false,
+  );
+  assert.ok(focusedFiles, "focus returned to the files toggle on close");
+});
+
 test("phone: a permission request is answerable by thumb", async () => {
   await sendPrompt(phone, "do something dangerous");
   await phone.waitForSelector(".perm-bar", { timeout: 15_000 });

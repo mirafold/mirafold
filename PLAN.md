@@ -2630,7 +2630,7 @@ in nested lists are tabbable and axe-clean.
     beside the transcript, back + close) and the C.2 axe scan extended to the
     open panel — clean. All tiers green **349/95/39**.*
 
-- [ ] **Step E.4 — Phone: full-screen drill-in** (~0.5–1 day)
+- [x] **Step E.4 — Phone: full-screen drill-in**
   - Goal: at ≤640px the same data presents as stacked full-screen layers —
     StatusBar affordance → tree → file/diff → back — never a squeezed panel.
   - Build: branch on the 640px breakpoint with a LIVE matchMedia check (not
@@ -2646,6 +2646,32 @@ in nested lists are tabbable and axe-clean.
     to the tree; Esc closes the top layer only; `noSideScroll` passes on every
     layer; focus returns to the opener on final close; the axe scan of the
     layers is clean.
+  - *2026-07-24: DONE, on `feat/explorer-e4` (stacked on E.3). Because E.3
+    already made the panel drill-in, E.4 was mostly the frame: a live
+    `useIsPhone` hook (`web/src/use-is-phone.ts` — the tracked matchMedia the
+    plan asked for, not PromptBox's module-load constant), a `@media
+    (max-width:640px)` rule turning `.files-panel` into a full-screen fixed
+    layer (z-index 55, below the 60 modals; safe-area padding; ≥40px rows),
+    and dialog semantics via the two hooks directly (`useFocusTrap` +
+    `useEscapeKey`) rather than `ModalCard`, since drill-in Esc = back-one-layer
+    then close, which ModalCard's fixed onDismiss can't express. Also
+    restructured the panel so the tree stays MOUNTED with the file view laid
+    over it (absolute overlay) — back reveals the tree at its prior scroll,
+    and this improves desktop too. **One real bug found + fixed while
+    verifying** (the honest kind the e2e existed to catch): the trap/escape
+    were gated on `phone` alone, but FilesPanel is always mounted (returns
+    null when closed), so the hooks' `[ref, active]` deps never re-fired when
+    `open` flipped false→true — the trap ran once at mount (closed, a no-op)
+    and never engaged. Gated on `phone && open`; the e2e proved it (focus →
+    files-btn on open, → sb-files on close). Design note for E.4's "each layer
+    is a ModalCard": kept as ONE component with an overlaid file layer, not
+    two stacked ModalCards — simpler, and back-preserves-scroll falls out.
+    Verified: `phone.e2e.ts` at 390px — full-screen open, drill to a file,
+    Esc-back-to-tree (panel stays), Esc-close, `noSideScroll` at every layer,
+    focus-return on close (tested via keyboard open, the path where the A.3
+    contract is real — a touch tap doesn't focus the opener). The existing
+    tight phone status-bar row absorbed the `files` control without wrapping
+    (no flex-wrap) or side-scroll. All tiers green **349/95/40**.*
 
 - [ ] **Step E.5 — Polish (optional; the cut line)** (~0.5 day)
   - Auto-refresh the open panel on `turn_end` (the server throttle already
