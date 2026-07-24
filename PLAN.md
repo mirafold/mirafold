@@ -2498,7 +2498,7 @@ in nested lists are tabbable and axe-clean.
     Q.4 sweep (bad ids dropped whole and leak-checked against viewport B).
     All tiers green **336 / 91 / 38**.*
 
-- [ ] **Step E.2 — Git layer: tracked tree, change status, per-file diff** (~1 day)
+- [x] **Step E.2 — Git layer: tracked tree, change status, per-file diff**
   - Goal: in a repo, the tree is git's view (tracked + untracked-unignored)
     with per-file change status, and any file answers "what changed" as
     `{before, after}` — degrading to E.1 behavior when there's no repo, no git
@@ -2530,6 +2530,24 @@ in nested lists are tabbable and axe-clean.
     deleted, and renamed files all diff correctly; a session rooted in a repo
     SUBDIRECTORY labels statuses correctly; a non-repo dir and an unborn-HEAD
     repo degrade instead of erroring; all tiers green.
+  - *2026-07-24: DONE, on `feat/explorer-e1` (same PR as E.1). As specced,
+    with two additions beyond the Build text: (1) `cleanRelPath` — a pure
+    TEXTUAL containment check applied to `fs_diff` paths before git ever sees
+    them, because `git show HEAD:./<rel>` resolves against the REPO, not the
+    filesystem, so the realpath jail can't cover it and a `../` could read
+    repo files above a subdirectory session's root; (2) porcelain COPY
+    records keep their source unmarked (only a rename's source is D — a
+    copy's source still exists unchanged). One deviation carried from E.1:
+    before-side capping via `capBuffer` (same 64 KB + honesty contract as
+    capOutput, applied to the in-memory git blob). One E.1 test taught a
+    lesson worth keeping: the throttle error is sync while the served reply
+    is now async, so replies are correlated by echoed id, never arrival
+    order — the itest pins that. Observed: Tier-1 parser pins (rename
+    two-field alignment, copy source, collapse chars, cleanRelPath); Tier-2
+    `fs-git.itest.ts` against a scripted repo — git's-view tree (ignored
+    excluded, staged delete + rename source visible), modified/added/
+    deleted/renamed diffs, the SUBDIRECTORY prefix-strip session, unborn
+    HEAD, `.env`-diff refusal, `../` refusal. All tiers green **342/95/38**.*
 
 - [ ] **Step E.3 — Desktop: the Files side panel** (~1.5–2 days)
   - Goal: a collapsible left column beside the transcript — tree → click a

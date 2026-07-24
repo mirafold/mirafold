@@ -253,6 +253,24 @@ type WireMsgBody =
       binary?: boolean;
       error?: string;
     }
+  // The fs_diff reply (E.2): one file's change as BEFORE/AFTER text — never
+  // hunk/patch text (the render_diff lesson: snippets need no bookkeeping;
+  // the client diffs them with the same differ ToolBlock uses). `before` is
+  // HEAD's version (absent in HEAD / unborn HEAD → ""), `after` the working
+  // tree (deleted → ""). Sides are capped independently and honestly;
+  // `binary` on either side withholds both texts. Same per-viewport rules as
+  // fs_tree/fs_file.
+  | {
+      type: "fs_file_diff";
+      id: string;
+      path: string;
+      before?: string;
+      after?: string;
+      beforeTruncatedBytes?: number;
+      afterTruncatedBytes?: number;
+      binary?: boolean;
+      error?: string;
+    }
   // Reply to a client ping — connection liveness only, never
   // buffered or sequenced (4.4).
   | { type: "pong" }
@@ -426,6 +444,9 @@ export type ClientMsg =
   // per connection (throttled requests still get an error reply).
   | { type: "fs_list"; id: string }
   | { type: "fs_read"; id: string; path: string }
+  // E.2: "what changed in this file" — answered as fs_file_diff. Same id
+  // grammar, same jail, same throttle family as fs_read.
+  | { type: "fs_diff"; id: string; path: string }
   // The browser half's uncaught errors (window "error"/"unhandledrejection"),
   // forwarded so the daemon's flight-recorder log hears about a front-end
   // crash — otherwise a "it went blank" bug report arrives with an empty log

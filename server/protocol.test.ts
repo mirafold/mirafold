@@ -154,6 +154,17 @@ const WIRE: WireByType = {
     binary: false,
     error: "path is outside the session workspace",
   },
+  fs_file_diff: {
+    type: "fs_file_diff",
+    id: "f3",
+    path: "src/app.ts",
+    before: "export {};\n",
+    after: "export default {};\n",
+    beforeTruncatedBytes: 0,
+    afterTruncatedBytes: 0,
+    binary: false,
+    error: "no diff available for this entry",
+  },
   sessions: { type: "sessions", sessions: [SESSION_META] },
   session_ended: { type: "session_ended", sessionId: "s1" },
 };
@@ -182,6 +193,7 @@ const CLIENT: ClientByType = {
   refresh_agents: { type: "refresh_agents" },
   fs_list: { type: "fs_list", id: "f1" },
   fs_read: { type: "fs_read", id: "f2", path: "src/app.ts" },
+  fs_diff: { type: "fs_diff", id: "f3", path: "src/app.ts" },
   client_error: { type: "client_error", message: "TypeError: x is undefined", clientVersion: "0.0.1" },
 };
 

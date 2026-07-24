@@ -108,10 +108,15 @@ test("E.1: a burst is throttled but ANSWERED — then works again past the windo
   const c = await openSession(ws);
   c.send({ type: "fs_list", id: "b1" } as ClientMsg);
   c.send({ type: "fs_list", id: "b2" } as ClientMsg);
-  const first = (await c.waitFor((m) => m.type === "fs_tree" && (m as Any).id === "b1", "b1")) as Any;
-  const second = (await c.waitFor((m) => m.type === "fs_tree" && (m as Any).id === "b2", "b2")) as Any;
-  assert.equal(first.error, undefined);
-  assert.match(String(second.error), /too fast/);
+  // Since E.2 the served reply is async (git) while the throttle error is
+  // sync — b2's error legitimately arrives BEFORE b1's tree. Correlate by
+  // echoed id, never by arrival order: that's the wire contract.
+  const first = (await c.waitFor((m) => m.type === "fs_tree", "first fs_tree")) as Any;
+  const second = (await c.waitFor((m) => m.type === "fs_tree", "second fs_tree")) as Any;
+  const byId = new Map<string, Any>([first, second].map((m) => [m.id, m]));
+  assert.ok(byId.has("b1") && byId.has("b2"), "one reply per request");
+  assert.equal(byId.get("b1")!.error, undefined);
+  assert.match(String(byId.get("b2")!.error), /too fast/);
   await settle(THROTTLE_MS + 30);
   c.send({ type: "fs_list", id: "b3" } as ClientMsg);
   const third = (await c.waitFor((m) => m.type === "fs_tree" && (m as Any).id === "b3", "b3")) as Any;

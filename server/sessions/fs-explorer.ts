@@ -34,6 +34,19 @@ const SKIP_DIRS = new Set([".git", "node_modules"]);
 const SNIFF_BYTES = 8_192;
 const FS_FILE_CAP_BYTES = Number(process.env.FS_FILE_CAP_BYTES ?? 64_000);
 
+/** NUL in the sniff window = binary. E.2 applies the same rule to git blobs
+ *  (the fd path below sniffs its own window the same way). */
+export const sniffBinary = (buf: Buffer): boolean =>
+  buf.subarray(0, Math.min(buf.length, SNIFF_BYTES)).includes(0);
+
+/** Cap an in-memory blob (a `git show` result) to the file cap with the same
+ *  honesty contract as the fd read path: lossy decode, byte-true elision. */
+export function capBuffer(buf: Buffer): { text: string; truncatedBytes?: number } {
+  const kept = buf.subarray(0, Math.min(buf.length, FS_FILE_CAP_BYTES));
+  const text = new TextDecoder().decode(kept);
+  return { text, ...(buf.length > kept.length ? { truncatedBytes: buf.length - kept.length } : {}) };
+}
+
 export type TreeResult = { entries: FsEntry[]; truncated: boolean } | { error: string };
 
 export type FileResult =

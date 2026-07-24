@@ -5,7 +5,9 @@ import path from "node:path";
 import type { AgentName, ClientMsg, WireMsg } from "../protocol";
 import type { SessionEntry, SessionRegistry } from "./registry";
 import { runActionTool } from "./actions";
-import { listTree, readWorkspaceFile } from "./fs-explorer";
+import { capBuffer, listTree, readWorkspaceFile, sniffBinary } from "./fs-explorer";
+import { cleanRelPath, gitShowHead, gitTree } from "./git";
+import { isSecretFile } from "../security/permissions";
 import {
   ADAPTER_AGENTS,
   availableAgents,
@@ -276,6 +278,10 @@ export function openConnection(
   // Explorer throttles (E.1), one clock per request type.
   let lastFsListAt = 0;
   let lastFsReadAt = 0;
+  let lastFsDiffAt = 0;
+  // At most one git child per connection (E.2) — like the bang
+  // already-running refusal; a second request while busy errors, not queues.
+  let gitInFlight = false;
 
   // Identity first, then the replayed history, then the live stream. 4.4:
   // a valid afterSeq turns the replay into a tail-only resume — the client
@@ -567,25 +573,52 @@ export function openConnection(
           break;
         }
         lastFsListAt = Date.now();
-        // try/catch: this runs on the local WS path with no net above it —
-        // an escaped throw exits the daemon (the null-frame lesson).
-        try {
-          const r = listTree(entry.cwd);
-          if ("error" in r) {
-            treeErr(entry.cwd, r.error);
-          } else {
-            viewport({
-              type: "fs_tree",
-              id: msg.id,
-              root: entry.cwd,
-              entries: r.entries,
-              git: false, // E.2 turns this on when the root is a git repo
-              ...(r.truncated ? { truncated: true } : {}),
-            });
-          }
-        } catch (err) {
-          treeErr(entry.cwd, errText(err));
+        if (gitInFlight) {
+          treeErr(entry.cwd, "a git query is already running — retry shortly");
+          break;
         }
+        // Git's view first (E.2); not-a-repo / no-git degrades to the E.1
+        // walk. Async now, so: root captured before the await (the viewport
+        // may switch sessions under it), `closed` checked before replying,
+        // and every path caught — an escaped throw exits the daemon.
+        const root = entry.cwd;
+        gitInFlight = true;
+        void gitTree(root)
+          .then((g) => {
+            if (closed) return;
+            if ("error" in g) {
+              treeErr(root, g.error);
+            } else if ("entries" in g) {
+              viewport({
+                type: "fs_tree",
+                id: msg.id,
+                root,
+                entries: g.entries,
+                git: true,
+                ...(g.truncated ? { truncated: true } : {}),
+              });
+            } else {
+              const r = listTree(root);
+              if ("error" in r) {
+                treeErr(root, r.error);
+              } else {
+                viewport({
+                  type: "fs_tree",
+                  id: msg.id,
+                  root,
+                  entries: r.entries,
+                  git: false,
+                  ...(r.truncated ? { truncated: true } : {}),
+                });
+              }
+            }
+          })
+          .catch((err) => {
+            if (!closed) treeErr(root, errText(err));
+          })
+          .finally(() => {
+            gitInFlight = false;
+          });
         break;
       }
       case "fs_read": {
@@ -626,6 +659,102 @@ export function openConnection(
         } catch (err) {
           fileErr(msg.path, errText(err));
         }
+        break;
+      }
+      case "fs_diff": {
+        // Explorer per-file diff (E.2): before = HEAD's version, after = the
+        // working tree — the client diffs the pair; no hunk text on the wire.
+        if (typeof msg.id !== "string" || !FS_ID_RE.test(msg.id)) break;
+        const diffErr = (p: string, error: string) =>
+          viewport({ type: "fs_file_diff", id: msg.id, path: p, error });
+        if (typeof msg.path !== "string") {
+          diffErr("", "bad path");
+          break;
+        }
+        // Textual containment BEFORE git sees the path: `git show` resolves
+        // against the repo, not the fs, so the realpath jail can't cover it —
+        // a `../` here could read repo files above a subdirectory session.
+        const rel = cleanRelPath(msg.path);
+        if (!rel) {
+          diffErr(msg.path.slice(0, 200), "bad path");
+          break;
+        }
+        if (!entry) {
+          diffErr(rel, "no session attached");
+          break;
+        }
+        if (isSecretFile(rel)) {
+          diffErr(rel, "environment files are never readable here");
+          break;
+        }
+        if (Date.now() - lastFsDiffAt < FS_MIN_INTERVAL_MS) {
+          diffErr(rel, "requests are arriving too fast — retry shortly");
+          break;
+        }
+        lastFsDiffAt = Date.now();
+        if (gitInFlight) {
+          diffErr(rel, "a git query is already running — retry shortly");
+          break;
+        }
+        const diffRoot = entry.cwd;
+        gitInFlight = true;
+        void gitShowHead(diffRoot, rel)
+          .then((show) => {
+            if (closed) return;
+            if ("notGit" in show) {
+              diffErr(rel, "not a git repository — no diff available");
+              return;
+            }
+            if ("error" in show) {
+              diffErr(rel, show.error);
+              return;
+            }
+            const beforeBuf = "content" in show ? show.content : Buffer.alloc(0);
+            if (sniffBinary(beforeBuf)) {
+              viewport({ type: "fs_file_diff", id: msg.id, path: rel, binary: true });
+              return;
+            }
+            // The after side. A missing working file is a REAL case (deleted
+            // → after ""), not an error — but only plain absence; an
+            // existing-but-unreadable path stays an error.
+            let after = "";
+            let afterTruncatedBytes: number | undefined;
+            let exists = true;
+            try {
+              lstatSync(path.join(diffRoot, rel));
+            } catch {
+              exists = false;
+            }
+            if (exists) {
+              const r = readWorkspaceFile(diffRoot, rel);
+              if ("error" in r) {
+                diffErr(rel, r.error);
+                return;
+              }
+              if ("binary" in r) {
+                viewport({ type: "fs_file_diff", id: msg.id, path: rel, binary: true });
+                return;
+              }
+              after = r.content;
+              afterTruncatedBytes = r.truncatedBytes;
+            }
+            const before = capBuffer(beforeBuf);
+            viewport({
+              type: "fs_file_diff",
+              id: msg.id,
+              path: rel,
+              before: before.text,
+              after,
+              ...(before.truncatedBytes ? { beforeTruncatedBytes: before.truncatedBytes } : {}),
+              ...(afterTruncatedBytes ? { afterTruncatedBytes } : {}),
+            });
+          })
+          .catch((err) => {
+            if (!closed) diffErr(rel, errText(err));
+          })
+          .finally(() => {
+            gitInFlight = false;
+          });
         break;
       }
       case "client_error":
