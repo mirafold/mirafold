@@ -66,6 +66,10 @@ export function FilesPanel({
   // and is ignored.
   const listId = useRef<string | null>(null);
   const fileId = useRef<string | null>(null);
+  // The subscribe effect below runs once; this ref lets its turn_end handler
+  // (E.5 auto-refresh) read whether the panel is open without re-subscribing.
+  const openRef = useRef(open);
+  openRef.current = open;
 
   // Phone = a full-screen dialog; desktop = a docked column. Live (not the
   // module-load constant) so a resize across the breakpoint re-frames it.
@@ -107,17 +111,31 @@ export function FilesPanel({
           const f = m as FsFileDiff;
           if (!isCurrentReply(fileId.current, f.id)) return;
           setView(diffToState(f));
+        } else if (m.type === "turn_end" && openRef.current) {
+          // E.5: the agent likely just touched files — refresh the TREE so
+          // statuses and new/deleted entries reflect reality. Tree only (no
+          // scroll-jank on an open file view); the server throttle bounds it.
+          listId.current = requestList();
         }
       }),
-    [subscribe],
+    [subscribe, requestList],
   );
 
-  // Open (or switch sessions while open) → refetch the tree from scratch.
+  // A session switch means a different workspace — clear everything, expanded
+  // dirs included. (Kept separate from the open effect below so expanded state
+  // SURVIVES a close/reopen within one session — E.5.)
+  useEffect(() => {
+    setSelected(null);
+    setView({ kind: "empty" });
+    setExpanded(new Set());
+  }, [sessionKey]);
+
+  // Opening (or a session switch while open) fetches the tree. Returns to the
+  // tree view, but leaves expanded dirs intact across a close/reopen.
   useEffect(() => {
     if (!open || !sessionKey) return;
     setSelected(null);
     setView({ kind: "empty" });
-    setExpanded(new Set());
     listId.current = requestList();
   }, [open, sessionKey, requestList]);
 

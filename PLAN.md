@@ -2673,13 +2673,41 @@ in nested lists are tabbable and axe-clean.
     tight phone status-bar row absorbed the `files` control without wrapping
     (no flex-wrap) or side-scroll. All tiers green **349/95/40**.*
 
-- [ ] **Step E.5 — Polish (optional; the cut line)** (~0.5 day)
+- [x] **Step E.5 — Polish (the valuable slice; taste items parked)**
   - Auto-refresh the open panel on `turn_end` (the server throttle already
     protects the daemon); changed-files-first grouping in the tree;
     panel-collapsed/expanded-dirs persistence (localStorage, the theme-key
     precedent); revisit syntax highlighting (plain v1 is deliberate —
     consistent with tool-code; highlight.js is already bundled if wanted
     later). Everything here is safe to drop.
+  - *2026-07-24: DONE, on `feat/explorer-e4`. Did the two solid, low-risk
+    wins and DELIBERATELY parked the taste-driven ones. **Landed:** (1)
+    auto-refresh — on `turn_end`, if the panel is open, re-request the TREE
+    (statuses + new/deleted entries reflect what the agent just did); tree
+    only, so an open file view keeps its scroll, and the per-connection
+    throttle bounds it. (2) expanded dirs now SURVIVE a close/reopen within a
+    session — the reset moved to a session-switch-keyed effect, so only a
+    different workspace clears the tree UI state. **Parked, on purpose:**
+    changed-files-first / a "Changes" section is a TASTE/layout decision —
+    per the propose-then-verify rule it wants candidates shown to Kyle first,
+    not a unilateral pick; localStorage panel-open persistence was skipped
+    (auto-opening a full-screen overlay on phone reload is jank, and the
+    value is marginal); syntax highlighting stays plain by design (matches
+    tool-code; the bundled highlight.js is there if Kyle later wants it).
+    Verified: Tier-3 `app.e2e.ts` — expand `server/`, close+reopen (still
+    expanded), run a full turn (panel stays open, expansion survives the
+    auto-refresh). Auto-refresh FIRING on a changed tree isn't directly
+    asserted (the mock changes no files); the wiring reuses the proven
+    `requestList` path and the test proves it integrates without clobbering
+    tree state. All tiers green **349/95/41**.*
+
+**Phase E — Explorer is COMPLETE** (E.1–E.5, 2026-07-24). Read-only
+folder/file/diff browser shipped: wire-native per-viewport transport,
+cwd-jailed with the secret denial, git tree + statuses + before/after diffs,
+desktop collapsible left panel and phone full-screen drill-in, auto-refresh
+on turn-end. PRs #7 (E.1+E.2, merged), #9 (E.3), #10 (E.4+E.5, stacked).
+Post-v1 depth (editing, fs-watcher, syntax highlighting, changed-files
+grouping) stays parked in POST-RELEASE.md.
 
 ---
 
