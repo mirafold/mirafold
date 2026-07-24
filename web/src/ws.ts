@@ -103,6 +103,27 @@ function relayTargetFromPage(): { code: string; ws: string | null } | null {
   return code ? { code, ws: sessionStorage.getItem("mirafold-relay-ws") } : null;
 }
 
+/** The href for the "new session" affordance, which opens a FRESH TAB. A new
+ *  tab inherits neither the URL fragment nor — reliably, and never on a
+ *  `noopener` open or on mobile — the opener's sessionStorage. So on the relay
+ *  path the pairing target must be re-encoded into the new tab's fragment, or
+ *  that tab finds no code, falls back to a local `ws://` origin with no daemon
+ *  behind it, and hangs on "connecting" forever with the picker never arriving
+ *  (the mobile new-session bug, 2026-07-24). The fragment stays client-side
+ *  exactly as the QR's did — it is never sent to the relay, and the new tab
+ *  scrubs it on load. A local page has no stored code and gets the plain URL.
+ *  Reads storage lazily so tests can drive it; `base` defaults to the real
+ *  new-session URL. */
+export function newSessionHref(base = "/?new=1", storage: Storage = sessionStorage): string {
+  const code = storage.getItem("mirafold-relay-code");
+  if (!code) return base;
+  const ws = storage.getItem("mirafold-relay-ws");
+  const frag = ws
+    ? `#code=${encodeURIComponent(code)}&relay=${encodeURIComponent(ws)}`
+    : `#code=${encodeURIComponent(code)}`;
+  return base + frag;
+}
+
 /**
  * The shell's WebSocket client. Lives in the trusted shell — agent output
  * never touches it. Reconnects automatically on drop; every (re)open first
