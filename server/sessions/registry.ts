@@ -80,7 +80,33 @@ export type SessionEntry = {
   // When the last `!` command started — the burst throttle in connection.ts
   // (each bang costs a model turn, so bursts burn tokens).
   lastBangAt?: number;
+  // Phase M cockpit metadata (M.1), derived in broadcast() the same way
+  // `status` is: when the session was created (the cockpit's stable sort
+  // key), what it's doing right now, the pending-permission queue (lives as
+  // long as the 4.6 permission hold), and folded session usage.
+  createdAt: number;
+  activity?: { label: string; since: number };
+  permissions: { id: string; tool: string; detail: string }[];
+  usage?: { inputTokens: number; outputTokens: number; costUsd?: number };
 };
+
+/**
+ * Fold one per-turn `usage` report into the session total — the status bar's
+ * exact rule (T2.6, Shell.tsx): tokens are per-turn and SUM; costUsd arrives
+ * session-cumulative and is TAKEN, never summed (a later report without a
+ * cost keeps the last one). Exported for the Tier-1 pin.
+ */
+export function foldUsage(
+  prev: SessionEntry["usage"],
+  msg: { inputTokens: number; outputTokens: number; costUsd?: number },
+): NonNullable<SessionEntry["usage"]> {
+  const costUsd = msg.costUsd ?? prev?.costUsd;
+  return {
+    inputTokens: (prev?.inputTokens ?? 0) + msg.inputTokens,
+    outputTokens: (prev?.outputTokens ?? 0) + msg.outputTokens,
+    ...(costUsd !== undefined ? { costUsd } : {}),
+  };
+}
 
 /**
  * Sessions decoupled from connections (Step 4.2). A session outlives any
@@ -135,6 +161,8 @@ export class SessionRegistry {
       name: path.basename(dir) || dir,
       status: "idle",
       lastActivity: Date.now(),
+      createdAt: Date.now(),
+      permissions: [],
     };
     session.onMessage((msg) => this.broadcast(entry, msg));
     this.entries.set(id, entry);
@@ -177,6 +205,8 @@ export class SessionRegistry {
     // cooperation needed. Terminal states first; a permission hold sticks
     // until the turn moves again (4.6).
     const prev = entry.status;
+    const prevActivity = entry.activity?.label;
+    const prevPending = entry.permissions.length;
     if (msg.type === "turn_end" || msg.type === "error" || msg.type === "bang_end") {
       entry.status = "idle";
     } else if (msg.type === "permission_request") {
@@ -184,7 +214,46 @@ export class SessionRegistry {
     } else {
       entry.status = "working";
     }
-    if (entry.status !== prev) this.notifyWatchers();
+    // Cockpit metadata (M.1), same stream-derivation idea. Activity: what
+    // the session is doing right now — `since` resets only when the label
+    // CHANGES, so a re-announced identical status keeps its elapsed time.
+    // The in-session status line persists through text streaming until
+    // turn_end (RenderZone), so holding the last label here is faithful.
+    if (msg.type === "status") {
+      const label = msg.state === "tool" ? (msg.label ?? "tool") : "thinking";
+      if (prevActivity !== label) entry.activity = { label, since: Date.now() };
+    } else if (msg.type === "bang_start") {
+      // First line only, capped — a pasted script must not bloat snapshots.
+      entry.activity = {
+        label: `! ${msg.command.split("\n", 1)[0].slice(0, 80)}`,
+        since: Date.now(),
+      };
+    } else if (entry.status === "idle") {
+      entry.activity = undefined;
+    }
+    // The pending-permission queue lives exactly as long as the 4.6 hold:
+    // cleared the moment the stream moves off "permission". (A second
+    // concurrently-pending request that outlives the first answer re-surfaces
+    // only via its own timeout — the documented v1 honesty bound, the same
+    // one the status dot already has.)
+    if (msg.type === "permission_request") {
+      entry.permissions.push({
+        id: msg.id,
+        tool: msg.tool,
+        detail: msg.detail.slice(0, 200),
+      });
+    } else if (prev === "permission") {
+      entry.permissions = [];
+    }
+    if (msg.type === "usage") entry.usage = foldUsage(entry.usage, msg);
+    if (
+      entry.status !== prev ||
+      entry.activity?.label !== prevActivity ||
+      entry.permissions.length !== prevPending ||
+      msg.type === "usage"
+    ) {
+      this.notifyWatchers();
+    }
     for (const viewport of entry.viewports) viewport(msg);
   }
 
@@ -266,6 +335,15 @@ export class SessionRegistry {
         status: e.status,
         lastActivity: e.lastActivity,
         viewports: e.viewports.size,
+        createdAt: e.createdAt,
+        // Copies, and absent-when-empty (M.1): a watcher's serialized
+        // snapshot must not alias entry state, and old clients strip fields
+        // they don't know rather than seeing empty placeholders.
+        ...(e.activity ? { activity: { ...e.activity } } : {}),
+        ...(e.permissions.length
+          ? { permissions: e.permissions.map((p) => ({ ...p })) }
+          : {}),
+        ...(e.usage ? { usage: { ...e.usage } } : {}),
       }))
       .sort((a, b) => b.lastActivity - a.lastActivity);
   }

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { resolveCwd, SessionRegistry } from "./registry";
+import { foldUsage, resolveCwd, SessionRegistry } from "./registry";
 import type { Backend } from "../adapters";
 import type { WireMsg } from "../protocol";
 
@@ -144,5 +144,111 @@ test("Q.3 canResume on a small (un-evicted) buffer: seq 0 replays from the very 
   const seen: number[] = [];
   reg.attach(entry, (m) => seen.push(m.seq!), 0);
   assert.deepEqual(seen, [1, 2, 3, 4, 5]);
+  reg.end(entry.id);
+});
+
+// ---- Phase M.1: cockpit metadata derived in broadcast() --------------------
+// Driven in-process like the Q.3 ring tests above — broadcast() by hand,
+// entry state inspected directly, so every transition is deterministic. The
+// over-the-socket proof (real daemon, real watcher, mock pacing) is
+// fleet-cockpit.itest.ts.
+
+test("M.1 foldUsage sums per-turn tokens", () => {
+  const first = foldUsage(undefined, { inputTokens: 100, outputTokens: 10 });
+  assert.deepEqual(first, { inputTokens: 100, outputTokens: 10 });
+  assert.deepEqual(foldUsage(first, { inputTokens: 50, outputTokens: 5 }), {
+    inputTokens: 150,
+    outputTokens: 15,
+  });
+});
+
+test("M.1 foldUsage TAKES costUsd (session-cumulative), never sums it", () => {
+  const first = foldUsage(undefined, { inputTokens: 1, outputTokens: 1, costUsd: 0.1 });
+  const second = foldUsage(first, { inputTokens: 1, outputTokens: 1, costUsd: 0.25 });
+  assert.equal(second.costUsd, 0.25, "the cumulative figure replaces, not adds");
+  const later = foldUsage(second, { inputTokens: 1, outputTokens: 1 });
+  assert.equal(later.costUsd, 0.25, "a report without cost keeps the last one");
+});
+
+test("M.1 foldUsage invents no cost when none was ever reported", () => {
+  const folded = foldUsage(foldUsage(undefined, { inputTokens: 1, outputTokens: 1 }), {
+    inputTokens: 1,
+    outputTokens: 1,
+  });
+  assert.ok(!("costUsd" in folded), "absent cost stays absent — never a stand-in");
+});
+
+test("M.1 activity follows the status stream; since resets only on a label CHANGE; idle clears", () => {
+  const { reg, entry } = freshSession();
+  reg.broadcast(entry, { type: "status", state: "thinking" });
+  assert.equal(entry.activity?.label, "thinking");
+  const since = entry.activity!.since;
+  reg.broadcast(entry, { type: "status", state: "thinking" }); // re-announced, same label
+  assert.equal(entry.activity!.since, since, "identical label keeps its elapsed time");
+  reg.broadcast(entry, { type: "status", state: "tool", label: "Bash" });
+  assert.equal(entry.activity?.label, "Bash");
+  reg.broadcast(entry, { type: "text_delta", text: "x" });
+  assert.equal(entry.activity?.label, "Bash", "text streaming keeps the label — RenderZone parity");
+  reg.broadcast(entry, { type: "turn_end" });
+  assert.equal(entry.activity, undefined, "cleared at idle");
+  reg.end(entry.id);
+});
+
+test("M.1 bang activity: first line only, capped, cleared at bang_end", () => {
+  const { reg, entry } = freshSession();
+  reg.broadcast(entry, { type: "bang_start", command: "echo hi\nrm -rf /", id: "b1" });
+  assert.equal(entry.activity?.label, "! echo hi");
+  reg.broadcast(entry, { type: "bang_start", command: "x".repeat(200), id: "b2" });
+  assert.equal(entry.activity!.label.length, "! ".length + 80);
+  reg.broadcast(entry, { type: "bang_end", id: "b2", exitCode: 0 });
+  assert.equal(entry.activity, undefined);
+  reg.end(entry.id);
+});
+
+test("M.1 the permission queue lives exactly as long as the 4.6 hold", () => {
+  const { reg, entry } = freshSession();
+  reg.broadcast(entry, { type: "permission_request", tool: "Bash", detail: "rm -rf x", id: "p1" });
+  assert.equal(entry.status, "permission");
+  assert.deepEqual(entry.permissions, [{ id: "p1", tool: "Bash", detail: "rm -rf x" }]);
+  // A second concurrent request stacks, oldest first — no clear.
+  reg.broadcast(entry, { type: "permission_request", tool: "Write", detail: "f.txt", id: "p2" });
+  assert.deepEqual(
+    entry.permissions.map((p) => p.id),
+    ["p1", "p2"],
+  );
+  // The stream moving off the hold clears the queue (status-stickiness rule).
+  reg.broadcast(entry, { type: "tool_use", name: "Bash", detail: "rm -rf x", id: "t1" });
+  assert.equal(entry.status, "working");
+  assert.deepEqual(entry.permissions, []);
+  reg.end(entry.id);
+});
+
+test("M.1 permission detail is capped for the snapshot", () => {
+  const { reg, entry } = freshSession();
+  reg.broadcast(entry, {
+    type: "permission_request",
+    tool: "Bash",
+    detail: "y".repeat(500),
+    id: "p1",
+  });
+  assert.equal(entry.permissions[0].detail.length, 200);
+  reg.end(entry.id);
+});
+
+test("M.1 summary(): cockpit fields are absent when empty, present as COPIES when set", () => {
+  const { reg, entry } = freshSession();
+  let meta = reg.summary().find((s) => s.sessionId === entry.id)!;
+  assert.equal(typeof meta.createdAt, "number");
+  assert.ok(!("activity" in meta) && !("permissions" in meta) && !("usage" in meta));
+
+  reg.broadcast(entry, { type: "status", state: "tool", label: "Bash" });
+  reg.broadcast(entry, { type: "usage", inputTokens: 10, outputTokens: 2 });
+  reg.broadcast(entry, { type: "permission_request", tool: "Bash", detail: "d", id: "p1" });
+  meta = reg.summary().find((s) => s.sessionId === entry.id)!;
+  assert.equal(meta.activity?.label, "Bash");
+  assert.deepEqual(meta.usage, { inputTokens: 10, outputTokens: 2 });
+  assert.deepEqual(meta.permissions, [{ id: "p1", tool: "Bash", detail: "d" }]);
+  meta.permissions![0].detail = "mutated";
+  assert.equal(entry.permissions[0].detail, "d", "snapshot rows are copies, not aliases");
   reg.end(entry.id);
 });

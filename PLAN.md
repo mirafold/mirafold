@@ -2674,7 +2674,17 @@ exact rule (per-turn tokens summed, cost taken cumulative — the same numbers
 the in-session bar shows); elapsed time ticks client-side from `since`, the
 server sends no timers.
 
-- [ ] **Step M.1 — Live cockpit state on the wire (registry-derived, additive SessionMeta)**
+- [x] **Step M.1 — Live cockpit state on the wire (registry-derived, additive SessionMeta)**
+  - Status 2026-07-24: ✅ done as specified, on `feat/cockpit-m`. One
+    placement delta: the deterministic per-transition pins (activity
+    since-reset, queue stickiness, detail cap, summary copies/absence, the
+    `foldUsage` cost-taken rule — unobservable through the costless mock)
+    landed as Tier-1 additions to the existing in-process
+    `registry.test.ts` (its Q.3 pattern), with `fleet-cockpit.itest.ts`
+    keeping the over-the-socket proof (activity across a real mock turn,
+    `dangerous` permission surface + in-session answer clears, usage folded
+    across two turns, stable `createdAt`). Tier 1 330 / Tier 2 89 green,
+    typecheck clean.
   - Goal: a fleet watcher's snapshot says what each session is DOING — current
     activity + since-when, the pending-permission queue, session usage totals,
     and creation time — derived entirely in the registry.

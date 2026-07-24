@@ -361,6 +361,24 @@ export type SessionMeta = {
   status: "idle" | "working" | "permission";
   lastActivity: number;
   viewports: number;
+  // Phase M cockpit state (all optional/additive — old clients strip them,
+  // R.4h). Derived by the registry from the broadcast stream itself, so every
+  // agent carries them with no adapter cooperation (M.1).
+  // When the session was created — the cockpit's stable sort key (M.3).
+  createdAt?: number;
+  // What the session is doing RIGHT NOW ("thinking", a tool name, "! <cmd>");
+  // `since` is when that label started, so the client ticks elapsed time
+  // locally. Absent when idle. Engine-derived text — the fleet renders it as
+  // inert plain text only, never markdown (the trusted-shell rule).
+  activity?: { label: string; since: number };
+  // The pending-permission queue, oldest first — what the session is blocked
+  // on. Lives exactly as long as the 4.6 status hold: cleared when the stream
+  // moves off "permission". Same inert-text trust rule as `activity`.
+  permissions?: { id: string; tool: string; detail: string }[];
+  // Session-total usage, folded under the status bar's exact rule (T2.6):
+  // per-turn tokens SUMMED; costUsd TAKEN (it arrives session-cumulative),
+  // never summed.
+  usage?: { inputTokens: number; outputTokens: number; costUsd?: number };
 };
 
 /**
