@@ -2596,6 +2596,162 @@ in nested lists are tabbable and axe-clean.
 
 ---
 
+## Phase M — Mission control (opened 2026-07-24; Kyle-directed — the cockpit fleetview, promoted from POST-RELEASE.md)
+
+The "Cockpit fleetview" intake entry, promoted to active work: grow FleetView
+(4.6) into a true cockpit — at-a-glance live state of every session, and acting
+on sessions from the grid rather than only entering them. Design settled with
+Kyle 2026-07-24. The governing principles:
+
+- **Shell-owned end to end.** Same trust rule as the permission bar: agent
+  output never paints here, and every engine-derived string on a row (activity
+  label, permission detail) renders as inert plain text — never markdown, never
+  HTML.
+- **Extends the watch_sessions path, additively.** All live state rides
+  optional `SessionMeta` fields in the existing per-viewport `sessions`
+  snapshot (never broadcast, never replay-buffered, no `seq`); all grid acts
+  are new sessionId-addressed `ClientMsg` types on the `end_session`
+  precedent. No new stream, no new transport.
+- **Agent-neutral by construction.** Every new field is derived in the
+  registry from the WireMsg stream it already fans out (status / bang /
+  permission_request / usage) — no adapter cooperation, no per-agent code.
+- **Grid acts = viewport acts, same gates.** Acting from the grid grants
+  nothing a local viewport couldn't do by attaching. The one real gate carries
+  over: a REMOTE (relay) watcher may not drive a subscription-backed session
+  (R.4i), so quick-prompt and permission-answer are refused when
+  `remote && !allowedOverRelay(kind)` — interrupt stays ungated, like
+  `end_session` (teardown, not model use).
+- **Stable rows, needs-you first** (Kyle's ordering call): rows hold creation
+  order so eyes can park on a session; the one exception is sessions awaiting
+  permission, which surface to a group at the top — the "act here" zone. The
+  recency sort is retired on this page.
+- **The archived-session fleetview stays unprecluded.** The `sessions`
+  snapshot remains live-only; the future archived fleetview (POST-RELEASE.md)
+  arrives as its own additive message + a second page section, never by
+  reshaping this one.
+
+Accepted v1 limits, on purpose: no live output preview on rows (Kyle's call —
+activity + permission + usage are the glance set); no one-click default
+new-session (the picker stays the only create); the pending-permission display
+mirrors the 4.6 status stickiness (the queue clears when the stream moves, so a
+second concurrently-pending request can be invisible on the fleet until its own
+timeout — same honesty as the status dot today); usage mirrors the status bar's
+exact rule (per-turn tokens summed, cost taken cumulative — the same numbers
+the in-session bar shows); elapsed time ticks client-side from `since`, the
+server sends no timers.
+
+- [ ] **Step M.1 — Live cockpit state on the wire (registry-derived, additive SessionMeta)**
+  - Goal: a fleet watcher's snapshot says what each session is DOING — current
+    activity + since-when, the pending-permission queue, session usage totals,
+    and creation time — derived entirely in the registry.
+  - Build: `protocol.ts` additive optional `SessionMeta` fields:
+    `createdAt?: number`, `activity?: { label: string; since: number }`,
+    `permissions?: { id: string; tool: string; detail: string }[]`,
+    `usage?: { inputTokens: number; outputTokens: number; costUsd?: number }`.
+    `registry.ts`: `SessionEntry` gains the backing fields; the existing status
+    derivation in `broadcast()` grows the capture — a `status` msg sets
+    activity (`thinking` → "thinking", `tool` → its label), `bang_start` sets
+    `! <command>`, terminal messages (turn_end/error/bang_end) clear it;
+    `permission_request` appends `{id, tool, detail}` to the queue; any message
+    that flips status off "permission" clears the queue (the 4.6 stickiness
+    rule, mirrored); a `usage` msg adds per-turn tokens and TAKES `costUsd`
+    (session-cumulative per T2.6 — never summed; Shell.tsx's exact rule).
+    `notifyWatchers()` fires on metadata change (activity label change, queue
+    change, usage turn) through the existing 100 ms coalescer — text_delta
+    storms change nothing and stay silent. `summary()` carries the new fields;
+    all absent when empty, so old clients strip them (R.4h).
+  - Files: `server/protocol.ts` (additive), `server/sessions/registry.ts`.
+  - Done when: Tier 2 (new `fleet-cockpit.itest.ts`, real daemon + real
+    sockets, mock-forced): a watcher sees activity appear during a working turn
+    and clear at turn_end; a `dangerous` mock prompt puts `{tool, detail}` on
+    the session's meta and an in-session answer clears it; usage totals
+    accumulate across two turns with cost taken-not-summed; `createdAt` is
+    stable across snapshots. `yarn typecheck` clean; all existing tests green.
+
+- [ ] **Step M.2 — Acting from the grid, server side (sessionId-addressed ClientMsg)**
+  - Goal: a fleet watcher can answer a permission, interrupt a turn, and
+    dispatch a prompt on any session by id — validated, throw-wrapped,
+    relay-gated where it drives the model — without attaching.
+  - Build: `protocol.ts` additive `ClientMsg` types:
+    `{ type: "answer_permission"; sessionId: string; id: string; allow: boolean }`,
+    `{ type: "interrupt_session"; sessionId: string }`,
+    `{ type: "prompt_session"; sessionId: string; text: string }`.
+    `connection.ts`: own NEW switch cases only (nothing existing is touched):
+    validate inputs first (typeof checks; prompt text trimmed non-empty with a
+    sane length cap); unknown sessionId → error reply, never a crash; then
+    `answer_permission` → the session's `resolvePermission` plus dropping the
+    id from the entry's pending queue (+ notify); `interrupt_session` →
+    `session.interrupt()`; `prompt_session` → the `prompt` case's exact
+    semantics addressed by id (broadcast `user_prompt` + `pushPrompt`). The
+    relay gate: on a `remote` connection, `prompt_session` and
+    `answer_permission` against `!allowedOverRelay(entry.kind)` get the attach
+    gate's refusal wording as an error reply.
+  - Files: `server/protocol.ts` (additive), `server/sessions/connection.ts`
+    (new cases only), `server/sessions/registry.ts` (queue-drop helper).
+  - Done when: Tier 2 `fleet-cockpit.itest.ts` over a real socket: a watcher's
+    allow resolves a mock `dangerous` permission (the session's own viewport
+    sees the tool run) and deny refuses it; `interrupt_session` halts a working
+    mock turn and the session still answers the next prompt;
+    `prompt_session` round-trips (user_prompt broadcast + turn runs); unknown
+    sessionId, malformed fields, and empty text each get an error reply with
+    the daemon still alive; the remote gate refuses prompt/answer on a
+    subscription-kind session for a remote-flagged connection. All tiers green.
+
+- [ ] **Step M.3 — The cockpit rows (front end)**
+  - Goal: the fleet page shows each session's live state and carries the three
+    acts — needs-you rows answerable in place — in the enriched-row shape,
+    stable-ordered with needs-you first.
+  - Build: `FleetView.tsx`: client-side sort — needs-you group first (oldest
+    pending first), then creation order (`createdAt`, wire order as the
+    old-daemon fallback); the row gains the activity readout ("⚙ Bash · 14s" —
+    label from meta, elapsed ticked client-side ~1 s while any row is active)
+    and compact usage ("12.3k tok · $0.42" — own small formatter; never import
+    from StatusBar). A needs-you row grows a second line: `tool · detail`
+    (inert plain text, ellipsized, `+N more` when the queue is deeper) with
+    Allow / Deny buttons sending `answer_permission` (disabled once clicked
+    until the next snapshot). A working row gets an armed two-click stop
+    (`useArmedConfirm`, the end-button precedent) sending
+    `interrupt_session`. A per-row quick-prompt affordance (❯) expands an
+    inline one-line input — Enter sends `prompt_session` and collapses, Escape
+    collapses, autofocus on open. Fleet-action error replies render as a
+    dismissible line in the fleet header region (only picker-open errors keep
+    routing to the onboarding card). An `sr-only` polite live region announces
+    the needs-you count change. All controls carry real aria-labels naming the
+    session. New CSS blocks only, appended (`.fleet-activity`, `.fleet-usage`,
+    `.fleet-perm…`, `.fleet-stop`, `.fleet-prompt…`).
+  - Files: `web/src/components/FleetView.tsx`, `web/src/styles.css` (additive
+    blocks only).
+  - Done when: Tier 3 (new `server/testing/fleet.e2e.ts`, its own suite,
+    desktop width): a mock turn shows the activity label live and clears to
+    idle; a `dangerous` prompt surfaces the needs-you second line with the
+    tool detail and the row moves to the top group; Allow from the grid runs
+    the tool (observed in the session tab) and the line clears; Deny refuses
+    it; the armed stop interrupts a working turn; a quick prompt from the row
+    lands as a user_prompt strip in the session tab; an idle session's row
+    holds its place while another works (no jumping); the axe scan of the
+    cockpit with a permission row visible has no serious/critical hits.
+
+- [ ] **Step M.4 — Phone width**
+  - Goal: at ≤640 px the cockpit rows fold without side-scroll — the glance
+    set survives, targets stay ≥40 px, the second-line controls remain usable.
+  - Build: additive media-query CSS for the new row elements (the existing
+    fleet phone folding is the precedent); tests ride `fleet.e2e.ts` with a
+    phone-sized context, reusing the existing `noSideScroll`/target-size
+    helpers.
+  - Files: `web/src/styles.css` (additive), `server/testing/fleet.e2e.ts`.
+  - Done when: `fleet.e2e.ts` at phone width: Allow/Deny tap targets ≥40 px,
+    `noSideScroll` passes with activity + permission + usage visible, the
+    quick prompt opens and sends, the axe scan is clean.
+
+- [ ] **Step M.5 — Polish (optional; the cut line)**
+  - A needs-you signal on the fleet page's TAB: title count ("Mirafold — 1
+    needs you") + the corner-badge favicon via `tab-status.ts` (the session
+    page's existing mechanism, reused); the row's viewport count (meta already
+    carries it); quick-prompt remembering its open state per row. Everything
+    here is safe to drop.
+
+---
+
 ## Stretch goals (unscheduled — polish, no milestone gates on these)
 
 Pick one up only when the phases above are quiet.
