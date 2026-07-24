@@ -39,10 +39,20 @@ body {
   padding: 0 24px;
 }
 
+/* Explorer (E.3) + transcript. The files panel is a fixed-width left column;
+   the zone-row fills the rest so the transcript keeps rendering beside it.
+   With the panel closed this collapses to just the transcript, full-width. */
+.zone-outer {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
 /* Output area: transcript column + (only while something is pinned) the
    dock or its collapsed edge tab. */
 .zone-row {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   display: flex;
 }
@@ -305,6 +315,230 @@ body {
 .pin-tab:hover {
   color: var(--fg-body);
   background: var(--surface);
+}
+
+/* ── Explorer files panel (E.3) ────────────────────────────────────────── */
+.files-panel {
+  flex-shrink: 0;
+  width: 340px;
+  max-width: 42vw;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+  animation: files-in 0.18s ease-out;
+}
+
+@keyframes files-in {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+}
+
+.files-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 10px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.files-head-spacer {
+  flex: 1;
+}
+
+.files-title {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82em;
+  color: var(--fg-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.files-back,
+.files-btn {
+  background: transparent;
+  color: var(--fg-dim);
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  padding: 2px 8px;
+  cursor: pointer;
+  font-size: 0.82em;
+}
+
+.files-back:hover,
+.files-btn:hover {
+  color: var(--fg-body);
+  border-color: var(--border-hover);
+}
+
+.files-tree {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 6px 4px 12px;
+}
+
+.files-ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.files-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 3px 6px;
+  background: transparent;
+  border: none;
+  color: var(--fg-body);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.86em;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 5px;
+}
+
+.files-row:hover {
+  background: var(--surface);
+}
+
+.files-caret {
+  flex-shrink: 0;
+  width: 1em;
+  color: var(--fg-dim);
+}
+
+.files-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.files-dir .files-name {
+  color: var(--fg-body);
+}
+
+.files-status {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 0.9em;
+  font-weight: 600;
+  padding-left: 6px;
+}
+
+.files-status-M {
+  color: var(--accent);
+}
+.files-status-A {
+  color: var(--ok, var(--accent));
+}
+.files-status-D {
+  color: var(--danger, var(--fg-dim));
+}
+.files-status-U {
+  color: var(--fg-dim);
+}
+
+.files-empty {
+  padding: 12px 10px;
+  color: var(--fg-dim);
+  font-size: 0.85em;
+}
+
+.files-error {
+  color: var(--danger, var(--fg-dim));
+}
+
+.files-truncated {
+  font-style: italic;
+}
+
+.files-file {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.files-file-path {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.files-file-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82em;
+  color: var(--fg-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.files-file-tabs {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.files-tab {
+  background: transparent;
+  color: var(--fg-dim);
+  border: 1px solid var(--border-2);
+  border-radius: 5px;
+  padding: 1px 8px;
+  cursor: pointer;
+  font-size: 0.8em;
+}
+
+.files-tab.is-active {
+  color: var(--fg-body);
+  border-color: var(--border-hover);
+  background: var(--surface);
+}
+
+.files-view {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 8px 14px;
+}
+
+.fv-content {
+  white-space: pre;
+  margin: 0;
+}
+
+.fv-blank {
+  padding: 16px 10px;
+  color: var(--fg-dim);
+  font-size: 0.85em;
+}
+
+.fv-error {
+  color: var(--danger, var(--fg-dim));
+}
+
+.fv-note {
+  padding: 6px 8px;
+  margin-bottom: 8px;
+  color: var(--fg-dim);
+  font-size: 0.8em;
+  border-left: 2px solid var(--border-hover);
+}
+
+.fv-elided {
+  color: var(--fg-dim);
+  font-style: italic;
 }
 
 .rc {
@@ -2304,6 +2538,37 @@ html {
   color: var(--error);
   border-color: var(--err-border-strong);
   background: var(--err-bg);
+}
+
+/* Explorer files toggle (E.3) — a left-cluster button, IDE sidebar-toggle
+   convention. Reuses the .sb-new/.sb-end pill shape; lit when the panel is
+   open, matching the theme-pill's is-active treatment. */
+.sb-files {
+  display: inline-flex;
+  align-items: center;
+  height: 34px;
+  background: transparent;
+  border: 1px solid var(--border-2);
+  border-radius: 7px;
+  padding: 0 12px;
+  color: var(--fg-mid);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+
+.sb-files:hover {
+  color: var(--fg);
+  border-color: var(--border-hover);
+  background: var(--surface-hover);
+}
+
+.sb-files.is-active {
+  color: var(--fg);
+  border-color: var(--border-hover);
+  background: var(--surface-hover);
 }
 
 /* #9: mission-control home — an <a> styled as an icon button, the status
