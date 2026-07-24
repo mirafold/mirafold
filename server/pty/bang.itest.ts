@@ -147,7 +147,10 @@ test("a failing shell spawn errors the session, never the daemon (R.4f)", async 
   assert.equal(end.id, "bf");
   assert.equal(end.exitCode, null);
   // session-stream errors are mirrored to the daemon log, timestamped (R.4g).
-  assert.match(bad.logs(), /Z\] \[session \w+\] error: ! failed to start/);
+  // waitForLog, not an immediate logs() assert: the log rides stdout's pipe
+  // while the error frame rides the socket, and under CPU load the frame
+  // wins the race into this process (the C.1 runner flake).
+  await bad.waitForLog(/Z\] \[session \w+\] error: ! failed to start/, "spawn-fail logged");
 
   // The daemon survived the keystroke: the same session still runs a full
   // turn over the same socket.

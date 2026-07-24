@@ -41,15 +41,17 @@ test("supportability: hello carries the version; errors and skew reach the log (
   t.send({ type: "create", cwd: "/nonexistent/genui-r4g" } as never);
   const err = (await t.type("error")) as Any;
   assert.match(err.message, /no such directory/);
-  assert.match(
-    d.logs(),
+  // waitForLog, not an immediate logs(): the log rides stdout's pipe while
+  // the error frame rides the socket — under load the frame wins the race.
+  await d.waitForLog(
     /\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\] \[ws\] error: no such directory: \/nonexistent\/genui-r4g/,
+    "bad-cwd error logged",
   );
 
   // A client announcing a different build is logged as version skew.
   t.send({ type: "attach", sessionId: "stale-id", clientVersion: "0.0.0-skew" } as never);
   await t.type("session_created"); // stale id → fallback create still works
-  assert.match(d.logs(), /version skew: client v0\.0\.0-skew, daemon v\d+\.\d+\.\d+/);
+  await d.waitForLog(/version skew: client v0\.0\.0-skew, daemon v\d+\.\d+\.\d+/, "version skew logged");
 
   // A forwarded front-end crash (client_error) lands in the same log, and a
   // malformed report is dropped without a wobble. ping/pong sequences them:
@@ -57,8 +59,11 @@ test("supportability: hello carries the version; errors and skew reach the log (
   t.send({ type: "client_error", message: "TypeError: boom in bundle.js:1:2", clientVersion: "0.0.0-skew" } as never);
   t.send({ type: "client_error", message: 12345 } as never);
   t.send({ type: "ping" } as never);
-  await t.type("pong");
-  assert.match(d.logs(), /\[ws\] error: client error \(client v0\.0\.0-skew\): TypeError: boom in bundle\.js:1:2/);
+  await t.type("pong"); // proves both client_errors (incl. the malformed one) were processed, in order
+  await d.waitForLog(
+    /\[ws\] error: client error \(client v0\.0\.0-skew\): TypeError: boom in bundle\.js:1:2/,
+    "client_error logged",
+  );
   t.close();
 });
 
