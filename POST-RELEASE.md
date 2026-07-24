@@ -51,7 +51,15 @@ has a home in this plan, the entry points there instead of duplicating it.
 
 - [ ] **Cockpit fleetview** — grow FleetView (4.6) into a true cockpit:
   at-a-glance live state of every session, and acting on sessions from the
-  grid rather than only entering them.
+  grid rather than only entering them. The v1 (live activity / pending
+  permission / usage on enriched rows; permission allow/deny, interrupt, and
+  quick prompt from the grid) was promoted to active work 2026-07-24 and is
+  tracked in PLAN.md as **Phase M — Mission control**; this entry parks the
+  post-v1 depth — a live output-preview line on rows, one-click default
+  new-session, a card-grid presentation (all considered and deliberately not
+  picked for v1). The **archived-session fleetview** below stays its own
+  entry — Phase M leaves the `sessions` snapshot live-only so it can arrive
+  additively.
 
 - [ ] **Folder & file & diff view** — shell-owned project browsing: the
   working tree, file contents, and diffs of what the agent changed. The
