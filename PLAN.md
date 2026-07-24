@@ -885,6 +885,21 @@ with it. Both sequence BEFORE R.5.**
     Verified by computed-style probe at 607px and 769px viewports + all
     tiers green; worst-case content (3 credential-less agents, longest
     hints) scrolls internally with the gutter intact at any height.
+  - Finding #3 (proactive sweep after #2, same day): the settings and pair
+    dialogs share the exact defect #2 found in the onboarding card — the
+    S.4 card idiom had `max-width` but no `max-height`. Measured live at a
+    560px viewport: settings (583px natural — the theme list) overflowed
+    the window by 11px top AND bottom; pair (430px) fit but was one short
+    window from the same. Fixed with the same two-line cap on the shared
+    idiom (`max-height: 100%` + internal scroll — inert until a card would
+    overflow). Sweep completeness: these were the ONLY three
+    fixed-position overlay surfaces in the shell (onboarding, settings,
+    pair); the in-session model picker, question component, permission
+    bar, and demo banner are all in-flow and immune. Probed at 560/769,
+    e2e + unit green. NOT done (deliberately): a compact-styles pass for
+    the settings card at short heights — it would touch the theme picker's
+    layout, which is Kyle-locked territory; internal scroll is the
+    accepted behavior there.
   - **Opened 2026-07-23.** Mechanics locked with Kyle: distribution is a
     hand-sent `npm pack` tarball (v0.1.0, shell @ 50950a7 / relay @ 3f92992
     deployed) — NOT npm; testers subscribe FOR REAL via the direct `/pay`

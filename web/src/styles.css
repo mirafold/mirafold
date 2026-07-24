@@ -2673,6 +2673,13 @@ html {
 .pair-card,
 .settings-card {
   width: 100%;
+  /* Same hard floor as .onb-card: never taller than the backdrop's padded
+     box, so short viewports keep the 24px gutter and the card scrolls
+     internally instead of sitting flush (settings measures 583px natural —
+     taller than a ~600px un-maximized Mac window). */
+  max-height: 100%;
+  overflow-y: auto;
+  scrollbar-width: thin;
   background: var(--surface);
   border: 1px solid var(--border-2);
   border-radius: 12px;
