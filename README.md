@@ -423,6 +423,13 @@ server/            the local daemon (Node, run with tsx)
     connection.ts      one viewport's server side, transport-agnostic (R.1) —
                        shared verbatim by local sockets and relay viewports
     actions.ts         Phase 2 mediation: allowlisted tools component actions may run
+    fs-handlers.ts     Explorer request layer (Phase E): the fs_list/fs_read/
+                       fs_diff handlers connection.ts delegates to — per-viewport
+                       replies, jailed + throttled, one reply each
+    fs-explorer.ts     Explorer data layer: the capped tree walk + jailed,
+                       secret-safe, binary-sniffing file reads (E.1)
+    git.ts             Explorer git layer (E.2): bounded one-shot git calls for
+                       the tracked tree + statuses + HEAD-vs-working diffs
     ws-liveness.ts     heartbeat sweep shared by the local and relay socket paths
   security/          the two trust gates (H.6):
     auth.ts            the 4.5 auth predicates (token cookie, loopback Origin) —
@@ -486,6 +493,9 @@ web/               the browser app (React 19 + Vite)
                        dismiss + dialog ARIA + Escape + focus trap, shared by
                        ConnectDevice/ThemePicker/Onboarding — mount only while
                        open
+    files/             the Explorer panel (Phase E): FilesPanel.tsx (tree +
+                       drill-in — docked left column on desktop, full-screen
+                       dialog on phone) + FileView.tsx (content / diff / binary)
   src/registry/      Card, List, Table, LinkGroup, Chart, TodoList, Md +
                      RenderBlock (validate → fallback → error boundary) +
                      ActionRow/context
@@ -507,7 +517,13 @@ web/               the browser app (React 19 + Vite)
                      the end-session buttons in StatusBar + FleetView
   src/diff.ts        the LCS line differ shared by ToolBlock's Edit/Write
                      diffs and the `diff` registry component (the per-line
-                     JSX lives once, as `DiffLines` in registry/Diff.tsx)
+                     JSX lives once, as `DiffLines` in registry/Diff.tsx) —
+                     the Explorer's FileView reuses it too (E.3)
+  src/files-tree.ts  the Explorer's shell-owned flat→nested tree builder
+                     (dirs-first, git status on leaves); a deliberate copy of
+                     registry/FileTree's approach, kept off the agent surface (E.3)
+  src/use-is-phone.ts  live matchMedia phone-width hook — re-renders on a
+                     breakpoint cross, unlike PromptBox's module-load constant (E.4)
   src/tildify.ts     ~-abbreviation for cwd display (prompt + status bar)
   src/ws.ts          SocketClient: typed send/onMessage, hello, seq cursor,
                      heartbeat (half-open detection) + capped backoff (4.4);

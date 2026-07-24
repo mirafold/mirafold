@@ -888,6 +888,45 @@ test("E.3: the files panel lists the working tree, opens a file beside the trans
   assert.equal(await page.locator(".files-panel").count(), 0);
 });
 
+test("E.5: expanded dirs survive a close/reopen, and a turn's auto-refresh keeps tree state", async () => {
+  await page.locator(".sb-files").click();
+  await page.waitForSelector(".files-panel");
+
+  // Expand a known top-level directory (the repo has server/). The row's text
+  // includes the caret glyph, so match the name as a substring.
+  const serverDir = page.locator(".files-dir", { hasText: "server" }).first();
+  await serverDir.waitFor({ timeout: 15_000 });
+  await serverDir.click();
+  // A child appears — protocol.ts is a tracked file directly under server/.
+  await page.waitForSelector(".files-file-row:has-text('protocol.ts')");
+
+  // Close and reopen within the same session — the expansion is remembered
+  // (E.5: reset is keyed on session switch, not on open).
+  await page.locator(".sb-files").click();
+  assert.equal(await page.locator(".files-panel").count(), 0);
+  await page.locator(".sb-files").click();
+  await page.waitForSelector(".files-tree");
+  assert.ok(
+    await page.locator(".files-file-row:has-text('protocol.ts')").first().isVisible(),
+    "expanded dir was collapsed on reopen",
+  );
+
+  // A turn auto-refreshes the tree (E.5) without collapsing what's open or
+  // closing the panel: run a full mock turn, then the expansion still holds.
+  await page.locator("textarea").click();
+  await page.keyboard.type("plan it step by step");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector("text=Plan complete — all four steps done.", { timeout: 30_000 });
+  await page.waitForTimeout(400); // let the turn_end refresh land
+  assert.equal(await page.locator(".files-panel").count(), 1, "auto-refresh closed the panel");
+  assert.ok(
+    await page.locator(".files-file-row:has-text('protocol.ts')").first().isVisible(),
+    "auto-refresh collapsed the expanded dir",
+  );
+
+  await page.locator(".sb-files").click(); // tidy up for later tests
+});
+
 test("a notice in the engine's own words is badged; the shell's own words aren't", async () => {
   await page.locator("textarea").click();
   await page.keyboard.type("show me a notice");

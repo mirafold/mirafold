@@ -2630,7 +2630,7 @@ in nested lists are tabbable and axe-clean.
     beside the transcript, back + close) and the C.2 axe scan extended to the
     open panel — clean. All tiers green **349/95/39**.*
 
-- [ ] **Step E.4 — Phone: full-screen drill-in** (~0.5–1 day)
+- [x] **Step E.4 — Phone: full-screen drill-in**
   - Goal: at ≤640px the same data presents as stacked full-screen layers —
     StatusBar affordance → tree → file/diff → back — never a squeezed panel.
   - Build: branch on the 640px breakpoint with a LIVE matchMedia check (not
@@ -2646,14 +2646,84 @@ in nested lists are tabbable and axe-clean.
     to the tree; Esc closes the top layer only; `noSideScroll` passes on every
     layer; focus returns to the opener on final close; the axe scan of the
     layers is clean.
+  - *2026-07-24: DONE, on `feat/explorer-e4` (stacked on E.3). Because E.3
+    already made the panel drill-in, E.4 was mostly the frame: a live
+    `useIsPhone` hook (`web/src/use-is-phone.ts` — the tracked matchMedia the
+    plan asked for, not PromptBox's module-load constant), a `@media
+    (max-width:640px)` rule turning `.files-panel` into a full-screen fixed
+    layer (z-index 55, below the 60 modals; safe-area padding; ≥40px rows),
+    and dialog semantics via the two hooks directly (`useFocusTrap` +
+    `useEscapeKey`) rather than `ModalCard`, since drill-in Esc = back-one-layer
+    then close, which ModalCard's fixed onDismiss can't express. Also
+    restructured the panel so the tree stays MOUNTED with the file view laid
+    over it (absolute overlay) — back reveals the tree at its prior scroll,
+    and this improves desktop too. **One real bug found + fixed while
+    verifying** (the honest kind the e2e existed to catch): the trap/escape
+    were gated on `phone` alone, but FilesPanel is always mounted (returns
+    null when closed), so the hooks' `[ref, active]` deps never re-fired when
+    `open` flipped false→true — the trap ran once at mount (closed, a no-op)
+    and never engaged. Gated on `phone && open`; the e2e proved it (focus →
+    files-btn on open, → sb-files on close). Design note for E.4's "each layer
+    is a ModalCard": kept as ONE component with an overlaid file layer, not
+    two stacked ModalCards — simpler, and back-preserves-scroll falls out.
+    Verified: `phone.e2e.ts` at 390px — full-screen open, drill to a file,
+    Esc-back-to-tree (panel stays), Esc-close, `noSideScroll` at every layer,
+    focus-return on close (tested via keyboard open, the path where the A.3
+    contract is real — a touch tap doesn't focus the opener). The existing
+    tight phone status-bar row absorbed the `files` control without wrapping
+    (no flex-wrap) or side-scroll. All tiers green **349/95/40**.*
 
-- [ ] **Step E.5 — Polish (optional; the cut line)** (~0.5 day)
+- [x] **Step E.5 — Polish (the valuable slice; taste items parked)**
   - Auto-refresh the open panel on `turn_end` (the server throttle already
     protects the daemon); changed-files-first grouping in the tree;
     panel-collapsed/expanded-dirs persistence (localStorage, the theme-key
     precedent); revisit syntax highlighting (plain v1 is deliberate —
     consistent with tool-code; highlight.js is already bundled if wanted
     later). Everything here is safe to drop.
+  - *2026-07-24: DONE, on `feat/explorer-e4`. Did the two solid, low-risk
+    wins and DELIBERATELY parked the taste-driven ones. **Landed:** (1)
+    auto-refresh — on `turn_end`, if the panel is open, re-request the TREE
+    (statuses + new/deleted entries reflect what the agent just did); tree
+    only, so an open file view keeps its scroll, and the per-connection
+    throttle bounds it. (2) expanded dirs now SURVIVE a close/reopen within a
+    session — the reset moved to a session-switch-keyed effect, so only a
+    different workspace clears the tree UI state. **Parked, on purpose:**
+    changed-files-first / a "Changes" section is a TASTE/layout decision —
+    per the propose-then-verify rule it wants candidates shown to Kyle first,
+    not a unilateral pick; localStorage panel-open persistence was skipped
+    (auto-opening a full-screen overlay on phone reload is jank, and the
+    value is marginal); syntax highlighting stays plain by design (matches
+    tool-code; the bundled highlight.js is there if Kyle later wants it).
+    Verified: Tier-3 `app.e2e.ts` — expand `server/`, close+reopen (still
+    expanded), run a full turn (panel stays open, expansion survives the
+    auto-refresh). Auto-refresh FIRING on a changed tree isn't directly
+    asserted (the mock changes no files); the wiring reuses the proven
+    `requestList` path and the test proves it integrates without clobbering
+    tree state. All tiers green **349/95/41**.*
+
+**Phase E — Explorer is COMPLETE** (E.1–E.5, 2026-07-24). Read-only
+folder/file/diff browser shipped: wire-native per-viewport transport,
+cwd-jailed with the secret denial, git tree + statuses + before/after diffs,
+desktop collapsible left panel and phone full-screen drill-in, auto-refresh
+on turn-end. PRs #7 (E.1+E.2, merged), #9 (E.3), #10 (E.4+E.5, stacked).
+Post-v1 depth (editing, fs-watcher, syntax highlighting, changed-files
+grouping) stays parked in POST-RELEASE.md.
+
+*2026-07-24 — post-completion security audit of the whole Phase E delta:
+**no exploitable vulnerability.** The realpath jail, `.env` basename denial,
+`execFile` git calls (no shell), `cleanRelPath` before `git show`, throttles,
+reply caps, and server-side validation of all client input all hold — the
+itests that perform the `../`/absolute/symlink-out/`.env` attacks are the
+demonstration. Two items surfaced: (a) FIXED same session — `listTree`'s walk
+counted only files, so a non-git workspace that's a huge tree of empty
+directories could be walked unbounded and synchronously (the git path is
+bounded by its subprocess limits); a total-node cap (`FS_TREE_MAX_NODES`)
+now bounds the walk, pinned by a non-vacuous Tier-1 test. (b) DOC — the
+Explorer's `.env`-basename read scope matches the existing `Read` tool/`!cat`
+(terminal parity, daemon's own `.env` protected, Explorer narrower); recorded
+in SECURITY.md's known-trust-decisions, not a bug. **Deferred (this item):
+make the non-git walk asynchronous (yield to the event loop) IF the node cap
+ever proves too blunt — evidence-gated, likely unnecessary given the cap.***
 
 ---
 

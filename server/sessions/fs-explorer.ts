@@ -21,6 +21,13 @@ import { isSecretFile } from "../security/permissions";
 // both. Honest: `truncated: true`, never a silent cut.
 const FS_TREE_MAX_ENTRIES = Number(process.env.FS_TREE_MAX_ENTRIES ?? 4_000);
 const FS_TREE_MAX_PATH_BYTES = Number(process.env.FS_TREE_MAX_PATH_BYTES ?? 400_000);
+// Bounds the WALK's cost, not just the reply. The entry/byte caps count only
+// FILES, so a tree of many (mostly empty) directories would be walked in full
+// — the file cap never trips. This caps total nodes VISITED (files + dirs), so
+// the synchronous walk can't block the event loop on a pathological non-git
+// workspace (the git path is bounded separately by its subprocess limits).
+// Well above the entry cap: real projects hit files first (2026-07-24 audit).
+const FS_TREE_MAX_NODES = Number(process.env.FS_TREE_MAX_NODES ?? 40_000);
 
 // Directories nobody browses that would drown the tree (and blow the caps
 // instantly). E.2's git view gets this pruning for free via .gitignore;
@@ -63,14 +70,16 @@ export type FileResult =
  */
 export function listTree(
   root: string,
-  caps: { maxEntries?: number; maxPathBytes?: number } = {},
+  caps: { maxEntries?: number; maxPathBytes?: number; maxNodes?: number } = {},
 ): TreeResult {
   const maxEntries = caps.maxEntries ?? FS_TREE_MAX_ENTRIES;
   const maxPathBytes = caps.maxPathBytes ?? FS_TREE_MAX_PATH_BYTES;
+  const maxNodes = caps.maxNodes ?? FS_TREE_MAX_NODES;
   const realRoot = inside(root, ".");
   if (!realRoot) return { error: "the session workspace is not readable" };
   const entries: FsEntry[] = [];
   let pathBytes = 0;
+  let nodesSeen = 0;
   let truncated = false;
   const walk = (dir: string, relPrefix: string) => {
     if (truncated) return;
@@ -83,6 +92,12 @@ export function listTree(
     dirents.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     for (const d of dirents) {
       if (truncated) return;
+      // Every dirent counts toward the walk budget — directories included, so
+      // an empty-dir-heavy tree can't be walked without bound (audit finding).
+      if (++nodesSeen > maxNodes) {
+        truncated = true;
+        return;
+      }
       const rel = relPrefix ? `${relPrefix}/${d.name}` : d.name;
       // Dirent types come from lstat semantics: a symlink-to-dir reports as
       // a symlink (not a directory), which is exactly the leaf rule.

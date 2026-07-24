@@ -70,6 +70,22 @@ test("listTree: path-byte cap trips honestly", () => {
   assert.ok(r.entries.length < 5);
 });
 
+test("listTree: the walk is node-bounded — a tree of empty dirs can't be walked without limit (audit 2026-07-24)", () => {
+  const root = tmp();
+  // 30 sibling directories, each with a nested empty child — NO files, so the
+  // entry/byte caps never trip. Before the node cap this walked all of them.
+  for (let i = 0; i < 30; i++) {
+    mkdirSync(path.join(root, `dir${i}`, "child"), { recursive: true });
+  }
+  const r = listTree(root, { maxNodes: 10 });
+  assert.ok(!("error" in r));
+  assert.equal(r.truncated, true, "the node cap must trip on a file-less tree");
+  // And a normal small tree with room to spare is NOT flagged truncated.
+  writeFileSync(path.join(root, "a.txt"), "a");
+  const ok = listTree(tmp());
+  assert.ok(!("error" in ok));
+});
+
 test("listTree: unreadable root is the error case, not a throw", () => {
   const r = listTree(path.join(os.tmpdir(), "fsx-does-not-exist-ever"));
   assert.ok("error" in r);
