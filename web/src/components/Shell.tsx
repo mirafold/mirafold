@@ -3,6 +3,7 @@ import type { AgentInfo, AgentName } from "@protocol";
 import { Onboarding } from "./Onboarding";
 import { PromptBox } from "./PromptBox";
 import { RenderZone } from "./RenderZone";
+import { FilesPanel } from "./files/FilesPanel";
 import { StatusBar, type Usage } from "./StatusBar";
 import { createSessionBus } from "../session-bus";
 import {
@@ -98,6 +99,11 @@ export function Shell() {
   }>({ my: null, tail: "" });
 
   const hasUrlSession = useMemo(() => /^\/s\/[\w-]+/.test(location.pathname), []);
+
+  // ── The Explorer (Phase E) ──────────────────────────────────────────────
+  // The read-only files panel, collapsed by default (nothing changes for a
+  // user who never opens it). Shell-owned; the agent paints nothing in it.
+  const [filesOpen, setFilesOpen] = useState(false);
 
   // ── The theme (4.3; two-slot model S.3) ─────────────────────────────────
   // Theme is shell-owned UI state. Dark is the default and the identity;
@@ -356,7 +362,22 @@ export function Shell() {
             </span>
           </div>
         )}
-        <RenderZone subscribe={bus.subscribe} sendAction={bus.sendAction} />
+        {/* The Explorer panel sits left of the transcript (E.3). Both live in
+            a flex row so the transcript keeps rendering beside an open panel;
+            when the panel is closed this is just the transcript full-width. */}
+        <div className="zone-outer">
+          <FilesPanel
+            open={filesOpen && Boolean(meta.sessionId)}
+            subscribe={bus.subscribe}
+            requestList={bus.requestFsList}
+            requestRead={bus.requestFsRead}
+            requestDiff={bus.requestFsDiff}
+            onClose={() => setFilesOpen(false)}
+            rootLabel={tildify(meta.cwd, daemonInfo.home)}
+            sessionKey={meta.sessionId}
+          />
+          <RenderZone subscribe={bus.subscribe} sendAction={bus.sendAction} />
+        </div>
         {asks.length > 0 && (
           <div className="perm-bar">
             <span className="perm-badge">permission</span>
@@ -398,6 +419,8 @@ export function Shell() {
           mode={mode}
           onToggleTheme={() => setMode((m) => (m === "dark" ? "light" : "dark"))}
           onOpenSettings={() => setSettingsOpen(true)}
+          filesOpen={filesOpen}
+          onToggleFiles={meta.sessionId ? () => setFilesOpen((f) => !f) : undefined}
           onEndSession={meta.sessionId ? bus.endSession : undefined}
           relay={daemonInfo.relay}
           version={daemonInfo.version}

@@ -39,6 +39,8 @@ export function StatusBar({
   mode,
   onToggleTheme,
   onOpenSettings,
+  filesOpen,
+  onToggleFiles,
   onEndSession,
   relay,
   version,
@@ -62,6 +64,10 @@ export function StatusBar({
   // Opens the settings card (S.4) — the gear beside the pill. The card
   // itself mounts in Shell; this bar only carries the button.
   onOpenSettings?: () => void;
+  // Toggles the Explorer files panel (E.3) — a left-cluster control like an
+  // IDE's sidebar toggle. Absent until there's a session to browse.
+  filesOpen?: boolean;
+  onToggleFiles?: () => void;
   // End this session (absent when there's no session yet). Two-click
   // confirm lives in this shell-owned control, never in agent output (#11).
   onEndSession?: () => void;
@@ -137,6 +143,19 @@ export function StatusBar({
       >
         {dot}
       </button>
+      {/* Files toggle (E.3) — a sidebar-style control in the left cluster,
+          IDE convention. Present only with a session to browse. */}
+      {onToggleFiles && (
+        <button
+          className={"sb-item sb-files" + (filesOpen ? " is-active" : "")}
+          onClick={onToggleFiles}
+          title={filesOpen ? "Hide files" : "Show files"}
+          aria-label="Files"
+          aria-expanded={filesOpen}
+        >
+          files
+        </button>
+      )}
       {/* The agent chip is the session's identity element — tapping it opens
           the settings card's Session section ("what is this session?"), the
           phone's path to the facts the bar no longer carries inline (R.4l). */}

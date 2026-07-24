@@ -32,6 +32,13 @@ export interface SessionBus {
   answerPermission(id: string, allow: boolean): void;
   endSession(): void;
   sendAction(action: Action, sourceId: string): void;
+  /** Explorer (Phase E): request the working tree / a file's content / a
+   *  file's diff. Each mints and returns a correlation id — the reply
+   *  (fs_tree / fs_file / fs_file_diff) echoes it, so a component can drop a
+   *  reply that isn't the one it's currently waiting on. */
+  requestFsList(): string;
+  requestFsRead(path: string): string;
+  requestFsDiff(path: string): string;
 }
 
 export function createSessionBus(): SessionBus {
@@ -132,6 +139,23 @@ export function createSessionBus(): SessionBus {
     },
     sendAction(action: Action, sourceId: string) {
       socket.send({ type: "action", action, sourceId });
+    },
+    // Explorer requests (Phase E). Ids are minted here (the sendBang shape)
+    // and returned so the panel correlates the one reply each gets.
+    requestFsList(): string {
+      const id = `fsl-${Math.random().toString(36).slice(2, 10)}`;
+      socket.send({ type: "fs_list", id });
+      return id;
+    },
+    requestFsRead(path: string): string {
+      const id = `fsr-${Math.random().toString(36).slice(2, 10)}`;
+      socket.send({ type: "fs_read", id, path });
+      return id;
+    },
+    requestFsDiff(path: string): string {
+      const id = `fsd-${Math.random().toString(36).slice(2, 10)}`;
+      socket.send({ type: "fs_diff", id, path });
+      return id;
     },
   };
 }

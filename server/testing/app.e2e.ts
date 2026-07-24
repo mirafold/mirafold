@@ -863,6 +863,31 @@ test("streaming holds a scrolled-up reader in place, and re-follows once back at
   assert.ok(gap <= 60, `expected to be following the tail again, sat ${gap}px above it`);
 });
 
+test("E.3: the files panel lists the working tree, opens a file beside the transcript, drills back", async () => {
+  // The e2e daemon runs in the genui-shell repo itself — a real git repo — so
+  // the tree is live git data. package.json is always tracked and top-level.
+  await page.locator(".sb-files").click();
+  await page.waitForSelector(".files-panel");
+  const pkg = page.locator(".files-file-row", { hasText: "package.json" }).first();
+  await pkg.waitFor({ timeout: 15_000 });
+
+  // The transcript and the prompt box both stay usable beside the open panel
+  // (the squeeze risk — the panel and transcript are separate flex columns).
+  assert.ok(await page.locator(".render-zone").isVisible());
+  assert.ok(await page.locator(".prompt-box textarea, textarea").first().isVisible());
+
+  // Open the file → its content shows in the panel's file view.
+  await pkg.click();
+  await page.waitForSelector(".files-view .fv-content");
+  assert.match(await page.locator(".files-view .fv-content").innerText(), /"name"/);
+
+  // Back returns to the tree; the toggle closes the panel entirely.
+  await page.locator(".files-back").click();
+  await page.waitForSelector(".files-tree");
+  await page.locator(".sb-files").click();
+  assert.equal(await page.locator(".files-panel").count(), 0);
+});
+
 test("a notice in the engine's own words is badged; the shell's own words aren't", async () => {
   await page.locator("textarea").click();
   await page.keyboard.type("show me a notice");
@@ -980,6 +1005,12 @@ test("C.2: axe-core finds no serious/critical WCAG violations across the app", a
     await p.keyboard.press("Enter");
     await p.waitForSelector("text=Plan complete — all four steps done.", { timeout: 30_000 });
     await assertAxeClean(p, "session transcript");
+
+    // 2b) Explorer files panel open, tree listed (E.3).
+    await p.locator(".sb-files").click();
+    await p.waitForSelector(".files-panel .files-row");
+    await assertAxeClean(p, "files panel");
+    await p.locator(".sb-files").click(); // close before the next surface
 
     // 3) Settings / theme card (a dialog).
     await p.locator(".sb-settings").click();

@@ -2565,7 +2565,7 @@ in nested lists are tabbable and axe-clean.
     deleted/renamed diffs, the SUBDIRECTORY prefix-strip session, unborn
     HEAD, `.env`-diff refusal, `../` refusal. All tiers green **342/95/38**.*
 
-- [ ] **Step E.3 — Desktop: the Files side panel** (~1.5–2 days)
+- [x] **Step E.3 — Desktop: the Files side panel**
   - Goal: a collapsible left column beside the transcript — tree → click a
     file → content or diff — VS Code-shaped, shell-owned, refresh-on-demand.
   - Build: `session-bus.ts` gains `requestFsList()/requestFsRead(path)/
@@ -2602,6 +2602,33 @@ in nested lists are tabbable and axe-clean.
     content, the transcript still renders beside it, the prompt box stays
     visible with the panel AND PinDock both open, and the C.2 axe scan runs
     with the panel open (a new scanned surface) with no serious/critical hits.
+  - *2026-07-24: DONE, on `feat/explorer-e3`. Key design call, Kyle-relevant:
+    desktop uses the SAME drill-in interaction the phone will (tree → back
+    button → file view) inside the docked left column, rather than a cramped
+    tree+file split in a narrow column. Reasons: code stays legible at column
+    width, the transcript keeps its space, and E.4 becomes a pure container
+    swap (column → full-screen) reusing this exact component — the two
+    platforms differ only in their frame. `session-bus.ts` gained
+    `requestFsList/Read/Diff` (mint+return id, the sendBang shape);
+    `web/src/files-tree.ts` is the shell-owned flat→nested builder (dirs-first,
+    status on leaves — the registry FileTree stays untouched agent surface);
+    `components/files/FilesPanel.tsx` + `FileView.tsx` are new, reusing the
+    shared `diffSnippet`/`DiffLines` and `formatBytes`. Replies correlate by
+    echoed id (`isCurrentReply`) so a superseded click or switched session
+    drops its late reply; open/session-switch refetches; the O(n·m) LCS is
+    guarded (`diffTooLarge`, ~4M cells → show after-side + note); the diff
+    affordance shows only for a changed file in a git tree. Layout: a
+    `.zone-outer` flex row wraps the panel + the existing zone-row, transcript
+    `min-width:0` so panel+PinDock+prompt coexist. StatusBar `files` toggle
+    (left cluster, `aria-expanded`), gated on a session. One honest deviation
+    from Done-when: the e2e asserts transcript AND prompt box stay visible with
+    the panel open (the real squeeze risk); it does not also pin a widget
+    simultaneously — PinDock+panel coexistence rests on both being
+    flex-shrink:0 columns around a min-width:0 transcript, structural not
+    timing. Observed: Tier-1 tree-builder + `isCurrentReply` + `diffTooLarge`
+    pins; Tier-3 `app.e2e.ts` panel test (tree lists real git data, file opens
+    beside the transcript, back + close) and the C.2 axe scan extended to the
+    open panel — clean. All tiers green **349/95/39**.*
 
 - [ ] **Step E.4 — Phone: full-screen drill-in** (~0.5–1 day)
   - Goal: at ≤640px the same data presents as stacked full-screen layers —
