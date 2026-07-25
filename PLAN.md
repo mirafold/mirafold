@@ -704,7 +704,13 @@ with it. Both sequence BEFORE R.5.**
     billing machinery being done does not make the product show-ready).
     Still to decide here: beta size/who, its duration/exit criteria, and
     how R.5c's user-testing round folds in;* remainder of (a) — staged
-    rollout vs. one splash for the PUBLIC release — still open;
+    rollout vs. one splash for the PUBLIC release — **DECIDED 2026-07-25
+    (Kyle): ONE splash, as big as possible.** A soft/staged launch
+    (publish quietly, announce later) was considered and rejected: the
+    pre-public work gates going public at all, not announcing loudly, so
+    a quiet period pays nearly the full launch cost for almost none of
+    the audience; the channel list was instead expanded (R.6's
+    launch-channel prep + Product Hunt in R.7's sequence);
     (b) **per-repo mechanics + order** — `genui-shell` (repo public + `npm
     publish` + versioning/cadence), `genui-relay` (deploy pipeline, **when
     the repo flips public — owed to K.1, which relicensed it MIT**, when the
