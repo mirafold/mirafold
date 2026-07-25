@@ -937,6 +937,29 @@ with it. Both sequence BEFORE R.5.**
       FAQ — that item is REMOVED by the locked decision above. If asked "how
       is this different," the answer is what Mirafold does, stated plainly,
       not a competitor teardown.
+  - **Launch-channel prep (added 2026-07-25 — Kyle: try basically everything
+    feasible and worth the time; every channel below is $0 via its free
+    route — paid placements exist at some of them but are advertising, not
+    submission fees, and are not used):**
+    - **Product Hunt** ($0): draft the listing + maker comment ahead of
+      launch morning — launches run midnight-to-midnight Pacific and the
+      first hours of votes decide surfacing. Fires launch day with the rest
+      of the splash (added to R.7's sequence).
+    - **Dev-newsletter submissions** ($0, organic forms): TLDR / TLDR AI,
+      JavaScript Weekly + Node Weekly (Cooperpress — Mirafold is a Node
+      tool, squarely eligible), Console.dev, Changelog News. Submit all of
+      them launch week; editors also trawl HN front pages, so a good HN
+      showing compounds here.
+    - **Lobste.rs** ($0, but posting is invite-only): seek an invite before
+      launch; if none materializes, skip — don't chase it.
+    - **GitHub discovery surfaces** ($0): once the repo is public, PR a
+      one-line entry to the established awesome lists (the Claude Code
+      ecosystem list, local-LLM tooling lists). Trending needs no action —
+      a launch-day star spike feeds it on its own.
+    - **Post-launch follow-ups, not launch-day** ($0): an Indie Hackers
+      launch post (the solo-builder-ships-a-real-product story), and
+      podcast pitches (Changelog, Syntax and the like — weeks of lead
+      time; pitch once the launch gives a story to tell).
   - **Package & repo hygiene** (2026-07-07 friction log + 2026-07-08
     operability review) — **ALL DONE 2026-07-08:**
     - [x] Pin a `packageManager` field in package.json — `yarn@1.22.22`
@@ -1056,8 +1079,10 @@ with it. Both sequence BEFORE R.5.**
   - Build, same day, in order: repo public → `npm publish` over the 0.0.1
     placeholder → verify `npx mirafold` against the real registry (the
     one check that's unverifiable until publish) → post (X + Show HN +
-    r/ClaudeAI + r/LocalLLaMA with the "BYOK or fully local" line) with
-    Pro purchasable from minute one.
+    Product Hunt + r/ClaudeAI + r/LocalLLaMA with the "BYOK or fully
+    local" line) with Pro purchasable from minute one. Same week, riding
+    the splash: the newsletter submissions and awesome-list PRs prepped
+    in R.6's launch-channel item (all $0).
   - Done when: a stranger can watch the GIF, install cold, run their own
     agent, pay, and drive it from their phone — all within the launch
     hour. Signals per BUSINESS.md §9 read concurrently from here.
