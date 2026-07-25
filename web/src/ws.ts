@@ -205,6 +205,7 @@ export class SocketClient {
     // A returning network or a re-focused tab shouldn't wait out the backoff.
     window.addEventListener("online", this.reconnectNow);
     document.addEventListener("visibilitychange", this.onVisible);
+    window.addEventListener("pagehide", this.onPageHide);
     if (url) {
       this.url = url;
       this.connect();
@@ -232,6 +233,15 @@ export class SocketClient {
 
   private onVisible = () => {
     if (document.visibilityState === "visible") this.reconnectNow();
+  };
+
+  // Navigating away (the home button is a full page navigation) must hand the
+  // daemon a clean close, or the viewport lingers attached — and the fleet's
+  // count stays stale — until the server heartbeat reaps the half-open socket
+  // (30–60s). Only the raw socket closes, NOT close(): a page restored from
+  // the back/forward cache must come back through the normal reconnect path.
+  private onPageHide = () => {
+    this.ws?.close();
   };
 
   private reconnectNow = () => {
@@ -427,6 +437,7 @@ export class SocketClient {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     window.removeEventListener("online", this.reconnectNow);
     document.removeEventListener("visibilitychange", this.onVisible);
+    window.removeEventListener("pagehide", this.onPageHide);
     this.ws?.close();
   }
 }

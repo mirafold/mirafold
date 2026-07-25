@@ -362,50 +362,85 @@ export function Shell() {
             </span>
           </div>
         )}
-        {/* The Explorer panel sits left of the transcript (E.3). Both live in
-            a flex row so the transcript keeps rendering beside an open panel;
-            when the panel is closed this is just the transcript full-width. */}
-        <div className="zone-outer">
-          <FilesPanel
-            open={filesOpen && Boolean(meta.sessionId)}
-            subscribe={bus.subscribe}
-            requestList={bus.requestFsList}
-            requestRead={bus.requestFsRead}
-            requestDiff={bus.requestFsDiff}
-            onClose={() => setFilesOpen(false)}
-            rootLabel={tildify(meta.cwd, daemonInfo.home)}
-            sessionKey={meta.sessionId}
-          />
-          <RenderZone subscribe={bus.subscribe} sendAction={bus.sendAction} />
-        </div>
-        {asks.length > 0 && (
-          <div className="perm-bar">
-            <span className="perm-badge">permission</span>
-            <span className="perm-tool">{asks[0].tool}</span>
-            <code className="perm-detail">{asks[0].detail}</code>
-            {asks.length > 1 && <span className="perm-more">+{asks.length - 1}</span>}
-            <button className="perm-allow" onClick={() => answer(asks[0].id, true)}>
-              allow
-            </button>
-            <button className="perm-deny" onClick={() => answer(asks[0].id, false)}>
-              deny
+        {/* The activity bar (VS Code convention) is the workbench's permanent
+            left edge — it spans transcript AND prompt box, everything to its
+            strict right; only banners and the status bar run full-width. Its
+            files icon opens/collapses the Explorer panel (E.3), which sits
+            left of the transcript in a flex row so the transcript keeps
+            rendering beside it; panel closed = transcript full-width. */}
+        <div className="main-row">
+          <div className="activity-bar">
+            <button
+              className={"ab-btn ab-files" + (filesOpen ? " is-active" : "")}
+              onClick={() => setFilesOpen((f) => !f)}
+              disabled={!meta.sessionId}
+              title={filesOpen ? "Hide files" : "Show files"}
+              aria-label="Files"
+              aria-expanded={filesOpen}
+            >
+              {/* A single document sheet, drawn symmetric about the viewBox
+                  center — a two-page glyph reads as hanging right (its front
+                  page's mass sits right of center) even when its bounds are
+                  centered. Tight viewBox: the drawing fills the 22px box. */}
+              <svg
+                viewBox="5 2 14 20"
+                width="22"
+                height="22"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M13.5 3H7.5A1.5 1.5 0 0 0 6 4.5v15A1.5 1.5 0 0 0 7.5 21h9a1.5 1.5 0 0 0 1.5-1.5V7.5L13.5 3z" />
+                <path d="M13.5 3v3a1.5 1.5 0 0 0 1.5 1.5h3" />
+              </svg>
             </button>
           </div>
-        )}
-        {bang.my && (
-          <BangBar
-            command={bang.my.command}
-            tail={bang.tail}
-            onInput={(data) => bus.sendBangInput(bang.my!.id, data)}
-            onKill={() => bus.killBang(bang.my!.id)}
-          />
-        )}
-        <PromptBox
-          onSend={send}
-          busy={busy}
-          onInterrupt={bus.interrupt}
-          cwd={tildify(meta.cwd, daemonInfo.home)}
-        />
+          <div className="main-col">
+            <div className="zone-outer">
+              <FilesPanel
+                open={filesOpen && Boolean(meta.sessionId)}
+                subscribe={bus.subscribe}
+                requestList={bus.requestFsList}
+                requestRead={bus.requestFsRead}
+                requestDiff={bus.requestFsDiff}
+                onClose={() => setFilesOpen(false)}
+                rootLabel={tildify(meta.cwd, daemonInfo.home)}
+                sessionKey={meta.sessionId}
+              />
+              <RenderZone subscribe={bus.subscribe} sendAction={bus.sendAction} />
+            </div>
+            {asks.length > 0 && (
+              <div className="perm-bar">
+                <span className="perm-badge">permission</span>
+                <span className="perm-tool">{asks[0].tool}</span>
+                <code className="perm-detail">{asks[0].detail}</code>
+                {asks.length > 1 && <span className="perm-more">+{asks.length - 1}</span>}
+                <button className="perm-allow" onClick={() => answer(asks[0].id, true)}>
+                  allow
+                </button>
+                <button className="perm-deny" onClick={() => answer(asks[0].id, false)}>
+                  deny
+                </button>
+              </div>
+            )}
+            {bang.my && (
+              <BangBar
+                command={bang.my.command}
+                tail={bang.tail}
+                onInput={(data) => bus.sendBangInput(bang.my!.id, data)}
+                onKill={() => bus.killBang(bang.my!.id)}
+              />
+            )}
+            <PromptBox
+              onSend={send}
+              busy={busy}
+              onInterrupt={bus.interrupt}
+              cwd={tildify(meta.cwd, daemonInfo.home)}
+            />
+          </div>
+        </div>
         <StatusBar
           connected={connected}
           connectionNote={connNote}
@@ -419,8 +454,6 @@ export function Shell() {
           mode={mode}
           onToggleTheme={() => setMode((m) => (m === "dark" ? "light" : "dark"))}
           onOpenSettings={() => setSettingsOpen(true)}
-          filesOpen={filesOpen}
-          onToggleFiles={meta.sessionId ? () => setFilesOpen((f) => !f) : undefined}
           onEndSession={meta.sessionId ? bus.endSession : undefined}
           relay={daemonInfo.relay}
           version={daemonInfo.version}

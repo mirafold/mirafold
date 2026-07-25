@@ -866,9 +866,19 @@ test("streaming holds a scrolled-up reader in place, and re-follows once back at
 test("E.3: the files panel lists the working tree, opens a file beside the transcript, drills back", async () => {
   // The e2e daemon runs in the genui-shell repo itself — a real git repo — so
   // the tree is live git data. package.json is always tracked and top-level.
-  await page.locator(".sb-files").click();
+  await page.locator(".ab-files").click();
   await page.waitForSelector(".files-panel");
   const pkg = page.locator(".files-file-row", { hasText: "package.json" }).first();
+  await pkg.waitFor({ timeout: 15_000 });
+
+  // The tree leads with the checked-out ROOT as its top node — the folder's
+  // NAME (no path header above the tree); collapsing it folds the whole tree.
+  const root = page.locator(".files-root-row");
+  assert.match(await root.innerText(), /genui-shell/);
+  assert.equal(await page.locator(".files-title").count(), 0, "the old path header is gone");
+  await root.click();
+  assert.equal(await page.locator(".files-file-row").count(), 0, "collapsed root still lists files");
+  await root.click();
   await pkg.waitFor({ timeout: 15_000 });
 
   // The transcript and the prompt box both stay usable beside the open panel
@@ -884,12 +894,12 @@ test("E.3: the files panel lists the working tree, opens a file beside the trans
   // Back returns to the tree; the toggle closes the panel entirely.
   await page.locator(".files-back").click();
   await page.waitForSelector(".files-tree");
-  await page.locator(".sb-files").click();
+  await page.locator(".ab-files").click();
   assert.equal(await page.locator(".files-panel").count(), 0);
 });
 
 test("E.5: expanded dirs survive a close/reopen, and a turn's auto-refresh keeps tree state", async () => {
-  await page.locator(".sb-files").click();
+  await page.locator(".ab-files").click();
   await page.waitForSelector(".files-panel");
 
   // Expand a known top-level directory (the repo has server/). The row's text
@@ -902,9 +912,9 @@ test("E.5: expanded dirs survive a close/reopen, and a turn's auto-refresh keeps
 
   // Close and reopen within the same session — the expansion is remembered
   // (E.5: reset is keyed on session switch, not on open).
-  await page.locator(".sb-files").click();
+  await page.locator(".ab-files").click();
   assert.equal(await page.locator(".files-panel").count(), 0);
-  await page.locator(".sb-files").click();
+  await page.locator(".ab-files").click();
   await page.waitForSelector(".files-tree");
   assert.ok(
     await page.locator(".files-file-row:has-text('protocol.ts')").first().isVisible(),
@@ -924,7 +934,7 @@ test("E.5: expanded dirs survive a close/reopen, and a turn's auto-refresh keeps
     "auto-refresh collapsed the expanded dir",
   );
 
-  await page.locator(".sb-files").click(); // tidy up for later tests
+  await page.locator(".ab-files").click(); // tidy up for later tests
 });
 
 test("a notice in the engine's own words is badged; the shell's own words aren't", async () => {
@@ -1046,10 +1056,10 @@ test("C.2: axe-core finds no serious/critical WCAG violations across the app", a
     await assertAxeClean(p, "session transcript");
 
     // 2b) Explorer files panel open, tree listed (E.3).
-    await p.locator(".sb-files").click();
+    await p.locator(".ab-files").click();
     await p.waitForSelector(".files-panel .files-row");
     await assertAxeClean(p, "files panel");
-    await p.locator(".sb-files").click(); // close before the next surface
+    await p.locator(".ab-files").click(); // close before the next surface
 
     // 3) Settings / theme card (a dialog).
     await p.locator(".sb-settings").click();

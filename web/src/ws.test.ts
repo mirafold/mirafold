@@ -103,8 +103,13 @@ function shimDom() {
     visible: () => {
       for (const fn of doc.get("visibilitychange") ?? []) fn();
     },
+    pagehide: () => {
+      for (const fn of win.get("pagehide") ?? []) fn();
+    },
     listenerCount: () =>
-      (win.get("online")?.size ?? 0) + (doc.get("visibilitychange")?.size ?? 0),
+      (win.get("online")?.size ?? 0) +
+      (doc.get("visibilitychange")?.size ?? 0) +
+      (win.get("pagehide")?.size ?? 0),
   };
 }
 
@@ -331,7 +336,7 @@ test("deliberate close(): no reconnect, heartbeat stopped, dom listeners removed
   const { dom, client, sock } = setup(t);
   const one = sock();
   one.open();
-  assert.equal(dom.listenerCount(), 2);
+  assert.equal(dom.listenerCount(), 3);
 
   client.close();
   one.finishClose();
@@ -342,6 +347,28 @@ test("deliberate close(): no reconnect, heartbeat stopped, dom listeners removed
   dom.online(); // nothing left listening
   dom.visible();
   assert.equal(FakeWS.instances.length, 1);
+});
+
+// The lingering-fleet-count fix (2026-07-24): navigating away must deliver a
+// clean close so the daemon detaches the viewport immediately, instead of the
+// count staying stale until the server heartbeat reaps the half-open socket.
+test("pagehide closes the socket immediately but is NOT a deliberate close — a restored page reconnects", (t) => {
+  const { dom, client, sock } = setup(t);
+  const one = sock();
+  one.open();
+
+  dom.pagehide();
+  assert.equal(one.readyState, FakeWS.CLOSING); // close handshake started at once
+
+  // A bfcache restore: the close completes, and because closedByUs was never
+  // set, the ordinary reconnect path revives the connection.
+  one.finishClose();
+  t.mock.timers.tick(BACKOFF_MIN_MS);
+  assert.equal(FakeWS.instances.length, 2);
+
+  // close() also removes the pagehide listener — nothing left to fire.
+  client.close();
+  assert.equal(dom.listenerCount(), 0);
 });
 
 // Static-origin serving: the fragment may carry relay=<ws(s) origin> beside

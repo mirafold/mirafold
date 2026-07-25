@@ -31,6 +31,11 @@ type FsFileDiff = Extract<WireMsg, { type: "fs_file_diff" }>;
 export const isCurrentReply = (awaited: string | null, replyId: string): boolean =>
   awaited !== null && awaited === replyId;
 
+/** The root row shows just the checked-out folder's NAME; the full ~-path
+ *  stays in its tooltip. Pure, for Tier-1. */
+export const rootNameOf = (rootLabel?: string): string =>
+  rootLabel?.replace(/\/+$/, "").split("/").pop() || rootLabel || "files";
+
 export function FilesPanel({
   open,
   subscribe,
@@ -47,7 +52,8 @@ export function FilesPanel({
   requestRead: (path: string) => string;
   requestDiff: (path: string) => string;
   onClose: () => void;
-  /** ~-abbreviated session root, for the header. */
+  /** ~-abbreviated session root — its basename names the tree's root row,
+   *  the full path lives in that row's tooltip. */
   rootLabel?: string;
   /** meta.sessionId — a change means a different workspace: reset + refetch. */
   sessionKey?: string;
@@ -57,6 +63,7 @@ export function FilesPanel({
   const [truncated, setTruncated] = useState(false);
   const [treeError, setTreeError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [rootOpen, setRootOpen] = useState(true);
   const [selected, setSelected] = useState<{ path: string; status?: string } | null>(null);
   const [mode, setMode] = useState<"content" | "diff">("content");
   const [view, setView] = useState<FileViewState>({ kind: "empty" });
@@ -128,6 +135,7 @@ export function FilesPanel({
     setSelected(null);
     setView({ kind: "empty" });
     setExpanded(new Set());
+    setRootOpen(true);
   }, [sessionKey]);
 
   // Opening (or a session switch while open) fetches the tree. Returns to the
@@ -172,59 +180,77 @@ export function FilesPanel({
       aria-modal={phone ? true : undefined}
       tabIndex={phone ? -1 : undefined}
     >
-      <div className="files-head">
-        {selected ? (
-          <button className="files-back" onClick={() => setSelected(null)} title="Back to files">
-            ‹ files
-          </button>
-        ) : (
-          <span className="files-title" title={rootLabel}>
-            {rootLabel ?? "Files"}
-          </span>
-        )}
-        <span className="files-head-spacer" />
-        <button className="files-btn" onClick={refresh} title="Refresh" aria-label="Refresh files">
-          ⟳
-        </button>
-        <button className="files-btn" onClick={onClose} title="Hide files" aria-label="Hide files">
-          ✕
-        </button>
-      </div>
-
       {/* The tree stays mounted; the file view (when a file is open) is laid
           over it, so back reveals the tree at its prior scroll (E.4). */}
       <div className="files-main">
-        <div className="files-tree" role="tree" aria-label="Working tree">
-          {treeError ? (
-            <div className="files-empty files-error">{treeError}</div>
-          ) : entries.length === 0 ? (
-            <div className="files-empty">(no files)</div>
-          ) : (
-            <>
-              <TreeNodes
-                nodes={tree}
-                depth={0}
-                git={git}
-                expanded={expanded}
-                onToggleDir={toggleDir}
-                onOpenFile={(node) =>
-                  // A changed file leads with its diff — that's what you want
-                  // to see; an unchanged file has only content.
-                  openFile(node.path, node.status, git && node.status ? "diff" : "content")
-                }
-              />
-              {truncated && (
-                <div className="files-empty files-truncated">
-                  …tree truncated (too many files to list all)
+        <div className="files-tree">
+          {/* The session's checked-out root leads the tree as its top node
+              (VS Code convention) — no path header; the full ~-path lives in
+              the row's tooltip. The panel's actions ride the same row. ARIA:
+              it's a disclosure button OVER the tree widget, not a treeitem
+              inside it — role=tree owns only treeitems/groups (axe, C.2). */}
+          <div className="files-root">
+            <button
+              className="files-row files-dir files-root-row"
+              onClick={() => setRootOpen((o) => !o)}
+              title={rootLabel}
+              aria-expanded={rootOpen}
+            >
+              <span className="files-caret">{rootOpen ? "▾" : "▸"}</span>
+              <span className="files-name">{rootNameOf(rootLabel)}</span>
+            </button>
+            <button className="files-btn" onClick={refresh} title="Refresh" aria-label="Refresh files">
+              ⟳
+            </button>
+            {/* Desktop closes from the activity-bar toggle; the phone dialog
+                still needs its own close. */}
+            {phone && (
+              <button className="files-btn" onClick={onClose} title="Close files" aria-label="Close files">
+                ✕
+              </button>
+            )}
+          </div>
+          {rootOpen &&
+            (treeError ? (
+              <div className="files-empty files-error">{treeError}</div>
+            ) : entries.length === 0 ? (
+              <div className="files-empty">(no files)</div>
+            ) : (
+              <>
+                <div role="tree" aria-label="Working tree">
+                  <TreeNodes
+                    nodes={tree}
+                    depth={1}
+                    git={git}
+                    expanded={expanded}
+                    onToggleDir={toggleDir}
+                    onOpenFile={(node) =>
+                      // A changed file leads with its diff — that's what you want
+                      // to see; an unchanged file has only content.
+                      openFile(node.path, node.status, git && node.status ? "diff" : "content")
+                    }
+                  />
                 </div>
-              )}
-            </>
-          )}
+                {truncated && (
+                  <div className="files-empty files-truncated">
+                    …tree truncated (too many files to list all)
+                  </div>
+                )}
+              </>
+            ))}
         </div>
 
         {selected && (
           <div className="files-file">
             <div className="files-file-path">
+              <button
+                className="files-back"
+                onClick={() => setSelected(null)}
+                title="Back to files"
+                aria-label="Back to files"
+              >
+                ‹
+              </button>
               <span className="files-file-name" title={selected.path}>
                 {selected.path}
               </span>

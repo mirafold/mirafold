@@ -39,6 +39,26 @@ body {
   padding: 0 24px;
 }
 
+/* The workbench row: activity bar on the left, everything else — transcript
+   AND prompt box — strictly to its right (VS Code frame). Banners above and
+   the status bar below stay full-width. The negative margin cancels .shell's
+   left gutter so the strip is FLUSH with the window edge — the visible band
+   from edge to border line IS the bar, with no dead page-margin inside it. */
+.main-row {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  margin-left: -24px;
+}
+
+.main-col {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 /* Explorer (E.3) + transcript. The files panel is a fixed-width left column;
    the zone-row fills the rest so the transcript keeps rendering beside it.
    With the panel closed this collapses to just the transcript, full-width. */
@@ -318,6 +338,52 @@ body {
 }
 
 /* ── Explorer files panel (E.3) ────────────────────────────────────────── */
+
+/* The activity bar — the workbench's permanent left edge (VS Code
+   convention): a thin strip whose files icon opens/collapses the panel.
+   Always present, so the affordance never moves. */
+.activity-bar {
+  flex-shrink: 0;
+  width: 30px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 24px; /* same top offset as the tree's root row (.files-root) */
+  border-right: 1px solid var(--border);
+}
+
+/* Nearly the strip's width — a hairline of air on each side; the icon
+   inside is ~3/4 of the strip. */
+.ab-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0; /* the UA's default button padding squeezes the svg to 14px wide */
+  background: transparent;
+  border: none;
+  border-radius: 7px;
+  color: var(--fg-dim);
+  cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+
+.ab-btn:hover:not(:disabled) {
+  color: var(--fg-body);
+  background: var(--surface);
+}
+
+.ab-btn.is-active {
+  color: var(--fg-body);
+  background: var(--surface);
+}
+
+.ab-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
 .files-panel {
   flex-shrink: 0;
   width: 340px;
@@ -337,25 +403,31 @@ body {
   }
 }
 
-.files-head {
+/* The tree's root row — the session's checked-out directory. Sticky, so the
+   root (and the panel's actions riding it) survive a deep scroll. */
+.files-root {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 12px 10px 10px;
-  border-bottom: 1px solid var(--border);
+  gap: 4px;
+  padding: 24px 0 4px;
+  background: var(--bg);
 }
 
-.files-head-spacer {
+.files-root-row {
   flex: 1;
+  min-width: 0;
 }
 
-.files-title {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.82em;
-  color: var(--fg-dim);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.files-root-row .files-name {
+  font-weight: 600;
+}
+
+.files-root .files-btn {
+  flex-shrink: 0;
+  border: none;
 }
 
 .files-back,
@@ -388,7 +460,7 @@ body {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 6px 4px 12px;
+  padding: 0 4px 12px;
 }
 
 .files-ul {
@@ -473,6 +545,7 @@ body {
 .files-file {
   position: absolute;
   inset: 0;
+  z-index: 2; /* above the sticky root row, or it steals the back button's clicks */
   background: var(--bg);
   display: flex;
   flex-direction: column;
@@ -2552,37 +2625,6 @@ html {
   background: var(--err-bg);
 }
 
-/* Explorer files toggle (E.3) — a left-cluster button, IDE sidebar-toggle
-   convention. Reuses the .sb-new/.sb-end pill shape; lit when the panel is
-   open, matching the theme-pill's is-active treatment. */
-.sb-files {
-  display: inline-flex;
-  align-items: center;
-  height: 34px;
-  background: transparent;
-  border: 1px solid var(--border-2);
-  border-radius: 7px;
-  padding: 0 12px;
-  color: var(--fg-mid);
-  font: inherit;
-  font-size: 13px;
-  line-height: 1;
-  cursor: pointer;
-  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
-}
-
-.sb-files:hover {
-  color: var(--fg);
-  border-color: var(--border-hover);
-  background: var(--surface-hover);
-}
-
-.sb-files.is-active {
-  color: var(--fg);
-  border-color: var(--border-hover);
-  background: var(--surface-hover);
-}
-
 /* #9: mission-control home — an <a> styled as an icon button, the status
    bar's outermost far-LEFT control (moved from the far right 2026-07-16);
    the connection dot sits between it and the agent text. */
@@ -3436,8 +3478,23 @@ html {
     padding: 9px 8px;
   }
 
-  .files-head {
-    padding: 14px 12px;
+  .files-root {
+    padding: 8px 4px 4px;
+  }
+
+  /* Match the phone's narrower .shell gutter so the strip stays flush. */
+  .main-row {
+    margin-left: calc(-1 * max(10px, env(safe-area-inset-left)));
+  }
+
+  /* The ≥40px tap-target rule, applied to the always-there left strip. */
+  .activity-bar {
+    width: 46px;
+  }
+
+  .ab-btn {
+    width: 40px;
+    height: 40px;
   }
 }
 

@@ -19,7 +19,7 @@ import { createLogger, verbose } from "../log";
 // oldest messages fall off and a late viewport sees a truncated head.
 const BUFFER_CAP = 4000;
 // A session with no viewports survives this long, then dies for real.
-const IDLE_TIMEOUT_MS = Number(process.env.SESSION_IDLE_TIMEOUT_MS ?? 60 * 60_000);
+const IDLE_TIMEOUT_MS = Number(process.env.SESSION_IDLE_TIMEOUT_MS ?? 4 * 60 * 60_000);
 // Ceiling on concurrent sessions: a runaway or hostile local client can't
 // exhaust memory + PTYs by creating without bound. Generous — a human working
 // across projects won't approach it; create() throws past it (the caller turns

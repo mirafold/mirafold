@@ -595,7 +595,7 @@ only the unseen messages under `session_created{resumed:true}` — mid-turn
 streaming continues into the same DOM block, pins and scroll survive. A
 cursor that has fallen off the ring (or a fresh page) takes the full-replay
 path as before. Closing a tab merely detaches; a session with no viewports dies
-only after an idle timeout (default 60 min, `SESSION_IDLE_TIMEOUT_MS`). Each
+only after an idle timeout (default 4 h, `SESSION_IDLE_TIMEOUT_MS`). Each
 session runs in a real working dir — default: the directory the daemon was
 launched from, exactly like a terminal agent (Step 4.8) — or any existing
 directory typed at onboarding (`~` expands; a missing path rejects the

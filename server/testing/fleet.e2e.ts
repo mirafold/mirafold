@@ -230,6 +230,28 @@ test("phone: glance set visible with no side-scroll; permission and prompt act b
   await phoneCtx.close();
 });
 
+// The lingering-count fix (2026-07-24): leaving a session by real navigation
+// (the ⌂ home link) must detach its viewport at once — the client's pagehide
+// clean close — not 30–60s later when the server heartbeat finally reaps a
+// half-open socket. Runs LAST: it navigates the shared session tab away.
+test("home navigation drops the row's viewport count immediately", async () => {
+  const row = fleet.locator(".fleet-item", { hasText: sessionId });
+  assert.equal((await row.locator(".fleet-viewports").innerText()).trim(), "⧉ 1");
+
+  await session.locator(".sb-home").click();
+  await session.waitForURL(`${base}/`);
+  // Far under the 30s heartbeat: reaching 0 this fast proves the clean close.
+  await fleet.waitForFunction(
+    (id) =>
+      [...document.querySelectorAll(".fleet-item")]
+        .find((r) => r.textContent?.includes(id))
+        ?.querySelector(".fleet-viewports")
+        ?.textContent?.trim() === "⧉ 0",
+    sessionId,
+    { timeout: 5_000 },
+  );
+});
+
 // ---- axe (copy of app.e2e.ts's assertAxeClean — a shared testing helper
 // would force importing that whole suite, which would re-register its tests;
 // dedupe when the helpers move to their own module) ------------------------

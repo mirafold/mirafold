@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isCurrentReply } from "./FilesPanel";
+import { isCurrentReply, rootNameOf } from "./FilesPanel";
 import { diffTooLarge } from "./FileView";
 
 // E.3 pure logic: the stale-reply gate and the client-side diff-size guard.
@@ -9,6 +9,14 @@ test("isCurrentReply: only the awaited id is accepted", () => {
   assert.equal(isCurrentReply("fsl-abc", "fsl-abc"), true);
   assert.equal(isCurrentReply("fsl-abc", "fsl-xyz"), false, "a superseded reply is dropped");
   assert.equal(isCurrentReply(null, "fsl-abc"), false, "nothing awaited → drop");
+});
+
+test("rootNameOf: the root row carries the folder's name, not the path", () => {
+  assert.equal(rootNameOf("~/Projects/mirafold/genui-shell"), "genui-shell");
+  assert.equal(rootNameOf("~/Projects/x/"), "x", "trailing slash is ignored");
+  assert.equal(rootNameOf("~"), "~", "home itself keeps the tilde");
+  assert.equal(rootNameOf("/"), "/", "filesystem root stays legible");
+  assert.equal(rootNameOf(undefined), "files", "no label yet → a neutral name");
 });
 
 test("diffTooLarge: small diffs pass, huge ones are guarded", () => {
