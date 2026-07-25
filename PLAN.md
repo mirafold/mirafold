@@ -670,7 +670,8 @@ with it. Both sequence BEFORE R.5.**
        app-serving origin half of this step).
     4. The pre-public-launch hardening trio — claim window ✅ and revocation
        runbook ✅ (both 2026-07-23); the **genui-shell dependabot findings**
-       remain, and must clear before this repo flips public (R.5b).
+       ✅ **cleared 2026-07-25** (postcss bump `c660130` closed the last
+       one — zero open alerts on the repo; see R.5b's sweep note).
     5. **token→account binding — deliberately deferred.** The license key IS
        the binding for now: sharing a key shares one subscription's access,
        and a lapsed-then-returning customer gets a NEW key (a re-subscribe is
@@ -745,6 +746,12 @@ with it. Both sequence BEFORE R.5.**
     repo swept 2026-07-22: `shell-quote` ≥1.9 + `@hono/node-server` ≥2.0.5
     forced via yarn resolutions — the MCP SDK still pins hono 1.x upstream,
     so the resolution stays until the SDK moves; all tiers green on 2.0.11.)
+    **2026-07-25: shell repo now at ZERO open alerts** — transitive
+    `postcss` 8.5.16 → 8.5.23 (GHSA-r28c-9q8g-f849, high, dev-scope; via
+    vite, so a lockfile re-resolve only, no resolution needed) landed as
+    `c660130`, typecheck + all tiers green (369/103/52), alert #4 verified
+    "fixed" via the GitHub API. The `genui-relay` half of this sweep is
+    still owed at its own flip.
   - **Gate on the relay flip (2026-07-15 audit):** before `genui-relay` goes
     public in (b), run a dedicated security-audit pass over that repo — the
     shell got its own on 2026-07-15; public security-marketed code gets
@@ -855,7 +862,9 @@ with it. Both sequence BEFORE R.5.**
     already-sent link serves the new build. Also flagged on push: GitHub
     reports 1 HIGH Dependabot alert on the default branch (dependabot/4);
     a dependency bump was already in flight in a parallel session the
-    same afternoon.
+    same afternoon. *(Resolved same day: that bump landed as `c660130` —
+    alert #4 "fixed", zero open alerts on the repo; detail in R.5b's
+    sweep note.)*
 
 - [x] **Step R.5d — Relay staging (nonprod) environment** — **DONE
   2026-07-23** (the day the private release went live, per the sequencing).
