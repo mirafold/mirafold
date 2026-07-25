@@ -49,6 +49,54 @@ test("?token= mints the cookie, cleans the URL, boots the shell", async () => {
   assert.equal(await page.locator(".fleet-title").textContent(), "Mirafold");
 });
 
+test("the agent picker flexes to the window — no internal scrollbar through the squeeze ramp", async () => {
+  // The card's vertical chrome compresses with the window (--onb-squeeze in
+  // styles.css) so its overflow-y:auto scrollbar is a last resort, not a
+  // routine sight. The guarantee is calibrated to the credentialed picker
+  // (short per-row detail lines — the state a set-up user sees); the fresh
+  // credential-less picker carries paragraph-length hints, and hiding those
+  // behind a scrollbar is correct, not a regression. So: a daemon whose rows
+  // are mostly ready (same recipe as the R.4k test below), swept through the
+  // squeeze ramp's lower band, where pre-fix EVERY height here scrolled.
+  const token = "e2e-squeeze-9c2f";
+  // All three rows ready (one-line details, no paragraph hints) — display
+  // only, nothing is clicked, so no engine ever spawns.
+  const d2 = await startDaemon({
+    MIRAFOLD_TOKEN: token,
+    ANTHROPIC_BASE_URL: "http://localhost:11434",
+    OPENAI_API_KEY: "e2e-not-a-real-key",
+    GEMINI_API_KEY: "e2e-not-a-real-key",
+  });
+  const page2 = await browser.newPage();
+  try {
+    await page2.goto(`http://127.0.0.1:${d2.port}/?token=${token}`);
+    await page2.waitForSelector(".onb-card");
+    await page2.setViewportSize({ width: 1100, height: 1400 });
+    await page2.waitForTimeout(60);
+    const fullGlyph = await page2.evaluate(
+      () => document.querySelector(".onb-glyph")!.getBoundingClientRect().height,
+    );
+    for (const h of [760, 745, 730]) {
+      await page2.setViewportSize({ width: 1100, height: h });
+      await page2.waitForTimeout(60);
+      const m = await page2.evaluate(() => {
+        const c = document.querySelector(".onb-card")!;
+        return {
+          overflow: c.scrollHeight - c.clientHeight,
+          glyph: document.querySelector(".onb-glyph")!.getBoundingClientRect().height,
+        };
+      });
+      assert.ok(m.overflow <= 2, `picker scrolls ${m.overflow}px internally at ${h}px window height`);
+      // The fit must come from the squeeze compressing chrome, not from a
+      // floor that quietly grew the full-size card.
+      assert.ok(m.glyph < fullGlyph - 4, `glyph did not compress at ${h}px (${fullGlyph}px → ${m.glyph}px)`);
+    }
+  } finally {
+    await page2.close();
+    await d2.stop();
+  }
+});
+
 test("onboarding → a full mock turn renders in the DOM", async () => {
   // An empty registry opens straight into "choose your agent".
   // Every credential-less row carries its one-line fix on the picker

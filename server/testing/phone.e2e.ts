@@ -171,12 +171,20 @@ test("phone: pairs by URL, opens the session, drives a turn with a rendered comp
 });
 
 test("phone (E.4): the files panel is a full-screen drill-in — tree → file → back → Esc, no side-scroll", async () => {
+  // On phone the rail is gone entirely (a permanent strip is too much of a
+  // 390px screen, 2026-07-25) — the toggle lives in the status bar instead,
+  // boxed off at its far left.
+  assert.equal(
+    await phone.locator(".activity-bar").evaluate((el) => getComputedStyle(el).display),
+    "none",
+    "the activity bar must be hidden on phone",
+  );
   // Open from the status-bar affordance — a full-screen dialog layer, not the
   // desktop docked column. Activated by keyboard (focus + Enter) rather than
   // tap: focus-return-on-close is an A.3 KEYBOARD contract, and a touch tap
   // doesn't move DOM focus to the button, so only the keyboard path has a
   // meaningful opener to return to.
-  await phone.locator(".ab-files").focus();
+  await phone.locator(".sb-files").focus();
   await phone.keyboard.press("Enter");
   await phone.waitForSelector(".files-panel[role=dialog]");
   await noSideScroll(phone);
@@ -209,7 +217,7 @@ test("phone (E.4): the files panel is a full-screen drill-in — tree → file �
   assert.equal(await phone.locator(".files-panel").count(), 0, "Esc from the tree closes the panel");
   await noSideScroll(phone);
   const focusedFiles = await phone.evaluate(
-    () => document.activeElement?.classList.contains("ab-files") ?? false,
+    () => document.activeElement?.classList.contains("sb-files") ?? false,
   );
   assert.ok(focusedFiles, "focus returned to the files toggle on close");
 });

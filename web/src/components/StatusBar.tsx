@@ -1,11 +1,35 @@
 import { useState } from "react";
 import { ConnectDevice, type RelayInfo } from "./ConnectDevice";
 import { useArmedConfirm } from "../use-armed-confirm";
+import { useIsPhone } from "../use-is-phone";
 import { newSessionHref } from "../ws";
 
 // The workbench strip — model, session, cwd, connection, and token/cost
 // usage at a glance. Shell-owned (the agent can't paint here) and collapsible
 // per the side-surface rule: it folds to a single connection dot (T2.6).
+
+/* The Explorer files glyph — one drawing, two homes: the desktop activity
+   bar (Shell) and this bar's phone-only toggle. A single document sheet,
+   drawn symmetric about the viewBox center — a two-page glyph reads as
+   hanging right (its front page's mass sits right of center) even when its
+   bounds are centered. Tight viewBox: the drawing fills the box. */
+export function FilesGlyph({ size = 28 }: { size?: number }) {
+  return (
+    <svg
+      viewBox="5 2 14 20"
+      width={size}
+      height={size}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M13.5 3H7.5A1.5 1.5 0 0 0 6 4.5v15A1.5 1.5 0 0 0 7.5 21h9a1.5 1.5 0 0 0 1.5-1.5V7.5L13.5 3z" />
+      <path d="M13.5 3v3a1.5 1.5 0 0 0 1.5 1.5h3" />
+    </svg>
+  );
+}
 
 export type Usage = {
   model?: string;
@@ -42,6 +66,9 @@ export function StatusBar({
   onEndSession,
   relay,
   version,
+  filesOpen,
+  filesDisabled,
+  onToggleFiles,
 }: {
   connected: boolean;
   // Why the socket is down, when the relay refused it (no daemon / at capacity /
@@ -70,8 +97,18 @@ export function StatusBar({
   // The daemon's version, off the agents hello — the first thing a
   // bug report needs (R.4g).
   version?: string;
+  // The Explorer toggle's PHONE home (2026-07-25, Kyle): the activity bar is
+  // a desktop affordance, so on ≤640px the bar hides and this button carries
+  // the same open/collapse — boxed off at the far left by its own separator
+  // line (the rail's border, folded into the row). Not rendered on desktop
+  // at all (useIsPhone), where home must stay the bar's first control
+  // (2026-07-16 order).
+  filesOpen?: boolean;
+  filesDisabled?: boolean;
+  onToggleFiles?: () => void;
 }) {
   const [open, setOpen] = useState(true);
+  const phone = useIsPhone();
   // First click arms, second click ends — guards against a stray click
   // killing a session (#11).
   const endConfirm = useArmedConfirm<true>();
@@ -105,6 +142,21 @@ export function StatusBar({
 
   return (
     <div className="status-bar">
+      {/* Phone-only (desktop's activity bar owns this there): the files
+          toggle sits one notch OUTSIDE home — its separator boxes it off as
+          navigation, distinct from the session controls. */}
+      {phone && onToggleFiles && (
+        <button
+          className={"sb-files" + (filesOpen ? " is-active" : "")}
+          onClick={onToggleFiles}
+          disabled={filesDisabled}
+          title={filesOpen ? "Hide files" : "Show files"}
+          aria-label="Files"
+          aria-expanded={filesOpen}
+        >
+          <FilesGlyph size={20} />
+        </button>
+      )}
       {/* Home (⌂ → mission control) is the outermost far-LEFT control —
           moved from the far right 2026-07-16 (Kyle); the dot stays glued to
           the agent text it reports on. (A brand-M-as-home experiment lived

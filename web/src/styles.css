@@ -2229,6 +2229,10 @@ body {
 /* #9: mission-control home — an <a> styled as an icon button, the status
    bar's outermost far-LEFT control (moved from the far right 2026-07-16);
    the connection dot sits between it and the agent text. */
+/* .sb-files — the Explorer toggle's phone home (2026-07-25, Kyle) — only
+   RENDERS on ≤640px (StatusBar gates on useIsPhone, keeping home the bar's
+   first control on desktop); its styles live in the phone block. */
+
 .sb-home {
   display: inline-flex;
   align-items: center;
@@ -2360,6 +2364,15 @@ body {
 }
 
 /* ---- Onboarding: shell-owned agent picker (P.4) ------------------------- */
+/* The card's vertical chrome flexes with the window so its internal
+   scrollbar is a genuine last resort, not a routine sight. --onb-squeeze
+   runs 16px (full chrome, tall windows — the sizes read exactly as before)
+   down to 0px (a floor a notch tighter than the old max-height:700px compact
+   tier, which this replaces); every vertical metric interpolates on it, with
+   its full→floor range in a trailing comment. The card lives inside .fleet's
+   zoom (1.15), which inflates used vh values by that factor — the constants
+   below divide it back out (9.1vh ≈ 10.5 real vh). Re-derive them if the
+   fleet zoom ever moves. */
 .onb-overlay {
   position: fixed;
   inset: 0;
@@ -2369,43 +2382,44 @@ body {
   justify-content: center;
   background: var(--overlay);
   backdrop-filter: blur(3px);
-  padding: 24px;
+  padding: calc(12px + var(--onb-squeeze) * 0.75) 24px; /* 12→24px */
+  --onb-squeeze: clamp(0px, calc(9.1vh - 66px), 16px);
 }
 
 .onb-card {
   width: 100%;
   max-width: 560px;
-  /* Never taller than the overlay's padded box: short viewports (small Mac
-     windows are ~600px) get a nested modal with the 24px gutter intact and
-     the card scrolling internally — never flush edges or clipped content. */
+  /* Never taller than the overlay's padded box: below the squeeze floor
+     (windows shorter than a small laptop's ~650px) the card scrolls
+     internally — never flush edges or clipped content. */
   max-height: 100%;
   overflow-y: auto;
   scrollbar-width: thin;
   background: var(--surface);
   border: 1px solid var(--border-2);
   border-radius: 12px;
-  padding: 36px 34px;
+  padding: calc(18px + var(--onb-squeeze) * 1.125) 34px; /* 18→36px */
   box-shadow: var(--shadow-card);
   text-align: center;
 }
 
 
 .onb-glyph {
-  width: 80px;
-  height: 80px;
+  width: calc(40px + var(--onb-squeeze) * 2.5); /* 40→80px */
+  height: calc(40px + var(--onb-squeeze) * 2.5);
 }
 
 .onb-title {
-  margin: 14px 0 6px;
-  font-size: 25px;
+  margin: calc(7px + var(--onb-squeeze) * 0.4375) 0 calc(3px + var(--onb-squeeze) * 0.1875); /* 7→14px / 3→6px */
+  font-size: calc(19px + var(--onb-squeeze) * 0.375); /* 19→25px */
   font-weight: 650;
   color: var(--fg-strong);
 }
 
 .onb-sub {
-  margin: 0 auto 22px;
+  margin: 0 auto calc(10px + var(--onb-squeeze) * 0.75); /* 10→22px */
   max-width: 46ch;
-  font-size: 15px;
+  font-size: calc(14px + var(--onb-squeeze) * 0.0625); /* 14→15px */
   line-height: 1.5;
   color: var(--fg-dim);
 }
@@ -2425,8 +2439,8 @@ body {
 
 .onb-cwd {
   width: 100%;
-  margin-bottom: 14px;
-  padding: 11px 13px;
+  margin-bottom: calc(10px + var(--onb-squeeze) * 0.25); /* 10→14px */
+  padding: calc(8px + var(--onb-squeeze) * 0.1875) 13px; /* 8→11px */
   background: var(--bg-inset);
   border: 1px solid var(--border-mid);
   border-radius: 8px;
@@ -2456,7 +2470,7 @@ body {
 .onb-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: calc(7px + var(--onb-squeeze) * 0.1875); /* 7→10px */
 }
 
 .onb-connecting {
@@ -2470,14 +2484,14 @@ body {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 7px;
-  padding: 17px 19px;
+  gap: calc(3px + var(--onb-squeeze) * 0.25); /* 3→7px */
+  padding: calc(10px + var(--onb-squeeze) * 0.4375) calc(14px + var(--onb-squeeze) * 0.3125); /* 10→17px / 14→19px */
   background: var(--surface-2);
   border: 1px solid var(--border-mid);
   border-radius: 9px;
   cursor: pointer;
   color: var(--fg-strong);
-  font-size: 17px;
+  font-size: calc(15px + var(--onb-squeeze) * 0.125); /* 15→17px */
   text-align: left;
   transition: border-color 0.12s ease, background 0.12s ease, transform 0.06s ease;
 }
@@ -2522,7 +2536,7 @@ body {
 /* R.4k: the local-model signpost under the picker — dim, one notch above the
    card background, so "run your own model" is discoverable without shouting. */
 .onb-local-note {
-  margin-top: 16px;
+  margin-top: calc(8px + var(--onb-squeeze) * 0.5); /* 8→16px */
   font-size: 13px;
   line-height: 1.55;
   color: var(--fg-dim);
@@ -2536,38 +2550,6 @@ body {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 13px;
   letter-spacing: 0.02em;
-}
-
-/* Short viewports: compact the card's chrome so the whole picker FITS at
-   ~600px of page height (a small laptop window) without internal scrolling —
-   the max-height above stays as the hard floor beneath this. */
-@media (max-height: 700px) {
-  .onb-card {
-    padding: 20px 24px;
-  }
-  .onb-glyph {
-    width: 44px;
-    height: 44px;
-  }
-  .onb-title {
-    margin: 8px 0 4px;
-    font-size: 20px;
-  }
-  .onb-sub {
-    margin-bottom: 12px;
-    font-size: 14px;
-  }
-  .onb-list {
-    gap: 8px;
-  }
-  .onb-agent {
-    padding: 11px 15px;
-    gap: 4px;
-    font-size: 16px;
-  }
-  .onb-local-note {
-    margin-top: 10px;
-  }
 }
 
 /* ---- N.4: the second step — how the picked agent is backed -------------- */
@@ -2971,7 +2953,10 @@ body {
   /* The whole page reads a notch larger than the in-session workbench
      (2026-07-25, Kyle; 1.25 tried first — too much) — zoom, not font-size,
      so px paddings, dots, and controls scale together. The phone block
-     resets it: that layout is sized to fit one row at 390px. */
+     resets it: that layout is sized to fit one row at 390px. NOTE: this
+     zoom also scales the modals hosted inside .fleet (the agent picker and
+     the pair dialog); the picker's --onb-squeeze constants bake this factor
+     in — re-derive them if this value moves. */
   zoom: 1.15;
 }
 
@@ -3605,8 +3590,9 @@ html {
   .status-bar {
     flex-wrap: nowrap;
     column-gap: 5px;
-    /* Same T-junction as desktop: the top border starts at the activity
-       bar's line, the controls at the column's content edge. */
+    /* No activity bar on phone (it folds into .sb-files) — the negative
+       margin just runs the top border edge-to-edge; the controls stay at
+       the column's content edge. */
     margin: 4px 0 0 calc(-1 * var(--content-air));
     padding: 8px 0 max(8px, env(safe-area-inset-bottom)) var(--content-air);
     font-size: 0.78em;
@@ -3762,14 +3748,42 @@ html {
     padding: 8px 4px 4px;
   }
 
-  /* The ≥40px tap-target rule, applied to the always-there left strip. */
+  /* The rail is a desktop affordance — a permanent 46px strip is too much
+     of a 390px screen (2026-07-25, Kyle). Its files toggle folds down into
+     the status bar (.sb-files below); the shell and prompt box above run
+     full-width. */
   .activity-bar {
-    width: 46px;
+    display: none;
   }
 
-  .ab-btn {
-    width: 40px;
-    height: 40px;
+  /* The files toggle, boxed off as the row's outermost-left section: the
+     separator is the rail's border line folded into the row, and it keeps
+     navigation visually distinct from the session controls (home/new/…).
+     Radius 0 + transparent: a section of the bar, not another button pill. */
+  .sb-files {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    min-width: 40px;
+    align-self: stretch;
+    margin-right: 3px;
+    padding: 0 10px 0 0;
+    background: transparent;
+    border: none;
+    border-right: 1px solid var(--border);
+    border-radius: 0;
+    color: var(--fg-dim);
+    cursor: pointer;
+  }
+
+  .sb-files.is-active {
+    color: var(--fg-body);
+  }
+
+  .sb-files:disabled {
+    opacity: 0.35;
+    cursor: default;
   }
 
   /* Cockpit sub-lines: they lose the desktop indent (a 390px canvas has no

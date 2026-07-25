@@ -4,7 +4,7 @@ import { Onboarding } from "./Onboarding";
 import { PromptBox } from "./PromptBox";
 import { RenderZone } from "./RenderZone";
 import { FilesPanel } from "./files/FilesPanel";
-import { StatusBar, type Usage } from "./StatusBar";
+import { StatusBar, FilesGlyph, type Usage } from "./StatusBar";
 import { createSessionBus } from "../session-bus";
 import {
   MODE_STORAGE_KEY,
@@ -436,6 +436,9 @@ export function Shell() {
               onEndSession={meta.sessionId ? bus.endSession : undefined}
               relay={daemonInfo.relay}
               version={daemonInfo.version}
+              filesOpen={filesOpen}
+              filesDisabled={!meta.sessionId}
+              onToggleFiles={() => setFilesOpen((f) => !f)}
             />
           </div>
         </div>
@@ -467,7 +470,10 @@ export function Shell() {
 
 /** The workbench's permanent left strip (VS Code's activity-bar convention):
  *  always present so the affordance never moves; its files icon opens or
- *  collapses the Explorer panel (E.3). Disabled until there's a session. */
+ *  collapses the Explorer panel (E.3). Disabled until there's a session.
+ *  DESKTOP ONLY (2026-07-25, Kyle): on ≤640px the strip is hidden — a
+ *  permanent 46px rail is too much of a 390px screen — and the same toggle
+ *  lives in the status bar instead (StatusBar's sb-files). */
 function ActivityBar({
   filesOpen,
   disabled,
@@ -487,23 +493,7 @@ function ActivityBar({
         aria-label="Files"
         aria-expanded={filesOpen}
       >
-        {/* A single document sheet, drawn symmetric about the viewBox
-            center — a two-page glyph reads as hanging right (its front
-            page's mass sits right of center) even when its bounds are
-            centered. Tight viewBox: the drawing fills the 22px box. */}
-        <svg
-          viewBox="5 2 14 20"
-          width="28"
-          height="28"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <path d="M13.5 3H7.5A1.5 1.5 0 0 0 6 4.5v15A1.5 1.5 0 0 0 7.5 21h9a1.5 1.5 0 0 0 1.5-1.5V7.5L13.5 3z" />
-          <path d="M13.5 3v3a1.5 1.5 0 0 0 1.5 1.5h3" />
-        </svg>
+        <FilesGlyph />
       </button>
     </div>
   );
