@@ -1649,11 +1649,11 @@ The governing principles, which any later fleet work inherits:
   additive message + a second page section, never by reshaping this one.
 
 Accepted v1 limits, on purpose: no live output preview on rows (Kyle's call);
-no one-click default new-session (the picker stays the only create); the
-pending-permission display mirrors 4.6's status stickiness, so a second
-concurrently-pending request can be invisible until its own timeout; usage
+no one-click default new-session (the picker stays the only create); usage
 mirrors the status bar's exact rule (per-turn tokens summed, cost taken
-cumulative); elapsed time ticks client-side from `since`.
+cumulative); elapsed time ticks client-side from `since`. *(A third v1 limit —
+permission-queue status stickiness hiding a second concurrently-pending
+request — was hit in real use and FIXED in the 2026-07-24 evening pass below.)*
 
 **Post-merge quality passes (2026-07-24, PR #11):** a real bug behind the
 fleet.e2e ordering flake — `.fleet-activity` was the row's only shrinkable
@@ -1666,6 +1666,38 @@ extracted server-side, the Phase M CSS consolidated); and an `/audit` whose
 permission detail to 200 chars while the in-session bar shows it whole, so a
 grid approver could miss a dangerous tail past a benign head. Now carried
 whole, pinned in Tier 1 + Tier 2 (pins verified to fail with the cap restored).
+
+**Evening pass (2026-07-24, second session — Kyle-driven cockpit UX + honesty):**
+
+- **Concurrent-permission honesty bug FIXED** (was the accepted v1 stickiness
+  limit above; Kyle hit it live — approved one ask, the next two never
+  surfaced). Queue entries now live until their OWN resolution: both answer
+  paths (grid `answer_permission` AND in-session `permission_response`) route
+  through `registry.answerPermission`; unanswered asks age out on the
+  adapter's own `PERMISSION_TIMEOUT_MS` clock (server-side `askedAt`, never
+  on the wire); terminal states still clear all. Needs-you (ordering, ⚠
+  title, tab badge) keys on pending asks OR permission status, so asks
+  surviving past the first answer surface to the top.
+- **Details disclosure**: activity readout + tokens·cost moved OFF the row
+  bar (full working-state rows overflowed their border; volatile inline text
+  made the layout jumpy) into a per-row caret-toggled sub-line — the ❯ glyph
+  CSS-rotated down/up, one row open at a time, live-updating. Bar keeps the
+  stable glance set: dot · name · agent · model · id · status · ago · ⧉ ·
+  acts. (Kyle iterated placement live: centered-borderless tried and reverted.)
+- **Viewport-count lag fixed**: leaving a session by navigation now closes
+  the socket in `pagehide`, so the daemon detaches immediately instead of the
+  30–60s heartbeat window; bfcache restores still reconnect. Session idle
+  timeout (zero-viewport grace) raised 60min → **4h** (Kyle's call). Both
+  rode the parallel session's commits (`bb272da`).
+- **/audit (delta-scoped) → one hardening fix landed**: the fleet's
+  pending-permission mirror is capped at 25 (oldest evict — closest to
+  auto-deny; evicted asks stay answerable at the adapter) so a permission
+  flood can't grow watcher snapshots without bound (probe: 500 asks ≈ 1MB per
+  snapshot before, 51KB after) — full per-entry detail kept (the earlier
+  audit's no-truncation rule). At-cap floods also stop fanning notifies.
+- All pinned: Tier-1 registry lifecycle/prune/cap tests + reworked fleet.e2e
+  (details-line interaction, phone tap flow, immediate viewport-count drop).
+  Tiers at close: **369 / 103 / 51**.
 ---
 
 ## Stretch goals (unscheduled — polish, no milestone gates on these)

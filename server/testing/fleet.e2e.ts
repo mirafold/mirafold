@@ -55,20 +55,34 @@ async function allIdle(rows: number) {
   );
 }
 
-test("the row shows live activity while a turn works, then clears to idle", async () => {
+test("the ▾ details line shows live activity while a turn works, then honest idle text", async () => {
+  // Activity lives behind the per-row disclosure now (2026-07-24, Kyle) —
+  // the bar itself stays a stable glance set.
+  await fleet.locator(".fleet-details-toggle").first().click();
   await say(session, "give me a quick overview");
-  const activity = await fleet.waitForSelector(".fleet-activity", { timeout: 15_000 });
-  assert.match((await activity.innerText()) ?? "", /[✳⚙!] ?.* · \d+[smh]/u);
-  // Activity clears when the turn ends — the row is honest at idle.
-  await fleet.waitForSelector(".fleet-activity", { state: "detached", timeout: 30_000 });
+  await fleet.waitForFunction(
+    () => /[✳⚙!] ?.* · \d+[smh]/u.test(document.querySelector(".fleet-details-activity")?.textContent ?? ""),
+    undefined,
+    { timeout: 15_000 },
+  );
+  // Activity clears when the turn ends — the open line stays honest at idle.
+  await fleet.waitForFunction(
+    () => document.querySelector(".fleet-details-activity")?.textContent === "nothing running",
+    undefined,
+    { timeout: 30_000 },
+  );
   await allIdle(1);
 });
 
-test("session usage lands on the row after the turn (tokens, no invented cost)", async () => {
-  const usage = await fleet.waitForSelector(".fleet-usage", { timeout: 15_000 });
+test("session usage lands on the details line after the turn (tokens, no invented cost)", async () => {
+  // The details line is still open from the previous test — live-updating.
+  const usage = await fleet.waitForSelector(".fleet-details-usage", { timeout: 15_000 });
   const text = (await usage.innerText()) ?? "";
-  assert.match(text, /tok/, "token total on the row");
+  assert.match(text, /tok/, "token total on the line");
   assert.ok(!text.includes("$"), "the mock reports no cost — none shown");
+  // Close it: the toggle is one-at-a-time state the later tests shouldn't inherit.
+  await fleet.locator(".fleet-details-toggle").first().click();
+  await fleet.waitForSelector(".fleet-details", { state: "detached", timeout: 5_000 });
 });
 
 test("needs-you: the row names WHAT it wants; allow from the grid runs the tool; axe-clean", async () => {
@@ -139,7 +153,7 @@ test("ordering: rows hold creation order while working; needs-you surfaces to th
 
   // A working turn must NOT reorder the grid (the recency sort is retired).
   await say(second, "summarize the repo");
-  await fleet.waitForSelector(".fleet-activity", { timeout: 15_000 });
+  await fleet.waitForSelector(".fleet-status-working", { timeout: 15_000 });
   assert.equal(await firstRowId(), sessionId, "rows hold their place while one works");
   await allIdle(2);
 
@@ -202,8 +216,11 @@ test("phone: glance set visible with no side-scroll; permission and prompt act b
   // turns, the row is at its richest: activity + permission + usage at once.
   await say(session, "do something dangerous");
   await phone.waitForSelector(".fleet-perm", { timeout: 15_000 });
-  await phone.waitForSelector(".fleet-activity", { timeout: 15_000 });
-  assert.ok(await phone.locator(".fleet-usage").count(), "usage stays visible on phone");
+  // Details by thumb: the ▾ disclosure works on phone, and the opened line
+  // (activity + usage at their richest) doesn't introduce side-scroll.
+  await phone.locator(".fleet-details-toggle").first().tap();
+  await phone.waitForSelector(".fleet-details", { timeout: 5_000 });
+  assert.ok(await phone.locator(".fleet-details-usage").count(), "usage reachable on phone");
   await noSideScroll(phone);
 
   // Thumb targets: the answer pair is ≥40px tall (the R.4l standard).

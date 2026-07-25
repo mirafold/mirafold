@@ -48,6 +48,13 @@ function activityText(a: NonNullable<SessionMeta["activity"]>): string {
 
 const STATUS_LABEL = { idle: "idle", working: "working", permission: "needs you" } as const;
 
+/** A session that wants an answer: the stream-derived permission hold, OR a
+ *  still-pending ask surviving past it — with concurrent requests, answering
+ *  the first lets the stream move (status "working") while the rest wait. */
+function wantsAnswer(s: SessionMeta): boolean {
+  return s.status === "permission" || (s.permissions?.length ?? 0) > 0;
+}
+
 /** Cockpit ordering (Kyle's call, Phase M): rows hold a stable creation
  *  order so eyes can park on a session; the one exception is sessions
  *  awaiting permission, which surface to a top group — longest-stalled
@@ -55,7 +62,7 @@ const STATUS_LABEL = { idle: "idle", working: "working", permission: "needs you"
  *  `createdAt` is optional on the wire (old daemon); absent → the wire
  *  order holds (the sort is stable). */
 function cockpitOrder(sessions: SessionMeta[]): SessionMeta[] {
-  const rank = (s: SessionMeta) => (s.status === "permission" ? 0 : 1);
+  const rank = (s: SessionMeta) => (wantsAnswer(s) ? 0 : 1);
   return [...sessions].sort(
     (a, b) =>
       rank(a) - rank(b) ||
@@ -89,6 +96,10 @@ export function FleetView() {
   const [answered, setAnswered] = useState<ReadonlySet<string>>(new Set());
   // SessionId whose quick-prompt line is open (one at a time).
   const [promptFor, setPromptFor] = useState<string | null>(null);
+  // SessionId whose details sub-line is open (one at a time, like promptFor):
+  // the row's volatile extras — live activity, tokens · cost — live behind
+  // the down-caret disclosure instead of crowding the bar (2026-07-24, Kyle).
+  const [detailsFor, setDetailsFor] = useState<string | null>(null);
   const [, setTick] = useState(0); // re-render so ago/elapsed labels stay honest
 
   const socket = useMemo(() => {
@@ -151,7 +162,7 @@ export function FleetView() {
   // session tab (amber = something needs you, blue = fleet busy), title
   // carrying the needs-you count. paintTabStatus draws the favicon; the
   // fleet's own title overwrites its session wording.
-  const needsYou = (sessions ?? []).filter((s) => s.status === "permission").length;
+  const needsYou = (sessions ?? []).filter(wantsAnswer).length;
   const fleetBusy = (sessions ?? []).some((s) => s.status === "working");
   useEffect(() => {
     paintTabStatus(needsYou > 0 ? "permission" : fleetBusy ? "busy" : "idle");
@@ -280,18 +291,7 @@ export function FleetView() {
                     {s.model}
                   </span>
                 )}
-                {s.activity && (
-                  <span className="fleet-activity" title="current activity">
-                    {activityText(s.activity)}
-                  </span>
-                )}
                 <span className="fleet-spacer" />
-                {s.usage && (
-                  <span className="fleet-usage" title="session tokens · cost">
-                    {fmtTokens(s.usage.inputTokens + s.usage.outputTokens)} tok
-                    {s.usage.costUsd !== undefined ? ` · $${s.usage.costUsd.toFixed(2)}` : ""}
-                  </span>
-                )}
                 <span className="fleet-id" title="session id">
                   {s.sessionId}
                 </span>
@@ -307,6 +307,23 @@ export function FleetView() {
                 <span className="fleet-viewports" title="open viewports">
                   ⧉ {s.viewports}
                 </span>
+                <button
+                  className={
+                    "fleet-details-toggle" +
+                    (detailsFor === s.sessionId ? " fleet-details-toggle-open" : "")
+                  }
+                  title="Session details"
+                  aria-label={`${detailsFor === s.sessionId ? "Hide" : "Show"} details for session ${s.name}`}
+                  aria-expanded={detailsFor === s.sessionId}
+                  onClick={() => setDetailsFor(detailsFor === s.sessionId ? null : s.sessionId)}
+                >
+                  {/* The ❯ glyph the prompt toggle uses, CSS-rotated to point
+                      down (closed) or up (open) — same icon family, not a
+                      lookalike triangle. */}
+                  <span className="fleet-details-caret" aria-hidden="true">
+                    ❯
+                  </span>
+                </button>
                 <button
                   className={
                     "fleet-prompt-toggle" + (promptFor === s.sessionId ? " fleet-prompt-toggle-open" : "")
@@ -354,6 +371,7 @@ export function FleetView() {
                 answered={answered}
                 onAnswer={(id, allow) => answerPermission(s.sessionId, id, allow)}
               />
+              {detailsFor === s.sessionId && <DetailsLine s={s} />}
               {promptFor === s.sessionId && (
                 <QuickPromptLine
                   name={s.name}
@@ -486,6 +504,28 @@ function PermissionLine({
       >
         deny
       </button>
+    </div>
+  );
+}
+
+/** The on-demand details sub-line (2026-07-24, Kyle): the row's volatile
+ *  extras — live activity and tokens · cost — moved off the bar so the
+ *  glance set stays stable; opened per-row by the caret disclosure, one at
+ *  a time. Renders from the same snapshots as the row, so it live-updates
+ *  while open. Activity text is engine-derived — inert plain text, never
+ *  markdown. */
+function DetailsLine({ s }: { s: SessionMeta }) {
+  return (
+    <div className="fleet-details">
+      <span className="fleet-details-activity">
+        {s.activity ? activityText(s.activity) : "nothing running"}
+      </span>
+      {s.usage && (
+        <span className="fleet-details-usage" title="session tokens · cost">
+          {fmtTokens(s.usage.inputTokens + s.usage.outputTokens)} tok
+          {s.usage.costUsd !== undefined ? ` · $${s.usage.costUsd.toFixed(2)}` : ""}
+        </span>
+      )}
     </div>
   );
 }

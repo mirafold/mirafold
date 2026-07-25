@@ -4,6 +4,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { foldUsage, resolveCwd, SessionRegistry } from "./registry";
+import { PERMISSION_TIMEOUT_MS } from "../adapters/types";
 import type { Backend } from "../adapters";
 import type { WireMsg } from "../protocol";
 
@@ -205,21 +206,78 @@ test("M.1 bang activity: first line only, capped, cleared at bang_end", () => {
   reg.end(entry.id);
 });
 
-test("M.1 the permission queue lives exactly as long as the 4.6 hold", () => {
+test("M.1 each pending permission lives until ITS OWN resolution — never wiped by stream movement", () => {
   const { reg, entry } = freshSession();
   reg.broadcast(entry, { type: "permission_request", tool: "Bash", detail: "rm -rf x", id: "p1" });
   assert.equal(entry.status, "permission");
-  assert.deepEqual(entry.permissions, [{ id: "p1", tool: "Bash", detail: "rm -rf x" }]);
   // A second concurrent request stacks, oldest first — no clear.
   reg.broadcast(entry, { type: "permission_request", tool: "Write", detail: "f.txt", id: "p2" });
   assert.deepEqual(
     entry.permissions.map((p) => p.id),
     ["p1", "p2"],
   );
-  // The stream moving off the hold clears the queue (status-stickiness rule).
+  // Answering the first removes exactly that one.
+  reg.answerPermission(entry.id, "p1", true);
+  assert.deepEqual(
+    entry.permissions.map((p) => p.id),
+    ["p2"],
+  );
+  // The approved tool's stream moving must NOT wipe the still-pending ask —
+  // the 2026-07-24 bug: with concurrent requests, the first answer's tool
+  // output silently dropped the rest off the fleet forever.
   reg.broadcast(entry, { type: "tool_use", name: "Bash", detail: "rm -rf x", id: "t1" });
   assert.equal(entry.status, "working");
+  assert.deepEqual(
+    entry.permissions.map((p) => p.id),
+    ["p2"],
+    "a pending ask survives the stream moving",
+  );
+  // A terminal state clears whatever is left — nothing can still be pending.
+  reg.broadcast(entry, { type: "turn_end" });
   assert.deepEqual(entry.permissions, []);
+  reg.end(entry.id);
+});
+
+// Mirror of PERMISSION_MIRROR_CAP in registry.ts (module-private, like
+// BUFFER_CAP above). Pinning the absolute value is deliberate: a cap change
+// must consciously update this test.
+const PERMISSION_MIRROR_CAP = 25;
+
+test("2026-07-24 audit: a permission flood can't grow fleet snapshots without bound", () => {
+  const { reg, entry } = freshSession();
+  for (let i = 0; i < 100; i++) {
+    reg.broadcast(entry, {
+      type: "permission_request",
+      tool: "Bash",
+      detail: "d".repeat(2_000),
+      id: `p${i}`,
+    });
+  }
+  assert.equal(entry.permissions.length, PERMISSION_MIRROR_CAP, "the mirror holds the cap, not the flood");
+  // Oldest evicted first — the kept asks are the newest, i.e. the ones with
+  // the longest remaining life before the adapter's auto-deny.
+  assert.equal(entry.permissions[0].id, `p${100 - PERMISSION_MIRROR_CAP}`);
+  assert.equal(entry.permissions.at(-1)!.id, "p99");
+  // Capping the COUNT must not reintroduce detail truncation — every kept
+  // entry still carries its full text (the earlier 2026-07-24 audit's rule).
+  assert.equal(entry.permissions[0].detail.length, 2_000);
+  const meta = reg.summary().find((s) => s.sessionId === entry.id)!;
+  assert.equal(meta.permissions!.length, PERMISSION_MIRROR_CAP);
+  reg.end(entry.id);
+});
+
+test("M.1 an ask older than PERMISSION_TIMEOUT_MS ages out — the adapter auto-denied it silently", () => {
+  const { reg, entry } = freshSession();
+  reg.broadcast(entry, { type: "permission_request", tool: "Bash", detail: "d1", id: "p1" });
+  reg.broadcast(entry, { type: "permission_request", tool: "Write", detail: "d2", id: "p2" });
+  // Age only the first past the adapter's auto-deny deadline.
+  entry.permissions[0].askedAt = Date.now() - PERMISSION_TIMEOUT_MS - 1;
+  reg.broadcast(entry, { type: "text_delta", text: "x" });
+  assert.deepEqual(
+    entry.permissions.map((p) => p.id),
+    ["p2"],
+    "the timed-out ask is pruned; the live one stays",
+  );
   reg.end(entry.id);
 });
 
@@ -246,6 +304,7 @@ test("M.1 summary(): cockpit fields are absent when empty, present as COPIES whe
   meta = reg.summary().find((s) => s.sessionId === entry.id)!;
   assert.equal(meta.activity?.label, "Bash");
   assert.deepEqual(meta.usage, { inputTokens: 10, outputTokens: 2 });
+  // deepEqual doubles as the wire-shape pin: askedAt stays server-side.
   assert.deepEqual(meta.permissions, [{ id: "p1", tool: "Bash", detail: "d" }]);
   meta.permissions![0].detail = "mutated";
   assert.equal(entry.permissions[0].detail, "d", "snapshot rows are copies, not aliases");

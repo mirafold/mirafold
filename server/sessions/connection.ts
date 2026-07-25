@@ -560,8 +560,11 @@ export function openConnection(
         entry?.session.interrupt();
         break;
       case "permission_response":
-        if (typeof msg.id === "string" && typeof msg.allow === "boolean") {
-          entry?.session.resolvePermission(msg.id, msg.allow);
+        if (typeof msg.id === "string" && typeof msg.allow === "boolean" && entry) {
+          // Through the registry, not the adapter directly: the answer must
+          // also drop the ask from the fleet's pending queue and notify
+          // watchers — same semantics as the grid's answer_permission.
+          registry.answerPermission(entry.id, msg.id, msg.allow);
         }
         break;
       case "action": {
