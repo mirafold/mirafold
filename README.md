@@ -47,11 +47,15 @@ codebase. Companion documents:
   Goal / Build / Files / Done-when. Shipped so far: **Phases 0, 1, T, 2, 3, T2,
   and P** (three faithful agent skins — Claude Code, Codex, Gemini CLI), all
   of Phase 4, **G/H/H2** (the 2026-07-15 maintainability restructure this
-  document's layout reflects), **S** (the theme system; seven themes at launch), L.1, most of
-  the Phase F fidelity fixes, and the working core of **Phase R** (the
-  hosted relay: R.1 dial-out + envelope, R.3 per-pair E2E encryption,
-  R.4's QR pairing + phone layout — proven on a real phone — and R.2's
-  relay **deployed** on Fly.io). What remains before launch: the R.4l
+  document's layout reflects), **S** (the theme system; seven themes at launch),
+  **N** (the onboarding backend picker + local-server discovery), **V** (the
+  visual/fidelity punch list), **A** (the accessibility floor, WCAG 2.1 AA),
+  **C** (CI on every push), **E** (the Explorer — the read-only files panel),
+  **M** (mission control grown into a cockpit: act on sessions from the grid),
+  L.1, most of the Phase F fidelity fixes, and the working core of
+  **Phase R** (the hosted relay: R.1 dial-out + envelope, R.3 per-pair E2E
+  encryption, R.4's QR pairing + phone layout — proven on a real phone — and
+  R.2's relay **deployed** on Fly.io). What remains before launch: the R.4l
   polish/fidelity intake, billing (R.5, on a merchant of record — Paddle —
   per Phase K.4), the written release order (R.5b), a user-testing round
   (R.5c), launch prep (R.6), and launch day itself (R.7). **Phase K**, the
@@ -477,14 +481,19 @@ web/               the browser app (React 19 + Vite)
                        incl. thinking blocks, artifacts, and subagent grouping
     ToolBlock.tsx      tool-call records: collapsed row, expands to input diff +
                        output with elision marker (T.1/T2.2/T2.3)
-    StatusBar.tsx      workbench strip (T2.6; regrouped 4.11): home ⌂ + end
-                       session controls far left, conn dot, agent · model ·
-                       session · cwd · usage · version, ⚙ settings, theme pill;
-                       folds to one row of controls at phone width (R.4l)
+    StatusBar.tsx      workbench strip (T2.6; regrouped 4.11): home ⌂ + new
+                       far left, conn dot, agent · model · session · cwd ·
+                       usage · version, ⚙ settings, theme pill, end far right;
+                       sits INSIDE the workbench column (2026-07-25) so the
+                       activity bar's border line runs unbroken to the window
+                       bottom; folds to one row of controls at phone width (R.4l)
     PinDock.tsx        right-side dock for pinned components (live via entries)
     Artifact.tsx       Level 3 host: sandboxed iframe for agent-authored UI (Phase 3)
-    FleetView.tsx      mission control at / (4.6): live session list, rename,
-                       new-session affordance; routing lives in main.tsx
+    FleetView.tsx      mission control at / (4.6; Phase M cockpit 2026-07-24):
+                       live session rows — status carried by the colored dot
+                       alone — with per-row acts (answer a pending permission,
+                       interrupt, quick prompt, ▾ details), rename, new-session
+                       affordance; routing lives in main.tsx
     ConnectDevice.tsx  shell-owned "⧉ pair" affordance: QR of the pairing
                        URL, status bar + fleet header (R.4)
     ThemePicker.tsx    shell-owned settings card (S.4): Session facts section
@@ -534,7 +543,10 @@ web/               the browser app (React 19 + Vite)
                      reached only via agentLabel()/connectHint() so an
                      unknown agent name degrades to its raw string (R.4h)
   src/version.ts     the web bundle's own build version (R.4g)
-  src/styles.css     structural CSS only — every color via var(...) (see §7)
+  src/styles.css     structural CSS only — every color via var(...) (see §7);
+                     organized by surface, top of the screen down, with ONE
+                     phone media block at the end (its header comment maps the
+                     sections and the order-sensitive spots, 2026-07-25)
   src/themes/        the palettes (Phase S): base.css (pinned code/diff
                      tokens) + one self-contained file per theme; manifest.ts
                      is the single source (THEMES, the token contract, the
@@ -733,8 +745,13 @@ output zone.)
 
 ### 6.1 `Shell.tsx` — the trusted shell and its message bus
 
-`Shell` builds (once, in a `useMemo`) a tiny **bus**: a `SocketClient` plus a
-listener set. The URL is the session identity — `/s/<id>` — so the bus's
+`Shell` builds (once, in a `useState` lazy initializer) a tiny **bus**: a
+`SocketClient` plus a listener set. (`useState`, not `useMemo`, is
+load-bearing: React's Fast Refresh re-runs `useMemo` on every dev hot edit —
+dependency lists are deliberately ignored — and each re-run opened a fresh
+socket while the orphaned one stayed attached, inflating the fleet's viewport
+counts; state survives a hot update. Same rule in `FleetView`, 2026-07-25.)
+The URL is the session identity — `/s/<id>` — so the bus's
 hello is `attach` (id present) or `create`, and `session_created` writes the
 id back into the URL via `history.replaceState`. It exposes a handful of
 capabilities downward, and nothing below the shell ever holds the socket:
@@ -922,6 +939,13 @@ knowing because it constrains future UI work:
   all of it is disabled under `prefers-reduced-motion`.
 - Side surfaces are emergent/collapsible — the pin dock only exists while
   something is pinned, and the status bar folds to a single connection dot.
+- **The workbench frame is VS Code-like** (2026-07-25): the activity bar's
+  border line runs unbroken from the window's top edge to its bottom, and
+  everything in the session view — transcript, prompt box, status bar — sits
+  strictly to its right (only banners run full-width). The status bar's top
+  border meets that line in a clean T, with its controls vertically centered
+  in the bottom band. Mission control renders a notch larger than the
+  in-session workbench (`zoom: 1.15`, reset on phone).
 - **Visibility superset + collapse-on-finalize** (the Phase T2 rule): the
   browser must never show *less* than the terminal — thinking, full tool
   detail, diffs, subagent progress, todos, and usage are all surfaced — but
@@ -1266,9 +1290,17 @@ Read PLAN.md for the real thing; the shape in one breath:
   policy (K.9), and the export/compliance closure notes (K.11/K.12). The
   LLC and trademark filing are deliberately revenue-triggered, not
   launch-gating.
-- **Now (as of 2026-07-17):** finishing **Phase R**. The billing vendor is
-  locked (Paddle, as merchant of record; account created, its two
-  verification reviews pending). The build steps that remain: the R.4l
+- **Also shipped (2026-07-20 → 25):** the accessibility floor (**Phase A** —
+  WCAG 2.1 AA: screen-reader turn/permission announcements, focus traps,
+  axe-clean e2e gates); **CI on every push** (Phase C); the **Explorer**
+  (**Phase E** — the read-only files panel behind the activity bar: jailed
+  tree walk, file view, HEAD-vs-working diffs); **mission control grown into
+  a cockpit** (**Phase M** — answer permissions, interrupt, and dispatch
+  prompts from the grid without entering a session); and the workbench-frame
+  polish + the by-surface `styles.css` reorganization (2026-07-25, §7).
+- **Now (as of 2026-07-25):** finishing **Phase R**. The billing vendor is
+  locked (Paddle, as merchant of record; account created and both
+  verification reviews approved 2026-07-19). The build steps that remain: the R.4l
   polish + fidelity intake (enumeration in progress), entitlement/billing
   (R.5), the written release order (R.5b), a user-testing round (R.5c),
   launch prep (R.6), then launch as one event — demo post, repo public,

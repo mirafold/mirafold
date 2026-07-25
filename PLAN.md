@@ -531,6 +531,27 @@ with it. Both sequence BEFORE R.5.**
        fleetview": the session view AND FleetView both have styling
        problems in Kyle's eyes. Details owed; enumerate screen by screen
        with him.
+       **Progress (2026-07-25, Kyle-directed session):** the workbench
+       frame settled — the activity bar's border line runs unbroken from
+       window top to window bottom, the status bar moved inside the
+       workbench column (top border meets the line in a T; controls
+       vertically centered in the bottom band); fleet rows dropped the
+       status word (the dot alone carries state, sr-only text kept for
+       screen readers) and the fleet page renders at 1.15× (phone reset);
+       styles.css reorganized by surface (pure permutation, rule set
+       proven identical); plus one real bug fixed — Fast Refresh re-runs
+       `useMemo`, so every dev hot edit leaked an attached socket and
+       inflated the fleet's viewport counts (Shell + FleetView now use
+       `useState` lazy init).
+       **Found, not fixed (same pass — each an equal-specificity CSS
+       override killing an intended declaration; one-rule fixes):**
+       (a) `.status-line`'s pulse is dead — the cross-cutting rise list
+       overrides its `animation`, so the working line never pulses;
+       (b) `.onb-agent`'s own transitions are dead — the theme-fade list
+       overrides them (press/hover easing off-spec);
+       (c) `.files-refresh`'s surface background is dead — `.files-btn`'s
+       later `transparent` wins, so the floating refresh button is
+       see-through over the rows it scrolls above.
     3. **Permission prompts diverge from terminal behavior — FIDELITY
        BUG, not polish.** Kyle: "permissions questions seem to work
        differently than they do in the terminal, breaking our fidelity
