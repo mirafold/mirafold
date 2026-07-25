@@ -750,8 +750,11 @@ with it. Both sequence BEFORE R.5.**
     `postcss` 8.5.16 → 8.5.23 (GHSA-r28c-9q8g-f849, high, dev-scope; via
     vite, so a lockfile re-resolve only, no resolution needed) landed as
     `c660130`, typecheck + all tiers green (369/103/52), alert #4 verified
-    "fixed" via the GitHub API. The `genui-relay` half of this sweep is
-    still owed at its own flip.
+    "fixed" via the GitHub API. The `genui-relay` half was verified the
+    same day: alerts confirmed ENABLED on that repo (API 204) with zero
+    open, and a local `npm audit` at `9f35e2d` found 0 vulnerabilities —
+    clean today; still RE-verify at its public flip, since new advisories
+    can land anytime.
   - **Gate on the relay flip (2026-07-15 audit):** before `genui-relay` goes
     public in (b), run a dedicated security-audit pass over that repo — the
     shell got its own on 2026-07-15; public security-marketed code gets
