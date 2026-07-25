@@ -874,6 +874,44 @@ with it. Both sequence BEFORE R.5.**
     same afternoon. *(Resolved same day: that bump landed as `c660130` —
     alert #4 "fixed", zero open alerts on the repo; detail in R.5b's
     sweep note.)*
+  - **Tarball rebuilt again 2026-07-25 (evening), from this commit's tree
+    (parent `d743632`)** — still **0.2.0**, no version bump: the only
+    code-affecting change since the `d8abc62` build is the transitive
+    postcss 8.5.16 → 8.5.23 bump in `c660130`, which moves the built CSS
+    asset and nothing else. Staged at `../beta/mirafold-0.2.0.tgz` and
+    verified the way a tester installs it: cold `npm i -g` into a
+    throwaway prefix, `mirafold --version` → 0.2.0, real boot serving
+    HTTP 200. Tier-1 (369 tests) + typecheck green on the tree it was
+    built from.
+  - **npm-audit noise on install — investigated and settled
+    (2026-07-25):** installing the tarball into a *local project
+    directory* reports 4 moderate advisories, all one chain
+    (`@hono/node-server` <2.0.5 — Windows-only path traversal in
+    `serve-static` — reached transitively via `@modelcontextprotocol/sdk`,
+    which `@anthropic-ai/claude-agent-sdk` also requires as a peer).
+    **Testers never see it: npm skips audit on global installs**, so the
+    documented `npm i -g ./mirafold-0.2.0.tgz` prints no advisory at all
+    (verified against a clean prefix). And it cannot be fixed from our
+    side anyway: the MCP SDK still declares `^1.19.9` at its latest
+    (1.29.0), hono 1.x has no patched release (1.19.15 is the last), a
+    published package's own `overrides` field is ignored by npm (verified
+    by packing one and installing it), and **npm v12 no longer reads an
+    `npm-shrinkwrap.json` shipped inside a tarball** — the one mechanism
+    that used to pin a consumer's transitive tree. `bundleDependencies`,
+    npm's suggested replacement, is a non-starter here: `@lydell/node-pty`
+    and the agent SDK ship per-platform optional binaries. What DID land:
+    `package.json` gains an `overrides` block mirroring the existing yarn
+    `resolutions`, so an `npm install` from source resolves the same tree
+    yarn does (`npm install --package-lock-only` → 0 vulnerabilities);
+    it has no effect on the tarball. Our own testing keeps running the
+    forced 2.0.11, as R.5b's sweep note records.
+  - **Do not run `npm install` in this repo** (learned 2026-07-25):
+    `npm install --package-lock-only` silently rewrote `yarn.lock` —
+    dropped every non-Linux platform entry (`@lydell/node-pty`, the agent
+    SDK's darwin/win32 binaries) and all the integrity hashes. Restored
+    from git and re-verified with `yarn install --frozen-lockfile`. Use
+    yarn for every package operation, as CLAUDE.md already says; npm is
+    for `npm pack` only.
 
 - [x] **Step R.5d — Relay staging (nonprod) environment** — **DONE
   2026-07-23** (the day the private release went live, per the sequencing).
