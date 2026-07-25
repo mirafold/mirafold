@@ -790,6 +790,16 @@ with it. Both sequence BEFORE R.5.**
     Verified by computed-style probe at 607px and 769px viewports + all
     tiers green; worst-case content (3 credential-less agents, longest
     hints) scrolls internally with the gutter intact at any height.
+    *(Superseded 2026-07-25: the fleet page's `zoom: 1.15` — a cockpit
+    polish landing — inflated the card 15% while this breakpoint kept
+    measuring the real viewport, so the scrollbar showed at every height
+    under ~890px. The binary compact tier is replaced by a fluid
+    `--onb-squeeze` driver: every vertical metric interpolates full→compact
+    with window height (zoom factor divided out of the vh math), the
+    credentialed picker fits scroll-free down to ~645px real, and scroll
+    remains the last resort for hint-heavy or tiny-window states. E2e pins
+    the ramp — an all-rows-ready daemon swept through it, asserting no
+    internal scroll AND that the glyph actually compressed. `d8abc62`.)*
   - Finding #3 (proactive sweep after #2, same day): the settings and pair
     dialogs share the exact defect #2 found in the onboarding card — the
     S.4 card idiom had `max-width` but no `max-height`. Measured live at a
@@ -829,6 +839,23 @@ with it. Both sequence BEFORE R.5.**
     fleet row render the slot only when known. Gemini's "auto" stays (a
     genuine configured router-mode value, still refined per turn). All
     three tiers verified; tarball rebuilt at that commit.
+  - **2026-07-25 status:** version bumped to **0.2.0** with the `engines`
+    Node floor raised to **>=22** (`52ffdaf` — the floor now matches what
+    we actually develop and test on; README, mirafold.com's install note,
+    /beta, and the beta-folder WELCOME.md all state Node 22+ and name
+    `mirafold-0.2.0.tgz`). Tarball rebuilt at `d8abc62` (includes the
+    phone rail fix + onboarding squeeze), staged at
+    `../beta/mirafold-0.2.0.tgz`, cold-install + boot smoke-tested.
+    **Distribution channel (external fact):** testers get it via Kyle's
+    Google Drive link — replace-in-place version upload keeps the link
+    stable; Drive keeps the old display name on content swaps, so the
+    rename to `mirafold-0.2.0.tgz` is a manual step (advised, link
+    survives it). **Uptake (Kyle, 2026-07-25): almost no testers have
+    actually tried it yet** — the stable-link swap was chosen so the
+    already-sent link serves the new build. Also flagged on push: GitHub
+    reports 1 HIGH Dependabot alert on the default branch (dependabot/4);
+    a dependency bump was already in flight in a parallel session the
+    same afternoon.
 
 - [x] **Step R.5d — Relay staging (nonprod) environment** — **DONE
   2026-07-23** (the day the private release went live, per the sequencing).
@@ -1645,6 +1672,22 @@ Same session: a behavior-preserving refactor (ActivityBar extracted beside
 BangBar; `--gutter-left/right` + `--content-air` CSS vars replace the
 duplicated gutter expressions) and a delta audit — no exploitable findings; a
 hostile `<img onerror>` filename demonstrated inert (React text escaping).
+
+**2026-07-25 amendment (Kyle-caught deviation):** the polish pass above made
+the activity bar permanent at ALL widths — but the locked design (the charter
+above, and the 2026-07-24 scope lock before it) always said phone entry =
+files icon in the status bar. On a 390px screen the 46px always-on strip was
+"way too much precious screen real estate" (Kyle). Restored same day
+(`d8abc62`): the rail is desktop-only (≤640px hides it; shell + prompt box
+run full-width again); the phone toggle is `.sb-files` at the status bar's
+far LEFT, boxed off by its own separator line (the rail's border folded into
+the row), one notch outside home — Kyle's chosen shape over between-home-and-
+new, auto-hiding rail, FAB, and bottom-nav alternatives. Rendered only on
+phone via `useIsPhone`, so desktop DOM keeps home as the bar's first control
+(the locked 2026-07-16 order). Drill-in, focus trap, and focus-return carry
+over untouched; the phone e2e opens via `.sb-files` and asserts the rail is
+`display: none`. Deployed to app.mirafold.com same day (Pages auto-build,
+bundle `index-BG3GNY9U.js` confirmed live).
 
 Post-v1 depth (editing, fs-watcher, syntax highlighting, changed-files
 grouping) stays parked in POST-RELEASE.md.

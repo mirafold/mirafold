@@ -470,7 +470,9 @@ web/               the browser app (React 19 + Vite)
                      registry/, so the trust split reads in the tree
     Shell.tsx          TRUSTED SHELL: prompt box + permission bar + notices +
                        status bar + the activity bar (the left strip that
-                       toggles the Explorer); consumes the session bus (H.9)
+                       toggles the Explorer — desktop only; on phone the
+                       toggle folds into the status bar, 2026-07-25);
+                       consumes the session bus (H.9)
     Onboarding.tsx     first-run card: pick the agent + working directory, then
                        how it's backed when there's a choice — detected
                        credentials + discovered local model servers (P.4/4.8/N.4)
@@ -486,7 +488,10 @@ web/               the browser app (React 19 + Vite)
                        usage · version, ⚙ settings, theme pill, end far right;
                        sits INSIDE the workbench column (2026-07-25) so the
                        activity bar's border line runs unbroken to the window
-                       bottom; folds to one row of controls at phone width (R.4l)
+                       bottom; folds to one row of controls at phone width
+                       (R.4l), where it also hosts the Explorer toggle
+                       (.sb-files, boxed at the far left — the rail is
+                       desktop-only, 2026-07-25)
     PinDock.tsx        right-side dock for pinned components (live via entries)
     Artifact.tsx       Level 3 host: sandboxed iframe for agent-authored UI (Phase 3)
     FleetView.tsx      mission control at / (4.6; Phase M cockpit 2026-07-24):
@@ -939,13 +944,17 @@ knowing because it constrains future UI work:
   all of it is disabled under `prefers-reduced-motion`.
 - Side surfaces are emergent/collapsible — the pin dock only exists while
   something is pinned, and the status bar folds to a single connection dot.
-- **The workbench frame is VS Code-like** (2026-07-25): the activity bar's
-  border line runs unbroken from the window's top edge to its bottom, and
-  everything in the session view — transcript, prompt box, status bar — sits
-  strictly to its right (only banners run full-width). The status bar's top
-  border meets that line in a clean T, with its controls vertically centered
-  in the bottom band. Mission control renders a notch larger than the
-  in-session workbench (`zoom: 1.15`, reset on phone).
+- **The workbench frame is VS Code-like** (2026-07-25) — on desktop: the
+  activity bar's border line runs unbroken from the window's top edge to its
+  bottom, and everything in the session view — transcript, prompt box, status
+  bar — sits strictly to its right (only banners run full-width). The status
+  bar's top border meets that line in a clean T, with its controls vertically
+  centered in the bottom band. On phone (≤640px) the rail is hidden — a
+  permanent strip is too much of a 390px screen — and its files toggle sits
+  boxed at the status bar's far left, its separator echoing the rail's border
+  (2026-07-25). Mission control renders a notch larger than the in-session
+  workbench (`zoom: 1.15`, reset on phone; the agent picker hosted inside it
+  compensates via the fluid `--onb-squeeze` chrome).
 - **Visibility superset + collapse-on-finalize** (the Phase T2 rule): the
   browser must never show *less* than the terminal — thinking, full tool
   detail, diffs, subagent progress, todos, and usage are all surfaced — but
