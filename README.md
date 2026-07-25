@@ -1012,7 +1012,8 @@ messages; the log carries the detail behind them.
 ### Prerequisites (development)
 
 - **Node 22** (any install method; this machine uses nvm with 22 as the
-  default alias). The published package itself requires only Node ≥ 20.12.
+  default alias). The published package requires Node ≥ 22 as well
+  (`engines` in package.json).
 - **yarn** for all package operations (via corepack: `corepack enable`).
 
 ### Development
