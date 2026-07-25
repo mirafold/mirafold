@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentInfo, SessionMeta } from "@protocol";
 import { Onboarding } from "./Onboarding";
 import { ConnectDevice } from "./ConnectDevice";
@@ -102,11 +102,14 @@ export function FleetView() {
   const [detailsFor, setDetailsFor] = useState<string | null>(null);
   const [, setTick] = useState(0); // re-render so ago/elapsed labels stay honest
 
-  const socket = useMemo(() => {
+  // useState's lazy initializer, NOT useMemo — same reason as Shell's bus:
+  // Fast Refresh re-runs useMemo on every hot edit, leaking a socket each
+  // time; state survives the hot update (2026-07-25).
+  const [socket] = useState(() => {
     const s = new SocketClient();
     s.setHello(() => ({ type: "watch_sessions" }));
     return s;
-  }, []);
+  });
 
   // The socket's message handler lives for the socket's life; it reads the
   // picker's openness through this ref so error ROUTING follows the live
@@ -295,12 +298,10 @@ export function FleetView() {
                 <span className="fleet-id" title="session id">
                   {s.sessionId}
                 </span>
-                <span className="fleet-sep" aria-hidden="true">
-                  —
-                </span>
-                <span className={`fleet-status fleet-status-${s.status}`}>
-                  {STATUS_LABEL[s.status]}
-                </span>
+                {/* The status WORD came off the row (2026-07-25, Kyle): the
+                    dot already says it — blinking blue = working. Kept for
+                    screen readers, which can't read a colored dot. */}
+                <span className="sr-only">{STATUS_LABEL[s.status]}</span>
                 <span className="fleet-ago">{ago(s.lastActivity)}</span>
                 {/* M.5: who's watching — 0 is the interesting number (an
                     unwatched session still working for you). */}

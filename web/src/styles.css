@@ -2,7 +2,27 @@
    Palettes live in web/src/themes/ — base.css (pinned code/diff tokens) plus
    one self-contained file per theme; import order is set in main.tsx. Every
    rule here consumes colors via var(...) only: no color literal belongs in
-   this file. */
+   this file.
+
+   Organized by SURFACE (2026-07-25), top of the screen to the bottom, then
+   the pages and layers beyond the session view:
+     1. Base + page frame        html/body, .shell, .main-row/.main-col, zones
+     2. Activity bar + Explorer  the left strip and its files panel
+     3. Shell banners            session-notice, demo banner
+     4. Transcript               welcome, turns, markdown, thinking, notices,
+                                 tool calls, ! output strips
+     5. Generative UI            .rc components, picker, artifacts, pinning
+     6. Prompt area              prompt box, ! stdin bar, permission bar, stop
+     7. Status bar               the strip and every .sb-* control
+     8. Dialogs & overlays       onboarding, pairing QR, settings card
+     9. Fleet page               mission control + the Phase M cockpit
+    10. Cross-cutting polish     motion, theme fade, selection, a11y, scrollbars
+    11. Responsive               the ONE phone (max-width: 640px) block
+
+   Ordering is load-bearing in three places (equal-specificity overrides):
+   the theme-fade transition list must stay after .onb-agent, the rise
+   animation list after .status-line, and phone overrides after their base
+   rules — all satisfied by sections 10/11 staying last. */
 
 * {
   box-sizing: border-box;
@@ -43,9 +63,10 @@ body {
   padding: 0 var(--gutter-right) 0 var(--gutter-left);
 }
 
-/* The workbench row: activity bar on the left, everything else — transcript
-   AND prompt box — strictly to its right (VS Code frame). Banners above and
-   the status bar below stay full-width. The negative margin cancels .shell's
+/* The workbench row: activity bar on the left, everything else — transcript,
+   prompt box AND status bar — strictly to its right (VS Code frame). Only
+   banners above stay full-width, so the bar's border line runs unbroken from
+   the window's top edge to its bottom. The negative margin cancels .shell's
    left gutter so the strip is FLUSH with the window edge — the visible band
    from edge to border line IS the bar, with no dead page-margin inside it. */
 .main-row {
@@ -93,256 +114,6 @@ body {
   display: flex;
   flex-direction: column;
   gap: 14px;
-}
-
-/* #12: welcome shown in a fresh session with no transcript yet — centered in
-   the empty output zone so it's clearly "your session", not raw emptiness. */
-.zone-empty {
-  margin: auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  gap: 15px;
-  padding: 24px;
-  color: var(--fg-dim);
-  animation: rise 0.2s ease-out both;
-}
-
-.zone-empty-hello {
-  position: relative; /* anchors the hanging mark */
-}
-
-.zone-empty-mark {
-  width: 56px;
-  height: 56px;
-  border-radius: 12px; /* clips the tile's corners; no outline by design */
-  position: absolute;
-  right: 100%; /* hangs left of the title so the TEXT owns the centerline */
-  margin-right: 18px;
-  top: 50%;
-  transform: translateY(-50%);
-}
-
-.zone-empty-title {
-  font-size: 33px;
-  font-weight: 650;
-  color: var(--fg-strong);
-}
-
-.zone-empty-sub {
-  max-width: 44ch;
-  font-size: 19px;
-  line-height: 1.55;
-}
-
-.glyph {
-  color: var(--accent);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  user-select: none;
-}
-
-/* User input renders as a command strip: a tinted band with a green edge
-   that segments the scrollback — everything between strips is agent output. */
-.turn-user {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.92em;
-  color: var(--fg-strong);
-  white-space: pre-wrap;
-  background: var(--surface-2);
-  border-left: 3px solid var(--accent);
-  border-radius: 6px;
-  padding: 10px 14px;
-  margin-top: 12px;
-  /* a pasted URL/token must wrap, not widen the zone into a sideways scroll */
-  overflow-wrap: anywhere;
-}
-
-.turn-user:first-child {
-  margin-top: 0;
-}
-
-/* Agent output sits slightly inset from the strips, on the bare canvas. */
-.turn-assistant {
-  padding: 0 4px;
-  color: var(--fg-body);
-  align-self: stretch;
-  line-height: 1.55;
-}
-
-.markdown :is(h1, h2, h3):first-child {
-  margin-top: 0;
-}
-
-.markdown a {
-  color: var(--info);
-}
-
-.markdown code {
-  background: var(--inline-code-bg);
-  border-radius: 4px;
-  padding: 1px 5px;
-  font-size: 0.9em;
-}
-
-.markdown pre {
-  background: var(--code-bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 12px;
-  overflow-x: auto;
-  color: var(--code-fg); /* --code-bg is pinned dark; never inherit light fg */
-}
-
-.markdown pre code {
-  background: none;
-  padding: 0;
-}
-
-.markdown table {
-  border-collapse: collapse;
-}
-
-.markdown th,
-.markdown td {
-  border: 1px solid var(--border-mid);
-  padding: 6px 12px;
-}
-
-/* ---- Registry components (Level 2) --------------------------------------
-   Rendered blocks share the .rc base: a bordered panel that mounts with a
-   small rise so components visibly "arrive" in the transcript. */
-
-.turn-render {
-  padding: 0 4px;
-  position: relative;
-}
-
-/* ---- Pinning ------------------------------------------------------------
-   The pin affordance is drawn by trusted shell code as a frame *around*
-   rendered blocks — never inside a component, so agent-supplied props can't
-   fake or reach it. */
-
-.pin-btn {
-  position: absolute;
-  top: 8px;
-  right: 12px;
-  z-index: 1;
-  padding: 2px 7px;
-  font-size: 0.85em;
-  background: var(--surface-2);
-  border: 1px solid var(--border-2);
-  border-radius: 6px;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.15s ease;
-}
-
-.turn-render:hover .pin-btn,
-.pin-dock-item:hover .pin-btn {
-  opacity: 1;
-}
-
-.pin-btn:hover {
-  border-color: var(--border-hover);
-}
-
-.pin-btn.is-pinned {
-  color: var(--fg-dim);
-}
-
-/* Placeholder holding a pinned block's spot in the transcript. */
-.pin-stub {
-  align-self: flex-start;
-  margin: 0 4px;
-  padding: 6px 12px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.82em;
-  color: var(--fg-dim);
-  background: transparent;
-  border: 1px dashed var(--border-mid);
-  border-radius: 8px;
-  cursor: pointer;
-}
-
-.pin-stub:hover {
-  color: var(--fg-body);
-  border-color: var(--border-hover);
-}
-
-.pin-dock {
-  width: 340px;
-  flex-shrink: 0;
-  overflow-y: auto;
-  border-left: 1px solid var(--border);
-  padding: 18px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  animation: dock-in 0.18s ease-out;
-}
-
-@keyframes dock-in {
-  from {
-    opacity: 0;
-    transform: translateX(12px);
-  }
-}
-
-.pin-dock-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.pin-dock-title {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.82em;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--fg-dim);
-}
-
-.dock-btn {
-  padding: 2px 8px;
-  background: transparent;
-  color: var(--fg-dim);
-  border: 1px solid var(--border-2);
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.dock-btn:hover {
-  color: var(--fg-body);
-  border-color: var(--border-hover);
-}
-
-.pin-dock-item {
-  position: relative;
-}
-
-.pin-dock-item .rc {
-  max-width: none;
-}
-
-/* Collapsed dock: a thin edge tab that keeps the pins one click away. */
-.pin-tab {
-  flex-shrink: 0;
-  width: 30px;
-  writing-mode: vertical-rl;
-  padding: 14px 4px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.82em;
-  color: var(--fg-dim);
-  background: transparent;
-  border: none;
-  border-left: 1px solid var(--border);
-  cursor: pointer;
-}
-
-.pin-tab:hover {
-  color: var(--fg-body);
-  background: var(--surface);
 }
 
 /* ── Explorer files panel (E.3) ────────────────────────────────────────── */
@@ -652,6 +423,514 @@ body {
 .fv-elided {
   color: var(--fg-dim);
   font-style: italic;
+}
+
+/* ---- Shell banners -------------------------------------------------------
+   Full-width strips above the workbench, drawn by the trusted shell — agent
+   output can never paint or clear them. */
+
+/* R.4c: the shell-drawn "session ended" notice — same trust rule and visual
+   family as the demo banner; dismissable because it's a one-time event. */
+.session-notice {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 8px 0 4px;
+  padding: 7px 14px;
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-border);
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8em;
+  flex-shrink: 0;
+}
+
+.session-notice-text {
+  color: var(--fg-mid);
+  min-width: 0;
+  flex: 1;
+}
+
+.session-notice-dismiss {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: var(--fg-dim);
+  cursor: pointer;
+  font: inherit;
+  padding: 0 2px;
+}
+
+.session-notice-dismiss:hover {
+  color: var(--fg-strong);
+}
+
+/* R.4b: the shell-drawn demo banner — pinned above the transcript, never
+   paintable by agent output. Dim warn tones: informative, not alarming. */
+.demo-banner {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 8px 0 4px;
+  padding: 7px 14px;
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-border);
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8em;
+  flex-shrink: 0;
+}
+
+.demo-banner-badge {
+  color: var(--warn-fg);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.85em;
+  flex-shrink: 0;
+}
+
+.demo-banner-text {
+  color: var(--fg-mid);
+  min-width: 0;
+}
+
+/* ---- Transcript ----------------------------------------------------------
+   Everything the output zone renders: the empty-session welcome, command
+   strips and agent turns, thinking, service notices, tool calls, and the
+   `!` command's output. */
+
+/* #12: welcome shown in a fresh session with no transcript yet — centered in
+   the empty output zone so it's clearly "your session", not raw emptiness. */
+.zone-empty {
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 15px;
+  padding: 24px;
+  color: var(--fg-dim);
+  animation: rise 0.2s ease-out both;
+}
+
+.zone-empty-hello {
+  position: relative; /* anchors the hanging mark */
+}
+
+.zone-empty-mark {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px; /* clips the tile's corners; no outline by design */
+  position: absolute;
+  right: 100%; /* hangs left of the title so the TEXT owns the centerline */
+  margin-right: 18px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.zone-empty-title {
+  font-size: 33px;
+  font-weight: 650;
+  color: var(--fg-strong);
+}
+
+.zone-empty-sub {
+  max-width: 44ch;
+  font-size: 19px;
+  line-height: 1.55;
+}
+
+.glyph {
+  color: var(--accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  user-select: none;
+}
+
+/* User input renders as a command strip: a tinted band with a green edge
+   that segments the scrollback — everything between strips is agent output. */
+.turn-user {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.92em;
+  color: var(--fg-strong);
+  white-space: pre-wrap;
+  background: var(--surface-2);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin-top: 12px;
+  /* a pasted URL/token must wrap, not widen the zone into a sideways scroll */
+  overflow-wrap: anywhere;
+}
+
+.turn-user:first-child {
+  margin-top: 0;
+}
+
+/* Agent output sits slightly inset from the strips, on the bare canvas. */
+.turn-assistant {
+  padding: 0 4px;
+  color: var(--fg-body);
+  align-self: stretch;
+  line-height: 1.55;
+}
+
+.markdown :is(h1, h2, h3):first-child {
+  margin-top: 0;
+}
+
+.markdown a {
+  color: var(--info);
+}
+
+.markdown code {
+  background: var(--inline-code-bg);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 0.9em;
+}
+
+.markdown pre {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  overflow-x: auto;
+  color: var(--code-fg); /* --code-bg is pinned dark; never inherit light fg */
+}
+
+.markdown pre code {
+  background: none;
+  padding: 0;
+}
+
+.markdown table {
+  border-collapse: collapse;
+}
+
+.markdown th,
+.markdown td {
+  border: 1px solid var(--border-mid);
+  padding: 6px 12px;
+}
+
+/* ---- Thinking (Phase T2.1) ------------------------------------------------
+   The model's reasoning, full fidelity: streams dim and italic while the
+   turn runs, folds to one clickable line once real output starts.
+   Collapsed is fine — invisible is not. */
+
+.thinking-block {
+  /* flex-none: overflow:hidden (folded state) would otherwise let the
+     zone's flex column squash this row to zero height */
+  flex: none;
+  color: var(--fg-dimmer);
+  font-style: italic;
+  font-size: 0.88em;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-width: 80ch;
+  padding-left: 10px;
+  border-left: 2px solid var(--border-2);
+}
+
+.thinking-done {
+  cursor: pointer;
+}
+
+.thinking-done:hover {
+  color: var(--fg-dim);
+}
+
+.thinking-folded {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8em;
+  font-style: normal;
+}
+
+/* ---- Service-status line (F.2) ------------------------------------------
+   Events the terminal shows and the adapter would otherwise drop — a retry,
+   a compaction, a rate-limit warning, a model refusal. Same dim system-line
+   family as the thinking block, never agent markdown. rate_limit / refusal
+   read as warnings (amber); retry / compaction stay neutral-dim. */
+
+.notice-line {
+  flex: none; /* same reason as .thinking-block: don't let the flex column squash it */
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  color: var(--fg-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8em;
+  line-height: 1.5;
+  max-width: 80ch;
+  padding: 2px 0 2px 10px;
+  border-left: 2px solid var(--border-2);
+}
+
+.notice-glyph {
+  opacity: 0.85;
+}
+
+.notice-line[data-kind="rate_limit"],
+.notice-line[data-kind="refusal"] {
+  color: var(--warn-fg);
+  border-left-color: var(--warn-fg);
+}
+
+/* An engine's OWN words, badged with its name (2026-07-20 audit). Unbadged,
+   this line is Mirafold speaking; a verbatim model-chosen string must not be
+   able to pass for that. The badge replaces the glyph rather than joining it,
+   so the two cases can't be confused at a glance, and the dashed rule marks
+   the whole line as quoted from elsewhere. */
+.notice-line[data-source] {
+  border-left-style: dashed;
+}
+
+.notice-source {
+  flex: none;
+  align-self: center;
+  padding: 1px 6px;
+  border: 1px solid var(--border-2);
+  border-radius: 4px;
+  color: var(--fg-dimmer);
+  font-size: 0.85em;
+  letter-spacing: 0.02em;
+}
+
+/* ---- Tool calls (Phase T.1) ---------------------------------------------
+   Terminal-style records of what the agent actually did: one dim monospace
+   row per call, collapsed by default; errors arrive expanded. Negative
+   margins tighten consecutive rows against the zone's 14px gap so a run of
+   tool calls reads as one burst of activity. */
+
+.tool-block {
+  margin: -5px 4px;
+  min-width: 0;
+}
+
+.tool-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 2px 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  color: var(--fg-dim);
+}
+
+.tool-caret {
+  width: 1em;
+  flex-shrink: 0;
+  color: var(--fg-faint);
+}
+
+.tool-block.is-running .tool-caret {
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.tool-name {
+  font-weight: 600;
+  color: var(--fg-mid);
+  flex-shrink: 0;
+}
+
+.tool-head:hover .tool-name {
+  color: var(--fg-body);
+}
+
+.tool-detail {
+  color: var(--fg-dimmer);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.tool-output {
+  margin: 4px 0 6px 22px;
+  padding: 10px 12px;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8em;
+  line-height: 1.5;
+  color: var(--code-fg);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 320px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hover) transparent;
+}
+
+.tool-block.is-error .tool-name {
+  color: var(--error);
+}
+
+.tool-block.is-error .tool-output {
+  border-color: var(--err-border);
+}
+
+/* Tool input (T2.2): full args in the expansion — diff / code / JSON. */
+.tool-input {
+  margin: 4px 0 2px 22px;
+}
+
+.tool-code,
+.tool-diff,
+.rc-diff-body {
+  margin: 0 0 4px 0;
+  padding: 10px 12px;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8em;
+  line-height: 1.5;
+  color: var(--code-fg);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 360px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hover) transparent;
+}
+
+.tool-code.tool-added {
+  border-color: var(--diff-add-border);
+}
+
+.tool-diff > div,
+.rc-diff-body > div {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.diff-add {
+  background: var(--diff-add-bg);
+  color: var(--diff-add-fg);
+}
+
+.diff-del {
+  background: var(--diff-del-bg);
+  color: var(--diff-del-fg);
+}
+
+.diff-ctx {
+  color: var(--fg-dimmer);
+}
+
+/* Truncation marker (T2.3): explicit, dim, never mistaken for real output. */
+.tool-elided {
+  color: var(--warn-fg);
+  font-style: italic;
+}
+
+/* Subagent group (T2.4): a Task's inner calls, nested and collapsible so a
+   subagent's churn is present but never crowds the transcript. */
+.tool-group {
+  display: contents;
+}
+
+.subagent-group {
+  margin: -8px 0 0 22px;
+  padding-left: 12px;
+  border-left: 1px solid var(--border-mid);
+}
+
+.subagent-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8em;
+  color: var(--fg-dim);
+}
+
+.subagent-head:hover .subagent-label {
+  color: var(--fg-mid);
+}
+
+.subagent-caret {
+  color: var(--fg-faint);
+}
+
+.subagent-calls {
+  margin-top: 2px;
+}
+
+.status-line {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  color: var(--fg-dim);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* The `!` passthrough (Step 4.9). The strip echoes the command-strip look
+   with an amber `!` in place of the green `❯`; output is a plain mono block
+   streaming live below it. */
+.turn-bang .bang-glyph {
+  color: var(--warn-fg);
+}
+
+.bang-state {
+  margin-left: 12px;
+  font-size: 0.85em;
+  color: var(--fg-faint);
+}
+
+.bang-fail {
+  color: var(--error);
+}
+
+.bang-no-output {
+  margin: 0 0 4px;
+  padding: 2px 14px 6px 30px;
+  font-size: 0.85em;
+  font-style: italic;
+  color: var(--fg-faint);
+}
+
+.bang-output {
+  margin: 0 0 4px;
+  padding: 8px 14px 10px 30px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.88em;
+  line-height: 1.45;
+  color: var(--fg-mid);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+}
+
+/* ---- Registry components (Level 2) --------------------------------------
+   Rendered blocks share the .rc base: a bordered panel that mounts with a
+   small rise so components visibly "arrive" in the transcript. */
+
+.turn-render {
+  padding: 0 4px;
+  position: relative;
 }
 
 .rc {
@@ -1435,279 +1714,137 @@ body {
   word-break: break-word;
 }
 
-/* ---- Thinking (Phase T2.1) ------------------------------------------------
-   The model's reasoning, full fidelity: streams dim and italic while the
-   turn runs, folds to one clickable line once real output starts.
-   Collapsed is fine — invisible is not. */
+/* ---- Pinning ------------------------------------------------------------
+   The pin affordance is drawn by trusted shell code as a frame *around*
+   rendered blocks — never inside a component, so agent-supplied props can't
+   fake or reach it. */
 
-.thinking-block {
-  /* flex-none: overflow:hidden (folded state) would otherwise let the
-     zone's flex column squash this row to zero height */
-  flex: none;
-  color: var(--fg-dimmer);
-  font-style: italic;
-  font-size: 0.88em;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-word;
-  max-width: 80ch;
-  padding-left: 10px;
-  border-left: 2px solid var(--border-2);
-}
-
-.thinking-done {
-  cursor: pointer;
-}
-
-.thinking-done:hover {
-  color: var(--fg-dim);
-}
-
-.thinking-folded {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.8em;
-  font-style: normal;
-}
-
-/* ---- Service-status line (F.2) ------------------------------------------
-   Events the terminal shows and the adapter would otherwise drop — a retry,
-   a compaction, a rate-limit warning, a model refusal. Same dim system-line
-   family as the thinking block, never agent markdown. rate_limit / refusal
-   read as warnings (amber); retry / compaction stay neutral-dim. */
-
-.notice-line {
-  flex: none; /* same reason as .thinking-block: don't let the flex column squash it */
-  display: flex;
-  gap: 8px;
-  align-items: baseline;
-  color: var(--fg-dim);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.8em;
-  line-height: 1.5;
-  max-width: 80ch;
-  padding: 2px 0 2px 10px;
-  border-left: 2px solid var(--border-2);
-}
-
-.notice-glyph {
-  opacity: 0.85;
-}
-
-.notice-line[data-kind="rate_limit"],
-.notice-line[data-kind="refusal"] {
-  color: var(--warn-fg);
-  border-left-color: var(--warn-fg);
-}
-
-/* An engine's OWN words, badged with its name (2026-07-20 audit). Unbadged,
-   this line is Mirafold speaking; a verbatim model-chosen string must not be
-   able to pass for that. The badge replaces the glyph rather than joining it,
-   so the two cases can't be confused at a glance, and the dashed rule marks
-   the whole line as quoted from elsewhere. */
-.notice-line[data-source] {
-  border-left-style: dashed;
-}
-
-.notice-source {
-  flex: none;
-  align-self: center;
-  padding: 1px 6px;
+.pin-btn {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  z-index: 1;
+  padding: 2px 7px;
+  font-size: 0.85em;
+  background: var(--surface-2);
   border: 1px solid var(--border-2);
-  border-radius: 4px;
-  color: var(--fg-dimmer);
-  font-size: 0.85em;
-  letter-spacing: 0.02em;
+  border-radius: 6px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease;
 }
 
-/* ---- Tool calls (Phase T.1) ---------------------------------------------
-   Terminal-style records of what the agent actually did: one dim monospace
-   row per call, collapsed by default; errors arrive expanded. Negative
-   margins tighten consecutive rows against the zone's 14px gap so a run of
-   tool calls reads as one burst of activity. */
-
-.tool-block {
-  margin: -5px 4px;
-  min-width: 0;
+.turn-render:hover .pin-btn,
+.pin-dock-item:hover .pin-btn {
+  opacity: 1;
 }
 
-.tool-head {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  width: 100%;
-  padding: 2px 0;
+.pin-btn:hover {
+  border-color: var(--border-hover);
+}
+
+.pin-btn.is-pinned {
+  color: var(--fg-dim);
+}
+
+/* Placeholder holding a pinned block's spot in the transcript. */
+.pin-stub {
+  align-self: flex-start;
+  margin: 0 4px;
+  padding: 6px 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82em;
+  color: var(--fg-dim);
   background: transparent;
-  border: none;
+  border: 1px dashed var(--border-mid);
+  border-radius: 8px;
   cursor: pointer;
-  text-align: left;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.85em;
-  color: var(--fg-dim);
 }
 
-.tool-caret {
-  width: 1em;
-  flex-shrink: 0;
-  color: var(--fg-faint);
-}
-
-.tool-block.is-running .tool-caret {
-  animation: pulse 1.4s ease-in-out infinite;
-}
-
-.tool-name {
-  font-weight: 600;
-  color: var(--fg-mid);
-  flex-shrink: 0;
-}
-
-.tool-head:hover .tool-name {
+.pin-stub:hover {
   color: var(--fg-body);
+  border-color: var(--border-hover);
 }
 
-.tool-detail {
-  color: var(--fg-dimmer);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-}
-
-.tool-output {
-  margin: 4px 0 6px 22px;
-  padding: 10px 12px;
-  background: var(--code-bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.8em;
-  line-height: 1.5;
-  color: var(--code-fg);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  max-height: 320px;
+.pin-dock {
+  width: 340px;
+  flex-shrink: 0;
   overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-hover) transparent;
-}
-
-.tool-block.is-error .tool-name {
-  color: var(--error);
-}
-
-.tool-block.is-error .tool-output {
-  border-color: var(--err-border);
-}
-
-/* Tool input (T2.2): full args in the expansion — diff / code / JSON. */
-.tool-input {
-  margin: 4px 0 2px 22px;
-}
-
-.tool-code,
-.tool-diff,
-.rc-diff-body {
-  margin: 0 0 4px 0;
-  padding: 10px 12px;
-  background: var(--code-bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.8em;
-  line-height: 1.5;
-  color: var(--code-fg);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  max-height: 360px;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-hover) transparent;
-}
-
-.tool-code.tool-added {
-  border-color: var(--diff-add-border);
-}
-
-.tool-diff > div,
-.rc-diff-body > div {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.diff-add {
-  background: var(--diff-add-bg);
-  color: var(--diff-add-fg);
-}
-
-.diff-del {
-  background: var(--diff-del-bg);
-  color: var(--diff-del-fg);
-}
-
-.diff-ctx {
-  color: var(--fg-dimmer);
-}
-
-/* Truncation marker (T2.3): explicit, dim, never mistaken for real output. */
-.tool-elided {
-  color: var(--warn-fg);
-  font-style: italic;
-}
-
-/* Subagent group (T2.4): a Task's inner calls, nested and collapsible so a
-   subagent's churn is present but never crowds the transcript. */
-.tool-group {
-  display: contents;
-}
-
-.subagent-group {
-  margin: -8px 0 0 22px;
-  padding-left: 12px;
-  border-left: 1px solid var(--border-mid);
-}
-
-.subagent-head {
+  border-left: 1px solid var(--border);
+  padding: 18px 14px;
   display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  padding: 4px 0;
-  background: none;
-  border: 0;
-  cursor: pointer;
-  text-align: left;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.8em;
-  color: var(--fg-dim);
+  flex-direction: column;
+  gap: 12px;
+  animation: dock-in 0.18s ease-out;
 }
 
-.subagent-head:hover .subagent-label {
-  color: var(--fg-mid);
-}
-
-.subagent-caret {
-  color: var(--fg-faint);
-}
-
-.subagent-calls {
-  margin-top: 2px;
-}
-
-.status-line {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.85em;
-  color: var(--fg-dim);
-  animation: pulse 1.4s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  50% {
-    opacity: 0.45;
+@keyframes dock-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
   }
 }
+
+.pin-dock-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.pin-dock-title {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82em;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg-dim);
+}
+
+.dock-btn {
+  padding: 2px 8px;
+  background: transparent;
+  color: var(--fg-dim);
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.dock-btn:hover {
+  color: var(--fg-body);
+  border-color: var(--border-hover);
+}
+
+.pin-dock-item {
+  position: relative;
+}
+
+.pin-dock-item .rc {
+  max-width: none;
+}
+
+/* Collapsed dock: a thin edge tab that keeps the pins one click away. */
+.pin-tab {
+  flex-shrink: 0;
+  width: 30px;
+  writing-mode: vertical-rl;
+  padding: 14px 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82em;
+  color: var(--fg-dim);
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.pin-tab:hover {
+  color: var(--fg-body);
+  background: var(--surface);
+}
+
+/* ---- Prompt area ---------------------------------------------------------
+   The input side of the workbench: the command bar, the `!` command's stdin
+   bar, the permission bar, and the stop affordance — all trusted-shell
+   surfaces agent output can never render or wrap. */
 
 /* The command bar: prompt glyph + monospace input, submits on Enter.
    Grows with content up to ~8 lines, then scrolls internally. */
@@ -1794,43 +1931,6 @@ body {
   color: var(--fg-faint);
 }
 
-/* The `!` passthrough (Step 4.9). The strip echoes the command-strip look
-   with an amber `!` in place of the green `❯`; output is a plain mono block
-   streaming live below it. */
-.turn-bang .bang-glyph {
-  color: var(--warn-fg);
-}
-
-.bang-state {
-  margin-left: 12px;
-  font-size: 0.85em;
-  color: var(--fg-faint);
-}
-
-.bang-fail {
-  color: var(--error);
-}
-
-.bang-no-output {
-  margin: 0 0 4px;
-  padding: 2px 14px 6px 30px;
-  font-size: 0.85em;
-  font-style: italic;
-  color: var(--fg-faint);
-}
-
-.bang-output {
-  margin: 0 0 4px;
-  padding: 8px 14px 10px 30px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.88em;
-  line-height: 1.45;
-  color: var(--fg-mid);
-  white-space: pre-wrap;
-  word-break: break-word;
-  overflow-x: auto;
-}
-
 /* Stdin for the running `!` command — shell-owned, ephemeral-path input
    (never buffered or fanned out). Amber family: it's a live process asking. */
 .bang-bar {
@@ -1893,70 +1993,6 @@ body {
 /* Permission bar (Phase T.3): drawn by the trusted shell above the prompt
    box — agent output cannot render, wrap, or fake this surface. Amber is
    the "decision needed" accent. */
-/* R.4c: the shell-drawn "session ended" notice — same trust rule and visual
-   family as the demo banner; dismissable because it's a one-time event. */
-.session-notice {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  margin: 8px 0 4px;
-  padding: 7px 14px;
-  background: var(--warn-bg);
-  border: 1px solid var(--warn-border);
-  border-radius: 8px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.8em;
-  flex-shrink: 0;
-}
-
-.session-notice-text {
-  color: var(--fg-mid);
-  min-width: 0;
-  flex: 1;
-}
-
-.session-notice-dismiss {
-  flex-shrink: 0;
-  background: transparent;
-  border: none;
-  color: var(--fg-dim);
-  cursor: pointer;
-  font: inherit;
-  padding: 0 2px;
-}
-
-.session-notice-dismiss:hover {
-  color: var(--fg-strong);
-}
-
-/* R.4b: the shell-drawn demo banner — pinned above the transcript, never
-   paintable by agent output. Dim warn tones: informative, not alarming. */
-.demo-banner {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  margin: 8px 0 4px;
-  padding: 7px 14px;
-  background: var(--warn-bg);
-  border: 1px solid var(--warn-border);
-  border-radius: 8px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.8em;
-  flex-shrink: 0;
-}
-
-.demo-banner-badge {
-  color: var(--warn-fg);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-size: 0.85em;
-  flex-shrink: 0;
-}
-
-.demo-banner-text {
-  color: var(--fg-mid);
-  min-width: 0;
-}
 
 .perm-bar {
   display: flex;
@@ -2059,8 +2095,17 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin: 6px 0 8px;
-  padding: 4px 10px;
+  /* Lives in .main-col (right of the activity bar, like the prompt box). The
+     negative left margin gives back the column's content air so the top
+     border starts AT the bar's border line — a clean T-junction, not two
+     lines crossing — while the left padding puts the controls back on the
+     prompt box's left edge. Vertically the same trade (2026-07-25, Kyle):
+     top margin −2 + top padding 12 keeps the controls exactly where they
+     were (offset sum 10px, as the old 6+4) but lifts the border line so the
+     12px above the buttons matches the 12px below (4px padding + 8px
+     margin) — the buttons sit centered between line and window bottom. */
+  margin: -2px 0 8px calc(-1 * var(--content-air));
+  padding: 12px 10px 4px var(--content-air);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.74em;
   color: var(--fg-dimmer);
@@ -2072,7 +2117,8 @@ body {
   border: 0;
   border-top: 1px solid var(--border-ghost);
   cursor: pointer;
-  width: 100%;
+  /* No width: 100% — .main-col's stretch sizes it, which keeps the right
+     edge in place despite the negative left margin above. */
   justify-content: flex-start;
 }
 
@@ -2154,6 +2200,171 @@ body {
 .sb-agent-btn:hover {
   filter: brightness(1.25);
 }
+
+/* The status bar's two word-pills — "new" (#new session, an <a> to the startup
+   screen) and "end" (#11, two-click end → end?). One shape, opposite hover
+   intents: neutral for new, danger for end. */
+.sb-new,
+.sb-end {
+  display: inline-flex;
+  align-items: center;
+  height: 34px; /* matches the computed height of .sb-home / .sb-theme */
+  background: transparent;
+  border: 1px solid var(--border-2);
+  border-radius: 7px;
+  padding: 0 12px;
+  color: var(--fg-mid);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  text-decoration: none;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+
+.sb-new:hover {
+  color: var(--fg);
+  border-color: var(--border-hover);
+  background: var(--surface-hover);
+}
+
+.sb-end:hover {
+  color: var(--error);
+  border-color: var(--err-border-strong);
+}
+
+.sb-end-armed,
+.sb-end-armed:hover {
+  color: var(--error);
+  border-color: var(--err-border-strong);
+  background: var(--err-bg);
+}
+
+/* #9: mission-control home — an <a> styled as an icon button, the status
+   bar's outermost far-LEFT control (moved from the far right 2026-07-16);
+   the connection dot sits between it and the agent text. */
+.sb-home {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-mid);
+  border-radius: 7px;
+  padding: 6px 11px;
+  color: var(--fg);
+  font: inherit;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.sb-home:hover {
+  border-color: var(--border-hover);
+  background: var(--surface-hover);
+}
+
+/* Theme as a segmented sun|moon switch: both modes visible, the active side
+   lit, so the control never needs decoding as state-vs-action. */
+.sb-theme {
+  display: inline-flex;
+  align-items: stretch;
+  background: var(--surface-2);
+  border: 1px solid var(--border-mid);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.sb-theme-opt {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  padding: 6px 9px;
+  background: transparent;
+  border: 0;
+  color: var(--fg-dimmer);
+  font: inherit;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sb-theme-opt + .sb-theme-opt {
+  border-left: 1px solid var(--border-mid);
+}
+
+.sb-theme-opt:hover {
+  color: var(--fg-mid);
+}
+
+.sb-theme-opt.is-active {
+  color: var(--fg);
+  background: var(--surface-hover);
+  cursor: default;
+}
+
+/* The "connect a device" pairing button (R.4) — the QR card it opens lives
+   with the dialogs below. */
+.sb-pair {
+  display: inline-flex;
+  align-items: center;
+  height: 34px; /* the status bar's shared control height (.sb-new / .sb-end) */
+  padding: 0 12px;
+  color: var(--fg-mid);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  background: transparent;
+  border: 1px solid var(--border-2);
+  border-radius: 7px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+
+.sb-pair:hover {
+  color: var(--fg);
+  border-color: var(--border-hover);
+  background: var(--surface-hover);
+}
+
+/* In the fleet header the pair button sits beside .fleet-new, not the status
+   bar's 34px row — keep it sized to that neighbour. */
+.fleet-head .sb-pair {
+  height: auto;
+  padding: 5px 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  color: var(--fg-dimmer);
+}
+
+/* The settings gear (S.4) — sits beside the theme pill; the card it opens
+   lives with the dialogs below. */
+.sb-settings {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  padding: 6px 10px;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--fg-dimmer);
+  background: transparent;
+  border: 1px solid var(--border-2);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.sb-settings:hover {
+  color: var(--fg);
+  border-color: var(--border-hover);
+}
+
+/* ---- Dialogs & overlays --------------------------------------------------
+   The modal layer: onboarding's agent picker, the pairing QR card, and the
+   settings card. */
 
 /* Transparent wrapper so `inert` can hide everything behind an open dialog
    from the accessibility tree without touching flex/grid layout — aria-modal
@@ -2533,189 +2744,234 @@ body {
   color: var(--warn-fg);
 }
 
-/* ---- Polish (Step 4.3) ----------------------------------------------------
-   Motion: everything that enters the transcript rises in — one short, soft
-   arrival, no bounce. Replay repaints use the same animation; at 160ms a
-   full-history repaint reads as a quick settle, not a shimmer storm. */
+/* ---- Connect a device (Step R.4) -------------------------------------------
+   Shell-owned pairing affordance: a status-bar / fleet-header button opening
+   a QR of the pairing URL. The QR stays black-on-white in both themes —
+   scanners want contrast, not theming. */
 
-@keyframes rise {
-  from {
-    opacity: 0;
-    transform: translateY(5px);
-  }
+.pair-backdrop,
+.settings-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--overlay);
+  backdrop-filter: blur(3px);
+  padding: 24px;
 }
 
-.turn-user,
-.turn-assistant,
-.tool-block,
-.thinking-block,
-.notice-line,
-.bang-block,
-.status-line {
-  animation: rise 0.16s ease-out both;
-}
-
-/* Theme switch fades instead of snapping; hover borders ride the same rule. */
-body,
-.rc,
-.artifact,
-.turn-user,
-.prompt-box,
-.status-bar,
-.pin-dock,
-.rc-link,
-.onb-agent {
-  transition:
-    background-color 0.22s ease,
-    color 0.22s ease,
-    border-color 0.22s ease;
-}
-
-::selection {
-  background: var(--selection);
-}
-
-/* Available to screen readers, invisible on screen (A.1). Not `display:none`
-   or `visibility:hidden` — both remove the element from the accessibility
-   tree, which would silence the live regions this exists for. */
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  border: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
-/* Keyboard focus gets a visible ring; pointer clicks stay quiet. */
-:focus-visible {
-  outline: 2px solid var(--border-hover);
-  outline-offset: 1px;
-}
-
-html {
-  scrollbar-color: var(--border-hover) transparent;
-}
-
-.render-zone,
-.pin-dock {
+/* The pairing and settings cards share one modal idiom (S.4): same card
+   shell, head, title, and close — only the width differs. */
+.pair-card,
+.settings-card {
+  width: 100%;
+  /* Same hard floor as .onb-card: never taller than the backdrop's padded
+     box, so short viewports keep the 24px gutter and the card scrolls
+     internally instead of sitting flush (settings measures 583px natural —
+     taller than a ~600px un-maximized Mac window). */
+  max-height: 100%;
+  overflow-y: auto;
   scrollbar-width: thin;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation: none !important;
-    transition: none !important;
-  }
-}
-
-/* The status bar's two word-pills — "new" (#new session, an <a> to the startup
-   screen) and "end" (#11, two-click end → end?). One shape, opposite hover
-   intents: neutral for new, danger for end. */
-.sb-new,
-.sb-end {
-  display: inline-flex;
-  align-items: center;
-  height: 34px; /* matches the computed height of .sb-home / .sb-theme */
-  background: transparent;
+  background: var(--surface);
   border: 1px solid var(--border-2);
-  border-radius: 7px;
-  padding: 0 12px;
-  color: var(--fg-mid);
-  font: inherit;
-  font-size: 13px;
-  line-height: 1;
-  cursor: pointer;
-  text-decoration: none;
-  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: var(--shadow-card);
 }
 
-.sb-new:hover {
-  color: var(--fg);
-  border-color: var(--border-hover);
-  background: var(--surface-hover);
+.pair-card {
+  max-width: 380px;
 }
 
-.sb-end:hover {
-  color: var(--error);
-  border-color: var(--err-border-strong);
+.settings-card {
+  max-width: 420px;
 }
 
-.sb-end-armed,
-.sb-end-armed:hover {
-  color: var(--error);
-  border-color: var(--err-border-strong);
-  background: var(--err-bg);
-}
-
-/* #9: mission-control home — an <a> styled as an icon button, the status
-   bar's outermost far-LEFT control (moved from the far right 2026-07-16);
-   the connection dot sits between it and the agent text. */
-.sb-home {
-  display: inline-flex;
+.pair-head,
+.settings-head {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  min-width: 34px;
-  background: var(--surface-2);
-  border: 1px solid var(--border-mid);
-  border-radius: 7px;
-  padding: 6px 11px;
-  color: var(--fg);
-  font: inherit;
-  font-size: 20px;
-  line-height: 1;
-  cursor: pointer;
-  text-decoration: none;
+  gap: 8px;
+  margin-bottom: 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
-.sb-home:hover {
-  border-color: var(--border-hover);
-  background: var(--surface-hover);
+.pair-title,
+.settings-title {
+  color: var(--fg-strong);
+  font-size: 0.95em;
 }
 
-/* Theme as a segmented sun|moon switch: both modes visible, the active side
-   lit, so the control never needs decoding as state-vs-action. */
-.sb-theme {
-  display: inline-flex;
-  align-items: stretch;
-  background: var(--surface-2);
-  border: 1px solid var(--border-mid);
-  border-radius: 7px;
-  overflow: hidden;
-}
-
-.sb-theme-opt {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 32px;
-  padding: 6px 9px;
+.pair-close,
+.settings-close {
+  margin-left: auto;
   background: transparent;
   border: 0;
   color: var(--fg-dimmer);
   font: inherit;
-  font-size: 20px;
-  line-height: 1;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+
+.pair-close:hover,
+.settings-close:hover {
+  color: var(--fg);
+}
+
+.pair-qr {
+  display: block;
+  width: 100%;
+  max-width: 260px;
+  margin: 0 auto;
+  border-radius: 8px;
+}
+
+.pair-hint {
+  margin: 14px 2px 10px;
+  font-size: 0.82em;
+  line-height: 1.5;
+  color: var(--fg-dim);
+}
+
+.pair-url-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pair-url {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.72em;
+  color: var(--fg-mid);
+  background: var(--bg-inset);
+  border: 1px solid var(--border-faint);
+  border-radius: 6px;
+  padding: 6px 8px;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.pair-copy {
+  flex-shrink: 0;
+  padding: 5px 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78em;
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid var(--ok-border);
+  border-radius: 6px;
   cursor: pointer;
 }
 
-.sb-theme-opt + .sb-theme-opt {
-  border-left: 1px solid var(--border-mid);
+.pair-copy:hover {
+  background: var(--ok-bg);
 }
 
-.sb-theme-opt:hover {
+/* ---- Settings card (S.4) ----------------------------------------------------
+   Shell-owned, same modal idiom as the pairing card. One section today
+   (Theme); built to grow more sections. The gear (.sb-settings) sits beside
+   the pill in the status bar; the pill itself is locked unchanged. */
+
+.settings-section-title {
+  font-size: 0.85em;
+  font-weight: 600;
   color: var(--fg-mid);
+  margin-bottom: 10px;
 }
 
-.sb-theme-opt.is-active {
-  color: var(--fg);
+/* Session facts (R.4l) — the card is the phone's one home for these. */
+.settings-kv {
+  margin: 0 0 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-kv-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.settings-kv dt {
+  flex: none;
+  width: 64px;
+  font-size: 0.78em;
+  color: var(--fg-dim);
+}
+
+.settings-kv dd {
+  margin: 0;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82em;
+  color: var(--fg-body);
+  overflow-wrap: anywhere;
+}
+
+.theme-group + .theme-group {
+  margin-top: 12px;
+}
+
+.theme-group-label {
+  font-size: 0.74em;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-dimmer);
+  margin-bottom: 6px;
+}
+
+.theme-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 0.9em;
+  color: var(--fg-body);
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.theme-row:hover {
   background: var(--surface-hover);
-  cursor: default;
+  border-color: var(--border-faint);
+}
+
+.theme-row.is-slotted {
+  border-color: var(--border-mid);
+  background: var(--surface-2);
+}
+
+.theme-chips {
+  display: inline-flex;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.theme-chip {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  border: 1px solid var(--border-mid);
+}
+
+.theme-row-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.theme-row-check {
+  color: var(--accent);
+  flex-shrink: 0;
 }
 
 /* ---- Mission control (Step 4.6) -------------------------------------------
@@ -2726,6 +2982,11 @@ html {
   max-width: 900px;
   margin: 0 auto;
   padding: 48px 24px;
+  /* The whole page reads a notch larger than the in-session workbench
+     (2026-07-25, Kyle; 1.25 tried first — too much) — zoom, not font-size,
+     so px paddings, dots, and controls scale together. The phone block
+     resets it: that layout is sized to fit one row at 390px. */
+  zoom: 1.15;
 }
 
 .fleet-head {
@@ -2904,24 +3165,6 @@ html {
   flex-shrink: 0;
 }
 
-.fleet-status {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.78em;
-  flex-shrink: 0;
-}
-
-.fleet-status-idle {
-  color: var(--fg-dim);
-}
-
-.fleet-status-working {
-  color: var(--info);
-}
-
-.fleet-status-permission {
-  color: var(--warn-fg);
-}
-
 .fleet-ago {
   color: var(--fg-faint);
   flex-shrink: 0;
@@ -2953,572 +3196,6 @@ html {
   color: var(--error);
   border-color: var(--err-border-strong);
   background: var(--err-bg);
-}
-
-/* #6: separates the session id (left edge of the right-hand group) from the
-   state cluster, so the right side reads as two groups instead of one clutter. */
-.fleet-sep {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.78em;
-  color: var(--fg-faint);
-  flex-shrink: 0;
-}
-
-/* ---- Connect a device (Step R.4) -------------------------------------------
-   Shell-owned pairing affordance: a status-bar / fleet-header button opening
-   a QR of the pairing URL. The QR stays black-on-white in both themes —
-   scanners want contrast, not theming. */
-
-.sb-pair {
-  display: inline-flex;
-  align-items: center;
-  height: 34px; /* the status bar's shared control height (.sb-new / .sb-end) */
-  padding: 0 12px;
-  color: var(--fg-mid);
-  font: inherit;
-  font-size: 13px;
-  line-height: 1;
-  background: transparent;
-  border: 1px solid var(--border-2);
-  border-radius: 7px;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
-}
-
-.sb-pair:hover {
-  color: var(--fg);
-  border-color: var(--border-hover);
-  background: var(--surface-hover);
-}
-
-/* In the fleet header the pair button sits beside .fleet-new, not the status
-   bar's 34px row — keep it sized to that neighbour. */
-.fleet-head .sb-pair {
-  height: auto;
-  padding: 5px 12px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.85em;
-  color: var(--fg-dimmer);
-}
-
-.pair-backdrop,
-.settings-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--overlay);
-  backdrop-filter: blur(3px);
-  padding: 24px;
-}
-
-/* The pairing and settings cards share one modal idiom (S.4): same card
-   shell, head, title, and close — only the width differs. */
-.pair-card,
-.settings-card {
-  width: 100%;
-  /* Same hard floor as .onb-card: never taller than the backdrop's padded
-     box, so short viewports keep the 24px gutter and the card scrolls
-     internally instead of sitting flush (settings measures 583px natural —
-     taller than a ~600px un-maximized Mac window). */
-  max-height: 100%;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  background: var(--surface);
-  border: 1px solid var(--border-2);
-  border-radius: 12px;
-  padding: 20px;
-  box-shadow: var(--shadow-card);
-}
-
-.pair-card {
-  max-width: 380px;
-}
-
-.settings-card {
-  max-width: 420px;
-}
-
-.pair-head,
-.settings-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 14px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-}
-
-.pair-title,
-.settings-title {
-  color: var(--fg-strong);
-  font-size: 0.95em;
-}
-
-.pair-close,
-.settings-close {
-  margin-left: auto;
-  background: transparent;
-  border: 0;
-  color: var(--fg-dimmer);
-  font: inherit;
-  cursor: pointer;
-  padding: 4px 8px;
-}
-
-.pair-close:hover,
-.settings-close:hover {
-  color: var(--fg);
-}
-
-.pair-qr {
-  display: block;
-  width: 100%;
-  max-width: 260px;
-  margin: 0 auto;
-  border-radius: 8px;
-}
-
-.pair-hint {
-  margin: 14px 2px 10px;
-  font-size: 0.82em;
-  line-height: 1.5;
-  color: var(--fg-dim);
-}
-
-.pair-url-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.pair-url {
-  flex: 1;
-  min-width: 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.72em;
-  color: var(--fg-mid);
-  background: var(--bg-inset);
-  border: 1px solid var(--border-faint);
-  border-radius: 6px;
-  padding: 6px 8px;
-  overflow-x: auto;
-  white-space: nowrap;
-}
-
-.pair-copy {
-  flex-shrink: 0;
-  padding: 5px 12px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.78em;
-  color: var(--accent);
-  background: transparent;
-  border: 1px solid var(--ok-border);
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.pair-copy:hover {
-  background: var(--ok-bg);
-}
-
-/* ---- Settings card (S.4) ----------------------------------------------------
-   Shell-owned, same modal idiom as the pairing card. One section today
-   (Theme); built to grow more sections. The gear (.sb-settings) sits beside
-   the pill in the status bar; the pill itself is locked unchanged. */
-
-.sb-settings {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 34px;
-  padding: 6px 10px;
-  font-size: 20px;
-  line-height: 1;
-  color: var(--fg-dimmer);
-  background: transparent;
-  border: 1px solid var(--border-2);
-  border-radius: 7px;
-  cursor: pointer;
-}
-
-.sb-settings:hover {
-  color: var(--fg);
-  border-color: var(--border-hover);
-}
-
-.settings-section-title {
-  font-size: 0.85em;
-  font-weight: 600;
-  color: var(--fg-mid);
-  margin-bottom: 10px;
-}
-
-/* Session facts (R.4l) — the card is the phone's one home for these. */
-.settings-kv {
-  margin: 0 0 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.settings-kv-row {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-}
-
-.settings-kv dt {
-  flex: none;
-  width: 64px;
-  font-size: 0.78em;
-  color: var(--fg-dim);
-}
-
-.settings-kv dd {
-  margin: 0;
-  min-width: 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.82em;
-  color: var(--fg-body);
-  overflow-wrap: anywhere;
-}
-
-.theme-group + .theme-group {
-  margin-top: 12px;
-}
-
-.theme-group-label {
-  font-size: 0.74em;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--fg-dimmer);
-  margin-bottom: 6px;
-}
-
-.theme-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 8px 10px;
-  font: inherit;
-  font-size: 0.9em;
-  color: var(--fg-body);
-  text-align: left;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  cursor: pointer;
-}
-
-.theme-row:hover {
-  background: var(--surface-hover);
-  border-color: var(--border-faint);
-}
-
-.theme-row.is-slotted {
-  border-color: var(--border-mid);
-  background: var(--surface-2);
-}
-
-.theme-chips {
-  display: inline-flex;
-  gap: 3px;
-  flex-shrink: 0;
-}
-
-.theme-chip {
-  width: 14px;
-  height: 14px;
-  border-radius: 4px;
-  border: 1px solid var(--border-mid);
-}
-
-.theme-row-name {
-  flex: 1;
-  min-width: 0;
-}
-
-.theme-row-check {
-  color: var(--accent);
-  flex-shrink: 0;
-}
-
-/* ---- Phone-width pass (Steps R.4 / R.4l) -----------------------------------
-   The identity holds at 390px: command strips, mono-in/rich-out, full-width
-   canvas — just tighter chrome and comfortable tap targets. Two rules make
-   it feel like an app instead of a page: the frame is EXACTLY the visual
-   viewport (100dvh, no overscroll — the page never wiggles under a swipe;
-   only the render zone scrolls), and the status bar is ONE guaranteed row
-   of thumb-sized controls — session facts live in the settings card's
-   Session section, not in persistent chrome. */
-
-@media (max-width: 640px) {
-  /* dvh tracks the browser's collapsing URL bar, so the frame is always
-     exactly the viewport — 100% is the URL-bar-visible height, and the
-     leftover slack is what let the page drift under a swipe. */
-  html,
-  body,
-  #root {
-    height: 100dvh;
-  }
-
-  body {
-    overscroll-behavior: none; /* no rubber-band / pull-to-refresh wiggle */
-  }
-
-  .shell {
-    --gutter-left: max(10px, env(safe-area-inset-left));
-    --gutter-right: max(10px, env(safe-area-inset-right));
-  }
-
-  /* 16px is the iOS no-auto-zoom threshold: a smaller input font makes
-     Safari zoom the page on focus and LEAVE it zoomed — which reads as
-     "the page pans sideways". Never below 16px on anything focusable. */
-  .prompt-box textarea,
-  .bang-bar-input,
-  .onb-cwd,
-  .fleet-rename {
-    font-size: 16px;
-  }
-
-  button,
-  a {
-    -webkit-tap-highlight-color: transparent;
-    touch-action: manipulation; /* no double-tap zoom on controls */
-  }
-
-  .render-zone {
-    padding: 14px 2px;
-    gap: 12px;
-  }
-
-  /* The welcome lockup, scaled to the narrow canvas (same geometry). */
-  .zone-empty-mark {
-    width: 44px;
-    height: 44px;
-    margin-right: 12px;
-  }
-
-  .zone-empty-title {
-    font-size: 26px;
-  }
-
-  .zone-empty-sub {
-    font-size: 16px;
-  }
-
-  .prompt-box {
-    padding: 8px 10px;
-    margin: 6px 0 8px;
-    gap: 8px;
-  }
-
-  /* The ↑ send button — phone's ONE submit gesture (Enter is a newline
-     here; PromptBox only renders this at phone width). Inline in the
-     prompt row beside the textarea, so it adds no vertical height and can
-     never sit over typed text; anchored to the box's bottom edge so it
-     stays by the newest line as the box grows. */
-  .prompt-send {
-    flex-shrink: 0;
-    align-self: flex-end;
-    width: 36px;
-    height: 36px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 19px;
-    line-height: 1;
-    color: var(--bg);
-    background: var(--accent);
-    border: none;
-    border-radius: 999px;
-    cursor: pointer;
-  }
-
-  .prompt-send:disabled {
-    opacity: 0.4;
-    cursor: default;
-  }
-
-  /* ── Status bar: ONE row, guaranteed ───────────────────────────────────
-       ⌂  new  ● claude-code      [⧉ pair]  ⚙  end
-     The dot and the agent name read as one unit (connected — to what);
-     everything else that was on the facts row lives in the settings
-     card's Session section (opened by the gear or the agent chip), and
-     the theme pill folds into that card too — it stays desktop-only per
-     the Phase S lock. nowrap + an ellipsizing agent name means the name
-     can never push a control off the row. */
-  .status-bar {
-    flex-wrap: nowrap;
-    column-gap: 5px;
-    margin: 4px 0 0;
-    padding: 8px 0 max(8px, env(safe-area-inset-bottom));
-    font-size: 0.78em;
-  }
-
-  .sb-agent {
-    flex: 0 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  /* Everything that doesn't earn phone space (facts + plumbing + the pill). */
-  .sb-session,
-  .sb-version,
-  .sb-usage,
-  .sb-model,
-  .sb-cwd,
-  .sb-theme {
-    display: none;
-  }
-
-  /* Thumb-sized controls, one consistent 40px height — sized so the whole
-     strip (pair button included, the local-viewport worst case) fits one
-     row at 390px. */
-  .sb-home,
-  .sb-new,
-  .sb-end,
-  .sb-pair,
-  .sb-settings {
-    height: 40px;
-    min-width: 40px;
-    justify-content: center;
-  }
-
-  .sb-new,
-  .sb-end {
-    padding: 0 10px;
-  }
-
-  .sb-pair {
-    padding: 0 7px;
-  }
-
-  .sb-toggle {
-    padding: 0 2px;
-  }
-
-  /* Comfortable thumb targets on the answer-or-act surfaces. */
-  .perm-bar {
-    flex-wrap: wrap;
-    row-gap: 8px;
-  }
-
-  .perm-allow,
-  .perm-deny,
-  .stop-btn,
-  .bang-bar-kill {
-    min-height: 40px;
-    padding-left: 16px;
-    padding-right: 16px;
-  }
-
-  .perm-detail {
-    flex-basis: 100%;
-    order: 5;
-  }
-
-  /* Markdown tables scroll in place rather than widening the page. */
-  .markdown table {
-    display: block;
-    max-width: 100%;
-    overflow-x: auto;
-  }
-
-  .fleet {
-    padding: 20px 12px;
-  }
-
-  /* The header wraps as two deliberate lines — identity first, then the
-     action buttons — instead of the buttons' labels breaking mid-word. */
-  .fleet-head {
-    flex-wrap: wrap;
-    row-gap: 10px;
-  }
-
-  .fleet-count {
-    white-space: nowrap;
-  }
-
-  .fleet-new,
-  .fleet-head .sb-pair {
-    white-space: nowrap;
-    min-height: 40px;
-  }
-
-  /* Fleet rows: name + state read first; plumbing columns step back. */
-  .fleet-row {
-    flex-wrap: wrap;
-    row-gap: 2px;
-  }
-
-  .fleet-id,
-  .fleet-sep {
-    display: none;
-  }
-
-  .fleet-end {
-    min-height: 36px;
-    padding: 5px 12px;
-  }
-
-  .fleet-edit {
-    min-width: 36px;
-    min-height: 36px;
-  }
-
-  .onb-card {
-    padding: 24px 18px;
-  }
-
-  .pin-dock {
-    display: none; /* supervision dock is a desktop affordance */
-  }
-
-  /* No dock → nothing to pin to; the affordance is hover-only anyway. */
-  .pin-btn {
-    display: none;
-  }
-
-  /* Explorer on phone (E.4): the docked column becomes a full-screen
-     drill-in layer over everything, GitHub-mobile style. Same component,
-     different frame; the file view still overlays the tree within it. */
-  .files-panel {
-    position: fixed;
-    inset: 0;
-    width: 100%;
-    max-width: none;
-    z-index: 55; /* above the transcript + status bar, below the 60 modals */
-    border-right: none;
-    background: var(--bg);
-    padding-top: env(safe-area-inset-top);
-    padding-bottom: env(safe-area-inset-bottom);
-  }
-
-  /* Bigger tap targets on the touch surface (the ≥40px rule from the phone
-     pass) without disturbing the desktop density. */
-  .files-row {
-    padding: 9px 8px;
-  }
-
-  .files-root {
-    padding: 8px 4px 4px;
-  }
-
-  /* The ≥40px tap-target rule, applied to the always-there left strip. */
-  .activity-bar {
-    width: 46px;
-  }
-
-  .ab-btn {
-    width: 40px;
-    height: 40px;
-  }
 }
 
 /* ---- Phase M cockpit: the enriched fleet rows -----------------------------
@@ -3745,11 +3422,375 @@ html {
   font-size: 1em;
 }
 
-/* Phone width: sub-lines lose the desktop indent (a 390px canvas has no
-   room to spend on hierarchy), plumbing columns step back like .fleet-id
-   above, act controls are thumb-sized, and anything focusable holds the
-   16px iOS no-auto-zoom floor (see the rule atop the main phone block). */
+/* ---- Cross-cutting polish (Step 4.3) ---------------------------------------
+   Rules that span surfaces: arrival motion, the theme-switch fade,
+   selection, a11y helpers, scrollbars, reduced motion. ORDER MATTERS here —
+   the rise list and the transition list override equal-specificity
+   declarations in the sections above (see the header note).
+
+   Motion: everything that enters the transcript rises in — one short, soft
+   arrival, no bounce. Replay repaints use the same animation; at 160ms a
+   full-history repaint reads as a quick settle, not a shimmer storm. */
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+}
+
+.turn-user,
+.turn-assistant,
+.tool-block,
+.thinking-block,
+.notice-line,
+.bang-block,
+.status-line {
+  animation: rise 0.16s ease-out both;
+}
+
+/* Theme switch fades instead of snapping; hover borders ride the same rule. */
+body,
+.rc,
+.artifact,
+.turn-user,
+.prompt-box,
+.status-bar,
+.pin-dock,
+.rc-link,
+.onb-agent {
+  transition:
+    background-color 0.22s ease,
+    color 0.22s ease,
+    border-color 0.22s ease;
+}
+
+::selection {
+  background: var(--selection);
+}
+
+/* Available to screen readers, invisible on screen (A.1). Not `display:none`
+   or `visibility:hidden` — both remove the element from the accessibility
+   tree, which would silence the live regions this exists for. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Keyboard focus gets a visible ring; pointer clicks stay quiet. */
+:focus-visible {
+  outline: 2px solid var(--border-hover);
+  outline-offset: 1px;
+}
+
+html {
+  scrollbar-color: var(--border-hover) transparent;
+}
+
+.render-zone,
+.pin-dock {
+  scrollbar-width: thin;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* ---- Responsive: the ONE phone block (Steps R.4 / R.4l) --------------------
+   Every max-width: 640px rule lives in this single block (the cockpit's
+   phone rules ride at its tail), so "what changes on the phone" has exactly
+   one home — and staying last keeps every override after its base rule.
+   The identity holds at 390px: command strips, mono-in/rich-out, full-width
+   canvas — just tighter chrome and comfortable tap targets. Two rules make
+   it feel like an app instead of a page: the frame is EXACTLY the visual
+   viewport (100dvh, no overscroll — the page never wiggles under a swipe;
+   only the render zone scrolls), and the status bar is ONE guaranteed row
+   of thumb-sized controls — session facts live in the settings card's
+   Session section, not in persistent chrome. */
+
 @media (max-width: 640px) {
+  /* dvh tracks the browser's collapsing URL bar, so the frame is always
+     exactly the viewport — 100% is the URL-bar-visible height, and the
+     leftover slack is what let the page drift under a swipe. */
+  html,
+  body,
+  #root {
+    height: 100dvh;
+  }
+
+  body {
+    overscroll-behavior: none; /* no rubber-band / pull-to-refresh wiggle */
+  }
+
+  .shell {
+    --gutter-left: max(10px, env(safe-area-inset-left));
+    --gutter-right: max(10px, env(safe-area-inset-right));
+  }
+
+  /* 16px is the iOS no-auto-zoom threshold: a smaller input font makes
+     Safari zoom the page on focus and LEAVE it zoomed — which reads as
+     "the page pans sideways". Never below 16px on anything focusable. */
+  .prompt-box textarea,
+  .bang-bar-input,
+  .onb-cwd,
+  .fleet-rename {
+    font-size: 16px;
+  }
+
+  button,
+  a {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation; /* no double-tap zoom on controls */
+  }
+
+  .render-zone {
+    padding: 14px 2px;
+    gap: 12px;
+  }
+
+  /* The welcome lockup, scaled to the narrow canvas (same geometry). */
+  .zone-empty-mark {
+    width: 44px;
+    height: 44px;
+    margin-right: 12px;
+  }
+
+  .zone-empty-title {
+    font-size: 26px;
+  }
+
+  .zone-empty-sub {
+    font-size: 16px;
+  }
+
+  .prompt-box {
+    padding: 8px 10px;
+    margin: 6px 0 8px;
+    gap: 8px;
+  }
+
+  /* The ↑ send button — phone's ONE submit gesture (Enter is a newline
+     here; PromptBox only renders this at phone width). Inline in the
+     prompt row beside the textarea, so it adds no vertical height and can
+     never sit over typed text; anchored to the box's bottom edge so it
+     stays by the newest line as the box grows. */
+  .prompt-send {
+    flex-shrink: 0;
+    align-self: flex-end;
+    width: 36px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 19px;
+    line-height: 1;
+    color: var(--bg);
+    background: var(--accent);
+    border: none;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+
+  .prompt-send:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+
+  /* ── Status bar: ONE row, guaranteed ───────────────────────────────────
+       ⌂  new  ● claude-code      [⧉ pair]  ⚙  end
+     The dot and the agent name read as one unit (connected — to what);
+     everything else that was on the facts row lives in the settings
+     card's Session section (opened by the gear or the agent chip), and
+     the theme pill folds into that card too — it stays desktop-only per
+     the Phase S lock. nowrap + an ellipsizing agent name means the name
+     can never push a control off the row. */
+  .status-bar {
+    flex-wrap: nowrap;
+    column-gap: 5px;
+    /* Same T-junction as desktop: the top border starts at the activity
+       bar's line, the controls at the column's content edge. */
+    margin: 4px 0 0 calc(-1 * var(--content-air));
+    padding: 8px 0 max(8px, env(safe-area-inset-bottom)) var(--content-air);
+    font-size: 0.78em;
+  }
+
+  .sb-agent {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Everything that doesn't earn phone space (facts + plumbing + the pill). */
+  .sb-session,
+  .sb-version,
+  .sb-usage,
+  .sb-model,
+  .sb-cwd,
+  .sb-theme {
+    display: none;
+  }
+
+  /* Thumb-sized controls, one consistent 40px height — sized so the whole
+     strip (pair button included, the local-viewport worst case) fits one
+     row at 390px. */
+  .sb-home,
+  .sb-new,
+  .sb-end,
+  .sb-pair,
+  .sb-settings {
+    height: 40px;
+    min-width: 40px;
+    justify-content: center;
+  }
+
+  .sb-new,
+  .sb-end {
+    padding: 0 10px;
+  }
+
+  .sb-pair {
+    padding: 0 7px;
+  }
+
+  .sb-toggle {
+    padding: 0 2px;
+  }
+
+  /* Comfortable thumb targets on the answer-or-act surfaces. */
+  .perm-bar {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .perm-allow,
+  .perm-deny,
+  .stop-btn,
+  .bang-bar-kill {
+    min-height: 40px;
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .perm-detail {
+    flex-basis: 100%;
+    order: 5;
+  }
+
+  /* Markdown tables scroll in place rather than widening the page. */
+  .markdown table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .fleet {
+    padding: 20px 12px;
+    zoom: 1; /* the phone layout is sized to its real viewport — no upscale */
+  }
+
+  /* The header wraps as two deliberate lines — identity first, then the
+     action buttons — instead of the buttons' labels breaking mid-word. */
+  .fleet-head {
+    flex-wrap: wrap;
+    row-gap: 10px;
+  }
+
+  .fleet-count {
+    white-space: nowrap;
+  }
+
+  .fleet-new,
+  .fleet-head .sb-pair {
+    white-space: nowrap;
+    min-height: 40px;
+  }
+
+  /* Fleet rows: name + state read first; plumbing columns step back. */
+  .fleet-row {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+
+  .fleet-id {
+    display: none;
+  }
+
+  .fleet-end {
+    min-height: 36px;
+    padding: 5px 12px;
+  }
+
+  .fleet-edit {
+    min-width: 36px;
+    min-height: 36px;
+  }
+
+  .onb-card {
+    padding: 24px 18px;
+  }
+
+  .pin-dock {
+    display: none; /* supervision dock is a desktop affordance */
+  }
+
+  /* No dock → nothing to pin to; the affordance is hover-only anyway. */
+  .pin-btn {
+    display: none;
+  }
+
+  /* Explorer on phone (E.4): the docked column becomes a full-screen
+     drill-in layer over everything, GitHub-mobile style. Same component,
+     different frame; the file view still overlays the tree within it. */
+  .files-panel {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    max-width: none;
+    z-index: 55; /* above the transcript + status bar, below the 60 modals */
+    border-right: none;
+    background: var(--bg);
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* Bigger tap targets on the touch surface (the ≥40px rule from the phone
+     pass) without disturbing the desktop density. */
+  .files-row {
+    padding: 9px 8px;
+  }
+
+  .files-root {
+    padding: 8px 4px 4px;
+  }
+
+  /* The ≥40px tap-target rule, applied to the always-there left strip. */
+  .activity-bar {
+    width: 46px;
+  }
+
+  .ab-btn {
+    width: 40px;
+    height: 40px;
+  }
+
+  /* Cockpit sub-lines: they lose the desktop indent (a 390px canvas has no
+     room to spend on hierarchy), plumbing columns step back like .fleet-id
+     above, act controls are thumb-sized, and anything focusable holds the
+     16px iOS no-auto-zoom floor (the rule atop this block). */
+
   .fleet-viewports {
     display: none;
   }

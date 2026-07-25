@@ -46,10 +46,11 @@ async function say(p: Page, text: string) {
   await p.keyboard.press("Enter");
 }
 
-/** The fleet-wide idle oracle: every row idle, nothing mid-turn. */
+/** The fleet-wide idle oracle: every row idle, nothing mid-turn. The dot is
+ *  the row's one status surface (the status word came off, 2026-07-25). */
 async function allIdle(rows: number) {
   await fleet.waitForFunction(
-    (n) => document.querySelectorAll(".fleet-status-idle").length === n,
+    (n) => document.querySelectorAll(".fleet-dot-idle").length === n,
     rows,
     { timeout: 30_000 },
   );
@@ -91,7 +92,13 @@ test("needs-you: the row names WHAT it wants; allow from the grid runs the tool;
   const detail = await fleet.locator(".fleet-perm-detail").innerText();
   assert.match(detail, /Bash/);
   assert.match(detail, /rm -rf/);
-  assert.equal(await fleet.locator(".fleet-status-permission").innerText(), "needs you");
+  // The dot carries the state (title for sighted hover, sr-only text for
+  // screen readers — the visible status word is gone, 2026-07-25).
+  assert.equal(await fleet.locator(".fleet-dot-permission").count(), 1);
+  assert.equal(
+    await fleet.locator(".fleet-row .sr-only").first().innerText(),
+    "needs you",
+  );
 
   // The C.2 discipline: the cockpit's new surface scans clean WITH the
   // permission line (its most content-rich state) on screen.
@@ -153,7 +160,7 @@ test("ordering: rows hold creation order while working; needs-you surfaces to th
 
   // A working turn must NOT reorder the grid (the recency sort is retired).
   await say(second, "summarize the repo");
-  await fleet.waitForSelector(".fleet-status-working", { timeout: 15_000 });
+  await fleet.waitForSelector(".fleet-dot-working", { timeout: 15_000 });
   assert.equal(await firstRowId(), sessionId, "rows hold their place while one works");
   await allIdle(2);
 

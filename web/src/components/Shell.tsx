@@ -137,9 +137,13 @@ export function Shell() {
     setMode(entry.appearance);
   };
 
-  // The socket + pub/sub live in session-bus.ts (H.9); one bus per mount,
-  // exactly as the inline useMemo built it.
-  const bus = useMemo(() => createSessionBus(), []);
+  // The socket + pub/sub live in session-bus.ts (H.9); one bus per mount.
+  // useState's lazy initializer, NOT useMemo: Fast Refresh re-runs useMemo on
+  // every hot edit (dependency lists are deliberately ignored), and each
+  // re-run opened a fresh socket while the orphaned one stayed attached —
+  // inflating the fleet's viewport count during dev (2026-07-25, Kyle).
+  // State survives a hot update, so the one bus lives as long as the page.
+  const [bus] = useState(createSessionBus);
 
   // Screen-reader announcements (A.1) — see Announcer.tsx for why the
   // transcript itself stays silent and these speak at turn boundaries.
@@ -363,8 +367,8 @@ export function Shell() {
           </div>
         )}
         {/* The activity bar (VS Code convention) is the workbench's permanent
-            left edge — it spans transcript AND prompt box, everything to its
-            strict right; only banners and the status bar run full-width. Its
+            left edge — it spans transcript, prompt box AND status bar,
+            everything to its strict right; only banners run full-width. Its
             files icon opens/collapses the Explorer panel (E.3), which sits
             left of the transcript in a flex row so the transcript keeps
             rendering beside it; panel closed = transcript full-width. */}
@@ -416,25 +420,25 @@ export function Shell() {
               onInterrupt={bus.interrupt}
               cwd={tildify(meta.cwd, daemonInfo.home)}
             />
+            <StatusBar
+              connected={connected}
+              connectionNote={connNote}
+              agent={meta.agent}
+              // The engine's live report (usage) wins once a turn has run; until
+              // then, what the daemon knew at attach ("default" beats nothing).
+              model={usage.model ?? meta.model}
+              sessionId={meta.sessionId}
+              cwd={meta.cwd}
+              usage={usage}
+              mode={mode}
+              onToggleTheme={() => setMode((m) => (m === "dark" ? "light" : "dark"))}
+              onOpenSettings={() => setSettingsOpen(true)}
+              onEndSession={meta.sessionId ? bus.endSession : undefined}
+              relay={daemonInfo.relay}
+              version={daemonInfo.version}
+            />
           </div>
         </div>
-        <StatusBar
-          connected={connected}
-          connectionNote={connNote}
-          agent={meta.agent}
-          // The engine's live report (usage) wins once a turn has run; until
-          // then, what the daemon knew at attach ("default" beats nothing).
-          model={usage.model ?? meta.model}
-          sessionId={meta.sessionId}
-          cwd={meta.cwd}
-          usage={usage}
-          mode={mode}
-          onToggleTheme={() => setMode((m) => (m === "dark" ? "light" : "dark"))}
-          onOpenSettings={() => setSettingsOpen(true)}
-          onEndSession={meta.sessionId ? bus.endSession : undefined}
-          relay={daemonInfo.relay}
-          version={daemonInfo.version}
-        />
         {settingsOpen && (
           <ThemePicker
             slots={slots}
