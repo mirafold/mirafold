@@ -1584,6 +1584,22 @@ daemon's own `.env` stays protected and the Explorer is narrower).
 **Deferred, evidence-gated:** make the non-git walk asynchronous (yield to the
 event loop) only IF the node cap ever proves too blunt — likely unnecessary.
 
+**Kyle-directed UI polish pass (2026-07-24 evening, iterative):** the desktop
+frame got a VS Code-style **activity bar** — a permanent thin strip flush with
+the window's left edge whose files icon toggles the panel (replacing the
+status bar's `files` button); the tree now leads with the **checked-out root
+as its top node** (name only, full path in its tooltip — the path header row
+is gone); the panel width is **fit-to-content** (widest visible row + a little
+air, capped at the old 340px/42vw, 140px floor); refresh floats pinned at the
+panel's **bottom-left**; back lives in the file view's path bar. Verified per
+round in headless Chrome by measurement (geometry probes), not eyeballing —
+the round-3 lesson: the icon's SVG box, the UA button padding, and the
+`.shell` gutter each silently ate a "fix" until measured from the window edge.
+Same session: a behavior-preserving refactor (ActivityBar extracted beside
+BangBar; `--gutter-left/right` + `--content-air` CSS vars replace the
+duplicated gutter expressions) and a delta audit — no exploitable findings; a
+hostile `<img onerror>` filename demonstrated inert (React text escaping).
+
 Post-v1 depth (editing, fs-watcher, syntax highlighting, changed-files
 grouping) stays parked in POST-RELEASE.md.
 ---

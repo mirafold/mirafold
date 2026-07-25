@@ -32,11 +32,15 @@ body {
 }
 
 .shell {
+  /* One source of truth for the page's side gutters — .main-row cancels the
+     left one to keep the activity bar flush, so they must never drift. */
+  --gutter-left: 24px;
+  --gutter-right: 24px;
   display: flex;
   flex-direction: column;
   height: 100%;
   width: 100%;
-  padding: 0 24px;
+  padding: 0 var(--gutter-right) 0 var(--gutter-left);
 }
 
 /* The workbench row: activity bar on the left, everything else — transcript
@@ -45,10 +49,13 @@ body {
    left gutter so the strip is FLUSH with the window edge — the visible band
    from edge to border line IS the bar, with no dead page-margin inside it. */
 .main-row {
+  /* Air between the activity bar's border line and the content beside it;
+     .files-panel gives most of it back to sit near-flush (see there). */
+  --content-air: 12px;
   flex: 1;
   min-height: 0;
   display: flex;
-  margin-left: -24px;
+  margin-left: calc(-1 * var(--gutter-left));
 }
 
 .main-col {
@@ -57,6 +64,7 @@ body {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  padding-left: var(--content-air);
 }
 
 /* Explorer (E.3) + transcript. The files panel is a fixed-width left column;
@@ -344,7 +352,7 @@ body {
    Always present, so the affordance never moves. */
 .activity-bar {
   flex-shrink: 0;
-  width: 30px;
+  width: 39px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -358,9 +366,9 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
-  padding: 0; /* the UA's default button padding squeezes the svg to 14px wide */
+  width: 34px;
+  height: 34px;
+  padding: 0; /* the UA's default button padding squeezes the svg otherwise */
   background: transparent;
   border: none;
   border-radius: 7px;
@@ -386,9 +394,16 @@ body {
 
 .files-panel {
   flex-shrink: 0;
-  width: 340px;
-  max-width: 42vw;
-  min-width: 0;
+  /* Give back all but 5px of .main-col's content air: the panel sits
+     near-flush against the activity bar's border line (VS Code-style),
+     while the transcript and prompt box keep the full amount. */
+  margin-left: calc(5px - var(--content-air));
+  /* Fit the widest visible row (indentation included) plus the tree's own
+     right padding — expanding a deep dir widens the panel to match — but
+     never beyond the old fixed width, where names go back to ellipsizing. */
+  width: max-content;
+  max-width: min(340px, 42vw);
+  min-width: 140px;
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--border);
@@ -430,6 +445,17 @@ body {
   border: none;
 }
 
+/* Refresh floats in the panel's bottom-left corner; the surface background
+   keeps it legible over rows scrolling beneath it. */
+.files-refresh {
+  position: absolute;
+  left: 4px;
+  bottom: 10px;
+  z-index: 1;
+  padding: 4px 9px;
+  background: var(--surface);
+}
+
 .files-back,
 .files-btn {
   background: transparent;
@@ -460,7 +486,9 @@ body {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 0 4px 12px;
+  /* The right padding is the "little bit more" the fit-content panel adds
+     past its longest name; the left stays tight to the panel edge. */
+  padding: 0 14px 12px 0;
 }
 
 .files-ul {
@@ -3243,8 +3271,8 @@ html {
   }
 
   .shell {
-    padding: 0 max(10px, env(safe-area-inset-right)) 0
-      max(10px, env(safe-area-inset-left));
+    --gutter-left: max(10px, env(safe-area-inset-left));
+    --gutter-right: max(10px, env(safe-area-inset-right));
   }
 
   /* 16px is the iOS no-auto-zoom threshold: a smaller input font makes
@@ -3482,11 +3510,6 @@ html {
     padding: 8px 4px 4px;
   }
 
-  /* Match the phone's narrower .shell gutter so the strip stays flush. */
-  .main-row {
-    margin-left: calc(-1 * max(10px, env(safe-area-inset-left)));
-  }
-
   /* The ≥40px tap-target rule, applied to the always-there left strip. */
   .activity-bar {
     width: 46px;
@@ -3509,32 +3532,14 @@ html {
   gap: 4px;
 }
 
-/* The row's cockpit metadata, in the plumbing columns' mono voice: the live
-   activity readout, tokens · cost, and the open-viewport count. */
-.fleet-activity,
-.fleet-usage,
+/* The open-viewport count, in the plumbing columns' mono voice. (Activity
+   and usage moved OFF the bar into the .fleet-details sub-line — 2026-07-24,
+   Kyle: the full working-state row overflowed its border, and volatile
+   inline text made the layout jumpy.) */
 .fleet-viewports {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.78em;
   white-space: nowrap;
-}
-
-/* Ellipsized: a bang label carries the command's first line. */
-.fleet-activity {
-  color: var(--info);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 30ch;
-  /* The floor: this is the row's only shrinkable column, and without one a
-     full row flex-crushes it to ZERO width — the readout silently vanishes
-     (found as the fleet.e2e ordering flake: Playwright saw the span
-     "hidden" at exactly the content widths a slow run produces). Ellipsize,
-     never disappear. */
-  min-width: 12ch;
-}
-
-.fleet-usage,
-.fleet-viewports {
   color: var(--fg-faint);
   flex-shrink: 0;
 }
@@ -3544,7 +3549,8 @@ html {
    warn-toned — it halts a turn, it doesn't kill the session — and two-click
    armed; the ❯ toggle opens the quick-prompt line. */
 .fleet-stop,
-.fleet-prompt-toggle {
+.fleet-prompt-toggle,
+.fleet-details-toggle {
   position: relative;
   z-index: 1;
   flex-shrink: 0;
@@ -3573,9 +3579,57 @@ html {
 }
 
 .fleet-prompt-toggle:hover,
-.fleet-prompt-toggle-open {
+.fleet-prompt-toggle-open,
+.fleet-details-toggle:hover,
+.fleet-details-toggle-open {
   color: var(--accent);
   border-color: var(--border-hover);
+}
+
+/* The prompt toggle's exact ❯, rotated: down = disclose, up = collapse. The
+   span rotates (inline-block), never the button — a rotated button would
+   take its squircle border and padding along for the spin. */
+.fleet-details-caret {
+  display: inline-block;
+  transform: rotate(90deg);
+  transition: transform 0.12s ease;
+}
+
+.fleet-details-toggle-open .fleet-details-caret {
+  transform: rotate(-90deg);
+}
+
+/* The on-demand details sub-line: the caret disclosure's payload — live
+   activity in the info voice, tokens · cost in the faint one. Neutral-
+   bordered (unlike the warn-tinted permission line — nothing here needs
+   the user). */
+.fleet-details {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-left: 24px;
+  padding: 7px 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8em;
+  background: var(--surface);
+  border: 1px solid var(--border-2);
+  border-radius: 8px;
+  animation: rise 0.16s ease-out both;
+}
+
+.fleet-details-activity {
+  color: var(--info);
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fleet-details-usage {
+  color: var(--fg-faint);
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 /* The "act here" sub-line: what the session is blocked on, answerable in
@@ -3696,16 +3750,13 @@ html {
    above, act controls are thumb-sized, and anything focusable holds the
    16px iOS no-auto-zoom floor (see the rule atop the main phone block). */
 @media (max-width: 640px) {
-  .fleet-activity {
-    max-width: 34vw;
-  }
-
   .fleet-viewports {
     display: none;
   }
 
   .fleet-perm,
-  .fleet-prompt {
+  .fleet-prompt,
+  .fleet-details {
     margin-left: 0;
   }
 
@@ -3728,7 +3779,8 @@ html {
 
   /* .fleet-end's phone sizing, matched. */
   .fleet-stop,
-  .fleet-prompt-toggle {
+  .fleet-prompt-toggle,
+  .fleet-details-toggle {
     min-height: 36px;
     padding: 5px 12px;
   }

@@ -465,7 +465,8 @@ web/               the browser app (React 19 + Vite)
                      (H2.1); the agent-paintable vocabulary is its SIBLING,
                      registry/, so the trust split reads in the tree
     Shell.tsx          TRUSTED SHELL: prompt box + permission bar + notices +
-                       status bar; consumes the session bus (H.9)
+                       status bar + the activity bar (the left strip that
+                       toggles the Explorer); consumes the session bus (H.9)
     Onboarding.tsx     first-run card: pick the agent + working directory, then
                        how it's backed when there's a choice — detected
                        credentials + discovered local model servers (P.4/4.8/N.4)

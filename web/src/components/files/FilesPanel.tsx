@@ -199,9 +199,6 @@ export function FilesPanel({
               <span className="files-caret">{rootOpen ? "▾" : "▸"}</span>
               <span className="files-name">{rootNameOf(rootLabel)}</span>
             </button>
-            <button className="files-btn" onClick={refresh} title="Refresh" aria-label="Refresh files">
-              ⟳
-            </button>
             {/* Desktop closes from the activity-bar toggle; the phone dialog
                 still needs its own close. */}
             {phone && (
@@ -239,6 +236,17 @@ export function FilesPanel({
               </>
             ))}
         </div>
+
+        {/* Pinned to the panel's bottom-left corner, floating over the tree;
+            the file-view overlay (z-index above) covers it, same as the tree. */}
+        <button
+          className="files-btn files-refresh"
+          onClick={refresh}
+          title="Refresh"
+          aria-label="Refresh files"
+        >
+          ⟳
+        </button>
 
         {selected && (
           <div className="files-file">

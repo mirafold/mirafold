@@ -369,34 +369,11 @@ export function Shell() {
             left of the transcript in a flex row so the transcript keeps
             rendering beside it; panel closed = transcript full-width. */}
         <div className="main-row">
-          <div className="activity-bar">
-            <button
-              className={"ab-btn ab-files" + (filesOpen ? " is-active" : "")}
-              onClick={() => setFilesOpen((f) => !f)}
-              disabled={!meta.sessionId}
-              title={filesOpen ? "Hide files" : "Show files"}
-              aria-label="Files"
-              aria-expanded={filesOpen}
-            >
-              {/* A single document sheet, drawn symmetric about the viewBox
-                  center — a two-page glyph reads as hanging right (its front
-                  page's mass sits right of center) even when its bounds are
-                  centered. Tight viewBox: the drawing fills the 22px box. */}
-              <svg
-                viewBox="5 2 14 20"
-                width="22"
-                height="22"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M13.5 3H7.5A1.5 1.5 0 0 0 6 4.5v15A1.5 1.5 0 0 0 7.5 21h9a1.5 1.5 0 0 0 1.5-1.5V7.5L13.5 3z" />
-                <path d="M13.5 3v3a1.5 1.5 0 0 0 1.5 1.5h3" />
-              </svg>
-            </button>
-          </div>
+          <ActivityBar
+            filesOpen={filesOpen}
+            disabled={!meta.sessionId}
+            onToggleFiles={() => setFilesOpen((f) => !f)}
+          />
           <div className="main-col">
             <div className="zone-outer">
               <FilesPanel
@@ -480,6 +457,50 @@ export function Shell() {
           />
         )}
       </div>
+    </div>
+  );
+}
+
+/** The workbench's permanent left strip (VS Code's activity-bar convention):
+ *  always present so the affordance never moves; its files icon opens or
+ *  collapses the Explorer panel (E.3). Disabled until there's a session. */
+function ActivityBar({
+  filesOpen,
+  disabled,
+  onToggleFiles,
+}: {
+  filesOpen: boolean;
+  disabled: boolean;
+  onToggleFiles: () => void;
+}) {
+  return (
+    <div className="activity-bar">
+      <button
+        className={"ab-btn ab-files" + (filesOpen ? " is-active" : "")}
+        onClick={onToggleFiles}
+        disabled={disabled}
+        title={filesOpen ? "Hide files" : "Show files"}
+        aria-label="Files"
+        aria-expanded={filesOpen}
+      >
+        {/* A single document sheet, drawn symmetric about the viewBox
+            center — a two-page glyph reads as hanging right (its front
+            page's mass sits right of center) even when its bounds are
+            centered. Tight viewBox: the drawing fills the 22px box. */}
+        <svg
+          viewBox="5 2 14 20"
+          width="28"
+          height="28"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M13.5 3H7.5A1.5 1.5 0 0 0 6 4.5v15A1.5 1.5 0 0 0 7.5 21h9a1.5 1.5 0 0 0 1.5-1.5V7.5L13.5 3z" />
+          <path d="M13.5 3v3a1.5 1.5 0 0 0 1.5 1.5h3" />
+        </svg>
+      </button>
     </div>
   );
 }
