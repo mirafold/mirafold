@@ -240,6 +240,21 @@ type WireMsgBody =
       truncated?: boolean;
       error?: string;
     }
+  // One directory's children (the fs_listdir reply; E2.1) — the lazy tree's
+  // fetch unit. Same per-viewport rules as fs_tree: request/reply, never
+  // buffered or sequenced; every request gets exactly one reply, an error
+  // rides the reply. `path` echoes the request so racing replies correlate
+  // beyond the id. Entries are NAMES (not paths — the client owns nesting),
+  // capped per directory with `truncated` honest. `status` chars arrive with
+  // E2.3's multi-repo git layer; absent until then.
+  | {
+      type: "fs_dir";
+      id: string;
+      path: string;
+      entries: FsDirEntry[];
+      truncated?: boolean;
+      error?: string;
+    }
   // One file's content (the fs_read reply). `binary` = NUL-sniffed, content
   // withheld. `truncatedBytes` mirrors tool_result's honest cap: how many
   // bytes of the real file were elided after the content cap.
@@ -347,6 +362,14 @@ export type BackendChoice = {
  *  known cost is that empty directories are invisible). `status` arrives with
  *  E.2's git layer: a single collapsed change char (M/A/D/U). */
 export type FsEntry = { path: string; status?: string };
+
+/** One child in an fs_dir reply (E2.1): a NAME within the listed directory —
+ *  never a path; the client owns nesting (the lazy-tree inversion of
+ *  FsEntry's flat file paths). `kind` comes from lstat semantics, so a
+ *  symlink-to-dir is a `symlink` — the leaf rule: links are never expandable,
+ *  a link can't graft an outside (or cyclic) tree into the panel. `status`
+ *  is E2.3's per-repo git char (M/A/D/U), absent until that lands. */
+export type FsDirEntry = { name: string; kind: "dir" | "file" | "symlink"; status?: string };
 
 /** One fleet row (4.6). `lastActivity` is epoch ms of the last broadcast. */
 export type SessionMeta = {
@@ -476,6 +499,16 @@ export type ClientMsg =
   // E.2: "what changed in this file" — answered as fs_file_diff. Same id
   // grammar, same jail, same throttle family as fs_read.
   | { type: "fs_diff"; id: string; path: string }
+  // E2.1: list ONE directory's children — the lazy tree's fetch unit,
+  // answered as fs_dir. `path` is session-root-relative and /-separated
+  // ("" or "." = the root itself); same id grammar and jail as fs_read.
+  // Throttled as a token BUCKET, not the min-interval family: opening the
+  // panel legitimately fetches root + first level in one burst, and a
+  // single readdir is orders cheaper than the whole-tree walk fs_list pays.
+  // fs_list/fs_tree stay untouched beside this — the app bundle and a
+  // user's daemon can be version-skewed, so the whole-tree pair is the
+  // compatibility floor, never removed here.
+  | { type: "fs_listdir"; id: string; path: string }
   // The browser half's uncaught errors (window "error"/"unhandledrejection"),
   // forwarded so the daemon's flight-recorder log hears about a front-end
   // crash — otherwise a "it went blank" bug report arrives with an empty log

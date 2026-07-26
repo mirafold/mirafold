@@ -144,6 +144,18 @@ const WIRE: WireByType = {
     truncated: true,
     error: "the session workspace is not readable",
   },
+  fs_dir: {
+    type: "fs_dir",
+    id: "f4",
+    path: "src",
+    entries: [
+      { name: "components", kind: "dir" },
+      { name: "app.ts", kind: "file", status: "M" },
+      { name: "link", kind: "symlink" },
+    ],
+    truncated: true,
+    error: "path is outside the session workspace",
+  },
   fs_file: {
     type: "fs_file",
     id: "f2",
@@ -196,6 +208,7 @@ const CLIENT: ClientByType = {
   prompt_session: { type: "prompt_session", sessionId: "s1", text: "run the tests" },
   refresh_agents: { type: "refresh_agents" },
   fs_list: { type: "fs_list", id: "f1" },
+  fs_listdir: { type: "fs_listdir", id: "f4", path: "src" },
   fs_read: { type: "fs_read", id: "f2", path: "src/app.ts" },
   fs_diff: { type: "fs_diff", id: "f3", path: "src/app.ts" },
   client_error: { type: "client_error", message: "TypeError: x is undefined", clientVersion: "0.0.1" },

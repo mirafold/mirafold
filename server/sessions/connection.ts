@@ -269,7 +269,7 @@ export function openConnection(
   // hostile client could spam — bound the probe rate per connection. A
   // throttled refresh still answers, from the cache.
   let lastProbeAt = 0;
-  // The Explorer's fs_list/fs_read/fs_diff handling (Phase E), with its own
+  // The Explorer's fs_list/fs_listdir/fs_read/fs_diff handling (Phase E), with its own
   // per-connection throttle + git-in-flight state (fs-handlers.ts). `entry`
   // and `closed` are read through getters because both change over the
   // connection's life.
@@ -612,6 +612,9 @@ export function openConnection(
         // Explorer tree/read/diff (Phase E) — per-viewport queries handled
         // in fs-handlers.ts (jail, throttle, git-in-flight, one reply each).
         fs.list(msg);
+        break;
+      case "fs_listdir":
+        fs.listdir(msg);
         break;
       case "fs_read":
         fs.read(msg);

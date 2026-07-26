@@ -10,7 +10,7 @@
 
 import { closeSync, openSync, readdirSync, readSync, statSync } from "node:fs";
 import path from "node:path";
-import type { FsEntry } from "../protocol";
+import type { FsDirEntry, FsEntry } from "../protocol";
 import { inside } from "./actions";
 import { isSecretFile } from "../security/permissions";
 
@@ -34,6 +34,13 @@ const FS_TREE_MAX_NODES = Number(process.env.FS_TREE_MAX_NODES ?? 40_000);
 // this is the non-repo walk's equivalent floor.
 const SKIP_DIRS = new Set([".git", "node_modules"]);
 
+// Per-directory caps (E2.1). One fs_dir reply must stay far under the wire
+// payload bounds even on a pathological flat directory — capped on entry
+// COUNT and NAME BYTES both (names, not paths: the reply carries names).
+// Strictly tighter than the whole-tree caps, since the unit is one readdir.
+const FS_DIR_MAX_ENTRIES = Number(process.env.FS_DIR_MAX_ENTRIES ?? 2_000);
+const FS_DIR_MAX_NAME_BYTES = Number(process.env.FS_DIR_MAX_NAME_BYTES ?? 200_000);
+
 // A file read is bounded twice: the sniff window that decides binary vs
 // text, and the content cap — same size and same honesty contract as the
 // tool_result cap (TOOL_OUTPUT_CAP_BYTES), but applied via bounded fd reads
@@ -55,6 +62,8 @@ export function capBuffer(buf: Buffer): { text: string; truncatedBytes?: number 
 }
 
 export type TreeResult = { entries: FsEntry[]; truncated: boolean } | { error: string };
+
+export type DirResult = { entries: FsDirEntry[]; truncated: boolean } | { error: string };
 
 export type FileResult =
   | { content: string; size: number; truncatedBytes?: number }
@@ -114,6 +123,60 @@ export function listTree(
     }
   };
   walk(realRoot, "");
+  return { entries, truncated };
+}
+
+/**
+ * List ONE directory's children — the lazy tree's fetch unit (E2.1). `rel`
+ * is the client's requested root-relative path ("" or "." = the root),
+ * jailed through `inside()` like every fs resolution. Directories sort
+ * before files, alphabetical within each group — so when a cap trips, files
+ * are what get cut and the tree stays navigable. Symlinks are leaves by
+ * kind (lstat semantics: a symlink-to-dir reports `symlink`, not `dir`).
+ * The SKIP_DIRS floor carries over: a `.git`/`node_modules` DIRECTORY is
+ * omitted, exactly as the whole-tree walk prunes it.
+ */
+export function listDir(
+  root: string,
+  rel: string,
+  caps: { maxEntries?: number; maxNameBytes?: number } = {},
+): DirResult {
+  const maxEntries = caps.maxEntries ?? FS_DIR_MAX_ENTRIES;
+  const maxNameBytes = caps.maxNameBytes ?? FS_DIR_MAX_NAME_BYTES;
+  const real = inside(root, rel === "" ? "." : rel);
+  if (!real) return { error: "path is outside the session workspace" };
+  let dirents;
+  try {
+    dirents = readdirSync(real, { withFileTypes: true });
+  } catch (err) {
+    return {
+      error:
+        (err as NodeJS.ErrnoException).code === "ENOTDIR"
+          ? "path is not a directory"
+          : "directory is not readable",
+    };
+  }
+  const kindOf = (d: (typeof dirents)[number]): FsDirEntry["kind"] =>
+    // Order matters: isDirectory() is false for a symlink-to-dir (lstat
+    // semantics), so the symlink check needn't come first — but a FIFO or
+    // socket lands as `file`, same as the walk lists it (refused at read time).
+    d.isDirectory() ? "dir" : d.isSymbolicLink() ? "symlink" : "file";
+  const rank = (k: FsDirEntry["kind"]) => (k === "dir" ? 0 : 1);
+  const all = dirents
+    .filter((d) => !(d.isDirectory() && SKIP_DIRS.has(d.name)))
+    .map((d) => ({ name: d.name, kind: kindOf(d) }))
+    .sort((a, b) => rank(a.kind) - rank(b.kind) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  const entries: FsDirEntry[] = [];
+  let nameBytes = 0;
+  let truncated = false;
+  for (const e of all) {
+    nameBytes += Buffer.byteLength(e.name, "utf8");
+    if (entries.length >= maxEntries || nameBytes > maxNameBytes) {
+      truncated = true;
+      break;
+    }
+    entries.push(e);
+  }
   return { entries, truncated };
 }
 

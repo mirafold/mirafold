@@ -2039,7 +2039,21 @@ trip. Mitigations in-scope: cache fetched directories for the session,
 prefetch root + first level on open. Phone drill-in maps naturally (each
 layer = one directory = one fetch).
 
-- [ ] **Step E2.1 — per-directory listing: wire + server**
+- [x] **Step E2.1 — per-directory listing: wire + server** ✅ 2026-07-26 —
+  `fs_listdir { id, path }` → `fs_dir { id, path, entries, truncated?, error? }`
+  landed additively (`FsDirEntry` = name + dir/file/symlink kind + the
+  `status` slot E2.3 will fill); `listDir()` in fs-explorer.ts (jailed via
+  `inside()`, dirs-first sort so caps cut files not dirs, SKIP_DIRS floor
+  carried over, per-dir entry + name-byte caps honest). One deliberate
+  deviation inside the "same throttle discipline": fs_listdir throttles as a
+  **token bucket** (`FS_LISTDIR_MAX_PER_SEC`, default 32 — capacity = refill)
+  instead of the min-interval family, because E2.2's open-panel prefetch is a
+  legitimate same-instant burst the interval would refuse; a drained bucket
+  still answers with an error reply. Done-when observed over a real socket:
+  root + nested listings correct with kinds; `../`, absolute, and a planted
+  dir-symlink-out all refused; legacy `fs_list` answers identically on the
+  same connection; burst refused-then-recovers; hostile-frame pins added
+  (bad id drops whole, bad path answers). Tier 1 + Tier 2 + typecheck green.
   - Goal: the daemon can answer "list this one directory" — jailed, capped,
     throttled, correlated — beside the untouched whole-tree path.
   - Build: `fs_listdir`/`fs_dir` in `server/protocol.ts`; handler in

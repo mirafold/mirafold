@@ -1,6 +1,7 @@
-// The Explorer's per-viewport request layer (Phase E) — the fs_list / fs_read
-// / fs_diff message handlers, lifted out of connection.ts's switch so the
-// Explorer's request handling lives beside its data layer (fs-explorer.ts,
+// The Explorer's per-viewport request layer (Phase E) — the fs_list /
+// fs_listdir / fs_read / fs_diff message handlers, lifted out of
+// connection.ts's switch so the Explorer's
+// request handling lives beside its data layer (fs-explorer.ts,
 // git.ts) instead of swelling the dispatcher. connection.ts builds one of
 // these per connection and delegates the three cases to it.
 //
@@ -16,7 +17,7 @@ import { lstatSync } from "node:fs";
 import path from "node:path";
 import type { ClientMsg, FsEntry, WireMsg } from "../protocol";
 import type { SessionEntry } from "./registry";
-import { capBuffer, listTree, readWorkspaceFile, sniffBinary } from "./fs-explorer";
+import { capBuffer, listDir, listTree, readWorkspaceFile, sniffBinary } from "./fs-explorer";
 import { cleanRelPath, gitShowHead, gitTree } from "./git";
 import { isSecretFile } from "../security/permissions";
 import { errText } from "../adapters";
@@ -28,11 +29,20 @@ import { errText } from "../adapters";
 // request/reply correlation must always resolve.
 const FS_MIN_INTERVAL_MS = Number(process.env.FS_MIN_INTERVAL_MS ?? 250);
 
+// fs_listdir's throttle is a token BUCKET, not the min-interval family
+// (E2.1): opening the panel legitimately fires root + a first level of
+// fetches in the same instant, which a min-interval would refuse — and one
+// readdir is orders cheaper than the tree walk the interval was sized for.
+// Capacity = refill rate, one knob: a full burst of this many, sustained at
+// this many per second. A drained bucket still ANSWERS (error reply).
+const FS_LISTDIR_MAX_PER_SEC = Number(process.env.FS_LISTDIR_MAX_PER_SEC ?? 32);
+
 // Same shape rule as bang ids: client-minted correlation ids are short and
 // word-safe or the message is dropped whole.
 const FS_ID_RE = /^[\w-]{1,64}$/;
 
 type FsList = Extract<ClientMsg, { type: "fs_list" }>;
+type FsListdir = Extract<ClientMsg, { type: "fs_listdir" }>;
 type FsRead = Extract<ClientMsg, { type: "fs_read" }>;
 type FsDiff = Extract<ClientMsg, { type: "fs_diff" }>;
 
@@ -47,6 +57,7 @@ type FsDeps = {
 
 export type FsHandlers = {
   list: (msg: FsList) => void;
+  listdir: (msg: FsListdir) => void;
   read: (msg: FsRead) => void;
   diff: (msg: FsDiff) => void;
 };
@@ -59,9 +70,24 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
   let lastReadAt = 0;
   let lastDiffAt = 0;
   let gitInFlight = false;
+  // fs_listdir's token bucket (see FS_LISTDIR_MAX_PER_SEC above): fractional
+  // tokens accrue continuously, capped at one full burst.
+  let listdirTokens = FS_LISTDIR_MAX_PER_SEC;
+  let listdirRefilledAt = Date.now();
 
   const badId = (id: unknown): boolean => typeof id !== "string" || !FS_ID_RE.test(id);
   const tooSoon = (last: number): boolean => Date.now() - last < FS_MIN_INTERVAL_MS;
+  const takeListdirToken = (): boolean => {
+    const now = Date.now();
+    listdirTokens = Math.min(
+      FS_LISTDIR_MAX_PER_SEC,
+      listdirTokens + ((now - listdirRefilledAt) / 1_000) * FS_LISTDIR_MAX_PER_SEC,
+    );
+    listdirRefilledAt = now;
+    if (listdirTokens < 1) return false;
+    listdirTokens -= 1;
+    return true;
+  };
 
   const list = (msg: FsList): void => {
     if (badId(msg.id)) return;
@@ -98,6 +124,33 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
       .finally(() => {
         gitInFlight = false;
       });
+  };
+
+  const listdir = (msg: FsListdir): void => {
+    if (badId(msg.id)) return;
+    const sendErr = (p: string, error: string) =>
+      viewport({ type: "fs_dir", id: msg.id, path: p, entries: [], error });
+    // "" and "." both mean the session root — a length-0 path is valid here,
+    // unlike fs_read's. The cap mirrors fs_read's; the jail does the rest.
+    if (typeof msg.path !== "string" || msg.path.length > 4_096) {
+      return sendErr("", "bad path");
+    }
+    const entry = getEntry();
+    if (!entry) return sendErr(msg.path, "no session attached");
+    if (!takeListdirToken()) return sendErr(msg.path, "requests are arriving too fast — retry shortly");
+    try {
+      const r = listDir(entry.cwd, msg.path);
+      if ("error" in r) return sendErr(msg.path, r.error);
+      viewport({
+        type: "fs_dir",
+        id: msg.id,
+        path: msg.path,
+        entries: r.entries,
+        ...(r.truncated ? { truncated: true } : {}),
+      });
+    } catch (err) {
+      sendErr(msg.path, errText(err));
+    }
   };
 
   const read = (msg: FsRead): void => {
@@ -195,7 +248,7 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
       });
   };
 
-  return { list, read, diff };
+  return { list, listdir, read, diff };
 }
 
 const fileExists = (abs: string): boolean => {

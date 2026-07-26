@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { listTree, readWorkspaceFile } from "./fs-explorer";
+import { listDir, listTree, readWorkspaceFile } from "./fs-explorer";
 
 // E.1's module contract, on real temp directories: the walk's shape and caps,
 // the jail, the secret denial, and the read's binary/truncation/UTF-8 honesty.
@@ -89,6 +89,108 @@ test("listTree: the walk is node-bounded — a tree of empty dirs can't be walke
 test("listTree: unreadable root is the error case, not a throw", () => {
   const r = listTree(path.join(os.tmpdir(), "fsx-does-not-exist-ever"));
   assert.ok("error" in r);
+});
+
+// --- listDir (E2.1): the lazy tree's one-directory fetch unit ---
+
+test("listDir: one directory's children — dirs first then files, alphabetical, skip dirs omitted", () => {
+  const root = tmp();
+  mkdirSync(path.join(root, "src"));
+  mkdirSync(path.join(root, "docs"));
+  mkdirSync(path.join(root, ".git"));
+  mkdirSync(path.join(root, "node_modules"));
+  writeFileSync(path.join(root, "zz.txt"), "z");
+  writeFileSync(path.join(root, "README.md"), "r");
+  writeFileSync(path.join(root, "src", "app.ts"), "a");
+  const r = listDir(root, "");
+  assert.ok(!("error" in r));
+  assert.deepEqual(r.entries, [
+    { name: "docs", kind: "dir" },
+    { name: "src", kind: "dir" },
+    { name: "README.md", kind: "file" },
+    { name: "zz.txt", kind: "file" },
+  ]);
+  assert.equal(r.truncated, false);
+});
+
+test("listDir: '' and '.' both list the root; a nested dir lists only its own children", () => {
+  const root = tmp();
+  mkdirSync(path.join(root, "src", "deep"), { recursive: true });
+  writeFileSync(path.join(root, "src", "app.ts"), "a");
+  writeFileSync(path.join(root, "src", "deep", "x.ts"), "x");
+  const dot = listDir(root, ".");
+  const empty = listDir(root, "");
+  assert.ok(!("error" in dot) && !("error" in empty));
+  assert.deepEqual(dot.entries, empty.entries);
+  const nested = listDir(root, "src");
+  assert.ok(!("error" in nested));
+  assert.deepEqual(nested.entries, [
+    { name: "deep", kind: "dir" },
+    { name: "app.ts", kind: "file" },
+  ]);
+});
+
+test("listDir: a symlink is kind 'symlink' even when it points at a directory — the leaf rule", () => {
+  const root = tmp();
+  mkdirSync(path.join(root, "real"));
+  writeFileSync(path.join(root, "plain.txt"), "p");
+  symlinkSync(path.join(root, "real"), path.join(root, "dirlink"));
+  symlinkSync(path.join(root, "plain.txt"), path.join(root, "filelink"));
+  const r = listDir(root, "");
+  assert.ok(!("error" in r));
+  const byName = new Map(r.entries.map((e) => [e.name, e.kind]));
+  assert.equal(byName.get("dirlink"), "symlink");
+  assert.equal(byName.get("filelink"), "symlink");
+  assert.equal(byName.get("real"), "dir");
+});
+
+test("listDir: the jail — ../, absolute, and a symlink-out path all refuse", () => {
+  const root = tmp();
+  const outside = tmp();
+  mkdirSync(path.join(outside, "loot"));
+  symlinkSync(path.join(outside, "loot"), path.join(root, "innocent"));
+  for (const p of ["..", "../" + path.basename(outside), outside, "innocent"]) {
+    const r = listDir(root, p);
+    assert.ok("error" in r, `${p} must refuse`);
+  }
+});
+
+test("listDir: a file path, a missing dir, and an unreadable root are errors, not throws", () => {
+  const root = tmp();
+  writeFileSync(path.join(root, "a.txt"), "a");
+  const file = listDir(root, "a.txt");
+  assert.ok("error" in file);
+  assert.match(file.error, /not a directory/);
+  assert.ok("error" in listDir(root, "nope"));
+  assert.ok("error" in listDir(path.join(os.tmpdir(), "fsx-never-exists"), ""));
+});
+
+test("listDir: entry cap trips honestly — and files are cut before dirs", () => {
+  const root = tmp();
+  mkdirSync(path.join(root, "keepdir"));
+  for (let i = 0; i < 5; i++) writeFileSync(path.join(root, `f${i}.txt`), "x");
+  const r = listDir(root, "", { maxEntries: 3 });
+  assert.ok(!("error" in r));
+  assert.equal(r.entries.length, 3);
+  assert.equal(r.truncated, true);
+  assert.equal(r.entries[0].name, "keepdir", "dirs sort first, so the cut lands on files");
+});
+
+test("listDir: name-byte cap trips honestly", () => {
+  const root = tmp();
+  for (let i = 0; i < 5; i++) writeFileSync(path.join(root, `file-with-a-name-${i}.txt`), "x");
+  const r = listDir(root, "", { maxNameBytes: 50 });
+  assert.ok(!("error" in r));
+  assert.equal(r.truncated, true);
+  assert.ok(r.entries.length < 5);
+});
+
+test("listDir: secret env files are still LISTED — honesty over hiding, denial is at read time", () => {
+  const root = tmp();
+  writeFileSync(path.join(root, ".env"), "SECRET=1");
+  const r = listDir(root, "");
+  assert.ok(!("error" in r));
+  assert.ok(r.entries.some((e) => e.name === ".env" && e.kind === "file"));
 });
 
 test("readWorkspaceFile: content round-trip with size", () => {
