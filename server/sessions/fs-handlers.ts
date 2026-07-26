@@ -18,7 +18,15 @@ import path from "node:path";
 import type { ClientMsg, FsDirEntry, FsEntry, WireMsg } from "../protocol";
 import type { SessionEntry } from "./registry";
 import { capBuffer, listTree, readDirRaw, readWorkspaceFile, sniffBinary, sortAndCapDir } from "./fs-explorer";
-import { cleanRelPath, decorateGitDir, findRepoRoot, gitShowHead, gitTree, repoStatus } from "./git";
+import {
+  cleanRelPath,
+  decorateGitDir,
+  findRepoRoot,
+  gitShowHead,
+  gitTree,
+  repoRelPath,
+  repoStatus,
+} from "./git";
 import { inside } from "./actions";
 import { isSecretFile } from "../security/permissions";
 import { errText } from "../adapters";
@@ -162,7 +170,7 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
       // discipline is repoStatus's queue, not a refusal.
       const repoRoot = findRepoRoot(raw.real);
       if (!repoRoot) return sendDir(raw.all);
-      const dirRel = path.relative(repoRoot, raw.real).split(path.sep).join("/");
+      const dirRel = repoRelPath(repoRoot, raw.real);
       void repoStatus(repoRoot)
         .then((st) => {
           if (isClosed()) return;
@@ -241,9 +249,7 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
     const repoRoot = realDir ? findRepoRoot(realDir) : null;
     const repoRel =
       repoRoot && realDir
-        ? [path.relative(repoRoot, realDir).split(path.sep).join("/"), rel.slice(cut + 1)]
-            .filter(Boolean)
-            .join("/")
+        ? [repoRelPath(repoRoot, realDir), rel.slice(cut + 1)].filter(Boolean).join("/")
         : rel;
     gitInFlight = true;
     void gitShowHead(repoRoot ?? root, repoRel)

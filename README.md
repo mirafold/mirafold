@@ -50,7 +50,8 @@ codebase. Companion documents:
   document's layout reflects), **S** (the theme system; seven themes at launch),
   **N** (the onboarding backend picker + local-server discovery), **V** (the
   visual/fidelity punch list), **A** (the accessibility floor, WCAG 2.1 AA),
-  **C** (CI on every push), **E** (the Explorer — the read-only files panel),
+  **C** (CI on every push), **E** + **E2** (the Explorer — the read-only files
+  panel, lazy per-directory since E2 with per-repo git fidelity),
   **M** (mission control grown into a cockpit: act on sessions from the grid),
   L.1, most of the Phase F fidelity fixes, and the working core of
   **Phase R** (the hosted relay: R.1 dial-out + envelope, R.3 per-pair E2E
@@ -427,13 +428,20 @@ server/            the local daemon (Node, run with tsx)
     connection.ts      one viewport's server side, transport-agnostic (R.1) —
                        shared verbatim by local sockets and relay viewports
     actions.ts         Phase 2 mediation: allowlisted tools component actions may run
-    fs-handlers.ts     Explorer request layer (Phase E): the fs_list/fs_read/
-                       fs_diff handlers connection.ts delegates to — per-viewport
-                       replies, jailed + throttled, one reply each
-    fs-explorer.ts     Explorer data layer: the capped tree walk + jailed,
-                       secret-safe, binary-sniffing file reads (E.1)
-    git.ts             Explorer git layer (E.2): bounded one-shot git calls for
-                       the tracked tree + statuses + HEAD-vs-working diffs
+    fs-handlers.ts     Explorer request layer (Phase E): the fs_list/fs_listdir/
+                       fs_read/fs_diff handlers connection.ts delegates to —
+                       per-viewport replies, jailed + throttled, one reply each
+    fs-explorer.ts     Explorer data layer: the capped tree walk (E.1) + the
+                       per-directory lister behind the lazy tree (E2.1) +
+                       jailed, secret-safe, binary-sniffing file reads
+    git.ts             Explorer git layer: bounded one-shot git calls for the
+                       tracked tree + statuses + HEAD-vs-working diffs (E.2),
+                       plus the per-repo view the lazy tree uses — nearest-.git
+                       discovery, cached+serialized status, ignore-aware
+                       decoration (E2.3). NOTE: that discovery walks ABOVE the
+                       session root when the session is scoped inside a repo;
+                       SECURITY.md states the bound (nothing outside the scope
+                       reaches the wire), pinned by a Tier-2 test
     ws-liveness.ts     heartbeat sweep shared by the local and relay socket paths
   security/          the two trust gates (H.6):
     auth.ts            the 4.5 auth predicates (token cookie, loopback Origin) —
@@ -539,9 +547,12 @@ web/               the browser app (React 19 + Vite)
                      diffs and the `diff` registry component (the per-line
                      JSX lives once, as `DiffLines` in registry/Diff.tsx) —
                      the Explorer's FileView reuses it too (E.3)
-  src/files-tree.ts  the Explorer's shell-owned flat→nested tree builder
-                     (dirs-first, git status on leaves); a deliberate copy of
-                     registry/FileTree's approach, kept off the agent surface (E.3)
+  src/files-tree.ts  the Explorer's shell-owned lazy per-directory store (E2.2):
+                     one DirState per directory the panel has asked about
+                     (unfetched/loading/loaded/refetching/error), pure
+                     transitions, kept off the agent surface. Replaced the
+                     original flat→nested whole-tree builder (E.3) when the
+                     panel went lazy — the client no longer fetches whole trees
   src/use-is-phone.ts  live matchMedia phone-width hook — re-renders on a
                      breakpoint cross, unlike PromptBox's module-load constant (E.4)
   src/tildify.ts     ~-abbreviation for cwd display (prompt + status bar)
@@ -1311,8 +1322,11 @@ Read PLAN.md for the real thing; the shape in one breath:
 - **Also shipped (2026-07-20 → 25):** the accessibility floor (**Phase A** —
   WCAG 2.1 AA: screen-reader turn/permission announcements, focus traps,
   axe-clean e2e gates); **CI on every push** (Phase C); the **Explorer**
-  (**Phase E** — the read-only files panel behind the activity bar: jailed
-  tree walk, file view, HEAD-vs-working diffs); **mission control grown into
+  (**Phase E**, extended by **Phase E2** on 2026-07-26 — the read-only files
+  panel behind the activity bar: jailed listing, file view, HEAD-vs-working
+  diffs, now fetched one directory per expand with each nested repo's own
+  statuses and ignore rules, so a session can root at a folder of many
+  repos); **mission control grown into
   a cockpit** (**Phase M** — answer permissions, interrupt, and dispatch
   prompts from the grid without entering a session); and the workbench-frame
   polish + the by-surface `styles.css` reorganization (2026-07-25, §7).

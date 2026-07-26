@@ -1,11 +1,10 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { ClientMsg, WireMsg } from "../protocol";
-import { startDaemon, TestClient, type Daemon } from "../testing/itest-harness";
+import { fixtureGit as git, startDaemon, TestClient, type Daemon } from "../testing/itest-harness";
 
 // E.1 over a REAL daemon and socket: the fs_list/fs_read round-trip against a
 // scripted temp workspace, the jail + secret denial refusing with error
@@ -22,15 +21,11 @@ let ws: string; // the session workspace
 let outside: string; // where the planted symlink points
 let mr: string; // the E2.3 multi-repo root: repoA (dirty) + repoB (own rules) + plain/
 
-// Real git against the temp fixtures, isolated from the machine's config
-// (identity via -c, global/system config nulled so signing hooks etc. can't
-// leak in). The suite assumes a git binary — the daemon's own degrade path
-// for a missing binary is covered at Tier 1.
-const git = (cwd: string, ...args: string[]) =>
-  execFileSync("git", ["-C", cwd, "-c", "user.name=t", "-c", "user.email=t@t", ...args], {
-    env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" },
-    stdio: "pipe",
-  });
+/** One fs_listdir round-trip: send with `id`, wait for its correlated fs_dir. */
+const listdir = async (c: TestClient, id: string, p: string) => {
+  c.send({ type: "fs_listdir", id, path: p } as ClientMsg);
+  return (await c.waitFor((m) => m.type === "fs_dir" && (m as Any).id === id, `fs_dir ${id}`)) as Any;
+};
 
 // The throttle window under test — small so the suite stays fast, real so
 // the burst case actually trips it.
@@ -183,12 +178,7 @@ test("E.1: a burst is throttled but ANSWERED — then works again past the windo
 
 test("E2.1: fs_listdir serves one directory at a time — root and nested, kinds, no seq; legacy fs_list untouched beside it", async () => {
   const c = await openSession(ws);
-  const ld = async (id: string, p: string) => {
-    c.send({ type: "fs_listdir", id, path: p } as ClientMsg);
-    return (await c.waitFor((m) => m.type === "fs_dir" && (m as Any).id === id, `fs_dir ${id}`)) as Any;
-  };
-
-  const root = await ld("L1", "");
+  const root = await listdir(c, "L1", "");
   assert.equal(root.error, undefined);
   assert.equal(root.path, "");
   assert.ok(!("seq" in root), "per-viewport replies are never sequenced");
@@ -202,7 +192,7 @@ test("E2.1: fs_listdir serves one directory at a time — root and nested, kinds
     { name: "innocent.txt", kind: "symlink" },
   ]);
 
-  const nested = await ld("L2", "src");
+  const nested = await listdir(c, "L2", "src");
   assert.equal(nested.error, undefined);
   assert.deepEqual(nested.entries, [{ name: "app.ts", kind: "file" }]);
 
@@ -227,22 +217,17 @@ test("E2.1: fs_listdir jail — ../, absolute, and a symlink-to-outside dir all 
   writeFileSync(path.join(jailWs, "ok.txt"), "inside\n");
   symlinkSync(jailOut, path.join(jailWs, "outlink"));
   const c = await openSession(jailWs);
-  const ld = async (id: string, p: string) => {
-    c.send({ type: "fs_listdir", id, path: p } as ClientMsg);
-    return (await c.waitFor((m) => m.type === "fs_dir" && (m as Any).id === id, `fs_dir ${id}`)) as Any;
-  };
-
-  const escape = await ld("j1", "../" + path.basename(jailOut));
+  const escape = await listdir(c, "j1", "../" + path.basename(jailOut));
   assert.equal(typeof escape.error, "string");
   assert.deepEqual(escape.entries, [], "denied listings never carry entries");
-  const absolute = await ld("j2", jailOut);
+  const absolute = await listdir(c, "j2", jailOut);
   assert.equal(typeof absolute.error, "string");
-  const symlinkOut = await ld("j3", "outlink");
+  const symlinkOut = await listdir(c, "j3", "outlink");
   assert.equal(typeof symlinkOut.error, "string", "a planted dir symlink can't list outside the root");
 
   // Every refusal left the daemon standing — and the link is still honestly
   // LISTED as a leaf, it just refuses to expand.
-  const alive = await ld("j4", "");
+  const alive = await listdir(c, "j4", "");
   assert.equal(alive.error, undefined);
   assert.deepEqual(alive.entries, [
     { name: "ok.txt", kind: "file" },
@@ -276,17 +261,13 @@ test("E2.1: an fs_listdir burst drains the token bucket but is ANSWERED — and 
 });
 
 test("E2.3: a multi-repo root — each repo's own ignore rules and statuses, the plain dir statusless", async () => {
-  const ld = async (c: TestClient, id: string, p: string) => {
-    c.send({ type: "fs_listdir", id, path: p } as ClientMsg);
-    return (await c.waitFor((m) => m.type === "fs_dir" && (m as Any).id === id, `fs_dir ${id}`)) as Any;
-  };
   // Two connections so the per-connection token bucket (5/s here) never
   // throttles the five listings under test.
   const c1 = await openSession(mr);
   const c2 = await openSession(mr);
 
   // The root itself is not a repo: plain listing, no statuses anywhere.
-  const root = await ld(c1, "m1", "");
+  const root = await listdir(c1, "m1", "");
   assert.equal(root.error, undefined);
   assert.deepEqual(root.entries, [
     { name: "plain", kind: "dir" },
@@ -297,7 +278,7 @@ test("E2.3: a multi-repo root — each repo's own ignore rules and statuses, the
   // repoA through its own view: dist/ gone (A's .gitignore), the untracked
   // dir U, the modified file M, the deleted file still VISIBLE with D, the
   // clean files statusless.
-  const a = await ld(c1, "m2", "repoA");
+  const a = await listdir(c1, "m2", "repoA");
   assert.equal(a.error, undefined);
   assert.deepEqual(a.entries, [
     { name: "newdir", kind: "dir", status: "U" },
@@ -309,13 +290,13 @@ test("E2.3: a multi-repo root — each repo's own ignore rules and statuses, the
 
   // Inside the collapsed untracked dir, children inherit U — porcelain gave
   // them no record of their own.
-  const nested = await ld(c1, "m3", "repoA/newdir");
+  const nested = await listdir(c1, "m3", "repoA/newdir");
   assert.equal(nested.error, undefined);
   assert.deepEqual(nested.entries, [{ name: "fresh.txt", kind: "file", status: "U" }]);
 
   // repoB's OWN rules: secret.log gone here (and only here), while dist/ —
   // ignored in repoA — is a visible untracked dir in B. No rule leaks across.
-  const b = await ld(c2, "m4", "repoB");
+  const b = await listdir(c2, "m4", "repoB");
   assert.equal(b.error, undefined);
   assert.deepEqual(b.entries, [
     { name: "dist", kind: "dir", status: "U" },
@@ -325,7 +306,7 @@ test("E2.3: a multi-repo root — each repo's own ignore rules and statuses, the
 
   // The plain dir: outside any repo, the E2.1 listing byte-identical —
   // entries and nothing else.
-  const p = await ld(c2, "m5", "plain");
+  const p = await listdir(c2, "m5", "plain");
   assert.equal(p.error, undefined);
   assert.deepEqual(p.entries, [{ name: "note.txt", kind: "file" }]);
 
@@ -436,6 +417,101 @@ test("E2.4: the old-client floor at a Projects root — legacy fs_list still ser
     "the plain walk never carries statuses",
   );
   c.close();
+});
+
+// The 2026-07-26 audit's probe, kept as a permanent pin (SECURITY.md, "Git
+// metadata is read from the containing repo"). Since E2.3 the daemon finds a
+// directory's repo by walking ABOVE the session root, so it runs git in — and
+// reads HEAD through — a repo the session was never scoped to. That is
+// deliberate fidelity; the bound is that NOTHING from outside the session
+// directory reaches the wire. A session scoped to a subdirectory must not be
+// able to see, name, or read anything in its parent repo above that scope,
+// and every escape route must still refuse.
+test("SECURITY (audit 2026-07-26): a subdirectory-scoped session sees nothing above its scope, though the repo above it is what supplies git data", async () => {
+  const base = mkdtempSync(path.join(os.tmpdir(), "fsx-scope-"));
+  const repo = path.join(base, "repo");
+  mkdirSync(path.join(repo, "public", "inner"), { recursive: true });
+  git(repo, "init", "-q");
+  writeFileSync(path.join(repo, "TOPSECRET.txt"), "sibling secret\n");
+  writeFileSync(path.join(repo, "SECRETGONE.txt"), "deleted sibling secret\n");
+  writeFileSync(path.join(repo, "public", "ok.txt"), "committed\n");
+  writeFileSync(path.join(repo, "public", "inner", "deep.txt"), "deep\n");
+  git(repo, "add", "-A");
+  git(repo, "commit", "-qm", "init");
+  // Dirt ABOVE the scope and inside it: the status the panel shows must come
+  // from the parent repo, while the secrets above stay invisible. Both dirty
+  // SHAPES exist above the scope on purpose — a modified file AND a deleted
+  // one. The deleted case is the one that matters most: deleted files are
+  // merged into a listing from status alone (they aren't on disk to be read
+  // by readdir), so a regression in that merge's same-directory check is
+  // exactly how a path from above the scope could reach the wire.
+  writeFileSync(path.join(repo, "TOPSECRET.txt"), "sibling secret CHANGED\n");
+  rmSync(path.join(repo, "SECRETGONE.txt"));
+  writeFileSync(path.join(repo, "public", "ok.txt"), "committed CHANGED\n");
+  // A second repo entirely outside, reachable only by a planted symlink.
+  const outsideRepo = path.join(base, "outsiderepo");
+  mkdirSync(outsideRepo);
+  git(outsideRepo, "init", "-q");
+  writeFileSync(path.join(outsideRepo, "loot.txt"), "loot\n");
+  git(outsideRepo, "add", "-A");
+  git(outsideRepo, "commit", "-qm", "init");
+  writeFileSync(path.join(outsideRepo, "loot.txt"), "loot CHANGED\n");
+  symlinkSync(outsideRepo, path.join(repo, "public", "escape"));
+
+  const c = await openSession(path.join(repo, "public"));
+  const root = await listdir(c, "sc1", "");
+  assert.equal(root.error, undefined);
+  // The parent repo IS supplying git data — ok.txt carries its M — while
+  // nothing above the scope is named.
+  assert.deepEqual(root.entries, [
+    { name: "inner", kind: "dir" },
+    { name: "escape", kind: "symlink", status: "U" },
+    { name: "ok.txt", kind: "file", status: "M" },
+  ]);
+  const serialized = JSON.stringify(root);
+  assert.ok(!serialized.includes("TOPSECRET"), "a file above the session scope was named on the wire");
+  assert.ok(
+    !serialized.includes("SECRETGONE"),
+    "a DELETED file above the session scope was merged into the listing",
+  );
+  assert.ok(!serialized.includes(base), "an absolute path above the session root reached the wire");
+
+  // Every escape route still refuses — including the symlink to a real repo.
+  for (const [id, p] of [
+    ["sc2", ".."],
+    ["sc3", repo],
+    ["sc4", "escape"],
+  ] as const) {
+    const r = await listdir(c, id, p);
+    assert.match(String(r.error), /outside the session workspace/, `${p} must refuse`);
+    assert.deepEqual(r.entries, [], "a refused listing never carries entries");
+  }
+
+  const diff = async (id: string, p: string) => {
+    await settle(THROTTLE_MS + 30);
+    c.send({ type: "fs_diff", id, path: p } as ClientMsg);
+    return (await c.waitFor(
+      (m) => m.type === "fs_file_diff" && (m as Any).id === id,
+      `fs_file_diff ${id}`,
+    )) as Any;
+  };
+  // The in-scope diff works THROUGH the parent repo (that's the E2.4 fix)…
+  const ok = await diff("sd1", "ok.txt");
+  assert.equal(ok.error, undefined);
+  assert.equal(ok.before, "committed\n");
+  assert.equal(ok.after, "committed CHANGED\n");
+  // …while the secret above the scope, and the outside repo's file behind the
+  // symlink, both refuse — the repo walk never becomes a read path.
+  const secret = await diff("sd2", "../TOPSECRET.txt");
+  assert.equal(typeof secret.error, "string");
+  assert.equal(secret.before, undefined, "denied content never rides an error reply");
+  const looted = await diff("sd3", "escape/loot.txt");
+  assert.equal(typeof looted.error, "string");
+  assert.equal(looted.before, undefined);
+
+  assert.doesNotMatch(d.logs(), /crashed \(uncaughtException\)/);
+  c.close();
+  rmSync(base, { recursive: true, force: true });
 });
 
 test("E.1: no session attached — both queries answer with an error reply, not silence", async () => {

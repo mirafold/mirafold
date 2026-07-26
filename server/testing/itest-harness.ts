@@ -3,7 +3,7 @@
 // ships: the Express auth gate, the ws upgrade path, the registry, and the
 // mock adapter behind the AgentSession seam.
 
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
@@ -116,6 +116,18 @@ export function startDaemon(env: Record<string, string> = {}): Promise<Daemon> {
     }, 50);
   });
 }
+
+/**
+ * Real git against a temp fixture, isolated from the machine's config
+ * (identity via -c, global/system config nulled so signing hooks etc. can't
+ * leak in). Suites that call this assume a git binary; the daemon's own
+ * degrade path for a missing binary is covered at Tier 1.
+ */
+export const fixtureGit = (cwd: string, ...args: string[]) =>
+  execFileSync("git", ["-C", cwd, "-c", "user.name=t", "-c", "user.email=t@t", ...args], {
+    env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" },
+    stdio: "pipe",
+  });
 
 /**
  * A viewport: one ws connection. `received` keeps every frame for whole-stream

@@ -58,15 +58,42 @@ guard is defense-in-depth, not the boundary: creating a symlink or running
 are the zero-click ones. A prompt-free path to the daemon's secrets is a
 vulnerability we want reported.
 
-The **Explorer's** read-only file browser (`fs_list`/`fs_read`/`fs_diff`,
-Phase E) shares this same guard: it refuses `.env`/`.env.local` *content* by
-basename (the file still appears in the tree — its name isn't secret) and
-jails every path to the session's working directory via realpath containment,
-which — unlike the tool guard above — *does* catch symlinks that escape the
-root. Its read scope otherwise matches the auto-allowed `Read` tool and `!cat`
-(terminal parity): any other file inside the session directory — including a
-project's own `.env.production`, `id_rsa`, etc. — is browsable, exactly as the
-agent could already read it. That's by design (the browser shows you your own
-project); the daemon's own `.env` is the file that's protected, and the
-Explorer is *narrower* than `Read`, since it can't reach outside the session
-directory at all (2026-07-24 audit).
+The **Explorer's** read-only file browser (`fs_list`/`fs_listdir`/`fs_read`/
+`fs_diff`, Phases E and E2) shares this same guard: it refuses
+`.env`/`.env.local` *content* by basename (the file still appears in the tree —
+its name isn't secret) and jails every path to the session's working directory
+via realpath containment, which — unlike the tool guard above — *does* catch
+symlinks that escape the root. Its read scope otherwise matches the
+auto-allowed `Read` tool and `!cat` (terminal parity): any other file inside
+the session directory — including a project's own `.env.production`, `id_rsa`,
+etc. — is browsable, exactly as the agent could already read it. That's by
+design (the browser shows you your own project); the daemon's own `.env` is
+the file that's protected (2026-07-24 audit).
+
+**Git metadata is read from the containing repo, which can sit ABOVE the
+session directory** (Phase E2.3/E2.4, 2026-07-26 audit — this sharpens an
+earlier, now-imprecise claim that the Explorer "can't reach outside the
+session directory at all"). To show the right change letters and honor the
+right ignore rules — including at a Projects-style root holding several
+repos — the daemon finds the repo that contains a directory by walking
+upward for a `.git`, exactly as git itself does, and that walk does not stop
+at the session root. So for a session scoped to a SUBDIRECTORY of a repo,
+the daemon runs `git status` in the whole repo and reads HEAD's version of a
+file through that repo. Two bounds make this safe, and both are pinned by
+tests:
+
+- **No data from outside the session directory ever reaches the browser.**
+  Listings contain only entries read from a jailed directory; statuses are
+  attached only to those entries; a file's diff resolves only through a path
+  that already passed the realpath jail. A session scoped to `repo/public`
+  cannot see, name, or read `repo/TOPSECRET.txt` — verified by probe.
+- **Every wire path is still jailed exactly as before.** `../`, absolute
+  paths, and symlinks pointing outside the root are refused for both listing
+  and diffing, even when the escape target is itself a git repo.
+
+What this does mean: the daemon touches (reads, never writes) git metadata
+for a repo your session was not scoped to, and one repo's ignore rules can
+hide a file inside your scope. That is the intended fidelity — it is what
+makes the file tree match what git actually thinks — but it is a real widening
+of what the daemon reads compared to Phase E, so it is stated here rather
+than left implied.

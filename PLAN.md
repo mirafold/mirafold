@@ -2184,6 +2184,34 @@ layer = one directory = one fetch).
   - Done when: both land green in CI alongside all existing tiers, and the
     e2e demonstrates no whole-tree request anywhere in the lazy flow.
 
+### Deferred from the 2026-07-26 security audit (do these inside Phase W)
+
+The audit of Phase E2 found **nothing exploitable** — every containment
+probe refused (see `SECURITY.md`'s "Git metadata is read from the containing
+repo" entry, pinned by a Tier-2 test). Two **hardening** items were deferred
+here rather than fixed, because neither is reachable today and both touch the
+refresh machinery W rewrites anyway. Measured on the real 1.1 GB repo, the
+per-repo `git status --ignored` runs in **40 ms** and emits **<400 bytes**
+(git collapses ignored directories) — that measurement is why both items are
+"later", and if it ever stops holding they become "now".
+
+- [ ] **W.H1 — a slow repo must not hold up every viewport's listings.**
+  Per-repo status calls are serialized in ONE global queue (so an open-panel
+  burst can't fork N git subprocesses), and a directory listing waits for its
+  status before it's sent. Consequence: one pathological repo (network mount,
+  cold cache) delays the file panel for every attached viewport, bounded by
+  the 5 s git timeout, after which the listing degrades to no badges. Fix
+  direction: send the listing immediately and let badges arrive as a
+  follow-up, or bound the wait well under the git timeout. Natural fit with
+  W, which makes listings arrive on a signal rather than a request.
+- [ ] **W.H2 — the status cache stamps its clock at request time, not
+  arrival.** `repoStatus` records `at: Date.now()` when the promise is
+  CREATED. If a git call ever exceeded the 3 s TTL, its result would already
+  be stale on arrival, so new requests would start additional calls instead
+  of reusing it — a backlog that feeds itself. One-line fix (stamp on
+  settle); the concurrent-caller coalescing that the prefetch burst actually
+  relies on already works correctly and must keep working.
+
 ## Phase W — Live tree (the filesystem watcher; the refresh button goes vestigial)
 
 **Why.** The tree self-refreshes only at agent turn-end (E.5), so anything

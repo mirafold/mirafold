@@ -1,12 +1,11 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { chromium, type Browser, type Page } from "playwright-core";
 import axe from "axe-core";
-import { startDaemon, TestClient, type Daemon } from "./itest-harness";
+import { fixtureGit as git, startDaemon, TestClient, type Daemon } from "./itest-harness";
 import type { ClientMsg } from "../protocol";
 import { startOllamaFixture } from "./ollama-fixture";
 import { startRelayStub } from "../relay/relay-stub";
@@ -24,6 +23,34 @@ let d: Daemon;
 let browser: Browser;
 let page: Page; // carries the auth cookie across tests, like a real tab
 let base: string;
+
+// The in-page wire recorder (E2.2/E2.4): log every outgoing fs_* frame by
+// patching the WebSocket prototype — ws.ts resolves send() through the
+// prototype on every call, so the app's EXISTING socket is caught too. Each
+// install resets the log; the patch itself lands once per window (a fresh
+// navigation gets a fresh window, so re-installing after goto is correct).
+const installFsRecorder = (p: Page) =>
+  p.evaluate(() => {
+    const w = window as unknown as { __fsSent: { type: string; path?: string }[]; __fsPatched?: boolean };
+    w.__fsSent = [];
+    if (!w.__fsPatched) {
+      w.__fsPatched = true;
+      const orig = WebSocket.prototype.send;
+      WebSocket.prototype.send = function (data: Parameters<WebSocket["send"]>[0]) {
+        try {
+          const m = JSON.parse(String(data));
+          if (String(m.type).startsWith("fs_")) {
+            (window as unknown as { __fsSent: unknown[] }).__fsSent.push({ type: m.type, path: m.path });
+          }
+        } catch {
+          /* binary or non-JSON frame — not ours */
+        }
+        return orig.call(this, data);
+      };
+    }
+  });
+const fsSent = (p: Page) =>
+  p.evaluate(() => (window as unknown as { __fsSent: { type: string; path?: string }[] }).__fsSent);
 
 before(async () => {
   d = await startDaemon({ MIRAFOLD_TOKEN: TOKEN });
@@ -1011,30 +1038,8 @@ test("E.5: expanded dirs survive a close/reopen, and a turn's auto-refresh keeps
 });
 
 test("E2.2: the tree is LAZY — open fetches root + first level only; expand fetches exactly that dir; cache re-expands with no request; turn-end refetches only expanded dirs", async () => {
-  // Observe the wire from inside the page: record every outgoing fs_* frame.
-  // Patching the prototype catches the app's existing socket — ws.ts resolves
-  // send() through the prototype on every call.
-  await page.evaluate(() => {
-    const w = window as unknown as { __fsSent: { type: string; path?: string }[]; __fsPatched?: boolean };
-    w.__fsSent = [];
-    if (!w.__fsPatched) {
-      w.__fsPatched = true;
-      const orig = WebSocket.prototype.send;
-      WebSocket.prototype.send = function (data: Parameters<WebSocket["send"]>[0]) {
-        try {
-          const m = JSON.parse(String(data));
-          if (String(m.type).startsWith("fs_")) {
-            (window as unknown as { __fsSent: unknown[] }).__fsSent.push({ type: m.type, path: m.path });
-          }
-        } catch {
-          /* binary or non-JSON frame — not ours */
-        }
-        return orig.call(this, data);
-      };
-    }
-  });
-  const sent = () =>
-    page.evaluate(() => (window as unknown as { __fsSent: { type: string; path?: string }[] }).__fsSent);
+  await installFsRecorder(page);
+  const sent = () => fsSent(page);
   const mark = async () => (await sent()).length;
 
   // Open: the root and (prefetched) first level arrive — every listing
@@ -1113,11 +1118,6 @@ test("E2.4: the Projects-root proof — lazy expands into two repos with per-rep
   // is NOT a repo, holding two repos with different ignore rules (one dirty)
   // and a plain dir.
   const mr = mkdtempSync(path.join(os.tmpdir(), "e2e-mr-"));
-  const git = (cwd: string, ...args: string[]) =>
-    execFileSync("git", ["-C", cwd, "-c", "user.name=t", "-c", "user.email=t@t", ...args], {
-      env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" },
-      stdio: "pipe",
-    });
   const repoA = path.join(mr, "repoA");
   const repoB = path.join(mr, "repoB");
   mkdirSync(repoA);
@@ -1154,23 +1154,8 @@ test("E2.4: the Projects-root proof — lazy expands into two repos with per-rep
 
     // The recorder goes in BEFORE the panel opens — the claim under proof is
     // that NO frame in the whole flow is a whole-tree fs_list, so every
-    // frame must be caught. (Fresh page after goto: re-patch.)
-    await page.evaluate(() => {
-      const w = window as unknown as { __fsSent: { type: string; path?: string }[] };
-      w.__fsSent = [];
-      const orig = WebSocket.prototype.send;
-      WebSocket.prototype.send = function (data: Parameters<WebSocket["send"]>[0]) {
-        try {
-          const m = JSON.parse(String(data));
-          if (String(m.type).startsWith("fs_")) {
-            (window as unknown as { __fsSent: unknown[] }).__fsSent.push({ type: m.type, path: m.path });
-          }
-        } catch {
-          /* binary or non-JSON frame — not ours */
-        }
-        return orig.call(this, data);
-      };
-    });
+    // frame must be caught. (Fresh window after goto: re-install.)
+    await installFsRecorder(page);
 
     await page.locator(".ab-files").click();
     // The root: three dirs, no statuses anywhere — the root is no repo.
@@ -1229,9 +1214,7 @@ test("E2.4: the Projects-root proof — lazy expands into two repos with per-rep
 
     // The pinned claim: the entire flow — open, prefetch, expands, refreshes
     // — rode the lazy pair. Not one whole-tree request anywhere.
-    const frames = await page.evaluate(
-      () => (window as unknown as { __fsSent: { type: string }[] }).__fsSent,
-    );
+    const frames = await fsSent(page);
     assert.ok(frames.length > 0, "the recorder saw no fs traffic at all");
     assert.ok(
       frames.every((m) => m.type !== "fs_list"),

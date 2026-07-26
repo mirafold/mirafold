@@ -202,6 +202,12 @@ export const findRepoRoot = (realDir: string): string | null => {
   }
 };
 
+/** `realPath`'s repo-root-relative, /-separated path — the unit every
+ *  per-repo lookup keys on ("" = the repo root itself). `realPath` must be
+ *  at or beneath `repoRoot` (findRepoRoot guarantees it for its own result). */
+export const repoRelPath = (repoRoot: string, realPath: string): string =>
+  path.relative(repoRoot, realPath).split(path.sep).join("/");
+
 export type RepoStatusData = {
   /** Repo-root-relative FILE path → collapsed status char (M/A/D/U). */
   files: Map<string, string>;
