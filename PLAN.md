@@ -1830,6 +1830,12 @@ component, agent-controlled labels beside the new gear still render as escaped
 text, the pairing link is never an `<a href>` (text + clipboard only), no
 secrets in the session's commits, the shipped tarball carries no `.env` /
 source maps / install hooks, and builds are byte-for-byte reproducible.
+**Kept deliberately, don't re-flag:** the pairing URL's `tabIndex={0}`. It was
+there because the box scrolled sideways and a scrollable region must be
+keyboard-reachable; the box wraps now, so that reason is gone, but Kyle's call
+was to keep the tab stop so a keyboard user has somewhere to land on the URL
+(reading it, or selecting with caret browsing). Neither keeping nor removing it
+is an accessibility defect and the axe sweep passes both ways.
 **Considered and dismissed:** the pairing card now shows the full code at 1.5×
 rather than a truncated scroll — no marginal exposure, since the QR directly
 above encodes the same secret and decodes from any screenshot. **Closed with
