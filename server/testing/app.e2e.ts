@@ -911,6 +911,16 @@ test("streaming holds a scrolled-up reader in place, and re-follows once back at
   assert.ok(gap <= 60, `expected to be following the tail again, sat ${gap}px above it`);
 });
 
+/** Asserts a DOM condition that lands a tick or two AFTER the click that
+ *  causes it. A one-shot count()/isVisible() right after a click is a coin
+ *  flip once the machine is busy — E.3/E.5 lost that flip on 2026-07-25.
+ *  Keeps the descriptive message a bare waitForFunction timeout would lose.
+ *  Pass the check INLINE (never via a const): tsx's keepNames wraps a named
+ *  function expression in a helper that doesn't exist inside the page. */
+const eventually = async (check: () => boolean, message: string, timeout = 10_000) => {
+  await page.waitForFunction(check, undefined, { timeout }).catch(() => assert.fail(message));
+};
+
 test("E.3: the files panel lists the working tree, opens a file beside the transcript, drills back", async () => {
   // The e2e daemon runs in the genui-shell repo itself — a real git repo — so
   // the tree is live git data. package.json is always tracked and top-level.
@@ -925,7 +935,10 @@ test("E.3: the files panel lists the working tree, opens a file beside the trans
   assert.match(await root.innerText(), /genui-shell/);
   assert.equal(await page.locator(".files-title").count(), 0, "the old path header is gone");
   await root.click();
-  assert.equal(await page.locator(".files-file-row").count(), 0, "collapsed root still lists files");
+  await eventually(
+    () => document.querySelectorAll(".files-file-row").length === 0,
+    "collapsed root still lists files",
+  );
   await root.click();
   await pkg.waitFor({ timeout: 15_000 });
 
@@ -943,7 +956,7 @@ test("E.3: the files panel lists the working tree, opens a file beside the trans
   await page.locator(".files-back").click();
   await page.waitForSelector(".files-tree");
   await page.locator(".ab-files").click();
-  assert.equal(await page.locator(".files-panel").count(), 0);
+  await eventually(() => !document.querySelector(".files-panel"), "the toggle left the panel open");
 });
 
 test("E.5: expanded dirs survive a close/reopen, and a turn's auto-refresh keeps tree state", async () => {
@@ -961,11 +974,14 @@ test("E.5: expanded dirs survive a close/reopen, and a turn's auto-refresh keeps
   // Close and reopen within the same session — the expansion is remembered
   // (E.5: reset is keyed on session switch, not on open).
   await page.locator(".ab-files").click();
-  assert.equal(await page.locator(".files-panel").count(), 0);
+  await eventually(() => !document.querySelector(".files-panel"), "the toggle left the panel open");
   await page.locator(".ab-files").click();
   await page.waitForSelector(".files-tree");
-  assert.ok(
-    await page.locator(".files-file-row:has-text('protocol.ts')").first().isVisible(),
+  await eventually(
+    () =>
+      [...document.querySelectorAll(".files-file-row")].some((el) =>
+        el.textContent?.includes("protocol.ts"),
+      ),
     "expanded dir was collapsed on reopen",
   );
 
@@ -975,10 +991,15 @@ test("E.5: expanded dirs survive a close/reopen, and a turn's auto-refresh keeps
   await page.keyboard.type("plan it step by step");
   await page.keyboard.press("Enter");
   await page.waitForSelector("text=Plan complete — all four steps done.", { timeout: 30_000 });
-  await page.waitForTimeout(400); // let the turn_end refresh land
-  assert.equal(await page.locator(".files-panel").count(), 1, "auto-refresh closed the panel");
-  assert.ok(
-    await page.locator(".files-file-row:has-text('protocol.ts')").first().isVisible(),
+  await page.waitForTimeout(400); // let the turn_end refresh land…
+  // …then let it FINISH: the refetch swaps the rows, so a slow one under load
+  // must not read as a collapse.
+  await eventually(() => !!document.querySelector(".files-panel"), "auto-refresh closed the panel");
+  await eventually(
+    () =>
+      [...document.querySelectorAll(".files-file-row")].some((el) =>
+        el.textContent?.includes("protocol.ts"),
+      ),
     "auto-refresh collapsed the expanded dir",
   );
 
