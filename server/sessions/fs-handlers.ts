@@ -15,10 +15,10 @@
 
 import { lstatSync } from "node:fs";
 import path from "node:path";
-import type { ClientMsg, FsEntry, WireMsg } from "../protocol";
+import type { ClientMsg, FsDirEntry, FsEntry, WireMsg } from "../protocol";
 import type { SessionEntry } from "./registry";
-import { capBuffer, listDir, listTree, readWorkspaceFile, sniffBinary } from "./fs-explorer";
-import { cleanRelPath, gitShowHead, gitTree } from "./git";
+import { capBuffer, listTree, readDirRaw, readWorkspaceFile, sniffBinary, sortAndCapDir } from "./fs-explorer";
+import { cleanRelPath, decorateGitDir, findRepoRoot, gitShowHead, gitTree, repoStatus } from "./git";
 import { isSecretFile } from "../security/permissions";
 import { errText } from "../adapters";
 
@@ -139,15 +139,38 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
     if (!entry) return sendErr(msg.path, "no session attached");
     if (!takeListdirToken()) return sendErr(msg.path, "requests are arriving too fast — retry shortly");
     try {
-      const r = listDir(entry.cwd, msg.path);
-      if ("error" in r) return sendErr(msg.path, r.error);
-      viewport({
-        type: "fs_dir",
-        id: msg.id,
-        path: msg.path,
-        entries: r.entries,
-        ...(r.truncated ? { truncated: true } : {}),
-      });
+      const raw = readDirRaw(entry.cwd, msg.path);
+      if ("error" in raw) return sendErr(msg.path, raw.error);
+      const sendDir = (all: FsDirEntry[]) => {
+        const r = sortAndCapDir(all);
+        viewport({
+          type: "fs_dir",
+          id: msg.id,
+          path: msg.path,
+          entries: r.entries,
+          ...(r.truncated ? { truncated: true } : {}),
+        });
+      };
+      // E2.3: a directory inside a repo lists through THAT repo's view —
+      // its own ignore rules honored, its own statuses attached (cached per
+      // repo, one git child at a time — repoStatus serializes). Outside any
+      // repo: the plain listing, byte-identical to E2.1. Git trouble
+      // degrades to the plain listing, never to an error — the entries are
+      // disk truth either way; statuses are the garnish. Note gitInFlight
+      // stays out of this path: the burst is legitimate here, so the
+      // discipline is repoStatus's queue, not a refusal.
+      const repoRoot = findRepoRoot(raw.real);
+      if (!repoRoot) return sendDir(raw.all);
+      const dirRel = path.relative(repoRoot, raw.real).split(path.sep).join("/");
+      void repoStatus(repoRoot)
+        .then((st) => {
+          if (isClosed()) return;
+          if ("notGit" in st || "error" in st) return sendDir(raw.all);
+          sendDir(decorateGitDir(raw.all, dirRel, st));
+        })
+        .catch(() => {
+          if (!isClosed()) sendDir(raw.all);
+        });
     } catch (err) {
       sendErr(msg.path, errText(err));
     }

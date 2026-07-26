@@ -1,0 +1,1040 @@
+{
+  "mistralai/mistral-medium-3": [
+    {
+      "case": "phone-compare",
+      "turns": 1,
+      "calls": [],
+      "usedExpected": false,
+      "finalTextChars": 281,
+      "latencyMs": 3433,
+      "cost": 0.0019832
+    },
+    {
+      "case": "workout-plan",
+      "turns": 1,
+      "calls": [],
+      "usedExpected": false,
+      "finalTextChars": 1864,
+      "latencyMs": 14435,
+      "cost": 0.00148832
+    },
+    {
+      "case": "budget-chart",
+      "turns": 2,
+      "calls": [
+        {
+          "tool": "render_chart",
+          "component": "chart",
+          "argsParsed": true,
+          "valid": true
+        },
+        {
+          "tool": "render_chart",
+          "component": "chart",
+          "argsParsed": true,
+          "valid": true,
+          "reusedId": true
+        }
+      ],
+      "usedExpected": true,
+      "finalTextChars": 76,
+      "latencyMs": 11959,
+      "cost": 0.0031996
+    },
+    {
+      "case": "tokyo-trip",
+      "turns": 1,
+      "calls": [],
+      "usedExpected": false,
+      "finalTextChars": 567,
+      "latencyMs": 3246,
+      "cost": 0.00045792
+    },
+    {
+      "case": "camping-list",
+      "turns": 1,
+      "calls": [],
+      "usedExpected": false,
+      "finalTextChars": 1856,
+      "latencyMs": 12141,
+      "cost": 0.00120152
+    },
+    {
+      "case": "sleep-data",
+      "turns": 1,
+      "calls": [
+        {
+          "tool": "render_chart",
+          "component": "chart",
+          "argsParsed": true,
+          "valid": true
+        }
+      ],
+      "usedExpected": true,
+      "finalTextChars": 66,
+      "latencyMs": 7047,
+      "cost": 0.00101336
+    },
+    {
+      "case": "cat-or-dog",
+      "turns": 1,
+      "calls": [],
+      "usedExpected": false,
+      "finalTextChars": 1345,
+      "latencyMs": 6141,
+      "cost": 0.00075912
+    },
+    {
+      "case": "reading-goal",
+      "turns": 1,
+      "calls": [],
+      "usedExpected": false,
+      "finalTextChars": 414,
+      "latencyMs": 3237,
+      "cost": 0.00043712
+    },
+    {
+      "case": "dinner-recipe",
+      "turns": 1,
+      "calls": [],
+      "usedExpected": false,
+      "finalTextChars": 1544,
+      "latencyMs": 10283,
+      "cost": 0.00100872
+    },
+    {
+      "case": "apollo",
+      "turns": 1,
+      "calls": [],
+      "usedExpected": false,
+      "finalTextChars": 3442,
+      "latencyMs": 19303,
+      "cost": 0.00201632
+    }
+  ],
+  "meta-llama/llama-4-maverick": [
+    {
+      "case": "phone-compare",
+      "turns": 1,
+      "calls": [],
+      "usedExpected": false,
+      "finalTextChars": 3101,
+      "latencyMs": 34598,
+      "cost": 0.00199363
+    },
+    {
+      "case": "workout-plan",
+      "turns": 1,
+      "calls": [],
+      "usedExpected": false,
+      "finalTextChars": 1237,
+      "latencyMs": 20049,
+      "cost": 0.0017151
+    },
+    {
+      "case": "budget-chart",
+      "turns": 2,
+      "calls": [
+        {
+          "tool": "render_chart",
+          "component": "chart",
+          "argsParsed": true,
+          "valid": true
+        }
+      ],
+      "usedExpected": true,
+      "finalTextChars": 215,
+      "latencyMs": 15505,
+      "cost": 0.00443715
+    },
+    {
+      "case": "tokyo-trip",
+      "turns": 1,
+      "calls": [],
+      "usedExpected": false,
+      "finalTextChars": 2615,
+      "latencyMs": 6264,
+      "cost": 0.00252045
+    },
+    {
+      "case": "camping-list",
+      "turns": 1,
+      "calls": [],
+      "usedExpected": false,
+      "finalTextChars": 1879,
+      "latencyMs": 5661,
+      "cost": 0.00142509
+    },
+    {
+      "case": "sleep-data",
+      "turns": 1,
+      "calls": [],
+      "usedExpected": false,
+      "finalTextChars": 659,
+      "latencyMs": 3000,
+      "cost": 0.00118874
+    },
+    {
+      "case": "cat-or-dog",
+      "turns": 1,
+      "calls": [],
+      "usedExpected": false,
+      "finalTextChars": 1576,
+      "latencyMs": 3252,
+      "cost": 0.00127149
+    },
+    {
+      "case": "reading-goal",
+      "turns": 1,
+      "calls": [],
+      "usedExpected": false,
+      "finalTextChars": 1383,
+      "latencyMs": 3719,
+      "cost": 0.00126754
+    },
+    {
+      "case": "dinner-recipe",
+      "turns": 1,
+      "calls": [],
+      "usedExpected": false,
+      "finalTextChars": 1665,
+      "latencyMs": 22882,
+      "cost": 0.00175412
+    },
+    {
+      "case": "apollo",
+      "turns": 1,
+      "calls": [],
+      "usedExpected": false,
+      "finalTextChars": 1083,
+      "latencyMs": 12718,
+      "cost": 0.00160684
+    }
+  ],
+  "moonshotai/kimi-k2": [
+    {
+      "case": "phone-compare",
+      "turns": 1,
+      "calls": [
+        {
+          "tool": "render_table",
+          "component": "table",
+          "argsParsed": true,
+          "valid": true
+        }
+      ],
+      "usedExpected": true,
+      "finalTextChars": 845,
+      "latencyMs": 14552,
+      "cost": 0.005493110000000001
+    },
+    {
+      "case": "workout-plan",
+      "turns": 1,
+      "calls": [
+        {
+          "tool": "render_card",
+          "component": "card",
+          "argsParsed": true,
+          "valid": true
+        },
+        {
+          "tool": "render_table",
+          "component": "table",
+          "argsParsed": true,
+          "valid": true
+        }
+      ],
+      "usedExpected": true,
+      "finalTextChars": 257,
+      "latencyMs": 14939,
+      "cost": 0.00764271
+    },
+    {
+      "case": "budget-chart",
+      "turns": 2,
+      "calls": [
+        {
+          "tool": "render_chart",
+          "component": "chart",
+          "argsParsed": true,
+          "valid": true
+        },
+        {
+          "tool": "render_card",
+          "component": "card",
+          "argsParsed": true,
+          "valid": true
+        },
+        {
+          "tool": "render_chart",
+          "component": "chart",
+          "argsParsed": true,
+          "valid": true,
+          "reusedId": true
+        }
+      ],
+      "usedExpected": true,
+      "finalTextChars": 155,
+      "latencyMs": 28794,
+      "cost": 0.012739140000000001
+    },
+    {
+      "case": "tokyo-trip",
+      "turns": 1,
+      "calls": [
+        {
+          "tool": "render_question",
+          "component": "question",
+          "argsParsed": true,
+          "valid": true
+        }
+      ],
+      "usedExpected": false,
+      "finalTextChars": 271,
+      "latencyMs": 11655,
+      "cost": 0.00517862
+    },
+    {
+      "case": "camping-list",
+      "turns": 1,
+      "calls": [
+        {
+          "tool": "render_list",
+          "component": "list",
+          "argsParsed": true,
+          "valid": true
+        }
+      ],
+      "usedExpected": true,
+      "finalTextChars": 188,
+      "latencyMs": 11875,
+      "cost": 0.00538298
+    },
+    {
+      "case": "sleep-data",
+      "turns": 1,
+      "calls": [
+        {
+          "tool": "render_chart",
+          "component": "chart",
+          "argsParsed": true,
+          "valid": true
+        }
+      ],
+      "usedExpected": true,
+      "finalTextChars": 212,
+      "latencyMs": 10511,
+      "cost": 0.0050961700000000006
+    },
+    {
+      "case": "cat-or-dog",
+      "turns": 1,
+      "calls": [
+        {
+          "tool": "render_table",
+          "component": "table",
+          "argsParsed": true,
+          "valid": true
+        }
+      ],
+      "usedExpected": true,
+      "finalTextChars": 689,
+      "latencyMs": 12018,
+      "cost": 0.00530646
+    },
+    {
+      "case": "reading-goal",
+      "turns": 1,
+      "calls": [
+        {
+          "tool": "render_progress",
+          "component": "progress",
+          "argsParsed": true,
+          "valid": true
+        },
+        {
+          "tool": "render_card",
+          "component": "card",
+          "argsParsed": true,
+          "valid": true
+        }
+      ],
+      "usedExpected": true,
+      "finalTextChars": 77,
+      "latencyMs": 12595,
+      "cost": 0.005290319999999999
+    },
+    {
+      "case": "dinner-recipe",
+      "turns": 1,
+      "calls": [
+        {
+          "tool": "render_card",
+          "component": "card",
+          "argsParsed": true,
+          "valid": true
+        }
+      ],
+      "usedExpected": false,
+      "finalTextChars": 866,
+      "latencyMs": 11909,
+      "cost": 0.00533106
+    },
+    {
+      "case": "apollo",
+      "turns": 1,
+      "calls": [
+        {
+          "tool": "render_timeline",
+          "component": "timeline",
+          "argsParsed": true,
+          "valid": true
+        }
+      ],
+      "usedExpected": true,
+      "finalTextChars": 206,
+      "latencyMs": 14302,
+      "cost": 0.00562072
+    }
+  ],
+  "deepseek/deepseek-chat-v3-0324": [
+    {
+      "case": "phone-compare",
+      "turns": 1,
+      "calls": [],
+      "usedExpected": false,
+      "finalTextChars": 1416,
+      "latencyMs": 11855,
+      "cost": 0.00172904
+    },
+    {
+      "case": "workout-plan",
+      "turns": 1,
+      "calls": [],
+      "usedExpected": false,
+      "finalTextChars": 1083,
+      "latencyMs": 10482,
+      "cost": 0.00172599
+    },
+    {
+      "case": "budget-chart",
+      "turns": 2,
+      "calls": [
+        {
+          "tool": "render_chart",
+          "component": "chart",
+          "argsParsed": true,
+          "valid": true
+        },
+        {
+          "tool": "render_chart",
+          "component": "chart",
+          "argsParsed": true,
+          "valid": true,
+          "reusedId": true
+        }
+      ],
+      "usedExpected": true,
+      "finalTextChars": 193,
+      "latencyMs": 26373,
+      "cost": 0.005206
+    },
+    {
+      "case": "tokyo-trip",
+      "turns": 1,
+      "calls": [],
+      "usedExpected": false,
+      "finalTextChars": 2476,
+      "latencyMs": 33232,
+      "cost": 0.00193125
+    },
+    {
+      "case": "camping-list",
+      "turns": 1,
+      "calls": [
+        {
+          "tool": "render_list",
+          "component": "list",
+          "argsParsed": true,
+          "valid": true
+        },
+        {
+          "tool": "render_list",
+          "component": "list",
+          "argsParsed": true,
+          "valid": true
+        },
+        {
+          "tool": "render_list",
+          "component": "list",
+          "argsParsed": true,
+          "valid": true
+        },
+        {
+          "tool": "render_list",
+          "component": "list",
+          "argsParsed": true,
+          "valid": true
+        },
+        {
+          "tool": "render_list",
+          "component": "list",
+          "argsParsed": true,
+          "valid": true
+        },
+        {
+          "tool": "render_list",
+          "component": "list",
+          "argsParsed": true,
+          "valid": true
+        }
+      ],
+      "usedExpected": true,
+      "finalTextChars": 1596,
+      "latencyMs": 64177,
+      "cost": 0.009667
+    },
+    {
+      "case": "sleep-data",
+      "turns": 1,
+      "calls": [
+        {
+          "tool": "render_chart",
+          "component": "chart",
+          "argsParsed": true,
+          "valid": true
+        }
+      ],
+      "usedExpected": true,
+      "finalTextChars": 278,
+      "latencyMs": 13153,
+      "cost": 0.0026335
+    },
+    {
+      "case": "cat-or-dog",
+      "turns": 1,
+      "calls": [
+        {
+          "tool": "render_card",
+          "component": "card",
+          "argsParsed": true,
+          "valid": true
+        }
+      ],
+      "usedExpected": true,
+      "finalTextChars": 324,
+      "latencyMs": 24271,
+      "cost": 0.0029189999999999997
+    },
+    {
+      "case": "reading-goal",
+      "turns": 1,
+      "calls": [
+        {
+          "tool": "render_chart",
+          "component": "chart",
+          "argsParsed": true,
+          "valid": true
+        }
+      ],
+      "usedExpected": true,
+      "finalTextChars": 211,
+      "latencyMs": 7592,
+      "cost": 0.00251875
+    },
+    {
+      "case": "dinner-recipe",
+      "turns": 1,
+      "calls": [],
+      "usedExpected": false,
+      "finalTextChars": 1345,
+      "latencyMs": 13957,
+      "cost": 0.0015225
+    },
+    {
+      "case": "apollo",
+      "turns": 1,
+      "calls": [
+        {
+          "tool": "render_timeline",
+          "component": "timeline",
+          "argsParsed": true,
+          "valid": true
+        }
+      ],
+      "usedExpected": true,
+      "finalTextChars": 58,
+      "latencyMs": 14269,
+      "cost": 0.0027152499999999998
+    }
+  ],
+  "qwen/qwen3-235b-a22b": [
+    {
+      "case": "phone-compare",
+      "turns": 1,
+      "calls": [
+        {
+          "tool": "render_table",
+          "component": "table",
+          "argsParsed": false,
+          "valid": false,
+          "error": "bad JSON args: SyntaxError: Expected ',' or ']' after array element in JSON at position 328 (line 1 column 329)"
+        }
+      ],
+      "usedExpected": true,
+      "finalTextChars": 821,
+      "latencyMs": 24555,
+      "cost": 0.006496035
+    },
+    {
+      "case": "workout-plan",
+      "turns": 1,
+      "calls": [
+        {
+          "tool": "render_table",
+          "component": "table",
+          "argsParsed": true,
+          "valid": true
+        }
+      ],
+      "usedExpected": true,
+      "finalTextChars": 192,
+      "latencyMs": 44845,
+      "cost": 0.00943033
+    },
+    {
+      "case": "budget-chart",
+      "turns": 2,
+      "calls": [
+        {
+          "tool": "render_card",
+          "component": "card",
+          "argsParsed": true,
+          "valid": true
+        },
+        {
+          "tool": "render_table",
+          "component": "table",
+          "argsParsed": true,
+          "valid": true
+        },
+        {
+          "tool": "render_chart",
+          "component": "chart",
+          "argsParsed": true,
+          "valid": true
+        },
+        {
+          "tool": "render_table",
+          "component": "table",
+          "argsParsed": true,
+          "valid": true,
+          "reusedId": true
+        },
+        {
+          "tool": "render_chart",
+          "component": "chart",
+          "argsParsed": true,
+          "valid": true,
+          "reusedId": true
+        },
+        {
+          "tool": "render_card",
+          "component": "card",
+          "argsParsed": true,
+          "valid": true
+        },
+        {
+          "tool": "render_question",
+          "component": "question",
+          "argsParsed": true,
+          "valid": true
+        }
+      ],
+      "usedExpected": true,
+      "finalTextChars": 320,
+      "latencyMs": 76718,
+      "cost": 0.022213555
+    },
+    {
+      "case": "tokyo-trip",
+      "turns": 1,
+      "calls": [
+        {
+          "tool": "render_timeline",
+          "component": "timeline",
+          "argsParsed": true,
+          "valid": true
+        }
+      ],
+      "usedExpected": true,
+      "finalTextChars": 507,
+      "latencyMs": 27405,
+      "cost": 0.00679861
+    },
+    {
+      "case": "camping-list",
+      "turns": 1,
+      "calls": [
+        {
+          "tool": "render_list",
+          "component": "list",
+          "argsParsed": true,
+          "valid": true
+        },
+        {
+          "tool": "render_list",
+          "component": "list",
+          "argsParsed": true,
+          "valid": true
+        },
+        {
+          "tool": "render_list",
+          "component": "list",
+          "argsParsed": true,
+          "valid": true
+        },
+        {
+          "tool": "render_list",
+          "component": "list",
+          "argsParsed": true,
+          "valid": true
+        },
+        {
+          "tool": "render_card",
+          "component": "card",
+          "argsParsed": true,
+          "valid": true
+        }
+      ],
+      "usedExpected": true,
+      "finalTextChars": 1439,
+      "latencyMs": 33037,
+      "cost": 0.0077745850000000005
+    },
+    {
+      "case": "sleep-data",
+      "turns": 1,
+      "calls": [
+        {
+          "tool": "render_chart",
+          "component": "chart",
+          "argsParsed": true,
+          "valid": true
+        },
+        {
+          "tool": "render_card",
+          "component": "card",
+          "argsParsed": true,
+          "valid": true
+        }
+      ],
+      "usedExpected": true,
+      "finalTextChars": 405,
+      "latencyMs": 48950,
+      "cost": 0.012724075000000001
+    },
+    {
+      "case": "cat-or-dog",
+      "turns": 1,
+      "calls": [
+        {
+          "tool": "render_card",
+          "component": "card",
+          "argsParsed": true,
+          "valid": true
+        },
+        {
+          "tool": "render_table",
+          "component": "table",
+          "argsParsed": true,
+          "valid": true
+        },
+        {
+          "tool": "render_list",
+          "component": "list",
+          "argsParsed": true,
+          "valid": false,
+          "error": ": Unrecognized key: \"actions\""
+        }
+      ],
+      "usedExpected": true,
+      "finalTextChars": 329,
+      "latencyMs": 29667,
+      "cost": 0.012027014999999999
+    },
+    {
+      "case": "reading-goal",
+      "turns": 1,
+      "calls": [
+        {
+          "tool": "render_progress",
+          "component": "progress",
+          "argsParsed": true,
+          "valid": true
+        },
+        {
+          "tool": "render_card",
+          "component": "card",
+          "argsParsed": true,
+          "valid": true
+        }
+      ],
+      "usedExpected": true,
+      "finalTextChars": 252,
+      "latencyMs": 15209,
+      "cost": 0.0060151
+    },
+    {
+      "case": "dinner-recipe",
+      "turns": 1,
+      "calls": [
+        {
+          "tool": "render_card",
+          "component": "card",
+          "argsParsed": true,
+          "valid": true
+        }
+      ],
+      "usedExpected": false,
+      "finalTextChars": 136,
+      "latencyMs": 9676,
+      "cost": 0.00518336
+    },
+    {
+      "case": "apollo",
+      "turns": 1,
+      "calls": [
+        {
+          "tool": "render_timeline",
+          "component": "timeline",
+          "argsParsed": true,
+          "valid": true
+        }
+      ],
+      "usedExpected": true,
+      "finalTextChars": 314,
+      "latencyMs": 25400,
+      "cost": 0.007516145
+    }
+  ],
+  "z-ai/glm-4.5": [
+    {
+      "case": "phone-compare",
+      "turns": 1,
+      "calls": [
+        {
+          "tool": "render_card",
+          "component": "card",
+          "argsParsed": true,
+          "valid": true
+        }
+      ],
+      "usedExpected": false,
+      "finalTextChars": 0,
+      "latencyMs": 37775,
+      "cost": 0.00457712
+    },
+    {
+      "case": "workout-plan",
+      "turns": 1,
+      "calls": [
+        {
+          "tool": "render_table",
+          "component": "table",
+          "argsParsed": true,
+          "valid": false,
+          "error": "columns: Invalid input: expected array, received string"
+        },
+        {
+          "tool": "render_card",
+          "component": "card",
+          "argsParsed": true,
+          "valid": true
+        }
+      ],
+      "usedExpected": true,
+      "finalTextChars": 196,
+      "latencyMs": 103078,
+      "cost": 0.00371
+    },
+    {
+      "case": "budget-chart",
+      "turns": 2,
+      "calls": [
+        {
+          "tool": "render_chart",
+          "component": "chart",
+          "argsParsed": true,
+          "valid": true
+        },
+        {
+          "tool": "render_card",
+          "component": "card",
+          "argsParsed": true,
+          "valid": true
+        },
+        {
+          "tool": "render_chart",
+          "component": "chart",
+          "argsParsed": true,
+          "valid": true,
+          "reusedId": true
+        }
+      ],
+      "usedExpected": true,
+      "finalTextChars": 262,
+      "latencyMs": 25024,
+      "cost": 0.00410516
+    },
+    {
+      "case": "tokyo-trip",
+      "turns": 1,
+      "calls": [
+        {
+          "tool": "render_timeline",
+          "component": "timeline",
+          "argsParsed": true,
+          "valid": true
+        }
+      ],
+      "usedExpected": true,
+      "finalTextChars": 308,
+      "latencyMs": 26930,
+      "cost": 0.0031794400000000004
+    },
+    {
+      "case": "camping-list",
+      "turns": 1,
+      "calls": [
+        {
+          "tool": "render_list",
+          "component": "list",
+          "argsParsed": true,
+          "valid": true
+        }
+      ],
+      "usedExpected": true,
+      "finalTextChars": 499,
+      "latencyMs": 27650,
+      "cost": 0.00327624
+    },
+    {
+      "case": "sleep-data",
+      "turns": 1,
+      "calls": [
+        {
+          "tool": "render_chart",
+          "component": "chart",
+          "argsParsed": true,
+          "valid": true
+        },
+        {
+          "tool": "render_keyvalue",
+          "component": "key-value",
+          "argsParsed": true,
+          "valid": true
+        }
+      ],
+      "usedExpected": true,
+      "finalTextChars": 766,
+      "latencyMs": 20768,
+      "cost": 0.0029779200000000002
+    },
+    {
+      "case": "cat-or-dog",
+      "turns": 1,
+      "calls": [
+        {
+          "tool": "render_list",
+          "component": "list",
+          "argsParsed": true,
+          "valid": true
+        },
+        {
+          "tool": "render_question",
+          "component": "question",
+          "argsParsed": true,
+          "valid": true
+        }
+      ],
+      "usedExpected": true,
+      "finalTextChars": 272,
+      "latencyMs": 28976,
+      "cost": 0.0037627199999999998
+    },
+    {
+      "case": "reading-goal",
+      "turns": 1,
+      "calls": [
+        {
+          "tool": "render_progress",
+          "component": "progress",
+          "argsParsed": true,
+          "valid": true
+        },
+        {
+          "tool": "render_card",
+          "component": "card",
+          "argsParsed": true,
+          "valid": true
+        }
+      ],
+      "usedExpected": true,
+      "finalTextChars": 57,
+      "latencyMs": 16696,
+      "cost": 0.00280404
+    },
+    {
+      "case": "dinner-recipe",
+      "turns": 1,
+      "calls": [
+        {
+          "tool": "render_list",
+          "component": "list",
+          "argsParsed": true,
+          "valid": true
+        },
+        {
+          "tool": "render_list",
+          "component": "list",
+          "argsParsed": true,
+          "valid": true
+        },
+        {
+          "tool": "render_card",
+          "component": "card",
+          "argsParsed": true,
+          "valid": true
+        }
+      ],
+      "usedExpected": true,
+      "finalTextChars": 101,
+      "latencyMs": 24381,
+      "cost": 0.00395008
+    },
+    {
+      "case": "apollo",
+      "turns": 1,
+      "calls": [
+        {
+          "tool": "render_timeline",
+          "component": "timeline",
+          "argsParsed": true,
+          "valid": true
+        },
+        {
+          "tool": "render_card",
+          "component": "card",
+          "argsParsed": true,
+          "valid": true
+        }
+      ],
+      "usedExpected": true,
+      "finalTextChars": 125,
+      "latencyMs": 30074,
+      "cost": 0.00446416
+    }
+  ]
+}

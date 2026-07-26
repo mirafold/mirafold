@@ -7,8 +7,9 @@
 // Nothing here touches the wire or the registry; connection.ts composes.
 
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import path from "node:path";
-import type { FsEntry } from "../protocol";
+import type { FsDirEntry, FsEntry } from "../protocol";
 
 const GIT_TIMEOUT_MS = Number(process.env.FS_GIT_TIMEOUT_MS ?? 5_000);
 // `git show` of a big blob is the largest legitimate output; the caller caps
@@ -174,3 +175,163 @@ export async function gitShowHead(root: string, rel: string): Promise<GitShow> {
 
 const gitErr = (op: string, r: { code: number | null; stderr: string }): string =>
   `git ${op} failed${r.stderr ? `: ${r.stderr.slice(0, 200)}` : ""}`;
+
+// --- The per-repo layer for the lazy tree (E2.3) ---
+//
+// A Projects-style session root holds several repos side by side, so git
+// fidelity becomes per-NESTED-repo: each directory listing is decorated by
+// the repo that actually contains it — its own ignore rules, its own status
+// — and a directory outside any repo stays the plain lister's.
+
+/**
+ * The repo that contains `realDir`, or null if none: nearest ancestor with a
+ * `.git` entry (a DIRECTORY for an ordinary repo; a FILE for worktrees and
+ * submodules — existsSync covers both, and `git -C` accepts both). Nearest
+ * wins, so a repo nested inside another repo gets its own view. The walk
+ * runs to the filesystem root, not the session root, because a session
+ * rooted at a SUBDIRECTORY of a repo (the Phase E trap) finds its repo
+ * above the jail — same discovery rule git itself uses.
+ */
+export const findRepoRoot = (realDir: string): string | null => {
+  let dir = realDir;
+  for (;;) {
+    if (existsSync(path.join(dir, ".git"))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+};
+
+export type RepoStatusData = {
+  /** Repo-root-relative FILE path → collapsed status char (M/A/D/U). */
+  files: Map<string, string>;
+  /** Wholly-untracked dirs porcelain collapses to one `?? dir/` record —
+   *  everything beneath one is untracked without its own record. */
+  untrackedDirs: Set<string>;
+  /** Ignored paths (`!!` records): files exact, dirs stored without the
+   *  trailing slash — everything beneath an ignored dir is ignored too. */
+  ignored: Set<string>;
+};
+
+export type RepoStatus = RepoStatusData | { notGit: true } | { error: string };
+
+/**
+ * Parse `git status --porcelain=v1 -z --ignored` into the per-repo view.
+ * Same -z framing rules as parseStatusZ (which stays untouched — the legacy
+ * whole-tree path is a compatibility floor): rename/copy records carry TWO
+ * fields, renames collapse to A(to) + D(from), copies never mark the source.
+ * New here: `!!` (ignored) and the trailing-slash dir collapse of `??`/`!!`
+ * records land in their own sets instead of masquerading as file statuses.
+ * Exported pure for the Tier-1 pin.
+ */
+export const parseStatusIgnoredZ = (out: string): RepoStatusData => {
+  const files = new Map<string, string>();
+  const untrackedDirs = new Set<string>();
+  const ignored = new Set<string>();
+  const fields = out.split("\0");
+  for (let i = 0; i < fields.length; i++) {
+    const rec = fields[i];
+    if (rec.length < 4) continue; // trailing empty field / junk
+    const xy = rec.slice(0, 2);
+    const p = rec.slice(3);
+    if (xy.includes("R") || xy.includes("C")) {
+      const from = fields[++i]; // the second field of this record
+      files.set(p, "A");
+      if (xy.includes("R") && from) files.set(from, "D");
+      continue;
+    }
+    if (xy === "!!") ignored.add(p.endsWith("/") ? p.slice(0, -1) : p);
+    else if (xy === "??") {
+      if (p.endsWith("/")) untrackedDirs.add(p.slice(0, -1));
+      else files.set(p, "U");
+    } else if (xy.includes("D")) files.set(p, "D");
+    else if (xy.includes("A")) files.set(p, "A");
+    else files.set(p, "M");
+  }
+  return { files, untrackedDirs, ignored };
+};
+
+// One git child at a time across ALL per-repo status queries — the E-phase
+// one-git-child-in-flight discipline extended to E2.3: an open-panel
+// prefetch burst spanning N repos QUEUES N calls (each request still gets
+// its reply), it never forks N subprocesses at once.
+let repoQueue: Promise<unknown> = Promise.resolve();
+const enqueue = <T>(job: () => Promise<T>): Promise<T> => {
+  const run = repoQueue.then(job, job);
+  repoQueue = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+};
+
+// Per-repo cache, keyed by repo root: the prefetch burst shares ONE status
+// subprocess per repo (concurrent callers coalesce on the cached promise).
+// The TTL is the only invalidation until Phase W's watcher signal exists —
+// short enough that a turn-end refresh reads fresh state, long enough to
+// cover the burst. Errors cache too: a broken repo shouldn't be re-probed
+// per request.
+const REPO_STATUS_TTL_MS = Number(process.env.FS_GIT_STATUS_TTL_MS ?? 3_000);
+const statusCache = new Map<string, { at: number; value: Promise<RepoStatus> }>();
+
+export function repoStatus(repoRoot: string): Promise<RepoStatus> {
+  const hit = statusCache.get(repoRoot);
+  if (hit && Date.now() - hit.at < REPO_STATUS_TTL_MS) return hit.value;
+  // Keys are real repo roots found on disk, so growth is naturally bounded —
+  // this guard just caps the pathological case (repos created and deleted
+  // under a long-lived daemon).
+  if (statusCache.size > 64) statusCache.clear();
+  const value = enqueue(async () => {
+    const r = await runGit(repoRoot, ["status", "--porcelain=v1", "-z", "--ignored"]);
+    if (!r.ok) return r.notGit ? { notGit: true as const } : { error: gitErr("status", r) };
+    return parseStatusIgnoredZ(String(r.stdout));
+  });
+  statusCache.set(repoRoot, { at: Date.now(), value });
+  return value;
+}
+
+/** Any strict ancestor prefix of `p` present in `set` ("a/b/c" → "a/b", "a"). */
+const underAny = (p: string, set: Set<string>): boolean => {
+  for (let i = p.lastIndexOf("/"); i > 0; i = p.lastIndexOf("/")) {
+    p = p.slice(0, i);
+    if (set.has(p)) return true;
+  }
+  return false;
+};
+
+/**
+ * Decorate one directory's raw entries with the repo's view: ignored entries
+ * DROP (the repo's own ignore rules, honored — E2.2's known interim closed),
+ * statuses attach (a file's own record; a wholly-untracked dir shows U, and
+ * so does anything beneath one — porcelain's collapse means those children
+ * have no record of their own), and deleted children MERGE in (they exist in
+ * status but not on disk; the whole-tree view kept them visible, so does
+ * this). `dirRel` is the listed dir's repo-root-relative path, "" at the
+ * repo root. Pure — exported for the Tier-1 pin; caller sorts and caps.
+ */
+export function decorateGitDir(
+  raw: FsDirEntry[],
+  dirRel: string,
+  st: RepoStatusData,
+): FsDirEntry[] {
+  const key = (name: string) => (dirRel ? `${dirRel}/${name}` : name);
+  const out: FsDirEntry[] = [];
+  const names = new Set<string>();
+  for (const e of raw) {
+    const p = key(e.name);
+    if (st.ignored.has(p) || underAny(p, st.ignored)) continue;
+    names.add(e.name);
+    const status =
+      st.files.get(p) ??
+      (st.untrackedDirs.has(p) || underAny(p, st.untrackedDirs) ? "U" : undefined);
+    out.push({ ...e, ...(status ? { status } : {}) });
+  }
+  for (const [p, c] of st.files) {
+    if (c !== "D") continue;
+    const cut = p.lastIndexOf("/");
+    if ((cut === -1 ? "" : p.slice(0, cut)) !== dirRel) continue;
+    const name = p.slice(cut + 1);
+    if (!names.has(name)) out.push({ name, kind: "file", status: "D" });
+  }
+  return out;
+}

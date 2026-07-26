@@ -2109,7 +2109,33 @@ layer = one directory = one fetch).
     exactly that dir; collapse/re-expand serves from cache with no request;
     the E.5 turn-end refresh refetches only expanded dirs.
 
-- [ ] **Step E2.3 — multi-repo git fidelity**
+- [x] **Step E2.3 — multi-repo git fidelity** ✅ 2026-07-26 — per-repo git
+  view on the lazy listings: `findRepoRoot()` (nearest `.git` — dir or file —
+  walking to the FILESYSTEM root, so a subdirectory-rooted session finds its
+  repo above the jail, git's own discovery rule); `repoStatus()` runs
+  `status --porcelain=v1 -z --ignored` per repo behind a TTL cache
+  (`FS_GIT_STATUS_TTL_MS`, default 3 s — the invalidation until W's watcher
+  signal exists; a prefetch burst shares one subprocess per repo) and a
+  GLOBAL one-at-a-time queue (the one-git-child discipline extended —
+  fs_listdir's git calls serialize instead of hitting the per-connection
+  refusal, because the open-panel burst is legitimate); `decorateGitDir()`
+  (pure) drops ignored entries, attaches statuses (children of a collapsed
+  `?? dir/` inherit U), and merges status-only deleted files back in so a
+  deleted file stays visible. Git trouble degrades to the plain listing,
+  never to an error. Zero wire changes (E2.1's `status` slot fills) and zero
+  client changes (file rows already render badges; dir rows ignore the U
+  they now receive — a render nicety left for later). **Known adjacent gap
+  (deliberately not done, E2.4-or-later):** `fs_diff` still runs from the
+  session root, so a status badge in a NESTED repo invites a diff that
+  answers "not a git repository — no diff available" (graceful error reply);
+  single-repo roots diff fine. Done-when observed over a real socket against
+  the two-repos-plus-plain-dir fixture (repoA dirty: M/D/untracked-dir/
+  ignored dist; repoB's own rules — secret.log hidden only there, dist
+  visible U there): each repo honors its own `.gitignore`, statuses ride per
+  repo, the plain dir and the non-repo root list statusless and
+  byte-identical to E2.1; the legacy `fs_list` whole-tree reply pinned
+  as-is, quirks included (collapsed `newdir/` U entry). All three tiers
+  green (388/108/55).
   - Goal: full fidelity at a Projects-folder root — each nested repo shows
     its own statuses and respects its own ignore rules; single-repo roots
     behave exactly as today.

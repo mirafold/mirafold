@@ -127,22 +127,18 @@ export function listTree(
 }
 
 /**
- * List ONE directory's children — the lazy tree's fetch unit (E2.1). `rel`
- * is the client's requested root-relative path ("" or "." = the root),
- * jailed through `inside()` like every fs resolution. Directories sort
- * before files, alphabetical within each group — so when a cap trips, files
- * are what get cut and the tree stays navigable. Symlinks are leaves by
- * kind (lstat semantics: a symlink-to-dir reports `symlink`, not `dir`).
- * The SKIP_DIRS floor carries over: a `.git`/`node_modules` DIRECTORY is
- * omitted, exactly as the whole-tree walk prunes it.
+ * The raw readdir behind the lazy tree's fetch unit: jail, kinds, and the
+ * SKIP_DIRS floor — but no sort, no caps, and the resolved real path kept.
+ * Split out (E2.3) so the git layer can decorate or filter a listing BEFORE
+ * the caps apply — a dropped ignored entry must free its cap budget, and a
+ * merged deleted entry must count against it. `rel` is the client's requested
+ * root-relative path ("" or "." = the root). Symlinks are leaves by kind
+ * (lstat semantics: a symlink-to-dir reports `symlink`, not `dir`).
  */
-export function listDir(
+export function readDirRaw(
   root: string,
   rel: string,
-  caps: { maxEntries?: number; maxNameBytes?: number } = {},
-): DirResult {
-  const maxEntries = caps.maxEntries ?? FS_DIR_MAX_ENTRIES;
-  const maxNameBytes = caps.maxNameBytes ?? FS_DIR_MAX_NAME_BYTES;
+): { real: string; all: FsDirEntry[] } | { error: string } {
   const real = inside(root, rel === "" ? "." : rel);
   if (!real) return { error: "path is outside the session workspace" };
   let dirents;
@@ -161,15 +157,31 @@ export function listDir(
     // semantics), so the symlink check needn't come first — but a FIFO or
     // socket lands as `file`, same as the walk lists it (refused at read time).
     d.isDirectory() ? "dir" : d.isSymbolicLink() ? "symlink" : "file";
-  const rank = (k: FsDirEntry["kind"]) => (k === "dir" ? 0 : 1);
   const all = dirents
     .filter((d) => !(d.isDirectory() && SKIP_DIRS.has(d.name)))
-    .map((d) => ({ name: d.name, kind: kindOf(d) }))
-    .sort((a, b) => rank(a.kind) - rank(b.kind) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    .map((d) => ({ name: d.name, kind: kindOf(d) }));
+  return { real, all };
+}
+
+/**
+ * Order and cap one directory's entries for the wire. Directories sort
+ * before files, alphabetical within each group — so when a cap trips, files
+ * are what get cut and the tree stays navigable.
+ */
+export function sortAndCapDir(
+  all: FsDirEntry[],
+  caps: { maxEntries?: number; maxNameBytes?: number } = {},
+): { entries: FsDirEntry[]; truncated: boolean } {
+  const maxEntries = caps.maxEntries ?? FS_DIR_MAX_ENTRIES;
+  const maxNameBytes = caps.maxNameBytes ?? FS_DIR_MAX_NAME_BYTES;
+  const rank = (k: FsDirEntry["kind"]) => (k === "dir" ? 0 : 1);
+  const sorted = [...all].sort(
+    (a, b) => rank(a.kind) - rank(b.kind) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0),
+  );
   const entries: FsDirEntry[] = [];
   let nameBytes = 0;
   let truncated = false;
-  for (const e of all) {
+  for (const e of sorted) {
     nameBytes += Buffer.byteLength(e.name, "utf8");
     if (entries.length >= maxEntries || nameBytes > maxNameBytes) {
       truncated = true;
@@ -178,6 +190,22 @@ export function listDir(
     entries.push(e);
   }
   return { entries, truncated };
+}
+
+/**
+ * List ONE directory's children — the lazy tree's fetch unit (E2.1), plain
+ * (no git view): readDirRaw + sortAndCapDir. The SKIP_DIRS floor carries
+ * over: a `.git`/`node_modules` DIRECTORY is omitted, exactly as the
+ * whole-tree walk prunes it.
+ */
+export function listDir(
+  root: string,
+  rel: string,
+  caps: { maxEntries?: number; maxNameBytes?: number } = {},
+): DirResult {
+  const raw = readDirRaw(root, rel);
+  if ("error" in raw) return raw;
+  return sortAndCapDir(raw.all, caps);
 }
 
 /**
