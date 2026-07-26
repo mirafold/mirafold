@@ -594,6 +594,47 @@ with it. Both sequence BEFORE R.5.**
        agent → backing picker with probed local-server discovery; the four
        hard requirements carried into Phase N's charter verbatim). This
        item closes when Phase N ships; items 1–3 remain open intake.
+    5. **Pairing should land IN the session you paired from — ⬅️ NEXT UP
+       (agreed 2026-07-25 for the next working session).** Today the QR
+       encodes `<relay origin>/#code=<pairing code>`, the phone loads it at
+       the root path, and `main.tsx` routes purely on the path (`/s/<id>` =
+       session, anything else = mission control) — so the phone always
+       lands on the fleet list and has to tap the row for the session the
+       user was sitting in when they hit pair. Kyle wants it to open
+       straight into that session.
+       **Shape (investigated 2026-07-25, ~30–45 min including tests):**
+       carry the session id in the fragment beside the code (`&s=<id>`) and
+       rewrite the path before the router reads it. Three touch points —
+       (a) `ConnectDevice.tsx` takes an optional session id and appends it
+       (the status bar has it; mission control's pair button passes nothing
+       and keeps landing on the fleet, no special case); (b) `ws.ts` gains a
+       small pure parser beside `relayTargetFromFragment`, validating the id
+       as defensively as the relay origin is validated; (c) `main.tsx`
+       rewrites the path to `/s/<id>` before rendering. Everything
+       downstream is untouched — `session-bus.ts` already reads the session
+       id off `location.pathname` to build its attach message, the same path
+       a fleet-row tap takes today.
+       **The trap:** `history.replaceState(null, "", "/s/" + id)` DROPS the
+       fragment, and the pairing code still lives there unconsumed (the
+       socket client reads and scrubs it later, at connect). Carry
+       `location.hash` along in the rewrite or the phone loses its code,
+       dials a relay it has no credential for, and hangs on "connecting"
+       forever — the exact shape of the 2026-07-24 mobile new-session bug.
+       Related: the session hint must NOT be stashed in sessionStorage the
+       way the code is; it's a one-shot intent, and persisting it would
+       bounce the user back into the session every time they tap home.
+       **Edge cases, both with existing behavior:** a session that ended
+       between QR and scan hits the daemon's attach-fallback (fresh session
+       + the "the session you asked for is gone" notice, R.4c) — a stale
+       link degrades to today's behavior with an explanation; a session on a
+       subscription login is refused for remote viewports (R.4i notice
+       exists), but the user would land INSIDE a refused session rather than
+       on the fleet — decide whether that case should bounce to mission
+       control. **Verify:** a unit test beside the existing fragment tests,
+       plus one phone e2e asserting the paired link lands on `/s/<id>` with
+       the transcript instead of the fleet list (the existing phone pairing
+       test is ~3 lines from being that). The extra ~8 characters are
+       immaterial to QR density.
   - Done when: each item above is enumerated concretely with Kyle,
     triaged (fix now / R.6 pre-release blocker / post-launch), and either
     fixed or explicitly scheduled — and the permissions fidelity item has
