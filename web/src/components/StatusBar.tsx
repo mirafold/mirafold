@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ConnectDevice, type RelayInfo } from "./ConnectDevice";
+import { GearGlyph } from "./GearGlyph";
 import { useArmedConfirm } from "../use-armed-confirm";
 import { useIsPhone } from "../use-is-phone";
 import { newSessionHref } from "../ws";
@@ -241,8 +242,13 @@ export function StatusBar({
           control (home moved to the far left). The pill below is LOCKED
           unchanged (Phase S). */}
       {onOpenSettings && (
-        <button className="sb-settings" onClick={onOpenSettings} title="Settings">
-          ⚙
+        <button
+          className="sb-settings"
+          onClick={onOpenSettings}
+          title="Settings"
+          aria-label="Settings"
+        >
+          <GearGlyph size={20} />
         </button>
       )}
       {/* Segmented switch: both modes visible, the current one lit — nothing

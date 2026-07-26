@@ -2330,6 +2330,13 @@ body {
   color: var(--fg-dimmer);
 }
 
+/* The gear drawing (GearGlyph) rides the text where it prefixes a line — the
+   status line, the subagent head, the fleet details activity. Inside the
+   settings button it's a flex item and the alignment is moot. */
+.gear-glyph {
+  vertical-align: -0.14em;
+}
+
 /* The settings gear (S.4) — sits beside the theme pill; the card it opens
    lives with the dialogs below. */
 .sb-settings {

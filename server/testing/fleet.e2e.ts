@@ -62,7 +62,9 @@ test("the ▾ details line shows live activity while a turn works, then honest i
   await fleet.locator(".fleet-details-toggle").first().click();
   await say(session, "give me a quick overview");
   await fleet.waitForFunction(
-    () => /[✳⚙!] ?.* · \d+[smh]/u.test(document.querySelector(".fleet-details-activity")?.textContent ?? ""),
+    // The tool gear is a drawing now, not a character, so the label may carry
+    // no glyph in textContent at all — assert the line's shape instead.
+    () => /\S.* · \d+[smh]/u.test(document.querySelector(".fleet-details-activity")?.textContent ?? ""),
     undefined,
     { timeout: 15_000 },
   );

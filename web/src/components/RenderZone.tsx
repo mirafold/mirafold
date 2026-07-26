@@ -10,6 +10,7 @@ import { PinDock } from "./PinDock";
 import { ToolBlock } from "./ToolBlock";
 import { Artifact } from "./Artifact";
 import { PickerBlock, type PickerRow } from "./PickerBlock";
+import { GearGlyph } from "./GearGlyph";
 import { useFollowTail } from "../use-follow-tail";
 
 // The scrollback is a flat list of entries: text blocks and rendered
@@ -92,7 +93,7 @@ function SubagentGroup({ calls }: { calls: ToolCall[] }) {
       <button className="subagent-head" onClick={() => setOpen(!open)}>
         <span className="subagent-caret">{open ? "▾" : "▸"}</span>
         <span className="subagent-label">
-          ⚙ subagent · {calls.length} call{calls.length === 1 ? "" : "s"}
+          <GearGlyph size="1em" /> subagent · {calls.length} call{calls.length === 1 ? "" : "s"}
           {pending ? " …" : ""}
         </span>
       </button>
@@ -687,7 +688,13 @@ export function RenderZone({
         })}
         {status && (
           <div className="status-line">
-            {status.state === "tool" ? `⚙ ${status.label ?? "tool"}` : "✳ thinking…"}
+            {status.state === "tool" ? (
+              <>
+                <GearGlyph size="1em" /> {status.label ?? "tool"}
+              </>
+            ) : (
+              "✳ thinking…"
+            )}
           </div>
         )}
         <div ref={tail.tailRef} />

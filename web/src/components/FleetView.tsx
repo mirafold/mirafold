@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentInfo, SessionMeta } from "@protocol";
 import { Onboarding } from "./Onboarding";
 import { ConnectDevice } from "./ConnectDevice";
+import { GearGlyph } from "./GearGlyph";
 import { SocketClient } from "../ws";
 import { tildify } from "../tildify";
 import { useArmedConfirm } from "../use-armed-confirm";
@@ -40,10 +41,20 @@ function fmtTokens(n: number): string {
 }
 
 /** The activity line, glyph-prefixed like the in-session status line:
- *  "✳ thinking", "⚙ Bash", and a bang label ("! cmd") kept as-is. */
-function activityText(a: NonNullable<SessionMeta["activity"]>): string {
-  const head = a.label === "thinking" ? "✳ thinking" : a.label.startsWith("! ") ? a.label : `⚙ ${a.label}`;
-  return `${head} · ${elapsed(a.since)}`;
+ *  "✳ thinking", the gear glyph ahead of a tool label, and a bang label
+ *  ("! cmd") kept as-is. */
+function ActivityLine({ a }: { a: NonNullable<SessionMeta["activity"]> }) {
+  const isTool = a.label !== "thinking" && !a.label.startsWith("! ");
+  return (
+    <>
+      {isTool && (
+        <>
+          <GearGlyph size="1em" />{" "}
+        </>
+      )}
+      {a.label === "thinking" ? "✳ thinking" : a.label} · {elapsed(a.since)}
+    </>
+  );
 }
 
 const STATUS_LABEL = { idle: "idle", working: "working", permission: "needs you" } as const;
@@ -519,7 +530,7 @@ function DetailsLine({ s }: { s: SessionMeta }) {
   return (
     <div className="fleet-details">
       <span className="fleet-details-activity">
-        {s.activity ? activityText(s.activity) : "nothing running"}
+        {s.activity ? <ActivityLine a={s.activity} /> : "nothing running"}
       </span>
       {s.usage && (
         <span className="fleet-details-usage" title="session tokens · cost">
