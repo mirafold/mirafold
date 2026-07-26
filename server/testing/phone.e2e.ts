@@ -255,3 +255,33 @@ test("phone: a network flip mid-turn resumes the stream without losing the trans
   assert.ok(await marker.evaluate((el) => el.isConnected), "pre-blip DOM node was repainted");
   await noSideScroll(phone);
 });
+
+// The backgrounded-phone bug (2026-07-25, Kyle's phone): leave the browser for
+// a few minutes, come back, and the session was dead — no transcript, Explorer
+// disabled, no end button, prompts going nowhere — while the same session was
+// fine on the desktop. Cause: the pairing code lived in per-tab sessionStorage,
+// which a browser is free to drop when it discards a backgrounded tab; the
+// rebuilt tab had no way to reach the daemon and no way to say so. Wiping
+// sessionStorage and reloading is that discard, exactly.
+test("phone: a discarded tab comes back paired — the session survives, transcript and all", async () => {
+  const turnsBefore = await phone.locator(".turn-user").count();
+  assert.ok(turnsBefore > 0, "no transcript to lose — earlier tests should have left turns");
+
+  await phone.evaluate(() => sessionStorage.clear());
+  await phone.reload();
+
+  // Attached again: the end button only renders with a live session, and the
+  // Explorer toggle is disabled without one.
+  await phone.waitForSelector(".sb-end", { timeout: 20_000 });
+  assert.equal(
+    await phone.locator(".sb-files").isDisabled(),
+    false,
+    "Explorer still disabled — the viewport never attached",
+  );
+  await phone.waitForFunction(
+    (n) => document.querySelectorAll(".turn-user").length >= n,
+    turnsBefore,
+    { timeout: 20_000 },
+  );
+  assert.match(phone.url(), /\/s\/[\w-]+/, "should still be in the session it was in");
+});

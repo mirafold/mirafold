@@ -5,6 +5,7 @@ import {
   SocketClient,
   relayTargetFromFragment,
   newSessionHref,
+  storedPairing,
   viewportRefusalReason,
   PING_INTERVAL_MS,
   PONG_DEADLINE_MS,
@@ -463,4 +464,45 @@ test("newSessionHref: relay path w/ same-origin (no stored ws) → fragment carr
     code: "just-a-code_9",
     ws: null,
   });
+});
+
+// The backgrounded-phone bug (2026-07-25, Kyle's phone): the pairing code used
+// to live in per-tab sessionStorage, which does not survive a browser
+// discarding a backgrounded tab. The rebuilt tab found no code — and since the
+// fragment is scrubbed on first load by design, the URL couldn't supply one
+// either — so the shell loaded with nothing to attach to. The store is the
+// device's now, with an age bound so a bearer credential can't live forever.
+const DAY = 24 * 60 * 60 * 1000;
+
+test("storedPairing: a device-stored pairing survives (that's the bug fix)", () => {
+  const store = fakeStorage({
+    "mirafold-relay-code": "pair-code-abc_123",
+    "mirafold-relay-ws": "wss://relay.mirafold.sh",
+    "mirafold-relay-paired-at": String(1_000_000),
+  });
+  assert.deepEqual(storedPairing(store, null, 1_000_000 + 6 * DAY), {
+    code: "pair-code-abc_123",
+    ws: "wss://relay.mirafold.sh",
+  });
+});
+
+test("storedPairing: one older than the max age is dropped, and cleared out", () => {
+  const store = fakeStorage({
+    "mirafold-relay-code": "pair-code-abc_123",
+    "mirafold-relay-paired-at": String(1_000_000),
+  });
+  assert.equal(storedPairing(store, null, 1_000_000 + 8 * DAY), null);
+  assert.equal(store.getItem("mirafold-relay-code"), null, "an aged-out code must not linger");
+});
+
+test("storedPairing: a tab paired by an older build still works (sessionStorage carried)", () => {
+  const legacy = fakeStorage({ "mirafold-relay-code": "older-build-code_7" });
+  assert.deepEqual(storedPairing(fakeStorage(), legacy), {
+    code: "older-build-code_7",
+    ws: null,
+  });
+});
+
+test("storedPairing: nothing stored anywhere → null (a local page never dials a relay)", () => {
+  assert.equal(storedPairing(fakeStorage(), fakeStorage()), null);
 });

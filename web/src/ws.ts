@@ -55,10 +55,25 @@ export const BACKOFF_MAX_MS = 5_000;
 /**
  * Phase R.3 — the remote (relay) path. A remote page is opened as
  * /#code=<pairing code>: the code rides the URL FRAGMENT, which never leaves
- * the browser, so the relay's HTTP logs can't see it. It's stashed per-tab in
- * sessionStorage (in-app navigation — fleet row links, history.replaceState —
- * drops the fragment) and scrubbed from the address bar. Shell-owned state:
- * agent output can never read or set it.
+ * the browser, so the relay's HTTP logs can't see it. It's stashed on the
+ * device (in-app navigation — fleet row links, history.replaceState — drops the
+ * fragment) and scrubbed from the address bar. Shell-owned state: agent output
+ * can never read or set it.
+ *
+ * The stash is localStorage, NOT sessionStorage (2026-07-25, Kyle's phone).
+ * Per-tab storage does not reliably survive what a phone actually does to a
+ * backgrounded tab: switch to another app for a few minutes, and the browser is
+ * free to discard the tab and rebuild it on return. The URL is unchanged (the
+ * fragment was scrubbed on first load, by design) — so a rebuilt tab with no
+ * stored code has no way to reach the daemon at all, and lands on a shell that
+ * looks like a fresh session: no transcript, Explorer disabled, no end button,
+ * prompts going nowhere. Reproduced exactly by wiping the store and reloading.
+ *
+ * What persisting it costs: the code is a bearer credential — whoever holds it
+ * reaches the sessions — so it now outlives the tab on that device. Two things
+ * bound that: pairing codes are per-launch (a daemon restart makes every stored
+ * code useless), and this stash expires on its own after PAIRING_MAX_AGE_MS.
+ * sessionStorage is still READ, so a tab paired by an older build keeps working.
  *
  * Static-origin serving (R.4/R.5): the page may be served from a static origin
  * that is NOT the relay (app.mirafold.com serves the bundle; relay.mirafold.sh
@@ -88,19 +103,43 @@ export function relayTargetFromFragment(hash: string): { code: string; ws: strin
   return { code: code[1], ws };
 }
 
+const CODE_KEY = "mirafold-relay-code";
+const WS_KEY = "mirafold-relay-ws";
+const PAIRED_AT_KEY = "mirafold-relay-paired-at";
+/** A stored pairing goes stale on its own — see the storage note above. */
+const PAIRING_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Reads the device's stored pairing, dropping one that has aged out. Falls
+ *  back to sessionStorage for tabs paired before the store moved. Exported for
+ *  tests — takes its stores, touches no DOM. */
+export function storedPairing(
+  store: Storage,
+  legacy: Storage | null = null,
+  now: number = Date.now(),
+): { code: string; ws: string | null } | null {
+  const code = store.getItem(CODE_KEY);
+  if (code) {
+    const pairedAt = Number(store.getItem(PAIRED_AT_KEY) ?? 0);
+    if (now - pairedAt <= PAIRING_MAX_AGE_MS) return { code, ws: store.getItem(WS_KEY) };
+    for (const k of [CODE_KEY, WS_KEY, PAIRED_AT_KEY]) store.removeItem(k);
+  }
+  const carried = legacy?.getItem(CODE_KEY);
+  return carried ? { code: carried, ws: legacy!.getItem(WS_KEY) } : null;
+}
+
 function relayTargetFromPage(): { code: string; ws: string | null } | null {
   const target = relayTargetFromFragment(location.hash);
   if (target) {
-    sessionStorage.setItem("mirafold-relay-code", target.code);
+    localStorage.setItem(CODE_KEY, target.code);
+    localStorage.setItem(PAIRED_AT_KEY, String(Date.now()));
     // A fresh #code with no relay param must also CLEAR a stale stored origin —
     // the new pairing decides where to dial, not a leftover from the last one.
-    if (target.ws) sessionStorage.setItem("mirafold-relay-ws", target.ws);
-    else sessionStorage.removeItem("mirafold-relay-ws");
+    if (target.ws) localStorage.setItem(WS_KEY, target.ws);
+    else localStorage.removeItem(WS_KEY);
     history.replaceState(null, "", location.pathname + location.search);
     return target;
   }
-  const code = sessionStorage.getItem("mirafold-relay-code");
-  return code ? { code, ws: sessionStorage.getItem("mirafold-relay-ws") } : null;
+  return storedPairing(localStorage, sessionStorage);
 }
 
 /** The href for the "new session" affordance, which opens a FRESH TAB. A new
@@ -114,10 +153,10 @@ function relayTargetFromPage(): { code: string; ws: string | null } | null {
  *  scrubs it on load. A local page has no stored code and gets the plain URL.
  *  Reads storage lazily so tests can drive it; `base` defaults to the real
  *  new-session URL. */
-export function newSessionHref(base = "/?new=1", storage: Storage = sessionStorage): string {
-  const code = storage.getItem("mirafold-relay-code");
+export function newSessionHref(base = "/?new=1", storage: Storage = localStorage): string {
+  const code = storage.getItem(CODE_KEY);
   if (!code) return base;
-  const ws = storage.getItem("mirafold-relay-ws");
+  const ws = storage.getItem(WS_KEY);
   const frag = ws
     ? `#code=${encodeURIComponent(code)}&relay=${encodeURIComponent(ws)}`
     : `#code=${encodeURIComponent(code)}`;
