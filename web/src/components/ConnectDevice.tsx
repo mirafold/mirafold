@@ -95,22 +95,24 @@ export function ConnectDevice({ relay }: { relay?: RelayInfo }) {
             Scan from your phone. The pairing code rides the URL fragment — it never
             reaches the relay, and every frame is end-to-end encrypted.
           </div>
-          <div className="pair-url-row">
-            <code className="pair-url" tabIndex={0}>
-              {href}
-            </code>
-            <button
-              className="pair-copy"
-              onClick={() => {
-                void navigator.clipboard?.writeText(href).then(() => {
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 1500);
-                });
-              }}
-            >
-              {copied ? "copied" : "copy"}
-            </button>
-          </div>
+          {/* Can't scan? Copy the link and send it to your own phone. Copy is
+              the one action, full width; the URL below it wraps to a couple of
+              readable lines — the old one-line box scrolled sideways, which was
+              the thing worth killing (2026-07-25, Kyle). */}
+          <button
+            className="pair-copy"
+            onClick={() => {
+              void navigator.clipboard?.writeText(href).then(() => {
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1500);
+              });
+            }}
+          >
+            {copied ? "copied" : "copy link"}
+          </button>
+          <code className="pair-url" tabIndex={0}>
+            {href}
+          </code>
         </ModalCard>
       )}
     </>

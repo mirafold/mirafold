@@ -2790,6 +2790,15 @@ body {
   padding: 4px 8px;
 }
 
+/* The pairing card reads at arm's length — you're holding a phone up to it,
+   not leaning into the screen — so its whole head row goes up 1.5× (2026-07-25,
+   Kyle). One override on the row scales the ❯ glyph, the title (0.95em of it)
+   and the ✕ (font: inherit) together, and leaves the settings card, which
+   shares every rule above, exactly where it was. */
+.pair-head {
+  font-size: 1.5em;
+}
+
 .pair-close:hover,
 .settings-close:hover {
   color: var(--fg);
@@ -2805,36 +2814,20 @@ body {
 
 .pair-hint {
   margin: 14px 2px 10px;
-  font-size: 0.82em;
+  /* 1.5× the old 0.82em, with the URL row below on the same ramp. */
+  font-size: 1.23em;
   line-height: 1.5;
   color: var(--fg-dim);
 }
 
-.pair-url-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.pair-url {
-  flex: 1;
-  min-width: 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.72em;
-  color: var(--fg-mid);
-  background: var(--bg-inset);
-  border: 1px solid var(--border-faint);
-  border-radius: 6px;
-  padding: 6px 8px;
-  overflow-x: auto;
-  white-space: nowrap;
-}
-
+/* Copy is the card's one action — the phone that can't scan gets the link
+   sent to it. Full width so the card reads QR → sentence → button. */
 .pair-copy {
-  flex-shrink: 0;
-  padding: 5px 12px;
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.78em;
+  font-size: 1.17em;
   color: var(--accent);
   background: transparent;
   border: 1px solid var(--ok-border);
@@ -2844,6 +2837,22 @@ body {
 
 .pair-copy:hover {
   background: var(--ok-bg);
+}
+
+/* The URL is for verifying, not transcribing — shown, never a scroll slot. */
+.pair-url {
+  display: block;
+  margin-top: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 1.08em;
+  line-height: 1.45;
+  color: var(--fg-mid);
+  background: var(--bg-inset);
+  border: 1px solid var(--border-faint);
+  border-radius: 6px;
+  padding: 8px;
+  /* Wraps to a few readable lines instead of scrolling sideways in a slot. */
+  overflow-wrap: anywhere;
 }
 
 /* ---- Settings card (S.4) ----------------------------------------------------
@@ -3753,6 +3762,21 @@ html {
 
   .files-root {
     padding: 8px 4px 4px;
+  }
+
+  /* Refresh moves under the thumb on the full-screen layer — bottom RIGHT
+     here, where the desktop panel keeps it bottom-left (2026-07-25, Kyle). */
+  .files-refresh {
+    left: auto;
+    right: 4px;
+  }
+
+  /* The phone-only close ✕ at twice its size: it's the one way out of a
+     full-screen layer, so it earns a real tap target. */
+  .files-root .files-btn {
+    padding: 4px 10px;
+    font-size: 1.64em;
+    line-height: 1;
   }
 
   /* The rail is a desktop affordance — a permanent 46px strip is too much
