@@ -485,13 +485,18 @@ web/               the browser app (React 19 + Vite)
                        output with elision marker (T.1/T2.2/T2.3)
     StatusBar.tsx      workbench strip (T2.6; regrouped 4.11): home ⌂ + new
                        far left, conn dot, agent · model · session · cwd ·
-                       usage · version, ⚙ settings, theme pill, end far right;
-                       sits INSIDE the workbench column (2026-07-25) so the
+                       usage · version, the settings gear, theme pill, end far
+                       right; sits INSIDE the workbench column (2026-07-25) so the
                        activity bar's border line runs unbroken to the window
                        bottom; folds to one row of controls at phone width
                        (R.4l), where it also hosts the Explorer toggle
                        (.sb-files, boxed at the far left — the rail is
                        desktop-only, 2026-07-25)
+    GearGlyph.tsx      the settings/tool gear as a flat outline drawing, four
+                       homes: the settings button, the status line, the
+                       subagent head, the fleet activity line (2026-07-25 —
+                       the ⚙ character rendered from the color-emoji font and
+                       clashed with every glyph beside it)
     PinDock.tsx        right-side dock for pinned components (live via entries)
     Artifact.tsx       Level 3 host: sandboxed iframe for agent-authored UI (Phase 3)
     FleetView.tsx      mission control at / (4.6; Phase M cockpit 2026-07-24):
@@ -843,7 +848,8 @@ subscription handles each `ZoneMsg`:
   the expansion shows the full input — Edit/Write as a colored diff / code
   (T2.2) — and any `truncatedBytes` as an explicit elision marker (T2.3). A
   tool with `parentId` isn't rendered top-level: it's grouped under its Task
-  row in a collapsible `SubagentGroup` ("⚙ subagent · N calls", T2.4).
+  row in a collapsible `SubagentGroup` (the gear glyph + "subagent · N
+  calls", T2.4).
 - `artifact` → route to `Artifact.tsx` (the sandboxed iframe, Phase 3);
   re-sending an id replaces it in place, same as `render`.
 - `picker` → append a `PickerBlock.tsx` entry: the SHELL-owned selector
@@ -856,7 +862,8 @@ subscription handles each `ZoneMsg`:
   user's next turn over the same mediated action path as a question click,
   and the copy locks. Replayed/stale copies stay click-only. No pin
   affordance — it's chrome, not content.
-- `status` → set the activity line (`✳ thinking…` / `⚙ Bash`).
+- `status` → set the activity line (`✳ thinking…` / the gear glyph + a tool
+  label such as `Bash`).
 - `turn_end` → mark the streaming block done, finalize any dangling tool
   entries, clear the ref and status.
 - `error` → rendered as a bold-prefixed assistant entry.
@@ -937,7 +944,8 @@ knowing because it constrains future UI work:
   github-dark) are pinned dark in EVERY theme (`themes/base.css`), so code
   reads as a terminal window on any canvas. Switching: the ☾/☀ pill in the
   status bar flips between the user's chosen light and dark themes (the
-  two-slot model, S.3); the ⚙ settings card beside it picks which theme
+  two-slot model, S.3); the settings card beside it — behind the gear —
+  picks which theme
   fills each slot, live-applied. Persisted to localStorage, applied
   pre-paint in index.html.
 - Motion: transcript entries mount with a 160ms rise; theme switches fade;

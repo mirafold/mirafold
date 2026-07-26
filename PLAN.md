@@ -635,6 +635,35 @@ with it. Both sequence BEFORE R.5.**
        the transcript instead of the fleet list (the existing phone pairing
        test is ~3 lines from being that). The extra ~8 characters are
        immaterial to QR density.
+    6. **Phone session died after backgrounding — ✅ FIXED 2026-07-25
+       (`0c993e0`).** Kyle, on Chrome: session open on the phone, switch to
+       another app for a few minutes, come back, and the session was
+       effectively dead — welcome screen, no transcript, Explorer grayed,
+       no end button, prompts going nowhere — while the same session ran
+       fine on his desktop. Cause: the pairing code lived only in per-tab
+       storage, which does not survive a browser discarding a backgrounded
+       tab, and the rebuilt tab can't recover it from the URL either (the
+       fragment is scrubbed on first load, by design). The shell attached
+       to nothing and said nothing about it. Reproduced against a real
+       daemon over the relay on a phone-sized Chrome — freezing the page
+       (CDP `Page.setWebLifecycleState`) recovers, reloading with the store
+       intact recovers, reloading with it dropped gives Kyle's screen
+       symptom for symptom. Fix: the stash is the device's now, bounded by
+       a 7-day expiry (aged-out entries are deleted) on top of the existing
+       per-launch codes; per-tab storage is still read so an already-paired
+       tab keeps working. Pinned by 4 unit tests + a phone e2e that wipes
+       the store, reloads, and asserts the session comes back with its
+       transcript. **Note for whoever picks up item 5** (pair-into-the-
+       session): that work touches the same boot path, so re-run this e2e.
+    7. **Swipe-to-open the Explorer on phone — DECIDED AGAINST 2026-07-25
+       (Kyle).** Swipe right from the left edge to open the tree, left to
+       close. Mechanically easy (~30–45 min: the panel is already one
+       boolean, plus a touch hook beside `use-escape`/`use-is-phone`, no
+       dependency). Killed on one caveat: iOS reserves a left-edge swipe
+       for browser back-navigation and a page cannot reliably override it,
+       so the gesture would fire history-back instead of opening the panel
+       on iPhones. Kyle: "i dont want to do it if it wont work consistently
+       for iphones." Don't re-propose without a way around that.
   - Done when: each item above is enumerated concretely with Kyle,
     triaged (fix now / R.6 pre-release blocker / post-launch), and either
     fixed or explicitly scheduled — and the permissions fidelity item has
@@ -946,6 +975,37 @@ with it. Both sequence BEFORE R.5.**
     yarn does (`npm install --package-lock-only` → 0 vulnerabilities);
     it has no effect on the tarball. Our own testing keeps running the
     forced 2.0.11, as R.5b's sweep note records.
+  - **Tarball rebuilt once more at session end (2026-07-25), shell
+    `b97f85d`** — still **0.2.0**, Kyle's call ("don't bother updating the
+    version number"). Staged at `../beta/mirafold-0.2.0.tgz` (335,280 bytes,
+    sha256 `69c84f6d…`). Carries everything from that evening: the
+    flat-outline gear, the readable pairing card with copy as its one action,
+    the phone Explorer fixes, the browser bundle no longer shipping
+    package.json, and the discarded-tab pairing fix. Verified by cold
+    `npm i -g` into a throwaway prefix — `--version` 0.2.0, boots, serves
+    HTTP 200 — and by grepping the packed bundle to confirm it actually
+    carries that work rather than trusting the pack. ⬜ **Kyle still owes the
+    replace-in-place upload to Drive.**
+  - **Where the version lives, for whenever it IS bumped (swept
+    2026-07-25):** `genui-shell/package.json` is the single source of truth —
+    `bin/mirafold.js` reads it at runtime for `--version` and the boot banner,
+    `web/src/version.ts` imports it at build time for the version the browser
+    announces, and `npm pack` names the tarball from it. Hand-written copies
+    exist in exactly TWO files, both only because the beta ships a file whose
+    NAME carries the version: `beta/WELCOME.md` (×2) and
+    `mirafold-site/public/beta.html` (×3 — prose, command, copy-button
+    attribute). The marketing site's own install line is `npm i -g mirafold`,
+    version-free, and the README uses a `mirafold-*.tgz` wildcard. So after
+    npm publish a bump is one line. **Trap:** a bump changes the tarball
+    filename, which breaks the Drive replace-in-place trick unless the file is
+    renamed there and both doc files are updated in the same sitting —
+    instructions already sent to testers go stale even though the link never
+    does. Kyle confirmed the Drive mechanics: renaming and uploading a new
+    version both preserve the file ID, so old links keep working; only
+    delete-and-reupload breaks them. **Idea, not adopted:** give the Drive
+    file a version-free name (`mirafold.tgz`) so a bump touches nothing but
+    package.json.
+
   - **Do not run `npm install` in this repo** (learned 2026-07-25):
     `npm install --package-lock-only` silently rewrote `yarn.lock` —
     dropped every non-Linux platform entry (`@lydell/node-pty`, the agent
@@ -1753,6 +1813,29 @@ was recorded in SECURITY.md's known-trust-decisions (the Explorer's
 daemon's own `.env` stays protected and the Explorer is narrower).
 **Deferred, evidence-gated:** make the non-git walk asynchronous (yield to the
 event loop) only IF the node cap ever proves too blunt — likely unnecessary.
+
+**Security audit of the 2026-07-25 evening delta: one finding, fixed the
+same session (`0ae994c`).** `web/src/version.ts` read one string,
+`pkg.version`, through a DEFAULT json import — which inlines the ENTIRE
+manifest into the browser bundle every viewport downloads (and a paired phone
+pulls over the relay): every dependency and devDependency with its version
+range, the scripts, the package-manager pin. No secrets in it, so information
+disclosure rather than a hole — but it hands anyone with the bundle a complete
+dependency inventory, which is the first thing you enumerate looking for a
+known-vulnerable version, and the repo is private until launch. A named import
+tree-shakes; `bundle.e2e.ts` pins it in Tier 3 (the tier that rebuilds dist, so
+the assertion means something) and was proved to bite by restoring the default
+import. Also verified clean in the same pass: no raw-HTML sinks in any changed
+component, agent-controlled labels beside the new gear still render as escaped
+text, the pairing link is never an `<a href>` (text + clipboard only), no
+secrets in the session's commits, the shipped tarball carries no `.env` /
+source maps / install hooks, and builds are byte-for-byte reproducible.
+**Considered and dismissed:** the pairing card now shows the full code at 1.5×
+rather than a truncated scroll — no marginal exposure, since the QR directly
+above encodes the same secret and decodes from any screenshot. **Closed with
+evidence:** the `@hono/node-server` advisory is unreachable here — MCP connects
+over `StdioServerTransport` only (`server/render-mcp.ts:106`) and the shipped
+bundles contain zero references to `serveStatic` or the HTTP transport.
 
 **Kyle-directed UI polish pass (2026-07-24 evening, iterative):** the desktop
 frame got a VS Code-style **activity bar** — a permanent thin strip flush with
