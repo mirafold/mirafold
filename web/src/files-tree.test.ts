@@ -1,52 +1,107 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildFileTree, type FileNode } from "./files-tree";
+import {
+  applyDirReply,
+  beginDirFetch,
+  childDirPaths,
+  emptyDirStore,
+  pruneDirStore,
+} from "./files-tree";
 
-// The shell-owned flat→nested tree (E.3): dir inference, status carry, and
-// the dirs-first display ordering the panel relies on.
+// The lazy per-directory store (E2.2): fetch-state transitions, the
+// keep-entries-while-refetching rule (a refresh must never read as a
+// collapse), error handling, the refresh-boundary prune, and the prefetch
+// walk. All pure — the panel adds only correlation ids and requests.
 
-const names = (nodes: FileNode[]) => nodes.map((n) => n.name);
-
-test("nests flat paths and infers directories", () => {
-  const tree = buildFileTree([
-    { path: "src/app.ts" },
-    { path: "src/deep/x.ts" },
-    { path: "README.md" },
-  ]);
-  assert.deepEqual(names(tree), ["src", "README.md"]); // dir before file
-  const src = tree[0]!;
-  assert.equal(src.isDir, true);
-  assert.equal(src.path, "src");
-  assert.deepEqual(names(src.children), ["deep", "app.ts"]); // dir before file
-  const deep = src.children[0]!;
-  assert.equal(deep.path, "src/deep");
-  assert.equal(deep.children[0]!.path, "src/deep/x.ts");
+test("first fetch: loading with nothing, then the reply loads entries + honest truncation", () => {
+  let store = beginDirFetch(emptyDirStore(), "src");
+  assert.deepEqual(store.get("src"), { loading: true });
+  store = applyDirReply(store, "src", {
+    entries: [
+      { name: "deep", kind: "dir" },
+      { name: "app.ts", kind: "file" },
+    ],
+    truncated: true,
+  });
+  assert.deepEqual(store.get("src"), {
+    loading: false,
+    entries: [
+      { name: "deep", kind: "dir" },
+      { name: "app.ts", kind: "file" },
+    ],
+    truncated: true,
+  });
 });
 
-test("carries the git status onto the leaf, not its ancestors", () => {
-  const tree = buildFileTree([{ path: "src/app.ts", status: "M" }]);
-  assert.equal(tree[0]!.status, undefined, "the dir has no status");
-  assert.equal(tree[0]!.children[0]!.status, "M");
+test("refetch keeps the previous entries visible while loading — never a collapse flash", () => {
+  let store = applyDirReply(beginDirFetch(emptyDirStore(), ""), "", {
+    entries: [{ name: "a.txt", kind: "file" }],
+  });
+  store = beginDirFetch(store, "");
+  const st = store.get("")!;
+  assert.equal(st.loading, true);
+  assert.deepEqual(st.entries, [{ name: "a.txt", kind: "file" }], "old rows stay during refetch");
+  store = applyDirReply(store, "", { entries: [{ name: "b.txt", kind: "file" }] });
+  assert.deepEqual(store.get("")!.entries, [{ name: "b.txt", kind: "file" }]);
 });
 
-test("dirs sort before files, alphabetical within each group", () => {
-  const tree = buildFileTree([
-    { path: "z.txt" },
-    { path: "a.txt" },
-    { path: "beta/one.ts" },
-    { path: "alpha/two.ts" },
-  ]);
-  assert.deepEqual(names(tree), ["alpha", "beta", "a.txt", "z.txt"]);
+test("an error reply keeps prior entries when there are any, and stands alone when there aren't", () => {
+  // No prior listing: the error is all there is.
+  const fresh = applyDirReply(beginDirFetch(emptyDirStore(), "x"), "x", {
+    entries: [],
+    error: "directory is not readable",
+  });
+  assert.deepEqual(fresh.get("x"), { loading: false, error: "directory is not readable" });
+  // A throttled REFETCH: the known-good listing stays beside the error.
+  let store = applyDirReply(beginDirFetch(emptyDirStore(), "x"), "x", {
+    entries: [{ name: "keep.txt", kind: "file" }],
+  });
+  store = applyDirReply(beginDirFetch(store, "x"), "x", {
+    entries: [],
+    error: "requests are arriving too fast — retry shortly",
+  });
+  const st = store.get("x")!;
+  assert.equal(st.loading, false);
+  assert.match(String(st.error), /too fast/);
+  assert.deepEqual(st.entries, [{ name: "keep.txt", kind: "file" }]);
 });
 
-test("a path that later proves to be a directory is reclassified", () => {
-  // "src" appears as a leaf first, then as a parent — must end a dir.
-  const tree = buildFileTree([{ path: "src" }, { path: "src/app.ts" }]);
-  assert.equal(tree[0]!.isDir, true);
-  assert.equal(tree[0]!.children[0]!.name, "app.ts");
+test("a new fetch clears a previous error — the new reply decides", () => {
+  let store = applyDirReply(beginDirFetch(emptyDirStore(), "x"), "x", {
+    entries: [],
+    error: "nope",
+  });
+  store = beginDirFetch(store, "x");
+  assert.deepEqual(store.get("x"), { loading: true });
 });
 
-test("empty and root-ish inputs don't throw", () => {
-  assert.deepEqual(buildFileTree([]), []);
-  assert.deepEqual(buildFileTree([{ path: "" }]), []);
+test("prune drops cached dirs not kept — the root always survives", () => {
+  let store = emptyDirStore();
+  for (const p of ["", "src", "src/deep", "web"]) {
+    store = applyDirReply(beginDirFetch(store, p), p, { entries: [] });
+  }
+  const pruned = pruneDirStore(store, new Set(["src"]));
+  assert.deepEqual([...pruned.keys()].sort(), ["", "src"]);
+});
+
+test("transitions never mutate the input store", () => {
+  const before = applyDirReply(beginDirFetch(emptyDirStore(), ""), "", {
+    entries: [{ name: "a", kind: "dir" }],
+  });
+  const snapshot = before.get("")!;
+  beginDirFetch(before, "");
+  applyDirReply(before, "", { entries: [] });
+  pruneDirStore(before, new Set());
+  assert.equal(before.get(""), snapshot, "input map is untouched");
+  assert.equal(before.size, 1);
+});
+
+test("childDirPaths: only dirs qualify (symlinks are leaves), paths nest under the parent", () => {
+  const entries = [
+    { name: "deep", kind: "dir" as const },
+    { name: "app.ts", kind: "file" as const },
+    { name: "link", kind: "symlink" as const },
+  ];
+  assert.deepEqual(childDirPaths("", entries), ["deep"]);
+  assert.deepEqual(childDirPaths("src", entries), ["src/deep"]);
 });

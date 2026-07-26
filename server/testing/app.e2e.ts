@@ -963,9 +963,11 @@ test("E.5: expanded dirs survive a close/reopen, and a turn's auto-refresh keeps
   await page.locator(".ab-files").click();
   await page.waitForSelector(".files-panel");
 
-  // Expand a known top-level directory (the repo has server/). The row's text
-  // includes the caret glyph, so match the name as a substring.
-  const serverDir = page.locator(".files-dir", { hasText: "server" }).first();
+  // Expand a known top-level directory (the repo has server/). Exact-match
+  // the name span: since E2.2 the lazy lister is git-blind until the git
+  // layer lands, so ignored siblings like dist-server/ are listed too — a
+  // substring match would hit dist-server first.
+  const serverDir = page.locator('.files-dir:has(.files-name:text-is("server"))').first();
   await serverDir.waitFor({ timeout: 15_000 });
   await serverDir.click();
   // A child appears — protocol.ts is a tracked file directly under server/.
@@ -1001,6 +1003,104 @@ test("E.5: expanded dirs survive a close/reopen, and a turn's auto-refresh keeps
         el.textContent?.includes("protocol.ts"),
       ),
     "auto-refresh collapsed the expanded dir",
+  );
+
+  await page.locator(".ab-files").click(); // tidy up for later tests
+});
+
+test("E2.2: the tree is LAZY — open fetches root + first level only; expand fetches exactly that dir; cache re-expands with no request; turn-end refetches only expanded dirs", async () => {
+  // Observe the wire from inside the page: record every outgoing fs_* frame.
+  // Patching the prototype catches the app's existing socket — ws.ts resolves
+  // send() through the prototype on every call.
+  await page.evaluate(() => {
+    const w = window as unknown as { __fsSent: { type: string; path?: string }[]; __fsPatched?: boolean };
+    w.__fsSent = [];
+    if (!w.__fsPatched) {
+      w.__fsPatched = true;
+      const orig = WebSocket.prototype.send;
+      WebSocket.prototype.send = function (data: Parameters<WebSocket["send"]>[0]) {
+        try {
+          const m = JSON.parse(String(data));
+          if (String(m.type).startsWith("fs_")) {
+            (window as unknown as { __fsSent: unknown[] }).__fsSent.push({ type: m.type, path: m.path });
+          }
+        } catch {
+          /* binary or non-JSON frame — not ours */
+        }
+        return orig.call(this, data);
+      };
+    }
+  });
+  const sent = () =>
+    page.evaluate(() => (window as unknown as { __fsSent: { type: string; path?: string }[] }).__fsSent);
+  const mark = async () => (await sent()).length;
+
+  // Open: the root and (prefetched) first level arrive — every listing
+  // request is depth ≤ 1, and the whole-tree fs_list is never sent.
+  await page.locator(".ab-files").click();
+  await page.waitForSelector(".files-file-row:has-text('package.json')");
+  await page.waitForTimeout(300); // let the prefetch fan-out finish
+  const onOpen = await sent();
+  assert.ok(onOpen.every((m) => m.type !== "fs_list"), "the whole-tree request is retired from the client");
+  const listdirs = onOpen.filter((m) => m.type === "fs_listdir");
+  assert.ok(listdirs.some((m) => m.path === ""), "the root is fetched");
+  assert.ok(
+    listdirs.every((m) => !String(m.path).includes("/")),
+    `open fetches only root + first level, got: ${listdirs.map((m) => m.path).join(", ")}`,
+  );
+
+  // Expanding a PREFETCHED first-level dir renders from cache — no request.
+  // (web/ was fetched by the open prefetch above.)
+  let m0 = await mark();
+  const webDir = page.locator('.files-dir:has(.files-name:text-is("web"))').first();
+  await webDir.click();
+  await page.waitForSelector('.files-dir:has(.files-name:text-is("src"))');
+  assert.equal((await sent()).length, m0, "a prefetched dir expands with no request");
+
+  // Expanding a DEEP dir fetches exactly that dir and nothing else.
+  m0 = await mark();
+  await page.locator('.files-dir:has(.files-name:text-is("src"))').first().click();
+  await page.waitForSelector(".files-file-row:has-text('main.tsx')");
+  const deep = (await sent()).slice(m0);
+  assert.deepEqual(
+    deep.map((m) => `${m.type}:${m.path}`),
+    ["fs_listdir:web/src"],
+    "expand fetched exactly the expanded dir",
+  );
+
+  // Collapse and re-expand: served from cache, zero requests.
+  m0 = await mark();
+  await webDir.click(); // collapse web (web/src stays expanded underneath)
+  await eventually(
+    () => ![...document.querySelectorAll(".files-file-row")].some((el) => el.textContent?.includes("main.tsx")),
+    "collapse left the subtree visible",
+  );
+  await webDir.click(); // re-expand
+  await page.waitForSelector(".files-file-row:has-text('main.tsx')");
+  assert.equal((await sent()).length, m0, "collapse/re-expand made requests despite the cache");
+
+  // A turn's auto-refresh (E.5, lazy since E2.2) refetches ONLY the root and
+  // the expanded dirs — never a whole-tree request, no first-level prefetch.
+  m0 = await mark();
+  await page.locator("textarea").click();
+  await page.keyboard.type("plan it step by step");
+  await page.keyboard.press("Enter");
+  // Wait on the refetch TRAFFIC itself, not on transcript text — the E.5
+  // test above ran this same prompt, so its completion line already matches
+  // a text selector instantly, racing the real turn_end. The refetch batch
+  // is sent synchronously in one handler, so one new frame means all of them.
+  await page
+    .waitForFunction(
+      (n) => (window as unknown as { __fsSent: unknown[] }).__fsSent.length > n,
+      m0,
+      { timeout: 30_000 },
+    )
+    .catch(() => assert.fail("turn-end sent no refresh at all"));
+  const onTurn = (await sent()).slice(m0);
+  const expected = new Set(["", "server", "web", "web/src"]); // server/ expanded by the E.5 test above
+  assert.ok(
+    onTurn.every((m) => m.type === "fs_listdir" && expected.has(String(m.path))),
+    `turn-end refetched beyond root + expanded dirs: ${onTurn.map((m) => `${m.type}:${m.path}`).join(", ")}`,
   );
 
   await page.locator(".ab-files").click(); // tidy up for later tests

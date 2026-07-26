@@ -339,6 +339,16 @@ body {
   font-style: italic;
 }
 
+/* Non-interactive in-tree rows (E2.2): a dir's loading "…", "(empty)", an
+   error, or the per-dir truncation note — dim, italic, indented like a row. */
+.files-note-row {
+  padding: 3px 10px;
+  color: var(--fg-dim);
+  font-size: 0.85em;
+  font-style: italic;
+  list-style: none;
+}
+
 /* Laid over the still-mounted tree (opaque), so it fully covers it on desktop
    and phone alike; back just unmounts this layer. */
 .files-file {

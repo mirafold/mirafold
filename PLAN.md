@@ -2069,7 +2069,28 @@ layer = one directory = one fetch).
     dir returns correct entries; a `../` request and a planted symlink-to-
     outside are refused; the legacy `fs_list` still answers identically.
 
-- [ ] **Step E2.2 — the lazy client: incremental tree store**
+- [x] **Step E2.2 — the lazy client: incremental tree store** ✅ 2026-07-26 —
+  `files-tree.ts` is now the per-directory store (pure transitions:
+  unfetched/loading/loaded/error, refetch keeps prior entries visible so a
+  refresh never reads as a collapse); `FilesPanel` holds per-dir correlation
+  ids (the single `listId` ref is gone), drops stale replies per directory,
+  fetches on first expand with an inline loading row, serves cached
+  re-expands with no request, and shows per-dir truncation/"(empty)" rows.
+  Open = fetch root + prefetch first level (capped at 24 dirs, under the
+  token bucket) + refetch expanded dirs; turn-end/refresh-button = root +
+  expanded dirs only, and both PRUNE cached-but-collapsed dirs so their next
+  expand fetches fresh (staleness honesty at refresh boundaries — a design
+  addition, not in the original spec). Whole-tree `fs_list` retired from the
+  client (bus method replaced by `requestFsListdir`); daemon still answers
+  it. **Known interim (until E2.3):** listings are the plain lister's — no
+  status chars, and gitignored dirs (`dist/` etc.) appear; both return with
+  the git layer. Done-when observed in headless Chrome via a wire recorder:
+  open sends only root + first-level fetches (no `fs_list` anywhere), a deep
+  expand fetches exactly that dir, collapse/re-expand is request-free, and
+  the E.5 turn-end refresh refetches only root + expanded dirs. All three
+  tiers green (e2e run three times to shake out two test-side flakes: an
+  exact-name locator now that ignored siblings like `dist-server/` are
+  listed, and waiting on refetch traffic instead of reused transcript text).
   - Goal: the panel builds its tree incrementally — fetch on first expand,
     cache, loading rows — with the whole-tree fetch retired from the client.
   - Build: replace the flat-entries + derived-tree model in

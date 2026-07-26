@@ -1,27 +1,38 @@
 import { useEffect, useRef, useState } from "react";
-import type { FsEntry, WireMsg } from "@protocol";
+import type { WireMsg } from "@protocol";
 import type { ZoneMsg } from "../../session-bus";
-import { buildFileTree, type FileNode } from "../../files-tree";
+import {
+  applyDirReply,
+  beginDirFetch,
+  childDirPaths,
+  emptyDirStore,
+  pruneDirStore,
+  type DirStore,
+} from "../../files-tree";
 import { useEscapeKey } from "../../use-escape";
 import { useFocusTrap } from "../../use-focus-trap";
 import { useIsPhone } from "../../use-is-phone";
 import { FileView, type FileViewState } from "./FileView";
 
-// The Explorer's shell-owned panel (E.3 desktop, E.4 phone): a read-only
-// browser of the session's working tree. Interaction is drill-in on both
-// platforms — the tree, then a file view laid OVER it with a back button —
-// so a narrow surface never shows tree and file at once, the tree stays
-// mounted underneath (its scroll survives a round trip), and the two
-// platforms differ only in the frame: desktop = a docked LEFT column beside
-// the transcript; phone (≤640px) = a full-screen dialog (focus-trapped, Esc
-// = back one layer / close from the tree — the A.3 discipline the other
-// overlays use).
+// The Explorer's shell-owned panel (E.3 desktop, E.4 phone; lazy since
+// E2.2): a read-only browser of the session's working tree, built
+// incrementally — one fs_listdir per directory, fetched on first expand and
+// cached (files-tree.ts holds the store). Opening fetches the root and
+// prefetches its first level; the whole-tree fs_list is retired from the
+// client (the server keeps answering it for older bundles). Interaction is
+// drill-in on both platforms — the tree, then a file view laid OVER it with
+// a back button — so a narrow surface never shows tree and file at once, the
+// tree stays mounted underneath (its scroll survives a round trip), and the
+// two platforms differ only in the frame: desktop = a docked LEFT column
+// beside the transcript; phone (≤640px) = a full-screen dialog
+// (focus-trapped, Esc = back one layer / close from the tree).
 //
 // SHELL-OWNED: it holds the bus (socket) and the agent paints nothing here.
-// Replies are correlated by the echoed id (a stale reply from a superseded
-// click or a since-switched session is dropped, never rendered).
+// Replies are correlated by the echoed id — one outstanding id PER DIRECTORY
+// (dirReqIds) plus one for the file view; a stale reply (superseded click,
+// since-switched session) is dropped, never rendered.
 
-type FsTree = Extract<WireMsg, { type: "fs_tree" }>;
+type FsDir = Extract<WireMsg, { type: "fs_dir" }>;
 type FsFile = Extract<WireMsg, { type: "fs_file" }>;
 type FsFileDiff = Extract<WireMsg, { type: "fs_file_diff" }>;
 
@@ -36,10 +47,16 @@ export const isCurrentReply = (awaited: string | null, replyId: string): boolean
 export const rootNameOf = (rootLabel?: string): string =>
   rootLabel?.replace(/\/+$/, "").split("/").pop() || rootLabel || "files";
 
+// The open-panel prefetch fetches the root's child dirs so their first
+// expand is instant — capped under the server's token bucket (default 32/s)
+// so a many-repo Projects root can't drain it and starve the expand the
+// user actually clicks.
+const PREFETCH_MAX_DIRS = 24;
+
 export function FilesPanel({
   open,
   subscribe,
-  requestList,
+  requestListdir,
   requestRead,
   requestDiff,
   onClose,
@@ -48,7 +65,7 @@ export function FilesPanel({
 }: {
   open: boolean;
   subscribe: (l: (m: ZoneMsg) => void) => () => void;
-  requestList: () => string;
+  requestListdir: (path: string) => string;
   requestRead: (path: string) => string;
   requestDiff: (path: string) => string;
   onClose: () => void;
@@ -58,25 +75,52 @@ export function FilesPanel({
   /** meta.sessionId — a change means a different workspace: reset + refetch. */
   sessionKey?: string;
 }) {
-  const [entries, setEntries] = useState<FsEntry[]>([]);
-  const [git, setGit] = useState(false);
-  const [truncated, setTruncated] = useState(false);
-  const [treeError, setTreeError] = useState<string | null>(null);
+  const [store, setStore] = useState<DirStore>(emptyDirStore());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [rootOpen, setRootOpen] = useState(true);
   const [selected, setSelected] = useState<{ path: string; status?: string } | null>(null);
   const [mode, setMode] = useState<"content" | "diff">("content");
   const [view, setView] = useState<FileViewState>({ kind: "empty" });
 
-  // The reply this panel is currently waiting on, per surface. A reply whose
-  // id doesn't match is stale (a superseded click, a since-switched session)
-  // and is ignored.
-  const listId = useRef<string | null>(null);
+  // Correlation ids: one outstanding fs_listdir PER DIRECTORY (the E.3-era
+  // single listId ref is gone — the lazy tree legitimately has several
+  // fetches in flight), one for the file view. A reply whose id doesn't
+  // match its directory's current id is stale and is ignored.
+  const dirReqIds = useRef<Map<string, string>>(new Map());
   const fileId = useRef<string | null>(null);
-  // The subscribe effect below runs once; this ref lets its turn_end handler
-  // (E.5 auto-refresh) read whether the panel is open without re-subscribing.
+  // When true, the next root reply fans out the first-level prefetch —
+  // armed by opening (and session switch), not by turn-end refreshes.
+  const prefetchArmed = useRef(false);
+  // The subscribe effect below runs once; these refs let its handlers read
+  // current panel state without re-subscribing.
   const openRef = useRef(open);
   openRef.current = open;
+  const expandedRef = useRef(expanded);
+  expandedRef.current = expanded;
+
+  const fetchDir = (path: string) => {
+    dirReqIds.current.set(path, requestListdir(path));
+    setStore((s) => beginDirFetch(s, path));
+  };
+
+  // The refresh boundary (open, E.5 turn-end, the button): refetch the root
+  // and every expanded dir in place (previous rows stay visible while the
+  // replies swap them), and DROP cached-but-collapsed dirs — their next
+  // expand fetches fresh instead of serving a pre-turn listing.
+  const refreshTree = (prefetch: boolean) => {
+    prefetchArmed.current = prefetch;
+    const keep = expandedRef.current;
+    for (const path of dirReqIds.current.keys()) {
+      if (path !== "" && !keep.has(path)) dirReqIds.current.delete(path);
+    }
+    setStore((s) => pruneDirStore(s, keep));
+    fetchDir("");
+    for (const path of keep) fetchDir(path);
+  };
+  // Ref-stable mirror for the subscribe handler (it closes over the first
+  // render otherwise).
+  const refreshRef = useRef(refreshTree);
+  refreshRef.current = refreshTree;
 
   // Phone = a full-screen dialog; desktop = a docked column. Live (not the
   // module-load constant) so a resize across the breakpoint re-frames it.
@@ -93,22 +137,25 @@ export function FilesPanel({
   // stacked-layer contract. Desktop leaves Esc to Shell (busy = interrupt).
   useEscapeKey(modal ? (selected ? () => setSelected(null) : onClose) : undefined);
 
-  // Subscribe once; the refs above make the handler care only about the
-  // latest request. RenderZone ignores fs_* the same way (unknown to it).
+  // Subscribe once; the refs above make the handlers care only about the
+  // latest requests. RenderZone ignores fs_* the same way (unknown to it).
   useEffect(
     () =>
       subscribe((m) => {
-        if (m.type === "fs_tree") {
-          const t = m as FsTree;
-          if (!isCurrentReply(listId.current, t.id)) return;
-          if (t.error) {
-            setTreeError(t.error);
-            setEntries([]);
-          } else {
-            setTreeError(null);
-            setEntries(t.entries);
-            setGit(t.git);
-            setTruncated(Boolean(t.truncated));
+        if (m.type === "fs_dir") {
+          const d = m as FsDir;
+          if (dirReqIds.current.get(d.path) !== d.id) return; // stale per-dir
+          dirReqIds.current.delete(d.path);
+          setStore((s) => applyDirReply(s, d.path, d));
+          // The open-panel prefetch: the root reply just named the first
+          // level — fetch its child dirs so expanding them is instant.
+          if (d.path === "" && prefetchArmed.current) {
+            prefetchArmed.current = false;
+            if (!d.error) {
+              for (const p of childDirPaths("", d.entries).slice(0, PREFETCH_MAX_DIRS)) {
+                if (!dirReqIds.current.has(p)) fetchDir(p);
+              }
+            }
           }
         } else if (m.type === "fs_file") {
           const f = m as FsFile;
@@ -119,13 +166,14 @@ export function FilesPanel({
           if (!isCurrentReply(fileId.current, f.id)) return;
           setView(diffToState(f));
         } else if (m.type === "turn_end" && openRef.current) {
-          // E.5: the agent likely just touched files — refresh the TREE so
-          // statuses and new/deleted entries reflect reality. Tree only (no
-          // scroll-jank on an open file view); the server throttle bounds it.
-          listId.current = requestList();
+          // E.5: the agent likely just touched files — refetch the root and
+          // the EXPANDED dirs only (the lazy refresh unit), pruning stale
+          // collapsed cache. No prefetch: collapsed first-level dirs refetch
+          // on their next expand. The server throttle bounds the burst.
+          refreshRef.current(false);
         }
       }),
-    [subscribe, requestList],
+    [subscribe],
   );
 
   // A session switch means a different workspace — clear everything, expanded
@@ -134,23 +182,32 @@ export function FilesPanel({
   useEffect(() => {
     setSelected(null);
     setView({ kind: "empty" });
-    setExpanded(new Set());
+    // The ref mirror is cleared alongside the state: the open effect below
+    // runs in the same commit and reads expandedRef — it must not refetch
+    // the OLD session's expanded dirs against the new root.
+    const cleared = new Set<string>();
+    setExpanded(cleared);
+    expandedRef.current = cleared;
     setRootOpen(true);
+    setStore(emptyDirStore());
+    dirReqIds.current.clear();
+    prefetchArmed.current = false;
   }, [sessionKey]);
 
-  // Opening (or a session switch while open) fetches the tree. Returns to the
-  // tree view, but leaves expanded dirs intact across a close/reopen.
+  // Opening (or a session switch while open) fetches root + expanded dirs and
+  // arms the first-level prefetch. Returns to the tree view, but leaves
+  // expanded dirs intact across a close/reopen.
   useEffect(() => {
     if (!open || !sessionKey) return;
     setSelected(null);
     setView({ kind: "empty" });
-    listId.current = requestList();
-  }, [open, sessionKey, requestList]);
+    refreshRef.current(true);
+  }, [open, sessionKey, requestListdir]);
 
   if (!open) return null;
 
   const refresh = () => {
-    listId.current = requestList();
+    refreshTree(true);
     if (selected) openFile(selected.path, selected.status, mode);
   };
 
@@ -161,14 +218,22 @@ export function FilesPanel({
     fileId.current = m === "diff" ? requestDiff(path) : requestRead(path);
   };
 
-  const toggleDir = (path: string) =>
+  const toggleDir = (path: string) => {
+    const opening = !expanded.has(path);
     setExpanded((s) => {
       const next = new Set(s);
       next.has(path) ? next.delete(path) : next.add(path);
       return next;
     });
+    // First expand (or expand after an error/invalidation) fetches; a cached
+    // re-expand renders from the store with no request.
+    if (opening) {
+      const st = store.get(path);
+      if ((!st || st.error) && !dirReqIds.current.has(path)) fetchDir(path);
+    }
+  };
 
-  const tree = buildFileTree(entries);
+  const rootState = store.get("");
 
   return (
     <aside
@@ -208,32 +273,27 @@ export function FilesPanel({
             )}
           </div>
           {rootOpen &&
-            (treeError ? (
-              <div className="files-empty files-error">{treeError}</div>
-            ) : entries.length === 0 ? (
+            (rootState?.error && !rootState.entries ? (
+              <div className="files-empty files-error">{rootState.error}</div>
+            ) : rootState?.entries && rootState.entries.length === 0 ? (
               <div className="files-empty">(no files)</div>
+            ) : rootState?.entries ? (
+              <div role="tree" aria-label="Working tree">
+                <DirChildren
+                  path=""
+                  depth={1}
+                  store={store}
+                  expanded={expanded}
+                  onToggleDir={toggleDir}
+                  onOpenFile={(path, status) =>
+                    // A changed file leads with its diff — that's what you want
+                    // to see; an unchanged file has only content.
+                    openFile(path, status, status ? "diff" : "content")
+                  }
+                />
+              </div>
             ) : (
-              <>
-                <div role="tree" aria-label="Working tree">
-                  <TreeNodes
-                    nodes={tree}
-                    depth={1}
-                    git={git}
-                    expanded={expanded}
-                    onToggleDir={toggleDir}
-                    onOpenFile={(node) =>
-                      // A changed file leads with its diff — that's what you want
-                      // to see; an unchanged file has only content.
-                      openFile(node.path, node.status, git && node.status ? "diff" : "content")
-                    }
-                  />
-                </div>
-                {truncated && (
-                  <div className="files-empty files-truncated">
-                    …tree truncated (too many files to list all)
-                  </div>
-                )}
-              </>
+              <div className="files-empty">…</div>
             ))}
         </div>
 
@@ -262,7 +322,7 @@ export function FilesPanel({
               <span className="files-file-name" title={selected.path}>
                 {selected.path}
               </span>
-              {git && selected.status && (
+              {selected.status && (
                 <span className="files-file-tabs">
                   <button
                     className={"files-tab" + (mode === "content" ? " is-active" : "")}
@@ -289,57 +349,96 @@ export function FilesPanel({
   );
 }
 
-function TreeNodes({
-  nodes,
+// One directory's children, rendered from the store — recursion IS the tree
+// (E2.2): an expanded child dir renders its own DirChildren, which shows a
+// loading row until its fs_dir lands, then its listing. The wire stays
+// non-recursive; nesting exists only here.
+function DirChildren({
+  path,
   depth,
-  git,
+  store,
   expanded,
   onToggleDir,
   onOpenFile,
 }: {
-  nodes: FileNode[];
+  path: string;
   depth: number;
-  git: boolean;
+  store: DirStore;
   expanded: Set<string>;
   onToggleDir: (path: string) => void;
-  onOpenFile: (node: FileNode) => void;
+  onOpenFile: (path: string, status?: string) => void;
 }) {
+  const st = store.get(path);
+  const pad = { paddingLeft: `${depth * 12 + 6}px` };
+  if (!st?.entries) {
+    // Nothing usable yet: an inline loading row while the fetch flies, an
+    // error row if it refused. Non-interactive rows are aria-disabled
+    // treeitems — still part of the tree for the reading order.
+    if (!st) return null;
+    return (
+      <ul className="files-ul" role="group">
+        <li role="treeitem" aria-disabled="true" className="files-note-row" style={pad}>
+          {st.loading ? "…" : (st.error ?? "…")}
+        </li>
+      </ul>
+    );
+  }
   return (
     <ul className="files-ul" role="group">
-      {nodes.map((n) => {
-        const isOpen = expanded.has(n.path);
-        const pad = { paddingLeft: `${depth * 12 + 6}px` };
-        return (
-          <li key={n.path} role="treeitem" aria-expanded={n.isDir ? isOpen : undefined}>
-            {n.isDir ? (
-              <button className="files-row files-dir" style={pad} onClick={() => onToggleDir(n.path)}>
+      {st.entries.length === 0 && (
+        <li role="treeitem" aria-disabled="true" className="files-note-row" style={pad}>
+          (empty)
+        </li>
+      )}
+      {st.entries.map((e) => {
+        const p = path ? `${path}/${e.name}` : e.name;
+        if (e.kind === "dir") {
+          const isOpen = expanded.has(p);
+          return (
+            <li key={e.name} role="treeitem" aria-expanded={isOpen}>
+              <button className="files-row files-dir" style={pad} onClick={() => onToggleDir(p)}>
                 <span className="files-caret">{isOpen ? "▾" : "▸"}</span>
-                <span className="files-name">{n.name}</span>
+                <span className="files-name">{e.name}</span>
               </button>
-            ) : (
-              <button className="files-row files-file-row" style={pad} onClick={() => onOpenFile(n)}>
-                <span className="files-caret" />
-                <span className="files-name">{n.name}</span>
-                {git && n.status && (
-                  <span className={`files-status files-status-${n.status}`} title={statusLabel(n.status)}>
-                    {n.status}
-                  </span>
-                )}
-              </button>
-            )}
-            {n.isDir && isOpen && n.children.length > 0 && (
-              <TreeNodes
-                nodes={n.children}
-                depth={depth + 1}
-                git={git}
-                expanded={expanded}
-                onToggleDir={onToggleDir}
-                onOpenFile={onOpenFile}
-              />
-            )}
+              {isOpen && (
+                <DirChildren
+                  path={p}
+                  depth={depth + 1}
+                  store={store}
+                  expanded={expanded}
+                  onToggleDir={onToggleDir}
+                  onOpenFile={onOpenFile}
+                />
+              )}
+            </li>
+          );
+        }
+        // Files and symlinks are both leaves (E2.1's kind rule); a symlink
+        // click goes through fs_read like any file — the daemon's jail
+        // decides whether its target is readable.
+        return (
+          <li key={e.name} role="treeitem">
+            <button
+              className="files-row files-file-row"
+              style={pad}
+              onClick={() => onOpenFile(p, e.status)}
+            >
+              <span className="files-caret" />
+              <span className="files-name">{e.name}</span>
+              {e.status && (
+                <span className={`files-status files-status-${e.status}`} title={statusLabel(e.status)}>
+                  {e.status}
+                </span>
+              )}
+            </button>
           </li>
         );
       })}
+      {st.truncated && (
+        <li role="treeitem" aria-disabled="true" className="files-note-row" style={pad}>
+          …more entries than can be listed
+        </li>
+      )}
     </ul>
   );
 }

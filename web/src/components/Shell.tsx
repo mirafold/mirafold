@@ -383,7 +383,7 @@ export function Shell() {
               <FilesPanel
                 open={filesOpen && Boolean(meta.sessionId)}
                 subscribe={bus.subscribe}
-                requestList={bus.requestFsList}
+                requestListdir={bus.requestFsListdir}
                 requestRead={bus.requestFsRead}
                 requestDiff={bus.requestFsDiff}
                 onClose={() => setFilesOpen(false)}

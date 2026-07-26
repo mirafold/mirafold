@@ -32,11 +32,13 @@ export interface SessionBus {
   answerPermission(id: string, allow: boolean): void;
   endSession(): void;
   sendAction(action: Action, sourceId: string): void;
-  /** Explorer (Phase E): request the working tree / a file's content / a
-   *  file's diff. Each mints and returns a correlation id — the reply
-   *  (fs_tree / fs_file / fs_file_diff) echoes it, so a component can drop a
-   *  reply that isn't the one it's currently waiting on. */
-  requestFsList(): string;
+  /** Explorer (Phase E; lazy since E2.2): request ONE directory's listing /
+   *  a file's content / a file's diff. Each mints and returns a correlation
+   *  id — the reply (fs_dir / fs_file / fs_file_diff) echoes it, so a
+   *  component can drop a reply that isn't the one it's currently waiting
+   *  on. The whole-tree fs_list is retired from the client; the daemon still
+   *  answers it for older bundles (the version-skew floor). */
+  requestFsListdir(path: string): string;
   requestFsRead(path: string): string;
   requestFsDiff(path: string): string;
 }
@@ -142,9 +144,9 @@ export function createSessionBus(): SessionBus {
     },
     // Explorer requests (Phase E). Ids are minted here (the sendBang shape)
     // and returned so the panel correlates the one reply each gets.
-    requestFsList(): string {
+    requestFsListdir(path: string): string {
       const id = `fsl-${Math.random().toString(36).slice(2, 10)}`;
-      socket.send({ type: "fs_list", id });
+      socket.send({ type: "fs_listdir", id, path });
       return id;
     },
     requestFsRead(path: string): string {
