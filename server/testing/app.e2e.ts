@@ -1,11 +1,13 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { chromium, type Browser, type Page } from "playwright-core";
 import axe from "axe-core";
-import { startDaemon, type Daemon } from "./itest-harness";
+import { startDaemon, TestClient, type Daemon } from "./itest-harness";
+import type { ClientMsg } from "../protocol";
 import { startOllamaFixture } from "./ollama-fixture";
 import { startRelayStub } from "../relay/relay-stub";
 import { THEMES } from "../../web/src/themes/manifest";
@@ -1104,6 +1106,176 @@ test("E2.2: the tree is LAZY — open fetches root + first level only; expand fe
   );
 
   await page.locator(".ab-files").click(); // tidy up for later tests
+});
+
+test("E2.4: the Projects-root proof — lazy expands into two repos with per-repo statuses, ignore rules, and a nested-repo diff; never a whole-tree request; phone drills the same fixture", async () => {
+  // The headline E2 use case, end to end: a session rooted at a folder that
+  // is NOT a repo, holding two repos with different ignore rules (one dirty)
+  // and a plain dir.
+  const mr = mkdtempSync(path.join(os.tmpdir(), "e2e-mr-"));
+  const git = (cwd: string, ...args: string[]) =>
+    execFileSync("git", ["-C", cwd, "-c", "user.name=t", "-c", "user.email=t@t", ...args], {
+      env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" },
+      stdio: "pipe",
+    });
+  const repoA = path.join(mr, "repoA");
+  const repoB = path.join(mr, "repoB");
+  mkdirSync(repoA);
+  mkdirSync(repoB);
+  mkdirSync(path.join(mr, "plain"));
+  writeFileSync(path.join(mr, "plain", "note.txt"), "just a note\n");
+  git(repoA, "init", "-q");
+  writeFileSync(path.join(repoA, ".gitignore"), "dist/\n");
+  writeFileSync(path.join(repoA, "kept.txt"), "kept content\n");
+  writeFileSync(path.join(repoA, "changed.txt"), "the before line\n");
+  git(repoA, "add", "-A");
+  git(repoA, "commit", "-qm", "init");
+  writeFileSync(path.join(repoA, "changed.txt"), "the after line\n");
+  mkdirSync(path.join(repoA, "dist"));
+  writeFileSync(path.join(repoA, "dist", "bundle.js"), "never listed\n");
+  git(repoB, "init", "-q");
+  writeFileSync(path.join(repoB, ".gitignore"), "secret.log\n");
+  writeFileSync(path.join(repoB, "app.ts"), "export const b = 1;\n");
+  git(repoB, "add", "-A");
+  git(repoB, "commit", "-qm", "init");
+  writeFileSync(path.join(repoB, "secret.log"), "s\n");
+  writeFileSync(path.join(repoB, "notes.md"), "untracked here\n");
+
+  // Seed the session AT the fixture over the wire (the UI has no cwd
+  // picker), then join it from the browser like any viewport would.
+  const seed = new TestClient(d.port, { token: TOKEN });
+  await seed.opened();
+  await seed.type("agents");
+  seed.send({ type: "create", agent: "claude-code", cwd: mr } as ClientMsg);
+  const created = (await seed.type("session_created")) as { sessionId: string } & Record<string, unknown>;
+  const backUrl = page.url(); // later tests continue the original session
+  try {
+    await page.goto(`${base}/s/${created.sessionId}`);
+
+    // The recorder goes in BEFORE the panel opens — the claim under proof is
+    // that NO frame in the whole flow is a whole-tree fs_list, so every
+    // frame must be caught. (Fresh page after goto: re-patch.)
+    await page.evaluate(() => {
+      const w = window as unknown as { __fsSent: { type: string; path?: string }[] };
+      w.__fsSent = [];
+      const orig = WebSocket.prototype.send;
+      WebSocket.prototype.send = function (data: Parameters<WebSocket["send"]>[0]) {
+        try {
+          const m = JSON.parse(String(data));
+          if (String(m.type).startsWith("fs_")) {
+            (window as unknown as { __fsSent: unknown[] }).__fsSent.push({ type: m.type, path: m.path });
+          }
+        } catch {
+          /* binary or non-JSON frame — not ours */
+        }
+        return orig.call(this, data);
+      };
+    });
+
+    await page.locator(".ab-files").click();
+    // The root: three dirs, no statuses anywhere — the root is no repo.
+    await page.waitForSelector('.files-dir:has(.files-name:text-is("repoA"))');
+    assert.equal(await page.locator(".files-status").count(), 0, "statuses at a non-repo root");
+
+    // Into the dirty repo: its own gitignore hides dist/, its statuses ride
+    // the rows — the modified file badged M, the clean file unbadged.
+    await page.locator('.files-dir:has(.files-name:text-is("repoA"))').click();
+    await page.waitForSelector(".files-file-row:has-text('changed.txt')");
+    assert.equal(
+      await page.locator('.files-dir:has(.files-name:text-is("dist"))').count(),
+      0,
+      "repoA's ignored dist/ must not be listed",
+    );
+    assert.equal(
+      await page.locator(".files-file-row:has-text('changed.txt') .files-status").innerText(),
+      "M",
+    );
+    assert.equal(
+      await page.locator(".files-file-row:has-text('kept.txt') .files-status").count(),
+      0,
+      "a clean tracked file carries no badge",
+    );
+
+    // Open the modified file: a status click leads with the DIFF, and the
+    // diff resolves through repoA — the nested repo — not the session root.
+    await page.locator(".files-file-row:has-text('changed.txt')").click();
+    await page.waitForSelector(".files-view .tool-diff");
+    const diffText = await page.locator(".files-view .tool-diff").innerText();
+    assert.match(diffText, /the before line/);
+    assert.match(diffText, /the after line/);
+    await page.locator(".files-back").click();
+    await page.waitForSelector(".files-tree");
+
+    // Into the second repo: ITS rules now — secret.log hidden here (and only
+    // here), its untracked file badged U. Open a file in this repo too: the
+    // clean one arrives as plain content.
+    await page.locator('.files-dir:has(.files-name:text-is("repoB"))').click();
+    await page.waitForSelector(".files-file-row:has-text('app.ts')");
+    assert.equal(
+      await page.locator(".files-file-row:has-text('secret.log')").count(),
+      0,
+      "repoB's ignored secret.log must not be listed",
+    );
+    assert.equal(
+      await page.locator(".files-file-row:has-text('notes.md') .files-status").innerText(),
+      "U",
+    );
+    await page.locator(".files-file-row:has-text('app.ts')").click();
+    await page.waitForSelector(".files-view .fv-content");
+    assert.match(await page.locator(".files-view .fv-content").innerText(), /export const b/);
+    await page.locator(".files-back").click();
+    await page.waitForSelector(".files-tree");
+    await page.locator(".ab-files").click(); // close the panel
+
+    // The pinned claim: the entire flow — open, prefetch, expands, refreshes
+    // — rode the lazy pair. Not one whole-tree request anywhere.
+    const frames = await page.evaluate(
+      () => (window as unknown as { __fsSent: { type: string }[] }).__fsSent,
+    );
+    assert.ok(frames.length > 0, "the recorder saw no fs traffic at all");
+    assert.ok(
+      frames.every((m) => m.type !== "fs_list"),
+      "a whole-tree fs_list rode the lazy flow",
+    );
+
+    // Phone drill-in over the SAME fixture: full-screen panel, expand the
+    // dirty repo, the badge is there, a file opens, Esc walks back out.
+    const phoneCtx = await browser.newContext({
+      viewport: { width: 390, height: 844 },
+      deviceScaleFactor: 3,
+      isMobile: true,
+      hasTouch: true,
+    });
+    try {
+      const phone = await phoneCtx.newPage();
+      await phone.goto(`${base}/?token=${TOKEN}`);
+      await phone.goto(`${base}/s/${created.sessionId}`);
+      await phone.locator(".sb-files").focus();
+      await phone.keyboard.press("Enter");
+      await phone.waitForSelector(".files-panel[role=dialog]");
+      await phone.locator('.files-dir:has(.files-name:text-is("repoA"))').tap();
+      await phone.waitForSelector(".files-file-row:has-text('changed.txt')");
+      assert.equal(
+        await phone.locator(".files-file-row:has-text('changed.txt') .files-status").innerText(),
+        "M",
+        "the per-repo badge rides the phone drill-in too",
+      );
+      await phone.locator(".files-file-row:has-text('kept.txt')").tap();
+      await phone.waitForSelector(".files-view .fv-content");
+      assert.match(await phone.locator(".files-view .fv-content").innerText(), /kept content/);
+      await phone.keyboard.press("Escape");
+      await phone.waitForSelector(".files-tree");
+      await phone.keyboard.press("Escape");
+      assert.equal(await phone.locator(".files-panel").count(), 0, "Esc from the tree closes the panel");
+    } finally {
+      await phoneCtx.close();
+    }
+  } finally {
+    seed.close();
+    await page.goto(backUrl); // hand the original session back to later tests
+    await page.waitForSelector("textarea");
+    rmSync(mr, { recursive: true, force: true });
+  }
 });
 
 test("a notice in the engine's own words is badged; the shell's own words aren't", async () => {

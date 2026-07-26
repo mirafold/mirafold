@@ -19,6 +19,7 @@ import type { ClientMsg, FsDirEntry, FsEntry, WireMsg } from "../protocol";
 import type { SessionEntry } from "./registry";
 import { capBuffer, listTree, readDirRaw, readWorkspaceFile, sniffBinary, sortAndCapDir } from "./fs-explorer";
 import { cleanRelPath, decorateGitDir, findRepoRoot, gitShowHead, gitTree, repoStatus } from "./git";
+import { inside } from "./actions";
 import { isSecretFile } from "../security/permissions";
 import { errText } from "../adapters";
 
@@ -226,8 +227,26 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
     if (gitInFlight) return sendErr(rel, "a git query is already running — retry shortly");
 
     const root = entry.cwd;
+    // E2.4: HEAD's version comes from the repo that CONTAINS the file —
+    // nearest .git above its directory — so a file in a NESTED repo diffs
+    // through that repo, closing E2.3's recorded gap. The wire path is
+    // already textually contained (cleanRelPath above), and the directory
+    // resolves through the realpath jail before any discovery; if it can't
+    // (say the whole directory was deleted), fall back to the session root,
+    // which is exactly the pre-E2.4 behavior. repoRel stays clean by
+    // construction: realDir is jailed under the root and repoRoot is an
+    // ancestor of realDir, so the relative path has no `..` to offer git.
+    const cut = rel.lastIndexOf("/");
+    const realDir = inside(root, cut === -1 ? "." : rel.slice(0, cut));
+    const repoRoot = realDir ? findRepoRoot(realDir) : null;
+    const repoRel =
+      repoRoot && realDir
+        ? [path.relative(repoRoot, realDir).split(path.sep).join("/"), rel.slice(cut + 1)]
+            .filter(Boolean)
+            .join("/")
+        : rel;
     gitInFlight = true;
-    void gitShowHead(root, rel)
+    void gitShowHead(repoRoot ?? root, repoRel)
       .then((show) => {
         if (isClosed()) return;
         if ("notGit" in show) return sendErr(rel, "not a git repository — no diff available");

@@ -2135,7 +2135,7 @@ layer = one directory = one fetch).
   repo, the plain dir and the non-repo root list statusless and
   byte-identical to E2.1; the legacy `fs_list` whole-tree reply pinned
   as-is, quirks included (collapsed `newdir/` U entry). All three tiers
-  green (388/108/55).
+  green (388/108/55). *(The diff gap closed the same day — E2.4.)*
   - Goal: full fidelity at a Projects-folder root — each nested repo shows
     its own statuses and respects its own ignore rules; single-repo roots
     behave exactly as today.
@@ -2154,7 +2154,27 @@ layer = one directory = one fetch).
     statuses, the plain dir lists without statuses — and a plain single-repo
     root session is byte-identical to pre-E2.3 behavior in both suites.
 
-- [ ] **Step E2.4 — the Projects-root proof + compatibility pin**
+- [x] **Step E2.4 — the Projects-root proof + compatibility pin** ✅
+  2026-07-26 — **phase E2 complete.** Three deliverables plus the gap
+  E2.3 recorded: (1) `fs_diff` now discovers the repo that CONTAINS the
+  file (same `findRepoRoot` walk, directory resolved through the realpath
+  jail first, session-root fallback when the directory is gone — the exact
+  pre-E2.4 behavior), so a modified file in a nested repo diffs instead of
+  answering "no diff available"; Tier-2 pins the nested diff, the
+  deleted-file diff (HEAD vs empty), the plain-dir degrade, and the jail.
+  (2) The old-client floor pinned at a Projects root: legacy `fs_list`
+  serves the plain whole-tree walk (`git: false`, no statuses, ignore
+  rules unhonored, deliberately — pinned as-is, never to be "fixed").
+  (3) The Tier-3 proof over a real multi-repo fixture seeded at a wire-
+  created session: a WebSocket-prototype recorder installed before the
+  panel opens catches every fs frame — open, prefetch, expand into both
+  repos, per-repo badges (M on the dirty file, U on the untracked, none on
+  clean), per-repo ignore fidelity (dist/ hidden in one repo, secret.log
+  in the other), the nested-repo DIFF rendered with real before/after
+  lines, a content view in the second repo — and not one `fs_list` frame
+  anywhere in the flow. (4) Phone drill-in over the same fixture: full-
+  screen panel, badge visible, file opens, Esc walks back out. All tiers
+  green (388 / 110 / 56), e2e twice to shake flakes.
   - Goal: the headline use case observed end-to-end, and the version-skew
     floor pinned so it can't rot.
   - Build: a Tier-3 e2e driving the full lazy flow over a multi-repo

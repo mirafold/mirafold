@@ -370,6 +370,74 @@ test("E2.3: a single-repo root gets the git view lazily — and the legacy whole
   c.close();
 });
 
+test("E2.4: a diff comes from the repo that CONTAINS the file — nested repos diff, the plain dir degrades honestly", async () => {
+  const c = await openSession(mr);
+  const diff = async (id: string, p: string) => {
+    await settle(THROTTLE_MS + 30);
+    c.send({ type: "fs_diff", id, path: p } as ClientMsg);
+    return (await c.waitFor(
+      (m) => m.type === "fs_file_diff" && (m as Any).id === id,
+      `fs_file_diff ${id}`,
+    )) as Any;
+  };
+
+  // A modified file in a nested repo: HEAD's version resolves through repoA,
+  // not the (non-repo) session root — E2.3's recorded gap, closed.
+  const mod = await diff("d1", "repoA/changed.txt");
+  assert.equal(mod.error, undefined);
+  assert.equal(mod.before, "before\n");
+  assert.equal(mod.after, "after\n");
+
+  // A deleted file still diffs: HEAD's content against an empty after side.
+  const gone = await diff("d2", "repoA/doomed.txt");
+  assert.equal(gone.error, undefined);
+  assert.equal(gone.before, "d\n");
+  assert.equal(gone.after, "");
+
+  // Outside any repo there is honestly no diff — the error reply, unchanged.
+  const plain = await diff("d3", "plain/note.txt");
+  assert.match(String(plain.error), /not a git repository/);
+
+  // The textual jail still fronts everything repo discovery does.
+  const escape = await diff("d4", "../loot.txt");
+  assert.equal(typeof escape.error, "string");
+  assert.doesNotMatch(d.logs(), /crashed \(uncaughtException\)/);
+  c.close();
+});
+
+test("E2.4: the old-client floor at a Projects root — legacy fs_list still serves the whole-tree walk", async () => {
+  // An old app bundle against a new daemon sends only fs_list. At a
+  // multi-repo root that's the PLAIN walk (git:false — the root is no repo):
+  // no statuses, ignore rules unhonored, every nested repo's files flat.
+  // Pinned as-is: this is the compatibility floor the lazy pair improves on,
+  // and it must keep answering exactly like this, never be "fixed".
+  const c = await openSession(mr);
+  c.send({ type: "fs_list", id: "f1" } as ClientMsg);
+  const tree = (await c.waitFor((m) => m.type === "fs_tree" && (m as Any).id === "f1", "fs_tree f1")) as Any;
+  assert.equal(tree.error, undefined);
+  assert.equal(tree.git, false);
+  assert.deepEqual(
+    (tree.entries as { path: string; status?: string }[]).map((e) => e.path),
+    [
+      "plain/note.txt",
+      "repoA/.gitignore",
+      "repoA/changed.txt",
+      "repoA/dist/bundle.js",
+      "repoA/kept.txt",
+      "repoA/newdir/fresh.txt",
+      "repoB/.gitignore",
+      "repoB/app.ts",
+      "repoB/dist/x.js",
+      "repoB/secret.log",
+    ],
+  );
+  assert.ok(
+    (tree.entries as { status?: string }[]).every((e) => e.status === undefined),
+    "the plain walk never carries statuses",
+  );
+  c.close();
+});
+
 test("E.1: no session attached — both queries answer with an error reply, not silence", async () => {
   const c = new TestClient(d.port);
   await c.opened();
