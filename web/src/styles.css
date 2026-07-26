@@ -2773,6 +2773,15 @@ body {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
+/* The pairing card reads at arm's length — you're holding a phone up to it,
+   not leaning into the screen — so its whole head row goes up 1.5× (2026-07-25,
+   Kyle). One override on the row scales the ❯ glyph, the title (0.95em of it)
+   and the ✕ (font: inherit) together, and leaves the settings card, which
+   shares the head/title/close rules around it, exactly where it was. */
+.pair-head {
+  font-size: 1.5em;
+}
+
 .pair-title,
 .settings-title {
   color: var(--fg-strong);
@@ -2788,15 +2797,6 @@ body {
   font: inherit;
   cursor: pointer;
   padding: 4px 8px;
-}
-
-/* The pairing card reads at arm's length — you're holding a phone up to it,
-   not leaning into the screen — so its whole head row goes up 1.5× (2026-07-25,
-   Kyle). One override on the row scales the ❯ glyph, the title (0.95em of it)
-   and the ✕ (font: inherit) together, and leaves the settings card, which
-   shares every rule above, exactly where it was. */
-.pair-head {
-  font-size: 1.5em;
 }
 
 .pair-close:hover,

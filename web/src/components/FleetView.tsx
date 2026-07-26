@@ -44,7 +44,8 @@ function fmtTokens(n: number): string {
  *  "✳ thinking", the gear glyph ahead of a tool label, and a bang label
  *  ("! cmd") kept as-is. */
 function ActivityLine({ a }: { a: NonNullable<SessionMeta["activity"]> }) {
-  const isTool = a.label !== "thinking" && !a.label.startsWith("! ");
+  const thinking = a.label === "thinking";
+  const isTool = !thinking && !a.label.startsWith("! ");
   return (
     <>
       {isTool && (
@@ -52,7 +53,7 @@ function ActivityLine({ a }: { a: NonNullable<SessionMeta["activity"]> }) {
           <GearGlyph size="1em" />{" "}
         </>
       )}
-      {a.label === "thinking" ? "✳ thinking" : a.label} · {elapsed(a.since)}
+      {thinking ? "✳ thinking" : a.label} · {elapsed(a.since)}
     </>
   );
 }

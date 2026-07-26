@@ -8,7 +8,14 @@
    fill, so it sits in the same flat line language as FilesGlyph and the ⌂/☀/☾
    text glyphs beside it. Six teeth, not the conventional eight: at button size
    eight gaps mush into a blur. `size` takes any CSS length so the inline uses
-   can ride the surrounding text at "1em" while the button pins 20px. */
+   can ride the surrounding text at "1em" while the button pins 20px.
+
+   The path is generated, not drawn by hand — regenerate it rather than nudging
+   numbers. Centre 12,12 in a 24 box; 6 teeth, tip radius 9.4, root radius
+   9.4 × 0.78 (teeth stand 22% of the radius proud), each tooth top spanning
+   45% of its pitch, hub radius 0.38 × 9.4. Tooth tops ride an arc at the tip
+   radius, valleys an arc at the root radius, joined by straight radial
+   flanks. */
 export function GearGlyph({ size = 20 }: { size?: number | string }) {
   return (
     <svg
