@@ -1975,6 +1975,312 @@ whole, pinned in Tier 1 + Tier 2 (pins verified to fail with the cap restored).
   Tiers at close: **369 / 103 / 51**.
 ---
 
+## The Explorer→panes→terminal arc (opened 2026-07-26; Kyle-directed, four phases, worked in stages)
+
+One design conversation (2026-07-26) produced the next four phases. They are
+deliberately **separate phases, implemented in stages, never as one push**
+(Kyle's explicit instruction), in this **locked order**:
+
+> **E2 (Explorer at scale) → W (live tree) → PN (panes) → TP (terminal pane)**
+
+E2/PN/TP is Kyle's stated feature order (lazy explorer first, then a pane to
+view files, then vim in a pane); W slots second because its client half depends
+on E2's lazy shape (the refetch unit becomes "expanded directories", not "the
+one flat list"), and both PN and TP consume its change signal. None of these
+gates Phase R — this is the dev-side track that continues alongside launch.
+
+**Decisions from that conversation, recorded once here (the phases below
+inherit them):**
+
+- **The explorer stays read-only — no create/rename/delete in the panel,
+  possibly forever** (Kyle). Editing arrives only through the terminal pane
+  (TP), where vim owns its own buffers, swap files and conflict detection —
+  Mirafold hosts an editor without ever being one. The Phase E "disk is the
+  truth, refetch is always correct" property is therefore permanent.
+- **No extension/plugin system, ever** (Kyle: doesn't think he'll ever want
+  extensions needing special permissions). Consequence, and the reason the
+  watcher stays simple: Mirafold-internal features are the ONLY subscribers
+  to any file-change signal, so W can be doorbell-grade ("something changed →
+  refetch") instead of VS Code's precise per-file event contract, which
+  exists to serve third-party subscribers we will never have.
+- **Native dependencies are acceptable** (Kyle) — ordinary for this class of
+  package (esbuild, sharp, node-pty precedent). Each still passes the
+  dependency test individually; costs named per phase.
+- **The terminal pane is LOCAL-viewport-only, enforced daemon-side,
+  fail-closed** (Kyle: desktop-only, never over the relay) — see TP.
+
+## Phase E2 — Explorer at scale (lazy tree + multi-repo fidelity)
+
+**Why.** Phase E's whole-tree bet (one flat capped listing, expand is
+client-side) was right for its scope — one session rooted at one ordinary
+repo — but Kyle's target use now includes **rooting a session at a
+Projects-style folder holding several repos** (fleets of agents across
+projects). That breaks the bet two ways: (1) when the root isn't itself a git
+repo, the fallback walk reads no nested `.gitignore`, so every `dist/`/venv
+counts against the 4,000-entry cap; (2) that mode has no git awareness at
+all — zero status letters. The fix is VS Code's shape: **fetch lazily, one
+directory per request**, and let git fidelity be per-nested-repo.
+
+**Wire (additive, per the locked rule).** A new request/reply pair —
+`fs_listdir { id, path }` → `fs_dir { id, path, entries }`, where entries are
+one directory's children (name, dir/file/symlink kind, optional git status).
+The legacy `fs_list`/`fs_tree` whole-tree pair **keeps working untouched** —
+the app bundle (app.mirafold.com) and a user's daemon can be version-skewed,
+so the old pair is the compatibility floor, never removed in this phase.
+
+**Inherited from Phase E, unchanged:** shell-owned and read-only; per-viewport
+correlated replies (never broadcast, never replayed); every path jailed
+through `inside()` realpath containment + the secret-file denial; per-type
+throttle. Caps become **per-directory** (entry count + path bytes per reply),
+which is strictly tighter than the old whole-tree walk.
+
+**Latency posture (relay/phone):** first expand of a folder is now a round
+trip. Mitigations in-scope: cache fetched directories for the session,
+prefetch root + first level on open. Phone drill-in maps naturally (each
+layer = one directory = one fetch).
+
+- [ ] **Step E2.1 — per-directory listing: wire + server**
+  - Goal: the daemon can answer "list this one directory" — jailed, capped,
+    throttled, correlated — beside the untouched whole-tree path.
+  - Build: `fs_listdir`/`fs_dir` in `server/protocol.ts`; handler in
+    `server/sessions/fs-handlers.ts` (same badId/throttle/gitInFlight
+    discipline); a bounded one-directory lister in
+    `server/sessions/fs-explorer.ts` (readdir + sort + per-dir caps; symlinks
+    stay leaves; unreadable dir = error on the reply). Plain (non-git) listing
+    only in this step — statuses ride E2.3.
+  - Files: `server/protocol.ts`, `server/sessions/fs-handlers.ts`,
+    `server/sessions/fs-explorer.ts` + Tier-1 unit and Tier-2 itest coverage
+    (including hostile paths: `../`, absolute, symlink-out, secret files).
+  - Done when: over a real WebSocket (Tier 2), listing the root and a nested
+    dir returns correct entries; a `../` request and a planted symlink-to-
+    outside are refused; the legacy `fs_list` still answers identically.
+
+- [ ] **Step E2.2 — the lazy client: incremental tree store**
+  - Goal: the panel builds its tree incrementally — fetch on first expand,
+    cache, loading rows — with the whole-tree fetch retired from the client.
+  - Build: replace the flat-entries + derived-tree model in
+    `web/src/files-tree.ts` / `FilesPanel.tsx` with a per-directory node
+    store: per-dir fetch state (unfetched/loading/loaded/error), per-dir
+    correlation ids (the single `listId` ref goes away), stale-reply drop per
+    directory, session-switch clears all. Open = fetch root + prefetch first
+    level; expand of an unfetched dir = fetch + inline loading row; refresh
+    button = refetch currently-expanded dirs. Desktop panel and phone
+    drill-in both consume the store; a11y tree semantics (role=tree,
+    aria-expanded) carry over.
+  - Files: `web/src/files-tree.ts`, `web/src/components/files/FilesPanel.tsx`
+    (+ their tests, a Tier-3 e2e over the mock).
+  - Done when: in headless Chrome, opening the panel shows root + first level
+    with no whole-tree request on the wire; expanding a deep dir fetches
+    exactly that dir; collapse/re-expand serves from cache with no request;
+    the E.5 turn-end refresh refetches only expanded dirs.
+
+- [ ] **Step E2.3 — multi-repo git fidelity**
+  - Goal: full fidelity at a Projects-folder root — each nested repo shows
+    its own statuses and respects its own ignore rules; single-repo roots
+    behave exactly as today.
+  - Build: nested-repo discovery during listing (a child dir containing
+    `.git` marks a repo boundary); inside a repo, directory listings come
+    from that repo's git view (ignore-rule fidelity) with per-repo `git
+    status` attached to entries (cached per repo, invalidated by refresh/
+    turn-end/W's signal later); outside any repo, the plain E2.1 lister.
+    The existing one-git-child-in-flight discipline extends to per-repo
+    queries (serialize, never fan out N subprocesses at once).
+  - Files: `server/sessions/git.ts`, `server/sessions/fs-handlers.ts`,
+    `server/sessions/fs-explorer.ts` + both test tiers with a multi-repo
+    fixture (two nested repos + one plain dir, one repo dirty).
+  - Done when: against that fixture over a real socket, each repo's dir
+    listings honor its own `.gitignore`, the dirty repo's files carry
+    statuses, the plain dir lists without statuses — and a plain single-repo
+    root session is byte-identical to pre-E2.3 behavior in both suites.
+
+- [ ] **Step E2.4 — the Projects-root proof + compatibility pin**
+  - Goal: the headline use case observed end-to-end, and the version-skew
+    floor pinned so it can't rot.
+  - Build: a Tier-3 e2e driving the full lazy flow over a multi-repo
+    workspace (expand into two repos, open a file in each, statuses visible);
+    a Tier-2 pin that the legacy `fs_list` whole-tree reply still works
+    (the old-client floor); phone drill-in pass over the same fixture.
+  - Done when: both land green in CI alongside all existing tiers, and the
+    e2e demonstrates no whole-tree request anywhere in the lazy flow.
+
+## Phase W — Live tree (the filesystem watcher; the refresh button goes vestigial)
+
+**Why.** The tree self-refreshes only at agent turn-end (E.5), so anything
+out-of-band — Kyle editing in another program, git in a terminal, and later
+TP's vim edits, which happen with no agent turn at all — leaves it stale
+behind a manual button. TP makes this load-bearing: without W, Mirafold's own
+UI would cause disk changes its own tree doesn't show. Goal state: the button
+**stays** (VS Code keeps one too — network mounts, missed events) but a user
+should never *need* it.
+
+**Design: doorbell, not precision.** One watcher per session on the daemon;
+on any change, after a debounce (coalesce an agent's 40-file write into one
+signal), push a small notification to attached viewports; the client
+responds by refetching through the machinery it already has (E2's expanded
+dirs; later PN's open file views). No per-file event contract — the
+no-extensions decision above is what makes this sufficient, permanently.
+
+**Dependency decision: `@parcel/watcher`** (VS Code's own choice). It passes
+the take-the-dependency test on two grounds: native/platform code (a C++
+addon over inotify/FSEvents/ReadDirectoryChangesW) and the load-bearing
+capability Node's recursive `fs.watch` lacks — **exclusion patterns**, so
+`node_modules`/`.git/objects` never consume inotify watches. Costs, named:
+per-platform prebuilt binaries (~1 MB installed, no compile at install),
+native supply-chain surface, a small transitive tree (micromatch-class glob
+matching).
+
+**Wire (additive):** one new server→client message, `fs_changed`, minted
+from day one with an **optional best-effort `paths` hint** (capped list +
+`truncated` flag; consumers must tolerate its absence — the doorbell
+contract). The hint is nearly free now and is what lets PN/TP panes ignore
+irrelevant bells later without ever reshaping the message.
+
+**Robustness rules:** watch `.git`'s HEAD/index/refs (excluding `objects/`)
+so commits and branch switches — which change statuses without touching
+working files — still ring the bell; watcher start/stop follows viewport
+attach/detach per session; **failure degrades gracefully, fail-open to
+today's behavior** — watch-limit exhaustion (ENOSPC) or any watcher error
+surfaces one notice and leaves turn-end refresh + the button as the floor.
+The E.5 turn-end refresh stays as belt-and-suspenders.
+
+- [ ] **Step W.1 — the watcher module, server-side**
+  - Goal: a per-session, debounced, exclusion-aware change signal the daemon
+    can consume — proven against a real filesystem.
+  - Build: add `@parcel/watcher`; a small module (`server/sessions/
+    fs-watch.ts`) owning per-session lifecycle (subscribe on first viewport,
+    unsubscribe on last detach / session end), debounce/coalesce
+    (~300–500 ms), the exclusion list, the `.git` status-change coverage,
+    and the error→degraded path.
+  - Files: `package.json`, `server/sessions/fs-watch.ts` (+ registry wiring)
+    + Tier-2 itest.
+  - Done when: Tier 2 proves — file touch fires one coalesced callback with
+    the touched path; a burst of writes fires once; a `git commit` (no
+    working-file change) fires; writes under `node_modules` do NOT fire; a
+    forced subscribe error degrades without crashing the daemon.
+
+- [ ] **Step W.2 — `fs_changed` on the wire + the live client**
+  - Goal: the tree updates by itself, observed end-to-end; the button
+    becomes something you never need.
+  - Build: `fs_changed { paths?, truncated? }` in `server/protocol.ts`,
+    fanned to the session's attached viewports; client-side, the panel (open
+    only) responds by refetching expanded dirs (+ invalidating E2.3's
+    per-repo status cache); throttle-aware (the bell never bypasses
+    FS_MIN_INTERVAL_MS discipline — coalesce client-side too).
+  - Files: `server/protocol.ts`, `server/sessions/` wiring,
+    `web/src/components/files/FilesPanel.tsx` (+ tiers; Tier-3 e2e).
+  - Done when: in headless Chrome with the panel open, a file written behind
+    the UI's back (test harness writes to the workspace directly) appears in
+    the tree within ~1 s with zero clicks; a new file inside a collapsed,
+    unfetched dir causes no fetch (nothing expanded shows it — correct); the
+    refresh button still works unchanged.
+
+## Phase PN — Panes (file views beside the transcript)
+
+**Why.** Kyle (2026-07-26): open a file and see it in its own pane. Also the
+structural prerequisite for TP — pane content must be a self-contained
+component from day one so a terminal can slot into the same frame later.
+Scope is deliberately modest: **one pane region beside the transcript on
+desktop, tabs within it** — NOT a VS Code-style divisible split grid (can
+grow later without rework if PN.1's seam is respected). Phone keeps the
+existing drill-in unchanged — no panes at phone widths.
+
+**The seam this phase exists to cut:** today `FileView` is welded inside the
+explorer panel with ONE outstanding-file correlation ref. Panes mean N
+independent viewers, each with its own request lifecycle.
+
+- [ ] **Step PN.1 — FileView extraction (behavior-preserving)**
+  - Goal: `FileView` becomes a self-contained unit — own subscribe, own
+    correlation ids, own loading/stale state — usable by any host; the
+    explorer panel becomes merely its first host. Zero visual change.
+  - Build: lift the request bookkeeping (fileId ref, openFile, mode,
+    fs_read/fs_diff correlation) out of `FilesPanel` into the extracted
+    component/hook; panel consumes it exactly as before.
+  - Done when: all three tiers green with no e2e assertion changed — the
+    proof of behavior preservation.
+
+- [ ] **Step PN.2 — the pane frame**
+  - Goal: "open in pane" from the explorer puts the file in a tabbed pane
+    beside the transcript; open/close/switch/focus all keyboard-clean.
+  - Build: a desktop pane region (claims the split-pane layout slot Phase E's
+    charter reserved); explorer rows gain open-in-pane (default click
+    behavior decided here — Kyle's call at build time); tabs with close;
+    focus management per Phase A discipline (focus moves into the pane on
+    open, returns sensibly on close; axe-clean).
+  - Done when: in headless Chrome, opening two files yields two tabs; tab
+    switch, close, and keyboard traversal all pass; phone width shows no
+    pane affordance and drill-in is untouched.
+
+- [ ] **Step PN.3 — live panes**
+  - Goal: open file views stay honest under disk change — the read-only
+    payoff (nothing to conflict, always safe to reload).
+  - Build: on `fs_changed`, open views refetch — using the paths hint to
+    skip irrelevant bells when present, refetching all open views when
+    absent; diff views refetch both sides; scroll position preserved on
+    identical-prefix content (best effort).
+  - Done when: e2e — with a file open in a pane, the harness rewrites it on
+    disk; the pane shows the new content within ~1 s, no clicks; an
+    unrelated file's change (hint present) causes no refetch of that pane.
+
+## Phase TP — Terminal pane (vim on the desktop; promoted from POST-RELEASE.md)
+
+The POST-RELEASE "Embedded terminal pane" intake entry (2026-07-22),
+promoted 2026-07-26. Its settled scope carries over verbatim: a real
+terminal box inside the session (tmux-style pane via PN's frame, not a
+window) where curses programs run, so `!vim`/`!top` just works instead of
+garbling through the ANSI-stripped Tier-1 stream; **viewport-local, not
+session-shared** (the keystroke stream ties to the one viewport that opened
+it — never fanned out, never in the replay ring; the first stream that opts
+out of broadcast/replay, so it's designed deliberately); the *work* stays
+session-bound (same cwd/files; the agent is handed the resulting **diff** on
+exit, never keystrokes); auto-open on alternate-screen entry (`\x1b[?1049h`),
+collapse on exit. The PTY substrate already exists (`server/pty/pty.ts`,
+`xterm-256color`, stdin flows); the deltas are a raw un-stripped output path
+beside `cleanPtyOutput`, `resize` on `BangProc`, additive wire messages
+(raw bytes base64; resize; keystrokes), and an xterm.js pane.
+
+**LOCKED harder than the intake entry (Kyle, 2026-07-26): LOCAL viewports
+only, enforced in the daemon, fail-closed.** Not merely "the phone doesn't
+show the button": the daemon **refuses terminal messages on any
+relay-attached viewport** — same shape as the no-subscription-over-relay
+absolute bound. This kills both remote-shell exposure and relay keystroke
+latency by construction. Corollary security work is TP.1 and comes FIRST.
+
+**New dependency at this phase:** xterm.js (the standard browser terminal
+emulator — deep-spec surface, clear take-the-dependency verdict). Cost:
+a few hundred KB of bundle, loaded only on desktop viewports (lazy-load with
+the pane). `node-pty` is already a dependency — no new native code.
+
+**Shared decision with Phase KB (standing note carried from the intake):**
+once keystrokes can reach the prompt, an app shortcut, or the vim pane, the
+modal key-routing (which context owns a key) is settled once, by whichever
+of KB/TP ships first, and reused by the other.
+
+*(Steps below are coarser than house standard — TP is furthest out; split
+each into prompt-sized pieces when the phase actually opens.)*
+
+- [ ] **Step TP.1 — the local-only gate + socket-auth verification**
+  - Goal: the security substrate before any PTY byte flows: terminal
+    messages hard-refused for relay viewports, and the local WebSocket's
+    protection against drive-by browser connections re-verified (any webpage
+    can open a WebSocket to localhost — the socket's origin/auth check is
+    the only wall, and it must gate the connection BEFORE a terminal can
+    exist).
+  - Done when: hostile-client Tier-2 tests prove a relay-attached viewport's
+    terminal messages are refused with a typed close/error, and a
+    wrong-origin local dial can never reach a terminal path.
+- [ ] **Step TP.2 — raw PTY path + wire messages** (base64 raw output beside
+  `cleanPtyOutput`, `resize`, keystroke routing — add, never reshape).
+- [ ] **Step TP.3 — the xterm.js pane in PN's frame** (auto-open on
+  alternate-screen, collapse on exit, focus/modal routing per the KB-shared
+  decision).
+- [ ] **Step TP.4 — vim acceptance, end-to-end** — e2e: open vim in the
+  pane, edit, `:wq`; W's bell fires; the tree and any open pane view update
+  with no clicks; `top` renders and exits clean; a phone viewport never
+  sees the affordance and a relay viewport's attempt is refused (TP.1 pin
+  re-run in the full flow).
+
+---
+
 ## Stretch goals (unscheduled — polish, no milestone gates on these)
 
 Pick one up only when the phases above are quiet.
