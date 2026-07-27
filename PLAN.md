@@ -2290,7 +2290,33 @@ The E.5 turn-end refresh stays as belt-and-suspenders.
     working-file change) fires; writes under `node_modules` do NOT fire; a
     forced subscribe error degrades without crashing the daemon.
 
-- [ ] **Step W.2 — `fs_changed` on the wire + the live client**
+- [x] **Step W.2 — `fs_changed` on the wire + the live client** ✅
+  2026-07-26 — `fs_changed { paths?, truncated? }` minted (per-viewport
+  plumbing like the fs_* replies — fanned to attached viewports straight
+  from the watcher callback, never through broadcast(), so it never enters
+  the replay ring; pinned by a late-attacher itest). The bell invalidates
+  the per-repo status cache BEFORE fanning (`invalidateRepoStatusCache()`
+  in git.ts), so a bell-triggered refetch can't be served a pre-change
+  status still inside its TTL — pinned and mutation-tested. Client:
+  FilesPanel handles the bell with the turn-end refresh unit (root +
+  expanded dirs; hint deliberately not consulted — doorbell contract),
+  coalesced client-side through `bellRefreshDelay` (pure, Tier-1-pinned;
+  min gap 1s, immediate first ring, trailing after) so sustained bells
+  can't drain the fs_listdir token bucket. The phase charter's failure
+  notice landed too: a watcher error now fans one shell-composed notice to
+  attached viewports beside the server log line. **Field find, fixed at
+  the source:** the daemon's own per-listing `git status` takes git's
+  optional lock (`.git/index.lock`, sometimes rewriting the index's stat
+  cache) — churn the watcher now HEARS, feeding a listing→status→bell→
+  refetch loop that polluted the E2.2 e2e's recorded window; every runGit
+  now passes `--no-optional-locks` (the background-tool rule), pinned by
+  a deterministic itest (same-content mtime touch makes the stat cache
+  stale, then listings must stay silent) and mutation-tested. Done-when
+  observed in headless Chrome: a file written behind the UI's back appears
+  with zero clicks; a new file in a collapsed, unfetched dir causes no
+  fetch of that dir and stays unlisted; the refresh button still refetches;
+  not one whole-tree request in the flow. All tiers green (389/123/57),
+  e2e twice.
   - Goal: the tree updates by itself, observed end-to-end; the button
     becomes something you never need.
   - Build: `fs_changed { paths?, truncated? }` in `server/protocol.ts`,

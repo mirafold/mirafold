@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   applyDirReply,
   beginDirFetch,
+  bellRefreshDelay,
   childDirPaths,
   emptyDirStore,
   pruneDirStore,
@@ -104,4 +105,11 @@ test("childDirPaths: only dirs qualify (symlinks are leaves), paths nest under t
   ];
   assert.deepEqual(childDirPaths("", entries), ["deep"]);
   assert.deepEqual(childDirPaths("src", entries), ["src/deep"]);
+});
+
+test("bellRefreshDelay: immediate when the gap has passed, trailing remainder inside it (W.2)", () => {
+  assert.equal(bellRefreshDelay(10_000, 0, 1_000), 0, "no prior refresh → run now");
+  assert.equal(bellRefreshDelay(10_000, 9_000, 1_000), 0, "gap exactly elapsed → run now");
+  assert.equal(bellRefreshDelay(10_000, 9_400, 1_000), 400, "inside the gap → wait the remainder");
+  assert.equal(bellRefreshDelay(10_000, 10_000, 1_000), 1_000, "same-instant repeat → full gap");
 });

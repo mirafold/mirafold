@@ -177,6 +177,11 @@ const WIRE: WireByType = {
     binary: false,
     error: "no diff available for this entry",
   },
+  fs_changed: {
+    type: "fs_changed",
+    paths: ["src/app.ts", ".git/index"],
+    truncated: true,
+  },
   sessions: { type: "sessions", sessions: [SESSION_META] },
   session_ended: { type: "session_ended", sessionId: "s1" },
 };

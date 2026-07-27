@@ -4,6 +4,7 @@ import type { ZoneMsg } from "../../session-bus";
 import {
   applyDirReply,
   beginDirFetch,
+  bellRefreshDelay,
   childDirPaths,
   emptyDirStore,
   pruneDirStore,
@@ -52,6 +53,12 @@ export const rootNameOf = (rootLabel?: string): string =>
 // so a many-repo Projects root can't drain it and starve the expand the
 // user actually clicks.
 const PREFETCH_MAX_DIRS = 24;
+
+// Minimum gap between BELL-triggered refreshes (W.2). Bells arrive already
+// server-debounced per session, but each refresh here spends one fs_listdir
+// per shown directory — sustained bells over a many-dir tree would drain the
+// token bucket. A bell during the gap coalesces onto one trailing refresh.
+const BELL_REFRESH_MIN_GAP_MS = 1_000;
 
 export function FilesPanel({
   open,
@@ -122,6 +129,23 @@ export function FilesPanel({
   const refreshRef = useRef(refreshTree);
   refreshRef.current = refreshTree;
 
+  // The doorbell's client half (W.2): one pending refresh at most, run when
+  // the coalescing gap allows — an immediate first ring, trailing after.
+  const bellTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastBellRefreshAt = useRef(0);
+  const onBell = () => {
+    if (!openRef.current || bellTimer.current) return;
+    bellTimer.current = setTimeout(
+      () => {
+        bellTimer.current = null;
+        lastBellRefreshAt.current = Date.now();
+        // Re-checked at fire time — the panel may have closed during the gap.
+        if (openRef.current) refreshRef.current(false);
+      },
+      bellRefreshDelay(Date.now(), lastBellRefreshAt.current, BELL_REFRESH_MIN_GAP_MS),
+    );
+  };
+
   // Phone = a full-screen dialog; desktop = a docked column. Live (not the
   // module-load constant) so a resize across the breakpoint re-frames it.
   const phone = useIsPhone();
@@ -171,9 +195,24 @@ export function FilesPanel({
           // collapsed cache. No prefetch: collapsed first-level dirs refetch
           // on their next expand. The server throttle bounds the burst.
           refreshRef.current(false);
+        } else if (m.type === "fs_changed") {
+          // W.2: disk changed behind the UI — same refresh unit as turn-end
+          // (root + expanded; a new file in a collapsed, unfetched dir
+          // rightly causes no fetch), coalesced through the gap above. The
+          // hint isn't consulted: doorbell contract, refetch what you show.
+          onBell();
         }
       }),
     [subscribe],
+  );
+
+  // A pending bell refresh must not fire into an unmounted panel.
+  useEffect(
+    () => () => {
+      if (bellTimer.current) clearTimeout(bellTimer.current);
+      bellTimer.current = null;
+    },
+    [],
   );
 
   // A session switch means a different workspace — clear everything, expanded

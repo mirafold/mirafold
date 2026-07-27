@@ -286,6 +286,17 @@ type WireMsgBody =
       binary?: boolean;
       error?: string;
     }
+  // The live-tree doorbell (Phase W): something under the session root
+  // changed on disk. Pushed to every ATTACHED viewport — per-viewport
+  // plumbing like the fs_* replies, never buffered or sequenced (a bell
+  // about past disk state is useless on reattach; the panel refetches on
+  // open regardless). `paths` is a best-effort root-relative hint, capped
+  // at the source with `truncated` honest — and a truncated or absent hint
+  // still means exactly what an empty bell means: something changed,
+  // refetch what you show. Consumers must never require the hint; this is
+  // a doorbell, not a per-file event feed (the no-extensions decision is
+  // what makes that sufficient permanently).
+  | { type: "fs_changed"; paths?: string[]; truncated?: boolean }
   // Reply to a client ping — connection liveness only, never
   // buffered or sequenced (4.4).
   | { type: "pong" }

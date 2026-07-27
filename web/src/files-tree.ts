@@ -82,6 +82,14 @@ export function pruneDirStore(store: DirStore, keep: ReadonlySet<string>): DirSt
   return next;
 }
 
+/** How long a bell-triggered refresh must wait (W.2): immediately when the
+ *  last one is at least `gapMs` old, else the remainder of the gap — the
+ *  client-side coalescing that keeps a busy disk (bells are server-debounced
+ *  but each refresh spends one request per shown directory) from draining
+ *  the server's token bucket. Pure, for Tier-1. */
+export const bellRefreshDelay = (nowMs: number, lastRefreshMs: number, gapMs: number): number =>
+  Math.max(0, lastRefreshMs + gapMs - nowMs);
+
 /** The child-directory paths of one listing — what the open-panel prefetch
  *  walks (fetch the first level so expanding it is instant). Symlinks are
  *  leaves by kind (E2.1's rule), so only `dir` children qualify. */

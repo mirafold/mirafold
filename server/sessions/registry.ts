@@ -17,6 +17,7 @@ import type { CredentialKind } from "../provider-policy";
 import type { BangProc } from "../pty/pty";
 import { createLogger, verbose } from "../log";
 import { startWatch, type FsWatchHandle } from "./fs-watch";
+import { invalidateRepoStatusCache } from "./git";
 
 // Replay depth: enough to reconstruct a long working session; beyond it the
 // oldest messages fall off and a late viewport sees a truncated head.
@@ -324,15 +325,26 @@ export class SessionRegistry {
       if (afterSeq === undefined || (msg.seq ?? 0) > afterSeq) viewport(msg);
     }
     entry.viewports.add(viewport);
-    // First viewport in → the doorbell starts (W.1). The change signal's
-    // consumer is W.2's fs_changed; until that message exists the bell only
-    // traces under MIRAFOLD_DEBUG. Watcher failure degrades to Phase E
-    // behavior (turn-end refresh + the manual button) with one log line —
-    // never a crash, and a later fresh attach retries.
+    // First viewport in → the doorbell starts (W.1), and every ring fans an
+    // fs_changed to the ATTACHED viewports (W.2) — per-viewport plumbing
+    // like the fs_* replies, never through broadcast(): disk state is a
+    // query, not session history, so the bell must not enter the replay
+    // ring. Statuses are invalidated BEFORE the fan so a bell-triggered
+    // refetch can't be served a pre-change answer still inside its TTL.
+    // Watcher failure degrades to Phase E behavior (turn-end refresh + the
+    // manual button): one shell-composed notice to attached viewports, one
+    // log line, never a crash — and a later fresh first attach retries.
     if (entry.viewports.size === 1 && !entry.fsWatch) {
       entry.fsWatch = startWatch(
         entry.cwd,
         (change) => {
+          invalidateRepoStatusCache();
+          const msg: WireMsg = {
+            type: "fs_changed",
+            ...(change.paths.length ? { paths: change.paths } : {}),
+            ...(change.truncated ? { truncated: true } : {}),
+          };
+          for (const viewport of entry.viewports) viewport(msg);
           if (verbose) {
             createLogger(`session ${entry.id}`).debug(
               `fs change: ${change.paths.length} path(s)${change.truncated ? " (truncated)" : ""}`,
@@ -342,6 +354,11 @@ export class SessionRegistry {
         {
           onError: (err) => {
             entry.fsWatch = undefined;
+            const notice: WireMsg = {
+              type: "notice",
+              text: "Live file updates are unavailable — the Files panel still refreshes at turn end and with its refresh button.",
+            };
+            for (const viewport of entry.viewports) viewport(notice);
             createLogger(`session ${entry.id}`).error(
               `fs watcher stopped — the Explorer falls back to turn-end/manual refresh: ${errText(err)}`,
             );

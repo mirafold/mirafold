@@ -20,12 +20,17 @@ type RunResult =
   | { ok: true; stdout: Buffer }
   | { ok: false; notGit: boolean; code: number | null; stderr: string };
 
-/** One bounded git invocation in `root`. Buffer stdout — `show` can be binary. */
+/** One bounded git invocation in `root`. Buffer stdout — `show` can be binary.
+ *  `--no-optional-locks` because these are BACKGROUND reads over a watched
+ *  tree (Phase W): a plain `git status` may take `.git/index.lock` and
+ *  rewrite the index's stat cache — a write the watcher would hear, ringing
+ *  a bell whose refetch runs another status… our own reads must never feed
+ *  the doorbell. */
 const runGit = (root: string, args: string[]): Promise<RunResult> =>
   new Promise((resolve) => {
     execFile(
       "git",
-      ["-C", root, ...args],
+      ["--no-optional-locks", "-C", root, ...args],
       { timeout: GIT_TIMEOUT_MS, maxBuffer: GIT_MAX_BUFFER, encoding: "buffer" },
       (err, stdout, stderr) => {
         if (!err) return resolve({ ok: true, stdout });
@@ -273,12 +278,24 @@ const enqueue = <T>(job: () => Promise<T>): Promise<T> => {
 
 // Per-repo cache, keyed by repo root: the prefetch burst shares ONE status
 // subprocess per repo (concurrent callers coalesce on the cached promise).
-// The TTL is the only invalidation until Phase W's watcher signal exists —
-// short enough that a turn-end refresh reads fresh state, long enough to
-// cover the burst. Errors cache too: a broken repo shouldn't be re-probed
-// per request.
+// Invalidation is the TTL plus Phase W's watcher bell (below) — the TTL
+// stays short enough that a turn-end refresh reads fresh state even where
+// no watcher runs, long enough to cover the burst. Errors cache too: a
+// broken repo shouldn't be re-probed per request.
 const REPO_STATUS_TTL_MS = Number(process.env.FS_GIT_STATUS_TTL_MS ?? 3_000);
 const statusCache = new Map<string, { at: number; value: Promise<RepoStatus> }>();
+
+/**
+ * Drop every cached repo status — Phase W's watcher bell (W.2): disk just
+ * changed, so a bell-triggered refetch must read statuses fresh instead of
+ * being served a pre-change answer still inside its TTL. Global rather than
+ * per-session-root on purpose: a change often lands in a repo shared across
+ * views, re-statusing is one queued subprocess per repo, and the cache
+ * refills on the very next listing.
+ */
+export function invalidateRepoStatusCache(): void {
+  statusCache.clear();
+}
 
 export function repoStatus(repoRoot: string): Promise<RepoStatus> {
   const hit = statusCache.get(repoRoot);

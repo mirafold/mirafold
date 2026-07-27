@@ -1261,6 +1261,83 @@ test("E2.4: the Projects-root proof — lazy expands into two repos with per-rep
   }
 });
 
+test("W.2: the live tree — a write behind the UI's back appears with zero clicks; a collapsed dir's new file causes no fetch; the refresh button still works", async () => {
+  // A workspace the UI never touches directly: the test writes to disk and
+  // the tree must notice on its own (the doorbell → fs_changed → refetch).
+  const ws = mkdtempSync(path.join(os.tmpdir(), "e2e-live-"));
+  writeFileSync(path.join(ws, "top.txt"), "top\n");
+  mkdirSync(path.join(ws, "colly", "sub"), { recursive: true });
+  writeFileSync(path.join(ws, "colly", "sub", "inner.txt"), "inner\n");
+
+  const seed = new TestClient(d.port, { token: TOKEN });
+  await seed.opened();
+  await seed.type("agents");
+  seed.send({ type: "create", agent: "claude-code", cwd: ws } as ClientMsg);
+  const created = (await seed.type("session_created")) as { sessionId: string } & Record<string, unknown>;
+  const backUrl = page.url();
+  try {
+    await page.goto(`${base}/s/${created.sessionId}`);
+    await installFsRecorder(page);
+    await page.locator(".ab-files").click();
+    await page.waitForSelector(".files-file-row:has-text('top.txt')");
+
+    // The headline: a file written with NO interaction — no clicks, no agent
+    // turn — appears by itself (server debounce 400ms + one refetch ≪ this
+    // timeout; the claim is "you never need the button").
+    writeFileSync(path.join(ws, "fresh.txt"), "surprise\n");
+    await page.waitForSelector(".files-file-row:has-text('fresh.txt')", { timeout: 3_000 });
+
+    // A new file inside a collapsed, never-fetched dir: the bell rings, the
+    // refetch unit is root + EXPANDED dirs — so colly/sub is rightly never
+    // fetched and the file rightly not shown (it'd appear on expand).
+    writeFileSync(path.join(ws, "colly", "sub", "hidden.txt"), "quiet\n");
+    await page.waitForTimeout(2_200); // server debounce + client coalescing gap, settled
+    const frames = await fsSent(page);
+    assert.ok(
+      frames.every((m) => !(m.type === "fs_listdir" && m.path === "colly/sub")),
+      "a bell must not fetch a collapsed, unfetched dir",
+    );
+    assert.equal(
+      await page.locator(".files-file-row:has-text('hidden.txt')").count(),
+      0,
+      "nothing expanded shows the hidden file — correct",
+    );
+
+    // The refresh button is unchanged beside the bell: a click still
+    // refetches (fresh root request on the wire) and the tree stays whole.
+    const rootFetches = () =>
+      page.evaluate(
+        () =>
+          (window as unknown as { __fsSent: { type: string; path?: string }[] }).__fsSent.filter(
+            (m) => m.type === "fs_listdir" && m.path === "",
+          ).length,
+      );
+    const beforeClick = await rootFetches();
+    await page.locator(".files-refresh").click();
+    await page.waitForFunction(
+      (n) =>
+        (window as unknown as { __fsSent: { type: string; path?: string }[] }).__fsSent.filter(
+          (m) => m.type === "fs_listdir" && m.path === "",
+        ).length > n,
+      beforeClick,
+      { timeout: 5_000 },
+    );
+    await page.waitForSelector(".files-file-row:has-text('fresh.txt')");
+
+    // The lazy invariant survives the live tree: not one whole-tree request.
+    assert.ok(
+      (await fsSent(page)).every((m) => m.type !== "fs_list"),
+      "a whole-tree fs_list rode the live-tree flow",
+    );
+    await page.locator(".ab-files").click(); // close the panel for later tests
+  } finally {
+    seed.close();
+    await page.goto(backUrl);
+    await page.waitForSelector("textarea");
+    rmSync(ws, { recursive: true, force: true });
+  }
+});
+
 test("a notice in the engine's own words is badged; the shell's own words aren't", async () => {
   await page.locator("textarea").click();
   await page.keyboard.type("show me a notice");
