@@ -7,7 +7,11 @@
 // exclusion globs keep node_modules and .git/objects from consuming inotify
 // watches at all, while the REST of .git stays watched — HEAD/index/refs are
 // what move on a commit or branch switch, which changes statuses without
-// touching a single working file. Failure is fail-open to Phase E behavior:
+// touching a single working file. (That coverage holds when the session root
+// IS the repo root. A session scoped to a SUBDIRECTORY of a repo has its
+// `.git` above the watched root, so out-of-band commits ring nothing there;
+// turn-end refresh and the button remain the floor, as they are for every
+// missed event.) Failure is fail-open to Phase E behavior:
 // any error stops this watcher and reports once via onError; the turn-end
 // refresh and the manual button remain the floor.
 //
@@ -35,7 +39,12 @@ import watcher from "@parcel/watcher";
 const FS_WATCH_DEBOUNCE_MS = Number(process.env.FS_WATCH_DEBOUNCE_MS ?? 400);
 // The paths hint stays small on the wire (W.2); past the cap the bell rings
 // with `truncated` and the client refetches everything it shows anyway.
+// Capped on COUNT and BYTES both (2026-07-26 audit): a path may be thousands
+// of characters, so a count-only cap would let one bell carry a quarter
+// megabyte — bandwidth a phone viewport pays for over the relay, every
+// window. Real projects never approach either bound.
 const FS_WATCH_MAX_PATHS = Number(process.env.FS_WATCH_MAX_PATHS ?? 64);
+const FS_WATCH_MAX_PATH_BYTES = Number(process.env.FS_WATCH_MAX_PATH_BYTES ?? 16_000);
 
 // Subtrees whose churn nobody browses — excluded so they never consume
 // watches (the reason this dependency exists; Node's recursive fs.watch has
@@ -70,14 +79,21 @@ export type FsWatchHandle = {
 export function startWatch(
   root: string,
   onChange: (change: FsChange) => void,
-  opts: { debounceMs?: number; maxPaths?: number; onError?: (err: unknown) => void } = {},
+  opts: {
+    debounceMs?: number;
+    maxPaths?: number;
+    maxPathBytes?: number;
+    onError?: (err: unknown) => void;
+  } = {},
 ): FsWatchHandle {
   const debounceMs = opts.debounceMs ?? FS_WATCH_DEBOUNCE_MS;
   const maxPaths = opts.maxPaths ?? FS_WATCH_MAX_PATHS;
+  const maxPathBytes = opts.maxPathBytes ?? FS_WATCH_MAX_PATH_BYTES;
   let stopped = false;
   let sub: watcher.AsyncSubscription | undefined;
   let timer: NodeJS.Timeout | undefined;
   const pending = new Set<string>();
+  let pendingBytes = 0;
   let truncated = false;
   // The resubscribe latch (see the header): a window that saw a new
   // directory needs a fresh crawl; one runs at a time, and a need that
@@ -156,6 +172,7 @@ export function startWatch(
     const paths = [...pending].sort();
     const wasTruncated = truncated;
     pending.clear();
+    pendingBytes = 0;
     truncated = false;
     const needResub = sawNewDir;
     sawNewDir = false;
@@ -167,16 +184,19 @@ export function startWatch(
     if (stopped) return;
     if (err) return fail(err);
     for (const e of events) {
-      // Checked on EVERY event — before the hint cap can cut the loop short —
+      // Checked on EVERY event — before the hint caps can cut the loop short —
       // because missing one created dir mutes its subtree for good.
       if (!sawNewDir && e.type === "create" && isDir(e.path)) sawNewDir = true;
-      if (pending.size >= maxPaths) {
+      if (pending.size >= maxPaths || pendingBytes >= maxPathBytes) {
         truncated = true;
         continue;
       }
       const rel = path.relative(real, e.path).split(path.sep).join("/");
       if (rel.startsWith("..")) continue; // never happens; never trust it anyway
-      pending.add(rel === "" ? "." : rel);
+      const hint = rel === "" ? "." : rel;
+      if (pending.has(hint)) continue; // a repeated path costs no new budget
+      pending.add(hint);
+      pendingBytes += Buffer.byteLength(hint, "utf8");
     }
     if (timer === undefined) timer = setTimeout(fire, debounceMs);
   };

@@ -1,9 +1,9 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fixtureGit as git } from "../testing/itest-harness";
 import { startWatch, type FsChange } from "./fs-watch";
 
 // W.1 against the real filesystem (real inotify, real git): one coalesced
@@ -15,13 +15,6 @@ import { startWatch, type FsChange } from "./fs-watch";
 
 const DEBOUNCE = 150;
 const settle = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-const git = (cwd: string, ...args: string[]) =>
-  execFileSync(
-    "git",
-    ["-C", cwd, "-c", "user.email=t@t.t", "-c", "user.name=t", "-c", "commit.gpgsign=false", ...args],
-    { stdio: "pipe" },
-  );
 
 type Watched = {
   root: string;
@@ -36,7 +29,7 @@ const stops: (() => void)[] = [];
 /** A fresh temp root under watch, subscription confirmed live. */
 async function watchTemp(
   prefix: string,
-  opts: { maxPaths?: number; debounceMs?: number } = {},
+  opts: { maxPaths?: number; maxPathBytes?: number; debounceMs?: number } = {},
 ): Promise<Watched> {
   const root = mkdtempSync(path.join(os.tmpdir(), prefix));
   roots.push(root);
@@ -45,6 +38,7 @@ async function watchTemp(
   const handle = startWatch(root, (c) => changes.push(c), {
     debounceMs: opts.debounceMs ?? DEBOUNCE,
     ...(opts.maxPaths !== undefined ? { maxPaths: opts.maxPaths } : {}),
+    ...(opts.maxPathBytes !== undefined ? { maxPathBytes: opts.maxPathBytes } : {}),
     onError: (e) => errors.push(e),
   });
   stops.push(handle.stop);
@@ -110,6 +104,25 @@ test("W.1: the paths hint caps honestly — truncated, never silently cut", asyn
   await untilBell(w);
   assert.equal(w.changes[0].paths.length, 5);
   assert.equal(w.changes[0].truncated, true);
+});
+
+test("W.1: long names trip the BYTE budget well before the count budget (audit)", async () => {
+  // Count alone would let 64 four-thousand-character paths ride one bell —
+  // a quarter megabyte a phone viewport pays for over the relay. Names here
+  // are 200 bytes each, so a 1,000-byte budget must cut at ~5 of them even
+  // though the count cap (20) is nowhere near.
+  const w = await watchTemp("fsw-bytes-", { maxPaths: 20, maxPathBytes: 1_000 });
+  const longName = (i: number) => `${String(i).padStart(3, "0")}-${"n".repeat(196)}.txt`;
+  for (let i = 0; i < 15; i++) writeFileSync(path.join(w.root, longName(i)), "x\n");
+  await untilBell(w);
+
+  const hint = w.changes[0];
+  assert.equal(hint.truncated, true, "the byte budget must report honestly");
+  assert.ok(hint.paths.length < 20, `count cap was not what cut it (${hint.paths.length} paths)`);
+  const bytes = hint.paths.reduce((n, p) => n + Buffer.byteLength(p, "utf8"), 0);
+  assert.ok(bytes <= 1_200, `hint carried ${bytes} bytes past a 1,000-byte budget`);
+  // The bell itself is unaffected — a truncated hint still means "refetch".
+  assert.ok(hint.paths.length > 0, "a truncated hint still names what it could");
 });
 
 test("W.1: a git commit with no working-file change rings; .git/objects never reports", async () => {
