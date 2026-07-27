@@ -2515,6 +2515,65 @@ each into prompt-sized pieces when the phase actually opens.)*
 
 ---
 
+## Phase SG — The Mirafold signature, shell side (opened 2026-07-27; adopts what the consumer app defines)
+
+Origin: an outside design critique (2026-07-27) Kyle brought in and agreed
+with in substance — the current visual language is competent and clean but
+not distinctive: crop the logo from a screenshot and nothing says Mirafold.
+The fix is a **signature** — a small rule set for how Mirafold-authored UI
+looks and assembles (motion grammar, geometry, construction). The consumer
+app is the surface where it matters most (consumers judge on feel; shared
+screenshots are that product's growth loop), so the signature is DEFINED
+there — a design sitting with Kyle producing a written spec, `SIGNATURE.md`
+(`../mirafold-chat/PLAN.md` Phase 6) — and ADOPTED here afterward. This
+phase is that adoption. It gates nothing in Phase R and no launch step.
+
+*Amendment (2026-07-27, later the same day): a second, independent review —
+a true target consumer shown dev-product screenshots — judged the
+cross-product identity ALREADY coherent and retracted the "lacks identity"
+concern. This phase's role is unchanged (adopt the motion grammar at quiet
+amplitude once the spec exists), but its urgency is lower than the origin
+paragraph implies: the surviving critique is that the CONSUMER demos should
+sell the transformation rather than the result, which lands in the consumer
+repo and in demo/video selection, not here.*
+
+Two bounds, both structural:
+
+- **Mirafold-authored surfaces ONLY.** The signature applies to the
+  registry components the render tools paint and to shell-owned chrome
+  where Mirafold itself speaks. The terminal-parity surfaces are EXEMPT on
+  principle: the faithful-skin rule (a core requirement) makes matching the
+  real agent the spec there, and no brand language may compete with it.
+- **Quiet amplitude here.** The spec carries an intensity dial: the
+  consumer app runs it full; this repo runs the same grammar at the quiet
+  setting — developers in a work loop read added motion as added latency.
+  Same identity, lower volume.
+
+What the signature is NOT: not a theme change (all seven themes and every
+locked theme decision stand untouched — the signature is motion + geometry +
+construction, orthogonal to palette), not new chrome, and never a
+`prefers-reduced-motion` violation.
+
+Consistency mechanism: the renderer here and the consumer app's renderer
+are deliberate copies, not a shared package (that repo's copied-not-shared
+rule, which stands). Consistency rides the SPEC — `SIGNATURE.md` is
+authored in the consumer repo and a dated copy is hand-kept here, the same
+convention as the relay contract mirror — and a signature change touches
+both repos in the same sitting.
+
+- [ ] **Step SG.1 — Adopt the spec** *(blocked until the consumer app's
+  signature sitting produces it)*: bring the dated `SIGNATURE.md` copy in;
+  apply the grammar to the registry components' entrances/assembly and
+  construction at the spec's quiet-amplitude setting.
+- [ ] **Step SG.2 — Verify nothing else moved:** terminal-parity surfaces
+  provably untouched (existing fidelity e2e re-run), the reduced-motion
+  kill still total, all seven themes unaffected, full Tier-1/2/3 green.
+- Done when: a generated component here and the same component in the
+  consumer app read as one family at a glance, the parity surfaces are
+  demonstrably unchanged, and Kyle has looked at both and said so.
+
+---
+
 ## Stretch goals (unscheduled — polish, no milestone gates on these)
 
 Pick one up only when the phases above are quiet.
