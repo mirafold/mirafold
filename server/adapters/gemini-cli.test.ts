@@ -63,6 +63,35 @@ function makeSession(opts: Partial<ConstructorParameters<typeof GeminiCliSession
   return { s, msgs, turnEnds, awaitTurnEnd };
 }
 
+test("an unparseable .gemini/settings.json is backed up beside the rewrite, a valid one is merged", async () => {
+  // Unparseable: rewritten, but the user's original bytes land in the backup.
+  const ws = mkdtempSync(path.join(tmp, "ws-"));
+  const dir = path.join(ws, ".gemini");
+  const file = path.join(dir, "settings.json");
+  const garbage = '{ "theirs": true, // not JSON\n';
+  const { mkdirSync } = await import("node:fs");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(file, garbage);
+  const a = new GeminiCliSession({ workspaceDir: ws });
+  const rewritten = JSON.parse(readFileSync(file, "utf8"));
+  assert.equal(rewritten.security.auth.selectedType, "gemini-api-key");
+  assert.equal(readFileSync(`${file}.mirafold-backup`, "utf8"), garbage);
+  a.close();
+
+  // Valid: merged in place, their keys preserved, no backup written.
+  const ws2 = mkdtempSync(path.join(tmp, "ws-"));
+  const file2 = path.join(ws2, ".gemini", "settings.json");
+  mkdirSync(path.dirname(file2), { recursive: true });
+  writeFileSync(file2, JSON.stringify({ theirs: 1, mcpServers: { own: { command: "x" } } }));
+  const b = new GeminiCliSession({ workspaceDir: ws2 });
+  const merged = JSON.parse(readFileSync(file2, "utf8"));
+  assert.equal(merged.theirs, 1);
+  assert.equal(merged.mcpServers.own.command, "x");
+  assert.equal(merged.security.auth.selectedType, "gemini-api-key");
+  assert.throws(() => readFileSync(`${file2}.mirafold-backup`));
+  b.close();
+});
+
 function fixture(name: string, lines: (Record<string, unknown> | string)[]) {
   const file = path.join(tmp, name);
   writeFileSync(

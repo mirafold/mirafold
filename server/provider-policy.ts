@@ -17,6 +17,19 @@ import type { AgentName } from "./protocol";
 //       login or to route requests through Free, Pro, or Max plan credentials
 //       on behalf of their users." (Feb 2026 docs clarification; server-side
 //       token blocking live since Jan 2026.)
+//     - 2026-07-27 research note (external review; conclusion UNCHANGED —
+//       subscription stays blocked): Anthropic's posture moved twice more in
+//       H1 2026 — an April 2026 announcement extended the block to "all
+//       third-party harnesses" (hit OpenClaw, which made legitimate calls),
+//       then a June 15 partial reinstatement gave paid plans a dedicated
+//       monthly "Agent SDK"/programmatic credit pool (~$20–$200/mo by tier)
+//       spendable on third-party agents, with ordinary subscription quota
+//       reserved for official surfaces. Whether a faithful re-skin driving
+//       the official binary could legitimately ride that credit pool has no
+//       published answer; Anthropic's docs invite contacting them about
+//       permitted auth methods. Fold into the R.7 launch-week re-check as a
+//       possible OPPORTUNITY (a sanctioned subscription path), never a
+//       pre-answer — until verified in writing, this row stays blocked.
 //     - API key: allowed locally; relay = API key only.
 //   Google Gemini (gemini-cli), closed: subscription/OAuth isn't even a path
 //     anymore — Google stopped serving Gemini CLI requests for individual

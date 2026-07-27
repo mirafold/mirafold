@@ -96,10 +96,17 @@ export class GeminiCliSession implements AgentSession {
     const file = path.join(dir, "settings.json");
     let cfg: Record<string, any> = {};
     if (existsSync(file)) {
+      const raw = readFileSync(file, "utf8");
       try {
-        cfg = JSON.parse(readFileSync(file, "utf8"));
+        cfg = JSON.parse(raw);
       } catch {
-        /* clobber an unparseable file rather than fail the session */
+        // Rewrite an unparseable file rather than fail the session — but it's
+        // the user's file, so keep their bytes beside it and say so.
+        const backup = `${file}.mirafold-backup`;
+        writeFileSync(backup, raw);
+        createLogger("gemini-cli").warn(
+          `existing ${file} is not valid JSON — rewriting it (original saved to ${backup})`,
+        );
       }
     }
     cfg.security = { ...cfg.security, auth: { ...cfg.security?.auth, selectedType: "gemini-api-key" } };

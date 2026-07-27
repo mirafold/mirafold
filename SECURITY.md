@@ -48,6 +48,16 @@ for anything consequential, and the fence escaping in
 `server/sessions/connection.ts` keeps command output from faking its way
 out of its transcript block.
 
+**The pairing QR on screen IS the remote credential.** The connect-a-device
+QR encodes the pairing code, and possession of that code is full remote
+drive of the session (that's its job — the code is ~128 bits, travels only
+in the URL fragment, and short pinned codes are refused). The residual is
+optical, not cryptographic: anyone who can see your screen while the QR is
+up — screen sharing, a recording, a photo, a meeting projector — can pair.
+Treat the QR like a password field: show it only to the device you're
+pairing, and relaunch the daemon (which mints a fresh code) if it may have
+been captured.
+
 **The `.env` guard is path-based; symlinks are the accepted residual.**
 The daemon denies its auto-allowed read-only tools (Read, NotebookRead,
 Grep, Glob) access to its own `.env`/`.env.local` by resolved path —
