@@ -45,7 +45,10 @@ const BUFFER_CAP = 4000;
 const PUSH = BUFFER_CAP + 500; // exceed the cap so eviction fires
 
 function freshSession() {
-  const reg = new SessionRegistry(MOCK_BACKEND);
+  // deltaCoalesceMs 0: deltas pass straight through, so these tests can
+  // drive broadcast() by hand and inspect state between synchronous calls.
+  // The coalescing window itself has its own tests below.
+  const reg = new SessionRegistry(MOCK_BACKEND, 0);
   const dir = mkdtempSync(path.join(os.tmpdir(), "genui-reg-"));
   const entry = reg.create({ cwd: dir });
   assert.equal(entry.buffer.length, 0); // create() streams nothing
@@ -207,6 +210,91 @@ test("Q.3 canResume on a small (un-evicted) buffer: seq 0 replays from the very 
   reg.attach(entry, (m) => seen.push(m.seq!), 0);
   assert.deepEqual(seen, [1, 2, 3, 4, 5]);
   reg.end(entry.id);
+});
+
+// ---- Delta coalescing: consecutive text/thinking deltas merge into one
+// buffered WireMsg (its text the concatenation), flushed by the window timer
+// or by any other message arriving — order preserved either way.
+
+function coalescingSession(windowMs: number) {
+  const reg = new SessionRegistry(MOCK_BACKEND, windowMs);
+  const dir = mkdtempSync(path.join(os.tmpdir(), "genui-reg-"));
+  const entry = reg.create({ cwd: dir });
+  const seen: WireMsg[] = [];
+  reg.attach(entry, (m) => seen.push(m));
+  return { reg, entry, seen };
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+test("coalescing: consecutive text deltas merge into ONE message — ring, viewport, and seq agree", async () => {
+  const { reg, entry, seen } = coalescingSession(5);
+  reg.broadcast(entry, { type: "text_delta", text: "a" });
+  reg.broadcast(entry, { type: "text_delta", text: "b" });
+  reg.broadcast(entry, { type: "text_delta", text: "c" });
+  assert.equal(entry.buffer.length, 0, "nothing enters the ring inside the window");
+  await sleep(25);
+  assert.equal(entry.buffer.length, 1);
+  assert.deepEqual(entry.buffer[0], { type: "text_delta", text: "abc", seq: 1 });
+  assert.deepEqual(seen, [{ type: "text_delta", text: "abc", seq: 1 }]);
+  // The byte accounting counts the MERGED message, nothing else.
+  assert.equal(entry.bufferBytes, JSON.stringify(entry.buffer[0]).length);
+  reg.end(entry.id);
+});
+
+test("coalescing: any non-delta message flushes the window first — order preserved, no timer needed", () => {
+  const { reg, entry, seen } = coalescingSession(60_000);
+  reg.broadcast(entry, { type: "text_delta", text: "hel" });
+  reg.broadcast(entry, { type: "text_delta", text: "lo" });
+  reg.broadcast(entry, { type: "turn_end" });
+  assert.deepEqual(
+    seen.map((m) => m.type),
+    ["text_delta", "turn_end"],
+  );
+  assert.equal((seen[0] as { text: string }).text, "hello");
+  assert.deepEqual(
+    seen.map((m) => m.seq),
+    [1, 2],
+    "the merged delta keeps its stream position ahead of the flusher",
+  );
+  reg.end(entry.id);
+});
+
+test("coalescing: a delta of the OTHER type flushes too — thinking and text never merge together", () => {
+  const { reg, entry, seen } = coalescingSession(60_000);
+  reg.broadcast(entry, { type: "thinking_delta", text: "hm" });
+  reg.broadcast(entry, { type: "thinking_delta", text: "m." });
+  reg.broadcast(entry, { type: "text_delta", text: "Right" });
+  reg.broadcast(entry, { type: "turn_end" });
+  assert.deepEqual(seen, [
+    { type: "thinking_delta", text: "hmm.", seq: 1 },
+    { type: "text_delta", text: "Right", seq: 2 },
+    { type: "turn_end", seq: 3 },
+  ]);
+  reg.end(entry.id);
+});
+
+test("coalescing: attach, detach, and end flush the open window", () => {
+  const { reg, entry, seen } = coalescingSession(60_000);
+  reg.broadcast(entry, { type: "text_delta", text: "tail" });
+  // A new viewport's replay must include the held tail.
+  const replayed: WireMsg[] = [];
+  const vp = (m: WireMsg) => replayed.push(m);
+  reg.attach(entry, vp);
+  assert.deepEqual(replayed, [{ type: "text_delta", text: "tail", seq: 1 }]);
+  assert.deepEqual(seen, replayed, "the original viewport got the flush live");
+  // Detach flushes whatever is pending at that moment.
+  reg.broadcast(entry, { type: "text_delta", text: " end" });
+  reg.detach(entry, vp);
+  assert.equal((seen.at(-1) as { text: string }).text, " end");
+  // End flushes before session_ended reaches the survivors.
+  reg.broadcast(entry, { type: "text_delta", text: "bye" });
+  reg.end(entry.id);
+  assert.deepEqual(
+    seen.slice(-2).map((m) => m.type),
+    ["text_delta", "session_ended"],
+  );
+  assert.equal((seen.at(-2) as { text: string }).text, "bye");
 });
 
 // ---- Phase M.1: cockpit metadata derived in broadcast() --------------------

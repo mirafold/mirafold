@@ -157,10 +157,25 @@ async function probeOrigin(origin: string, runtimeGuess: string): Promise<LocalS
 }
 
 let cache: LocalServer[] = [];
+let cacheAt = 0;
+let inflight: Promise<LocalServer[]> | undefined;
+
+// One sweep answers every caller inside this window: each open onboarding
+// card polls refresh_agents on its own clock, and a sweep is a real HTTP
+// probe per target. The TTL stays short enough that a freshly started
+// server still appears within one poll or two — a longer window would turn
+// the picker's "start it and it appears here" promise into a wait.
+const PROBE_TTL_MS = Number(process.env.MIRAFOLD_LOCAL_PROBE_TTL_MS ?? 5_000);
 
 /** The last probe's result, synchronously — what hello-building reads. Empty
  *  until the first probe lands; the daemon never waits on discovery. */
 export function cachedLocalServers(): LocalServer[] {
+  return cache;
+}
+
+async function sweep(targets: { origin: string; runtime: string }[]): Promise<LocalServer[]> {
+  const results = await Promise.all(targets.map((t) => probeOrigin(t.origin, t.runtime)));
+  cache = results.filter((r): r is LocalServer => r !== undefined);
   return cache;
 }
 
@@ -169,11 +184,17 @@ export function cachedLocalServers(): LocalServer[] {
  * cache. Bounded by PROBE_TIMEOUT_MS regardless of hung sockets; never
  * throws. Callers fire-and-forget at startup and re-run on N.3's
  * `refresh_agents` — a probe must never delay startup or error a session.
+ * The default sweep is TTL-cached and coalesces concurrent callers onto one
+ * in-flight sweep; explicit `targets` (tests) always probe.
  */
 export async function probeLocalServers(
-  targets: { origin: string; runtime: string }[] = probeTargets(),
+  targets?: { origin: string; runtime: string }[],
 ): Promise<LocalServer[]> {
-  const results = await Promise.all(targets.map((t) => probeOrigin(t.origin, t.runtime)));
-  cache = results.filter((r): r is LocalServer => r !== undefined);
-  return cache;
+  if (targets) return sweep(targets);
+  if (Date.now() - cacheAt < PROBE_TTL_MS) return cache;
+  inflight ??= sweep(probeTargets()).finally(() => {
+    cacheAt = Date.now();
+    inflight = undefined;
+  });
+  return inflight;
 }

@@ -166,3 +166,26 @@ test("codexConfigProvider reads CODEX_HOME/config.toml; a missing file is no pro
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("the config read is briefly cached — and a config APPEARING is never masked by a cached miss", () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "genui-codex-home-"));
+  const saved = process.env.CODEX_HOME;
+  try {
+    process.env.CODEX_HOME = dir;
+    assert.equal(codexConfigProvider(), undefined);
+    writeFileSync(
+      path.join(dir, "config.toml"),
+      'model_provider = "ollama"\n[model_providers.ollama]\nbase_url = "http://localhost:11434/v1"\n',
+    );
+    // A missing file is never cached, so the file appearing shows at once.
+    assert.equal(codexConfigProvider()?.provider, "ollama");
+    // Inside the TTL the cached text answers — this is the poll-smoothing
+    // contract itself: remove the cache and this assertion fails.
+    writeFileSync(path.join(dir, "config.toml"), 'model_provider = "other"\n');
+    assert.equal(codexConfigProvider()?.provider, "ollama");
+  } finally {
+    if (saved === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = saved;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

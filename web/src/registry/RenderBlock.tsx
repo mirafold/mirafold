@@ -1,4 +1,4 @@
-import { Component as ReactComponent, type ComponentType, type ReactNode } from "react";
+import { Component as ReactComponent, memo, useMemo, type ComponentType, type ReactNode } from "react";
 import type { Action } from "@protocol";
 import { clientSchemas, type ComponentName } from "@registry-spec";
 import { registry } from "./index";
@@ -45,7 +45,7 @@ class RenderBoundary extends ReactComponent<
   }
 }
 
-export function RenderBlock({
+export const RenderBlock = memo(function RenderBlock({
   component,
   props,
   renderId,
@@ -63,10 +63,12 @@ export function RenderBlock({
   // Tolerant twin, not the strict source schema (R.4h): a newer daemon's
   // extra props must strip, not fail this whole component into the fallback.
   const schema = clientSchemas[name];
-  if (!Impl || !schema) {
+  // Re-parsed only when the props object changes — an update-in-place render
+  // arrives as a new props object, everything else re-renders with the same one.
+  const parsed = useMemo(() => schema?.safeParse(props), [schema, props]);
+  if (!Impl || !schema || !parsed) {
     return <Fallback component={component} props={props} reason="unknown component" />;
   }
-  const parsed = schema.safeParse(props);
   if (!parsed.success) {
     return <Fallback component={component} props={props} reason="invalid props" />;
   }
@@ -79,4 +81,4 @@ export function RenderBlock({
       </ActionContext.Provider>
     </RenderBoundary>
   );
-}
+});

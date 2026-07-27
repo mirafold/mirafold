@@ -115,11 +115,25 @@ export function parseCodexDefaultProvider(toml: string): CodexConfigProvider | u
   return { provider: defaultProvider, ...(baseUrl ? { baseUrl } : {}) };
 }
 
+// Short-lived read cache: onboarding's open-picker poll re-derives the whole
+// backend menu every few seconds, and one pass reads this file several times.
+// One read serves a pass; an edited config still shows within seconds — the
+// TTL must stay short, this is a poll-smoother, never a boot-time snapshot.
+// A missing file is never cached, so a config appearing shows immediately.
+const CONFIG_TTL_MS = Number(process.env.CODEX_CONFIG_TTL_MS ?? 2_000);
+let configCache: { file: string; at: number; text: string } | undefined;
+
 function readConfig(): string | undefined {
-  const dir = process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex");
+  const file = path.join(process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex"), "config.toml");
+  if (configCache && configCache.file === file && Date.now() - configCache.at < CONFIG_TTL_MS) {
+    return configCache.text;
+  }
   try {
-    return readFileSync(path.join(dir, "config.toml"), "utf8");
+    const text = readFileSync(file, "utf8");
+    configCache = { file, at: Date.now(), text };
+    return text;
   } catch {
+    configCache = undefined;
     return undefined;
   }
 }

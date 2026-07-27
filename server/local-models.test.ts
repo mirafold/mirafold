@@ -56,6 +56,36 @@ const OLLAMA_TAGS = JSON.stringify({
 });
 const V1_MODELS = JSON.stringify({ data: [{ id: "qwen/qwen3-8b" }] });
 
+test("poll smoothing: the default sweep is TTL-cached and coalesced; explicit targets always probe", async () => {
+  let hits = 0;
+  await withServer(
+    { "/api/tags": () => (hits++, OLLAMA_TAGS), "/v1/models": V1_MODELS },
+    async (origin) => {
+      const saved = {
+        discovery: process.env.MIRAFOLD_LOCAL_DISCOVERY,
+        endpoints: process.env.MIRAFOLD_LOCAL_ENDPOINTS,
+      };
+      process.env.MIRAFOLD_LOCAL_DISCOVERY = "off"; // never the real well-known ports
+      process.env.MIRAFOLD_LOCAL_ENDPOINTS = origin;
+      try {
+        const [a, b] = await Promise.all([probeLocalServers(), probeLocalServers()]);
+        assert.equal(hits, 1, "concurrent default sweeps coalesce onto one probe");
+        assert.deepEqual(a, b);
+        const cached = await probeLocalServers();
+        assert.equal(hits, 1, "inside the TTL the cached sweep answers");
+        assert.deepEqual(cached, a);
+        await probeLocalServers([{ origin, runtime: "custom" }]);
+        assert.equal(hits, 2, "explicit targets bypass the TTL");
+      } finally {
+        if (saved.discovery === undefined) delete process.env.MIRAFOLD_LOCAL_DISCOVERY;
+        else process.env.MIRAFOLD_LOCAL_DISCOVERY = saved.discovery;
+        if (saved.endpoints === undefined) delete process.env.MIRAFOLD_LOCAL_ENDPOINTS;
+        else process.env.MIRAFOLD_LOCAL_ENDPOINTS = saved.endpoints;
+      }
+    },
+  );
+});
+
 test("N.2: an Ollama fixture (native /api/tags) → both dialects, tag-listed models", async () => {
   await withServer({ "/api/tags": OLLAMA_TAGS, "/v1/models": V1_MODELS }, async (origin) => {
     const found = await probeLocalServers([{ origin, runtime: "custom" }]);

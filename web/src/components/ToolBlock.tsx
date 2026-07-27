@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import { diffLines } from "../diff";
 import { DiffLines } from "../registry/Diff";
 
@@ -9,7 +9,7 @@ import { DiffLines } from "../registry/Diff";
  * everything else as pretty JSON — followed by the result. Errors arrive
  * expanded. While the result is pending the row pulses.
  */
-export function ToolBlock({
+export const ToolBlock = memo(function ToolBlock({
   name,
   detail,
   input,
@@ -60,7 +60,7 @@ export function ToolBlock({
       )}
     </div>
   );
-}
+});
 
 export function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;

@@ -14,12 +14,27 @@ import { codexConfigProvider, codexProviders, type CodexProviderEntry } from "./
 export type { AgentName, AgentSession, Backend } from "./types";
 export { errText } from "./types";
 
+// Credential probes ride onboarding's open-picker poll, several per pass —
+// each path's answer is held briefly so a pass costs one stat per file. The
+// TTL must stay short: a fresh login (or logout) still shows within a couple
+// of seconds, which is the poll's whole point.
+const CRED_PROBE_TTL_MS = Number(process.env.CRED_PROBE_TTL_MS ?? 2_000);
+const credProbeCache = new Map<string, { at: number; value: boolean }>();
+
 /** Does `<$envDir | ~/subdir>/file` exist — the shape a terminal login writes
  *  (Claude's `.credentials.json`, Codex's `auth.json`)? `envDir` is each agent's
  *  own override for its config dir (the itest harness points it at an empty
  *  dir to force the mock). */
 function loginFileExists(envDir: string | undefined, subdir: string, file: string): boolean {
-  return existsSync(path.join(envDir ?? path.join(os.homedir(), subdir), file));
+  const p = path.join(envDir ?? path.join(os.homedir(), subdir), file);
+  const hit = credProbeCache.get(p);
+  if (hit && Date.now() - hit.at < CRED_PROBE_TTL_MS) return hit.value;
+  // Keys are a handful of real config paths; the guard only caps the
+  // pathological case (a long-lived process cycling override dirs).
+  if (credProbeCache.size > 64) credProbeCache.clear();
+  const value = existsSync(p);
+  credProbeCache.set(p, { at: Date.now(), value });
+  return value;
 }
 
 /**

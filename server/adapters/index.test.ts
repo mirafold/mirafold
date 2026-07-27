@@ -76,6 +76,19 @@ test("claude-code: a subscription login's credentials file alone → BLOCKED, no
   });
 });
 
+test("credential probes are briefly cached — a second look inside the TTL serves the first answer", () => {
+  withTempDir((dir) => {
+    withEnv({ CLAUDE_CONFIG_DIR: dir }, () => {
+      assert.equal(claude().live, false);
+      writeFileSync(path.join(dir, ".credentials.json"), "{}");
+      // Inside the TTL the cached probe stands (remove the cache and this
+      // fails); the login shows on the first probe after it expires — the
+      // window is a poll-smoother, short by design.
+      assert.notEqual(claude().blocked, true);
+    });
+  });
+});
+
 test("claude-code: an Anthropic API key (or auth token) is live and not blocked", () => {
   withTempDir((empty) => {
     for (const key of ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"]) {

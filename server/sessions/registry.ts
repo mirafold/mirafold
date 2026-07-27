@@ -41,6 +41,16 @@ function msgBytes(msg: WireMsg): number {
 }
 // A session with no viewports survives this long, then dies for real.
 const IDLE_TIMEOUT_MS = Number(process.env.SESSION_IDLE_TIMEOUT_MS ?? 4 * 60 * 60_000);
+// Streamed deltas are merged inside this window before they enter the
+// session stream: one broadcast WireMsg whose text is the concatenation of
+// the merged deltas — the replay ring, local viewports, and the relay's
+// sealed frames all carry the merged message, and byte accounting sees only
+// what was actually buffered. Any OTHER message flushes the window first, so
+// the stream keeps the adapter's exact order. 33ms holds a couple of mock
+// chunks per flush (12–14ms pacing), so demo streaming still reads as a
+// stream. 0 disables merging — every delta passes straight through
+// synchronously; tests inject their own window via the constructor.
+const DELTA_COALESCE_MS = Number(process.env.DELTA_COALESCE_MS ?? 33);
 // Cap on the fleet's pending-permission MIRROR (2026-07-24 audit): a flooded
 // session — a hostile or steered model spamming permissioned tool calls —
 // must not grow watcher snapshots without bound (500 asks × full detail ≈
@@ -127,6 +137,11 @@ export type SessionEntry = {
   activity?: { label: string; since: number };
   permissions: { id: string; tool: string; detail: string; askedAt: number }[];
   usage?: { inputTokens: number; outputTokens: number; costUsd?: number };
+  // The open delta-coalescing window (DELTA_COALESCE_MS): consecutive
+  // same-type deltas accumulate here until the timer — or any other
+  // message — flushes them as one WireMsg.
+  pendingDelta?: Extract<WireMsg, { type: "text_delta" | "thinking_delta" }>;
+  deltaTimer?: NodeJS.Timeout;
 };
 
 /**
@@ -159,7 +174,12 @@ export class SessionRegistry {
 
   // Which agent every session in this registry runs, resolved once from
   // config (Phase P.1). The agent is chosen here, not hardcoded downstream.
-  constructor(private backend: Backend = resolveBackend()) {}
+  // `deltaCoalesceMs` is the delta-merge window; 0 = no merging (tests that
+  // drive broadcast() by hand and inspect state between calls pass 0).
+  constructor(
+    private backend: Backend = resolveBackend(),
+    private deltaCoalesceMs: number = DELTA_COALESCE_MS,
+  ) {}
 
   create(opts?: { cwd?: string; agent?: AgentName; backend?: Backend }): SessionEntry {
     if (this.entries.size >= MAX_SESSIONS) {
@@ -214,8 +234,44 @@ export class SessionRegistry {
     return this.entries.get(id);
   }
 
-  /** Buffer a message and fan it out to every attached viewport. */
+  /**
+   * Buffer a message and fan it out to every attached viewport. Consecutive
+   * text/thinking deltas merge inside the coalescing window into one WireMsg
+   * whose text is their concatenation; any other message — and a delta of
+   * the other type — flushes the window first, so the buffered stream keeps
+   * the adapter's exact order.
+   */
   broadcast(entry: SessionEntry, msg: WireMsg) {
+    if (
+      this.deltaCoalesceMs > 0 &&
+      (msg.type === "text_delta" || msg.type === "thinking_delta")
+    ) {
+      const pending = entry.pendingDelta;
+      if (pending && pending.type === msg.type) {
+        pending.text += msg.text;
+        return;
+      }
+      this.flushDeltas(entry);
+      entry.pendingDelta = { type: msg.type, text: msg.text };
+      entry.deltaTimer = setTimeout(() => this.flushDeltas(entry), this.deltaCoalesceMs);
+      entry.deltaTimer.unref();
+      return;
+    }
+    this.flushDeltas(entry);
+    this.deliver(entry, msg);
+  }
+
+  /** Deliver whatever delta text the open window holds, in stream position. */
+  private flushDeltas(entry: SessionEntry) {
+    clearTimeout(entry.deltaTimer);
+    entry.deltaTimer = undefined;
+    const pending = entry.pendingDelta;
+    if (!pending) return;
+    entry.pendingDelta = undefined;
+    this.deliver(entry, pending);
+  }
+
+  private deliver(entry: SessionEntry, msg: WireMsg) {
     // The likeliest live failures (bad key, engine died, CLI missing)
     // arrive here as adapter-emitted `error` WireMsgs and used to reach only
     // the browser — mirror them to the terminal, timestamped, because the
@@ -351,6 +407,9 @@ export class SessionRegistry {
    */
   attach(entry: SessionEntry, viewport: Viewport, afterSeq?: number) {
     clearTimeout(entry.idleTimer);
+    // The ring must be complete before it replays — an open delta window
+    // would otherwise hold the transcript's tail past the replay.
+    this.flushDeltas(entry);
     for (const msg of entry.buffer) {
       if (afterSeq === undefined || (msg.seq ?? 0) > afterSeq) viewport(msg);
     }
@@ -408,6 +467,7 @@ export class SessionRegistry {
 
   /** Detaching never closes the session — the idle timer does, much later. */
   detach(entry: SessionEntry, viewport: Viewport) {
+    this.flushDeltas(entry); // the leaving viewport sees the stream's true tail
     entry.viewports.delete(viewport);
     if (entry.viewports.size === 0) {
       entry.fsWatch?.stop(); // nobody listening → no watches held (W.1)
@@ -438,6 +498,7 @@ export class SessionRegistry {
     const entry = this.entries.get(id);
     if (!entry) return false;
     clearTimeout(entry.idleTimer);
+    this.flushDeltas(entry); // pending stream text lands before session_ended
     entry.fsWatch?.stop();
     entry.fsWatch = undefined;
     entry.bang?.proc.kill();

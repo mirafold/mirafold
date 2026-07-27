@@ -65,6 +65,10 @@ export function startDaemon(env: Record<string, string> = {}): Promise<Daemon> {
       // passes its fixture server via MIRAFOLD_LOCAL_ENDPOINTS.
       MIRAFOLD_LOCAL_DISCOVERY: "off",
       MIRAFOLD_LOCAL_ENDPOINTS: "",
+      // A refresh_agents must re-probe on the test's clock, not the poll
+      // TTL's — fixture servers appear/disappear mid-test and the
+      // assertions watch for exactly that.
+      MIRAFOLD_LOCAL_PROBE_TTL_MS: "0",
       // Random base + the daemon's own EADDRINUSE walk absorbs collisions
       // between parallel test files; the real port is read off stdout.
       PORT: String(3900 + Math.floor(Math.random() * 90)),

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -12,6 +12,7 @@ import { Artifact } from "./Artifact";
 import { PickerBlock, type PickerRow } from "./PickerBlock";
 import { GearGlyph } from "./GearGlyph";
 import { useFollowTail } from "../use-follow-tail";
+import { queueDelta, type QueuedDelta } from "../delta-queue";
 
 // The scrollback is a flat list of entries: text blocks and rendered
 // components, in the exact order they arrived on the wire.
@@ -83,6 +84,47 @@ type ToolCall = Extract<Entry, { kind: "tool" }>;
 
 let nextId = 0;
 
+// Memoized on the entry's text: a settled block's markdown tree is reused
+// as-is while later entries stream.
+const AssistantTurn = memo(function AssistantTurn({ text }: { text: string }) {
+  return (
+    <div className="turn turn-assistant markdown">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[rehypeHighlight]}
+        components={safeAnchor}
+      >
+        {text}
+      </ReactMarkdown>
+    </div>
+  );
+});
+
+// Untouched entries keep their object identity across state updates, so the
+// memo comparison is the entry reference itself.
+const ThinkingBlock = memo(function ThinkingBlock({
+  entry,
+  onToggle,
+}: {
+  entry: Extract<Entry, { kind: "thinking" }>;
+  onToggle: (id: number) => void;
+}) {
+  const folded = entry.done && !entry.expanded;
+  return (
+    <div
+      className={
+        "thinking-block" +
+        (folded ? " thinking-folded" : "") +
+        (entry.done ? " thinking-done" : "")
+      }
+      onClick={entry.done ? () => onToggle(entry.id) : undefined}
+      title={entry.done ? (folded ? "Expand thinking" : "Collapse thinking") : undefined}
+    >
+      {folded ? <>✳ {entry.text.replace(/\s+/g, " ").slice(0, 100)}…</> : entry.text}
+    </div>
+  );
+});
+
 /** A Task's subagent tool calls (T2.4): collapsed by default — a subagent's
  *  churn shouldn't crowd the transcript — expandable to the nested rows. */
 function SubagentGroup({ calls }: { calls: ToolCall[] }) {
@@ -146,8 +188,8 @@ export function RenderZone({
   const thinkingId = useRef<number | null>(null);
 
   useEffect(
-    () =>
-      subscribe((msg) => {
+    () => {
+      const apply = (msg: ZoneMsg) => {
         // Collapse-on-finalize (T2.1): the open thinking block folds the
         // moment the turn's real output starts.
         const foldThinking = () => {
@@ -381,59 +423,117 @@ export function RenderZone({
             break;
           }
         }
-      }),
+      };
+      // Streamed deltas batch into one state pass per animation frame (the
+      // timer stands in where frames pause — a hidden tab). Anything else
+      // applies the pending batch first, so entries keep exact wire order —
+      // and every non-transcript bus listener still hears the raw stream.
+      const queue: QueuedDelta[] = [];
+      let frame: number | null = null;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      const flush = () => {
+        if (frame !== null) cancelAnimationFrame(frame);
+        if (timer !== null) clearTimeout(timer);
+        frame = null;
+        timer = null;
+        for (const m of queue.splice(0)) apply(m);
+      };
+      const unsubscribe = subscribe((msg) => {
+        if (msg.type === "text_delta" || msg.type === "thinking_delta") {
+          queueDelta(queue, msg);
+          if (frame === null) {
+            frame = requestAnimationFrame(flush);
+            timer = setTimeout(flush, 50);
+          }
+          return;
+        }
+        flush();
+        apply(msg);
+      });
+      return () => {
+        unsubscribe();
+        if (frame !== null) cancelAnimationFrame(frame);
+        if (timer !== null) clearTimeout(timer);
+      };
+    },
     [subscribe],
   );
 
   useEffect(tail.followTail, [entries, status]);
 
-  const togglePin = (renderId: string) =>
-    setPinned((p) =>
-      p.includes(renderId) ? p.filter((id) => id !== renderId) : [...p, renderId],
-    );
-
-  const handleAction = (action: Action, sourceId: string) => {
-    if (action.kind === "state") {
+  const togglePin = useCallback(
+    (renderId: string) =>
       setPinned((p) =>
-        action.op === "pin"
-          ? p.includes(action.renderId)
-            ? p
-            : [...p, action.renderId]
-          : p.filter((id) => id !== action.renderId),
-      );
-      return; // state actions never leave the output zone
-    }
-    sendAction(action, sourceId);
-  };
+        p.includes(renderId) ? p.filter((id) => id !== renderId) : [...p, renderId],
+      ),
+    [],
+  );
+
+  const handleAction = useCallback(
+    (action: Action, sourceId: string) => {
+      if (action.kind === "state") {
+        setPinned((p) =>
+          action.op === "pin"
+            ? p.includes(action.renderId)
+              ? p
+              : [...p, action.renderId]
+            : p.filter((id) => id !== action.renderId),
+        );
+        return; // state actions never leave the output zone
+      }
+      sendAction(action, sourceId);
+    },
+    [sendAction],
+  );
+
+  const toggleThinking = useCallback(
+    (id: number) =>
+      setEntries((es) =>
+        es.map((e) =>
+          e.kind === "thinking" && e.id === id ? { ...e, expanded: !e.expanded } : e,
+        ),
+      ),
+    [],
+  );
 
   // Dock items reference the same entry objects the transcript holds, so an
   // update-in-place render/artifact (same wire id) keeps pinned blocks live.
-  const pinnedItems = pinned.flatMap((id) => {
-    const entry = entries.find(
-      (e) =>
-        (e.kind === "render" && e.renderId === id) ||
-        (e.kind === "artifact" && e.artifactId === id),
-    );
-    return entry && (entry.kind === "render" || entry.kind === "artifact") ? [entry] : [];
-  });
+  const pinnedItems = useMemo(
+    () =>
+      pinned.flatMap((id) => {
+        const entry = entries.find(
+          (e) =>
+            (e.kind === "render" && e.renderId === id) ||
+            (e.kind === "artifact" && e.artifactId === id),
+        );
+        return entry && (entry.kind === "render" || entry.kind === "artifact") ? [entry] : [];
+      }),
+    [entries, pinned],
+  );
 
   // The ACTIVE picker — the one whose arrow-key capture is live: the newest
   // copy, and only until the user moves on (a later user turn retires it).
-  let activePickerId: number | null = null;
-  for (const e of entries) {
-    if (e.kind === "picker") activePickerId = e.id;
-    else if (e.kind === "text" && e.role === "user") activePickerId = null;
-  }
+  const activePickerId = useMemo(() => {
+    let active: number | null = null;
+    for (const e of entries) {
+      if (e.kind === "picker") active = e.id;
+      else if (e.kind === "text" && e.role === "user") active = null;
+    }
+    return active;
+  }, [entries]);
 
   // Subagent calls (parentId set) grouped under their Task's wire id (T2.4).
-  const childrenByParent = new Map<string, ToolCall[]>();
-  for (const e of entries) {
-    if (e.kind === "tool" && e.parentId) {
-      const arr = childrenByParent.get(e.parentId) ?? [];
-      arr.push(e);
-      childrenByParent.set(e.parentId, arr);
+  const childrenByParent = useMemo(() => {
+    const byParent = new Map<string, ToolCall[]>();
+    for (const e of entries) {
+      if (e.kind === "tool" && e.parentId) {
+        const arr = byParent.get(e.parentId) ?? [];
+        arr.push(e);
+        byParent.set(e.parentId, arr);
+      }
     }
-  }
+    return byParent;
+  }, [entries]);
 
   return (
     <div className="zone-row">
@@ -498,35 +598,7 @@ export function RenderZone({
         )}
         {entries.map((entry) => {
           if (entry.kind === "thinking") {
-            const folded = entry.done && !entry.expanded;
-            const toggle = entry.done
-              ? () =>
-                  setEntries((es) =>
-                    es.map((e) =>
-                      e.kind === "thinking" && e.id === entry.id
-                        ? { ...e, expanded: !e.expanded }
-                        : e,
-                    ),
-                  )
-              : undefined;
-            return (
-              <div
-                key={entry.id}
-                className={
-                  "thinking-block" +
-                  (folded ? " thinking-folded" : "") +
-                  (entry.done ? " thinking-done" : "")
-                }
-                onClick={toggle}
-                title={entry.done ? (folded ? "Expand thinking" : "Collapse thinking") : undefined}
-              >
-                {folded ? (
-                  <>✳ {entry.text.replace(/\s+/g, " ").slice(0, 100)}…</>
-                ) : (
-                  entry.text
-                )}
-              </div>
-            );
+            return <ThinkingBlock key={entry.id} entry={entry} onToggle={toggleThinking} />;
           }
           if (entry.kind === "notice") {
             const glyph =
@@ -675,15 +747,7 @@ export function RenderZone({
               <span className="glyph">❯</span> {entry.text}
             </div>
           ) : (
-            <div key={entry.id} className="turn turn-assistant markdown">
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                rehypePlugins={[rehypeHighlight]}
-                components={safeAnchor}
-              >
-                {entry.text}
-              </ReactMarkdown>
-            </div>
+            <AssistantTurn key={entry.id} text={entry.text} />
           );
         })}
         {status && (
