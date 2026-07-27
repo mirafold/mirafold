@@ -325,48 +325,55 @@ export class SessionRegistry {
       if (afterSeq === undefined || (msg.seq ?? 0) > afterSeq) viewport(msg);
     }
     entry.viewports.add(viewport);
-    // First viewport in → the doorbell starts (W.1), and every ring fans an
-    // fs_changed to the ATTACHED viewports (W.2) — per-viewport plumbing
-    // like the fs_* replies, never through broadcast(): disk state is a
-    // query, not session history, so the bell must not enter the replay
-    // ring. Statuses are invalidated BEFORE the fan so a bell-triggered
-    // refetch can't be served a pre-change answer still inside its TTL.
-    // Watcher failure degrades to Phase E behavior (turn-end refresh + the
-    // manual button): one shell-composed notice to attached viewports, one
-    // log line, never a crash — and a later fresh first attach retries.
+    // First viewport in → the doorbell starts (W.1); last detach stops it.
     if (entry.viewports.size === 1 && !entry.fsWatch) {
-      entry.fsWatch = startWatch(
-        entry.cwd,
-        (change) => {
-          invalidateRepoStatusCache();
-          const msg: WireMsg = {
-            type: "fs_changed",
-            ...(change.paths.length ? { paths: change.paths } : {}),
-            ...(change.truncated ? { truncated: true } : {}),
-          };
-          for (const viewport of entry.viewports) viewport(msg);
-          if (verbose) {
-            createLogger(`session ${entry.id}`).debug(
-              `fs change: ${change.paths.length} path(s)${change.truncated ? " (truncated)" : ""}`,
-            );
-          }
-        },
-        {
-          onError: (err) => {
-            entry.fsWatch = undefined;
-            const notice: WireMsg = {
-              type: "notice",
-              text: "Live file updates are unavailable — the Files panel still refreshes at turn end and with its refresh button.",
-            };
-            for (const viewport of entry.viewports) viewport(notice);
-            createLogger(`session ${entry.id}`).error(
-              `fs watcher stopped — the Explorer falls back to turn-end/manual refresh: ${errText(err)}`,
-            );
-          },
-        },
-      );
+      entry.fsWatch = this.startFsWatch(entry);
     }
     this.notifyWatchers(); // viewport counts are fleet metadata
+  }
+
+  /**
+   * The live-tree doorbell (W.1/W.2): every ring fans an fs_changed to the
+   * ATTACHED viewports — per-viewport plumbing like the fs_* replies, never
+   * through broadcast(): disk state is a query, not session history, so the
+   * bell must not enter the replay ring. Statuses are invalidated BEFORE
+   * the fan so a bell-triggered refetch can't be served a pre-change answer
+   * still inside its TTL. Watcher failure degrades to Phase E behavior
+   * (turn-end refresh + the manual button): one shell-composed notice to
+   * attached viewports, one log line, never a crash — and a later fresh
+   * first attach retries.
+   */
+  private startFsWatch(entry: SessionEntry): FsWatchHandle {
+    return startWatch(
+      entry.cwd,
+      (change) => {
+        invalidateRepoStatusCache();
+        const msg: WireMsg = {
+          type: "fs_changed",
+          ...(change.paths.length ? { paths: change.paths } : {}),
+          ...(change.truncated ? { truncated: true } : {}),
+        };
+        for (const viewport of entry.viewports) viewport(msg);
+        if (verbose) {
+          createLogger(`session ${entry.id}`).debug(
+            `fs change: ${change.paths.length} path(s)${change.truncated ? " (truncated)" : ""}`,
+          );
+        }
+      },
+      {
+        onError: (err) => {
+          entry.fsWatch = undefined;
+          const notice: WireMsg = {
+            type: "notice",
+            text: "Live file updates are unavailable — the Files panel still refreshes at turn end and with its refresh button.",
+          };
+          for (const viewport of entry.viewports) viewport(notice);
+          createLogger(`session ${entry.id}`).error(
+            `fs watcher stopped — the Explorer falls back to turn-end/manual refresh: ${errText(err)}`,
+          );
+        },
+      },
+    );
   }
 
   /** Detaching never closes the session — the idle timer does, much later. */

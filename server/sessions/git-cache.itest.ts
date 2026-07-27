@@ -1,9 +1,9 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fixtureGit as git } from "../testing/itest-harness";
 import { invalidateRepoStatusCache, repoStatus } from "./git";
 
 // W.H2 against a real repo, with Date mocked for determinism: the status
@@ -15,13 +15,6 @@ import { invalidateRepoStatusCache, repoStatus } from "./git";
 // real time underneath.
 
 let repo: string;
-
-const git = (cwd: string, ...args: string[]) =>
-  execFileSync(
-    "git",
-    ["-C", cwd, "-c", "user.email=t@t.t", "-c", "user.name=t", "-c", "commit.gpgsign=false", ...args],
-    { stdio: "pipe" },
-  );
 
 before(() => {
   repo = mkdtempSync(path.join(os.tmpdir(), "gitcache-"));
