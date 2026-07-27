@@ -143,13 +143,16 @@ is the remaining work.
 faithful per-agent skins) · **4** except 4.7 (→ Phase R) · **G, H, H2**
 (relay dedup + human legibility) · **S** (theme system) · **N** (onboarding
 backend picker) · **V** (visual + fidelity gaps) · **A** (accessibility) ·
-**C** (CI/CD) · **E** (Explorer) · **M** (Mission control), plus the finished
+**C** (CI/CD) · **E** (Explorer) · **M** (Mission control) · **E2** (Explorer at scale) ·
+**W** (live tree), plus the finished
 steps of the still-open Phases **K, R, F, Q, L**.
 
 Archive passes, each a section header in PLAN-ARCHIVE.md you can navigate to:
 2026-07-08 · 2026-07-10 · 2026-07-15 · "Moved 2026-07-17" · "Moved 2026-07-19"
 · "Moved 2026-07-24" (Phases A/C/E/M + V.4–V.6, and the completed material
-lifted out of the still-open Phase R steps).
+lifted out of the still-open Phase R steps) · "Moved 2026-07-27" (Phases
+E2/W step bodies, the Phase E/M narrative passes, the R.4l item-5
+investigation, the CI-flake breakdown, and finished stretch-goal specs).
 
 ---
 
@@ -595,10 +598,10 @@ with it. Both sequence BEFORE R.5.**
        hard requirements carried into Phase N's charter verbatim). This
        item closes when Phase N ships; items 1–3 remain open intake.
     5. **Pairing lands IN the session you paired from — ✅ DONE 2026-07-27,
-       exactly to the investigated shape below.** The QR/copy link from a
+       exactly to the investigated shape (investigation text → PLAN-ARCHIVE.md).** The QR/copy link from a
        session's status bar now carries `&s=<sessionId>` in the fragment;
        `main.tsx` rewrites the path to `/s/<id>` before the router reads it,
-       **carrying `location.hash` through the rewrite** (the trap below —
+       **carrying `location.hash` through the rewrite** (the investigated trap —
        mutation-tested: dropping the hash was watched to fail the phone e2e,
        then restored). New pure parser `sessionHintFromFragment` in `ws.ts`
        validates the id as a full `[\w-]+` token (hostile values dropped
@@ -609,47 +612,7 @@ with it. Both sequence BEFORE R.5.**
        refused session, where the R.4i notice explains — not bounced to
        mission control. Verified: unit tests beside the fragment tests, the
        phone e2e now asserts the paired link lands on `/s/<id>` with no
-       fleet list, full Tier-1 (394) + Tier-3 (57) green. Original item:
-       Today the QR
-       encodes `<relay origin>/#code=<pairing code>`, the phone loads it at
-       the root path, and `main.tsx` routes purely on the path (`/s/<id>` =
-       session, anything else = mission control) — so the phone always
-       lands on the fleet list and has to tap the row for the session the
-       user was sitting in when they hit pair. Kyle wants it to open
-       straight into that session.
-       **Shape (investigated 2026-07-25, ~30–45 min including tests):**
-       carry the session id in the fragment beside the code (`&s=<id>`) and
-       rewrite the path before the router reads it. Three touch points —
-       (a) `ConnectDevice.tsx` takes an optional session id and appends it
-       (the status bar has it; mission control's pair button passes nothing
-       and keeps landing on the fleet, no special case); (b) `ws.ts` gains a
-       small pure parser beside `relayTargetFromFragment`, validating the id
-       as defensively as the relay origin is validated; (c) `main.tsx`
-       rewrites the path to `/s/<id>` before rendering. Everything
-       downstream is untouched — `session-bus.ts` already reads the session
-       id off `location.pathname` to build its attach message, the same path
-       a fleet-row tap takes today.
-       **The trap:** `history.replaceState(null, "", "/s/" + id)` DROPS the
-       fragment, and the pairing code still lives there unconsumed (the
-       socket client reads and scrubs it later, at connect). Carry
-       `location.hash` along in the rewrite or the phone loses its code,
-       dials a relay it has no credential for, and hangs on "connecting"
-       forever — the exact shape of the 2026-07-24 mobile new-session bug.
-       Related: the session hint must NOT be stashed in sessionStorage the
-       way the code is; it's a one-shot intent, and persisting it would
-       bounce the user back into the session every time they tap home.
-       **Edge cases, both with existing behavior:** a session that ended
-       between QR and scan hits the daemon's attach-fallback (fresh session
-       + the "the session you asked for is gone" notice, R.4c) — a stale
-       link degrades to today's behavior with an explanation; a session on a
-       subscription login is refused for remote viewports (R.4i notice
-       exists), but the user would land INSIDE a refused session rather than
-       on the fleet — decide whether that case should bounce to mission
-       control. **Verify:** a unit test beside the existing fragment tests,
-       plus one phone e2e asserting the paired link lands on `/s/<id>` with
-       the transcript instead of the fleet list (the existing phone pairing
-       test is ~3 lines from being that). The extra ~8 characters are
-       immaterial to QR density.
+       fleet list, full Tier-1 (394) + Tier-3 (57) green.
     6. **Phone session died after backgrounding — ✅ FIXED 2026-07-25
        (`0c993e0`).** Kyle, on Chrome: session open on the phone, switch to
        another app for a few minutes, come back, and the session was
@@ -959,15 +922,9 @@ with it. Both sequence BEFORE R.5.**
     same afternoon. *(Resolved same day: that bump landed as `c660130` —
     alert #4 "fixed", zero open alerts on the repo; detail in R.5b's
     sweep note.)*
-  - **Tarball rebuilt again 2026-07-25 (evening), from this commit's tree
-    (parent `d743632`)** — still **0.2.0**, no version bump: the only
-    code-affecting change since the `d8abc62` build is the transitive
-    postcss 8.5.16 → 8.5.23 bump in `c660130`, which moves the built CSS
-    asset and nothing else. Staged at `../beta/mirafold-0.2.0.tgz` and
-    verified the way a tester installs it: cold `npm i -g` into a
-    throwaway prefix, `mirafold --version` → 0.2.0, real boot serving
-    HTTP 200. Tier-1 (369 tests) + typecheck green on the tree it was
-    built from.
+  - *(An interim 2026-07-25 evening rebuild — postcss-only delta, verified
+    cold-install — was superseded by the session-end rebuild below; note →
+    PLAN-ARCHIVE.md.)*
   - **npm-audit noise on install — investigated and settled
     (2026-07-25):** installing the tarball into a *local project
     directory* reports 4 moderate advisories, all one chain
@@ -1466,21 +1423,11 @@ bodies + dated history → PLAN-ARCHIVE.md ("Moved 2026-07-24").
   checks (unit + integration), NO review requirement (solo dev), admin bypass
   for direct pushes, no force-push/delete. Options: pay (org → GitHub Team) or
   wait for the public flip, when it's free. Revisit at R.5b.
-- **✅ CI FLAKE FULLY RESOLVED 2026-07-23** (PR `mirafold/mirafold#5`). The
-  "quarantine + fix" call became just FIX — nothing quarantined. Surface was
-  wider than the 3 named: **six** flaky tests, **three** root causes, each
-  reproduced under `taskset -c 0` + CPU stress before fixing. (1) *Log-vs-socket
-  race* (4 tests) — asserting `daemon.logs()` right after a wire event, but the
-  log rides stdout's pipe while the event rides the socket → new
-  `Daemon.waitForLog` helper, whole suite swept. (2) *bang-kill pre-attach* —
-  killed before the PTY child attached; now waits for output. (3) *axe animation
-  sampling* — fleet rows sampled mid-`rise` read as low-contrast;
-  `assertAxeClean` settles animations first. (4) *RemoteClient unhandled
-  rejection* (subtlest) — a wrong-code connect's close rejected `hsDone` before
-  it was awaited, crashing the whole test process (22/40 under stress; the
-  daemon was provably innocent) → `hsDone.catch(()=>{})`. **NO product code
-  changed — every fix was in test/harness code.** Proven by repeated green CI
-  cycles on the real runner, not a single pass.
+- **✅ CI flake fully resolved 2026-07-23** (PR `mirafold/mirafold#5`): six
+  flaky tests, three root causes, each reproduced under CPU pinning before
+  fixing — **no product code changed** (every fix was in test/harness code),
+  proven by repeated green CI cycles on the real runner. Full four-cause
+  breakdown → PLAN-ARCHIVE.md ("Moved 2026-07-27").
 ---
 
 ## Phase D — Decompose the Codex adapter (opened 2026-07-20)
@@ -1503,23 +1450,14 @@ type added to `handleEvent`/`onItem` afterwards makes the split more expensive.
 298 Tier-1 tests, the Tier-2 and Tier-3 suites, and the Tier-4 live tier, all
 green as of 2026-07-20 (318 Tier-1 as of 2026-07-23).
 
-**2026-07-23 — pre-launch refactor pass (unplanned maintenance, whole repo)**
-landed a behavior-preserving sweep that overlaps this phase's spirit without
-executing it: server-side, an `errText()` helper in `adapters/types.ts`
-replaced the 9 copy-pasted unknown-error idioms, `claude-code.ts`'s `pump()`
-had its 50-line `system` case extracted to `handleSystemMsg()`, `codex.ts`
-gained `finishTool()` (the 4× announced-delete + tool_result emit), and
-`connection.ts`'s module-load `OFFERABLE` now reads the static
-`ADAPTER_AGENTS` list instead of running full credential detection at import.
-Web-side: `ModalCard.tsx` absorbed the modal scaffold shared by
-ConnectDevice/ThemePicker/Onboarding, `useArmedConfirm` the two-click
-end-session state (StatusBar + FleetView), `DiffLines` the duplicated diff-line
-JSX (ToolBlock + registry Diff), plus one real bug fixed: both Onboarding
-callers passed a fresh inline `onRefresh` arrow, so the picker's 3s re-probe
-poll was reset on every parent render and effectively never fired — both now
-pass a `useCallback`-stable function. README §11's accepted-duplication list
-was honored throughout (worker() loops, listener/emit boilerplate, RenderZone
-upsert twins all untouched). All tiers green after (318 / 86 / 37).
+**2026-07-23 — pre-launch refactor pass** (unplanned maintenance, whole
+repo): a behavior-preserving sweep landed shared helpers server- and
+web-side (`errText()`, `handleSystemMsg()`, `finishTool()`, `ModalCard`,
+`useArmedConfirm`, `DiffLines`, static `OFFERABLE`) plus one real bug fix
+(Onboarding's 3s re-probe poll was reset every render by an unstable inline
+`onRefresh` — now `useCallback`-stable). README §11's accepted-duplication
+list honored; all tiers green (318/86/37). Full detail → PLAN-ARCHIVE.md
+("Moved 2026-07-27").
 
 - [ ] **Step D.1 — Split `codex.ts` along its existing seams**
   - Goal: no file over ~400 lines, each concern findable by name, and
@@ -1830,65 +1768,33 @@ daemon's own `.env` stays protected and the Explorer is narrower).
 event loop) only IF the node cap ever proves too blunt — likely unnecessary.
 
 **Security audit of the 2026-07-25 evening delta: one finding, fixed the
-same session (`0ae994c`).** `web/src/version.ts` read one string,
-`pkg.version`, through a DEFAULT json import — which inlines the ENTIRE
-manifest into the browser bundle every viewport downloads (and a paired phone
-pulls over the relay): every dependency and devDependency with its version
-range, the scripts, the package-manager pin. No secrets in it, so information
-disclosure rather than a hole — but it hands anyone with the bundle a complete
-dependency inventory, which is the first thing you enumerate looking for a
-known-vulnerable version, and the repo is private until launch. A named import
-tree-shakes; `bundle.e2e.ts` pins it in Tier 3 (the tier that rebuilds dist, so
-the assertion means something) and was proved to bite by restoring the default
-import. Also verified clean in the same pass: no raw-HTML sinks in any changed
-component, agent-controlled labels beside the new gear still render as escaped
-text, the pairing link is never an `<a href>` (text + clipboard only), no
-secrets in the session's commits, the shipped tarball carries no `.env` /
-source maps / install hooks, and builds are byte-for-byte reproducible.
-**Kept deliberately, don't re-flag:** the pairing URL's `tabIndex={0}`. It was
-there because the box scrolled sideways and a scrollable region must be
-keyboard-reachable; the box wraps now, so that reason is gone, but Kyle's call
-was to keep the tab stop so a keyboard user has somewhere to land on the URL
-(reading it, or selecting with caret browsing). Neither keeping nor removing it
-is an accessibility defect and the axe sweep passes both ways.
-**Considered and dismissed:** the pairing card now shows the full code at 1.5×
-rather than a truncated scroll — no marginal exposure, since the QR directly
-above encodes the same secret and decodes from any screenshot. **Closed with
-evidence:** the `@hono/node-server` advisory is unreachable here — MCP connects
-over `StdioServerTransport` only (`server/render-mcp.ts:106`) and the shipped
-bundles contain zero references to `serveStatic` or the HTTP transport.
+same session (`0ae994c`)** — the browser bundle inlined the ENTIRE
+package.json (a default json import in `web/src/version.ts`); a named import
+tree-shakes it, pinned by `bundle.e2e.ts` in Tier 3 and proved to bite.
+**Kept deliberately, don't re-flag:** the pairing URL's `tabIndex={0}`
+(Kyle's call — a keyboard landing spot on the URL; axe passes both ways).
+**Considered and dismissed:** the full pairing code at 1.5× adds no exposure
+(the QR above encodes the same secret). **Closed with evidence:** the
+`@hono/node-server` advisory is unreachable (stdio MCP transport only; no
+`serveStatic` in shipped bundles). Also verified clean: no raw-HTML sinks,
+escaped agent labels, no `<a href>` pairing link, no secrets in commits, no
+`.env`/source maps/install hooks in the tarball, reproducible builds. Full
+narrative → PLAN-ARCHIVE.md ("Moved 2026-07-27").
 
-**Kyle-directed UI polish pass (2026-07-24 evening, iterative):** the desktop
-frame got a VS Code-style **activity bar** — a permanent thin strip flush with
-the window's left edge whose files icon toggles the panel (replacing the
-status bar's `files` button); the tree now leads with the **checked-out root
-as its top node** (name only, full path in its tooltip — the path header row
-is gone); the panel width is **fit-to-content** (widest visible row + a little
-air, capped at the old 340px/42vw, 140px floor); refresh floats pinned at the
-panel's **bottom-left**; back lives in the file view's path bar. Verified per
-round in headless Chrome by measurement (geometry probes), not eyeballing —
-the round-3 lesson: the icon's SVG box, the UA button padding, and the
-`.shell` gutter each silently ate a "fix" until measured from the window edge.
-Same session: a behavior-preserving refactor (ActivityBar extracted beside
-BangBar; `--gutter-left/right` + `--content-air` CSS vars replace the
-duplicated gutter expressions) and a delta audit — no exploitable findings; a
-hostile `<img onerror>` filename demonstrated inert (React text escaping).
-
-**2026-07-25 amendment (Kyle-caught deviation):** the polish pass above made
-the activity bar permanent at ALL widths — but the locked design (the charter
-above, and the 2026-07-24 scope lock before it) always said phone entry =
-files icon in the status bar. On a 390px screen the 46px always-on strip was
-"way too much precious screen real estate" (Kyle). Restored same day
-(`d8abc62`): the rail is desktop-only (≤640px hides it; shell + prompt box
-run full-width again); the phone toggle is `.sb-files` at the status bar's
-far LEFT, boxed off by its own separator line (the rail's border folded into
-the row), one notch outside home — Kyle's chosen shape over between-home-and-
-new, auto-hiding rail, FAB, and bottom-nav alternatives. Rendered only on
-phone via `useIsPhone`, so desktop DOM keeps home as the bar's first control
-(the locked 2026-07-16 order). Drill-in, focus trap, and focus-return carry
-over untouched; the phone e2e opens via `.sb-files` and asserts the rail is
-`display: none`. Deployed to app.mirafold.com same day (Pages auto-build,
-bundle `index-BG3GNY9U.js` confirmed live).
+**Desktop/phone frame — final shipped shape** (Kyle-directed polish pass
+2026-07-24; Kyle-caught deviation restored 2026-07-25, `d8abc62`): desktop
+gets a VS Code-style **activity bar** (files icon toggles the panel; the
+tree leads with the checked-out root as its top node, path in tooltip;
+fit-to-content panel width capped at 340px/42vw, 140px floor; refresh
+floats bottom-left; back lives in the file view's path bar) — and the rail
+is **desktop-only**: on phone (≤640px) it's hidden (shell + prompt box
+full-width) and the toggle is `.sb-files` at the status bar's far LEFT,
+boxed by its own separator one notch outside home — Kyle's chosen shape;
+desktop DOM keeps home first (the locked 2026-07-16 order). Deployed to
+app.mirafold.com. A same-session behavior-preserving refactor + delta audit
+(no exploitable findings; hostile `<img onerror>` filename inert) rode
+along. Round-by-round narrative + the measure-don't-eyeball lesson →
+PLAN-ARCHIVE.md ("Moved 2026-07-27").
 
 Post-v1 depth (editing, fs-watcher, syntax highlighting, changed-files
 grouping) stays parked in POST-RELEASE.md.
@@ -1945,49 +1851,22 @@ cumulative); elapsed time ticks client-side from `since`. *(A third v1 limit —
 permission-queue status stickiness hiding a second concurrently-pending
 request — was hit in real use and FIXED in the 2026-07-24 evening pass below.)*
 
-**Post-merge quality passes (2026-07-24, PR #11):** a real bug behind the
-fleet.e2e ordering flake — `.fleet-activity` was the row's only shrinkable
-column with no floor, so a full row flex-crushed the live readout to invisible
-(`min-width: 12ch`; reproduced 8/1 under a 2-core pin, 5/5 green after); a
-behavior-preserving refactor (FleetView rows decomposed into SessionName /
-ArmedButton / PermissionLine / QuickPromptLine, `captureCockpit` + `actTarget`
-extracted server-side, the Phase M CSS consolidated); and an `/audit` whose
-**one real ship-time finding** was fixed — the fleet snapshot capped the
-permission detail to 200 chars while the in-session bar shows it whole, so a
-grid approver could miss a dangerous tail past a benign head. Now carried
-whole, pinned in Tier 1 + Tier 2 (pins verified to fail with the cap restored).
-
-**Evening pass (2026-07-24, second session — Kyle-driven cockpit UX + honesty):**
-
-- **Concurrent-permission honesty bug FIXED** (was the accepted v1 stickiness
-  limit above; Kyle hit it live — approved one ask, the next two never
-  surfaced). Queue entries now live until their OWN resolution: both answer
-  paths (grid `answer_permission` AND in-session `permission_response`) route
-  through `registry.answerPermission`; unanswered asks age out on the
-  adapter's own `PERMISSION_TIMEOUT_MS` clock (server-side `askedAt`, never
-  on the wire); terminal states still clear all. Needs-you (ordering, ⚠
-  title, tab badge) keys on pending asks OR permission status, so asks
-  surviving past the first answer surface to the top.
-- **Details disclosure**: activity readout + tokens·cost moved OFF the row
-  bar (full working-state rows overflowed their border; volatile inline text
-  made the layout jumpy) into a per-row caret-toggled sub-line — the ❯ glyph
-  CSS-rotated down/up, one row open at a time, live-updating. Bar keeps the
-  stable glance set: dot · name · agent · model · id · status · ago · ⧉ ·
-  acts. (Kyle iterated placement live: centered-borderless tried and reverted.)
-- **Viewport-count lag fixed**: leaving a session by navigation now closes
-  the socket in `pagehide`, so the daemon detaches immediately instead of the
-  30–60s heartbeat window; bfcache restores still reconnect. Session idle
-  timeout (zero-viewport grace) raised 60min → **4h** (Kyle's call). Both
-  rode the parallel session's commits (`bb272da`).
-- **/audit (delta-scoped) → one hardening fix landed**: the fleet's
-  pending-permission mirror is capped at 25 (oldest evict — closest to
-  auto-deny; evicted asks stay answerable at the adapter) so a permission
-  flood can't grow watcher snapshots without bound (probe: 500 asks ≈ 1MB per
-  snapshot before, 51KB after) — full per-entry detail kept (the earlier
-  audit's no-truncation rule). At-cap floods also stop fanning notifies.
-- All pinned: Tier-1 registry lifecycle/prune/cap tests + reworked fleet.e2e
-  (details-line interaction, phone tap flow, immediate viewport-count drop).
-  Tiers at close: **369 / 103 / 51**.
+**Post-merge + evening passes (2026-07-24, PR #11 + `bb272da`) — the
+standing outcomes:** the fleet.e2e ordering flake's real bug fixed
+(`.fleet-activity` had no min-width — now `12ch`); the permission detail
+rides the snapshot WHOLE (the 200-char cap removed — a grid approver could
+miss a dangerous tail; pinned Tier 1+2), with the pending-permission mirror
+capped at 25 entries (oldest evict — closest to auto-deny; evicted asks
+stay answerable at the adapter; a flood can't grow snapshots unbounded);
+the **concurrent-permission stickiness limit is FIXED** (queue entries live
+until their OWN resolution via `registry.answerPermission`, aging out on
+the adapter's own timeout clock; needs-you keys on pending asks OR status);
+activity/usage moved off the row bar into a per-row caret-toggled sub-line
+(centered-borderless tried and reverted — Kyle iterated live); viewport
+counts drop immediately on navigation (`pagehide` closes the socket;
+bfcache still reconnects); session idle timeout raised 60min → **4h**
+(Kyle's call). Tiers at close 369/103/51. Full narrative → PLAN-ARCHIVE.md
+("Moved 2026-07-27").
 ---
 
 ## The Explorer→panes→terminal arc (opened 2026-07-26; Kyle-directed, four phases, worked in stages)
@@ -2054,199 +1933,42 @@ trip. Mitigations in-scope: cache fetched directories for the session,
 prefetch root + first level on open. Phone drill-in maps naturally (each
 layer = one directory = one fetch).
 
-- [x] **Step E2.1 — per-directory listing: wire + server** ✅ 2026-07-26 —
-  `fs_listdir { id, path }` → `fs_dir { id, path, entries, truncated?, error? }`
-  landed additively (`FsDirEntry` = name + dir/file/symlink kind + the
-  `status` slot E2.3 will fill); `listDir()` in fs-explorer.ts (jailed via
-  `inside()`, dirs-first sort so caps cut files not dirs, SKIP_DIRS floor
-  carried over, per-dir entry + name-byte caps honest). One deliberate
-  deviation inside the "same throttle discipline": fs_listdir throttles as a
-  **token bucket** (`FS_LISTDIR_MAX_PER_SEC`, default 32 — capacity = refill)
-  instead of the min-interval family, because E2.2's open-panel prefetch is a
-  legitimate same-instant burst the interval would refuse; a drained bucket
-  still answers with an error reply. Done-when observed over a real socket:
-  root + nested listings correct with kinds; `../`, absolute, and a planted
-  dir-symlink-out all refused; legacy `fs_list` answers identically on the
-  same connection; burst refused-then-recovers; hostile-frame pins added
-  (bad id drops whole, bad path answers). Tier 1 + Tier 2 + typecheck green.
-  - Goal: the daemon can answer "list this one directory" — jailed, capped,
-    throttled, correlated — beside the untouched whole-tree path.
-  - Build: `fs_listdir`/`fs_dir` in `server/protocol.ts`; handler in
-    `server/sessions/fs-handlers.ts` (same badId/throttle/gitInFlight
-    discipline); a bounded one-directory lister in
-    `server/sessions/fs-explorer.ts` (readdir + sort + per-dir caps; symlinks
-    stay leaves; unreadable dir = error on the reply). Plain (non-git) listing
-    only in this step — statuses ride E2.3.
-  - Files: `server/protocol.ts`, `server/sessions/fs-handlers.ts`,
-    `server/sessions/fs-explorer.ts` + Tier-1 unit and Tier-2 itest coverage
-    (including hostile paths: `../`, absolute, symlink-out, secret files).
-  - Done when: over a real WebSocket (Tier 2), listing the root and a nested
-    dir returns correct entries; a `../` request and a planted symlink-to-
-    outside are refused; the legacy `fs_list` still answers identically.
+- [x] **Step E2.1 — per-directory listing: wire + server** — done
+  2026-07-26; additive `fs_listdir`/`fs_dir` pair, jailed + per-dir-capped,
+  token-bucket throttled (`FS_LISTDIR_MAX_PER_SEC` 32 — prefetch bursts are
+  legitimate), hostile paths refused, legacy `fs_list` untouched.
+  → PLAN-ARCHIVE.md.
+- [x] **Step E2.2 — the lazy client: incremental tree store** — done
+  2026-07-26; per-directory node store (fetch on first expand, cached
+  re-expands, per-dir correlation ids + stale-reply drop, loading rows),
+  open = root + first-level prefetch, refresh/turn-end refetch expanded dirs
+  and PRUNE cached-but-collapsed ones; whole-tree `fs_list` retired from the
+  client (daemon still answers it). → PLAN-ARCHIVE.md.
+- [x] **Step E2.3 — multi-repo git fidelity** — done 2026-07-26; per-repo
+  statuses + ignore rules on the lazy listings (`findRepoRoot()` walks to
+  the FILESYSTEM root — git's own discovery rule; `repoStatus()` behind a
+  TTL cache + ONE global serialized git queue; `decorateGitDir()` pure;
+  deleted files stay visible); git trouble degrades to the plain listing,
+  never an error; zero wire or client changes. → PLAN-ARCHIVE.md.
+- [x] **Step E2.4 — the Projects-root proof + compatibility pin** — done
+  2026-07-26, **phase E2 complete**; `fs_diff` discovers the repo CONTAINING
+  the file (nested-repo diffs work; jail first, session-root fallback), the
+  legacy `fs_list` old-client floor pinned as-is (never to be "fixed"), the
+  Tier-3 multi-repo proof shows zero whole-tree requests, phone drill-in
+  passes. All tiers 388/110/56. → PLAN-ARCHIVE.md.
 
-- [x] **Step E2.2 — the lazy client: incremental tree store** ✅ 2026-07-26 —
-  `files-tree.ts` is now the per-directory store (pure transitions:
-  unfetched/loading/loaded/error, refetch keeps prior entries visible so a
-  refresh never reads as a collapse); `FilesPanel` holds per-dir correlation
-  ids (the single `listId` ref is gone), drops stale replies per directory,
-  fetches on first expand with an inline loading row, serves cached
-  re-expands with no request, and shows per-dir truncation/"(empty)" rows.
-  Open = fetch root + prefetch first level (capped at 24 dirs, under the
-  token bucket) + refetch expanded dirs; turn-end/refresh-button = root +
-  expanded dirs only, and both PRUNE cached-but-collapsed dirs so their next
-  expand fetches fresh (staleness honesty at refresh boundaries — a design
-  addition, not in the original spec). Whole-tree `fs_list` retired from the
-  client (bus method replaced by `requestFsListdir`); daemon still answers
-  it. **Known interim (until E2.3):** listings are the plain lister's — no
-  status chars, and gitignored dirs (`dist/` etc.) appear; both return with
-  the git layer. Done-when observed in headless Chrome via a wire recorder:
-  open sends only root + first-level fetches (no `fs_list` anywhere), a deep
-  expand fetches exactly that dir, collapse/re-expand is request-free, and
-  the E.5 turn-end refresh refetches only root + expanded dirs. All three
-  tiers green (e2e run three times to shake out two test-side flakes: an
-  exact-name locator now that ignored siblings like `dist-server/` are
-  listed, and waiting on refetch traffic instead of reused transcript text).
-  - Goal: the panel builds its tree incrementally — fetch on first expand,
-    cache, loading rows — with the whole-tree fetch retired from the client.
-  - Build: replace the flat-entries + derived-tree model in
-    `web/src/files-tree.ts` / `FilesPanel.tsx` with a per-directory node
-    store: per-dir fetch state (unfetched/loading/loaded/error), per-dir
-    correlation ids (the single `listId` ref goes away), stale-reply drop per
-    directory, session-switch clears all. Open = fetch root + prefetch first
-    level; expand of an unfetched dir = fetch + inline loading row; refresh
-    button = refetch currently-expanded dirs. Desktop panel and phone
-    drill-in both consume the store; a11y tree semantics (role=tree,
-    aria-expanded) carry over.
-  - Files: `web/src/files-tree.ts`, `web/src/components/files/FilesPanel.tsx`
-    (+ their tests, a Tier-3 e2e over the mock).
-  - Done when: in headless Chrome, opening the panel shows root + first level
-    with no whole-tree request on the wire; expanding a deep dir fetches
-    exactly that dir; collapse/re-expand serves from cache with no request;
-    the E.5 turn-end refresh refetches only expanded dirs.
+### Deferred from the 2026-07-26 security audit — ✅ both landed with phase W
 
-- [x] **Step E2.3 — multi-repo git fidelity** ✅ 2026-07-26 — per-repo git
-  view on the lazy listings: `findRepoRoot()` (nearest `.git` — dir or file —
-  walking to the FILESYSTEM root, so a subdirectory-rooted session finds its
-  repo above the jail, git's own discovery rule); `repoStatus()` runs
-  `status --porcelain=v1 -z --ignored` per repo behind a TTL cache
-  (`FS_GIT_STATUS_TTL_MS`, default 3 s — the invalidation until W's watcher
-  signal exists; a prefetch burst shares one subprocess per repo) and a
-  GLOBAL one-at-a-time queue (the one-git-child discipline extended —
-  fs_listdir's git calls serialize instead of hitting the per-connection
-  refusal, because the open-panel burst is legitimate); `decorateGitDir()`
-  (pure) drops ignored entries, attaches statuses (children of a collapsed
-  `?? dir/` inherit U), and merges status-only deleted files back in so a
-  deleted file stays visible. Git trouble degrades to the plain listing,
-  never to an error. Zero wire changes (E2.1's `status` slot fills) and zero
-  client changes (file rows already render badges; dir rows ignore the U
-  they now receive — a render nicety left for later). **Known adjacent gap
-  (deliberately not done, E2.4-or-later):** `fs_diff` still runs from the
-  session root, so a status badge in a NESTED repo invites a diff that
-  answers "not a git repository — no diff available" (graceful error reply);
-  single-repo roots diff fine. Done-when observed over a real socket against
-  the two-repos-plus-plain-dir fixture (repoA dirty: M/D/untracked-dir/
-  ignored dist; repoB's own rules — secret.log hidden only there, dist
-  visible U there): each repo honors its own `.gitignore`, statuses ride per
-  repo, the plain dir and the non-repo root list statusless and
-  byte-identical to E2.1; the legacy `fs_list` whole-tree reply pinned
-  as-is, quirks included (collapsed `newdir/` U entry). All three tiers
-  green (388/108/55). *(The diff gap closed the same day — E2.4.)*
-  - Goal: full fidelity at a Projects-folder root — each nested repo shows
-    its own statuses and respects its own ignore rules; single-repo roots
-    behave exactly as today.
-  - Build: nested-repo discovery during listing (a child dir containing
-    `.git` marks a repo boundary); inside a repo, directory listings come
-    from that repo's git view (ignore-rule fidelity) with per-repo `git
-    status` attached to entries (cached per repo, invalidated by refresh/
-    turn-end/W's signal later); outside any repo, the plain E2.1 lister.
-    The existing one-git-child-in-flight discipline extends to per-repo
-    queries (serialize, never fan out N subprocesses at once).
-  - Files: `server/sessions/git.ts`, `server/sessions/fs-handlers.ts`,
-    `server/sessions/fs-explorer.ts` + both test tiers with a multi-repo
-    fixture (two nested repos + one plain dir, one repo dirty).
-  - Done when: against that fixture over a real socket, each repo's dir
-    listings honor its own `.gitignore`, the dirty repo's files carry
-    statuses, the plain dir lists without statuses — and a plain single-repo
-    root session is byte-identical to pre-E2.3 behavior in both suites.
-
-- [x] **Step E2.4 — the Projects-root proof + compatibility pin** ✅
-  2026-07-26 — **phase E2 complete.** Three deliverables plus the gap
-  E2.3 recorded: (1) `fs_diff` now discovers the repo that CONTAINS the
-  file (same `findRepoRoot` walk, directory resolved through the realpath
-  jail first, session-root fallback when the directory is gone — the exact
-  pre-E2.4 behavior), so a modified file in a nested repo diffs instead of
-  answering "no diff available"; Tier-2 pins the nested diff, the
-  deleted-file diff (HEAD vs empty), the plain-dir degrade, and the jail.
-  (2) The old-client floor pinned at a Projects root: legacy `fs_list`
-  serves the plain whole-tree walk (`git: false`, no statuses, ignore
-  rules unhonored, deliberately — pinned as-is, never to be "fixed").
-  (3) The Tier-3 proof over a real multi-repo fixture seeded at a wire-
-  created session: a WebSocket-prototype recorder installed before the
-  panel opens catches every fs frame — open, prefetch, expand into both
-  repos, per-repo badges (M on the dirty file, U on the untracked, none on
-  clean), per-repo ignore fidelity (dist/ hidden in one repo, secret.log
-  in the other), the nested-repo DIFF rendered with real before/after
-  lines, a content view in the second repo — and not one `fs_list` frame
-  anywhere in the flow. (4) Phone drill-in over the same fixture: full-
-  screen panel, badge visible, file opens, Esc walks back out. All tiers
-  green (388 / 110 / 56), e2e twice to shake flakes.
-  - Goal: the headline use case observed end-to-end, and the version-skew
-    floor pinned so it can't rot.
-  - Build: a Tier-3 e2e driving the full lazy flow over a multi-repo
-    workspace (expand into two repos, open a file in each, statuses visible);
-    a Tier-2 pin that the legacy `fs_list` whole-tree reply still works
-    (the old-client floor); phone drill-in pass over the same fixture.
-  - Done when: both land green in CI alongside all existing tiers, and the
-    e2e demonstrates no whole-tree request anywhere in the lazy flow.
-
-### Deferred from the 2026-07-26 security audit (do these inside Phase W)
-
-The audit of Phase E2 found **nothing exploitable** — every containment
-probe refused (see `SECURITY.md`'s "Git metadata is read from the containing
-repo" entry, pinned by a Tier-2 test). Two **hardening** items were deferred
-here rather than fixed, because neither is reachable today and both touch the
-refresh machinery W rewrites anyway. Measured on the real 1.1 GB repo, the
-per-repo `git status --ignored` runs in **40 ms** and emits **<400 bytes**
-(git collapses ignored directories) — that measurement is why both items are
-"later", and if it ever stops holding they become "now".
-
-- [x] **W.H1 — a slow repo must not hold up every viewport's listings.** ✅
-  2026-07-26 — fs_listdir now waits on its repo's status only up to
-  `FS_LISTDIR_STATUS_WAIT_MS` (default 300ms — well above the measured
-  healthy 40ms, well under the 5s git timeout, and covering queue time,
-  which is the actual exposure: statuses serialize globally). On timeout
-  the PLAIN listing ships immediately; when the status settles usable, one
-  synthetic `fs_changed` (no paths — nothing on disk changed) tells that
-  viewport to refetch, and the refetch decorates instantly from the settled
-  cache (W.H2's arrival-stamped TTL — the two fixes interlock). One owed
-  bell per repo per connection, so a prefetch burst against a slow repo
-  rings once; a status that settles degraded rings nothing (plain was
-  final). Pinned over a real socket with a deliberately slow repo (a
-  core.fsmonitor hook that sleeps makes every status ~2s,
-  deterministically): plain reply at the bound, synthetic bell, badged
-  refetch — and mutation-tested (bound disabled → test fails → restored).
-  Per-repo status calls are serialized in ONE global queue (so an open-panel
-  burst can't fork N git subprocesses), and a directory listing waits for its
-  status before it's sent. Consequence: one pathological repo (network mount,
-  cold cache) delays the file panel for every attached viewport, bounded by
-  the 5 s git timeout, after which the listing degrades to no badges. Fix
-  direction: send the listing immediately and let badges arrive as a
-  follow-up, or bound the wait well under the git timeout. Natural fit with
-  W, which makes listings arrive on a signal rather than a request.
-- [x] **W.H2 — the status cache stamps its clock at request time, not
-  arrival.** ✅ 2026-07-26 — `repoStatus` entries now carry `at: Infinity`
-  while in flight (always fresh → every late caller coalesces onto the
-  running call, however long git takes) and stamp `at` when the promise
-  SETTLES (rejections too), so the TTL measures the answer's age, not the
-  question's. The prefetch-burst coalescing is strictly stronger than
-  before. Pinned in `git-cache.itest.ts` with node:test's mocked Date over
-  a real repo (in-flight coalesce 100 mocked seconds past the TTL; fresh
-  from arrival at TTL−ε; expired at TTL+ε) and mutation-tested
-  (request-time stamp restored → test fails → fixed back).
-  *Original finding:* `repoStatus` records `at: Date.now()` when the
-  promise is CREATED. If a git call ever exceeded the 3 s TTL, its result
-  would already be stale on arrival, so new requests would start
-  additional calls instead of reusing it — a backlog that feeds itself.
+The E2 audit found **nothing exploitable**; two hardening items (neither
+reachable at the measured 40 ms / <400-byte per-repo status cost) were
+deferred into W and both shipped 2026-07-26, pinned + mutation-tested:
+**W.H1** — a listing waits on its repo's status only up to
+`FS_LISTDIR_STATUS_WAIT_MS` (300ms); on timeout the PLAIN listing ships and
+one synthetic `fs_changed` decorates it when the slow status settles (one
+owed bell per repo per connection; a degraded status rings nothing).
+**W.H2** — the status cache stamps its TTL clock when the answer ARRIVES
+(in-flight entries read as always-fresh, so every late caller coalesces).
+Full bodies + original findings → PLAN-ARCHIVE.md ("Moved 2026-07-27").
 
 ## Phase W — Live tree (the filesystem watcher; the refresh button goes vestigial)
 
@@ -2291,122 +2013,39 @@ today's behavior** — watch-limit exhaustion (ENOSPC) or any watcher error
 surfaces one notice and leaves turn-end refresh + the button as the floor.
 The E.5 turn-end refresh stays as belt-and-suspenders.
 
-- [x] **Step W.1 — the watcher module, server-side** ✅ 2026-07-26 —
-  `@parcel/watcher@2.6.0` added (prebuilt linux binaries, no install
-  compile); `server/sessions/fs-watch.ts` owns the doorbell: `startWatch()`
-  is a sync facade (lifecycle callers never await; `ready` exposed for
-  tests), one bell per fixed window from the FIRST event (not a trailing
-  debounce — a continuously-writing agent can't starve it;
-  `FS_WATCH_DEBOUNCE_MS`, default 400), root-relative paths hint capped
-  honestly (`FS_WATCH_MAX_PATHS`, default 64, `truncated` past it), the
-  exclusion globs, and error→stop→onError exactly once. Registry wiring:
-  first attach starts, last detach and end() stop, dormant sessions hold no
-  watches; the signal's consumer is W.2 — until then it traces under
-  MIRAFOLD_DEBUG only. **Two backend truths discovered and handled:** (1)
-  the inotify backend permanently misses a subtree created faster than
-  watch registration (`mkdir -p a/b` → only `a` watched — a git clone or
-  scaffold would go silent), healed by resubscribing when a window saw a
-  directory created — which must be unsubscribe-THEN-subscribe, because the
-  native layer shares one watcher per directory (an overlapping subscribe
-  attaches to the stale watch set and never crawls); the brief gap is
-  covered by one synthetic `truncated` bell. (2) unsubscribe is keyed on
-  (dir, callback, opts), so every subscribe passes a fresh closure. Done-
-  when proven in the Tier-2 itest (real inotify, real git), all five
-  clauses plus the heal, cap honesty, and stop-before-ready; the coalescing
-  window, the exclusion globs, and the heal each mutation-tested (guard
-  broken → test fails → restored). All three tiers green (388/119/56).
-  - Goal: a per-session, debounced, exclusion-aware change signal the daemon
-    can consume — proven against a real filesystem.
-  - Build: add `@parcel/watcher`; a small module (`server/sessions/
-    fs-watch.ts`) owning per-session lifecycle (subscribe on first viewport,
-    unsubscribe on last detach / session end), debounce/coalesce
-    (~300–500 ms), the exclusion list, the `.git` status-change coverage,
-    and the error→degraded path.
-  - Files: `package.json`, `server/sessions/fs-watch.ts` (+ registry wiring)
-    + Tier-2 itest.
-  - Done when: Tier 2 proves — file touch fires one coalesced callback with
-    the touched path; a burst of writes fires once; a `git commit` (no
-    working-file change) fires; writes under `node_modules` do NOT fire; a
-    forced subscribe error degrades without crashing the daemon.
-
-- [x] **Step W.B — the bell's paths hint is capped by BYTES too** ✅
-  2026-07-26 (audit finding, fixed same session) — the hint was capped at 64
-  entries but not by size, and a single path may run to thousands of
-  characters: one bell could carry ~250 KB, every window, which a phone
-  viewport pays for over the relay. `FS_WATCH_MAX_PATH_BYTES` (default
-  16,000) now bounds the accumulator alongside the count, whichever runs out
-  first, with `truncated` honest exactly as before (the client already treats
-  a truncated hint as "refetch what you show", so nothing downstream
-  changed). Repeated paths cost no budget. Real projects approach neither
-  bound. Pinned in the Tier-2 itest with 200-byte names against a 1,000-byte
-  budget — the byte cap must cut it while the count cap is nowhere near —
-  and mutation-tested. NOT an attacker-reachable issue: only the user or
-  their own agent can write files into the workspace; the fix is bandwidth
-  hygiene for the paid tier, taken now under the cheap-theoretical-finding
-  rule rather than roadmapped.
-
-- [x] **Step W.A — a browsed repo cannot run programs** ✅ 2026-07-26
-  (audit finding, fixed the same session) — `server/sessions/git-trust.ts`:
-  every daemon git call now neutralizes the settings a repository can use to
-  make git run a program during read-only commands, unless the user has
-  listed that repo in `trusted-repos.json`. Three settings proven to execute
-  by probe (`core.fsmonitor` naming a program; `filter.*.clean`;
-  `filter.*.process`) and neutralized; a dozen candidates proven NOT to fire
-  for our commands and deliberately left alone. The check reads git's
-  EFFECTIVE config (an `include.path`-hidden setting is otherwise missed and
-  still executes — both verified), reading config executes nothing, and
-  results cache per repo and clear on the watcher's bell. One notice per repo
-  per connection names what was skipped and where to allow it. Full detail
-  and the probe method are recorded in `SECURITY.md`. Pinned by
-  `git-trust.itest.ts` (real programs planted in all three settings; a marker
-  on disk IS the vulnerability reproducing) plus Tier-1 pins for the
-  classification, and mutation-tested by removing the protection and watching
-  the pin fail. The W.H1 fixture, which used `core.fsmonitor` to slow git,
-  now rides the allow list — so it proves that path through the real daemon
-  too. **For future work: the vector list is tied to the git commands the
-  daemon runs — adding a new one means re-running the probe.**
-
-- [x] **Step W.2 — `fs_changed` on the wire + the live client** ✅
-  2026-07-26 — `fs_changed { paths?, truncated? }` minted (per-viewport
-  plumbing like the fs_* replies — fanned to attached viewports straight
-  from the watcher callback, never through broadcast(), so it never enters
-  the replay ring; pinned by a late-attacher itest). The bell invalidates
-  the per-repo status cache BEFORE fanning (`invalidateRepoStatusCache()`
-  in git.ts), so a bell-triggered refetch can't be served a pre-change
-  status still inside its TTL — pinned and mutation-tested. Client:
-  FilesPanel handles the bell with the turn-end refresh unit (root +
-  expanded dirs; hint deliberately not consulted — doorbell contract),
-  coalesced client-side through `bellRefreshDelay` (pure, Tier-1-pinned;
-  min gap 1s, immediate first ring, trailing after) so sustained bells
-  can't drain the fs_listdir token bucket. The phase charter's failure
-  notice landed too: a watcher error now fans one shell-composed notice to
-  attached viewports beside the server log line. **Field find, fixed at
-  the source:** the daemon's own per-listing `git status` takes git's
-  optional lock (`.git/index.lock`, sometimes rewriting the index's stat
-  cache) — churn the watcher now HEARS, feeding a listing→status→bell→
-  refetch loop that polluted the E2.2 e2e's recorded window; every runGit
-  now passes `--no-optional-locks` (the background-tool rule), pinned by
-  a deterministic itest (same-content mtime touch makes the stat cache
-  stale, then listings must stay silent) and mutation-tested. Done-when
-  observed in headless Chrome: a file written behind the UI's back appears
-  with zero clicks; a new file in a collapsed, unfetched dir causes no
-  fetch of that dir and stays unlisted; the refresh button still refetches;
-  not one whole-tree request in the flow. All tiers green (389/123/57),
-  e2e twice.
-  - Goal: the tree updates by itself, observed end-to-end; the button
-    becomes something you never need.
-  - Build: `fs_changed { paths?, truncated? }` in `server/protocol.ts`,
-    fanned to the session's attached viewports; client-side, the panel (open
-    only) responds by refetching expanded dirs (+ invalidating E2.3's
-    per-repo status cache); throttle-aware (the bell never bypasses
-    FS_MIN_INTERVAL_MS discipline — coalesce client-side too).
-  - Files: `server/protocol.ts`, `server/sessions/` wiring,
-    `web/src/components/files/FilesPanel.tsx` (+ tiers; Tier-3 e2e).
-  - Done when: in headless Chrome with the panel open, a file written behind
-    the UI's back (test harness writes to the workspace directly) appears in
-    the tree within ~1 s with zero clicks; a new file inside a collapsed,
-    unfetched dir causes no fetch (nothing expanded shows it — correct); the
-    refresh button still works unchanged.
+- [x] **Step W.1 — the watcher module, server-side** — done 2026-07-26;
+  `@parcel/watcher@2.6.0` + `server/sessions/fs-watch.ts`: one bell per
+  fixed window from the FIRST event (a continuously-writing agent can't
+  starve it), honest capped paths hint, exclusion globs, error→stop→notice
+  exactly once; lifecycle follows viewport attach/detach. Two inotify
+  backend truths handled: fast-created subtrees go permanently silent →
+  healed by unsubscribe-THEN-resubscribe + one synthetic bell; every
+  subscribe needs a fresh closure. → PLAN-ARCHIVE.md.
+- [x] **Step W.B — the bell's paths hint capped by BYTES too** — done
+  2026-07-26 (audit finding; not attacker-reachable — bandwidth hygiene
+  under the cheap-theoretical-finding rule); `FS_WATCH_MAX_PATH_BYTES`
+  (16,000) beside the count cap, `truncated` honest, pinned +
+  mutation-tested. → PLAN-ARCHIVE.md.
+- [x] **Step W.A — a browsed repo cannot run programs** — done 2026-07-26
+  (audit finding); `server/sessions/git-trust.ts` + the `trusted-repos.json`
+  allow list neutralize the three probe-proven execute vectors
+  (`core.fsmonitor`, `filter.*.clean`, `filter.*.process`) unless the repo
+  is user-trusted; reads git's EFFECTIVE config (an `include.path`-hidden
+  setting still executes otherwise); one notice per repo per connection;
+  pinned by `git-trust.itest.ts` with real planted programs +
+  mutation-tested. Detail + probe method in `SECURITY.md`. **Standing
+  caution: the vector list is tied to which git commands the daemon runs —
+  adding a new one means re-running the probe.** → PLAN-ARCHIVE.md.
+- [x] **Step W.2 — `fs_changed` on the wire + the live client** — done
+  2026-07-26, **phase W complete**; per-viewport bell (never broadcast,
+  never replayed), the per-repo status cache invalidated BEFORE fanning,
+  client coalesces via `bellRefreshDelay` (min gap 1s) so bells can't drain
+  the token bucket, and the watcher-failure notice ships. Field find fixed
+  at the source: every daemon git read runs `--no-optional-locks`, so the
+  daemon's own status calls can't write `.git` churn the watcher hears (a
+  feedback loop) — itest-pinned + mutation-tested. Proven end-to-end: a
+  file written behind the UI's back appears with zero clicks. All tiers
+  389/123/57. → PLAN-ARCHIVE.md.
 
 ## Phase PN — Panes (file views beside the transcript)
 
@@ -2615,17 +2254,7 @@ parse into the Step 1.4 raw-props fallback — legible, and the designed path.
   6 slices incl. "other"; 2-series pie → legible fallback with the good
   charts unharmed; verified at desktop and phone widths, both fine (0px
   side-scroll).
-  - Build: add `pie` to the `kind` enum. Mapping: `x` = slice names,
-    `series[0].values` = slice values (validate exactly 1 series for pie);
-    fold slices past 6 into "other" so the fixed-slot palette (slot order is
-    the CVD mechanism — never cycle) always suffices. Donut rendering with
-    direct labels + hover tooltip (the ≥2-encodings rule). Read the dataviz
-    skill before writing the renderer, as Chart.tsx did.
-  - Files: `server/registry-spec.ts`, `web/src/registry/Chart.tsx` (+
-    `Chart.test.ts`, `registry-spec.test.ts`, an `app.e2e.ts` mock turn).
-  - Done when: a mock-session prompt for a pie renders a donut in the output
-    zone in both themes, and a malformed pie (e.g. 2 series) degrades into
-    the raw-props fallback, observed in headless Chrome.
+  - *(Original spec bullets → PLAN-ARCHIVE.md.)*
 
 - [x] **Step S.2 — chart ergonomics: `stacked`, `horizontal`, histogram
   hint** ✅ 2026-07-27 (with S.1, same sitting). Optional `stacked` +
@@ -2642,13 +2271,7 @@ parse into the Step 1.4 raw-props fallback — legible, and the designed path.
   schema strips both flags to a plain grouped/vertical bar, and yesterday's
   kind enum rejects `pie` whole into the fallback. Verified at desktop and
   phone widths in headless Chrome.
-  - Build: optional `stacked` (bar → cumulative segments) and `horizontal`
-    (bars grow rightward; y carries the category labels untruncated) props;
-    extend the bar `.describe()` to tell the agent to pre-bin distributions
-    into bar buckets.
-  - Done when: stacked and horizontal mock turns render correctly, and an
-    old-client simulation (parse through yesterday's tolerant schema) shows
-    the props stripping to a plain grouped/vertical bar, not a fallback.
+  - *(Original spec bullets → PLAN-ARCHIVE.md.)*
 
 - [x] **Security audit of the 2026-07-27 component work** ✅ same day, all
   three approved fixes landed with pinned, mutation-tested regressions:
@@ -2723,13 +2346,7 @@ parse into the Step 1.4 raw-props fallback — legible, and the designed path.
   - **`status-list`** — labeled rows with a pass/fail/warn/pending/skip
     verdict pill (glyph + word, existing semantic tokens; a Tier-1 test pins
     glyph↔enum so vocabulary drift fails loudly).
-  - Goal: single-number answers (coverage %, p95 ms, cost) get a glanceable
-    tile instead of a sentence in a `card` — the natural pin-dock resident.
-  - Build: new registry entry `stat`: `label`, `value` (string — the agent
-    formats units), optional `delta` (+/- with good/bad direction), optional
-    `footer`; follows the dataviz stat-tile guidance.
-  - Done when: a mock turn renders the tile, it pins to the dock, and an
-    update-in-place re-send (same wire id) changes the value live.
+  - *(Original spec bullets → PLAN-ARCHIVE.md.)*
 
 ---
 
