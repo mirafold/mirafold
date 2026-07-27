@@ -47,6 +47,12 @@ const TOOL_DESCRIPTIONS: Record<RenderToolName, string> = {
     "Ask the user a structured question with 2–6 clickable options. Clicking one sends its text as the user's next turn. Use when the next step is the user's call between concrete alternatives; never for open-ended questions.",
   render_diff:
     "Show a red/green line diff of a code change, made or proposed. Per file, pass the relevant lines as they were (before) and as they are/would be (after) — verbatim code, no +/- prefixes; the client computes the diff. Use instead of hand-written diff code fences.",
+  render_stat:
+    "Show a single-number stat tile: coverage %, p95, cost, a count — one glanceable KPI with an optional up/down change. Re-call with the returned id to update the number in place as it changes.",
+  render_code:
+    "Show a block of code with a filename/language header and a copy button. For a change you made to an existing file, prefer render_diff (before/after). Use render_code to display code that is not a before/after — the contents of a new file you created, a snippet you're explaining, an example, or a config block.",
+  render_statuslist:
+    "Show labeled rows each with a pass/fail/warn/pending/skip status pill. Use for check results — test suites, CI checks, lint rules, health probes — where every row carries a verdict.",
 };
 
 /** The generative-UI tool-preference nudge, shared across all three adapters:
@@ -68,23 +74,29 @@ components freely.
   render_chart for ANY plot or graph (line for trends, bar for comparisons).
 - Also: render_keyvalue for a name→value fact sheet (config, environment),
   render_timeline when the sequence of events or stages is the point,
-  render_filetree for ANY file/directory structure (never ASCII trees), and
-  render_progress — repainted via its id — for long-running work.
+  render_filetree for ANY file/directory structure (never ASCII trees),
+  render_progress — repainted via its id — for long-running work,
+  render_stat for a single number worth a glanceable tile (coverage, p95,
+  cost) — repaint it via its id as the number moves, and render_statuslist
+  when rows each carry a pass/fail-style verdict (test suites, CI checks,
+  health probes) — richer than render_list for check results.
 - render_question when the next step is genuinely the user's call between
   2–6 concrete options: clicking one sends it as their next turn. Prefer it
   to ending prose with "should I do A or B?". Never use it for open-ended
   questions — those stay prose.
 - render_diff when you present a code change, made or proposed: per file,
   the relevant before/after snippet — never a hand-written ±-prefixed code
-  fence. Plain code blocks stay right for showing code that isn't a change.
+  fence. render_code for code that is NOT a change: a new file's contents,
+  a snippet you're explaining, an example, a config block — it gets a
+  filename header, a copy button, and optional highlighted lines.
 - Raw HTML or SVG in your text renders as literal code, never as visuals.
   Never hand-write markup for something a render tool covers. When something
   genuinely needs custom visuals or interactivity that NO render_* component
   can express (a simulation, a custom diagram, a bespoke mini-app), use
   emit_artifact — it runs your HTML/JS in a locked-down sandbox. It is the
   last resort, not the default: registry components always win when they fit.
-- Plain markdown remains right for code blocks, long-form prose, and anything
-  with no fitting component.
+- Plain markdown remains right for long-form prose, brief inline snippets,
+  and anything with no fitting component.
 - Every render_* result includes the component's id. Calling the same tool
   again with that id replaces that component's props in place — use it to keep
   one widget live (progress, updated stats) instead of stacking duplicates.

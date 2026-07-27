@@ -2567,7 +2567,29 @@ parse into the Step 1.4 raw-props fallback — legible, and the designed path.
     old-client simulation (parse through yesterday's tolerant schema) shows
     the props stripping to a plain grouped/vertical bar, not a fallback.
 
-- [ ] **Step S.3 — `stat` registry component (KPI tile)**
+- [x] **Step S.3 — `stat` registry component (KPI tile)** ✅ 2026-07-27
+  (Kyle-directed, on branch `claude/next-registry-components-lyrbrq`; built to
+  this spec exactly — `label`/`value`/optional `delta {value, direction,
+  good}`/optional `footer`, delta tone follows `good` never the raw direction,
+  the arrow glyph carries direction so state never rides on color alone,
+  proportional figures per the dataviz stat-tile contract). Done-when observed
+  in headless Chrome: the mock `kpi` turn renders the tile, an update-in-place
+  re-send on the same wire id moves the number (one tile, never a stack), and
+  it pins to the dock and back. **Same sitting, same seam, Kyle-directed —
+  two MORE registry components** (all three across both transports via
+  `RENDER_TOOL_COMPONENT`, display-only, no ACTION_TOOLS changes):
+  - **`code`** — display code that is NOT a change (the tool description
+    steers code-vs-diff explicitly): filename/lang header, copy button,
+    client-side tokenizing of plain text through the same
+    react-markdown + rehype-highlight pipeline as turn fences (hast → React,
+    never raw HTML; the fence always outruns any backtick run inside), and
+    optional 1-based highlight ranges clamped to the code's own length. Line
+    emphasis is PINNED-surface styling (neutral lift + code-fg bar) because
+    per-theme tints go pale under the pinned-dark code surface's light text —
+    caught by the both-themes screenshot pass.
+  - **`status-list`** — labeled rows with a pass/fail/warn/pending/skip
+    verdict pill (glyph + word, existing semantic tokens; a Tier-1 test pins
+    glyph↔enum so vocabulary drift fails loudly).
   - Goal: single-number answers (coverage %, p95 ms, cost) get a glanceable
     tile instead of a sentence in a `card` — the natural pin-dock resident.
   - Build: new registry entry `stat`: `label`, `value` (string — the agent

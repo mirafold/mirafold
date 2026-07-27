@@ -72,6 +72,17 @@ const TOOL_DESCRIPTIONS: Record<RenderToolName, string> = {
     "Ask a structured question with 2–6 clickable options; a click sends that option as the user's next turn. Not for open-ended questions.",
   render_diff:
     "Show a red/green line diff of a code change. Per file, pass the relevant before and after lines verbatim (no +/- prefixes); the client computes the diff.",
+  render_stat:
+    "Show a single-number KPI tile (coverage %, p95, cost, a count) with an optional " +
+    "up/down change. Re-call with the same id to update the number in place.",
+  render_code:
+    "Show a block of code with a filename/language header and copy button. For a change " +
+    "to an existing file prefer render_diff (before/after); use this for code that is " +
+    "not a before/after — a new file's contents, a snippet you're explaining, an " +
+    "example, a config block.",
+  render_statuslist:
+    "Show labeled rows each with a pass/fail/warn/pending/skip status pill — test " +
+    "suites, CI checks, lint rules, health probes.",
 };
 
 for (const [name, component] of renderToolEntries) {

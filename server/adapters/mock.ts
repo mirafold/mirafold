@@ -370,6 +370,39 @@ export const MOCK_RENDERS: (() => { component: string; props: Record<string, unk
     },
   }),
   () => ({
+    component: "stat",
+    props: {
+      label: pick(["Cache hit rate", "p95 latency", "Bundle size"]),
+      value: pick(["87.4%", "212 ms", "1.2 MB"]),
+      delta: {
+        value: pick(["+2.1%", "-14 ms", "+38 kB"]),
+        direction: pick(["up", "down"] as const),
+        good: pick([true, false]),
+      },
+      footer: `mock stat · ${pick(PROJECTS)}`,
+    },
+  }),
+  () => ({
+    component: "code",
+    props: {
+      code: `export function retry(n: number) {\n  return Math.min(2 ** n * 100, 5_000);\n}`,
+      lang: "ts",
+      filename: `src/lib/${pick(SERVICES)}.ts`,
+      highlight: [{ start: 2 }],
+    },
+  }),
+  () => ({
+    component: "status-list",
+    props: {
+      title: `Checks — ${pick(PROJECTS)}`,
+      items: [
+        { label: "typecheck", status: "pass" },
+        { label: "unit suite", status: pick(["pass", "fail", "pending"] as const) },
+        { label: "lint", status: pick(["pass", "warn", "skip"] as const), detail: sentence() },
+      ],
+    },
+  }),
+  () => ({
     component: "file-tree",
     props: {
       title: `Touched files — ${pick(PROJECTS)}`,
@@ -460,6 +493,9 @@ export class MockSession implements AgentSession {
     if (/notice|attribution/i.test(text)) return this.playNotices();
     if (/question|choose|decide/i.test(text)) return this.playQuestion();
     if (/picker/i.test(text)) return this.playPicker();
+    if (/kpi/i.test(text)) return this.playStat();
+    if (/snippet/i.test(text)) return this.playCode();
+    if (/health/i.test(text)) return this.playStatusList();
     this.playTemplateTurn(text);
   }
 
@@ -606,6 +642,92 @@ export class MockSession implements AgentSession {
       d += 550;
     }
     d = this.streamText("Plan complete — all four steps done.", d + 100);
+    this.schedule(() => this.emit({ type: "turn_end" }), d + 40);
+  }
+
+  /** Deterministic S.3 hook: a KPI tile kept live — one render id, the
+   *  number moving in place. */
+  private playStat() {
+    const rid = randomUUID();
+    const frame = (value: string, delta: string) => ({
+      label: "Coverage",
+      value,
+      delta: { value: delta, direction: "up" as const, good: true },
+      footer: "yarn test · tier 1",
+    });
+    this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+    this.schedule(
+      () =>
+        this.emit({ type: "render", component: "stat", props: frame("94.2%", "+1.1%"), id: rid }),
+      250,
+    );
+    this.schedule(
+      () =>
+        this.emit({ type: "render", component: "stat", props: frame("96.8%", "+3.7%"), id: rid }),
+      900,
+    );
+    const d = this.streamText("Coverage is climbing as the new tests land.", 1000);
+    this.schedule(() => this.emit({ type: "turn_end" }), d + 40);
+  }
+
+  /** Deterministic hook: a code block — header, tokenized body, emphasized
+   *  lines (display code, NOT a change — that's the diff component). */
+  private playCode() {
+    const code = [
+      'import { readFile } from "node:fs/promises";',
+      "",
+      "export async function loadConfig(path: string) {",
+      '  const raw = await readFile(path, "utf8");',
+      "  return JSON.parse(raw); // TODO: validate",
+      "}",
+    ].join("\n");
+    this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+    const d = this.streamText(
+      "Here's the loader as it stands — the parse is the part worth reading:",
+      200,
+    );
+    this.schedule(
+      () =>
+        this.emit({
+          type: "render",
+          component: "code",
+          props: {
+            code,
+            lang: "ts",
+            filename: "src/config/load.ts",
+            highlight: [{ start: 4, end: 5 }],
+          },
+          id: randomUUID(),
+        }),
+      d + 250,
+    );
+    this.schedule(() => this.emit({ type: "turn_end" }), d + 300);
+  }
+
+  /** Deterministic hook: check rows with verdict pills — one row per status
+   *  the vocabulary knows, so the e2e pins the whole enum's rendering. */
+  private playStatusList() {
+    this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+    this.schedule(
+      () =>
+        this.emit({
+          type: "render",
+          component: "status-list",
+          props: {
+            title: "Health checks",
+            items: [
+              { label: "unit suite", status: "pass", detail: "394 tests, 7.4s" },
+              { label: "e2e suite", status: "pending" },
+              { label: "lint", status: "warn", detail: "2 warnings in `server/pty`" },
+              { label: "relay probe", status: "fail", detail: "dial refused (4007)" },
+              { label: "live-model probe", status: "skip", detail: "no API key" },
+            ],
+          },
+          id: randomUUID(),
+        }),
+      300,
+    );
+    const d = this.streamText("Four suites checked — the relay probe is the one to chase.", 500);
     this.schedule(() => this.emit({ type: "turn_end" }), d + 40);
   }
 

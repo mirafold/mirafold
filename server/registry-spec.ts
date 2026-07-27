@@ -273,6 +273,82 @@ export const registryShapes = {
       ),
   },
 
+  stat: {
+    label: z.string().describe("What the number is, 1–4 words, e.g. 'Coverage' or 'p95 latency'."),
+    value: z
+      .string()
+      .describe(
+        "The number itself, formatted with its unit, e.g. '98%', '212 ms', '$4.10', '1.2 MB'.",
+      ),
+    delta: z
+      .object({
+        value: z.string().describe("The change, formatted and signed, e.g. '+2.1%' or '-14 ms'."),
+        direction: z
+          .enum(["up", "down"])
+          .describe("Which way the number moved — drawn as an arrow beside the change."),
+        good: z
+          .boolean()
+          .describe(
+            "Whether this move is good news — colors the change. Up isn't always " +
+              "good (latency up is bad); say which this is.",
+          ),
+      })
+      .optional()
+      .describe("Change since a prior reading. Omit when there's no comparison."),
+    footer: z
+      .string()
+      .optional()
+      .describe("Small muted line under the value, e.g. the source, period, or baseline."),
+  },
+
+  code: {
+    code: z
+      .string()
+      .describe("The code itself, verbatim plain text. No markdown fences, no HTML."),
+    lang: z
+      .string()
+      .optional()
+      .describe("Language for syntax coloring, e.g. 'ts', 'python', 'json'. Omit if unsure."),
+    filename: z
+      .string()
+      .optional()
+      .describe("Shown in the block's header, e.g. 'src/api/router.ts'."),
+    highlight: z
+      .array(
+        z.object({
+          start: z.number().int().min(1).describe("First emphasized line, 1-based."),
+          end: z
+            .number()
+            .int()
+            .min(1)
+            .optional()
+            .describe("Last emphasized line, inclusive. Omit for a single line."),
+        }),
+      )
+      .optional()
+      .describe("Line ranges to emphasize — the lines the reader should look at first."),
+  },
+
+  "status-list": {
+    title: z.string().optional().describe("Optional heading above the rows."),
+    items: z
+      .array(
+        z.object({
+          label: markdown("What was checked, one line."),
+          status: z
+            .enum(["pass", "fail", "warn", "pending", "skip"])
+            .describe("The row's verdict, drawn as a colored status pill."),
+          detail: markdown(
+            "Optional second line, smaller and muted — the reason or evidence.",
+          ).optional(),
+        }),
+      )
+      .min(1)
+      .describe(
+        "The checks in display order (test suites, CI checks, lint rules, health probes).",
+      ),
+  },
+
   // NOT agent-authored — there is no render tool for this. The server
   // synthesizes it from the agent's TodoWrite calls (session.ts) so the
   // terminal's live task list shows up as a real, update-in-place component (T2.5).

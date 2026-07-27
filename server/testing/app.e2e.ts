@@ -279,6 +279,65 @@ test("shell picker: arrow keys + Enter select a row, terminal-style", async () =
   assert.equal(await rows.first().isDisabled(), true);
 });
 
+test("stat component (S.3): the KPI tile updates in place and pins to the dock", async () => {
+  await page.locator("textarea").click();
+  await page.keyboard.type("kpi demo");
+  await page.keyboard.press("Enter");
+  // Scoped by the deterministic hook's label — a random template turn
+  // elsewhere in this session may paint its own (differently-labeled) tile.
+  const tile = page.locator(".rc-stat", { hasText: "Coverage" });
+  await tile.waitFor({ timeout: 15_000 });
+  // Update-in-place: the re-send on the same wire id moves THIS tile's
+  // number — still one tile, never a stack.
+  await page.waitForSelector(".rc-stat-value:text('96.8%')", { timeout: 15_000 });
+  assert.equal(await tile.count(), 1);
+  // The delta carries its arrow (direction never rides on color alone).
+  assert.match((await tile.locator(".rc-stat-delta").innerText()).trim(), /^↑ \+3\.7%$/);
+  // The natural pin-dock resident: pin it, it moves to the dock, a stub
+  // holds its transcript place; unpin restores (leaves the page clean too).
+  await page.locator(".turn-render", { has: tile }).locator(".pin-btn").click();
+  await page.waitForSelector(".pin-dock .rc-stat");
+  assert.ok(await page.locator(".pin-stub").count());
+  await page.locator(".pin-dock .pin-btn").click();
+  await page.waitForSelector(".pin-dock", { state: "detached" });
+});
+
+test("code component: header, client-tokenized lines, emphasized range, copy affordance", async () => {
+  await page.locator("textarea").click();
+  await page.keyboard.type("snippet demo");
+  await page.keyboard.press("Enter");
+  const block = page.locator(".rc-code", { hasText: "loadConfig" });
+  await block.waitFor({ timeout: 15_000 });
+  assert.equal(await block.locator(".rc-code-name").innerText(), "src/config/load.ts");
+  assert.equal(await block.locator(".rc-code-lang").innerText(), "ts");
+  // Six source lines, lines 4–5 emphasized per the highlight ranges.
+  assert.equal(await block.locator(".rc-code-line").count(), 6);
+  assert.equal(await block.locator(".rc-code-line-hl").count(), 2);
+  assert.match(await block.locator(".rc-code-line-hl").first().innerText(), /readFile\(path/);
+  // Tokenized client-side from plain text — hljs token spans exist, and no
+  // markdown fence characters leaked into the rendered body.
+  assert.ok((await block.locator(".hljs-keyword").count()) > 0, "no syntax tokens");
+  assert.ok(!(await block.locator(".rc-code-body").innerText()).includes("```"));
+  assert.equal(await block.locator(".rc-code-copy").innerText(), "copy");
+});
+
+test("status-list component: one verdict pill per row, glyph + word, all five states", async () => {
+  await page.locator("textarea").click();
+  await page.keyboard.type("health checks demo");
+  await page.keyboard.press("Enter");
+  const block = page.locator(".rc-statuslist", { hasText: "Health checks" });
+  await block.waitFor({ timeout: 15_000 });
+  assert.equal(await block.locator(".rc-status-row").count(), 5);
+  // Every status in the vocabulary renders its own pill class, and the pill
+  // text carries the status WORD — state never rides on color alone.
+  for (const status of ["pass", "fail", "warn", "pending", "skip"]) {
+    const pill = block.locator(`.rc-status-${status}`);
+    assert.equal(await pill.count(), 1, `missing pill for ${status}`);
+    assert.ok((await pill.innerText()).includes(status));
+  }
+  assert.match(await block.locator(".rc-status-row", { hasText: "relay probe" }).innerText(), /4007/);
+});
+
 test("prompt cwd collapses to the caret, expands back, and the choice survives reload (4.8)", async () => {
   await page.waitForSelector(".prompt-cwd");
   // Clicking the path hides it; the caret is all that's left of the prompt.

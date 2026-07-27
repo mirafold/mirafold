@@ -57,6 +57,19 @@ test("every schema rejects wrong-shaped payloads, not just card", () => {
     ], // max(6)
     ["diff", { files: [] }], // min(1)
     ["diff", { files: [{ path: "a.ts", before: "x" }] }], // after required
+    ["stat", { label: "Coverage" }], // value required
+    ["stat", { value: "98%" }], // label required
+    [
+      "stat",
+      { label: "p95", value: "212 ms", delta: { value: "+3", direction: "sideways", good: true } },
+    ], // direction enum
+    ["stat", { label: "p95", value: "212 ms", delta: { value: "+3", direction: "up" } }], // good required
+    ["code", { lang: "ts" }], // code required
+    ["code", { code: "x", highlight: [{ start: 0 }] }], // 1-based
+    ["code", { code: "x", highlight: [{ start: 1.5 }] }], // int lines
+    ["code", { code: "x", highlight: [{ end: 3 }] }], // start required
+    ["status-list", { items: [] }], // min(1)
+    ["status-list", { items: [{ label: "unit", status: "ok" }] }], // status enum
   ];
   for (const [component, props] of bad) {
     assert.equal(
@@ -97,6 +110,36 @@ test("every schema rejects wrong-shaped payloads, not just card", () => {
         files: [
           { path: "a.ts", before: "old line", after: "new line" },
           { path: "b.ts", before: "", after: "added file", note: "new file" },
+        ],
+      },
+    ],
+    ["stat", { label: "p95", value: "212 ms" }], // delta/footer optional
+    [
+      "stat",
+      {
+        label: "Coverage",
+        value: "98%",
+        delta: { value: "+2.1%", direction: "up", good: true },
+        footer: "vs last run",
+      },
+    ],
+    ["code", { code: "const a = 1;" }], // everything else optional
+    [
+      "code",
+      {
+        code: "const a = 1;\nconst b = 2;",
+        lang: "ts",
+        filename: "src/a.ts",
+        highlight: [{ start: 1 }, { start: 2, end: 2 }],
+      },
+    ],
+    [
+      "status-list",
+      {
+        title: "CI",
+        items: [
+          { label: "unit", status: "pass", detail: "394 tests" },
+          { label: "e2e", status: "pending" },
         ],
       },
     ],

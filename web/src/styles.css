@@ -1470,6 +1470,205 @@ body {
   border-bottom: none;
 }
 
+/* stat — the single-number KPI tile (S.3), the natural pin-dock resident */
+.rc-stat {
+  max-width: 280px;
+}
+
+.rc-stat-label {
+  font-size: 0.82em;
+  color: var(--fg-dim);
+  margin-bottom: 4px;
+}
+
+.rc-stat-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+/* Proportional figures on purpose: tabular-nums is for columns that must
+   align; at display size it sets every digit 0-wide and reads loose. */
+.rc-stat-value {
+  font-size: 1.9em;
+  font-weight: 600;
+  color: var(--fg-strong);
+  line-height: 1.15;
+}
+
+.rc-stat-delta {
+  font-size: 0.88em;
+  font-weight: 500;
+}
+
+/* Tone follows `good`, never the raw direction — and the arrow glyph carries
+   the direction, so the state never rides on color alone. */
+.rc-stat-delta-good {
+  color: var(--accent);
+}
+
+.rc-stat-delta-bad {
+  color: var(--error);
+}
+
+.rc-stat-footer {
+  margin-top: 8px;
+  font-size: 0.8em;
+  color: var(--fg-dimmer);
+}
+
+/* code — display block (not a change): header + copy, tokenized body */
+.rc-code {
+  padding: 0;
+  overflow: hidden;
+}
+
+.rc-code-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8em;
+}
+
+.rc-code-name {
+  color: var(--fg-mid);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rc-code-lang {
+  color: var(--fg-faint);
+}
+
+.rc-code-copy {
+  margin-left: auto;
+  padding: 2px 10px;
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--fg-dim);
+  background: transparent;
+  border: 1px solid var(--border-mid);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.rc-code-copy:hover {
+  color: var(--fg-strong);
+  border-color: var(--border-hover);
+}
+
+.rc-code-body {
+  margin: 0;
+  padding: 10px 0;
+  background: var(--code-bg);
+  font-size: 0.84em;
+  overflow-x: auto;
+}
+
+.rc-code-body code {
+  display: block;
+  background: transparent;
+  padding: 0;
+  color: var(--code-fg);
+}
+
+/* Line rows span the full scroll width so a highlight stripe never stops at
+   the viewport edge on long lines. */
+.rc-code-line {
+  display: block;
+  min-width: 100%;
+  width: max-content;
+  padding: 0 12px;
+}
+
+/* Emphasis sits on the PINNED dark code surface (base.css), so it must not
+   ride per-theme tokens — light-theme surface tints go pale under the dark
+   surface's light text. A neutral lift + a code-fg marker bar reads as
+   "look here" (an editor's current-line treatment), not a semantic state. */
+.rc-code-line-hl {
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: inset 2px 0 0 var(--code-fg);
+}
+
+/* status-list — rows with a verdict pill (test suites, CI checks, probes) */
+.rc-statuslist {
+  max-width: 560px;
+}
+
+.rc-statuslist-title {
+  font-weight: 600;
+  color: var(--fg-strong);
+  margin-bottom: 10px;
+}
+
+.rc-statuslist-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rc-status-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.rc-status-pill {
+  flex: none;
+  min-width: 72px;
+  text-align: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.76em;
+  line-height: 1.7;
+}
+
+.rc-status-text {
+  min-width: 0;
+  font-size: 0.92em;
+  line-height: 1.45;
+}
+
+/* Verdict tints ride the existing semantic tokens — no new palette. */
+.rc-status-pass {
+  color: var(--accent);
+  background: var(--ok-bg);
+  border-color: var(--ok-border-strong);
+}
+
+.rc-status-fail {
+  color: var(--error);
+  background: var(--err-bg);
+  border-color: var(--err-border-strong);
+}
+
+.rc-status-warn {
+  color: var(--warn-fg);
+  background: var(--warn-bg);
+  border-color: var(--warn-border-2);
+}
+
+.rc-status-pending {
+  color: var(--info);
+  background: var(--info-bg);
+  border-color: var(--info-border-strong);
+}
+
+.rc-status-skip {
+  color: var(--fg-dimmer);
+  background: transparent;
+  border-color: var(--border-mid);
+}
+
 /* fallback for malformed render instructions (Step 1.4) */
 .rc-fallback {
   border-style: dashed;

@@ -26,6 +26,9 @@ export const RENDER_TOOL_COMPONENT = {
   render_filetree: "file-tree",
   render_question: "question",
   render_diff: "diff",
+  render_stat: "stat",
+  render_code: "code",
+  render_statuslist: "status-list",
 } as const satisfies Record<string, ComponentName>;
 
 export type RenderToolName = keyof typeof RENDER_TOOL_COMPONENT;

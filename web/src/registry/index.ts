@@ -16,6 +16,9 @@ import { Timeline } from "./Timeline";
 import { FileTree } from "./FileTree";
 import { Question } from "./Question";
 import { Diff } from "./Diff";
+import { Stat } from "./Stat";
+import { Code } from "./Code";
+import { StatusList } from "./StatusList";
 
 export const registry: { [N in ComponentName]: ComponentType<ComponentProps<N>> } = {
   card: Card,
@@ -30,4 +33,7 @@ export const registry: { [N in ComponentName]: ComponentType<ComponentProps<N>> 
   "file-tree": FileTree,
   question: Question,
   diff: Diff,
+  stat: Stat,
+  code: Code,
+  "status-list": StatusList,
 };
