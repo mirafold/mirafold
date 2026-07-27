@@ -2252,7 +2252,30 @@ today's behavior** — watch-limit exhaustion (ENOSPC) or any watcher error
 surfaces one notice and leaves turn-end refresh + the button as the floor.
 The E.5 turn-end refresh stays as belt-and-suspenders.
 
-- [ ] **Step W.1 — the watcher module, server-side**
+- [x] **Step W.1 — the watcher module, server-side** ✅ 2026-07-26 —
+  `@parcel/watcher@2.6.0` added (prebuilt linux binaries, no install
+  compile); `server/sessions/fs-watch.ts` owns the doorbell: `startWatch()`
+  is a sync facade (lifecycle callers never await; `ready` exposed for
+  tests), one bell per fixed window from the FIRST event (not a trailing
+  debounce — a continuously-writing agent can't starve it;
+  `FS_WATCH_DEBOUNCE_MS`, default 400), root-relative paths hint capped
+  honestly (`FS_WATCH_MAX_PATHS`, default 64, `truncated` past it), the
+  exclusion globs, and error→stop→onError exactly once. Registry wiring:
+  first attach starts, last detach and end() stop, dormant sessions hold no
+  watches; the signal's consumer is W.2 — until then it traces under
+  MIRAFOLD_DEBUG only. **Two backend truths discovered and handled:** (1)
+  the inotify backend permanently misses a subtree created faster than
+  watch registration (`mkdir -p a/b` → only `a` watched — a git clone or
+  scaffold would go silent), healed by resubscribing when a window saw a
+  directory created — which must be unsubscribe-THEN-subscribe, because the
+  native layer shares one watcher per directory (an overlapping subscribe
+  attaches to the stale watch set and never crawls); the brief gap is
+  covered by one synthetic `truncated` bell. (2) unsubscribe is keyed on
+  (dir, callback, opts), so every subscribe passes a fresh closure. Done-
+  when proven in the Tier-2 itest (real inotify, real git), all five
+  clauses plus the heal, cap honesty, and stop-before-ready; the coalescing
+  window, the exclusion globs, and the heal each mutation-tested (guard
+  broken → test fails → restored). All three tiers green (388/119/56).
   - Goal: a per-session, debounced, exclusion-aware change signal the daemon
     can consume — proven against a real filesystem.
   - Build: add `@parcel/watcher`; a small module (`server/sessions/

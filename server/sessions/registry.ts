@@ -5,6 +5,7 @@ import path from "node:path";
 import type { SessionMeta, WireMsg } from "../protocol";
 import {
   createSession,
+  errText,
   resolveBackend,
   resolveBackendFor,
   type AgentName,
@@ -15,6 +16,7 @@ import { PERMISSION_TIMEOUT_MS } from "../adapters/types";
 import type { CredentialKind } from "../provider-policy";
 import type { BangProc } from "../pty/pty";
 import { createLogger, verbose } from "../log";
+import { startWatch, type FsWatchHandle } from "./fs-watch";
 
 // Replay depth: enough to reconstruct a long working session; beyond it the
 // oldest messages fall off and a late viewport sees a truncated head.
@@ -90,6 +92,10 @@ export type SessionEntry = {
   // When the last `!` command started — the burst throttle in connection.ts
   // (each bang costs a model turn, so bursts burn tokens).
   lastBangAt?: number;
+  // The live-tree doorbell (W.1): running exactly while viewports are
+  // attached — first attach starts it, last detach (and end) stops it — so a
+  // dormant session holds no inotify watches.
+  fsWatch?: FsWatchHandle;
   // Phase M cockpit metadata (M.1), derived in broadcast() the same way
   // `status` is: when the session was created (the cockpit's stable sort
   // key), what it's doing right now, the pending-permission queue (each
@@ -318,12 +324,41 @@ export class SessionRegistry {
       if (afterSeq === undefined || (msg.seq ?? 0) > afterSeq) viewport(msg);
     }
     entry.viewports.add(viewport);
+    // First viewport in → the doorbell starts (W.1). The change signal's
+    // consumer is W.2's fs_changed; until that message exists the bell only
+    // traces under MIRAFOLD_DEBUG. Watcher failure degrades to Phase E
+    // behavior (turn-end refresh + the manual button) with one log line —
+    // never a crash, and a later fresh attach retries.
+    if (entry.viewports.size === 1 && !entry.fsWatch) {
+      entry.fsWatch = startWatch(
+        entry.cwd,
+        (change) => {
+          if (verbose) {
+            createLogger(`session ${entry.id}`).debug(
+              `fs change: ${change.paths.length} path(s)${change.truncated ? " (truncated)" : ""}`,
+            );
+          }
+        },
+        {
+          onError: (err) => {
+            entry.fsWatch = undefined;
+            createLogger(`session ${entry.id}`).error(
+              `fs watcher stopped — the Explorer falls back to turn-end/manual refresh: ${errText(err)}`,
+            );
+          },
+        },
+      );
+    }
     this.notifyWatchers(); // viewport counts are fleet metadata
   }
 
   /** Detaching never closes the session — the idle timer does, much later. */
   detach(entry: SessionEntry, viewport: Viewport) {
     entry.viewports.delete(viewport);
+    if (entry.viewports.size === 0) {
+      entry.fsWatch?.stop(); // nobody listening → no watches held (W.1)
+      entry.fsWatch = undefined;
+    }
     this.notifyWatchers(); // viewport counts are fleet metadata
     // The `=== entry` guard skips this for a session already ended (#11):
     // end() deletes it from the map, so a later detach mustn't re-arm the idle
@@ -349,6 +384,8 @@ export class SessionRegistry {
     const entry = this.entries.get(id);
     if (!entry) return false;
     clearTimeout(entry.idleTimer);
+    entry.fsWatch?.stop();
+    entry.fsWatch = undefined;
     entry.bang?.proc.kill();
     entry.session.close();
     this.entries.delete(id);
