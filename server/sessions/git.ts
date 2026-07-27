@@ -10,6 +10,7 @@ import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import type { FsDirEntry, FsEntry } from "../protocol";
+import { invalidateRepoTrustCache, repoTrust } from "./git-trust";
 
 const GIT_TIMEOUT_MS = Number(process.env.FS_GIT_TIMEOUT_MS ?? 5_000);
 // `git show` of a big blob is the largest legitimate output; the caller caps
@@ -20,13 +21,27 @@ type RunResult =
   | { ok: true; stdout: Buffer }
   | { ok: false; notGit: boolean; code: number | null; stderr: string };
 
-/** One bounded git invocation in `root`. Buffer stdout — `show` can be binary.
+/** One bounded git invocation in `root`, with the repo's own
+ *  program-running settings neutralized unless the user allowed that repo
+ *  (git-trust.ts — the daemon runs git automatically, so a browsed repo must
+ *  not get to run code by configuration alone). A repo naming more filter
+ *  drivers than we will neutralize is refused outright, degrading to the
+ *  plain non-git listing.
  *  `--no-optional-locks` because these are BACKGROUND reads over a watched
  *  tree (Phase W): a plain `git status` may take `.git/index.lock` and
  *  rewrite the index's stat cache — a write the watcher would hear, ringing
  *  a bell whose refetch runs another status… our own reads must never feed
- *  the doorbell. */
-const runGit = (root: string, args: string[]): Promise<RunResult> =>
+ *  the doorbell. It also happens to stop the one hook (`post-index-change`)
+ *  that our commands would otherwise fire (probed). */
+const runGit = async (root: string, args: string[]): Promise<RunResult> => {
+  const trust = await repoTrust(root);
+  if (trust.unscannable) {
+    return { ok: false, notGit: true, code: null, stderr: "repo config not scannable" };
+  }
+  return runGitRaw(root, [...trust.disableArgs, ...args]);
+};
+
+const runGitRaw = (root: string, args: string[]): Promise<RunResult> =>
   new Promise((resolve) => {
     execFile(
       "git",
@@ -295,6 +310,10 @@ const statusCache = new Map<string, { at: number; value: Promise<RepoStatus> }>(
  */
 export function invalidateRepoStatusCache(): void {
   statusCache.clear();
+  // The trust scan is config-derived, and `.git/config` changing is exactly
+  // the kind of disk change that rings the bell — so an edited config is
+  // re-read on the same signal rather than living on until restart.
+  invalidateRepoTrustCache();
 }
 
 export function repoStatus(repoRoot: string): Promise<RepoStatus> {

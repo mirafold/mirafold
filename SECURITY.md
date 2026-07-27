@@ -97,3 +97,40 @@ hide a file inside your scope. That is the intended fidelity — it is what
 makes the file tree match what git actually thinks — but it is a real widening
 of what the daemon reads compared to Phase E, so it is stated here rather
 than left implied.
+
+**A repository does not get to run programs just by being browsed**
+(2026-07-26 audit). Git can be told, by settings inside a repository's own
+`.git/config`, to run a program during ordinary read-only commands — and the
+Explorer runs `git status` automatically the moment a Files panel opens, with
+no permission prompt, because it is the daemon's own call rather than an agent
+tool. A repository that arrived carrying its own `.git` directory (an archive,
+never a `git clone` — cloning deliberately does not copy config) could
+therefore have run code the moment its folder was browsed.
+
+Mirafold now refuses those programs by default and says so in a notice naming
+what it skipped; a user who set one up deliberately can list that repo in
+`trusted-repos.json` (beside the log file, path named in the notice) and it
+behaves exactly as their terminal does. Specifics, each established by probing
+a real repo with a marker program in every candidate setting and running the
+daemon's exact commands:
+
+- **Three settings actually execute** for the commands we issue:
+  `core.fsmonitor` when it names a program (the `true` form is git's own
+  builtin watcher and is left alone), and `filter.<any>.clean` /
+  `filter.<any>.process`, which fire whenever git must read a file's content.
+  Smudge/textconv/external-diff drivers, the signing program, pager, editor,
+  ssh command, credential helper and every hook did **not** fire and are
+  deliberately not neutralized. **This list is tied to the commands the daemon
+  runs — adding a new git command means re-running that probe.**
+- **The check asks git for the effective config**, never reads `.git/config`
+  textually: a setting hidden in an `include.path` file is otherwise missed,
+  and it still executes (both verified).
+- **Reading the config runs nothing**, so the check itself is safe, and it is
+  cached per repo and re-read when the watcher sees `.git` change.
+- A repo naming more content filters than are neutralized one by one is
+  refused git entirely, degrading to the plain listing rather than building an
+  unbounded command line.
+
+Pinned by `server/sessions/git-trust.itest.ts`, which plants real programs in
+all three settings and fails if any of them leaves a mark on disk — verified
+to fail when the protection is removed.

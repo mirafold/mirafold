@@ -27,6 +27,7 @@ import {
   repoRelPath,
   repoStatus,
 } from "./git";
+import { repoTrust, trustFile } from "./git-trust";
 import { inside } from "./actions";
 import { isSecretFile } from "../security/permissions";
 import { errText } from "../adapters";
@@ -94,6 +95,33 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
   // owed ONE follow-up bell per repo when that status lands, however many
   // listings timed out against it (a prefetch burst must not ring N times).
   const lateStatusBells = new Set<string>();
+  // Repos already reported as configuring programs Mirafold refused to run
+  // (the 2026-07-26 audit's default): the prefetch burst hits one repo many
+  // times, and the user needs to be told once, not per directory.
+  const trustNoticed = new Set<string>();
+
+  /**
+   * Say — once per repo, in the shell's own words — that this repo asked git
+   * to run a program and Mirafold didn't. Silent for the ordinary repo that
+   * configures nothing, and silent once the user has allowed this one.
+   */
+  const noticeRefusedPrograms = async (repoRoot: string): Promise<void> => {
+    if (trustNoticed.has(repoRoot)) return;
+    const trust = await repoTrust(repoRoot);
+    if (isClosed() || trustNoticed.has(repoRoot)) return;
+    if (trust.allowed || (!trust.risky.length && !trust.unscannable)) return;
+    trustNoticed.add(repoRoot);
+    const what = trust.unscannable
+      ? "an unusual number of content filters"
+      : trust.risky.map((r) => r.key).join(", ");
+    viewport({
+      type: "notice",
+      text:
+        `This project's git settings ask git to run a program (${what}), and Mirafold skipped it — ` +
+        `file statuses still work. If you set this up yourself, add ${repoRoot} to ` +
+        `${trustFile() ?? "the trusted-repos file"} to allow it.`,
+    });
+  };
 
   const badId = (id: unknown): boolean => typeof id !== "string" || !FS_ID_RE.test(id);
   const tooSoon = (last: number): boolean => Date.now() - last < FS_MIN_INTERVAL_MS;
@@ -188,6 +216,7 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
       // degraded (not a repo, git error) rings nothing: plain was final.
       const repoRoot = findRepoRoot(raw.real);
       if (!repoRoot) return sendDir(raw.all);
+      void noticeRefusedPrograms(repoRoot);
       const dirRel = repoRelPath(repoRoot, raw.real);
       let replied = false;
       const timer = setTimeout(() => {

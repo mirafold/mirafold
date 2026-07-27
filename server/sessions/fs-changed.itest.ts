@@ -1,11 +1,10 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { chmodSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { ClientMsg, WireMsg } from "../protocol";
-import { startDaemon, TestClient, type Daemon } from "../testing/itest-harness";
+import { fixtureGit as git, startDaemon, TestClient, type Daemon } from "../testing/itest-harness";
 
 // W.2 over a real daemon and a real socket: a disk write behind the wire
 // pushes fs_changed to the attached viewport (per-viewport plumbing — never
@@ -18,13 +17,6 @@ type Any = WireMsg & Record<string, any>;
 
 const DEBOUNCE_MS = 120;
 const settle = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-const git = (cwd: string, ...args: string[]) =>
-  execFileSync(
-    "git",
-    ["-C", cwd, "-c", "user.email=t@t.t", "-c", "user.name=t", "-c", "commit.gpgsign=false", ...args],
-    { stdio: "pipe" },
-  );
 
 let d: Daemon;
 let plain: string;
@@ -42,6 +34,16 @@ const openSession = async (cwd: string) => {
   const created = (await c.type("session_created")) as Any;
   return { c, sessionId: created.sessionId as string };
 };
+
+/** One root listing, correlated on `id`. */
+const listRoot = async (c: TestClient, id: string): Promise<Any> => {
+  c.send({ type: "fs_listdir", id, path: "" } as ClientMsg);
+  return (await c.waitFor((m) => m.type === "fs_dir" && (m as Any).id === id, `fs_dir ${id}`, 5_000)) as Any;
+};
+
+/** The status char an fs_dir reply carries for `name` (undefined = clean). */
+const statusOf = (reply: Any, name: string): string | undefined =>
+  (reply.entries as Any[]).find((e) => e.name === name)?.status;
 
 before(async () => {
   plain = mkdtempSync(path.join(os.tmpdir(), "fsc-plain-"));
@@ -68,10 +70,17 @@ before(async () => {
   git(slow, "commit", "-q", "-m", "c1");
   writeFileSync(path.join(slow, "tracked.txt"), "one\ntwo\n"); // the M to see
   git(slow, "config", "core.fsmonitor", hook);
+  // That setting is exactly what the 2026-07-26 audit made the daemon refuse
+  // by default, so this repo has to be ALLOWED for its hook to run at all —
+  // which makes this fixture a live proof of the allow path through the real
+  // daemon, on top of what it was already pinning.
+  const trustPath = path.join(hookDir, "trusted-repos.json");
+  writeFileSync(trustPath, JSON.stringify({ repos: [slow] }));
 
   d = await startDaemon({
     FS_WATCH_DEBOUNCE_MS: String(DEBOUNCE_MS),
     FS_LISTDIR_STATUS_WAIT_MS: String(STATUS_WAIT_MS),
+    MIRAFOLD_TRUST_FILE: trustPath,
   });
 });
 after(async () => {
@@ -118,13 +127,8 @@ test("W.2: a bell invalidates the repo status cache — the next listing is fres
   await settle(DEBOUNCE_MS * 3);
 
   // Prime the cache: a clean repo, no status chars anywhere.
-  c.send({ type: "fs_listdir", id: "before", path: "" } as ClientMsg);
-  const beforeReply = (await c.waitFor(
-    (m) => m.type === "fs_dir" && (m as Any).id === "before",
-    "fs_dir before",
-  )) as Any;
-  const beforeEntry = (beforeReply.entries as Any[]).find((e) => e.name === "tracked.txt");
-  assert.equal(beforeEntry?.status, undefined, "clean file carries no status");
+  const before = await listRoot(c, "before");
+  assert.equal(statusOf(before, "tracked.txt"), undefined, "clean file carries no status");
 
   // Dirty it behind the wire; the bell must arrive AND clear the cache.
   writeFileSync(path.join(repo, "tracked.txt"), "one\ntwo\n");
@@ -132,13 +136,8 @@ test("W.2: a bell invalidates the repo status cache — the next listing is fres
 
   // Well inside FS_GIT_STATUS_TTL_MS (3s default): without the bell's
   // invalidation this would be served the cached clean status.
-  c.send({ type: "fs_listdir", id: "afterr", path: "" } as ClientMsg);
-  const afterReply = (await c.waitFor(
-    (m) => m.type === "fs_dir" && (m as Any).id === "afterr",
-    "fs_dir after",
-  )) as Any;
-  const afterEntry = (afterReply.entries as Any[]).find((e) => e.name === "tracked.txt");
-  assert.equal(afterEntry?.status, "M", "the post-bell listing reads statuses fresh");
+  const after = await listRoot(c, "afterr");
+  assert.equal(statusOf(after, "tracked.txt"), "M", "the post-bell listing reads statuses fresh");
   c.close();
 });
 
@@ -160,8 +159,7 @@ test("W.2: the daemon's own git reads never ring the bell — no status-write fe
 
   const bellsBefore = (c.received as Any[]).filter((m) => m.type === "fs_changed").length;
   for (const id of ["q1", "q2", "q3"]) {
-    c.send({ type: "fs_listdir", id, path: "" } as ClientMsg);
-    await c.waitFor((m) => m.type === "fs_dir" && (m as Any).id === id, `fs_dir ${id}`);
+    await listRoot(c, id);
     await settle(DEBOUNCE_MS * 3); // a status-write bell would land here
   }
   const bellsAfter = (c.received as Any[]).filter((m) => m.type === "fs_changed").length;
@@ -176,16 +174,10 @@ test("W.H1: a slow repo ships the plain listing at the bound; badges follow via 
   // The listing must arrive at the wait bound (150ms here), NOT after the
   // ~2s status — and arrive plain, statuses honestly absent.
   const t0 = Date.now();
-  c.send({ type: "fs_listdir", id: "s1", path: "" } as ClientMsg);
-  const first = (await c.waitFor(
-    (m) => m.type === "fs_dir" && (m as Any).id === "s1",
-    "fs_dir s1",
-    5_000,
-  )) as Any;
+  const first = await listRoot(c, "s1");
   const elapsed = Date.now() - t0;
   assert.ok(elapsed < 900, `the listing waited on git (${elapsed}ms) instead of shipping at the bound`);
-  const firstEntry = (first.entries as Any[]).find((e) => e.name === "tracked.txt");
-  assert.equal(firstEntry?.status, undefined, "the bounded reply is the plain listing");
+  assert.equal(statusOf(first, "tracked.txt"), undefined, "the bounded reply is the plain listing");
 
   // When the status finally settles, ONE synthetic bell (no paths hint —
   // nothing on disk changed) tells this viewport to refetch.
@@ -194,13 +186,7 @@ test("W.H1: a slow repo ships the plain listing at the bound; badges follow via 
 
   // The refetch decorates instantly from the settled cache (TTL from
   // arrival, W.H2) — no second timeout round.
-  c.send({ type: "fs_listdir", id: "s2", path: "" } as ClientMsg);
-  const second = (await c.waitFor(
-    (m) => m.type === "fs_dir" && (m as Any).id === "s2",
-    "fs_dir s2",
-    5_000,
-  )) as Any;
-  const secondEntry = (second.entries as Any[]).find((e) => e.name === "tracked.txt");
-  assert.equal(secondEntry?.status, "M", "the post-bell listing carries the badge");
+  const second = await listRoot(c, "s2");
+  assert.equal(statusOf(second, "tracked.txt"), "M", "the post-bell listing carries the badge");
   c.close();
 });
