@@ -338,6 +338,40 @@ test("status-list component: one verdict pill per row, glyph + word, all five st
   assert.match(await block.locator(".rc-status-row", { hasText: "relay probe" }).innerText(), /4007/);
 });
 
+test("chart stretch (S.1/S.2): pie folds to 'other', stacked and horizontal bars, malformed pie degrades", async () => {
+  await page.locator("textarea").click();
+  await page.keyboard.type("chart demo");
+  await page.keyboard.press("Enter");
+
+  // S.1 — the 8-category pie renders 6 slices: top 5 + "other", never a 7th hue.
+  const pie = page.locator(".rc-chart", { hasText: "Language mix" });
+  await pie.waitFor({ timeout: 15_000 });
+  assert.equal(await pie.locator(".rc-chart-slice").count(), 6);
+  const pieText = await pie.innerText();
+  assert.ok(pieText.includes("other"), "folded slice missing");
+  assert.ok(pieText.includes("total"), "donut-hole total missing");
+
+  // S.2 — stacked: every positive segment drawn (3 series × 4 columns).
+  const stacked = page.locator(".rc-chart", { hasText: "Tokens by model" });
+  await stacked.waitFor({ timeout: 15_000 });
+  assert.equal(await stacked.locator(".rc-chart-seg").count(), 12);
+  assert.equal(await stacked.locator(".rc-chart-key").count(), 3, "stacked keeps its legend");
+
+  // S.2 — horizontal: the category labels render WHOLE (the vertical axis
+  // would clip these at 12 chars).
+  const hbar = page.locator(".rc-chart", { hasText: "Slowest e2e tests" });
+  await hbar.waitFor({ timeout: 15_000 });
+  assert.equal(await hbar.locator(".rc-chart-hbar").count(), 5);
+  assert.ok((await hbar.innerText()).includes("explorer drill-in (phone)"), "label truncated");
+
+  // S.1's rule enforced: the two-series pie lands in the legible raw-props
+  // fallback (error boundary → fallback), and the rest of the zone survived.
+  const fallback = page.locator(".rc-fallback", { hasText: "broken pie" });
+  await fallback.waitFor({ timeout: 15_000 });
+  assert.match(await fallback.innerText(), /couldn't render/);
+  assert.equal(await pie.locator(".rc-chart-slice").count(), 6, "good pie died with the bad one");
+});
+
 test("prompt cwd collapses to the caret, expands back, and the choice survives reload (4.8)", async () => {
   await page.waitForSelector(".prompt-cwd");
   // Clicking the path hides it; the caret is all that's left of the prompt.

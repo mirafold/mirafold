@@ -493,6 +493,7 @@ export class MockSession implements AgentSession {
     if (/notice|attribution/i.test(text)) return this.playNotices();
     if (/question|choose|decide/i.test(text)) return this.playQuestion();
     if (/picker/i.test(text)) return this.playPicker();
+    if (/chart demo/i.test(text)) return this.playCharts();
     if (/kpi/i.test(text)) return this.playStat();
     if (/snippet/i.test(text)) return this.playCode();
     if (/health/i.test(text)) return this.playStatusList();
@@ -642,6 +643,77 @@ export class MockSession implements AgentSession {
       d += 550;
     }
     d = this.streamText("Plan complete — all four steps done.", d + 100);
+    this.schedule(() => this.emit({ type: "turn_end" }), d + 40);
+  }
+
+  /** Deterministic S.1/S.2 hook: the chart stretch shapes in one turn — a
+   *  pie that folds past 6 slices, a stacked bar, a horizontal bar with
+   *  labels the vertical axis would truncate, and a MALFORMED pie (two
+   *  series) whose designed degradation is the raw-props fallback. */
+  private playCharts() {
+    const paint = (props: Record<string, unknown>, at: number) =>
+      this.schedule(
+        () => this.emit({ type: "render", component: "chart", props, id: randomUUID() }),
+        at,
+      );
+    this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+    paint(
+      {
+        title: "Language mix",
+        kind: "pie",
+        x: ["TypeScript", "CSS", "HTML", "Shell", "JSON", "Markdown", "YAML", "SVG"],
+        series: [{ name: "lines", values: [61_200, 9_800, 4_100, 2_600, 1_900, 1_400, 600, 300] }],
+      },
+      250,
+    );
+    paint(
+      {
+        title: "Tokens by model",
+        kind: "bar",
+        stacked: true,
+        x: ["Mon", "Tue", "Wed", "Thu"],
+        yLabel: "tokens",
+        series: [
+          { name: "sonnet", values: [42_000, 51_000, 38_000, 47_000] },
+          { name: "haiku", values: [18_000, 12_000, 22_000, 16_000] },
+          { name: "opus", values: [6_000, 9_000, 4_000, 8_000] },
+        ],
+      },
+      600,
+    );
+    paint(
+      {
+        title: "Slowest e2e tests",
+        kind: "bar",
+        horizontal: true,
+        yLabel: "s",
+        x: [
+          "explorer drill-in (phone)",
+          "relay pairing handshake",
+          "artifact sandbox escapes",
+          "codex model picker flow",
+          "gemini approval prompts",
+        ],
+        series: [{ name: "duration", values: [14.2, 11.8, 9.4, 7.1, 5.6] }],
+      },
+      950,
+    );
+    // The rule-breaker: two series under kind pie. The client must show the
+    // legible raw-props fallback (RenderBlock's designed degradation), never
+    // guess a slice set or crash the zone.
+    paint(
+      {
+        title: "broken pie",
+        kind: "pie",
+        x: ["a", "b"],
+        series: [
+          { name: "s1", values: [1, 2] },
+          { name: "s2", values: [3, 4] },
+        ],
+      },
+      1300,
+    );
+    const d = this.streamText("Three chart shapes and one deliberate rule-breaker.", 1450);
     this.schedule(() => this.emit({ type: "turn_end" }), d + 40);
   }
 

@@ -2541,9 +2541,21 @@ Wire-contract check (all additive, nothing reshapes): new *optional props*
 schemas' ideal degradation; a new *`kind` enum value* fails an old client's
 parse into the Step 1.4 raw-props fallback — legible, and the designed path.
 
-- [ ] **Step S.1 — `chart` kind: pie (donut)**
-  - Goal: a proportions ask renders as a native, theme-tokened chart — never
-    an artifact fallback.
+- [x] **Step S.1 — `chart` kind: pie (donut)** ✅ 2026-07-27 (Kyle-directed,
+  branch `claude/next-registry-components-lyrbrq`, with S.2 same sitting).
+  Built to spec: `pie` on the kind enum; slices = `x` names ×
+  `series[0].values`; size-ordered, past 6 the tail folds into ONE "other"
+  (top 5 + other — the fixed-slot palette always suffices, never cycled);
+  donut with the total in the hole, a per-slice direct-label list
+  (chip + name + value + share, no around-the-donut collisions by
+  construction) and hover tooltip. The one-series rule is enforced in the
+  RENDERER by throw → RenderBlock's error boundary → the raw-props fallback
+  (the schema's raw shapes can't carry cross-field refinements through the
+  generic strict/tolerant derivation; the describe strings state the rule for
+  the agent). Done-when observed in headless Chrome: 8-category mock pie →
+  6 slices incl. "other"; 2-series pie → legible fallback with the good
+  charts unharmed; verified at desktop and phone widths, both fine (0px
+  side-scroll).
   - Build: add `pie` to the `kind` enum. Mapping: `x` = slice names,
     `series[0].values` = slice values (validate exactly 1 series for pie);
     fold slices past 6 into "other" so the fixed-slot palette (slot order is
@@ -2556,9 +2568,21 @@ parse into the Step 1.4 raw-props fallback — legible, and the designed path.
     zone in both themes, and a malformed pie (e.g. 2 series) degrades into
     the raw-props fallback, observed in headless Chrome.
 
-- [ ] **Step S.2 — chart ergonomics: `stacked`, `horizontal`, histogram hint**
-  - Goal: composition and long-label asks stop degrading (cramped grouped
-    bars, truncated labels).
+- [x] **Step S.2 — chart ergonomics: `stacked`, `horizontal`, histogram
+  hint** ✅ 2026-07-27 (with S.1, same sitting). Optional `stacked` +
+  `horizontal` booleans, bar-only, quiet no-ops on line/pie (and on a
+  single-series stack), composable with each other; the kind `.describe()`
+  now tells the agent to pre-bin distributions into labeled bar buckets.
+  Stacked: cumulative columns in palette-slot order, surface-stroke gaps
+  between segments, only the data end rounded, y-scale spans column TOTALS,
+  negatives dropped (no stacking geometry). Horizontal: bars rightward,
+  category labels whole down the left (the vertical axis clips at 12 chars —
+  the point), height grows with category count; the value-unit label moved
+  top-right after the screenshot pass caught it overlapping the last tick.
+  Old-client degradation pinned by test: a rebuilt "yesterday" tolerant
+  schema strips both flags to a plain grouped/vertical bar, and yesterday's
+  kind enum rejects `pie` whole into the fallback. Verified at desktop and
+  phone widths in headless Chrome.
   - Build: optional `stacked` (bar → cumulative segments) and `horizontal`
     (bars grow rightward; y carries the category labels untruncated) props;
     extend the bar `.describe()` to tell the agent to pre-bin distributions

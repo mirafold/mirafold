@@ -32,7 +32,7 @@ const TOOL_DESCRIPTIONS: Record<RenderToolName, string> = {
     "Show a list component in the output zone. Use instead of a markdown bullet/numbered list.",
   render_table: "Show a table component in the output zone. Use instead of a markdown table.",
   render_chart:
-    "Show a chart in the output zone: line for trends over an ordered axis, bar for category comparisons. Use for ANY plot/graph — never hand-write SVG or ASCII charts.",
+    "Show a chart in the output zone: line for trends over an ordered axis, bar for category comparisons, pie for a single part-of-whole split (exactly one series; ≤6 slices read best). On bar, stacked=true stacks the series into part-to-whole columns, and horizontal=true lays the category labels down the left — use it when names are long or categories many. For a distribution, pre-bin the values into labeled bar buckets yourself. Use for ANY plot/graph — never hand-write SVG or ASCII charts.",
   render_links:
     "Show a group of links in the output zone. Use for any collection of URLs worth clicking.",
   render_keyvalue:
@@ -71,7 +71,9 @@ components freely.
   numbered list, render_links to a bare pile of links, render_card for a
   single highlight, verdict, or summary worth setting off from the prose (its
   optional \`kind\` tints it as an info/success/warning/error callout), and
-  render_chart for ANY plot or graph (line for trends, bar for comparisons).
+  render_chart for ANY plot or graph (line for trends, bar for comparisons —
+  stacked for part-to-whole, horizontal for long category names — and pie
+  for a single-series share-of-whole split).
 - Also: render_keyvalue for a name→value fact sheet (config, environment),
   render_timeline when the sequence of events or stages is the point,
   render_filetree for ANY file/directory structure (never ASCII trees),

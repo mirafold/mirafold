@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { clientSchemas, registrySchemas, type ComponentName } from "./registry-spec";
+import { z } from "zod";
+import { clientSchemas, registrySchemas, registryShapes, type ComponentName } from "./registry-spec";
 import { MOCK_RENDERS } from "./adapters/mock";
 
 test("every MOCK_RENDERS payload satisfies its component schema", () => {
@@ -41,8 +42,9 @@ test("every schema rejects wrong-shaped payloads, not just card", () => {
     ["list", { items: [] }], // min(1)
     ["table", { columns: [], rows: [] }], // min(1) columns
     ["table", { columns: ["a"], rows: [[true]] }], // cells are string|number
-    ["chart", { kind: "pie", x: ["a"], series: [{ name: "s", values: [1] }] }], // enum
+    ["chart", { kind: "donut", x: ["a"], series: [{ name: "s", values: [1] }] }], // enum
     ["chart", { kind: "line", x: ["a"], series: [] }], // min(1) series
+    ["chart", { kind: "bar", x: ["a"], series: [{ name: "s", values: [1] }], stacked: "yes" }], // bool
     ["todo-list", { todos: [{ content: "x", status: "bogus" }] }], // status enum
     ["card", { title: "t", body: "b", kind: "loud" }], // kind enum
     ["key-value", { pairs: [] }], // min(1)
@@ -82,6 +84,20 @@ test("every schema rejects wrong-shaped payloads, not just card", () => {
     ["list", { items: [{ text: "x" }] }],
     ["table", { columns: ["a"], rows: [["x", 1]] }],
     ["chart", { kind: "line", x: ["a"], series: [{ name: "s", values: [1] }] }],
+    ["chart", { kind: "pie", x: ["a", "b"], series: [{ name: "s", values: [3, 1] }] }], // S.1
+    [
+      "chart",
+      {
+        kind: "bar",
+        x: ["a"],
+        series: [
+          { name: "s", values: [1] },
+          { name: "t", values: [2] },
+        ],
+        stacked: true,
+        horizontal: true,
+      },
+    ], // S.2 — the flags compose
     ["todo-list", { todos: [{ content: "x", status: "pending" }] }],
     ["card", { title: "t", body: "b", kind: "success" }],
     ["key-value", { pairs: [{ key: "k", value: "v" }] }],
@@ -151,6 +167,44 @@ test("every schema rejects wrong-shaped payloads, not just card", () => {
       `${component} should accept ${JSON.stringify(props)}`,
     );
   }
+});
+
+test("old-client simulation: yesterday's chart schema strips S.2 flags to a plain bar (R.4h)", () => {
+  // Rebuild "yesterday's" tolerant chart twin — today's shape minus the S.2
+  // props — and feed it today's payload. The flags must strip silently
+  // (grouped/vertical bar), never reject into the fallback.
+  const { stacked, horizontal, ...yesterdayShape } = registryShapes.chart;
+  void stacked;
+  void horizontal;
+  const yesterday = z.object(yesterdayShape);
+  const today = {
+    kind: "bar",
+    x: ["a"],
+    series: [
+      { name: "s", values: [1] },
+      { name: "t", values: [2] },
+    ],
+    stacked: true,
+    horizontal: true,
+  };
+  const parsed = yesterday.safeParse(today);
+  assert.ok(parsed.success);
+  assert.ok(!("stacked" in parsed.data) && !("horizontal" in parsed.data));
+  // kind "pie" on that same old client fails the enum parse whole — the
+  // designed degradation is the legible raw-props fallback, not a wrong chart.
+  assert.equal(
+    yesterday.safeParse({ kind: "pie", x: ["a"], series: [{ name: "s", values: [1] }] })
+      .success,
+    true, // NB: yesterdayShape still has TODAY'S kind enum — pie passes here…
+  );
+  const { kind, ...rest } = yesterdayShape;
+  void kind;
+  const yesterdayEnum = z.object({ ...rest, kind: z.enum(["line", "bar"]) });
+  assert.equal(
+    yesterdayEnum.safeParse({ kind: "pie", x: ["a"], series: [{ name: "s", values: [1] }] })
+      .success,
+    false, // …the true old enum rejects it into the fallback.
+  );
 });
 
 test("card actions: the agent may author prompt|tool only, max 3 buttons", () => {

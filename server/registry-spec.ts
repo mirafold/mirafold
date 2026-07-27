@@ -102,12 +102,20 @@ export const registryShapes = {
   chart: {
     title: z.string().optional().describe("Optional heading above the chart."),
     kind: z
-      .enum(["line", "bar"])
-      .describe("line for change/trends over an ordered axis; bar for comparing categories."),
+      .enum(["line", "bar", "pie"])
+      .describe(
+        "line for change/trends over an ordered axis; bar for comparing " +
+          "categories (for a distribution/histogram, pre-bin the values " +
+          "yourself into labeled buckets: '0–99', '100–199', …); pie for ONE " +
+          "part-of-whole split — exactly 1 series, and ≤6 slices read best " +
+          "(smaller slices fold into 'other' automatically).",
+      ),
     x: z
       .array(z.string())
       .min(1)
-      .describe("X-axis labels (time points or categories), in display order."),
+      .describe(
+        "X-axis labels (time points or categories), in display order. For pie: the slice names.",
+      ),
     series: z
       .array(
         z.object({
@@ -119,8 +127,26 @@ export const registryShapes = {
       )
       .min(1)
       .max(6)
-      .describe("1–6 data series sharing the same x axis."),
+      .describe(
+        "1–6 data series sharing the same x axis. pie takes exactly ONE " +
+          "series (its values are the slice sizes) — more than one fails to render.",
+      ),
     yLabel: z.string().optional().describe("Optional y-axis unit/label, e.g. 'ms' or '$k'."),
+    stacked: z
+      .boolean()
+      .optional()
+      .describe(
+        "Bar charts only: stack the series into one part-to-whole column per " +
+          "x label instead of grouping side by side. Ignored for line and pie.",
+      ),
+    horizontal: z
+      .boolean()
+      .optional()
+      .describe(
+        "Bar charts only: bars grow rightward with the category labels down " +
+          "the left — use when category names are long or numerous. Ignored " +
+          "for line and pie.",
+      ),
   },
 
   "link-group": {

@@ -59,7 +59,10 @@ const TOOL_DESCRIPTIONS: Record<RenderToolName, string> = {
   render_table: "Show a table component instead of a markdown table.",
   render_chart:
     "Show a chart for ANY plot/graph: line for trends over an ordered axis, bar " +
-    "for category comparisons. Never hand-write SVG or ASCII charts — use this.",
+    "for category comparisons, pie for one part-of-whole split (exactly 1 series, " +
+    "≤6 slices read best). Bar options: stacked=true for part-to-whole columns; " +
+    "horizontal=true for long/many category names. Pre-bin distributions into bar " +
+    "buckets yourself. Never hand-write SVG or ASCII charts — use this.",
   render_links: "Show a group of links instead of a bare pile of URLs.",
   render_keyvalue:
     "Show a two-column key/value fact sheet: config, environment, any name→value facts.",
