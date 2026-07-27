@@ -639,11 +639,15 @@ frame (`MAX_WS_PAYLOAD`) and session ceiling (`MAX_SESSIONS`) bound resources.
 hello — `attach` (session id taken from the `/s/<id>` URL) or `create` — and
 the server replies `session_created`, replays the session's buffered history,
 then subscribes the socket to the live stream. Every emitted `WireMsg` is
-fanned out to all attached viewports and kept in a ring buffer (4000
-messages, and additionally 32 MB — `SESSION_BUFFER_MAX_BYTES`, 2026-07-27
-audit: the count cap alone assumed text-sized messages, which `render_image`
-broke) for replay, so a refresh or a second tab repaints the same
-transcript. **Reconnects resume, they don't repaint** (4.4): every broadcast
+fanned out to all attached viewports and kept in a ring buffer — with one
+pre-step: consecutive same-type `text_delta`/`thinking_delta` merge on a
+33 ms window (`DELTA_COALESCE_MS`, 0 disables; any other message flushes
+first, so order is exact), so the ring, viewports and relay all carry the
+merged frame, ~3× fewer for streamed text (2026-07-27 perf pass). The ring
+holds 4000 messages (and additionally 32 MB — `SESSION_BUFFER_MAX_BYTES`,
+2026-07-27 audit: the count cap alone assumed text-sized messages, which
+`render_image` broke) for replay, so a refresh or a second tab repaints the
+same transcript. **Reconnects resume, they don't repaint** (4.4): every broadcast
 message carries a session-scoped `seq`; a reconnecting viewport sends the
 last seq it saw and, when the tail is still buffered, the server replays
 only the unseen messages under `session_created{resumed:true}` — mid-turn

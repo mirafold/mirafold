@@ -2213,6 +2213,47 @@ both repos in the same sitting.
 
 ---
 
+## Phase PF — Performance pass (opened + ✅ COMPLETE 2026-07-27)
+
+One sitting, on `main` (commit `9626219`), from a streaming-hot-path map of
+the whole daemon→browser pipeline. All Tier-1 + Tier-2 green (435 + 132),
+typecheck clean; key guards mutation-tested (coalescer flush and
+concatenation each broken → exact pinning tests failed → restored).
+
+- [x] **PF.1 — Server-side delta coalescing.** `broadcast()`
+  (`server/sessions/registry.ts`) merges consecutive same-type
+  `text_delta`/`thinking_delta` into one WireMsg (text = concatenation) on a
+  33 ms window (`DELTA_COALESCE_MS`, env-overridable; constructor-injectable;
+  `0` = passthrough). Any other message — or a delta of the other type —
+  flushes first; attach (before ring replay), detach and session end all
+  flush. The replay ring, seq, byte accounting, local sockets and relay
+  sealing all see only merged frames (~3× fewer for text). Wire protocol
+  untouched — a merged delta is an ordinary delta. Demo mode measured: 18
+  flushes ~36 ms apart, ~3 mock chunks each — still visibly streaming.
+- [x] **PF.2 — Client render batching + memoization.** RenderZone applies
+  queued deltas one animation frame at a time (50 ms hidden-tab fallback;
+  pure merge helper in `web/src/delta-queue.ts`, Tier-1-tested); non-delta
+  messages flush first so order is exact. Transcript entry renderers,
+  ToolBlock and RenderBlock are memoized; RenderBlock's zod `safeParse` runs
+  per props change, not per render; the three per-render full-transcript
+  scans (`pinnedItems`, `activePickerId`, `childrenByParent`) are
+  `useMemo`'d. Follow-tail untouched (its docstring's instant-scroll
+  rationale stands; it now fires per flush). `Artifact` deliberately NOT
+  memoized (per-render closure props; restructuring touches the sandbox
+  bridge). `bang_output` deliberately NOT coalesced (own id + wire-budget
+  logic in `connection.ts`; PTY output is already chunky).
+- [x] **PF.3 — Onboarding poll cost.** The 3 s `refresh_agents` poll no
+  longer re-reads `~/.codex/config.toml` (2 s TTL, missing file never
+  cached), re-probes credential files (2 s TTL) or re-fires the 8 localhost
+  model probes (default sweep TTL 5 s, `MIRAFOLD_LOCAL_PROBE_TTL_MS`,
+  in-flight callers coalesce; itest harness pins it to 0). Tradeoff, eyes
+  open: a just-started local model server takes up to ~8 s to appear
+  (was ~3 s).
+- Deferred, not forgotten (contract-sensitive, own sitting, both suites):
+  `permessage-deflate` on the sockets, slow-viewport backpressure
+  (`bufferedAmount` is checked nowhere), and batching the attach-replay's
+  per-message sealing on the relay path.
+
 ## Stretch goals (unscheduled — polish, no milestone gates on these)
 
 Pick one up only when the phases above are quiet.
