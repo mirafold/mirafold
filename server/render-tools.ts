@@ -9,6 +9,7 @@ import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import { renderToolEntries, type RenderToolName } from "./adapters/render-mcp-cmd";
 import type { WireMsg } from "./protocol";
+import { resolveImageProps } from "./render-image";
 import { registryShapes, type ComponentName } from "./registry-spec";
 import { actionToolNames } from "./sessions/actions";
 
@@ -55,6 +56,8 @@ const TOOL_DESCRIPTIONS: Record<RenderToolName, string> = {
     "Show labeled rows each with a pass/fail/warn/pending/skip status pill. Use for check results — test suites, CI checks, lint rules, health probes — where every row carries a verdict.",
   render_console:
     "Show terminal output you're quoting — a build log excerpt, a failing test's output, a stack trace — as a console block: optional command header, monospace body with ANSI colors rendered, exit-code badge. Quote the RELEVANT excerpt, not a whole log. For code itself use render_code.",
+  render_image:
+    "Show a raster image from the workspace inline: pass the FILE PATH (png/jpeg/gif/webp, ≤2 MB) — e.g. a screenshot you just saved — and the daemon inlines the bytes; never encode them yourself. Use whenever you produce or verify something visual: app screenshots, rendered pages, plots saved to disk.",
 };
 
 /** The generative-UI tool-preference nudge, shared across all three adapters:
@@ -95,6 +98,9 @@ components freely.
   filename header, a copy button, and optional highlighted lines. And
   render_console when you quote what a command PRINTED (build logs, test
   failures, stack traces) — ANSI colors render, and the exit code badges it.
+- render_image whenever you produce or verify something VISUAL — a screenshot
+  you saved, a rendered page, a plot written to disk: pass the workspace file
+  path and the daemon inlines the picture right into the transcript.
 - Raw HTML or SVG in your text renders as literal code, never as visuals.
   Never hand-write markup for something a render tool covers. When something
   genuinely needs custom visuals or interactivity that NO render_* component
@@ -115,9 +121,14 @@ components freely.
   runs a server-side helper — allowlisted names: ${actionToolNames.join(", ")}.
   Never promise a button behavior outside these two kinds.`;
 
-export function makeRenderServer(emit: (msg: WireMsg) => void) {
+export function makeRenderServer(emit: (msg: WireMsg) => void, workspaceDir?: string) {
   const emitRender = (component: ComponentName, id: string | undefined, props: object) => {
     const renderId = id ?? randomUUID();
+    // image authors a PATH; the daemon inlines the bytes at the synthesis
+    // point (same contract as generativeUIMsg on the stdio adapters).
+    if (component === "image" && workspaceDir) {
+      props = resolveImageProps(workspaceDir, props as Record<string, unknown>);
+    }
     emit({ type: "render", component, props: props as Record<string, unknown>, id: renderId });
     return {
       content: [{ type: "text" as const, text: `Rendered ${component} (id: ${renderId})` }],

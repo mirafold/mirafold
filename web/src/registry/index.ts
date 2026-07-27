@@ -20,6 +20,7 @@ import { Stat } from "./Stat";
 import { Code } from "./Code";
 import { StatusList } from "./StatusList";
 import { Console } from "./Console";
+import { Image } from "./Image";
 
 export const registry: { [N in ComponentName]: ComponentType<ComponentProps<N>> } = {
   card: Card,
@@ -38,4 +39,5 @@ export const registry: { [N in ComponentName]: ComponentType<ComponentProps<N>> 
   code: Code,
   "status-list": StatusList,
   console: Console,
+  image: Image,
 };

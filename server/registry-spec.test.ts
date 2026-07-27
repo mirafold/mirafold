@@ -74,6 +74,10 @@ test("every schema rejects wrong-shaped payloads, not just card", () => {
     ["status-list", { items: [{ label: "unit", status: "ok" }] }], // status enum
     ["console", { command: "yarn test" }], // output required
     ["console", { output: "ok", exitCode: 1.5 }], // int exit code
+    ["image", { path: "shot.png" }], // alt required
+    ["image", { path: "shot.png", alt: "x", src: "https://evil.example/a.png" }], // data: only
+    ["image", { path: "shot.png", alt: "x", src: "data:text/html;base64,AAAA" }], // raster MIME only
+    ["image", { path: "shot.png", alt: "x", src: "data:image/svg+xml;base64,AAAA" }], // no svg
   ];
   for (const [component, props] of bad) {
     assert.equal(
@@ -162,6 +166,11 @@ test("every schema rejects wrong-shaped payloads, not just card", () => {
       },
     ],
     ["console", { output: "plain tail" }], // header/exit optional
+    ["image", { path: "shots/app.png", alt: "the app after the fix" }], // authoring shape
+    [
+      "image",
+      { path: "a.png", alt: "x", caption: "c", src: "data:image/webp;base64,AAAA" },
+    ], // wire shape
     ["console", { command: "yarn test", output: "[31mFAIL[0m", exitCode: 1 }],
   ];
   for (const [component, props] of good) {

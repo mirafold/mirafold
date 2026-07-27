@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { WireMsg } from "../protocol";
+import { resolveImageProps } from "../render-image";
 import type { ComponentName } from "../registry-spec";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -30,6 +31,7 @@ export const RENDER_TOOL_COMPONENT = {
   render_code: "code",
   render_statuslist: "status-list",
   render_console: "console",
+  render_image: "image",
 } as const satisfies Record<string, ComponentName>;
 
 export type RenderToolName = keyof typeof RENDER_TOOL_COMPONENT;
@@ -54,8 +56,9 @@ export function generativeUIMsg(
   tool: string,
   params: Record<string, unknown>,
   id: string,
+  workspaceDir?: string,
 ): WireMsg | null {
-  const props = { ...params };
+  let props = { ...params };
   delete props["id"];
   if (tool === "emit_artifact") {
     return {
@@ -66,6 +69,11 @@ export function generativeUIMsg(
     };
   }
   const component = (RENDER_TOOL_COMPONENT as Record<string, ComponentName | undefined>)[tool];
+  // The image component's props are authored as a PATH; the daemon inlines
+  // the bytes here, where the WireMsg is synthesized (the stdio stub has no
+  // file access by design). Without a workspace dir the resolver is skipped
+  // and the client shows the unavailable state — never a guessed file.
+  if (component === "image" && workspaceDir) props = resolveImageProps(workspaceDir, props);
   return component ? { type: "render", component, props, id } : null;
 }
 

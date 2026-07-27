@@ -90,6 +90,11 @@ const TOOL_DESCRIPTIONS: Record<RenderToolName, string> = {
     "Show terminal output you're quoting (build log excerpt, failing test output, " +
     "stack trace): optional command header, ANSI colors rendered, exit-code badge. " +
     "Quote the relevant excerpt, not a whole log. For code itself use render_code.",
+  render_image:
+    "Show a raster image from the workspace inline: pass the FILE PATH " +
+    "(png/jpeg/gif/webp, ≤2 MB), e.g. a screenshot you just saved — the daemon " +
+    "inlines the bytes; never encode them yourself. Use for anything visual you " +
+    "produce or verify: app screenshots, rendered pages, plots saved to disk.",
 };
 
 for (const [name, component] of renderToolEntries) {

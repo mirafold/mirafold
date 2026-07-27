@@ -338,6 +338,24 @@ test("status-list component: one verdict pill per row, glyph + word, all five st
   assert.match(await block.locator(".rc-status-row", { hasText: "relay probe" }).innerText(), /4007/);
 });
 
+test("image component: a resolved shot renders as a real <img>; a refused one says why", async () => {
+  await page.locator("textarea").click();
+  await page.keyboard.type("screenshot demo");
+  await page.keyboard.press("Enter");
+  const fig = page.locator(".rc-image", { hasText: "welcome screen, dark theme" });
+  await fig.waitFor({ timeout: 15_000 });
+  const img = fig.locator("img.rc-image-img");
+  assert.equal(await img.getAttribute("alt"), "the welcome screen after the fix");
+  assert.match((await img.getAttribute("src"))!, /^data:image\/png;base64,/);
+  // The pixels actually decoded — a broken data URI reports naturalWidth 0.
+  assert.equal(await img.evaluate((el) => (el as HTMLImageElement).naturalWidth), 1);
+  // The refused shot explains itself instead of a broken-image glyph.
+  const missing = page.locator(".rc-image-missing", { hasText: "shots/huge.png" });
+  await missing.waitFor({ timeout: 15_000 });
+  assert.match(await missing.innerText(), /image unavailable — too large/);
+  assert.equal(await missing.locator("img").count(), 0);
+});
+
 test("console component: command header, ANSI colors as spans, junk escapes stripped, exit badge", async () => {
   await page.locator("textarea").click();
   await page.keyboard.type("console demo");

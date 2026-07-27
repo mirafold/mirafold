@@ -222,6 +222,7 @@ function providerBinding(
 export class CodexSession implements AgentSession {
   private queue = new AsyncQueue<string | typeof CLOSE>();
   private listeners = new Set<(msg: WireMsg) => void>();
+  private workspaceDir: string;
   private thread: Thread;
   // Retained for the V.2 /model switch: a mid-session model change is
   // `codex.resumeThread(threadId, {...threadOpts, model})` — a fresh Thread
@@ -290,6 +291,7 @@ export class CodexSession implements AgentSession {
   }) {
     const workspaceDir = path.resolve(opts.workspaceDir);
     mkdirSync(workspaceDir, { recursive: true });
+    this.workspaceDir = workspaceDir;
     this.modelLabel = opts.model ?? MODEL_STAND_IN;
     // The chosen backend, enforced per-session (N.5; provider binding 2026-07-19):
     // every pick forces the provider its label promised, because a config.toml
@@ -813,7 +815,7 @@ export class CodexSession implements AgentSession {
       item.arguments && typeof item.arguments === "object"
         ? (item.arguments as Record<string, unknown>)
         : {};
-    const msg = generativeUIMsg(item.tool, args, extractRenderId(item));
+    const msg = generativeUIMsg(item.tool, args, extractRenderId(item), this.workspaceDir);
     if (msg) this.emit(msg);
   }
 

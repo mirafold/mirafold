@@ -495,6 +495,7 @@ export class MockSession implements AgentSession {
     if (/picker/i.test(text)) return this.playPicker();
     if (/chart demo/i.test(text)) return this.playCharts();
     if (/console/i.test(text)) return this.playConsole();
+    if (/screenshot/i.test(text)) return this.playImage();
     if (/kpi/i.test(text)) return this.playStat();
     if (/snippet/i.test(text)) return this.playCode();
     if (/health/i.test(text)) return this.playStatusList();
@@ -715,6 +716,47 @@ export class MockSession implements AgentSession {
       1300,
     );
     const d = this.streamText("Three chart shapes and one deliberate rule-breaker.", 1450);
+    this.schedule(() => this.emit({ type: "turn_end" }), d + 40);
+  }
+
+  /** Deterministic hook: the image component in both states — pixels
+   *  arrived (a daemon-resolved data URI, mock-inlined here since the mock
+   *  emits WireMsgs directly), and the daemon-refused unavailable box. */
+  private playImage() {
+    // A real 1×1 PNG so the client draws an actual <img>.
+    const px =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+    this.schedule(
+      () =>
+        this.emit({
+          type: "render",
+          component: "image",
+          props: {
+            path: "shots/welcome.png",
+            alt: "the welcome screen after the fix",
+            caption: "welcome screen, dark theme",
+            src: px,
+          },
+          id: randomUUID(),
+        }),
+      300,
+    );
+    this.schedule(
+      () =>
+        this.emit({
+          type: "render",
+          component: "image",
+          props: {
+            path: "shots/huge.png",
+            alt: "a screenshot that was too big",
+            error: "too large (4.2 MB; the cap is 2 MB)",
+          },
+          id: randomUUID(),
+        }),
+      650,
+    );
+    const d = this.streamText("The welcome screen matches the mock — one shot was over the cap.", 800);
     this.schedule(() => this.emit({ type: "turn_end" }), d + 40);
   }
 

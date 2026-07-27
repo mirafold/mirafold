@@ -355,6 +355,32 @@ export const registryShapes = {
       .describe("Line ranges to emphasize — the lines the reader should look at first."),
   },
 
+  image: {
+    path: z
+      .string()
+      .describe(
+        "Workspace-relative path to a raster image file (png, jpeg, gif, webp; " +
+          "≤2 MB) — e.g. the screenshot you just saved. The daemon inlines the " +
+          "bytes for you; never try to encode them yourself.",
+      ),
+    alt: z
+      .string()
+      .describe("What the image shows, one line — screen readers read it, and it stands in when the image can't load."),
+    caption: z.string().optional().describe("Optional muted caption under the image."),
+    // Daemon-filled pair. The wire/client contract for the actual pixels: a
+    // strictly-shaped data: URI (raster MIME + base64 only) — the client's
+    // schema regex is the gate that keeps any other src shape out of the DOM.
+    src: z
+      .string()
+      .regex(/^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+={0,2}$/)
+      .optional()
+      .describe("Filled by the daemon from `path`. Never set this — anything you pass is discarded."),
+    error: z
+      .string()
+      .optional()
+      .describe("Filled by the daemon when `path` couldn't be inlined. Never set this."),
+  },
+
   console: {
     command: z
       .string()

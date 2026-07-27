@@ -396,7 +396,7 @@ export class GeminiCliSession implements AgentSession {
   /** A buffered genui tool call → the render/artifact WireMsg it stands for. */
   private emitGenerativeUI(pending: { tool: string; params: Record<string, unknown> }, output: unknown) {
     const id = typeof pending.params["id"] === "string" ? (pending.params["id"] as string) : parseRenderId(output);
-    const msg = generativeUIMsg(pending.tool, pending.params, id);
+    const msg = generativeUIMsg(pending.tool, pending.params, id, this.workspaceDir);
     if (msg) this.emit(msg);
   }
 }

@@ -164,7 +164,7 @@ export class ClaudeCodeSession implements AgentSession {
         ...(process.env.MAX_THINKING_TOKENS
           ? { maxThinkingTokens: Number(process.env.MAX_THINKING_TOKENS) }
           : {}),
-        mcpServers: { ui: makeRenderServer((msg) => this.emit(msg)) },
+        mcpServers: { ui: makeRenderServer((msg) => this.emit(msg), workspaceDir) },
         systemPrompt: { type: "preset", preset: "claude_code", append: RENDER_GUIDANCE },
       },
     });
