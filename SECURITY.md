@@ -134,3 +134,33 @@ daemon's exact commands:
 Pinned by `server/sessions/git-trust.itest.ts`, which plants real programs in
 all three settings and fails if any of them leaves a mark on disk — verified
 to fail when the protection is removed.
+
+**One render can now carry megabytes, so the replay buffer is capped by bytes
+as well as by count** (2026-07-27 audit). Each session keeps its recent
+messages in memory so a reconnecting viewport can catch up. That ring was
+bounded only by message COUNT, which was safe while every message was text the
+agent had to type out — its own output limits were the real bound. The `image`
+component broke that assumption: the agent writes a short file path and the
+daemon inlines up to 2 MB of picture into a single buffered message, and
+render tools are auto-allowed (they only draw), so nothing prompts. Measured
+before the fix: 40 image renders retained 96 MB, and the count cap's own
+ceiling worked out to roughly 10 GB. The realistic trigger is not even an
+attack — an agent looping screenshot→verify renders images normally — but text
+the agent picked up from somewhere untrusted could also ask for it, with no
+click from the user.
+
+The ring is now additionally bounded by `SESSION_BUFFER_MAX_BYTES` (32 MB
+default), evicting oldest-first exactly as the count cap does. A single
+message larger than the whole budget is still retained rather than emptying
+the ring — single messages are bounded at their source (the image resolver
+refuses past 2 MB). What this costs: a session that renders many large images
+keeps a shorter replay history, so a viewport reconnecting after a long
+absence may see a truncated head — the same degradation the count cap has
+always had. Pinned by `server/sessions/registry.test.ts`, verified to fail
+when the byte cap is removed.
+
+Related, same audit: the workspace directory is a **required** argument on
+both render paths (`makeRenderServer`, `generativeUIMsg`). It is what jails
+the image tool's file read to the session's directory; optional, a future
+adapter could omit it and silently pass the agent's own `src` through,
+skipping containment and the size cap. Required, that is a compile error.

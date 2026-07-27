@@ -2591,6 +2591,28 @@ parse into the Step 1.4 raw-props fallback — legible, and the designed path.
     old-client simulation (parse through yesterday's tolerant schema) shows
     the props stripping to a plain grouped/vertical bar, not a fallback.
 
+- [x] **Security audit of the 2026-07-27 component work** ✅ same day, all
+  three approved fixes landed with pinned, mutation-tested regressions:
+  1. **Session replay buffer capped by BYTES** (`SESSION_BUFFER_MAX_BYTES`,
+     32 MB) beside the existing 4000-message count cap. The count cap
+     assumed text-only messages; `image` made one message worth megabytes
+     from a short path, with no permission prompt. Measured open: 40 renders
+     retained 96 MB, ~10 GB at the count ceiling. Re-probed closed: 200
+     renders now plateau at 32.9 MB. Full note in SECURITY.md.
+  2. **Workspace dir is a REQUIRED argument** on `makeRenderServer` and
+     `generativeUIMsg` — it jails the image read, and optional meant a
+     future adapter could skip containment by forgetting it.
+  3. **`mermaid` moved to devDependencies** — the runtime is inlined into
+     `dist/` at build time and nothing shipped loads it from `node_modules`
+     (verified), so it was costing every user 84 MB and 62 transitive
+     packages of install + supply-chain surface for zero runtime use.
+     Kyle's zero-passengers rule, applied.
+  Clean on everything else probed: image containment (symlink/traversal/
+  `.env`/wrong-bytes/oversize all refused, mutation-tested), every new
+  parser against pathological input (worst case 56 ms, no hangs, clamps
+  hold), the diagram sandbox, supply chain (0 advisories/248 pkgs, no
+  install scripts), and repo hygiene (no secrets in the session's commits).
+
 - [x] **Workflow-gap batch (Kyle-directed 2026-07-27, same branch): `console`,
   `image`, `diagram`** ✅ — the three glaring terminal-agent workflow gaps
   from the 2026-07-27 survey, each through the full seam, one commit apiece:

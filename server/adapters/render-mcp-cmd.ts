@@ -53,11 +53,14 @@ export const RENDER_ID_RE = /id:\s*([0-9a-fA-F-]{8,})/;
  * the agent's own event stream paints the message here. Returns null for an
  * unknown Mirafold MCP tool (ignore rather than paint junk).
  */
+// `workspaceDir` is REQUIRED for the same reason it is on makeRenderServer
+// (2026-07-27 audit): it jails the image tool's read. Making it optional
+// would let a future adapter skip containment by simply forgetting it.
 export function generativeUIMsg(
   tool: string,
   params: Record<string, unknown>,
   id: string,
-  workspaceDir?: string,
+  workspaceDir: string,
 ): WireMsg | null {
   let props = { ...params };
   delete props["id"];
@@ -72,9 +75,8 @@ export function generativeUIMsg(
   const component = (RENDER_TOOL_COMPONENT as Record<string, ComponentName | undefined>)[tool];
   // The image component's props are authored as a PATH; the daemon inlines
   // the bytes here, where the WireMsg is synthesized (the stdio stub has no
-  // file access by design). Without a workspace dir the resolver is skipped
-  // and the client shows the unavailable state — never a guessed file.
-  if (component === "image" && workspaceDir) props = resolveImageProps(workspaceDir, props);
+  // file access by design).
+  if (component === "image") props = resolveImageProps(workspaceDir, props);
   return component ? { type: "render", component, props, id } : null;
 }
 

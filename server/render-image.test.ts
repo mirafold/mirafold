@@ -4,6 +4,7 @@ import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { IMAGE_MAX_BYTES, resolveImageProps } from "./render-image";
+import { generativeUIMsg } from "./adapters/render-mcp-cmd";
 
 // A real 1×1 PNG — the sniff must see genuine magic bytes.
 const PNG = Buffer.from(
@@ -53,6 +54,40 @@ test("containment: a symlink out of the workspace and a ../ path are both refuse
     assert.equal(out["src"], undefined, p);
     assert.equal(out["error"], "missing, or outside the workspace", p);
   }
+});
+
+// 2026-07-27 audit. Both render paths must run every image through the
+// resolver — the agent's own `src` may never reach a viewport, or it would
+// skip containment AND the byte cap. The workspace dir being a REQUIRED
+// argument is what makes forgetting it a compile error rather than a silent
+// hole; these pin the runtime half of that contract.
+test("audit: the stdio adapters' path resolves images — an agent-authored src never survives", () => {
+  const msg = generativeUIMsg(
+    "render_image",
+    { path: "shots/ok.png", alt: "x", src: "data:image/png;base64,QUFBQQ==" },
+    "wire-id",
+    root,
+  );
+  assert.ok(msg && msg.type === "render");
+  const props = msg.props as Record<string, unknown>;
+  // Resolved from the FILE, not from what the agent passed.
+  assert.equal(
+    Buffer.from((props["src"] as string).split(",")[1], "base64").equals(PNG),
+    true,
+    "the agent's src survived instead of the resolved file",
+  );
+});
+
+test("audit: an escaping path yields no src on the adapters' path either", () => {
+  const msg = generativeUIMsg(
+    "render_image",
+    { path: "escape.png", alt: "x", src: "data:image/png;base64,QUFBQQ==" },
+    "wire-id",
+    root,
+  );
+  const props = (msg as { props: Record<string, unknown> }).props;
+  assert.equal(props["src"], undefined);
+  assert.equal(props["error"], "missing, or outside the workspace");
 });
 
 test("refusals: wrong bytes, oversize, secret basename, missing file, no path", () => {

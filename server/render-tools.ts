@@ -127,12 +127,16 @@ components freely.
   runs a server-side helper — allowlisted names: ${actionToolNames.join(", ")}.
   Never promise a button behavior outside these two kinds.`;
 
-export function makeRenderServer(emit: (msg: WireMsg) => void, workspaceDir?: string) {
+// `workspaceDir` is REQUIRED (2026-07-27 audit): it is what jails the image
+// tool's file read to the session's directory. Optional, a future adapter
+// could omit it and silently ship the agent's own `src` to the client,
+// skipping containment and the byte cap. Required, that's a compile error.
+export function makeRenderServer(emit: (msg: WireMsg) => void, workspaceDir: string) {
   const emitRender = (component: ComponentName, id: string | undefined, props: object) => {
     const renderId = id ?? randomUUID();
     // image authors a PATH; the daemon inlines the bytes at the synthesis
     // point (same contract as generativeUIMsg on the stdio adapters).
-    if (component === "image" && workspaceDir) {
+    if (component === "image") {
       props = resolveImageProps(workspaceDir, props as Record<string, unknown>);
     }
     emit({ type: "render", component, props: props as Record<string, unknown>, id: renderId });

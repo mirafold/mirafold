@@ -62,7 +62,6 @@
     "@openai/codex-sdk": "^0.142.5",
     "@parcel/watcher": "^2.6.0",
     "express": "^5.2.1",
-    "mermaid": "^11.16.0",
     "ws": "^8.21.0",
     "zod": "^4.4.3"
   },
@@ -77,6 +76,7 @@
     "concurrently": "^10.0.3",
     "esbuild": "^0.28.1",
     "highlight.js": "^11.11.1",
+    "mermaid": "^11.16.0",
     "playwright-core": "^1.61.1",
     "qrcode-generator": "^2.0.4",
     "react": "^19.2.7",

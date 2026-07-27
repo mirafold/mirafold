@@ -22,6 +22,23 @@ import { invalidateRepoStatusCache } from "./git";
 // Replay depth: enough to reconstruct a long working session; beyond it the
 // oldest messages fall off and a late viewport sees a truncated head.
 const BUFFER_CAP = 4000;
+// The same ring, capped by BYTES as well (2026-07-27 audit). The count cap
+// alone assumed every message was text the agent had to type, which bounded
+// it implicitly — `render_image` broke that: a six-character path inlines up
+// to 2 MB of picture into one buffered message, and render tools are
+// auto-allowed, so nothing prompts. Measured: 40 image renders held 96 MB,
+// and the count cap's own ceiling worked out to ~10 GB. Evict oldest-first on
+// either cap; a viewport that falls behind the trimmed head just replays from
+// a truncated head, exactly as it does when the count cap trims.
+const BUFFER_MAX_BYTES = Number(process.env.SESSION_BUFFER_MAX_BYTES ?? 32_000_000);
+
+/** Rough retained size of a buffered message. JSON length is the honest proxy
+ *  for the payloads that matter here (a data: URI is one long string) and
+ *  costs one serialization per broadcast — the same work the verbose logger
+ *  already does per message. */
+function msgBytes(msg: WireMsg): number {
+  return JSON.stringify(msg).length;
+}
 // A session with no viewports survives this long, then dies for real.
 const IDLE_TIMEOUT_MS = Number(process.env.SESSION_IDLE_TIMEOUT_MS ?? 4 * 60 * 60_000);
 // Cap on the fleet's pending-permission MIRROR (2026-07-24 audit): a flooded
@@ -76,6 +93,9 @@ export type SessionEntry = {
   kind: CredentialKind;
   session: AgentSession;
   buffer: WireMsg[];
+  /** Running sum of `msgBytes` over `buffer` — kept incrementally so the byte
+   *  cap costs one serialization per broadcast, not a walk of the whole ring. */
+  bufferBytes: number;
   viewports: Set<Viewport>;
   // Next session-scoped sequence number; broadcast stamps it onto every
   // message so a reconnecting viewport can name where its stream broke off (4.4).
@@ -175,6 +195,7 @@ export class SessionRegistry {
       kind: backend.kind,
       session,
       buffer: [],
+      bufferBytes: 0,
       viewports: new Set(),
       nextSeq: 1,
       name: path.basename(dir) || dir,
@@ -216,8 +237,17 @@ export class SessionRegistry {
     // an adapter re-emitting a message can't corrupt an already-buffered seq (4.4).
     msg = { ...msg, seq: entry.nextSeq++ };
     entry.buffer.push(msg);
+    entry.bufferBytes += msgBytes(msg);
     if (entry.buffer.length > BUFFER_CAP) {
-      entry.buffer.splice(0, entry.buffer.length - BUFFER_CAP);
+      for (const dropped of entry.buffer.splice(0, entry.buffer.length - BUFFER_CAP)) {
+        entry.bufferBytes -= msgBytes(dropped);
+      }
+    }
+    // Byte cap: drop oldest until under budget, but never the message just
+    // buffered — a single payload over the whole budget still replays (it is
+    // already bounded at its source, e.g. the image resolver's 2 MB cap).
+    while (entry.bufferBytes > BUFFER_MAX_BYTES && entry.buffer.length > 1) {
+      entry.bufferBytes -= msgBytes(entry.buffer.shift()!);
     }
     entry.lastActivity = Date.now();
     // Coarse fleet status, derived from the stream itself — no adapter

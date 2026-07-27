@@ -55,6 +55,67 @@ function freshSession() {
 
 const delta = (): WireMsg => ({ type: "text_delta", text: "x" });
 
+// Mirror of BUFFER_MAX_BYTES, same hand-kept convention as BUFFER_CAP above.
+const BUFFER_MAX_BYTES = 32_000_000;
+
+/** One image-sized render — the payload class the byte cap exists for: a
+ *  short agent-authored path becomes a multi-megabyte data: URI. */
+const bigRender = (mb: number): WireMsg => ({
+  type: "render",
+  component: "image",
+  props: { path: "shot.png", alt: "x", src: `data:image/png;base64,${"A".repeat(mb * 1_000_000)}` },
+  id: "img",
+});
+
+// 2026-07-27 audit. The count cap alone assumed every message was text the
+// agent had to type; render_image broke that (six characters of path → 2 MB
+// buffered, no permission prompt). Measured before the fix: 40 image renders
+// held 96 MB, with the count cap's own ceiling around 10 GB.
+test("audit: the ring is capped by BYTES too — image renders can't grow the session unbounded", () => {
+  const { reg, entry } = freshSession();
+  for (let i = 0; i < 60; i++) reg.broadcast(entry, bigRender(2));
+
+  assert.ok(
+    entry.bufferBytes <= BUFFER_MAX_BYTES,
+    `buffer held ${(entry.bufferBytes / 1e6).toFixed(0)} MB, over the ${BUFFER_MAX_BYTES / 1e6} MB cap`,
+  );
+  // Nowhere near the COUNT cap — so it was the byte cap that trimmed, which
+  // is the whole point of this test.
+  assert.ok(entry.buffer.length < BUFFER_CAP, "count cap did the trimming, not the byte cap");
+  assert.ok(entry.buffer.length > 0, "the ring must not empty itself");
+  // The running total stays honest against a recount of what's retained.
+  const recounted = entry.buffer.reduce((sum, m) => sum + JSON.stringify(m).length, 0);
+  assert.equal(entry.bufferBytes, recounted);
+  // Newest is always kept; eviction is oldest-first, so seqs stay contiguous.
+  assert.equal(entry.buffer[entry.buffer.length - 1].seq, 60);
+  for (let k = 1; k < entry.buffer.length; k++) {
+    assert.equal(entry.buffer[k].seq, entry.buffer[k - 1].seq! + 1);
+  }
+  reg.end(entry.id);
+});
+
+test("audit: one payload larger than the whole byte budget still replays", () => {
+  // The source-side caps bound a single message (the image resolver refuses
+  // past 2 MB); the ring must not answer an oversize message by emptying.
+  const { reg, entry } = freshSession();
+  reg.broadcast(entry, delta());
+  reg.broadcast(entry, bigRender(40));
+  assert.equal(entry.buffer.length, 1);
+  assert.equal(entry.buffer[0].type, "render");
+  assert.equal(entry.bufferBytes, JSON.stringify(entry.buffer[0]).length);
+  reg.end(entry.id);
+});
+
+test("audit: text sessions are untouched by the byte cap — the count cap still owns them", () => {
+  // A regression here would mean the byte cap started trimming ordinary
+  // sessions, silently shortening everyone's replay history.
+  const { reg, entry } = freshSession();
+  for (let i = 0; i < PUSH; i++) reg.broadcast(entry, delta());
+  assert.equal(entry.buffer.length, BUFFER_CAP);
+  assert.ok(entry.bufferBytes < BUFFER_MAX_BYTES / 100, "text sessions sit far under the byte cap");
+  reg.end(entry.id);
+});
+
 test("Q.3 ring buffer stays bounded and holds exactly the newest window after eviction", () => {
   const { reg, entry } = freshSession();
   for (let i = 0; i < PUSH; i++) reg.broadcast(entry, delta());
