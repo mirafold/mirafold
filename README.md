@@ -50,8 +50,9 @@ codebase. Companion documents:
   document's layout reflects), **S** (the theme system; seven themes at launch),
   **N** (the onboarding backend picker + local-server discovery), **V** (the
   visual/fidelity punch list), **A** (the accessibility floor, WCAG 2.1 AA),
-  **C** (CI on every push), **E** + **E2** (the Explorer — the read-only files
-  panel, lazy per-directory since E2 with per-repo git fidelity),
+  **C** (CI on every push), **E** + **E2** + **W** (the Explorer — the
+  read-only files panel, lazy per-directory since E2 with per-repo git
+  fidelity, and self-refreshing since W's filesystem watcher),
   **M** (mission control grown into a cockpit: act on sessions from the grid),
   L.1, most of the Phase F fidelity fixes, and the working core of
   **Phase R** (the hosted relay: R.1 dial-out + envelope, R.3 per-pair E2E
@@ -442,6 +443,17 @@ server/            the local daemon (Node, run with tsx)
                        session root when the session is scoped inside a repo;
                        SECURITY.md states the bound (nothing outside the scope
                        reaches the wire), pinned by a Tier-2 test
+    git-trust.ts       what a repo's OWN git config would make git run, and how
+                       to stop it (2026-07-26 audit): the daemon runs git
+                       automatically when a panel opens, so a browsed repo's
+                       configured programs are neutralized by default and the
+                       user allows a repo explicitly. SECURITY.md carries the
+                       vector list + the probe method that established it
+    fs-watch.ts        the live tree's doorbell (Phase W): one @parcel/watcher
+                       subscription per session, alive only while a viewport is
+                       attached — coalesced per window, exclusion-aware, with a
+                       count- and byte-capped paths hint; heals the inotify
+                       backend's missed-fast-subtree gap by resubscribing
     ws-liveness.ts     heartbeat sweep shared by the local and relay socket paths
   security/          the two trust gates (H.6):
     auth.ts            the 4.5 auth predicates (token cookie, loopback Origin) —

@@ -2267,7 +2267,10 @@ irrelevant bells later without ever reshaping the message.
 
 **Robustness rules:** watch `.git`'s HEAD/index/refs (excluding `objects/`)
 so commits and branch switches — which change statuses without touching
-working files — still ring the bell; watcher start/stop follows viewport
+working files — still ring the bell (*true when the session root is the repo
+root; a session scoped to a SUBDIRECTORY has its `.git` above the watched
+root, so out-of-band commits ring nothing there and turn-end/the button stay
+the floor — 2026-07-26*); watcher start/stop follows viewport
 attach/detach per session; **failure degrades gracefully, fail-open to
 today's behavior** — watch-limit exhaustion (ENOSPC) or any watcher error
 surfaces one notice and leaves turn-end refresh + the button as the floor.
@@ -2310,6 +2313,43 @@ The E.5 turn-end refresh stays as belt-and-suspenders.
     the touched path; a burst of writes fires once; a `git commit` (no
     working-file change) fires; writes under `node_modules` do NOT fire; a
     forced subscribe error degrades without crashing the daemon.
+
+- [x] **Step W.B — the bell's paths hint is capped by BYTES too** ✅
+  2026-07-26 (audit finding, fixed same session) — the hint was capped at 64
+  entries but not by size, and a single path may run to thousands of
+  characters: one bell could carry ~250 KB, every window, which a phone
+  viewport pays for over the relay. `FS_WATCH_MAX_PATH_BYTES` (default
+  16,000) now bounds the accumulator alongside the count, whichever runs out
+  first, with `truncated` honest exactly as before (the client already treats
+  a truncated hint as "refetch what you show", so nothing downstream
+  changed). Repeated paths cost no budget. Real projects approach neither
+  bound. Pinned in the Tier-2 itest with 200-byte names against a 1,000-byte
+  budget — the byte cap must cut it while the count cap is nowhere near —
+  and mutation-tested. NOT an attacker-reachable issue: only the user or
+  their own agent can write files into the workspace; the fix is bandwidth
+  hygiene for the paid tier, taken now under the cheap-theoretical-finding
+  rule rather than roadmapped.
+
+- [x] **Step W.A — a browsed repo cannot run programs** ✅ 2026-07-26
+  (audit finding, fixed the same session) — `server/sessions/git-trust.ts`:
+  every daemon git call now neutralizes the settings a repository can use to
+  make git run a program during read-only commands, unless the user has
+  listed that repo in `trusted-repos.json`. Three settings proven to execute
+  by probe (`core.fsmonitor` naming a program; `filter.*.clean`;
+  `filter.*.process`) and neutralized; a dozen candidates proven NOT to fire
+  for our commands and deliberately left alone. The check reads git's
+  EFFECTIVE config (an `include.path`-hidden setting is otherwise missed and
+  still executes — both verified), reading config executes nothing, and
+  results cache per repo and clear on the watcher's bell. One notice per repo
+  per connection names what was skipped and where to allow it. Full detail
+  and the probe method are recorded in `SECURITY.md`. Pinned by
+  `git-trust.itest.ts` (real programs planted in all three settings; a marker
+  on disk IS the vulnerability reproducing) plus Tier-1 pins for the
+  classification, and mutation-tested by removing the protection and watching
+  the pin fail. The W.H1 fixture, which used `core.fsmonitor` to slow git,
+  now rides the allow list — so it proves that path through the real daemon
+  too. **For future work: the vector list is tied to the git commands the
+  daemon runs — adding a new one means re-running the probe.**
 
 - [x] **Step W.2 — `fs_changed` on the wire + the live client** ✅
   2026-07-26 — `fs_changed { paths?, truncated? }` minted (per-viewport
