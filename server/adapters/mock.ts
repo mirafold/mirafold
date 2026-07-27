@@ -494,6 +494,7 @@ export class MockSession implements AgentSession {
     if (/question|choose|decide/i.test(text)) return this.playQuestion();
     if (/picker/i.test(text)) return this.playPicker();
     if (/chart demo/i.test(text)) return this.playCharts();
+    if (/console/i.test(text)) return this.playConsole();
     if (/kpi/i.test(text)) return this.playStat();
     if (/snippet/i.test(text)) return this.playCode();
     if (/health/i.test(text)) return this.playStatusList();
@@ -714,6 +715,33 @@ export class MockSession implements AgentSession {
       1300,
     );
     const d = this.streamText("Three chart shapes and one deliberate rule-breaker.", 1450);
+    this.schedule(() => this.emit({ type: "turn_end" }), d + 40);
+  }
+
+  /** Deterministic hook: quoted terminal output — ANSI colors, an OSC
+   *  sequence that must strip, a failing exit badge. */
+  private playConsole() {
+    const out = [
+      "\x1b]0;window title junk\x07> mirafold@0.2.0 test",
+      "\x1b[1;32m✓\x1b[0m registry spec pins the vocabulary (12 ms)",
+      "\x1b[1;31m✗ console renders ANSI colors\x1b[0m",
+      "  \x1b[31mAssertionError\x1b[0m: expected \x1b[33m3\x1b[0m spans, got \x1b[33m2\x1b[0m",
+      "      at \x1b[2mConsole.test.ts:41:9\x1b[0m",
+      "",
+      "\x1b[90m1 failing, 411 passing\x1b[0m",
+    ].join("\n");
+    this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+    this.schedule(
+      () =>
+        this.emit({
+          type: "render",
+          component: "console",
+          props: { command: "yarn test", output: out, exitCode: 1 },
+          id: randomUUID(),
+        }),
+      300,
+    );
+    const d = this.streamText("One assertion is off — the span-merge case.", 500);
     this.schedule(() => this.emit({ type: "turn_end" }), d + 40);
   }
 

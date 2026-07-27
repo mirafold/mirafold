@@ -72,6 +72,8 @@ test("every schema rejects wrong-shaped payloads, not just card", () => {
     ["code", { code: "x", highlight: [{ end: 3 }] }], // start required
     ["status-list", { items: [] }], // min(1)
     ["status-list", { items: [{ label: "unit", status: "ok" }] }], // status enum
+    ["console", { command: "yarn test" }], // output required
+    ["console", { output: "ok", exitCode: 1.5 }], // int exit code
   ];
   for (const [component, props] of bad) {
     assert.equal(
@@ -159,6 +161,8 @@ test("every schema rejects wrong-shaped payloads, not just card", () => {
         ],
       },
     ],
+    ["console", { output: "plain tail" }], // header/exit optional
+    ["console", { command: "yarn test", output: "[31mFAIL[0m", exitCode: 1 }],
   ];
   for (const [component, props] of good) {
     assert.equal(

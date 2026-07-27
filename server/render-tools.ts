@@ -53,6 +53,8 @@ const TOOL_DESCRIPTIONS: Record<RenderToolName, string> = {
     "Show a block of code with a filename/language header and a copy button. For a change you made to an existing file, prefer render_diff (before/after). Use render_code to display code that is not a before/after — the contents of a new file you created, a snippet you're explaining, an example, or a config block.",
   render_statuslist:
     "Show labeled rows each with a pass/fail/warn/pending/skip status pill. Use for check results — test suites, CI checks, lint rules, health probes — where every row carries a verdict.",
+  render_console:
+    "Show terminal output you're quoting — a build log excerpt, a failing test's output, a stack trace — as a console block: optional command header, monospace body with ANSI colors rendered, exit-code badge. Quote the RELEVANT excerpt, not a whole log. For code itself use render_code.",
 };
 
 /** The generative-UI tool-preference nudge, shared across all three adapters:
@@ -90,7 +92,9 @@ components freely.
   the relevant before/after snippet — never a hand-written ±-prefixed code
   fence. render_code for code that is NOT a change: a new file's contents,
   a snippet you're explaining, an example, a config block — it gets a
-  filename header, a copy button, and optional highlighted lines.
+  filename header, a copy button, and optional highlighted lines. And
+  render_console when you quote what a command PRINTED (build logs, test
+  failures, stack traces) — ANSI colors render, and the exit code badges it.
 - Raw HTML or SVG in your text renders as literal code, never as visuals.
   Never hand-write markup for something a render tool covers. When something
   genuinely needs custom visuals or interactivity that NO render_* component

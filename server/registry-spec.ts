@@ -355,6 +355,27 @@ export const registryShapes = {
       .describe("Line ranges to emphasize — the lines the reader should look at first."),
   },
 
+  console: {
+    command: z
+      .string()
+      .optional()
+      .describe("The command line that produced this output, shown in the header, e.g. 'yarn test'."),
+    output: z
+      .string()
+      .describe(
+        "The captured output, verbatim plain text. ANSI color codes render as " +
+          "colors; other escape codes are stripped. No markdown.",
+      ),
+    exitCode: z
+      .number()
+      .int()
+      .optional()
+      .describe(
+        "The command's exit code — 0 badges ok, anything else badges failed. " +
+          "Omit when it isn't a finished command.",
+      ),
+  },
+
   "status-list": {
     title: z.string().optional().describe("Optional heading above the rows."),
     items: z

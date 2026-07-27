@@ -19,6 +19,7 @@ import { Diff } from "./Diff";
 import { Stat } from "./Stat";
 import { Code } from "./Code";
 import { StatusList } from "./StatusList";
+import { Console } from "./Console";
 
 export const registry: { [N in ComponentName]: ComponentType<ComponentProps<N>> } = {
   card: Card,
@@ -36,4 +37,5 @@ export const registry: { [N in ComponentName]: ComponentType<ComponentProps<N>> 
   stat: Stat,
   code: Code,
   "status-list": StatusList,
+  console: Console,
 };

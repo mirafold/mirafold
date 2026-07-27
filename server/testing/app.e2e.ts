@@ -338,6 +338,23 @@ test("status-list component: one verdict pill per row, glyph + word, all five st
   assert.match(await block.locator(".rc-status-row", { hasText: "relay probe" }).innerText(), /4007/);
 });
 
+test("console component: command header, ANSI colors as spans, junk escapes stripped, exit badge", async () => {
+  await page.locator("textarea").click();
+  await page.keyboard.type("console demo");
+  await page.keyboard.press("Enter");
+  const block = page.locator(".rc-console", { hasText: "yarn test" });
+  await block.waitFor({ timeout: 15_000 });
+  assert.match(await block.locator(".rc-console-exit").innerText(), /exit 1/);
+  assert.ok((await block.locator(".rc-console-exit-err").count()) === 1, "failing exit not badged");
+  // Colors became class spans, not leaked escape bytes…
+  assert.ok((await block.locator(".ansi-red").count()) >= 1, "no red span");
+  assert.ok((await block.locator(".ansi-green").count()) >= 1, "no green span");
+  const body = await block.locator(".rc-console-body").innerText();
+  assert.ok(!body.includes("\x1b"), "escape bytes leaked into the rendered body");
+  assert.ok(!body.includes("window title junk"), "OSC sequence not stripped");
+  assert.ok(body.includes("1 failing, 411 passing"));
+});
+
 test("chart stretch (S.1/S.2): pie folds to 'other', stacked and horizontal bars, malformed pie degrades", async () => {
   await page.locator("textarea").click();
   await page.keyboard.type("chart demo");

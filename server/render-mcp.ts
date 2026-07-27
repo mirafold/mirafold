@@ -86,6 +86,10 @@ const TOOL_DESCRIPTIONS: Record<RenderToolName, string> = {
   render_statuslist:
     "Show labeled rows each with a pass/fail/warn/pending/skip status pill — test " +
     "suites, CI checks, lint rules, health probes.",
+  render_console:
+    "Show terminal output you're quoting (build log excerpt, failing test output, " +
+    "stack trace): optional command header, ANSI colors rendered, exit-code badge. " +
+    "Quote the relevant excerpt, not a whole log. For code itself use render_code.",
 };
 
 for (const [name, component] of renderToolEntries) {
