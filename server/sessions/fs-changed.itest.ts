@@ -1,7 +1,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { ClientMsg, WireMsg } from "../protocol";
@@ -29,6 +29,10 @@ const git = (cwd: string, ...args: string[]) =>
 let d: Daemon;
 let plain: string;
 let repo: string;
+let slow: string;
+let hookDir: string;
+
+const STATUS_WAIT_MS = 150;
 
 const openSession = async (cwd: string) => {
   const c = new TestClient(d.port);
@@ -50,12 +54,32 @@ before(async () => {
   git(repo, "add", "-A");
   git(repo, "commit", "-q", "-m", "c1");
 
-  d = await startDaemon({ FS_WATCH_DEBOUNCE_MS: String(DEBOUNCE_MS) });
+  // A DELIBERATELY slow repo (W.H1): a core.fsmonitor hook that sleeps
+  // makes every `git status` take ~2s, far past the listing bound. The
+  // hook lives OUTSIDE the repo so nothing about it rings the watcher.
+  hookDir = mkdtempSync(path.join(os.tmpdir(), "fsc-hook-"));
+  const hook = path.join(hookDir, "slow.sh");
+  writeFileSync(hook, "#!/bin/sh\nsleep 1\nexit 1\n");
+  chmodSync(hook, 0o755);
+  slow = mkdtempSync(path.join(os.tmpdir(), "fsc-slow-"));
+  git(slow, "init", "-q");
+  writeFileSync(path.join(slow, "tracked.txt"), "one\n");
+  git(slow, "add", "-A");
+  git(slow, "commit", "-q", "-m", "c1");
+  writeFileSync(path.join(slow, "tracked.txt"), "one\ntwo\n"); // the M to see
+  git(slow, "config", "core.fsmonitor", hook);
+
+  d = await startDaemon({
+    FS_WATCH_DEBOUNCE_MS: String(DEBOUNCE_MS),
+    FS_LISTDIR_STATUS_WAIT_MS: String(STATUS_WAIT_MS),
+  });
 });
 after(async () => {
   await d.stop();
   rmSync(plain, { recursive: true, force: true });
   rmSync(repo, { recursive: true, force: true });
+  rmSync(slow, { recursive: true, force: true });
+  rmSync(hookDir, { recursive: true, force: true });
 });
 
 test("W.2: a write behind the wire pushes fs_changed to the attached viewport, unsequenced", async () => {
@@ -142,5 +166,41 @@ test("W.2: the daemon's own git reads never ring the bell — no status-write fe
   }
   const bellsAfter = (c.received as Any[]).filter((m) => m.type === "fs_changed").length;
   assert.equal(bellsAfter, bellsBefore, "a listing's git status rang the bell — feedback loop");
+  c.close();
+});
+
+test("W.H1: a slow repo ships the plain listing at the bound; badges follow via one bell", async () => {
+  const { c } = await openSession(slow);
+  await settle(DEBOUNCE_MS * 3);
+
+  // The listing must arrive at the wait bound (150ms here), NOT after the
+  // ~2s status — and arrive plain, statuses honestly absent.
+  const t0 = Date.now();
+  c.send({ type: "fs_listdir", id: "s1", path: "" } as ClientMsg);
+  const first = (await c.waitFor(
+    (m) => m.type === "fs_dir" && (m as Any).id === "s1",
+    "fs_dir s1",
+    5_000,
+  )) as Any;
+  const elapsed = Date.now() - t0;
+  assert.ok(elapsed < 900, `the listing waited on git (${elapsed}ms) instead of shipping at the bound`);
+  const firstEntry = (first.entries as Any[]).find((e) => e.name === "tracked.txt");
+  assert.equal(firstEntry?.status, undefined, "the bounded reply is the plain listing");
+
+  // When the status finally settles, ONE synthetic bell (no paths hint —
+  // nothing on disk changed) tells this viewport to refetch.
+  const bell = (await c.waitFor((m) => m.type === "fs_changed", "the late-status bell", 10_000)) as Any;
+  assert.equal(bell.paths, undefined, "the late-status bell is synthetic — no watcher paths");
+
+  // The refetch decorates instantly from the settled cache (TTL from
+  // arrival, W.H2) — no second timeout round.
+  c.send({ type: "fs_listdir", id: "s2", path: "" } as ClientMsg);
+  const second = (await c.waitFor(
+    (m) => m.type === "fs_dir" && (m as Any).id === "s2",
+    "fs_dir s2",
+    5_000,
+  )) as Any;
+  const secondEntry = (second.entries as Any[]).find((e) => e.name === "tracked.txt");
+  assert.equal(secondEntry?.status, "M", "the post-bell listing carries the badge");
   c.close();
 });

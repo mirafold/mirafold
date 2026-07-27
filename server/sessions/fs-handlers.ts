@@ -46,6 +46,13 @@ const FS_MIN_INTERVAL_MS = Number(process.env.FS_MIN_INTERVAL_MS ?? 250);
 // this many per second. A drained bucket still ANSWERS (error reply).
 const FS_LISTDIR_MAX_PER_SEC = Number(process.env.FS_LISTDIR_MAX_PER_SEC ?? 32);
 
+// W.H1: how long a directory listing may wait on its repo's git status
+// before shipping plain. Status calls serialize in one GLOBAL queue, so one
+// pathological repo (network mount, cold cache) would otherwise hold every
+// viewport's listings hostage for up to the 5s git timeout. Well above the
+// measured healthy case (~40ms on a 1.1GB repo), well under the timeout.
+const FS_LISTDIR_STATUS_WAIT_MS = Number(process.env.FS_LISTDIR_STATUS_WAIT_MS ?? 300);
+
 // Same shape rule as bang ids: client-minted correlation ids are short and
 // word-safe or the message is dropped whole.
 const FS_ID_RE = /^[\w-]{1,64}$/;
@@ -83,6 +90,10 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
   // tokens accrue continuously, capped at one full burst.
   let listdirTokens = FS_LISTDIR_MAX_PER_SEC;
   let listdirRefilledAt = Date.now();
+  // Repos whose status outran the listing bound (W.H1) — this connection is
+  // owed ONE follow-up bell per repo when that status lands, however many
+  // listings timed out against it (a prefetch burst must not ring N times).
+  const lateStatusBells = new Set<string>();
 
   const badId = (id: unknown): boolean => typeof id !== "string" || !FS_ID_RE.test(id);
   const tooSoon = (last: number): boolean => Date.now() - last < FS_MIN_INTERVAL_MS;
@@ -168,17 +179,43 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
       // disk truth either way; statuses are the garnish. Note gitInFlight
       // stays out of this path: the burst is legitimate here, so the
       // discipline is repoStatus's queue, not a refusal.
+      //
+      // W.H1: the reply never waits on git past the bound. On timeout the
+      // plain listing ships NOW; when the status finally settles usable,
+      // one synthetic bell tells this viewport to refetch — by then the
+      // status is cached (TTL from settle, W.H2), so the refetch decorates
+      // instantly instead of timing out again. A status that settles
+      // degraded (not a repo, git error) rings nothing: plain was final.
       const repoRoot = findRepoRoot(raw.real);
       if (!repoRoot) return sendDir(raw.all);
       const dirRel = repoRelPath(repoRoot, raw.real);
+      let replied = false;
+      const timer = setTimeout(() => {
+        if (replied || isClosed()) return;
+        replied = true;
+        lateStatusBells.add(repoRoot);
+        sendDir(raw.all);
+      }, FS_LISTDIR_STATUS_WAIT_MS);
       void repoStatus(repoRoot)
         .then((st) => {
-          if (isClosed()) return;
-          if ("notGit" in st || "error" in st) return sendDir(raw.all);
-          sendDir(decorateGitDir(raw.all, dirRel, st));
+          if (isClosed()) return clearTimeout(timer);
+          if (!replied) {
+            clearTimeout(timer);
+            replied = true;
+            if ("notGit" in st || "error" in st) return sendDir(raw.all);
+            return sendDir(decorateGitDir(raw.all, dirRel, st));
+          }
+          const owed = lateStatusBells.delete(repoRoot);
+          if (owed && !("notGit" in st) && !("error" in st)) {
+            viewport({ type: "fs_changed", truncated: true });
+          }
         })
         .catch(() => {
-          if (!isClosed()) sendDir(raw.all);
+          lateStatusBells.delete(repoRoot);
+          clearTimeout(timer);
+          if (isClosed() || replied) return;
+          replied = true;
+          sendDir(raw.all);
         });
     } catch (err) {
       sendErr(msg.path, errText(err));

@@ -2195,7 +2195,21 @@ per-repo `git status --ignored` runs in **40 ms** and emits **<400 bytes**
 (git collapses ignored directories) — that measurement is why both items are
 "later", and if it ever stops holding they become "now".
 
-- [ ] **W.H1 — a slow repo must not hold up every viewport's listings.**
+- [x] **W.H1 — a slow repo must not hold up every viewport's listings.** ✅
+  2026-07-26 — fs_listdir now waits on its repo's status only up to
+  `FS_LISTDIR_STATUS_WAIT_MS` (default 300ms — well above the measured
+  healthy 40ms, well under the 5s git timeout, and covering queue time,
+  which is the actual exposure: statuses serialize globally). On timeout
+  the PLAIN listing ships immediately; when the status settles usable, one
+  synthetic `fs_changed` (no paths — nothing on disk changed) tells that
+  viewport to refetch, and the refetch decorates instantly from the settled
+  cache (W.H2's arrival-stamped TTL — the two fixes interlock). One owed
+  bell per repo per connection, so a prefetch burst against a slow repo
+  rings once; a status that settles degraded rings nothing (plain was
+  final). Pinned over a real socket with a deliberately slow repo (a
+  core.fsmonitor hook that sleeps makes every status ~2s,
+  deterministically): plain reply at the bound, synthetic bell, badged
+  refetch — and mutation-tested (bound disabled → test fails → restored).
   Per-repo status calls are serialized in ONE global queue (so an open-panel
   burst can't fork N git subprocesses), and a directory listing waits for its
   status before it's sent. Consequence: one pathological repo (network mount,
@@ -2204,13 +2218,20 @@ per-repo `git status --ignored` runs in **40 ms** and emits **<400 bytes**
   direction: send the listing immediately and let badges arrive as a
   follow-up, or bound the wait well under the git timeout. Natural fit with
   W, which makes listings arrive on a signal rather than a request.
-- [ ] **W.H2 — the status cache stamps its clock at request time, not
-  arrival.** `repoStatus` records `at: Date.now()` when the promise is
-  CREATED. If a git call ever exceeded the 3 s TTL, its result would already
-  be stale on arrival, so new requests would start additional calls instead
-  of reusing it — a backlog that feeds itself. One-line fix (stamp on
-  settle); the concurrent-caller coalescing that the prefetch burst actually
-  relies on already works correctly and must keep working.
+- [x] **W.H2 — the status cache stamps its clock at request time, not
+  arrival.** ✅ 2026-07-26 — `repoStatus` entries now carry `at: Infinity`
+  while in flight (always fresh → every late caller coalesces onto the
+  running call, however long git takes) and stamp `at` when the promise
+  SETTLES (rejections too), so the TTL measures the answer's age, not the
+  question's. The prefetch-burst coalescing is strictly stronger than
+  before. Pinned in `git-cache.itest.ts` with node:test's mocked Date over
+  a real repo (in-flight coalesce 100 mocked seconds past the TTL; fresh
+  from arrival at TTL−ε; expired at TTL+ε) and mutation-tested
+  (request-time stamp restored → test fails → fixed back).
+  *Original finding:* `repoStatus` records `at: Date.now()` when the
+  promise is CREATED. If a git call ever exceeded the 3 s TTL, its result
+  would already be stale on arrival, so new requests would start
+  additional calls instead of reusing it — a backlog that feeds itself.
 
 ## Phase W — Live tree (the filesystem watcher; the refresh button goes vestigial)
 

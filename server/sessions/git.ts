@@ -309,7 +309,18 @@ export function repoStatus(repoRoot: string): Promise<RepoStatus> {
     if (!r.ok) return r.notGit ? { notGit: true as const } : { error: gitErr("status", r) };
     return parseStatusIgnoredZ(String(r.stdout));
   });
-  statusCache.set(repoRoot, { at: Date.now(), value });
+  // W.H2: the TTL clock starts when the answer ARRIVES, not when it was
+  // asked for. In flight = always fresh (at: Infinity), so late callers
+  // coalesce onto the running call — a request-time stamp would expire
+  // mid-flight whenever git (plus its queue time) outran the TTL, and every
+  // expiry would enqueue yet another child behind the slow one, a backlog
+  // that feeds itself. The settle stamp covers rejections too.
+  const entry = { at: Number.POSITIVE_INFINITY, value };
+  const stamp = () => {
+    entry.at = Date.now();
+  };
+  value.then(stamp, stamp);
+  statusCache.set(repoRoot, entry);
   return value;
 }
 
