@@ -536,9 +536,16 @@ web/               the browser app (React 19 + Vite)
     files/             the Explorer panel (Phase E): FilesPanel.tsx (tree +
                        drill-in — docked left column on desktop, full-screen
                        dialog on phone) + FileView.tsx (content / diff / binary)
-  src/registry/      Card, List, Table, LinkGroup, Chart, TodoList, Md +
+  src/registry/      Card, List, Table, LinkGroup, Chart, TodoList, KeyValue,
+                     Progress, Timeline, FileTree, Question, Diff, Stat, Code,
+                     StatusList, Console, Image, Diagram, Md, CopyButton +
                      RenderBlock (validate → fallback → error boundary) +
-                     ActionRow/context
+                     ActionRow/context. Two of them render agent content
+                     OUTSIDE the shell origin: Diagram runs mermaid in an
+                     artifact-grade sandboxed iframe (§3), and Image draws
+                     only a daemon-resolved data: URI (server/render-image.ts
+                     does the jailed read; the agent authors a path, never
+                     bytes)
   src/session-bus.ts the shell's message bus (H.9): one SocketClient + the
                      pub/sub fan-out and senders Shell.tsx consumes
   src/tab-status.ts  the tab status light: brand-M favicon + corner badge
@@ -633,7 +640,9 @@ hello — `attach` (session id taken from the `/s/<id>` URL) or `create` — and
 the server replies `session_created`, replays the session's buffered history,
 then subscribes the socket to the live stream. Every emitted `WireMsg` is
 fanned out to all attached viewports and kept in a ring buffer (4000
-messages) for replay, so a refresh or a second tab repaints the same
+messages, and additionally 32 MB — `SESSION_BUFFER_MAX_BYTES`, 2026-07-27
+audit: the count cap alone assumed text-sized messages, which `render_image`
+broke) for replay, so a refresh or a second tab repaints the same
 transcript. **Reconnects resume, they don't repaint** (4.4): every broadcast
 message carries a session-scoped `seq`; a reconnecting viewport sends the
 last seq it saw and, when the tail is still buffered, the server replays
@@ -715,9 +724,15 @@ mediation path (§5.4).
   (`server/render-tools.ts`) exposing side-effect-free `render_card` /
   `render_list` / `render_table` / `render_chart` / `render_links` /
   `render_keyvalue` / `render_progress` / `render_timeline` /
-  `render_filetree` / `render_question` / `render_diff` tools
+  `render_filetree` / `render_question` / `render_diff` / `render_stat` /
+  `render_code` / `render_statuslist` / `render_console` / `render_image` /
+  `render_diagram` tools
   whose input schemas are the registry spec (`server/registry-spec.ts`) plus
-  an optional `id` for update-in-place. Calling one emits a `render` WireMsg
+  an optional `id` for update-in-place. The one tool that is not purely a
+  drawing instruction is `render_image`: the agent authors a workspace PATH
+  and the DAEMON inlines the bytes (`server/render-image.ts` — realpath
+  containment, secret denial, 2 MB cap, raster magic-byte allowlist), so the
+  workspace dir is a required argument on both render paths. Calling one emits a `render` WireMsg
   at that point in the stream and returns the id to the model.
   `RENDER_GUIDANCE` (appended to the `claude_code` system-prompt preset)
   teaches when to prefer a component over prose — and that raw HTML/SVG
