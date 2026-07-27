@@ -237,7 +237,7 @@ export function StatusBar({
           v{version}
         </span>
       )}
-      <ConnectDevice relay={relay} />
+      <ConnectDevice relay={relay} sessionId={sessionId} />
       {/* Settings gear (S.4) — beside the pill, which is now the far-right
           control (home moved to the far left). The pill below is LOCKED
           unchanged (Phase S). */}

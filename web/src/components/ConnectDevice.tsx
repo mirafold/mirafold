@@ -49,14 +49,18 @@ function QrSvg({ text }: { text: string }) {
   );
 }
 
-export function ConnectDevice({ relay }: { relay?: RelayInfo }) {
+// `sessionId`: pairing from inside a session encodes that session into the
+// fragment (`&s=<id>`) so the scanned phone lands IN it, not on the fleet
+// list. Mission control's pair button passes nothing and keeps landing on the
+// fleet — no special case.
+export function ConnectDevice({ relay, sessionId }: { relay?: RelayInfo; sessionId?: string }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
 
   if (!relay) return null;
   const href = `${relay.url}/#code=${relay.code}${
     relay.ws ? `&relay=${encodeURIComponent(relay.ws)}` : ""
-  }`;
+  }${sessionId ? `&s=${sessionId}` : ""}`;
 
   return (
     <>

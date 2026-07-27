@@ -103,6 +103,17 @@ export function relayTargetFromFragment(hash: string): { code: string; ws: strin
   return { code: code[1], ws };
 }
 
+/** Parses the pairing fragment's session hint (`…&s=<id>`) — the session the
+ *  QR was made from, so a paired device lands IN it rather than on the fleet.
+ *  Honored only as a full `[\w-]+` token (the router's own id shape); anything
+ *  else is dropped → mission control, today's behavior. One-shot intent for
+ *  THIS load: unlike the code beside it, it is never stashed in storage —
+ *  persisting it would bounce the device back into the session on every tap
+ *  of home. Pure, exported for tests. */
+export function sessionHintFromFragment(hash: string): string | null {
+  return hash.match(/(?:^#|&)s=([\w-]+)(?:&|$)/)?.[1] ?? null;
+}
+
 const CODE_KEY = "mirafold-relay-code";
 const WS_KEY = "mirafold-relay-ws";
 const PAIRED_AT_KEY = "mirafold-relay-paired-at";

@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 import { Shell } from "./components/Shell";
 import { FleetView } from "./components/FleetView";
+import { sessionHintFromFragment } from "./ws";
 import "highlight.js/styles/github-dark.css";
 // Palettes: base.css (pinned tokens) + every theme file, loaded by glob so a
 // new theme stays "one CSS file + one manifest row" with no import wiring
@@ -16,6 +17,18 @@ import "./styles.css";
 // theme files' background propagation and color-scheme on later switches.
 document.documentElement.style.backgroundColor = "";
 document.documentElement.style.colorScheme = "";
+
+// Pairing lands IN the session the QR was made from: the fragment may carry a
+// session hint beside the code (`&s=<id>`) — rewrite the path so the router
+// below sees a session URL, exactly the URL a fleet-row tap produces. The
+// hash MUST ride along in the rewrite: the pairing code still lives there
+// unconsumed (the socket client reads and scrubs it later, at connect), and
+// dropping it would strand the device dialing a relay it has no credential
+// for. An explicit /s/ path wins over the hint.
+const hint = sessionHintFromFragment(location.hash);
+if (hint && !/^\/s\//.test(location.pathname)) {
+  history.replaceState(null, "", `/s/${hint}${location.search}${location.hash}`);
+}
 
 // Routing is the URL contract from 4.2/4.6: /s/<id> is a session viewport,
 // everything else is mission control (the fleet page at /).

@@ -20,6 +20,8 @@ let browser: Browser;
 let desktop: Page;
 let phoneCtx: BrowserContext;
 let phone: Page;
+/** The desktop's session id, captured by the QR test — the phone pairs into it. */
+let sessionId: string;
 
 const noSideScroll = async (p: Page) => {
   const over = await p.evaluate(
@@ -53,11 +55,14 @@ test("desktop: the shell-owned pair affordance shows the QR of the pairing URL",
   // pair affordance is testable in the session's status bar…
   await desktop.locator(".onb-agent", { hasText: "Claude Code" }).click();
   await desktop.waitForURL(/\/s\/[\w-]+/);
+  sessionId = new URL(desktop.url()).pathname.match(/^\/s\/([\w-]+)/)![1];
   await desktop.locator(".status-bar .sb-pair").click();
   await desktop.waitForSelector(".pair-card");
   assert.ok(await desktop.locator(".pair-qr path").count(), "QR modules rendered");
+  // In-session pairing encodes the session beside the code (`&s=<id>`) so the
+  // scanned phone lands IN this session, not on the fleet list.
   const url = await desktop.locator(".pair-url").textContent();
-  assert.equal(url, `http://127.0.0.1:${stub.port}/#code=${CODE}`);
+  assert.equal(url, `http://127.0.0.1:${stub.port}/#code=${CODE}&s=${sessionId}`);
   await desktop.keyboard.press("Escape");
   assert.equal(await desktop.locator(".pair-card").count(), 0, "Esc closes the overlay");
 
@@ -74,10 +79,13 @@ test("phone: pairs by URL, opens the session, drives a turn with a rendered comp
     hasTouch: true,
   });
   phone = await phoneCtx.newPage();
-  await phone.goto(`http://127.0.0.1:${stub.port}/#code=${CODE}`);
+  // The paired link (the QR's URL, session hint and all) lands straight IN the
+  // session it was made from — the transcript view, never the fleet list.
+  await phone.goto(`http://127.0.0.1:${stub.port}/#code=${CODE}&s=${sessionId}`);
+  await phone.waitForURL(new RegExp(`/s/${sessionId}$`));
+  assert.equal(await phone.locator(".fleet-row").count(), 0, "landed on the fleet list");
+  await phone.waitForSelector(".prompt-box textarea");
   await noSideScroll(phone);
-  await phone.locator(".fleet-row").first().tap();
-  await phone.waitForURL(/\/s\/[\w-]+/);
 
   // R.4l (Kyle 2026-07-22, "nail this down for sure"): on phone, Enter
   // NEVER submits — it inserts a newline; the ↑ button is the one way to

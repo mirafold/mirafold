@@ -594,8 +594,23 @@ with it. Both sequence BEFORE R.5.**
        agent → backing picker with probed local-server discovery; the four
        hard requirements carried into Phase N's charter verbatim). This
        item closes when Phase N ships; items 1–3 remain open intake.
-    5. **Pairing should land IN the session you paired from — ⬅️ NEXT UP
-       (agreed 2026-07-25 for the next working session).** Today the QR
+    5. **Pairing lands IN the session you paired from — ✅ DONE 2026-07-27,
+       exactly to the investigated shape below.** The QR/copy link from a
+       session's status bar now carries `&s=<sessionId>` in the fragment;
+       `main.tsx` rewrites the path to `/s/<id>` before the router reads it,
+       **carrying `location.hash` through the rewrite** (the trap below —
+       mutation-tested: dropping the hash was watched to fail the phone e2e,
+       then restored). New pure parser `sessionHintFromFragment` in `ws.ts`
+       validates the id as a full `[\w-]+` token (hostile values dropped
+       whole, never truncated). Mission control's pair button passes no id
+       and keeps landing on the fleet — no special case. The hint is never
+       persisted (one-shot intent). The refused-subscription edge case was
+       decided as KEEP existing behavior: the device lands inside the
+       refused session, where the R.4i notice explains — not bounced to
+       mission control. Verified: unit tests beside the fragment tests, the
+       phone e2e now asserts the paired link lands on `/s/<id>` with no
+       fleet list, full Tier-1 (394) + Tier-3 (57) green. Original item:
+       Today the QR
        encodes `<relay origin>/#code=<pairing code>`, the phone loads it at
        the root path, and `main.tsx` routes purely on the path (`/s/<id>` =
        session, anything else = mission control) — so the phone always

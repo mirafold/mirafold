@@ -4,6 +4,7 @@ import { CLIENT_VERSION } from "./version";
 import {
   SocketClient,
   relayTargetFromFragment,
+  sessionHintFromFragment,
   newSessionHref,
   storedPairing,
   viewportRefusalReason,
@@ -413,6 +414,32 @@ test("fragment parsing: code alone, code+relay, and hostile/malformed relay valu
       { code: "abc", ws: null },
       hostile,
     );
+  }
+});
+
+// Pairing lands IN the session the QR was made from: the fragment may carry a
+// session hint beside the code — main.tsx rewrites the path from it before the
+// router reads location.pathname. Pure parser, tested directly.
+test("fragment parsing: the session hint — absent, present in any position, hostile", () => {
+  // No hint (mission control's QR, and every pre-hint link): null → the fleet.
+  assert.equal(sessionHintFromFragment(""), null);
+  assert.equal(sessionHintFromFragment("#code=abc"), null);
+
+  // Present, in any position among the other params.
+  assert.equal(sessionHintFromFragment("#code=abc&s=sess-42_x"), "sess-42_x");
+  assert.equal(
+    sessionHintFromFragment(`#code=abc&relay=${encodeURIComponent("wss://r.example")}&s=s1`),
+    "s1",
+  );
+  assert.equal(sessionHintFromFragment("#s=s1&code=abc"), "s1");
+  // Duplicate params: the first hint wins, same as the code/relay matchers.
+  assert.equal(sessionHintFromFragment("#code=abc&s=s1&s=s2"), "s1");
+
+  // A crafted link must not steer the path anywhere but a well-formed session
+  // id: anything beyond a full [\w-]+ token is dropped whole, never truncated
+  // into a "valid" prefix.
+  for (const hostile of ["../admin", "s1/../../x", "s1%2F..", ".", "%ZZ"]) {
+    assert.equal(sessionHintFromFragment(`#code=abc&s=${hostile}`), null, hostile);
   }
 });
 
