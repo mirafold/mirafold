@@ -496,6 +496,7 @@ export class MockSession implements AgentSession {
     if (/chart demo/i.test(text)) return this.playCharts();
     if (/console/i.test(text)) return this.playConsole();
     if (/screenshot/i.test(text)) return this.playImage();
+    if (/diagram/i.test(text)) return this.playDiagram();
     if (/kpi/i.test(text)) return this.playStat();
     if (/snippet/i.test(text)) return this.playCode();
     if (/health/i.test(text)) return this.playStatusList();
@@ -716,6 +717,46 @@ export class MockSession implements AgentSession {
       1300,
     );
     const d = this.streamText("Three chart shapes and one deliberate rule-breaker.", 1450);
+    this.schedule(() => this.emit({ type: "turn_end" }), d + 40);
+  }
+
+  /** Deterministic hook: a mermaid diagram (sandbox-rendered), plus one with
+   *  broken source — the failure shows the source, never a blank frame. */
+  private playDiagram() {
+    this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+    this.schedule(
+      () =>
+        this.emit({
+          type: "render",
+          component: "diagram",
+          props: {
+            title: "Relay pairing flow",
+            source: [
+              "sequenceDiagram",
+              "  participant P as Phone",
+              "  participant R as Relay",
+              "  participant D as Daemon",
+              "  P->>R: dial (pairId)",
+              "  R->>D: forward (opaque)",
+              "  D-->>P: E2E handshake",
+              "  P->>D: attach session",
+            ].join("\n"),
+          },
+          id: randomUUID(),
+        }),
+      300,
+    );
+    this.schedule(
+      () =>
+        this.emit({
+          type: "render",
+          component: "diagram",
+          props: { title: "broken diagram", source: "flowchart TD\n  A --> ] nope [" },
+          id: randomUUID(),
+        }),
+      700,
+    );
+    const d = this.streamText("The pairing flow, drawn — and one deliberately broken source.", 900);
     this.schedule(() => this.emit({ type: "turn_end" }), d + 40);
   }
 

@@ -95,6 +95,11 @@ const TOOL_DESCRIPTIONS: Record<RenderToolName, string> = {
     "(png/jpeg/gif/webp, ≤2 MB), e.g. a screenshot you just saved — the daemon " +
     "inlines the bytes; never encode them yourself. Use for anything visual you " +
     "produce or verify: app screenshots, rendered pages, plots saved to disk.",
+  render_diagram:
+    "Render a mermaid diagram from source text (flowchart, sequenceDiagram, " +
+    "stateDiagram-v2, classDiagram, erDiagram). Use for ANY architecture/flow/" +
+    "relationship picture — never ASCII art, never a raw ```mermaid fence " +
+    "(that renders as literal code here). Data plots stay render_chart.",
 };
 
 for (const [name, component] of renderToolEntries) {

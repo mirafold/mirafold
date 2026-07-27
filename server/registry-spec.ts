@@ -355,6 +355,18 @@ export const registryShapes = {
       .describe("Line ranges to emphasize — the lines the reader should look at first."),
   },
 
+  diagram: {
+    title: z.string().optional().describe("Optional heading above the diagram."),
+    source: z
+      .string()
+      .describe(
+        "Mermaid diagram source, plain text — e.g. 'flowchart TD\\n  A[Client] " +
+          "--> B[Server]'. flowchart / sequenceDiagram / stateDiagram-v2 / " +
+          "classDiagram / erDiagram all work. Rendered in a sandbox; keep it a " +
+          "diagram, not a data plot (plots are render_chart's job).",
+      ),
+  },
+
   image: {
     path: z
       .string()

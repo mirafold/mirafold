@@ -74,6 +74,7 @@ test("every schema rejects wrong-shaped payloads, not just card", () => {
     ["status-list", { items: [{ label: "unit", status: "ok" }] }], // status enum
     ["console", { command: "yarn test" }], // output required
     ["console", { output: "ok", exitCode: 1.5 }], // int exit code
+    ["diagram", { title: "x" }], // source required
     ["image", { path: "shot.png" }], // alt required
     ["image", { path: "shot.png", alt: "x", src: "https://evil.example/a.png" }], // data: only
     ["image", { path: "shot.png", alt: "x", src: "data:text/html;base64,AAAA" }], // raster MIME only
@@ -166,6 +167,7 @@ test("every schema rejects wrong-shaped payloads, not just card", () => {
       },
     ],
     ["console", { output: "plain tail" }], // header/exit optional
+    ["diagram", { source: "flowchart TD\n  A[Client] --> B[Server]" }],
     ["image", { path: "shots/app.png", alt: "the app after the fix" }], // authoring shape
     [
       "image",

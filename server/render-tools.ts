@@ -58,6 +58,8 @@ const TOOL_DESCRIPTIONS: Record<RenderToolName, string> = {
     "Show terminal output you're quoting — a build log excerpt, a failing test's output, a stack trace — as a console block: optional command header, monospace body with ANSI colors rendered, exit-code badge. Quote the RELEVANT excerpt, not a whole log. For code itself use render_code.",
   render_image:
     "Show a raster image from the workspace inline: pass the FILE PATH (png/jpeg/gif/webp, ≤2 MB) — e.g. a screenshot you just saved — and the daemon inlines the bytes; never encode them yourself. Use whenever you produce or verify something visual: app screenshots, rendered pages, plots saved to disk.",
+  render_diagram:
+    "Render a mermaid diagram (flowchart, sequenceDiagram, stateDiagram-v2, classDiagram, erDiagram) from its source text. Use for ANY architecture/flow/relationship picture — never ASCII-art diagrams, and never a raw ```mermaid fence (that renders as literal code here). Data plots stay render_chart.",
 };
 
 /** The generative-UI tool-preference nudge, shared across all three adapters:
@@ -101,6 +103,10 @@ components freely.
 - render_image whenever you produce or verify something VISUAL — a screenshot
   you saved, a rendered page, a plot written to disk: pass the workspace file
   path and the daemon inlines the picture right into the transcript.
+- render_diagram for ANY architecture, flow, sequence, state, or
+  relationship picture: pass mermaid source and it renders as a real
+  diagram. Never ASCII-art a diagram, and never emit a \`\`\`mermaid fence in
+  prose — fences render as literal code here.
 - Raw HTML or SVG in your text renders as literal code, never as visuals.
   Never hand-write markup for something a render tool covers. When something
   genuinely needs custom visuals or interactivity that NO render_* component

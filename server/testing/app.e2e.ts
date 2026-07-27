@@ -338,6 +338,32 @@ test("status-list component: one verdict pill per row, glyph + word, all five st
   assert.match(await block.locator(".rc-status-row", { hasText: "relay probe" }).innerText(), /4007/);
 });
 
+test("diagram component: mermaid renders as SVG inside the sandbox; broken source shows itself", async () => {
+  await page.locator("textarea").click();
+  await page.keyboard.type("diagram demo");
+  await page.keyboard.press("Enter");
+  const block = page.locator(".rc-diagram", { hasText: "Relay pairing flow" });
+  await block.waitFor({ timeout: 20_000 });
+  // The runtime is a lazy ~3.6 MB chunk — give the first render room.
+  const frame = block.locator("iframe.rc-diagram-frame");
+  await frame.waitFor({ timeout: 20_000 });
+  const svg = page
+    .frameLocator(".rc-diagram:has-text('Relay pairing flow') iframe")
+    .locator("#host svg");
+  await svg.waitFor({ timeout: 20_000 });
+  // The frame reported its measured height back — the host sized to fit.
+  const h = await frame.evaluate((el) => el.getBoundingClientRect().height);
+  assert.ok(h > 130, `frame did not grow to the diagram (h=${h})`);
+  // The shell-drawn chrome badges the sandbox, outside the frame.
+  assert.match(await block.locator(".rc-diagram-badge").innerText(), /sandboxed/);
+
+  // Broken source: the failure state carries the message AND the source text.
+  const failed = page.locator(".rc-diagram-failed", { hasText: "broken diagram" });
+  await failed.waitFor({ timeout: 20_000 });
+  assert.match(await failed.innerText(), /diagram didn't render/);
+  assert.ok((await failed.locator(".rc-diagram-source").innerText()).includes("nope"));
+});
+
 test("image component: a resolved shot renders as a real <img>; a refused one says why", async () => {
   await page.locator("textarea").click();
   await page.keyboard.type("screenshot demo");
@@ -803,7 +829,9 @@ test("sandboxed artifact: scripts run inside the iframe under the shell CSP", as
   await page.keyboard.type("show me an artifact");
   await page.keyboard.press("Enter");
 
-  const iframe = await page.waitForSelector("iframe", { timeout: 30_000 });
+  // Anchored to the artifact's own frame class — the transcript can hold
+  // other sandboxed iframes by now (diagram components).
+  const iframe = await page.waitForSelector("iframe.artifact-frame", { timeout: 30_000 });
   const frame = await iframe.contentFrame();
   assert.ok(frame, "artifact iframe has an accessible content frame");
 
@@ -824,10 +852,12 @@ test("an artifact pins to the dock via its chrome control, and unpins back", asy
   assert.equal(await page.locator(".pin-dock iframe").count(), 1);
   assert.match(await page.locator(".pin-stub").innerText(), /pinned/);
   // Unpin from the dock chrome → dock closes, the artifact returns inline.
+  // (Anchored to the artifact's frame class: the transcript can hold other
+  // sandboxed iframes by now — diagram components.)
   await page.locator(".pin-dock .artifact-pin").click();
   await page.waitForSelector(".pin-dock", { state: "detached" });
   assert.equal(await page.locator(".pin-stub").count(), 0);
-  assert.equal(await page.locator(".render-zone iframe").count(), 1);
+  assert.equal(await page.locator(".render-zone iframe.artifact-frame").count(), 1);
 });
 
 test("hostile artifact is contained: escapes fail, sandbox is exactly allow-scripts (R.4e)", async () => {
