@@ -638,11 +638,7 @@ export class MockSession implements AgentSession {
     this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
     let d = 300;
     for (let active = 0; active <= items.length; active++) {
-      const todos = frame(active);
-      this.schedule(
-        () => this.emit({ type: "render", component: "todo-list", props: { todos }, id: rid }),
-        d,
-      );
+      this.paintRender(d, "todo-list", { todos: frame(active) }, rid);
       d += 550;
     }
     d = this.streamText("Plan complete — all four steps done.", d + 100);
@@ -655,10 +651,7 @@ export class MockSession implements AgentSession {
    *  series) whose designed degradation is the raw-props fallback. */
   private playCharts() {
     const paint = (props: Record<string, unknown>, at: number) =>
-      this.schedule(
-        () => this.emit({ type: "render", component: "chart", props, id: randomUUID() }),
-        at,
-      );
+      this.paintRender(at, "chart", props);
     this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
     paint(
       {
@@ -724,38 +717,23 @@ export class MockSession implements AgentSession {
    *  broken source — the failure shows the source, never a blank frame. */
   private playDiagram() {
     this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
-    this.schedule(
-      () =>
-        this.emit({
-          type: "render",
-          component: "diagram",
-          props: {
-            title: "Relay pairing flow",
-            source: [
-              "sequenceDiagram",
-              "  participant P as Phone",
-              "  participant R as Relay",
-              "  participant D as Daemon",
-              "  P->>R: dial (pairId)",
-              "  R->>D: forward (opaque)",
-              "  D-->>P: E2E handshake",
-              "  P->>D: attach session",
-            ].join("\n"),
-          },
-          id: randomUUID(),
-        }),
-      300,
-    );
-    this.schedule(
-      () =>
-        this.emit({
-          type: "render",
-          component: "diagram",
-          props: { title: "broken diagram", source: "flowchart TD\n  A --> ] nope [" },
-          id: randomUUID(),
-        }),
-      700,
-    );
+    this.paintRender(300, "diagram", {
+      title: "Relay pairing flow",
+      source: [
+        "sequenceDiagram",
+        "  participant P as Phone",
+        "  participant R as Relay",
+        "  participant D as Daemon",
+        "  P->>R: dial (pairId)",
+        "  R->>D: forward (opaque)",
+        "  D-->>P: E2E handshake",
+        "  P->>D: attach session",
+      ].join("\n"),
+    });
+    this.paintRender(700, "diagram", {
+      title: "broken diagram",
+      source: "flowchart TD\n  A --> ] nope [",
+    });
     const d = this.streamText("The pairing flow, drawn — and one deliberately broken source.", 900);
     this.schedule(() => this.emit({ type: "turn_end" }), d + 40);
   }
@@ -768,35 +746,17 @@ export class MockSession implements AgentSession {
     const px =
       "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
     this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
-    this.schedule(
-      () =>
-        this.emit({
-          type: "render",
-          component: "image",
-          props: {
-            path: "shots/welcome.png",
-            alt: "the welcome screen after the fix",
-            caption: "welcome screen, dark theme",
-            src: px,
-          },
-          id: randomUUID(),
-        }),
-      300,
-    );
-    this.schedule(
-      () =>
-        this.emit({
-          type: "render",
-          component: "image",
-          props: {
-            path: "shots/huge.png",
-            alt: "a screenshot that was too big",
-            error: "too large (4.2 MB; the cap is 2 MB)",
-          },
-          id: randomUUID(),
-        }),
-      650,
-    );
+    this.paintRender(300, "image", {
+      path: "shots/welcome.png",
+      alt: "the welcome screen after the fix",
+      caption: "welcome screen, dark theme",
+      src: px,
+    });
+    this.paintRender(650, "image", {
+      path: "shots/huge.png",
+      alt: "a screenshot that was too big",
+      error: "too large (4.2 MB; the cap is 2 MB)",
+    });
     const d = this.streamText("The welcome screen matches the mock — one shot was over the cap.", 800);
     this.schedule(() => this.emit({ type: "turn_end" }), d + 40);
   }
@@ -814,16 +774,7 @@ export class MockSession implements AgentSession {
       "\x1b[90m1 failing, 411 passing\x1b[0m",
     ].join("\n");
     this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
-    this.schedule(
-      () =>
-        this.emit({
-          type: "render",
-          component: "console",
-          props: { command: "yarn test", output: out, exitCode: 1 },
-          id: randomUUID(),
-        }),
-      300,
-    );
+    this.paintRender(300, "console", { command: "yarn test", output: out, exitCode: 1 });
     const d = this.streamText("One assertion is off — the span-merge case.", 500);
     this.schedule(() => this.emit({ type: "turn_end" }), d + 40);
   }
@@ -839,16 +790,8 @@ export class MockSession implements AgentSession {
       footer: "yarn test · tier 1",
     });
     this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
-    this.schedule(
-      () =>
-        this.emit({ type: "render", component: "stat", props: frame("94.2%", "+1.1%"), id: rid }),
-      250,
-    );
-    this.schedule(
-      () =>
-        this.emit({ type: "render", component: "stat", props: frame("96.8%", "+3.7%"), id: rid }),
-      900,
-    );
+    this.paintRender(250, "stat", frame("94.2%", "+1.1%"), rid);
+    this.paintRender(900, "stat", frame("96.8%", "+3.7%"), rid);
     const d = this.streamText("Coverage is climbing as the new tests land.", 1000);
     this.schedule(() => this.emit({ type: "turn_end" }), d + 40);
   }
@@ -869,21 +812,12 @@ export class MockSession implements AgentSession {
       "Here's the loader as it stands — the parse is the part worth reading:",
       200,
     );
-    this.schedule(
-      () =>
-        this.emit({
-          type: "render",
-          component: "code",
-          props: {
-            code,
-            lang: "ts",
-            filename: "src/config/load.ts",
-            highlight: [{ start: 4, end: 5 }],
-          },
-          id: randomUUID(),
-        }),
-      d + 250,
-    );
+    this.paintRender(d + 250, "code", {
+      code,
+      lang: "ts",
+      filename: "src/config/load.ts",
+      highlight: [{ start: 4, end: 5 }],
+    });
     this.schedule(() => this.emit({ type: "turn_end" }), d + 300);
   }
 
@@ -891,25 +825,16 @@ export class MockSession implements AgentSession {
    *  the vocabulary knows, so the e2e pins the whole enum's rendering. */
   private playStatusList() {
     this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
-    this.schedule(
-      () =>
-        this.emit({
-          type: "render",
-          component: "status-list",
-          props: {
-            title: "Health checks",
-            items: [
-              { label: "unit suite", status: "pass", detail: "394 tests, 7.4s" },
-              { label: "e2e suite", status: "pending" },
-              { label: "lint", status: "warn", detail: "2 warnings in `server/pty`" },
-              { label: "relay probe", status: "fail", detail: "dial refused (4007)" },
-              { label: "live-model probe", status: "skip", detail: "no API key" },
-            ],
-          },
-          id: randomUUID(),
-        }),
-      300,
-    );
+    this.paintRender(300, "status-list", {
+      title: "Health checks",
+      items: [
+        { label: "unit suite", status: "pass", detail: "394 tests, 7.4s" },
+        { label: "e2e suite", status: "pending" },
+        { label: "lint", status: "warn", detail: "2 warnings in `server/pty`" },
+        { label: "relay probe", status: "fail", detail: "dial refused (4007)" },
+        { label: "live-model probe", status: "skip", detail: "no API key" },
+      ],
+    });
     const d = this.streamText("Four suites checked — the relay probe is the one to chase.", 500);
     this.schedule(() => this.emit({ type: "turn_end" }), d + 40);
   }
@@ -1093,10 +1018,7 @@ export class MockSession implements AgentSession {
     delay += 300;
     this.schedule(() => this.emit({ type: "status", state: "tool", label }), delay);
     delay += 400;
-    this.schedule(
-      () => this.emit({ type: "render", component, props, id: randomUUID() }),
-      delay,
-    );
+    this.paintRender(delay, component, props);
     // Per-turn tokens so the meters run — but NO costUsd: a fabricated
     // dollar figure is the one number a demo viewer takes as real (R.4b;
     // omitted → the status bar shows no cost at all) (T2.6).
@@ -1186,6 +1108,17 @@ export class MockSession implements AgentSession {
 
   private schedule(fn: () => void, ms: number) {
     this.timers.push(setTimeout(fn, ms));
+  }
+
+  /** Schedules one render paint at `at` ms — the hooks' shared brushstroke.
+   *  Pass an explicit `id` to repaint the same component (update-in-place). */
+  private paintRender(
+    at: number,
+    component: string,
+    props: Record<string, unknown>,
+    id = randomUUID(),
+  ) {
+    this.schedule(() => this.emit({ type: "render", component, props, id }), at);
   }
 
   /** Schedule `text` as 16-char text_delta chunks, the first `per` ms after

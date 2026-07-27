@@ -1,14 +1,8 @@
-import {
-  cloneElement,
-  isValidElement,
-  useMemo,
-  useState,
-  type ReactElement,
-  type ReactNode,
-} from "react";
+import { cloneElement, isValidElement, useMemo, type ReactElement, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import type { ComponentProps } from "@registry-spec";
+import { CopyButton } from "./CopyButton";
 
 // Code display (not a change — that's Diff). Tokenizing happens client-side on
 // the plain code string through the same react-markdown + rehype-highlight
@@ -85,7 +79,6 @@ export function splitNodeLines(nodes: ReactNode): ReactNode[][] {
 }
 
 export function Code({ code, lang, filename, highlight }: ComponentProps<"code">) {
-  const [copied, setCopied] = useState(false);
   const fenced = useMemo(() => codeFence(code, lang), [code, lang]);
   const components = useMemo(
     () => ({
@@ -117,17 +110,7 @@ export function Code({ code, lang, filename, highlight }: ComponentProps<"code">
       <div className="rc-code-head">
         <span className="rc-code-name">{filename ?? lang ?? "code"}</span>
         {filename && lang && <span className="rc-code-lang">{lang}</span>}
-        <button
-          className="rc-code-copy"
-          onClick={() => {
-            void navigator.clipboard?.writeText(code).then(() => {
-              setCopied(true);
-              setTimeout(() => setCopied(false), 1500);
-            });
-          }}
-        >
-          {copied ? "copied" : "copy"}
-        </button>
+        <CopyButton text={code} />
       </div>
       <ReactMarkdown rehypePlugins={[rehypeHighlight]} components={components}>
         {fenced}

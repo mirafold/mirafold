@@ -225,6 +225,9 @@ function HBarChart({ title, x, series, yLabel, stacked }: ComponentProps<"chart"
   );
   const barH = 12;
   const band = isStacked || series.length === 1 ? 26 : series.length * (barH + 2) + 12;
+  const groupH = series.length === 1 ? barH : series.length * (barH + 2) - 2;
+  const rowTop = (i: number, si: number) =>
+    PAD.top + i * band + (band - groupH) / 2 + si * (barH + 2);
   const hgt = PAD.top + x.length * band + 30;
   const iw = W - labelW - 20;
   const xPos = (v: number) => labelW + ((v - vMin) / (vMax - vMin)) * iw;
@@ -310,29 +313,23 @@ function HBarChart({ title, x, series, yLabel, stacked }: ComponentProps<"chart"
                 }),
               )
             : series.map((s, si) =>
-                s.values.slice(0, x.length).map((v, i) =>
-                  Number.isFinite(v) ? (
+                s.values.slice(0, x.length).map((v, i) => {
+                  if (!Number.isFinite(v)) return null;
+                  const top = rowTop(i, si);
+                  return (
                     <path
                       key={`${si}-${i}`}
                       className="rc-chart-hbar"
                       d={
                         v >= 0
-                          ? hBarPath(
-                              PAD.top +
-                                i * band +
-                                (band - (series.length === 1 ? barH : series.length * (barH + 2) - 2)) / 2 +
-                                si * (barH + 2),
-                              xPos(v),
-                              barH,
-                              x0,
-                            )
-                          : `M${xPos(v)},${PAD.top + i * band + (band - (series.length === 1 ? barH : series.length * (barH + 2) - 2)) / 2 + si * (barH + 2)} H${x0} V${PAD.top + i * band + (band - (series.length === 1 ? barH : series.length * (barH + 2) - 2)) / 2 + si * (barH + 2) + barH} H${xPos(v)} Z`
+                          ? hBarPath(top, xPos(v), barH, x0)
+                          : `M${xPos(v)},${top} H${x0} V${top + barH} H${xPos(v)} Z`
                       }
                       fill={COLORS[si % COLORS.length]}
                       opacity={hover === null || hover === i ? 1 : 0.45}
                     />
-                  ) : null,
-                ),
+                  );
+                }),
               )}
 
           {/* hover hit rows — bigger than the marks */}

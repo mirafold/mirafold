@@ -318,7 +318,7 @@ test("code component: header, client-tokenized lines, emphasized range, copy aff
   // markdown fence characters leaked into the rendered body.
   assert.ok((await block.locator(".hljs-keyword").count()) > 0, "no syntax tokens");
   assert.ok(!(await block.locator(".rc-code-body").innerText()).includes("```"));
-  assert.equal(await block.locator(".rc-code-copy").innerText(), "copy");
+  assert.equal(await block.locator(".rc-copy").innerText(), "copy");
 });
 
 test("status-list component: one verdict pill per row, glyph + word, all five states", async () => {

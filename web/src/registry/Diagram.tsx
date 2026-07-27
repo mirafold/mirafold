@@ -103,7 +103,6 @@ export function Diagram({ title, source }: ComponentProps<"diagram">) {
   // Re-send when source changes after the frame already loaded.
   useEffect(() => {
     if (runtime) post();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [source, runtime]);
 
   if (error) {

@@ -1,5 +1,5 @@
-import { useState } from "react";
 import type { ComponentProps } from "@registry-spec";
+import { CopyButton } from "./CopyButton";
 
 // Quoted terminal output (build logs, failing tests, stack traces) — command
 // header, exit badge, and a monospace body with ANSI SGR colors rendered.
@@ -88,7 +88,6 @@ export function ansiSpans(raw: string): AnsiSpan[] {
 }
 
 export function Console({ command, output, exitCode }: ComponentProps<"console">) {
-  const [copied, setCopied] = useState(false);
   const clipped = output.length > CONSOLE_CLIP;
   const spans = ansiSpans(clipped ? output.slice(0, CONSOLE_CLIP) : output);
   return (
@@ -111,17 +110,7 @@ export function Console({ command, output, exitCode }: ComponentProps<"console">
             exit {exitCode}
           </span>
         )}
-        <button
-          className="rc-code-copy"
-          onClick={() => {
-            void navigator.clipboard?.writeText(output).then(() => {
-              setCopied(true);
-              setTimeout(() => setCopied(false), 1500);
-            });
-          }}
-        >
-          {copied ? "copied" : "copy"}
-        </button>
+        <CopyButton text={output} />
       </div>
       <pre className="rc-console-body">
         {spans.map((s, i) =>
