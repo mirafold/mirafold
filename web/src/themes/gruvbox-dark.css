@@ -44,10 +44,14 @@
   --ok-bg: #393a28;
   --ok-border: #505127;
   --ok-border-strong: #696a27;
-  --err-bg: #412c29;
+  /* err/info tints darkened 2026-07-27: --error/--info render as TEXT on
+     them (status pills) and the originals sat at 4.38/4.49:1 — under the
+     guard's 4.5 floor. Darker bg, not brighter accents: the accents are
+     already tuned against every text surface. */
+  --err-bg: #3c2926;
   --err-border: #63312b;
   --err-border-strong: #87372d;
-  --info-bg: #333735;
+  --info-bg: #2f3331;
   --info-border: #414b47;
   --info-border-strong: #51605a;
   --warn-bg: #3d3729;

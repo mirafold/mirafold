@@ -172,6 +172,30 @@ test("accent text clears 4.5:1 on every real text surface, in every theme", () =
   }
 });
 
+test("semantic text on its matching tint clears 4.5:1, in every theme", () => {
+  // The status-list pills (2026-07-27) are the first surface to set the
+  // semantic colors as TEXT on their own tint backgrounds (accent on the ok
+  // tint, error on the err tint, …). The accent test above checks the text
+  // surfaces only, so without this a theme could ship an unreadable pill and
+  // nothing would fail. Checked for every theme, including future ones.
+  const pairs: Array<[string, string]> = [
+    ["--accent", "--ok-bg"],
+    ["--error", "--err-bg"],
+    ["--info", "--info-bg"],
+    ["--warn-fg", "--warn-bg"],
+  ];
+  for (const t of THEMES) {
+    const tokens = parseThemeTokens(themeCss(t.id));
+    for (const [fg, bg] of pairs) {
+      const ratio = contrast(tokens.get(fg)!, tokens.get(bg)!);
+      assert.ok(
+        ratio >= 4.5,
+        `${t.id}: ${fg} on ${bg} is ${ratio.toFixed(2)}:1, below the 4.5:1 floor`,
+      );
+    }
+  }
+});
+
 test("pinned code/diff text clears its floors", () => {
   const base = parseThemeTokens(readFileSync(join(themesDir, "base.css"), "utf8"));
   const pairs: Array<[string, string, number]> = [
