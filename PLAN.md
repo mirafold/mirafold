@@ -2591,6 +2591,34 @@ parse into the Step 1.4 raw-props fallback — legible, and the designed path.
     old-client simulation (parse through yesterday's tolerant schema) shows
     the props stripping to a plain grouped/vertical bar, not a fallback.
 
+- [x] **Workflow-gap batch (Kyle-directed 2026-07-27, same branch): `console`,
+  `image`, `diagram`** ✅ — the three glaring terminal-agent workflow gaps
+  from the 2026-07-27 survey, each through the full seam, one commit apiece:
+  - **`console`** — quoted terminal output (build logs, failing tests, stack
+    traces): command header, exit badge, copy; a self-written SGR-subset
+    parser turns ANSI colors into class spans (16 fg colors on a pinned
+    palette, other escapes stripped; text rides React as text nodes).
+  - **`image`** — the visual-verification gap. Agent authors a WORKSPACE
+    PATH; the daemon inlines the bytes at the WireMsg synthesis point (all
+    three adapters; the stdio stub stays file-access-free). Explorer-grade
+    posture: `inside()` realpath containment (mutation-tested), secret
+    denial, 2 MB raw cap (sealed relay frame ≈1.8×, relay ceiling 8 MB;
+    replay ring is count-capped so per-image bytes are the bound), raster
+    magic-byte allowlist, NO svg. Client accepts `src` only as a
+    strict-shaped data:image/raster URI — anything else → raw-props
+    fallback. Refusals render their reason.
+  - **`diagram`** — mermaid (flowchart/sequence/state/class/ER), rendered in
+    the ARTIFACT-grade sandbox, never the shell origin: shell-supplied
+    runtime (securityLevel strict) inlined in an opaque-origin no-network
+    iframe; agent source arrives by postMessage only (no interpolation slot
+    — pinned by test); nonce-stamped ready/height/error channel. New dep
+    `mermaid` (^11, deep-spec verdict): ~3.6 MB lazy chunk, first diagram
+    only. Broken source shows the error beside the source.
+  **Deliberately NOT built: structured input beyond `question`** (multi-value
+  forms, editable commit messages). Free-text input inside agent-authored UI
+  collides with the trusted-shell rule that input surfaces are shell-owned —
+  it needs a design conversation with Kyle first, not a batch add.
+
 - [x] **Step S.3 — `stat` registry component (KPI tile)** ✅ 2026-07-27
   (Kyle-directed, on branch `claude/next-registry-components-lyrbrq`; built to
   this spec exactly — `label`/`value`/optional `delta {value, direction,
