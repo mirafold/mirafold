@@ -3,16 +3,18 @@ import assert from "node:assert/strict";
 import { CLIENT_VERSION } from "./version";
 import {
   SocketClient,
-  relayTargetFromFragment,
-  sessionHintFromFragment,
-  newSessionHref,
-  storedPairing,
   viewportRefusalReason,
   PING_INTERVAL_MS,
   PONG_DEADLINE_MS,
   BACKOFF_MIN_MS,
   BACKOFF_MAX_MS,
 } from "./ws";
+import {
+  relayTargetFromFragment,
+  sessionHintFromFragment,
+  newSessionHref,
+  storedPairing,
+} from "./relay-pairing";
 
 /** In-memory Storage stub for newSessionHref (which takes storage injected). */
 function fakeStorage(init: Record<string, string> = {}): Storage {

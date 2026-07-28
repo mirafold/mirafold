@@ -25,32 +25,41 @@ export type Daemon = {
 };
 
 /**
- * Start `server/index.ts` with every provider credential forced EMPTY so
- * credential detection routes all agents to the MockSession — a set (even
- * empty) env var beats `.env` under process.loadEnvFile(), verified. No test
- * may ever reach a metered engine. MIRAFOLD_TOKEN defaults to disabled; auth
- * tests pass their own.
+ * Every provider credential forced EMPTY — a set (even empty) env var beats
+ * `.env` under process.loadEnvFile(), verified — so credential detection
+ * routes all agents to the MockSession. No test may ever reach a metered
+ * engine. Shared with launcher.e2e.ts, which spawns the launcher (not the
+ * daemon) and so can't use startDaemon but must scrub the same credentials.
+ * PORT is deliberately NOT here: each spawn randomizes its own.
+ */
+export const SCRUBBED_CREDENTIAL_ENV = {
+  ANTHROPIC_API_KEY: "",
+  ANTHROPIC_AUTH_TOKEN: "",
+  ANTHROPIC_BASE_URL: "",
+  OPENAI_API_KEY: "",
+  GEMINI_API_KEY: "",
+  GOOGLE_API_KEY: "",
+  CODEX_HOME: path.join(ROOT, "itest-no-codex-home"), // no auth.json here
+  MIRAFOLD_LOG_FILE: "", // never write the real flight-recorder file from tests
+  // R.4b made a `claude` subscription login count as live credentials —
+  // point the check at an empty dir so a logged-in dev machine (the
+  // usual case) still runs every test against the mock.
+  CLAUDE_CONFIG_DIR: path.join(ROOT, "itest-no-claude-home"),
+  MIRAFOLD_TOKEN: "",
+  MIRAFOLD_RELAY_URL: "", // no dial-out unless a relay test asks for it
+  MIRAFOLD_RELAY_CODE: "",
+};
+
+/**
+ * Start `server/index.ts` with the credential scrub above applied.
+ * MIRAFOLD_TOKEN defaults to disabled; auth tests pass their own.
  */
 export function startDaemon(env: Record<string, string> = {}): Promise<Daemon> {
   const child = spawn(process.execPath, ["--import", "tsx", "server/index.ts"], {
     cwd: ROOT,
     env: {
       ...process.env,
-      ANTHROPIC_API_KEY: "",
-      ANTHROPIC_AUTH_TOKEN: "",
-      ANTHROPIC_BASE_URL: "",
-      OPENAI_API_KEY: "",
-      GEMINI_API_KEY: "",
-      GOOGLE_API_KEY: "",
-      CODEX_HOME: path.join(ROOT, "itest-no-codex-home"), // no auth.json here
-      MIRAFOLD_LOG_FILE: "", // never write the real flight-recorder file from tests
-      // R.4b made a `claude` subscription login count as live credentials —
-      // point the check at an empty dir so a logged-in dev machine (the
-      // usual case) still runs every test against the mock.
-      CLAUDE_CONFIG_DIR: path.join(ROOT, "itest-no-claude-home"),
-      MIRAFOLD_TOKEN: "",
-      MIRAFOLD_RELAY_URL: "", // no dial-out unless a relay test asks for it
-      MIRAFOLD_RELAY_CODE: "",
+      ...SCRUBBED_CREDENTIAL_ENV,
       // R.5's paid-tier settings, scrubbed like credentials: a set APP_URL
       // points pairing QRs at the hosted app instead of the daemon under
       // test, and license/entitlement config makes the daemon call the real
@@ -147,13 +156,9 @@ export class TestClient {
 
   constructor(
     port: number,
-    opts: { token?: string; origin?: string; cookie?: string; query?: string } = {},
+    opts: { token?: string; origin?: string; cookie?: string } = {},
   ) {
-    // `query` is used verbatim (the relay tests pass ?code=…); `token` keeps
-    // its dedicated shorthand for the auth tests.
-    const q =
-      opts.query ??
-      (opts.token !== undefined ? `?token=${encodeURIComponent(opts.token)}` : "");
+    const q = opts.token !== undefined ? `?token=${encodeURIComponent(opts.token)}` : "";
     this.ws = new WebSocket(`ws://127.0.0.1:${port}/ws${q}`, {
       headers: {
         ...(opts.origin ? { origin: opts.origin } : {}),
@@ -238,3 +243,23 @@ export async function createSession(
   const created = (await client.type("session_created")) as WireMsg & { sessionId: string };
   return { client, sessionId: created.sessionId };
 }
+
+/** Open a client and attach it to an existing session (optionally resuming
+ *  from `afterSeq`); hands back the `session_created` ack for its
+ *  `sessionId`/`resumed` fields. */
+export async function attachSession(
+  port: number,
+  sessionId: string,
+  afterSeq?: number,
+): Promise<{ client: TestClient; created: WireMsg & Record<string, any> }> {
+  const client = new TestClient(port);
+  await client.opened();
+  await client.type("agents");
+  client.send({ type: "attach", sessionId, ...(afterSeq !== undefined ? { afterSeq } : {}) } as never);
+  const created = (await client.type("session_created")) as WireMsg & Record<string, any>;
+  return { client, created };
+}
+
+/** Everything seq-stamped a client has seen (i.e. the session's broadcast stream). */
+export const broadcasts = (c: { received: WireMsg[] }) =>
+  (c.received as (WireMsg & Record<string, any>)[]).filter((m) => typeof m.seq === "number");

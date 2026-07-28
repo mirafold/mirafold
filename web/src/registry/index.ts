@@ -7,9 +7,8 @@ import type { ComponentName, ComponentProps } from "@registry-spec";
 import { Card } from "./Card";
 import { List } from "./List";
 import { Table } from "./Table";
-import { LinkGroup } from "./LinkGroup";
 import { Chart } from "./Chart";
-import { TodoList } from "./TodoList";
+import { LinkGroup } from "./LinkGroup";
 import { KeyValue } from "./KeyValue";
 import { Progress } from "./Progress";
 import { Timeline } from "./Timeline";
@@ -18,18 +17,20 @@ import { Question } from "./Question";
 import { Diff } from "./Diff";
 import { Stat } from "./Stat";
 import { Code } from "./Code";
-import { StatusList } from "./StatusList";
-import { Console } from "./Console";
-import { Image } from "./Image";
 import { Diagram } from "./Diagram";
+import { Image } from "./Image";
+import { Console } from "./Console";
+import { StatusList } from "./StatusList";
+import { TodoList } from "./TodoList";
 
+// Entries in the spec's order (server/registry-spec.ts) — the two halves of
+// the one-source-of-truth pairing read side by side.
 export const registry: { [N in ComponentName]: ComponentType<ComponentProps<N>> } = {
   card: Card,
   list: List,
   table: Table,
-  "link-group": LinkGroup,
   chart: Chart,
-  "todo-list": TodoList,
+  "link-group": LinkGroup,
   "key-value": KeyValue,
   progress: Progress,
   timeline: Timeline,
@@ -38,8 +39,9 @@ export const registry: { [N in ComponentName]: ComponentType<ComponentProps<N>> 
   diff: Diff,
   stat: Stat,
   code: Code,
-  "status-list": StatusList,
-  console: Console,
-  image: Image,
   diagram: Diagram,
+  image: Image,
+  console: Console,
+  "status-list": StatusList,
+  "todo-list": TodoList,
 };

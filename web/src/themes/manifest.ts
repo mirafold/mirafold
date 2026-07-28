@@ -41,7 +41,7 @@ export const THEMES: ThemeEntry[] = [
 // pre-paint script mirrors these key names by value (it can't import).
 export const MODE_STORAGE_KEY = "mirafold-theme";
 export function slotStorageKey(appearance: ThemeAppearance): string {
-  return `mirafold-theme-${appearance}`;
+  return `${MODE_STORAGE_KEY}-${appearance}`;
 }
 
 /** The theme id a pill side resolves to: the stored slot choice when it

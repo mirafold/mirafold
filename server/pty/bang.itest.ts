@@ -4,7 +4,13 @@ import { mkdirSync, mkdtempSync, realpathSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { WireMsg } from "../protocol";
-import { startDaemon, createSession, TestClient, type Daemon } from "../testing/itest-harness";
+import {
+  attachSession,
+  startDaemon,
+  createSession,
+  TestClient,
+  type Daemon,
+} from "../testing/itest-harness";
 
 // The `!` passthrough (4.9) over a real PTY — and its core security
 // promise: bang_input is EPHEMERAL. Data written to a running command's stdin
@@ -29,14 +35,7 @@ after(async () => {
 });
 
 test("bang secrets invariant: stdin data is ephemeral, output is not", async () => {
-  const { client: b } = (await (async () => {
-    const other = new TestClient(d.port);
-    await other.opened();
-    await other.type("agents");
-    other.send({ type: "attach", sessionId } as never);
-    await other.type("session_created");
-    return { client: other };
-  })()) as { client: TestClient };
+  const { client: b } = await attachSession(d.port, sessionId);
 
   // `read -s` turns off tty echo, like a password prompt; the command then
   // reveals only the LENGTH of what it read — proof the input arrived.
@@ -64,11 +63,7 @@ test("bang secrets invariant: stdin data is ephemeral, output is not", async () 
     assert.ok(!JSON.stringify(viewport.received).includes(SECRET));
   }
   // not in the ring buffer (a fresh attach replays it in full),
-  const late = new TestClient(d.port);
-  await late.opened();
-  await late.type("agents");
-  late.send({ type: "attach", sessionId } as never);
-  await late.type("session_created");
+  const { client: late } = await attachSession(d.port, sessionId);
   await late.waitFor((m) => m.type === "bang_end", "replayed bang_end");
   assert.ok(!JSON.stringify(late.received).includes(SECRET));
   // while the command's own output DID replay (buffered, unlike the input).
@@ -115,11 +110,7 @@ test("runaway ! output is capped on the wire, in replay, and can't evict the rin
 
   // A fresh viewport's replay is bounded the same way, and the earlier
   // turn's transcript is still in the ring.
-  const late = new TestClient(bd.port);
-  await late.opened();
-  await late.type("agents");
-  late.send({ type: "attach", sessionId: sid } as never);
-  await late.type("session_created");
+  const { client: late } = await attachSession(bd.port, sid);
   await late.waitFor((m) => m.type === "bang_end", "replayed bang_end");
   const replay = (late.received as Any[])
     .filter((m) => m.type === "bang_output")

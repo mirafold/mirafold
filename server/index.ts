@@ -218,47 +218,54 @@ void probeLocalServers();
 // pinned via MIRAFOLD_RELAY_CODE); its HTTP twin of MIRAFOLD_RELAY_URL is what a
 // phone's browser opens. Local viewports get both in the hello so the shell
 // can draw the "connect a device" QR (R.4) — remote viewports never do.
-let RELAY_CODE: string | undefined;
-// A malformed or non-ws MIRAFOLD_RELAY_URL used to reach `new WebSocket()` in
-// the relay client and throw an unhandledRejection — AFTER the "server on …"
-// line, so the daemon looked like it started and then died, pointing the user
-// at the issue tracker for their own typo. Refuse it here instead, naming the
-// actual problem. Same posture as the weak-pairing-code refusal below:
-// refusing beats honoring, and local sessions never depend on the relay.
-// (relayOrigin is null exactly when the URL is unusable — 2026-07-27 audit.)
-if (RELAY_URL && !relayOrigin) {
-  createLogger("relay").warn(
-    `MIRAFOLD_RELAY_URL is not a valid ws:// or wss:// URL and was REFUSED — ` +
-      `remote access is OFF for this launch. Local sessions are unaffected. ` +
-      `Expected something like wss://relay.mirafold.sh`,
-  );
-}
-if (RELAY_URL && relayOrigin) {
-  const { code, weakPin } = resolvePairingCode(process.env.MIRAFOLD_RELAY_CODE);
-  if (weakPin) {
-    // Refusing beats honoring: a guessable code is remote shell access for
-    // whoever guesses it, and the minted fallback keeps the relay usable.
+function resolveRelayConfig(): {
+  code?: string;
+  info?: { url: string; code: string; ws?: string };
+} {
+  // A malformed or non-ws MIRAFOLD_RELAY_URL used to reach `new WebSocket()` in
+  // the relay client and throw an unhandledRejection — AFTER the "server on …"
+  // line, so the daemon looked like it started and then died, pointing the user
+  // at the issue tracker for their own typo. Refuse it here instead, naming the
+  // actual problem. Same posture as the weak-pairing-code refusal below:
+  // refusing beats honoring, and local sessions never depend on the relay.
+  // (relayOrigin is null exactly when the URL is unusable — 2026-07-27 audit.)
+  if (RELAY_URL && !relayOrigin) {
     createLogger("relay").warn(
-      `MIRAFOLD_RELAY_CODE is shorter than ${MIN_PAIRING_CODE_LENGTH} chars and was REFUSED — ` +
-        `a guessable pairing code hands remote shell access to whoever guesses it. ` +
-        `Using a freshly minted code instead (printed below).`,
+      `MIRAFOLD_RELAY_URL is not a valid ws:// or wss:// URL and was REFUSED — ` +
+        `remote access is OFF for this launch. Local sessions are unaffected. ` +
+        `Expected something like wss://relay.mirafold.sh`,
     );
   }
-  RELAY_CODE = code;
+  let relayCode: string | undefined;
+  if (RELAY_URL && relayOrigin) {
+    const { code, weakPin } = resolvePairingCode(process.env.MIRAFOLD_RELAY_CODE);
+    if (weakPin) {
+      // Refusing beats honoring: a guessable code is remote shell access for
+      // whoever guesses it, and the minted fallback keeps the relay usable.
+      createLogger("relay").warn(
+        `MIRAFOLD_RELAY_CODE is shorter than ${MIN_PAIRING_CODE_LENGTH} chars and was REFUSED — ` +
+          `a guessable pairing code hands remote shell access to whoever guesses it. ` +
+          `Using a freshly minted code instead (printed below).`,
+      );
+    }
+    relayCode = code;
+  }
+  // Where the phone loads the viewport app FROM (static-origin serving). The
+  // relay serves no JS — the trust decision: whoever carries the traffic must
+  // not serve the code that could read the pairing fragment. With
+  // MIRAFOLD_APP_URL set (e.g. https://app.mirafold.com) the QR points there and
+  // `ws` rides the fragment so the page knows where to dial; unset falls back to
+  // the relay URL's HTTP twin (dev + stub, where one host plays both parts).
+  const APP_URL = process.env.MIRAFOLD_APP_URL?.trim().replace(/\/+$/, "");
+  const info =
+    RELAY_URL && relayCode
+      ? APP_URL
+        ? { url: APP_URL, code: relayCode, ws: RELAY_URL }
+        : { url: RELAY_URL.replace(/^ws/, "http"), code: relayCode }
+      : undefined;
+  return { code: relayCode, info };
 }
-// Where the phone loads the viewport app FROM (static-origin serving). The
-// relay serves no JS — the trust decision: whoever carries the traffic must
-// not serve the code that could read the pairing fragment. With
-// MIRAFOLD_APP_URL set (e.g. https://app.mirafold.com) the QR points there and
-// `ws` rides the fragment so the page knows where to dial; unset falls back to
-// the relay URL's HTTP twin (dev + stub, where one host plays both parts).
-const APP_URL = process.env.MIRAFOLD_APP_URL?.trim().replace(/\/+$/, "");
-const relayInfo =
-  RELAY_URL && RELAY_CODE
-    ? APP_URL
-      ? { url: APP_URL, code: RELAY_CODE, ws: RELAY_URL }
-      : { url: RELAY_URL.replace(/^ws/, "http"), code: RELAY_CODE }
-    : undefined;
+const { code: RELAY_CODE, info: relayInfo } = resolveRelayConfig();
 
 // Per-socket liveness, read by the heartbeat below to reap half-open
 // leftovers whose `close` never arrived (see ws-liveness.ts) (#10).

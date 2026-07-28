@@ -30,12 +30,19 @@ export const verbose = Boolean(process.env.MIRAFOLD_DEBUG) || process.argv.inclu
 const MAX_LINE = 4_000; // payload-scale content has no business in a log line
 const MAX_FILE_BYTES = 5_000_000; // roll here; one prior generation kept → ≤10 MB ever
 
-function defaultLogFile(): string {
+/** The daemon's platform state directory (win32 LOCALAPPDATA / XDG state) —
+ *  the one home for daemon-kept files: the log here, the trusted-repos list
+ *  in git-trust.ts. */
+export function stateDir(): string {
   const base =
     process.platform === "win32"
       ? (process.env.LOCALAPPDATA ?? path.join(os.homedir(), "AppData", "Local"))
       : (process.env.XDG_STATE_HOME || path.join(os.homedir(), ".local", "state"));
-  return path.join(base, "mirafold", "mirafold.log");
+  return path.join(base, "mirafold");
+}
+
+function defaultLogFile(): string {
+  return path.join(stateDir(), "mirafold.log");
 }
 
 /** Resolved log file path, or null when disabled (MIRAFOLD_LOG_FILE=""). */

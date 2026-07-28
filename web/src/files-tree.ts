@@ -32,6 +32,11 @@ export type DirStore = ReadonlyMap<string, DirState>;
 
 export const emptyDirStore = (): DirStore => new Map();
 
+/** The carry-forward half of a transition: a prior listing (and its
+ *  truncation flag) stays visible until the new reply decides. */
+const carriedEntries = (prev: DirState | undefined) =>
+  prev?.entries ? { entries: prev.entries, truncated: prev.truncated } : {};
+
 /** Mark `path` as fetching. Previous entries (and truncation) stay visible;
  *  a previous error is cleared — the new reply decides. */
 export function beginDirFetch(store: DirStore, path: string): DirStore {
@@ -39,7 +44,7 @@ export function beginDirFetch(store: DirStore, path: string): DirStore {
   const prev = store.get(path);
   next.set(path, {
     loading: true,
-    ...(prev?.entries ? { entries: prev.entries, truncated: prev.truncated } : {}),
+    ...carriedEntries(prev),
   });
   return next;
 }
@@ -58,7 +63,7 @@ export function applyDirReply(
     next.set(path, {
       loading: false,
       error: reply.error,
-      ...(prev?.entries ? { entries: prev.entries, truncated: prev.truncated } : {}),
+      ...carriedEntries(prev),
     });
   } else {
     next.set(path, {
@@ -75,11 +80,7 @@ export function applyDirReply(
  *  place, and anything cached-but-collapsed is invalidated so its next
  *  expand fetches fresh instead of serving a listing from before the turn. */
 export function pruneDirStore(store: DirStore, keep: ReadonlySet<string>): DirStore {
-  const next = new Map<string, DirState>();
-  for (const [path, state] of store) {
-    if (path === "" || keep.has(path)) next.set(path, state);
-  }
-  return next;
+  return new Map([...store].filter(([path]) => path === "" || keep.has(path)));
 }
 
 /** How long a bell-triggered refresh must wait (W.2): immediately when the

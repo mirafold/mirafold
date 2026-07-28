@@ -18,9 +18,10 @@ import { isSecretFile } from "../security/permissions";
 // (1 MB inbound; replies should honor the same order of magnitude — the
 // relay envelope allows 1.5×) even on a monorepo, and JSON escaping can
 // inflate exotic filenames — so the cap is on entry COUNT and path BYTES
-// both. Honest: `truncated: true`, never a silent cut.
-const FS_TREE_MAX_ENTRIES = Number(process.env.FS_TREE_MAX_ENTRIES ?? 4_000);
-const FS_TREE_MAX_PATH_BYTES = Number(process.env.FS_TREE_MAX_PATH_BYTES ?? 400_000);
+// both. Honest: `truncated: true`, never a silent cut. Exported: git.ts's
+// tree reply shares exactly these caps.
+export const FS_TREE_MAX_ENTRIES = Number(process.env.FS_TREE_MAX_ENTRIES ?? 4_000);
+export const FS_TREE_MAX_PATH_BYTES = Number(process.env.FS_TREE_MAX_PATH_BYTES ?? 400_000);
 // Bounds the WALK's cost, not just the reply. The entry/byte caps count only
 // FILES, so a tree of many (mostly empty) directories would be walked in full
 // — the file cap never trips. This caps total nodes VISITED (files + dirs), so
@@ -196,7 +197,8 @@ export function sortAndCapDir(
  * List ONE directory's children — the lazy tree's fetch unit (E2.1), plain
  * (no git view): readDirRaw + sortAndCapDir. The SKIP_DIRS floor carries
  * over: a `.git`/`node_modules` DIRECTORY is omitted, exactly as the
- * whole-tree walk prunes it.
+ * whole-tree walk prunes it. The tests' composition of the two exported
+ * halves — production (fs-handlers.ts) composes them directly.
  */
 export function listDir(
   root: string,

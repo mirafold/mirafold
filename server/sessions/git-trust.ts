@@ -25,10 +25,11 @@
 
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
-import os from "node:os";
 import path from "node:path";
+import { stateDir } from "../log";
 
-const GIT_TIMEOUT_MS = Number(process.env.FS_GIT_TIMEOUT_MS ?? 5_000);
+// Shared with every git invocation in git.ts — one timebox for the family.
+export const GIT_TIMEOUT_MS = Number(process.env.FS_GIT_TIMEOUT_MS ?? 5_000);
 // A config dump is small; this only bounds a pathological repo's memory.
 const CONFIG_MAX_BUFFER = 2 * 1024 * 1024;
 // Each named filter driver costs one `-c` argument to neutralize. A repo
@@ -119,11 +120,7 @@ export function assessConfig(entries: ReadonlyMap<string, string>): {
 // restart and a hand-edit is honored immediately.
 
 function defaultTrustFile(): string {
-  const base =
-    process.platform === "win32"
-      ? (process.env.LOCALAPPDATA ?? path.join(os.homedir(), "AppData", "Local"))
-      : (process.env.XDG_STATE_HOME || path.join(os.homedir(), ".local", "state"));
-  return path.join(base, "mirafold", "trusted-repos.json");
+  return path.join(stateDir(), "trusted-repos.json");
 }
 
 /** The allow-list path, or null when disabled (MIRAFOLD_TRUST_FILE=""),

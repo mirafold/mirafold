@@ -57,7 +57,7 @@ export function xychartToChart(body: string): ChartProps | undefined {
   let title: string | undefined;
   let yLabel: string | undefined;
   let x: string[] | undefined;
-  const raw: { kind: "line" | "bar"; values: number[] }[] = [];
+  const parsedSeries: { kind: "line" | "bar"; values: number[] }[] = [];
 
   for (const line of lines.slice(1)) {
     if (line.startsWith("title ")) {
@@ -74,19 +74,19 @@ export function xychartToChart(body: string): ChartProps | undefined {
       if (!items) return undefined;
       const values = items.map(Number);
       if (values.some((v) => !Number.isFinite(v))) return undefined;
-      raw.push({ kind: line.startsWith("line") ? "line" : "bar", values });
+      parsedSeries.push({ kind: line.startsWith("line") ? "line" : "bar", values });
     }
     // anything else (comments, config) is ignorable noise
   }
 
-  if (!x || raw.length === 0) return undefined;
-  if (raw.some((s) => s.values.length !== x.length)) return undefined;
+  if (!x || parsedSeries.length === 0) return undefined;
+  if (parsedSeries.some((s) => s.values.length !== x.length)) return undefined;
 
   // The model sometimes emits the same values as both `line` and `bar`
   // (observed live) — mermaid overlays them; our chart has one kind, so
   // duplicates collapse to the first.
   const series: { kind: "line" | "bar"; values: number[] }[] = [];
-  for (const s of raw) {
+  for (const s of parsedSeries) {
     if (!series.some((t) => t.values.length === s.values.length && t.values.every((v, i) => v === s.values[i]))) {
       series.push(s);
     }

@@ -48,16 +48,20 @@ export const BLOCKED_HINT: Partial<Record<AgentName, string>> = {
 // additive-only: a newer daemon can announce an agent this bundle has never
 // heard of, and it must display as its raw name — not `undefined` (R.4h).
 
+function tolerantLookup(record: Partial<Record<AgentName, string>>, agent: string): string | undefined {
+  return (record as Record<string, string | undefined>)[agent];
+}
+
 export function agentLabel(agent: string): string {
-  return (LABEL as Record<string, string | undefined>)[agent] ?? agent;
+  return tolerantLookup(LABEL, agent) ?? agent;
 }
 
 export function connectHint(agent: string): string | undefined {
-  return (CONNECT_HINT as Record<string, string | undefined>)[agent];
+  return tolerantLookup(CONNECT_HINT, agent);
 }
 
 export function blockedHint(agent: string): string | undefined {
-  return (BLOCKED_HINT as Record<string, string | undefined>)[agent];
+  return tolerantLookup(BLOCKED_HINT, agent);
 }
 
 // ── The second-step backend picker's copy (N.4) ──────────────────────────

@@ -20,8 +20,9 @@ import { isSecretFile } from "./security/permissions";
 /** Raw-file cap. The sealed relay frame inflates ~1.8× over raw bytes
  *  (base64-in-JSON, then the E2E seal's encoding), and the relay's default
  *  frame ceiling is 8 MB — 2 MB raw keeps a wide margin. It also bounds what
- *  one image costs the session's replay ring (count-capped, not byte-capped),
- *  which re-sends every buffered render on resume. */
+ *  one image costs the session's replay ring (byte-capped, but the byte cap
+ *  never evicts the newest message), which re-sends every buffered render on
+ *  resume. */
 export const IMAGE_MAX_BYTES = 2_000_000;
 
 const SNIFFS: [kind: string, ok: (b: Buffer) => boolean][] = [

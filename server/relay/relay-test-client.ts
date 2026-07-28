@@ -6,7 +6,6 @@
 
 import WebSocket from "ws";
 import type { ClientMsg, WireMsg } from "../protocol";
-import type { Daemon } from "../testing/itest-harness";
 import { PAIR_PARAM, VIEWPORT_PATH } from "./relay-protocol";
 import {
   derivePair,
@@ -16,8 +15,6 @@ import {
   sealHandshake,
   type FrameCipher,
 } from "./relay-crypto";
-
-type Any = WireMsg & Record<string, any>;
 
 export class RemoteClient {
   ws!: WebSocket;
@@ -156,22 +153,11 @@ export class RemoteClient {
   }
 }
 
-export const waitForLog = (re: RegExp, timeoutMs = 10_000, daemon?: Daemon, fallback?: Daemon) =>
-  new Promise<void>((resolve, reject) => {
-    const dm = daemon ?? fallback;
-    if (!dm) throw new Error("waitForLog needs a daemon");
-    const t0 = Date.now();
-    const poll = setInterval(() => {
-      if (re.test(dm.logs())) {
-        clearInterval(poll);
-        resolve();
-      } else if (Date.now() - t0 > timeoutMs) {
-        clearInterval(poll);
-        reject(new Error(`daemon log never matched ${re};\n${dm.logs()}`));
-      }
-    }, 50);
+/** Close code of a raw socket the relay/daemon is expected to refuse; -1 =
+ *  the handshake itself was rejected before any close frame. */
+export function closeCode(ws: WebSocket): Promise<number> {
+  return new Promise((res) => {
+    ws.on("close", (c: number) => res(c));
+    ws.on("error", () => res(-1));
   });
-
-/** Everything seq-stamped (i.e. the session's broadcast stream). */
-export const broadcasts = (c: { received: WireMsg[] }) =>
-  (c.received as Any[]).filter((m) => typeof m.seq === "number");
+}

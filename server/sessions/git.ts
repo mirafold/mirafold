@@ -10,9 +10,10 @@ import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import type { FsDirEntry, FsEntry } from "../protocol";
-import { invalidateRepoTrustCache, repoTrust } from "./git-trust";
+import { GIT_TIMEOUT_MS, invalidateRepoTrustCache, repoTrust } from "./git-trust";
+// The walk's caps, shared (fs-explorer.ts) — both replies ride the same wire.
+import { FS_TREE_MAX_ENTRIES, FS_TREE_MAX_PATH_BYTES } from "./fs-explorer";
 
-const GIT_TIMEOUT_MS = Number(process.env.FS_GIT_TIMEOUT_MS ?? 5_000);
 // `git show` of a big blob is the largest legitimate output; the caller caps
 // content for the wire — this only bounds process memory.
 const GIT_MAX_BUFFER = 10 * 1024 * 1024;
@@ -116,10 +117,6 @@ export type GitTree =
   | { notGit: true }
   | { error: string };
 
-// Same caps as the walk in fs-explorer.ts — the reply rides the same wire.
-const MAX_ENTRIES = Number(process.env.FS_TREE_MAX_ENTRIES ?? 4_000);
-const MAX_PATH_BYTES = Number(process.env.FS_TREE_MAX_PATH_BYTES ?? 400_000);
-
 /**
  * Git's view of the session root: tracked + untracked-unignored files
  * (`ls-files --cached --others --exclude-standard`, cwd-relative), each with
@@ -155,7 +152,7 @@ export async function gitTree(root: string): Promise<GitTree> {
   const push = (rel: string) => {
     if (rel === "" || seen.has(rel)) return;
     seen.add(rel);
-    if (entries.length >= MAX_ENTRIES || pathBytes + rel.length > MAX_PATH_BYTES) {
+    if (entries.length >= FS_TREE_MAX_ENTRIES || pathBytes + rel.length > FS_TREE_MAX_PATH_BYTES) {
       truncated = true;
       return;
     }

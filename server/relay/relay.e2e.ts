@@ -1,7 +1,8 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { chromium, type Browser, type Page } from "playwright-core";
+import { type Browser, type Page } from "playwright-core";
 import { startDaemon, type Daemon } from "../testing/itest-harness";
+import { launchChrome } from "../testing/e2e-harness";
 import { startRelayStub, type RelayStub } from "./relay-stub";
 
 // R.1's "Done when", literally: a second BROWSER attaches through the local
@@ -14,7 +15,6 @@ import { startRelayStub, type RelayStub } from "./relay-stub";
 // relay forwarded was ciphertext.
 
 const CODE = "e2e-pairing-code-77adf1";
-const CHROME = process.env.CHROME_BIN ?? "/usr/bin/google-chrome";
 
 let stub: RelayStub;
 let d: Daemon;
@@ -26,7 +26,7 @@ const tapped: string[] = [];
 before(async () => {
   stub = await startRelayStub({ tap: { frame: (_dir, p) => tapped.push(p) } });
   d = await startDaemon({ MIRAFOLD_TOKEN: "", MIRAFOLD_RELAY_URL: stub.url, MIRAFOLD_RELAY_CODE: CODE });
-  browser = await chromium.launch({ executablePath: CHROME });
+  browser = await launchChrome();
 });
 after(async () => {
   await browser?.close();

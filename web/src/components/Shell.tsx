@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentInfo, AgentName } from "@protocol";
+import { BangBar } from "./BangBar";
+import { FilesGlyph } from "./FilesGlyph";
 import { Onboarding } from "./Onboarding";
 import { PromptBox } from "./PromptBox";
 import { RenderZone } from "./RenderZone";
 import { FilesPanel } from "./files/FilesPanel";
-import { StatusBar, FilesGlyph, type Usage } from "./StatusBar";
+import { StatusBar, type Usage } from "./StatusBar";
 import { createSessionBus } from "../session-bus";
 import {
   MODE_STORAGE_KEY,
@@ -19,10 +21,6 @@ import { agentLabel, connectHint } from "../agents-meta";
 import { paintTabStatus } from "../tab-status";
 import { useEscapeKey } from "../use-escape";
 import { Announcer, turnResponse, useAnnouncer } from "./Announcer";
-
-// The zone-message type lives with the bus (H.9); re-exported so consumers
-// of the shell's contract (RenderZone) keep their import site.
-export type { ZoneMsg } from "../session-bus";
 
 const ZERO_USAGE: Usage = { turnIn: 0, turnOut: 0, sumIn: 0, sumOut: 0, cost: 0 };
 
@@ -322,32 +320,19 @@ export function Shell() {
       <div className="behind-dialog" inert={showOnboarding || undefined}>
         {notices.session && (
           // SHELL-OWNED notice — honest about the swap the server made (R.4c).
-          <div className="session-notice">
-            <span className="session-notice-text">
-              that session ended — started a new one (the daemon restarted or the
-              session expired; the previous transcript wasn't saved)
-            </span>
-            <button
-              className="session-notice-dismiss"
-              onClick={() => setNotices((n) => ({ ...n, session: false }))}
-              title="Dismiss"
-            >
-              ✕
-            </button>
-          </div>
+          <NoticeLine
+            text={
+              "that session ended — started a new one (the daemon restarted or the session expired; the previous transcript wasn't saved)"
+            }
+            onDismiss={() => setNotices((n) => ({ ...n, session: false }))}
+          />
         )}
         {notices.refused && (
           // SHELL-OWNED — the relay refused a subscription-backed session (R.4i).
-          <div className="session-notice">
-            <span className="session-notice-text">{notices.refused}</span>
-            <button
-              className="session-notice-dismiss"
-              onClick={() => setNotices((n) => ({ ...n, refused: null }))}
-              title="Dismiss"
-            >
-              ✕
-            </button>
-          </div>
+          <NoticeLine
+            text={notices.refused}
+            onDismiss={() => setNotices((n) => ({ ...n, refused: null }))}
+          />
         )}
         {meta.demo && (
           // SHELL-OWNED banner — the agent paints nothing here, so a demo
@@ -468,6 +453,21 @@ export function Shell() {
   );
 }
 
+/** A dismissible shell-owned notice line — one text span and the ✕. Shell's
+ *  two banners (session swap, relay refusal) differ only in text and which
+ *  dismiss setter fires. NOT FleetView's fleet-error variant, which has its
+ *  own classes and role="alert". */
+function NoticeLine({ text, onDismiss }: { text: string; onDismiss: () => void }) {
+  return (
+    <div className="session-notice">
+      <span className="session-notice-text">{text}</span>
+      <button className="session-notice-dismiss" onClick={onDismiss} title="Dismiss">
+        ✕
+      </button>
+    </div>
+  );
+}
+
 /** The workbench's permanent left strip (VS Code's activity-bar convention):
  *  always present so the affordance never moves; its files icon opens or
  *  collapses the Explorer panel (E.3). Disabled until there's a session.
@@ -494,79 +494,6 @@ function ActivityBar({
         aria-expanded={filesOpen}
       >
         <FilesGlyph />
-      </button>
-    </div>
-  );
-}
-
-/**
- * Stdin for the running `!` command (4.9) — SHELL-OWNED UI on the ephemeral
- * input path: what's typed here goes to the PTY and nowhere else (never the
- * replay ring, never other viewports), and only the issuing viewport mounts
- * it. Masks itself when the command's output ends in a password prompt
- * (echo-off input never comes back as output, so masking here is the only
- * echo there is); a toggle overrides the guess either way.
- */
-function BangBar({
-  command,
-  tail,
-  onInput,
-  onKill,
-}: {
-  command: string;
-  tail: string;
-  onInput: (data: string) => void;
-  onKill: () => void;
-}) {
-  const [val, setVal] = useState("");
-  const [maskOverride, setMaskOverride] = useState<boolean | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const lastLine = tail.slice(tail.lastIndexOf("\n") + 1);
-  const maskAuto = /pass(word|phrase)/i.test(lastLine) && /:\s*$/.test(lastLine);
-  const masked = maskOverride ?? maskAuto;
-
-  // A password prompt appearing is the moment the user wants to type here.
-  useEffect(() => {
-    if (maskAuto) inputRef.current?.focus();
-  }, [maskAuto]);
-
-  return (
-    <div className="bang-bar">
-      <span className="bang-bar-badge">!</span>
-      <span className="bang-bar-cmd" title={command}>
-        {command}
-      </span>
-      <input
-        ref={inputRef}
-        className="bang-bar-input"
-        type={masked ? "password" : "text"}
-        value={val}
-        spellCheck={false}
-        autoComplete="off"
-        placeholder={masked ? "password — sent to the command only, never stored" : "stdin"}
-        onChange={(e) => setVal(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            onInput(val + "\n");
-            setVal("");
-            setMaskOverride(null); // re-detect on the next prompt
-          } else if (e.key === "c" && e.ctrlKey) {
-            e.preventDefault();
-            onInput("\x03"); // SIGINT to the foreground process, like a terminal
-          } else if (e.key === "Escape") {
-            onKill();
-          }
-        }}
-      />
-      <button
-        className="bang-bar-mask"
-        onClick={() => setMaskOverride(!masked)}
-        title={masked ? "Show what I type" : "Mask what I type"}
-      >
-        {masked ? "abc" : "•••"}
-      </button>
-      <button className="bang-bar-kill" onClick={onKill} title="Kill the command (Esc)">
-        ■ kill
       </button>
     </div>
   );

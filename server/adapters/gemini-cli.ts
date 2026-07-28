@@ -61,6 +61,10 @@ export class GeminiCliSession implements AgentSession {
   private model?: string;
   private workspaceDir: string;
   private listModels: () => Promise<GeminiModelCatalog>;
+  // Non-genui tool ids we announced, and buffered genui render calls awaiting
+  // their tool_result (which carries the assigned component id).
+  private announced = new Set<string>();
+  private pendingRenders = new Map<string, { tool: string; params: Record<string, unknown> }>();
 
   // `modelLabel` is undefined until configured or a turn reports the concrete
   // model — the UI shows nothing, never a stand-in that reads as a model name
@@ -69,10 +73,6 @@ export class GeminiCliSession implements AgentSession {
   get modelName(): string | undefined {
     return this.modelLabel;
   }
-  // Non-genui tool ids we announced, and buffered genui render calls awaiting
-  // their tool_result (which carries the assigned component id).
-  private announced = new Set<string>();
-  private pendingRenders = new Map<string, { tool: string; params: Record<string, unknown> }>();
 
   constructor(opts: {
     workspaceDir: string;

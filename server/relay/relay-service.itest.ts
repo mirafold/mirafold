@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { generateKeyPairSync, sign as signMessage, type KeyObject } from "node:crypto";
 import type { WireMsg } from "../protocol";
-import { startDaemon, TestClient, type Daemon } from "../testing/itest-harness";
-import { RemoteClient, broadcasts, waitForLog as waitForLogH } from "./relay-test-client";
+import { attachSession, broadcasts, startDaemon, TestClient, type Daemon } from "../testing/itest-harness";
+import { closeCode, RemoteClient } from "./relay-test-client";
 import {
   CLOSE_CODE_TAKEN,
   CLOSE_BAD_CODE,
@@ -46,15 +46,13 @@ const CODE = "service-itest-code-7b21e4";
 let relay: Relay;
 let d: Daemon;
 
-const waitForLog = (re: RegExp, ms = 10_000, dm?: Daemon) => waitForLogH(re, ms, dm ?? d);
-
 before(async () => {
   relay = await startRelay({ host: "127.0.0.1" });
   d = await startDaemon({
     MIRAFOLD_RELAY_URL: `ws://127.0.0.1:${relay.port}`,
     MIRAFOLD_RELAY_CODE: CODE,
   });
-  await waitForLog(/\[relay\] paired/);
+  await d.waitForLog(/\[relay\] paired/, "paired");
 });
 after(async () => {
   await d.stop();
@@ -101,11 +99,7 @@ test("a remote viewport drives a full turn; a local viewport mirrors it byte-for
   await remote.type("turn_end", 20_000);
 
   // A local late-joiner reconstructs exactly what streamed to the remote one.
-  const local = new TestClient(d.port);
-  await local.opened();
-  await local.type("agents");
-  local.send({ type: "attach", sessionId: created.sessionId } as never);
-  await local.type("session_created");
+  const { client: local } = await attachSession(d.port, created.sessionId);
   const tail = broadcasts(remote).at(-1)!.seq;
   await local.waitFor((m) => (m as Any).seq === tail, "replay tail", 20_000);
   assert.deepEqual(broadcasts(local), broadcasts(remote));
@@ -149,7 +143,7 @@ test("the global connection cap refuses upgrades past the ceiling", async () => 
     MIRAFOLD_RELAY_CODE: CODE,
   });
   try {
-    await waitForLog(/\[relay\] paired/, 10_000, dd); // daemon = conn #1
+    await dd.waitForLog(/\[relay\] paired/, "paired", 10_000); // daemon = conn #1
     const v1 = await RemoteClient.connect(r.port, CODE); // = conn #2
     await v1.type("agents");
     await assert.rejects(() => RemoteClient.connect(r.port, CODE)); // #3 refused
@@ -167,7 +161,7 @@ test("the per-pair viewport cap refuses extra viewports on one pair", async () =
     MIRAFOLD_RELAY_CODE: CODE,
   });
   try {
-    await waitForLog(/\[relay\] paired/, 10_000, dd);
+    await dd.waitForLog(/\[relay\] paired/, "paired", 10_000);
     const v1 = await RemoteClient.connect(r.port, CODE);
     await v1.type("agents");
     await assert.rejects(() => RemoteClient.connect(r.port, CODE)); // 2nd refused
@@ -189,7 +183,7 @@ test("a frame flood past the rate limit drops that connection", async () => {
     MIRAFOLD_RELAY_CODE: CODE,
   });
   try {
-    await waitForLog(/\[relay\] paired/, 10_000, dd);
+    await dd.waitForLog(/\[relay\] paired/, "paired", 10_000);
     const flooder = await RemoteClient.connect(r.port, CODE);
     await flooder.type("agents");
     await flooder.blast(30); // >> 5 in the window
@@ -208,7 +202,7 @@ test("the heartbeat reaper does not kill a healthy connection", async () => {
     MIRAFOLD_RELAY_CODE: CODE,
   });
   try {
-    await waitForLog(/\[relay\] paired/, 10_000, dd);
+    await dd.waitForLog(/\[relay\] paired/, "paired", 10_000);
     const v = await RemoteClient.connect(r.port, CODE);
     await v.type("agents");
     // Several heartbeat intervals pass; ws answers pings automatically, so the
@@ -239,7 +233,7 @@ test("an unentitled real daemon: refused (4007), surfaces WHY, and never claims 
   });
   try {
     // relay-client interpreted CLOSE_UNENTITLED into the actionable line.
-    await waitForLog(/refused: remote access needs a valid subscription/, 10_000, ud);
+    await ud.waitForLog(/refused: remote access needs a valid subscription/, "refusal line", 10_000);
     // The confirm-timer held: a refused dial-out never logged a false "paired"
     // (the refusal close cancels PAIR_CONFIRM_MS before it can fire).
     assert.ok(!ud.logs().includes("[relay] paired with"), "must not falsely claim to be paired");
@@ -265,8 +259,8 @@ test("an entitled real daemon (token override): pairs through the gated relay an
     MIRAFOLD_ENTITLEMENT_TOKEN: token,
   });
   try {
-    await waitForLog(/entitlement: hand-issued token/, 10_000, ed);
-    await waitForLog(/\[relay\] paired/, 10_000, ed);
+    await ed.waitForLog(/entitlement: hand-issued token/, "token mode", 10_000);
+    await ed.waitForLog(/\[relay\] paired/, "paired", 10_000);
     const v = await RemoteClient.connect(gated.port, "entitled-service-itest-code-4d8c1e");
     await v.type("agents");
     v.close();
@@ -313,8 +307,8 @@ test("license-key exchange: the daemon trades its key for a token and pairs; a l
     MIRAFOLD_ENTITLEMENT_URL: `http://127.0.0.1:${billingPort}/api/entitlement`,
   });
   try {
-    await waitForLog(/entitlement: license key/, 10_000, ld);
-    await waitForLog(/\[relay\] paired/, 10_000, ld);
+    await ld.waitForLog(/entitlement: license key/, "license-key mode", 10_000);
+    await ld.waitForLog(/\[relay\] paired/, "paired", 10_000);
     assert.deepEqual([...new Set(seenKeys)], ["mf_itest_active_key"]);
     const v = await RemoteClient.connect(gated.port, "license-service-itest-code-6a9b3f");
     await v.type("agents");
@@ -334,7 +328,7 @@ test("license-key exchange: the daemon trades its key for a token and pairs; a l
     MIRAFOLD_ENTITLEMENT_URL: `http://127.0.0.1:${billingPort}/api/entitlement`,
   });
   try {
-    await waitForLog(/refused: remote access needs a valid subscription/, 10_000, dd);
+    await dd.waitForLog(/refused: remote access needs a valid subscription/, "refusal line", 10_000);
     assert.ok(!dd.logs().includes("[relay] paired with"), "no false paired on a lapsed key");
     const local = new TestClient(dd.port);
     await local.opened();
@@ -346,10 +340,3 @@ test("license-key exchange: the daemon trades its key for a token and pairs; a l
     await new Promise<void>((r) => billing.close(() => r()));
   }
 });
-
-async function closeCode(ws: import("ws").WebSocket): Promise<number> {
-  return new Promise((res) => {
-    ws.on("close", (c: number) => res(c));
-    ws.on("error", () => res(-1));
-  });
-}

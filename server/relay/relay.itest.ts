@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import WebSocket from "ws";
 import type { WireMsg } from "../protocol";
-import { startDaemon, TestClient, type Daemon } from "../testing/itest-harness";
+import { attachSession, broadcasts, startDaemon, TestClient, type Daemon } from "../testing/itest-harness";
 import { startRelayStub, type RelayStub } from "./relay-stub";
 import {
   CLOSE_BAD_CODE,
@@ -15,7 +15,7 @@ import {
   VIEWPORT_PATH,
 } from "./relay-protocol";
 import { derivePair } from "./relay-crypto";
-import { RemoteClient, broadcasts, waitForLog as waitForLogH } from "./relay-test-client";
+import { closeCode, RemoteClient } from "./relay-test-client";
 
 // R.1 + R.3: the relay seam over real processes — the daemon (child) dials
 // OUT to the stub (in this test process); remote viewports handshake and talk
@@ -40,14 +40,10 @@ const tap = {
   url: (u: string) => tappedUrls.push(u),
 };
 
-// Bound to this file's default daemon; the shared helper takes an explicit one.
-const waitForLog = (re: RegExp, timeoutMs = 10_000, daemon?: Daemon) =>
-  waitForLogH(re, timeoutMs, daemon ?? d);
-
 before(async () => {
   stub = await startRelayStub({ tap });
   d = await startDaemon({ MIRAFOLD_RELAY_URL: stub.url, MIRAFOLD_RELAY_CODE: CODE });
-  await waitForLog(/\[relay\] paired/);
+  await d.waitForLog(/\[relay\] paired/, "paired");
 });
 after(async () => {
   remote?.close();
@@ -72,11 +68,7 @@ test("a remote viewport handshakes, creates a session, and runs a full mock turn
 });
 
 test("local and remote viewports mirror the stream byte for byte (replay + live)", async () => {
-  const local = new TestClient(d.port);
-  await local.opened();
-  await local.type("agents");
-  local.send({ type: "attach", sessionId } as never);
-  await local.type("session_created");
+  const { client: local } = await attachSession(d.port, sessionId);
 
   // Replay: the local late-joiner must reconstruct exactly what streamed to
   // the remote viewport live, through the encrypted path.
@@ -123,11 +115,7 @@ test("a sudo-style prompt answered from the phone: the secret reaches the PTY on
   // The 4.9 ephemeral-path invariant, now load-bearing over the relay: the
   // remote viewport types into a password prompt; the secret must appear in
   // no viewport's stream (echo-off PTY), no replay, and no relay frame.
-  const watcher = new TestClient(d.port);
-  await watcher.opened();
-  await watcher.type("agents");
-  watcher.send({ type: "attach", sessionId } as never);
-  await watcher.type("session_created");
+  const { client: watcher } = await attachSession(d.port, sessionId);
 
   remote.send({
     type: "bang",
@@ -187,21 +175,13 @@ test("an unknown pair id is refused by the relay itself", async () => {
   const ws = new WebSocket(
     `${stub.url}${VIEWPORT_PATH}?${PAIR_PARAM}=totally-unknown-id`,
   );
-  const code = await new Promise<number>((res) => {
-    ws.on("close", (c) => res(c));
-    ws.on("error", () => res(-1));
-  });
-  assert.equal(code, CLOSE_BAD_CODE);
+  assert.equal(await closeCode(ws), CLOSE_BAD_CODE);
 });
 
 test("a second daemon dialing the same pair id is refused", async () => {
   const pair = await derivePair(CODE);
   const ws = new WebSocket(`${stub.url}${DAEMON_PATH}?${PAIR_PARAM}=${pair.id}`);
-  const code = await new Promise<number>((res) => {
-    ws.on("close", (c) => res(c));
-    ws.on("error", () => res(-1));
-  });
-  assert.equal(code, CLOSE_CODE_TAKEN);
+  assert.equal(await closeCode(ws), CLOSE_CODE_TAKEN);
 });
 
 test("a weak pinned MIRAFOLD_RELAY_CODE is refused: the daemon mints and the weak code admits no one", async () => {
@@ -211,8 +191,8 @@ test("a weak pinned MIRAFOLD_RELAY_CODE is refused: the daemon mints and the wea
     MIRAFOLD_RELAY_CODE: "kyle123", // guessable — must never become the credential
   });
   try {
-    await waitForLog(/MIRAFOLD_RELAY_CODE .* REFUSED/, 10_000, d2);
-    await waitForLog(/\[relay\] paired/, 10_000, d2);
+    await d2.waitForLog(/MIRAFOLD_RELAY_CODE .* REFUSED/, "weak code refused", 10_000);
+    await d2.waitForLog(/\[relay\] paired/, "paired", 10_000);
     const minted = d2.logs().match(/pairing code: (\S+)/)?.[1];
     assert.ok(minted && minted !== "kyle123" && minted.length >= 16);
 
@@ -239,8 +219,8 @@ test("R.5: a gated relay refuses a token-less daemon (actionable line) and admit
   // the daemon keeps serving locally (startDaemon itself proves boot health).
   const dNo = await startDaemon({ MIRAFOLD_RELAY_URL: stub2.url, MIRAFOLD_RELAY_CODE: GATED_CODE });
   try {
-    await waitForLog(/entitlement: none configured/, 10_000, dNo);
-    await waitForLog(/refused: remote access needs a valid subscription/, 10_000, dNo);
+    await dNo.waitForLog(/entitlement: none configured/, "no entitlement", 10_000);
+    await dNo.waitForLog(/refused: remote access needs a valid subscription/, "refusal line", 10_000);
     assert.ok(!dNo.logs().includes("[relay] paired"));
   } finally {
     await dNo.stop();
@@ -252,8 +232,8 @@ test("R.5: a gated relay refuses a token-less daemon (actionable line) and admit
     MIRAFOLD_ENTITLEMENT_TOKEN: TOKEN,
   });
   try {
-    await waitForLog(/entitlement: hand-issued token/, 10_000, dYes);
-    await waitForLog(/\[relay\] paired/, 10_000, dYes);
+    await dYes.waitForLog(/entitlement: hand-issued token/, "token mode", 10_000);
+    await dYes.waitForLog(/\[relay\] paired/, "paired", 10_000);
     const ok = await RemoteClient.connect(stub2.port, GATED_CODE);
     await ok.type("agents");
     ok.close();
@@ -273,7 +253,7 @@ test("the daemon refuses viewports past MAX_REMOTE_VIEWPORTS and frees slots on 
     MAX_REMOTE_VIEWPORTS: "2",
   });
   try {
-    await waitForLog(/\[relay\] paired/, 10_000, d2);
+    await d2.waitForLog(/\[relay\] paired/, "paired", 10_000);
     const c1 = await RemoteClient.connect(stub2.port, CODE);
     const c2 = await RemoteClient.connect(stub2.port, CODE);
     await c1.type("agents");
@@ -316,7 +296,7 @@ test("a handshaken viewport that goes silent is idle-reaped; an active one survi
     RELAY_VIEWPORT_IDLE_MS: "1000",
   });
   try {
-    await waitForLog(/\[relay\] paired/, 10_000, d3);
+    await d3.waitForLog(/\[relay\] paired/, "paired", 10_000);
     const idle = await RemoteClient.connect(stub3.port, CODE);
     const active = await RemoteClient.connect(stub3.port, CODE);
     await idle.type("agents");
@@ -354,7 +334,7 @@ test("R.4i: a subscription-backed session is refused over the relay but served l
     CLAUDE_CONFIG_DIR: claudeDir,
   });
   try {
-    await waitForLog(/\[relay\] paired/, 10_000, d2);
+    await d2.waitForLog(/\[relay\] paired/, "paired", 10_000);
 
     // The picker hello marks claude-code blocked, not live.
     const r = await RemoteClient.connect(stub2.port, CODE);
@@ -396,7 +376,7 @@ test("the daemon re-dials after a relay restart and the session is reachable aga
   await stub.stop(); // kills the daemon's dial-out and the remote viewport
   await remote.closed;
   stub = await startRelayStub({ port, tap });
-  await waitForLog(/\[relay\] paired[\s\S]*\[relay\] paired/, 15_000);
+  await d.waitForLog(/\[relay\] paired[\s\S]*\[relay\] paired/, "re-paired", 15_000);
 
   remote = await RemoteClient.connect(stub.port, CODE);
   await remote.type("agents");

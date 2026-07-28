@@ -19,9 +19,10 @@ function childrenText(children: ReactNode): string {
     .trim();
 }
 
-// Same safety rule as turn text: links open in a new tab, and react-markdown
-// never emits raw HTML from its source. Shared with RenderZone's turn text.
-export const safeAnchor = {
+// The markdown renderer overrides shared with RenderZone's turn text: anchors
+// get the safety rule (links open in a new tab, and react-markdown never emits
+// raw HTML from its source), and task-list items get an accessible checkbox label.
+export const mdOverrides = {
   a: ({ node: _node, ...props }: ComponentProps<"a"> & { node?: unknown }) => (
     <a {...props} target="_blank" rel="noopener noreferrer" />
   ),
@@ -65,7 +66,7 @@ export function Md({ text, inline = false }: { text: string; inline?: boolean })
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
-      components={inline ? { ...safeAnchor, ...unwrapParagraph } : safeAnchor}
+      components={inline ? { ...mdOverrides, ...unwrapParagraph } : mdOverrides}
     >
       {text}
     </ReactMarkdown>

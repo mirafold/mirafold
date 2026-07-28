@@ -119,24 +119,25 @@ function capNames(names: string[]): string[] {
   return names.slice(0, MAX_MODELS).map((n) => n.slice(0, MAX_NAME_LENGTH));
 }
 
-/** Ollama's native catalog: `{ models: [{ name }] }`. */
-function parseTags(body: unknown): string[] | undefined {
-  const models = (body as { models?: unknown } | undefined)?.models;
-  if (!Array.isArray(models)) return undefined;
-  const names = models
-    .map((m) => (m as { name?: unknown })?.name)
+/** Pull a capped name list out of a catalog body of shape
+ *  `{ [listKey]: [{ [nameKey]: string }] }`; undefined when it isn't one. */
+function parseCatalog(body: unknown, listKey: string, nameKey: string): string[] | undefined {
+  const list = (body as Record<string, unknown> | undefined)?.[listKey];
+  if (!Array.isArray(list)) return undefined;
+  const names = list
+    .map((m) => (m as Record<string, unknown> | undefined)?.[nameKey])
     .filter((n): n is string => typeof n === "string" && n.length > 0);
   return names.length ? capNames(names) : undefined;
 }
 
+/** Ollama's native catalog: `{ models: [{ name }] }`. */
+function parseTags(body: unknown): string[] | undefined {
+  return parseCatalog(body, "models", "name");
+}
+
 /** The OpenAI-shaped catalog: `{ data: [{ id }] }`. */
 function parseV1Models(body: unknown): string[] | undefined {
-  const data = (body as { data?: unknown } | undefined)?.data;
-  if (!Array.isArray(data)) return undefined;
-  const ids = data
-    .map((m) => (m as { id?: unknown })?.id)
-    .filter((n): n is string => typeof n === "string" && n.length > 0);
-  return ids.length ? capNames(ids) : undefined;
+  return parseCatalog(body, "data", "id");
 }
 
 async function probeOrigin(origin: string, runtimeGuess: string): Promise<LocalServer | undefined> {
@@ -173,7 +174,7 @@ export function cachedLocalServers(): LocalServer[] {
   return cache;
 }
 
-async function sweep(targets: { origin: string; runtime: string }[]): Promise<LocalServer[]> {
+async function refreshCache(targets: { origin: string; runtime: string }[]): Promise<LocalServer[]> {
   const results = await Promise.all(targets.map((t) => probeOrigin(t.origin, t.runtime)));
   cache = results.filter((r): r is LocalServer => r !== undefined);
   return cache;
@@ -190,9 +191,9 @@ async function sweep(targets: { origin: string; runtime: string }[]): Promise<Lo
 export async function probeLocalServers(
   targets?: { origin: string; runtime: string }[],
 ): Promise<LocalServer[]> {
-  if (targets) return sweep(targets);
+  if (targets) return refreshCache(targets);
   if (Date.now() - cacheAt < PROBE_TTL_MS) return cache;
-  inflight ??= sweep(probeTargets()).finally(() => {
+  inflight ??= refreshCache(probeTargets()).finally(() => {
     cacheAt = Date.now();
     inflight = undefined;
   });

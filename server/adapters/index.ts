@@ -148,7 +148,7 @@ export function backendOptions(agent: AgentName): BackendOption[] {
   // the agent resolves its own default and the row stays silent rather than
   // guess. (Codex's config `model` is deliberately NOT it: a pick that forces
   // the first-party provider neutralizes that model — codex.ts.)
-  const add = (kind: Exclude<CredentialKind, "none">, detail?: string) => {
+  const addCredentialRow = (kind: Exclude<CredentialKind, "none">, detail?: string) => {
     const usable = allowedLocally(agent, kind);
     const model = modelFor(agent);
     options.push({
@@ -161,10 +161,10 @@ export function backendOptions(agent: AgentName): BackendOption[] {
   };
   switch (agent) {
     case "claude-code": {
-      if (process.env.ANTHROPIC_BASE_URL) add("local", endpointDetail(agent));
-      if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) add("api-key");
+      if (process.env.ANTHROPIC_BASE_URL) addCredentialRow("local", endpointDetail(agent));
+      if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) addCredentialRow("api-key");
       if (loginFileExists(process.env.CLAUDE_CONFIG_DIR, ".claude", ".credentials.json"))
-        add("subscription");
+        addCredentialRow("subscription");
       break;
     }
     case "codex": {
@@ -174,13 +174,13 @@ export function backendOptions(agent: AgentName): BackendOption[] {
       // one is set, else the first-party rows.
       const { defaultRow, otherRows } = codexProviderRows();
       if (defaultRow) options.push(defaultRow);
-      if (process.env.OPENAI_API_KEY) add("api-key");
-      if (loginFileExists(process.env.CODEX_HOME, ".codex", "auth.json")) add("subscription");
+      if (process.env.OPENAI_API_KEY) addCredentialRow("api-key");
+      if (loginFileExists(process.env.CODEX_HOME, ".codex", "auth.json")) addCredentialRow("subscription");
       options.push(...otherRows);
       break;
     }
     case "gemini-cli":
-      if (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY) add("api-key");
+      if (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY) addCredentialRow("api-key");
       break;
   }
   return options;

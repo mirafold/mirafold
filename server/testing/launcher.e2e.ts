@@ -5,6 +5,7 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { SCRUBBED_CREDENTIAL_ENV } from "./itest-harness";
 
 // Tier-3 (`yarn test:e2e`, needs a fresh `yarn build`): the launcher's browser
 // open must never tie the browser to the user's terminal. If the opener were
@@ -54,20 +55,9 @@ printf 'args=%s\\nfd0=%s\\nfd1=%s\\nfd2=%s\\npid=%s\\nsid=%s\\n' \\
       ...process.env,
       PATH: `${tmp}:${process.env.PATH}`,
       MIRAFOLD_TEST_RECORD: record,
-      MIRAFOLD_LOG_FILE: "", // never write the real flight-recorder file from tests
       // Same forced-empty credentials as the Tier-2 harness: no test may ever
       // reach a metered engine, even though this one never creates a session.
-      ANTHROPIC_API_KEY: "",
-      ANTHROPIC_AUTH_TOKEN: "",
-      ANTHROPIC_BASE_URL: "",
-      OPENAI_API_KEY: "",
-      GEMINI_API_KEY: "",
-      GOOGLE_API_KEY: "",
-      CODEX_HOME: path.join(ROOT, "itest-no-codex-home"),
-      CLAUDE_CONFIG_DIR: path.join(ROOT, "itest-no-claude-home"),
-      MIRAFOLD_TOKEN: "",
-      MIRAFOLD_RELAY_URL: "",
-      MIRAFOLD_RELAY_CODE: "",
+      ...SCRUBBED_CREDENTIAL_ENV,
       PORT: String(3900 + Math.floor(Math.random() * 90)),
     },
   });

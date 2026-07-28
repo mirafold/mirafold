@@ -25,7 +25,7 @@ export interface CodexModel {
 }
 
 /** The subset of an app-server `model/list` row this module reads. */
-interface RawModelRow {
+interface RawCodexModelRow {
   id: unknown;
   displayName?: unknown;
   description?: unknown;
@@ -91,7 +91,7 @@ export function listCodexModels(
         }
         finish(
           null,
-          (data as RawModelRow[])
+          (data as RawCodexModelRow[])
             .filter((m) => !m.hidden)
             .map((m) => ({
               id: String(m.id),

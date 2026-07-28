@@ -59,6 +59,15 @@ const IGNORE_GLOBS = [
 
 export type FsChange = { paths: string[]; truncated: boolean };
 
+/** Still a directory right now? A created-then-deleted path is simply no. */
+const isDir = (abs: string): boolean => {
+  try {
+    return lstatSync(abs).isDirectory();
+  } catch {
+    return false;
+  }
+};
+
 export type FsWatchHandle = {
   /** Resolves once the subscription is live (or has already failed via
    *  onError) — it never rejects. Callers that only stop() can ignore it. */
@@ -211,12 +220,3 @@ export function startWatch(
 
   return { ready, stop };
 }
-
-/** Still a directory right now? A created-then-deleted path is simply no. */
-const isDir = (abs: string): boolean => {
-  try {
-    return lstatSync(abs).isDirectory();
-  } catch {
-    return false;
-  }
-};

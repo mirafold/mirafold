@@ -13,6 +13,14 @@ const GRID = { stroke: "var(--border-faint)" };
 const INK_MUTED = { fill: "var(--fg-dim)" };
 const INK = { fill: "var(--fg-mid)" };
 
+const seriesColor = (i: number) => COLORS[i % COLORS.length];
+
+const dimUnlessHovered = (hover: number | null, i: number) =>
+  hover === null || hover === i ? 1 : 0.45;
+
+const elide = (label: string, max: number) =>
+  label.length > max ? label.slice(0, max - 1) + "…" : label;
+
 const W = 640;
 const H = 260;
 const PAD = { top: 16, right: 118, bottom: 28, left: 48 };
@@ -119,6 +127,51 @@ export function stackSegments(series: { values: number[] }[], xLen: number): Sta
   });
 }
 
+function Legend({ series }: { series: ComponentProps<"chart">["series"] }) {
+  return (
+    <div className="rc-chart-legend">
+      {series.map((s, i) => (
+        <span key={i} className="rc-chart-key">
+          <span className="rc-chart-chip" style={{ background: seriesColor(i) }} />
+          {s.name}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/** The tooltip's shared body — hovered category, then one row per finite
+ *  series value. Each caller keeps its own positioned wrapper div. */
+function TipRows({
+  x,
+  series,
+  yLabel,
+  hover,
+}: {
+  x: string[];
+  series: ComponentProps<"chart">["series"];
+  yLabel?: string;
+  hover: number;
+}) {
+  return (
+    <>
+      <div className="rc-chart-tip-x">{x[hover]}</div>
+      {series.map((s, si) =>
+        Number.isFinite(s.values[hover]) ? (
+          <div key={si} className="rc-chart-tip-row">
+            <span className="rc-chart-chip" style={{ background: seriesColor(si) }} />
+            <span className="rc-chart-tip-name">{s.name}</span>
+            <span className="rc-chart-tip-val">
+              {fmt(s.values[hover])}
+              {yLabel ? ` ${yLabel}` : ""}
+            </span>
+          </div>
+        ) : null,
+      )}
+    </>
+  );
+}
+
 export function Chart(props: ComponentProps<"chart">) {
   if (props.kind === "pie") {
     // The one-series rule is part of the vocabulary (the schema's describe
@@ -157,10 +210,10 @@ function PieChart({ title, x, series }: ComponentProps<"chart">) {
               key={i}
               className="rc-chart-slice"
               d={arcPath(cx, cy, 92, 56, s.a0, s.a1)}
-              fill={COLORS[i % COLORS.length]}
+              fill={seriesColor(i)}
               style={SURFACE}
               strokeWidth="2"
-              opacity={hover === null || hover === i ? 1 : 0.45}
+              opacity={dimUnlessHovered(hover, i)}
               onMouseEnter={() => setHover(i)}
             >
               <title>{`${s.label}: ${fmt(s.value)} (${share(s.frac)})`}</title>
@@ -178,12 +231,12 @@ function PieChart({ title, x, series }: ComponentProps<"chart">) {
           {segs.map((s, i) => (
             <g
               key={i}
-              opacity={hover === null || hover === i ? 1 : 0.45}
+              opacity={dimUnlessHovered(hover, i)}
               onMouseEnter={() => setHover(i)}
             >
-              <rect x={266} y={rowY(i) - 8} width={10} height={10} rx={2} fill={COLORS[i % COLORS.length]} />
+              <rect x={266} y={rowY(i) - 8} width={10} height={10} rx={2} fill={seriesColor(i)} />
               <text x={283} y={rowY(i) + 1} fontSize="11" style={INK}>
-                {s.label.length > 24 ? s.label.slice(0, 23) + "…" : s.label}
+                {elide(s.label, 24)}
               </text>
               <text x={W - 24} y={rowY(i) + 1} textAnchor="end" fontSize="11" style={INK_MUTED}>
                 {fmt(s.value)} · {share(s.frac)}
@@ -195,7 +248,7 @@ function PieChart({ title, x, series }: ComponentProps<"chart">) {
           <div className="rc-chart-tip" style={{ left: `${(cx / W) * 100}%`, transform: "translateX(10px)" }}>
             <div className="rc-chart-tip-x">{segs[hover].label}</div>
             <div className="rc-chart-tip-row">
-              <span className="rc-chart-chip" style={{ background: COLORS[hover % COLORS.length] }} />
+              <span className="rc-chart-chip" style={{ background: seriesColor(hover) }} />
               <span className="rc-chart-tip-val">
                 {fmt(segs[hover].value)} · {share(segs[hover].frac)}
               </span>
@@ -236,16 +289,7 @@ function HBarChart({ title, x, series, yLabel, stacked }: ComponentProps<"chart"
   return (
     <div className="rc rc-chart">
       {title && <div className="rc-title">{title}</div>}
-      {series.length >= 2 && (
-        <div className="rc-chart-legend">
-          {series.map((s, i) => (
-            <span key={i} className="rc-chart-key">
-              <span className="rc-chart-chip" style={{ background: COLORS[i % COLORS.length] }} />
-              {s.name}
-            </span>
-          ))}
-        </div>
-      )}
+      {series.length >= 2 && <Legend series={series} />}
       <div className="rc-chart-plot" onMouseLeave={() => setHover(null)}>
         <svg viewBox={`0 0 ${W} ${hgt}`} role="img" aria-label={title ?? "bar chart"}>
           {/* recessive vertical grid + value labels along the bottom */}
@@ -275,7 +319,7 @@ function HBarChart({ title, x, series, yLabel, stacked }: ComponentProps<"chart"
               fontSize="10.5"
               style={INK_MUTED}
             >
-              {label.length > 34 ? label.slice(0, 33) + "…" : label}
+              {elide(label, 34)}
             </text>
           ))}
 
@@ -291,10 +335,10 @@ function HBarChart({ title, x, series, yLabel, stacked }: ComponentProps<"chart"
                       key={`${i}-${k}`}
                       className="rc-chart-hbar"
                       d={hBarPath(by, hi, barH, lo)}
-                      fill={COLORS[seg.si % COLORS.length]}
+                      fill={seriesColor(seg.si)}
                       style={SURFACE}
                       strokeWidth="1"
-                      opacity={hover === null || hover === i ? 1 : 0.45}
+                      opacity={dimUnlessHovered(hover, i)}
                     />
                   ) : (
                     <rect
@@ -304,10 +348,10 @@ function HBarChart({ title, x, series, yLabel, stacked }: ComponentProps<"chart"
                       y={by}
                       width={Math.max(0, hi - lo)}
                       height={barH}
-                      fill={COLORS[seg.si % COLORS.length]}
+                      fill={seriesColor(seg.si)}
                       style={SURFACE}
                       strokeWidth="1"
-                      opacity={hover === null || hover === i ? 1 : 0.45}
+                      opacity={dimUnlessHovered(hover, i)}
                     />
                   );
                 }),
@@ -325,8 +369,8 @@ function HBarChart({ title, x, series, yLabel, stacked }: ComponentProps<"chart"
                           ? hBarPath(top, xPos(v), barH, x0)
                           : `M${xPos(v)},${top} H${x0} V${top + barH} H${xPos(v)} Z`
                       }
-                      fill={COLORS[si % COLORS.length]}
-                      opacity={hover === null || hover === i ? 1 : 0.45}
+                      fill={seriesColor(si)}
+                      opacity={dimUnlessHovered(hover, i)}
                     />
                   );
                 }),
@@ -353,19 +397,7 @@ function HBarChart({ title, x, series, yLabel, stacked }: ComponentProps<"chart"
               top: `${((PAD.top + hover * band + band / 2) / hgt) * 100}%`,
             }}
           >
-            <div className="rc-chart-tip-x">{x[hover]}</div>
-            {series.map((s, si) =>
-              Number.isFinite(s.values[hover]) ? (
-                <div key={si} className="rc-chart-tip-row">
-                  <span className="rc-chart-chip" style={{ background: COLORS[si % COLORS.length] }} />
-                  <span className="rc-chart-tip-name">{s.name}</span>
-                  <span className="rc-chart-tip-val">
-                    {fmt(s.values[hover])}
-                    {yLabel ? ` ${yLabel}` : ""}
-                  </span>
-                </div>
-              ) : null,
-            )}
+            <TipRows x={x} series={series} yLabel={yLabel} hover={hover} />
           </div>
         )}
       </div>
@@ -407,7 +439,7 @@ function VChart({ title, kind, x, series, yLabel, stacked }: ComponentProps<"cha
           .map((s, si) => {
             const last = [...s.values].reverse().findIndex(Number.isFinite);
             const li = last === -1 ? -1 : s.values.length - 1 - last;
-            return { name: s.name, color: COLORS[si % COLORS.length], y: li >= 0 ? yPos(s.values[li]) : NaN, xi: li };
+            return { name: s.name, color: seriesColor(si), y: li >= 0 ? yPos(s.values[li]) : NaN, xi: li };
           })
           .filter((l) => Number.isFinite(l.y))
           .sort((a, b) => a.y - b.y)
@@ -421,16 +453,7 @@ function VChart({ title, kind, x, series, yLabel, stacked }: ComponentProps<"cha
   return (
     <div className="rc rc-chart">
       {title && <div className="rc-title">{title}</div>}
-      {series.length >= 2 && (
-        <div className="rc-chart-legend">
-          {series.map((s, i) => (
-            <span key={i} className="rc-chart-key">
-              <span className="rc-chart-chip" style={{ background: COLORS[i % COLORS.length] }} />
-              {s.name}
-            </span>
-          ))}
-        </div>
-      )}
+      {series.length >= 2 && <Legend series={series} />}
       <div className="rc-chart-plot" onMouseLeave={() => setHover(null)}>
         <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={title ?? `${kind} chart`}>
           {/* recessive grid + y labels */}
@@ -451,7 +474,7 @@ function VChart({ title, kind, x, series, yLabel, stacked }: ComponentProps<"cha
           {x.map((label, i) =>
             i % labelStride === 0 || i === x.length - 1 ? (
               <text key={i} x={xPos(i)} y={H - 8} textAnchor="middle" fontSize="10.5" style={INK_MUTED}>
-                {label.length > 12 ? label.slice(0, 11) + "…" : label}
+                {elide(label, 12)}
               </text>
             ) : null,
           )}
@@ -469,8 +492,8 @@ function VChart({ title, kind, x, series, yLabel, stacked }: ComponentProps<"cha
                       barW,
                       yPos(Math.max(yMin, Math.min(0, yMax))),
                     )}
-                    fill={COLORS[si % COLORS.length]}
-                    opacity={hover === null || hover === i ? 1 : 0.45}
+                    fill={seriesColor(si)}
+                    opacity={dimUnlessHovered(hover, i)}
                   />
                 ) : null,
               ),
@@ -489,10 +512,10 @@ function VChart({ title, kind, x, series, yLabel, stacked }: ComponentProps<"cha
                     key={`${i}-${k}`}
                     className="rc-chart-seg"
                     d={barPath(bx, yPos(seg.hi), stackW, yPos(seg.lo))}
-                    fill={COLORS[seg.si % COLORS.length]}
+                    fill={seriesColor(seg.si)}
                     style={SURFACE}
                     strokeWidth="1"
-                    opacity={hover === null || hover === i ? 1 : 0.45}
+                    opacity={dimUnlessHovered(hover, i)}
                   />
                 ) : (
                   <rect
@@ -502,10 +525,10 @@ function VChart({ title, kind, x, series, yLabel, stacked }: ComponentProps<"cha
                     y={yPos(seg.hi)}
                     width={stackW}
                     height={Math.max(0, yPos(seg.lo) - yPos(seg.hi))}
-                    fill={COLORS[seg.si % COLORS.length]}
+                    fill={seriesColor(seg.si)}
                     style={SURFACE}
                     strokeWidth="1"
-                    opacity={hover === null || hover === i ? 1 : 0.45}
+                    opacity={dimUnlessHovered(hover, i)}
                   />
                 ),
               );
@@ -525,7 +548,7 @@ function VChart({ title, kind, x, series, yLabel, stacked }: ComponentProps<"cha
                     .filter(Boolean)
                     .join(" ")}
                   fill="none"
-                  stroke={COLORS[si % COLORS.length]}
+                  stroke={seriesColor(si)}
                   strokeWidth="2"
                   strokeLinejoin="round"
                   strokeLinecap="round"
@@ -540,7 +563,7 @@ function VChart({ title, kind, x, series, yLabel, stacked }: ComponentProps<"cha
                       cx={xPos(hover)}
                       cy={yPos(s.values[hover])}
                       r="4.5"
-                      fill={COLORS[si % COLORS.length]}
+                      fill={seriesColor(si)}
                       style={SURFACE}
                       strokeWidth="2"
                     />
@@ -550,7 +573,7 @@ function VChart({ title, kind, x, series, yLabel, stacked }: ComponentProps<"cha
                 <g key={i}>
                   <circle cx={xPos(l.xi) + 8} cy={l.y} r="3" fill={l.color} />
                   <text x={xPos(l.xi) + 15} y={l.y + 3.5} fontSize="10.5" style={INK}>
-                    {l.name.length > 14 ? l.name.slice(0, 13) + "…" : l.name}
+                    {elide(l.name, 14)}
                   </text>
                 </g>
               ))}
@@ -578,19 +601,7 @@ function VChart({ title, kind, x, series, yLabel, stacked }: ComponentProps<"cha
               transform: hover > x.length / 2 ? "translateX(calc(-100% - 10px))" : "translateX(10px)",
             }}
           >
-            <div className="rc-chart-tip-x">{x[hover]}</div>
-            {series.map((s, si) =>
-              Number.isFinite(s.values[hover]) ? (
-                <div key={si} className="rc-chart-tip-row">
-                  <span className="rc-chart-chip" style={{ background: COLORS[si % COLORS.length] }} />
-                  <span className="rc-chart-tip-name">{s.name}</span>
-                  <span className="rc-chart-tip-val">
-                    {fmt(s.values[hover])}
-                    {yLabel ? ` ${yLabel}` : ""}
-                  </span>
-                </div>
-              ) : null,
-            )}
+            <TipRows x={x} series={series} yLabel={yLabel} hover={hover} />
           </div>
         )}
       </div>

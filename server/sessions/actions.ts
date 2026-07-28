@@ -1,16 +1,16 @@
 // Action mediation (Step 2.3). `tool` actions from components run HERE,
-import { createLogger } from "../log";
-
-const log = createLogger("action");
 // against an explicit allowlist with validated args — the client never
 // calls anything directly, and off-list names are rejected and logged.
 // Results are broadcast as tool_use/tool_result records, so an action's
 // effect is visible in every viewport's transcript.
 
+import { createLogger } from "../log";
 import { readdirSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { errText } from "../adapters/types";
+
+const log = createLogger("action");
 
 type ActionTool = {
   description: string;

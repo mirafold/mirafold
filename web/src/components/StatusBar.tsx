@@ -1,36 +1,15 @@
 import { useState } from "react";
+import { ArmedButton } from "./ArmedButton";
 import { ConnectDevice, type RelayInfo } from "./ConnectDevice";
+import { FilesGlyph } from "./FilesGlyph";
 import { GearGlyph } from "./GearGlyph";
 import { useArmedConfirm } from "../use-armed-confirm";
 import { useIsPhone } from "../use-is-phone";
-import { newSessionHref } from "../ws";
+import { newSessionHref } from "../relay-pairing";
 
 // The workbench strip — model, session, cwd, connection, and token/cost
 // usage at a glance. Shell-owned (the agent can't paint here) and collapsible
 // per the side-surface rule: it folds to a single connection dot (T2.6).
-
-/* The Explorer files glyph — one drawing, two homes: the desktop activity
-   bar (Shell) and this bar's phone-only toggle. A single document sheet,
-   drawn symmetric about the viewBox center — a two-page glyph reads as
-   hanging right (its front page's mass sits right of center) even when its
-   bounds are centered. Tight viewBox: the drawing fills the box. */
-export function FilesGlyph({ size = 28 }: { size?: number }) {
-  return (
-    <svg
-      viewBox="5 2 14 20"
-      width={size}
-      height={size}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M13.5 3H7.5A1.5 1.5 0 0 0 6 4.5v15A1.5 1.5 0 0 0 7.5 21h9a1.5 1.5 0 0 0 1.5-1.5V7.5L13.5 3z" />
-      <path d="M13.5 3v3a1.5 1.5 0 0 0 1.5 1.5h3" />
-    </svg>
-  );
-}
 
 export type Usage = {
   model?: string;
@@ -284,16 +263,15 @@ export function StatusBar({
       {/* End (#11) is the outermost far-RIGHT control, past the theme pill
           (2026-07-20, Kyle) — two-click confirm, shell-owned. */}
       {onEndSession && (
-        <button
-          className={"sb-end" + (confirmEnd ? " sb-end-armed" : "")}
-          title={confirmEnd ? "Click again to end this session" : "End this session"}
-          onClick={() => {
-            if (confirmEnd) onEndSession();
-            else endConfirm.arm(true);
-          }}
-        >
-          {confirmEnd ? "end?" : "end"}
-        </button>
+        <ArmedButton
+          className="sb-end"
+          verb="end"
+          armed={confirmEnd}
+          title="End this session"
+          armedTitle="Click again to end this session"
+          onArm={() => endConfirm.arm(true)}
+          onFire={onEndSession}
+        />
       )}
     </div>
   );

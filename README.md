@@ -436,6 +436,10 @@ server/            the local daemon (Node, run with tsx)
     connection.ts      one viewport's server side, transport-agnostic (R.1) —
                        shared verbatim by local sockets and relay viewports
     actions.ts         Phase 2 mediation: allowlisted tools component actions may run
+    bang-handlers.ts   the `!` passthrough's request layer (4.9): the bang/
+                       bang_input/bang_kill handlers connection.ts delegates to,
+                       plus the output budgets, cwd handoff, and agent-turn
+                       transcript (the PTY runner itself stays in pty/)
     fs-handlers.ts     Explorer request layer (Phase E): the fs_list/fs_listdir/
                        fs_read/fs_diff handlers connection.ts delegates to —
                        per-viewport replies, jailed + throttled, one reply each
@@ -486,7 +490,9 @@ server/            the local daemon (Node, run with tsx)
                      this repo + `npm install` inside it to run that test;
                      without the sibling, the rest of Tier 2 is unaffected
   testing/           cross-cutting test infrastructure (H.8): itest-harness.ts
-                     (spawns the real daemon for Tier 2/3) + the whole-product
+                     (spawns the real daemon for Tier 2/3) + e2e-harness.ts
+                     (shared browser-e2e helpers: Chrome launch, the axe
+                     accessibility gate, noSideScroll) + the whole-product
                      e2e suites (app, launcher, phone, resilience)
 web/               the browser app (React 19 + Vite)
   index.html         entry html
@@ -506,6 +512,8 @@ web/               the browser app (React 19 + Vite)
     PromptBox.tsx      the command bar (auto-grows to 8 lines; Enter sends on
                        desktop — on phone Enter is a newline and the ↑ button
                        sends, R.4l)
+    BangBar.tsx        the `!` command's stdin bar (4.9): per-viewport input
+                       with password auto-masking — ephemeral, never broadcast
     RenderZone.tsx     OUTPUT ZONE: WireMsg interpreter → entries + status line,
                        incl. thinking blocks, artifacts, and subagent grouping
     ToolBlock.tsx      tool-call records: collapsed row, expands to input diff +
@@ -524,6 +532,10 @@ web/               the browser app (React 19 + Vite)
                        subagent head, the fleet activity line (2026-07-25 —
                        the ⚙ character rendered from the color-emoji font and
                        clashed with every glyph beside it)
+    FilesGlyph.tsx     the Explorer/files glyph drawing — the activity-bar
+                       toggle and the status bar's phone-width .sb-files
+    ArmedButton.tsx    the two-click destructive button (#11's arm → 3s
+                       auto-disarm), shared by StatusBar + FleetView's end/stop
     PinDock.tsx        right-side dock for pinned components (live via entries)
     Artifact.tsx       Level 3 host: sandboxed iframe for agent-authored UI (Phase 3)
     FleetView.tsx      mission control at / (4.6; Phase M cockpit 2026-07-24):
@@ -582,6 +594,10 @@ web/               the browser app (React 19 + Vite)
   src/use-is-phone.ts  live matchMedia phone-width hook — re-renders on a
                      breakpoint cross, unlike PromptBox's module-load constant (E.4)
   src/tildify.ts     ~-abbreviation for cwd display (prompt + status bar)
+  src/relay-pairing.ts  the pairing-fragment/storage layer (R.3/R.4): #code=
+                     parsing, the capped-age sessionStorage stash, and
+                     newSessionHref — split from ws.ts so the socket client
+                     and the pairing pure functions read separately
   src/ws.ts          SocketClient: typed send/onMessage, hello, seq cursor,
                      heartbeat (half-open detection) + capped backoff (4.4);
                      on a relay page (#code= fragment) it handshakes and

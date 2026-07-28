@@ -1,15 +1,13 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { chromium, type Browser, type Page } from "playwright-core";
-import axe from "axe-core";
+import { type Browser, type Page } from "playwright-core";
 import { startDaemon, type Daemon } from "./itest-harness";
+import { assertAxeClean, launchChrome, noSideScroll } from "./e2e-harness";
 
 // Phase M (M.3), Tier-3: the cockpit — mission control's enriched rows and
 // grid acts, driven in a real browser against the real daemon (mock-forced).
 // Two tabs throughout: a session tab (the acted-on session's transcript is
 // the proof an act really landed) and the fleet tab (the cockpit under test).
-
-const CHROME = process.env.CHROME_BIN ?? "/usr/bin/google-chrome";
 
 let d: Daemon;
 let browser: Browser;
@@ -21,7 +19,7 @@ let base: string;
 before(async () => {
   d = await startDaemon({ SESSION_IDLE_TIMEOUT_MS: "300000" });
   base = `http://127.0.0.1:${d.port}`;
-  browser = await chromium.launch({ executablePath: CHROME });
+  browser = await launchChrome();
 
   // First run: "/" opens straight into the picker; picking creates session 1.
   session = await browser.newPage();
@@ -203,13 +201,6 @@ test("M.5: the fleet tab itself signals needs-you (title count), and rows show v
 
 // ---- M.4: phone width — the same cockpit, folded clean and thumb-sized ----
 
-const noSideScroll = async (p: Page) => {
-  const over = await p.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
-  assert.ok(over <= 1, `page scrolls sideways by ${over}px`);
-};
-
 test("phone: glance set visible with no side-scroll; permission and prompt act by thumb", async () => {
   const phoneCtx = await browser.newContext({
     viewport: { width: 390, height: 844 },
@@ -277,43 +268,3 @@ test("home navigation drops the row's viewport count immediately", async () => {
     { timeout: 5_000 },
   );
 });
-
-// ---- axe (copy of app.e2e.ts's assertAxeClean — a shared testing helper
-// would force importing that whole suite, which would re-register its tests;
-// dedupe when the helpers move to their own module) ------------------------
-
-const AXE_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"];
-const AXE_EXCEPTIONS: { rule: string; why: string }[] = [];
-
-type AxeViolation = { id: string; impact: string; nodes: unknown[]; help: string };
-type AxePage = { axe: { run: (ctx: Document, opts: unknown) => Promise<{ violations: AxeViolation[] }> } };
-
-async function assertAxeClean(p: Page, label: string): Promise<void> {
-  // Settle animations to their end state first (the C.2 fleet-rise flake).
-  await p.addStyleTag({
-    content:
-      "*, *::before, *::after { animation-duration: 0s !important; " +
-      "animation-delay: 0s !important; transition-duration: 0s !important; }",
-  });
-  await p.addScriptTag({ content: axe.source });
-  const violations = await p.evaluate(
-    async ([tags, exceptions]) => {
-      const rules: Record<string, { enabled: boolean }> = {};
-      for (const r of exceptions as string[]) rules[r] = { enabled: false };
-      const res = await (window as unknown as AxePage).axe.run(document, {
-        resultTypes: ["violations"],
-        runOnly: { type: "tag", values: tags },
-        rules,
-      });
-      return res.violations
-        .filter((v) => v.impact === "serious" || v.impact === "critical")
-        .map((v) => ({ id: v.id, impact: v.impact, help: v.help, count: v.nodes.length }));
-    },
-    [AXE_TAGS, AXE_EXCEPTIONS.map((e) => e.rule)] as const,
-  );
-  assert.deepEqual(
-    violations,
-    [],
-    `axe serious/critical violations on ${label}: ${JSON.stringify(violations, null, 2)}`,
-  );
-}

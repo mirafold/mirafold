@@ -1,14 +1,13 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { chromium, type Browser, type Page } from "playwright-core";
+import { type Browser, type Page } from "playwright-core";
 import { startDaemon, type Daemon } from "./itest-harness";
+import { launchChrome } from "./e2e-harness";
 
 // The two "the app lies quietly" behaviors, exercised for real — a
 // daemon killed mid-turn must not leave the ■ esc working state up, and a
 // restarted daemon must SAY it swapped the gone session for a fresh one
 // instead of silently rewriting the URL over a blank transcript (R.4c).
-
-const CHROME = process.env.CHROME_BIN ?? "/usr/bin/google-chrome";
 
 let d: Daemon;
 let browser: Browser;
@@ -16,7 +15,7 @@ let page: Page;
 
 before(async () => {
   d = await startDaemon({ MIRAFOLD_TOKEN: "" });
-  browser = await chromium.launch({ executablePath: CHROME });
+  browser = await launchChrome();
   page = await browser.newPage();
 });
 after(async () => {

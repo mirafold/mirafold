@@ -302,17 +302,7 @@ export class SessionRegistry {
     msg = { ...msg, seq: entry.nextSeq++ };
     entry.buffer.push(msg);
     entry.bufferBytes += msgBytes(msg);
-    if (entry.buffer.length > BUFFER_CAP) {
-      for (const dropped of entry.buffer.splice(0, entry.buffer.length - BUFFER_CAP)) {
-        entry.bufferBytes -= msgBytes(dropped);
-      }
-    }
-    // Byte cap: drop oldest until under budget, but never the message just
-    // buffered — a single payload over the whole budget still replays (it is
-    // already bounded at its source, e.g. the image resolver's 2 MB cap).
-    while (entry.bufferBytes > BUFFER_MAX_BYTES && entry.buffer.length > 1) {
-      entry.bufferBytes -= msgBytes(entry.buffer.shift()!);
-    }
+    this.trimBuffer(entry);
     entry.lastActivity = Date.now();
     // Coarse fleet status, derived from the stream itself — no adapter
     // cooperation needed. Terminal states first; a permission hold sticks
@@ -329,7 +319,27 @@ export class SessionRegistry {
     if (this.captureCockpit(entry, msg) || entry.status !== prev) {
       this.notifyWatchers();
     }
+    this.fanout(entry, msg);
+  }
+
+  /** Send one message to every attached viewport — fan-out only, no buffering. */
+  private fanout(entry: SessionEntry, msg: WireMsg) {
     for (const viewport of entry.viewports) viewport(msg);
+  }
+
+  /** Evict oldest-first until the ring is under both caps. */
+  private trimBuffer(entry: SessionEntry) {
+    if (entry.buffer.length > BUFFER_CAP) {
+      for (const dropped of entry.buffer.splice(0, entry.buffer.length - BUFFER_CAP)) {
+        entry.bufferBytes -= msgBytes(dropped);
+      }
+    }
+    // Byte cap: drop oldest until under budget, but never the message just
+    // buffered — a single payload over the whole budget still replays (it is
+    // already bounded at its source, e.g. the image resolver's 2 MB cap).
+    while (entry.bufferBytes > BUFFER_MAX_BYTES && entry.buffer.length > 1) {
+      entry.bufferBytes -= msgBytes(entry.buffer.shift()!);
+    }
   }
 
   /**
@@ -451,7 +461,7 @@ export class SessionRegistry {
           ...(change.paths.length ? { paths: change.paths } : {}),
           ...(change.truncated ? { truncated: true } : {}),
         };
-        for (const viewport of entry.viewports) viewport(msg);
+        this.fanout(entry, msg);
         if (verbose) {
           createLogger(`session ${entry.id}`).debug(
             `fs change: ${change.paths.length} path(s)${change.truncated ? " (truncated)" : ""}`,
@@ -465,7 +475,7 @@ export class SessionRegistry {
             type: "notice",
             text: "Live file updates are unavailable — the Files panel still refreshes at turn end and with its refresh button.",
           };
-          for (const viewport of entry.viewports) viewport(notice);
+          this.fanout(entry, notice);
           createLogger(`session ${entry.id}`).error(
             `fs watcher stopped — the Explorer falls back to turn-end/manual refresh: ${errText(err)}`,
           );
@@ -488,13 +498,19 @@ export class SessionRegistry {
     // timer or double-close the engine.
     if (entry.viewports.size === 0 && this.entries.get(entry.id) === entry) {
       entry.idleTimer = setTimeout(() => {
-        entry.bang?.proc.kill(); // no orphaned PTYs past the session's life
-        entry.session.close();
-        this.entries.delete(entry.id);
+        this.teardown(entry);
         this.notifyWatchers();
       }, IDLE_TIMEOUT_MS);
       entry.idleTimer.unref();
     }
+  }
+
+  /** The death core both paths share: kill any running PTY (no orphaned PTYs
+   *  past the session's life), close the engine, drop it from the fleet. */
+  private teardown(entry: SessionEntry) {
+    entry.bang?.proc.kill();
+    entry.session.close();
+    this.entries.delete(entry.id);
   }
 
   /**
@@ -510,10 +526,8 @@ export class SessionRegistry {
     this.flushDeltas(entry); // pending stream text lands before session_ended
     entry.fsWatch?.stop();
     entry.fsWatch = undefined;
-    entry.bang?.proc.kill();
-    entry.session.close();
-    this.entries.delete(id);
-    for (const viewport of entry.viewports) viewport({ type: "session_ended", sessionId: id });
+    this.teardown(entry);
+    this.fanout(entry, { type: "session_ended", sessionId: id });
     this.notifyWatchers();
     return true;
   }
@@ -627,16 +641,6 @@ export class SessionRegistry {
     this.broadcast(entry, { type: "user_prompt", text });
     entry.session.pushPrompt(text);
     return true;
-  }
-
-  /** Dispatch a user turn to a session from the grid — the `prompt` case's
-   *  exact semantics, addressed by id. False when the id is unknown OR the
-   *  burst gate refused; callers who need to distinguish resolve the entry
-   *  themselves and call dispatchPrompt. */
-  promptSession(id: string, text: string): boolean {
-    const entry = this.entries.get(id);
-    if (!entry) return false;
-    return this.dispatchPrompt(entry, text);
   }
 
   /** Push a fresh snapshot to every watcher, coalescing bursts. */

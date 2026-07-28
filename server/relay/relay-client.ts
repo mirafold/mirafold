@@ -25,18 +25,6 @@ import {
 
 const log = createLogger("relay");
 
-// Dial-out backoff: a down relay is routine (offline laptop, relay deploy) —
-// it must cost nothing but a quiet, widening retry.
-const RECONNECT_MIN_MS = 1_000;
-const RECONNECT_MAX_MS = 30_000;
-// The relay refuses AFTER accepting the WS upgrade (a cap/entitlement close
-// arrives ms after 'open'), so a healthy pairing is "opened and NOT immediately
-// closed". We confirm success — the "paired" log AND the backoff reset — only
-// after staying open this long; an early refusal close cancels it, so a refused
-// dial-out neither claims to be paired nor resets its backoff (it keeps widening
-// against a wall it can't beat, e.g. a bad token).
-const PAIR_CONFIRM_MS = 400;
-
 /** A relay dial-out close code that means the connection was REFUSED (not a
  *  routine drop), mapped to an actionable line for the user's terminal. null =
  *  not a known refusal → treat as an ordinary connection loss. Exported for the
@@ -53,6 +41,18 @@ export function relayRefusalReason(code: number): string | null {
       return null;
   }
 }
+
+// Dial-out backoff: a down relay is routine (offline laptop, relay deploy) —
+// it must cost nothing but a quiet, widening retry.
+const RECONNECT_MIN_MS = 1_000;
+const RECONNECT_MAX_MS = 30_000;
+// The relay refuses AFTER accepting the WS upgrade (a cap/entitlement close
+// arrives ms after 'open'), so a healthy pairing is "opened and NOT immediately
+// closed". We confirm success — the "paired" log AND the backoff reset — only
+// after staying open this long; an early refusal close cancels it, so a refused
+// dial-out neither claims to be paired nor resets its backoff (it keeps widening
+// against a wall it can't beat, e.g. a bad token).
+const PAIR_CONFIRM_MS = 400;
 // Inbound envelope cap: one client frame (bounded by the same ceiling as the
 // local socket), sealed (~4/3 base64) plus envelope overhead — same
 // no-unbounded-allocation posture.

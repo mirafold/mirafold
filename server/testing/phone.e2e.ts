@@ -1,7 +1,8 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
+import { type Browser, type BrowserContext, type Page } from "playwright-core";
 import { startDaemon, type Daemon } from "./itest-harness";
+import { launchChrome, noSideScroll } from "./e2e-harness";
 import { startRelayStub, type RelayStub } from "../relay/relay-stub";
 
 // R.4, the locally-verifiable slice: a phone-sized browser pairs through the
@@ -12,7 +13,6 @@ import { startRelayStub, type RelayStub } from "../relay/relay-stub";
 // the local page — the phone-scans-it half is the real-device launch check.
 
 const CODE = "e2e-phone-pairing-3c9df2";
-const CHROME = process.env.CHROME_BIN ?? "/usr/bin/google-chrome";
 
 let stub: RelayStub;
 let d: Daemon;
@@ -22,13 +22,6 @@ let phoneCtx: BrowserContext;
 let phone: Page;
 /** The desktop's session id, captured by the QR test — the phone pairs into it. */
 let sessionId: string;
-
-const noSideScroll = async (p: Page) => {
-  const over = await p.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
-  assert.ok(over <= 1, `page scrolls sideways by ${over}px`);
-};
 
 // The phone's one submit gesture (Enter is a newline there — see below).
 const sendPrompt = async (p: Page, text: string) => {
@@ -40,7 +33,7 @@ const sendPrompt = async (p: Page, text: string) => {
 before(async () => {
   stub = await startRelayStub();
   d = await startDaemon({ MIRAFOLD_TOKEN: "", MIRAFOLD_RELAY_URL: stub.url, MIRAFOLD_RELAY_CODE: CODE });
-  browser = await chromium.launch({ executablePath: CHROME });
+  browser = await launchChrome();
 });
 after(async () => {
   await browser?.close();

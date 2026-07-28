@@ -106,17 +106,6 @@ export function mcpText(content: unknown): string {
   return joinTextBlocks(content);
 }
 
-/**
- * The model Codex ACTUALLY resolved for a thread (the analog of Claude's
- * system/init model, F.3): the SDK's event stream never names it, but Codex's
- * own session record does — the rollout file at
- * `<codexHome>/sessions/YYYY/MM/DD/rollout-…-<threadId>.jsonl`, whose
- * turn_context line carries `payload.model` (e.g. "gpt-5.6-sol", exactly what
- * the terminal's own header shows). Read-only, local, and failure-silent:
- * any miss returns undefined and the label stays the "codex" stand-in.
- * The date dir is the session's LOCAL start date — today is checked first,
- * yesterday too for a session straddling midnight.
- */
 /** `<codexHome>/sessions/YYYY/MM/DD` — the CLI's rollout layout, LOCAL date.
  *  Exported for the test fixture (the bangShell pattern), so the layout is
  *  written down exactly once. */
@@ -129,6 +118,17 @@ export const rolloutDateDir = (codexHome: string, d: Date) =>
     String(d.getDate()).padStart(2, "0"),
   );
 
+/**
+ * The model Codex ACTUALLY resolved for a thread (the analog of Claude's
+ * system/init model, F.3): the SDK's event stream never names it, but Codex's
+ * own session record does — the rollout file at
+ * `<codexHome>/sessions/YYYY/MM/DD/rollout-…-<threadId>.jsonl`, whose
+ * turn_context line carries `payload.model` (e.g. "gpt-5.6-sol", exactly what
+ * the terminal's own header shows). Read-only, local, and failure-silent:
+ * any miss returns undefined and the label stays the "codex" stand-in.
+ * The date dir is the session's LOCAL start date — today is checked first,
+ * yesterday too for a session straddling midnight.
+ */
 export async function resolveRolloutModel(
   threadId: string,
   codexHome: string,
@@ -441,9 +441,19 @@ export class CodexSession implements AgentSession {
    * any `-m <model_name>` (its picker hints exactly that for legacy models),
    * so refusing here would be less faithful, not more.
    */
-  private async runModelCommand(arg: string) {
+  /** The slash-command turn envelope: `status: thinking`, the body, then a
+   *  guaranteed `turn_end` — even when the body errors out early. */
+  private async runSlashTurn(body: () => Promise<void> | void) {
     this.emit({ type: "status", state: "thinking" });
     try {
+      await body();
+    } finally {
+      this.emit({ type: "turn_end" });
+    }
+  }
+
+  private async runModelCommand(arg: string) {
+    await this.runSlashTurn(async () => {
       if (arg === "") {
         let models: CodexModel[];
         try {
@@ -480,9 +490,7 @@ export class CodexSession implements AgentSession {
         this.setThreadModel(arg);
         this.emit({ type: "text_delta", text: `Model set to ${arg}.` });
       }
-    } finally {
-      this.emit({ type: "turn_end" });
-    }
+    });
   }
 
   /** Switch the warm thread onto `model`. The label becomes configured-truth
@@ -513,8 +521,7 @@ export class CodexSession implements AgentSession {
    * engine's own type. Per-model availability is NOT yet filtered.
    */
   private async runEffortCommand(arg: string) {
-    this.emit({ type: "status", state: "thinking" });
-    try {
+    await this.runSlashTurn(() => {
       if (arg === "") {
         emitModelPicker(
           (msg) => this.emit(msg),
@@ -539,9 +546,7 @@ export class CodexSession implements AgentSession {
           text: `Usage: \`/effort\` to pick, or \`/effort <level>\` (${EFFORTS.join(", ")}).`,
         });
       }
-    } finally {
-      this.emit({ type: "turn_end" });
-    }
+    });
   }
 
   /** The reasoning-effort analog of setThreadModel: switch the warm thread onto
@@ -716,8 +721,7 @@ export class CodexSession implements AgentSession {
       case "command_execution": {
         if (phase === "started") this.announceTool(item.id, "Shell", item.command, { command: item.command });
         else if (phase === "completed") {
-          if (!this.announced.has(item.id))
-            this.announceTool(item.id, "Shell", item.command, { command: item.command });
+          this.ensureAnnounced(item.id, "Shell", item.command, { command: item.command });
           const capped = capOutput(item.aggregated_output ?? "");
           this.finishTool(item.id, {
             output: capped.text,
@@ -750,7 +754,7 @@ export class CodexSession implements AgentSession {
         const label = `${item.server}.${item.tool}`;
         if (phase === "started") this.announceTool(item.id, label, item.tool, item.arguments);
         else if (phase === "completed") {
-          if (!this.announced.has(item.id)) this.announceTool(item.id, label, item.tool, item.arguments);
+          this.ensureAnnounced(item.id, label, item.tool, item.arguments);
           const capped = capOutput(item.error ? item.error.message : mcpText(item.result?.content));
           this.finishTool(item.id, {
             output: capped.text,
@@ -786,6 +790,12 @@ export class CodexSession implements AgentSession {
           this.emit({ type: "notice", text: item.message, kind: "warning", source: "codex" });
         break;
     }
+  }
+
+  /** Announce only if the started phase was missed (the item arrived
+   *  completed-first) — a repeat announce would paint a duplicate row. */
+  private ensureAnnounced(id: string, name: string, detail: string, input: unknown) {
+    if (!this.announced.has(id)) this.announceTool(id, name, detail, input);
   }
 
   private announceTool(id: string, name: string, detail: string, input: unknown) {

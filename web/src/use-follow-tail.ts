@@ -6,13 +6,12 @@ import { useRef } from "react";
  * at the bottom. Scroll up and the view freezes where they put it — output
  * keeps landing below, out of sight — until they come back down.
  *
- * Wire up all six parts: `scrollerRef` on the scrolling element, `tailRef` on
- * a sentinel as its last child, and `onScroll` / `onWheel` / `onTouchStart` /
- * `onTouchMove` as its handlers. Then call `followTail()` from an effect keyed
- * on whatever
- * changes the content, `armFollow()` when the reader is conceptually back at
- * the bottom (they sent a message), and `resetTail()` when the content is
- * replaced wholesale.
+ * Wire up all five parts: `scrollerRef` on the scrolling element, and
+ * `onScroll` / `onWheel` / `onTouchStart` / `onTouchMove` as its handlers.
+ * Then call `followTail()` from an effect keyed on whatever changes the
+ * content, `armFollow()` when the reader is conceptually back at the bottom
+ * (they sent a message), and `resetTail()` when the content is replaced
+ * wholesale.
  *
  * Two decisions here were bought with a bug (2026-07-20, traced in a real
  * browser — don't undo either without re-reading that trace):
@@ -41,7 +40,6 @@ const BOTTOM_SLACK_PX = 24;
 
 export function useFollowTail() {
   const scrollerRef = useRef<HTMLDivElement>(null);
-  const tailRef = useRef<HTMLDivElement>(null);
   const following = useRef(true);
   const lastTop = useRef(0);
   const touchY = useRef<number | null>(null);
@@ -107,7 +105,6 @@ export function useFollowTail() {
 
   return {
     scrollerRef,
-    tailRef,
     onScroll,
     onWheel,
     onTouchStart,

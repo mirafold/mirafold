@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentInfo, SessionMeta } from "@protocol";
 import { Onboarding } from "./Onboarding";
-import { ConnectDevice } from "./ConnectDevice";
+import { ArmedButton } from "./ArmedButton";
+import { ConnectDevice, type RelayInfo } from "./ConnectDevice";
 import { GearGlyph } from "./GearGlyph";
 import { SocketClient } from "../ws";
 import { tildify } from "../tildify";
@@ -88,7 +89,9 @@ export function FleetView() {
   const [daemon, setDaemon] = useState<{
     cwd?: string;
     home?: string;
-    relay?: { url: string; code: string };
+    // The agents hello's relay info (protocol.ts) — RelayInfo mirrors its
+    // shape, `ws` included (static-origin serving).
+    relay?: RelayInfo;
   }>({});
   const [connected, setConnected] = useState(false);
   // ?new=1 lands straight on the picker — that's the URL the in-session "new"
@@ -126,7 +129,7 @@ export function FleetView() {
   // The socket's message handler lives for the socket's life; it reads the
   // picker's openness through this ref so error ROUTING follows the live
   // value (picker open → its card; otherwise → the header line).
-  const showNewRef = useRef(false);
+  const pickerOpenRef = useRef(false);
 
   useEffect(() => {
     const offMsg = socket.onMessage((m) => {
@@ -150,7 +153,7 @@ export function FleetView() {
       } else if (m.type === "error") {
         // While the picker is open its card owns errors (a refused create);
         // otherwise the reply belongs to a grid act — the header line (M.3).
-        if (showNewRef.current) setOnbError(m.message);
+        if (pickerOpenRef.current) setOnbError(m.message);
         else setActionError(m.message);
       }
     });
@@ -209,7 +212,7 @@ export function FleetView() {
 
   // First run (no sessions yet) opens straight into "choose your agent".
   const onboarding = showNew || (sessions !== null && sessions.length === 0);
-  showNewRef.current = onboarding;
+  pickerOpenRef.current = onboarding;
 
   const ordered = cockpitOrder(sessions ?? []);
 
@@ -273,129 +276,187 @@ export function FleetView() {
         )}
         <div className="fleet-list">
           {ordered.map((s) => (
-            // A wrapper per session (M.3): the classic row plus its cockpit
-            // sub-lines — the pending-permission line and the quick-prompt
-            // line — so the row's stretched click-overlay
-            // (.fleet-link::after, bounded by .fleet-row's position) never
-            // covers the sub-line controls.
-            <div key={s.sessionId} className="fleet-item">
-              {/* A.3b: the row is a plain container, NOT an anchor — buttons
-                  inside a link are invalid HTML and made screen readers read the
-                  whole row (id, status, "end") as one link label. The session
-                  NAME is the link; its stretched overlay (.fleet-link::after)
-                  keeps click-anywhere-to-open for mouse users, and the real
-                  controls ride above the overlay.
-                  The cwd stays OFF the row (an on-row column was tried
-                  2026-07-22 and re-removed the same day as clutter — Kyle):
-                  desktop gets it on hover here; phone gets it in the settings
-                  card's Session section, one tap inside. */}
-              <div className="fleet-row" title={tildify(s.cwd, daemon.home)}>
-                <span className={`fleet-dot fleet-dot-${s.status}`} title={STATUS_LABEL[s.status]} />
-                <SessionName
-                  s={s}
-                  renaming={renaming === s.sessionId}
-                  onStart={() => setRenaming(s.sessionId)}
-                  onCommit={(name) => commitRename(s.sessionId, name)}
-                  onCancel={() => setRenaming(null)}
-                />
-                {/* Agent before model, matching the in-session status bar (2026-07-17, Kyle);
-                    model only when known, like the bar (2026-07-23). */}
-                <span className="fleet-agent">{s.agent}</span>
-                {s.model && (
-                  <span className="fleet-model" title="model">
-                    {s.model}
-                  </span>
-                )}
-                <span className="fleet-spacer" />
-                <span className="fleet-id" title="session id">
-                  {s.sessionId}
-                </span>
-                {/* The status WORD came off the row (2026-07-25, Kyle): the
-                    dot already says it — blinking blue = working. Kept for
-                    screen readers, which can't read a colored dot. */}
-                <span className="sr-only">{STATUS_LABEL[s.status]}</span>
-                <span className="fleet-ago">{ago(s.lastActivity)}</span>
-                {/* M.5: who's watching — 0 is the interesting number (an
-                    unwatched session still working for you). */}
-                <span className="fleet-viewports" title="open viewports">
-                  ⧉ {s.viewports}
-                </span>
-                <button
-                  className={
-                    "fleet-details-toggle" +
-                    (detailsFor === s.sessionId ? " fleet-details-toggle-open" : "")
-                  }
-                  title="Session details"
-                  aria-label={`${detailsFor === s.sessionId ? "Hide" : "Show"} details for session ${s.name}`}
-                  aria-expanded={detailsFor === s.sessionId}
-                  onClick={() => setDetailsFor(detailsFor === s.sessionId ? null : s.sessionId)}
-                >
-                  {/* The ❯ glyph the prompt toggle uses, CSS-rotated to point
-                      down (closed) or up (open) — same icon family, not a
-                      lookalike triangle. */}
-                  <span className="fleet-details-caret" aria-hidden="true">
-                    ❯
-                  </span>
-                </button>
-                <button
-                  className={
-                    "fleet-prompt-toggle" + (promptFor === s.sessionId ? " fleet-prompt-toggle-open" : "")
-                  }
-                  title="Send a prompt to this session"
-                  aria-label={`Send a prompt to session ${s.name}`}
-                  aria-expanded={promptFor === s.sessionId}
-                  onClick={() => setPromptFor(promptFor === s.sessionId ? null : s.sessionId)}
-                >
-                  ❯
-                </button>
-                {s.status === "working" && (
-                  <ArmedButton
-                    className="fleet-stop"
-                    verb="stop"
-                    armed={stopConfirm.armed === s.sessionId}
-                    title="Interrupt this turn (the session stays warm)"
-                    armedTitle="Click again to interrupt this turn"
-                    ariaLabel={`Interrupt session ${s.name}`}
-                    armedAriaLabel={`Click again to interrupt session ${s.name}`}
-                    onArm={() => stopConfirm.arm(s.sessionId)}
-                    onFire={() => {
-                      socket.send({ type: "interrupt_session", sessionId: s.sessionId });
-                      stopConfirm.disarm();
-                    }}
-                  />
-                )}
-                <ArmedButton
-                  className="fleet-end"
-                  verb="end"
-                  armed={endConfirm.armed === s.sessionId}
-                  title="End this session"
-                  armedTitle="Click again to end this session"
-                  ariaLabel={`End session ${s.name}`}
-                  armedAriaLabel={`Click again to end session ${s.name}`}
-                  onArm={() => endConfirm.arm(s.sessionId)}
-                  onFire={() => {
-                    socket.send({ type: "end_session", sessionId: s.sessionId });
-                    endConfirm.disarm();
-                  }}
-                />
-              </div>
-              <PermissionLine
-                s={s}
-                answered={answered}
-                onAnswer={(id, allow) => answerPermission(s.sessionId, id, allow)}
-              />
-              {detailsFor === s.sessionId && <DetailsLine s={s} />}
-              {promptFor === s.sessionId && (
-                <QuickPromptLine
-                  name={s.name}
-                  onSubmit={(text) => sendQuickPrompt(s.sessionId, text)}
-                  onClose={() => setPromptFor(null)}
-                />
-              )}
-            </div>
+            <FleetRow
+              key={s.sessionId}
+              s={s}
+              home={daemon.home}
+              renaming={renaming}
+              setRenaming={setRenaming}
+              commitRename={commitRename}
+              detailsFor={detailsFor}
+              setDetailsFor={setDetailsFor}
+              promptFor={promptFor}
+              setPromptFor={setPromptFor}
+              stopConfirm={stopConfirm}
+              endConfirm={endConfirm}
+              socket={socket}
+              answered={answered}
+              answerPermission={answerPermission}
+              sendQuickPrompt={sendQuickPrompt}
+            />
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** One session's cockpit entry: the classic row plus its sub-lines. Every
+ *  prop is FleetView's own state or actions, passed through under the same
+ *  names — the row is presentation, the grid still owns all state. */
+function FleetRow({
+  s,
+  home,
+  renaming,
+  setRenaming,
+  commitRename,
+  detailsFor,
+  setDetailsFor,
+  promptFor,
+  setPromptFor,
+  stopConfirm,
+  endConfirm,
+  socket,
+  answered,
+  answerPermission,
+  sendQuickPrompt,
+}: {
+  s: SessionMeta;
+  home?: string;
+  renaming: string | null;
+  setRenaming: (id: string | null) => void;
+  commitRename: (id: string, name: string) => void;
+  detailsFor: string | null;
+  setDetailsFor: (id: string | null) => void;
+  promptFor: string | null;
+  setPromptFor: (id: string | null) => void;
+  stopConfirm: ReturnType<typeof useArmedConfirm<string>>;
+  endConfirm: ReturnType<typeof useArmedConfirm<string>>;
+  socket: SocketClient;
+  answered: ReadonlySet<string>;
+  answerPermission: (sessionId: string, id: string, allow: boolean) => void;
+  sendQuickPrompt: (sessionId: string, text: string) => void;
+}) {
+  return (
+    // A wrapper per session (M.3): the classic row plus its cockpit
+    // sub-lines — the pending-permission line and the quick-prompt
+    // line — so the row's stretched click-overlay
+    // (.fleet-link::after, bounded by .fleet-row's position) never
+    // covers the sub-line controls.
+    <div className="fleet-item">
+      {/* A.3b: the row is a plain container, NOT an anchor — buttons
+          inside a link are invalid HTML and made screen readers read the
+          whole row (id, status, "end") as one link label. The session
+          NAME is the link; its stretched overlay (.fleet-link::after)
+          keeps click-anywhere-to-open for mouse users, and the real
+          controls ride above the overlay.
+          The cwd stays OFF the row (an on-row column was tried
+          2026-07-22 and re-removed the same day as clutter — Kyle):
+          desktop gets it on hover here; phone gets it in the settings
+          card's Session section, one tap inside. */}
+      <div className="fleet-row" title={tildify(s.cwd, home)}>
+        <span className={`fleet-dot fleet-dot-${s.status}`} title={STATUS_LABEL[s.status]} />
+        <SessionName
+          s={s}
+          renaming={renaming === s.sessionId}
+          onStart={() => setRenaming(s.sessionId)}
+          onCommit={(name) => commitRename(s.sessionId, name)}
+          onCancel={() => setRenaming(null)}
+        />
+        {/* Agent before model, matching the in-session status bar (2026-07-17, Kyle);
+            model only when known, like the bar (2026-07-23). */}
+        <span className="fleet-agent">{s.agent}</span>
+        {s.model && (
+          <span className="fleet-model" title="model">
+            {s.model}
+          </span>
+        )}
+        <span className="fleet-spacer" />
+        <span className="fleet-id" title="session id">
+          {s.sessionId}
+        </span>
+        {/* The status WORD came off the row (2026-07-25, Kyle): the
+            dot already says it — blinking blue = working. Kept for
+            screen readers, which can't read a colored dot. */}
+        <span className="sr-only">{STATUS_LABEL[s.status]}</span>
+        <span className="fleet-ago">{ago(s.lastActivity)}</span>
+        {/* M.5: who's watching — 0 is the interesting number (an
+            unwatched session still working for you). */}
+        <span className="fleet-viewports" title="open viewports">
+          ⧉ {s.viewports}
+        </span>
+        <button
+          className={
+            "fleet-details-toggle" +
+            (detailsFor === s.sessionId ? " fleet-details-toggle-open" : "")
+          }
+          title="Session details"
+          aria-label={`${detailsFor === s.sessionId ? "Hide" : "Show"} details for session ${s.name}`}
+          aria-expanded={detailsFor === s.sessionId}
+          onClick={() => setDetailsFor(detailsFor === s.sessionId ? null : s.sessionId)}
+        >
+          {/* The ❯ glyph the prompt toggle uses, CSS-rotated to point
+              down (closed) or up (open) — same icon family, not a
+              lookalike triangle. */}
+          <span className="fleet-details-caret" aria-hidden="true">
+            ❯
+          </span>
+        </button>
+        <button
+          className={
+            "fleet-prompt-toggle" + (promptFor === s.sessionId ? " fleet-prompt-toggle-open" : "")
+          }
+          title="Send a prompt to this session"
+          aria-label={`Send a prompt to session ${s.name}`}
+          aria-expanded={promptFor === s.sessionId}
+          onClick={() => setPromptFor(promptFor === s.sessionId ? null : s.sessionId)}
+        >
+          ❯
+        </button>
+        {s.status === "working" && (
+          <ArmedButton
+            className="fleet-stop"
+            verb="stop"
+            armed={stopConfirm.armed === s.sessionId}
+            title="Interrupt this turn (the session stays warm)"
+            armedTitle="Click again to interrupt this turn"
+            ariaLabel={`Interrupt session ${s.name}`}
+            armedAriaLabel={`Click again to interrupt session ${s.name}`}
+            onArm={() => stopConfirm.arm(s.sessionId)}
+            onFire={() => {
+              socket.send({ type: "interrupt_session", sessionId: s.sessionId });
+              stopConfirm.disarm();
+            }}
+          />
+        )}
+        <ArmedButton
+          className="fleet-end"
+          verb="end"
+          armed={endConfirm.armed === s.sessionId}
+          title="End this session"
+          armedTitle="Click again to end this session"
+          ariaLabel={`End session ${s.name}`}
+          armedAriaLabel={`Click again to end session ${s.name}`}
+          onArm={() => endConfirm.arm(s.sessionId)}
+          onFire={() => {
+            socket.send({ type: "end_session", sessionId: s.sessionId });
+            endConfirm.disarm();
+          }}
+        />
+      </div>
+      <PermissionLine
+        s={s}
+        answered={answered}
+        onAnswer={(id, allow) => answerPermission(s.sessionId, id, allow)}
+      />
+      {detailsFor === s.sessionId && <DetailsLine s={s} />}
+      {promptFor === s.sessionId && (
+        <QuickPromptLine
+          name={s.name}
+          onSubmit={(text) => sendQuickPrompt(s.sessionId, text)}
+          onClose={() => setPromptFor(null)}
+        />
+      )}
     </div>
   );
 }
@@ -441,42 +502,6 @@ function SessionName({
         ✎
       </button>
     </span>
-  );
-}
-
-/** A two-click destructive row control (#11): the first click arms (the verb
- *  gains a "?"), a second click within the arm window fires. Shared by the
- *  stop (interrupt) and end buttons — same idiom, different consequence. */
-function ArmedButton({
-  className,
-  verb,
-  armed,
-  title,
-  armedTitle,
-  ariaLabel,
-  armedAriaLabel,
-  onArm,
-  onFire,
-}: {
-  className: string;
-  verb: string;
-  armed: boolean;
-  title: string;
-  armedTitle: string;
-  ariaLabel: string;
-  armedAriaLabel: string;
-  onArm: () => void;
-  onFire: () => void;
-}) {
-  return (
-    <button
-      className={className + (armed ? ` ${className}-armed` : "")}
-      title={armed ? armedTitle : title}
-      aria-label={armed ? armedAriaLabel : ariaLabel}
-      onClick={armed ? onFire : onArm}
-    >
-      {armed ? `${verb}?` : verb}
-    </button>
   );
 }
 

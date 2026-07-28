@@ -1,7 +1,12 @@
 import path from "node:path";
 import { mkdirSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { query, type Query, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import {
+  query,
+  type Query,
+  type SDKResultMessage,
+  type SDKUserMessage,
+} from "@anthropic-ai/claude-agent-sdk";
 import type { WireMsg } from "../protocol";
 import { makeCanUseTool } from "../security/permissions";
 import { makeRenderServer, RENDER_GUIDANCE } from "../render-tools";
@@ -19,6 +24,11 @@ import { AsyncQueue, CLOSE } from "./async-queue";
 import { createLogger, verbose } from "../log";
 
 const log = createLogger("claude-code");
+
+// The in-process render-tools MCP server's registered name — the SDK exposes
+// its tools to the model as `mcp__<name>__<tool>`, so both spellings below
+// derive from this one constant.
+const UI_MCP = "ui";
 
 // The SDK's session-task-list tools (T2.5) — folded into the live checklist,
 // never shown as raw tool rows. Note the subagent spawner is named "Agent"
@@ -67,7 +77,7 @@ export function resultText(content: unknown): string {
 export class ClaudeCodeSession implements AgentSession {
   private queue = new AsyncQueue<string | typeof CLOSE>();
   private listeners = new Set<(msg: WireMsg) => void>();
-  private q: Query;
+  private engine: Query;
   private closed = false;
   // pump() exited — the SDK stream is gone. Distinct from `closed`: this is
   // the abnormal path (stream death without close()), where a queued prompt
@@ -119,7 +129,7 @@ export class ClaudeCodeSession implements AgentSession {
     mkdirSync(workspaceDir, { recursive: true }); // spawn fails on a missing cwd
     const model = opts.model ?? process.env.DEFAULT_MODEL;
     this.modelLabel = model;
-    this.q = (opts.engine ?? query)({
+    this.engine = (opts.engine ?? query)({
       prompt: this.promptStream(),
       options: {
         model,
@@ -164,7 +174,7 @@ export class ClaudeCodeSession implements AgentSession {
         ...(process.env.MAX_THINKING_TOKENS
           ? { maxThinkingTokens: Number(process.env.MAX_THINKING_TOKENS) }
           : {}),
-        mcpServers: { ui: makeRenderServer((msg) => this.emit(msg), workspaceDir) },
+        mcpServers: { [UI_MCP]: makeRenderServer((msg) => this.emit(msg), workspaceDir) },
         systemPrompt: { type: "preset", preset: "claude_code", append: RENDER_GUIDANCE },
       },
     });
@@ -191,10 +201,10 @@ export class ClaudeCodeSession implements AgentSession {
     if (this.closed) return;
     // A pending permission prompt would keep the aborted turn hanging —
     // interrupt means the user walked away from it: deny.
-    for (const finish of [...this.pendingAsks.values()]) finish(false);
+    this.denyAllPending();
     // The SDK also emits a result for the aborted turn; the extra turn_end
     // after the abort settles is a client-side no-op, kept as a guarantee.
-    this.q
+    this.engine
       .interrupt()
       .then(() => this.emit({ type: "turn_end" }))
       .catch(() => {}); // interrupting an idle session is not an error
@@ -202,6 +212,14 @@ export class ClaudeCodeSession implements AgentSession {
 
   resolvePermission(id: string, allow: boolean) {
     this.pendingAsks.get(id)?.(allow);
+  }
+
+  close() {
+    if (this.closed) return;
+    this.closed = true;
+    this.denyAllPending();
+    this.queue.push(CLOSE);
+    this.engine.interrupt().catch(() => {});
   }
 
   /** Pause the tool call on a browser prompt; deny on timeout or close. */
@@ -219,6 +237,11 @@ export class ClaudeCodeSession implements AgentSession {
       this.emit({ type: "permission_request", tool, detail, id });
     });
   };
+
+  /** Deny every in-flight permission prompt — the interrupt/close teardown. */
+  private denyAllPending() {
+    for (const finish of [...this.pendingAsks.values()]) finish(false);
+  }
 
   /** Fold a Task-family or TodoWrite call into the live checklist (T2.5). */
   private trackTasks(name: string, input: unknown) {
@@ -273,14 +296,6 @@ export class ClaudeCodeSession implements AgentSession {
     });
   }
 
-  close() {
-    if (this.closed) return;
-    this.closed = true;
-    for (const finish of [...this.pendingAsks.values()]) finish(false);
-    this.queue.push(CLOSE);
-    this.q.interrupt().catch(() => {});
-  }
-
   private emit(msg: WireMsg) {
     for (const cb of this.listeners) cb(msg);
   }
@@ -300,7 +315,7 @@ export class ClaudeCodeSession implements AgentSession {
   /** Normalize the SDK's event stream into WireMsg. */
   private async pump() {
     try {
-      for await (const msg of this.q) {
+      for await (const msg of this.engine) {
         switch (msg.type) {
           case "stream_event": {
             if (msg.parent_tool_use_id) break; // subagent traffic — not ours to render
@@ -341,7 +356,7 @@ export class ClaudeCodeSession implements AgentSession {
               }
               if (block.type !== "tool_use") continue;
               // Render tools already paint their own component block.
-              if (block.name.startsWith("mcp__ui__")) continue;
+              if (block.name.startsWith(`mcp__${UI_MCP}__`)) continue;
               // The agent's task list becomes one live checklist
               // component (updated in place), not raw tool rows. This SDK
               // manages it via the Task* family (TaskCreate/TaskUpdate,
@@ -389,54 +404,12 @@ export class ClaudeCodeSession implements AgentSession {
           case "system":
             this.handleSystemMsg(msg);
             break;
-          case "rate_limit_event": {
-            // Observed live on ordinary turns, so surface it ONLY when it
-            // actually matters — approaching (allowed_warning) or hitting
-            // (rejected) the limit — never on the constant plain "allowed" (F.2).
-            const info = (
-              msg as { rate_limit_info?: { status?: unknown; rateLimitType?: unknown } }
-            ).rate_limit_info;
-            const status = info?.status;
-            if (status === "allowed_warning" || status === "rejected") {
-              const t = info?.rateLimitType;
-              const scope = typeof t === "string" && t ? ` (${t.replace(/_/g, " ")})` : "";
-              this.emit({
-                type: "notice",
-                text:
-                  status === "rejected"
-                    ? `rate limit reached${scope} — requests are being throttled`
-                    : `approaching the rate limit${scope}`,
-                kind: "rate_limit",
-              });
-            }
+          case "rate_limit_event":
+            this.handleRateLimitMsg(msg);
             break;
-          }
-          case "result": {
-            if (msg.is_error) {
-              const detail = "result" in msg ? msg.result : msg.subtype;
-              this.emit({ type: "error", message: String(detail) });
-            }
-            // Per-turn usage for the status bar. Input includes cache
-            // tokens — that's the real context weight the user is paying for (T2.6).
-            const u = (msg as { usage?: Record<string, number> }).usage;
-            if (u) {
-              const inputTokens =
-                (u["input_tokens"] ?? 0) +
-                (u["cache_read_input_tokens"] ?? 0) +
-                (u["cache_creation_input_tokens"] ?? 0);
-              this.emit({
-                type: "usage",
-                model: this.modelLabel,
-                inputTokens,
-                outputTokens: u["output_tokens"] ?? 0,
-                costUsd: (msg as { total_cost_usd?: number }).total_cost_usd,
-              });
-            }
-            this.todoRenderId = undefined; // next turn starts a fresh checklist
-            this.streamedText = false; // F.1: next turn's streamed/buffered decision is independent
-            this.emit({ type: "turn_end" });
+          case "result":
+            this.handleResultMsg(msg);
             break;
-          }
         }
       }
     } catch (err) {
@@ -447,6 +420,55 @@ export class ClaudeCodeSession implements AgentSession {
     } finally {
       this.dead = true;
     }
+  }
+
+  /** Rate-limit frames, surfaced ONLY when they actually matter — approaching
+   *  (allowed_warning) or hitting (rejected) the limit — never on the constant
+   *  plain "allowed"; observed live on ordinary turns (F.2). */
+  private handleRateLimitMsg(msg: object) {
+    const info = (msg as { rate_limit_info?: { status?: unknown; rateLimitType?: unknown } })
+      .rate_limit_info;
+    const status = info?.status;
+    if (status === "allowed_warning" || status === "rejected") {
+      const t = info?.rateLimitType;
+      const scope = typeof t === "string" && t ? ` (${t.replace(/_/g, " ")})` : "";
+      this.emit({
+        type: "notice",
+        text:
+          status === "rejected"
+            ? `rate limit reached${scope} — requests are being throttled`
+            : `approaching the rate limit${scope}`,
+        kind: "rate_limit",
+      });
+    }
+  }
+
+  /** The turn's closing frame: surface an error result, report per-turn
+   *  usage, reset per-turn state, and end the turn. */
+  private handleResultMsg(msg: SDKResultMessage) {
+    if (msg.is_error) {
+      const detail = "result" in msg ? msg.result : msg.subtype;
+      this.emit({ type: "error", message: String(detail) });
+    }
+    // Per-turn usage for the status bar. Input includes cache
+    // tokens — that's the real context weight the user is paying for (T2.6).
+    const u = (msg as { usage?: Record<string, number> }).usage;
+    if (u) {
+      const inputTokens =
+        (u["input_tokens"] ?? 0) +
+        (u["cache_read_input_tokens"] ?? 0) +
+        (u["cache_creation_input_tokens"] ?? 0);
+      this.emit({
+        type: "usage",
+        model: this.modelLabel,
+        inputTokens,
+        outputTokens: u["output_tokens"] ?? 0,
+        costUsd: (msg as { total_cost_usd?: number }).total_cost_usd,
+      });
+    }
+    this.todoRenderId = undefined; // next turn starts a fresh checklist
+    this.streamedText = false; // F.1: next turn's streamed/buffered decision is independent
+    this.emit({ type: "turn_end" });
   }
 
   /** The engine's out-of-band `system` frames — each subtype an independent

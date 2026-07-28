@@ -503,10 +503,27 @@ export class MockSession implements AgentSession {
     this.playTemplateTurn(text);
   }
 
+  onMessage(cb: (msg: WireMsg) => void) {
+    this.listeners.add(cb);
+  }
+
+  interrupt() {
+    this.abandonTurn();
+    this.emit({ type: "turn_end" });
+  }
+
+  resolvePermission(id: string, allow: boolean) {
+    this.pendingAsks.get(id)?.(allow);
+  }
+
+  close() {
+    this.abandonTurn();
+  }
+
   /** Deterministic 2.2 hook: a card with action buttons so the
    *  click→action→turn loop runs API-free. */
   private playActionCard() {
-    this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+    this.beginTurn();
     let delay = this.streamText("Here's the deploy control card — the buttons are live.", 350);
     delay += 350;
     this.schedule(
@@ -533,7 +550,7 @@ export class MockSession implements AgentSession {
         }),
       delay,
     );
-    this.schedule(() => this.emit({ type: "turn_end" }), delay + 40);
+    this.endTurn(delay);
   }
 
   /** Deterministic hook: the two kinds of system line side by side — one
@@ -542,7 +559,7 @@ export class MockSession implements AgentSession {
    *  render alike. The engine text here is deliberately the shape of an
    *  impersonation attempt. */
   private playNotices() {
-    this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+    this.beginTurn();
     this.schedule(
       () => this.emit({ type: "notice", text: "context compacted", kind: "compaction" }),
       60,
@@ -558,13 +575,13 @@ export class MockSession implements AgentSession {
       120,
     );
     const delay = this.streamText("Both lines are above.", 200);
-    this.schedule(() => this.emit({ type: "turn_end" }), delay + 40);
+    this.endTurn(delay);
   }
 
   /** Deterministic hook: a question component, so the option-click →
    *  prompt-turn loop runs API-free. */
   private playQuestion() {
-    this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+    this.beginTurn();
     let delay = this.streamText("Two viable paths here — pick one and I'll take it.", 350);
     delay += 350;
     this.schedule(
@@ -591,14 +608,14 @@ export class MockSession implements AgentSession {
         }),
       delay,
     );
-    this.schedule(() => this.emit({ type: "turn_end" }), delay + 40);
+    this.endTurn(delay);
   }
 
   /** Deterministic hook: the shell-owned picker (the /model re-skin's wire
    *  shape), six rows deep so the e2e proves arrow-key selection past the
    *  question component's option range. */
   private playPicker() {
-    this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+    this.beginTurn();
     this.schedule(
       () =>
         this.emit({
@@ -615,7 +632,7 @@ export class MockSession implements AgentSession {
         }),
       120,
     );
-    this.schedule(() => this.emit({ type: "turn_end" }), 160);
+    this.endTurn(160, 0);
   }
 
   /** Deterministic T2.5 hook: a live checklist — one render id, statuses
@@ -635,14 +652,14 @@ export class MockSession implements AgentSession {
         content,
         status: i < active ? "completed" : i === active ? "in_progress" : "pending",
       }));
-    this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+    this.beginTurn();
     let d = 300;
     for (let active = 0; active <= items.length; active++) {
       this.paintRender(d, "todo-list", { todos: frame(active) }, rid);
       d += 550;
     }
     d = this.streamText("Plan complete — all four steps done.", d + 100);
-    this.schedule(() => this.emit({ type: "turn_end" }), d + 40);
+    this.endTurn(d);
   }
 
   /** Deterministic S.1/S.2 hook: the chart stretch shapes in one turn — a
@@ -652,7 +669,7 @@ export class MockSession implements AgentSession {
   private playCharts() {
     const paint = (props: Record<string, unknown>, at: number) =>
       this.paintRender(at, "chart", props);
-    this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+    this.beginTurn();
     paint(
       {
         title: "Language mix",
@@ -710,13 +727,13 @@ export class MockSession implements AgentSession {
       1300,
     );
     const d = this.streamText("Three chart shapes and one deliberate rule-breaker.", 1450);
-    this.schedule(() => this.emit({ type: "turn_end" }), d + 40);
+    this.endTurn(d);
   }
 
   /** Deterministic hook: a mermaid diagram (sandbox-rendered), plus one with
    *  broken source — the failure shows the source, never a blank frame. */
   private playDiagram() {
-    this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+    this.beginTurn();
     this.paintRender(300, "diagram", {
       title: "Relay pairing flow",
       source: [
@@ -735,7 +752,7 @@ export class MockSession implements AgentSession {
       source: "flowchart TD\n  A --> ] nope [",
     });
     const d = this.streamText("The pairing flow, drawn — and one deliberately broken source.", 900);
-    this.schedule(() => this.emit({ type: "turn_end" }), d + 40);
+    this.endTurn(d);
   }
 
   /** Deterministic hook: the image component in both states — pixels
@@ -745,7 +762,7 @@ export class MockSession implements AgentSession {
     // A real 1×1 PNG so the client draws an actual <img>.
     const px =
       "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
-    this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+    this.beginTurn();
     this.paintRender(300, "image", {
       path: "shots/welcome.png",
       alt: "the welcome screen after the fix",
@@ -758,7 +775,7 @@ export class MockSession implements AgentSession {
       error: "too large (4.2 MB; the cap is 2 MB)",
     });
     const d = this.streamText("The welcome screen matches the mock — one shot was over the cap.", 800);
-    this.schedule(() => this.emit({ type: "turn_end" }), d + 40);
+    this.endTurn(d);
   }
 
   /** Deterministic hook: quoted terminal output — ANSI colors, an OSC
@@ -773,10 +790,10 @@ export class MockSession implements AgentSession {
       "",
       "\x1b[90m1 failing, 411 passing\x1b[0m",
     ].join("\n");
-    this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+    this.beginTurn();
     this.paintRender(300, "console", { command: "yarn test", output: out, exitCode: 1 });
     const d = this.streamText("One assertion is off — the span-merge case.", 500);
-    this.schedule(() => this.emit({ type: "turn_end" }), d + 40);
+    this.endTurn(d);
   }
 
   /** Deterministic S.3 hook: a KPI tile kept live — one render id, the
@@ -789,11 +806,11 @@ export class MockSession implements AgentSession {
       delta: { value: delta, direction: "up" as const, good: true },
       footer: "yarn test · tier 1",
     });
-    this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+    this.beginTurn();
     this.paintRender(250, "stat", frame("94.2%", "+1.1%"), rid);
     this.paintRender(900, "stat", frame("96.8%", "+3.7%"), rid);
     const d = this.streamText("Coverage is climbing as the new tests land.", 1000);
-    this.schedule(() => this.emit({ type: "turn_end" }), d + 40);
+    this.endTurn(d);
   }
 
   /** Deterministic hook: a code block — header, tokenized body, emphasized
@@ -807,7 +824,7 @@ export class MockSession implements AgentSession {
       "  return JSON.parse(raw); // TODO: validate",
       "}",
     ].join("\n");
-    this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+    this.beginTurn();
     const d = this.streamText(
       "Here's the loader as it stands — the parse is the part worth reading:",
       200,
@@ -818,13 +835,13 @@ export class MockSession implements AgentSession {
       filename: "src/config/load.ts",
       highlight: [{ start: 4, end: 5 }],
     });
-    this.schedule(() => this.emit({ type: "turn_end" }), d + 300);
+    this.endTurn(d, 300);
   }
 
   /** Deterministic hook: check rows with verdict pills — one row per status
    *  the vocabulary knows, so the e2e pins the whole enum's rendering. */
   private playStatusList() {
-    this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+    this.beginTurn();
     this.paintRender(300, "status-list", {
       title: "Health checks",
       items: [
@@ -836,14 +853,14 @@ export class MockSession implements AgentSession {
       ],
     });
     const d = this.streamText("Four suites checked — the relay probe is the one to chase.", 500);
-    this.schedule(() => this.emit({ type: "turn_end" }), d + 40);
+    this.endTurn(d);
   }
 
   /** Deterministic T2.4 hook: a Task whose inner tool calls nest under it
    *  (subagent text stays hidden). */
   private playSubagent() {
     const taskId = randomUUID();
-    this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+    this.beginTurn();
     this.schedule(() => {
       this.emit({ type: "status", state: "tool", label: "Task" });
       this.emit({
@@ -874,7 +891,7 @@ export class MockSession implements AgentSession {
       d,
     );
     d = this.streamText("The subagent audited the config loader — it merges three sources correctly, no precedence bug.", d + 200);
-    this.schedule(() => this.emit({ type: "turn_end" }), d + 40);
+    this.endTurn(d);
   }
 
   /** Deterministic T2.3 hook: a tool whose output blows past the cap,
@@ -884,7 +901,7 @@ export class MockSession implements AgentSession {
     const bigLine = "2026-07-05T12:00:00Z  INFO  request served in 42ms — ok\n";
     const big = bigLine.repeat(2000); // ~110KB, well over the 64KB cap
     const capped = capOutput(big);
-    this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+    this.beginTurn();
     this.schedule(() => {
       this.emit({ type: "status", state: "tool", label: "Bash" });
       this.emit({ type: "tool_use", name: "Bash", detail: "cat server.log", id });
@@ -900,14 +917,14 @@ export class MockSession implements AgentSession {
       900,
     );
     const d = this.streamText("That log is enormous — showing the head, the rest is elided.", 1100);
-    this.schedule(() => this.emit({ type: "turn_end" }), d + 40);
+    this.endTurn(d);
   }
 
   /** Deterministic 3.2/3.3 hook: a small interactive artifact with bridge
    *  buttons (one allowlisted tool, one off-allowlist, one prompt) so
    *  sandbox + bridge run API-free. */
   private playBridgeArtifact() {
-    this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+    this.beginTurn();
     let delay = this.streamText("No registry component fits this, so here's a sandboxed artifact — the buttons use the bridge.", 350);
     delay += 300;
     this.schedule(() => this.emit({ type: "status", state: "tool", label: "emit_artifact" }), delay);
@@ -939,14 +956,14 @@ export class MockSession implements AgentSession {
         }),
       delay,
     );
-    this.schedule(() => this.emit({ type: "turn_end" }), delay + 40);
+    this.endTurn(delay);
   }
 
   /** Deterministic T.3 hook: pause on a permission_request so the prompt bar
    *  is exercisable API-free. */
   private playPermissionAsk() {
     const id = randomUUID();
-    this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+    this.beginTurn();
     this.schedule(() => {
       const timer = setTimeout(
         () => this.pendingAsks.get(id)?.(false),
@@ -975,7 +992,7 @@ export class MockSession implements AgentSession {
     const reply = TEMPLATES[this.deck.pop()!](text);
 
     let delay = 120;
-    this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+    this.beginTurn();
     // A short scripted thought streams before the work starts (T2.1).
     const thought =
       "Reading the prompt again — the useful answer here is a quick check of " +
@@ -1034,41 +1051,18 @@ export class MockSession implements AgentSession {
         }),
       delay + 20,
     );
-    this.schedule(() => this.emit({ type: "turn_end" }), delay + 40);
-  }
-
-  onMessage(cb: (msg: WireMsg) => void) {
-    this.listeners.add(cb);
-  }
-
-  interrupt() {
-    // Everything still scheduled belongs to the in-flight turn; abandoned
-    // permission prompts die with it (deny by default).
-    for (const t of this.timers) clearTimeout(t);
-    this.timers = [];
-    this.pendingAsks.clear();
-    this.emit({ type: "turn_end" });
-  }
-
-  resolvePermission(id: string, allow: boolean) {
-    this.pendingAsks.get(id)?.(allow);
-  }
-
-  close() {
-    for (const t of this.timers) clearTimeout(t);
-    this.timers = [];
-    this.pendingAsks.clear();
+    this.endTurn(delay);
   }
 
   /** Emit a one-artifact turn: brief text, then the artifact (Step 3.4 hooks). */
   private playArtifact(title: string, html: string) {
-    this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+    this.beginTurn();
     let delay = this.streamText(`Here's the ${title} artifact.`, 300);
     delay += 250;
     this.schedule(() => this.emit({ type: "status", state: "tool", label: "emit_artifact" }), delay);
     delay += 350;
     this.schedule(() => this.emit({ type: "artifact", title, html, id: randomUUID() }), delay);
-    this.schedule(() => this.emit({ type: "turn_end" }), delay + 40);
+    this.endTurn(delay);
   }
 
   /** Continuation after the permission prompt was allowed: run the "command". */
@@ -1093,13 +1087,13 @@ export class MockSession implements AgentSession {
       900,
     );
     const delay = this.streamText("Cache cleared and the service restarted cleanly. ✅", 1100);
-    this.schedule(() => this.emit({ type: "turn_end" }), delay + 60);
+    this.endTurn(delay, 60);
   }
 
   /** Continuation after the permission prompt was denied (or timed out). */
   private playDangerousDenied() {
     const delay = this.streamText("Understood — I won't run that command. Nothing was changed.", 150);
-    this.schedule(() => this.emit({ type: "turn_end" }), delay + 60);
+    this.endTurn(delay, 60);
   }
 
   private emit(msg: WireMsg) {
@@ -1108,6 +1102,25 @@ export class MockSession implements AgentSession {
 
   private schedule(fn: () => void, ms: number) {
     this.timers.push(setTimeout(fn, ms));
+  }
+
+  /** Cancel the in-flight turn's remaining schedule. Everything still
+   *  scheduled belongs to that turn; abandoned permission prompts die with
+   *  it (deny by default). */
+  private abandonTurn() {
+    for (const t of this.timers) clearTimeout(t);
+    this.timers = [];
+    this.pendingAsks.clear();
+  }
+
+  /** Open the scripted turn envelope: `status: thinking` at t=0. */
+  private beginTurn() {
+    this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
+  }
+
+  /** Close the envelope: `turn_end` at `at + pad` ms. */
+  private endTurn(at: number, pad = 40) {
+    this.schedule(() => this.emit({ type: "turn_end" }), at + pad);
   }
 
   /** Schedules one render paint at `at` ms — the hooks' shared brushstroke.

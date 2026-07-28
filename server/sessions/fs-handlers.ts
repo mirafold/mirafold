@@ -3,7 +3,7 @@
 // connection.ts's switch so the Explorer's
 // request handling lives beside its data layer (fs-explorer.ts,
 // git.ts) instead of swelling the dispatcher. connection.ts builds one of
-// these per connection and delegates the three cases to it.
+// these per connection and delegates the four cases to it.
 //
 // Every reply is per-viewport: answered on THIS connection only (like
 // pong/sessions), never broadcast, never replay-buffered — disk state is a
@@ -54,9 +54,41 @@ const FS_LISTDIR_MAX_PER_SEC = Number(process.env.FS_LISTDIR_MAX_PER_SEC ?? 32);
 // measured healthy case (~40ms on a 1.1GB repo), well under the timeout.
 const FS_LISTDIR_STATUS_WAIT_MS = Number(process.env.FS_LISTDIR_STATUS_WAIT_MS ?? 300);
 
-// Same shape rule as bang ids: client-minted correlation ids are short and
-// word-safe or the message is dropped whole.
-const FS_ID_RE = /^[\w-]{1,64}$/;
+// The one shape rule for client-minted ids (fs correlation ids, bang ids):
+// short and word-safe or the message is dropped whole.
+export const CLIENT_ID_RE = /^[\w-]{1,64}$/;
+
+const fileExists = (abs: string): boolean => {
+  try {
+    lstatSync(abs);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+// E2.4: HEAD's version comes from the repo that CONTAINS the file —
+// nearest .git above its directory — so a file in a NESTED repo diffs
+// through that repo, closing E2.3's recorded gap. The wire path is
+// already textually contained (cleanRelPath), and the directory
+// resolves through the realpath jail before any discovery; if it can't
+// (say the whole directory was deleted), fall back to the session root,
+// which is exactly the pre-E2.4 behavior. repoRel stays clean by
+// construction: realDir is jailed under the root and repoRoot is an
+// ancestor of realDir, so the relative path has no `..` to offer git.
+const resolveDiffRepo = (
+  root: string,
+  rel: string,
+): { repoRoot: string | null; repoRel: string } => {
+  const cut = rel.lastIndexOf("/");
+  const realDir = inside(root, cut === -1 ? "." : rel.slice(0, cut));
+  const repoRoot = realDir ? findRepoRoot(realDir) : null;
+  const repoRel =
+    repoRoot && realDir
+      ? [repoRelPath(repoRoot, realDir), rel.slice(cut + 1)].filter(Boolean).join("/")
+      : rel;
+  return { repoRoot, repoRel };
+};
 
 type FsList = Extract<ClientMsg, { type: "fs_list" }>;
 type FsListdir = Extract<ClientMsg, { type: "fs_listdir" }>;
@@ -123,7 +155,7 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
     });
   };
 
-  const badId = (id: unknown): boolean => typeof id !== "string" || !FS_ID_RE.test(id);
+  const badId = (id: unknown): boolean => typeof id !== "string" || !CLIENT_ID_RE.test(id);
   const tooSoon = (last: number): boolean => Date.now() - last < FS_MIN_INTERVAL_MS;
   const takeListdirToken = (): boolean => {
     const now = Date.now();
@@ -301,22 +333,7 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
     if (gitInFlight) return sendErr(rel, "a git query is already running — retry shortly");
 
     const root = entry.cwd;
-    // E2.4: HEAD's version comes from the repo that CONTAINS the file —
-    // nearest .git above its directory — so a file in a NESTED repo diffs
-    // through that repo, closing E2.3's recorded gap. The wire path is
-    // already textually contained (cleanRelPath above), and the directory
-    // resolves through the realpath jail before any discovery; if it can't
-    // (say the whole directory was deleted), fall back to the session root,
-    // which is exactly the pre-E2.4 behavior. repoRel stays clean by
-    // construction: realDir is jailed under the root and repoRoot is an
-    // ancestor of realDir, so the relative path has no `..` to offer git.
-    const cut = rel.lastIndexOf("/");
-    const realDir = inside(root, cut === -1 ? "." : rel.slice(0, cut));
-    const repoRoot = realDir ? findRepoRoot(realDir) : null;
-    const repoRel =
-      repoRoot && realDir
-        ? [repoRelPath(repoRoot, realDir), rel.slice(cut + 1)].filter(Boolean).join("/")
-        : rel;
+    const { repoRoot, repoRel } = resolveDiffRepo(root, rel);
     gitInFlight = true;
     void gitShowHead(repoRoot ?? root, repoRel)
       .then((show) => {
@@ -364,12 +381,3 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
 
   return { list, listdir, read, diff };
 }
-
-const fileExists = (abs: string): boolean => {
-  try {
-    lstatSync(abs);
-    return true;
-  } catch {
-    return false;
-  }
-};

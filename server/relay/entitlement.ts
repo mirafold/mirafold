@@ -23,7 +23,10 @@ import { createLogger } from "../log";
 const log = createLogger("relay");
 
 const REFRESH_INTERVAL_MS = 12 * 60 * 60 * 1000; // well inside the 48h token TTL
-const FORCED_REFRESH_MIN_GAP_MS = 60_000; // a lapsed key must not turn dial backoff into an HTTP hammer
+// Minimum gap between on-demand exchanges — throttles BOTH a forced (post-4007)
+// refresh and a natural stale-cache one, so a lapsed key can't turn dial
+// backoff into an HTTP hammer.
+const FORCED_REFRESH_MIN_GAP_MS = 60_000;
 const FETCH_TIMEOUT_MS = 10_000;
 
 export type EntitlementTokenSource = {
@@ -61,7 +64,7 @@ export function createEntitlementTokenSource(env: {
   }
 
   let cached: { token: string; expMs: number } | undefined;
-  let denied = false; // a 403 — don't hammer; only a forced refresh retries
+  let denied = false; // a 403 already warned — suppresses repeat WARNINGS only (the request throttle is FORCED_REFRESH_MIN_GAP_MS)
   let lastFetchMs = 0;
   let inflight: Promise<void> | undefined;
 

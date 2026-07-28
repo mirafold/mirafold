@@ -10,7 +10,7 @@ import { CopyButton } from "./CopyButton";
 // A pathological payload can't hang the tab: past this, the tail is dropped
 // with a visible note (the head carries the command context; agents are told
 // to quote excerpts).
-export const CONSOLE_CLIP = 200_000;
+const CONSOLE_CLIP = 200_000;
 
 export type AnsiSpan = { text: string; className?: string };
 
@@ -44,9 +44,10 @@ function stripOtherEscapes(text: string): string {
 }
 
 /** Splits raw terminal text into styled spans. Understood SGR codes: reset,
- *  bold, dim, and the 16 foreground colors; 256/truecolor selectors (38/48)
- *  and everything else reset nothing and render no color — their text still
- *  shows. Pure, for Tier-1. */
+ *  bold, dim, and the 16 foreground colors. A 256/truecolor selector consumes
+ *  its arguments and picks no palette class — 38 drops the foreground back to
+ *  default ink, 48 changes nothing. Every other code is ignored; the text
+ *  still shows. Pure, for Tier-1. */
 export function ansiSpans(raw: string): AnsiSpan[] {
   const spans: AnsiSpan[] = [];
   let bold = false;

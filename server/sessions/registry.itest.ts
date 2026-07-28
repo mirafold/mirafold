@@ -1,7 +1,14 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import type { WireMsg } from "../protocol";
-import { startDaemon, createSession, TestClient, type Daemon } from "../testing/itest-harness";
+import {
+  attachSession,
+  broadcasts,
+  startDaemon,
+  createSession,
+  TestClient,
+  type Daemon,
+} from "../testing/itest-harness";
 
 // The session registry over the real socket — fan-out, ring-buffer
 // replay, 4.4 tail resume vs full replay, stale-id fallback, the fleet
@@ -22,21 +29,8 @@ after(async () => {
   await d.stop();
 });
 
-/** Everything seq-stamped this client has seen (i.e. the broadcast stream). */
-const broadcasts = (c: TestClient) =>
-  (c.received as Any[]).filter((m) => typeof m.seq === "number");
-
-async function attach(opts: { sessionId: string; afterSeq?: number }): Promise<{
-  client: TestClient;
-  created: Any;
-}> {
-  const client = new TestClient(d.port);
-  await client.opened();
-  await client.type("agents");
-  client.send({ type: "attach", ...opts } as never);
-  const created = (await client.type("session_created")) as Any;
-  return { client, created };
-}
+const attach = (opts: { sessionId: string; afterSeq?: number }) =>
+  attachSession(d.port, opts.sessionId, opts.afterSeq);
 
 test("broadcast fans out to two viewports with identical seq stamps", async () => {
   const { client: b, created } = await attach({ sessionId });

@@ -34,12 +34,12 @@ const DETAIL_FIELD: Record<string, string> = {
 // Defense-in-depth: still string-based (a symlink or `Bash cat .env` isn't
 // caught — but Bash asks), so it closes the obvious routes, not every one.
 // One source for WHICH filenames are secret: the tool guard below derives its
-// daemon-cwd absolute pair from it, and the Explorer's file viewer
-// (fs-explorer.ts, E.1) applies it by basename to any file under a session
-// root — stricter there on purpose (a browsing UI invites wandering in a way
-// a typed command doesn't), and derived from the same set so the two guards
-// can't drift.
-export const SECRET_FILE_BASENAMES = new Set([".env", ".env.local"]);
+// daemon-cwd absolute pair from it, and `isSecretFile` (consumed by
+// fs-explorer, fs-handlers, render-image) applies it by basename to any file
+// under a session root — stricter there on purpose (a browsing UI invites
+// wandering in a way a typed command doesn't), and derived from the same set
+// so the guards can't drift.
+const SECRET_FILE_BASENAMES = new Set([".env", ".env.local"]);
 const SECRET_PATHS = new Set([...SECRET_FILE_BASENAMES].map((n) => path.resolve(n)));
 
 /** True when `p` names a secret env file (by basename) — the Explorer's

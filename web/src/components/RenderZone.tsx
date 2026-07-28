@@ -3,9 +3,9 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import type { Action } from "@protocol";
-import type { ZoneMsg } from "./Shell";
+import type { ZoneMsg } from "../session-bus";
 import { RenderBlock } from "../registry/RenderBlock";
-import { safeAnchor } from "../registry/Md";
+import { mdOverrides } from "../registry/Md";
 import { PinDock } from "./PinDock";
 import { ToolBlock } from "./ToolBlock";
 import { Artifact } from "./Artifact";
@@ -92,7 +92,7 @@ const AssistantTurn = memo(function AssistantTurn({ text }: { text: string }) {
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeHighlight]}
-        components={safeAnchor}
+        components={mdOverrides}
       >
         {text}
       </ReactMarkdown>
@@ -596,160 +596,18 @@ export function RenderZone({
             </div>
           </div>
         )}
-        {entries.map((entry) => {
-          if (entry.kind === "thinking") {
-            return <ThinkingBlock key={entry.id} entry={entry} onToggle={toggleThinking} />;
-          }
-          if (entry.kind === "notice") {
-            const glyph =
-              entry.noticeKind === "retry"
-                ? "↻"
-                : entry.noticeKind === "compaction"
-                  ? "⊙"
-                  : "⚠"; // rate_limit / refusal / unknown
-            // An engine's own words are BADGED and set apart (2026-07-20
-            // audit): unbadged, this dim line is Mirafold speaking, and text
-            // chosen by a model — or by whatever a model just read — must
-            // never be able to pass for that.
-            return (
-              <div
-                key={entry.id}
-                className="notice-line"
-                data-kind={entry.noticeKind}
-                data-source={entry.source}
-              >
-                {entry.source ? (
-                  <span className="notice-source">{entry.source}</span>
-                ) : (
-                  <span className="notice-glyph">{glyph}</span>
-                )}
-                <span>{entry.text}</span>
-              </div>
-            );
-          }
-          if (entry.kind === "bang") {
-            return (
-              <div key={entry.id} className="bang-block">
-                <div className="turn turn-user turn-bang">
-                  <span className="glyph bang-glyph">!</span> {entry.command}
-                  {!entry.done && <span className="bang-state">running…</span>}
-                  {entry.done && entry.exitCode !== 0 && (
-                    <span className="bang-state bang-fail">
-                      {entry.exitCode === null ? "killed" : `exit ${entry.exitCode}`}
-                    </span>
-                  )}
-                </div>
-                {entry.output && <pre className="bang-output">{entry.output}</pre>}
-                {entry.done && entry.exitCode === 0 && !entry.output && (
-                  // Silent success must still SAY so — an empty block reads
-                  // as the command having vanished (terminal parity).
-                  <div className="bang-no-output">(completed with no output)</div>
-                )}
-              </div>
-            );
-          }
-          if (entry.kind === "tool") {
-            // Subagent calls are rendered nested under their Task (below),
-            // not at the top level.
-            if (entry.parentId) return null;
-            const children = childrenByParent.get(entry.toolId);
-            return (
-              <div key={entry.id} className="tool-group">
-                <ToolBlock
-                  name={entry.name}
-                  detail={entry.detail}
-                  input={entry.input}
-                  output={entry.output}
-                  truncatedBytes={entry.truncatedBytes}
-                  isError={entry.isError}
-                />
-                {children && children.length > 0 && <SubagentGroup calls={children} />}
-              </div>
-            );
-          }
-          if (entry.kind === "picker") {
-            // Shell chrome, not agent content — no pin affordance.
-            return (
-              <div key={entry.id} className="turn turn-render">
-                <PickerBlock
-                  title={entry.title}
-                  rows={entry.rows}
-                  hint={entry.hint}
-                  active={entry.id === activePickerId}
-                  onPick={(text) => handleAction({ kind: "prompt", text }, entry.pickerId)}
-                />
-              </div>
-            );
-          }
-          if (entry.kind === "artifact") {
-            if (pinned.includes(entry.artifactId)) {
-              // Promoted to the dock; the stub holds its place in history.
-              return (
-                <button
-                  key={entry.id}
-                  className="pin-stub"
-                  onClick={() => togglePin(entry.artifactId)}
-                  title="Unpin — return it here"
-                >
-                  📌 pinned · {entry.title ?? "artifact"}
-                </button>
-              );
-            }
-            return (
-              <div key={entry.id} className="turn turn-render">
-                <Artifact
-                  html={entry.html}
-                  title={entry.title}
-                  // Bridge actions ride the same mediated path as component
-                  // actions; Artifact's validation ensures no state ops.
-                  onAction={(action) => handleAction(action, entry.artifactId)}
-                  pin={{ pinned: false, onToggle: () => togglePin(entry.artifactId) }}
-                />
-              </div>
-            );
-          }
-          if (entry.kind === "render") {
-            if (pinned.includes(entry.renderId)) {
-              // Promoted to the dock; the stub holds its place in history.
-              return (
-                <button
-                  key={entry.id}
-                  className="pin-stub"
-                  onClick={() => togglePin(entry.renderId)}
-                  title="Unpin — return it here"
-                >
-                  📌 pinned · {entry.component}
-                </button>
-              );
-            }
-            return (
-              <div key={entry.id} className="turn turn-render">
-                {/* Shell-drawn affordance: the frame around the component,
-                    never inside it — the agent can't fake or grab it. */}
-                <button
-                  className="pin-btn"
-                  onClick={() => togglePin(entry.renderId)}
-                  title="Pin — keep visible while the transcript scrolls"
-                >
-                  📌
-                </button>
-                <RenderBlock
-                  component={entry.component}
-                  props={entry.props}
-                  renderId={entry.renderId}
-                  onAction={handleAction}
-                />
-              </div>
-            );
-          }
-          return entry.role === "user" ? (
-            <div key={entry.id} className="turn turn-user">
-              <span className="glyph">❯</span> {entry.text}
-            </div>
-          ) : (
-            <AssistantTurn key={entry.id} text={entry.text} />
-          );
-        })}
+        {entries.map((entry) => (
+          <ZoneEntry
+            key={entry.id}
+            entry={entry}
+            toggleThinking={toggleThinking}
+            childrenByParent={childrenByParent}
+            activePickerId={activePickerId}
+            handleAction={handleAction}
+            pinned={pinned}
+            togglePin={togglePin}
+          />
+        ))}
         {status && (
           <div className="status-line">
             {status.state === "tool" ? (
@@ -761,7 +619,6 @@ export function RenderZone({
             )}
           </div>
         )}
-        <div ref={tail.tailRef} />
       </div>
       {pinned.length > 0 &&
         (dockCollapsed ? (
@@ -781,5 +638,177 @@ export function RenderZone({
           />
         ))}
     </div>
+  );
+}
+
+/** One transcript entry's presentation — the per-kind branches of the
+ *  scrollback. File-local on purpose: the renderers lean on RenderZone's
+ *  context (pin state, subagent grouping, the mediated action path), and
+ *  brand-mark.test.ts reads this file as text. */
+function ZoneEntry({
+  entry,
+  toggleThinking,
+  childrenByParent,
+  activePickerId,
+  handleAction,
+  pinned,
+  togglePin,
+}: {
+  entry: Entry;
+  toggleThinking: (id: number) => void;
+  childrenByParent: Map<string, ToolCall[]>;
+  activePickerId: number | null;
+  handleAction: (action: Action, sourceId: string) => void;
+  pinned: string[];
+  togglePin: (renderId: string) => void;
+}) {
+  if (entry.kind === "thinking") {
+    return <ThinkingBlock entry={entry} onToggle={toggleThinking} />;
+  }
+  if (entry.kind === "notice") {
+    const glyph =
+      entry.noticeKind === "retry"
+        ? "↻"
+        : entry.noticeKind === "compaction"
+          ? "⊙"
+          : "⚠"; // rate_limit / refusal / unknown
+    // An engine's own words are BADGED and set apart (2026-07-20
+    // audit): unbadged, this dim line is Mirafold speaking, and text
+    // chosen by a model — or by whatever a model just read — must
+    // never be able to pass for that.
+    return (
+      <div
+        className="notice-line"
+        data-kind={entry.noticeKind}
+        data-source={entry.source}
+      >
+        {entry.source ? (
+          <span className="notice-source">{entry.source}</span>
+        ) : (
+          <span className="notice-glyph">{glyph}</span>
+        )}
+        <span>{entry.text}</span>
+      </div>
+    );
+  }
+  if (entry.kind === "bang") {
+    return (
+      <div className="bang-block">
+        <div className="turn turn-user turn-bang">
+          <span className="glyph bang-glyph">!</span> {entry.command}
+          {!entry.done && <span className="bang-state">running…</span>}
+          {entry.done && entry.exitCode !== 0 && (
+            <span className="bang-state bang-fail">
+              {entry.exitCode === null ? "killed" : `exit ${entry.exitCode}`}
+            </span>
+          )}
+        </div>
+        {entry.output && <pre className="bang-output">{entry.output}</pre>}
+        {entry.done && entry.exitCode === 0 && !entry.output && (
+          // Silent success must still SAY so — an empty block reads
+          // as the command having vanished (terminal parity).
+          <div className="bang-no-output">(completed with no output)</div>
+        )}
+      </div>
+    );
+  }
+  if (entry.kind === "tool") {
+    // Subagent calls are rendered nested under their Task (below),
+    // not at the top level.
+    if (entry.parentId) return null;
+    const children = childrenByParent.get(entry.toolId);
+    return (
+      <div className="tool-group">
+        <ToolBlock
+          name={entry.name}
+          detail={entry.detail}
+          input={entry.input}
+          output={entry.output}
+          truncatedBytes={entry.truncatedBytes}
+          isError={entry.isError}
+        />
+        {children && children.length > 0 && <SubagentGroup calls={children} />}
+      </div>
+    );
+  }
+  if (entry.kind === "picker") {
+    // Shell chrome, not agent content — no pin affordance.
+    return (
+      <div className="turn turn-render">
+        <PickerBlock
+          title={entry.title}
+          rows={entry.rows}
+          hint={entry.hint}
+          active={entry.id === activePickerId}
+          onPick={(text) => handleAction({ kind: "prompt", text }, entry.pickerId)}
+        />
+      </div>
+    );
+  }
+  if (entry.kind === "artifact") {
+    if (pinned.includes(entry.artifactId)) {
+      // Promoted to the dock; the stub holds its place in history.
+      return (
+        <button
+          className="pin-stub"
+          onClick={() => togglePin(entry.artifactId)}
+          title="Unpin — return it here"
+        >
+          📌 pinned · {entry.title ?? "artifact"}
+        </button>
+      );
+    }
+    return (
+      <div className="turn turn-render">
+        <Artifact
+          html={entry.html}
+          title={entry.title}
+          // Bridge actions ride the same mediated path as component
+          // actions; Artifact's validation ensures no state ops.
+          onAction={(action) => handleAction(action, entry.artifactId)}
+          pin={{ pinned: false, onToggle: () => togglePin(entry.artifactId) }}
+        />
+      </div>
+    );
+  }
+  if (entry.kind === "render") {
+    if (pinned.includes(entry.renderId)) {
+      // Promoted to the dock; the stub holds its place in history.
+      return (
+        <button
+          className="pin-stub"
+          onClick={() => togglePin(entry.renderId)}
+          title="Unpin — return it here"
+        >
+          📌 pinned · {entry.component}
+        </button>
+      );
+    }
+    return (
+      <div className="turn turn-render">
+        {/* Shell-drawn affordance: the frame around the component,
+            never inside it — the agent can't fake or grab it. */}
+        <button
+          className="pin-btn"
+          onClick={() => togglePin(entry.renderId)}
+          title="Pin — keep visible while the transcript scrolls"
+        >
+          📌
+        </button>
+        <RenderBlock
+          component={entry.component}
+          props={entry.props}
+          renderId={entry.renderId}
+          onAction={handleAction}
+        />
+      </div>
+    );
+  }
+  return entry.role === "user" ? (
+    <div className="turn turn-user">
+      <span className="glyph">❯</span> {entry.text}
+    </div>
+  ) : (
+    <AssistantTurn text={entry.text} />
   );
 }

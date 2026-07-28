@@ -13,7 +13,7 @@ import {
 import { useEscapeKey } from "../../use-escape";
 import { useFocusTrap } from "../../use-focus-trap";
 import { useIsPhone } from "../../use-is-phone";
-import { FileView, type FileViewState } from "./FileView";
+import { FileView, fileToState, diffToState, type FileViewState } from "./FileView";
 
 // The Explorer's shell-owned panel (E.3 desktop, E.4 phone; lazy since
 // E2.2): a read-only browser of the session's working tree, built
@@ -34,8 +34,6 @@ import { FileView, type FileViewState } from "./FileView";
 // since-switched session) is dropped, never rendered.
 
 type FsDir = Extract<WireMsg, { type: "fs_dir" }>;
-type FsFile = Extract<WireMsg, { type: "fs_file" }>;
-type FsFileDiff = Extract<WireMsg, { type: "fs_file_diff" }>;
 
 /** Accept a reply only when it answers the request we're currently awaiting —
  *  a superseded click or a since-switched session mints a new id, so its late
@@ -182,13 +180,11 @@ export function FilesPanel({
             }
           }
         } else if (m.type === "fs_file") {
-          const f = m as FsFile;
-          if (!isCurrentReply(fileId.current, f.id)) return;
-          setView(fileToState(f));
+          if (!isCurrentReply(fileId.current, m.id)) return;
+          setView(fileToState(m));
         } else if (m.type === "fs_file_diff") {
-          const f = m as FsFileDiff;
-          if (!isCurrentReply(fileId.current, f.id)) return;
-          setView(diffToState(f));
+          if (!isCurrentReply(fileId.current, m.id)) return;
+          setView(diffToState(m));
         } else if (m.type === "turn_end" && openRef.current) {
           // E.5: the agent likely just touched files — refetch the root and
           // the EXPANDED dirs only (the lazy refresh unit), pruning stale
@@ -484,27 +480,3 @@ function DirChildren({
 
 const statusLabel = (s: string) =>
   ({ M: "modified", A: "added", D: "deleted", U: "untracked" })[s] ?? s;
-
-function fileToState(f: FsFile): FileViewState {
-  if (f.error) return { kind: "error", path: f.path, message: f.error };
-  if (f.binary) return { kind: "binary", path: f.path, size: f.size };
-  return {
-    kind: "content",
-    path: f.path,
-    content: f.content ?? "",
-    truncatedBytes: f.truncatedBytes,
-  };
-}
-
-function diffToState(f: FsFileDiff): FileViewState {
-  if (f.error) return { kind: "error", path: f.path, message: f.error };
-  if (f.binary) return { kind: "binary", path: f.path };
-  return {
-    kind: "diff",
-    path: f.path,
-    before: f.before ?? "",
-    after: f.after ?? "",
-    beforeTruncatedBytes: f.beforeTruncatedBytes,
-    afterTruncatedBytes: f.afterTruncatedBytes,
-  };
-}

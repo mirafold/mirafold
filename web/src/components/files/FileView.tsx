@@ -1,3 +1,4 @@
+import type { WireMsg } from "@protocol";
 import { diffSnippet, DiffLines } from "../../registry/Diff";
 import { formatBytes } from "../ToolBlock";
 
@@ -34,6 +35,32 @@ export type FileViewState =
       beforeTruncatedBytes?: number;
       afterTruncatedBytes?: number;
     };
+
+/** Maps an fs_file reply onto the view state this file renders. */
+export function fileToState(f: Extract<WireMsg, { type: "fs_file" }>): FileViewState {
+  if (f.error) return { kind: "error", path: f.path, message: f.error };
+  if (f.binary) return { kind: "binary", path: f.path, size: f.size };
+  return {
+    kind: "content",
+    path: f.path,
+    content: f.content ?? "",
+    truncatedBytes: f.truncatedBytes,
+  };
+}
+
+/** Maps an fs_file_diff reply onto the view state this file renders. */
+export function diffToState(f: Extract<WireMsg, { type: "fs_file_diff" }>): FileViewState {
+  if (f.error) return { kind: "error", path: f.path, message: f.error };
+  if (f.binary) return { kind: "binary", path: f.path };
+  return {
+    kind: "diff",
+    path: f.path,
+    before: f.before ?? "",
+    after: f.after ?? "",
+    beforeTruncatedBytes: f.beforeTruncatedBytes,
+    afterTruncatedBytes: f.afterTruncatedBytes,
+  };
+}
 
 const elided = (bytes?: number) =>
   bytes ? <span className="fv-elided">{`⋯ ${formatBytes(bytes)} elided`}</span> : null;

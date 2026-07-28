@@ -27,7 +27,7 @@ export interface GeminiModelCatalog {
 }
 
 /** The subset of an ACP availableModels row this module reads. */
-interface RawModelRow {
+interface RawGeminiModelRow {
   modelId: unknown;
   name?: unknown;
   description?: unknown;
@@ -80,7 +80,7 @@ export function listGeminiModels(workspaceDir: string, timeoutMs = 15_000): Prom
           return;
         }
         finish(null, {
-          models: (models.availableModels as RawModelRow[]).map((m) => ({
+          models: (models.availableModels as RawGeminiModelRow[]).map((m) => ({
             id: String(m.modelId),
             displayName: String(m.name ?? m.modelId),
             description: String(m.description ?? ""),

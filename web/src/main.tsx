@@ -1,7 +1,7 @@
 import { createRoot } from "react-dom/client";
 import { Shell } from "./components/Shell";
 import { FleetView } from "./components/FleetView";
-import { sessionHintFromFragment } from "./ws";
+import { sessionHintFromFragment } from "./relay-pairing";
 import "highlight.js/styles/github-dark.css";
 // Palettes: base.css (pinned tokens) + every theme file, loaded by glob so a
 // new theme stays "one CSS file + one manifest row" with no import wiring
