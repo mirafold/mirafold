@@ -89,10 +89,14 @@ export function startDaemon(env: Record<string, string> = {}): Promise<Daemon> {
   child.stdout.on("data", (d: Buffer) => (log += d));
   child.stderr.on("data", (d: Buffer) => (log += d));
   return new Promise<Daemon>((resolve, reject) => {
-    const deadline = setTimeout(
-      () => reject(new Error(`daemon did not start in 15s; log:\n${log}`)),
-      15_000,
-    );
+    const deadline = setTimeout(() => {
+      // A failed boot must not leak: the poll would fire for the rest of the
+      // process, and the child — maybe listening but never having printed —
+      // would squat its port for every test after this one (2026-07-28 fix).
+      clearInterval(poll);
+      child.kill("SIGKILL");
+      reject(new Error(`daemon did not start in 15s; log:\n${log}`));
+    }, 15_000);
     const poll = setInterval(() => {
       const m = log.match(/server on http:\/\/127\.0\.0\.1:(\d+)\//);
       if (!m) return;

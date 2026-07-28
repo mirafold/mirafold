@@ -39,3 +39,19 @@ test("ansiSpans: adjacent same-style runs merge into one span", () => {
   const spans = ansiSpans("\x1b[31ma\x1b[31mb\x1b[0m");
   assert.deepEqual(spans, [{ text: "ab", className: "ansi-red" }]);
 });
+
+// The clip boundary (2026-07-28 fix): a cut landing inside an escape sequence
+// must not leak the sequence's tail as literal text.
+test("clipping mid-escape-sequence drops the partial sequence, not just its head", async () => {
+  const { createElement } = await import("react");
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  const { Console } = await import("./Console");
+  const CLIP = 200_000; // Console.tsx's CONSOLE_CLIP
+  // Place the cut two chars into "\x1b[31m": the clipped text ends "\x1b[3".
+  const output = "x".repeat(CLIP - 3) + "\x1b[31mred text past the clip";
+  const html = renderToStaticMarkup(createElement(Console as never, { output }));
+  assert.ok(html.includes("output clipped"), "the clip note still shows");
+  // Unfixed, stripOtherEscapes ate only "\x1b[" and the residue rendered as
+  // literal "x…x3"; fixed, the clipped text is the x-run alone.
+  assert.ok(!/x3/.test(html), "no escape-sequence tail leaks as literal text");
+});

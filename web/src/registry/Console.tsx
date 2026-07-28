@@ -90,7 +90,12 @@ export function ansiSpans(raw: string): AnsiSpan[] {
 
 export function Console({ command, output, exitCode }: ComponentProps<"console">) {
   const clipped = output.length > CONSOLE_CLIP;
-  const spans = ansiSpans(clipped ? output.slice(0, CONSOLE_CLIP) : output);
+  // A fixed-offset cut can land inside an escape sequence; the strip rules
+  // then eat only `\x1b[`, leaking the tail ("31m") as literal text — drop a
+  // trailing partial sequence with the cut (2026-07-28 fix).
+  const spans = ansiSpans(
+    clipped ? output.slice(0, CONSOLE_CLIP).replace(/\x1b\[?[0-9;]*$/, "") : output,
+  );
   return (
     <div className="rc rc-console">
       <div className="rc-console-head">

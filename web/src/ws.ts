@@ -366,6 +366,9 @@ export class SocketClient {
 
   close() {
     this.closedByUs = true;
+    // Stop being the error-forwarding socket: reports after close would only
+    // queue into `pending` on a client that never reconnects (2026-07-28 fix).
+    if (errorSocket === this) errorSocket = null;
     this.stopHeartbeat();
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     window.removeEventListener("online", this.reconnectNow);
