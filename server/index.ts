@@ -12,7 +12,7 @@ import { sweepLiveness } from "./sessions/ws-liveness";
 import { startRelayClient } from "./relay/relay-client";
 import { createEntitlementTokenSource } from "./relay/entitlement";
 import { MIN_PAIRING_CODE_LENGTH, resolvePairingCode } from "./relay/relay-protocol";
-import { COOKIE_NAME, cookieToken, isLoopbackOrigin, safeRedirectPath, tokensMatch, verifyToken } from "./security/auth";
+import { COOKIE_NAME, cookieToken, isAllowedOrigin, safeRedirectPath, tokensMatch, verifyToken } from "./security/auth";
 import { createLogger, logFile, print } from "./log";
 import { VERSION } from "./version";
 
@@ -142,6 +142,15 @@ app.get("/s/:id", (_req, res) => res.sendFile(path.join(DIST, "index.html")));
 
 const server = createServer(app);
 
+// The port we ACTUALLY bound — the EADDRINUSE walk below can move us off
+// basePort, and the Origin guard matches against our own origin. Read per
+// handshake, never cached: the walk always finishes before a socket arrives,
+// and -1 (not yet listening) matches nothing rather than widening the gate.
+function boundPort(): number {
+  const addr = server.address();
+  return typeof addr === "object" && addr !== null ? addr.port : -1;
+}
+
 // Cap a single inbound frame so a hostile client can't force an unbounded
 // allocation. Client messages (prompts, bang commands, stdin) are small; 1 MB
 // is comfortably above any real one. Env-overridable.
@@ -152,7 +161,8 @@ const wss = new WebSocketServer({
   path: "/ws",
   maxPayload: MAX_WS_PAYLOAD,
   verifyClient: (info: { origin?: string; req: IncomingMessage }) =>
-    isLoopbackOrigin(info.origin) && verifyToken(info.req, AUTH_TOKEN, AUTH_ENABLED),
+    isAllowedOrigin(info.origin, { port: boundPort(), authEnabled: AUTH_ENABLED }) &&
+    verifyToken(info.req, AUTH_TOKEN, AUTH_ENABLED),
 });
 // ws re-emits the http server's errors on itself; without a listener that
 // throws and defeats the EADDRINUSE port walk below. The walk (or the loud

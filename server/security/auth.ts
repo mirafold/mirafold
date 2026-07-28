@@ -50,20 +50,58 @@ export function safeRedirectPath(path: string): string {
   return path.startsWith("//") || path.startsWith("/\\") ? "/" : path;
 }
 
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/** The origins our own served page can have, normalized (URL drops default
+ *  ports, so a comparison against `URL.origin` stays exact either way). */
+function selfOrigins(port: number): Set<string> {
+  const set = new Set<string>();
+  for (const host of LOOPBACK_HOSTS) {
+    try {
+      set.add(new URL(`http://${host}:${port}`).origin);
+    } catch {
+      /* an unbound port (-1) yields nothing to match — refuse, don't widen */
+    }
+  }
+  return set;
+}
+
 /**
- * Cross-site WebSocket hijacking guard: a browser always sends Origin on a WS
- * handshake, so we require it to be a loopback host. Non-browser clients (wscat,
- * tests) send no Origin and are allowed through — they can't be weaponized by a
- * malicious page the way a browser socket can.
+ * Cross-site WebSocket hijacking guard. A browser always sends Origin on a WS
+ * handshake; non-browser clients (wscat, tests) send none and are allowed
+ * through — they can't be weaponized by a malicious page, and the token still
+ * gates them.
+ *
+ * With auth ON the match is EXACT — scheme, host, AND our own port. A
+ * host-family check ("any loopback origin") is NOT enough: the auth cookie is
+ * scoped by host but never by port, and an IP literal is its own registrable
+ * domain, so SameSite=Strict doesn't fire between ports either. That makes a
+ * page served from http://127.0.0.1:<any other port> — another dev server, a
+ * hostile npm postinstall's local server — same-site with us: the browser
+ * attaches our cookie to its handshake and the socket drives a shell as the
+ * user. Scheme is part of the match for the same reason (cookies aren't
+ * scheme-isolated, so an https loopback page could present ours too), and we
+ * only ever serve http (2026-07-27 audit).
+ *
+ * With auth OFF there is no cookie to steal and any local page can connect
+ * regardless — index.ts says exactly that, loudly, at boot — so the looser
+ * loopback-family rule stands. The Vite dev proxy on :5173 depends on it
+ * (`dev:server` sets MIRAFOLD_TOKEN="").
  */
-export function isLoopbackOrigin(origin: string | undefined): boolean {
+export function isAllowedOrigin(
+  origin: string | undefined,
+  opts: { port: number; authEnabled: boolean },
+): boolean {
   if (!origin) return true;
+  let url: URL;
   try {
-    const { hostname } = new URL(origin);
-    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
+    url = new URL(origin);
   } catch {
     return false;
   }
+  if (!LOOPBACK_HOSTS.has(url.hostname)) return false;
+  if (!opts.authEnabled) return true;
+  return selfOrigins(opts.port).has(url.origin);
 }
 
 /**

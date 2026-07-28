@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cookieToken, isLoopbackOrigin, safeRedirectPath, verifyToken } from "./auth";
+import { cookieToken, isAllowedOrigin, safeRedirectPath, verifyToken } from "./auth";
 
 test("cookieToken extracts the mirafold_token value", () => {
   assert.equal(cookieToken("mirafold_token=abc"), "abc");
@@ -16,14 +16,39 @@ test("cookieToken returns undefined when absent/malformed", () => {
   assert.equal(cookieToken("mirafold_tokenX=abc"), undefined); // must be an exact name match
 });
 
-test("isLoopbackOrigin: loopback and no-Origin pass, foreign fails", () => {
-  assert.equal(isLoopbackOrigin(undefined), true); // non-browser client
-  assert.equal(isLoopbackOrigin("http://localhost:3000"), true);
-  assert.equal(isLoopbackOrigin("http://127.0.0.1:3000"), true);
-  assert.equal(isLoopbackOrigin("http://[::1]:3000"), true);
-  assert.equal(isLoopbackOrigin("http://evil.example.com"), false);
-  assert.equal(isLoopbackOrigin("http://127.0.0.1.evil.com"), false);
-  assert.equal(isLoopbackOrigin("not a url"), false);
+const authOn = { port: 3000, authEnabled: true };
+const authOff = { port: 3000, authEnabled: false };
+
+test("isAllowedOrigin: our own origin and no-Origin pass, foreign fails", () => {
+  assert.equal(isAllowedOrigin(undefined, authOn), true); // non-browser client
+  assert.equal(isAllowedOrigin("http://localhost:3000", authOn), true);
+  assert.equal(isAllowedOrigin("http://127.0.0.1:3000", authOn), true);
+  assert.equal(isAllowedOrigin("http://[::1]:3000", authOn), true);
+  assert.equal(isAllowedOrigin("http://evil.example.com", authOn), false);
+  assert.equal(isAllowedOrigin("http://127.0.0.1.evil.com", authOn), false);
+  assert.equal(isAllowedOrigin("not a url", authOn), false);
+});
+
+test("isAllowedOrigin: with auth ON another loopback PORT is refused (2026-07-27 audit)", () => {
+  // The hole this closes: cookies are scoped by host but not by port, and an
+  // IP literal is its own registrable domain — so SameSite=Strict does not
+  // fire between ports. A page on any other local port was same-site with us,
+  // and the browser would hand it our cookie.
+  assert.equal(isAllowedOrigin("http://127.0.0.1:5173", authOn), false);
+  assert.equal(isAllowedOrigin("http://localhost:8080", authOn), false);
+  assert.equal(isAllowedOrigin("http://[::1]:4321", authOn), false);
+  // Scheme counts too — cookies aren't scheme-isolated, and we only serve http.
+  assert.equal(isAllowedOrigin("https://127.0.0.1:3000", authOn), false);
+  // A port we never bound can't be matched into an open gate.
+  assert.equal(isAllowedOrigin("http://127.0.0.1:3000", { port: -1, authEnabled: true }), false);
+});
+
+test("isAllowedOrigin: with auth OFF the loopback family passes (Vite dev proxy)", () => {
+  // No cookie exists to steal, and index.ts warns loudly that any local page
+  // can drive the agent in this posture — `dev:server` sets MIRAFOLD_TOKEN="".
+  assert.equal(isAllowedOrigin("http://127.0.0.1:5173", authOff), true);
+  assert.equal(isAllowedOrigin("http://localhost:5173", authOff), true);
+  assert.equal(isAllowedOrigin("http://evil.example.com", authOff), false);
 });
 
 test("verifyToken accepts a matching cookie or ?token= query", () => {

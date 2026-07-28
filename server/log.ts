@@ -16,6 +16,8 @@
 //   e.g. the registry's WireMsg trace) are CONSOLE-ONLY, never in the file;
 // - print() (boot lines the user reads, including the ?token= URL and the
 //   pairing code) is stdout-only, never persisted;
+// - every logged line is scrubbed of credential-shaped text (see scrub()),
+//   because adapters pass third-party engine stderr through verbatim;
 // - a logging failure disables the file sink, never the daemon.
 
 import fs from "node:fs";
@@ -74,9 +76,45 @@ const CONSOLE: Record<Level, (s: string) => void> = {
 
 const clip = (msg: string) => (msg.length > MAX_LINE ? `${msg.slice(0, MAX_LINE)}…` : msg);
 
+/**
+ * Last-line defense for the "safe to paste into a public issue" rule above.
+ *
+ * Our OWN secrets never reach here — print() keeps the ?token= URL and the
+ * pairing code on stdout, and their file twins are hand-elided. The exposure
+ * is third-party text we pass through verbatim: an adapter's `error` WireMsg
+ * is written to the flight recorder (registry.ts), and one producer of those
+ * is a raw tail of engine stderr. Gemini's REST API authenticates with the key
+ * in the QUERY STRING, and CLI/SDK failure paths routinely echo the failing
+ * request URL — so a plausible crash writes a live API key into the exact file
+ * we tell users to attach to bug reports (2026-07-27 audit).
+ *
+ * Patterns are deliberately shaped (known credential prefixes, named query
+ * params) rather than entropy-guessing, so ordinary log text is never mangled.
+ * Exported for the Tier-1 test.
+ */
+export function scrub(msg: string): string {
+  return (
+    msg
+      // ?key=… / &api_key=… / ?access_token=… — the Gemini-style query credential
+      .replace(/([?&](?:key|api[-_]?key|access[-_]?token|auth|token)=)[^&\s"'`]+/gi, "$1[redacted]")
+      // Authorization headers echoed into an error string
+      .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi, "$1 [redacted]")
+      // OpenAI / Anthropic / OpenRouter style: sk-…, sk-ant-…, sk-or-…
+      .replace(/\bsk-[A-Za-z0-9_-]{16,}/g, "[redacted-key]")
+      // Google API keys
+      .replace(/\bAIza[0-9A-Za-z_-]{35}\b/g, "[redacted-key]")
+      // GitHub tokens (ghp_/gho_/ghu_/ghs_/ghr_)
+      .replace(/\bgh[pousr]_[A-Za-z0-9]{20,}\b/g, "[redacted-key]")
+  );
+}
+
+/** Scrub BEFORE clipping — clipping first could sever a credential mid-string
+ *  and leave the surviving half unmatched. */
+const sanitize = (msg: string) => clip(scrub(msg));
+
 function emit(level: Level, component: string, msg: string) {
   const tag = level === "info" ? "" : ` ${level}:`;
-  const line = `[${new Date().toISOString()}] [${component}]${tag} ${clip(msg)}`;
+  const line = `[${new Date().toISOString()}] [${component}]${tag} ${sanitize(msg)}`;
   if (level !== "debug" || verbose) CONSOLE[level](line);
   if (level !== "debug") writeFile(line);
 }
@@ -96,7 +134,7 @@ export function createLogger(component: string): Logger {
     warn: (m) => emit("warn", component, m),
     info: (m) => emit("info", component, m),
     debug: (m) => emit("debug", component, m),
-    file: (m) => writeFile(`[${new Date().toISOString()}] [${component}] ${clip(m)}`),
+    file: (m) => writeFile(`[${new Date().toISOString()}] [${component}] ${sanitize(m)}`),
   };
 }
 

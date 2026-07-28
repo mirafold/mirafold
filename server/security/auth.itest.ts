@@ -83,8 +83,21 @@ test("WS: a foreign Origin is rejected even with a valid token", async () => {
   );
 });
 
-test("WS: a loopback Origin (the browser case) is accepted", async () => {
-  const c = new TestClient(d.port, { token: TOKEN, origin: "http://127.0.0.1:5173" });
+test("WS: our OWN origin (the browser case) is accepted", async () => {
+  const c = new TestClient(d.port, { token: TOKEN, origin: `http://127.0.0.1:${d.port}` });
   await c.opened();
   c.close();
+});
+
+test("WS: another loopback port is rejected even with a valid token (2026-07-27 audit)", async () => {
+  // The cross-origin-localhost hijack: a page served from any other local
+  // port (another dev server, a hostile postinstall's server) is same-site
+  // with us — cookie scope ignores ports — so the browser would attach our
+  // auth cookie to its handshake and the socket drives a shell as the user.
+  await assert.rejects(
+    new TestClient(d.port, { token: TOKEN, origin: `http://127.0.0.1:${d.port + 1}` }).opened(),
+  );
+  await assert.rejects(
+    new TestClient(d.port, { token: TOKEN, origin: "http://localhost:5173" }).opened(),
+  );
 });
