@@ -6,6 +6,14 @@ import {
   capOutput,
   PERMISSION_TIMEOUT_MS,
 } from "./types";
+import { RENDER_TOOL_COMPONENT } from "./render-mcp-cmd";
+
+// component → its real render_* tool name, inverted from the one mapping
+// (2026-07-28 fix: a hand-rolled inverse here produced tool names no agent
+// can call — "render_key-value" for the real render_keyvalue).
+const RENDER_TOOL_BY_COMPONENT = new Map<string, string>(
+  Object.entries(RENDER_TOOL_COMPONENT).map(([tool, component]) => [component, tool]),
+);
 
 // ---------------------------------------------------------------------------
 // Mock content — five demo "personas", drawn from a shuffled deck with
@@ -39,27 +47,36 @@ const MOCK_TOOLS: (() => {
   isError?: boolean;
   input?: Record<string, unknown>;
 })[] = [
-  () => ({
-    name: "Edit",
-    detail: pick(FILES),
-    input: {
-      file_path: pick(FILES),
-      old_string:
-        "export function retry(fn, times) {\n  for (let i = 0; i < times; i++) {\n    return fn();\n  }\n}",
-      new_string:
-        "export async function retry(fn, times) {\n  let lastErr;\n  for (let i = 0; i < times; i++) {\n    try {\n      return await fn();\n    } catch (err) {\n      lastErr = err;\n    }\n  }\n  throw lastErr;\n}",
-    },
-    output: `Updated 1 occurrence`,
-  }),
-  () => ({
-    name: "Write",
-    detail: pick(FILES),
-    input: {
-      file_path: pick(FILES),
-      content: `import { retry } from "./retry";\n\nexport const fetchStats = () =>\n  retry(() => fetch("/api/stats").then((r) => r.json()), 3);\n`,
-    },
-    output: "File created",
-  }),
+  // ONE draw shared by the row's detail and its input — two independent picks
+  // could name different files in the collapsed row vs the expanded diff
+  // (2026-07-28 fix).
+  () => {
+    const file = pick(FILES);
+    return {
+      name: "Edit",
+      detail: file,
+      input: {
+        file_path: file,
+        old_string:
+          "export function retry(fn, times) {\n  for (let i = 0; i < times; i++) {\n    return fn();\n  }\n}",
+        new_string:
+          "export async function retry(fn, times) {\n  let lastErr;\n  for (let i = 0; i < times; i++) {\n    try {\n      return await fn();\n    } catch (err) {\n      lastErr = err;\n    }\n  }\n  throw lastErr;\n}",
+      },
+      output: `Updated 1 occurrence`,
+    };
+  },
+  () => {
+    const file = pick(FILES);
+    return {
+      name: "Write",
+      detail: file,
+      input: {
+        file_path: file,
+        content: `import { retry } from "./retry";\n\nexport const fetchStats = () =>\n  retry(() => fetch("/api/stats").then((r) => r.json()), 3);\n`,
+      },
+      output: "File created",
+    };
+  },
   () => ({
     name: "Bash",
     detail: "ls -la src/",
@@ -1031,7 +1048,7 @@ export class MockSession implements AgentSession {
     // Every mock turn ends with a rendered component so the Phase 1 pipeline
     // is exercised without an API key.
     const { component, props } = pick(MOCK_RENDERS)();
-    const label = `render_${component === "link-group" ? "links" : component}`;
+    const label = RENDER_TOOL_BY_COMPONENT.get(component) ?? `render_${component}`;
     delay += 300;
     this.schedule(() => this.emit({ type: "status", state: "tool", label }), delay);
     delay += 400;
