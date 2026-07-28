@@ -182,6 +182,21 @@ records of later unplanned polish batches.
 
 - [x] **Step 4.11 — Cockpit polish batch (unplanned, Kyle-driven)** — done 2026-07-16, all e2e-covered; status bar regrouped (home ⌂ + end far left), collapsible prompt-bar cwd, fleet cwd column → hover tooltip, dismissible new-session card. Theme pill untouched (LOCKED). → PLAN-ARCHIVE.md.
 
+- [ ] **Step 4.12 — Interstitial on `exp://` links (deferred hardening, 2026-07-28 audit)** —
+  transcript markdown renders Expo Go deep links as tappable (the
+  mobile-app preview workflow; scheme allowance + dead-link fix landed
+  2026-07-28, pinned in `web/src/registry/Md.test.ts`). Link text can lie
+  about its target, and Expo Go runs the bundle at whatever address the
+  link names — disclosed in SECURITY.md's known-trust-decisions. This step
+  adds the active layer: tapping an `exp://`/`exps://` link first shows a
+  small shell-owned card (the ModalCard idiom) revealing the link's TRUE
+  target, and the user confirms the hand-off. Defeats masked link text at
+  the cost of one tap per preview. **Trigger:** do this when phone/relay
+  mobile-app sessions become a real usage path (Kyle's call, 2026-07-28 —
+  deliberately not built while phone usage is just us). Sized ~half a day
+  including an e2e pin (tap → card shows raw target → confirm opens,
+  dismiss doesn't).
+
 ---
 
 ## Phase K — Legal & compliance readiness (opened 2026-07-15; gates the remaining Phase R steps)

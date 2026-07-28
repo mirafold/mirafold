@@ -174,3 +174,24 @@ both render paths (`makeRenderServer`, `generativeUIMsg`). It is what jails
 the image tool's file read to the session's directory; optional, a future
 adapter could omit it and silently pass the agent's own `src` through,
 skipping containment and the size cap. Required, that is a compile error.
+
+**An `exp://` link in the transcript hands the tap to Expo Go, which runs
+what the link names** (2026-07-28). Agent-authored markdown may carry Expo
+Go deep links (`exp://` / `exps://`) as real tappable links — that is the
+mobile-app preview workflow: build the app in a session, tap the link on
+your phone. Expo Go's whole job is to fetch and RUN the JavaScript bundle
+at whatever address the link names, and markdown link text can always lie
+about its target — so an agent steered by untrusted text it read during
+the session (the same injection route disclosed for `!` output above)
+could emit "tap to preview your app" pointing at an attacker's bundle.
+Containment: the bundle runs inside the Expo Go app's own sandbox with
+only the permissions Expo Go holds — comparable to opening a hostile web
+page, which agent-authored `https://` links could always do — it takes an
+explicit tap, and a phone without Expo Go installed gets nothing. The
+scheme allowance is exactly `exp`/`exps`: `javascript:`, `data:`, and
+every other off-allowlist scheme stays stripped, and a stripped link
+renders as plain text, not a clickable dead anchor — pinned by
+`web/src/registry/Md.test.ts`. The planned hardening, if mobile-app
+sessions become a mainstream path, is an interstitial that reveals the
+link's TRUE target before the hand-off (PLAN.md Step 4.12) — masked link
+text is the deception this class of attack actually uses.
