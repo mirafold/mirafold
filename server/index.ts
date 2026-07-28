@@ -52,22 +52,58 @@ if (typeof process.loadEnvFile === "function") {
 
 const app = express();
 
+// Read here (not with the relay block below) because the CSP's connect-src
+// needs it — see relayOrigin.
+const RELAY_URL = process.env.MIRAFOLD_RELAY_URL;
+
+/**
+ * The ONE outside destination the page may open a socket to: the configured
+ * relay, normalized to a bare origin. Unset or malformed contributes nothing —
+ * a bad value must narrow the policy, never widen it.
+ *
+ * A local page never dials the relay (it has no pairing code, so none of that
+ * engages — web/src/ws.ts). But the same bundle serves the remote viewport and
+ * picks its target from the URL, so naming the relay keeps the policy honest
+ * for every flow that path can reach, instead of relying on "I couldn't find a
+ * case." One exact origin, not a wildcard.
+ */
+const relayOrigin = (() => {
+  if (!RELAY_URL) return null;
+  try {
+    const u = new URL(RELAY_URL);
+    return u.protocol === "ws:" || u.protocol === "wss:" ? u.origin : null;
+  } catch {
+    return null; // malformed — the plain same-origin policy stands
+  }
+})();
+
 // Defense-in-depth headers on the shell page. The client XSS surface is already
 // closed (react-markdown escapes raw HTML, no innerHTML), so this guards against
-// a future regression: it caps where the app can source/connect (no external
-// script or exfil target beyond the local WS), forbids being framed
-// (clickjacking), and stops MIME sniffing. `script-src`/`style-src` keep
-// 'unsafe-inline' because the pre-paint theme script in index.html and React's
-// inline style attributes need it — the tightening that matters here is
-// connect/img/object/base/frame, not script. `frame-src 'self'` still admits the
-// artifact's srcDoc iframe (verified); the iframe carries its OWN stricter CSP.
+// a future regression — and against a supply-chain compromise in the bundle,
+// which no amount of reading our own code can prevent. `connect-src` is the
+// directive that matters most there: it is the only one that limits where data
+// can go OUT, so it is the wall in front of exfiltration.
+//
+// It used to read `'self' ws: wss:`. A bare scheme source matches ANY host on
+// that scheme, so those two entries permitted a socket to any server on the
+// internet — exactly what this line exists to prevent. They were written that
+// way on 2026-07-06 when the dev page (Vite :5173) and the daemon socket
+// (:3000) were different origins, and never revisited once the architecture
+// settled (the daemon dials the relay itself; the browser talks to its own
+// origin). Narrowed to same-origin + the configured relay, 2026-07-27 audit.
+//
+// `script-src`/`style-src` keep 'unsafe-inline' because the pre-paint theme
+// script in index.html and React's inline style attributes need it — the
+// tightening that matters here is connect/img/object/base/frame, not script.
+// `frame-src 'self'` still admits the artifact's srcDoc iframe (verified); the
+// iframe carries its OWN stricter CSP.
 const SHELL_CSP = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data:",
   "font-src 'self' data:",
-  "connect-src 'self' ws: wss:",
+  `connect-src ${["'self'", relayOrigin].filter(Boolean).join(" ")}`,
   "frame-src 'self'",
   "object-src 'none'",
   "base-uri 'self'",
@@ -182,9 +218,22 @@ void probeLocalServers();
 // pinned via MIRAFOLD_RELAY_CODE); its HTTP twin of MIRAFOLD_RELAY_URL is what a
 // phone's browser opens. Local viewports get both in the hello so the shell
 // can draw the "connect a device" QR (R.4) — remote viewports never do.
-const RELAY_URL = process.env.MIRAFOLD_RELAY_URL;
 let RELAY_CODE: string | undefined;
-if (RELAY_URL) {
+// A malformed or non-ws MIRAFOLD_RELAY_URL used to reach `new WebSocket()` in
+// the relay client and throw an unhandledRejection — AFTER the "server on …"
+// line, so the daemon looked like it started and then died, pointing the user
+// at the issue tracker for their own typo. Refuse it here instead, naming the
+// actual problem. Same posture as the weak-pairing-code refusal below:
+// refusing beats honoring, and local sessions never depend on the relay.
+// (relayOrigin is null exactly when the URL is unusable — 2026-07-27 audit.)
+if (RELAY_URL && !relayOrigin) {
+  createLogger("relay").warn(
+    `MIRAFOLD_RELAY_URL is not a valid ws:// or wss:// URL and was REFUSED — ` +
+      `remote access is OFF for this launch. Local sessions are unaffected. ` +
+      `Expected something like wss://relay.mirafold.sh`,
+  );
+}
+if (RELAY_URL && relayOrigin) {
   const { code, weakPin } = resolvePairingCode(process.env.MIRAFOLD_RELAY_CODE);
   if (weakPin) {
     // Refusing beats honoring: a guessable code is remote shell access for

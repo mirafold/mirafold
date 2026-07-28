@@ -2311,6 +2311,93 @@ prose-buried comparison as worked examples). Measured on the recipe prompt:
 control stays 0/2 (no over-rendering). Confirmed in the real UI end-to-end.
 Ported to mirafold-chat the same day (its `090d29f`) with its own probe.
 
+## Open from the 2026-07-27 security audit (three repos, checked against a
+## "pre-launch checklist" post Kyle brought in)
+
+**Shipped that day** (each landed with a test whose guard was broken and
+watched to fail before restoring): relay `new URL` crash guard · daemon
+exact-origin WebSocket check · credential scrubber on both log sinks ·
+site cross-site guard on the waitlist form POST · site `no-store` on
+credential responses · site `HEAD /api/health` · daemon `connect-src`
+narrowed off the `ws:`/`wss:` wildcards · daemon refuses a malformed
+`MIRAFOLD_RELAY_URL` instead of crashing at boot.
+
+### KNOWN FLAKE — `relay.e2e.ts` test 3 (do not chase as a regression)
+
+`assert.ok(tapped.length > 50)` (`server/relay/relay.e2e.ts:91`) is a
+hardcoded frame-count threshold and it is **load-sensitive**. Sampled
+2026-07-27 in isolation: **1 pass / 3 fail**, failing at exactly `saw 50`.
+The comment directly above it already documents the same failure a week
+earlier — *"the 'saw 40' flake, reproduced 2/20 under saturation
+2026-07-19"* — so the earlier fix (keying the wait on turn completion)
+did not remove the underlying brittleness, only moved the number.
+
+Mechanism: `DELTA_COALESCE_MS` (33ms) merges streamed deltas, so the number
+of frames the tap sees depends on machine load — under saturation more
+deltas merge, fewer frames cross, and the count drops under the threshold.
+The assertion it actually wants is "the relay only ever saw ciphertext,"
+which the loop below it already checks; the count is a proxy for "a real
+turn happened" and should key on something deterministic (turn boundaries,
+or a floor low enough to survive coalescing) rather than a frame tally.
+
+**Not proven unrelated to that day's `server/index.ts` change.** The
+isolation run — revert `server/index.ts`, sample the same number of times,
+compare pass rates — was offered and not run before the session ended. Do
+that first; it either clears the change or catches a second problem.
+
+### REVERTED — per-session prompt throttle (redo only with the fixed design)
+
+A 400ms per-session gate on `prompt` / `prompt_session` / component
+`action{kind:prompt}` was written and **reverted the same day**: it measured
+time since the last *accepted* prompt, which punishes legitimate
+back-to-back turns and broke four e2e tests (`shell picker`, `notice
+badging`, `navigating artifact`, `chart stretch` — all prompt-driven, all
+passing again after the revert). A 450ms sleep had been added to
+`fleet-cockpit.itest.ts` to accommodate it; that went with the revert.
+
+The threat is real — nothing bounds a client that bursts prompts, each of
+which costs a model turn, and the artifact bridge reaches
+`action{kind:prompt}` with no user gesture (its 400ms gate is client-side,
+so a hostile client simply wouldn't run it). The design that works:
+**clear the gate at `turn_end`** rather than timing from the last prompt.
+A burst arriving before any turn completes is refused; a prompt sent the
+instant a turn finishes is always allowed. That caps burn at one prompt per
+turn — the real limit — and never fires on human use or on the suite.
+
+### Still open (ranked; the least valuable of the audit's findings)
+
+1. **Relay caps vs. actual machine memory.** `maxConnections` (2000) ×
+   `maxPayloadBytes` (8 MB) ≈ **16 GB** of legal in-flight buffering, on a
+   Fly machine with a fraction of that and no `[[vm]]` section declaring a
+   size. Lower the connection cap (launch scale needs hundreds, not
+   thousands) rather than paying for a bigger machine. **Worth more than
+   the cap itself: there is no send-side backpressure** in either
+   forwarding direction (`genui-relay/src/relay.ts`, the `viewport.send` /
+   `pair.daemon.send` paths) — a stalled receiver queues without bound, so
+   any cap is theoretical until that exists. There is also no byte-rate
+   cap, only a frame-count one (~3.8 GB/s per socket is legal).
+2. **Pairing id rides in the URL query string**, so Fly's edge proxy logs
+   it — contradicting `genui-relay/SECURITY.md`'s promise that a pairing id
+   reaching the logs "counts as a bug." **Severity is lower than that
+   wording implies**: the relay only ever receives a SHA-256-derived
+   identifier, never the pairing code, so a log leak exposes a rendezvous
+   id (squat/DoS a slot) and not a credential that decrypts anything or
+   completes a handshake. Two jobs: (a) tighten the SECURITY.md / `log.ts`
+   wording, which currently calls it "a bearer secret," and (b) **verify
+   before acting** that Fly actually logs query strings on WebSocket
+   upgrades — asserted in the audit, never confirmed. Moving it to a header
+   or `Sec-WebSocket-Protocol` is a contract change touching both repos.
+3. **Stale `genui-relay/dist/`.** Gitignored but present and months behind
+   `src/` — `npm start` maps to `node dist/main.js`, so running it locally
+   executes code missing the entitlement max-TTL backstop and the
+   connect-rate gate. Deployments rebuild from source in the Dockerfile, so
+   this is a local-run footgun only. Delete it and add a `prestart` build.
+
+Also noted, not acted on: `mirafold-site/PLAN.md`'s "Remote viewport app
+origin" item still reads as though the bundle hasn't shipped (it is live at
+`app.mirafold.com`); the site repo's `CLAUDE.md` had the same staleness and
+was corrected 2026-07-27.
+
 ## Stretch goals (unscheduled — polish, no milestone gates on these)
 
 Pick one up only when the phases above are quiet.
