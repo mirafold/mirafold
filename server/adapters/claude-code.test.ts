@@ -303,6 +303,27 @@ test("F.1 the streamed/buffered decision resets per turn", async () => {
   s.close();
 });
 
+test("announced tools clear at the turn boundary — a stale cross-turn result is dropped", async () => {
+  // Interrupt-mid-call leaves an announced id with no result; without the
+  // boundary clear it sat in the set for the session's life (2026-07-28).
+  // Results never span turns, so a turn-2 result for turn 1's id is stale
+  // and must be dropped, not complete the old row.
+  const { s, msgs, awaitTurnEnd } = makeSession(
+    [
+      assistant([{ type: "tool_use", id: "t-stale", name: "Bash", input: { command: "ls" } }]),
+      RESULT,
+    ],
+    [user([{ type: "tool_result", tool_use_id: "t-stale", content: "too late" }]), RESULT],
+  );
+  s.pushPrompt("go");
+  await awaitTurnEnd(1);
+  s.pushPrompt("again");
+  await awaitTurnEnd(2);
+  assert.ok(msgs.some((m) => m.type === "tool_use" && m.id === "t-stale"), "turn 1 announced it");
+  assert.ok(!msgs.some((m) => m.type === "tool_result"), "the stale result is dropped");
+  s.close();
+});
+
 test("F.2 api_retry: a scripted retry surfaces as a notice, not a silent stall", async () => {
   // The terminal shows "retrying (attempt n)…" here; without the notice the UI
   // sits on "thinking…" through the backoff, looking hung. The turn still ends.

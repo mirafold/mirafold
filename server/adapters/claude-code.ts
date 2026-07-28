@@ -468,6 +468,11 @@ export class ClaudeCodeSession implements AgentSession {
     }
     this.todoRenderId = undefined; // next turn starts a fresh checklist
     this.streamedText = false; // F.1: next turn's streamed/buffered decision is independent
+    // A tool announced but never resolved (interrupt mid-call) must not sit
+    // in the set for the session's life; results never span turns, so the
+    // boundary is the safe clear point (2026-07-28, Kyle's call — a stale
+    // cross-turn straggler is dropped rather than completing an old row).
+    this.announcedTools.clear();
     this.emit({ type: "turn_end" });
   }
 

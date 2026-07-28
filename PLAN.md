@@ -689,14 +689,14 @@ with it. Both sequence BEFORE R.5.**
        so it should ride the next deliberate envelope revision, not a
        drive-by fix. Decide with Kyle: acceptable copy, or new code.
        (b) **`ClaudeCodeSession.announcedTools` retains ids across
-       interrupted turns.** Entries only clear when a matching tool_result
-       arrives; a turn aborted between tool_use and result leaves the id
-       for the session's life. Unbounded only in pathological use.
-       Clearing on interrupt() would make a post-interrupt late result
-       DROP instead of completing its record — a visible-behavior trade
-       (the zone already finalizes dangling records at turn_end) that
-       wasn't worth deciding unilaterally. Decide, then it's a two-line
-       change either way.
+       interrupted turns — ✅ RESOLVED 2026-07-28, Kyle's call.** Of the
+       three options (leave it; clear on interrupt(), which drops a
+       post-interrupt late result that today completes its row; clear at
+       the TURN BOUNDARY, which only drops a cross-turn straggler — a
+       result for a turn that already ended), Kyle picked the turn-
+       boundary variant. The clear lives with the other per-turn resets
+       in handleResultMsg; Tier-1 pins that a turn-2 result for turn 1's
+       announced id is dropped, never completing the old row.
   - Done when: each item above is enumerated concretely with Kyle,
     triaged (fix now / R.6 pre-release blocker / post-launch), and either
     fixed or explicitly scheduled — and the permissions fidelity item has
