@@ -2406,6 +2406,28 @@ body {
   animation: rc-mount 0.18s ease-out;
 }
 
+/* Everything except allow/deny is one button: it opens the full-command
+   card, because the one-line preview truncates (always on phone) and the
+   body is what a thumb tries to tap (2026-07-28, Kyle). */
+.perm-body {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.perm-body:hover .perm-detail {
+  color: var(--fg-strong);
+}
+
 .perm-badge {
   color: var(--warn-fg);
   text-transform: uppercase;
@@ -2462,6 +2484,35 @@ body {
 .perm-deny:hover {
   background: var(--err-bg);
   border-color: var(--err-border-strong);
+}
+
+/* The full-command card: same modal shell as pairing/settings (backdrop and
+   card rules live with those), plus the command itself — wrapped, scrollable
+   past 60vh, and focusable so a keyboard can scroll it. */
+.perm-modal-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
+}
+
+.perm-modal-detail {
+  display: block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  line-height: 1.5;
+  color: var(--fg-body);
+  background: var(--bg-inset);
+  border: 1px solid var(--border-faint);
+  border-radius: 6px;
+  padding: 10px 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 60vh;
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 
 /* Stop affordance (Phase T.2): shell-drawn, visible only while a turn is
@@ -3148,7 +3199,8 @@ body {
    scanners want contrast, not theming. */
 
 .pair-backdrop,
-.settings-backdrop {
+.settings-backdrop,
+.perm-modal-backdrop {
   position: fixed;
   inset: 0;
   z-index: 60;
@@ -3160,10 +3212,11 @@ body {
   padding: 24px;
 }
 
-/* The pairing and settings cards share one modal idiom (S.4): same card
-   shell, head, title, and close — only the width differs. */
+/* The pairing, settings, and full-command cards share one modal idiom (S.4):
+   same card shell, head, title, and close — only the width differs. */
 .pair-card,
-.settings-card {
+.settings-card,
+.perm-modal-card {
   width: 100%;
   /* Same hard floor as .onb-card: never taller than the backdrop's padded
      box, so short viewports keep the 24px gutter and the card scrolls
@@ -3185,6 +3238,10 @@ body {
 
 .settings-card {
   max-width: 420px;
+}
+
+.perm-modal-card {
+  max-width: 560px;
 }
 
 .pair-head,
@@ -4081,7 +4138,8 @@ html {
   }
 
   /* Comfortable thumb targets on the answer-or-act surfaces. */
-  .perm-bar {
+  .perm-bar,
+  .perm-body {
     flex-wrap: wrap;
     row-gap: 8px;
   }

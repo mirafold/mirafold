@@ -238,6 +238,34 @@ test("phone: a permission request is answerable by thumb", async () => {
   await phone.waitForSelector("text=restarted cleanly", { timeout: 15_000 });
 });
 
+// The 2026-07-28 readability bug: at phone width the strip's one-line
+// preview truncates, so the user couldn't SEE what they were allowing.
+// Tapping the strip's body — the thing a thumb tries unprompted — opens the
+// full command in a card; a tap anywhere else dismisses it unanswered.
+test("phone: the truncated command expands to a card on tap; a tap away dismisses, unanswered", async () => {
+  await sendPrompt(phone, "do something dangerous");
+  await phone.waitForSelector(".perm-bar", { timeout: 15_000 });
+  const clipped = await phone.evaluate(() => {
+    const el = document.querySelector(".perm-detail")!;
+    return el.scrollWidth > el.clientWidth;
+  });
+  assert.ok(clipped, "the preview is not truncated at phone width — this test proves nothing");
+  await phone.locator(".perm-body").tap();
+  await phone.waitForSelector(".perm-modal-card");
+  assert.match(
+    await phone.locator(".perm-modal-detail").innerText(),
+    /rm -rf \/var\/cache\/app && systemctl restart app/,
+  );
+  await noSideScroll(phone);
+  await phone.touchscreen.tap(8, 8);
+  await phone.waitForFunction(() => !document.querySelector(".perm-modal-card"));
+  assert.equal(await phone.locator(".perm-bar").count(), 1, "the tap away answered the ask");
+  await phone.locator(".perm-deny").tap();
+  await phone.waitForFunction(() => !document.querySelector(".perm-bar"), undefined, {
+    timeout: 15_000,
+  });
+});
+
 // The 2026-07-28 sync bug: an ask answered on one device left the other
 // device's bar up until turn_end — and a tap on that stale bar was a silent
 // no-op at the adapter (the phone "hangs"). The fix broadcasts

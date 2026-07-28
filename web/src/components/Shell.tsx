@@ -21,8 +21,10 @@ import { agentLabel, connectHint } from "../agents-meta";
 import { paintTabStatus } from "../tab-status";
 import { useEscapeKey } from "../use-escape";
 import { Announcer, turnResponse, useAnnouncer } from "./Announcer";
+import { ModalCard } from "./ModalCard";
 
 const ZERO_USAGE: Usage = { turnIn: 0, turnOut: 0, sumIn: 0, sumOut: 0, cost: 0 };
+const PERM_MODAL_TITLE_ID = "perm-modal-title";
 
 /**
  * The trusted shell. Owns the socket and the prompt box; neither is ever
@@ -47,6 +49,11 @@ export function Shell() {
   // every asks change.
   const asksRef = useRef(asks);
   asksRef.current = asks;
+  // Which ask's full command is expanded into the card, by id — derived
+  // against `asks` so the card closes ITSELF when the ask resolves elsewhere
+  // (another viewport answered, or the adapter timed it out).
+  const [detailAskId, setDetailAskId] = useState<string | null>(null);
+  const detailAsk = detailAskId === null ? undefined : asks.find((a) => a.id === detailAskId);
 
   // ── The session + daemon (status-bar state, T2.6 — all shell-owned) ─────
   const [connected, setConnected] = useState(false);
@@ -396,10 +403,20 @@ export function Shell() {
             </div>
             {asks.length > 0 && (
               <div className="perm-bar">
-                <span className="perm-badge">permission</span>
-                <span className="perm-tool">{asks[0].tool}</span>
-                <code className="perm-detail">{asks[0].detail}</code>
-                {asks.length > 1 && <span className="perm-more">+{asks.length - 1}</span>}
+                {/* The whole strip minus allow/deny is ONE tap target for the
+                    full-command card — on a phone the preview truncates, and
+                    tapping the body is what a thumb tries first (2026-07-28,
+                    Kyle). */}
+                <button
+                  className="perm-body"
+                  onClick={() => setDetailAskId(asks[0].id)}
+                  title="Show the full command"
+                >
+                  <span className="perm-badge">permission</span>
+                  <span className="perm-tool">{asks[0].tool}</span>
+                  <code className="perm-detail">{asks[0].detail}</code>
+                  {asks.length > 1 && <span className="perm-more">+{asks.length - 1}</span>}
+                </button>
                 <button className="perm-allow" onClick={() => answer(asks[0].id, true)}>
                   allow
                 </button>
@@ -407,6 +424,22 @@ export function Shell() {
                   deny
                 </button>
               </div>
+            )}
+            {detailAsk && (
+              <ModalCard
+                overlayClass="perm-modal-backdrop"
+                cardClass="perm-modal-card"
+                titleId={PERM_MODAL_TITLE_ID}
+                onDismiss={() => setDetailAskId(null)}
+              >
+                <div className="perm-modal-head" id={PERM_MODAL_TITLE_ID}>
+                  <span className="perm-badge">permission</span>
+                  <span className="perm-tool">{detailAsk.tool}</span>
+                </div>
+                <code className="perm-modal-detail" tabIndex={0}>
+                  {detailAsk.detail}
+                </code>
+              </ModalCard>
             )}
             {bang.my && (
               <BangBar

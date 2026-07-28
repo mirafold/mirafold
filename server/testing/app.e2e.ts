@@ -238,6 +238,48 @@ test("A.1: tool_use and permission_request announce (assertive interrupts polite
   assert.equal(await page.locator(".perm-bar").count(), 0);
 });
 
+test("the permission strip expands to the full command on click, and collapses away", async () => {
+  await page.locator("textarea").click();
+  await page.keyboard.type("run something dangerous");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector(".perm-bar", { timeout: 15_000 });
+  // The strip's body — everything except allow/deny — is one click target…
+  await page.locator(".perm-body").click();
+  // …opening the card with the WHOLE command, not the one-line preview.
+  await page.waitForSelector(".perm-modal-card");
+  assert.match(
+    await page.locator(".perm-modal-detail").innerText(),
+    /rm -rf \/var\/cache\/app && systemctl restart app/,
+  );
+  // A click away dismisses WITHOUT answering: the ask (and the turn paused
+  // behind it) must both survive.
+  await page.mouse.click(8, 8);
+  await eventually(
+    () => !document.querySelector(".perm-modal-card"),
+    "clicking the backdrop did not close the card",
+  );
+  assert.equal(await page.locator(".perm-bar").count(), 1, "backdrop click answered the ask");
+  // Esc is exclusive to the card: it closes it, never reaching the busy
+  // interrupt — the ModalCard contract the settings card pinned first.
+  await page.locator(".perm-body").click();
+  await page.waitForSelector(".perm-modal-card");
+  await page.waitForTimeout(80);
+  await page.keyboard.press("Escape");
+  await eventually(() => !document.querySelector(".perm-modal-card"), "Esc did not close the card");
+  assert.equal(await page.locator(".perm-bar").count(), 1, "Esc through the card killed the ask");
+  assert.equal(await page.locator(".stop-btn").count(), 1, "Esc through the card halted the turn");
+  // Focus lands back on the strip that opened the card (A.3).
+  const focusedBody = await page.evaluate(
+    () => document.activeElement?.classList.contains("perm-body") ?? false,
+  );
+  assert.ok(focusedBody, "focus did not return to the strip on close");
+  // Deny to clean up; the turn runs out.
+  await page.locator(".perm-deny").click();
+  await page.waitForFunction(() => !document.querySelector(".stop-btn"), undefined, {
+    timeout: 15_000,
+  });
+});
+
 test("question component: clicking an option sends it as the user's next turn", async () => {
   await page.locator("textarea").click();
   await page.keyboard.type("question: canary or fleet?");
