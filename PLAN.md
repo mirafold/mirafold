@@ -671,6 +671,32 @@ with it. Both sequence BEFORE R.5.**
        so the gesture would fire history-back instead of opening the panel
        on iPhones. Kyle: "i dont want to do it if it wont work consistently
        for iphones." Don't re-propose without a way around that.
+    8. **Leftovers from the 2026-07-28 whole-repo review — recorded, not
+       fixed (the rest of that review's bug list WAS fixed the same day,
+       eleven `fix:` commits).** Two items survive unfixed, each needing a
+       decision rather than a patch:
+       (a) **A daemon-initiated viewport drop reads as "desktop not
+       reachable" on the phone.** The daemon sends the relay `{t:"close"}`
+       for three distinct reasons — tampered frame, 90s idle reap,
+       viewport-cap refusal — and the relay (stub and sibling service
+       alike) closes the viewport with `CLOSE_BAD_CODE` ("no daemon paired
+       under that id"), which `ws.ts` maps to "Desktop not reachable — is
+       Mirafold running there?" So a live, healthy desktop that rejected a
+       frame tells the phone the desktop is down. Current behavior is
+       PINNED by relay.itest tests, so it may be intended; distinguishing
+       the reasons means a new close code in the relay envelope — a
+       cross-repo contract change (genui-relay's mirrored contract.ts) —
+       so it should ride the next deliberate envelope revision, not a
+       drive-by fix. Decide with Kyle: acceptable copy, or new code.
+       (b) **`ClaudeCodeSession.announcedTools` retains ids across
+       interrupted turns.** Entries only clear when a matching tool_result
+       arrives; a turn aborted between tool_use and result leaves the id
+       for the session's life. Unbounded only in pathological use.
+       Clearing on interrupt() would make a post-interrupt late result
+       DROP instead of completing its record — a visible-behavior trade
+       (the zone already finalizes dangling records at turn_end) that
+       wasn't worth deciding unilaterally. Decide, then it's a two-line
+       change either way.
   - Done when: each item above is enumerated concretely with Kyle,
     triaged (fix now / R.6 pre-release blocker / post-launch), and either
     fixed or explicitly scheduled — and the permissions fidelity item has

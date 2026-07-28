@@ -1445,7 +1445,8 @@ the M2 launch trigger. Keep every seam agent-neutral and compatible with that.
   `joinTextBlocks`, and since 2026-07-23 `errText`) and
   `adapters/render-mcp-cmd.ts` (`generativeUIMsg`, `RENDER_ID_RE`) — decided
   at the 2026-07-08 refactor; the 2026-07-23 pass re-affirmed the
-  accepted-duplication list above.
+  accepted-duplication list above, and the 2026-07-28 whole-repo pass
+  re-affirmed it again (every file read; nothing on the list consolidated).
 - **`dist/` is gitignored build output** served by Express; rebuild with
   `yarn build` when the front end changes and you're testing the one-port
   path.
