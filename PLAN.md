@@ -2433,9 +2433,13 @@ refusals → restored). Tier-1 443/443, Tier-2 137/137 with the gate in.
    `prestart` build, so a local run can never again execute months-old
    code (verified: `npm start` rebuilt dist with the new limits in it).
 
-**Deploy note:** the relay is `workflow_dispatch` only — these relay
-changes sit on `main` and are NOT live until someone dispatches a deploy
-(staging first, per the runbook).
+**Deploy note — RESOLVED same day:** Kyle dispatched production directly
+from `main` (~13:12 UTC, no staging run this time; v9 did staging first) —
+Fly **`v10`**, ref `6b83ded`, the exact audit commit. Verified live:
+workflow run green, health `200`, and his entitled daemon re-paired
+through the new build 6s after `listening`. The new guards themselves
+aren't safely probe-able against production (they'd need a real flood or
+stall); their proof is the pinned + mutation-tested suite behind the ref.
 
 ### ✅ 2026-07-28 — the refusal reason is VISIBLE on the phone (Kyle's call)
 
@@ -2455,7 +2459,11 @@ the desktop as the fix; "at capacity" stays true for the new mid-session
 backpressure shed, which uses the same close code). Pinned end-to-end in
 `relay.e2e.ts` test 4 — the daemon is killed mid-pairing and headless
 Chrome must show the exact 4003 string beside the dot — and
-mutation-tested (render neutered → the pin fails → restored).
+mutation-tested (render neutered → the pin fails → restored). **LIVE on
+the remote path same day**: the git-integrated Pages project rebuilt on
+the push; verified by fetching the served assets (`.sb-conn-note` in both
+the live JS and CSS at app.mirafold.com). Local users get it with the
+next package release, like every daemon-side change.
 
 Also noted, not acted on: `mirafold-site/PLAN.md`'s "Remote viewport app
 origin" item still reads as though the bundle hasn't shipped (it is live at
