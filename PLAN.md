@@ -2429,6 +2429,28 @@ refusals → restored). Tier-1 443/443, Tier-2 137/137 with the gate in.
    moving the id to a header/`Sec-WebSocket-Protocol` (a both-repo
    contract change) stays unjustified; SECURITY.md now states the
    deployment-layer caveat honestly.
+
+   **Standing policy (Kyle, 2026-07-28): opportunistic, never dedicated.**
+   A from-scratch design would carry the id in `Sec-WebSocket-Protocol`
+   (the one header-like channel a browser WebSocket can set — custom
+   headers aren't available to page JS), and at design time that costs
+   nothing. As a retrofit it buys nothing until the tail of old daemons
+   and cached phone bundles dies off — the relay must keep accepting
+   URL-borne ids through the whole transition window — so it must never
+   be scheduled on its own. **Do it as a passenger on the next breaking
+   change to the daemon↔relay dial-in contract** (a protocol version
+   bump, compression negotiation, whatever breaks it first): fold the
+   id-to-subprotocol move in and retire the URL form with that same
+   compat window. Three things reopen it as urgent on its own: (1)
+   evidence of ids reaching logs on the happy path — a platform change,
+   or any hosting migration (the "error-lines-only" verdict is
+   Fly-specific; re-measure on a new host); (2) pairing ids ever becoming
+   longer-lived or reusable than per-launch; (3) slot-squatting observed
+   as a real abuse pattern rather than a theoretical one. The deeper
+   posture stands regardless: the system's robustness is that id
+   exposure is harmless by construction (E2E keys derive from the code
+   the relay never sees; ids die on daemon restart) — hiding the id
+   better is defense-in-depth on a denial-only vector.
 3. **Stale `genui-relay/dist/` — deleted**, and `npm start` now runs a
    `prestart` build, so a local run can never again execute months-old
    code (verified: `npm start` rebuilt dist with the new limits in it).
