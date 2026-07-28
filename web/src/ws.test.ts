@@ -471,6 +471,7 @@ test("newSessionHref: relay path w/ separate app origin → fragment carries cod
     fakeStorage({
       "mirafold-relay-code": "pair-code-abc_123",
       "mirafold-relay-ws": "wss://relay.mirafold.sh",
+      "mirafold-relay-paired-at": String(Date.now()),
     }),
   );
   // The invariant that fixes the bug: the fragment parses back to the SAME
@@ -486,13 +487,28 @@ test("newSessionHref: relay path w/ separate app origin → fragment carries cod
 test("newSessionHref: relay path w/ same-origin (no stored ws) → fragment carries code only", () => {
   const href = newSessionHref(
     "/?new=1",
-    fakeStorage({ "mirafold-relay-code": "just-a-code_9" }),
+    fakeStorage({
+      "mirafold-relay-code": "just-a-code_9",
+      "mirafold-relay-paired-at": String(Date.now()),
+    }),
   );
   assert.equal(href, "/?new=1#code=just-a-code_9");
   assert.deepEqual(relayTargetFromFragment(href.slice(href.indexOf("#"))), {
     code: "just-a-code_9",
     ws: null,
   });
+});
+
+test("newSessionHref: an aged-out pairing is NOT resurrected into the new tab", () => {
+  // Raw reads here would re-encode the expired code, and the new tab's
+  // load-time stash would grant it a fresh max-age window — defeating the
+  // bearer credential's expiry (2026-07-28 review).
+  const store = fakeStorage({
+    "mirafold-relay-code": "expired-code_1",
+    "mirafold-relay-ws": "wss://relay.mirafold.sh",
+    "mirafold-relay-paired-at": "1000",
+  });
+  assert.equal(newSessionHref("/?new=1", store), "/?new=1");
 });
 
 // The backgrounded-phone bug (2026-07-25, Kyle's phone): the pairing code used

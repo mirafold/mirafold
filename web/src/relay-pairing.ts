@@ -109,13 +109,14 @@ export function relayTargetFromPage(): { code: string; ws: string | null } | nul
  *  exactly as the QR's did — it is never sent to the relay, and the new tab
  *  scrubs it on load. A local page has no stored code and gets the plain URL.
  *  Reads storage lazily so tests can drive it; `base` defaults to the real
- *  new-session URL. */
+ *  new-session URL. Goes through storedPairing, not raw reads: an aged-out
+ *  pairing must not be re-encoded into a fresh tab, where the load-time stash
+ *  would grant it a new PAIRING_MAX_AGE_MS window (2026-07-28 review). */
 export function newSessionHref(base = "/?new=1", storage: Storage = localStorage): string {
-  const code = storage.getItem(CODE_KEY);
-  if (!code) return base;
-  const ws = storage.getItem(WS_KEY);
-  const frag = ws
-    ? `#code=${encodeURIComponent(code)}&relay=${encodeURIComponent(ws)}`
-    : `#code=${encodeURIComponent(code)}`;
+  const pairing = storedPairing(storage);
+  if (!pairing) return base;
+  const frag = pairing.ws
+    ? `#code=${encodeURIComponent(pairing.code)}&relay=${encodeURIComponent(pairing.ws)}`
+    : `#code=${encodeURIComponent(pairing.code)}`;
   return base + frag;
 }
