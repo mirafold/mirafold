@@ -392,7 +392,7 @@ export function Shell() {
                 rootLabel={tildify(meta.cwd, daemonInfo.home)}
                 sessionKey={meta.sessionId}
               />
-              <RenderZone subscribe={bus.subscribe} sendAction={bus.sendAction} />
+              <RenderZone subscribe={bus.subscribe} sendAction={bus.sendAction} busy={busy} />
             </div>
             {asks.length > 0 && (
               <div className="perm-bar">

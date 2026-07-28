@@ -166,11 +166,16 @@ function SubagentGroup({ calls }: { calls: ToolCall[] }) {
 export function RenderZone({
   subscribe,
   sendAction,
+  busy,
 }: {
   subscribe: (l: (m: ZoneMsg) => void) => () => void;
   // Shell-provided sender for prompt/tool actions (Phase 2); state actions
   // are resolved here because pin state is output-zone state.
   sendAction: (action: Action, sourceId: string) => void;
+  // Shell's turn-in-flight flag (its handling of disconnects and mid-turn
+  // resumes included) — keeps the status line up for the WHOLE turn, not
+  // just the gaps `status` messages happen to cover (2026-07-28, Kyle).
+  busy: boolean;
 }) {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [status, setStatus] = useState<Status>(null);
@@ -557,7 +562,7 @@ export function RenderZone({
         onTouchStart={tail.onTouchStart}
         onTouchMove={tail.onTouchMove}
       >
-        {entries.length === 0 && !status && (
+        {entries.length === 0 && !status && !busy && (
           // A fresh session (no transcript yet) shows an inviting welcome
           // instead of raw emptiness. Shell-owned and agent-neutral (#12).
           <div className="zone-empty">
@@ -613,14 +618,19 @@ export function RenderZone({
             togglePin={togglePin}
           />
         ))}
-        {status && (
+        {/* Visible for the whole turn: a specific label when one is known,
+            "working…" while output streams between status frames — a busy
+            turn must never look idle. */}
+        {(status || busy) && (
           <div className="status-line">
-            {status.state === "tool" ? (
+            {status?.state === "tool" ? (
               <>
                 <GearGlyph size="1em" /> {status.label ?? "tool"}
               </>
-            ) : (
+            ) : status ? (
               "✳ thinking…"
+            ) : (
+              "✳ working…"
             )}
           </div>
         )}

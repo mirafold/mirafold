@@ -1116,6 +1116,60 @@ test("streaming holds a scrolled-up reader in place, and re-follows once back at
   assert.ok(gap <= 60, `expected to be following the tail again, sat ${gap}px above it`);
 });
 
+test("a busy turn never looks idle: the activity line is up whenever the stop button is", async () => {
+  // Frame-by-frame watcher, armed BEFORE the prompt goes out: any frame
+  // where the turn is in flight (stop button present) but no activity line
+  // is painted is the 2026-07-28 bug — work happening with nothing showing.
+  // The sampler is an ANONYMOUS callback on setInterval — a named function
+  // const here dies in-page on tsx's keepNames __name wrapper (same trap
+  // `eventually` documents below).
+  await page.evaluate(() => {
+    const w = window as unknown as {
+      __busyFrames: number;
+      __blankFrames: number;
+      __watch: number;
+    };
+    w.__busyFrames = 0;
+    w.__blankFrames = 0;
+    w.__watch = window.setInterval(() => {
+      if (document.querySelector(".stop-btn")) {
+        w.__busyFrames++;
+        if (!document.querySelector(".status-line")) w.__blankFrames++;
+      }
+    }, 16);
+  });
+  await page.locator("textarea").click();
+  await page.keyboard.type("give me a quick status summary");
+  await page.keyboard.press("Enter");
+  // The generic fallback ("working…") paints while the reply streams between
+  // status frames — a label the pre-fix client never rendered.
+  await page.waitForFunction(
+    () => document.querySelector(".status-line")?.textContent?.includes("working"),
+    undefined,
+    { timeout: 15_000 },
+  );
+  // Turn over: the stop button goes, and the activity line goes with it.
+  await page.waitForFunction(() => !document.querySelector(".stop-btn"), undefined, {
+    timeout: 30_000,
+  });
+  const frames = await page.evaluate(() => {
+    const w = window as unknown as {
+      __busyFrames: number;
+      __blankFrames: number;
+      __watch: number;
+    };
+    window.clearInterval(w.__watch);
+    return { busy: w.__busyFrames, blank: w.__blankFrames };
+  });
+  assert.ok(frames.busy > 10, `watcher barely ran (${frames.busy} busy frames)`);
+  assert.equal(
+    frames.blank,
+    0,
+    `${frames.blank} frame(s) had a turn in flight with no activity line painted`,
+  );
+  assert.equal(await page.locator(".status-line").count(), 0);
+});
+
 /** Asserts a DOM condition that lands a tick or two AFTER the click that
  *  causes it. A one-shot count()/isVisible() right after a click is a coin
  *  flip once the machine is busy — E.3/E.5 lost that flip on 2026-07-25.
