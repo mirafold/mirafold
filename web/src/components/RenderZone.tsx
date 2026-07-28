@@ -357,6 +357,11 @@ export function RenderZone({
           }
           case "error": {
             setStatus(null);
+            // Close the streaming text block like every other appended entry —
+            // a delta after the error must open a NEW block below it, keeping
+            // wire order (2026-07-28 fix: it glued onto the block ABOVE the
+            // error). notice/user_prompt omit this deliberately and say so.
+            streamingId.current = null;
             const id = nextId++;
             setEntries((es) => [
               ...es,
