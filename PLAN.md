@@ -2589,8 +2589,11 @@ phone through the encrypted relay path with the local viewport hearing it
 (`relay.itest.ts`). Tier-3 — desktop answers, the PHONE's bar must drop
 while the turn is still streaming, not at `turn_end` (`phone.e2e.ts`, the
 count-pinned "restarted cleanly" discriminator). Tier-1 454/454, Tier-2
-139/139, Tier-3 67/67. Daemon-side + bundle change: reaches users with the
-next package release; no relay deploy involved.
+139/139, Tier-3 67/67. No relay deploy involved (the relay never parses
+frames). **Client half LIVE on the remote path same day** — the Pages
+project rebuilt on the push; verified by fetching the served bundle
+(`permission_resolved` in app.mirafold.com's JS). Local daemons get the
+daemon half with the next package release, like every daemon-side change.
 
 ## Stretch goals (unscheduled — polish, no milestone gates on these)
 
