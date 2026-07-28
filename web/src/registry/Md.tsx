@@ -1,4 +1,4 @@
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Children, cloneElement, isValidElement, type ComponentProps, type ReactElement, type ReactNode } from "react";
 
@@ -19,13 +19,27 @@ function childrenText(children: ReactNode): string {
     .trim();
 }
 
+// react-markdown blanks the href of any scheme off its allowlist
+// (javascript:, data:, …). Two adjustments, both from the 2026-07-28 phone
+// session: exp/exps — Expo Go's deep-link schemes, how a mobile app built in
+// a session reaches the phone — are re-allowed (a plain external-app
+// navigation, no script surface); everything else stays stripped, and a
+// stripped link renders as its text, never a clickable anchor going nowhere.
+export const mdUrlTransform = (url: string): string =>
+  /^exps?:/i.test(url) ? url : defaultUrlTransform(url);
+
 // The markdown renderer overrides shared with RenderZone's turn text: anchors
 // get the safety rule (links open in a new tab, and react-markdown never emits
 // raw HTML from its source), and task-list items get an accessible checkbox label.
 export const mdOverrides = {
-  a: ({ node: _node, ...props }: ComponentProps<"a"> & { node?: unknown }) => (
-    <a {...props} target="_blank" rel="noopener noreferrer" />
-  ),
+  a: ({ node: _node, href, children, ...props }: ComponentProps<"a"> & { node?: unknown }) =>
+    href ? (
+      <a {...props} href={href} target="_blank" rel="noopener noreferrer">
+        {children}
+      </a>
+    ) : (
+      <span>{children}</span>
+    ),
   li: ({ node: _node, children, ...props }: ComponentProps<"li"> & { node?: unknown }) => {
     const kids = Children.toArray(children);
     const checkbox = kids[0];
@@ -66,6 +80,7 @@ export function Md({ text, inline = false }: { text: string; inline?: boolean })
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
+      urlTransform={mdUrlTransform}
       components={inline ? { ...mdOverrides, ...unwrapParagraph } : mdOverrides}
     >
       {text}

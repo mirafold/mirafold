@@ -5,7 +5,7 @@ import rehypeHighlight from "rehype-highlight";
 import type { Action } from "@protocol";
 import type { ZoneMsg } from "../session-bus";
 import { RenderBlock } from "../registry/RenderBlock";
-import { mdOverrides } from "../registry/Md";
+import { mdOverrides, mdUrlTransform } from "../registry/Md";
 import { PinDock } from "./PinDock";
 import { ToolBlock } from "./ToolBlock";
 import { Artifact } from "./Artifact";
@@ -92,6 +92,7 @@ const AssistantTurn = memo(function AssistantTurn({ text }: { text: string }) {
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeHighlight]}
+        urlTransform={mdUrlTransform}
         components={mdOverrides}
       >
         {text}
