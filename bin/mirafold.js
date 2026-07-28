@@ -63,13 +63,21 @@ const child = spawn(process.execPath, [daemon], {
 
 // The daemon prints its final URL (it may walk past a busy port, and it carries
 // the auth token as ?token=…) — mirror stdout and open the browser on the first
-// URL seen. \S* captures the token query, stopping at the space before "(ws…".
+// URL seen. Matched against an ACCUMULATED tail, not per chunk: a line split
+// across two data events matched neither chunk alone, and the browser never
+// opened (2026-07-28 fix). The (?=\s) lookahead insists on the character after
+// the URL — "(ws…"'s leading space or the newline — so a chunk ending mid-token
+// can't open a truncated URL. \S* captures the token query.
 let opened = false;
+let bootTail = "";
 child.stdout.on("data", (buf) => {
   process.stdout.write(buf);
-  const m = String(buf).match(/http:\/\/127\.0\.0\.1:\d+\/\S*/);
-  if (m && !opened) {
+  if (opened) return;
+  bootTail = (bootTail + String(buf)).slice(-4096); // one boot line, bounded
+  const m = bootTail.match(/http:\/\/127\.0\.0\.1:\d+\/\S*(?=\s)/);
+  if (m) {
     opened = true;
+    bootTail = "";
     if (!noOpen) openBrowser(m[0]);
   }
 });
