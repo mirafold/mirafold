@@ -389,9 +389,15 @@ export class GeminiCliSession implements AgentSession {
         break;
       case "result": {
         const stats = (ev["stats"] ?? {}) as Record<string, unknown>;
+        const model = this.honestModel(stats["models"]);
+        // The refinement must land on modelLabel too — modelName is what the
+        // fleet and status bar read (F.3), and it stayed "auto" forever while
+        // only the usage line got the concrete names (2026-07-28 fix). Router
+        // mode re-vagues at the next turn's init, so each turn re-refines.
+        if (model) this.modelLabel = model;
         this.emit({
           type: "usage",
-          model: this.honestModel(stats["models"]),
+          model,
           inputTokens: Number(stats["input_tokens"] ?? 0),
           outputTokens: Number(stats["output_tokens"] ?? 0),
         });

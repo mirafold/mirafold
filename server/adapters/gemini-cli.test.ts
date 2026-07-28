@@ -181,6 +181,9 @@ test("F.3 honest model: init 'auto' is replaced by the real models from result.s
   assert.notEqual(model, "auto");
   assert.match(model!, /gemini-2\.5-flash/);
   assert.match(model!, /gemini-2\.5-pro/);
+  // The fleet/status-bar label follows the refinement too (2026-07-28 fix:
+  // modelName stayed "auto" while only the usage line named what ran).
+  assert.equal(s.modelName, model);
   s.close();
 });
 
