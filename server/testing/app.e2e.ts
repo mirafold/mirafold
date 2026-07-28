@@ -1158,6 +1158,9 @@ test("streaming holds a scrolled-up reader in place, and re-follows once back at
   assert.ok(gap <= 60, `expected to be following the tail again, sat ${gap}px above it`);
 });
 
+// The frame sampler's in-page globals (armed before the prompt, read after).
+type BusyWatch = { __busyFrames: number; __blankFrames: number; __watch: number };
+
 test("a busy turn never looks idle: the activity line is up whenever the stop button is", async () => {
   // Frame-by-frame watcher, armed BEFORE the prompt goes out: any frame
   // where the turn is in flight (stop button present) but no activity line
@@ -1166,11 +1169,7 @@ test("a busy turn never looks idle: the activity line is up whenever the stop bu
   // const here dies in-page on tsx's keepNames __name wrapper (same trap
   // `eventually` documents below).
   await page.evaluate(() => {
-    const w = window as unknown as {
-      __busyFrames: number;
-      __blankFrames: number;
-      __watch: number;
-    };
+    const w = window as unknown as BusyWatch;
     w.__busyFrames = 0;
     w.__blankFrames = 0;
     w.__watch = window.setInterval(() => {
@@ -1195,11 +1194,7 @@ test("a busy turn never looks idle: the activity line is up whenever the stop bu
     timeout: 30_000,
   });
   const frames = await page.evaluate(() => {
-    const w = window as unknown as {
-      __busyFrames: number;
-      __blankFrames: number;
-      __watch: number;
-    };
+    const w = window as unknown as BusyWatch;
     window.clearInterval(w.__watch);
     return { busy: w.__busyFrames, blank: w.__blankFrames };
   });
