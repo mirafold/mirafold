@@ -41,6 +41,11 @@ function msgBytes(msg: WireMsg): number {
 }
 // A session with no viewports survives this long, then dies for real.
 const IDLE_TIMEOUT_MS = Number(process.env.SESSION_IDLE_TIMEOUT_MS ?? 4 * 60 * 60_000);
+// The one refusal line for a prompt the burst gate rejects (dispatchPrompt) —
+// shared so every path (prompt, grid dispatch, component action) refuses
+// identically.
+export const PROMPT_GATE_REFUSAL =
+  "a turn is already running and a prompt is queued — wait for the turn to end";
 // Streamed deltas are merged inside this window before they enter the
 // session stream: one broadcast WireMsg whose text is the concatenation of
 // the merged deltas — the replay ring, local viewports, and the relay's
@@ -123,6 +128,9 @@ export type SessionEntry = {
   // When the last `!` command started — the burst throttle in connection.ts
   // (each bang costs a model turn, so bursts burn tokens).
   lastBangAt?: number;
+  // The prompt-burst gate (dispatchPrompt): has the running turn already
+  // accepted its one queued follow-up? Cleared where status returns to idle.
+  midTurnPromptUsed?: boolean;
   // The live-tree doorbell (W.1): running exactly while viewports are
   // attached — first attach starts it, last detach (and end) stops it — so a
   // dormant session holds no inotify watches.
@@ -312,6 +320,7 @@ export class SessionRegistry {
     const prev = entry.status;
     if (msg.type === "turn_end" || msg.type === "error" || msg.type === "bang_end") {
       entry.status = "idle";
+      entry.midTurnPromptUsed = false; // the burst gate clears on the turn grammar, never a clock
     } else if (msg.type === "permission_request") {
       entry.status = "permission";
     } else {
@@ -588,14 +597,46 @@ export class SessionRegistry {
     return true;
   }
 
-  /** Dispatch a user turn to a session from the grid — the `prompt` case's
-   *  exact semantics (echo through the stream, then push), addressed by id. */
-  promptSession(id: string, text: string): boolean {
-    const entry = this.entries.get(id);
-    if (!entry) return false;
+  /**
+   * Every model-driving prompt enters through here — the `prompt` case, the
+   * grid's `prompt_session`, a component `action{kind:prompt}` — echoing the
+   * user turn through the stream (so every viewport and the replay buffer
+   * render the command strip), then pushing it to the engine, behind the
+   * burst gate. Returns false when the gate refuses; the caller owes the
+   * sender PROMPT_GATE_REFUSAL and nothing reaches the stream.
+   *
+   * The gate (2026-07-27 audit finding 5, redone 2026-07-28 — the first
+   * attempt timed from the last accepted prompt, which punished legitimate
+   * back-to-back turns and was reverted): nothing else bounds a client that
+   * bursts prompts, each of which costs a model turn, and the artifact
+   * bridge reaches `action{kind:prompt}` with no user gesture (its 400ms
+   * gate is client-side — a hostile client simply wouldn't run it). Keyed
+   * on the turn grammar, never a clock: a prompt while idle starts the
+   * turn; ONE more may arrive while it runs — the terminal agents queue
+   * typed-mid-turn input, so refusing a single queued follow-up would break
+   * parity (desktop Enter still sends while busy); anything past that is
+   * refused until a terminal event (turn_end / error / bang_end) clears the
+   * gate in broadcast(). Burn is capped near one turn per completed turn,
+   * and no human pace — nor the suite's — can trip it.
+   */
+  dispatchPrompt(entry: SessionEntry, text: string): boolean {
+    if (entry.status !== "idle") {
+      if (entry.midTurnPromptUsed) return false;
+      entry.midTurnPromptUsed = true;
+    }
     this.broadcast(entry, { type: "user_prompt", text });
     entry.session.pushPrompt(text);
     return true;
+  }
+
+  /** Dispatch a user turn to a session from the grid — the `prompt` case's
+   *  exact semantics, addressed by id. False when the id is unknown OR the
+   *  burst gate refused; callers who need to distinguish resolve the entry
+   *  themselves and call dispatchPrompt. */
+  promptSession(id: string, text: string): boolean {
+    const entry = this.entries.get(id);
+    if (!entry) return false;
+    return this.dispatchPrompt(entry, text);
   }
 
   /** Push a fresh snapshot to every watcher, coalescing bursts. */

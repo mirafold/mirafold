@@ -2369,53 +2369,73 @@ fails `saw 0 new frames over 0` → restored); verified 6/6 passing
 unpinned and 3/3 passing under single-core CPU pinning (`taskset -c 0`),
 the condition that originally reproduced the flake.
 
-### REVERTED — per-session prompt throttle (redo only with the fixed design)
+### ✅ REDONE 2026-07-28 — per-session prompt gate, keyed on the turn grammar
 
-A 400ms per-session gate on `prompt` / `prompt_session` / component
-`action{kind:prompt}` was written and **reverted the same day**: it measured
-time since the last *accepted* prompt, which punishes legitimate
-back-to-back turns and broke four e2e tests (`shell picker`, `notice
-badging`, `navigating artifact`, `chart stretch` — all prompt-driven, all
-passing again after the revert). A 450ms sleep had been added to
-`fleet-cockpit.itest.ts` to accommodate it; that went with the revert.
+History: a 400ms per-session gate on `prompt` / `prompt_session` /
+component `action{kind:prompt}` was written 2026-07-27 and **reverted the
+same day** — it measured time since the last *accepted* prompt, which
+punishes legitimate back-to-back turns and broke four e2e tests (`shell
+picker`, `notice badging`, `navigating artifact`, `chart stretch`). The
+threat is real: nothing bounded a client that bursts prompts, each of which
+costs a model turn, and the artifact bridge reaches `action{kind:prompt}`
+with no user gesture (its 400ms gate is client-side — a hostile client
+simply wouldn't run it).
 
-The threat is real — nothing bounds a client that bursts prompts, each of
-which costs a model turn, and the artifact bridge reaches
-`action{kind:prompt}` with no user gesture (its 400ms gate is client-side,
-so a hostile client simply wouldn't run it). The design that works:
-**clear the gate at `turn_end`** rather than timing from the last prompt.
-A burst arriving before any turn completes is refused; a prompt sent the
-instant a turn finishes is always allowed. That caps burn at one prompt per
-turn — the real limit — and never fires on human use or on the suite.
+The redo implements the corrected design with one parity-driven refinement.
+All three model-driving paths now enter through ONE seam,
+`registry.dispatchPrompt` (echo + push behind the gate); the gate is
+cleared in `broadcast()` by the same terminal events that flip status back
+to idle (`turn_end` / `error` / `bang_end`) — no timer anywhere. The
+refinement: a prompt while idle starts the turn, and **one more** may
+arrive while it runs, because the terminal agents queue typed-mid-turn
+input (the Claude Code adapter literally `queue.push`es it) and the desktop
+prompt box still sends on Enter while busy — a strict refuse-while-busy
+gate would have refused a legitimate human flow. Anything past that one
+queued follow-up is refused with the shared `PROMPT_GATE_REFUSAL` line
+(sent only to the offending viewport — never broadcast, so it can't touch
+session status or other viewports' busy state). Burn is capped near one
+turn per completed turn; no human pace, and none of the four e2e tests,
+can trip it.
 
-### Still open (ranked; the least valuable of the audit's findings)
+Pinned in `hostile-client.itest.ts` (burst of 5 → exactly 2 echoes + 3
+refusals → gate clears at turn_end and a fresh prompt completes);
+mutation-tested (gate forced open → the pin fails on 5 echoes / 0
+refusals → restored). Tier-1 443/443, Tier-2 137/137 with the gate in.
 
-1. **Relay caps vs. actual machine memory.** `maxConnections` (2000) ×
-   `maxPayloadBytes` (8 MB) ≈ **16 GB** of legal in-flight buffering, on a
-   Fly machine with a fraction of that and no `[[vm]]` section declaring a
-   size. Lower the connection cap (launch scale needs hundreds, not
-   thousands) rather than paying for a bigger machine. **Worth more than
-   the cap itself: there is no send-side backpressure** in either
-   forwarding direction (`genui-relay/src/relay.ts`, the `viewport.send` /
-   `pair.daemon.send` paths) — a stalled receiver queues without bound, so
-   any cap is theoretical until that exists. There is also no byte-rate
-   cap, only a frame-count one (~3.8 GB/s per socket is legal).
-2. **Pairing id rides in the URL query string**, so Fly's edge proxy logs
-   it — contradicting `genui-relay/SECURITY.md`'s promise that a pairing id
-   reaching the logs "counts as a bug." **Severity is lower than that
-   wording implies**: the relay only ever receives a SHA-256-derived
-   identifier, never the pairing code, so a log leak exposes a rendezvous
-   id (squat/DoS a slot) and not a credential that decrypts anything or
-   completes a handshake. Two jobs: (a) tighten the SECURITY.md / `log.ts`
-   wording, which currently calls it "a bearer secret," and (b) **verify
-   before acting** that Fly actually logs query strings on WebSocket
-   upgrades — asserted in the audit, never confirmed. Moving it to a header
-   or `Sec-WebSocket-Protocol` is a contract change touching both repos.
-3. **Stale `genui-relay/dist/`.** Gitignored but present and months behind
-   `src/` — `npm start` maps to `node dist/main.js`, so running it locally
-   executes code missing the entitlement max-TTL backstop and the
-   connect-rate gate. Deployments rebuild from source in the Dockerfile, so
-   this is a local-run footgun only. Delete it and add a `prestart` build.
+### ✅ The three ranked items — ALL RESOLVED 2026-07-28 (relay changes await a deploy)
+
+1. **Relay caps vs. machine memory + missing backpressure — FIXED.**
+   Defaults lowered to launch scale (`maxConnections` 2000→256, `maxSockets`
+   2400→320, `maxPairs` 1000→128 — env-raisable per-deploy). **Send-side
+   backpressure added** on both forwarding paths: a receiver whose socket
+   buffers past `RELAY_MAX_BUFFERED_BYTES` (64 MB — sized so a maxed-ring
+   attach-replay, ~43 MB sealed, survives) is closed `CLOSE_OVERLOADED`;
+   closing rather than dropping keeps the stream gapless (a re-attach
+   replays). **Byte-rate cap added** to the per-connection window
+   (`RELAY_RATE_MAX_BYTES`, 64 MB/s — the frame cap alone left ~3.8 GB/s
+   legal). No contract change: existing close codes only, so the mirror and
+   the contract-guard itest are untouched. Both pinned in the relay's
+   standalone suite (a stalled-socket test and a big-frame test), both
+   mutation-tested (each guard neutered → its pin fails/hangs → restored).
+2. **Pairing id in the URL query — wording fixed, exposure MEASURED.**
+   `SECURITY.md`, `README.md`, and `log.ts` no longer call it "a bearer
+   secret" — it is `b64url(SHA-256(code)[0..16))`, a rendezvous id that
+   decrypts nothing (verified against `relay-crypto.ts`); its exposure
+   enables slot squatting/DoS, not disclosure. The Fly question was
+   **verified live 2026-07-28** instead of assumed: a marker-id probe
+   dialed at the production relay produced NO proxy log line at all —
+   Fly's edge logs `request.url` **only on proxy-error lines**, so the
+   pairing id does not reach platform logs on the happy path. Conclusion:
+   moving the id to a header/`Sec-WebSocket-Protocol` (a both-repo
+   contract change) stays unjustified; SECURITY.md now states the
+   deployment-layer caveat honestly.
+3. **Stale `genui-relay/dist/` — deleted**, and `npm start` now runs a
+   `prestart` build, so a local run can never again execute months-old
+   code (verified: `npm start` rebuilt dist with the new limits in it).
+
+**Deploy note:** the relay is `workflow_dispatch` only — these relay
+changes sit on `main` and are NOT live until someone dispatches a deploy
+(staging first, per the runbook).
 
 Also noted, not acted on: `mirafold-site/PLAN.md`'s "Remote viewport app
 origin" item still reads as though the bundle hasn't shipped (it is live at

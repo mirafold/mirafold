@@ -3,7 +3,7 @@ import { existsSync, lstatSync, mkdtempSync, readFileSync, realpathSync, rmSync 
 import os from "node:os";
 import path from "node:path";
 import type { AgentName, ClientMsg, WireMsg } from "../protocol";
-import type { SessionEntry, SessionRegistry } from "./registry";
+import { PROMPT_GATE_REFUSAL, type SessionEntry, type SessionRegistry } from "./registry";
 import { runActionTool } from "./actions";
 import { createFsHandlers } from "./fs-handlers";
 import {
@@ -450,11 +450,9 @@ export function openConnection(
         break;
       }
       case "prompt":
+        // Echo + push live in dispatchPrompt, behind the burst gate.
         if (entry && typeof msg.text === "string" && msg.text.trim()) {
-          // Echo the user turn through the session stream so every viewport
-          // (and the replay buffer) renders the command strip.
-          registry.broadcast(entry, { type: "user_prompt", text: msg.text });
-          entry.session.pushPrompt(msg.text);
+          if (!registry.dispatchPrompt(entry, msg.text)) sendError(PROMPT_GATE_REFUSAL);
         }
         break;
       case "bang":
@@ -551,8 +549,12 @@ export function openConnection(
         // The frame cap already bounds a message; this bounds what one grid
         // dispatch may push into a model turn.
         if (!text || text.length > 100_000) break;
-        if (!actTarget(msg.sessionId, true)) break;
-        registry.promptSession(msg.sessionId, text);
+        const target = actTarget(msg.sessionId, true);
+        if (!target) break;
+        if (!registry.dispatchPrompt(target, text)) {
+          sendError(PROMPT_GATE_REFUSAL);
+          break;
+        }
         log.info(`prompt_session → session ${msg.sessionId}`);
         break;
       }
@@ -572,9 +574,10 @@ export function openConnection(
         if (!entry || typeof msg.action !== "object" || msg.action === null) break;
         const src = typeof msg.sourceId === "string" ? msg.sourceId : "?";
         if (msg.action.kind === "prompt" && typeof msg.action.text === "string") {
+          // The path the burst gate exists for: the bridge reaches here with
+          // no user gesture (its 400ms client-side gate is advisory).
           createLogger("action").info(`prompt from render ${src}`);
-          registry.broadcast(entry, { type: "user_prompt", text: msg.action.text });
-          entry.session.pushPrompt(msg.action.text);
+          if (!registry.dispatchPrompt(entry, msg.action.text)) sendError(PROMPT_GATE_REFUSAL);
         } else if (msg.action.kind === "tool" && typeof msg.action.name === "string") {
           const id = `action-${randomUUID().slice(0, 8)}`;
           registry.broadcast(entry, {

@@ -1,6 +1,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import type { WireMsg } from "../protocol";
+import { PROMPT_GATE_REFUSAL } from "./registry";
 import { startDaemon, createSession, TestClient, type Daemon } from "../testing/itest-harness";
 
 // The hostile-client sweep. Every `case` in connection.ts's message
@@ -132,6 +133,46 @@ test("Q.4 garbage frames mid-session: daemon survives, 2nd viewport stays quiet,
 
   a.close();
   b.close();
+});
+
+test("prompt-burst gate: idle + one queued accepted, the rest refused, cleared at turn_end", async () => {
+  // The 2026-07-27 audit's finding 5, redone on the turn grammar: each
+  // prompt costs a model turn and the artifact bridge reaches
+  // action{kind:prompt} with no user gesture, so the server must bound a
+  // burst — without ever refusing the terminal-parity flow of typing ONE
+  // follow-up while a turn runs (desktop Enter still sends while busy).
+  const { client: c } = await createSession(d.port);
+  const mark = c.received.length;
+
+  // Five prompts in one tick: the first starts the turn, the second takes
+  // the one mid-turn queue slot, three are refused with the shared line.
+  for (let i = 1; i <= 5; i++) c.send({ type: "prompt", text: `burst ${i}` });
+
+  // Both accepted prompts drive full turns; wait for their two turn_ends.
+  await c.waitFor(
+    () => c.received.slice(mark).filter((m) => m.type === "turn_end").length >= 2,
+    "two turn_ends",
+    20_000,
+  );
+  const tail = c.received.slice(mark) as Any[];
+  const echoes = tail.filter((m) => m.type === "user_prompt").map((m) => m.text);
+  assert.deepEqual(echoes, ["burst 1", "burst 2"], "exactly the idle + queued prompts ran");
+  const refusals = tail.filter((m) => m.type === "error" && m.message === PROMPT_GATE_REFUSAL);
+  assert.equal(refusals.length, 3, "the burst tail was refused, each with the one shared line");
+
+  // turn_end cleared the gate: a fresh prompt is accepted and completes.
+  c.send({ type: "prompt", text: "after the dust" });
+  await c.waitFor(
+    (m) => m.type === "user_prompt" && (m as Any).text === "after the dust",
+    "post-turn prompt accepted",
+    20_000,
+  );
+  await c.waitFor(
+    () => c.received.slice(mark).filter((m) => m.type === "turn_end").length >= 3,
+    "post-turn prompt completes",
+    20_000,
+  );
+  c.close();
 });
 
 test("Q.4 garbage create/attach frames are tolerated and still yield a working session", async () => {
