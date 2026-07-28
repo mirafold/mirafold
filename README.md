@@ -16,6 +16,17 @@ socket, and all credentials, and the agent can never touch any of them.
 owners; Mirafold is not affiliated with or endorsed by Anthropic, OpenAI, or
 Google.*
 
+**Know what you're running.** Mirafold drives a real coding agent on your
+machine: with your permission it reads and writes files, runs shell
+commands, and acts on whatever you point it at. Permission prompts gate
+consequential actions, the shell (prompt box, socket, credentials) is
+walled off from agent output, and dangerous link schemes are stripped from
+the transcript — but an AI agent can be wrong, and text it reads (a web
+page, a log, a README) can try to steer it. Review what you allow, treat
+links in agent output like links from a stranger, and read
+[SECURITY.md](SECURITY.md) for the security model's exact boundaries and
+the known trade-offs we've chosen to disclose rather than paper over.
+
 > **The faithful-skin-per-agent model is the identity, and it's shipped (PLAN
 > Phase P, complete).** Three terminal agents run behind one front end today —
 > **Claude Code** (Anthropic Agent SDK), **Codex** (OpenAI), and **Gemini CLI**
