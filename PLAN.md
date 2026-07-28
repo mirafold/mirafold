@@ -2437,6 +2437,26 @@ refusals → restored). Tier-1 443/443, Tier-2 137/137 with the gate in.
 changes sit on `main` and are NOT live until someone dispatches a deploy
 (staging first, per the runbook).
 
+### ✅ 2026-07-28 — the refusal reason is VISIBLE on the phone (Kyle's call)
+
+A relay refusal's why (no daemon 4003 / at capacity 4004 / bad origin
+4006, mapped in `web/src/ws.ts` `viewportRefusalReason`) reached the
+StatusBar only as the dot's `title` — a hover tooltip no touch device can
+reveal, on the remote path built for phones. Kyle chose the middle option
+of the recorded three (tooltip-only / visible line / banner): a **visible
+line beside the dot**, shown only when the connection is down WITH a known
+reason — an ordinary blip keeps the quiet dot and plain "reconnecting…"
+tooltip. `.sb-conn-note`: warn-colored to match the off-dot it explains,
+ellipsis-bounded so it can't push the phone row's controls off. No live
+region on it — Shell's Announcer already speaks the transition (A.1); this
+is the visible copy of the same words. Wording kept from the provisional
+strings (they already said the right things: the no-daemon line points at
+the desktop as the fix; "at capacity" stays true for the new mid-session
+backpressure shed, which uses the same close code). Pinned end-to-end in
+`relay.e2e.ts` test 4 — the daemon is killed mid-pairing and headless
+Chrome must show the exact 4003 string beside the dot — and
+mutation-tested (render neutered → the pin fails → restored).
+
 Also noted, not acted on: `mirafold-site/PLAN.md`'s "Remote viewport app
 origin" item still reads as though the bundle hasn't shipped (it is live at
 `app.mirafold.com`); the site repo's `CLAUDE.md` had the same staleness and

@@ -26,8 +26,12 @@ const VIEWPORT_CLOSE = {
 /** A relay close code that means this viewport was REFUSED (not a routine
  *  drop), mapped to a short line for the connection indicator. undefined = an
  *  ordinary disconnect → the plain "reconnecting…". Exported for the unit test.
- *  (Wording is provisional — surfaced only in the status dot's tooltip today;
- *  a phone-visible presentation is a separate design pass.) */
+ *  Surfaced visibly beside the status dot when down-with-reason (2026-07-28,
+ *  Kyle's call), not just in the dot's tooltip. Note OVERLOADED can arrive
+ *  mid-session too, not only at the door: the relay closes a receiver whose
+ *  socket buffered past its backpressure limit with the same code, so its
+ *  wording stays true for both ("at capacity" covers shedding a stalled
+ *  connection). */
 export function viewportRefusalReason(code: number | undefined): string | undefined {
   switch (code) {
     case VIEWPORT_CLOSE.NO_DAEMON:

@@ -2555,6 +2555,17 @@ body {
   white-space: nowrap;
 }
 
+/* The visible refusal reason beside the dot (touch has no tooltip). Warn
+   color to match the off-dot it explains; shrinks with ellipsis before it
+   can push the bar's controls off a phone row. */
+.sb-conn-note {
+  color: var(--warn-fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex-shrink: 1;
+}
+
 .sb-model {
   color: var(--fg-dim);
 }

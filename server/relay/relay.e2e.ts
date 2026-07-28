@@ -105,3 +105,19 @@ test("typing in the remote browser drives the session; both transcripts mirror",
     assert.ok(!p.includes("hello from the far side"), "relay saw plaintext prompt text");
   }
 });
+
+test("a dead daemon's WHY is visible beside the status dot, not tooltip-only", async () => {
+  // The laptop's daemon dies (sleep, crash, quit): the relay tears the pair
+  // down and closes every viewport 4003. That reason used to live only in
+  // the dot's `title` — a hover tooltip no touch device can reveal, on the
+  // path built for phones. It must render as visible text (2026-07-28,
+  // Kyle's call: a line beside the dot when down-with-reason).
+  const gone = d.stop();
+  // after() must not stop it again — the harness stop() waits on an exit
+  // event a dead child will never re-emit.
+  d = undefined as unknown as Daemon;
+  await gone;
+  const note = remote.locator(".sb-conn-note");
+  await note.waitFor({ state: "visible", timeout: 15_000 });
+  assert.equal(await note.innerText(), "Desktop not reachable — is Mirafold running there?");
+});

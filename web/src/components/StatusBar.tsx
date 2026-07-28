@@ -190,6 +190,16 @@ export function StatusBar({
       >
         {dot}
       </button>
+      {/* The refusal reason, visible (2026-07-28, Kyle's call): a relay
+          refusal's WHY used to live only in the dot's title — a hover
+          tooltip no touch device can reveal, on the path built for phones.
+          Shown only when down WITH a known reason; an ordinary blip keeps
+          the quiet dot and the plain "reconnecting…" tooltip. No live
+          region here — Shell's Announcer already speaks the transition;
+          this is the visible copy of the same words. */}
+      {!connected && connectionNote && (
+        <span className="sb-item sb-conn-note">{connectionNote}</span>
+      )}
       {/* The agent chip is the session's identity element — tapping it opens
           the settings card's Session section ("what is this session?"), the
           phone's path to the facts the bar no longer carries inline (R.4l). */}
