@@ -387,6 +387,26 @@ test("M.1 each pending permission lives until ITS OWN resolution — never wiped
   reg.end(entry.id);
 });
 
+test("2026-07-28 a permission_resolved broadcast drops exactly its ask; the hold lifts only when none pend", () => {
+  const { reg, entry } = freshSession();
+  reg.broadcast(entry, { type: "permission_request", tool: "Bash", detail: "rm -rf x", id: "p1" });
+  reg.broadcast(entry, { type: "permission_request", tool: "Write", detail: "f.txt", id: "p2" });
+  // The adapter announced p1's resolution (timeout path: answerPermission
+  // never ran, so only this broadcast can clear the mirror). The second ask
+  // still pends — the status hold must survive.
+  reg.broadcast(entry, { type: "permission_resolved", id: "p1", allow: false });
+  assert.deepEqual(
+    entry.permissions.map((p) => p.id),
+    ["p2"],
+  );
+  assert.equal(entry.status, "permission", "a still-pending ask keeps the hold");
+  // The last resolution releases the hold — the turn is running again.
+  reg.broadcast(entry, { type: "permission_resolved", id: "p2", allow: true });
+  assert.deepEqual(entry.permissions, []);
+  assert.equal(entry.status, "working");
+  reg.end(entry.id);
+});
+
 // Mirror of PERMISSION_MIRROR_CAP in registry.ts (module-private, like
 // BUFFER_CAP above). Pinning the absolute value is deliberate: a cap change
 // must consciously update this test.

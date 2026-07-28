@@ -462,6 +462,12 @@ test("permission ask: canUseTool pauses on permission_request; resolvePermission
   assert.equal(ask.tool, "Bash");
   assert.equal(ask.detail, "make it so");
   s.resolvePermission(ask.id, true);
+  // The resolution is announced on the stream (2026-07-28): every OTHER
+  // viewport drops its bar on this instead of holding a stale ask that a tap
+  // can only no-op against.
+  const resolved = await awaitMsg((m) => m.type === "permission_resolved", "permission_resolved");
+  assert.equal(resolved.id, ask.id);
+  assert.equal(resolved.allow, true);
   await awaitTurnEnd();
   assert.equal(decisions[0].behavior, "allow");
   s.close();
@@ -477,9 +483,14 @@ test("interrupt: pending permission asks die as deny, engine interrupted, one tu
     })(),
   );
   s.pushPrompt("go");
-  await awaitMsg((m) => m.type === "permission_request", "permission_request");
+  const ask = await awaitMsg((m) => m.type === "permission_request", "permission_request");
   s.interrupt();
   await awaitTurnEnd();
+  // The deny-all teardown announces the resolution too — same contract as an
+  // answered ask (2026-07-28).
+  const resolved = await awaitMsg((m) => m.type === "permission_resolved", "permission_resolved");
+  assert.equal(resolved.id, ask.id);
+  assert.equal(resolved.allow, false);
   assert.equal(decisions[0].behavior, "deny");
   assert.equal(captured.interrupts, 1);
   assert.equal(turnEnds(), 1);

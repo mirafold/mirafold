@@ -2545,6 +2545,53 @@ origin" item still reads as though the bundle hasn't shipped (it is live at
 `app.mirafold.com`); the site repo's `CLAUDE.md` had the same staleness and
 was corrected 2026-07-27.
 
+### ✅ 2026-07-28 — permission answers sync across viewports (Kyle's phone bug)
+
+Kyle's report: allow/deny tapped on the phone looked like it worked (its own
+bar cleared) but "nothing actually happens" — the desktop's copy of the same
+ask stayed up and the phone hung; and an answer given ON the desktop didn't
+reliably clear the phone's bar either. Root cause (reproduced with a local +
+relay-stub two-viewport harness before touching anything): **nothing on the
+wire ever announced a permission's resolution.** Each viewport dropped an ask
+only when it was itself clicked, or at `turn_end`; the fleet mirror was kept
+honest (`answerPermission` + clock-aging) but attached session viewports were
+not. So the second device kept showing an ask that had already been answered
+elsewhere — or auto-denied by the adapter's 60s `PERMISSION_TIMEOUT_MS` — and
+a tap on that stale bar is, by design, a silent no-op at the adapter. Exactly
+"the phone just hangs there." The relay was innocent: a fresh
+`permission_response` from the remote path resolves fine (proven in the
+repro); it was the stale-bar window that made phone answers look dead.
+
+The fix (additive wire message, no relay/contract change — the relay never
+parses frames): **`permission_resolved { id, allow }`** is broadcast on the
+session stream for EVERY resolution path. Emitted from the one place all
+paths funnel through — the adapter's ask `finish` (answer from any viewport,
+timeout auto-deny, interrupt/close deny-all) in `claude-code.ts`, mirrored in
+`mock.ts`; adapters that emit `permission_request` MUST emit this
+(protocol.ts). Registry: `captureCockpit` drops exactly that id from the
+fleet mirror (the timeout path only this catches — `answerPermission` never
+ran) and releases the `permission` status hold only when nothing is still
+pending; `deliver`'s blanket working-flip skips the new type so a second
+pending ask keeps the hold. Client (`Shell.tsx`): drops the ask by id the
+moment the broadcast lands — with a polite announcement when the ask was
+still showing here (it resolved elsewhere), silent when this viewport's own
+click already removed it. Replay benefits for free: the buffer now carries
+request→resolved, so a reloaded viewport can't repaint a stale bar mid-turn.
+
+Pinned in all three tiers and each pin mutation-tested (guard broken → exact
+pin fails → restored): Tier-1 — adapter emits on answer AND on the
+interrupt deny-all (`claude-code.test.ts`), registry drop + hold-until-none-
+pend (`registry.test.ts`), protocol fixture. Tier-2 — the second viewport's
+very NEXT frame after the answer is the resolution, before the allowed
+tool's frames (`session.itest.ts`); the timeout announces `allow:false`
+before `turn_end` (ibid.); and Kyle's exact scenario, answered FROM the
+phone through the encrypted relay path with the local viewport hearing it
+(`relay.itest.ts`). Tier-3 — desktop answers, the PHONE's bar must drop
+while the turn is still streaming, not at `turn_end` (`phone.e2e.ts`, the
+count-pinned "restarted cleanly" discriminator). Tier-1 454/454, Tier-2
+139/139, Tier-3 67/67. Daemon-side + bundle change: reaches users with the
+next package release; no relay deploy involved.
+
 ## Stretch goals (unscheduled — polish, no milestone gates on these)
 
 Pick one up only when the phases above are quiet.

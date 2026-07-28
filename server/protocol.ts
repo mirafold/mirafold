@@ -86,6 +86,14 @@ type WireMsgBody =
   // Phase T.3: the turn is paused on a gated tool call until the browser
   // answers (or the server times out to deny). Drawn by the trusted shell.
   | { type: "permission_request"; tool: string; detail: string; id: string }
+  // 2026-07-28: the ask above RESOLVED — answered from ANY viewport, or
+  // auto-denied by the adapter's timeout/interrupt. Broadcast on the session
+  // stream so every attached viewport (and the replay buffer) drops the bar
+  // the moment it can no longer be answered; before this, a second viewport
+  // kept showing the ask until turn_end and a tap on it was a silent stale
+  // no-op at the adapter (the phone-hangs bug). Adapters that emit
+  // permission_request MUST emit this for every resolution path.
+  | { type: "permission_resolved"; id: string; allow: boolean }
   // Phase 4.2: the server's echo of a user turn. User strips come off the
   // wire (not a local echo) so every attached viewport — and the replay
   // buffer — carries them identically.

@@ -990,6 +990,10 @@ export class MockSession implements AgentSession {
       this.pendingAsks.set(id, (allow) => {
         clearTimeout(timer);
         this.pendingAsks.delete(id);
+        // Answer AND timeout resolve through here — announce it so every
+        // viewport drops the bar, mirroring the real adapter's contract
+        // (protocol.ts permission_resolved).
+        this.emit({ type: "permission_resolved", id, allow });
         if (allow) this.playDangerousAllowed();
         else this.playDangerousDenied();
       });

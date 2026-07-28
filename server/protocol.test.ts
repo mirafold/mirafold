@@ -84,6 +84,7 @@ const WIRE: WireByType = {
     parentId: "task1",
   },
   permission_request: { type: "permission_request", tool: "Bash", detail: "rm -rf build", id: "p1" },
+  permission_resolved: { type: "permission_resolved", id: "p1", allow: true },
   user_prompt: { type: "user_prompt", text: "do the thing" },
   session_created: {
     type: "session_created",

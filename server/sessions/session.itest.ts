@@ -188,6 +188,35 @@ test("permission allow: the held tool runs after permission_response", async () 
   assert.ok(turn.some((m) => m.type === "tool_result" && m.id === use.id));
 });
 
+test("permission sync: the answer reaches the OTHER viewport as permission_resolved, before the tool moves", async () => {
+  // Two viewports on one session — the 2026-07-28 bug: viewport A's bar sat
+  // until turn_end after B answered, and a tap on the stale ask was a silent
+  // no-op at the adapter (the phone-hangs report).
+  const { client: a, sessionId } = await createSession(d.port);
+  const b = new TestClient(d.port);
+  await b.opened();
+  await b.type("agents");
+  b.send({ type: "attach", sessionId } as never);
+  await b.type("session_created");
+
+  a.send({ type: "prompt", text: "run something dangerous" });
+  const askA = (await a.type("permission_request")) as Any;
+  const askB = (await b.type("permission_request")) as Any;
+  assert.equal(askB.id, askA.id);
+
+  b.send({ type: "permission_response", id: askB.id, allow: true } as never);
+  // A's very NEXT frame is the resolution — ahead of the allowed tool's own
+  // frames, so the bar clears the moment the answer lands, never at turn_end.
+  const next = (await a.waitFor(() => true, "frame after the ask", 20_000)) as Any;
+  assert.equal(next.type, "permission_resolved", `expected the resolution first, got ${next.type}`);
+  assert.equal(next.id, askA.id);
+  assert.equal(next.allow, true);
+  await a.type("turn_end", 20_000);
+  await b.type("turn_end", 20_000);
+  a.close();
+  b.close();
+});
+
 test("permission deny: no tool runs, the turn still ends", async () => {
   const from = c.mark();
   c.send({ type: "prompt", text: "run something dangerous" });
@@ -266,7 +295,13 @@ test("permission timeout: nobody answers → deny by default, the turn still end
     const { client } = await createSession(quick.port);
     const from = client.mark();
     client.send({ type: "prompt", text: "run something dangerous" });
-    await client.type("permission_request");
+    const ask = (await client.type("permission_request")) as Any;
+    // The auto-deny is announced like any answer (2026-07-28) — the bar on a
+    // slow-to-notice phone drops instead of inviting a stale tap. type()
+    // consumes forward, so this also pins resolved BEFORE turn_end.
+    const resolved = (await client.type("permission_resolved", 20_000)) as Any;
+    assert.equal(resolved.id, ask.id);
+    assert.equal(resolved.allow, false);
     await client.type("turn_end", 20_000); // no permission_response ever sent
     const turn = client.received.slice(from) as Any[];
     assert.ok(!turn.some((m) => m.type === "tool_use")); // the held tool never ran

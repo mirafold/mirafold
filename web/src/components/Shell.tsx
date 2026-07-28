@@ -41,6 +41,12 @@ export function Shell() {
   // Pending permission prompts, oldest first; the bar shows one at a time.
   // SHELL-OWNED UI: the agent can paint nothing here, so it can't fake it.
   const [asks, setAsks] = useState<{ tool: string; detail: string; id: string }[]>([]);
+  // Mirror for the bus subscription (a stable closure): lets the
+  // permission_resolved handler know whether the ask was still showing HERE —
+  // i.e. it was answered elsewhere / timed out — without re-subscribing on
+  // every asks change.
+  const asksRef = useRef(asks);
+  asksRef.current = asks;
 
   // ── The session + daemon (status-bar state, T2.6 — all shell-owned) ─────
   const [connected, setConnected] = useState(false);
@@ -188,6 +194,17 @@ export function Shell() {
           setAsks((a) => [...a, { tool: m.tool, detail: m.detail, id: m.id }]);
           // Assertive: this one blocks the turn until answered.
           announce(`Permission needed: ${m.tool}. ${m.detail}`, true);
+        } else if (m.type === "permission_resolved") {
+          // The ask was answered on ANOTHER viewport, or auto-denied by the
+          // daemon's timeout — drop it HERE too. Before this, the bar sat
+          // until turn_end and a tap on it was a silent stale no-op at the
+          // adapter (the phone-hangs bug, 2026-07-28). A locally-answered ask
+          // is already gone (the click removed it), so the filter no-ops and
+          // the announcement stays quiet.
+          if (asksRef.current.some((a) => a.id === m.id)) {
+            announce(m.allow ? "Permission allowed." : "Permission denied.");
+          }
+          setAsks((a) => a.filter((x) => x.id !== m.id));
         } else if (m.type === "agents") {
           setDaemonInfo({
             agents: m.agents,

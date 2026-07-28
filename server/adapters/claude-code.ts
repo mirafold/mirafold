@@ -230,6 +230,11 @@ export class ClaudeCodeSession implements AgentSession {
       const finish = (allow: boolean) => {
         clearTimeout(timer);
         this.pendingAsks.delete(id);
+        // Every resolution path lands here (answer, timeout, deny-all), so
+        // this is the one place the resolution is announced to the stream —
+        // other viewports drop their bar on it instead of holding a stale
+        // ask until turn_end (protocol.ts permission_resolved, 2026-07-28).
+        this.emit({ type: "permission_resolved", id, allow });
         resolve(allow);
       };
       const timer = setTimeout(() => finish(false), PERMISSION_TIMEOUT_MS);

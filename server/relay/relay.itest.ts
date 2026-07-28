@@ -98,6 +98,30 @@ test("interrupt sent through the relay halts the in-flight turn", async () => {
   assert.ok(!slice.some((m) => m.type === "render" || m.type === "usage"));
 });
 
+test("a permission answered FROM THE PHONE resolves for the local viewport too (2026-07-28)", async () => {
+  // Kyle's report: the phone's allow/deny looked like it worked (its own bar
+  // cleared locally) while the desktop's copy of the ask sat there and — once
+  // the ask went stale — a tap resolved nothing. The fix: the adapter
+  // announces every resolution on the stream; here the REMOTE viewport
+  // answers and the LOCAL one must hear it before the allowed tool moves.
+  const { client: local } = await attachSession(d.port, sessionId);
+
+  remote.send({ type: "prompt", text: "do something dangerous" });
+  const askLocal = (await local.type("permission_request", 20_000)) as Any;
+  const askRemote = (await remote.type("permission_request", 20_000)) as Any;
+  assert.equal(askRemote.id, askLocal.id);
+
+  remote.send({ type: "permission_response", id: askRemote.id, allow: true } as never);
+  const next = (await local.waitFor(() => true, "frame after the ask", 20_000)) as Any;
+  assert.equal(next.type, "permission_resolved", `expected the resolution first, got ${next.type}`);
+  assert.equal(next.id, askLocal.id);
+  assert.equal(next.allow, true);
+  // …and the allowed turn completes on both sides.
+  await local.type("turn_end", 20_000);
+  await remote.type("turn_end", 20_000);
+  local.close();
+});
+
 test("the pairing code rides the LOCAL hello only — the relay-path hello omits it", async () => {
   const local = new TestClient(d.port);
   await local.opened();

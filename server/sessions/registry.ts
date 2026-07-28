@@ -313,7 +313,9 @@ export class SessionRegistry {
       entry.midTurnPromptUsed = false; // the burst gate clears on the turn grammar, never a clock
     } else if (msg.type === "permission_request") {
       entry.status = "permission";
-    } else {
+    } else if (msg.type !== "permission_resolved") {
+      // permission_resolved decides its own status in captureCockpit — it
+      // must not blanket-flip to "working" while a SECOND ask still pends.
       entry.status = "working";
     }
     if (this.captureCockpit(entry, msg) || entry.status !== prev) {
@@ -388,6 +390,16 @@ export class SessionRegistry {
         // check below stays false and the notify storm is damped too — a
         // flood past the cap stops fanning snapshots to watchers entirely.
         entry.permissions = entry.permissions.slice(-PERMISSION_MIRROR_CAP);
+      }
+    } else if (msg.type === "permission_resolved") {
+      // The adapter's own resolution word (answer, timeout, interrupt) —
+      // exact where the clock-aging below is approximate. An answered id is
+      // usually already gone (answerPermission dropped it for instant fleet
+      // feedback); the timeout path is the one only this catches. The hold
+      // lifts once nothing is pending — never while a second ask still is.
+      entry.permissions = entry.permissions.filter((p) => p.id !== msg.id);
+      if (entry.status === "permission" && entry.permissions.length === 0) {
+        entry.status = "working";
       }
     } else if (entry.status === "idle") {
       // turn_end / error / bang_end: nothing can still be pending.

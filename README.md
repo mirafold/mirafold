@@ -155,6 +155,10 @@ type WireMsg =
   | { type: "tool_result"; output: string; isError?: boolean; id: string;
       truncatedBytes?: number; parentId?: string }
   | { type: "permission_request"; tool: string; detail: string; id: string } // T.3
+  | { type: "permission_resolved"; id: string; allow: boolean } // 2026-07-28: the ask
+                                                   //   resolved (any viewport's answer,
+                                                   //   timeout, interrupt) — every
+                                                   //   viewport drops its bar on this
   | { type: "user_prompt"; text: string }              // 4.2: server-echoed user turn
   | { type: "session_created"; sessionId: string; cwd: string;    // 4.2: attach reply
       agent?: AgentName; model?: string;           // (P.4: + agent; F.3/F.8: + model —

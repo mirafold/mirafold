@@ -234,6 +234,40 @@ test("phone: a permission request is answerable by thumb", async () => {
   await phone.waitForSelector("text=restarted cleanly", { timeout: 15_000 });
 });
 
+// The 2026-07-28 sync bug: an ask answered on one device left the other
+// device's bar up until turn_end — and a tap on that stale bar was a silent
+// no-op at the adapter (the phone "hangs"). The fix broadcasts
+// permission_resolved the moment the ask resolves, so here the DESKTOP
+// answers and the phone's bar must drop while the turn is still running —
+// i.e. BEFORE this turn's "restarted cleanly" streams in (the count pins it
+// to this turn; earlier tests already put one in the transcript).
+test("phone: a permission answered on the desktop clears the phone's bar mid-turn", async () => {
+  await desktop.goto(`http://127.0.0.1:${d.port}/s/${sessionId}`);
+  await desktop.waitForSelector(".prompt-box textarea");
+  const before = await phone.evaluate(
+    () => document.body.innerText.split("restarted cleanly").length,
+  );
+
+  await sendPrompt(phone, "do something dangerous");
+  await phone.waitForSelector(".perm-bar", { timeout: 15_000 });
+  await desktop.waitForSelector(".perm-bar", { timeout: 15_000 });
+  await desktop.locator(".perm-allow").click();
+
+  await phone.waitForFunction(
+    (n) =>
+      !document.querySelector(".perm-bar") &&
+      document.body.innerText.split("restarted cleanly").length === n,
+    before,
+    { timeout: 15_000 },
+  );
+  // …and the allowed turn then completes normally on the phone.
+  await phone.waitForFunction(
+    (n) => document.body.innerText.split("restarted cleanly").length > n,
+    before,
+    { timeout: 15_000 },
+  );
+});
+
 test("phone: a network flip mid-turn resumes the stream without losing the transcript", async () => {
   // A marker node from BEFORE the blip: if resume repainted the zone, this
   // handle would be detached afterwards.
