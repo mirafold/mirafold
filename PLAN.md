@@ -2322,6 +2322,19 @@ credential responses · site `HEAD /api/health` · daemon `connect-src`
 narrowed off the `ws:`/`wss:` wildcards · daemon refuses a malformed
 `MIRAFOLD_RELAY_URL` instead of crashing at boot.
 
+**Deploy state (2026-07-28).** The relay crash guard is **LIVE in
+production** — Fly `v9`, ref `f01a765`, staging `v2` first per the
+documented flow. Verified on both by firing the real payload at the live
+host and reading the logs: `{"event":"bad_request_target"}` with no restart
+between it and the preceding `listening` event, health `ok` on four probes
+after. That deploy also shipped the relay's `HEAD /health` (confirmed `200`
+live), which had been sitting undeployed since 07-23. The site fixes went
+live with the push (Cloudflare Pages builds on push to main). **The daemon
+fixes ship with the next release** — they only reach users when the package
+does. Note the relay does NOT auto-deploy: `deploy.yml` is
+`workflow_dispatch` only, so relay code sitting on `main` is NOT live until
+someone dispatches it.
+
 ### KNOWN FLAKE — `relay.e2e.ts` test 3 (do not chase as a regression)
 
 `assert.ok(tapped.length > 50)` (`server/relay/relay.e2e.ts:91`) is a
