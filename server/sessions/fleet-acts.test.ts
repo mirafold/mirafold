@@ -44,6 +44,20 @@ test("M.2 remote gate: prompt_session and answer_permission are refused on a sub
   reg.end(e.id);
 });
 
+test("M.2 remote gate: a DENY is not gated — stopping the model is not driving it", () => {
+  // Gating both paths left a phone watching a subscription session unable to
+  // deny a pending ask at all; only PERMISSION_TIMEOUT_MS resolved it
+  // (2026-07-28 fix). protocol.ts scopes the gate to the ALLOW path.
+  const reg = new SessionRegistry(SUB);
+  const e = reg.create({ cwd: dir() });
+  reg.broadcast(e, { type: "permission_request", tool: "Bash", detail: "a", id: "p1" });
+  const { c, seen } = conn(reg, true);
+  send(c, { type: "answer_permission", sessionId: e.id, id: "p1", allow: false });
+  assert.equal(errors(seen).length, 0, "the deny is not refused");
+  assert.deepEqual(e.permissions, [], "the ask leaves the pending queue");
+  reg.end(e.id);
+});
+
 test("M.2 remote gate: interrupt_session stays ungated (teardown, like end_session)", () => {
   const reg = new SessionRegistry(SUB);
   const e = reg.create({ cwd: dir() });

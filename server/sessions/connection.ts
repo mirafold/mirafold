@@ -308,10 +308,13 @@ export function openConnection(
         }
         break;
       // ---- Cockpit acts (M.2): sessionId-addressed like end_session, so a
-      // fleet watcher acts without attaching. answer_permission and
-      // prompt_session DRIVE the model, so a remote (relay) connection gets
-      // the same R.4i gate attach applies; interrupt_session stays ungated
-      // like end_session. Unknown ids error, never crash.
+      // fleet watcher acts without attaching. answer_permission's ALLOW path
+      // and prompt_session DRIVE the model, so a remote (relay) connection
+      // gets the same R.4i gate attach applies; a DENY stops the model — it
+      // stays ungated (2026-07-28 fix: gating both left a phone unable to
+      // deny an ask on a subscription session, resolving only by timeout),
+      // and interrupt_session stays ungated like end_session. Unknown ids
+      // error, never crash.
       case "answer_permission": {
         if (
           typeof msg.sessionId !== "string" ||
@@ -320,7 +323,7 @@ export function openConnection(
         ) {
           break;
         }
-        if (!actTarget(msg.sessionId, true)) break;
+        if (!actTarget(msg.sessionId, msg.allow)) break;
         registry.answerPermission(msg.sessionId, msg.id, msg.allow);
         log.info(`answer_permission → session ${msg.sessionId} (${msg.allow ? "allow" : "deny"})`);
         break;
