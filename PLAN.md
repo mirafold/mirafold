@@ -2335,12 +2335,12 @@ does. Note the relay does NOT auto-deploy: `deploy.yml` is
 `workflow_dispatch` only, so relay code sitting on `main` is NOT live until
 someone dispatches it.
 
-### KNOWN FLAKE — `relay.e2e.ts` test 3 (do not chase as a regression)
+### ✅ RESOLVED 2026-07-28 — the `relay.e2e.ts` test 3 flake
 
-`assert.ok(tapped.length > 50)` (`server/relay/relay.e2e.ts:91`) is a
-hardcoded frame-count threshold and it is **load-sensitive**. Sampled
+`assert.ok(tapped.length > 50)` (`server/relay/relay.e2e.ts:91`) was a
+hardcoded frame-count threshold and it was **load-sensitive**. Sampled
 2026-07-27 in isolation: **1 pass / 3 fail**, failing at exactly `saw 50`.
-The comment directly above it already documents the same failure a week
+The comment directly above it already documented the same failure a week
 earlier — *"the 'saw 40' flake, reproduced 2/20 under saturation
 2026-07-19"* — so the earlier fix (keying the wait on turn completion)
 did not remove the underlying brittleness, only moved the number.
@@ -2348,15 +2348,26 @@ did not remove the underlying brittleness, only moved the number.
 Mechanism: `DELTA_COALESCE_MS` (33ms) merges streamed deltas, so the number
 of frames the tap sees depends on machine load — under saturation more
 deltas merge, fewer frames cross, and the count drops under the threshold.
-The assertion it actually wants is "the relay only ever saw ciphertext,"
-which the loop below it already checks; the count is a proxy for "a real
-turn happened" and should key on something deterministic (turn boundaries,
-or a floor low enough to survive coalescing) rather than a frame tally.
 
-**Not proven unrelated to that day's `server/index.ts` change.** The
-isolation run — revert `server/index.ts`, sample the same number of times,
-compare pass rates — was offered and not run before the session ended. Do
-that first; it either clears the change or catches a second problem.
+**The owed isolation run was run 2026-07-28 and CLEARED the 07-27
+`server/index.ts` change**: 6 samples on HEAD (0 pass / 6 fail, `saw`
+43–50) vs. 6 samples with `server/index.ts` reverted to `5e0abe4^`
+(0 pass / 6 fail, `saw` 44–49) — identical distributions, so the flake is
+fully explained by the threshold, no second problem. (Note the fail rate
+on this machine had drifted to 6/6 — the tally sat permanently just under
+50, i.e. the threshold was not merely flaky but effectively broken.)
+
+**Fix (same day):** the count was only ever a guard against the ciphertext
+loop below it passing vacuously over zero frames. Replaced the total-frame
+tally with growth-during-the-turn: capture `tapped.length` before the
+remote prompt, assert it grew by ≥2 after both viewports saw `turn_end` —
+the prompt itself must cross the tap upstream (c2d) and the `turn_end`
+that detaches the stop buttons must cross downstream (d2c), and delta
+coalescing can never merge either away. Deterministic under any load.
+Mutation-tested (both tap `frame` calls dropped from `relay-stub.ts` →
+fails `saw 0 new frames over 0` → restored); verified 6/6 passing
+unpinned and 3/3 passing under single-core CPU pinning (`taskset -c 0`),
+the condition that originally reproduced the flake.
 
 ### REVERTED — per-session prompt throttle (redo only with the fixed design)
 

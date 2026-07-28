@@ -60,6 +60,7 @@ test("a second browser attaches THROUGH the stub and replays the transcript", as
 });
 
 test("typing in the remote browser drives the session; both transcripts mirror", async () => {
+  const tappedBefore = tapped.length;
   await remote.locator("textarea").click();
   await remote.keyboard.type("hello from the far side of the relay");
   await remote.keyboard.press("Enter");
@@ -88,7 +89,17 @@ test("typing in the remote browser drives the session; both transcripts mirror",
 
   // Everything the relay shuttled for that mirrored session was
   // ciphertext — base64url only, no JSON, no prompt text, no code (R.3).
-  assert.ok(tapped.length > 50, `expected real traffic through the tap, saw ${tapped.length}`);
+  // The count guard only proves the tap saw THIS turn (a vacuous loop over
+  // zero frames would pass). A total-frame threshold is load-sensitive:
+  // DELTA_COALESCE_MS merges more deltas the slower the machine, so a tally
+  // drifts with CPU load — the "saw 40" flake above resurfaced as "saw 50"
+  // 2026-07-27, sampled 0/6 passing in isolation. What coalescing can NEVER
+  // remove: the prompt itself crossing c2d, and the turn_end that detached
+  // the stop buttons crossing d2c. Growth of ≥2 during the turn is exact.
+  assert.ok(
+    tapped.length >= tappedBefore + 2,
+    `expected this turn's traffic through the tap: prompt up + turn_end down (saw ${tapped.length - tappedBefore} new frames over ${tappedBefore})`,
+  );
   for (const p of tapped) {
     assert.ok(/^[A-Za-z0-9_-]+$/.test(p), `relay saw a non-ciphertext frame: ${p.slice(0, 80)}`);
     assert.ok(!p.includes("hello from the far side"), "relay saw plaintext prompt text");
