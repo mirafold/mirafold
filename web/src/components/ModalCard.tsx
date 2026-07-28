@@ -29,7 +29,9 @@ export function ModalCard({
   onDismiss?: () => void;
   children: ReactNode;
 }) {
-  useEscapeKey(onDismiss);
+  // Exclusive: dismissing the card is the WHOLE keypress — it must not also
+  // reach Shell's busy-interrupt listener and halt the running turn.
+  useEscapeKey(onDismiss, { exclusive: true });
   const card = useRef<HTMLDivElement>(null);
   useFocusTrap(card, true);
 

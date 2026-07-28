@@ -787,6 +787,25 @@ test("settings card: gear opens it, picking applies live and writes the slot (S.
   assert.equal(await dataTheme(), "dark"); // ends where the suite expects
 });
 
+test("Esc on an open card is exclusive — it dismisses without interrupting the turn", async () => {
+  // The double-fire (2026-07-28 review): ModalCard's Escape used to share the
+  // bubble phase with Shell's busy interrupt, so closing a card mid-turn also
+  // silently halted the turn. The card now owns the key (capture +
+  // stopPropagation, PickerBlock's idiom); the interrupt stays the fallback.
+  await page.locator("textarea").click();
+  await page.keyboard.type("tell me about the weather");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector(".stop-btn"); // the turn is in flight
+  await page.locator(".sb-settings").click();
+  await page.waitForSelector(".settings-card");
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator(".settings-card").count(), 0); // card dismissed…
+  assert.equal(await page.locator(".stop-btn").count(), 1); // …turn still running
+  // With no card open, Escape falls through to the interrupt as before.
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".stop-btn", { state: "detached", timeout: 15_000 });
+});
+
 test("a borrowed theme is selectable, actually painted, and persistent (S.5)", async () => {
   const bodyBg = () =>
     page.locator("body").evaluate((el) => getComputedStyle(el).backgroundColor);

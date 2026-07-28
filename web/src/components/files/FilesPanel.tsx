@@ -156,8 +156,12 @@ export function FilesPanel({
   const modal = phone && open;
   useFocusTrap(panelRef, modal);
   // Esc on phone drills back one layer, then closes from the tree — the
-  // stacked-layer contract. Desktop leaves Esc to Shell (busy = interrupt).
-  useEscapeKey(modal ? (selected ? () => setSelected(null) : onClose) : undefined);
+  // stacked-layer contract, and it owns the key while open (exclusive: a
+  // drill-back must not also reach Shell's busy interrupt). Desktop leaves
+  // Esc to Shell (busy = interrupt).
+  useEscapeKey(modal ? (selected ? () => setSelected(null) : onClose) : undefined, {
+    exclusive: true,
+  });
 
   // Subscribe once; the refs above make the handlers care only about the
   // latest requests. RenderZone ignores fs_* the same way (unknown to it).
