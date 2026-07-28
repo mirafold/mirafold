@@ -2296,6 +2296,21 @@ concatenation each broken → exact pinning tests failed → restored).
   (`bufferedAmount` is checked nowhere), and batching the attach-replay's
   per-message sealing on the relay path.
 
+## Guidance tuning — the prose exit ramp (✅ 2026-07-27)
+
+One bullet in `RENDER_GUIDANCE` (`server/render-tools.ts`, commit `9330ded`),
+from a live report: a recipe ask rendered as plain markdown. Probed against
+the real engine with the adapter's exact setup first — pipeline healthy (a
+table-shaped prompt tool-searches and paints; render tools ARE deferred
+behind the SDK's tool search, noted, deliberately left alone), so the cause
+was the old "plain markdown remains right for long-form prose" bullet
+filing whole prose-shaped answers under markdown. New bullet: markdown is
+connective tissue; find and render the answer's structured core (recipe and
+prose-buried comparison as worked examples). Measured on the recipe prompt:
+0/2 renders → 2/3, ingredients + steps as components; diagnostic-prose
+control stays 0/2 (no over-rendering). Confirmed in the real UI end-to-end.
+Ported to mirafold-chat the same day (its `090d29f`) with its own probe.
+
 ## Stretch goals (unscheduled — polish, no milestone gates on these)
 
 Pick one up only when the phases above are quiet.
