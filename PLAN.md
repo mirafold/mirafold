@@ -742,7 +742,14 @@ with it. Both sequence BEFORE R.5.**
     is ops/emergency tooling only.*
   - **Still open on this step:**
     1. The **Pro button → `/pay` link** swap on the site.
-    2. The **Paddle.js default-payment-link page**, before real renewals begin.
+    2. ✅ **The Paddle.js default-payment-link page — DONE 2026-07-28.** The
+       dashboard setting still pointed at `/welcome` (the 07-22 setup's
+       wrong target — no Paddle.js there, so Paddle's card-update /
+       renewal-recovery emails dead-ended). Kyle repointed it to
+       `https://mirafold.com/pay` — which was built for exactly this
+       (Paddle.js auto-opens checkout on `?_ptxn=`) and was verified live
+       the same day — ahead of the first real charges (his own trial
+       converts ~07-29).
     3. Deploying the **phone app bundle to the site origin** (the static
        app-serving origin half of this step).
     4. The pre-public-launch hardening trio — claim window ✅ and revocation
