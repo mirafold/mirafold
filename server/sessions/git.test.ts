@@ -11,32 +11,42 @@ import { cleanRelPath, decorateGitDir, findRepoRoot, parseStatusIgnoredZ, parseS
 // rules, and nearest-.git repo discovery on real temp dirs.
 
 test("parseStatusZ: plain records collapse to single chars", () => {
-  const m = parseStatusZ("M  a.txt\0?? new.txt\0 D gone.txt\0A  staged.txt\0 M work.txt\0");
-  assert.equal(m.get("a.txt"), "M");
-  assert.equal(m.get("new.txt"), "U");
-  assert.equal(m.get("gone.txt"), "D");
-  assert.equal(m.get("staged.txt"), "A");
-  assert.equal(m.get("work.txt"), "M");
+  const { files } = parseStatusZ("M  a.txt\0?? new.txt\0 D gone.txt\0A  staged.txt\0 M work.txt\0");
+  assert.equal(files.get("a.txt"), "M");
+  assert.equal(files.get("new.txt"), "U");
+  assert.equal(files.get("gone.txt"), "D");
+  assert.equal(files.get("staged.txt"), "A");
+  assert.equal(files.get("work.txt"), "M");
 });
 
 test("parseStatusZ: a rename record is TWO fields — later records stay aligned", () => {
   // R: `XY to\0from\0`. A naive one-field split would read `old.txt` as a
   // record and misparse everything after it.
-  const m = parseStatusZ("R  new-name.txt\0old-name.txt\0M  after-the-rename.txt\0");
-  assert.equal(m.get("new-name.txt"), "A");
-  assert.equal(m.get("old-name.txt"), "D");
-  assert.equal(m.get("after-the-rename.txt"), "M", "alignment survives the rename record");
+  const { files } = parseStatusZ("R  new-name.txt\0old-name.txt\0M  after-the-rename.txt\0");
+  assert.equal(files.get("new-name.txt"), "A");
+  assert.equal(files.get("old-name.txt"), "D");
+  assert.equal(files.get("after-the-rename.txt"), "M", "alignment survives the rename record");
 });
 
 test("parseStatusZ: a copy's source is NOT marked deleted", () => {
-  const m = parseStatusZ("C  copy.txt\0source.txt\0");
-  assert.equal(m.get("copy.txt"), "A");
-  assert.equal(m.get("source.txt"), undefined, "the copy source still exists unchanged");
+  const { files } = parseStatusZ("C  copy.txt\0source.txt\0");
+  assert.equal(files.get("copy.txt"), "A");
+  assert.equal(files.get("source.txt"), undefined, "the copy source still exists unchanged");
 });
 
 test("parseStatusZ: trailing empty field and junk are ignored", () => {
-  const m = parseStatusZ("M  a.txt\0\0x\0");
-  assert.equal(m.size, 1);
+  const { files } = parseStatusZ("M  a.txt\0\0x\0");
+  assert.equal(files.size, 1);
+});
+
+test("parseStatusZ: a wholly-untracked dir is a PREFIX, not a phantom file (2026-07-28)", () => {
+  // Default untracked-files=normal collapses the dir to one `?? dir/` record;
+  // treating it as a file shipped a trailing-slash entry with status U while
+  // the real files inside (listed by ls-files --others) carried none.
+  const { files, untrackedDirs } = parseStatusZ("?? newdir/\0?? loose.txt\0");
+  assert.equal(files.get("loose.txt"), "U");
+  assert.ok(!files.has("newdir/"), "the collapse is not a file status");
+  assert.deepEqual([...untrackedDirs], ["newdir"]);
 });
 
 test("cleanRelPath: accepts plain relative paths, normalizes ./", () => {

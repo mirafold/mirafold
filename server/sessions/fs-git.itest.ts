@@ -71,6 +71,10 @@ before(async () => {
   writeFileSync(path.join(repo, "untracked.txt"), "new\n");
   writeFileSync(path.join(repo, "ignored.txt"), "invisible\n");
   writeFileSync(path.join(repo, "sub", "inner.txt"), "inner-two\n");
+  // A wholly-untracked directory: status collapses it to one `?? newdir/`
+  // record (the 2026-07-28 phantom-entry fix's case).
+  mkdirSync(path.join(repo, "newdir"));
+  writeFileSync(path.join(repo, "newdir", "inside.txt"), "inside\n");
   unlinkSync(path.join(repo, "gone.txt"));
   git(repo, "mv", "moveme.txt", "moved.txt");
 
@@ -103,6 +107,10 @@ test("E.2: fs_list is git's view — statuses collapsed, ignored excluded, stage
   assert.ok(by.has(".gitignore"));
   assert.ok(!by.has("ignored.txt"), "gitignored files are git's view — not listed");
   assert.ok(![...by.keys()].some((p) => (p as string).startsWith(".git/")));
+  // The untracked-dir collapse (2026-07-28 fix): the files inside carry U,
+  // and no trailing-slash phantom entry ships for the dir itself.
+  assert.equal(by.get("newdir/inside.txt"), "U", "files inside an untracked dir carry U");
+  assert.ok(!by.has("newdir/"), "no phantom dir/ entry");
   // Deterministic order.
   const paths = (tree.entries as Any[]).map((e) => e.path);
   assert.deepEqual(paths, [...paths].sort());

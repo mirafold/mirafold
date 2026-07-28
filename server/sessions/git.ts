@@ -85,11 +85,18 @@ export const cleanRelPath = (rel: string): string | null => {
  * `XY <to>\0<from>\0` — TWO fields, and a naive single-field split misaligns
  * every record after the first rename. Renames collapse to A(to) + D(from)
  * for v1. Status collapse: `??` → U (untracked); any D → D; any A → A;
- * everything else that reaches porcelain (M/T/U-conflict/…) → M. Exported
- * pure for the Tier-1 pin.
+ * everything else that reaches porcelain (M/T/U-conflict/…) → M. A wholly-
+ * untracked directory arrives collapsed to ONE `?? dir/` record — that's a
+ * prefix, not a file, so it lands in `untrackedDirs` (slashless, the
+ * parseStatusIgnoredZ convention) instead of masquerading as a file status
+ * (2026-07-28 fix: it used to ship as a phantom `dir/` tree entry while the
+ * real files inside carried no status). Exported pure for the Tier-1 pin.
  */
-export const parseStatusZ = (out: string): Map<string, string> => {
-  const byPath = new Map<string, string>();
+export const parseStatusZ = (
+  out: string,
+): { files: Map<string, string>; untrackedDirs: Set<string> } => {
+  const files = new Map<string, string>();
+  const untrackedDirs = new Set<string>();
   const fields = out.split("\0");
   for (let i = 0; i < fields.length; i++) {
     const rec = fields[i];
@@ -98,18 +105,20 @@ export const parseStatusZ = (out: string): Map<string, string> => {
     const p = rec.slice(3);
     if (xy.includes("R") || xy.includes("C")) {
       const from = fields[++i]; // the second field of this record
-      byPath.set(p, "A");
+      files.set(p, "A");
       // Rename: the source is gone → D. Copy: the source still exists,
       // unchanged — marking it D would lie about a file sitting on disk.
-      if (xy.includes("R") && from) byPath.set(from, "D");
+      if (xy.includes("R") && from) files.set(from, "D");
       continue;
     }
-    if (xy === "??") byPath.set(p, "U");
-    else if (xy.includes("D")) byPath.set(p, "D");
-    else if (xy.includes("A")) byPath.set(p, "A");
-    else byPath.set(p, "M");
+    if (xy === "??") {
+      if (p.endsWith("/")) untrackedDirs.add(p.slice(0, -1));
+      else files.set(p, "U");
+    } else if (xy.includes("D")) files.set(p, "D");
+    else if (xy.includes("A")) files.set(p, "A");
+    else files.set(p, "M");
   }
-  return byPath;
+  return { files, untrackedDirs };
 };
 
 export type GitTree =
@@ -140,10 +149,20 @@ export async function gitTree(root: string): Promise<GitTree> {
   // Re-key repo-root-relative status paths to session-root-relative; changes
   // outside a subdirectory session's subtree are not this session's story.
   const statusByRel = new Map<string, string>();
-  for (const [p, s] of rawStatus) {
+  for (const [p, s] of rawStatus.files) {
     if (prefix === "") statusByRel.set(p, s);
     else if (p.startsWith(prefix)) statusByRel.set(p.slice(prefix.length), s);
   }
+  // Untracked-dir prefixes, re-keyed the same way. "" means the session root
+  // itself sits inside the collapsed dir — everything unlisted is untracked.
+  const untrackedDirs: string[] = [];
+  for (const d of rawStatus.untrackedDirs) {
+    if (prefix === "") untrackedDirs.push(d);
+    else if ((d + "/").startsWith(prefix)) untrackedDirs.push(d.slice(prefix.length));
+    else if (prefix.startsWith(d + "/")) untrackedDirs.push("");
+  }
+  const inUntrackedDir = (rel: string) =>
+    untrackedDirs.some((d) => (d === "" ? true : rel.startsWith(d + "/")));
 
   const seen = new Set<string>();
   const entries: FsEntry[] = [];
@@ -156,7 +175,7 @@ export async function gitTree(root: string): Promise<GitTree> {
       truncated = true;
       return;
     }
-    const status = statusByRel.get(rel);
+    const status = statusByRel.get(rel) ?? (inUntrackedDir(rel) ? "U" : undefined);
     entries.push({ path: rel, ...(status ? { status } : {}) });
     pathBytes += Buffer.byteLength(rel, "utf8");
   };
@@ -240,11 +259,10 @@ export type RepoStatus = RepoStatusData | { notGit: true } | { error: string };
 
 /**
  * Parse `git status --porcelain=v1 -z --ignored` into the per-repo view.
- * Same -z framing rules as parseStatusZ (which stays untouched — the legacy
- * whole-tree path is a compatibility floor): rename/copy records carry TWO
- * fields, renames collapse to A(to) + D(from), copies never mark the source.
- * New here: `!!` (ignored) and the trailing-slash dir collapse of `??`/`!!`
- * records land in their own sets instead of masquerading as file statuses.
+ * Same -z framing rules as parseStatusZ (the legacy whole-tree parser):
+ * rename/copy records carry TWO fields, renames collapse to A(to) + D(from),
+ * copies never mark the source, and the trailing-slash dir collapse lands in
+ * its own set. New here: `!!` (ignored) gets a set of its own too.
  * Exported pure for the Tier-1 pin.
  */
 export const parseStatusIgnoredZ = (out: string): RepoStatusData => {
