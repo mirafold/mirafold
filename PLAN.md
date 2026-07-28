@@ -1240,7 +1240,20 @@ with it. Both sequence BEFORE R.5.**
       cap, reclaims on close). All read SERVER-SIDE (relay logs +
       `connections()`); a client-side harness was unreliable for the
       refuse-after-handshake pattern (relay `close(4004)`s just after the WS
-      `open`, so the client briefly sees "open"). Side effect: the live relay
+      `open`, so the client briefly sees "open"). **That harness now exists and
+      handles exactly that pattern — `genui-relay/scripts/load.mjs`, added
+      2026-07-28 (`npm run load -- <staging-url>`).** It reads a refusal by
+      waiting out a grace window after `open` instead of racing it, so an
+      "open" that is about to be closed is counted correctly; four phases
+      (connection ramp, frame-rate flood, byte-rate flood, slowloris) each
+      report which cap fired at what threshold, and it exits non-zero when a
+      phase hits NO cap. Validated against a deliberately tiny-capped local
+      relay — reported thresholds matched the configured caps exactly, and the
+      no-cap-fired path was confirmed to FAIL rather than pass. Run it on
+      STAGING, never production (runbook: `genui-relay/DEPLOY.md` §6), after any
+      cap retune or machine resize, and compare the numbers. The client can't
+      tell the three capacity caps apart (all close 4004), so read the relay's
+      own log line alongside it. Side effect: the live relay
       was **redeployed to current code** (had been v4/Jul-13 — all Phase-G+
       work was unshipped; now current + health-verified). Still NOT done (not
       blockers): the NAT'd-office many-users-one-IP case; a daemon-side check
