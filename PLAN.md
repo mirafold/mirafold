@@ -687,7 +687,14 @@ with it. Both sequence BEFORE R.5.**
        the reasons means a new close code in the relay envelope — a
        cross-repo contract change (genui-relay's mirrored contract.ts) —
        so it should ride the next deliberate envelope revision, not a
-       drive-by fix. Decide with Kyle: acceptable copy, or new code.
+       drive-by fix. **Triage (2026-07-28, Kyle): nice-to-have, not a big
+       deal — fix only if really easy, and it isn't (the close frame must
+       grow an optional code field, mirrored + both suites + a relay
+       redeploy). So: ride the next envelope revision, alongside the
+       pairing-id URL move's standing policy. Cheap head start when that
+       happens: the vocabulary already has the right code —
+       CLOSE_OVERLOADED 4004, which ws.ts already maps to a capacity
+       message — the daemon's cap-refusal close just can't name it yet.**
        (b) **`ClaudeCodeSession.announcedTools` retains ids across
        interrupted turns — ✅ RESOLVED 2026-07-28, Kyle's call.** Of the
        three options (leave it; clear on interrupt(), which drops a
