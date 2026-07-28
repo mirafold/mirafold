@@ -59,10 +59,16 @@ export const RenderBlock = memo(function RenderBlock({
   onAction: (action: Action, sourceId: string) => void;
 }) {
   const name = component as ComponentName;
-  const Impl = registry[name] as ComponentType<Record<string, unknown>> | undefined;
+  // Own-property lookups only: `component` is a wire string, and a prototype
+  // key ("toString", "constructor") would otherwise pass both lookups truthy
+  // and then throw in safeParse — during THIS component's render, above the
+  // boundary it installs, unmounting the whole zone (2026-07-28 review).
+  const Impl = Object.hasOwn(registry, name)
+    ? (registry[name] as ComponentType<Record<string, unknown>>)
+    : undefined;
   // Tolerant twin, not the strict source schema (R.4h): a newer daemon's
   // extra props must strip, not fail this whole component into the fallback.
-  const schema = clientSchemas[name];
+  const schema = Object.hasOwn(clientSchemas, name) ? clientSchemas[name] : undefined;
   // Re-parsed only when the props object changes — an update-in-place render
   // arrives as a new props object, everything else re-renders with the same one.
   const parsed = useMemo(() => schema?.safeParse(props), [schema, props]);
