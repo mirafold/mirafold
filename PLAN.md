@@ -197,6 +197,33 @@ records of later unplanned polish batches.
   including an e2e pin (tap → card shows raw target → confirm opens,
   dismiss doesn't).
 
+- [x] **Step 4.13 — Phone-testing bug batch (unplanned, Kyle-driven)** — done
+  2026-07-28, all tiers green (458/139/70), every fix e2e-pinned +
+  mutation-tested. Three bugs from Kyle's manual phone/relay testing:
+  (1) **busy turns looked idle** — the transcript's activity line now stays
+  up the whole turn (`✳ working…` fallback between status frames), driven
+  by Shell's wire-derived busy flag; (2) **the permission strip's one-line
+  preview was unreadable on phone** — its body is now one tap target
+  opening the full command in a ModalCard (extracted to `PermBar.tsx` in
+  the same-day refactor); (3) **`exp://` links rendered as dead
+  empty-href anchors** (the about:blank tab) — Expo Go schemes now pass
+  the markdown URL allowlist as real links, and stripped schemes render
+  as text (`web/src/registry/Md.test.ts`). Same-day audit: exp:// hand-off
+  disclosed in SECURITY.md, interstitial planned as 4.12; the audit's
+  second finding — the permission `detail` string is uncapped end-to-end —
+  judged theoretical and **accepted, no action** (Kyle's call 2026-07-28:
+  real agents emit real commands, the card + scrollbar already show more
+  than the old strip ever did; don't re-litigate absent an engine that
+  emits huge payloads); user-facing
+  "know what you're running" paragraph added to the README top. Related
+  decision, same day: **relay port-tunneling** (phone reaches a dev server
+  on the laptop through the relay, no LAN/firewall dependence) was
+  explored and **parked by Kyle** — no roadmap item; the self-serve LAN
+  workaround stands, revisit only if phone-first app-building becomes a
+  real usage path. (The `192.168…` failure that started it was Kyle's ufw
+  dropping LAN SYNs — his machine, not repo state.)
+
+
 ---
 
 ## Phase K — Legal & compliance readiness (opened 2026-07-15; gates the remaining Phase R steps)

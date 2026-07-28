@@ -516,7 +516,7 @@ web/               the browser app (React 19 + Vite)
   src/components/    the shell-owned components — trusted UI, every file here
                      (H2.1); the agent-paintable vocabulary is its SIBLING,
                      registry/, so the trust split reads in the tree
-    Shell.tsx          TRUSTED SHELL: prompt box + permission bar + notices +
+    Shell.tsx          TRUSTED SHELL: prompt box + notices +
                        status bar + the activity bar (the left strip that
                        toggles the Explorer — desktop only; on phone the
                        toggle folds into the status bar, 2026-07-25);
@@ -529,6 +529,10 @@ web/               the browser app (React 19 + Vite)
                        sends, R.4l)
     BangBar.tsx        the `!` command's stdin bar (4.9): per-viewport input
                        with password auto-masking — ephemeral, never broadcast
+    PermBar.tsx        the permission strip + its full-command card (2026-07-28):
+                       the strip's body is one tap target opening the whole
+                       command in a ModalCard — the phone's truncated preview
+                       was unreadable; Shell keeps owning asks + the wire answer
     RenderZone.tsx     OUTPUT ZONE: WireMsg interpreter → entries + status line,
                        incl. thinking blocks, artifacts, and subagent grouping
     ToolBlock.tsx      tool-call records: collapsed row, expands to input diff +
