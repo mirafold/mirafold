@@ -72,3 +72,21 @@ test("stackSegments: cumulative spans in series order; negatives don't stack", (
     { si: 1, v: 2, lo: 1, hi: 3 },
   ]);
 });
+
+// The axis must scale on what is DRAWN (2026-07-28 fix): marks clip values to
+// one per x label, so surplus values may not stretch the domain invisibly.
+test("surplus values beyond the x labels do not stretch the axis", async () => {
+  const { createElement } = await import("react");
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  const { Chart } = await import("./Chart");
+  for (const kind of ["bar", "hbar", "line"] as const) {
+    const html = renderToStaticMarkup(
+      createElement(Chart as never, {
+        kind,
+        x: ["only"],
+        series: [{ name: "s", values: [1, 1000] }],
+      }),
+    );
+    assert.ok(!html.includes("1k"), `${kind}: the undrawn 1000 must not appear as a tick`);
+  }
+});

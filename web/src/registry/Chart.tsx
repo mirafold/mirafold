@@ -264,9 +264,12 @@ function HBarChart({ title, x, series, yLabel, stacked }: ComponentProps<"chart"
   const [hover, setHover] = useState<number | null>(null);
   const isStacked = stacked === true && series.length > 1;
   const cols = isStacked ? stackSegments(series, x.length) : null;
+  // Scale on what is DRAWN: every mark renderer clips values to x.length
+  // (one value per x label), so extra values must not stretch the axis with
+  // invisible data (2026-07-28 fix — stacked was already bounded via xLen).
   const values = cols
     ? cols.flatMap((col) => (col.length ? [col[col.length - 1].hi] : []))
-    : series.flatMap((s) => s.values).filter(Number.isFinite);
+    : series.flatMap((s) => s.values.slice(0, x.length)).filter(Number.isFinite);
   const tks = niceTicks(Math.min(0, ...values), Math.max(0, ...values));
   const vMin = tks[0];
   const vMax = tks[tks.length - 1] === vMin ? vMin + 1 : tks[tks.length - 1];
@@ -412,9 +415,13 @@ function VChart({ title, kind, x, series, yLabel, stacked }: ComponentProps<"cha
   // series. A single series has nothing to stack; the flag is a quiet no-op.
   const isStacked = kind === "bar" && stacked === true && series.length > 1;
   const cols = isStacked ? stackSegments(series, x.length) : null;
+  // Same domain rule as HBarChart, including the empty-column [] (an empty
+  // stack contributes nothing; the Math.min/max 0-anchors cover it — the [0]
+  // this once carried was copy-paste drift). Scale on what is DRAWN: marks
+  // clip values to x.length, so extras must not stretch the axis (2026-07-28).
   const values = cols
-    ? cols.flatMap((col) => (col.length ? [col[col.length - 1].hi] : [0]))
-    : series.flatMap((s) => s.values).filter(Number.isFinite);
+    ? cols.flatMap((col) => (col.length ? [col[col.length - 1].hi] : []))
+    : series.flatMap((s) => s.values.slice(0, x.length)).filter(Number.isFinite);
   const dataMin = Math.min(0, ...values);
   const dataMax = Math.max(0, ...values);
   const tks = niceTicks(dataMin, dataMax);
