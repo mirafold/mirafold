@@ -329,10 +329,11 @@ test("E2.3: a single-repo root gets the git view lazily — and the legacy whole
   ]);
 
   // The compatibility floor, now with git: the legacy fs_list on the SAME
-  // connection still serves the whole-tree git view exactly as Phase E did —
-  // including its quirk of surfacing a wholly-untracked dir as a collapsed
-  // `newdir/` U entry beside the statusless file ls-files lists. Pinned
-  // as-is: the old pair is byte-identical, never "improved".
+  // connection still serves the whole-tree git view beside the lazy pair.
+  // E2.3 pinned its wholly-untracked-dir quirk as-is (a phantom `newdir/` U
+  // entry beside a statusless file — E2.3's scope was "don't touch the old
+  // pair"); the 2026-07-28 fix then closed the quirk itself, so the pin now
+  // reads the fixed truth: the FILE carries U, no trailing-slash entry.
   c.send({ type: "fs_list", id: "s2" } as ClientMsg);
   const tree = (await c.waitFor((m) => m.type === "fs_tree" && (m as Any).id === "s2", "fs_tree s2")) as Any;
   assert.equal(tree.error, undefined);
@@ -344,8 +345,7 @@ test("E2.3: a single-repo root gets the git view lazily — and the legacy whole
       ["changed.txt", "M"],
       ["doomed.txt", "D"],
       ["kept.txt", undefined],
-      ["newdir/", "U"],
-      ["newdir/fresh.txt", undefined],
+      ["newdir/fresh.txt", "U"],
     ],
   );
   c.close();
