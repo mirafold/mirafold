@@ -573,7 +573,9 @@ web/               the browser app (React 19 + Vite)
                        open
     files/             the Explorer panel (Phase E): FilesPanel.tsx (tree +
                        drill-in — docked left column on desktop, full-screen
-                       dialog on phone) + FileView.tsx (content / diff / binary)
+                       dialog on phone; desktop ⤢ enlarges the file box into
+                       a dimmed lightbox, E.6) + FileView.tsx (content /
+                       diff / binary)
   src/registry/      Card, List, Table, LinkGroup, Chart, TodoList, KeyValue,
                      Progress, Timeline, FileTree, Question, Diff, Stat, Code,
                      StatusList, Console, Image, Diagram, Md, CopyButton +
