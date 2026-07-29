@@ -1312,6 +1312,19 @@ with it. Both sequence BEFORE R.5.**
     because they don't; no one owns this space like we do.** All copy stands
     on what Mirafold IS, never on a contrast with anyone else. This
     supersedes the earlier 2026-07-08 "competitive scan" framing below.
+    - [ ] **Public-beta framing (Kyle's call, 2026-07-29):** the launch
+      presents Mirafold as a **public beta**, stated plainly and
+      consistently everywhere it speaks — ONE phrase (working draft:
+      "Mirafold is in public beta — new, moving fast, and issues are
+      wanted"; Kyle tunes the words) used in the README top, the site's
+      hero/install area, the post-flip `/beta` live note, and every
+      launch post; the GitHub issue tracker named as the front door for
+      reports. The point is honesty as positioning: expectations set as
+      "new, may have bugs" rather than implied maturity — the audience
+      rewards the plain version over implied polish. Pairs with the 0.x
+      version number (R.5b open call (i); 0.3.0 recommended). Pro stays
+      purchasable — normal for a public beta and consistent with R.5b's
+      real-billing beta shape.
     - Refresh the demo GIF with the phone beat (the §6 launch asset as
       originally imagined) — the phone beat must show a RENDERED COMPONENT
       on the phone (live checklist, chart, pinned widget), not a chat
