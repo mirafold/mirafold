@@ -1305,6 +1305,37 @@ test("a queued follow-up keeps the indicator up across the turn boundary", async
   );
 });
 
+test("audit: an over-long engine label can't widen the page (the indicator ellipsizes)", async () => {
+  // 2026-07-29 audit. The label is engine-supplied — realistically from a
+  // third-party MCP server's tool name — and the indicator is prompt-area
+  // chrome, so before the fix a huge one grew the PAGE's scroll width
+  // (measured 1,100 px → 1.6 M) rather than a scroll box. Two bounds now:
+  // the server caps at 120 chars (registry.test.ts pins that), and this
+  // pins the layout's own guarantee against a label that slipped the cap.
+  await page.locator("textarea").click();
+  await page.keyboard.type("plan it step by step");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector(".activity-line", { timeout: 15_000 });
+  const geom = await page.evaluate(() => {
+    document.querySelector(".activity-label")!.textContent = "A".repeat(200_000);
+    return {
+      scrollW: document.documentElement.scrollWidth,
+      winW: window.innerWidth,
+      promptVisible:
+        document.querySelector(".prompt-box")!.getBoundingClientRect().bottom <=
+        window.innerHeight,
+    };
+  });
+  assert.ok(
+    geom.scrollW <= geom.winW + 1,
+    `a long label widened the page: ${geom.scrollW}px vs ${geom.winW}px viewport`,
+  );
+  assert.ok(geom.promptVisible, "the prompt box was pushed off screen");
+  await page.waitForFunction(() => !document.querySelector(".stop-btn"), undefined, {
+    timeout: 30_000,
+  });
+});
+
 /** Asserts a DOM condition that lands a tick or two AFTER the click that
  *  causes it. A one-shot count()/isVisible() right after a click is a coin
  *  flip once the machine is busy — E.3/E.5 lost that flip on 2026-07-25.

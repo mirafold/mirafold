@@ -70,6 +70,40 @@ const PERMISSION_MIRROR_CAP = 25;
 // across projects won't approach it; create() throws past it (the caller turns
 // that into an error WireMsg). Env-overridable.
 const MAX_SESSIONS = Number(process.env.MAX_SESSIONS ?? 100);
+// Ceiling on the short ENGINE-SUPPLIED labels the shell renders as chrome:
+// tool names (`status.label`, `tool_use.name`) and the model label. None has
+// a length bound at its source — they come from `system/init`, the Codex
+// rollout file, Gemini stats, and (the realistic path) any third-party MCP
+// server the user installed, whose tool names pass through verbatim. Real
+// values are a few dozen chars; a 200 KB one made the whole PAGE scroll
+// sideways once the activity indicator moved into prompt-area chrome, where
+// growth widens the layout instead of a scroll box (2026-07-29 audit,
+// proven). Capped HERE — one choke point covers every adapter at once — and
+// the line also ellipsizes in CSS. Bloat insurance, not an escape guard:
+// React already renders a hostile string inert.
+const LABEL_CAP = 120;
+const capLabel = (s: string) => (s.length > LABEL_CAP ? s.slice(0, LABEL_CAP) + "…" : s);
+
+/**
+ * Bound the engine-supplied labels on a wire message, if it carries any.
+ * Returns the SAME object when nothing needed capping — the common path
+ * allocates nothing.
+ */
+function capWireLabels(msg: WireMsg): WireMsg {
+  if (msg.type === "status") {
+    if (msg.label === undefined || msg.label.length <= LABEL_CAP) return msg;
+    return { ...msg, label: capLabel(msg.label) };
+  }
+  if (msg.type === "tool_use") {
+    if (msg.name.length <= LABEL_CAP) return msg;
+    return { ...msg, name: capLabel(msg.name) };
+  }
+  if (msg.type === "usage") {
+    if (msg.model === undefined || msg.model.length <= LABEL_CAP) return msg;
+    return { ...msg, model: capLabel(msg.model) };
+  }
+  return msg;
+}
 
 export type Viewport = (msg: WireMsg) => void;
 
@@ -250,6 +284,9 @@ export class SessionRegistry {
    * the adapter's exact order.
    */
   broadcast(entry: SessionEntry, msg: WireMsg) {
+    // Before the buffer, the cockpit derivation and every viewport — so the
+    // cap holds on replay and in fleet snapshots too, not just live paint.
+    msg = capWireLabels(msg);
     if (
       this.deltaCoalesceMs > 0 &&
       (msg.type === "text_delta" || msg.type === "thinking_delta")

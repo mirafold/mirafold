@@ -97,6 +97,21 @@ permission or stop affordances — is about the AGENT; it is intact. Do not
 prompt should stomp on top of a user's chosen reading surface is a
 deliberate-design question, not a bug.
 
+**The activity indicator names the engine's tool verbatim, on shell chrome
+(disclosed, 2026-07-29 audit).** The working indicator above the prompt box
+shows what the turn is doing — and when that's a tool call, the word it
+prints is the engine's own tool name, third-party MCP servers included
+(`mcp__server__tool`). The shell's voice rule (README §3) says a string
+taken verbatim from an engine and shown where the user reads *Mirafold*
+speaking must be attributed to it. This is judged to stay on the right side
+of that line: the label is a bare noun, not a sentence — the indicator's own
+words ("working…", "thinking…", the elapsed count) are Mirafold's, and a
+tool name is the same fact the transcript's tool rows already show. It is
+also length-capped at the wire (`LABEL_CAP`, registry.ts) and ellipsized in
+CSS, so a hostile MCP tool name can't reshape the page. If a future label
+ever becomes engine *prose* rather than an identifier, it needs the
+`notice.source` treatment instead.
+
 **Git metadata is read from the containing repo, which can sit ABOVE the
 session directory** (Phase E2.3/E2.4, 2026-07-26 audit — this sharpens an
 earlier, now-imprecise claim that the Explorer "can't reach outside the

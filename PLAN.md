@@ -1391,14 +1391,22 @@ with it. Both sequence BEFORE R.5.**
       anything flagged in `express`, `ws`, `react-markdown`, the agent
       SDKs, etc. (2026-07-08 security audit: the one item that can't be
       cleared offline; a known-vuln transitive dep is a real ship risk).
-    - [ ] Cap the model-label length where it enters the wire (2026-07-16
-      audit, hardening tier — no live risk): the label comes from
-      engine-controlled sources (Claude `system/init`, the Codex rollout
-      file, Gemini stats) with no length bound, so a corrupt source could
-      bloat every `sessions` broadcast and the status bar. One `slice()` at
-      the registry/usage emission covers all adapters at once — same
-      philosophy as R.4d's `!`-output cap. React escaping already makes a
-      hostile string inert (verified); this is bloat insurance only.
+    - [x] **Cap the engine-supplied label length where it enters the wire**
+      (2026-07-16 audit, hardening tier) — **DONE 2026-07-29**, and widened
+      past the original model-label scope by that day's audit. `LABEL_CAP`
+      (120) + `capWireLabels()` in `registry.broadcast()` bound
+      `status.label`, `tool_use.name` AND `usage.model` at one choke point
+      that covers every adapter, sitting BEFORE the replay ring, the cockpit
+      derivation and every viewport — so replay and fleet snapshots inherit
+      it. Why it stopped being "bloat insurance only": the 4.14 indicator
+      moved the tool label into prompt-area CHROME, where growth widens the
+      page instead of a scroll box — measured, a 200 KB label took the
+      page's scroll width from 1,100 px to 1.6 M. The realistic source is
+      not a corrupt engine but any third-party **MCP server** the user
+      installed (`mcp__server__tool` names pass through verbatim). Second
+      bound in CSS (`.activity-label` ellipsizes). Pinned: two Tier-1 tests
+      (cap fires + ordinary labels untouched) and a Tier-3 layout test; all
+      three mutation-tested.
   - **Real-hardware checks** (need R.2 deployed; none need the registry):
     - Local-model turn COMPLETION (Phase N.6 residual, 2026-07-17): the
       discovery→pick→configure path is fully verified (the picked model's

@@ -447,7 +447,10 @@ server/            the local daemon (Node, run with tsx)
                      gemini-cli.ts, mock.ts (+ index.ts seam, types.ts,
                      async-queue.ts, render-mcp-cmd.ts, *.spike.md probe notes)
   sessions/          the session state core (H.4/H.5):
-    registry.ts        SessionRegistry: sessions decoupled from connections (4.2)
+    registry.ts        SessionRegistry: sessions decoupled from connections (4.2);
+                       broadcast() is also where engine-supplied labels are
+                       length-capped (LABEL_CAP), ahead of the ring, the
+                       cockpit derivation and every viewport (2026-07-29)
     connection.ts      one viewport's server side, transport-agnostic (R.1) —
                        shared verbatim by local sockets and relay viewports
     actions.ts         Phase 2 mediation: allowlisted tools component actions may run

@@ -479,3 +479,49 @@ test("M.1 summary(): cockpit fields are absent when empty, present as COPIES whe
   assert.equal(entry.permissions[0].detail, "d", "snapshot rows are copies, not aliases");
   reg.end(entry.id);
 });
+
+// 2026-07-29 audit. The engine-supplied labels the shell renders as CHROME
+// (tool names via status/tool_use, the model label via usage) had no length
+// bound anywhere — and the realistic source isn't a hostile engine, it's any
+// third-party MCP server the user installed, whose tool names pass through
+// verbatim. Proven consequence before the cap: a 200 KB label took the page's
+// scrollable width from 1,100 px to 1.6 million (the activity indicator is
+// prompt-area chrome, so it widens the layout instead of a scroll box).
+// Capping in broadcast() puts the bound BEFORE the ring, the cockpit
+// derivation and every viewport, so replay and fleet snapshots inherit it.
+const LABEL_CAP = 120; // mirror of registry.ts, same hand-kept convention as BUFFER_CAP
+
+test("audit: engine-supplied labels are capped before they reach the ring", () => {
+  const { reg, entry } = freshSession();
+  const huge = "A".repeat(200_000);
+  reg.broadcast(entry, { type: "status", state: "tool", label: huge });
+  reg.broadcast(entry, { type: "tool_use", name: huge, id: "t1" });
+  reg.broadcast(entry, { type: "usage", inputTokens: 1, outputTokens: 1, model: huge });
+
+  const [status, toolUse, usage] = entry.buffer as [
+    Extract<WireMsg, { type: "status" }>,
+    Extract<WireMsg, { type: "tool_use" }>,
+    Extract<WireMsg, { type: "usage" }>,
+  ];
+  assert.equal(status.label!.length, LABEL_CAP + 1, "status.label keeps the cap + ellipsis");
+  assert.equal(toolUse.name.length, LABEL_CAP + 1);
+  assert.equal(usage.model!.length, LABEL_CAP + 1);
+  assert.ok(status.label!.endsWith("…"), "a truncated label says so");
+  // The fleet mirror inherits the bound (it derives from the same call).
+  const meta = reg.summary().find((s) => s.sessionId === entry.id)!;
+  assert.equal(meta.activity!.label.length, LABEL_CAP + 1);
+  reg.end(entry.id);
+});
+
+test("audit: ordinary labels pass through untouched (the cap is not a rewrite)", () => {
+  const { reg, entry } = freshSession();
+  reg.broadcast(entry, { type: "status", state: "tool", label: "Bash" });
+  reg.broadcast(entry, { type: "tool_use", name: "mcp__github__create_issue", id: "t1" });
+  const [status, toolUse] = entry.buffer as [
+    Extract<WireMsg, { type: "status" }>,
+    Extract<WireMsg, { type: "tool_use" }>,
+  ];
+  assert.equal(status.label, "Bash");
+  assert.equal(toolUse.name, "mcp__github__create_issue");
+  reg.end(entry.id);
+});

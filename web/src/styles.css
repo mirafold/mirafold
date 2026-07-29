@@ -2487,6 +2487,18 @@ body {
   font-size: 0.85em;
   color: var(--fg-dim);
   animation: rise 0.16s ease-out both;
+  /* The label is engine-supplied (a tool name, MCP servers included) and
+     this line is chrome, not scrollable transcript — so an over-long one
+     must ellipsize here rather than widen the page (2026-07-29 audit).
+     The server cap is the first bound; this is the layout's own. */
+  min-width: 0;
+}
+
+.activity-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .activity-glyph {
