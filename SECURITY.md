@@ -80,6 +80,23 @@ etc. — is browsable, exactly as the agent could already read it. That's by
 design (the browser shows you your own project); the daemon's own `.env` is
 the file that's protected (2026-07-24 audit).
 
+**A user-opened lightbox may sit above the permission bar and the stop
+button (accepted, 2026-07-28 audit).** The Explorer's desktop enlarge (⤢,
+E.6) floats the file view over a translucent dim that covers the prompt
+area: a permission prompt arriving mid-read paints *behind* the dim —
+visible through it, but inert until one Esc or click restores the frame —
+and stopping the agent likewise costs one extra gesture. This is chosen,
+not missed: only the user can create the state (nothing on the wire can
+open, close, or restyle the layer), the muted controls remain visible
+through the dim, escape is a single gesture, and the phone's full-screen
+Explorer (E.4) already covers the same controls completely opaquely. The
+permission *modal* (z-60) still ranks above the lightbox (z-54/55). The
+trusted-shell rule this brushes against — nothing may intercept the
+permission or stop affordances — is about the AGENT; it is intact. Do not
+"fix" this by making the permission bar punch through the layer: whether a
+prompt should stomp on top of a user's chosen reading surface is a
+deliberate-design question, not a bug.
+
 **Git metadata is read from the containing repo, which can sit ABOVE the
 session directory** (Phase E2.3/E2.4, 2026-07-26 audit — this sharpens an
 earlier, now-imprecise claim that the Explorer "can't reach outside the

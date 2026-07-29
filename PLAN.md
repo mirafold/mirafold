@@ -2107,6 +2107,24 @@ owed bell per repo per connection; a degraded status rings nothing).
 (in-flight entries read as always-fresh, so every late caller coalesces).
 Full bodies + original findings → PLAN-ARCHIVE.md ("Moved 2026-07-27").
 
+### Step E.6 — the enlarge lightbox (desktop reads big on demand)
+
+- [x] **Step E.6 — ⤢ enlarge** — done 2026-07-28 (Kyle-directed; splits,
+  docks, and a full takeover were weighed and the dimmed lightbox chosen —
+  the transcript never reflows, and the user trades it away only by
+  deliberate click). The docked file view stays compact (wrapped,
+  tool-output look); ⤢ lifts the SAME node — class re-frame, no remount, so
+  scroll survives — into a fixed frame over a 55% dim (Esc / backdrop / ⤡
+  restore in place; focus-trapped dialog; title centered on the bar's true
+  center; content 1em, box sat 1.5vh above center). Found en route and
+  fixed: the file view had been inheriting `.tool-code`'s transcript-only
+  360px height cap in every frame. Desktop-only — the phone E.4 frame is
+  already full-screen, pinned by a phone-suite assertion. Commits c01d846 +
+  b9589b2 (the day's new busy-turn sanity guard recalibrated `>10` → `>0`
+  samples). Tiers 458/139/54 green. Same-day audit: nothing exploitable;
+  the lightbox-over-permission-bar layering recorded as an accepted
+  decision in SECURITY.md.
+
 ## Phase W — Live tree (the filesystem watcher; the refresh button goes vestigial)
 
 **Why.** The tree self-refreshes only at agent turn-end (E.5), so anything
