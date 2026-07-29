@@ -244,6 +244,27 @@ records of later unplanned polish batches.
   status line is gone, and the e2e now asserts aliveness (glyph frame
   changes), on-screen-ness while scrolled up, and gaplessness across the
   queued-turn boundary — not mere DOM presence.
+  - **⚠ Test-strength caveat, recorded 2026-07-29 (honest limits of the
+    queued-turn pin).** Of the three e2e guarantees, two are solidly
+    mutation-proven (the glyph must visibly cycle; a long label must not
+    widen the page). The THIRD — "no blank frame across the queued-turn
+    boundary" — is a reliable smoke test but NOT a dependable regression
+    pin: `MockSession` overlays a mid-turn prompt's scripted timers on the
+    running turn instead of queuing behind it, so turn 2's events usually
+    land within one 16 ms sample of turn 1's `turn_end`. Reverting the
+    `openTurns` counter therefore produces a gap too short to sample, and
+    the test passes on the broken code (verified — it caught the mutation
+    on some runs and not others). Chasing stability also cost several
+    false failures: a 2.2 s "blank" that was the product correctly idling
+    after a REFUSED follow-up (the registry allows exactly one queued
+    prompt; when it's spent the scenario never occurs), now handled by
+    retrying the whole scenario and asserting acceptance-while-busy first.
+    Options for a real pin, for whoever picks this up: give the mock an
+    explicit "queue, don't overlay" mode so the boundary has a measurable
+    gap, or pin `openTurns` directly in a Shell-level unit test (Tier 1
+    has no DOM harness today, so that's the larger lift). Until then,
+    treat the boundary behavior as verified by construction + manual
+    observation, not by an automated guard.
 
 - [x] **Step 4.15 — Beta-channel trust follow-ups (beta tester 002's
   evaluation, 2026-07-28; triaged with Kyle 2026-07-29)** — **done
