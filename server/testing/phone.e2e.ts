@@ -205,6 +205,9 @@ test("phone (E.4): the files panel is a full-screen drill-in — tree → file �
   await pkg.tap();
   await phone.waitForSelector(".files-view .fv-content");
   await noSideScroll(phone);
+  // The enlarge button is a desktop affordance — the phone frame is already
+  // full-screen, so it must not render here (E.6).
+  assert.equal(await phone.locator(".files-enlarge").count(), 0, "enlarge button on phone");
 
   // Esc drills BACK one layer (to the tree), never straight out — the
   // stacked-layer contract; the panel stays open.

@@ -360,6 +360,87 @@ body {
   flex-direction: column;
 }
 
+/* E.6: the deliberate desktop enlarge. The ⤢ button lifts the SAME box into
+   a fixed near-full-screen frame over the dimmed workspace — a lightbox, so
+   the transcript never reflows and is visibly still there behind the dim.
+   Same z band as the phone drill-in layer: above the transcript and status
+   bar, below the 60 modals (a permission card must never be buried). */
+.files-dim {
+  position: fixed;
+  inset: 0;
+  z-index: 54;
+  background: rgba(0, 0, 0, 0.55);
+  animation: files-dim-in 0.12s ease-out;
+}
+
+@keyframes files-dim-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.files-file.is-maximized {
+  position: fixed;
+  /* The rim: enough dimmed workspace to read as a layer. Each axis steps in
+     by 5% of the viewport per edge on top of the base rim (~10% smaller
+     than edge-flush overall); the vertical split is deliberately uneven —
+     same box height, sat 1.5vh above center (Kyle, 2026-07-28). */
+  inset: calc(24px + 3.5vh) calc(36px + 5vw) calc(24px + 6.5vh);
+  z-index: 55;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-pop);
+  overflow: hidden; /* the rounded corners clip the scrolling view */
+  animation: files-pop-in 0.12s ease-out;
+}
+
+@keyframes files-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+}
+
+/* The wide frame earns a bigger read: the 0.8em content and 0.82em header
+   chrome are density choices for the narrow column; the enlarged frame
+   relaxes them all. */
+.files-file.is-maximized .fv-content {
+  font-size: 1em;
+}
+
+.files-file.is-maximized .files-back {
+  font-size: 0.95em;
+}
+
+/* Enlarged, the bar reads as a TITLE bar: the name anchors to the bar's
+   true center — absolutely positioned, so the uneven flanks (narrow ‹,
+   wide tabs, tabs absent on clean files) can never tug it off-center or
+   make it shift between files. Ellipsis still trims long paths; the 60%
+   cap keeps them clear of both flanks. */
+.files-file.is-maximized .files-file-path {
+  position: relative;
+}
+
+.files-file.is-maximized .files-file-name {
+  font-size: 0.95em;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  max-width: 60%;
+}
+
+/* Floats in the file box's bottom-right corner (the refresh idiom, opposite
+   corner); the surface background keeps it legible over scrolling content. */
+.files-enlarge {
+  position: absolute;
+  right: 8px;
+  bottom: 10px;
+  z-index: 1;
+  padding: 4px 9px;
+  background: var(--surface);
+}
+
 .files-file-path {
   display: flex;
   align-items: center;
@@ -407,9 +488,15 @@ body {
   padding: 8px 8px 14px;
 }
 
-.fv-content {
-  white-space: pre;
-  margin: 0;
+/* The tool-code look minus the transcript's 360px height cap: in every
+   frame (docked, phone, enlarged) the file fills the panel and .files-view
+   is the ONE scroller — while .tool-code's wrapping stays, so lines fold at
+   the frame's width and there is never a side-scroll (Kyle, 2026-07-28).
+   The descendant selector beats .tool-code's later-declared rule on
+   specificity. */
+.files-view .fv-content {
+  max-height: none;
+  overflow-y: visible;
 }
 
 .fv-blank {

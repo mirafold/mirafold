@@ -1255,6 +1255,75 @@ test("E.3: the files panel lists the working tree, opens a file beside the trans
   await eventually(() => !document.querySelector(".files-panel"), "the toggle left the panel open");
 });
 
+test("E.6: ⤢ lifts the file view into a dimmed lightbox; Esc and the backdrop restore it in place", async () => {
+  await page.locator(".ab-files").click();
+  await page.waitForSelector(".files-panel");
+  // yarn.lock, not package.json: the scroll assertions below need a file
+  // tall enough to overflow the view in BOTH frames, with lines long enough
+  // that unwrapped they would side-scroll a 340px panel.
+  const lock = page.locator(".files-file-row", { hasText: "yarn.lock" }).first();
+  await lock.waitFor({ timeout: 15_000 });
+  await lock.click();
+  await page.waitForSelector(".files-view .fv-content");
+
+  // The view is the ONE scroller — the transcript's 360px tool-output cap
+  // is lifted here — and lines WRAP at the frame's width, never side-scroll
+  // (both deliberate, 2026-07-28).
+  await page.locator(".files-view").evaluate((el) => (el.scrollTop = 40));
+  assert.equal(
+    await page.locator(".files-view").evaluate((el) => el.scrollTop),
+    40,
+    "the docked view is not scrollable — the tool-output height cap is back",
+  );
+  assert.ok(
+    await page.locator(".fv-content").evaluate((el) => el.scrollWidth <= el.clientWidth),
+    "long lines side-scroll instead of wrapping",
+  );
+  await page.locator(".files-enlarge").click();
+  await page.waitForSelector(".files-file.is-maximized");
+  assert.ok(await page.locator(".files-dim").isVisible(), "no backdrop behind the lifted box");
+  // The enlarged bar is a title bar: the name centers on the BAR, immune to
+  // its uneven flanks (yarn.lock is clean, so this pins the no-tabs case).
+  assert.ok(
+    await page.evaluate(() => {
+      const bar = document
+        .querySelector(".files-file.is-maximized .files-file-path")!
+        .getBoundingClientRect();
+      const name = document
+        .querySelector(".files-file.is-maximized .files-file-name")!
+        .getBoundingClientRect();
+      return Math.abs((name.left + name.right) / 2 - (bar.left + bar.right) / 2) < 2;
+    }),
+    "the enlarged title is not centered on the bar",
+  );
+  // Same node, same scroller in both frames — scroll survives the enlarge.
+  assert.equal(
+    await page.locator(".files-view").evaluate((el) => el.scrollTop),
+    40,
+    "scroll position reset across the enlarge",
+  );
+
+  // Esc restores the frame WITHOUT closing the file view or the panel — the
+  // exclusive handler must also keep the key from Shell's busy interrupt.
+  await page.keyboard.press("Escape");
+  await eventually(() => !document.querySelector(".files-file.is-maximized"), "Esc left it enlarged");
+  assert.ok(await page.locator(".files-view .fv-content").isVisible(), "Esc closed the file view");
+  assert.equal(await page.locator(".files-dim").count(), 0, "backdrop outlived the restore");
+
+  // The backdrop click is the other way back (the lightbox contract).
+  await page.locator(".files-enlarge").click();
+  await page.waitForSelector(".files-dim");
+  await page.locator(".files-dim").click({ position: { x: 5, y: 5 } });
+  await eventually(
+    () => !document.querySelector(".files-file.is-maximized"),
+    "backdrop click left it enlarged",
+  );
+
+  await page.locator(".files-back").click(); // tidy up for later tests
+  await page.locator(".ab-files").click();
+  await eventually(() => !document.querySelector(".files-panel"), "the toggle left the panel open");
+});
+
 test("E.5: expanded dirs survive a close/reopen, and a turn's auto-refresh keeps tree state", async () => {
   await page.locator(".ab-files").click();
   await page.waitForSelector(".files-panel");

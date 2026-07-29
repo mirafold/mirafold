@@ -86,6 +86,19 @@ export function FilesPanel({
   const [selected, setSelected] = useState<{ path: string; status?: string } | null>(null);
   const [mode, setMode] = useState<"content" | "diff">("content");
   const [view, setView] = useState<FileViewState>({ kind: "empty" });
+  // E.6: the deliberate desktop enlarge — the file box lifted out of the
+  // narrow column into a near-full-screen lightbox over the dimmed
+  // workspace. User-initiated only (the ⤢ button); every path that closes
+  // the file view drops it too.
+  const [maximized, setMaximized] = useState(false);
+
+  // Closing the file view ALWAYS drops the enlarge with it — the invariant
+  // behind every close path (back button, phone Esc drill-back, session
+  // switch, panel open). Setters only, so any render's copy is current.
+  const closeFile = () => {
+    setSelected(null);
+    setMaximized(false);
+  };
 
   // Correlation ids: one outstanding fs_listdir PER DIRECTORY (the E.3-era
   // single listId ref is gone — the lazy tree legitimately has several
@@ -158,10 +171,21 @@ export function FilesPanel({
   // Esc on phone drills back one layer, then closes from the tree — the
   // stacked-layer contract, and it owns the key while open (exclusive: a
   // drill-back must not also reach Shell's busy interrupt). Desktop leaves
-  // Esc to Shell (busy = interrupt).
-  useEscapeKey(modal ? (selected ? () => setSelected(null) : onClose) : undefined, {
+  // Esc to Shell (busy = interrupt). closeFile, not bare setSelected: a
+  // drill-back is a close path, and leaving `maximized` armed here meant a
+  // desktop→phone→desktop resize dance re-enlarged the NEXT opened file.
+  useEscapeKey(modal ? (selected ? closeFile : onClose) : undefined, {
     exclusive: true,
   });
+  // The enlarged frame exists only while a file is open on DESKTOP — phone is
+  // already full-screen, so a breakpoint crossing mid-enlarge just re-frames
+  // to the phone dialog with no extra state. While enlarged it is a modal
+  // layer like the phone dialog: focus-trapped, and Esc restores it
+  // exclusively (a restore must not also reach Shell's busy interrupt).
+  const maxi = maximized && !phone && selected !== null;
+  const fileRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(fileRef, maxi);
+  useEscapeKey(maxi ? () => setMaximized(false) : undefined, { exclusive: true });
 
   // Subscribe once; the refs above make the handlers care only about the
   // latest requests. RenderZone ignores fs_* the same way (unknown to it).
@@ -219,7 +243,7 @@ export function FilesPanel({
   // dirs included. (Kept separate from the open effect below so expanded state
   // SURVIVES a close/reopen within one session — E.5.)
   useEffect(() => {
-    setSelected(null);
+    closeFile();
     setView({ kind: "empty" });
     // The ref mirror is cleared alongside the state: the open effect below
     // runs in the same commit and reads expandedRef — it must not refetch
@@ -238,7 +262,7 @@ export function FilesPanel({
   // expanded dirs intact across a close/reopen.
   useEffect(() => {
     if (!open || !sessionKey) return;
-    setSelected(null);
+    closeFile();
     setView({ kind: "empty" });
     refreshRef.current(true);
   }, [open, sessionKey, requestListdir]);
@@ -348,40 +372,70 @@ export function FilesPanel({
         </button>
 
         {selected && (
-          <div className="files-file">
-            <div className="files-file-path">
-              <button
-                className="files-back"
-                onClick={() => setSelected(null)}
-                title="Back to files"
-                aria-label="Back to files"
-              >
-                ‹
-              </button>
-              <span className="files-file-name" title={selected.path}>
-                {selected.path}
-              </span>
-              {selected.status && (
-                <span className="files-file-tabs">
-                  <button
-                    className={"files-tab" + (mode === "content" ? " is-active" : "")}
-                    onClick={() => openFile(selected.path, selected.status, "content")}
-                  >
-                    file
-                  </button>
-                  <button
-                    className={"files-tab" + (mode === "diff" ? " is-active" : "")}
-                    onClick={() => openFile(selected.path, selected.status, "diff")}
-                  >
-                    diff
-                  </button>
+          <>
+            {/* The lightbox backdrop: the whole workspace dimmed but visible
+                behind the lifted box — clicking it is the universal "put it
+                back". Below the box, above everything the box floats over. */}
+            {maxi && (
+              <div className="files-dim" onClick={() => setMaximized(false)} aria-hidden="true" />
+            )}
+            {/* One node in BOTH frames — enlarging toggles a class, never
+                remounts, so the view's scroll position survives the round
+                trip in each direction. */}
+            <div
+              className={"files-file" + (maxi ? " is-maximized" : "")}
+              ref={fileRef}
+              role={maxi ? "dialog" : undefined}
+              aria-modal={maxi ? true : undefined}
+              tabIndex={maxi ? -1 : undefined}
+            >
+              <div className="files-file-path">
+                <button
+                  className="files-back"
+                  onClick={closeFile}
+                  title="Back to files"
+                  aria-label="Back to files"
+                >
+                  ‹
+                </button>
+                <span className="files-file-name" title={selected.path}>
+                  {selected.path}
                 </span>
+                {selected.status && (
+                  <span className="files-file-tabs">
+                    <button
+                      className={"files-tab" + (mode === "content" ? " is-active" : "")}
+                      onClick={() => openFile(selected.path, selected.status, "content")}
+                    >
+                      file
+                    </button>
+                    <button
+                      className={"files-tab" + (mode === "diff" ? " is-active" : "")}
+                      onClick={() => openFile(selected.path, selected.status, "diff")}
+                    >
+                      diff
+                    </button>
+                  </span>
+                )}
+              </div>
+              <div className="files-view">
+                <FileView state={view} />
+              </div>
+              {/* Desktop-only (the phone frame is already full-screen): floats
+                  in the box's bottom-right corner — the refresh idiom, other
+                  corner — and stays under the pointer across a toggle. */}
+              {!phone && (
+                <button
+                  className="files-btn files-enlarge"
+                  onClick={() => setMaximized((m) => !m)}
+                  title={maxi ? "Restore size" : "Enlarge"}
+                  aria-label={maxi ? "Restore file view size" : "Enlarge file view"}
+                >
+                  {maxi ? "⤡" : "⤢"}
+                </button>
               )}
             </div>
-            <div className="files-view">
-              <FileView state={view} />
-            </div>
-          </div>
+          </>
         )}
       </div>
     </aside>
