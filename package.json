@@ -29,6 +29,7 @@
     "bin/",
     "dist/",
     "dist-server/",
+    "SECURITY.md",
     "THIRD-PARTY-NOTICES.md"
   ],
   "engines": {

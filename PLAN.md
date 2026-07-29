@@ -245,11 +245,19 @@ records of later unplanned polish batches.
   changes), on-screen-ness while scrolled up, and gaplessness across the
   queued-turn boundary — not mere DOM presence.
 
-- [ ] **Step 4.15 — Beta-channel trust follow-ups (beta tester 002's
-  evaluation, 2026-07-28; triaged with Kyle 2026-07-29)** — the
-  now-actionable slice of the evaluation (the provenance practice went to
-  R.5b; the provenance + install-command concerns otherwise dissolve at
-  R.7's publish):
+- [x] **Step 4.15 — Beta-channel trust follow-ups (beta tester 002's
+  evaluation, 2026-07-28; triaged with Kyle 2026-07-29)** — **done
+  2026-07-29**: `SECURITY.md` ships in the package (`files` whitelist),
+  tarball repacked + cold-install re-verified + restaged as
+  `../beta/mirafold.tgz` (sha256 `c8a66f4c98e6…`, full value printed in
+  WELCOME.md + `/beta`), and WELCOME.md gained the fingerprint + a
+  "cautious first run" recipe (throwaway dir, credential-less scripted
+  demo first, honest note that the file browser is confined while the
+  agent keeps its terminal powers behind the permission prompts). ⚠ The
+  repack changed the artifact: if a `mirafold.tgz` was uploaded to Drive
+  before this, it must be re-uploaded. The now-actionable slice of the
+  evaluation (the provenance practice went to R.5b; the provenance +
+  install-command concerns otherwise dissolve at R.7's publish):
   - Ship `SECURITY.md` in the npm package (add to the `files` whitelist;
     the README cites it and the tarball is where a beta tester looks) —
     then repack + restage `../beta/mirafold.tgz`.
