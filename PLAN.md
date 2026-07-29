@@ -245,6 +245,24 @@ records of later unplanned polish batches.
   changes), on-screen-ness while scrolled up, and gaplessness across the
   queued-turn boundary — not mere DOM presence.
 
+- [ ] **Step 4.15 — Beta-channel trust follow-ups (beta tester 002's
+  evaluation, 2026-07-28; triaged with Kyle 2026-07-29)** — the
+  now-actionable slice of the evaluation (the provenance practice went to
+  R.5b; the provenance + install-command concerns otherwise dissolve at
+  R.7's publish):
+  - Ship `SECURITY.md` in the npm package (add to the `files` whitelist;
+    the README cites it and the tarball is where a beta tester looks) —
+    then repack + restage `../beta/mirafold.tgz`.
+  - Publish the staged tarball's SHA-256 where testers can check it:
+    `beta/WELCOME.md` + the site's `/beta` page.
+  - A short "cautious first run" section in `beta/WELCOME.md` (disposable
+    repo with canary files, mock adapter first, relay off) — the
+    evaluation's pilot checklist, offered rather than left for each
+    tester to invent.
+  - Done when: a tester following the public trail finds the security doc
+    inside the artifact, a fingerprint to verify it, and a sane first-run
+    recipe.
+
 
 ---
 
@@ -951,6 +969,27 @@ with it. Both sequence BEFORE R.5.**
     public in (b), run a dedicated security-audit pass over that repo — the
     shell got its own on 2026-07-15; public security-marketed code gets
     adversarial readers on day one, so the relay flips only after its pass.
+  - **Release provenance (adopted 2026-07-29, from beta tester 002's
+    evaluation):** a public repo alone doesn't let anyone verify the
+    published npm package was built FROM it — the two are separate uploads
+    with no link, and the package ships compiled bundles. Adopt as standing
+    release practice, first release included: (i) publish via a GitHub
+    Actions **release workflow** using npm **trusted publishing** (npmjs.com
+    configured to accept `mirafold` publishes only from that workflow —
+    identity-federated, NO stored npm token, so the no-secrets-in-CI bound
+    holds and a stolen npm password can't publish) with
+    `npm publish --provenance` (machine-signed attestation binding the
+    package to the exact public commit + workflow; users verify with
+    `npm audit signatures`, README gets the one-liner); (ii) a **signed git
+    tag** per release (SSH signing key — Kyle's, minutes to set up) with the
+    tarball's **SHA-256 in the tag message** and in the GitHub Release
+    notes. This changes R.7's publish move: Kyle pushes the signed tag and
+    the workflow publishes — no hand-run `npm publish`. Kyle's-hands parts:
+    the npmjs.com trusted-publisher form (~5 min, walked one step at a
+    time) and generating/registering the signing key. Caveat: provenance
+    requires a public repo, so the end-to-end proof fires at the first real
+    publish (launch morning) — same class as R.7's existing `npx` check;
+    everything short of that rehearses beforehand.
   - Done when: a written release-sequence exists that R.6 and R.7 just
     follow, with no open "how do we actually ship this" questions.
 
@@ -1387,9 +1426,11 @@ with it. Both sequence BEFORE R.5.**
     audit)**~~ — **done early, 2026-07-23**: landed in SECURITY.md's
     "Known trust decisions" section, together with the Q.5 symlink
     residual of the `.env` guard (also now disclosed there).
-  - Build, same day, in order: repo public → `npm publish` over the 0.0.1
-    placeholder → verify `npx mirafold` against the real registry (the
-    one check that's unverifiable until publish) → post (X + Show HN +
+  - Build, same day, in order: repo public → push the **signed release
+    tag** (the R.5b release workflow publishes with provenance over the
+    0.0.1 placeholder — no hand-run `npm publish`) → verify `npx mirafold`
+    AND `npm audit signatures` against the real registry (the two checks
+    that are unverifiable until publish) → post (X + Show HN +
     Product Hunt + r/ClaudeAI + r/LocalLLaMA with the "BYOK or fully
     local" line) with Pro purchasable from minute one. Same week, riding
     the splash: the newsletter submissions and awesome-list PRs prepped
