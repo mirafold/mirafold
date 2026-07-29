@@ -1100,21 +1100,17 @@ with it. Both sequence BEFORE R.5.**
     2026-07-25):** `genui-shell/package.json` is the single source of truth —
     `bin/mirafold.js` reads it at runtime for `--version` and the boot banner,
     `web/src/version.ts` imports it at build time for the version the browser
-    announces, and `npm pack` names the tarball from it. Hand-written copies
-    exist in exactly TWO files, both only because the beta ships a file whose
-    NAME carries the version: `beta/WELCOME.md` (×2) and
-    `mirafold-site/public/beta.html` (×3 — prose, command, copy-button
-    attribute). The marketing site's own install line is `npm i -g mirafold`,
-    version-free, and the README uses a `mirafold-*.tgz` wildcard. So after
-    npm publish a bump is one line. **Trap:** a bump changes the tarball
-    filename, which breaks the Drive replace-in-place trick unless the file is
-    renamed there and both doc files are updated in the same sitting —
-    instructions already sent to testers go stale even though the link never
-    does. Kyle confirmed the Drive mechanics: renaming and uploading a new
-    version both preserve the file ID, so old links keep working; only
-    delete-and-reupload breaks them. **Idea, not adopted:** give the Drive
-    file a version-free name (`mirafold.tgz`) so a bump touches nothing but
-    package.json.
+    announces, and `npm pack` names the tarball from it. Since 2026-07-29
+    NO hand-written copy of the version remains anywhere: the Drive
+    artifact is the version-free `../beta/mirafold.tgz` (adopted in
+    practice 2026-07-28, confirmed by Kyle 2026-07-29 — Drive
+    replace-in-place keeps the link AND the documented filename stable),
+    and `beta/WELCOME.md` + `mirafold-site/public/beta.html` both
+    instruct `npm i -g ./mirafold.tgz` (updated 2026-07-29). The
+    marketing site's own install line is `npm i -g mirafold` and the
+    README uses a `mirafold-*.tgz` wildcard, both already version-free.
+    So a version bump touches package.json and nothing else — `npm pack`
+    emits `mirafold-<v>.tgz`, rename it to `mirafold.tgz` when staging.
 
   - **Do not run `npm install` in this repo** (learned 2026-07-25):
     `npm install --package-lock-only` silently rewrote `yarn.lock` —
