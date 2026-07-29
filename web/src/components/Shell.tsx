@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentInfo, AgentName } from "@protocol";
-import { ActivityLine } from "./ActivityLine";
+import { ActivityLine, activityLabel, type Activity } from "./ActivityLine";
 import { BangBar } from "./BangBar";
 import { FilesGlyph } from "./FilesGlyph";
 import { Onboarding } from "./Onboarding";
@@ -53,9 +53,7 @@ export function Shell() {
   // What the indicator says the turn is doing right now — the engine's last
   // status frame (or announced tool), cleared back to the generic "working…"
   // the moment it could go stale (tool_result, streamed text, turn_end).
-  const [activity, setActivity] = useState<{ state: "thinking" | "tool"; label?: string } | null>(
-    null,
-  );
+  const [activity, setActivity] = useState<Activity>(null);
   // Pending permission prompts, oldest first; the bar shows one at a time.
   // SHELL-OWNED UI: the agent can paint nothing here, so it can't fake it.
   const [asks, setAsks] = useState<PermAsk[]>([]);
@@ -438,16 +436,7 @@ export function Shell() {
               />
               <RenderZone subscribe={bus.subscribe} sendAction={bus.sendAction} busy={busy} />
             </div>
-            <ActivityLine
-              busy={busy}
-              label={
-                activity == null
-                  ? "working…"
-                  : activity.state === "thinking"
-                    ? "thinking…"
-                    : `${activity.label ?? "tool"}…`
-              }
-            />
+            <ActivityLine busy={busy} label={activityLabel(activity)} />
             <PermBar asks={asks} onAnswer={answer} />
             {bang.my && (
               <BangBar

@@ -8,6 +8,15 @@ import { useEffect, useState } from "react";
 const FRAMES = ["·", "✢", "✳", "✻", "✽", "✻", "✳", "✢"];
 const FRAME_MS = 140;
 
+// The engine's last known doing, as Shell tracks it off the wire; null =
+// nothing specific is known (the generic fallback).
+export type Activity = { state: "thinking" | "tool"; label?: string } | null;
+
+// The indicator's wording lives here with the indicator — Shell interprets
+// the wire, this file owns the voice.
+export const activityLabel = (a: Activity): string =>
+  a == null ? "working…" : a.state === "thinking" ? "thinking…" : `${a.label ?? "tool"}…`;
+
 export function ActivityLine({ busy, label }: { busy: boolean; label: string }) {
   const [frame, setFrame] = useState(0);
   const [elapsed, setElapsed] = useState(0);
@@ -39,7 +48,7 @@ export function ActivityLine({ busy, label }: { busy: boolean; label: string }) 
     // a line whose text changes every second would drown a screen reader.
     <div className="activity-line" aria-hidden="true">
       <span className="activity-glyph">{FRAMES[frame]}</span>
-      <span>{label}</span>
+      <span className="activity-label">{label}</span>
       <span className="activity-elapsed">({elapsed}s)</span>
     </div>
   );
