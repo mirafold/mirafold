@@ -19,10 +19,10 @@
     10. Cross-cutting polish     motion, theme fade, selection, a11y, scrollbars
     11. Responsive               the ONE phone (max-width: 640px) block
 
-   Ordering is load-bearing in three places (equal-specificity overrides):
-   the theme-fade transition list must stay after .onb-agent, the rise
-   animation list after .status-line, and phone overrides after their base
-   rules — all satisfied by sections 10/11 staying last. */
+   Ordering is load-bearing in two places (equal-specificity overrides):
+   the theme-fade transition list must stay after .onb-agent, and phone
+   overrides after their base rules — both satisfied by sections 10/11
+   staying last. */
 
 * {
   box-sizing: border-box;
@@ -955,13 +955,6 @@ body {
 
 .subagent-calls {
   margin-top: 2px;
-}
-
-.status-line {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.85em;
-  color: var(--fg-dim);
-  animation: pulse 1.4s ease-in-out infinite;
 }
 
 @keyframes pulse {
@@ -2478,6 +2471,34 @@ body {
 /* Permission bar (Phase T.3): drawn by the trusted shell above the prompt
    box — agent output cannot render, wrap, or fake this surface. Amber is
    the "decision needed" accent. */
+
+/* The always-visible work indicator (2026-07-29): prompt-area chrome, never
+   a transcript entry, so no scroll position can hide it. The glyph frames
+   cycle from ActivityLine.tsx (JS, where reduced motion is honored) — the
+   2026-07-25 lesson baked in: a CSS pulse here was silently killed by the
+   rise-animation override and the line sat frozen. */
+.activity-line {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  margin-top: 8px;
+  padding: 0 15px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  color: var(--fg-dim);
+  animation: rise 0.16s ease-out both;
+}
+
+.activity-glyph {
+  width: 1.2em;
+  flex-shrink: 0;
+  text-align: center;
+  color: var(--accent);
+}
+
+.activity-elapsed {
+  color: var(--fg-faint);
+}
 
 .perm-bar {
   display: flex;
@@ -3998,8 +4019,7 @@ body {
 .tool-block,
 .thinking-block,
 .notice-line,
-.bang-block,
-.status-line {
+.bang-block {
   animation: rise 0.16s ease-out both;
 }
 

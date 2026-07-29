@@ -533,8 +533,13 @@ web/               the browser app (React 19 + Vite)
                        the strip's body is one tap target opening the whole
                        command in a ModalCard — the phone's truncated preview
                        was unreadable; Shell keeps owning asks + the wire answer
-    RenderZone.tsx     OUTPUT ZONE: WireMsg interpreter → entries + status line,
-                       incl. thinking blocks, artifacts, and subagent grouping
+    RenderZone.tsx     OUTPUT ZONE: WireMsg interpreter → entries, incl.
+                       thinking blocks, artifacts, and subagent grouping
+    ActivityLine.tsx   the always-visible work indicator (4.14): cycling
+                       asterisk + label + elapsed seconds, prompt-area chrome
+                       above the box — never a transcript entry, so no scroll
+                       position can hide it; Shell owns the label and the
+                       open-turn count that keeps it up across a queued turn
     ToolBlock.tsx      tool-call records: collapsed row, expands to input diff +
                        output with elision marker (T.1/T2.2/T2.3)
     StatusBar.tsx      workbench strip (T2.6; regrouped 4.11): home ⌂ + new
@@ -546,11 +551,11 @@ web/               the browser app (React 19 + Vite)
                        (R.4l), where it also hosts the Explorer toggle
                        (.sb-files, boxed at the far left — the rail is
                        desktop-only, 2026-07-25)
-    GearGlyph.tsx      the settings/tool gear as a flat outline drawing, four
-                       homes: the settings button, the status line, the
-                       subagent head, the fleet activity line (2026-07-25 —
-                       the ⚙ character rendered from the color-emoji font and
-                       clashed with every glyph beside it)
+    GearGlyph.tsx      the settings/tool gear as a flat outline drawing, three
+                       homes: the settings button, the subagent head, the
+                       fleet activity line (2026-07-25 — the ⚙ character
+                       rendered from the color-emoji font and clashed with
+                       every glyph beside it)
     FilesGlyph.tsx     the Explorer/files glyph drawing — the activity-bar
                        toggle and the status bar's phone-width .sb-files
     ArmedButton.tsx    the two-click destructive button (#11's arm → 3s

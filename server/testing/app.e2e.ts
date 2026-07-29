@@ -1159,36 +1159,63 @@ test("streaming holds a scrolled-up reader in place, and re-follows once back at
 });
 
 // The frame sampler's in-page globals (armed before the prompt, read after).
-type BusyWatch = { __busyFrames: number; __blankFrames: number; __watch: number };
+type BusyWatch = {
+  __busyFrames: number;
+  __blankFrames: number;
+  __glyphFlips: number;
+  __lastGlyph: string;
+  __watch: number;
+};
 
-test("a busy turn never looks idle: the activity line is up whenever the stop button is", async () => {
+test("a busy turn never looks idle: the indicator is up, moving, and on screen whenever the stop button is", async () => {
   // Frame-by-frame watcher, armed BEFORE the prompt goes out: any frame
   // where the turn is in flight (stop button present) but no activity line
   // is painted is the 2026-07-28 bug — work happening with nothing showing.
-  // The sampler is an ANONYMOUS callback on setInterval — a named function
-  // const here dies in-page on tsx's keepNames __name wrapper (same trap
-  // `eventually` documents below).
+  // It also counts glyph frame CHANGES: a present-but-frozen line is the
+  // 2026-07-29 bug (the CSS pulse was dead under the rise-animation
+  // override, so "thinking…" never moved). The sampler is an ANONYMOUS
+  // callback on setInterval — a named function const here dies in-page on
+  // tsx's keepNames __name wrapper (same trap `eventually` documents below).
   await page.evaluate(() => {
     const w = window as unknown as BusyWatch;
     w.__busyFrames = 0;
     w.__blankFrames = 0;
+    w.__glyphFlips = 0;
+    w.__lastGlyph = "";
     w.__watch = window.setInterval(() => {
       if (document.querySelector(".stop-btn")) {
         w.__busyFrames++;
-        if (!document.querySelector(".status-line")) w.__blankFrames++;
+        const glyph = document.querySelector(".activity-glyph")?.textContent;
+        if (glyph === undefined) w.__blankFrames++;
+        else if (glyph !== w.__lastGlyph) {
+          if (w.__lastGlyph !== "") w.__glyphFlips++;
+          w.__lastGlyph = glyph;
+        }
       }
     }, 16);
   });
   await page.locator("textarea").click();
-  await page.keyboard.type("give me a quick status summary");
+  // The checklist turn runs multiple seconds — long enough to observe the
+  // glyph cycle and to scroll mid-turn below.
+  await page.keyboard.type("plan it step by step");
   await page.keyboard.press("Enter");
-  // The generic fallback ("working…") paints while the reply streams between
-  // status frames — a label the pre-fix client never rendered.
-  await page.waitForFunction(
-    () => document.querySelector(".status-line")?.textContent?.includes("working"),
-    undefined,
-    { timeout: 15_000 },
+  await page.waitForSelector(".activity-line", { timeout: 15_000 });
+  // The elapsed counter is painted from the first frame — (0s) and upward.
+  assert.match(
+    (await page.locator(".activity-line").textContent()) ?? "",
+    /\(\d+s\)/,
+    "no elapsed counter in the activity line",
   );
+  // Mid-turn, scroll the transcript to its top: the indicator is prompt-area
+  // chrome, not a transcript entry — no scroll position may hide it.
+  await page.evaluate(() => {
+    document.querySelector(".render-zone")!.scrollTop = 0;
+  });
+  const visible = await page.evaluate(() => {
+    const r = document.querySelector(".activity-line")?.getBoundingClientRect();
+    return Boolean(r && r.height > 0 && r.top >= 0 && r.bottom <= window.innerHeight);
+  });
+  assert.ok(visible, "indicator off screen while the transcript is scrolled up");
   // Turn over: the stop button goes, and the activity line goes with it.
   await page.waitForFunction(() => !document.querySelector(".stop-btn"), undefined, {
     timeout: 30_000,
@@ -1196,20 +1223,86 @@ test("a busy turn never looks idle: the activity line is up whenever the stop bu
   const frames = await page.evaluate(() => {
     const w = window as unknown as BusyWatch;
     window.clearInterval(w.__watch);
-    return { busy: w.__busyFrames, blank: w.__blankFrames };
+    return { busy: w.__busyFrames, blank: w.__blankFrames, flips: w.__glyphFlips };
   });
-  // Sanity floor, not a strength claim: a fast machine finishes this mock
-  // turn in a handful of 16ms samples, so demand only that the sampler
-  // overlapped the busy window at all — the blank-frame assertion below is
-  // vacuous with zero samples (recalibrated 2026-07-28: `> 10` flaked
-  // whenever the reply streamed fast).
+  // Sanity floor, not a strength claim (recalibrated 2026-07-28: a bigger
+  // floor flaked whenever the reply streamed fast).
   assert.ok(frames.busy > 0, "the sampler never saw the turn in flight");
   assert.equal(
     frames.blank,
     0,
     `${frames.blank} frame(s) had a turn in flight with no activity line painted`,
   );
-  assert.equal(await page.locator(".status-line").count(), 0);
+  // Aliveness: the glyph visibly cycled while the turn ran (140ms frames
+  // over a multi-second turn — 3 is a floor, not the expected count).
+  assert.ok(frames.flips >= 3, `the glyph barely moved (${frames.flips} frame changes)`);
+  assert.equal(await page.locator(".activity-line").count(), 0);
+});
+
+// In-page globals for the queued-follow-up sampler below.
+type QueueWatch = { __framesSeen: boolean[]; __qWatch: number };
+
+test("a queued follow-up keeps the indicator up across the turn boundary", async () => {
+  // Registry queues ONE prompt sent mid-turn. The first turn ending must
+  // not blank the indicator while the engine rolls straight into the queued
+  // turn — that gap is real work with nothing on screen (2026-07-29). The
+  // sampler records the line's presence every frame; afterwards the series
+  // must be gapless between its first and last true — a disappear/reappear
+  // in the middle is exactly the regression.
+  await page.evaluate(() => {
+    const w = window as unknown as QueueWatch;
+    w.__framesSeen = [];
+    w.__qWatch = window.setInterval(() => {
+      w.__framesSeen.push(Boolean(document.querySelector(".activity-line")));
+    }, 16);
+  });
+  // Earlier tests already painted these replies into the shared transcript —
+  // wait for the occurrence COUNT to grow past the baseline, not for a
+  // selector a stale match would satisfy instantly.
+  const sentinels = [
+    "Plan complete — all four steps done.",
+    "Three chart shapes and one deliberate rule-breaker.",
+  ];
+  const base = await page.evaluate(
+    ({ needles }) =>
+      needles.map((n) => document.body.textContent!.split(n).length - 1),
+    { needles: sentinels },
+  );
+  await page.locator("textarea").click();
+  await page.keyboard.type("plan it step by step");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector(".activity-line", { timeout: 15_000 });
+  // Mid-turn follow-up (desktop Enter still sends while busy).
+  await page.keyboard.type("chart demo");
+  await page.keyboard.press("Enter");
+  // Both replies complete and the turn machinery settles.
+  await page.waitForFunction(
+    ({ needles, before }) =>
+      needles.every(
+        (n, i) => document.body.textContent!.split(n).length - 1 > before[i],
+      ),
+    { needles: sentinels, before: base },
+    { timeout: 30_000 },
+  );
+  await page.waitForFunction(() => !document.querySelector(".stop-btn"), undefined, {
+    timeout: 30_000,
+  });
+  await page.waitForTimeout(200);
+  const seen = await page.evaluate(() => {
+    const w = window as unknown as QueueWatch;
+    window.clearInterval(w.__qWatch);
+    return w.__framesSeen;
+  });
+  const first = seen.indexOf(true);
+  const last = seen.lastIndexOf(true);
+  assert.ok(first >= 0, "the sampler never saw the indicator at all");
+  assert.ok(last < seen.length - 1, "the indicator never cleared after both turns ended");
+  const gaps = seen.slice(first, last + 1).filter((present) => !present).length;
+  assert.equal(
+    gaps,
+    0,
+    `the indicator blanked for ${gaps} frame(s) between the queued turns`,
+  );
 });
 
 /** Asserts a DOM condition that lands a tick or two AFTER the click that

@@ -223,6 +223,28 @@ records of later unplanned polish batches.
   real usage path. (The `192.168…` failure that started it was Kyle's ufw
   dropping LAN SYNs — his machine, not repo state.)
 
+- [x] **Step 4.14 — The activity indicator, done right (Kyle-driven rework of
+  4.13's fix #1)** — done 2026-07-29, all tiers green (458/139/72), both new
+  guarantees mutation-tested. Kyle's requirement, verbatim in spirit: **at
+  all times while Mirafold is working with nothing painting, something
+  visibly alive says so** — the terminal agents' cycling asterisk is the
+  bar. 4.13's fix guaranteed only DOM presence and failed it four ways:
+  the `.status-line` pulse was dead CSS (the rise-animation list overrode
+  the `animation` shorthand at equal specificity — frozen text since at
+  least 2026-07-25), the label went stale (`Bash ⚙` through the post-tool
+  model round trip), the line lived inside the scrolling transcript (any
+  scroll-up = zero indication), and a queued mid-turn prompt blanked it at
+  the first turn's `turn_end` while the engine rolled into the queued turn.
+  The rework: `ActivityLine.tsx` — cycling thin→fat asterisk frames (JS,
+  reduced-motion honored) + label + ticking elapsed seconds — as
+  prompt-area chrome above the box; Shell owns the label (status frames /
+  announced tools, cleared on `tool_result` so it can't go stale) and an
+  open-turn counter (`user_prompt` up, `turn_end` down, replay-safe) so a
+  queued follow-up keeps busy across the boundary; the in-transcript
+  status line is gone, and the e2e now asserts aliveness (glyph frame
+  changes), on-screen-ness while scrolled up, and gaplessness across the
+  queued-turn boundary — not mere DOM presence.
+
 
 ---
 

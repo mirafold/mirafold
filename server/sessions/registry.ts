@@ -355,9 +355,9 @@ export class SessionRegistry {
     const prevPending = entry.permissions.length;
     // Activity: what the session is doing right now — `since` resets only
     // when the label CHANGES, so a re-announced identical status keeps its
-    // elapsed time. The in-session status line persists through text
-    // streaming until turn_end (RenderZone), so holding the last label here
-    // is faithful.
+    // elapsed time. The in-session indicator persists through text
+    // streaming until turn_end (Shell's ActivityLine), so holding the last
+    // label here is faithful.
     if (msg.type === "status") {
       const label = msg.state === "tool" ? (msg.label ?? "tool") : "thinking";
       if (prevActivity !== label) entry.activity = { label, since: Date.now() };

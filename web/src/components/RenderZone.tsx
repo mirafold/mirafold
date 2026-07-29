@@ -79,7 +79,6 @@ type Entry =
       rows: PickerRow[];
       hint?: string;
     };
-type Status = { state: "thinking" | "tool"; label?: string } | null;
 type ToolCall = Extract<Entry, { kind: "tool" }>;
 
 let nextId = 0;
@@ -173,13 +172,13 @@ export function RenderZone({
   // Shell-provided sender for prompt/tool actions (Phase 2); state actions
   // are resolved here because pin state is output-zone state.
   sendAction: (action: Action, sourceId: string) => void;
-  // Shell's turn-in-flight flag (its handling of disconnects and mid-turn
-  // resumes included) — keeps the status line up for the WHOLE turn, not
-  // just the gaps `status` messages happen to cover (2026-07-28, Kyle).
+  // Shell's turn-in-flight flag — only the welcome card reads it here (it
+  // must not flash up mid-turn on an entry-less transcript). The activity
+  // indicator itself is Shell chrome (ActivityLine), not a transcript entry,
+  // so no scroll position can hide it (2026-07-29, Kyle).
   busy: boolean;
 }) {
   const [entries, setEntries] = useState<Entry[]>([]);
-  const [status, setStatus] = useState<Status>(null);
   // Pinning is pure output-zone state: wire ids (render or artifact) in pin
   // order. The dock only exists while something is pinned (PLAN Step 1.6).
   const [pinned, setPinned] = useState<string[]>([]);
@@ -226,11 +225,9 @@ export function RenderZone({
               ...es,
               { kind: "text", id, role: "user", text: msg.text, done: true },
             ]);
-            setStatus({ state: "thinking" });
             break;
           }
           case "thinking_delta": {
-            setStatus(null); // the streaming thought itself is the signal
             const id = thinkingId.current;
             if (id !== null) {
               setEntries((es) =>
@@ -249,7 +246,6 @@ export function RenderZone({
             break;
           }
           case "text_delta": {
-            setStatus(null);
             const id = streamingId.current;
             if (id !== null) {
               setEntries((es) =>
@@ -342,11 +338,9 @@ export function RenderZone({
             );
             break;
           }
-          case "status":
-            setStatus({ state: msg.state, label: msg.label });
-            break;
+          // `status` frames are Shell's to interpret (the ActivityLine label);
+          // the transcript renders nothing for them.
           case "turn_end": {
-            setStatus(null);
             const id = streamingId.current;
             streamingId.current = null;
             setEntries((es) =>
@@ -362,7 +356,6 @@ export function RenderZone({
             break;
           }
           case "error": {
-            setStatus(null);
             // Close the streaming text block like every other appended entry —
             // a delta after the error must open a NEW block below it, keeping
             // wire order (2026-07-28 fix: it glued onto the block ABOVE the
@@ -427,7 +420,6 @@ export function RenderZone({
             streamingId.current = null;
             thinkingId.current = null;
             tail.resetTail(); // a replayed transcript lands at its end
-            setStatus(null);
             setEntries([]);
             // pinned renderIds survive — the replayed render entries carry
             // the same wire ids, so pins re-bind to the repainted blocks.
@@ -563,7 +555,7 @@ export function RenderZone({
         onTouchStart={tail.onTouchStart}
         onTouchMove={tail.onTouchMove}
       >
-        {entries.length === 0 && !status && !busy && (
+        {entries.length === 0 && !busy && (
           // A fresh session (no transcript yet) shows an inviting welcome
           // instead of raw emptiness. Shell-owned and agent-neutral (#12).
           <div className="zone-empty">
@@ -619,22 +611,6 @@ export function RenderZone({
             togglePin={togglePin}
           />
         ))}
-        {/* Visible for the whole turn: a specific label when one is known,
-            "working…" while output streams between status frames — a busy
-            turn must never look idle. */}
-        {(status || busy) && (
-          <div className="status-line">
-            {status?.state === "tool" ? (
-              <>
-                <GearGlyph size="1em" /> {status.label ?? "tool"}
-              </>
-            ) : status ? (
-              "✳ thinking…"
-            ) : (
-              "✳ working…"
-            )}
-          </div>
-        )}
       </div>
       {pinned.length > 0 &&
         (dockCollapsed ? (

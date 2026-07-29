@@ -101,10 +101,10 @@ test("phone: pairs by URL, opens the session, drives a turn with a rendered comp
 
   await phone.locator("textarea").fill("");
   await sendPrompt(phone, "plan it step by step");
-  // Mid-turn the phone shows the activity line too — the busy signal rides
-  // the same bundle over the relay, not a desktop-only affordance
+  // Mid-turn the phone shows the activity indicator too — the busy signal
+  // rides the same bundle over the relay, not a desktop-only affordance
   // (2026-07-28).
-  await phone.waitForSelector(".status-line", { timeout: 15_000 });
+  await phone.waitForSelector(".activity-line", { timeout: 15_000 });
   await phone.waitForSelector("text=Plan complete — all four steps done.", { timeout: 30_000 });
   // The live checklist is a rendered registry component — generative UI on
   // the phone, through the encrypted relay path.

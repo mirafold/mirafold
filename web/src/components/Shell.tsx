@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentInfo, AgentName } from "@protocol";
+import { ActivityLine } from "./ActivityLine";
 import { BangBar } from "./BangBar";
 import { FilesGlyph } from "./FilesGlyph";
 import { Onboarding } from "./Onboarding";
@@ -35,10 +36,26 @@ const ZERO_USAGE: Usage = { turnIn: 0, turnOut: 0, sumIn: 0, sumOut: 0, cost: 0 
  */
 export function Shell() {
   // ── The turn ──────────────────────────────────────────────────────────
-  // Whether a turn is in flight — drives the stop affordance and Esc.
-  // Derived entirely from the wire: user_prompt sets it, turn_end clears it,
-  // and a replayed in-flight turn therefore restores it correctly.
+  // Whether a turn is in flight — drives the stop affordance, Esc, and the
+  // activity indicator. Derived entirely from the wire: user_prompt sets it,
+  // turn_end clears it, and a replayed in-flight turn therefore restores it
+  // correctly.
   const [busy, setBusy] = useState(false);
+  // Unanswered prompts in flight, counted off the wire (user_prompt up,
+  // turn_end down). A bare flag can't cover the queued follow-up: one
+  // prompt may be sent mid-turn (registry queues it), and flipping idle at
+  // the FIRST turn_end would blank the indicator exactly while the engine
+  // starts into the queued turn — an API round trip of real work with
+  // nothing on screen (2026-07-29, Kyle). Replay-safe: the ring replays
+  // prompt/end pairs in order and trims oldest-first, so an unmatched
+  // turn_end can only under-count — the clamp absorbs it.
+  const openTurns = useRef(0);
+  // What the indicator says the turn is doing right now — the engine's last
+  // status frame (or announced tool), cleared back to the generic "working…"
+  // the moment it could go stale (tool_result, streamed text, turn_end).
+  const [activity, setActivity] = useState<{ state: "thinking" | "tool"; label?: string } | null>(
+    null,
+  );
   // Pending permission prompts, oldest first; the bar shows one at a time.
   // SHELL-OWNED UI: the agent can paint nothing here, so it can't fake it.
   const [asks, setAsks] = useState<PermAsk[]>([]);
@@ -165,7 +182,9 @@ export function Shell() {
     () =>
       bus.subscribe((m) => {
         if (m.type === "user_prompt") {
+          openTurns.current += 1;
           setBusy(true);
+          setActivity({ state: "thinking" });
           turnText.current = "";
           announce("Sent. Working…");
           // They've moved on in the new session — the R.4c notice is done.
@@ -180,14 +199,26 @@ export function Shell() {
           // user_prompt — a tail resume mid-turn replays none of the turn's
           // opening frames, and busy was cleared on the disconnect (R.4c).
           setBusy(true);
+          if (m.type === "status") setActivity({ state: m.state, label: m.label });
+          else if (m.type === "thinking_delta") setActivity({ state: "thinking" });
+          else if (m.type === "tool_use") setActivity({ state: "tool", label: m.name });
+          // Streamed prose means the last specific label is over; the
+          // indicator falls back to the generic "working…".
+          else setActivity(null);
           // A.1: the response is announced once at turn_end, so the prose is
           // banked here rather than spoken per token.
           if (m.type === "text_delta") turnText.current += m.text;
           // Tool activity is the other thing a sighted user reads off the
           // transcript mid-turn; announce the name, not the arguments.
           if (m.type === "tool_use") announce(`Running ${m.name}.`);
+        } else if (m.type === "tool_result") {
+          // A finished tool must not keep naming itself — a frozen "Bash"
+          // through the next model round trip reads as "done?" (2026-07-29).
+          setActivity((a) => (a?.state === "tool" ? null : a));
         } else if (m.type === "turn_end") {
-          setBusy(false);
+          openTurns.current = Math.max(0, openTurns.current - 1);
+          setBusy(openTurns.current > 0);
+          setActivity(null);
           setAsks([]); // a request that outlived its turn is void (server denies)
           announce(turnResponse(turnText.current));
           turnText.current = "";
@@ -252,7 +283,9 @@ export function Shell() {
             cost: m.costUsd ?? u.cost,
           }));
         } else if (m.type === "zone_reset") {
+          openTurns.current = 0;
           setBusy(false);
+          setActivity(null);
           setAsks([]);
           setUsage(ZERO_USAGE);
           turnText.current = "";
@@ -277,15 +310,25 @@ export function Shell() {
         // of view — clear the working state and the ■ esc stop affordance so
         // a dead daemon doesn't look like an agent still thinking. Replay (or
         // the turn-activity frames above) re-derives busy after reconnect (R.4c).
-        if (!c) setBusy(false);
+        if (!c) {
+          openTurns.current = 0;
+          setBusy(false);
+          setActivity(null);
+        }
       }),
     [bus, announce],
   );
 
   // Esc interrupts from anywhere in the page, not just the textarea. Stable
   // identity — a fresh arrow each render would re-register the window
-  // listener on every re-render of a streaming turn.
-  const interrupt = useCallback(() => bus.interrupt(), [bus]);
+  // listener on every re-render of a streaming turn. An interrupt kills
+  // everything in flight (a queued follow-up included) but doesn't promise
+  // one turn_end per open turn — the mock emits a single turn_end for all
+  // abandoned work — so the counter drops to the one turn_end still coming.
+  const interrupt = useCallback(() => {
+    openTurns.current = Math.min(openTurns.current, 1);
+    bus.interrupt();
+  }, [bus]);
   useEscapeKey(busy ? interrupt : undefined);
 
   // Stable identity: Onboarding keys its poll interval on this prop, so a
@@ -395,6 +438,16 @@ export function Shell() {
               />
               <RenderZone subscribe={bus.subscribe} sendAction={bus.sendAction} busy={busy} />
             </div>
+            <ActivityLine
+              busy={busy}
+              label={
+                activity == null
+                  ? "working…"
+                  : activity.state === "thinking"
+                    ? "thinking…"
+                    : `${activity.label ?? "tool"}…`
+              }
+            />
             <PermBar asks={asks} onAnswer={answer} />
             {bang.my && (
               <BangBar
@@ -407,7 +460,7 @@ export function Shell() {
             <PromptBox
               onSend={send}
               busy={busy}
-              onInterrupt={bus.interrupt}
+              onInterrupt={interrupt}
               cwd={tildify(meta.cwd, daemonInfo.home)}
             />
             <StatusBar
