@@ -998,8 +998,44 @@ with it. Both sequence BEFORE R.5.**
     requires a public repo, so the end-to-end proof fires at the first real
     publish (launch morning) — same class as R.7's existing `npx` check;
     everything short of that rehearses beforehand.
+  - **DRAFT release sequence (2026-07-29, assistant — Kyle to ratify;
+    "launch asap" is the directive it serves):**
+    - *Preconditions, any order, all before T-0:* 4.15 ✓ (done);
+      provenance release workflow landed + build/pack rehearsed (publish
+      itself fires at T-0); npm trusted-publisher configured (Kyle,
+      npmjs.com form) + SSH signing key registered (Kyle); Dependabot
+      re-verified zero on BOTH code repos; the relay repo's dedicated
+      security-audit pass (gates its flip); tracked-docs disclosure review
+      (Kyle reads what goes public: BUSINESS.md, PLAN + archive, git
+      history); theme value guards landed; Paddle payout details (Kyle —
+      money has nowhere to land without it); launch copy + Product Hunt
+      draft ready; R.6's real-hardware checks done.
+    - *T-0 morning, in order:* (1) `mirafold/mirafold` public → enable the
+      DCO check + re-enable the cross-repo relay itest in CI; (2)
+      `mirafold-relay` public (only if its audit passed); (3) Kyle pushes
+      the signed release tag → the workflow publishes to npm with
+      provenance over the 0.0.1 placeholder; (4) verify cold:
+      `npx mirafold` + `npm audit signatures`; (5) site stays as-is (its
+      install line `npm i -g mirafold` becomes true at step 3; checkout
+      already live); (6) the splash: X + Show HN + Product Hunt +
+      r/ClaudeAI + r/LocalLLaMA. Same week: newsletter submissions,
+      awesome-list PRs, the BIS §742.15(b) email, the provider-terms
+      re-check (R.7's standing item).
+    - *Rollback levers:* npm = re-point the `latest` dist-tag + deprecate
+      (never unpublish); relay = `fly deploy --image <prev>`; site = Pages
+      one-click rollback (KV does not roll back with it).
+    - *Rename (d): resolved* — the GitHub org/repo and the npm name are
+      already `mirafold`; the internal folder/Fly names are non-gating
+      (umbrella note 2026-07-11).
+    - *Still Kyle's calls, marked open:* (i) the first public version
+      number (0.2.0 as-is, or a fresh 0.3.0 cut); (ii) how R.5c's
+      user-testing gate is satisfied under "asap" — compress to Kyle's own
+      real-hardware pass + whatever testers surface this week, or
+      explicitly waive it (a waiver should be written down as a decision,
+      not left implicit); (iii) the launch date itself.
   - Done when: a written release-sequence exists that R.6 and R.7 just
-    follow, with no open "how do we actually ship this" questions.
+    follow, with no open "how do we actually ship this" questions —
+    *draft above; ratification + the three open calls close it.*
 
 - [ ] **Step R.5c — User-testing round before release (Kyle-led)** *(needs
   R.2 deployed + the phone experience end-to-end; gates R.7)*
