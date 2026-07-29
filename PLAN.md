@@ -1027,12 +1027,28 @@ with it. Both sequence BEFORE R.5.**
     - *Rename (d): resolved* — the GitHub org/repo and the npm name are
       already `mirafold`; the internal folder/Fly names are non-gating
       (umbrella note 2026-07-11).
+    - **AMENDMENT (Kyle, 2026-07-29): the flip and the splash separate.**
+      Everything goes truly public QUIETLY first — repos public, signed
+      tag pushed, workflow publishes to npm, verifications run — then a
+      **live-fire window of AT MOST 2 days** with a few more personally-
+      invited testers installing via the real public path
+      (`npm i -g mirafold`), then the one big splash, unchanged in shape.
+      This amends (not reverses) the 2026-07-25 "ONE splash" decision:
+      what was rejected then was a quiet launch *strategy*; this is a
+      bounded smoke-test window with the single announcement event kept.
+      It also converts R.7's two publish-only checks (`npx mirafold`,
+      `npm audit signatures`) into pre-splash facts, and in practice it IS
+      R.5c's user-testing round — real users, real hardware, the exact
+      artifact the public gets. `/beta` is NOT removed at the flip: it
+      becomes a short "we're live — `npm i -g mirafold`" note, so the link
+      already printed in every tester's WELCOME.md keeps working and
+      upgrades them to the public path. Every pre-PUBLIC gate still
+      precedes the quiet flip (tracked-docs/history review, relay audit
+      before ITS flip, Dependabot re-verify, provenance setup) — quiet
+      defers only the announcement, never a gate.
     - *Still Kyle's calls, marked open:* (i) the first public version
-      number (0.2.0 as-is, or a fresh 0.3.0 cut); (ii) how R.5c's
-      user-testing gate is satisfied under "asap" — compress to Kyle's own
-      real-hardware pass + whatever testers surface this week, or
-      explicitly waive it (a waiver should be written down as a decision,
-      not left implicit); (iii) the launch date itself.
+      number (0.2.0 as-is, or a fresh 0.3.0 cut — assistant recommends
+      0.3.0); (ii) the flip date itself (splash follows ≤2 days after).
   - Done when: a written release-sequence exists that R.6 and R.7 just
     follow, with no open "how do we actually ship this" questions —
     *draft above; ratification + the three open calls close it.*
