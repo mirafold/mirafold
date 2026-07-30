@@ -1171,8 +1171,14 @@ thinking), `MAX_WS_PAYLOAD` (largest inbound WS frame, default 1 MB),
 (the socket auth token, §3 — set empty to disable, or pin a fixed value;
 `yarn dev` sets it empty because the Vite `:5173` proxy is cross-origin and
 can't carry the cookie), and the Phase R relay pair: `MIRAFOLD_RELAY_URL`
-(ws/wss address of a relay — set, the daemon dials out and remote pairing
-turns on; unset, the whole relay path is off), `MIRAFOLD_RELAY_CODE` (pin
+(ws/wss address of a relay — set, the daemon dials that relay and remote
+pairing turns on; unset, the hosted relay `wss://relay.mirafold.sh` is the
+default **when an entitlement is configured** — with none, remote access
+stays off with one boot line saying how to enable it, and the daemon never
+dials; `MIRAFOLD_RELAY_URL=off` turns the remote path off outright; when the
+hosted default engages, the phone app origin defaults to
+`https://app.mirafold.com` unless `MIRAFOLD_APP_URL` overrides it),
+`MIRAFOLD_RELAY_CODE` (pin
 the pairing code across restarts; unset, a fresh 128-bit code is minted per
 launch and printed — a pin shorter than 16 chars is refused with a warning
 and a minted code is used instead, because the code is the remote path's

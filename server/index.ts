@@ -12,6 +12,7 @@ import { sweepLiveness } from "./sessions/ws-liveness";
 import { startRelayClient } from "./relay/relay-client";
 import { createEntitlementTokenSource } from "./relay/entitlement";
 import { MIN_PAIRING_CODE_LENGTH, resolvePairingCode } from "./relay/relay-protocol";
+import { resolveRelayPlan } from "./relay/relay-url";
 import { COOKIE_NAME, cookieToken, isAllowedOrigin, safeRedirectPath, tokensMatch, verifyToken } from "./security/auth";
 import { createLogger, logFile, print } from "./log";
 import { envInt } from "./env";
@@ -53,9 +54,12 @@ if (typeof process.loadEnvFile === "function") {
 
 const app = express();
 
-// Read here (not with the relay block below) because the CSP's connect-src
-// needs it — see relayOrigin.
-const RELAY_URL = process.env.MIRAFOLD_RELAY_URL;
+// Resolved here (not with the relay block below) because the CSP's connect-src
+// needs it — see relayOrigin. Unset no longer means off: the hosted relay is
+// the baked default when an entitlement is configured (relay-url.ts has the
+// full why; MIRAFOLD_RELAY_URL=off is the opt-out).
+const relayPlan = resolveRelayPlan(process.env);
+const RELAY_URL = relayPlan.kind === "dial" ? relayPlan.url : undefined;
 
 /**
  * The ONE outside destination the page may open a socket to: the configured
@@ -258,11 +262,12 @@ function resolveRelayConfig(): {
   }
   // Where the phone loads the viewport app FROM (static-origin serving). The
   // relay serves no JS — the trust decision: whoever carries the traffic must
-  // not serve the code that could read the pairing fragment. With
-  // MIRAFOLD_APP_URL set (e.g. https://app.mirafold.com) the QR points there and
-  // `ws` rides the fragment so the page knows where to dial; unset falls back to
-  // the relay URL's HTTP twin (dev + stub, where one host plays both parts).
-  const APP_URL = process.env.MIRAFOLD_APP_URL?.trim().replace(/\/+$/, "");
+  // not serve the code that could read the pairing fragment. With an app origin
+  // known (explicit MIRAFOLD_APP_URL, or the baked default riding the baked
+  // relay — relay-url.ts) the QR points there and `ws` rides the fragment so
+  // the page knows where to dial; otherwise falls back to the relay URL's HTTP
+  // twin (dev + stub, where one host plays both parts).
+  const APP_URL = relayPlan.kind === "dial" ? relayPlan.appUrl : undefined;
   const info =
     RELAY_URL && relayCode
       ? APP_URL
@@ -349,7 +354,8 @@ listen(basePort);
 // the daemon never opens a listening port for remote access. The pairing code
 // is the root of trust for that path: printed here and shown as the R.4 QR,
 // nowhere else — R.3 derives the E2E keys from it, and only its hash reaches
-// the relay. Off unless MIRAFOLD_RELAY_URL is set.
+// the relay. On when a relay is resolved (explicit URL, or the baked default
+// with an entitlement configured — relay-url.ts); MIRAFOLD_RELAY_URL=off opts out.
 if (RELAY_URL && RELAY_CODE) {
   // R.5: the entitlement token source — a hand-issued token, a license key
   // exchanged at the billing backend, or nothing (a gated relay will refuse
@@ -370,4 +376,14 @@ if (RELAY_URL && RELAY_CODE) {
       `never paste this boot output into an issue or chat`,
   );
   createLogger("relay").file(`dialing ${RELAY_URL} (pairing code elided) — ${modeLine}`);
+} else if (relayPlan.kind === "off" && relayPlan.reason === "unentitled-default") {
+  // The baked default stood down (no entitlement configured — relay-url.ts).
+  // One actionable line, not a nag: remote access is a paid feature and the
+  // local product never depends on it.
+  print(
+    `[relay] remote access off — set MIRAFOLD_LICENSE_KEY (Mirafold Pro) to pair ` +
+      `your phone; local sessions don't need it`,
+  );
+} else if (relayPlan.kind === "off") {
+  createLogger("relay").file("remote access disabled (MIRAFOLD_RELAY_URL=off)");
 }
