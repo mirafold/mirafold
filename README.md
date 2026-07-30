@@ -1112,7 +1112,14 @@ binaries for linux/macOS/Windows × x64/arm64 as platform
 `optionalDependencies`, no install scripts. Nothing compiles at install,
 no toolchain is needed, and npm's default install-script blocking (which
 crashed upstream `node-pty`'s postinstall build at first boot) has nothing
-to block. *(Publishing to npm is the M2 launch action — until then, install
+to block. **You will still see one install-script warning**, and it is
+expected: the Explorer's file watching uses `@parcel/watcher`, which
+declares an `install` script that current npm blocks by default. That
+script is a conditional no-op — it compiles only when you pass
+`--build-from-source` — and the binding you actually load ships prebuilt
+as a platform `optionalDependency` (darwin/win32/linux × x64/arm64/arm,
+glibc and musl, plus android and freebsd). Blocking it changes nothing;
+the warning names a package, not a failure. *(Publishing to npm is the M2 launch action — until then, install
 from a tarball. Prerequisites: `yarn` on PATH and a prior `yarn install`,
 because `prepack` runs `yarn build`. Then: `npm pack` in the repo, and
 `npm i -g ./mirafold-*.tgz`.)*

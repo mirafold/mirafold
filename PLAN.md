@@ -1208,6 +1208,39 @@ with it. Both sequence BEFORE R.5.**
   - Done when: the testing round is complete, every finding is written down,
     and each must-fix item is either fixed or explicitly scheduled as a
     Phase R blocker ahead of R.7.
+  - **Tester-002 thread CLOSED 2026-07-30** (the point-by-point discussion
+    Kyle held open since 07-28; ROADMAP launch item 5). Remaining points
+    resolved, standard practice applied rather than bespoke decisions:
+    **"What is real"** — accurate, and re-verified in passing today (the
+    loopback bind and the `!` cwd confinement + caps both came up
+    independently); noted, NOT used as external validation, since the
+    tester never ran the product and citing a pre-install vetting doc as a
+    security review would overstate it. **Concern 2** (SECURITY.md/tests/
+    docs absent from the tarball) — SECURITY.md ships since 4.15; tests,
+    plans and build instructions deliberately do NOT ship in an npm
+    package, and the README's citations resolve when the repo goes public
+    at R.7. **Concern 3** (the trust boundary is large) — the actionable
+    half is now a **"Running it safely" section in `SECURITY.md`**, which
+    ships inside the package: leave the auth token on, never put the
+    daemon behind a proxy or a LAN bind (the relay is the one supported
+    remote path), treat `!` as your shell, open it somewhere you'd give an
+    agent a terminal, keys stay server-side. Their pilot-only cautions
+    (skip the relay, no keys in `.env`) were deliberately NOT parroted —
+    `.env` in the launch directory IS the supported place for keys.
+    **Recommended pilot preconditions** — all four are satisfied by the
+    launch mechanics already planned: public source at the exact commit
+    (R.7), a signed tag + published fingerprint (R.5b's signed `v0.3.0` +
+    `npm publish --provenance` over trusted publishing), SECURITY.md +
+    lockfile + build instructions in the public repo, and native-install
+    clarity — now written into the README's native-module note, which had
+    claimed no install scripts at all while every npm-12 user sees a
+    `@parcel/watcher` warning (measured: its script is a conditional
+    no-op, prebuilts ship for every mainstream platform). **Bottom line** —
+    their sole blocker was supply-chain provenance, which dissolves at the
+    flip; no separate work. *One item deliberately left alone: the site
+    claims open source in the present tense while the repos are private.
+    That is true-by-R.7 and Kyle has made no decision to change the copy;
+    it resolves itself at the flip.*
   - Finding #5 (assistant, 2026-07-30, R.6's live-Gemini check — **LAUNCH
     BLOCKER, FIXED same day**): the `gemini-cli` adapter could not complete a
     turn on Gemini CLI **0.53.0** (written against 0.51.0). It presented as

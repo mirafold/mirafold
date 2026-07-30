@@ -22,6 +22,34 @@ raw agent HTML must never escape the sandboxed iframe. Anything that lets
 model-controlled output cross that line is a vulnerability, and exactly the
 kind of report we want.
 
+## Running it safely
+
+Mirafold drives an agent that has your filesystem and your shell. That is the
+product, not a flaw — but it means a compromise of the browser page, the
+daemon, a dependency, or a paired device is code execution as you. A few
+things follow, and they are the whole list:
+
+- **Leave the auth token on.** Each launch mints one and the browser trades it
+  for a SameSite cookie. `MIRAFOLD_TOKEN=""` disables it, which means any page
+  served from localhost — another dev server, a hostile package's local
+  server — can drive your agent. The daemon says so loudly at boot when you do
+  it. It exists for the Vite dev proxy, not for daily use.
+- **Don't put the daemon on a network.** It binds `127.0.0.1` deliberately and
+  has no multi-user model; a reverse proxy or a LAN bind in front of it hands
+  shell access to anyone who can reach the port. Remote access has one
+  supported path — the opt-in relay, which is end-to-end encrypted and pairs
+  per device.
+- **Treat `!` as your shell, because it is.** A `!` command runs in a real PTY
+  with your privileges. Nothing sandboxes it.
+- **Open it where you'd be comfortable giving an agent a terminal.** The file
+  browser is confined to the session's workspace, but the agent keeps its own
+  tools behind the permission prompts. A secrets directory, a mounted share,
+  or a production checkout is a poor first choice.
+- **Keys stay server-side.** Credentials come from the environment or a `.env`
+  in the launch directory and are never serialized to the browser. That `.env`
+  is the supported place for them; what matters is that the directory is one
+  you trust, per the point above.
+
 ## Known trust decisions (disclosed, not bugs)
 
 **Local model servers can't be authenticated.** Mirafold discovers local
