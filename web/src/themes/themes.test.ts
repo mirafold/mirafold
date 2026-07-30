@@ -225,6 +225,84 @@ test("slot storage keys derive from the mode key's namespace", () => {
   assert.equal(slotStorageKey("dark"), "mirafold-theme-dark");
 });
 
+// Value guard (R.7, 2026-07-16 audit / landed 2026-07-30): the contrast
+// floors above force ~18 tokens per theme to parse as plain hex, but the
+// REST — borders, the tinted families, --bg-inset, --warn-bg-2, and the
+// misc rgba()/shadow tokens — would accept any CSS at all. A contributed
+// theme could carry a working-but-weird value (url(...), var() indirection,
+// an expression) in one of those slots. The shell CSP already blocks a
+// fetch at runtime and a reviewer sees the diff; this guard makes `yarn
+// test` reject it mechanically. Grammars are deliberately narrow — exactly
+// the shapes the shipped themes use; a legitimate new shape loosens this
+// ON PURPOSE, in a reviewed diff.
+const VALUE_ALPHA_TOKENS = ["--overlay", "--selection"] as const;
+const VALUE_SHADOW_TOKENS = ["--shadow-pop", "--shadow-card"] as const;
+const HEX6 = /^#[0-9a-f]{6}$/i;
+const RGBA = /^rgba\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*(?:0|1|0?\.\d+)\s*\)$/;
+// One shadow layer: 2-4 lengths (unitless 0 or px) then an rgba()/hex color.
+const SHADOW_LAYER =
+  /^(?:-?(?:0|\d+(?:\.\d+)?px)\s+){2,4}(?:rgba\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*(?:0|1|0?\.\d+)\s*\)|#[0-9a-f]{6})$/i;
+
+/** Split a shadow list on layer commas — the ones OUTSIDE parentheses. */
+function shadowLayers(value: string): string[] {
+  const layers: string[] = [];
+  let depth = 0;
+  let cur = "";
+  for (const ch of value) {
+    if (ch === "(") depth++;
+    if (ch === ")") depth--;
+    if (ch === "," && depth === 0) {
+      layers.push(cur.trim());
+      cur = "";
+    } else cur += ch;
+  }
+  layers.push(cur.trim());
+  return layers;
+}
+
+test("every token VALUE parses under its slot's grammar, in every theme + base.css", () => {
+  const hexOnly = THEME_TOKENS.filter(
+    (t) =>
+      !(VALUE_ALPHA_TOKENS as readonly string[]).includes(t) &&
+      !(VALUE_SHADOW_TOKENS as readonly string[]).includes(t),
+  );
+  for (const t of THEMES) {
+    const tokens = parseThemeTokens(themeCss(t.id));
+    for (const name of hexOnly) {
+      assert.match(
+        tokens.get(name)!,
+        HEX6,
+        `${t.id}: ${name} must be a plain 6-digit hex color, got ${JSON.stringify(tokens.get(name))}`,
+      );
+    }
+    for (const name of VALUE_ALPHA_TOKENS) {
+      assert.match(
+        tokens.get(name)!,
+        RGBA,
+        `${t.id}: ${name} must be rgba(r, g, b, a), got ${JSON.stringify(tokens.get(name))}`,
+      );
+    }
+    for (const name of VALUE_SHADOW_TOKENS) {
+      for (const layer of shadowLayers(tokens.get(name)!)) {
+        assert.match(
+          layer,
+          SHADOW_LAYER,
+          `${t.id}: ${name} layer ${JSON.stringify(layer)} isn't lengths-then-color`,
+        );
+      }
+    }
+  }
+  // The pinned set is colors only, defined once in base.css.
+  const base = parseThemeTokens(readFileSync(join(themesDir, "base.css"), "utf8"));
+  for (const name of PINNED_TOKENS) {
+    assert.match(
+      base.get(name)!,
+      HEX6,
+      `base.css: ${name} must be a plain 6-digit hex color, got ${JSON.stringify(base.get(name))}`,
+    );
+  }
+});
+
 test("appearance labels match the palette: --bg is dark for dark themes, light for light", () => {
   for (const t of THEMES) {
     const [r, g, b] = hexToRgb(parseThemeTokens(themeCss(t.id)).get("--bg")!);
