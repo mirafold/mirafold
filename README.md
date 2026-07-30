@@ -58,13 +58,17 @@ thinking, full tool detail and diffs, subagent progress, the live task list,
 and token/cost usage are all surfaced (Phase T2, shipped). Richness is added
 on top of raw visibility, never traded against it.
 
-![Mirafold demo — ask about a repo and get a card, a table, and real links; paste data, get a live chart, pin it, and the agent updates it in place](demo/demo.gif)
+![Mirafold demo — a repo overview as a card and a table; a test-and-fix run with a permission strip, console output, a diff and a green re-run; a sudo password answered in the shell's own masked bar; a bundle pie chart pinned and updated in place](demo/demo.gif)
 
-*Two prompts, live and unscripted: ask about a repo → the agent answers with
-an overview card, a dependency table, and doc links — clicking one opens the
-real page. Then paste latency numbers → it chooses a line chart (hover it:
-a real component, not a picture) → **pin** it → one more ask, and the agent
-updates the **pinned** chart in place.*
+*The real UI, driven end to end: ask about a repo → an overview card, a
+dependency table, and doc links. Then "run the server tests and fix what's
+failing" → the shell's own permission strip, the failing run as console
+output, a live task list, the fix as a diff, a green re-run — and the
+Explorer opens for a look at the actual git diff before the commit.
+`!sudo lsof -i :3000` runs in a **real PTY**: the password prompt is answered
+in the shell-owned masked bar, and the agent reads the output and replies
+unprompted. Then a bundle question → a pie chart, **pinned**, updated in
+place by a later turn → and a mermaid diagram in the sandboxed frame.*
 
 This document is the technical orientation for someone taking ownership of the
 codebase. Companion documents:
