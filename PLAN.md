@@ -1102,9 +1102,14 @@ with it. Both sequence BEFORE R.5.**
     `contents: read` + `id-token: write` only, no stored token, fails
     closed until the trusted-publisher form is done. `workflow_dispatch`
     is the dry-run rehearsal; `npm pack` + `npm publish --dry-run` also
-    rehearsed locally on 0.2.0. Still Kyle's hands: the npmjs.com
-    trusted-publisher form (repo `mirafold/mirafold`, workflow
-    `release.yml`) and generating/registering the SSH signing key.
+    rehearsed locally on 0.2.0. *Both Kyle-hands parts ✅ DONE
+    2026-07-30:* the npmjs.com trusted-publisher form (GitHub Actions ·
+    `mirafold/mirafold` · `release.yml` · env blank · publish only,
+    stage off) and the dedicated ed25519 signing key (repo-local git
+    config signs all tags, sign smoke-tested; public half registered on
+    GitHub as a signing key). The publish path is fully set up; its
+    end-to-end proof fires at the first real publish, per the caveat
+    above.
   - **DRAFT release sequence (2026-07-29, assistant — Kyle to ratify;
     "launch asap" is the directive it serves):**
     - *Preconditions, any order, all before T-0:* 4.15 ✓ (done);
