@@ -618,11 +618,24 @@ notifications are **not** part of the launch and are not sold until built.
     + the 2026-07-17 move).
   - Open to close the box: (1) the **cellular-phone pass** — same flow on
     LTE with wifi off, plus the wifi→LTE mid-turn flip (also R.6's
-    real-hardware check; needs only Kyle + signal). (2) **Bake the default
-    `MIRAFOLD_RELAY_URL`** (`wss://relay.mirafold.sh`) — today the relay is
-    OFF when the env var is unset; baking the default turns it on for
-    everyone, so it lands WITH R.5's entitlement gate, never before (R.5's
-    explicit launch blocker). (3) The codebase/npm/GitHub **rename**
+    real-hardware check; needs only Kyle + signal). (2) ✅ **Bake the
+    default `MIRAFOLD_RELAY_URL` — DONE 2026-07-30** (`43441ac`,
+    `server/relay/relay-url.ts`): unset now means the hosted relay
+    (`wss://relay.mirafold.sh`) — but ONLY when an entitlement is
+    configured; an unentitled daemon never dials (a gated relay would
+    refuse it 4007 on a widening retry forever) and gets one actionable
+    boot line instead. `MIRAFOLD_RELAY_URL=off` opts out; explicit URLs
+    keep pre-bake behavior verbatim (self-host + dev stub); the app origin
+    defaults to `https://app.mirafold.com` only when riding the baked
+    default. The bake-lands-WITH-the-gate constraint was satisfied — the
+    gate has been ON in production since 2026-07-22. Verified: 9 unit
+    tests (unentitled guard mutation-tested), Tiers 1+2 green, live boots
+    in all four modes. *Follow-up flagged, Kyle's call: production (Fly's
+    proxy) delivers refusal closes ~5s after open — locally 14ms — which
+    defeats relay-client's 400ms pair-confirm, so an INVALID/lapsed
+    license logs a false "paired", resets backoff, and churns at ~6s
+    forever; candidate fix is restoring the widening backoff on a known
+    refusal close.* (3) The codebase/npm/GitHub **rename**
     genui-shell → mirafold rides this step (domains bought 2026-07-11;
     the Fly app name stays `genui-relay`, internal rename optional).
   - Done when: a phone on cellular (not the home wifi) drives a home
@@ -937,7 +950,11 @@ with it. Both sequence BEFORE R.5.**
     past-day-7 charges are paid back personally. `scripts/entitlement.mjs`
     is ops/emergency tooling only.*
   - **Still open on this step:**
-    1. The **Pro button → `/pay` link** swap on the site.
+    1. The **Pro button → `/pay` link** swap on the site — *staged
+       2026-07-30 on the site repo's `launch-flip` branch ("start free
+       trial" + 7-day-trial badge, rendered and verified); merges to main
+       at T-0, never before (the button must not go live ahead of the npm
+       publish).*
     2. ✅ **The Paddle.js default-payment-link page — DONE 2026-07-28.** The
        dashboard setting still pointed at `/welcome` (the 07-22 setup's
        wrong target — no Paddle.js there, so Paddle's card-update /
@@ -946,8 +963,12 @@ with it. Both sequence BEFORE R.5.**
        (Paddle.js auto-opens checkout on `?_ptxn=`) and was verified live
        the same day — ahead of the first real charges (his own trial
        converts ~07-29).
-    3. Deploying the **phone app bundle to the site origin** (the static
-       app-serving origin half of this step).
+    3. ✅ Deploying the **phone app bundle to the site origin** — resolved:
+       the static app origin is `https://app.mirafold.com` (its own
+       git-integrated Pages project), live and serving the bundle since
+       2026-07-13, rebuilt on every main push. *(Marked done 2026-07-30 —
+       this line predated the separate-origin decision and had gone
+       stale.)*
     4. The pre-public-launch hardening trio — claim window ✅ and revocation
        runbook ✅ (both 2026-07-23); the **genui-shell dependabot findings**
        ✅ **cleared 2026-07-25** (postcss bump `c660130` closed the last
@@ -1071,6 +1092,16 @@ with it. Both sequence BEFORE R.5.**
     requires a public repo, so the end-to-end proof fires at the first real
     publish (launch morning) — same class as R.7's existing `npx` check;
     everything short of that rehearses beforehand.
+    *Status 2026-07-30: the release workflow LANDED* —
+    `.github/workflows/release.yml` (`52ca799`): tag push (v*) → tag↔
+    version check → typecheck + Tier 1 → pack with the tarball SHA-256 in
+    the job summary (for the Release notes) → `npm publish --provenance`;
+    `contents: read` + `id-token: write` only, no stored token, fails
+    closed until the trusted-publisher form is done. `workflow_dispatch`
+    is the dry-run rehearsal; `npm pack` + `npm publish --dry-run` also
+    rehearsed locally on 0.2.0. Still Kyle's hands: the npmjs.com
+    trusted-publisher form (repo `mirafold/mirafold`, workflow
+    `release.yml`) and generating/registering the SSH signing key.
   - **DRAFT release sequence (2026-07-29, assistant — Kyle to ratify;
     "launch asap" is the directive it serves):**
     - *Preconditions, any order, all before T-0:* 4.15 ✓ (done);
@@ -1385,7 +1416,15 @@ with it. Both sequence BEFORE R.5.**
     because they don't; no one owns this space like we do.** All copy stands
     on what Mirafold IS, never on a contrast with anyone else. This
     supersedes the earlier 2026-07-08 "competitive scan" framing below.
-    - [ ] **Public-beta framing (Kyle's call, 2026-07-29):** the launch
+    - [x] **Public-beta framing (Kyle's call, 2026-07-29)** — *executed
+      2026-07-30 where it could be: the README top carries the working
+      phrase + the issue tracker as front door (`ac5fb39`), and the
+      README's opening paragraph is now the crisp quotable definition the
+      item below asks for (same commit). The site placements (hero
+      install area + the post-flip `/beta` live note) are staged on the
+      site repo's `launch-flip` branch, deployed at T-0. Kyle still tunes
+      the exact words; launch posts carry the phrase per the drafts.*
+      Original spec: the launch
       presents Mirafold as a **public beta**, stated plainly and
       consistently everywhere it speaks — ONE phrase (working draft:
       "Mirafold is in public beta — new, moving fast, and issues are
@@ -1575,7 +1614,12 @@ with it. Both sequence BEFORE R.5.**
     belt-and-suspenders: add a guard asserting the REMAINING values parse
     as colors/alpha-colors/shadow lists, so `yarn test` rejects it
     mechanically. Matters only once the repo is public and taking PRs —
-    land it with (or before) the public flip.
+    land it with (or before) the public flip. ✅ **DONE 2026-07-30**
+    (`7723010`, themes.test.ts): hex-only for every color slot (borders,
+    tints, --bg-inset, --warn-bg-2 included), rgba() for
+    overlay/selection, lengths-then-color layers for shadows, base.css's
+    pinned set hex-only; `url()` mutations in a border slot and a shadow
+    layer both verified failing loudly.
   - ~~**SECURITY.md: name the `!`-output → model path (2026-07-17
     audit)**~~ — **done early, 2026-07-23**: landed in SECURITY.md's
     "Known trust decisions" section, together with the Q.5 symlink
