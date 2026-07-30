@@ -616,9 +616,15 @@ notifications are **not** part of the launch and are not sold until built.
     in production). Full build/deploy/rename history (incl. the GENUI® →
     Mirafold naming story) → PLAN-ARCHIVE.md ("Step R.2 — status history"
     + the 2026-07-17 move).
-  - Open to close the box: (1) the **cellular-phone pass** — same flow on
-    LTE with wifi off, plus the wifi→LTE mid-turn flip (also R.6's
-    real-hardware check; needs only Kyle + signal). (2) ✅ **Bake the
+  - Open to close the box: (1) the **cellular-phone pass** — ✅ **FIRST HALF
+    DONE 2026-07-30**: Kyle paired his phone and ran a session over
+    **cellular with wifi off**, on the fixed 0.3.0 build. Notable because
+    his house is rural with near-unusable data — he found one spot with
+    signal and it worked there, so the pass happened on a *marginal* link
+    rather than a strong one, which is the harder case. ✅ **SECOND HALF
+    DONE the same day**: the **wifi→LTE mid-turn flip, run twice** — wifi
+    dropped while a turn was streaming and the session recovered on its own
+    both times. **The cellular-phone pass is CLOSED.** (2) ✅ **Bake the
     default `MIRAFOLD_RELAY_URL` — DONE 2026-07-30** (`43441ac`,
     `server/relay/relay-url.ts`): unset now means the hosted relay
     (`wss://relay.mirafold.sh`) — but ONLY when an entitlement is
@@ -662,7 +668,15 @@ notifications are **not** part of the launch and are not sold until built.
     load-bearing). **2026-07-13: worked end-to-end on a real phone over
     wifi** through the deployed relay + app.mirafold.com. Full build
     detail → PLAN-ARCHIVE.md.
-  - Open: the cellular pass (R.2/R.6's LTE check) closes this box; the
+  - ✅ **CLOSED 2026-07-30 — the cellular pass is done** (R.2/R.6's LTE
+    check). Kyle paired and ran a session on **cellular with wifi off** on
+    the fixed 0.3.0 build, from the single spot in a rural house that gets
+    data — a marginal link, not a strong one. Then the **wifi→LTE mid-turn
+    flip, twice**: wifi dropped while a turn was streaming, and the session
+    recovered on its own both times with the transcript intact. The
+    machinery behind that is `web/src/ws.ts` — 25s ping / 8s pong deadline
+    to catch the half-open socket, 500ms→5s reconnect backoff
+    short-circuited by the browser's `online` event and tab-visible. The
     styling/UX punch list that first phone session surfaced is R.4l
     item 1, not this step.
   - Done when: a real phone pairs by QR, drives a full session (prompt,
@@ -1194,6 +1208,50 @@ with it. Both sequence BEFORE R.5.**
   - Done when: the testing round is complete, every finding is written down,
     and each must-fix item is either fixed or explicitly scheduled as a
     Phase R blocker ahead of R.7.
+  - Finding #5 (assistant, 2026-07-30, R.6's live-Gemini check — **LAUNCH
+    BLOCKER, FIXED same day**): the `gemini-cli` adapter could not complete a
+    turn on Gemini CLI **0.53.0** (written against 0.51.0). It presented as
+    two failures — a refusal to run headless in an "untrusted" folder, and
+    `IneligibleTierError: This client is no longer supported for Gemini Code
+    Assist for individuals` — but they are **one cause**: 0.53.0 does not load
+    a project's `.gemini/settings.json` for an untrusted folder. That file is
+    where the adapter writes `security.auth.selectedType: "gemini-api-key"`,
+    so the selection was ignored and the CLI fell back to the USER-scope
+    choice; any user who ever logged in interactively (`oauth-personal`) then
+    died on the free-tier client path Google retired, while holding a valid
+    `GEMINI_API_KEY`.
+    **Fix (P.6b):** the workspace-trust question is asked ONCE per folder
+    through the shell's own permission strip — `permission_request` /
+    `permission_resolved`, both existing message types, so the wire protocol
+    is untouched and the ask is shell-owned (the agent can't paint or fake
+    it). A yes is remembered in a new daemon record,
+    `<state>/trusted-workspaces.json` (`server/sessions/workspace-trust.ts`),
+    and carried into the child as `GEMINI_CLI_TRUST_WORKSPACE=true`. A no runs
+    nothing and says why; the session stays usable. Asked once per workspace,
+    ever — matching what their own terminal `gemini` does.
+    **Measured negatives, both of which cost a round of wrong belief:**
+    `--skip-trust` is NOT equivalent — it lets the run proceed but still
+    doesn't load project settings, so auth falls back and the turn dies
+    (proven in a known-good workspace). And `GEMINI_DEFAULT_AUTH_TYPE=
+    gemini-api-key` does nothing at all on 0.53.0 — proven by the case with
+    no project settings + trust + that variable, which still failed. *An
+    earlier draft of this finding named that variable as the fix; it was
+    wrong, and only isolating one variable at a time exposed it.*
+    **Why (b) — reusing `trusted-repos.json` — was proposed and rejected:**
+    that list is the git-programs escape hatch, nothing in the product ever
+    writes it, and it is empty for essentially every project, so it would
+    have left Gemini broken while looking fixed.
+    **Verified:** a real Gemini turn end-to-end through the adapter (trust ask
+    → allow → `PROBE OK`, with usage), on Kyle's real home and its
+    `oauth-personal` login. Tests: `workspace-trust.test.ts` (containment,
+    persistence, malformed/disabled record) and two adapter tests pinning the
+    gate — nothing spawns before the answer, the yes reaches the child as the
+    trust env var and is remembered, a no runs nothing — mutation-checked
+    (defeating the gate fails both).
+    *Standing caveat: Gemini is the most volatile of the three engines —
+    0.51→0.53 both retired an auth path and added this gate in weeks. R.6's
+    live-Gemini check should re-run after Google releases; the other two
+    engines have needed nothing like it.*
   - Finding #4 (Kyle, 2026-07-30, his own machine — **LAUNCH BLOCKER, fixed
     same day**): the first time Kyle installed the tarball the way testers
     do (`npm i -g mirafold.tgz`) instead of running `yarn dev`, onboarding

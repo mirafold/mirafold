@@ -2,10 +2,11 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import os from "node:os";
-import { chmodSync, mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import type { WireMsg } from "../protocol";
 import { GeminiCliSession } from "./gemini-cli";
 import type { GeminiModelCatalog } from "./gemini-model-list";
+import { isWorkspaceTrusted } from "../sessions/workspace-trust";
 
 // L.2b2: the Gemini JSONL→WireMsg mapping and the turn grammar. The real
 // adapter spawns a real child — a scripted stub substituted via
@@ -17,6 +18,7 @@ type Any = WireMsg & Record<string, any>;
 
 let tmp: string;
 let stub: string;
+let trustRecord: string;
 
 before(() => {
   tmp = mkdtempSync(path.join(os.tmpdir(), "genui-gemini-test-"));
@@ -27,13 +29,20 @@ before(() => {
     // would hold the stdout pipe open and the adapter's `close` never fires.
     // FAKE_ARGS_LOG records the latest spawn's argv (one arg per ---ARG---
     // separator) for the -m / guidance-injection assertions.
-    '#!/usr/bin/env bash\n[ -n "$FAKE_ARGS_LOG" ] && printf \'%s\\n---ARG---\\n\' "$@" > "$FAKE_ARGS_LOG"\n[ -n "$FAKE_EVENTS" ] && cat "$FAKE_EVENTS"\n[ -n "$FAKE_STDERR" ] && echo "$FAKE_STDERR" >&2\n[ -n "$FAKE_HANG" ] && exec sleep 30\nexit "${FAKE_EXIT:-0}"\n',
+    '#!/usr/bin/env bash\n[ -n "$FAKE_ARGS_LOG" ] && { printf \'%s\\n---ARG---\\n\' "$@" > "$FAKE_ARGS_LOG"; printf \'ENV_TRUST=%s\\n\' "$GEMINI_CLI_TRUST_WORKSPACE" >> "$FAKE_ARGS_LOG"; }\n[ -n "$FAKE_EVENTS" ] && cat "$FAKE_EVENTS"\n[ -n "$FAKE_STDERR" ] && echo "$FAKE_STDERR" >&2\n[ -n "$FAKE_HANG" ] && exec sleep 30\nexit "${FAKE_EXIT:-0}"\n',
   );
   chmodSync(stub, 0o755);
   process.env.MIRAFOLD_GEMINI_BIN = stub;
+  // P.6b: a turn now waits on the folder-trust ask in an untrusted workspace.
+  // Every session below lives under `tmp`, so trusting that root once keeps
+  // these tests about the JSONL mapping — the gate itself has its own tests.
+  trustRecord = path.join(tmp, "trusted-workspaces.json");
+  writeFileSync(trustRecord, JSON.stringify([tmp]));
+  process.env.MIRAFOLD_WORKSPACE_TRUST_FILE = trustRecord;
 });
 after(() => {
   delete process.env.MIRAFOLD_GEMINI_BIN;
+  delete process.env.MIRAFOLD_WORKSPACE_TRUST_FILE;
   delete process.env.FAKE_EVENTS;
   delete process.env.FAKE_HANG;
   delete process.env.FAKE_EXIT;
@@ -585,4 +594,87 @@ test("2026-07-29 a first turn that dies unread gives the guidance back — the h
     delete process.env.FAKE_EXIT;
   }
   s.close();
+});
+
+// --- P.6b: the folder-trust gate ------------------------------------------
+// Gemini CLI 0.53.0 refuses to run headless in a folder it hasn't been told to
+// trust. Mirafold asks once through the SHELL's permission strip (the agent
+// cannot paint or fake it) and remembers the yes, rather than blanket-passing
+// --skip-trust — which would silently undo the protection for any repo the
+// user opens. These tests use a workspace OUTSIDE the pre-trusted root above.
+
+const untrustedSession = () => {
+  const ws = mkdtempSync(path.join(os.tmpdir(), "genui-gemini-untrusted-"));
+  const s = new GeminiCliSession({ workspaceDir: ws });
+  const msgs: Any[] = [];
+  s.onMessage((m) => msgs.push(m as Any));
+  const waitFor = (type: string, timeoutMs = 10_000) =>
+    new Promise<Any>((resolve, reject) => {
+      const t0 = Date.now();
+      const poll = setInterval(() => {
+        const hit = msgs.find((m) => m.type === type);
+        if (hit) {
+          clearInterval(poll);
+          resolve(hit);
+        } else if (Date.now() - t0 > timeoutMs) {
+          clearInterval(poll);
+          reject(new Error(`no ${type}; seen: ${msgs.map((m) => m.type).join(",")}`));
+        }
+      }, 10);
+    });
+  return { s, ws, msgs, waitFor };
+};
+
+test("an untrusted workspace asks the user before anything runs, then proceeds on allow", async () => {
+  const argsLog = path.join(tmp, "trust-allow-args");
+  process.env.FAKE_ARGS_LOG = argsLog;
+  const { s, ws, msgs, waitFor } = untrustedSession();
+  try {
+    s.pushPrompt("hello");
+    const ask = await waitFor("permission_request");
+    assert.equal(ask.tool, "Gemini");
+    assert.match(ask.detail, /trust this folder/);
+    assert.ok(ask.detail.includes(ws), "the ask names the exact folder");
+    // Nothing ran while the ask was open — the whole point of the gate.
+    assert.equal(existsSync(argsLog), false, "no child spawned before the answer");
+    assert.equal(msgs.some((m) => m.type === "turn_end"), false, "turn still open");
+
+    s.resolvePermission(ask.id, true);
+    await waitFor("turn_end");
+    assert.ok(
+      msgs.some((m) => m.type === "permission_resolved" && m.id === ask.id && m.allow === true),
+      "the resolution is announced so every viewport drops its bar",
+    );
+    const argv = readFileSync(argsLog, "utf8");
+    // The env var, NOT `--skip-trust`: measured against 0.53.0, the flag lets
+    // the run proceed but still won't load the project settings that select
+    // API-key auth, so the turn dies on IneligibleTierError instead.
+    assert.match(argv, /ENV_TRUST=true/, "the yes is carried into the child as workspace trust");
+    assert.equal(isWorkspaceTrusted(ws), true, "asked once — the answer is remembered");
+  } finally {
+    s.close();
+    delete process.env.FAKE_ARGS_LOG;
+    rmSync(ws, { recursive: true, force: true });
+  }
+});
+
+test("denying runs nothing, says why, and does not remember a yes", async () => {
+  const argsLog = path.join(tmp, "trust-deny-args");
+  process.env.FAKE_ARGS_LOG = argsLog;
+  const { s, ws, msgs, waitFor } = untrustedSession();
+  try {
+    s.pushPrompt("hello");
+    const ask = await waitFor("permission_request");
+    s.resolvePermission(ask.id, false);
+    await waitFor("turn_end");
+    assert.equal(existsSync(argsLog), false, "no child ever spawned");
+    const notice = msgs.find((m) => m.type === "notice");
+    assert.ok(notice, "the user is told why nothing happened");
+    assert.match(notice.text, /won't run in a folder you haven't trusted/);
+    assert.equal(isWorkspaceTrusted(ws), false, "a no is not recorded as a yes");
+  } finally {
+    s.close();
+    delete process.env.FAKE_ARGS_LOG;
+    rmSync(ws, { recursive: true, force: true });
+  }
 });

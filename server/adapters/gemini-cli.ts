@@ -9,6 +9,7 @@ import { type AgentSession, capOutput, errText, toolDetail } from "./types";
 import { MIRAFOLD_MCP, RENDER_ID_RE, generativeUIMsg, renderMcpCommand } from "./render-mcp-cmd";
 import { geminiBin, listGeminiModels, type GeminiModelCatalog } from "./gemini-model-list";
 import { emitModelPicker } from "./model-picker";
+import { isWorkspaceTrusted, trustWorkspace } from "../sessions/workspace-trust";
 import { AsyncQueue, CLOSE } from "./async-queue";
 
 // Same generative-UI stdio MCP server the Codex adapter injects (P.3). Gemini
@@ -19,6 +20,10 @@ const RENDER_MCP = renderMcpCommand();
 const MCP_PREFIX = `mcp_${MIRAFOLD_MCP}_`;
 // How much of a failed turn's stderr rides into the surfaced error (F.4).
 const STDERR_TAIL_CAP = 4000;
+// How long the folder-trust ask waits for an answer before denying (P.6b) —
+// the same posture as Claude's permission prompt: an unanswered ask must not
+// pin a turn open forever.
+const TRUST_PROMPT_TIMEOUT_MS = 5 * 60_000;
 // Gemini CLI's ExitCodes.FATAL_INPUT_ERROR — the exit for an unusable
 // `--resume`/`--session-id` id, thrown in resolveSessionId() before any
 // stdout event (verified against v0.51.0, 2026-07-23).
@@ -65,6 +70,13 @@ export class GeminiCliSession implements AgentSession {
   // their tool_result (which carries the assigned component id).
   private announced = new Set<string>();
   private pendingRenders = new Map<string, { tool: string; params: Record<string, unknown> }>();
+  // The folder-trust ask (P.6b), keyed by wire id → resolver. At most one is
+  // ever in flight: it gates the first turn in an untrusted workspace, and a
+  // yes is remembered on disk, so later turns never reach it.
+  private pendingAsks = new Map<string, (allow: boolean) => void>();
+  // Set once the user says yes IN THIS SESSION — the disk record is the
+  // durable answer, this just avoids re-reading it every turn.
+  private trusted = false;
 
   // `modelLabel` is undefined until configured or a turn reports the concrete
   // model — the UI shows nothing, never a stand-in that reads as a model name
@@ -127,16 +139,66 @@ export class GeminiCliSession implements AgentSession {
 
   interrupt() {
     this.child?.kill("SIGTERM"); // ends the in-flight turn; session stays warm
+    this.denyAllPending(); // an unanswered trust ask would pin the turn open
   }
 
-  // Headless Gemini has no interactive-approval channel (like Codex exec), so no
-  // browser prompt is ever pending — nothing to resolve.
-  resolvePermission(_id: string, _allow: boolean) {}
+  /** Deny every in-flight ask — the interrupt/close teardown. */
+  private denyAllPending() {
+    for (const finish of [...this.pendingAsks.values()]) finish(false);
+  }
+
+  // Headless Gemini has no interactive-approval channel for its OWN tool calls
+  // (like Codex exec). The one thing it does ask is folder trust (P.6b), and
+  // that ask is shell-owned — the browser's answer lands here.
+  resolvePermission(id: string, allow: boolean) {
+    this.pendingAsks.get(id)?.(allow);
+  }
+
+  /**
+   * Gemini 0.53.0 will not run headless in a folder it doesn't trust: a
+   * project can carry its own `.gemini/settings.json` defining MCP servers,
+   * i.e. programs. Their own terminal asks once and remembers; so do we,
+   * through the shell's permission strip, and the answer persists in
+   * Mirafold's state (never blanket-trusting whatever folder is open).
+   * Resolves to whether this turn may run.
+   */
+  private ensureTrusted(): Promise<boolean> {
+    if (this.trusted || isWorkspaceTrusted(this.workspaceDir)) {
+      this.trusted = true;
+      return Promise.resolve(true);
+    }
+    if (this.closed) return Promise.resolve(false);
+    return new Promise((resolve) => {
+      const id = randomUUID();
+      const finish = (allow: boolean) => {
+        clearTimeout(timer);
+        this.pendingAsks.delete(id);
+        // Announced on EVERY resolution path (answer, timeout, teardown), so
+        // other viewports drop their bar instead of holding a stale ask —
+        // protocol.ts's rule for permission_request.
+        this.emit({ type: "permission_resolved", id, allow });
+        if (allow) {
+          this.trusted = true;
+          trustWorkspace(this.workspaceDir); // remembered: asked once, ever
+        }
+        resolve(allow);
+      };
+      const timer = setTimeout(() => finish(false), TRUST_PROMPT_TIMEOUT_MS);
+      this.pendingAsks.set(id, finish);
+      this.emit({
+        type: "permission_request",
+        tool: "Gemini",
+        detail: `trust this folder — ${this.workspaceDir}`,
+        id,
+      });
+    });
+  }
 
   close() {
     if (this.closed) return;
     this.closed = true;
     this.child?.kill("SIGTERM");
+    this.denyAllPending();
     this.queue.push(CLOSE);
   }
 
@@ -220,7 +282,25 @@ export class GeminiCliSession implements AgentSession {
     }
   }
 
-  private runTurn(text: string): Promise<void> {
+  private async runTurn(text: string): Promise<void> {
+    // The folder-trust gate runs BEFORE anything is emitted for this turn: an
+    // untrusted workspace can't produce a turn at all, and a denied ask must
+    // leave the session usable (say why, end the turn) rather than spawn a
+    // child that exits 55 with a stderr the user can't act on.
+    if (!(await this.ensureTrusted())) {
+      this.emit({
+        type: "notice",
+        text:
+          `Gemini won't run in a folder you haven't trusted. Nothing ran. ` +
+          `Send another prompt to be asked again, or switch agents.`,
+      });
+      this.emit({ type: "turn_end" });
+      return;
+    }
+    return this.spawnTurn(text);
+  }
+
+  private spawnTurn(text: string): Promise<void> {
     return new Promise((resolve) => {
       // V.2: the headless stream-json surface has no system-prompt/instructions
       // hook (unlike Claude's `systemPrompt.append`), so RENDER_GUIDANCE rides
@@ -247,7 +327,24 @@ export class GeminiCliSession implements AgentSession {
 
       const child = spawn(geminiBin(), args, {
         cwd: this.workspaceDir,
-        env: process.env, // GEMINI_API_KEY lives here; never serialized to the wire
+        env: {
+          ...process.env, // GEMINI_API_KEY lives here; never serialized to the wire
+          // Only reached once ensureTrusted() holds the user's yes. This is
+          // ALSO what makes auth work, which is not obvious: 0.53.0 does not
+          // load a project's `.gemini/settings.json` for an UNTRUSTED folder,
+          // so the `selectedType: "gemini-api-key"` we write there was being
+          // ignored and the CLI fell back to the user-scope selection — an
+          // `oauth-personal` login dies on IneligibleTierError (the free-tier
+          // client Google retired) while a perfectly good API key sits unused.
+          // One cause, two symptoms.
+          //
+          // `--skip-trust` is NOT equivalent and was measured failing: it lets
+          // the run proceed but still doesn't load project settings, so auth
+          // falls back and the turn dies. `GEMINI_DEFAULT_AUTH_TYPE` does
+          // nothing at all on 0.53.0 (measured: no project settings + that var
+          // + trust still fails). The env var below is the whole fix.
+          GEMINI_CLI_TRUST_WORKSPACE: "true",
+        },
       });
       this.child = child;
 
