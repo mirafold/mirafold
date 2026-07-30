@@ -1153,9 +1153,10 @@ with it. Both sequence BEFORE R.5.**
       precedes the quiet flip (tracked-docs/history review, relay audit
       before ITS flip, Dependabot re-verify, provenance setup) — quiet
       defers only the announcement, never a gate.
-    - *Still Kyle's calls, marked open:* (i) the first public version
-      number (0.2.0 as-is, or a fresh 0.3.0 cut — assistant recommends
-      0.3.0); (ii) the flip date itself (splash follows ≤2 days after).
+    - *Still Kyle's calls, marked open:* (i) ✅ **DECIDED 2026-07-30: the
+      public cut is 0.3.0** — bumped on main (`b63941c`); `v0.3.0` is the
+      launch tag; (ii) the flip date itself (splash follows ≤2 days
+      after).
   - Done when: a written release-sequence exists that R.6 and R.7 just
     follow, with no open "how do we actually ship this" questions —
     *draft above; ratification + the three open calls close it.*
