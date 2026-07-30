@@ -5,7 +5,7 @@
 // postinstall compile crashed the daemon at first boot on default npm.
 import { spawn, type IPty } from "@lydell/node-pty";
 import { existsSync } from "node:fs";
-import { basename, isAbsolute } from "node:path";
+import { basename, delimiter, isAbsolute, join } from "node:path";
 
 /**
  * The `!` bash passthrough (Step 4.9). Commands run through a real PTY — not
@@ -23,12 +23,63 @@ export type BangProc = {
 // Tier 1 renders the stream as plain text, so ANSI control sequences (colors,
 // cursor movement, title-setting) are stripped server-side — the agent's
 // injected context wants clean text too. A full terminal (xterm.js) that
-// consumes the raw stream is Tier 2. CSI, OSC (BEL- or ST-terminated), and
-// single-char ESC sequences; then CRLF/lone-CR normalize to LF (a progress
-// bar's redraws stack as lines — acceptable for Tier 1).
-const ANSI_RE = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-Z\\-_]/g;
+// consumes the raw stream is Tier 2. CSI (parameter bytes are ECMA-48's full
+// 0x30–0x3F, so colon-subparameter SGR like `38:5:196` and the `<=>?` private
+// prefixes strip too), OSC and DCS (BEL- or ST-terminated), and single-char
+// ESC sequences; then CRLF/lone-CR normalize to LF (a progress bar's redraws
+// stack as lines — acceptable for Tier 1).
+const ANSI_RE =
+  /\x1b\[[0-9:;<=>?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1bP[^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-Z\\-_]/g;
+
+// A sequence PREFIX at end-of-chunk: PTY reads split at arbitrary byte
+// boundaries, so a chunk can end mid-sequence — cleaned per-chunk, the raw ESC
+// and the sequence's tail would both leak to viewports and the agent's
+// injected context. Matches only tails that could still complete (a finished
+// sequence never matches, so it strips normally).
+const PARTIAL_TAIL_RE = /\x1b(?:\[[0-9:;<=>?]*[ -/]*|\][^\x07\x1b]*\x1b?|P[^\x07\x1b]*\x1b?)?$/;
+
+/**
+ * A stateful cleaner for one PTY stream: strips ANSI sequences across chunk
+ * boundaries by holding an unterminated tail (a partial escape sequence, or a
+ * lone trailing CR that may be half of a CRLF) until the next chunk completes
+ * it. `flush()` drains the hold at stream end — an escape fragment that never
+ * completed is dropped (it was control data), a held CR normalizes.
+ */
+export function createPtyCleaner(maxHold = 4096): {
+  clean(data: string): string;
+  flush(): string;
+} {
+  let hold = "";
+  const strip = (s: string) => s.replace(ANSI_RE, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  return {
+    clean(data: string): string {
+      let s = hold + data;
+      hold = "";
+      const partial = PARTIAL_TAIL_RE.exec(s);
+      if (partial && partial[0].length <= maxHold) {
+        s = s.slice(0, partial.index);
+        hold = partial[0];
+      }
+      // A pathological unterminated OSC/DCS past maxHold falls through and is
+      // cleaned as-is — bounded leakage beats unbounded buffering.
+      if (s.endsWith("\r")) {
+        hold = "\r" + hold;
+        s = s.slice(0, -1);
+      }
+      return strip(s);
+    },
+    flush(): string {
+      const s = hold.replace(PARTIAL_TAIL_RE, "");
+      hold = "";
+      return strip(s);
+    },
+  };
+}
+
+/** One-shot form for whole strings (tests, single-chunk callers). */
 export function cleanPtyOutput(data: string): string {
-  return data.replace(ANSI_RE, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const c = createPtyCleaner();
+  return c.clean(data) + c.flush();
 }
 
 /**
@@ -72,6 +123,23 @@ export function cwdCapturePrefix(
   return `trap 'pwd -P > "$${CWD_FILE_ENV}"' EXIT\n`;
 }
 
+/** Whether the shell binary is reachable — absolute/relative paths directly,
+ *  bare names (`SHELL=zsh` is legal) through a PATH walk (with PATHEXT on
+ *  win32, mirroring what the OS exec would try). Exported for tests. */
+export function shellFound(
+  file: string,
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  if (isAbsolute(file) || file.includes("/") || file.includes("\\")) return existsSync(file);
+  const exts =
+    platform === "win32" ? (env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";") : [""];
+  for (const dir of (env.PATH ?? "").split(delimiter)) {
+    if (dir && exts.some((ext) => existsSync(join(dir, file + ext)))) return true;
+  }
+  return false;
+}
+
 export function spawnBang(
   command: string,
   cwd: string,
@@ -84,8 +152,9 @@ export function spawnBang(
   // A missing shell binary must throw HERE, identically on every platform:
   // win32 node-pty throws synchronously (ConPTY), but unix only fails after
   // the fork, inside the child — this check gives the caller one clean,
-  // catchable failure mode instead of two (R.4f).
-  if (isAbsolute(file) && !existsSync(file)) {
+  // catchable failure mode instead of two (R.4f). Bare names walk PATH so a
+  // `SHELL=zsh` typo gets the same clean throw as an absolute path.
+  if (!shellFound(file)) {
     throw new Error(`shell not found: ${file}`);
   }
   const proc: IPty = spawn(file, args(prefix ? prefix + command : command), {
@@ -98,13 +167,18 @@ export function spawnBang(
       ...(prefix && cwdFile ? { [CWD_FILE_ENV]: cwdFile } : {}),
     },
   });
+  const cleaner = createPtyCleaner();
   proc.onData((d) => {
-    const clean = cleanPtyOutput(d);
+    const clean = cleaner.clean(d);
     if (clean) onData(clean);
   });
   // node-pty reports signal deaths as { exitCode: 0, signal: n } — surface
   // those as null so a killed command isn't mistaken for a clean exit.
-  proc.onExit(({ exitCode, signal }) => onExit(signal ? null : exitCode));
+  proc.onExit(({ exitCode, signal }) => {
+    const tail = cleaner.flush();
+    if (tail) onData(tail);
+    onExit(signal ? null : exitCode);
+  });
   return {
     write(data: string) {
       proc.write(data);

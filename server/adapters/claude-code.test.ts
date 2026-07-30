@@ -577,3 +577,62 @@ test("N.5: no choice → no env override at all (inherit — the pre-N default, 
     assert.equal(capturedEnv({ kind: "local" }), undefined);
   });
 });
+
+// 2026-07-29 bughunt: an emptied task list never cleared the painted
+// checklist — TodoWrite {todos: []} was skipped whole (normalizeTodos
+// collapsed valid-empty to null) and deleting the LAST task hit
+// emitChecklist's size-0 early return, so the block froze showing deleted
+// items and a later TaskCreate resurrected them beside the new one.
+
+test("checklist: an empty TodoWrite clears the painted list; nothing resurrects", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    assistant([
+      {
+        type: "tool_use",
+        id: "w1",
+        name: "TodoWrite",
+        input: { todos: [{ content: "a", status: "pending" }, { content: "b", status: "pending" }] },
+      },
+    ]),
+    assistant([{ type: "tool_use", id: "w2", name: "TodoWrite", input: { todos: [] } }]),
+    assistant([{ type: "tool_use", id: "c1", name: "TaskCreate", input: { subject: "c" } }]),
+    RESULT,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+
+  const renders = msgs.filter((m) => m.type === "render" && m.component === "todo-list");
+  const todos = (r: Any) => r.props.todos.map((t: Any) => t.content);
+  assert.equal(renders.length, 3);
+  assert.deepEqual(todos(renders[0]), ["a", "b"]);
+  assert.deepEqual(todos(renders[1]), [], "the clear updates the painted block");
+  assert.deepEqual(todos(renders[2]), ["c"], "no deleted item rides back in");
+  s.close();
+});
+
+test("checklist: deleting the last task updates the painted block to empty", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    assistant([{ type: "tool_use", id: "c1", name: "TaskCreate", input: { subject: "only" } }]),
+    assistant([{ type: "tool_use", id: "u1", name: "TaskUpdate", input: { taskId: "1", status: "deleted" } }]),
+    RESULT,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+
+  const renders = msgs.filter((m) => m.type === "render" && m.component === "todo-list");
+  assert.equal(renders.length, 2);
+  assert.deepEqual(renders[1].props.todos, [], "the deletion reaches the screen");
+  assert.equal(renders[1].id, renders[0].id, "same block, updated in place");
+  s.close();
+});
+
+test("checklist: an empty TodoWrite with nothing painted stays silent", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    assistant([{ type: "tool_use", id: "w1", name: "TodoWrite", input: { todos: [] } }]),
+    RESULT,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  assert.ok(!msgs.some((m) => m.type === "render"), "no empty checklist is ever PAINTED");
+  s.close();
+});

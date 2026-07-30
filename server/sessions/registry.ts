@@ -18,6 +18,7 @@ import type { BangProc } from "../pty/pty";
 import { createLogger, verbose } from "../log";
 import { startWatch, type FsWatchHandle } from "./fs-watch";
 import { invalidateRepoStatusCache } from "./git";
+import { envInt } from "../env";
 
 // Replay depth: enough to reconstruct a long working session; beyond it the
 // oldest messages fall off and a late viewport sees a truncated head.
@@ -30,7 +31,7 @@ const BUFFER_CAP = 4000;
 // and the count cap's own ceiling worked out to ~10 GB. Evict oldest-first on
 // either cap; a viewport that falls behind the trimmed head just replays from
 // a truncated head, exactly as it does when the count cap trims.
-const BUFFER_MAX_BYTES = Number(process.env.SESSION_BUFFER_MAX_BYTES ?? 32_000_000);
+const BUFFER_MAX_BYTES = envInt("SESSION_BUFFER_MAX_BYTES", 32_000_000);
 
 /** Rough retained size of a buffered message. JSON length is the honest proxy
  *  for the payloads that matter here (a data: URI is one long string) and
@@ -40,7 +41,7 @@ function msgBytes(msg: WireMsg): number {
   return JSON.stringify(msg).length;
 }
 // A session with no viewports survives this long, then dies for real.
-const IDLE_TIMEOUT_MS = Number(process.env.SESSION_IDLE_TIMEOUT_MS ?? 4 * 60 * 60_000);
+const IDLE_TIMEOUT_MS = envInt("SESSION_IDLE_TIMEOUT_MS", 4 * 60 * 60_000);
 // The one refusal line for a prompt the burst gate rejects (dispatchPrompt) —
 // shared so every path (prompt, grid dispatch, component action) refuses
 // identically.
@@ -55,7 +56,7 @@ export const PROMPT_GATE_REFUSAL =
 // chunks per flush (12–14ms pacing), so demo streaming still reads as a
 // stream. 0 disables merging — every delta passes straight through
 // synchronously; tests inject their own window via the constructor.
-const DELTA_COALESCE_MS = Number(process.env.DELTA_COALESCE_MS ?? 33);
+const DELTA_COALESCE_MS = envInt("DELTA_COALESCE_MS", 33);
 // Cap on the fleet's pending-permission MIRROR (2026-07-24 audit): a flooded
 // session — a hostile or steered model spamming permissioned tool calls —
 // must not grow watcher snapshots without bound (500 asks × full detail ≈
@@ -69,7 +70,7 @@ const PERMISSION_MIRROR_CAP = 25;
 // exhaust memory + PTYs by creating without bound. Generous — a human working
 // across projects won't approach it; create() throws past it (the caller turns
 // that into an error WireMsg). Env-overridable.
-const MAX_SESSIONS = Number(process.env.MAX_SESSIONS ?? 100);
+const MAX_SESSIONS = envInt("MAX_SESSIONS", 100);
 // Ceiling on the short ENGINE-SUPPLIED labels the shell renders as chrome:
 // tool names (`status.label`, `tool_use.name`) and the model label. None has
 // a length bound at its source — they come from `system/init`, the Codex
@@ -345,11 +346,23 @@ export class SessionRegistry {
     // cooperation needed. Terminal states first; a permission hold sticks
     // until the turn moves again (4.6).
     const prev = entry.status;
-    if (msg.type === "turn_end" || msg.type === "error" || msg.type === "bang_end") {
+    if (msg.type === "turn_end" || msg.type === "error") {
       entry.status = "idle";
       entry.midTurnPromptUsed = false; // the burst gate clears on the turn grammar, never a clock
+    } else if (msg.type === "bang_end") {
+      // The `!` PTY is its own lifecycle running BESIDE the model turn — its
+      // end is NOT the turn reaching a terminal state. Treating it as one
+      // wiped the pending-permission mirror (the fleet row lost its
+      // allow/deny while the ask was still live at the adapter — the
+      // 2026-07-24 bug class through a different door) and re-opened the
+      // mid-turn burst gate (2026-07-29 bughunt).
+      entry.status = entry.permissions.length ? "permission" : "idle";
     } else if (msg.type === "permission_request") {
       entry.status = "permission";
+    } else if (msg.type === "bang_start" || msg.type === "bang_output") {
+      // Bang traffic is not the turn moving: it must not lift a permission
+      // hold (the row keeps sorting needs-you-first while the ask pends).
+      if (entry.status !== "permission") entry.status = "working";
     } else if (msg.type !== "permission_resolved") {
       // permission_resolved decides its own status in captureCockpit — it
       // must not blanket-flip to "working" while a SECOND ask still pends.
@@ -439,7 +452,9 @@ export class SessionRegistry {
         entry.status = "working";
       }
     } else if (entry.status === "idle") {
-      // turn_end / error / bang_end: nothing can still be pending.
+      // turn_end / error: nothing can still be pending. (bang_end only lands
+      // here when no ask pends — the status derivation keeps "permission"
+      // through a bang, so a live ask is never wiped by one.)
       entry.permissions = [];
     } else if (entry.permissions.length) {
       // The adapter auto-denies an unanswered ask at PERMISSION_TIMEOUT_MS
@@ -479,7 +494,13 @@ export class SessionRegistry {
     // would otherwise hold the transcript's tail past the replay.
     this.flushDeltas(entry);
     for (const msg of entry.buffer) {
-      if (afterSeq === undefined || (msg.seq ?? 0) > afterSeq) viewport(msg);
+      // Stamped on a copy at replay time (protocol.ts `replay`): the client
+      // paints history identically but suppresses live-only side effects
+      // (screen-reader announcements re-fired per historical turn on every
+      // reload — 2026-07-29 bughunt). The buffer itself stays unstamped.
+      if (afterSeq === undefined || (msg.seq ?? 0) > afterSeq) {
+        viewport({ ...msg, replay: true });
+      }
     }
     entry.viewports.add(viewport);
     // First viewport in → the doorbell starts (W.1); last detach stops it.

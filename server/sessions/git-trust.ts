@@ -27,9 +27,10 @@ import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { stateDir } from "../log";
+import { envInt } from "../env";
 
 // Shared with every git invocation in git.ts — one timebox for the family.
-export const GIT_TIMEOUT_MS = Number(process.env.FS_GIT_TIMEOUT_MS ?? 5_000);
+export const GIT_TIMEOUT_MS = envInt("FS_GIT_TIMEOUT_MS", 5_000);
 // A config dump is small; this only bounds a pathological repo's memory.
 const CONFIG_MAX_BUFFER = 2 * 1024 * 1024;
 // Each named filter driver costs one `-c` argument to neutralize. A repo

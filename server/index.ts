@@ -14,6 +14,7 @@ import { createEntitlementTokenSource } from "./relay/entitlement";
 import { MIN_PAIRING_CODE_LENGTH, resolvePairingCode } from "./relay/relay-protocol";
 import { COOKIE_NAME, cookieToken, isAllowedOrigin, safeRedirectPath, tokensMatch, verifyToken } from "./security/auth";
 import { createLogger, logFile, print } from "./log";
+import { envInt } from "./env";
 import { VERSION } from "./version";
 
 const log = createLogger("mirafold");
@@ -190,7 +191,7 @@ function boundPort(): number {
 // Cap a single inbound frame so a hostile client can't force an unbounded
 // allocation. Client messages (prompts, bang commands, stdin) are small; 1 MB
 // is comfortably above any real one. Env-overridable.
-const MAX_WS_PAYLOAD = Number(process.env.MAX_WS_PAYLOAD ?? 1_000_000);
+const MAX_WS_PAYLOAD = envInt("MAX_WS_PAYLOAD", 1_000_000);
 
 const wss = new WebSocketServer({
   server,
@@ -238,14 +239,19 @@ function resolveRelayConfig(): {
   }
   let relayCode: string | undefined;
   if (RELAY_URL && relayOrigin) {
-    const { code, weakPin } = resolvePairingCode(process.env.MIRAFOLD_RELAY_CODE);
+    const { code, weakPin, pinProblem } = resolvePairingCode(process.env.MIRAFOLD_RELAY_CODE);
     if (weakPin) {
       // Refusing beats honoring: a guessable code is remote shell access for
-      // whoever guesses it, and the minted fallback keeps the relay usable.
+      // whoever guesses it, and a code the pairing link can't carry pairs the
+      // daemon but never a phone. The minted fallback keeps the relay usable.
       createLogger("relay").warn(
-        `MIRAFOLD_RELAY_CODE is shorter than ${MIN_PAIRING_CODE_LENGTH} chars and was REFUSED — ` +
-          `a guessable pairing code hands remote shell access to whoever guesses it. ` +
-          `Using a freshly minted code instead (printed below).`,
+        pinProblem === "charset"
+          ? `MIRAFOLD_RELAY_CODE contains characters outside A-Z a-z 0-9 _ - and was ` +
+              `REFUSED — the phone's pairing link can't carry them, so pairing would ` +
+              `silently fail. Using a freshly minted code instead (printed below).`
+          : `MIRAFOLD_RELAY_CODE is shorter than ${MIN_PAIRING_CODE_LENGTH} chars and was REFUSED — ` +
+              `a guessable pairing code hands remote shell access to whoever guesses it. ` +
+              `Using a freshly minted code instead (printed below).`,
       );
     }
     relayCode = code;
@@ -275,6 +281,13 @@ wss.on("connection", (ws) => {
   // The per-viewport logic lives in connection.ts (shared with the R.1 relay
   // path); this block only binds it to the local WebSocket transport.
   liveViewports.set(ws, true);
+  // Without a per-socket listener, a transport error — an oversized frame
+  // tripping maxPayload is the everyday case (a >1 MB paste into the prompt
+  // box) — is an UNHANDLED 'error' event: it rides uncaughtException into
+  // lastGasp and kills the whole daemon, every session included (2026-07-29
+  // bughunt). Log it; ws closes the offending socket itself and `close` →
+  // conn.close does the detach.
+  ws.on("error", (err) => log.error(`[viewport] socket error: ${String(err)}`));
   ws.on("pong", () => liveViewports.set(ws, true));
   const viewport = (msg: WireMsg) => {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
@@ -289,7 +302,7 @@ wss.on("connection", (ws) => {
 // it fires `close` → conn.close → registry.detach, keeping viewport counts
 // honest and letting idle sessions actually reach their reaper. Local sockets
 // only — remote viewports have their own idle reaper (RELAY_VIEWPORT_IDLE_MS) (#10).
-const WS_HEARTBEAT_MS = Number(process.env.WS_HEARTBEAT_MS ?? 30_000);
+const WS_HEARTBEAT_MS = envInt("WS_HEARTBEAT_MS", 30_000);
 const heartbeat = setInterval(() => sweepLiveness(wss.clients, liveViewports), WS_HEARTBEAT_MS);
 heartbeat.unref(); // the listening server keeps the process alive; the beat shouldn't
 wss.on("close", () => clearInterval(heartbeat));
@@ -301,7 +314,7 @@ wss.on("close", () => clearInterval(heartbeat));
 // pass the guard — off the socket entirely.
 // A second daemon (another project, another terminal) must not crash on
 // EADDRINUSE — walk up a few ports; the launcher reads the final URL off stdout (4.10).
-const basePort = Number(process.env.PORT ?? 3000);
+const basePort = envInt("PORT", 3000);
 const listen = (port: number) => {
   const onListening = () => {
     server.removeListener("error", onBusy); // later errors stay loud, as before

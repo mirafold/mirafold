@@ -267,3 +267,9 @@ export async function attachSession(
 /** Everything seq-stamped a client has seen (i.e. the session's broadcast stream). */
 export const broadcasts = (c: { received: WireMsg[] }) =>
   (c.received as (WireMsg & Record<string, any>)[]).filter((m) => typeof m.seq === "number");
+
+/** Drop the attach-replay stamp for content comparisons: frames replayed to
+ *  a late joiner carry `replay: true` by design (2026-07-29), while the
+ *  CONTENT must still mirror the live stream byte for byte. */
+export const stripReplay = (msgs: WireMsg[]) =>
+  msgs.map(({ replay: _replay, ...m }) => m as WireMsg);

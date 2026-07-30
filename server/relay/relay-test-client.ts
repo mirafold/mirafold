@@ -102,11 +102,19 @@ export class RemoteClient {
     });
   }
 
-  /** A frame the daemon must reject: sealed correctly, then corrupted. */
+  /** A frame the daemon must reject: sealed correctly, then corrupted.
+   *  Tamper an INTERIOR character, never the last one: base64's final char
+   *  can carry 2–4 padding bits that decoders silently ignore, so a last-char
+   *  flip decodes to identical bytes ~25% of the time and the "tampered"
+   *  frame legitimately opens — the itest then passes via the 90 s idle
+   *  reaper instead of proving tamper rejection (2026-07-29 bughunt; same
+   *  flake relay-crypto.test.ts fixed for itself, now fixed at the shared
+   *  helper). Every interior character is fully significant. */
   async sendTampered() {
     const sealed = await this.cipher.seal(JSON.stringify({ type: "ping" }));
-    const last = sealed.at(-1) === "A" ? "B" : "A";
-    this.ws.send(sealed.slice(0, -1) + last);
+    const i = sealed.length - 8;
+    const flipped = sealed[i] === "A" ? "B" : "A";
+    this.ws.send(sealed.slice(0, i) + flipped + sealed.slice(i + 1));
   }
 
   /** Raw sealed frames, as fast as possible — for the relay's rate-limit test. */

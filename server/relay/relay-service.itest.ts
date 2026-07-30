@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { generateKeyPairSync, sign as signMessage, type KeyObject } from "node:crypto";
 import type { WireMsg } from "../protocol";
-import { attachSession, broadcasts, startDaemon, TestClient, type Daemon } from "../testing/itest-harness";
+import { attachSession, broadcasts, startDaemon, stripReplay, TestClient, type Daemon } from "../testing/itest-harness";
 import { closeCode, RemoteClient } from "./relay-test-client";
 import {
   CLOSE_CODE_TAKEN,
@@ -16,14 +16,18 @@ import {
   PAIR_PARAM,
   MIN_PAIR_ID_LENGTH,
 } from "./relay-protocol";
+import { MAX_ENVELOPE } from "./relay-client";
 import { startRelay, type Relay } from "../../../genui-relay/src/relay";
+import { LIMITS as SERVICE_LIMITS } from "../../../genui-relay/src/limits";
 import {
+  CLOSE_FORBIDDEN_ORIGIN as SERVICE_CLOSE_FORBIDDEN_ORIGIN,
   CLOSE_OVERLOADED,
   CLOSE_RATE_LIMITED,
   CLOSE_UNENTITLED,
   SHARED_CONTRACT,
   MIN_PAIR_ID_LENGTH as SERVICE_MIN_PAIR_ID_LENGTH,
 } from "../../../genui-relay/src/contract";
+import { viewportRefusalReason } from "../../web/src/ws";
 
 // Mints a token the exact way the R.5 billing backend does — the compact
 // "<b64url({exp})>.<b64url(Ed25519 sig)>" the relay verifies offline.
@@ -75,6 +79,22 @@ test("the relay's routing contract matches the daemon's relay-protocol", () => {
   // R.5: the daemon SENDS its entitlement token on this header; the relay
   // READS the same one. Drift = every paid pairing refused in production.
   assert.equal(SHARED_CONTRACT.ENTITLEMENT_HEADER, PROTO_ENTITLEMENT_HEADER);
+  // 2026-07-29 bughunt: the daemon's dial-out inbound cap must cover every
+  // frame the relay may lawfully forward. When it didn't (~1.5 MB vs the
+  // relay's 8 MB viewport cap), one oversized phone paste was a ws protocol
+  // violation on the daemon socket — closing the WHOLE pairing, every
+  // viewport, instead of the offender.
+  assert.ok(
+    MAX_ENVELOPE >= SERVICE_LIMITS.maxPayloadBytes,
+    `daemon MAX_ENVELOPE (${MAX_ENVELOPE}) < relay maxPayloadBytes (${SERVICE_LIMITS.maxPayloadBytes})`,
+  );
+  // 2026-07-29 bughunt: web/src/ws.ts hand-mirrors the viewport refusal
+  // codes, and its comment CLAIMED this guard pinned them — it didn't
+  // (CLOSE_FORBIDDEN_ORIGIN exists only in contract.ts). Now it does: the
+  // phone's refusal wording must track the codes the relay actually sends.
+  assert.match(viewportRefusalReason(SHARED_CONTRACT.CLOSE_BAD_CODE)!, /Desktop not reachable/);
+  assert.match(viewportRefusalReason(CLOSE_OVERLOADED)!, /capacity/);
+  assert.match(viewportRefusalReason(SERVICE_CLOSE_FORBIDDEN_ORIGIN)!, /allowed to connect/);
 });
 
 test("GET /health answers ok; other HTTP is 404", async () => {
@@ -98,11 +118,13 @@ test("a remote viewport drives a full turn; a local viewport mirrors it byte-for
   );
   await remote.type("turn_end", 20_000);
 
-  // A local late-joiner reconstructs exactly what streamed to the remote one.
+  // A local late-joiner reconstructs exactly what streamed to the remote one
+  // (its copies carry the replay stamp, 2026-07-29 — content identical).
   const { client: local } = await attachSession(d.port, created.sessionId);
   const tail = broadcasts(remote).at(-1)!.seq;
   await local.waitFor((m) => (m as Any).seq === tail, "replay tail", 20_000);
-  assert.deepEqual(broadcasts(local), broadcasts(remote));
+  assert.ok(broadcasts(local).every((m) => m.replay === true));
+  assert.deepEqual(stripReplay(broadcasts(local)), stripReplay(broadcasts(remote)));
 
   // connections() sees exactly the daemon dial + this viewport (+ local is a
   // separate local socket on the daemon, not on the relay).

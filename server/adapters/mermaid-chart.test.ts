@@ -66,3 +66,21 @@ test("convertMermaidCharts: unparseable mermaid and plain text pass through verb
   assert.deepEqual(convertMermaidCharts(flow), [{ text: flow }]);
   assert.deepEqual(convertMermaidCharts("no fences at all"), [{ text: "no fences at all" }]);
 });
+
+// 2026-07-29 bughunt: quoted labels containing commas were split on those
+// commas — usually silently defeating the backstop (count mismatch → code
+// block), and painting a WRONG chart when the mangled count happened to
+// match the series length.
+
+test("commas inside quoted labels are content, not separators", () => {
+  const chart = xychartToChart('xychart-beta\nx-axis ["Jan, 2026", Feb]\nbar [1, 2]');
+  assert.ok(chart, "the two-label axis parses");
+  assert.deepEqual(chart!.x, ["Jan, 2026", "Feb"]);
+  assert.deepEqual(chart!.series[0].values, [1, 2]);
+});
+
+test("a comma-bearing label can no longer masquerade as two categories", () => {
+  // Old behavior: ["\"Jan", "2026\""] — one label mangled into two, painted.
+  const chart = xychartToChart('xychart-beta\nx-axis ["Jan, 2026"]\nbar [1, 2]');
+  assert.equal(chart, undefined, "a real length mismatch fails open to a code block");
+});

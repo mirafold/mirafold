@@ -14,10 +14,12 @@ import {
 type Listener = (msg: WireMsg) => void;
 
 // The relay's stable close codes a VIEWPORT can be refused with. A small
-// hand-mirror of server/relay/relay-protocol.ts (pinned there against the
-// relay's own contract by the contract-guard itest) — relay-protocol.ts pulls
-// in node:crypto and can't cross into the web bundle, so these three codes are
-// duplicated with this note rather than shared through a module.
+// hand-mirror of the relay's contract (genui-relay contract.ts — 4006 has no
+// constant in relay-protocol.ts at all) — relay-protocol.ts pulls in
+// node:crypto and can't cross into the web bundle, so these three codes are
+// duplicated. Pinned DIRECTLY against contract.ts by relay-service.itest.ts,
+// which feeds each contract code through viewportRefusalReason (2026-07-29
+// bughunt: the old note claimed a pin that didn't exist).
 const VIEWPORT_CLOSE = {
   NO_DAEMON: 4003, // CLOSE_BAD_CODE — no daemon paired under this id
   OVERLOADED: 4004, // CLOSE_OVERLOADED — relay or this pair at capacity
@@ -52,6 +54,10 @@ export function viewportRefusalReason(code: number | undefined): string | undefi
 // deadline closes the socket, which routes into the normal reconnect path.
 export const PING_INTERVAL_MS = 25_000;
 export const PONG_DEADLINE_MS = 8_000;
+// Relay path only: how long an answered upgrade may sit handshake-pending
+// before the socket is closed into the retry ladder (2026-07-29 bughunt —
+// nothing else bounds that wait; see connect()).
+export const HANDSHAKE_DEADLINE_MS = 15_000;
 // Reconnect backoff: fast first retry (the daemon is local), capped so a
 // long outage doesn't hammer; `online`/tab-visible events short-circuit it.
 export const BACKOFF_MIN_MS = 500;
@@ -191,6 +197,11 @@ export class SocketClient {
 
   private connect() {
     if (this.closedByUs) return; // a queued reconnect must not outlive close()
+    // A superseded socket's onclose is inert and never ran stopHeartbeat, so
+    // its still-armed pong deadline would otherwise outlive it and fire
+    // against the SUCCESSOR socket mid-connect (2026-07-29 bughunt) — clear
+    // the previous life's timers before dialing.
+    this.stopHeartbeat();
     // Each handler checks it still belongs to the current socket: a superseded
     // socket's late onclose must not kill the new heartbeat, fire close
     // listeners, or schedule an extra connect (the duplicate-viewport race).
@@ -216,19 +227,32 @@ export class SocketClient {
       sendChain = sendChain.then(async () => {
         if (this.ws === sock && cipher && sock.readyState === WebSocket.OPEN) {
           sock.send(await cipher.seal(text));
+        } else {
+          // Accepted by send() while ready, but the socket died before this
+          // chained seal ran — requeue instead of vanishing: `pending` is
+          // the queue that survives disconnects (2026-07-29 bughunt).
+          this.pending.push(msg);
         }
       });
     };
 
+    // A handshake the daemon never answers must not wedge forever: the
+    // heartbeat only starts at finishOpen and reconnectNow bails on an OPEN
+    // socket, so nothing else bounds this wait (2026-07-29 bughunt). The
+    // deadline closes the socket into the ordinary retry ladder.
+    let handshakeTimer: ReturnType<typeof setTimeout> | null = null;
+
     sock.onopen = () => {
       if (this.ws !== sock) return;
-      this.backoff = BACKOFF_MIN_MS;
       if (!pair) {
         this.finishOpen();
         return;
       }
       // Handshake first; the hello and everything else wait for the reply.
       clientNonce = randomBytes(32);
+      handshakeTimer = setTimeout(() => {
+        if (this.ws === sock && !this.ready) sock.close();
+      }, HANDSHAKE_DEADLINE_MS);
       void sealHandshake(pair, "c", clientNonce).then((frame) => {
         if (this.ws === sock && sock.readyState === WebSocket.OPEN) sock.send(frame);
       });
@@ -246,6 +270,13 @@ export class SocketClient {
           if (!cipher) {
             const daemonNonce = await openHandshake(pair, "d", e.data as string);
             cipher = await frameCiphers(pair, clientNonce!, daemonNonce, "c");
+            // The socket can close while those awaits ran — onclose fires
+            // synchronously, this chained continuation later. Finishing the
+            // open anyway flashed "connected" on a dead socket and spliced
+            // `pending` into sends that all failed their readyState guard —
+            // every queued message destroyed (2026-07-29 bughunt).
+            if (this.ws !== sock || sock.readyState !== WebSocket.OPEN) return;
+            if (handshakeTimer) clearTimeout(handshakeTimer);
             this.finishOpen();
           } else {
             this.dispatch(await cipher.open(e.data as string));
@@ -258,6 +289,7 @@ export class SocketClient {
       });
     };
     sock.onclose = (ev?: CloseEvent) => {
+      if (handshakeTimer) clearTimeout(handshakeTimer);
       if (this.ws !== sock) return;
       this.ready = false;
       this.stopHeartbeat();
@@ -275,6 +307,13 @@ export class SocketClient {
 
   /** The channel is usable (handshaken, on the relay path) — start the app flow. */
   private finishOpen() {
+    // Backoff resets HERE, not in onopen: a relay refusal is a close CODE,
+    // which requires a completed upgrade — resetting on open meant a
+    // permanently-refused viewport (dead pairing, at-capacity relay)
+    // redialed at BACKOFF_MIN forever, ~2 Hz, with the ladder never
+    // climbing (2026-07-29 bughunt). Only a channel that actually became
+    // usable is evidence of health.
+    this.backoff = BACKOFF_MIN_MS;
     this.ready = true;
     for (const cb of this.openListeners) cb();
     const hello = this.hello?.();
@@ -302,11 +341,15 @@ export class SocketClient {
     this.stopHeartbeat();
     this.pingTimer = setInterval(() => {
       if (!this.ready || this.ws?.readyState !== WebSocket.OPEN) return;
+      // The deadline closes the socket it was armed FOR — closing `this.ws`
+      // let a stale deadline from a superseded socket kill its successor
+      // (2026-07-29 bughunt).
+      const sock = this.ws;
       this.transmit({ type: "ping" } satisfies ClientMsg);
       this.pongTimer ??= setTimeout(() => {
         // Half-open: nothing came back in time. Close → reconnect path.
         this.pongTimer = null;
-        this.ws?.close();
+        if (this.ws === sock) sock.close();
       }, PONG_DEADLINE_MS);
     }, PING_INTERVAL_MS);
   }

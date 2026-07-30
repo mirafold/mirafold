@@ -47,8 +47,16 @@ const ACTION_TOOLS: Record<string, ActionTool> = {
       if (names.length === 0) return "(empty)";
       return names
         .map((n) => {
-          const s = statSync(path.join(target, n));
-          return `${s.isDirectory() ? "d" : "-"} ${String(s.size).padStart(8)}  ${n}${s.isDirectory() ? "/" : ""}`;
+          // Per-entry stat failures (a dangling symlink; a file the agent
+          // deleted between readdir and stat) mark that ROW, never the whole
+          // listing — one broken link used to turn every sibling invisible
+          // (2026-07-29 bughunt; fs-explorer already handles the same case).
+          try {
+            const s = statSync(path.join(target, n));
+            return `${s.isDirectory() ? "d" : "-"} ${String(s.size).padStart(8)}  ${n}${s.isDirectory() ? "/" : ""}`;
+          } catch {
+            return `- ${"?".padStart(8)}  ${n}`;
+          }
         })
         .join("\n");
     },

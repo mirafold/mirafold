@@ -217,8 +217,11 @@ export function FilesPanel({
           // E.5: the agent likely just touched files — refetch the root and
           // the EXPANDED dirs only (the lazy refresh unit), pruning stale
           // collapsed cache. No prefetch: collapsed first-level dirs refetch
-          // on their next expand. The server throttle bounds the burst.
-          refreshRef.current(false);
+          // on their next expand. Through the bell's coalescing gap, not a
+          // direct refresh: an attach/reconnect replays EVERY historical
+          // turn_end in one burst, and one refresh per replayed turn drained
+          // the server's fs token bucket for nothing (2026-07-29 bughunt).
+          onBell();
         } else if (m.type === "fs_changed") {
           // W.2: disk changed behind the UI — same refresh unit as turn-end
           // (root + expanded; a new file in a collapsed, unfetched dir

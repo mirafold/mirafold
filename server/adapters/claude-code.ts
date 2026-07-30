@@ -43,7 +43,11 @@ const TASK_TOOLS = new Set([
   "TodoWrite",
 ]);
 
-/** Map a TodoWrite input to the todo-list component's props (T2.5). */
+/** Map a TodoWrite input to the todo-list component's props (T2.5).
+ *  null = not a TodoWrite shape at all; [] = a VALID empty list — the agent
+ *  clearing its tasks. Collapsing the two to null made an empty TodoWrite a
+ *  no-op, so deleted items stayed painted and a later TaskCreate resurrected
+ *  them (2026-07-29 bughunt). */
 export function normalizeTodos(input: unknown): TodoItem[] | null {
   if (typeof input !== "object" || input === null) return null;
   const todos = (input as { todos?: unknown }).todos;
@@ -56,7 +60,7 @@ export function normalizeTodos(input: unknown): TodoItem[] | null {
     const status = s === "in_progress" || s === "completed" ? s : "pending";
     out.push({ content, status });
   }
-  return out.length ? out : null;
+  return out;
 }
 
 // Capping happens at emit via capOutput (T2.3), never here.
@@ -252,9 +256,11 @@ export class ClaudeCodeSession implements AgentSession {
   private trackTasks(name: string, input: unknown) {
     const rec = (input ?? {}) as Record<string, unknown>;
     if (name === "TodoWrite") {
-      // TodoWrite replaces the whole list in one call.
+      // TodoWrite replaces the whole list in one call — an EMPTY list
+      // included, or deleted items linger and get resurrected by the next
+      // TaskCreate (2026-07-29 bughunt).
       const todos = normalizeTodos(input);
-      if (todos) {
+      if (todos !== null) {
         this.tasks = new Map(todos.map((t, i) => [String(i + 1), t]));
         this.taskSeq = todos.length;
         this.emitChecklist();
@@ -291,7 +297,11 @@ export class ClaudeCodeSession implements AgentSession {
   }
 
   private emitChecklist() {
-    if (this.tasks.size === 0) return;
+    // Never PAINT an empty checklist — but once one is on screen this turn
+    // (todoRenderId set), an emptied list must update it: the old early
+    // return froze the painted block showing already-deleted tasks forever
+    // (2026-07-29 bughunt).
+    if (this.tasks.size === 0 && !this.todoRenderId) return;
     this.todoRenderId ??= randomUUID();
     this.emit({
       type: "render",

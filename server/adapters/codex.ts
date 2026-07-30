@@ -606,8 +606,13 @@ export class CodexSession implements AgentSession {
       const prompt = this.firstTurn
         ? `${RENDER_GUIDANCE}\n${CODEX_DEFERRED_TOOLS_ADDENDUM}\n\n---\n\n${text}`
         : text;
-      this.firstTurn = false;
       const { events } = await this.thread.runStreamed(prompt, { signal: abort.signal });
+      // Consumed only once the engine ACCEPTED the prompt: flipping before
+      // the await meant a failed first turn (spawn failure, immediate
+      // reject) burned the guidance undelivered, and every later turn ran
+      // bare — no render calls for the session's whole life (2026-07-29
+      // bughunt; V.2 measured 0/9 render calls without the addendum).
+      this.firstTurn = false;
       for await (const ev of events) this.handleEvent(ev, end);
     } catch (err) {
       if (!this.closed && !abort.signal.aborted) {
@@ -830,7 +835,10 @@ export class CodexSession implements AgentSession {
   }
 
   private emitChecklist(items: { text: string; completed: boolean }[]) {
-    if (!items.length) return;
+    // Same rule as the Claude adapter: never paint an empty checklist, but
+    // an emptied list must still update one already painted this turn
+    // (2026-07-29 bughunt).
+    if (!items.length && !this.todoRenderId) return;
     this.todoRenderId ??= randomUUID();
     const todos: TodoItem[] = items.map((t) => ({
       content: t.text,

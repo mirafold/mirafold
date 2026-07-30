@@ -8,17 +8,18 @@ import { randomUUID } from "node:crypto";
 import { existsSync, lstatSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { ClientMsg } from "../protocol";
+import type { ClientMsg, WireMsg } from "../protocol";
 import type { SessionEntry, SessionRegistry } from "./registry";
 import { CLIENT_ID_RE } from "./fs-handlers";
 import { spawnBang } from "../pty/pty";
 import { errText } from "../adapters";
+import { envInt } from "../env";
 
 // How much of a `!` command's output rides into the agent's context with the
 // next prompt (tail-kept — the end of a long output is usually the payload).
 // The wire/replay stream is never capped by this; it only bounds the context
 // injection so one verbose command can't eat the model's window.
-const BANG_CONTEXT_CAP = Number(process.env.BANG_CONTEXT_CAP ?? 16_000);
+const BANG_CONTEXT_CAP = envInt("BANG_CONTEXT_CAP", 16_000);
 
 // How much of a `!` command's output reaches the wire — and therefore
 // the replay ring — per command (head-kept, honest marker; mirrors the
@@ -26,13 +27,13 @@ const BANG_CONTEXT_CAP = Number(process.env.BANG_CONTEXT_CAP ?? 16_000);
 // viewport, is replayed in full to each new tab, and its chunks evict the
 // real transcript from the ring. The PTY keeps running past the cap and the
 // agent-context tail above keeps accumulating — only the broadcast stops (R.4d).
-const BANG_OUTPUT_CAP_BYTES = Number(process.env.BANG_OUTPUT_CAP_BYTES ?? 262_144);
+const BANG_OUTPUT_CAP_BYTES = envInt("BANG_OUTPUT_CAP_BYTES", 262_144);
 
 // Minimum gap between `!` commands per session (2026-07-17 audit, finding 5):
 // each bang now costs a model turn, so a hostile client bursting bangs is a
 // token-burn vector, not just PTY churn. Humans never trip 400ms — the same
 // threshold the action bridge uses.
-const BANG_MIN_INTERVAL_MS = Number(process.env.BANG_MIN_INTERVAL_MS ?? 400);
+const BANG_MIN_INTERVAL_MS = envInt("BANG_MIN_INTERVAL_MS", 400);
 
 // A handoff file bigger than the longest legal path was not written by the
 // trap in pty.ts — refuse it (finding 3).
@@ -223,6 +224,9 @@ type BangDeps = {
   getEntry: () => SessionEntry | null;
   /** Error to this viewport AND the terminal log (connection.ts's sendError). */
   sendError: (message: string) => void;
+  /** This viewport only — for plumbing that must not enter the session
+   *  stream (the throttle-refusal bang_end below). */
+  viewport: (msg: WireMsg) => void;
 };
 
 export type BangHandlers = {
@@ -231,7 +235,7 @@ export type BangHandlers = {
   kill: (msg: BangKill) => void;
 };
 
-export function createBangHandlers({ registry, getEntry, sendError }: BangDeps): BangHandlers {
+export function createBangHandlers({ registry, getEntry, sendError, viewport }: BangDeps): BangHandlers {
   const start = (msg: Bang): void => {
     // The `!` passthrough (4.9): run it in a PTY in the session's bang
     // cwd; the finished transcript reaches the agent as its own turn.
@@ -248,11 +252,14 @@ export function createBangHandlers({ registry, getEntry, sendError }: BangDeps):
     }
     // The burst throttle (finding 5) — checked only when nothing is
     // running, so the already-running refusal above keeps its message.
-    // The paired bang_end keeps every viewport's grammar clean (the
-    // issuer's bang bar clears, like the spawn-failure path).
+    // The paired bang_end clears the ISSUER's locally-armed bar — and goes
+    // to that viewport only: no other viewport ever saw a bang_start for
+    // this id, and a broadcast entered the session stream, where the
+    // registry read it as a terminal event — flipping a mid-turn session to
+    // idle and re-opening the burst gate (2026-07-29 bughunt).
     if (entry.lastBangAt !== undefined && Date.now() - entry.lastBangAt < BANG_MIN_INTERVAL_MS) {
       sendError("! commands are arriving too fast — wait a moment");
-      registry.broadcast(entry, { type: "bang_end", id: msg.id, exitCode: null });
+      viewport({ type: "bang_end", id: msg.id, exitCode: null });
       return;
     }
     entry.lastBangAt = Date.now();

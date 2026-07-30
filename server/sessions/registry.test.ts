@@ -281,8 +281,13 @@ test("coalescing: attach, detach, and end flush the open window", () => {
   const replayed: WireMsg[] = [];
   const vp = (m: WireMsg) => replayed.push(m);
   reg.attach(entry, vp);
-  assert.deepEqual(replayed, [{ type: "text_delta", text: "tail", seq: 1 }]);
-  assert.deepEqual(seen, replayed, "the original viewport got the flush live");
+  // 2026-07-29: frames arriving via attach-replay carry the replay stamp.
+  assert.deepEqual(replayed, [{ type: "text_delta", text: "tail", seq: 1, replay: true }]);
+  assert.deepEqual(
+    seen,
+    [{ type: "text_delta", text: "tail", seq: 1 }],
+    "the original viewport got the flush live — unstamped",
+  );
   // Detach flushes whatever is pending at that moment.
   reg.broadcast(entry, { type: "text_delta", text: " end" });
   reg.detach(entry, vp);
@@ -523,5 +528,65 @@ test("audit: ordinary labels pass through untouched (the cap is not a rewrite)",
   ];
   assert.equal(status.label, "Bash");
   assert.equal(toolUse.name, "mcp__github__create_issue");
+  reg.end(entry.id);
+});
+
+// 2026-07-29 bughunt: bang_end sat in the terminal-status list, so a `!`
+// command finishing BESIDE a paused model turn read as "turn over" — the
+// fleet row flipped idle, its pending-permission mirror was wiped (allow/
+// deny gone from mission control while the ask was still live at the
+// adapter — the 2026-07-24 bug class through a different door), and the
+// mid-turn burst gate re-opened.
+
+test("a `!` bang beside a pending ask never wipes it — bang traffic is not turn grammar", () => {
+  const { reg, entry } = freshSession();
+  reg.broadcast(entry, { type: "permission_request", tool: "Bash", detail: "rm -rf /", id: "p1" });
+  assert.equal(entry.status, "permission");
+  entry.midTurnPromptUsed = true;
+  reg.broadcast(entry, { type: "bang_start", command: "git diff", id: "b1" });
+  assert.equal(entry.status, "permission", "bang traffic does not lift the hold");
+  reg.broadcast(entry, { type: "bang_output", data: "diff --git …", id: "b1" });
+  assert.equal(entry.status, "permission");
+  reg.broadcast(entry, { type: "bang_end", id: "b1", exitCode: 0 });
+  assert.equal(entry.status, "permission", "the row still sorts needs-you-first");
+  assert.deepEqual(
+    entry.permissions.map((p) => p.id),
+    ["p1"],
+    "the ask keeps its fleet allow/deny until ITS OWN resolution",
+  );
+  assert.equal(entry.midTurnPromptUsed, true, "the burst gate clears on turn grammar only");
+  reg.end(entry.id);
+});
+
+test("bang_end on an ask-free session still reads idle (the M.1 behavior stands)", () => {
+  const { reg, entry } = freshSession();
+  reg.broadcast(entry, { type: "bang_start", command: "ls", id: "b1" });
+  assert.equal(entry.status, "working");
+  reg.broadcast(entry, { type: "bang_end", id: "b1", exitCode: 0 });
+  assert.equal(entry.status, "idle");
+  assert.equal(entry.activity, undefined);
+  reg.end(entry.id);
+});
+
+// 2026-07-29 bughunt: replayed history and live traffic painted identically
+// AND fired identical side effects — every reload re-spoke each historical
+// turn to screen readers. The registry now stamps `replay: true` on frames
+// replayed from the buffer (a copy — the ring itself stays unstamped) so
+// clients can suppress live-only side effects.
+
+test("attach-replay stamps replay:true on a copy; live broadcast never carries it", () => {
+  const { reg, entry } = freshSession();
+  const liveSeen: WireMsg[] = [];
+  reg.attach(entry, (m) => liveSeen.push(m));
+  reg.broadcast(entry, { type: "user_prompt", text: "hi" });
+  reg.broadcast(entry, { type: "turn_end" });
+  assert.ok(liveSeen.every((m) => m.replay === undefined));
+
+  const replaySeen: WireMsg[] = [];
+  reg.attach(entry, (m) => replaySeen.push(m));
+  const replayed = replaySeen.filter((m) => m.type === "user_prompt" || m.type === "turn_end");
+  assert.equal(replayed.length, 2);
+  assert.ok(replayed.every((m) => m.replay === true), "replayed frames are stamped");
+  assert.ok(entry.buffer.every((m) => m.replay === undefined), "the ring itself stays unstamped");
   reg.end(entry.id);
 });

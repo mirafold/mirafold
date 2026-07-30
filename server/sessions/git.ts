@@ -13,6 +13,7 @@ import type { FsDirEntry, FsEntry } from "../protocol";
 import { GIT_TIMEOUT_MS, invalidateRepoTrustCache, repoTrust } from "./git-trust";
 // The walk's caps, shared (fs-explorer.ts) — both replies ride the same wire.
 import { FS_TREE_MAX_ENTRIES, FS_TREE_MAX_PATH_BYTES } from "./fs-explorer";
+import { envInt } from "../env";
 
 // `git show` of a big blob is the largest legitimate output; the caller caps
 // content for the wire — this only bounds process memory.
@@ -312,7 +313,7 @@ const enqueue = <T>(job: () => Promise<T>): Promise<T> => {
 // stays short enough that a turn-end refresh reads fresh state even where
 // no watcher runs, long enough to cover the burst. Errors cache too: a
 // broken repo shouldn't be re-probed per request.
-const REPO_STATUS_TTL_MS = Number(process.env.FS_GIT_STATUS_TTL_MS ?? 3_000);
+const REPO_STATUS_TTL_MS = envInt("FS_GIT_STATUS_TTL_MS", 3_000);
 const statusCache = new Map<string, { at: number; value: Promise<RepoStatus> }>();
 
 /**

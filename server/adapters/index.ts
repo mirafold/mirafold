@@ -13,12 +13,13 @@ import { codexConfigProvider, codexProviders, type CodexProviderEntry } from "./
 
 export type { AgentName, AgentSession, Backend } from "./types";
 export { errText } from "./types";
+import { envInt } from "../env";
 
 // Credential probes ride onboarding's open-picker poll, several per pass —
 // each path's answer is held briefly so a pass costs one stat per file. The
 // TTL must stay short: a fresh login (or logout) still shows within a couple
 // of seconds, which is the poll's whole point.
-const CRED_PROBE_TTL_MS = Number(process.env.CRED_PROBE_TTL_MS ?? 2_000);
+const CRED_PROBE_TTL_MS = envInt("CRED_PROBE_TTL_MS", 2_000);
 const credProbeCache = new Map<string, { at: number; value: boolean }>();
 
 /** Does `<$envDir | ~/subdir>/file` exist — the shape a terminal login writes

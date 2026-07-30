@@ -90,3 +90,32 @@ test("surplus values beyond the x labels do not stretch the axis", async () => {
     assert.ok(!html.includes("1k"), `${kind}: the undrawn 1000 must not appear as a tick`);
   }
 });
+
+// 2026-07-29 bughunt: the line-chart END LABELS (the ≥2-series CVD-safe
+// identifier) were computed from the FULL values array while every mark
+// clips to x.length — a surplus value placed a series' label and dot far
+// off-canvas (measured y=-71768 in a 260-high viewBox), silently deleting it.
+test("line end labels are computed from DRAWN values only", async () => {
+  const { createElement } = await import("react");
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  const { Chart } = await import("./Chart");
+  const html = renderToStaticMarkup(
+    createElement(Chart as never, {
+      kind: "line",
+      x: ["a", "b"],
+      series: [
+        { name: "alpha", values: [1, 2, 1000] }, // surplus 1000 is undrawn
+        { name: "beta", values: [2, 3] },
+      ],
+    }),
+  );
+  assert.ok(html.includes("alpha") && html.includes("beta"), "both end labels render");
+  // Every coordinate in the SVG stays inside the 640×260 viewBox — no
+  // off-canvas label anchored to an undrawn point.
+  const coords = [...html.matchAll(/\s(?:x|y|cx|cy)="(-?\d+(?:\.\d+)?)"/g)].map((m) => Number(m[1]));
+  assert.ok(coords.length > 0);
+  assert.ok(
+    coords.every((c) => c >= -20 && c <= 700),
+    `all coordinates on-canvas; saw ${Math.min(...coords)}..${Math.max(...coords)}`,
+  );
+});

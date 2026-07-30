@@ -167,9 +167,17 @@ export function Artifact({
   const nonce = useMemo(() => crypto.randomUUID(), [html]);
   const srcDoc = useMemo(() => wrap(html, nonce), [html, nonce]);
 
+  // Each html is a GENERATION: a liveness deadline armed by an earlier
+  // life's load event must stand down when update-in-place replaces the
+  // document — it used to fire against the reset counters and kill a
+  // healthy updated artifact as "navigation" (2026-07-29 bughunt; any
+  // update landing within the grace window of the prior load could trip it).
+  const generation = useRef(0);
+
   // New html = a new artifact life: reset failure state and the liveness
   // counters BEFORE the new document's load event can fire.
   useEffect(() => {
+    generation.current += 1;
     loadCount.current = 0;
     readyCount.current = 0;
     mountedAt.current = Date.now();
@@ -216,7 +224,9 @@ export function Artifact({
   const handleLoad = () => {
     loadCount.current += 1;
     const expected = loadCount.current;
+    const gen = generation.current;
     window.setTimeout(() => {
+      if (generation.current !== gen) return; // a newer html owns the counters now
       if (readyCount.current < expected) setFailure({ kind: "navigation" });
     }, READY_GRACE_MS);
   };

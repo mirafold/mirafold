@@ -22,6 +22,7 @@ import {
   type FrameCipher,
   type PairSecret,
 } from "./relay-crypto";
+import { envInt } from "../env";
 
 const log = createLogger("relay");
 
@@ -53,10 +54,16 @@ const RECONNECT_MAX_MS = 30_000;
 // dial-out neither claims to be paired nor resets its backoff (it keeps widening
 // against a wall it can't beat, e.g. a bad token).
 const PAIR_CONFIRM_MS = 400;
-// Inbound envelope cap: one client frame (bounded by the same ceiling as the
-// local socket), sealed (~4/3 base64) plus envelope overhead — same
-// no-unbounded-allocation posture.
-const MAX_ENVELOPE = Math.ceil(Number(process.env.MAX_WS_PAYLOAD ?? 1_000_000) * 1.5) + 8_192;
+// Inbound envelope cap. Must cover the relay's own per-frame cap
+// (RELAY_MAX_PAYLOAD_BYTES — 8 MB default in the service and the stub alike),
+// NOT the local socket's: a frame the relay forwards but this socket refuses
+// is a ws protocol violation, and ws closes the WHOLE dial-out connection —
+// dropping every remote viewport, not the one that misbehaved (2026-07-29
+// bughunt: a >1.13 MB phone paste killed the entire pairing). Envelope
+// wrapping overhead rides on top; the bound stays finite, which is all the
+// no-unbounded-allocation posture needs. Exported for the alignment pin in
+// relay.itest.ts.
+export const MAX_ENVELOPE = envInt("RELAY_MAX_PAYLOAD_BYTES", 8_000_000) + 16_384;
 // Ceilings on what the relay can make the daemon hold. The relay is untrusted
 // for resource pressure too (R.2 adds relay-side caps, but the daemon must
 // survive a hostile one): viewport announcements past the cap are refused
@@ -64,8 +71,8 @@ const MAX_ENVELOPE = Math.ceil(Number(process.env.MAX_WS_PAYLOAD ?? 1_000_000) *
 // is dropped. The web client heartbeats every 25s, so only a dead peer — or a
 // replayed handshake hello, which can never send an authentic frame — stays
 // quiet that long.
-const MAX_REMOTE_VIEWPORTS = Number(process.env.MAX_REMOTE_VIEWPORTS ?? 16);
-const VIEWPORT_IDLE_MS = Number(process.env.RELAY_VIEWPORT_IDLE_MS ?? 90_000);
+const MAX_REMOTE_VIEWPORTS = envInt("MAX_REMOTE_VIEWPORTS", 16);
+const VIEWPORT_IDLE_MS = envInt("RELAY_VIEWPORT_IDLE_MS", 90_000);
 
 export type RelayClient = { stop: () => void };
 

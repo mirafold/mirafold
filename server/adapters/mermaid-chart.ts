@@ -33,11 +33,35 @@ const unquote = (s: string) => {
     : t;
 };
 
-/** Parse a `[a, b, c]` bracket list into trimmed, unquoted items. */
+/** Parse a `[a, "b, c", d]` bracket list into trimmed, unquoted items.
+ *  Commas INSIDE quotes are content, not separators — a naive split turned
+ *  `x-axis ["Jan, 2026"]` into two mangled categories with stray quote
+ *  chars, and when the count happened to match the series it painted a
+ *  WRONG chart, the exact thing this file's doctrine forbids (2026-07-29
+ *  bughunt). An unterminated quote falls through as raw text; the length
+ *  check downstream fails it open to a code block. */
 function bracketList(line: string): string[] | undefined {
   const m = line.match(/\[([\s\S]*)\]/);
   if (!m) return undefined;
-  return m[1].split(",").map(unquote);
+  const items: string[] = [];
+  let cur = "";
+  let quote: '"' | "'" | null = null;
+  for (const ch of m[1]) {
+    if (quote) {
+      cur += ch;
+      if (ch === quote) quote = null;
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+      cur += ch;
+    } else if (ch === ",") {
+      items.push(cur);
+      cur = "";
+    } else {
+      cur += ch;
+    }
+  }
+  items.push(cur);
+  return items.map(unquote);
 }
 
 /**

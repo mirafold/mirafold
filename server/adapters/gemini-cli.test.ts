@@ -555,3 +555,34 @@ test("guidance skips slash-leading turns and rides the first prose turn instead"
   }
   s.close();
 });
+
+test("2026-07-29 a first turn that dies unread gives the guidance back — the healed turn carries it", async () => {
+  // guidanceInjected used to be consumed before spawn, so the documented
+  // brick sequence (exit 42/41 before any stdout event) left every later
+  // turn bare — the model never saw the render tools for the session's life.
+  const argsLog = path.join(tmp, "args-guidance.log");
+  delete process.env.FAKE_EVENTS;
+  process.env.FAKE_STDERR = "auth is broken";
+  process.env.FAKE_EXIT = "41";
+  const { s, awaitTurnEnd } = makeSession();
+  try {
+    s.pushPrompt("one");
+    await awaitTurnEnd(1);
+
+    delete process.env.FAKE_STDERR;
+    delete process.env.FAKE_EXIT;
+    process.env.FAKE_ARGS_LOG = argsLog;
+    fixture("guidance-retry.jsonl", [{ type: "result", stats: { input_tokens: 1, output_tokens: 1 } }]);
+    s.pushPrompt("two");
+    await awaitTurnEnd(2);
+    const args = spawnArgs(argsLog);
+    const prompt = args[args.indexOf("-p") + 1];
+    assert.ok(prompt.includes("## Generative UI"), `turn 2 re-carries guidance; -p was: ${prompt.slice(0, 80)}`);
+    assert.ok(prompt.endsWith("two"));
+  } finally {
+    delete process.env.FAKE_ARGS_LOG;
+    delete process.env.FAKE_STDERR;
+    delete process.env.FAKE_EXIT;
+  }
+  s.close();
+});

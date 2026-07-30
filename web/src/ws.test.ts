@@ -10,6 +10,7 @@ import {
   BACKOFF_MAX_MS,
 } from "./ws";
 import {
+  adoptStoredPairing,
   relayTargetFromFragment,
   sessionHintFromFragment,
   newSessionHref,
@@ -68,6 +69,10 @@ class FakeWS {
   }
   receive(msg: unknown) {
     this.onmessage?.({ data: JSON.stringify(msg) });
+  }
+  /** A frame that is ALREADY a wire string (sealed handshake/ciphertext). */
+  receiveRaw(data: string) {
+    this.onmessage?.({ data });
   }
   finishClose(code?: number) {
     this.readyState = FakeWS.CLOSED;
@@ -550,4 +555,228 @@ test("storedPairing: a tab paired by an older build still works (sessionStorage 
 
 test("storedPairing: nothing stored anywhere → null (a local page never dials a relay)", () => {
   assert.equal(storedPairing(fakeStorage(), fakeStorage()), null);
+});
+
+// ---- 2026-07-29 bughunt: the relay-path state machine, driven end-to-end
+// with real crypto (Node's WebCrypto). Four bugs lived here untested: the
+// backoff ladder reset on OPEN (a refusal is a close CODE, which arrives
+// only after a completed upgrade — so a permanently-refused viewport
+// redialed at 2 Hz forever); a superseded socket's still-armed pong deadline
+// closed its SUCCESSOR; a handshake the daemon never answers wedged the
+// viewport forever; and a handshake completion racing a close destroyed the
+// pending queue.
+
+import { derivePair, frameCiphers, openHandshake, sealHandshake, randomBytes } from "@relay-crypto";
+import { HANDSHAKE_DEADLINE_MS } from "./ws";
+
+const PAIR_CODE = "abcdefgh12345678";
+
+/** Drain microtasks + setImmediate rounds so chained crypto promises settle
+ *  (mock timers fake setTimeout/setInterval only). */
+const drain = async (rounds = 25) => {
+  for (let i = 0; i < rounds; i++) await new Promise((r) => setImmediate(r));
+};
+
+/** Spin the loop until `cond` holds — WebCrypto work lands on the threadpool,
+ *  so a fixed round count is a race (the first cold derivation flaked). */
+const drainUntil = async (cond: () => boolean, label: string, rounds = 20_000) => {
+  for (let i = 0; i < rounds; i++) {
+    if (cond()) return;
+    await new Promise((r) => setImmediate(r));
+  }
+  assert.fail(`drainUntil: ${label}`);
+};
+
+function setupRelay(t: TestContext) {
+  t.mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
+  FakeWS.instances = [];
+  const g = globalThis as Record<string, unknown>;
+  g.WebSocket = FakeWS;
+  const dom = shimDom();
+  g.location = {
+    protocol: "http:",
+    host: "phone.test",
+    hash: `#code=${PAIR_CODE}`,
+    pathname: "/",
+    search: "",
+  };
+  g.localStorage = fakeStorage();
+  g.sessionStorage = fakeStorage();
+  g.history = { replaceState: () => {} };
+  const client = new SocketClient(); // no url → relay mode from the fragment
+  return { dom, client, sock: () => FakeWS.instances.at(-1)! };
+}
+
+/** Complete the daemon half of the handshake on `s`; returns the daemon-side
+ *  cipher so tests can open the client's subsequent ciphertext frames. */
+async function answerHandshake(s: FakeWS) {
+  const pair = await derivePair(PAIR_CODE);
+  await drainUntil(() => s.sent.length >= 1, "client handshake frame sent");
+  const clientNonce = await openHandshake(pair, "c", s.sent[0]);
+  const daemonNonce = randomBytes(32);
+  s.receiveRaw(await sealHandshake(pair, "d", daemonNonce));
+  await drain();
+  return frameCiphers(pair, clientNonce, daemonNonce, "d");
+}
+
+test("relay path: backoff climbs across post-open refusals — no 2 Hz hammering", async (t) => {
+  const { client, sock } = setupRelay(t);
+  client.setHello(() => null);
+  await drainUntil(() => FakeWS.instances.length > 0, "first dial after derivePair");
+  const cadences: number[] = [];
+  for (let cycle = 0; cycle < 4; cycle++) {
+    const s = sock();
+    s.open(); // the upgrade completes...
+    await drain();
+    s.finishClose(4006); // ...then the relay refuses (permanent condition)
+    const before = FakeWS.instances.length;
+    let waited = 0;
+    while (FakeWS.instances.length === before && waited < 60_000) {
+      t.mock.timers.tick(100);
+      waited += 100;
+    }
+    cadences.push(waited);
+  }
+  assert.ok(
+    cadences[1] > cadences[0] && cadences[2] > cadences[1],
+    `the ladder climbs between refusals: ${cadences.join(",")}`,
+  );
+  client.close();
+});
+
+test("relay path: a completed handshake resets the ladder (health = usable channel, not upgrade)", async (t) => {
+  const { client, sock } = setupRelay(t);
+  client.setHello(() => null);
+  await drainUntil(() => FakeWS.instances.length > 0, "first dial after derivePair");
+  // Two refusal cycles push the backoff up…
+  for (let i = 0; i < 2; i++) {
+    sock().open();
+    await drain();
+    sock().finishClose(4006);
+    t.mock.timers.tick(BACKOFF_MAX_MS);
+  }
+  // …then a healthy handshaken connect resets it.
+  const healthy = sock();
+  healthy.open();
+  await answerHandshake(healthy);
+  healthy.finishClose(); // ordinary drop after a healthy session
+  const before = FakeWS.instances.length;
+  let waited = 0;
+  while (FakeWS.instances.length === before && waited < 60_000) {
+    t.mock.timers.tick(100);
+    waited += 100;
+  }
+  assert.ok(waited <= BACKOFF_MIN_MS, `post-health retry is prompt again (${waited}ms)`);
+  client.close();
+});
+
+test("relay path: an unanswered handshake is bounded — the deadline closes into the retry ladder", async (t) => {
+  const { client, sock } = setupRelay(t);
+  client.setHello(() => null);
+  await drainUntil(() => FakeWS.instances.length > 0, "first dial after derivePair");
+  const s = sock();
+  s.open();
+  await drainUntil(() => s.sent.length >= 1, "handshake frame sent; the daemon never answers");
+  assert.equal(s.sent.length, 1);
+  t.mock.timers.tick(HANDSHAKE_DEADLINE_MS);
+  assert.equal(s.readyState, FakeWS.CLOSING, "the wedged socket is closed, not waited on forever");
+  s.finishClose();
+  t.mock.timers.tick(BACKOFF_MAX_MS);
+  assert.ok(FakeWS.instances.at(-1)! !== s, "the ordinary reconnect path took over");
+  client.close();
+});
+
+test("relay path: a handshake completion racing a close keeps the pending queue alive", async (t) => {
+  const { client, sock } = setupRelay(t);
+  client.setHello(() => null);
+  client.send({ type: "prompt", text: "survives" });
+  await drainUntil(() => FakeWS.instances.length > 0, "first dial after derivePair");
+  const one = sock();
+  one.open();
+  const pair = await derivePair(PAIR_CODE);
+  await drainUntil(() => one.sent.length >= 1, "handshake frame sent");
+  // The daemon's reply arrives — and the socket drops before the chained
+  // async open runs. Finishing the open anyway used to flash "connected"
+  // on the dead socket and splice `pending` into sends that all failed
+  // their readyState guard — every queued message destroyed.
+  let opens = 0;
+  client.onOpen(() => opens++);
+  one.receiveRaw(await sealHandshake(pair, "d", randomBytes(32)));
+  one.finishClose();
+  await drain(200);
+  assert.equal(opens, 0, "no spurious onOpen for a dead socket");
+  // The queue survives to the next life: reconnect, handshake, and the
+  // queued prompt goes out — decrypted daemon-side to prove it's the SAME
+  // message, not a husk.
+  t.mock.timers.tick(BACKOFF_MAX_MS);
+  const two = sock();
+  assert.notEqual(two, one);
+  two.open();
+  const daemonCipher = await answerHandshake(two);
+  await drainUntil(() => two.sent.length >= 2, "queued prompt re-sent on the new life");
+  const first = JSON.parse(await daemonCipher.open(two.sent[1])) as { type: string; text?: string };
+  assert.equal(first.type, "prompt");
+  assert.equal(first.text, "survives");
+  client.close();
+});
+
+test("2026-07-29 a superseded socket's armed pong deadline never kills its successor", (t) => {
+  const { dom, client, sock } = setup(t);
+  client.setHello(() => null);
+  const one = sock();
+  one.open();
+
+  // A ping goes out; its pong deadline is pending (8s).
+  t.mock.timers.tick(PING_INTERVAL_MS);
+  assert.equal(one.pings(), 1);
+
+  // 1s later the user navigates away: pagehide closes the raw socket.
+  t.mock.timers.tick(1_000);
+  dom.pagehide();
+  assert.equal(one.readyState, FakeWS.CLOSING);
+
+  // bfcache restore: visibilitychange fires BEFORE the old socket's late
+  // onclose → reconnectNow supersedes the CLOSING socket.
+  dom.visible();
+  const two = sock();
+  assert.notEqual(two, one);
+  assert.equal(two.readyState, FakeWS.CONNECTING);
+
+  // The old socket's onclose arrives — inert by design, stopHeartbeat
+  // skipped. Its deadline used to fire against this.ws and close the NEW
+  // socket mid-connect; now it stands down with its own socket.
+  one.finishClose();
+  t.mock.timers.tick(PONG_DEADLINE_MS);
+  assert.equal(two.readyState, FakeWS.CONNECTING, "the successor socket is untouched");
+  two.open();
+  assert.equal(two.readyState, FakeWS.OPEN);
+  client.close();
+});
+
+// 2026-07-29 bughunt: newSessionHref reads the DEVICE store only, but a tab
+// paired by a pre-2026-07-25 build held its code only in the per-tab legacy
+// store — so its "new session" link carried no fragment and the fresh tab
+// hung on "connecting" (the 2026-07-24 mobile bug, resurrected for that
+// population). The boot path now migrates the carry on use.
+
+test("a legacy-store pairing is adopted into the device store, so newSessionHref carries it", () => {
+  const device = fakeStorage();
+  const legacy = fakeStorage({ "mirafold-relay-code": "legacy-code-16chars" });
+  const adopted = adoptStoredPairing(device, legacy); // real clock: the age
+  // window opens NOW (the device is actively driving the pairing).
+  assert.equal(adopted?.code, "legacy-code-16chars");
+  assert.equal(device.getItem("mirafold-relay-code"), "legacy-code-16chars");
+  const href = newSessionHref("/?new=1", device);
+  assert.match(href, /#code=legacy-code-16chars/);
+});
+
+test("adoption never overwrites a live device-store pairing", () => {
+  const device = fakeStorage({
+    "mirafold-relay-code": "device-code-16chars",
+    "mirafold-relay-paired-at": "500",
+  });
+  const legacy = fakeStorage({ "mirafold-relay-code": "legacy-code-16chars" });
+  const adopted = adoptStoredPairing(device, legacy, 1_000);
+  assert.equal(adopted?.code, "device-code-16chars");
+  assert.equal(device.getItem("mirafold-relay-code"), "device-code-16chars");
 });

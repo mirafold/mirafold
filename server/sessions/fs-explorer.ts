@@ -13,6 +13,7 @@ import path from "node:path";
 import type { FsDirEntry, FsEntry } from "../protocol";
 import { inside } from "./actions";
 import { isSecretFile } from "../security/permissions";
+import { envInt } from "../env";
 
 // Walk caps. The whole fs_tree reply must stay far under MAX_WS_PAYLOAD
 // (1 MB inbound; replies should honor the same order of magnitude — the
@@ -20,15 +21,15 @@ import { isSecretFile } from "../security/permissions";
 // inflate exotic filenames — so the cap is on entry COUNT and path BYTES
 // both. Honest: `truncated: true`, never a silent cut. Exported: git.ts's
 // tree reply shares exactly these caps.
-export const FS_TREE_MAX_ENTRIES = Number(process.env.FS_TREE_MAX_ENTRIES ?? 4_000);
-export const FS_TREE_MAX_PATH_BYTES = Number(process.env.FS_TREE_MAX_PATH_BYTES ?? 400_000);
+export const FS_TREE_MAX_ENTRIES = envInt("FS_TREE_MAX_ENTRIES", 4_000);
+export const FS_TREE_MAX_PATH_BYTES = envInt("FS_TREE_MAX_PATH_BYTES", 400_000);
 // Bounds the WALK's cost, not just the reply. The entry/byte caps count only
 // FILES, so a tree of many (mostly empty) directories would be walked in full
 // — the file cap never trips. This caps total nodes VISITED (files + dirs), so
 // the synchronous walk can't block the event loop on a pathological non-git
 // workspace (the git path is bounded separately by its subprocess limits).
 // Well above the entry cap: real projects hit files first (2026-07-24 audit).
-const FS_TREE_MAX_NODES = Number(process.env.FS_TREE_MAX_NODES ?? 40_000);
+const FS_TREE_MAX_NODES = envInt("FS_TREE_MAX_NODES", 40_000);
 
 // Directories nobody browses that would drown the tree (and blow the caps
 // instantly). E.2's git view gets this pruning for free via .gitignore;
@@ -39,15 +40,15 @@ const SKIP_DIRS = new Set([".git", "node_modules"]);
 // payload bounds even on a pathological flat directory — capped on entry
 // COUNT and NAME BYTES both (names, not paths: the reply carries names).
 // Strictly tighter than the whole-tree caps, since the unit is one readdir.
-const FS_DIR_MAX_ENTRIES = Number(process.env.FS_DIR_MAX_ENTRIES ?? 2_000);
-const FS_DIR_MAX_NAME_BYTES = Number(process.env.FS_DIR_MAX_NAME_BYTES ?? 200_000);
+const FS_DIR_MAX_ENTRIES = envInt("FS_DIR_MAX_ENTRIES", 2_000);
+const FS_DIR_MAX_NAME_BYTES = envInt("FS_DIR_MAX_NAME_BYTES", 200_000);
 
 // A file read is bounded twice: the sniff window that decides binary vs
 // text, and the content cap — same size and same honesty contract as the
 // tool_result cap (TOOL_OUTPUT_CAP_BYTES), but applied via bounded fd reads
 // so a multi-GB file never gets loaded to be truncated.
 const SNIFF_BYTES = 8_192;
-const FS_FILE_CAP_BYTES = Number(process.env.FS_FILE_CAP_BYTES ?? 64_000);
+const FS_FILE_CAP_BYTES = envInt("FS_FILE_CAP_BYTES", 64_000);
 
 /** NUL in the sniff window = binary. E.2 applies the same rule to git blobs
  *  (the fd path below sniffs its own window the same way). */

@@ -4,6 +4,7 @@ import type { AgentName, WireMsg } from "../protocol";
 import type { CredentialKind } from "../provider-policy";
 
 export type { AgentName } from "../protocol";
+import { envInt } from "../env";
 
 /** Resolve which `name`d agent binary to spawn: the env override wins (an
  *  operator knob, and the seam the adapter tests use to substitute a scripted
@@ -83,14 +84,14 @@ export function envWithout(...keys: string[]): Record<string, string> {
 // How long a permission prompt waits for the browser before denying.
 // Overridable for tests; deny-by-default is the security posture. Neutral
 // policy shared by every adapter.
-export const PERMISSION_TIMEOUT_MS = Number(process.env.PERMISSION_TIMEOUT_MS ?? 60_000);
+export const PERMISSION_TIMEOUT_MS = envInt("PERMISSION_TIMEOUT_MS", 60_000);
 
 // Cap a tool result before it hits the wire and the replay buffer. Byte-
 // based (not char count) because the buffer's memory cost is bytes, and
 // honest: the elided amount is reported so the client marks it, never a
 // silent cut. Env-overridable (tuning; also lets tests trip it on demand).
 // Agent-neutral — any adapter's tool output flows through it.
-const OUTPUT_CAP_BYTES = Number(process.env.TOOL_OUTPUT_CAP_BYTES ?? 64_000);
+const OUTPUT_CAP_BYTES = envInt("TOOL_OUTPUT_CAP_BYTES", 64_000);
 
 export function capOutput(text: string): { text: string; truncatedBytes?: number } {
   const total = Buffer.byteLength(text, "utf8");

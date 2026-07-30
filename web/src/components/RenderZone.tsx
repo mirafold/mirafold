@@ -462,7 +462,7 @@ export function RenderZone({
     [subscribe],
   );
 
-  useEffect(tail.followTail, [entries, status]);
+  useEffect(tail.followTail, [entries]);
 
   const togglePin = useCallback(
     (renderId: string) =>

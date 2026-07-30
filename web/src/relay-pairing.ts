@@ -96,7 +96,30 @@ export function relayTargetFromPage(): { code: string; ws: string | null } | nul
     history.replaceState(null, "", location.pathname + location.search);
     return target;
   }
-  return storedPairing(localStorage, sessionStorage);
+  return adoptStoredPairing(localStorage, sessionStorage);
+}
+
+/** storedPairing plus write-through: a pairing that only the LEGACY per-tab
+ *  store still holds (paired before the 2026-07-25 localStorage move) is
+ *  migrated into the device store on use — newSessionHref reads that store
+ *  only, so without this an old tab's "new session" link carried no fragment
+ *  and the fresh tab hung on "connecting", the exact 2026-07-24 mobile bug
+ *  this file exists to prevent (2026-07-29 bughunt). The device is actively
+ *  driving the pairing at the moment this runs, so stamping its age window
+ *  here is honest. Exported for tests — takes its stores, touches no DOM. */
+export function adoptStoredPairing(
+  store: Storage,
+  legacy: Storage | null,
+  now: number = Date.now(),
+): { code: string; ws: string | null } | null {
+  const stored = storedPairing(store, legacy, now);
+  if (stored && !store.getItem(CODE_KEY)) {
+    store.setItem(CODE_KEY, stored.code);
+    store.setItem(PAIRED_AT_KEY, String(now));
+    if (stored.ws) store.setItem(WS_KEY, stored.ws);
+    else store.removeItem(WS_KEY);
+  }
+  return stored;
 }
 
 /** The href for the "new session" affordance, which opens a FRESH TAB. A new

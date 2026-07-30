@@ -929,3 +929,38 @@ test("model axis: no foreign model (or no custom default) = no swap at all", asy
     s.close();
   }
 });
+
+test("2026-07-29 a failed first turn does not burn the render guidance — the retry still carries it", async () => {
+  // firstTurn used to flip BEFORE the engine accepted the prompt, so a
+  // spawn failure on turn 1 lost RENDER_GUIDANCE forever and the session
+  // never made a render call again (V.2: 0/9 without the addendum).
+  const s = new CodexSession({ workspaceDir: tmp });
+  const msgs: Any[] = [];
+  const prompts: string[] = [];
+  s.onMessage((m) => msgs.push(m as Any));
+  let call = 0;
+  (s as unknown as { thread: unknown }).thread = {
+    runStreamed: async (text: string) => {
+      if (call++ === 0) throw new Error("codex binary missing");
+      prompts.push(text);
+      return {
+        events: (async function* () {
+          yield ev({
+            type: "turn.completed",
+            usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1, reasoning_output_tokens: 0 },
+          });
+        })(),
+      };
+    },
+  };
+  s.pushPrompt("first ask");
+  await waitForTurnEnds(msgs, 1);
+  assert.ok(msgs.some((m) => m.type === "error"), "the failure itself surfaced");
+  s.pushPrompt("second ask");
+  await waitForTurnEnds(msgs, 2);
+  assert.equal(prompts.length, 1);
+  assert.ok(prompts[0].includes("## Generative UI"), "guidance survives the failed delivery");
+  assert.ok(prompts[0].includes("DEFERRED"));
+  assert.ok(prompts[0].endsWith("second ask"));
+  s.close();
+});

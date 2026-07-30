@@ -1,6 +1,7 @@
 import path from "node:path";
 import os from "node:os";
 import { readFileSync } from "node:fs";
+import { envInt } from "../env";
 
 /**
  * Reads the facts Mirafold needs from the user's own Codex config
@@ -120,7 +121,7 @@ export function parseCodexDefaultProvider(toml: string): CodexConfigProvider | u
 // One read serves a pass; an edited config still shows within seconds — the
 // TTL must stay short, this is a poll-smoother, never a boot-time snapshot.
 // A missing file is never cached, so a config appearing shows immediately.
-const CONFIG_TTL_MS = Number(process.env.CODEX_CONFIG_TTL_MS ?? 2_000);
+const CONFIG_TTL_MS = envInt("CODEX_CONFIG_TTL_MS", 2_000);
 let configCache: { file: string; at: number; text: string } | undefined;
 
 function readConfig(): string | undefined {

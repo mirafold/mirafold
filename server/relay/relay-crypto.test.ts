@@ -69,6 +69,25 @@ test("a tampered frame fails to open", async () => {
   await assert.rejects(() => daemon.open(tampered));
 });
 
+// 2026-07-29 bughunt: the shared itest helper (relay-test-client.ts
+// sendTampered) still flipped the LAST char — a no-op ~25% of the time (97
+// of 400 probed trials opened byte-identical), so the fail-closed itest
+// sometimes proved only the idle reaper. This pins the helper's exact
+// interior-flip transformation as never decoding to the original bytes.
+test("interior-flip corruption (the sendTampered shape) never opens, across many trials", async () => {
+  const { client, daemon } = await channel();
+  for (let t = 0; t < 60; t++) {
+    const sealed = await client.seal(JSON.stringify({ type: "ping" }));
+    const i = sealed.length - 8;
+    const flipped = sealed[i] === "A" ? "B" : "A";
+    const tampered = sealed.slice(0, i) + flipped + sealed.slice(i + 1);
+    assert.notEqual(tampered, sealed);
+    await assert.rejects(() => daemon.open(tampered), `trial ${t} opened`);
+    // Keep the daemon's counter in step for the next trial.
+    await daemon.open(sealed);
+  }
+});
+
 test("a replayed frame fails to open (counter cannot repeat)", async () => {
   const { client, daemon } = await channel();
   const sealed = await client.seal("once");

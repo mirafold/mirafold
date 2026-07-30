@@ -21,11 +21,12 @@ import { VERSION } from "../version";
 // The fence-escape lives in bang-handlers.ts with the rest of the bang
 // lifecycle; re-exported because the Tier-1 pin imports it from here.
 export { escapeTranscriptFence } from "./bang-handlers";
+import { envInt } from "../env";
 
 // Minimum gap between refresh_agents-triggered probe sweeps per connection
 // (N.3). The picker polls every few seconds; anything faster serves the
 // cached answer instead of re-probing localhost.
-const REFRESH_MIN_INTERVAL_MS = Number(process.env.REFRESH_MIN_INTERVAL_MS ?? 1_000);
+const REFRESH_MIN_INTERVAL_MS = envInt("REFRESH_MIN_INTERVAL_MS", 1_000);
 
 // What a remote (relay) connection is told when a cockpit act would drive a
 // subscription-backed session (M.2) — the same reasoning as the attach gate's
@@ -92,15 +93,21 @@ export function openConnection(
   // Identity first, then the replayed history, then the live stream. 4.4:
   // a valid afterSeq turns the replay into a tail-only resume — the client
   // is told via `resumed` so it keeps its state instead of repainting.
-  const attachTo = (e: SessionEntry, afterSeq?: number, fallback = false) => {
+  // Returns false on a relay-gate refusal so create-ish callers can reap the
+  // session they just minted (see below); true once the viewport is attached.
+  const attachTo = (e: SessionEntry, afterSeq?: number, fallback = false): boolean => {
     // The relay gate. A remote viewport may not drive a subscription-
     // backed session — charging for remote access to it trips the closed-model
     // providers' reselling clauses (provider-policy.ts). Refuse WITHOUT
     // attaching, and leave `entry` as it was so the viewport keeps whatever it
     // legitimately watched. Local viewports are never gated. (A remote CREATE
-    // that lands here leaves the just-created session unattached; it's idle-
-    // reaped — the important case this closes is a phone attaching to a
-    // subscription session a local tab started.) (R.4i)
+    // that lands here has just minted a session no one is attached to — the
+    // CALLER must reap it: nothing arms the idle timer before a first
+    // attach/detach cycle, so an unreaped refusal leaked the entry and its
+    // engine forever, and 100 retries exhausted MAX_SESSIONS for local
+    // creates too — 2026-07-29 bughunt. The important case this gate closes
+    // is a phone attaching to a subscription session a local tab started.)
+    // (R.4i)
     if (remote && !allowedOverRelay(e.kind)) {
       viewport({
         type: "refused",
@@ -109,7 +116,7 @@ export function openConnection(
           "This session runs on a subscription login, which can't be used over the relay. Use an API key to drive an agent remotely.",
       });
       log.info(`refused remote viewport → session ${e.id} (${e.kind})`);
-      return;
+      return false;
     }
     if (entry) registry.detach(entry, viewport);
     entry = e;
@@ -130,6 +137,14 @@ export function openConnection(
     log.info(
       `viewport ${resumed ? `resumed @${afterSeq}` : "attached"} → session ${e.id} (${e.viewports.size} viewport(s))`,
     );
+    return true;
+  };
+
+  // The reap half of the relay-gate contract above: a session minted by THIS
+  // message whose attach was refused has no viewports, no idle timer, and no
+  // other way to die — end it on the spot (2026-07-29 bughunt).
+  const attachOrReap = (e: SessionEntry, afterSeq?: number, fallback = false) => {
+    if (!attachTo(e, afterSeq, fallback)) registry.end(e.id);
   };
 
   // Advertise which agents this daemon offers + which are live, so the
@@ -160,7 +175,7 @@ export function openConnection(
   // The `!` lifecycle (4.9) — PTY spawn, output budgets, cwd handoff, burst
   // throttle — handled per-connection in bang-handlers.ts, the fs-handlers
   // pattern.
-  const bang = createBangHandlers({ registry, getEntry: () => entry, sendError });
+  const bang = createBangHandlers({ registry, getEntry: () => entry, sendError, viewport });
 
   // The client announces its build on attach/create; a skewed pair is
   // the first thing to know about a weird bug report, so log it here (R.4g).
@@ -230,7 +245,7 @@ export function openConnection(
           );
         }
         try {
-          attachTo(
+          attachOrReap(
             registry.create({
               cwd: typeof msg.cwd === "string" ? msg.cwd : undefined,
               agent,
@@ -253,12 +268,14 @@ export function openConnection(
           existing && typeof msg.afterSeq === "number" ? msg.afterSeq : undefined;
         try {
           // fallback only when a session was actually ASKED for and is gone —
-          // an id-less attach never had a transcript to lose.
-          attachTo(
-            existing ?? registry.create(),
-            afterSeq,
-            typeof msg.sessionId === "string" && !existing,
-          );
+          // an id-less attach never had a transcript to lose. An EXISTING
+          // session refused by the relay gate is left alone (a local tab may
+          // own it); only a fallback-created one is reaped.
+          if (existing) {
+            attachTo(existing, afterSeq, false);
+          } else {
+            attachOrReap(registry.create(), afterSeq, typeof msg.sessionId === "string");
+          }
         } catch (err) {
           sendError(errText(err));
         }

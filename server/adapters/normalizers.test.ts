@@ -22,7 +22,13 @@ test("normalizeTodos keeps valid items and defaults an unknown status to pending
 test("normalizeTodos returns null for non-todo input", () => {
   assert.equal(normalizeTodos(null), null);
   assert.equal(normalizeTodos({}), null);
-  assert.equal(normalizeTodos({ todos: [] }), null);
+});
+
+// 2026-07-29 bughunt: a valid EMPTY TodoWrite is the agent clearing its
+// list — it used to collapse to null (indistinguishable from junk), so the
+// clear was skipped and deleted tasks lingered in the adapter's mirror.
+test("normalizeTodos keeps a valid empty list distinct from junk", () => {
+  assert.deepEqual(normalizeTodos({ todos: [] }), []);
 });
 
 test("resultText flattens strings, block arrays, and objects", () => {

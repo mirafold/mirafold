@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, symlinkSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { runActionTool, actionToolNames } from "./actions";
@@ -46,4 +46,22 @@ test("invalid args are rejected", () => {
 
 test("workspace_ls is on the allowlist", () => {
   assert.ok(actionToolNames.includes("workspace_ls"));
+});
+
+// 2026-07-29 bughunt: statSync follows symlinks and throws on a dangling
+// one, and the throw escaped the whole listing — one broken link (or a file
+// the agent deleted between readdir and stat) made every sibling invisible.
+
+test("workspace_ls survives a dangling symlink — the row is marked, siblings stay listed", () => {
+  const dir = tmp();
+  try {
+    writeFileSync(path.join(dir, "real.txt"), "hello");
+    symlinkSync(path.join(dir, "gone.txt"), path.join(dir, "dangling"));
+    const res = runActionTool("workspace_ls", {}, dir);
+    assert.equal(res.isError, false);
+    assert.match(res.output, /real\.txt/);
+    assert.match(res.output, /\?\s+dangling/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

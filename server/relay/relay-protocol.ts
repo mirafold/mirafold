@@ -67,11 +67,32 @@ export const mintPairingCode = () => randomBytes(16).toString("base64url");
 // can't help. Minted codes are 22 chars.
 export const MIN_PAIRING_CODE_LENGTH = 16;
 
+// The one alphabet every surface the code crosses agrees on: the QR/copy
+// link interpolates it into a URL fragment raw, and the phone's fragment
+// parser reads `code=([A-Za-z0-9_-]+)` — a space or `&` in a pinned code
+// pairs the DAEMON fine but truncates on the phone, deriving a different
+// pairId and yielding an eternal "Desktop not reachable" with no warning
+// anywhere (2026-07-29 bughunt). Minted codes are base64url and always fit;
+// a pin outside the alphabet is refused at the source — refusing beats
+// honoring, as with the short-pin rule above.
+export const PAIRING_CODE_RE = /^[A-Za-z0-9_-]+$/;
+
 /** The launch's pairing code: the pin if it's strong enough, else minted.
- *  `weakPin` reports a pin that was refused so the caller can warn loudly. */
-export function resolvePairingCode(pinned?: string): { code: string; weakPin: boolean } {
-  if (pinned && pinned.length >= MIN_PAIRING_CODE_LENGTH) {
+ *  `weakPin` reports a pin that was refused so the caller can warn loudly;
+ *  `pinProblem` says why (length vs. characters the pairing link can't carry). */
+export function resolvePairingCode(pinned?: string): {
+  code: string;
+  weakPin: boolean;
+  pinProblem?: "short" | "charset";
+} {
+  if (pinned) {
+    if (pinned.length < MIN_PAIRING_CODE_LENGTH) {
+      return { code: mintPairingCode(), weakPin: true, pinProblem: "short" };
+    }
+    if (!PAIRING_CODE_RE.test(pinned)) {
+      return { code: mintPairingCode(), weakPin: true, pinProblem: "charset" };
+    }
     return { code: pinned, weakPin: false };
   }
-  return { code: mintPairingCode(), weakPin: Boolean(pinned) };
+  return { code: mintPairingCode(), weakPin: false };
 }

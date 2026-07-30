@@ -229,6 +229,11 @@ export class GeminiCliSession implements AgentSession {
       // a slash command at position 0, so the prepend would demote the user's
       // command to chat; the guidance waits for the first prose turn.
       const inject = !this.guidanceInjected && !text.trimStart().startsWith("/");
+      // Optimistic — REVERTED below if the child dies without ever reading
+      // the prompt (no stdout event: the exit-42 id-mode collision, a spawn
+      // failure, bad auth). Leaving it consumed there ran every later turn
+      // bare, so the model never saw the render tools for the session's
+      // whole life (2026-07-29 bughunt).
       if (inject) this.guidanceInjected = true;
       const prompt = inject ? `${RENDER_GUIDANCE}\n\n---\n\n${text}` : text;
       const args = ["-p", prompt, "-o", "stream-json", "--allowed-mcp-server-names", MIRAFOLD_MCP];
@@ -309,10 +314,14 @@ export class GeminiCliSession implements AgentSession {
         if (!this.closed && !sawEvent && code === GEMINI_FATAL_INPUT_ERROR) {
           this.started = !resumed;
         }
+        // No stdout event ⇒ the prompt was never read — give the guidance
+        // back to the next prose turn (see the inject note above).
+        if (!sawEvent && inject) this.guidanceInjected = false;
         end(); // covers the case where no `result` event arrived (crash/kill)
       });
       child.on("error", (err) => {
         if (!this.closed) this.emit({ type: "error", message: `gemini spawn failed: ${err.message}` });
+        if (inject) this.guidanceInjected = false; // spawn failed — nothing was read
         end();
       });
     });

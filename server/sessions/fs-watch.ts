@@ -32,19 +32,20 @@
 import { lstatSync, realpathSync } from "node:fs";
 import path from "node:path";
 import watcher from "@parcel/watcher";
+import { envInt } from "../env";
 
 // One bell at most per window: the FIRST event arms the timer, later events
 // only accumulate. A fixed window from the first event — not a trailing
 // debounce — so an agent writing continuously can never starve the bell.
-const FS_WATCH_DEBOUNCE_MS = Number(process.env.FS_WATCH_DEBOUNCE_MS ?? 400);
+const FS_WATCH_DEBOUNCE_MS = envInt("FS_WATCH_DEBOUNCE_MS", 400);
 // The paths hint stays small on the wire (W.2); past the cap the bell rings
 // with `truncated` and the client refetches everything it shows anyway.
 // Capped on COUNT and BYTES both (2026-07-26 audit): a path may be thousands
 // of characters, so a count-only cap would let one bell carry a quarter
 // megabyte — bandwidth a phone viewport pays for over the relay, every
 // window. Real projects never approach either bound.
-const FS_WATCH_MAX_PATHS = Number(process.env.FS_WATCH_MAX_PATHS ?? 64);
-const FS_WATCH_MAX_PATH_BYTES = Number(process.env.FS_WATCH_MAX_PATH_BYTES ?? 16_000);
+const FS_WATCH_MAX_PATHS = envInt("FS_WATCH_MAX_PATHS", 64);
+const FS_WATCH_MAX_PATH_BYTES = envInt("FS_WATCH_MAX_PATH_BYTES", 16_000);
 
 // Subtrees whose churn nobody browses — excluded so they never consume
 // watches (the reason this dependency exists; Node's recursive fs.watch has

@@ -979,6 +979,66 @@ test("navigating artifact is blanked into the navigation-blocked fallback (R.4e)
   await page.waitForSelector("text=tried to navigate away", { timeout: 5_000 });
 });
 
+test("2026-07-29 reload replays history silently — no re-announced turns in the live regions", async () => {
+  // The attach replay repaints every completed turn; before the `replay`
+  // stamp, each historical turn re-fired its screen-reader announcements,
+  // ending with an old response spoken as though it just arrived.
+  // Hermetic: a FRESH session with exactly one completed turn — the minimal
+  // scenario the bug needed (even one historical turn re-announced), free of
+  // the long shared-session history the suite accumulates by this point.
+  const sharedSession = page.url();
+  await page.goto(`${base}/?new=1`);
+  await page.waitForSelector(".onb-agent");
+  await page.locator(".onb-agent", { hasText: "Claude Code" }).click();
+  await page.waitForURL(/\/s\/[\w-]+/);
+  const freshSession = page.url();
+  await page.locator("textarea").click();
+  await page.keyboard.type("hello there");
+  await page.keyboard.press("Enter");
+  // Wait the turn fully out: indicator up, then gone (turn_end reached).
+  await page.waitForSelector(".activity-line", { timeout: 30_000 });
+  await page.waitForSelector(".activity-line", { state: "detached", timeout: 30_000 });
+  // The turn_end response announcement has landed in the polite region.
+  await page.waitForFunction(
+    () => document.querySelector('[role="status"]')?.textContent?.trim(),
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.reload();
+  // The transcript repaints from replay…
+  await page.waitForSelector(".turn-assistant", { timeout: 30_000 });
+  await page.waitForTimeout(500); // any wrongly re-fired announcement would land here
+  // …but both live regions stay empty: history is painted, never spoken.
+  const polite = ((await page.locator('[role="status"]').textContent()) ?? "").trim();
+  const assertive = ((await page.locator('[role="alert"]').textContent()) ?? "").trim();
+  assert.equal(polite, "", `polite live region re-announced history: "${polite}"`);
+  assert.equal(assertive, "", `assertive live region re-announced history: "${assertive}"`);
+  // Hand the shared session back to the tests that follow.
+  assert.ok(freshSession.includes("/s/"));
+  await page.goto(sharedSession);
+  await page.waitForSelector("textarea", { timeout: 30_000 });
+});
+
+test("2026-07-29 update-in-place artifacts survive the liveness tripwire", async () => {
+  // The mock re-sends ONE artifact id with three htmls, each update landing
+  // inside the liveness grace window — a stale deadline from an earlier
+  // html's load used to kill the healthy update as "navigation".
+  await page.waitForSelector(".activity-line", { state: "detached", timeout: 30_000 });
+  await page.locator("textarea").click();
+  await page.keyboard.type("show me an updating artifact");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector('.artifact-label:has-text("updating demo")', { timeout: 30_000 });
+  // Let every update land and every armed deadline expire, then judge.
+  await page.waitForTimeout(1_500);
+  const failed = await page.locator(".artifact-failed .artifact-label", { hasText: "updating demo" }).count();
+  assert.equal(failed, 0, "the updated artifact was killed by a stale liveness deadline");
+  const frames = await page
+    .locator(".artifact:not(.artifact-failed)")
+    .filter({ hasText: "updating demo" })
+    .count();
+  assert.ok(frames >= 1, "the updated artifact is still mounted");
+});
+
 test("fleet: the cwd is the row's hover tooltip; clicking outside the new-session card dismisses it", async () => {
   await page.goto(`${base}/`);
   await page.waitForSelector(".fleet-row");

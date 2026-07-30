@@ -9,6 +9,7 @@ import { RenderZone } from "./RenderZone";
 import { FilesPanel } from "./files/FilesPanel";
 import { StatusBar, type Usage } from "./StatusBar";
 import { createSessionBus } from "../session-bus";
+import { nextOpenTurns } from "../turn-busy";
 import {
   MODE_STORAGE_KEY,
   THEMES,
@@ -179,12 +180,19 @@ export function Shell() {
   useEffect(
     () =>
       bus.subscribe((m) => {
+        // Replayed history must repaint state but never re-fire live-only
+        // side effects: on every reload/reconnect the full-buffer replay
+        // re-spoke each historical turn to screen readers, ending with an
+        // old response presented as though it just arrived — the same lie
+        // the wasConnected guard below blocks for "Reconnected"
+        // (2026-07-29 bughunt).
+        const live = !("replay" in m && m.replay);
+        openTurns.current = nextOpenTurns(openTurns.current, m.type, !live);
         if (m.type === "user_prompt") {
-          openTurns.current += 1;
           setBusy(true);
           setActivity({ state: "thinking" });
           turnText.current = "";
-          announce("Sent. Working…");
+          if (live) announce("Sent. Working…");
           // They've moved on in the new session — the R.4c notice is done.
           setNotices((n) => (n.session ? { ...n, session: false } : n));
         } else if (
@@ -196,6 +204,8 @@ export function Shell() {
           // Busy re-derives from ANY turn activity, not just the
           // user_prompt — a tail resume mid-turn replays none of the turn's
           // opening frames, and busy was cleared on the disconnect (R.4c).
+          // The turn COUNTER re-derives with it (nextOpenTurns' floor rule,
+          // 2026-07-29 bughunt — see turn-busy.ts).
           setBusy(true);
           if (m.type === "status") setActivity({ state: m.state, label: m.label });
           else if (m.type === "thinking_delta") setActivity({ state: "thinking" });
@@ -208,22 +218,23 @@ export function Shell() {
           if (m.type === "text_delta") turnText.current += m.text;
           // Tool activity is the other thing a sighted user reads off the
           // transcript mid-turn; announce the name, not the arguments.
-          if (m.type === "tool_use") announce(`Running ${m.name}.`);
+          if (m.type === "tool_use" && live) announce(`Running ${m.name}.`);
         } else if (m.type === "tool_result") {
           // A finished tool must not keep naming itself — a frozen "Bash"
           // through the next model round trip reads as "done?" (2026-07-29).
           setActivity((a) => (a?.state === "tool" ? null : a));
         } else if (m.type === "turn_end") {
-          openTurns.current = Math.max(0, openTurns.current - 1);
           setBusy(openTurns.current > 0);
           setActivity(null);
           setAsks([]); // a request that outlived its turn is void (server denies)
-          announce(turnResponse(turnText.current));
+          if (live) announce(turnResponse(turnText.current));
           turnText.current = "";
         } else if (m.type === "permission_request") {
           setAsks((a) => [...a, { tool: m.tool, detail: m.detail, id: m.id }]);
-          // Assertive: this one blocks the turn until answered.
-          announce(`Permission needed: ${m.tool}. ${m.detail}`, true);
+          // Assertive: this one blocks the turn until answered. A replayed
+          // ask still paints the bar (it may be genuinely pending), just
+          // without re-interrupting the reader.
+          if (live) announce(`Permission needed: ${m.tool}. ${m.detail}`, true);
         } else if (m.type === "permission_resolved") {
           // The ask was answered on ANOTHER viewport, or auto-denied by the
           // daemon's timeout — drop it HERE too. Before this, the bar sat

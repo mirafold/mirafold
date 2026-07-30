@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import WebSocket from "ws";
 import type { WireMsg } from "../protocol";
-import { attachSession, broadcasts, startDaemon, TestClient, type Daemon } from "../testing/itest-harness";
+import { attachSession, broadcasts, startDaemon, stripReplay, TestClient, type Daemon } from "../testing/itest-harness";
 import { startRelayStub, type RelayStub } from "./relay-stub";
 import {
   CLOSE_BAD_CODE,
@@ -76,13 +76,16 @@ test("local and remote viewports mirror the stream byte for byte (replay + live)
   assert.ok(remoteSeen.length > 0, "remote viewport saw no broadcasts (prior turn never streamed?)");
   const remoteTail = remoteSeen.at(-1)!.seq;
   await local.waitFor((m) => (m as Any).seq === remoteTail, "replay tail");
-  assert.deepEqual(broadcasts(local), broadcasts(remote));
+  // The late joiner's copies carry the replay stamp (2026-07-29) — content
+  // must still mirror the live stream exactly.
+  assert.ok(broadcasts(local).every((m) => m.replay === true));
+  assert.deepEqual(stripReplay(broadcasts(local)), stripReplay(broadcasts(remote)));
 
   // Live: a turn driven from the LOCAL side fans out to both identically.
   local.send({ type: "prompt", text: "drive it from the local tab" });
   await local.type("turn_end", 20_000);
   await remote.type("turn_end", 20_000);
-  assert.deepEqual(broadcasts(remote), broadcasts(local));
+  assert.deepEqual(stripReplay(broadcasts(remote)), stripReplay(broadcasts(local)));
   local.close();
 });
 

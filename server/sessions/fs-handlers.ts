@@ -31,13 +31,14 @@ import { repoTrust, trustFile } from "./git-trust";
 import { inside } from "./actions";
 import { isSecretFile } from "../security/permissions";
 import { errText } from "../adapters";
+import { envInt } from "../env";
 
 // Minimum gap between Explorer requests per connection AND per type — fs_list
 // walks the tree, so a hostile client must not turn it into a CPU grinder; the
 // per-type split keeps a legitimate list-then-read pair from tripping it. A
 // throttled request still gets a reply (an error), never silence — the client's
 // request/reply correlation must always resolve.
-const FS_MIN_INTERVAL_MS = Number(process.env.FS_MIN_INTERVAL_MS ?? 250);
+const FS_MIN_INTERVAL_MS = envInt("FS_MIN_INTERVAL_MS", 250);
 
 // fs_listdir's throttle is a token BUCKET, not the min-interval family
 // (E2.1): opening the panel legitimately fires root + a first level of
@@ -45,14 +46,14 @@ const FS_MIN_INTERVAL_MS = Number(process.env.FS_MIN_INTERVAL_MS ?? 250);
 // readdir is orders cheaper than the tree walk the interval was sized for.
 // Capacity = refill rate, one knob: a full burst of this many, sustained at
 // this many per second. A drained bucket still ANSWERS (error reply).
-const FS_LISTDIR_MAX_PER_SEC = Number(process.env.FS_LISTDIR_MAX_PER_SEC ?? 32);
+const FS_LISTDIR_MAX_PER_SEC = envInt("FS_LISTDIR_MAX_PER_SEC", 32);
 
 // W.H1: how long a directory listing may wait on its repo's git status
 // before shipping plain. Status calls serialize in one GLOBAL queue, so one
 // pathological repo (network mount, cold cache) would otherwise hold every
 // viewport's listings hostage for up to the 5s git timeout. Well above the
 // measured healthy case (~40ms on a 1.1GB repo), well under the timeout.
-const FS_LISTDIR_STATUS_WAIT_MS = Number(process.env.FS_LISTDIR_STATUS_WAIT_MS ?? 300);
+const FS_LISTDIR_STATUS_WAIT_MS = envInt("FS_LISTDIR_STATUS_WAIT_MS", 300);
 
 // The one shape rule for client-minted ids (fs correlation ids, bang ids):
 // short and word-safe or the message is dropped whole.

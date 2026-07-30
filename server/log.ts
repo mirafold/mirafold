@@ -24,8 +24,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-/** True when debug-level output is enabled (MIRAFOLD_DEBUG=1 / --verbose). */
-export const verbose = Boolean(process.env.MIRAFOLD_DEBUG) || process.argv.includes("--verbose");
+import { envFlag } from "./env";
+
+/** True when debug-level output is enabled (MIRAFOLD_DEBUG=1 / --verbose).
+ *  MIRAFOLD_DEBUG=0 and =false mean OFF (2026-07-29 bughunt — Boolean("0")
+ *  is true, so setting 0 to disable debug used to enable it). */
+export const verbose = envFlag(process.env.MIRAFOLD_DEBUG) || process.argv.includes("--verbose");
 
 const MAX_LINE = 4_000; // payload-scale content has no business in a log line
 const MAX_FILE_BYTES = 5_000_000; // roll here; one prior generation kept → ≤10 MB ever

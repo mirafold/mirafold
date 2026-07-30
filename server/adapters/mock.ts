@@ -504,6 +504,9 @@ export class MockSession implements AgentSession {
       // An artifact that ATTEMPTS the escapes, reporting each result
       // into its own DOM so the e2e can assert containment from outside (R.4e).
       if (/hostile/i.test(text)) return this.playArtifact("hostile demo", HOSTILE_ARTIFACT);
+      // Same id re-sent with new html — the update-in-place mechanism the
+      // per-artifact UUIDs above never exercise (2026-07-29 bughunt).
+      if (/updat/i.test(text)) return this.playUpdatingArtifact();
       return this.playBridgeArtifact();
     }
     if (/dangerous|sudo|rm -rf/i.test(text)) return this.playPermissionAsk();
@@ -1086,6 +1089,33 @@ export class MockSession implements AgentSession {
     this.endTurn(delay);
   }
 
+  /** ONE artifact id, three htmls in quick succession — deliberately inside
+   *  the shell's liveness grace window: a stale deadline from an earlier
+   *  html's load used to kill the healthy update as "navigation"
+   *  (2026-07-29 bughunt). */
+  private playUpdatingArtifact() {
+    const id = randomUUID();
+    this.beginTurn();
+    let delay = this.streamText("Watch it update in place.", 300);
+    delay += 250;
+    this.schedule(() => this.emit({ type: "status", state: "tool", label: "emit_artifact" }), delay);
+    delay += 350;
+    for (const v of [1, 2, 3]) {
+      this.schedule(
+        () =>
+          this.emit({
+            type: "artifact",
+            title: "updating demo",
+            html: `<h2>version ${v}</h2>`,
+            id,
+          }),
+        delay,
+      );
+      delay += 180;
+    }
+    this.endTurn(delay);
+  }
+
   /** Continuation after the permission prompt was allowed: run the "command". */
   private playDangerousAllowed() {
     const id = randomUUID();
@@ -1131,6 +1161,14 @@ export class MockSession implements AgentSession {
   private abandonTurn() {
     for (const t of this.timers) clearTimeout(t);
     this.timers = [];
+    // protocol.ts: permission_resolved MUST fire on EVERY resolution path —
+    // interrupt/close included, or a second viewport keeps a dead bar and
+    // the replay buffer holds an unresolved ask forever (2026-07-29
+    // bughunt). Emitted directly, not through the resolver: its scripted
+    // follow-up belongs to the turn being abandoned.
+    for (const id of this.pendingAsks.keys()) {
+      this.emit({ type: "permission_resolved", id, allow: false });
+    }
     this.pendingAsks.clear();
   }
 

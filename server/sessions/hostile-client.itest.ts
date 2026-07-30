@@ -205,3 +205,21 @@ test("Q.4 garbage create/attach frames are tolerated and still yield a working s
   assert.doesNotMatch(d.logs(), /crashed \(uncaughtException\)/);
   t.close();
 });
+
+test("an oversized frame closes that socket only — the daemon survives (2026-07-29 bughunt)", async () => {
+  // A >MAX_WS_PAYLOAD frame (a huge paste) trips ws's cap, which emits
+  // 'error' on the socket. Without a per-socket listener that was an
+  // UNHANDLED 'error' → uncaughtException → the whole daemon exited,
+  // killing every session, for one viewport's paste.
+  const { client: a } = await createSession(d.port);
+  a.send({ type: "prompt", text: "x".repeat(1_100_000) });
+  const { code } = await a.closed;
+  assert.equal(code, 1009); // ws's "message too big" close, on the offender only
+
+  // The daemon is untouched: a fresh viewport drives a full turn.
+  const { client: b } = await createSession(d.port);
+  b.send({ type: "prompt", text: "hello" });
+  await b.waitFor((m) => m.type === "turn_end", "turn_end after oversized frame", 20_000);
+  assert.doesNotMatch(d.logs(), /crashed \(uncaughtException\)/);
+  b.close();
+});

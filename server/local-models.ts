@@ -10,6 +10,8 @@
 // GET /v1/models (the de facto standard catalog endpoint) is OpenAI-shaped
 // only. Listing needs no model loaded in memory — the catalog is bookkeeping.
 
+import { envInt } from "./env";
+
 export type LocalDialect = "anthropic" | "openai";
 
 export type LocalServer = {
@@ -166,7 +168,7 @@ let inflight: Promise<LocalServer[]> | undefined;
 // probe per target. The TTL stays short enough that a freshly started
 // server still appears within one poll or two — a longer window would turn
 // the picker's "start it and it appears here" promise into a wait.
-const PROBE_TTL_MS = Number(process.env.MIRAFOLD_LOCAL_PROBE_TTL_MS ?? 5_000);
+const PROBE_TTL_MS = envInt("MIRAFOLD_LOCAL_PROBE_TTL_MS", 5_000);
 
 /** The last probe's result, synchronously — what hello-building reads. Empty
  *  until the first probe lands; the daemon never waits on discovery. */

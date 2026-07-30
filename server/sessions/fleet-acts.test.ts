@@ -120,3 +120,64 @@ test("M.2 answer_permission drops ONLY the answered id from the queue, immediate
   );
   reg.end(e.id);
 });
+
+// 2026-07-29 bughunt: a remote CREATE refused by the relay gate minted a
+// session no one was attached to — and nothing arms the idle timer before a
+// first attach/detach cycle, so the entry (engine included) was immortal.
+// 100 phone retries exhausted MAX_SESSIONS and locked LOCAL creates out
+// until a daemon restart.
+
+test("a relay-refused CREATE reaps the just-minted session — no leak", () => {
+  const reg = new SessionRegistry(SUB);
+  const { c, seen } = conn(reg, true);
+  for (let i = 0; i < 5; i++) send(c, { type: "create", cwd: dir() });
+  assert.equal(seen.filter((m) => m.type === "refused").length, 5);
+  assert.equal(reg.summary().length, 0, "nothing immortal left in the registry");
+});
+
+test("a relay-refused ATTACH reaps only a fallback-created session, never an existing one", () => {
+  const reg = new SessionRegistry(SUB);
+  const local = reg.create({ cwd: dir() });
+  const { c, seen } = conn(reg, true);
+  // Attaching to the local tab's live session: refused, session untouched —
+  // the R.4l item-5 decision (the device sees the R.4i notice) stands.
+  send(c, { type: "attach", sessionId: local.id });
+  assert.equal(seen.filter((m) => m.type === "refused").length, 1);
+  assert.ok(reg.get(local.id), "the local tab's session survives the refusal");
+  // A stale id's fallback create is this connection's own mint — reaped.
+  send(c, { type: "attach", sessionId: "gone-session-id" });
+  assert.equal(seen.filter((m) => m.type === "refused").length, 2);
+  assert.equal(reg.summary().length, 1, "only the pre-existing session remains");
+  reg.end(local.id);
+});
+
+// 2026-07-29 bughunt: the bang burst-throttle's refusal used to BROADCAST a
+// fabricated bang_end — the registry read it as a terminal event (idle,
+// burst gate re-opened, permission mirror wiped) and every other viewport
+// got a bang_end for an id it never saw a bang_start for.
+
+test("a throttle-refused bang answers the issuer only — nothing enters the session stream", () => {
+  const reg = new SessionRegistry(NONE);
+  const e = reg.create({ cwd: dir() });
+  const issuer = conn(reg, false);
+  const watcher = conn(reg, false);
+  send(issuer.c, { type: "attach", sessionId: e.id });
+  send(watcher.c, { type: "attach", sessionId: e.id });
+  const watcherMark = watcher.seen.length;
+  reg.broadcast(e, { type: "status", state: "thinking" }); // a model turn is live
+  e.midTurnPromptUsed = true;
+  e.lastBangAt = Date.now(); // a bang just finished — inside the 400 ms window
+  send(issuer.c, { type: "bang", command: "true", id: "b2" });
+  assert.ok(
+    issuer.seen.some((m) => m.type === "bang_end" && (m as { id?: string }).id === "b2"),
+    "the issuer's locally-armed bar clears",
+  );
+  assert.ok(
+    !watcher.seen.slice(watcherMark).some((m) => m.type === "bang_end"),
+    "no fabricated bang_end reaches other viewports",
+  );
+  assert.ok(!e.buffer.some((m) => m.type === "bang_end"), "the replay ring stays clean");
+  assert.equal(e.status, "working", "a mid-turn session never flips idle over a refused bang");
+  assert.equal(e.midTurnPromptUsed, true, "the burst gate stays closed");
+  reg.end(e.id);
+});

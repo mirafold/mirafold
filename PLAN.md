@@ -265,6 +265,11 @@ records of later unplanned polish batches.
     has no DOM harness today, so that's the larger lift). Until then,
     treat the boundary behavior as verified by construction + manual
     observation, not by an automated guard.
+    *2026-07-29 addendum (Step 4.16):* the counter now lives in a pure
+    reducer (`web/src/turn-busy.ts`) and `turn-busy.test.ts` pins the
+    queued-turn arithmetic directly — the caveat's asked-for unit pin,
+    without the DOM-harness lift. The e2e's sampling weakness stands as
+    recorded; the reducer pin is the dependable guard.
 
 - [x] **Step 4.15 — Beta-channel trust follow-ups (beta tester 002's
   evaluation, 2026-07-28; triaged with Kyle 2026-07-29)** — **done
@@ -291,6 +296,53 @@ records of later unplanned polish batches.
   - Done when: a tester following the public trail finds the security doc
     inside the artifact, a fingerprint to verify it, and a sane first-run
     recipe.
+
+- [x] **Step 4.16 — Whole-repo bughunt batch (2026-07-29, Kyle: "do em
+  all")** — a six-subsystem correctness sweep (adapters / sessions / server
+  core+pty / relay / web core / web components), every finding verified with
+  a concrete failing scenario before reporting, all 27 approved and fixed
+  the same day, each with a pinned regression test (several
+  mutation-proven). The headliners, for the record: (1) an **oversized ws
+  frame crashed the whole daemon** — no per-socket `error` listener, so a
+  >1 MB paste tripped ws's maxPayload into uncaughtException (fix: listener
+  + Tier-2 pin; the socket now closes 1009 alone); (2) a **relay-gate-refused
+  CREATE leaked the session forever** (nothing arms the idle timer before a
+  first attach; 100 phone retries exhausted MAX_SESSIONS for local creates
+  too) — refused creates now reap what they minted; (3) a **viewport frame
+  >~1.5 MB killed the whole pairing** (daemon dial-out cap sat below the
+  relay's 8 MB viewport cap; ws closes the whole socket → dropAll) — cap
+  aligned + pinned against genui-relay's limits in the sibling itest;
+  (4) the **artifact update-in-place liveness race** (a stale navigation
+  deadline killed healthy updates; generation guard + a same-id mock
+  scenario the e2e now drives); (5) both **codex and gemini burned
+  RENDER_GUIDANCE on a failed first turn** (consumed before delivery → zero
+  render calls for the session's life); (6) **bang lifecycle masqueraded as
+  turn grammar** in the registry (a `!` during a pending ask wiped the
+  fleet's allow/deny — the 2026-07-24 bug class through a different door —
+  and a throttle-refused bang broadcast a fabricated `bang_end`);
+  (7) **ws.ts backoff reset on open**, so refused viewports redialed at
+  2 Hz forever (reset moved to the handshaken finishOpen; full relay-path
+  crypto now driven in ws.test); (8) **split/colon-form ANSI leaked through
+  the PTY cleaner** (stateful cross-chunk carry + ECMA-48 param class);
+  (9) replay re-fired **screen-reader announcements for historical turns**
+  on every reload (additive `replay: true` stamp on attach-replayed frames,
+  protocol.ts; Shell suppresses live-only side effects); (10) an
+  **env-misparse family** where garbage WIDENED policy (`MAX_WS_PAYLOAD`
+  NaN = unlimited, `WS_HEARTBEAT_MS` NaN = 1 ms reap-everything loop) —
+  `server/env.ts` envInt/envFlag now parse strictly, 34 sites swept. Plus:
+  checklist clear-to-empty (both adapters), mermaid quoted-comma labels,
+  chart end-label clipping, mock permission_resolved on interrupt,
+  workspace_ls dangling-symlink resilience, pairing-code charset refusal,
+  the sendTampered last-char no-op (the itest's tamper proof now actually
+  proves tamper rejection), stale pong deadline killing successor sockets,
+  the legacy pairing-store carry (newSessionHref), handshake-wedge deadline,
+  useArmedConfirm same-key re-arm, FilesPanel replay-burst coalescing, and
+  the ws.ts close-code mirror now REALLY pinned against genui-relay's
+  contract. One deliberate non-fix, recorded: no client-side prompt-size
+  cap was added (a feature call, not a bug) — a >cap paste now costs one
+  clean socket close instead of the daemon; add the cap only if that UX
+  bites. Full verified ledger: session scratchpad; findings' file:line
+  detail rides each fix's test comments.
 
 
 ---

@@ -195,6 +195,10 @@ type WireMsg =
 // 4.4: the whole union is intersected with { seq?: number } — the registry
 // stamps a session-scoped increasing seq on every BROADCAST message (never
 // on per-viewport plumbing), giving reconnects a resume cursor.
+// 2026-07-29 (additive): messages REPLAYED from the buffer on attach also
+// carry { replay?: true }, stamped at replay time — history paints
+// identically but live-only side effects (screen-reader announcements,
+// above all) don't re-fire per reload. Old clients ignore it.
 
 // Browser → server
 type ClientMsg =

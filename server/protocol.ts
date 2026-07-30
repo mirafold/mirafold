@@ -27,8 +27,15 @@ export type AgentName = "claude-code" | "codex" | "gemini-cli";
  * the server replays only the tail — resume without a repaint. Per-viewport
  * messages (session_created, agents, pong) carry no seq: they're connection
  * plumbing, not session history.
+ *
+ * 2026-07-29 (additive): a message REPLAYED from the buffer on attach also
+ * carries `replay: true`, stamped at replay time (never stored). History and
+ * live traffic paint identically, but side effects that only make sense for
+ * a live event — the screen-reader announcements, above all — must not
+ * re-fire for every historical turn on each page load/reconnect. Old clients
+ * ignore the field.
  */
-export type WireMsg = WireMsgBody & { seq?: number };
+export type WireMsg = WireMsgBody & { seq?: number; replay?: true };
 
 type WireMsgBody =
   | { type: "text_delta"; text: string }

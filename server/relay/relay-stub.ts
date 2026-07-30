@@ -26,6 +26,7 @@ import {
   type DaemonToRelay,
   type RelayToDaemon,
 } from "./relay-protocol";
+import { envInt } from "../env";
 
 type Pair = { daemon: WebSocket; viewports: Map<string, WebSocket> };
 
@@ -155,7 +156,7 @@ export function startRelayStub(
 
 // Runnable standalone for dev: `node --import tsx server/relay/relay-stub.ts`.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  startRelayStub({ port: Number(process.env.PORT ?? 9100) }).then(({ url }) =>
+  startRelayStub({ port: envInt("PORT", 9100) }).then(({ url }) =>
     print(`[relay-stub] on ${url} — point the daemon at MIRAFOLD_RELAY_URL=${url}`),
   );
 }

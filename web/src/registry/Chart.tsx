@@ -444,9 +444,14 @@ function VChart({ title, kind, x, series, yLabel, stacked }: ComponentProps<"cha
     kind === "line" && series.length >= 2 && series.length <= 4
       ? series
           .map((s, si) => {
-            const last = [...s.values].reverse().findIndex(Number.isFinite);
-            const li = last === -1 ? -1 : s.values.length - 1 - last;
-            return { name: s.name, color: seriesColor(si), y: li >= 0 ? yPos(s.values[li]) : NaN, xi: li };
+            // Same clip as the marks and the axis ("scale on what is
+            // DRAWN"): surplus values past x.length placed a series' end
+            // label — its one CVD-safe identifier — far off-canvas
+            // (2026-07-29 bughunt).
+            const drawn = s.values.slice(0, x.length);
+            const last = [...drawn].reverse().findIndex(Number.isFinite);
+            const li = last === -1 ? -1 : drawn.length - 1 - last;
+            return { name: s.name, color: seriesColor(si), y: li >= 0 ? yPos(drawn[li]) : NaN, xi: li };
           })
           .filter((l) => Number.isFinite(l.y))
           .sort((a, b) => a.y - b.y)

@@ -26,10 +26,27 @@ test("a strong pinned code is honored verbatim", () => {
 });
 
 test("a short pinned code is refused and replaced with a minted one", () => {
-  const { code, weakPin } = resolvePairingCode("kyle123");
+  const { code, weakPin, pinProblem } = resolvePairingCode("kyle123");
   assert.equal(weakPin, true);
+  assert.equal(pinProblem, "short");
   assert.notEqual(code, "kyle123");
   assert.ok(code.length >= MIN_PAIRING_CODE_LENGTH);
+});
+
+// 2026-07-29 bughunt: a long pin with a space ("correct horse battery
+// staple") passed the length-only check, paired the daemon fine — and the
+// phone's fragment parser truncated it at the space, deriving a different
+// pairId: an eternal "Desktop not reachable" with no warning anywhere.
+test("a pinned code the pairing link can't carry is refused, not honored", () => {
+  for (const pinned of ["correct horse battery staple", "sixteen&chars#ok!!", "trailing-space-code "]) {
+    const { code, weakPin, pinProblem } = resolvePairingCode(pinned);
+    assert.equal(weakPin, true, pinned);
+    assert.equal(pinProblem, "charset", pinned);
+    assert.notEqual(code, pinned);
+  }
+  // base64url-alphabet pins of honest length still pass verbatim.
+  const ok = "abcDEF123_-abcDEF";
+  assert.equal(resolvePairingCode(ok).code, ok);
 });
 
 test("no pin (unset or empty) mints silently — not a refusal", () => {
