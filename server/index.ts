@@ -179,7 +179,14 @@ if (AUTH_ENABLED) {
 
 app.use(express.static(DIST));
 // /s/<id> is client-side routing — serve the app shell.
-app.get("/s/:id", (_req, res) => res.sendFile(path.join(DIST, "index.html")));
+// `root` is load-bearing, not style: send's default dotfiles:"ignore" policy
+// inspects EVERY segment of an absolute path, so passing the joined path 404s
+// whenever the package is installed under a dot-directory — which is where
+// `npm i -g` puts it for nvm (~/.nvm/…), asdf, volta and fnm users. `GET /`
+// kept working (express.static passes a root, so only the request path is
+// checked), so the breakage looked like "onboarding dies on the first session
+// URL, but only for some people" (2026-07-30).
+app.get("/s/:id", (_req, res) => res.sendFile("index.html", { root: DIST }));
 
 const server = createServer(app);
 

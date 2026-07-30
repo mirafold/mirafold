@@ -1,7 +1,17 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -88,6 +98,77 @@ printf 'args=%s\\nfd0=%s\\nfd1=%s\\nfd2=%s\\npid=%s\\nsid=%s\\n' \\
     assert.equal(got.fd1, "/dev/null");
     assert.equal(got.fd2, "/dev/null");
     assert.equal(got.sid, got.pid, "opener is its own session leader (detached)");
+  } finally {
+    try {
+      process.kill(-child.pid!, "SIGTERM");
+    } catch {}
+    await new Promise<void>((done) => {
+      const hard = setTimeout(() => {
+        try {
+          process.kill(-child.pid!, "SIGKILL");
+        } catch {}
+        done();
+      }, 3_000);
+      child.once("exit", () => {
+        clearTimeout(hard);
+        done();
+      });
+    });
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+// The SPA fallback must survive a global install under a DOT-DIRECTORY.
+// `npm i -g` unpacks into the active Node's prefix, and for nvm (~/.nvm/…),
+// asdf, volta and fnm that path carries a dot-segment. send's default
+// dotfiles:"ignore" policy inspects EVERY segment of an ABSOLUTE path, so
+// `sendFile(join(DIST, "index.html"))` 404'd there while `GET /` kept working
+// (express.static passes a root, confining the check to the request path).
+// Reported 2026-07-30 from a real tester-style install: onboarding died on the
+// first session URL, for version-manager users only. Nothing caught it because
+// the repo checkout has no dot-segment — this test manufactures one, which is
+// the only way the suite can see the bug at all.
+test("SPA fallback serves from an install path containing a dot-directory", async () => {
+  assert.ok(existsSync(DAEMON), "dist-server missing — test:e2e must run `yarn build` first");
+
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "genui-dotpath-"));
+  const dotRoot = path.join(tmp, ".nvm-like"); // the dot-segment IS the fixture
+  mkdirSync(dotRoot, { recursive: true });
+  cpSync(path.join(ROOT, "dist"), path.join(dotRoot, "dist"), { recursive: true });
+  cpSync(path.join(ROOT, "dist-server"), path.join(dotRoot, "dist-server"), { recursive: true });
+  // Symlinked, not copied: resolution walks up from the module, and copying
+  // node_modules would dominate the test's runtime for no added coverage.
+  symlinkSync(path.join(ROOT, "node_modules"), path.join(dotRoot, "node_modules"));
+
+  const child = spawn(process.execPath, [path.join(dotRoot, "dist-server", "index.js")], {
+    cwd: tmp,
+    detached: true,
+    stdio: ["ignore", "pipe", "pipe"],
+    env: {
+      ...process.env,
+      ...SCRUBBED_CREDENTIAL_ENV,
+      MIRAFOLD_APP_URL: "",
+      MIRAFOLD_LICENSE_KEY: "",
+      PORT: String(3990 + Math.floor(Math.random() * 9)),
+    },
+  });
+  let log = "";
+  child.stdout.on("data", (d: Buffer) => (log += d));
+  child.stderr.on("data", (d: Buffer) => (log += d));
+
+  try {
+    const deadline = Date.now() + 20_000;
+    let url: string | undefined;
+    while (Date.now() < deadline && !url) {
+      url = log.match(/http:\/\/127\.0\.0\.1:\d+\//)?.[0];
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    assert.ok(url, `daemon never printed its URL:\n${log}`);
+
+    const res = await fetch(`${url}s/regression-check`);
+    const body = await res.text();
+    assert.equal(res.status, 200, `SPA fallback 404s from a dot-path install:\n${log}`);
+    assert.match(body, /<div id="root">/, "served the real app shell, not an error page");
   } finally {
     try {
       process.kill(-child.pid!, "SIGTERM");

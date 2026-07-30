@@ -1194,6 +1194,37 @@ with it. Both sequence BEFORE R.5.**
   - Done when: the testing round is complete, every finding is written down,
     and each must-fix item is either fixed or explicitly scheduled as a
     Phase R blocker ahead of R.7.
+  - Finding #4 (Kyle, 2026-07-30, his own machine — **LAUNCH BLOCKER, fixed
+    same day**): the first time Kyle installed the tarball the way testers
+    do (`npm i -g mirafold.tgz`) instead of running `yarn dev`, onboarding
+    died the moment it navigated to a session URL — a `NotFoundError` from
+    `send`, and no browser session could ever start. **Cause:**
+    `res.sendFile(path.join(DIST, "index.html"))` passes an ABSOLUTE path,
+    and send's default `dotfiles: "ignore"` policy inspects *every segment*
+    of it. `npm i -g` unpacks into the active Node's prefix, which for nvm
+    (`~/.nvm/…`), asdf, volta and fnm carries a dot-segment — so the SPA
+    fallback 404'd for every user on a version manager, i.e. most of the
+    target audience. `GET /` kept working (express.static passes a root, so
+    only the request path is checked), which is why it read as "some people
+    can't get past onboarding" rather than "the server is broken".
+    **Fixed:** `res.sendFile("index.html", { root: DIST })` in
+    `server/index.ts` and `server/relay/relay-stub.ts` — the policy then
+    applies to the relative part only. **Regression:** a Tier-3 test
+    (`server/testing/launcher.e2e.ts`) copies the built `dist/` +
+    `dist-server/` into a manufactured `.nvm-like/` directory, boots the
+    daemon from there and asserts `/s/:id` → 200 with the real app shell;
+    mutation-checked (restoring the old line reproduces the 404).
+    **Why three verification layers missed it:** the repo checkout has no
+    dot-segment so Tier 3 structurally cannot see it; `yarn dev` serves the
+    SPA from Vite, so the daemon's fallback route is never exercised in
+    dev; and the cold-install check booted the daemon and read `--version`
+    without fetching a session URL. The lesson is narrow and worth keeping:
+    **only exercising the packaged artifact from a realistic install path
+    proves the packaged artifact.** Re-packed and re-installed; Kyle
+    confirmed a real session with his Claude API key on the fixed build.
+    `beta/mirafold.tgz` re-cut (sha256 `8f829513…`, was `a9fe4152…`) and
+    `beta/WELCOME.md` updated to match; ⬜ the Drive copy still serves the
+    broken build until Kyle re-uploads.
   - Finding #3 (Kyle, 2026-07-24, real phone — SERIOUS): starting a NEW
     session on mobile hung on "connecting…" forever, picker never showed;
     desktop fine. Root cause: the in-session "new" button opens a fresh tab

@@ -56,7 +56,10 @@ export function startRelayStub(
   const app = express();
   const DIST = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "dist");
   app.use(express.static(DIST));
-  app.get("/s/:id", (_req, res) => res.sendFile(path.join(DIST, "index.html")));
+  // { root: DIST }, not a joined absolute path — see the same call in
+  // server/index.ts: send's dotfile policy 404s any absolute path with a
+  // dot-segment, which is every nvm/asdf/volta global install.
+  app.get("/s/:id", (_req, res) => res.sendFile("index.html", { root: DIST }));
 
   const server = createServer(app);
   const pairs = new Map<string, Pair>();
