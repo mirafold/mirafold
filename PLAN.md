@@ -630,12 +630,15 @@ notifications are **not** part of the launch and are not sold until built.
     default. The bake-lands-WITH-the-gate constraint was satisfied — the
     gate has been ON in production since 2026-07-22. Verified: 9 unit
     tests (unentitled guard mutation-tested), Tiers 1+2 green, live boots
-    in all four modes. *Follow-up flagged, Kyle's call: production (Fly's
-    proxy) delivers refusal closes ~5s after open — locally 14ms — which
-    defeats relay-client's 400ms pair-confirm, so an INVALID/lapsed
-    license logs a false "paired", resets backoff, and churns at ~6s
-    forever; candidate fix is restoring the widening backoff on a known
-    refusal close.* (3) The codebase/npm/GitHub **rename**
+    in all four modes. *Follow-up ✅ FIXED same day, Kyle-directed
+    (`92acd37`): production (Fly's proxy) delivers refusal closes ~5s
+    after open — locally 14ms — which defeated relay-client's 400ms
+    pair-confirm, so an invalid/lapsed license logged a false "paired",
+    reset backoff, and churned at ~6s forever. The confirm timer now
+    earns only the "paired" log; the backoff decision moved to close (a
+    refusal never resets, a confirmed ordinary drop still does).
+    Mutation-tested pin + live-verified against production: gaps double
+    1s→16s+ toward the 30s ceiling.* (3) The codebase/npm/GitHub **rename**
     genui-shell → mirafold rides this step (domains bought 2026-07-11;
     the Fly app name stays `genui-relay`, internal rename optional).
   - Done when: a phone on cellular (not the home wifi) drives a home
