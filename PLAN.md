@@ -1820,6 +1820,22 @@ Full bodies + dated status in PLAN-ARCHIVE.md ("Moved 2026-07-19").
 
 ## Phase A — Accessibility (opened 2026-07-20; ✅ COMPLETE 2026-07-21)
 
+> **Correction 2026-07-30 — A.4's page was NOT live, for nine days.** The
+> public accessibility statement was written and committed 2026-07-21 into the
+> site repo's `staged/` (site `b42c286`), and never made it into `public/`
+> when the blackout lifted on 07-23. `mirafold.com/accessibility` 404'd, no
+> footer linked it, the sitemap didn't list it — while this plan recorded the
+> step as done and live. Restored, linked from every page's footer, and added
+> to the sitemap 2026-07-30 (site `c4426df`); **measured live: 200.** The
+> lesson is the umbrella's own: a page's existence is a fact about the world,
+> not about a plan, and the plan is exactly as current as the last time
+> someone typed. *Also refreshed on restore*: a new known limitation states
+> plainly that the last hands-on keyboard/screen-reader audit was 2026-07-21,
+> that the automated axe gate covers newer surfaces where they appear in it
+> (onboarding, transcript, Explorer, settings, connect-device, fleet, cockpit
+> desktop + phone — `assertAxeClean` call sites), and that the `!` input bar,
+> the pin dock and the ⤢ enlarged file view have not yet had the same pass.
+
 Kyle's directive, verbatim: *"i want mirafold to be friendly to all people
 capable of using it and to be ada compliant."* The ADA names no technical
 standard for software, so the operative target is **WCAG 2.1 Level AA**.
