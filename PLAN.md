@@ -1134,9 +1134,9 @@ with it. Both sequence BEFORE R.5.**
       re-verified zero on BOTH code repos; the relay repo's dedicated
       security-audit pass (gates its flip); tracked-docs disclosure review
       (Kyle reads what goes public: BUSINESS.md, PLAN + archive, git
-      history); theme value guards landed; Paddle payout details (Kyle —
-      money has nowhere to land without it); launch copy + Product Hunt
-      draft ready; R.6's real-hardware checks done.
+      history); theme value guards landed ✅; Paddle payout details ✅ (set
+      up — confirmed 2026-07-30); launch copy + Product Hunt draft ready ✅;
+      R.6's real-hardware checks done.
     - *T-0 morning, in order:* (1) `mirafold/mirafold` public → enable the
       DCO check + re-enable the cross-repo relay itest in CI; (2)
       `mirafold-relay` public (only if its audit passed); (3) Kyle pushes
