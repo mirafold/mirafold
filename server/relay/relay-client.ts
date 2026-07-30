@@ -44,16 +44,20 @@ export function relayRefusalReason(code: number): string | null {
 }
 
 // Dial-out backoff: a down relay is routine (offline laptop, relay deploy) —
-// it must cost nothing but a quiet, widening retry.
-const RECONNECT_MIN_MS = 1_000;
-const RECONNECT_MAX_MS = 30_000;
-// The relay refuses AFTER accepting the WS upgrade (a cap/entitlement close
-// arrives ms after 'open'), so a healthy pairing is "opened and NOT immediately
-// closed". We confirm success — the "paired" log AND the backoff reset — only
-// after staying open this long; an early refusal close cancels it, so a refused
-// dial-out neither claims to be paired nor resets its backoff (it keeps widening
-// against a wall it can't beat, e.g. a bad token).
-const PAIR_CONFIRM_MS = 400;
+// it must cost nothing but a quiet, widening retry. Env-tunable for the unit
+// test only; the defaults are the product values.
+const RECONNECT_MIN_MS = envInt("RELAY_RECONNECT_MIN_MS", 1_000);
+const RECONNECT_MAX_MS = envInt("RELAY_RECONNECT_MAX_MS", 30_000);
+// The relay refuses AFTER accepting the WS upgrade, so a healthy pairing is
+// "opened and NOT immediately closed". Staying open this long earns the
+// "paired" log — but NOT the backoff reset. That decision waits for the close,
+// where the close code is known: in production a proxy (Fly's) can deliver a
+// refusal close ~5 s after open (locally it's ms), long past any sane confirm
+// window, and a timer-based reset there meant an invalid/lapsed license
+// churn-dialed at ~6 s forever — false "paired", reset, refused, repeat
+// (found 2026-07-30, live against production). A refusal close never resets
+// backoff; a confirmed connection's ordinary drop still reconnects fast.
+const PAIR_CONFIRM_MS = envInt("RELAY_PAIR_CONFIRM_MS", 400);
 // Inbound envelope cap. Must cover the relay's own per-frame cap
 // (RELAY_MAX_PAYLOAD_BYTES — 8 MB default in the service and the stub alike),
 // NOT the local socket's: a frame the relay forwards but this socket refuses
@@ -143,6 +147,7 @@ export function startRelayClient(opts: {
     });
     sock = ws;
     let wasOpen = false;
+    let confirmed = false;
     let confirmTimer: ReturnType<typeof setTimeout> | undefined;
     const sendEnv = (env: DaemonToRelay) => {
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(env));
@@ -162,11 +167,12 @@ export function startRelayClient(opts: {
     };
     ws.on("open", () => {
       wasOpen = true;
-      // Success is confirmed only by staying open (see PAIR_CONFIRM_MS): a
-      // refusal close cancels this, so neither the "paired" log nor the backoff
-      // reset fires for a dial-out the relay turned away.
+      // Staying open earns the "paired" log only (see PAIR_CONFIRM_MS): the
+      // backoff reset is decided at close, where the close code says whether
+      // this was ever a healthy pairing — a slow-arriving refusal (Fly's
+      // proxy: ~5 s) must not have already reset it.
       confirmTimer = setTimeout(() => {
-        backoff = RECONNECT_MIN_MS;
+        confirmed = true;
         log.info(`paired with ${opts.url}`);
       }, PAIR_CONFIRM_MS);
     });
@@ -257,6 +263,11 @@ export function startRelayClient(opts: {
       if (refusal) log.info(`refused: ${refusal} — retrying`);
       else if (wasOpen) log.info(`connection lost — retrying`);
       if (code === CLOSE_UNENTITLED) refreshTokenNext = true;
+      // A confirmed connection that ended in an ordinary drop was healthy —
+      // the next dial starts from the floor. A REFUSAL never resets, however
+      // long the close took to arrive (a wall it can't beat, e.g. a lapsed
+      // license, keeps widening toward RECONNECT_MAX_MS instead of churning).
+      if (confirmed && !refusal) backoff = RECONNECT_MIN_MS;
       const t = setTimeout(() => void dial(pair), backoff);
       t.unref();
       backoff = Math.min(backoff * 2, RECONNECT_MAX_MS);
