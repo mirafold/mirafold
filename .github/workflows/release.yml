@@ -1,0 +1,92 @@
+name: Release
+
+# Publishes `mirafold` to npm — the R.5b provenance decision (2026-07-29,
+# adopted from beta tester 002's evaluation). The publish is machine-run so
+# the package carries a signed provenance attestation binding it to the exact
+# public commit + this workflow; users verify with `npm audit signatures`.
+#
+# Auth is npm TRUSTED PUBLISHING (OIDC): npmjs.com is configured to accept
+# `mirafold` publishes only from this workflow — identity-federated, NO npm
+# token stored anywhere, so the repo's no-secrets-in-CI bound (PLAN C.1)
+# holds and a stolen npm password can't publish. Until Kyle completes the
+# npmjs.com trusted-publisher form, a real publish from here fails auth —
+# that's the fail-closed direction.
+#
+# Launch morning (R.7): Kyle pushes the SIGNED release tag (tarball SHA-256
+# in the tag message) and this workflow does the rest — no hand-run
+# `npm publish`, ever. Rehearsal: workflow_dispatch runs everything up to a
+# `npm publish --dry-run`, which packs and reports without authenticating.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch: # rehearsal — dry-run only, never a real publish
+
+# id-token: write is what mints the OIDC token npm's trusted publishing
+# exchanges for a one-shot publish credential. contents stays read-only —
+# this job never writes to the repo; the GitHub Release (notes carry the
+# tarball SHA-256 from the job summary) is Kyle's hand-made step.
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    name: verify + publish with provenance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: yarn
+          registry-url: https://registry.npmjs.org
+      # Trusted publishing needs npm >= 11.5.1; Node 22 bundles an older npm.
+      - run: npm install -g npm@latest && npm --version
+      - run: yarn install --frozen-lockfile
+
+      # A tag that doesn't match package.json is a mis-cut release — refuse
+      # loudly before anything publishes. (Dispatch rehearsals skip this;
+      # there's no tag to match.)
+      - name: Tag ↔ version check
+        if: github.event_name == 'push'
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "tag v$TAG != package.json $PKG — refusing to publish" >&2
+            exit 1
+          fi
+
+      # The fast gates re-run here even though CI ran on the commit — a tag
+      # can point anywhere, and the publish must verify what it publishes.
+      # (tsconfig.ci.json == tsconfig.json minus the cross-repo sibling
+      # itest; drop the ci config here when the relay checkout lands in CI
+      # at the public flip.)
+      - run: yarn tsc -p tsconfig.ci.json --noEmit
+      - run: yarn test
+
+      # Pack once (prepack builds), record the tarball's SHA-256 in the job
+      # summary — Kyle pastes it into the GitHub Release notes to match the
+      # signed tag message.
+      - name: Pack + SHA-256
+        run: |
+          TARBALL="$(npm pack 2>/dev/null | tail -1)"
+          SHA="$(sha256sum "$TARBALL" | cut -d' ' -f1)"
+          echo "tarball: $TARBALL"
+          echo "sha256:  $SHA"
+          {
+            echo "### $TARBALL"
+            echo ""
+            echo "\`\`\`"
+            echo "sha256 $SHA"
+            echo "\`\`\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish (tag push — provenance over trusted publishing)
+        if: github.event_name == 'push'
+        run: npm publish --provenance --access public
+
+      - name: Dry-run publish (rehearsal)
+        if: github.event_name == 'workflow_dispatch'
+        run: npm publish --dry-run --access public
