@@ -1070,10 +1070,25 @@ with it. Both sequence BEFORE R.5.**
     §742.15(b) email to crypt@bis.doc.gov + enc@nsa.gov with the repo
     URLs. $0, five minutes, settles the notification question regardless
     of which reading of the 2021 rule is right (detail in K.11's note).
-  - **Gate on the relay flip (2026-07-15 audit):** before `genui-relay` goes
-    public in (b), run a dedicated security-audit pass over that repo — the
-    shell got its own on 2026-07-15; public security-marketed code gets
-    adversarial readers on day one, so the relay flips only after its pass.
+  - **Gate on the relay flip (2026-07-15 audit): ✅ SATISFIED 2026-07-30.**
+    Before `genui-relay` goes public in (b), run a dedicated security-audit
+    pass over that repo — public security-marketed code gets adversarial
+    readers on day one. *Done: a dedicated isolated-adversarial read of all
+    ~850 lines (the checklist-driven 07-27 tri-repo audit and the 07-29
+    bughunt were a different lens each; this one asked only "hostile reader,
+    how do I hurt the service"). **No new exploitable findings** — the three
+    prior waves closed the real vectors (the malformed-URL process crash
+    07-27, the byte-rate + backpressure gaps 07-27, the per-frame
+    log/re-forward amplification 07-29); the entitlement verifier is
+    correctly ordered (no attacker JSON reaches the parser pre-signature),
+    every send is readyState-guarded or error-caught, and the prod
+    dependency surface is exactly `ws` with `npm audit` clean. Accepted
+    residuals, all safe: refused-log `origin` is verbatim-but-JSON-escaped
+    attacker text (ops-useful, size-capped); the churn-gate sweep needs the
+    heartbeat (ARCHITECTURE §10, off-by-default gate); the WS upgrade
+    completes before the capacity cap refuses (inherent to clean
+    close-codes, socket-cap bounded). Suite 38/38. The relay may flip on
+    schedule.*
   - **Release provenance (adopted 2026-07-29, from beta tester 002's
     evaluation):** a public repo alone doesn't let anyone verify the
     published npm package was built FROM it — the two are separate uploads
