@@ -1,16 +1,27 @@
 # Mirafold
 
-A **faithful browser re-skin of terminal coding agents**. Mirafold puts a
-browser dashboard — with generative UI on top — onto whichever terminal agent
-you already use — **Claude Code, Codex, or Gemini CLI** — staying faithful
-to that agent: a Codex user gets **Codex** in the browser, never "Claude
-things". A full agentic engine — filesystem, bash, tools, a warm persistent
-session — runs behind a web front end, and the agent's output stream is treated
-as a **UI-instruction stream**: it paints streamed markdown and live registry components into an
-output zone, those components can act back through a server-mediated action
-bridge, and — when no component fits — the agent emits sandboxed arbitrary UI
-into a locked-down iframe. A fixed, trusted shell owns the prompt box, the
-socket, and all credentials, and the agent can never touch any of them.
+**Mirafold is a browser interface for the terminal coding agent you already
+use — Claude Code, Codex, or Gemini CLI — rendered faithfully, with
+generative UI on top.** The agent runs on your own machine, with your own
+credentials, settings, memory, and permission rules, exactly as in the
+terminal — a Codex user gets **Codex** in the browser, never "Claude
+things". As it works, the agent paints live charts, tables, checklists, and
+diffs into the session — components that stay live and can act back — and
+on Pro the same session travels to your phone through an end-to-end
+encrypted relay. Free and open source, MIT.
+
+> **Mirafold is in public beta** — new, moving fast, and issues are wanted:
+> the [issue tracker](https://github.com/mirafold/mirafold/issues) is the
+> front door for anything that looks wrong.
+
+Under the hood: a full agentic engine — filesystem, bash, tools, a warm
+persistent session — runs behind a web front end, and the agent's output
+stream is treated as a **UI-instruction stream**. It paints streamed markdown
+and live registry components into an output zone, those components act back
+through a server-mediated action bridge, and — when no component fits — the
+agent emits sandboxed arbitrary UI into a locked-down iframe. A fixed,
+trusted shell owns the prompt box, the socket, and all credentials, and the
+agent can never touch any of them.
 
 *Claude Code, Codex, and Gemini CLI are trademarks of their respective
 owners; Mirafold is not affiliated with or endorsed by Anthropic, OpenAI, or
