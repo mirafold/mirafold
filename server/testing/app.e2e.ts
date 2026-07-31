@@ -1959,6 +1959,40 @@ test("C.2: axe-core finds no serious/critical WCAG violations across the app", a
     await assertAxeClean(p, "files panel");
     await p.locator(".ab-files").click(); // close before the next surface
 
+    // 2c) The ⤢ enlarged file view (E.6) — a near-full-screen surface over a
+    // dimmed workspace, i.e. its own focus/labelling problem, swept for the
+    // first time 2026-07-30 (the accessibility statement named it as unswept).
+    await p.locator(".ab-files").click();
+    await p.waitForSelector(".files-panel .files-row");
+    await p.locator(".files-file-row").first().click();
+    await p.waitForSelector(".files-view .fv-content");
+    await p.locator(".files-enlarge").click();
+    await p.waitForSelector(".files-file.is-maximized");
+    await assertAxeClean(p, "enlarged file view");
+    await p.locator(".files-enlarge").click();
+    await p.waitForSelector(".files-file.is-maximized", { state: "detached" });
+    await p.locator(".ab-files").click(); // close the panel
+
+    // 2d) The pin dock — a live region of pinned components that outlives the
+    // turn that made them, and the one surface whose content the AGENT wrote.
+    const pinnable = p.locator(".turn-render").first();
+    await pinnable.hover();
+    await pinnable.locator(".pin-btn").click();
+    await p.waitForSelector(".pin-dock, .pin-stub");
+    await assertAxeClean(p, "pin dock");
+
+    // 2e) The `!` passthrough's stdin bar (4.9) — shell-owned, appears only
+    // for the issuing viewport, and masks itself on a password prompt. `sleep`
+    // holds it open long enough to sweep; Escape kills the command after.
+    await p.locator("textarea").click();
+    await p.keyboard.type("!sleep 20");
+    await p.keyboard.press("Enter");
+    await p.waitForSelector(".bang-bar-input");
+    await assertAxeClean(p, "bang input bar");
+    await p.locator(".bang-bar-input").click();
+    await p.keyboard.press("Escape"); // kill the command
+    await p.waitForSelector(".bang-bar-input", { state: "detached" });
+
     // 3) Settings / theme card (a dialog).
     await p.locator(".sb-settings").click();
     await p.waitForSelector("[role=dialog]");

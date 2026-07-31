@@ -1722,6 +1722,34 @@ with it. Both sequence BEFORE R.5.**
   - Done when: every box above is checked and the only remaining
     launch-blocking action is R.7's publish sequence itself.
 
+- [x] **Step R.6b — The packaged-artifact pass (opened + done 2026-07-30,
+  after the day's two blockers)** — `scripts/packaged-pass.mjs`: `npm pack`,
+  `npm i -g`, then drive the INSTALLED global through onboarding, session
+  creation, a hard reload of the session URL, generative-UI paint, the pin
+  dock, the `!` PTY, the Explorer, and a standalone start of
+  `dist-server/render-mcp.js` — nine checks, mock-forced, discovery off, no
+  model reached. **9/9 on 0.3.0.**
+  - Why it exists: both 2026-07-30 blockers (Finding #4's dot-path 404,
+    Finding #5's Gemini folder gate) were invisible to all three tiers by
+    construction — the checkout has no dot-segment, `yarn dev` serves the
+    front end from Vite so the daemon's own routes never execute, and the
+    cold-install check only read `--version`. Only an install shows them.
+  - NOT wired into `yarn test:e2e` on purpose: it drives a global install CI
+    doesn't have. It is a pre-release ritual — run it against the artifact
+    about to ship, i.e. immediately before the R.7 publish.
+
+- [ ] **Flake watch — one unidentified Tier-3 failure, 2026-07-30.** During
+  the accessibility sweep extension, one `yarn test:e2e` run reported 75/76
+  and the failing test's name was NOT captured; the next three runs were
+  76/76. So the rate is **1 in 4, identity unknown** — recorded rather than
+  waved off, because a green run and "didn't flake this time" are
+  indistinguishable. Do NOT chase it by changing code. Next action when it
+  recurs: the run must be captured (`yarn test:e2e 2>&1 | tee /tmp/e2e.txt`)
+  so the `not ok` line names the test; only then is there anything to
+  diagnose. Suspicion order if it does recur: the newly added sweep steps
+  (the `!sleep 20` + Escape kill, and the pin/hover) are the newest timing
+  surfaces in that file.
+
 - [ ] **Step R.7 — Launch day (the M1+M2+M3 splash, one event)**
   - Goal: everything fires together and the signals start reading.
   - **Launch-week provider-terms re-check (K.3's standing item):** within

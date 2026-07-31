@@ -78,7 +78,15 @@ child.stdout.on("data", (buf) => {
   if (m) {
     opened = true;
     bootTail = "";
-    if (!noOpen) openBrowser(m[0]);
+    if (!noOpen) {
+      // Say it, because the open is often invisible: a compositor won't let a
+      // background process raise a window, so an already-running browser just
+      // gains a tab somewhere behind everything. Without this line a silent
+      // success and a failed opener look identical, and the user reads a
+      // working launch as broken (2026-07-30, Kyle's own first run).
+      console.log("[mirafold] opening it in your browser — check your tabs if no window appears");
+      openBrowser(m[0]);
+    }
   }
 });
 child.on("exit", (code, signal) => process.exit(signal ? 1 : (code ?? 0)));

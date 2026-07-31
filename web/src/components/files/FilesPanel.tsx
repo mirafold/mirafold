@@ -421,7 +421,20 @@ export function FilesPanel({
                   </span>
                 )}
               </div>
-              <div className="files-view">
+              {/* tabIndex + a named region because this div SCROLLS
+                  (styles.css `.files-view { overflow: auto }`): without a tab
+                  stop, a keyboard-only user could open a file or a diff and
+                  never scroll it — axe `scrollable-region-focusable`, serious,
+                  found 2026-07-30 when the sweep was extended to the enlarged
+                  view. A focusable region needs an accessible name, hence
+                  role + label. Costs one tab stop in the Explorer, which is
+                  the point: the content is now reachable. */}
+              <div
+                className="files-view"
+                tabIndex={0}
+                role="region"
+                aria-label={`${selected.path} — ${mode === "diff" ? "diff" : "contents"}`}
+              >
                 <FileView state={view} />
               </div>
               {/* Desktop-only (the phone frame is already full-screen): floats
