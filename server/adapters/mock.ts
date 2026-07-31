@@ -509,6 +509,7 @@ export class MockSession implements AgentSession {
       if (/updat/i.test(text)) return this.playUpdatingArtifact();
       return this.playBridgeArtifact();
     }
+    if (/fail the turn|turn error/i.test(text)) return this.playTurnError();
     if (/dangerous|sudo|rm -rf/i.test(text)) return this.playPermissionAsk();
     if (/notice|attribution/i.test(text)) return this.playNotices();
     if (/question|choose|decide/i.test(text)) return this.playQuestion();
@@ -538,6 +539,20 @@ export class MockSession implements AgentSession {
 
   close() {
     this.abandonTurn();
+  }
+
+  /** A turn that dies the way a real engine dies: `error` and NO `turn_end`
+   *  (2026-07-30). Every real adapter can produce this — an API failure, a
+   *  killed CLI, a dropped frame — and the daemon already treats it as
+   *  terminal (registry.ts flips the session to idle). It exists here so the
+   *  shell's recovery is pinned by a deterministic test instead of the
+   *  1-in-4 Tier-3 wedge that exposed it. */
+  private playTurnError() {
+    this.beginTurn();
+    this.schedule(
+      () => this.emit({ type: "error", message: "the engine died mid-turn (scripted)" }),
+      160,
+    );
   }
 
   /** Deterministic 2.2 hook: a card with action buttons so the

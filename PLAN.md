@@ -1738,6 +1738,65 @@ with it. Both sequence BEFORE R.5.**
     doesn't have. It is a pre-release ritual — run it against the artifact
     about to ship, i.e. immediately before the R.7 publish.
 
+- [x] **A turn that ends by `error` wedged the activity indicator forever —
+  found and FIXED 2026-07-30** (chasing the Tier-3 flake below; the two are
+  related in symptom, NOT in cause).
+  - **The defect:** `server/sessions/registry.ts` treats `turn_end` OR
+    `error` as terminal — that is what flips the session to idle and clears
+    the burst gate. The shell's counter (`web/src/turn-busy.ts`) decremented
+    only on `turn_end`. So any turn dying by error — an adapter crash, an
+    engine killed mid-stream, a dropped frame — left the count permanently
+    high: the indicator read "working…" for the LIFE of the session, on
+    every viewport, while the daemon knew it was idle. **A reload did not
+    heal it**, because replay rebuilds the same imbalance out of history.
+  - **The fix:** the client mirrors the daemon's terminal set, and
+    `Shell.tsx`'s error branch drops the indicator the way `turn_end` does.
+    Tradeoff, stated in the code: with two turns genuinely in flight an
+    error may read idle a beat early — which self-heals on the next activity
+    frame, where the wedge it replaces never healed at all.
+  - **Pinned:** four Tier-1 cases in `turn-busy.test.ts` (mutation-checked —
+    reverting the terminal set fails three), plus a Tier-3 test driving a
+    new deterministic mock scenario (`playTurnError`: `status` then `error`,
+    no `turn_end`) through the live path AND a reload, in its own session.
+    That converts a 1-in-4 heisenbug class into a test that always runs.
+
+- [ ] **Flake watch — one unterminated turn in the artifact chain (Tier-3
+  test `update-in-place artifacts survive the liveness tripwire`).** STILL
+  OPEN, and NOT the bug above: the captured trace shows **21 `user_prompt`
+  against 20 `turn_end`, with ZERO `error` and ZERO `bang_end` frames** —
+  a turn with no terminal frame of any kind. FIFO attribution points at
+  `burst-alpha`, the prompt the artifact iframe's bridge issues, though
+  interleaving makes that name the weakest part of the finding.
+  - **Ruled out by probe, not by reading:** the replay floor on an idle
+    reload (three rounds, clean); the burst gate inflating the count (it
+    refuses BEFORE broadcasting `user_prompt`); mid-turn queueing in general
+    (a socket probe sending a prompt 300ms into a running turn returns
+    `{ups: 2, ends: 2}`); and every mock artifact scenario — `playArtifact`,
+    `playBridgeArtifact`, `playUpdatingArtifact` all call `endTurn`.
+  - **The tool for next time already exists:** `web/src/turn-trace.ts` is
+    armed by the e2e harness and `waitTurnIdle` dumps it on any wedge —
+    frame types, replay flags, counts, and the prompt prefix. Reproduce with
+    `node --import tsx --test server/testing/app.e2e.ts` after a `yarn
+    build` (~64% per run in isolation, far higher than in a full Tier-3).
+  - **Cost note (Kyle, 2026-07-30):** this consumed a large share of a
+    session. If it recurs, read the dumped trace — do not re-derive it.
+
+- [x] **Step R.6b — The packaged-artifact pass (opened + done 2026-07-30,
+  after the day's two blockers)** — `scripts/packaged-pass.mjs`: `npm pack`,
+  `npm i -g`, then drive the INSTALLED global through onboarding, session
+  creation, a hard reload of the session URL, generative-UI paint, the pin
+  dock, the `!` PTY, the Explorer, and a standalone start of
+  `dist-server/render-mcp.js` — nine checks, mock-forced, discovery off, no
+  model reached. **9/9 on 0.3.0.**
+  - Why it exists: both 2026-07-30 blockers (Finding #4's dot-path 404,
+    Finding #5's Gemini folder gate) were invisible to all three tiers by
+    construction — the checkout has no dot-segment, `yarn dev` serves the
+    front end from Vite so the daemon's own routes never execute, and the
+    cold-install check only read `--version`. Only an install shows them.
+  - NOT wired into `yarn test:e2e` on purpose: it drives a global install CI
+    doesn't have. It is a pre-release ritual — run it against the artifact
+    about to ship, i.e. immediately before the R.7 publish.
+
 - [ ] **Flake watch — Tier-3 test 36 wedges on a stuck activity indicator
   (2026-07-30; IDENTIFIED, cause not yet proven — do not chase blind).**
   - **The test:** `2026-07-29 update-in-place artifacts survive the liveness

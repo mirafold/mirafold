@@ -10,6 +10,7 @@ import { FilesPanel } from "./files/FilesPanel";
 import { StatusBar, type Usage } from "./StatusBar";
 import { createSessionBus } from "../session-bus";
 import { nextOpenTurns } from "../turn-busy";
+import { traceTurn } from "../turn-trace";
 import {
   MODE_STORAGE_KEY,
   THEMES,
@@ -187,7 +188,9 @@ export function Shell() {
         // the wasConnected guard below blocks for "Reconnected"
         // (2026-07-29 bughunt).
         const live = !("replay" in m && m.replay);
+        const openBefore = openTurns.current;
         openTurns.current = nextOpenTurns(openTurns.current, m.type, !live);
+        traceTurn(m.type, !live, openBefore, openTurns.current, m.type === "user_prompt" ? m.text : undefined);
         if (m.type === "user_prompt") {
           setBusy(true);
           setActivity({ state: "thinking" });
@@ -267,6 +270,13 @@ export function Shell() {
           setNotices((n) => ({ ...n, refused: m.message, onboarding: m.message }));
           announce(m.message, true);
         } else if (m.type === "error") {
+          // An error ENDS the turn — the daemon says so (registry.ts flips the
+          // session to idle on it), so the indicator must come down here too.
+          // Without this the shell showed "working…" for the life of the
+          // session after any errored turn, and a reload replayed the same
+          // imbalance rather than clearing it (2026-07-30).
+          setBusy(openTurns.current > 0);
+          setActivity(null);
           // Only the onboarding card consumes this; in-session errors already
           // render in the output zone.
           setNotices((n) => ({ ...n, onboarding: m.message }));

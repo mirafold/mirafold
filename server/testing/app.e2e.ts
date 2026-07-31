@@ -70,6 +70,13 @@ test("no token → 403, nothing served", async () => {
 
 test("?token= mints the cookie, cleans the URL, boots the shell", async () => {
   page = await browser.newPage();
+  // Arm the open-turn trace for every document this page loads (flake watch,
+  // 2026-07-30): the counter behind the activity indicator wedged above zero
+  // and only the frame sequence can say which frame did it. Off in every
+  // other context — web/src/turn-trace.ts records nothing unless this exists.
+  await page.addInitScript(() => {
+    (window as unknown as { __MIRAFOLD_TURN_TRACE__: string[] }).__MIRAFOLD_TURN_TRACE__ = [];
+  });
   await page.goto(`${base}/?token=${TOKEN}`);
   assert.equal(page.url(), `${base}/`); // token traded for the cookie, gone from the bar
   const cookies = await page.context().cookies(base);
@@ -1038,10 +1045,75 @@ const waitTurnIdle = async (p: Page, where: string) => {
       tail: [...document.querySelectorAll(".turn-user, .turn-assistant, .turn-tool, .bang-block")]
         .slice(-5)
         .map((n) => (n.className + " :: " + (n.textContent ?? "")).replace(/\s+/g, " ").slice(0, 110)),
+      // The counter's own history: `type[*=replayed] from->to`. The wedge is
+      // whichever frame raised the count with nothing to lower it.
+      // The WHOLE ring, run-length compressed ("text_delta* 2->2 ×17"), so
+      // the imbalance is visible from page load rather than from an
+      // arbitrary tail window.
+      turnTrace: (() => {
+        const raw = (window as unknown as { __MIRAFOLD_TURN_TRACE__?: string[] }).__MIRAFOLD_TURN_TRACE__ ?? [];
+        const out: string[] = [];
+        for (const e of raw) {
+          const last = out[out.length - 1];
+          if (last && last.startsWith(e)) {
+            const n = Number(last.slice(e.length).replace(" ×", "")) || 1;
+            out[out.length - 1] = `${e} ×${n + 1}`;
+          } else out.push(e);
+        }
+        return out;
+      })(),
     }));
     throw new Error(`${where}: the activity indicator never cleared — ${JSON.stringify(snap, null, 1)}`);
   }
 };
+
+test("2026-07-30 a turn that dies by error leaves the shell idle, not wedged on 'working…'", async () => {
+  // The wedge this pins was a 1-in-4 Tier-3 flake until its trace was read:
+  // the daemon calls `error` terminal (registry.ts → status idle, burst gate
+  // cleared) while the shell only decremented on `turn_end`. One errored turn
+  // and the indicator read "working…" for the life of the session — and a
+  // reload did NOT heal it, because replay rebuilds the imbalance from
+  // history. Both halves are asserted: live, and after a reload.
+  //
+  // Its OWN session, deliberately: the shared one carries a separate,
+  // still-unexplained unterminated turn from the artifact chain (PLAN's
+  // flake-watch item), and asserting against that history would test
+  // something other than what this test claims.
+  const shared = page.url(); // hand it back at the end
+  await page.goto(`${base}/?new=1`);
+  await page.waitForSelector(".onb-agent");
+  await page.locator(".onb-agent", { hasText: "Claude Code" }).click();
+  await page.waitForURL(/\/s\/[\w-]+/);
+  const errSession = page.url();
+
+  await page.locator("textarea").click();
+  await page.keyboard.type("fail the turn");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector("text=the engine died mid-turn", { timeout: 30_000 });
+  await page.waitForSelector(".activity-line", { state: "detached", timeout: 10_000 });
+
+  // The next turn still works — a phantom open turn would also poison the
+  // daemon's mid-turn burst gate for everything after it.
+  await page.locator("textarea").click();
+  await page.keyboard.type("hello there");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector(".activity-line", { timeout: 30_000 });
+  await page.waitForSelector(".activity-line", { state: "detached", timeout: 30_000 });
+
+  // …and the imbalance must not come back out of replay on the next attach.
+  await page.goto(errSession);
+  await page.waitForSelector(".turn-assistant", { timeout: 30_000 });
+  await page.waitForTimeout(700);
+  assert.equal(
+    await page.locator(".activity-line").count(),
+    0,
+    "replaying an errored turn re-wedged the indicator",
+  );
+
+  // Hand the shared session back to the tests that follow.
+  await page.goto(shared);
+  await page.waitForSelector("textarea", { timeout: 30_000 });
+});
 
 test("2026-07-29 update-in-place artifacts survive the liveness tripwire", async () => {
   // The mock re-sends ONE artifact id with three htmls, each update landing

@@ -17,9 +17,27 @@
 
 const ACTIVITY_TYPES = new Set(["status", "thinking_delta", "text_delta", "tool_use"]);
 
+// Terminal for a turn — the SAME set the daemon uses to decide a session went
+// idle and to clear its burst gate (`server/sessions/registry.ts`: "turn_end
+// || error → idle"). Mirroring it is the point: when the two disagree, the
+// daemon knows the session is idle while the shell shows "working…" forever.
+//
+// Why forever, and why this matters (2026-07-30, found in a Tier-3 wedge):
+// a turn that ends by `error` — an adapter crash, an engine dying mid-stream,
+// a dropped frame — emits no `turn_end`, so the count never came down. A
+// reload does NOT heal it either: replay reconstructs the same imbalance out
+// of history, so the indicator reads busy for the life of that session, on
+// every viewport.
+//
+// The tradeoff, stated plainly: with two turns genuinely in flight, an error
+// closing one may read idle a beat early. That self-heals on the very next
+// activity frame (Shell re-arms busy on any of ACTIVITY_TYPES), whereas the
+// wedge it replaces never healed at all. Transient wrong beats permanent wrong.
+const TERMINAL_TYPES = new Set(["turn_end", "error"]);
+
 export function nextOpenTurns(current: number, msgType: string, replayed = false): number {
   if (msgType === "user_prompt") return current + 1;
-  if (msgType === "turn_end") return Math.max(0, current - 1);
+  if (TERMINAL_TYPES.has(msgType)) return Math.max(0, current - 1);
   if (replayed && ACTIVITY_TYPES.has(msgType)) return Math.max(current, 1);
   return current;
 }

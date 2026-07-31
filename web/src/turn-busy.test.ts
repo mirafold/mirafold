@@ -61,3 +61,37 @@ test("turn_end never goes negative; unrelated messages change nothing", () => {
   assert.equal(nextOpenTurns(3, "render"), 3);
   assert.equal(nextOpenTurns(0, "usage"), 0);
 });
+
+// 2026-07-30: `error` is terminal for a turn, exactly as it is for the daemon
+// (`registry.ts`: turn_end || error → idle + burst gate cleared). Found by a
+// Tier-3 wedge whose trace showed 21 user_prompt frames against 20 turn_end:
+// one turn had ended by error, the count never came down, and the indicator
+// read "working…" with no way back — a reload replays the same imbalance.
+test("an error closes the turn it ends — the indicator can come down", () => {
+  let n = run(0, ["user_prompt", "status", "text_delta"]);
+  assert.equal(n, 1, "the turn is open");
+  n = nextOpenTurns(n, "error");
+  assert.equal(n, 0, "an errored turn is a closed turn");
+});
+
+test("error then turn_end (the adapters that emit both) never goes negative", () => {
+  // The Gemini adapter surfaces a failed turn as status → error → turn_end.
+  assert.equal(run(0, ["user_prompt", "error", "turn_end"]), 0);
+  assert.equal(nextOpenTurns(0, "error"), 0, "an error with nothing open changes nothing");
+});
+
+test("a queued turn survives another turn's error", () => {
+  let n = run(0, ["user_prompt", "user_prompt"]);
+  assert.equal(n, 2);
+  n = nextOpenTurns(n, "error");
+  assert.equal(n, 1, "the still-running turn keeps the indicator up");
+});
+
+// The wedge itself, as a sequence: this is the exact shape the Tier-3 trace
+// caught — an unterminated turn followed by a normal one — and the assertion
+// is that the shell ends up idle rather than stuck.
+test("a turn that ends by error does not wedge the counter for the next turn", () => {
+  let n = run(0, ["user_prompt", "status", "error"]); // turn 1 dies
+  n = run(n, ["user_prompt", "status", "text_delta", "turn_end"]); // turn 2 is normal
+  assert.equal(n, 0, "no phantom turn left counting");
+});
