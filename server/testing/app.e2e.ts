@@ -1019,11 +1019,35 @@ test("2026-07-29 reload replays history silently — no re-announced turns in th
   await page.waitForSelector("textarea", { timeout: 30_000 });
 });
 
+// Flake instrumentation (2026-07-30). Waiting for the activity indicator to
+// clear is a PRECONDITION at two sites, and when it timed out — once in seven
+// full Tier-3 runs — the message said only "still visible after 63 polls".
+// That cannot distinguish the two candidate causes, which differ in kind: a
+// turn that never ended (test/mock timing) versus an indicator that stuck
+// after turn_end (a real 4.14 UI bug). So capture the page's own account of
+// itself when it fires. Diagnostic only — it changes no assertion.
+const waitTurnIdle = async (p: Page, where: string) => {
+  try {
+    await p.waitForSelector(".activity-line", { state: "detached", timeout: 30_000 });
+  } catch {
+    const snap = await p.evaluate(() => ({
+      path: location.pathname,
+      activity: document.querySelector(".activity-line")?.textContent?.trim() ?? null,
+      politeRegion: document.querySelector('[role="status"]')?.textContent?.trim() ?? null,
+      promptDisabled: (document.querySelector("textarea") as HTMLTextAreaElement | null)?.disabled ?? null,
+      tail: [...document.querySelectorAll(".turn-user, .turn-assistant, .turn-tool, .bang-block")]
+        .slice(-5)
+        .map((n) => (n.className + " :: " + (n.textContent ?? "")).replace(/\s+/g, " ").slice(0, 110)),
+    }));
+    throw new Error(`${where}: the activity indicator never cleared — ${JSON.stringify(snap, null, 1)}`);
+  }
+};
+
 test("2026-07-29 update-in-place artifacts survive the liveness tripwire", async () => {
   // The mock re-sends ONE artifact id with three htmls, each update landing
   // inside the liveness grace window — a stale deadline from an earlier
   // html's load used to kill the healthy update as "navigation".
-  await page.waitForSelector(".activity-line", { state: "detached", timeout: 30_000 });
+  await waitTurnIdle(page, "update-in-place artifacts precondition");
   await page.locator("textarea").click();
   await page.keyboard.type("show me an updating artifact");
   await page.keyboard.press("Enter");

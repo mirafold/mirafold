@@ -1738,17 +1738,42 @@ with it. Both sequence BEFORE R.5.**
     doesn't have. It is a pre-release ritual — run it against the artifact
     about to ship, i.e. immediately before the R.7 publish.
 
-- [ ] **Flake watch — one unidentified Tier-3 failure, 2026-07-30.** During
-  the accessibility sweep extension, one `yarn test:e2e` run reported 75/76
-  and the failing test's name was NOT captured; the next three runs were
-  76/76. So the rate is **1 in 4, identity unknown** — recorded rather than
-  waved off, because a green run and "didn't flake this time" are
-  indistinguishable. Do NOT chase it by changing code. Next action when it
-  recurs: the run must be captured (`yarn test:e2e 2>&1 | tee /tmp/e2e.txt`)
-  so the `not ok` line names the test; only then is there anything to
-  diagnose. Suspicion order if it does recur: the newly added sweep steps
-  (the `!sleep 20` + Escape kill, and the pin/hover) are the newest timing
-  surfaces in that file.
+- [ ] **Flake watch — Tier-3 test 36 wedges on a stuck activity indicator
+  (2026-07-30; IDENTIFIED, cause not yet proven — do not chase blind).**
+  - **The test:** `2026-07-29 update-in-place artifacts survive the liveness
+    tripwire` (`server/testing/app.e2e.ts`). It fails in its PRECONDITION,
+    not its subject: the wait for the previous turn's activity indicator to
+    clear. Rate ~1 in 4–7 full runs.
+  - **What the instrumentation caught** (`waitTurnIdle`, added same day —
+    diagnostic only, changes no assertion): `activity: "✢working…(30s)"`,
+    i.e. the indicator polled visible for the entire 30s, WHILE the polite
+    live region already held the finished response — and that region only
+    speaks at `turn_end`. So the turn ended and the indicator did not clear.
+    That rules out "a turn never ended" and puts it on the shell's
+    open-turn counter. Prompt box was enabled; last five transcript entries
+    were the artifact tests' turns (`show me a navigating artifact`, then
+    the iframe-issued `burst-alpha`).
+  - **Falsified:** the obvious reading of `web/src/turn-busy.ts`'s replay
+    floor (`replayed && ACTIVITY_TYPES → max(current, 1)`) — that a plain
+    attach-with-replay of an IDLE session forces the count to 1 with no
+    `turn_end` to follow. Probed directly against the built daemon: turn,
+    idle, reload, ×3 — indicator clear every time. Not it, at least not on
+    the straight-line path.
+  - **Still open, and where to look next:** the failing sequence involves
+    artifact turns plus an iframe-issued prompt (`burst-alpha`) whose
+    sibling (`burst-beta`) is deliberately dropped by the 400ms bridge rate
+    limit. `turn-busy.ts`'s own comment names this exact hazard — "a LIVE
+    straggler after a final turn_end … must not re-open a closed turn, or
+    busy wedges on with no turn_end ever coming". The next diagnostic is
+    the frame sequence itself: record every `(type, replayed)` the client
+    applies plus the running count, and read it back at the wedge. Do NOT
+    "fix" the floor rule without that — it was written to close a real gap
+    (a queued follow-up losing the indicator across an engine roll-in), and
+    an unproven change would trade one wedge for that one.
+  - **Not caused by 2026-07-30's work:** the extended axe sweep runs later
+    in the file with its own daemon and page, and the `FilesPanel`
+    tabIndex/role change touches the Explorer's scroll container. The
+    failure predates both.
 
 - [ ] **Step R.7 — Launch day (the M1+M2+M3 splash, one event)**
   - Goal: everything fires together and the signals start reading.
