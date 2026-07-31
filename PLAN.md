@@ -1001,8 +1001,8 @@ with it. Both sequence BEFORE R.5.**
     decision above.)*
 
 - [x] **Step R.5b — Release strategy, locked (all three repos)** — ✅ **DONE
-  2026-07-31: ratified with dates** (Saturday 2026-08-01 evening public +
-  publish · Sunday–Monday quiet window · Tuesday 2026-08-04 announcement).
+  2026-07-31: ratified, and EXECUTED the same evening** (Friday 2026-07-31
+  public + publish · Sat–Mon quiet window · Tuesday 2026-08-04 announcement).
   Full sequence, owners, and rollback levers in the RATIFIED block below.
   *(a decision to make + write down, not a build; do before R.6's final
   week)*
@@ -1211,23 +1211,36 @@ with it. Both sequence BEFORE R.5.**
     the flip, per the sweep note above); LTE phone pass, theme guards,
     Paddle payout, launch copy + Product Hunt draft all done.
 
-    **The dates:**
-    - **Saturday 2026-08-01, evening (start ~8–9pm)** — everything goes
-      public and gets published. No announcement.
-    - **Sunday 08-02 + Monday 08-03** — the quiet window. A handful of
-      personally-invited testers install via the real public path
+    **The dates (moved EARLIER by one day — Kyle, 2026-07-31 evening, after
+    ratifying Saturday the same day; see the note below):**
+    - **Friday 2026-07-31, evening** — everything goes public and gets
+      published. No announcement.
+    - **Saturday 08-01 + Sunday 08-02 + Monday 08-03** — the quiet window. A
+      handful of personally-invited testers install via the real public path
       (`npm i -g mirafold`) and use it. This IS R.5c's user-testing round.
     - **Tuesday 2026-08-04, US morning** — the single announcement: X, Show
       HN, Product Hunt, r/ClaudeAI, r/LocalLLaMA.
 
-    *On the window: Saturday night → Tuesday morning is ~2.5 days, which
-    stretches the amendment's "AT MOST 2 days" bound. Flagged and accepted
-    by Kyle 2026-07-31 — the bound was self-imposed and these dates
-    supersede it. Saturday night was chosen over Sunday deliberately: it
-    buys two FULL quiet days instead of one and a half, and it is the
-    lowest-traffic stretch of the week to go public.*
+    *On the window: it was first set at Saturday night → Tuesday (~2.5
+    days), then moved a day earlier to Friday night → Tuesday (~3.5 days)
+    when Kyle asked whether the longer gap hurt. It does not: the window
+    exists so invited testers exercise the real public install path before
+    strangers do, and more days serve that purpose rather than eroding it.
+    Nothing decays while it sits — the package is on npm, the repos are
+    public, and nobody is looking. Both figures stretch the amendment's "AT
+    MOST 2 days" bound, which was self-imposed; these dates supersede it.
+    Checked and dismissed as non-factors: staleness (neither Hacker News
+    nor Product Hunt weighs how long something has been available — Show HN
+    only requires that YOU are showing something people can try, and the
+    443-commit history was already public-facing either way) and
+    pre-emption (a stranger posting the link first is negligible; the one
+    plausible path is an invited tester, addressed by telling them it is
+    not announced until Tuesday). The residual risk, accepted: Hacker News
+    gives a URL roughly one shot, so if someone else posts it and it lands
+    well, that run is spent and Kyle would not be in the thread — the
+    fallback is that `mirafold.com` is a separate URL from the repo.*
 
-    **Saturday's steps, in order, with owner.** Assistant runs 1, 5, 7, 8;
+    **Launch-evening steps, in order, with owner.** Assistant runs 1, 5, 7, 8;
     Kyle runs 2, 3, 4, 6 — all four are GitHub-settings or signing-key
     actions, his hands by the privileged-mutation rule.
     1. Confirm Dependabot still zero on BOTH code repos — *assistant*.
