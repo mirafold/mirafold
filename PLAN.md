@@ -1240,6 +1240,48 @@ with it. Both sequence BEFORE R.5.**
     well, that run is spent and Kyle would not be in the thread — the
     fallback is that `mirafold.com` is a separate URL from the repo.*
 
+    ### ✅ EXECUTED — Friday 2026-07-31 evening. Mirafold is PUBLIC and LIVE.
+    Measured at each step, not assumed:
+    - Both repos **public** (API-confirmed): `mirafold/mirafold`,
+      `mirafold/mirafold-relay`. Dependabot **0 open on both** at the flip.
+    - DCO sign-off app installed on both (shows on PRs; it does not BLOCK a
+      merge until branch protection lands — deliberately deferred to after
+      Tuesday so launch weekend keeps a friction-free hotfix path).
+    - Signed tag **`v0.3.0`** pushed at commit
+      **`910cb246f04606a0e7f0274358122eabbbe43fea`**. Release run
+      **`30663563802`** — success in **1m32s**, every step green through
+      "Publish (tag push — provenance over trusted publishing)".
+    - **`mirafold@0.3.0` is on npm.** Published tarball SHA-256
+      **`804bd065ba51b156c59d8f2a7bf1e5a50bffa547a031c7830cf1164ee7f60518`**
+      (registry download re-hashed locally — matches CI byte for byte).
+      17 files, 5,063,377 bytes unpacked.
+    - **Provenance verified end-to-end**, which is the whole point of R.5b:
+      the SLSA attestation binds `pkg:npm/mirafold@0.3.0` to source
+      `git+https://github.com/mirafold/mirafold@refs/tags/v0.3.0`, commit
+      `910cb246…`, built by `.github/workflows/release.yml`. A skeptic can
+      now prove the package came from the public source. `npm audit
+      signatures` on a cold install: 116/116 verified registry signatures,
+      16 verified attestations, 0 invalid, 0 missing.
+    - **Cold-install proof** (fresh dir, package pulled from the public
+      registry, no repo checkout): `--version` → `0.3.0`; daemon boots,
+      serves `HTTP 200` with `<title>Mirafold</title>`; the per-launch auth
+      token → cookie redirect works; a busy port rolls to the next one; with
+      no license key it correctly says remote access is off. The
+      `@parcel/watcher` install-script warning appeared exactly as the
+      README documents.
+    - `mirafold.com/beta` rewritten to the public path and **verified live**
+      (site commit `7e46469`): `npm i -g mirafold`, `npm audit signatures`,
+      the new SHA-256, and a link to the now-public repo. Every tester's
+      existing WELCOME.md link keeps working and upgrades them.
+
+    **Still owed after this (see the resume list in ROADMAP.md):** the
+    GitHub Release for `v0.3.0` with the SHA-256 in the notes (Kyle's
+    hand-made step, per the workflow's own comment); re-enabling the
+    cross-repo relay itest in CI now that the relay is public; tester
+    invites for the quiet window; Tuesday's announcement; then branch
+    protection + the `next`/`release/x.y.z` model, and the BIS §742.15(b)
+    email.
+
     **Launch-evening steps, in order, with owner.** Assistant runs 1, 5, 7, 8;
     Kyle runs 2, 3, 4, 6 — all four are GitHub-settings or signing-key
     actions, his hands by the privileged-mutation rule.
