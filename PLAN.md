@@ -1760,6 +1760,87 @@ with it. Both sequence BEFORE R.5.**
     no `turn_end`) through the live path AND a reload, in its own session.
     That converts a 1-in-4 heisenbug class into a test that always runs.
 
+- [x] **The artifact-chain flake — ROOT-CAUSED AND FIXED 2026-07-30.** The
+  Tier-3 wedge (`update-in-place artifacts survive the liveness tripwire`,
+  ~1 in 4 in a full run, ~64% running `app.e2e.ts` alone) was
+  `MockSession.interrupt()`: it calls `abandonTurn()`, which clears the
+  ENTIRE timer table — including a queued turn's scheduled `turn_end` — then
+  emits exactly one. One turn is orphaned, the shell's counter never comes
+  down, and the indicator sticks on "working…" for the session's life.
+  - **Proven, not inferred.** A socket probe: two overlapping turns + one
+    interrupt → `{user_prompt: 2, turn_end: 1}`. The daemon's own verbose
+    frame log showed the same imbalance server-side (22 prompts / 21 ends,
+    zero `error`, zero `bang_end`), which ruled out transport, the replay
+    ring and delta coalescing in one measurement.
+  - **Two open turns is the NORMAL case:** the burst gate deliberately
+    admits one mid-turn prompt (terminal parity), so the trigger is "type,
+    type again, hit stop".
+  - **Real adapters do not share the shape** — claude-code emits after the
+    engine's abort settles, gemini-cli on child close, codex on stream end;
+    each turn completes on its own path rather than through a shared timer
+    table. That is why this stayed a fixture-only symptom.
+  - **Fix + pin:** the mock emits one `turn_end` per open turn (floor of
+    one, matching claude-code's deliberate extra after an abort), and
+    `server/sessions/interrupt-turn-grammar.itest.ts` asserts the invariant
+    over a real socket — every admitted `user_prompt` answered by exactly
+    one `turn_end`, with an interrupt and without. Mutation-checked.
+    **Verified: 0 failures in 8 runs of the file that failed ~64%.**
+  - **What it cost, and the lesson:** most of a session, nearly all of it
+    before the instrumentation existed. The trace
+    (`web/src/turn-trace.ts` + `waitTurnIdle`'s two-sided dump) is what
+    turned it from guessing into reading, and it should have been the first
+    move rather than the fifth. Both halves stay in the tree for next time.
+
+- [ ] **Two timing-fragile Tier-3 assertions, still flaky (2026-07-30).**
+  Separate from the wedge above and NOT product bugs — both assert on
+  wall-clock rendering rather than on state, in headless Chrome on a loaded
+  machine:
+  - `a busy turn never looks idle…` demands a CSS animation advance at
+    least one frame within a 128ms sample. Fix: assert the busy STATE the
+    indicator derives from, not the glyph's motion.
+  - `diagram component: mermaid renders as SVG inside the sandbox` — seen
+    twice; mermaid lazy-loads inside a sandboxed iframe.
+  Neither is worth a hunt; both are worth a rewrite when someone is in the
+  file. Combined they are the residual "sometimes 76/77".
+
+- [x] **Step R.6b — The packaged-artifact pass (opened + done 2026-07-30,
+  after the day's two blockers)** — `scripts/packaged-pass.mjs`: `npm pack`,
+  `npm i -g`, then drive the INSTALLED global through onboarding, session
+  creation, a hard reload of the session URL, generative-UI paint, the pin
+  dock, the `!` PTY, the Explorer, and a standalone start of
+  `dist-server/render-mcp.js` — nine checks, mock-forced, discovery off, no
+  model reached. **9/9 on 0.3.0.**
+  - Why it exists: both 2026-07-30 blockers (Finding #4's dot-path 404,
+    Finding #5's Gemini folder gate) were invisible to all three tiers by
+    construction — the checkout has no dot-segment, `yarn dev` serves the
+    front end from Vite so the daemon's own routes never execute, and the
+    cold-install check only read `--version`. Only an install shows them.
+  - NOT wired into `yarn test:e2e` on purpose: it drives a global install CI
+    doesn't have. It is a pre-release ritual — run it against the artifact
+    about to ship, i.e. immediately before the R.7 publish.
+
+- [x] **A turn that ends by `error` wedged the activity indicator forever —
+  found and FIXED 2026-07-30** (chasing the Tier-3 flake below; the two are
+  related in symptom, NOT in cause).
+  - **The defect:** `server/sessions/registry.ts` treats `turn_end` OR
+    `error` as terminal — that is what flips the session to idle and clears
+    the burst gate. The shell's counter (`web/src/turn-busy.ts`) decremented
+    only on `turn_end`. So any turn dying by error — an adapter crash, an
+    engine killed mid-stream, a dropped frame — left the count permanently
+    high: the indicator read "working…" for the LIFE of the session, on
+    every viewport, while the daemon knew it was idle. **A reload did not
+    heal it**, because replay rebuilds the same imbalance out of history.
+  - **The fix:** the client mirrors the daemon's terminal set, and
+    `Shell.tsx`'s error branch drops the indicator the way `turn_end` does.
+    Tradeoff, stated in the code: with two turns genuinely in flight an
+    error may read idle a beat early — which self-heals on the next activity
+    frame, where the wedge it replaces never healed at all.
+  - **Pinned:** four Tier-1 cases in `turn-busy.test.ts` (mutation-checked —
+    reverting the terminal set fails three), plus a Tier-3 test driving a
+    new deterministic mock scenario (`playTurnError`: `status` then `error`,
+    no `turn_end`) through the live path AND a reload, in its own session.
+    That converts a 1-in-4 heisenbug class into a test that always runs.
+
 - [ ] **Flake watch — one unterminated turn in the artifact chain (Tier-3
   test `update-in-place artifacts survive the liveness tripwire`).** STILL
   OPEN, and NOT the bug above: the captured trace shows **21 `user_prompt`

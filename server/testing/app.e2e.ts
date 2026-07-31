@@ -52,7 +52,12 @@ const fsSent = (p: Page) =>
   p.evaluate(() => (window as unknown as { __fsSent: { type: string; path?: string }[] }).__fsSent);
 
 before(async () => {
-  d = await startDaemon({ MIRAFOLD_TOKEN: TOKEN });
+  // MIRAFOLD_DEBUG makes the registry log every WireMsg it broadcasts, per
+  // session (registry.ts). That is the SERVER's half of the flake-watch
+  // wedge: the client trace shows a turn that never closed, and only this
+  // says whether the daemon emitted a turn_end that was lost on the way, or
+  // never emitted one at all.
+  d = await startDaemon({ MIRAFOLD_TOKEN: TOKEN, MIRAFOLD_DEBUG: "1" });
   base = `http://127.0.0.1:${d.port}`;
   browser = await launchChrome();
 });
@@ -1063,7 +1068,30 @@ const waitTurnIdle = async (p: Page, where: string) => {
         return out;
       })(),
     }));
-    throw new Error(`${where}: the activity indicator never cleared — ${JSON.stringify(snap, null, 1)}`);
+    // The daemon's own account of the same session, for comparison: if these
+    // counts balance while the client's do not, the loss is in transport or
+    // the ring; if they match the client, the adapter never closed the turn.
+    const sid = snap.path.replace("/s/", "");
+    const frames = d
+      .logs()
+      .split("\n")
+      .filter((l) => l.includes(`session ${sid}`));
+    const seen = (t: string) => frames.filter((l) => l.includes(`debug: ${t} {`)).length;
+    const server = {
+      sessionId: sid,
+      user_prompt: seen("user_prompt"),
+      turn_end: seen("turn_end"),
+      error: seen("error"),
+      lastFrames: frames.slice(-14).map((l) => l.replace(/^.*?debug: /, "").slice(0, 70)),
+      // Every prompt the daemon admitted, in order — the client's trace names
+      // the turn that never closed, and this says whether the daemon agreed.
+      prompts: frames
+        .filter((l) => l.includes("debug: user_prompt {"))
+        .map((l) => (l.match(/"text":"(.{0,26})/)?.[1] ?? "?")),
+    };
+    throw new Error(
+      `${where}: the activity indicator never cleared\nCLIENT ${JSON.stringify(snap, null, 1)}\nSERVER ${JSON.stringify(server, null, 1)}`,
+    );
   }
 };
 

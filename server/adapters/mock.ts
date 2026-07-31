@@ -472,6 +472,8 @@ export class MockSession implements AgentSession {
   private listeners = new Set<(msg: WireMsg) => void>();
   private timers: ReturnType<typeof setTimeout>[] = [];
   private deck: number[] = [];
+  // Turns opened but not yet closed — interrupt() must close every one.
+  private openTurns = 0;
   private pendingAsks = new Map<string, (allow: boolean) => void>();
 
   get modelName(): string {
@@ -529,8 +531,25 @@ export class MockSession implements AgentSession {
   }
 
   interrupt() {
+    // ONE turn_end per OPEN turn (2026-07-30). This scenario engine schedules
+    // a whole turn as timers, and abandonTurn() clears the timer table — so
+    // with a queued turn also in flight, both turns' scheduled `turn_end`s
+    // died while a single one was emitted here. The daemon's mid-turn burst
+    // gate deliberately admits one queued prompt, so two open turns is the
+    // NORMAL case for a user who types again and then hits stop; the orphaned
+    // turn left the shell's counter above zero and its activity indicator
+    // stuck on "working…" for the life of the session, healing on neither a
+    // later turn nor a reload (replay rebuilds the imbalance). It cost a long
+    // Tier-3 flake hunt; the real adapters don't share the shape, because
+    // each of their turns completes on its own path.
+    //
+    // Floor of one: interrupting an idle session still answers, matching the
+    // claude-code adapter's "extra turn_end after the abort settles" — the
+    // client's counter floors at zero, so an extra is a no-op.
+    const open = Math.max(1, this.openTurns);
     this.abandonTurn();
-    this.emit({ type: "turn_end" });
+    this.openTurns = 0;
+    for (let i = 0; i < open; i++) this.emit({ type: "turn_end" });
   }
 
   resolvePermission(id: string, allow: boolean) {
@@ -1189,12 +1208,16 @@ export class MockSession implements AgentSession {
 
   /** Open the scripted turn envelope: `status: thinking` at t=0. */
   private beginTurn() {
+    this.openTurns++;
     this.schedule(() => this.emit({ type: "status", state: "thinking" }), 0);
   }
 
   /** Close the envelope: `turn_end` at `at + pad` ms. */
   private endTurn(at: number, pad = 40) {
-    this.schedule(() => this.emit({ type: "turn_end" }), at + pad);
+    this.schedule(() => {
+      this.openTurns = Math.max(0, this.openTurns - 1);
+      this.emit({ type: "turn_end" });
+    }, at + pad);
   }
 
   /** Schedules one render paint at `at` ms — the hooks' shared brushstroke.
