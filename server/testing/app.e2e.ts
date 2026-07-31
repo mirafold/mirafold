@@ -1567,8 +1567,12 @@ test("E.3: the files panel lists the working tree, opens a file beside the trans
 
   // The tree leads with the checked-out ROOT as its top node — the folder's
   // NAME (no path header above the tree); collapsing it folds the whole tree.
+  // Asserted against the checkout's actual basename, not a literal: a public
+  // clone lands as `mirafold/` (or anything else), and the suite must pass
+  // from any of them.
   const root = page.locator(".files-root-row");
-  assert.match(await root.innerText(), /genui-shell/);
+  const repoDir = path.basename(path.resolve(import.meta.dirname, "..", ".."));
+  assert.ok((await root.innerText()).includes(repoDir), `root row names the checkout folder (${repoDir})`);
   assert.equal(await page.locator(".files-title").count(), 0, "the old path header is gone");
   await root.click();
   await eventually(

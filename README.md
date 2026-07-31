@@ -1119,10 +1119,11 @@ script is a conditional no-op — it compiles only when you pass
 `--build-from-source` — and the binding you actually load ships prebuilt
 as a platform `optionalDependency` (darwin/win32/linux × x64/arm64/arm,
 glibc and musl, plus android and freebsd). Blocking it changes nothing;
-the warning names a package, not a failure. *(Publishing to npm is the M2 launch action — until then, install
-from a tarball. Prerequisites: `yarn` on PATH and a prior `yarn install`,
-because `prepack` runs `yarn build`. Then: `npm pack` in the repo, and
-`npm i -g ./mirafold-*.tgz`.)*
+the warning names a package, not a failure. Install: `npm i -g mirafold`
+(published from CI with npm provenance — verify with `npm audit
+signatures`). *(Building from a checkout instead: `yarn` on PATH and a
+prior `yarn install`, because `prepack` runs `yarn build`; then `npm pack`
+and `npm i -g ./mirafold-*.tgz`.)*
 
 ### Logs
 
