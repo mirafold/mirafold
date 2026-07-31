@@ -1000,8 +1000,12 @@ with it. Both sequence BEFORE R.5.**
     "sandbox-mode purchase" — superseded by the 2026-07-22 no-sandbox
     decision above.)*
 
-- [ ] **Step R.5b — Release strategy, locked (all three repos)** *(a
-  decision to make + write down, not a build; do before R.6's final week)*
+- [x] **Step R.5b — Release strategy, locked (all three repos)** — ✅ **DONE
+  2026-07-31: ratified with dates** (Saturday 2026-08-01 evening public +
+  publish · Sunday–Monday quiet window · Tuesday 2026-08-04 announcement).
+  Full sequence, owners, and rollback levers in the RATIFIED block below.
+  *(a decision to make + write down, not a build; do before R.6's final
+  week)*
   - Goal: one agreed, written release sequence so R.6/R.7 execute a plan
     instead of improvising how each piece ships.
   - Decide and record: (a) **shape of the release** — *first half DECIDED
@@ -1021,7 +1025,11 @@ with it. Both sequence BEFORE R.5.**
     (Kyle: obvious flaws remain — see R.4l's phone-styling items; the
     billing machinery being done does not make the product show-ready).
     Still to decide here: beta size/who, its duration/exit criteria, and
-    how R.5c's user-testing round folds in;* remainder of (a) — staged
+    how R.5c's user-testing round folds in — **ANSWERED by the 2026-07-31
+    ratification below: duration is Sunday 08-02 + Monday 08-03, the exit
+    criterion is "the public install path works and nothing breaks," and
+    the window IS R.5c's user-testing round; only the tester list itself
+    stays open;* remainder of (a) — staged
     rollout vs. one splash for the PUBLIC release — **DECIDED 2026-07-25
     (Kyle): ONE splash, as big as possible.** A soft/staged launch
     (publish quietly, announce later) was considered and rejected: the
@@ -1189,11 +1197,91 @@ with it. Both sequence BEFORE R.5.**
       defers only the announcement, never a gate.
     - *Still Kyle's calls, marked open:* (i) ✅ **DECIDED 2026-07-30: the
       public cut is 0.3.0** — bumped on main (`b63941c`); `v0.3.0` is the
-      launch tag; (ii) the flip date itself (splash follows ≤2 days
-      after).
+      launch tag; (ii) ✅ **DECIDED 2026-07-31: the dates — see the
+      ratification below.**
+  - ## ✅ RATIFIED 2026-07-31 (Kyle) — this is the plan, no longer a draft
+    Every precondition above is MET, each measured rather than read off a
+    doc: the release workflow rehearsed successfully (run `30630399899`,
+    `workflow_dispatch` on `main`, **success in 2m34s**, never
+    authenticated); npm trusted publisher + ed25519 signing key configured
+    2026-07-30; the relay repo's dedicated security-audit pass clean
+    2026-07-30; the tracked-docs disclosure read done 2026-07-31, with Kyle
+    deciding to **publish everything as tracked — no trims, no
+    move-private**; Dependabot zero open on both code repos (re-verified at
+    the flip, per the sweep note above); LTE phone pass, theme guards,
+    Paddle payout, launch copy + Product Hunt draft all done.
+
+    **The dates:**
+    - **Saturday 2026-08-01, evening (start ~8–9pm)** — everything goes
+      public and gets published. No announcement.
+    - **Sunday 08-02 + Monday 08-03** — the quiet window. A handful of
+      personally-invited testers install via the real public path
+      (`npm i -g mirafold`) and use it. This IS R.5c's user-testing round.
+    - **Tuesday 2026-08-04, US morning** — the single announcement: X, Show
+      HN, Product Hunt, r/ClaudeAI, r/LocalLLaMA.
+
+    *On the window: Saturday night → Tuesday morning is ~2.5 days, which
+    stretches the amendment's "AT MOST 2 days" bound. Flagged and accepted
+    by Kyle 2026-07-31 — the bound was self-imposed and these dates
+    supersede it. Saturday night was chosen over Sunday deliberately: it
+    buys two FULL quiet days instead of one and a half, and it is the
+    lowest-traffic stretch of the week to go public.*
+
+    **Saturday's steps, in order, with owner.** Assistant runs 1, 5, 7, 8;
+    Kyle runs 2, 3, 4, 6 — all four are GitHub-settings or signing-key
+    actions, his hands by the privileged-mutation rule.
+    1. Confirm Dependabot still zero on BOTH code repos — *assistant*.
+    2. `mirafold/mirafold` → public — *Kyle* (GitHub settings).
+    3. `mirafold/mirafold-relay` → public — *Kyle* (GitHub settings).
+    4. Enable the DCO sign-off check on both repos — *Kyle*.
+    5. Re-enable the cross-repo relay itest in CI (drop the
+       `tsconfig.ci.json` exclusion + the Tier-2 `find` filter, add the
+       sibling checkout) — *assistant*. Can only pass once step 3 lands.
+    6. Push the signed `v0.3.0` tag — *Kyle*. **This is the publish**: the
+       tag push triggers `release.yml`, which builds and runs
+       `npm publish --provenance`. No hand-run `npm publish`, ever. Expect
+       ~2m34s, per the rehearsal.
+    7. **Verify the same night, before bed — non-negotiable.** Cold install
+       the way a stranger would (`npx mirafold`) + `npm audit signatures` —
+       *assistant*. Publishing and sleeping unverified would leave a broken
+       package installable for hours undetected; the publish is the
+       irreversible move and this is what tells us whether it went wrong.
+    8. `mirafold-site` `/beta` becomes a short "we're live —
+       `npm i -g mirafold`" note, so the link already printed in every
+       tester's `WELCOME.md` keeps working and upgrades them to the public
+       path — *assistant*.
+
+    **Tuesday:** post everywhere. Before posting, search `hn.algolia.com`
+    for "mirafold" — thirty seconds, removes a variable. (The odds of a
+    stranger posting it first during the quiet window are negligible and
+    were overstated in an earlier draft of this note: `mirafold@0.0.1`
+    already exists on npm, so 0.3.0 is a version update rather than a
+    new-package feed event, and a zero-star repo going public is invisible
+    to the star-velocity scrapers. The one plausible leak is an invited
+    tester sharing it — so the invite says "not announced yet, please don't
+    post it anywhere until Tuesday.")
+
+    **Same week, after the announcement:** newsletter submissions,
+    awesome-list PRs, the BIS §742.15(b) email to crypt@bis.doc.gov +
+    enc@nsa.gov with the repo URLs, and R.7's standing provider-terms
+    re-check.
+
+    **Rollback levers, unchanged:** npm = re-point the `latest` dist-tag +
+    `npm deprecate` (NEVER unpublish); relay = `fly deploy --image <prev>`;
+    site = Pages one-click rollback (KV does not roll back with it).
+
+    **Still open, non-gating:** WHO the invited testers are for the Sunday/
+    Monday window — may simply be the existing beta testers, told to
+    reinstall via `npm i -g mirafold`. Kyle's call, answerable any time
+    before Saturday night.
+
+    **Understood and accepted:** step 6 is the first irreversible move in
+    this project. An npm publish cannot be withdrawn, and a public repo
+    exposes all 443 commits plus every tracked doc permanently.
   - Done when: a written release-sequence exists that R.6 and R.7 just
     follow, with no open "how do we actually ship this" questions —
-    *draft above; ratification + the three open calls close it.*
+    ✅ **MET 2026-07-31** by the ratification above; only the non-gating
+    tester-list question remains.
 
 - [ ] **Step R.5c — User-testing round before release (Kyle-led)** *(needs
   R.2 deployed + the phone experience end-to-end; gates R.7)*
