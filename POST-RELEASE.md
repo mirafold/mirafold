@@ -11,15 +11,27 @@ intake — the reordering/organizing pass happens when we get there,
 post-R.7 — and none of these gates a Phase R step. Where an idea already
 has a home in this plan, the entry points there instead of duplicating it.
 
-- [ ] **Desktop app** — the first follower after release. An Electron shell
-  so running Mirafold needs no terminal/Node/npm: a thin, separate repo that
-  consumes the published `mirafold` package (which ships daemon + built
-  client together, so there's no UI or server duplication) and opens the
-  daemon's URL in its window. Shell-side seam to cut first: export a
-  programmatic entry (`startDaemon(opts) → { url, close }`) beside the CLI.
-  Known lifts beyond packaging: a folder picker replaces "run in the current
-  directory," macOS launched-from-Finder PATH resolution, and
-  signing/notarization + auto-update CI per platform.
+- [x] **Desktop app** — BUILT 2026-08-02, in its own repo. An Electron shell
+  so running Mirafold needs no terminal/Node/npm: it consumes the published
+  `mirafold` package (which ships daemon + built client together, so there's
+  no UI or server duplication) and opens the daemon's URL in its window.
+  Linux (`.deb`/`.tar.gz`/`.AppImage`) and Windows (unsigned NSIS) build in
+  CI; macOS deferred until signing is worth its annual cost.
+
+  **This repo needs NO change to support it, and the previously-planned
+  `startDaemon(opts) → { url, close }` export is NOT being cut.** The desktop
+  app spawns the daemon as a **child process** instead, using Electron's own
+  binary under `ELECTRON_RUN_AS_NODE=1`. That was the better design on the
+  merits, not just the cheaper one: this file's crash handlers end in
+  `process.exit(1)`, which in-process would kill the whole desktop app with
+  nothing on screen; the daemon's continuous pty/watcher/serialization work
+  would share an event loop with window management; and `process.cwd()` is
+  global, so a folder picker would be one-shot per launch. As a child
+  process all three are free, and the desktop build exercises the exact npm
+  artifact users install.
+
+  Reopen the programmatic-entry idea only if some OTHER embedder wants it —
+  the desktop app doesn't.
 
 - [ ] **Phone apps** — distant followers, behind the desktop app. The phone
   is a viewport, never the daemon host — the relay path (R.2–R.4) already
