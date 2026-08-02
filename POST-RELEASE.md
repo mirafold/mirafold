@@ -146,6 +146,55 @@ has a home in this plan, the entry points there instead of duplicating it.
   above (S.1 pie, S.2 stacked/horizontal, S.3 stat tile) are the first
   concrete batch; keep extending the registry additively (add message
   types/kinds, never reshape) as session needs surface.
+  - **HOW to grow it — the two mechanisms, and the ceiling** (2026-08-02
+    analysis). The registry is loaded FLAT and UPFRONT: every render tool's
+    full JSON Schema (all props, all `.describe()` strings) goes to the agent
+    at session start, in both servers, plus a prose bullet each in
+    `RENDER_GUIDANCE`. Nothing is deferred. Measured at 18 components:
+    ~3.6k tokens of schema + ~950 of tool descriptions + ~1,050 of guidance
+    + ~900 of per-tool `id`/`emit_artifact` boilerplate ≈ **6.5k tokens
+    resident in every request**. That is NOT the constraint — it's a static
+    prompt prefix, so prompt caching makes it near-free, and it occupies the
+    same ~3% of a 200k window on turn 40 as on turn 1 (it does not
+    accumulate). **The constraint is tool-selection accuracy**: each added
+    tool makes the neighbors it crowds harder to pick correctly, and
+    produces false positives (reaching for a narrow tool where a generic one
+    fit), not just misses. The pressure is already visible in the three
+    monospace components (`code`/`diff`/`console`) and the three
+    ordered-items ones (`list`/`status-list`/`timeline`), whose descriptions
+    spend real words fencing each other off. Two consequences:
+    - **1. Prefer PROP-SPACE growth to new components — do this first, it is
+      nearly free.** `render_chart` is the model: line/bar/pie + stacked +
+      horizontal are one tool with a `kind` enum and two booleans, not five
+      tools. Adding a `kind` costs ~40 tokens and ZERO new selection
+      decisions (the model already committed to the tool; picking `kind` is
+      a within-tool choice made with full context). A sibling tool costs
+      ~250 tokens AND a new boundary both descriptions must defend. **Rule:
+      if a proposed component would ever be confusable with an existing one,
+      it belongs as a prop on that one.** Prop-space growth is ~unbounded;
+      tool-space growth is capped.
+    - **2. Two-tier discovery — the restructure, due at ~30 components.**
+      Ceiling for the current flat design is **~30 tools** (they sit atop
+      the agent's own native tools, so the real menu is already >30; past
+      ~50 the industry answer is deferred loading, incl. Claude Code's own
+      tool-search). Past that: keep the ~12 that fire constantly
+      always-loaded, put the long tail behind `render_specialized(kind,
+      props)` + a schema-fetch tool, so the agent pays ONE round-trip the
+      first time per session it wants something exotic. List the available
+      kinds by NAME ONLY in `RENDER_GUIDANCE` (cheap) so it knows to look.
+      Watch `RENDER_GUIDANCE` as the tighter ceiling — it's sequential prose
+      that shapes the decision, and it degrades with length faster than
+      reference schemas do.
+    - **NOT a user-facing opt-in "component pack" setting** (considered and
+      rejected 2026-08-02). The user can't know at session start which
+      vocabulary the agent will want three tool calls into unplanned work —
+      it routes a decision to the actor with no information, and the failure
+      is silent (prose where a diagram belonged, and nobody learns why).
+      Auto-enable from workspace context if a pack is ever truly
+      domain-bound. The legitimate user-facing mode is the INVERSE —
+      **subtraction**: a plain-prose / reduced-vocabulary setting, which
+      earns its keep on local models where 6.5k is ~10% of a 64k window
+      (`docs/local-models.md`).
   - ✅ 2026-07-15 — first batch landed: four new registry components
     (`key-value`, `progress`, `timeline`, `file-tree` — flat paths on the
     wire, nested client-side) plus an additive `kind` callout tint on `card`
