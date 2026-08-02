@@ -13,12 +13,20 @@ name: CI
 # The DCO sign-off check is owed too (K.9) but is gated on the public flip; add
 # it when the repo goes public (R.7).
 #
-# ONE cross-repo caveat: server/relay/relay-service.itest.ts imports the relay
-# from the SIBLING ../genui-relay checkout, which isn't present here (and the
-# relay repo is private pre-launch, so cloning it would need a secret). So CI
-# typechecks via tsconfig.ci.json (excludes that file) and filters it out of
-# Tier 2. Local runs still cover it. Remove both exclusions when the relay goes
-# public (K.1/R.7) and add a sibling checkout — see tsconfig.ci.json's note.
+# ONE cross-repo arrangement: server/relay/relay-service.itest.ts imports the
+# relay under test from the SIBLING ../genui-relay checkout (README §"sibling
+# itest"). Both jobs therefore check this repo out into genui-shell/ and
+# mirafold-relay into genui-relay/, making them siblings under the workspace
+# exactly as they are on a dev machine, and run with working-directory
+# genui-shell. The relay is public since 2026-07-31, so the checkout needs no
+# secret. It tracks the relay's default branch on purpose: the itest carries the
+# contract guard that fails on drift between genui-relay/src/contract.ts and
+# server/relay/relay-protocol.ts, and pinning a ref would blind it to exactly
+# the drift it exists to catch. Consequence, accepted: a contract-breaking push
+# to the relay turns this repo's CI red, which is the intended alarm.
+#
+# The release workflow does NOT do this — it stays a single-repo checkout and
+# keeps using tsconfig.ci.json, so no other repo's branch can block a publish.
 
 on:
   push:
@@ -42,15 +50,33 @@ jobs:
   unit:
     name: typecheck + unit (Tier 1)
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: genui-shell
     steps:
       - uses: actions/checkout@v5
+        with:
+          path: genui-shell
+      # The sibling the itest imports from. Public since 2026-07-31 — the
+      # default GITHUB_TOKEN reads it without any added secret.
+      - uses: actions/checkout@v5
+        with:
+          repository: mirafold/mirafold-relay
+          path: genui-relay
       - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: yarn
+          cache-dependency-path: genui-shell/yarn.lock
+      # The relay's own install: the typecheck follows the itest's imports into
+      # genui-relay/src, which resolves `ws` and its types from genui-relay's
+      # node_modules — module resolution walks up from that file and never
+      # reaches this repo's node_modules, so the sibling needs its own install.
+      - run: npm ci
+        working-directory: genui-relay
       - run: yarn install --frozen-lockfile
-      # tsconfig.ci.json == tsconfig.json minus the cross-repo sibling itest.
-      - run: yarn tsc -p tsconfig.ci.json --noEmit
+      # Full tsconfig.json now — the sibling is present, so nothing is excluded.
+      - run: yarn typecheck
       - run: yarn test
 
   integration:
@@ -59,12 +85,24 @@ jobs:
     # merged them (Kyle's call, 2026-07-22).
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: genui-shell
     steps:
       - uses: actions/checkout@v5
+        with:
+          path: genui-shell
+      - uses: actions/checkout@v5
+        with:
+          repository: mirafold/mirafold-relay
+          path: genui-relay
       - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: yarn
+          cache-dependency-path: genui-shell/yarn.lock
+      - run: npm ci
+        working-directory: genui-relay
       - run: yarn install --frozen-lockfile
       # Tier 3 drives real headless Chrome via playwright-core; the harness
       # reads CHROME_BIN (default /usr/bin/google-chrome). ubuntu-latest ships
@@ -79,10 +117,8 @@ jobs:
           fi
           echo "CHROME_BIN=$BIN" >> "$GITHUB_ENV"
           "$BIN" --version
-      # Tier 2, minus the cross-repo sibling itest (see header). All other
-      # itests are self-contained (relay.itest.ts uses the in-repo relay-stub).
+      # Tier 2, complete — including relay-service.itest.ts, which runs a real
+      # daemon against the real sibling relay and carries the contract guard.
       - name: Tier 2 (integration, real daemon + sockets)
-        run: |
-          node --import tsx --test --test-concurrency=1 \
-            $(find server -name '*.itest.ts' ! -name 'relay-service.itest.ts')
+        run: yarn test:server
       - run: yarn test:e2e

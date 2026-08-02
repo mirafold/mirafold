@@ -1,13 +1,21 @@
 {
-  // CI-only typecheck config. Identical to tsconfig.json except it excludes the
-  // one cross-repo file: server/relay/relay-service.itest.ts imports the relay
-  // under test from the SIBLING ../genui-relay checkout (see README §"sibling
-  // itest"). That sibling isn't present in a single-repo CI checkout, and the
-  // relay repo is private pre-launch so CI can't clone it without a secret.
-  // Local `yarn typecheck` (tsconfig.json) still covers this file. When the
-  // relay repo goes public (product PLAN K.1/R.7), CI can check it out as a
-  // sibling unauthenticated and this exclusion — plus the matching Tier-2
-  // filter in .github/workflows/ci.yml — should be removed.
+  // Single-repo typecheck config. Identical to tsconfig.json except it excludes
+  // the one cross-repo file: server/relay/relay-service.itest.ts imports the
+  // relay under test from the SIBLING ../genui-relay checkout (README §"sibling
+  // itest"), which a lone checkout of this repo doesn't have.
+  //
+  // Used by .github/workflows/release.yml ONLY, and now for a different reason
+  // than it was written for (2026-08-02). The original reason — the relay repo
+  // was private, so CI couldn't clone it without a secret — expired when it went
+  // public on 2026-07-31, and ci.yml accordingly checks the sibling out and
+  // typechecks the full tsconfig.json.
+  //
+  // The publish path deliberately did NOT follow. Keeping release.yml a
+  // single-repo checkout means no push to another repo's default branch can
+  // block a release, and the file this excludes is a test that never ships in
+  // the package. Contract drift is still caught — loudly — by ci.yml on every
+  // PR. Delete this file only if the release workflow is ever given the sibling
+  // checkout too, which would trade that isolation away.
   "extends": "./tsconfig.json",
   "exclude": ["node_modules", "server/relay/relay-service.itest.ts"]
 }

@@ -60,9 +60,11 @@ jobs:
 
       # The fast gates re-run here even though CI ran on the commit — a tag
       # can point anywhere, and the publish must verify what it publishes.
-      # (tsconfig.ci.json == tsconfig.json minus the cross-repo sibling
-      # itest; drop the ci config here when the relay checkout lands in CI
-      # at the public flip.)
+      # tsconfig.ci.json == tsconfig.json minus the cross-repo sibling itest,
+      # and this workflow keeps it on purpose: a single-repo checkout means no
+      # other repo's branch can block a publish, and the excluded file is a
+      # test that never ships. ci.yml checks the sibling out and typechecks the
+      # full config on every PR, so drift is caught there.
       - run: yarn tsc -p tsconfig.ci.json --noEmit
       - run: yarn test
 

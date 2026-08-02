@@ -1289,9 +1289,9 @@ with it. Both sequence BEFORE R.5.**
     2. `mirafold/mirafold` → public — *Kyle* (GitHub settings).
     3. `mirafold/mirafold-relay` → public — *Kyle* (GitHub settings).
     4. Enable the DCO sign-off check on both repos — *Kyle*.
-    5. Re-enable the cross-repo relay itest in CI (drop the
-       `tsconfig.ci.json` exclusion + the Tier-2 `find` filter, add the
-       sibling checkout) — *assistant*. Can only pass once step 3 lands.
+    5. ~~Re-enable the cross-repo relay itest in CI~~ — ✅ **DONE 2026-08-02**
+       (*assistant*); see the resolution note under "Owed at the public flip"
+       below. ⬜ Not yet opened as a PR, so not yet exercised on a runner.
     6. Push the signed `v0.3.0` tag — *Kyle*. **This is the publish**: the
        tag push triggers `release.yml`, which builds and runs
        `npm publish --provenance`. No hand-run `npm publish`, ever. Expect
@@ -2304,11 +2304,30 @@ bodies + dated history → PLAN-ARCHIVE.md ("Moved 2026-07-24").
   push/merge/schedule). Scaffolded for the relay in
   `genui-relay/.github/workflows/deploy.yml` (`9162fa1`), with the R.5d
   staging/production environment dropdown on it.
-- **Owed at the public flip (carried in R.5b):** re-enable the cross-repo relay
-  itest. A single-repo checkout of a *private* sibling can't resolve
-  `../genui-relay`, so it is excluded via `tsconfig.ci.json` + a Tier-2 `find`
-  filter — both documented with the drop-them-at-the-flip path. It still runs
-  locally.
+- ~~**Owed at the public flip (carried in R.5b):** re-enable the cross-repo
+  relay itest.~~ ✅ **DONE 2026-08-02.** Both exclusions are gone from `ci.yml`:
+  its two jobs check this repo out to `genui-shell/` and
+  `mirafold/mirafold-relay` to `genui-relay/` — siblings under the workspace,
+  the same shape as a dev machine — then `npm ci` the relay, typecheck the
+  **full** `tsconfig.json`, and run Tier 2 as plain `yarn test:server`. The
+  relay needs its own install because module resolution walks up from
+  `genui-relay/src/` and never reaches this repo's `node_modules`. The relay is
+  public since 2026-07-31, so the default `GITHUB_TOKEN` reads it with no added
+  secret.
+  - **The checkout tracks the relay's default branch on purpose.** Pinning a
+    ref would blind the contract guard to exactly the drift it exists to catch.
+    Accepted consequence: a contract-breaking push to `mirafold-relay` turns
+    this repo's CI red. That is the alarm working.
+  - **`release.yml` deliberately did NOT follow.** It stays a single-repo
+    checkout using `tsconfig.ci.json`, so no other repo's branch can block a
+    publish, and the one file that config excludes is a test that never ships
+    in the package. `tsconfig.ci.json`'s comment was rewritten to state that
+    new reason — its original one (the relay was private) expired at the flip.
+  - Verified locally before and after: full `yarn typecheck` clean with the
+    sibling present, `relay-service.itest.ts` **12/12**, and the whole of
+    `yarn test:server` **142/142** in ~231s — 130 of which is what CI's
+    `find … ! -name relay-service.itest.ts` used to run, so the change is
+    strictly additive in coverage.
 - **Branch protection is BLOCKED by GitHub's paywall** — classic protection and
   rulesets both 403 ("Upgrade to GitHub Pro or make this repository public")
   on free-plan private repos. Kyle's intended shape when available: required
