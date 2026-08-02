@@ -2318,6 +2318,26 @@ bodies + dated history → PLAN-ARCHIVE.md ("Moved 2026-07-24").
     ref would blind the contract guard to exactly the drift it exists to catch.
     Accepted consequence: a contract-breaking push to `mirafold-relay` turns
     this repo's CI red. That is the alarm working.
+  - **Audited 2026-08-02, sound.** `ci.yml` runs on `pull_request` (not
+    `pull_request_target`), grants `permissions: contents: read`, and
+    references **no secrets at all**, so a fork PR gets a read-only token and
+    nothing to steal. `release.yml` — which holds `id-token: write`, the npm
+    trusted-publishing credential — runs only on tag pushes and manual
+    dispatch and deliberately kept the single-repo checkout, so the new
+    cross-repo checkout can never run in the job that can publish. The relay's
+    lockfile is v3 with integrity hashes on all 34 packages. Full dispositions:
+    `mirafold-chat/SECURITY.md`, the 2026-08-02 entry.
+
+- [ ] **Hardening: SHA-pin the GitHub Actions** *(from the 2026-08-02 audit —
+  roadmapped, not urgent)*. All eight `uses:` across `ci.yml` and `release.yml`
+  are tag-pinned (`actions/checkout@v5`, `actions/setup-node@v5`) rather than
+  pinned to a commit SHA. A tag is mutable: if one were ever moved
+  maliciously, CI would fetch and execute the new code — and `release.yml` is
+  the workflow that can publish to npm. Pre-existing (the relay-itest change
+  added two of the eight, it did not introduce the pattern). Fix is mechanical:
+  replace each `@vN` with the full commit SHA plus a trailing `# vN` comment,
+  and re-pin on deliberate upgrades. Do this before the repo starts taking
+  outside PRs in volume.
   - **`release.yml` deliberately did NOT follow.** It stays a single-repo
     checkout using `tsconfig.ci.json`, so no other repo's branch can block a
     publish, and the one file that config excludes is a test that never ships
