@@ -114,6 +114,31 @@ test("a setting hidden in an included config file is still caught", async () => 
   }
 });
 
+test("machine-level config is never flagged — only what the repo brought", async () => {
+  // CI's runners ship git-lfs preconfigured system-wide, which is exactly a
+  // real dev machine after `git lfs install`: filter.lfs.clean/process live in
+  // the merged config of EVERY repo. The scan must not report them — flagging
+  // the user's own machine settings would refuse every repo they browse.
+  const sysConfig = path.join(bin, "system-gitconfig");
+  writeFileSync(
+    sysConfig,
+    '[filter "lfs"]\n\tclean = git-lfs clean -- %f\n\tprocess = git-lfs filter-process\n[core]\n\tfsmonitor = /usr/bin/true\n',
+  );
+  const clean = mkdtempSync(path.join(os.tmpdir(), "trust-clean-"));
+  process.env.GIT_CONFIG_SYSTEM = sysConfig;
+  try {
+    git(clean, "init", "-q");
+    invalidateRepoStatusCache();
+    const trust = await repoTrust(clean);
+    assert.deepEqual(trust.risky, [], "machine-level settings reported as the repo's own");
+    assert.deepEqual(trust.disableArgs, [], "and nothing neutralized — terminal parity");
+  } finally {
+    delete process.env.GIT_CONFIG_SYSTEM;
+    rmSync(clean, { recursive: true, force: true });
+    rmSync(sysConfig, { force: true });
+  }
+});
+
 test("the user's allow list lets a repo's own programs run again", async () => {
   writeFileSync(trustPath, JSON.stringify({ repos: [repo] }));
   invalidateRepoStatusCache();
