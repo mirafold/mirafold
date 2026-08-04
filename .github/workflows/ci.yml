@@ -117,6 +117,12 @@ jobs:
           fi
           echo "CHROME_BIN=$BIN" >> "$GITHUB_ENV"
           "$BIN" --version
+      # Tier 2 asserts against the SERVED shell page (headers.itest.ts), so the
+      # front end must exist first: without dist/, Express's own 404 handler
+      # answers `/` and REPLACES our CSP with its `default-src 'none'` — the
+      # daemon's header never reaches the probe (first CI run, 2026-08-04).
+      # Dev machines always have a build; CI checkouts start without one.
+      - run: yarn build
       # Tier 2, complete — including relay-service.itest.ts, which runs a real
       # daemon against the real sibling relay and carries the contract guard.
       - name: Tier 2 (integration, real daemon + sockets)
