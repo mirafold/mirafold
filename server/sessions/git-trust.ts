@@ -58,9 +58,14 @@ export type RepoTrust = {
 const SAFE: RepoTrust = { risky: [], disableArgs: [], allowed: false, unscannable: false };
 
 /**
- * The effective git config for whatever repo `root` resolves to. Reading
- * config runs nothing (probed) and resolves `include.path` indirection, so a
- * setting hidden in an included file is still found — a textual read of
+ * The repo's OWN config — `--local` scope only. The threat is what the repo
+ * brought with it; the user's global/system config (git-lfs's filters on any
+ * machine that ever ran `git lfs install`, a global fsmonitor) is their own
+ * terminal's behavior and must not be flagged — scanning the merged config
+ * marked every repo risky for every LFS user (caught by CI's runners, which
+ * preconfigure LFS system-wide, 2026-08-04). Reading config runs nothing
+ * (probed) and still resolves `include.path` indirection from the local file,
+ * so a setting hidden in an included file is found — a textual read of
  * `.git/config` would miss it. Failure (no repo, no git binary) yields no
  * entries, which lands as "nothing risky": correct, since a git that cannot
  * run cannot run anything for an attacker either.
@@ -69,7 +74,9 @@ const readConfig = (root: string): Promise<Map<string, string>> =>
   new Promise((resolve) => {
     execFile(
       "git",
-      ["--no-optional-locks", "-C", root, "config", "--list", "-z"],
+      // --includes is explicit: given a single scope, git defaults it OFF,
+      // which would hide exactly the included-file indirection pinned below.
+      ["--no-optional-locks", "-C", root, "config", "--local", "--includes", "--list", "-z"],
       { timeout: GIT_TIMEOUT_MS, maxBuffer: CONFIG_MAX_BUFFER, encoding: "utf8" },
       (err, stdout) => {
         const entries = new Map<string, string>();

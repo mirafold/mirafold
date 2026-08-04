@@ -1095,6 +1095,11 @@ cd ~/your/project
 mirafold          # boots the daemon here, opens the browser
 ```
 
+**Platforms:** Linux and macOS see daily use. Windows ships the same
+prebuilt native binaries (nothing compiles at install) and is expected to
+work — it's the least-exercised of the three while Mirafold is in public
+beta, so a Windows issue report is a gift, not an imposition.
+
 Like launching `claude`/`codex`/`gemini`: sessions default to the directory
 you ran it from, and a second `mirafold` in another project walks to the
 next port (3001, …) and runs independently. `npx mirafold` is the
