@@ -36,6 +36,23 @@ off with a dated status note. **BUSINESS.md** — why and in what sequence
   `notice.source` badges it. Compose the sentence yourself and it's ours;
   pass the engine's words through and it carries `source` (README §3,
   2026-07-20 audit).
+- **Trust is never broken, under any reasonable interpretation** — of
+  anything Mirafold has claimed or reasonably suggested, not only what's
+  written down explicitly. This is the general standard, not a file-specific
+  one: it covers consent (no code may read, parse, back up, or write
+  anything a user already owns — a file, a setting, any state predating
+  Mirafold's involvement — before real permission for that specific action
+  exists; "backed up first," "low severity," "fully reversible" are not
+  exceptions) and it covers honesty (what Mirafold says or plainly implies
+  about its own behavior must match what it does, including things never
+  written down anywhere — the `notice.source` rule above is one instance of
+  this, not the whole of it). The test is what a reasonable user would
+  conclude, never a narrow technical reading that happens to comply with the
+  letter of a claim while missing what it plainly suggested. (2026-08-06:
+  originating case was the Gemini adapter writing into
+  `.gemini/settings.json` — including overwriting a pre-existing file —
+  before workspace trust was granted; the rule generalizes past that one
+  case and past files specifically.)
 - **Secrets stay server-side** — never serialize one into a `WireMsg`.
 - **Faithful skin per agent** (identity + core requirement, PLAN Phase P):
   a new agent is one adapter behind the `AgentSession` seam — drive that
