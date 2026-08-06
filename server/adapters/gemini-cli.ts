@@ -77,6 +77,9 @@ export class GeminiCliSession implements AgentSession {
   // Set once the user says yes IN THIS SESSION — the disk record is the
   // durable answer, this just avoids re-reading it every turn.
   private trusted = false;
+  // Whether the render-MCP entry has been merged into project settings yet
+  // (K.2): deferred until trust is confirmed, unlike the auth stub below.
+  private mcpSettingsWritten = false;
 
   // `modelLabel` is undefined until configured or a turn reports the concrete
   // model — the UI shows nothing, never a stand-in that reads as a model name
@@ -96,37 +99,65 @@ export class GeminiCliSession implements AgentSession {
     this.model = opts.model;
     this.modelLabel = opts.model;
     this.listModels = opts.listModels ?? (() => listGeminiModels(this.workspaceDir));
-    this.writeProjectSettings();
+    // Only ever creates a settings.json that didn't already exist (K.2,
+    // 2026-08-06): a file that predates this session is the user's, and
+    // consent to modify it — same as the MCP entry below — doesn't exist
+    // yet at construction time. No read, no parse, no backup, no rewrite of
+    // anything pre-existing until ensureTrusted() actually resolves true.
+    this.writeAuthSettingsIfAbsent();
     void this.worker();
   }
 
-  // Merge our auth + render MCP server into the session's project settings,
-  // preserving anything already there (custom-cwd sessions may have their own).
-  private writeProjectSettings() {
-    const dir = path.join(this.workspaceDir, ".gemini");
-    mkdirSync(dir, { recursive: true });
-    const file = path.join(dir, "settings.json");
-    let cfg: Record<string, any> = {};
-    if (existsSync(file)) {
-      const raw = readFileSync(file, "utf8");
-      try {
-        cfg = JSON.parse(raw);
-      } catch {
-        // Rewrite an unparseable file rather than fail the session — but it's
-        // the user's file, so keep their bytes beside it and say so.
-        const backup = `${file}.mirafold-backup`;
-        writeFileSync(backup, raw);
-        createLogger("gemini-cli").warn(
-          `existing ${file} is not valid JSON — rewriting it (original saved to ${backup})`,
-        );
-      }
+  private settingsFile(): string {
+    return path.join(this.workspaceDir, ".gemini", "settings.json");
+  }
+
+  // Only called once consent exists (writeMcpSettings, post-trust): existing
+  // content is preserved and merged over; an unparseable file is rewritten
+  // rather than failing the session, but it's the user's file, so their
+  // bytes land in a backup first.
+  private readSettings(): Record<string, any> {
+    const file = this.settingsFile();
+    if (!existsSync(file)) return {};
+    const raw = readFileSync(file, "utf8");
+    try {
+      return JSON.parse(raw);
+    } catch {
+      const backup = `${file}.mirafold-backup`;
+      writeFileSync(backup, raw);
+      createLogger("gemini-cli").warn(
+        `existing ${file} is not valid JSON — rewriting it (original saved to ${backup})`,
+      );
+      return {};
     }
+  }
+
+  private writeSettings(cfg: Record<string, any>) {
+    mkdirSync(path.dirname(this.settingsFile()), { recursive: true });
+    writeFileSync(this.settingsFile(), JSON.stringify(cfg, null, 2));
+  }
+
+  // Runs at construction, before any trust decision. Declares which auth type
+  // to use — but ONLY by creating a brand-new file: that's Mirafold's own
+  // bookkeeping, nothing pre-existing touched. A file that's already there,
+  // valid or not, is left completely alone until writeMcpSettings runs.
+  private writeAuthSettingsIfAbsent() {
+    if (existsSync(this.settingsFile())) return;
+    this.writeSettings({ security: { auth: { selectedType: "gemini-api-key" } } });
+  }
+
+  // Runs only once ensureTrusted() has actually resolved true: the one place
+  // allowed to open a pre-existing file, because consent now actually exists.
+  // Sets the auth stub too (not just the MCP entry) — a file that predated
+  // this session and was left untouched at construction may not have it yet.
+  private writeMcpSettings() {
+    const cfg = this.readSettings();
     cfg.security = { ...cfg.security, auth: { ...cfg.security?.auth, selectedType: "gemini-api-key" } };
     cfg.mcpServers = {
       ...cfg.mcpServers,
       [MIRAFOLD_MCP]: { command: RENDER_MCP.command, args: RENDER_MCP.args, trust: true },
     };
-    writeFileSync(file, JSON.stringify(cfg, null, 2));
+    this.writeSettings(cfg);
   }
 
   pushPrompt(text: string) {
@@ -296,6 +327,12 @@ export class GeminiCliSession implements AgentSession {
       });
       this.emit({ type: "turn_end" });
       return;
+    }
+    // The consequential half of settings.json (K.2): only merged in once the
+    // trust gate above has actually passed, and only once per session.
+    if (!this.mcpSettingsWritten) {
+      this.writeMcpSettings();
+      this.mcpSettingsWritten = true;
     }
     return this.spawnTurn(text);
   }

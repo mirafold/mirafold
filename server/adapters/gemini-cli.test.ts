@@ -7,6 +7,9 @@ import type { WireMsg } from "../protocol";
 import { GeminiCliSession } from "./gemini-cli";
 import type { GeminiModelCatalog } from "./gemini-model-list";
 import { isWorkspaceTrusted } from "../sessions/workspace-trust";
+import { MIRAFOLD_MCP, renderMcpCommand } from "./render-mcp-cmd";
+
+const RENDER_MCP_COMMAND = renderMcpCommand().command;
 
 // L.2b2: the Gemini JSONL→WireMsg mapping and the turn grammar. The real
 // adapter spawns a real child — a scripted stub substituted via
@@ -51,8 +54,8 @@ after(() => {
   rmSync(tmp, { recursive: true, force: true });
 });
 
-function makeSession(opts: Partial<ConstructorParameters<typeof GeminiCliSession>[0]> = {}) {
-  const s = new GeminiCliSession({ workspaceDir: mkdtempSync(path.join(tmp, "ws-")), ...opts });
+/** Wire message capture + turn_end waiting for an already-constructed session. */
+function attach(s: GeminiCliSession) {
   const msgs: Any[] = [];
   s.onMessage((m) => msgs.push(m as Any));
   const turnEnds = () => msgs.filter((m) => m.type === "turn_end").length;
@@ -69,11 +72,17 @@ function makeSession(opts: Partial<ConstructorParameters<typeof GeminiCliSession
         }
       }, 10);
     });
-  return { s, msgs, turnEnds, awaitTurnEnd };
+  return { msgs, turnEnds, awaitTurnEnd };
 }
 
-test("an unparseable .gemini/settings.json is backed up beside the rewrite, a valid one is merged", async () => {
-  // Unparseable: rewritten, but the user's original bytes land in the backup.
+function makeSession(opts: Partial<ConstructorParameters<typeof GeminiCliSession>[0]> = {}) {
+  const s = new GeminiCliSession({ workspaceDir: mkdtempSync(path.join(tmp, "ws-")), ...opts });
+  return { s, ...attach(s) };
+}
+
+test("a pre-existing settings.json — broken or valid — is untouched at construction; a turn is what earns consent to merge it", async () => {
+  // Unparseable: construction touches NOTHING. Only once a turn actually runs
+  // (this workspace is pre-trusted, under `tmp`) does the rewrite+backup happen.
   const ws = mkdtempSync(path.join(tmp, "ws-"));
   const dir = path.join(ws, ".gemini");
   const file = path.join(dir, "settings.json");
@@ -82,23 +91,69 @@ test("an unparseable .gemini/settings.json is backed up beside the rewrite, a va
   mkdirSync(dir, { recursive: true });
   writeFileSync(file, garbage);
   const a = new GeminiCliSession({ workspaceDir: ws });
-  const rewritten = JSON.parse(readFileSync(file, "utf8"));
-  assert.equal(rewritten.security.auth.selectedType, "gemini-api-key");
-  assert.equal(readFileSync(`${file}.mirafold-backup`, "utf8"), garbage);
+  assert.equal(readFileSync(file, "utf8"), garbage, "construction never opens a pre-existing file");
+  assert.throws(() => readFileSync(`${file}.mirafold-backup`), "no backup before consent exists");
+  const { awaitTurnEnd: aAwaitTurnEnd } = attach(a);
+  a.pushPrompt("hello");
+  await aAwaitTurnEnd();
+  const afterTurn = JSON.parse(readFileSync(file, "utf8"));
+  assert.equal(afterTurn.security.auth.selectedType, "gemini-api-key");
+  assert.equal(afterTurn.mcpServers[MIRAFOLD_MCP].command, RENDER_MCP_COMMAND);
+  assert.equal(readFileSync(`${file}.mirafold-backup`, "utf8"), garbage, "backup lands once the rewrite is earned");
   a.close();
 
-  // Valid: merged in place, their keys preserved, no backup written.
+  // Valid: also untouched at construction; merged in place — their keys
+  // preserved, no backup — only once a turn runs.
   const ws2 = mkdtempSync(path.join(tmp, "ws-"));
   const file2 = path.join(ws2, ".gemini", "settings.json");
+  const original2 = JSON.stringify({ theirs: 1, mcpServers: { own: { command: "x" } } });
   mkdirSync(path.dirname(file2), { recursive: true });
-  writeFileSync(file2, JSON.stringify({ theirs: 1, mcpServers: { own: { command: "x" } } }));
+  writeFileSync(file2, original2);
   const b = new GeminiCliSession({ workspaceDir: ws2 });
-  const merged = JSON.parse(readFileSync(file2, "utf8"));
-  assert.equal(merged.theirs, 1);
-  assert.equal(merged.mcpServers.own.command, "x");
-  assert.equal(merged.security.auth.selectedType, "gemini-api-key");
-  assert.throws(() => readFileSync(`${file2}.mirafold-backup`));
+  assert.equal(readFileSync(file2, "utf8"), original2, "construction never opens a pre-existing file");
+  const { awaitTurnEnd: bAwaitTurnEnd } = attach(b);
+  b.pushPrompt("hello");
+  await bAwaitTurnEnd();
+  const bAfterTurn = JSON.parse(readFileSync(file2, "utf8"));
+  assert.equal(bAfterTurn.theirs, 1);
+  assert.equal(bAfterTurn.mcpServers.own.command, "x", "the user's own entry survives the merge");
+  assert.equal(bAfterTurn.mcpServers[MIRAFOLD_MCP].command, RENDER_MCP_COMMAND);
+  assert.equal(bAfterTurn.security.auth.selectedType, "gemini-api-key");
+  assert.throws(() => readFileSync(`${file2}.mirafold-backup`), "valid JSON never gets a backup");
   b.close();
+});
+
+test("a pre-existing settings.json is never touched at all when trust is denied", async () => {
+  const ws = mkdtempSync(path.join(os.tmpdir(), "genui-gemini-untrusted-"));
+  const dir = path.join(ws, ".gemini");
+  const file = path.join(dir, "settings.json");
+  const garbage = '{ "theirs": true, // not JSON\n';
+  const { mkdirSync } = await import("node:fs");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(file, garbage);
+  const s = new GeminiCliSession({ workspaceDir: ws });
+  assert.equal(readFileSync(file, "utf8"), garbage, "construction never opens a pre-existing file");
+  const { awaitTurnEnd, msgs } = attach(s);
+  s.pushPrompt("hello");
+  const ask = await new Promise<Any>((resolve, reject) => {
+    const t0 = Date.now();
+    const poll = setInterval(() => {
+      const hit = msgs.find((m) => m.type === "permission_request");
+      if (hit) {
+        clearInterval(poll);
+        resolve(hit);
+      } else if (Date.now() - t0 > 10_000) {
+        clearInterval(poll);
+        reject(new Error("no permission_request"));
+      }
+    }, 10);
+  });
+  s.resolvePermission(ask.id, false);
+  await awaitTurnEnd();
+  assert.equal(readFileSync(file, "utf8"), garbage, "still untouched — denial never earns consent to rewrite");
+  assert.throws(() => readFileSync(`${file}.mirafold-backup`), "no backup ever written on a denied trust");
+  s.close();
+  rmSync(ws, { recursive: true, force: true });
 });
 
 function fixture(name: string, lines: (Record<string, unknown> | string)[]) {
@@ -638,12 +693,24 @@ test("an untrusted workspace asks the user before anything runs, then proceeds o
     // Nothing ran while the ask was open — the whole point of the gate.
     assert.equal(existsSync(argsLog), false, "no child spawned before the answer");
     assert.equal(msgs.some((m) => m.type === "turn_end"), false, "turn still open");
+    // K.2: the auth stub is already there (constructor-time), but the loadable
+    // MCP entry is NOT — that's the piece deferred to an actual trust yes.
+    const settingsFile = path.join(ws, ".gemini", "settings.json");
+    const beforeAllow = JSON.parse(readFileSync(settingsFile, "utf8"));
+    assert.equal(beforeAllow.security.auth.selectedType, "gemini-api-key");
+    assert.equal(beforeAllow.mcpServers, undefined, "no MCP entry while the ask is still open");
 
     s.resolvePermission(ask.id, true);
     await waitFor("turn_end");
     assert.ok(
       msgs.some((m) => m.type === "permission_resolved" && m.id === ask.id && m.allow === true),
       "the resolution is announced so every viewport drops its bar",
+    );
+    const afterAllow = JSON.parse(readFileSync(settingsFile, "utf8"));
+    assert.equal(
+      afterAllow.mcpServers[MIRAFOLD_MCP].command,
+      RENDER_MCP_COMMAND,
+      "the MCP entry lands only once the yes is in",
     );
     const argv = readFileSync(argsLog, "utf8");
     // The env var, NOT `--skip-trust`: measured against 0.53.0, the flag lets
@@ -672,6 +739,9 @@ test("denying runs nothing, says why, and does not remember a yes", async () => 
     assert.ok(notice, "the user is told why nothing happened");
     assert.match(notice.text, /won't run in a folder you haven't trusted/);
     assert.equal(isWorkspaceTrusted(ws), false, "a no is not recorded as a yes");
+    const settingsFile = path.join(ws, ".gemini", "settings.json");
+    const afterDeny = JSON.parse(readFileSync(settingsFile, "utf8"));
+    assert.equal(afterDeny.mcpServers, undefined, "a denied trust never gets the MCP entry either");
   } finally {
     s.close();
     delete process.env.FAKE_ARGS_LOG;
