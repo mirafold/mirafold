@@ -10,6 +10,15 @@ diffs into the session — components that stay live and can act back — and
 on Pro the same session travels to your phone through an end-to-end
 encrypted relay. Free and open source, MIT.
 
+If you've ever wished the agent's answers were readable instead of a wall
+of scrollback, that you could see every running session at a glance and act
+on any of them from one grid (mission control), that `sudo` and `ssh`
+didn't mean switching to another window (a `!`-prefixed command runs in a
+real PTY, in the same page, with the password prompt in a masked input the
+agent never sees), or that you could check on a long run from your phone
+(Pro) — that's this. And if you've been searching for a web UI, GUI, or
+frontend for Claude Code, Codex, or Gemini CLI: this is that.
+
 > **Mirafold is in public beta** — new, moving fast, and issues are wanted:
 > the [issue tracker](https://github.com/mirafold/mirafold/issues) is the
 > front door for anything that looks wrong.
