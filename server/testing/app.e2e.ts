@@ -1,11 +1,11 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { type Browser, type Page } from "playwright-core";
 import { fixtureGit as git, startDaemon, TestClient, type Daemon } from "./itest-harness";
-import { assertAxeClean, launchChrome } from "./e2e-harness";
+import { assertAxeClean, launchChrome, noSideScroll } from "./e2e-harness";
 import type { ClientMsg } from "../protocol";
 import { startOllamaFixture } from "./ollama-fixture";
 import { startRelayStub } from "../relay/relay-stub";
@@ -136,6 +136,60 @@ test("the agent picker flexes to the window — no internal scrollbar through th
     await d2.stop();
   }
 });
+
+test(
+  "N2: browse opens the host picker, fills cwd, and creates the session there",
+  { skip: process.platform !== "linux" && "the harmless Zenity fixture is Linux-specific" },
+  async () => {
+    // Substitute Zenity at the ordinary PATH seam: production still invokes
+    // the real platform helper, while this child prints one known directory
+    // and opens no GUI. The browser + daemon + WebSocket path remain real.
+    const fixture = mkdtempSync(path.join(os.tmpdir(), "mirafold-folder-picker-e2e-"));
+    const picked = path.join(fixture, "picked project");
+    const zenity = path.join(fixture, "zenity");
+    mkdirSync(picked);
+    writeFileSync(
+      zenity,
+      `#!/usr/bin/env node\n` +
+        `if ("OPENAI_API_KEY" in process.env || "MIRAFOLD_TEST_PICKER_SECRET" in process.env) process.exit(9);\n` +
+        `process.stdout.write(${JSON.stringify(picked)});\n`,
+    );
+    chmodSync(zenity, 0o755);
+    const token = "e2e-folder-picker-9c2f";
+    const d2 = await startDaemon({
+      MIRAFOLD_TOKEN: token,
+      MIRAFOLD_TEST_PICKER_SECRET: "must-not-cross",
+      DISPLAY: ":99",
+      PATH: `${fixture}${path.delimiter}${process.env.PATH ?? ""}`,
+    });
+    const page2 = await browser.newPage();
+    try {
+      await page2.goto(`http://127.0.0.1:${d2.port}/?token=${token}`);
+      await page2.waitForSelector(".onb-cwd-browse");
+      await page2.setViewportSize({ width: 390, height: 844 });
+      await noSideScroll(page2);
+      await assertAxeClean(page2, "onboarding folder picker");
+
+      await page2.locator(".onb-cwd-browse").click();
+      await page2.waitForFunction(
+        (expected) =>
+          (document.querySelector("#onb-cwd") as HTMLInputElement | null)?.value === expected,
+        picked,
+      );
+      assert.equal(await page2.locator("#onb-cwd").inputValue(), picked);
+
+      await page2.setViewportSize({ width: 1100, height: 800 });
+      await page2.locator(".onb-agent", { hasText: "Claude Code" }).click();
+      await page2.waitForURL(/\/s\/[\w-]+/);
+      await page2.waitForSelector(".sb-cwd");
+      assert.equal(await page2.locator(".sb-cwd").getAttribute("title"), picked);
+    } finally {
+      await page2.close();
+      await d2.stop();
+      rmSync(fixture, { recursive: true, force: true });
+    }
+  },
+);
 
 test("onboarding → a full mock turn renders in the DOM", async () => {
   // An empty registry opens straight into "choose your agent".

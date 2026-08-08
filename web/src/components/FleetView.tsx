@@ -8,6 +8,7 @@ import { SocketClient } from "../ws";
 import { tildify } from "../tildify";
 import { useArmedConfirm } from "../use-armed-confirm";
 import { paintTabStatus } from "../tab-status";
+import { createFolderPickerRequests } from "../folder-picker-requests";
 
 // 4.6 Mission control, grown into the Phase M cockpit: every live session in
 // the registry with name, cwd, live activity, pending permission, and usage —
@@ -89,6 +90,7 @@ export function FleetView() {
   const [daemon, setDaemon] = useState<{
     cwd?: string;
     home?: string;
+    folderPicker?: boolean;
     // The agents hello's relay info (protocol.ts) — RelayInfo mirrors its
     // shape, `ws` included (static-origin serving).
     relay?: RelayInfo;
@@ -125,6 +127,9 @@ export function FleetView() {
     s.setHello(() => ({ type: "watch_sessions" }));
     return s;
   });
+  const [folderPicker] = useState(() =>
+    createFolderPickerRequests((msg) => socket.sendIfOpen(msg)),
+  );
 
   // The socket's message handler lives for the socket's life; it reads the
   // picker's openness through this ref so error ROUTING follows the live
@@ -133,6 +138,7 @@ export function FleetView() {
 
   useEffect(() => {
     const offMsg = socket.onMessage((m) => {
+      if (folderPicker.handle(m)) return;
       if (m.type === "sessions") {
         setSessions(m.sessions);
         // Answered ids leave the set once the server's queue no longer
@@ -146,7 +152,7 @@ export function FleetView() {
         });
       } else if (m.type === "agents") {
         setAgents(m.agents);
-        setDaemon({ cwd: m.cwd, home: m.home, relay: m.relay });
+        setDaemon({ cwd: m.cwd, home: m.home, folderPicker: m.folderPicker, relay: m.relay });
       } else if (m.type === "session_created") {
         // The create issued from the onboarding card below: enter the session.
         location.assign(`/s/${m.sessionId}`);
@@ -158,14 +164,18 @@ export function FleetView() {
       }
     });
     const offOpen = socket.onOpen(() => setConnected(true));
-    const offClose = socket.onClose(() => setConnected(false));
+    const offClose = socket.onClose(() => {
+      folderPicker.disconnect();
+      setConnected(false);
+    });
     return () => {
       offMsg();
       offOpen();
       offClose();
+      folderPicker.disconnect();
       socket.close();
     };
-  }, [socket]);
+  }, [socket, folderPicker]);
 
   // Ago labels are honest at 30s; the second-resolution elapsed readout wants
   // a 1s tick — but only while something is actually active, so an idle
@@ -194,6 +204,10 @@ export function FleetView() {
   // fresh arrow each render would restart the 3s timer instead of letting
   // it fire.
   const refreshAgents = useCallback(() => socket.send({ type: "refresh_agents" }), [socket]);
+  const browseFolder = useCallback(
+    (cwd?: string) => folderPicker.request(cwd),
+    [folderPicker],
+  );
 
   const commitRename = (id: string, name: string) => {
     setRenaming(null);
@@ -223,6 +237,7 @@ export function FleetView() {
           agents={agents}
           defaultCwd={tildify(daemon.cwd, daemon.home)}
           error={onbError}
+          onBrowse={daemon.folderPicker ? browseFolder : undefined}
           onPick={(agent, cwd, backend) => {
             setOnbError(null);
             socket.send({ type: "create", agent, cwd, ...(backend ? { backend } : {}) });

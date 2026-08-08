@@ -2141,6 +2141,56 @@ own env/config. Live-verified on Kyle's machine.
 - [x] **N.5 — Session creation honors the choice** — done 2026-07-17. → PLAN-ARCHIVE.md.
 - [x] **N.6 — Live verification + docs reconciliation** — done 2026-07-17. → PLAN-ARCHIVE.md.
 
+## Phase N2 — Native working-directory picker (opened 2026-08-08)
+
+**Goal:** keep the launch directory as the honest default, but make changing it
+a normal graphical choice instead of requiring the user to type a filesystem
+path. Manual entry stays beside the picker for precision and as the fallback.
+
+**Proven constraint:** Mirafold's browser UI cannot use `showDirectoryPicker()`
+for this job: the web API returns a capability-scoped directory handle and its
+leaf name, not the host's absolute path that the local agent process needs as
+`cwd`. The authenticated local daemon must therefore open the host operating
+system's own folder dialog and return only the path the user explicitly chose.
+Remote relay viewports may still type a host path, but must never pop a dialog
+on the unattended host.
+
+**Dependency call:** add no package. macOS already supplies AppleScript's
+`choose folder`; Windows supplies `FolderBrowserDialog` through Windows
+PowerShell; Linux desktop users commonly have Zenity or KDialog, tried in that
+order. A native-dialog package would add platform binaries and supply-chain
+surface merely to wrap facilities the operating systems already provide. If no
+Linux dialog helper is installed, the existing editable path remains available.
+
+- [ ] **N2.1 — Host-native picker service + local-only wire**
+  - Build: bounded, shell-free child processes for macOS (`osascript`), Windows
+    (`FolderBrowserDialog`), and Linux (`zenity`, then `kdialog`); one global
+    dialog at a time, cancellation as a quiet result, selected-directory
+    validation, output caps, and abort on viewport close. Add an additive
+    correlated `pick_folder` / `folder_picked` request-reply pair. Advertise
+    availability in the `agents` hello; refuse the request over the relay.
+  - Files: `server/folder-picker.ts`, a small session handler,
+    `server/sessions/connection.ts`, `server/protocol.ts`, focused tests.
+
+- [ ] **N2.2 — Onboarding browse control**
+  - Build: put a real `browse…` button beside the still-editable working-dir
+    field; click opens the host dialog at the field's current valid directory,
+    a choice replaces the field, cancel changes nothing, errors stay in the
+    card, and the button cannot stack dialogs. Hide it when the daemon says no
+    native picker is available (including relay viewports).
+  - Files: `web/src/components/Onboarding.tsx`, `web/src/components/Shell.tsx`,
+    `web/src/session-bus.ts`, `web/src/styles.css`.
+
+- [ ] **N2.3 — Regression proof + documentation**
+  - Done when: Tier 1 pins every platform recipe, cancellation, fallback,
+    validation, and concurrency; a real-daemon browser test substitutes a
+    harmless Zenity fixture, clicks `browse…`, observes the chosen absolute
+    path in the field, and creates the session in that directory; remote and
+    hostile request behavior are pinned; typecheck, all three automated tiers,
+    build/package, and accessibility checks are green. README's working-dir
+    contract names the graphical path and its manual fallback. Land via a
+    DCO-signed `feature/*` PR into `next`; `main` and release state stay put.
+
 ## Phase V — Visual + fidelity gaps flagged by Kyle (opened 2026-07-17; ✅ COMPLETE)
 
 Full bodies + dated status in PLAN-ARCHIVE.md ("Moved 2026-07-19").

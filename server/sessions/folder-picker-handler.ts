@@ -1,0 +1,80 @@
+// Per-viewport wire handler for N2's host-native working-directory picker.
+// The dialog is local shell chrome: never broadcast, replayed, or reachable
+// through the paid relay. Every well-formed request gets one correlated reply.
+
+import type { ClientMsg, WireMsg } from "../protocol";
+import { errText } from "../adapters/types";
+import { pickHostDirectory, type PickHostDirectory } from "../folder-picker";
+import { CLIENT_ID_RE } from "./fs-handlers";
+
+type PickFolder = Extract<ClientMsg, { type: "pick_folder" }>;
+
+export type FolderPickerHandler = {
+  pick: (msg: PickFolder) => void;
+  close: () => void;
+};
+
+export function createFolderPickerHandler(opts: {
+  viewport: (msg: WireMsg) => void;
+  remote: boolean;
+  isClosed: () => boolean;
+  pickDirectory?: PickHostDirectory;
+}): FolderPickerHandler {
+  const pickDirectory = opts.pickDirectory ?? pickHostDirectory;
+  let active: AbortController | null = null;
+
+  const reply = (msg: Extract<WireMsg, { type: "folder_picked" }>) => {
+    if (!opts.isClosed()) opts.viewport(msg);
+  };
+
+  const pick = (msg: PickFolder): void => {
+    if (typeof msg.id !== "string" || !CLIENT_ID_RE.test(msg.id)) return;
+    if (opts.remote) {
+      reply({
+        type: "folder_picked",
+        id: msg.id,
+        error:
+          "Folder browsing is available only on the computer running Mirafold. Type a path on that computer instead.",
+      });
+      return;
+    }
+    if (typeof msg.cwd === "string" && msg.cwd.length > 4_096) {
+      reply({ type: "folder_picked", id: msg.id, error: "The working-directory path is too long." });
+      return;
+    }
+    if (active) {
+      reply({
+        type: "folder_picked",
+        id: msg.id,
+        error: "A folder picker is already open. Choose a folder or cancel it first.",
+      });
+      return;
+    }
+
+    const controller = new AbortController();
+    active = controller;
+    void pickDirectory(typeof msg.cwd === "string" ? msg.cwd : undefined, controller.signal)
+      .then((selected) => {
+        reply(
+          selected
+            ? { type: "folder_picked", id: msg.id, path: selected }
+            : { type: "folder_picked", id: msg.id, canceled: true },
+        );
+      })
+      .catch((err) => {
+        if (controller.signal.aborted) return;
+        reply({ type: "folder_picked", id: msg.id, error: errText(err) });
+      })
+      .finally(() => {
+        if (active === controller) active = null;
+      });
+  };
+
+  return {
+    pick,
+    close: () => {
+      active?.abort();
+      active = null;
+    },
+  };
+}

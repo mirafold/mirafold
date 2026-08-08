@@ -5,6 +5,7 @@ import { PROMPT_GATE_REFUSAL, type SessionEntry, type SessionRegistry } from "./
 import { runActionTool } from "./actions";
 import { createBangHandlers } from "./bang-handlers";
 import { createFsHandlers } from "./fs-handlers";
+import { createFolderPickerHandler } from "./folder-picker-handler";
 import {
   ADAPTER_AGENTS,
   availableAgents,
@@ -22,6 +23,7 @@ import { VERSION } from "../version";
 // lifecycle; re-exported because the Tier-1 pin imports it from here.
 export { escapeTranscriptFence } from "./bang-handlers";
 import { envInt } from "../env";
+import { folderPickerAvailable } from "../folder-picker";
 
 // Minimum gap between refresh_agents-triggered probe sweeps per connection
 // (N.3). The picker polls every few seconds; anything faster serves the
@@ -87,6 +89,11 @@ export function openConnection(
   const fs = createFsHandlers({
     viewport,
     getEntry: () => entry,
+    isClosed: () => closed,
+  });
+  const folderPicker = createFolderPickerHandler({
+    viewport,
+    remote,
     isClosed: () => closed,
   });
 
@@ -160,6 +167,7 @@ export function openConnection(
       default: defaultAgent(),
       cwd: process.cwd(),
       home: os.homedir(),
+      folderPicker: !remote && folderPickerAvailable(),
       version: VERSION,
       ...(relay ? { relay } : {}),
     });
@@ -422,6 +430,9 @@ export function openConnection(
           if (!closed) sendAgents();
         });
         break;
+      case "pick_folder":
+        folderPicker.pick(msg);
+        break;
       case "fs_list":
         // Explorer tree/read/diff (Phase E) — per-viewport queries handled
         // in fs-handlers.ts (jail, throttle, git-in-flight, one reply each).
@@ -454,6 +465,7 @@ export function openConnection(
 
   const close = () => {
     closed = true;
+    folderPicker.close();
     if (entry) {
       registry.detach(entry, viewport);
       log.info(`viewport detached ← session ${entry.id}`);
