@@ -1937,17 +1937,16 @@ with it. Both sequence BEFORE R.5.**
     turned it from guessing into reading, and it should have been the first
     move rather than the fifth. Both halves stay in the tree for next time.
 
-- [ ] **Two timing-fragile Tier-3 assertions, still flaky (2026-07-30).**
-  Separate from the wedge above and NOT product bugs — both assert on
-  wall-clock rendering rather than on state, in headless Chrome on a loaded
-  machine:
-  - `a busy turn never looks idle…` demands a CSS animation advance at
-    least one frame within a 128ms sample. Fix: assert the busy STATE the
-    indicator derives from, not the glyph's motion.
-  - `diagram component: mermaid renders as SVG inside the sandbox` — seen
-    twice; mermaid lazy-loads inside a sandboxed iframe.
-  Neither is worth a hunt; both are worth a rewrite when someone is in the
-  file. Combined they are the residual "sometimes 76/77".
+- [x] **Two timing-fragile Tier-3 assertions — resolved 2026-08-08 (N3).**
+  Neither failure was a product-rendering defect. The activity test split a
+  transient-element assertion across two Playwright calls, so a legitimate
+  `turn_end` could remove the line between the wait and the read. Its own
+  session now uses a permission request to hold the exact busy state under
+  test. Mermaid's outer component never arrived at all: the shared session
+  could inherit the preceding turn's one-follow-up prompt gate. Its test now
+  owns a session while retaining the production lazy chunk, sandbox, CSP,
+  postMessage, and parse-error paths. Focused repetition and two complete
+  78-test browser runs passed unchanged; protected proof remains N3.4.
 
 - [x] **Step R.6b — The packaged-artifact pass (opened + done 2026-07-30,
   after the day's two blockers)** — `scripts/packaged-pass.mjs`: `npm pack`,
@@ -2140,6 +2139,40 @@ own env/config. Live-verified on Kyle's machine.
 - [x] **N.4 — The second-step picker UI** — done 2026-07-17. → PLAN-ARCHIVE.md.
 - [x] **N.5 — Session creation honors the choice** — done 2026-07-17. → PLAN-ARCHIVE.md.
 - [x] **N.6 — Live verification + docs reconciliation** — done 2026-07-17. → PLAN-ARCHIVE.md.
+
+## Phase N2 — Native working-directory picker (opened + ✅ COMPLETE 2026-08-08)
+
+✅ COMPLETE — full body + dated outcome in PLAN-ARCHIVE.md ("Moved 2026-08-08").
+The startup screen keeps the launch directory as an editable default and adds
+an operating-system folder dialog for local viewports. The request is bounded,
+credential-scrubbed, never replayed, and refused over the relay; no dependency
+was added. Protected Tier 1/2/3 checks, Cloudflare, and DCO passed on PR #22.
+
+- [x] **N2.1 — Host-native picker service + local-only wire** — done
+  2026-08-08; shell-free macOS, Windows, and Linux recipes; correlated
+  non-replayed wire pair; validation, cancellation, concurrency, abort, and
+  relay refusal pinned. → PLAN-ARCHIVE.md.
+- [x] **N2.2 — Onboarding browse control** — done 2026-08-08; compact
+  `browse…` beside the editable path in both startup routes, capability-gated
+  with manual entry retained as the universal fallback. → PLAN-ARCHIVE.md.
+- [x] **N2.3 — Regression proof + documentation** — done 2026-08-08; focused
+  tests, real-daemon browser proof, accessibility/phone checks, typecheck,
+  build/package, production audit, README, and protected CI complete.
+  → PLAN-ARCHIVE.md.
+
+## Phase N3 — Stable Tier-3 browser gates (✅ COMPLETE 2026-08-08)
+
+- [x] **N3.1 — Controlled busy-state proof** — own session + permission latch;
+  no transient-locator race. → PLAN-ARCHIVE.md.
+- [x] **N3.2 — Isolated Mermaid renderer proof** — own session, production
+  lazy chunk/sandbox/CSP/postMessage paths retained. → PLAN-ARCHIVE.md.
+- [x] **N3.3 — Deterministic follow-tail re-arm** — wheel/touch intent arms
+  synchronously against pre-input geometry; pure boundaries + real-wheel e2e.
+  → PLAN-ARCHIVE.md.
+- [x] **N3.4 — Repetition + protected proof** — focused activity 6/6,
+  Mermaid 5/5, follow-tail 6/6; Tier 1 554/554; two unchanged full Tier-3
+  runs 78/78; PR #22's DCO, Cloudflare, Tier 1, and combined Tier 2/3 checks
+  passed on implementation head `a091ba1`. → PLAN-ARCHIVE.md.
 
 ## Phase V — Visual + fidelity gaps flagged by Kyle (opened 2026-07-17; ✅ COMPLETE)
 
@@ -2560,21 +2593,19 @@ anywhere; each is independent.
 
 - [x] **Step Q.5 — Pin the `.env` guard's edges** — done 2026-07-12; traversal + cross-cwd denials pinned across all four guarded readers, non-vacuous by weakening the guard. (Symlink bypass stays the documented accepted residual.) → PLAN-ARCHIVE.md.
 
-- **WATCH ITEM (2026-07-24): the follow-tail re-arm race** — seen once on the
+- [x] **WATCH ITEM (2026-07-24): the follow-tail re-arm race — closed
+  2026-08-08 by N3.3.** Seen once on the
   CI runner (app.e2e.ts "re-follows once back at the bottom", sat 188px above
-  the tail), green on rerun and on every local run; ROOT-CAUSED same day, fix
-  deferred. Mechanism: re-arming depends on `use-follow-tail.ts`'s `onScroll`
+  the tail), green on rerun and on every local run; root-caused same day.
+  Mechanism: re-arming depended on `use-follow-tail.ts`'s `onScroll`
   measuring within `BOTTOM_SLACK_PX` (24) of the bottom, but scroll events
   fire a frame after the scroll — under load the stream can paint >24px in
   that gap, so a reader (or the test's single programmatic jump) landing at
   the bottom mid-stream measures as "not at bottom" and follow never re-arms.
-  A REAL product race, not only test fragility — narrow, and a human recovers
-  by scrolling again, which is why it's a watch item not a blocker. Proposed
-  fix shape when picked up: arm on INTENT like detach already does (a
-  downward wheel/touch ending near the bottom re-arms), so re-arming stops
-  depending on winning a paint race; the hook's two locked decisions
-  (2026-07-20 trace) must be re-read first. The test's single jump + single
-  sample then stops being timing-sensitive on its own.
+  A real product race, not only test fragility. Downward wheel/touch intent
+  that reaches the current bottom now re-arms synchronously against pre-input
+  geometry; the existing instant-follow and input-detach decisions remain.
+  Pure boundary tests and a controlled real-wheel browser scenario pin it.
 
 ---
 

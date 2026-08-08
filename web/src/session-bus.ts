@@ -1,5 +1,6 @@
 import type { Action, AgentName, BackendChoice, WireMsg } from "@protocol";
 import { SocketClient } from "./ws";
+import { createFolderPickerRequests } from "./folder-picker-requests";
 
 /**
  * What the output zone consumes: the wire protocol plus one local control
@@ -23,6 +24,9 @@ export interface SessionBus {
   createSession(agent: AgentName, cwd?: string, backend?: BackendChoice): void;
   /** Ask the daemon to re-probe local servers and re-send the agents hello (N.3). */
   refreshAgents(): void;
+  /** Open the host's native folder dialog. A cancel resolves undefined; a
+   *  daemon/platform failure rejects with the shell-owned explanation. */
+  pickFolder(cwd?: string): Promise<string | undefined>;
   sendPrompt(text: string): void;
   /** Returns the minted bang id so the issuing viewport can correlate. */
   sendBang(command: string): string;
@@ -47,6 +51,7 @@ export function createSessionBus(): SessionBus {
   const socket = new SocketClient();
   const listeners = new Set<(m: ZoneMsg) => void>();
   const connListeners = new Set<(c: boolean, refusal?: string) => void>();
+  const folderPicker = createFolderPickerRequests((msg) => socket.sendIfOpen(msg));
   // The URL carries the session identity; no id yet means "create one".
   let sessionId = location.pathname.match(/^\/s\/([\w-]+)/)?.[1] ?? null;
   // Attach to a known session; otherwise send nothing and wait at onboarding
@@ -61,9 +66,11 @@ export function createSessionBus(): SessionBus {
     for (const c of connListeners) c(true);
   });
   socket.onClose((refusal) => {
+    folderPicker.disconnect();
     for (const c of connListeners) c(false, refusal);
   });
   socket.onMessage((m) => {
+    if (folderPicker.handle(m)) return;
     if (m.type === "session_created") {
       sessionId = m.sessionId;
       history.replaceState(null, "", `/s/${m.sessionId}`);
@@ -107,6 +114,9 @@ export function createSessionBus(): SessionBus {
     },
     refreshAgents() {
       socket.send({ type: "refresh_agents" });
+    },
+    pickFolder(cwd?: string): Promise<string | undefined> {
+      return folderPicker.request(cwd);
     },
     sendPrompt(text: string) {
       // No local echo — the server broadcasts the user_prompt to every

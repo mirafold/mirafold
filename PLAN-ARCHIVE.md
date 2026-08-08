@@ -6848,3 +6848,130 @@ per-repo `git status --ignored` runs in **40 ms** and emits **<400 bytes**
     selected GPT-5.6 Sol and replied `ok` without an error. Focused tests
     (53/53), Tier 1 (536/536), typecheck, build, package dry-run, and the
     production dependency audit (0 vulnerabilities) passed.
+
+## Moved 2026-08-08 (native working-directory picker — full body)
+
+### Phase N2 — Native working-directory picker (opened 2026-08-08)
+
+**Goal:** keep the launch directory as the honest default, but make changing it
+a normal graphical choice instead of requiring the user to type a filesystem
+path. Manual entry stays beside the picker for precision and as the fallback.
+
+**Proven constraint:** Mirafold's browser UI cannot use `showDirectoryPicker()`
+for this job: the web API returns a capability-scoped directory handle and its
+leaf name, not the host's absolute path that the local agent process needs as
+`cwd`. The authenticated local daemon must therefore open the host operating
+system's own folder dialog and return only the path the user explicitly chose.
+Remote relay viewports may still type a host path, but must never pop a dialog
+on the unattended host.
+
+**Dependency call:** add no package. macOS already supplies AppleScript's
+`choose folder`; Windows supplies `FolderBrowserDialog` through Windows
+PowerShell; Linux desktop users commonly have Zenity or KDialog, tried in that
+order. A native-dialog package would add platform binaries and supply-chain
+surface merely to wrap facilities the operating systems already provide. If no
+Linux dialog helper is installed, the existing editable path remains available.
+
+- [x] **N2.1 — Host-native picker service + local-only wire**
+  - Build: bounded, shell-free child processes for macOS (`osascript`), Windows
+    (`FolderBrowserDialog`), and Linux (`zenity`, then `kdialog`); one global
+    dialog at a time, cancellation as a quiet result, selected-directory
+    validation, output caps, and abort on viewport close. Add an additive
+    correlated `pick_folder` / `folder_picked` request-reply pair. Advertise
+    availability in the `agents` hello; refuse the request over the relay.
+  - Files: `server/folder-picker.ts`, a small session handler,
+    `server/sessions/connection.ts`, `server/protocol.ts`, focused tests.
+
+- [x] **N2.2 — Onboarding browse control**
+  - Build: put a real `browse…` button beside the still-editable working-dir
+    field; click opens the host dialog at the field's current valid directory,
+    a choice replaces the field, cancel changes nothing, errors stay in the
+    card, and the button cannot stack dialogs. Hide it when the daemon says no
+    native picker is available (including relay viewports).
+  - Files: `web/src/components/Onboarding.tsx`, `web/src/components/Shell.tsx`,
+    `web/src/session-bus.ts`, `web/src/styles.css`.
+
+- [x] **N2.3 — Regression proof + documentation**
+  - Done when: Tier 1 pins every platform recipe, cancellation, fallback,
+    validation, and concurrency; a real-daemon browser test substitutes a
+    harmless Zenity fixture, clicks `browse…`, observes the chosen absolute
+    path in the field, and creates the session in that directory; remote and
+    hostile request behavior are pinned; typecheck, all three automated tiers,
+    build/package, and accessibility checks are green. README's working-dir
+    contract names the graphical path and its manual fallback. Land via a
+    DCO-signed `feature/*` PR into `next`; `main` and release state stay put.
+
+**Outcome:** both startup routes now offer a compact native `browse…` control
+while preserving the editable absolute-path field. Mirafold opens the host
+dialog with fixed executable/argument arrays, validates the selected directory,
+caps output, allows only one dialog globally and per connection, aborts on
+disconnect, and gives the child a strict desktop/session allowlist rather than
+the daemon's credential-bearing environment. The correlated response is sent
+only to the requesting local viewport and clicks are never queued across a
+reconnect; relay, unsupported-platform, and helper-missing cases retain manual
+entry without claiming a picker exists. No package was added. Focused tests
+(51/51), Tier 1 (551/551), typecheck, package dry-run, production audit (0
+vulnerabilities), the real-daemon/real-browser picker proof, phone no-overflow,
+axe, and protected GitHub Tier 1/2/3 checks passed. The direct local full Tier 2
+and Tier 3 runs also exposed four unchanged baseline failures, each reproduced
+from an isolated `origin/next`; PR #22 records those controls explicitly.
+
+## Moved 2026-08-08 (stable Tier-3 browser gates — full body)
+
+### Phase N3 — Stable Tier-3 browser gates (opened + done 2026-08-08)
+
+**Goal:** keep the browser suite's real guarantees while removing the three
+observed timing/state races that intermittently blocked otherwise-good PRs.
+
+**Proven causes:**
+
+- Activity: the test waited for the transient `.activity-line`, then made a
+  second Playwright round-trip to read it. On the failed PR #22 run the first
+  wait succeeded, the scripted turn correctly ended and removed the line, and
+  the second call waited 30 seconds for an element that was supposed to stay
+  gone. The unchanged executable head had passed immediately before the
+  docs-only commit that caused the rerun.
+- Mermaid: the failed run never reached the outer `.rc-diagram`; the shared
+  session could carry a preceding turn across the test boundary and leave the
+  diagram prompt contending with the one-follow-up gate. The lazy Mermaid
+  runtime was never implicated by the trace.
+- Follow-tail: re-arming only in the delayed `scroll` event let streamed paint
+  move the bottom beyond the 24px slack after the user's downward gesture but
+  before that event measured it. This one was a narrow product race, not only
+  a test race; it matched the watch item root-caused on 2026-07-24.
+
+- [x] **N3.1 — Replace elapsed-time luck with a controlled busy state**
+  - The activity test now owns its daemon, page, and session and uses the mock
+    permission request as a deterministic latch. It asserts presence, elapsed
+    text, glyph movement, viewport placement, no blank busy frames, and clean
+    teardown while the test—not timer scheduling—controls when the turn ends.
+
+- [x] **N3.2 — Isolate the Mermaid renderer proof**
+  - The diagram test now owns its session, so it reaches the renderer or fails
+    for a renderer reason. Its guarantee is otherwise unchanged: it drives the
+    production lazy chunk, sandboxed iframe, CSP, postMessage sizing handshake,
+    SVG render, and parse-error fallback.
+
+- [x] **N3.3 — Close the real follow-tail re-arm race**
+  - Instant following and input-based upward detachment remain intact.
+    Downward wheel/touch intent that will reach the current bottom now arms
+    synchronously against the geometry at input time, before streamed paint
+    can move the target ahead of a later `scroll` event. Pure Tier-1 tests pin
+    pixel, line, page, direction, and exact boundary decisions. The browser
+    test owns deterministic scrollback, proves a real upward wheel detaches
+    during growth, then uses a permission latch and real downward wheel to
+    prove later tool/output frames keep following without a new prompt.
+
+- [x] **N3.4 — Prove the flakes are gone**
+  - Focused unchanged repetition: activity 6/6, Mermaid 5/5, follow-tail 6/6;
+    pure intent boundaries 3/3. Full Tier 1 passed 554/554, typecheck and
+    diff validation passed, and two consecutive unchanged full Tier-3 runs
+    passed 78/78 in 183s and 186s. PR #22's implementation head `a091ba1`
+    then passed DCO, Cloudflare Pages, Tier 1 (1m23s), and the combined Tier
+    2 + Tier 3 protected job (6m41s) on the loaded GitHub runner.
+
+**Outcome:** the two test-only flakes now synchronize on owned state instead
+of shared-session timing, while the follow-tail watch item is fixed in product
+code. No dependency was added. The checks retain their original user-visible
+guarantees and now fail at the component they name: busy chrome, Mermaid
+rendering, or follow-tail behavior.

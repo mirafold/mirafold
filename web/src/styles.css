@@ -3038,9 +3038,17 @@ body {
   color: var(--fg-dim);
 }
 
-.onb-cwd {
-  width: 100%;
+.onb-cwd-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
   margin-bottom: calc(10px + var(--onb-squeeze) * 0.25); /* 10→14px */
+}
+
+.onb-cwd {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
   padding: calc(8px + var(--onb-squeeze) * 0.1875) 13px; /* 8→11px */
   background: var(--bg-inset);
   border: 1px solid var(--border-mid);
@@ -3057,6 +3065,29 @@ body {
 
 .onb-cwd::placeholder {
   color: var(--fg-faint);
+}
+
+.onb-cwd-browse {
+  flex: none;
+  padding: 0 13px;
+  border: 1px solid var(--border-mid);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--fg-strong);
+  cursor: pointer;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.onb-cwd-browse:hover:not(:disabled) {
+  border-color: var(--border-hover);
+  background: var(--surface-hover);
+}
+
+.onb-cwd-browse:disabled {
+  cursor: wait;
+  color: var(--fg-dim);
 }
 
 /* A rejected working dir (no such directory) — fix the path and retry. */

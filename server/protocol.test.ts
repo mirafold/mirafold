@@ -120,9 +120,11 @@ const WIRE: WireByType = {
     default: "claude-code",
     cwd: "/home/u/proj",
     home: "/home/u",
+    folderPicker: true,
     relay: { url: "wss://relay.mirafold.sh", code: "abc123def456ghij" },
     version: "0.0.1",
   },
+  folder_picked: { type: "folder_picked", id: "fp1", path: "/home/u/other-project" },
   refused: {
     type: "refused",
     reason: "subscription_over_relay",
@@ -213,6 +215,7 @@ const CLIENT: ClientByType = {
   interrupt_session: { type: "interrupt_session", sessionId: "s1" },
   prompt_session: { type: "prompt_session", sessionId: "s1", text: "run the tests" },
   refresh_agents: { type: "refresh_agents" },
+  pick_folder: { type: "pick_folder", id: "fp1", cwd: "/home/u/proj" },
   fs_list: { type: "fs_list", id: "f1" },
   fs_listdir: { type: "fs_listdir", id: "f4", path: "src" },
   fs_read: { type: "fs_read", id: "f2", path: "src/app.ts" },
@@ -323,4 +326,10 @@ test("Q.2 load-bearing frames keep their exact shape (a rename fails here loudly
   // (the never-broadcast secret path) must not silently change field names.
   assert.deepEqual(CLIENT.permission_response, { type: "permission_response", id: "p1", allow: true });
   assert.deepEqual(CLIENT.bang_input, { type: "bang_input", data: "hunter2\n", id: "b1" });
+  assert.deepEqual(CLIENT.pick_folder, { type: "pick_folder", id: "fp1", cwd: "/home/u/proj" });
+  assert.deepEqual(WIRE.folder_picked, {
+    type: "folder_picked",
+    id: "fp1",
+    path: "/home/u/other-project",
+  });
 });

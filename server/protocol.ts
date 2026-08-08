@@ -170,9 +170,16 @@ type WireMsgBody =
       default: AgentName;
       cwd?: string;
       home?: string;
+      // N2: this viewport can ask the daemon to open a native folder dialog
+      // on the host. False/absent keeps the manual path field only (old
+      // daemon, relay viewport, or Linux without Zenity/KDialog).
+      folderPicker?: boolean;
       relay?: { url: string; code: string; ws?: string };
       version?: string;
     }
+  // N2: one local, per-viewport reply to `pick_folder`; never broadcast or
+  // replayed. Cancel is explicit so an empty reply cannot strand the button.
+  | { type: "folder_picked"; id: string; path?: string; canceled?: true; error?: string }
   // The daemon refused to attach this REMOTE (relay) viewport to the
   // session because the session's credential can't be used over the paid relay
   // — a subscription-backed agent (closed-model reselling posture). Sent instead
@@ -514,6 +521,10 @@ export type ClientMsg =
   // "start your local server and it appears here" promise is live — no
   // reload. Server-side throttled; a burst degrades to the cached answer.
   | { type: "refresh_agents" }
+  // N2: an explicit user gesture asks the LOCAL daemon to open the host OS's
+  // folder dialog. `cwd` is only the suggested starting directory; the daemon
+  // validates it and returns the actual selected path in `folder_picked`.
+  | { type: "pick_folder"; id: string; cwd?: string }
   // Phase E (Explorer): the read-only file browser's per-viewport queries.
   // `id` is client-minted (the bang-id grammar) so the issuing component can
   // correlate the one reply each request gets. The path is a REQUEST — the

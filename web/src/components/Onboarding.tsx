@@ -197,6 +197,7 @@ export function Onboarding({
   defaultCwd,
   error,
   onPick,
+  onBrowse,
   onRefresh,
   onDismiss,
 }: {
@@ -204,6 +205,9 @@ export function Onboarding({
   defaultCwd?: string;
   error?: string | null;
   onPick: (agent: AgentName, cwd?: string, backend?: BackendChoice) => void;
+  // Present only when this LOCAL daemon advertised a host-native picker.
+  // Cancel resolves undefined; errors reject and stay inside this card.
+  onBrowse?: (cwd?: string) => Promise<string | undefined>;
   // Ask the daemon to re-probe local servers and re-send the hello (N.3);
   // called on a slow poll while the card is open.
   onRefresh?: () => void;
@@ -214,6 +218,8 @@ export function Onboarding({
   onDismiss?: () => void;
 }) {
   const [cwd, setCwd] = useState("");
+  const [browsing, setBrowsing] = useState(false);
+  const [browseError, setBrowseError] = useState<string | null>(null);
   // Which agent's backend menu is open (the second step), if any.
   const [picking, setPicking] = useState<AgentName | null>(null);
   // Which discovered server's model catalog is open (the third step) — its
@@ -246,6 +252,20 @@ export function Onboarding({
   const pickingRow = picking ? agents?.find((a) => a.agent === picking) : undefined;
   const pick = (agent: AgentName, backend?: BackendChoice) =>
     onPick(agent, cwd.trim() || undefined, backend);
+  const browse = async () => {
+    if (!onBrowse || browsing) return;
+    setBrowseError(null);
+    setBrowsing(true);
+    try {
+      const selected = await onBrowse(cwd.trim() || undefined);
+      if (selected) setCwd(selected);
+    } catch (err) {
+      setBrowseError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBrowsing(false);
+    }
+  };
+  const shownError = browseError ?? error;
 
   return (
     // Esc/backdrop walk back the same steps (stepBack above), so the modal's
@@ -266,16 +286,36 @@ export function Onboarding({
       <label className="onb-cwd-label" htmlFor="onb-cwd">
         working directory
       </label>
-      <input
-        id="onb-cwd"
-        className="onb-cwd"
-        type="text"
-        value={cwd}
-        spellCheck={false}
-        placeholder={defaultCwd ?? "~/path/to/project"}
-        onChange={(e) => setCwd(e.target.value)}
-      />
-      {error && <div className="onb-error">{error}</div>}
+      <div className="onb-cwd-row">
+        <input
+          id="onb-cwd"
+          className="onb-cwd"
+          type="text"
+          value={cwd}
+          spellCheck={false}
+          placeholder={defaultCwd ?? "~/path/to/project"}
+          aria-describedby={shownError ? "onb-cwd-error" : undefined}
+          onChange={(e) => {
+            setCwd(e.target.value);
+            setBrowseError(null);
+          }}
+        />
+        {onBrowse && (
+          <button
+            type="button"
+            className="onb-cwd-browse"
+            disabled={browsing}
+            onClick={() => void browse()}
+          >
+            {browsing ? "choosing…" : "browse…"}
+          </button>
+        )}
+      </div>
+      {shownError && (
+        <div className="onb-error" id="onb-cwd-error">
+          {shownError}
+        </div>
+      )}
       {pickingRow ? (
         <BackendMenu
           row={pickingRow}

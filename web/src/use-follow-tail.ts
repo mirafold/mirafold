@@ -37,6 +37,39 @@ import { useRef } from "react";
 // pixel that subpixel scroll heights leave behind. A judgment call, not a
 // measurement.
 const BOTTOM_SLACK_PX = 24;
+const WHEEL_LINE_PX = 16;
+
+type ScrollGeometry = Pick<HTMLElement, "scrollHeight" | "scrollTop" | "clientHeight">;
+type WheelIntent = { deltaY: number; deltaMode?: number };
+
+const bottomGap = (el: ScrollGeometry) => el.scrollHeight - el.scrollTop - el.clientHeight;
+
+/**
+ * Decide from the geometry that existed when the user steered, before the
+ * browser dispatches a later scroll event and before streamed output can move
+ * the bottom. Exported so the race's exact boundary is pinned without a DOM
+ * test harness.
+ */
+export function wheelIntentReachesBottom(el: ScrollGeometry, e: WheelIntent): boolean {
+  if (e.deltaY <= 0) return false;
+  const deltaPx =
+    e.deltaMode === 1
+      ? e.deltaY * WHEEL_LINE_PX
+      : e.deltaMode === 2
+        ? e.deltaY * el.clientHeight
+        : e.deltaY;
+  return bottomGap(el) <= deltaPx + BOTTOM_SLACK_PX;
+}
+
+/** Finger moving up scrolls the transcript toward its tail. */
+export function touchIntentReachesBottom(
+  el: ScrollGeometry,
+  previousY: number,
+  nextY: number,
+): boolean {
+  const deltaPx = previousY - nextY;
+  return deltaPx > 0 && bottomGap(el) <= deltaPx + BOTTOM_SLACK_PX;
+}
 
 export function useFollowTail() {
   const scrollerRef = useRef<HTMLDivElement>(null);
@@ -44,8 +77,7 @@ export function useFollowTail() {
   const lastTop = useRef(0);
   const touchY = useRef<number | null>(null);
 
-  const atBottom = (el: HTMLElement) =>
-    el.scrollHeight - el.scrollTop - el.clientHeight <= BOTTOM_SLACK_PX;
+  const atBottom = (el: HTMLElement) => bottomGap(el) <= BOTTOM_SLACK_PX;
 
   const onScroll = () => {
     const el = scrollerRef.current;
@@ -56,11 +88,16 @@ export function useFollowTail() {
     lastTop.current = el.scrollTop;
   };
 
-  // Steering UP detaches. Steering down does not: at the bottom it produces no
-  // scroll event at all, so nothing would re-arm us and output would stop
-  // following for a reader who never left.
-  const onWheel = (e: { deltaY: number }) => {
-    if (e.deltaY < 0) following.current = false;
+  // Steering UP detaches. A gesture that will reach the current bottom arms
+  // synchronously: waiting for onScroll is racy because streamed paint can
+  // move the bottom by more than the slack before that event runs.
+  const onWheel = (e: WheelIntent) => {
+    if (e.deltaY < 0) {
+      following.current = false;
+      return;
+    }
+    const el = scrollerRef.current;
+    if (el && wheelIntentReachesBottom(el, e)) following.current = true;
   };
 
   const onTouchStart = (e: { touches: { clientY: number }[] | ArrayLike<{ clientY: number }> }) => {
@@ -79,7 +116,14 @@ export function useFollowTail() {
   const onTouchMove = (e: { touches: ArrayLike<{ clientY: number }> }) => {
     const y = e.touches[0]?.clientY;
     if (y === undefined) return;
-    if (touchY.current !== null && y > touchY.current) following.current = false;
+    const previousY = touchY.current;
+    if (previousY !== null && y > previousY) following.current = false;
+    else {
+      const el = scrollerRef.current;
+      if (el && previousY !== null && touchIntentReachesBottom(el, previousY, y)) {
+        following.current = true;
+      }
+    }
     touchY.current = y;
   };
 

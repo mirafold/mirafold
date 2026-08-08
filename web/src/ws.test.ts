@@ -171,6 +171,23 @@ test("a null hello sends nothing but still flushes the queue (P.4 onboarding)", 
   );
 });
 
+test("sendIfOpen never replays a user-gesture side effect after reconnect", (t) => {
+  const { client, sock } = setup(t);
+  assert.equal(client.sendIfOpen({ type: "pick_folder", id: "fp-before-open" }), false);
+
+  sock().open();
+  assert.deepEqual(sock().parsedSent(), [], "the rejected click was not queued");
+  assert.equal(client.sendIfOpen({ type: "pick_folder", id: "fp-open" }), true);
+  assert.deepEqual(sock().parsedSent(), [{ type: "pick_folder", id: "fp-open" }]);
+
+  sock().close();
+  sock().finishClose();
+  assert.equal(client.sendIfOpen({ type: "pick_folder", id: "fp-disconnected" }), false);
+  t.mock.timers.tick(BACKOFF_MIN_MS);
+  sock().open();
+  assert.deepEqual(sock().parsedSent(), [], "the disconnected click was not replayed");
+});
+
 test("viewportRefusalReason maps relay refusal codes; ordinary drops are undefined", () => {
   assert.match(viewportRefusalReason(4003)!, /Desktop not reachable/); // CLOSE_BAD_CODE
   assert.match(viewportRefusalReason(4004)!, /capacity/); // CLOSE_OVERLOADED
