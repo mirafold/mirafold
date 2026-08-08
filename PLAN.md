@@ -1937,17 +1937,16 @@ with it. Both sequence BEFORE R.5.**
     turned it from guessing into reading, and it should have been the first
     move rather than the fifth. Both halves stay in the tree for next time.
 
-- [ ] **Two timing-fragile Tier-3 assertions, still flaky (2026-07-30).**
-  Separate from the wedge above and NOT product bugs — both assert on
-  wall-clock rendering rather than on state, in headless Chrome on a loaded
-  machine:
-  - `a busy turn never looks idle…` demands a CSS animation advance at
-    least one frame within a 128ms sample. Fix: assert the busy STATE the
-    indicator derives from, not the glyph's motion.
-  - `diagram component: mermaid renders as SVG inside the sandbox` — seen
-    twice; mermaid lazy-loads inside a sandboxed iframe.
-  Neither is worth a hunt; both are worth a rewrite when someone is in the
-  file. Combined they are the residual "sometimes 76/77".
+- [x] **Two timing-fragile Tier-3 assertions — resolved 2026-08-08 (N3).**
+  Neither failure was a product-rendering defect. The activity test split a
+  transient-element assertion across two Playwright calls, so a legitimate
+  `turn_end` could remove the line between the wait and the read. Its own
+  session now uses a permission request to hold the exact busy state under
+  test. Mermaid's outer component never arrived at all: the shared session
+  could inherit the preceding turn's one-follow-up prompt gate. Its test now
+  owns a session while retaining the production lazy chunk, sandbox, CSP,
+  postMessage, and parse-error paths. Focused repetition and two complete
+  78-test browser runs passed unchanged; protected proof remains N3.4.
 
 - [x] **Step R.6b — The packaged-artifact pass (opened + done 2026-07-30,
   after the day's two blockers)** — `scripts/packaged-pass.mjs`: `npm pack`,
@@ -2160,6 +2159,51 @@ was added. Protected Tier 1/2/3 checks, Cloudflare, and DCO passed on PR #22.
   tests, real-daemon browser proof, accessibility/phone checks, typecheck,
   build/package, production audit, README, and protected CI complete.
   → PLAN-ARCHIVE.md.
+
+## Phase N3 — Stable Tier-3 browser gates (opened 2026-08-08)
+
+**Goal:** keep the browser suite's real guarantees while removing the three
+observed timing/state races that intermittently block otherwise-good PRs.
+
+**Proven causes:**
+
+- Activity: the test waited for the transient `.activity-line`, then made a
+  second Playwright round-trip to read it. On the failed PR #22 run the first
+  wait succeeded, the scripted turn correctly ended and removed the line, and
+  the second call waited 30 seconds for an element that was supposed to stay
+  gone.
+- Mermaid: the failed run never reached the outer `.rc-diagram`; the shared
+  session could carry a preceding turn across the test boundary and leave the
+  diagram prompt contending with the one-follow-up gate.
+- Follow-tail: re-arming only in the delayed `scroll` event let streamed paint
+  move the bottom beyond the 24px slack after the user's downward gesture but
+  before that event measured it. This one was a narrow product race, not only
+  a test race.
+
+- [x] **N3.1 — Replace elapsed-time luck with a controlled busy state**
+  - Give the test its own daemon/page/session and use the mock permission ask
+    as a deterministic latch. Assert presence, elapsed text, movement,
+    viewport placement, no blank busy frames, and clean teardown while the
+    test—not timer scheduling—controls when the turn may end.
+- [x] **N3.2 — Isolate the Mermaid renderer proof**
+  - Give the diagram test its own session so it reaches the real lazy chunk,
+    sandbox, postMessage handshake, and parse-error path without inheriting a
+    prior test's one-follow-up prompt-gate state.
+- [x] **N3.3 — Close the real follow-tail re-arm race**
+  - Preserve instant following and input-based upward detachment. When a
+    downward wheel/touch gesture will reach the current bottom, arm following
+    synchronously against that pre-input geometry so streamed paint cannot
+    move the target before a later `scroll` event measures it. Pin the
+    decision as a pure Tier-1 rule and drive it with real wheel input in an
+    isolated browser test.
+- [ ] **N3.4 — Prove the flakes are gone**
+  - Run each isolated test repeatedly, then the full Tier-3 suite and all
+    protected PR checks. Archive this phase only after the exact final head is
+    green.
+  - Local proof complete: activity 6/6, Mermaid 5/5, follow-tail 6/6, pure
+    intent boundaries 3/3, Tier 1 554/554, typecheck, and two consecutive
+    unchanged full Tier-3 runs at 78/78. Remaining: protected PR checks on the
+    pushed code head.
 
 ## Phase V — Visual + fidelity gaps flagged by Kyle (opened 2026-07-17; ✅ COMPLETE)
 
@@ -2580,21 +2624,19 @@ anywhere; each is independent.
 
 - [x] **Step Q.5 — Pin the `.env` guard's edges** — done 2026-07-12; traversal + cross-cwd denials pinned across all four guarded readers, non-vacuous by weakening the guard. (Symlink bypass stays the documented accepted residual.) → PLAN-ARCHIVE.md.
 
-- **WATCH ITEM (2026-07-24): the follow-tail re-arm race** — seen once on the
+- [x] **WATCH ITEM (2026-07-24): the follow-tail re-arm race — closed
+  2026-08-08 by N3.3.** Seen once on the
   CI runner (app.e2e.ts "re-follows once back at the bottom", sat 188px above
-  the tail), green on rerun and on every local run; ROOT-CAUSED same day, fix
-  deferred. Mechanism: re-arming depends on `use-follow-tail.ts`'s `onScroll`
+  the tail), green on rerun and on every local run; root-caused same day.
+  Mechanism: re-arming depended on `use-follow-tail.ts`'s `onScroll`
   measuring within `BOTTOM_SLACK_PX` (24) of the bottom, but scroll events
   fire a frame after the scroll — under load the stream can paint >24px in
   that gap, so a reader (or the test's single programmatic jump) landing at
   the bottom mid-stream measures as "not at bottom" and follow never re-arms.
-  A REAL product race, not only test fragility — narrow, and a human recovers
-  by scrolling again, which is why it's a watch item not a blocker. Proposed
-  fix shape when picked up: arm on INTENT like detach already does (a
-  downward wheel/touch ending near the bottom re-arms), so re-arming stops
-  depending on winning a paint race; the hook's two locked decisions
-  (2026-07-20 trace) must be re-read first. The test's single jump + single
-  sample then stops being timing-sensitive on its own.
+  A real product race, not only test fragility. Downward wheel/touch intent
+  that reaches the current bottom now re-arms synchronously against pre-input
+  geometry; the existing instant-follow and input-detach decisions remain.
+  Pure boundary tests and a controlled real-wheel browser scenario pin it.
 
 ---
 
