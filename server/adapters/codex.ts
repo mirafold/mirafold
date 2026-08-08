@@ -20,6 +20,7 @@ import {
   capOutput,
   envWithout,
   errText,
+  installedAgentBin,
   joinTextBlocks,
 } from "./types";
 import { MIRAFOLD_MCP, RENDER_ID_RE, generativeUIMsg, renderMcpCommand } from "./render-mcp-cmd";
@@ -319,7 +320,15 @@ export class CodexSession implements AgentSession {
     // the user's config.toml answer for us.
     const binding = providerBinding(kind, opts.endpoint, opts.provider);
     this.firstPartyOpenAI = binding["model_provider"] === "openai";
+    // Faithful-skin runtime parity: when the user has Codex installed, drive
+    // that exact executable rather than the SDK's separately-versioned bundled
+    // engine. Both versions share ~/.codex/config.toml and models_cache.json;
+    // splitting them lets a newer terminal write state an older engine cannot
+    // parse, then silently changes the default model (F.10, reproduced live).
+    // A machine with no external Codex keeps the SDK's bundled fallback.
+    const installedCodex = installedAgentBin("MIRAFOLD_CODEX_BIN", "codex");
     const codex = (opts.makeCodex ?? ((o: CodexOptions) => new Codex(o)))({
+      ...(installedCodex ? { codexPathOverride: installedCodex } : {}),
       ...(kind === "api-key" && process.env.OPENAI_API_KEY
         ? { apiKey: process.env.OPENAI_API_KEY }
         : {}),
@@ -349,18 +358,17 @@ export class CodexSession implements AgentSession {
       },
     });
     this.codex = codex;
-    // Both catalogs carry the binding: a picker row you can't run, or an
-    // engine default from a provider this session isn't using, is worse than
-    // no answer at all.
-    this.listModels = opts.listModels ?? (() => listCodexModels(undefined, undefined, binding));
-    // The ENGINE's catalog — asked of the binary the SDK actually spawns
-    // (reached through its resolved executablePath; falls back to the PATH
-    // binary if the SDK's internals ever reshape). Distinct from listModels,
-    // which asks the USER's binary for terminal-parity picker rows.
+    // Both catalogs ask the exact binary the SDK actually spawns and carry the
+    // same provider binding. A picker row from one version followed by a turn
+    // on another is the version-skew bug F.10 removes. The private-field read
+    // is failure-soft: injected test doubles may omit it, in which case the
+    // catalog helper performs its ordinary installed-binary lookup.
     const engineBin = (codex as unknown as { exec?: { executablePath?: string } }).exec
       ?.executablePath;
+    const engineModels = () => listCodexModels(undefined, engineBin, binding);
+    this.listModels = opts.listModels ?? engineModels;
     this.listEngineModels =
-      opts.listEngineModels ?? (() => listCodexModels(undefined, engineBin, binding));
+      opts.listEngineModels ?? engineModels;
     // Model-axis neutralization: only when the pick forces the first-party
     // provider away from a CUSTOM config default whose top-level model would
     // ride along wrongly. An explicit model override wins outright.

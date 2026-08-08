@@ -6805,3 +6805,46 @@ per-repo `git status --ignored` runs in **40 ms** and emits **<400 bytes**
     `footer`; follows the dataviz stat-tile guidance.
   - Done when: a mock turn renders the tile, it pins to the dock, and an
     update-in-place re-send (same wire id) changes the value live.
+
+## Moved 2026-08-08 (seventh lean-out pass — verbatim original)
+
+### Step F.10 — Codex runtime/version parity hotfix (full body)
+
+- [x] **Step F.10 — Codex runtime/version parity hotfix (opened 2026-08-08)**
+  - **Goal:** restore the product's faithful-skin promise for Codex sessions:
+    the engine Mirafold drives must be the same installed Codex the user drives
+    in a terminal, so one version owns the config, model cache, model default,
+    and accepted reasoning efforts.
+  - **Proven cause:** Kyle's `config.toml` sets
+    `model_reasoning_effort = "max"`; terminal Codex 0.147.0 wrote the current
+    `models_cache.json` and defaults to GPT-5.6 Sol, which supports `max`.
+    Mirafold 0.3.4 instead launches the SDK-vendored Codex 0.142.5. That older
+    engine logs `missing field base_instructions` while parsing the 0.147.0
+    cache, falls back to its built-in GPT-5.5 default, then sends the inherited
+    `max` effort to a model that accepts only through `xhigh`. The resulting
+    API 400 and cache warning are therefore one version-skew chain, not two
+    independent failures.
+  - **Build:** resolve the user's installed `codex` executable (honoring
+    `MIRAFOLD_CODEX_BIN`) and pass it through the SDK's
+    `codexPathOverride`; if none exists, retain the SDK's bundled fallback.
+    Ask that resolved engine for both model catalogs so picker and turns cannot
+    split across versions. Raise the existing `@openai/codex-sdk` floor from
+    0.142.5 to the current stable 0.147.0 so the fallback is compatible too.
+    No new dependency: the SDK remains six files with one transitive
+    `@openai/codex`; wrapper unpacked size is 77,268 bytes versus 76,741
+    (+527 bytes). The separate per-model `/effort` picker redesign remains
+    V.2/F.5 follow-up; it did not set the inherited value in this failure.
+  - **Files:** `server/adapters/types.ts`, `server/adapters/codex.ts`, their
+    focused tests, `package.json`, `yarn.lock`, `docs/ADAPTERS.md`, this plan.
+  - **Done when:** a regression test pins the external executable through
+    `CodexOptions` and the engine/catalog single-source rule; focused tests,
+    typecheck, Tier 1, build, and dependency audit are green; then one live
+    subscription-backed prompt succeeds with Kyle's unchanged `max` setting
+    and resolves GPT-5.6 rather than the vendored GPT-5.5. Land through a
+    DCO-signed feature-branch PR into `next` under `docs/RELEASING.md` flow b.
+  - **Outcome:** Mirafold now uses one resolved executable for SDK turns and
+    both model-catalog paths, preferring the installed Codex and falling back
+    to the SDK's updated 0.147.0 binary. The unchanged live subscription setup
+    selected GPT-5.6 Sol and replied `ok` without an error. Focused tests
+    (53/53), Tier 1 (536/536), typecheck, build, package dry-run, and the
+    production dependency audit (0 vulnerabilities) passed.
