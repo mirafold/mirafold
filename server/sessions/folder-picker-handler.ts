@@ -8,6 +8,7 @@ import { pickHostDirectory, type PickHostDirectory } from "../folder-picker";
 import { CLIENT_ID_RE } from "./fs-handlers";
 
 type PickFolder = Extract<ClientMsg, { type: "pick_folder" }>;
+type FolderPicked = Extract<WireMsg, { type: "folder_picked" }>;
 
 export type FolderPickerHandler = {
   pick: (msg: PickFolder) => void;
@@ -23,31 +24,28 @@ export function createFolderPickerHandler(opts: {
   const pickDirectory = opts.pickDirectory ?? pickHostDirectory;
   let active: AbortController | null = null;
 
-  const reply = (msg: Extract<WireMsg, { type: "folder_picked" }>) => {
+  const reply = (msg: FolderPicked) => {
     if (!opts.isClosed()) opts.viewport(msg);
+  };
+  const replyError = (id: string, error: string) => {
+    reply({ type: "folder_picked", id, error });
   };
 
   const pick = (msg: PickFolder): void => {
     if (typeof msg.id !== "string" || !CLIENT_ID_RE.test(msg.id)) return;
     if (opts.remote) {
-      reply({
-        type: "folder_picked",
-        id: msg.id,
-        error:
-          "Folder browsing is available only on the computer running Mirafold. Type a path on that computer instead.",
-      });
+      replyError(
+        msg.id,
+        "Folder browsing is available only on the computer running Mirafold. Type a path on that computer instead.",
+      );
       return;
     }
     if (typeof msg.cwd === "string" && msg.cwd.length > 4_096) {
-      reply({ type: "folder_picked", id: msg.id, error: "The working-directory path is too long." });
+      replyError(msg.id, "The working-directory path is too long.");
       return;
     }
     if (active) {
-      reply({
-        type: "folder_picked",
-        id: msg.id,
-        error: "A folder picker is already open. Choose a folder or cancel it first.",
-      });
+      replyError(msg.id, "A folder picker is already open. Choose a folder or cancel it first.");
       return;
     }
 
@@ -63,7 +61,7 @@ export function createFolderPickerHandler(opts: {
       })
       .catch((err) => {
         if (controller.signal.aborted) return;
-        reply({ type: "folder_picked", id: msg.id, error: errText(err) });
+        replyError(msg.id, errText(err));
       })
       .finally(() => {
         if (active === controller) active = null;

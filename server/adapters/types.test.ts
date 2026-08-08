@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import os from "node:os";
-import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { agentBin, capOutput, installedAgentBin, toolDetail } from "./types";
 
 // The default cap is 64 KB (TOOL_OUTPUT_CAP_BYTES), read at module load.
@@ -37,8 +37,8 @@ test("installedAgentBin finds PATH executables and preserves the non-SDK ENOENT 
   try {
     delete process.env[key];
     process.env.PATH = `${shadowDir}${path.delimiter}${dir}`;
-    assert.equal(installedAgentBin(key, name), file);
-    assert.equal(agentBin(key, name), file);
+    assert.equal(installedAgentBin(key, name), realpathSync.native(file));
+    assert.equal(agentBin(key, name), realpathSync.native(file));
     assert.equal(installedAgentBin(key, `${name}-missing`), undefined);
     assert.equal(agentBin(key, `${name}-missing`), `${name}-missing`);
   } finally {
@@ -46,6 +46,31 @@ test("installedAgentBin finds PATH executables and preserves the non-SDK ENOENT 
     else process.env.PATH = savedPath;
     if (savedOverride === undefined) delete process.env[key];
     else process.env[key] = savedOverride;
+  }
+});
+
+test("installedAgentBin ignores the project-local executables npm adds to PATH", () => {
+  const key = "MIRAFOLD_TEST_AGENT_BIN";
+  const name = `mirafold-local-agent-${process.pid}`;
+  const root = mkdtempSync(path.join(os.tmpdir(), "mirafold-agent-project-"));
+  const npmBin = path.join(root, "node_modules", ".bin");
+  mkdirSync(npmBin, { recursive: true });
+  const file = path.join(npmBin, process.platform === "win32" ? `${name}.cmd` : name);
+  writeFileSync(file, "");
+  if (process.platform !== "win32") chmodSync(file, 0o755);
+  const savedPath = process.env.PATH;
+  const savedOverride = process.env[key];
+  try {
+    delete process.env[key];
+    process.env.PATH = npmBin;
+    assert.equal(installedAgentBin(key, name), undefined);
+    assert.equal(agentBin(key, name), name);
+  } finally {
+    if (savedPath === undefined) delete process.env.PATH;
+    else process.env.PATH = savedPath;
+    if (savedOverride === undefined) delete process.env[key];
+    else process.env[key] = savedOverride;
+    rmSync(root, { recursive: true, force: true });
   }
 });
 

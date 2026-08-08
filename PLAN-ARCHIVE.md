@@ -6901,6 +6901,34 @@ Linux dialog helper is installed, the existing editable path remains available.
     contract names the graphical path and its manual fallback. Land via a
     DCO-signed `feature/*` PR into `next`; `main` and release state stay put.
 
+- [x] **N2.4 — Post-refactor executable-trust remediation**
+  - The 2026-08-08 defensive audit proved that npm exec always exposes local
+    package binaries in the child `PATH`. The published launcher resolved its
+    browser opener from that path, and the new Linux picker did the same for
+    Zenity/KDialog; a hostile checkout could therefore run code as the user.
+  - Remove ambient `PATH` from operating-system chrome entirely. Browser
+    openers and native-dialog helpers resolve only fixed system locations and
+    receive a credential-free system path plus a neutral home-directory cwd.
+    Filter relative, project-contained, symlink-back-into-project, and every
+    `node_modules/.bin` candidate from Codex/Gemini executable discovery while
+    preserving explicit operator overrides and legitimate global installs.
+  - Native-dialog abort/output overflow must settle only after `close`, with a
+    short graceful request followed by forced termination. Replace the tests
+    that depended on PATH substitution with injected process seams and add
+    adversarial resolution/cleanup proofs. README and SECURITY must state that
+    plain `npx mirafold` is for already-trusted directories only.
+  - **Outcome (2026-08-08):** browser openers and native dialogs now resolve
+    only fixed operating-system locations and inherit a fixed system path,
+    credential-scrubbed desktop state, and the user's home as cwd. Shared agent
+    lookup rejects relative, project-contained, npm-bin, and symlink-back-into-
+    project candidates while retaining explicit operator overrides. Abort and
+    output overflow request process-group termination, escalate after 250 ms,
+    and reject only after the child closes. Adversarial lookup, environment,
+    cwd, and force-kill regressions replaced the unsafe PATH-substitution seams;
+    README and SECURITY record the `npx` boundary. Local verification passed:
+    Tier 1 561/561, Tier 2 143/143, Tier 3 82/82, typecheck, build, 19-file
+    package dry-run, secret scan, and production audit (0 vulnerabilities).
+
 **Outcome:** both startup routes now offer a compact native `browse…` control
 while preserving the editable absolute-path field. Mirafold opens the host
 dialog with fixed executable/argument arrays, validates the selected directory,

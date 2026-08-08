@@ -1127,16 +1127,26 @@ beta, so a Windows issue report is a gift, not an imposition.
 
 Like launching `claude`/`codex`/`gemini`: sessions default to the directory
 you ran it from, and a second `mirafold` in another project walks to the
-next port (3001, …) and runs independently. `npx mirafold` is the
-zero-install try path; `--no-open` skips the browser; `PORT` moves the base
-port. The daemon prints (and opens) a URL carrying a per-launch auth token
-(§3) — that token, held as a browser cookie, is what keeps another account on
-a shared machine off your socket. With `--no-open` or on a headless box, open
-the exact printed URL (it has the token); `MIRAFOLD_TOKEN=""` disables the token
-on a single-user machine. The package ships only the launcher + the two esbuild bundles + the
-built front end (14 files, ~324 KB tarball); agent credentials come from your
-environment exactly as in a terminal (`ANTHROPIC_API_KEY`, `codex login`,
-`GEMINI_API_KEY`) — none live in the package. **Native-module note:**
+next port (3001, …) and runs independently. `--no-open` skips the browser;
+`PORT` moves the base port. The daemon prints (and opens) a URL carrying a
+per-launch auth token (§3) — that token, held as a browser cookie, is what keeps
+another account on a shared machine off your socket. With `--no-open` or on a
+headless box, open the exact printed URL (it has the token);
+`MIRAFOLD_TOKEN=""` disables the token on a single-user machine.
+
+`npx mirafold` is a convenience only inside a project you already trust. npm
+adds that project's `node_modules/.bin` executables to the launched process and
+may select a project-local `mirafold` package before registry code; the official
+launcher prints this warning when it detects npm exec. Do not use `npx` as a
+way to inspect an unfamiliar checkout. Install Mirafold globally from a neutral
+directory first, then enter the project and run `mirafold`; Mirafold itself
+also refuses project/npm-bin candidates when resolving host chrome and agent
+CLIs.
+
+The package ships only the launcher + the two esbuild bundles + the built front
+end; agent credentials come from your environment exactly as in a terminal
+(`ANTHROPIC_API_KEY`, `codex login`, `GEMINI_API_KEY`) — none live in the
+package. **Native-module note:**
 the `!` PTY ships as `@lydell/node-pty` (swapped 2026-07-23) — prebuilt
 binaries for linux/macOS/Windows × x64/arm64 as platform
 `optionalDependencies`, no install scripts. Nothing compiles at install,
@@ -1363,7 +1373,12 @@ reveal the absolute host path an agent process needs as its `cwd`. The explicit
 click makes one authenticated, local WebSocket request to the daemon, which
 opens the native dialog without a shell and returns only the selected directory.
 The dialog child receives desktop-session variables but no model credentials,
-relay credentials, or custom provider environment variables. The trusted shell
+relay credentials, custom provider environment variables, or caller-supplied
+`PATH`. macOS and Windows helpers use their fixed operating-system locations;
+Linux searches only fixed system binary directories, never the project or an
+npm-injected `node_modules/.bin`. The helper starts from the user's home rather
+than the project, and cancellation/output overflow wait for confirmed exit with
+forced termination as the backstop. The trusted shell
 then shows the session's cwd at the prompt (`~/Projects/foo ❯`) and its leaf in
 the status bar. File mutation and bash ask for approval on the shell's
 permission bar exactly as in the terminal, honoring the allowlists in your

@@ -167,24 +167,52 @@ export function spawnBang(
       ...(prefix && cwdFile ? { [CWD_FILE_ENV]: cwdFile } : {}),
     },
   });
+  let killedByUs = false;
   const cleaner = createPtyCleaner();
   proc.onData((d) => {
     const clean = cleaner.clean(d);
     if (clean) onData(clean);
   });
-  // node-pty reports signal deaths as { exitCode: 0, signal: n } — surface
-  // those as null so a killed command isn't mistaken for a clean exit.
+  // The explicit-stop path below records only a kill that the OS/library
+  // accepted. A request that raced a natural exit must keep that real exit
+  // code instead of being relabelled as "killed".
   proc.onExit(({ exitCode, signal }) => {
     const tail = cleaner.flush();
     if (tail) onData(tail);
-    onExit(signal ? null : exitCode);
+    onExit(killedByUs || signal ? null : exitCode);
   });
   return {
     write(data: string) {
       proc.write(data);
     },
     kill() {
-      proc.kill();
+      if (killedByUs) return;
+      try {
+        if (process.platform === "win32") {
+          // ConPTY's kill has no signal parameter and terminates the process
+          // tree. Passing one throws, per node-pty's API contract.
+          proc.kill();
+        } else {
+          // node-pty's default SIGHUP is catchable/ignorable. Stop means stop:
+          // forkpty makes the shell its process-group leader, so SIGKILL the
+          // whole foreground group rather than leaving command children alive.
+          try {
+            process.kill(-proc.pid, "SIGKILL");
+          } catch {
+            // A click can beat the child's setsid/process-group setup. In
+            // that narrow window the group does not exist yet, but the shell
+            // pid does; killing it directly is both confirmed and sufficient
+            // because it has not had time to create descendants.
+            process.kill(proc.pid, "SIGKILL");
+          }
+        }
+        killedByUs = true;
+      } catch {
+        // Most commonly ESRCH: the command exited between the user's click
+        // and this call. Leave killedByUs false so onExit reports the real
+        // result. Unexpected kill failures likewise must not crash the daemon
+        // or manufacture a successful Stop.
+      }
     },
   };
 }

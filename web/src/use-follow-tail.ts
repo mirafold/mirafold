@@ -44,6 +44,15 @@ type WheelIntent = { deltaY: number; deltaMode?: number };
 
 const bottomGap = (el: ScrollGeometry) => el.scrollHeight - el.scrollTop - el.clientHeight;
 
+const intentReachesBottom = (el: ScrollGeometry, deltaPx: number) =>
+  deltaPx > 0 && bottomGap(el) <= deltaPx + BOTTOM_SLACK_PX;
+
+function wheelDeltaPixels(el: ScrollGeometry, e: WheelIntent): number {
+  if (e.deltaMode === 1) return e.deltaY * WHEEL_LINE_PX;
+  if (e.deltaMode === 2) return e.deltaY * el.clientHeight;
+  return e.deltaY;
+}
+
 /**
  * Decide from the geometry that existed when the user steered, before the
  * browser dispatches a later scroll event and before streamed output can move
@@ -51,14 +60,7 @@ const bottomGap = (el: ScrollGeometry) => el.scrollHeight - el.scrollTop - el.cl
  * test harness.
  */
 export function wheelIntentReachesBottom(el: ScrollGeometry, e: WheelIntent): boolean {
-  if (e.deltaY <= 0) return false;
-  const deltaPx =
-    e.deltaMode === 1
-      ? e.deltaY * WHEEL_LINE_PX
-      : e.deltaMode === 2
-        ? e.deltaY * el.clientHeight
-        : e.deltaY;
-  return bottomGap(el) <= deltaPx + BOTTOM_SLACK_PX;
+  return intentReachesBottom(el, wheelDeltaPixels(el, e));
 }
 
 /** Finger moving up scrolls the transcript toward its tail. */
@@ -67,8 +69,7 @@ export function touchIntentReachesBottom(
   previousY: number,
   nextY: number,
 ): boolean {
-  const deltaPx = previousY - nextY;
-  return deltaPx > 0 && bottomGap(el) <= deltaPx + BOTTOM_SLACK_PX;
+  return intentReachesBottom(el, previousY - nextY);
 }
 
 export function useFollowTail() {

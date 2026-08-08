@@ -5,22 +5,30 @@
 // is an argv/env value, never executable text.
 
 import { spawn } from "node:child_process";
-import { accessSync, constants, statSync } from "node:fs";
+import { statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { locateTrustedExecutable } from "./security/executable-trust";
 
 const PICKER_TITLE = "Choose a Mirafold working directory";
 const PICKER_OUTPUT_MAX_BYTES = 16_384;
+const PICKER_TERMINATE_GRACE_MS = 250;
+const LINUX_SYSTEM_BIN_DIRS = [
+  "/usr/bin",
+  "/bin",
+  "/run/current-system/sw/bin",
+  "/usr/local/bin",
+  "/snap/bin",
+] as const;
 const LINUX_DIALOG_STARTUP_ERROR =
   /failed to open display|cannot open display|could not connect to display|could not load the qt platform plugin|no qt platform plugin/i;
 
 // Native dialogs need the signed-in desktop session, locale, and temporary
 // directory — not the daemon's model-provider keys, relay credentials, or an
 // arbitrary provider's custom env_key. An allowlist makes that true even for
-// credential names Mirafold has never seen before. Loader/plugin overrides are
-// deliberately absent too: these helpers should use their system defaults.
+// credential names Mirafold has never seen before. Loader/search-path overrides
+// are absent; desktop backend/theme selectors remain for native fidelity.
 const PICKER_ENV_KEYS = new Set([
-  "PATH",
   "PATHEXT",
   "HOME",
   "USER",
@@ -71,11 +79,30 @@ const PICKER_ENV_KEYS = new Set([
   "APPDATA",
   "LOCALAPPDATA",
   "PROGRAMDATA",
-  "COMSPEC",
-  "PSMODULEPATH",
   "SESSIONNAME",
   "MIRAFOLD_FOLDER_PICKER_START",
 ]);
+
+function envValue(source: NodeJS.ProcessEnv, name: string): string | undefined {
+  const hit = Object.entries(source).find(([key]) => key.toUpperCase() === name);
+  return hit?.[1];
+}
+
+function windowsRoot(env: NodeJS.ProcessEnv): string | undefined {
+  const root = envValue(env, "SYSTEMROOT") ?? envValue(env, "WINDIR");
+  return root && path.win32.isAbsolute(root) ? root : undefined;
+}
+
+function nativeHelperPath(platform: NodeJS.Platform, env: NodeJS.ProcessEnv): string {
+  if (platform === "win32") {
+    const root = windowsRoot(env);
+    return root
+      ? [path.win32.join(root, "System32"), root].join(path.win32.delimiter)
+      : "";
+  }
+  if (platform === "darwin") return "/usr/bin:/bin:/usr/sbin:/sbin";
+  return LINUX_SYSTEM_BIN_DIRS.join(path.posix.delimiter);
+}
 
 const MAC_SCRIPT = [
   'set startFolder to POSIX file (system attribute "MIRAFOLD_FOLDER_PICKER_START")',
@@ -118,6 +145,61 @@ type LocateExecutable = (
   env: NodeJS.ProcessEnv,
 ) => string | undefined;
 
+function macFolderPickerCommand(startDir: string): FolderPickerCommand {
+  return {
+    file: "/usr/bin/osascript",
+    args: ["-e", MAC_SCRIPT],
+    env: { MIRAFOLD_FOLDER_PICKER_START: startDir },
+    // AppleScript's `choose folder` reports user cancellation as -128.
+    canceled: (code, stderr) => code === 1 && /user canceled|-128/i.test(stderr),
+  };
+}
+
+function windowsFolderPickerCommand(
+  startDir: string,
+  env: NodeJS.ProcessEnv,
+): FolderPickerCommand | undefined {
+  const root = windowsRoot(env);
+  if (!root) return undefined;
+  const systemPowerShell = path.win32.join(
+    root,
+    "System32",
+    "WindowsPowerShell",
+    "v1.0",
+    "powershell.exe",
+  );
+  return {
+    file: systemPowerShell,
+    args: ["-NoLogo", "-NoProfile", "-STA", "-Command", WINDOWS_SCRIPT],
+    env: { MIRAFOLD_FOLDER_PICKER_START: startDir },
+    // FolderBrowserDialog writes nothing and exits successfully on Cancel.
+    canceled: () => false,
+  };
+}
+
+function linuxFolderPickerCommands(startDir: string): FolderPickerCommand[] {
+  const initial = startDir.endsWith(path.sep) ? startDir : startDir + path.sep;
+  const canceled = (code: number | null, stderr: string) =>
+    code === 1 && !LINUX_DIALOG_STARTUP_ERROR.test(stderr);
+  return [
+    {
+      file: "zenity",
+      args: [
+        "--file-selection",
+        "--directory",
+        `--title=${PICKER_TITLE}`,
+        `--filename=${initial}`,
+      ],
+      canceled,
+    },
+    {
+      file: "kdialog",
+      args: ["--title", PICKER_TITLE, "--getexistingdirectory", startDir],
+      canceled,
+    },
+  ];
+}
+
 /** Platform recipes, exported so Tier 1 pins the native contract without
  *  opening a real GUI. Linux tries the two desktop-standard helpers in order. */
 export function folderPickerCommands(
@@ -125,90 +207,33 @@ export function folderPickerCommands(
   platform: NodeJS.Platform = process.platform,
   env: NodeJS.ProcessEnv = process.env,
 ): FolderPickerCommand[] {
-  const startEnv = { MIRAFOLD_FOLDER_PICKER_START: startDir };
-  if (platform === "darwin") {
-    return [
-      {
-        file: "/usr/bin/osascript",
-        args: ["-e", MAC_SCRIPT],
-        env: startEnv,
-        // AppleScript's `choose folder` reports user cancellation as -128.
-        canceled: (code, stderr) => code === 1 && /user canceled|-128/i.test(stderr),
-      },
-    ];
+  switch (platform) {
+    case "darwin":
+      return [macFolderPickerCommand(startDir)];
+    case "win32": {
+      const command = windowsFolderPickerCommand(startDir, env);
+      return command ? [command] : [];
+    }
+    case "linux":
+      return linuxFolderPickerCommands(startDir);
+    default:
+      return [];
   }
-  if (platform === "win32") {
-    const systemPowerShell = env.SystemRoot
-      ? path.join(
-          env.SystemRoot,
-          "System32",
-          "WindowsPowerShell",
-          "v1.0",
-          "powershell.exe",
-        )
-      : "powershell.exe";
-    return [
-      {
-        file: systemPowerShell,
-        args: ["-NoLogo", "-NoProfile", "-STA", "-Command", WINDOWS_SCRIPT],
-        env: startEnv,
-        // FolderBrowserDialog writes nothing and exits successfully on Cancel.
-        canceled: () => false,
-      },
-    ];
-  }
-  if (platform === "linux") {
-    const initial = startDir.endsWith(path.sep) ? startDir : startDir + path.sep;
-    return [
-      {
-        file: "zenity",
-        args: [
-          "--file-selection",
-          "--directory",
-          `--title=${PICKER_TITLE}`,
-          `--filename=${initial}`,
-        ],
-        canceled: (code, stderr) => code === 1 && !LINUX_DIALOG_STARTUP_ERROR.test(stderr),
-      },
-      {
-        file: "kdialog",
-        args: ["--title", PICKER_TITLE, "--getexistingdirectory", startDir],
-        canceled: (code, stderr) => code === 1 && !LINUX_DIALOG_STARTUP_ERROR.test(stderr),
-      },
-    ];
-  }
-  return [];
 }
 
-/** Resolve a command exactly as a spawn would, but return an absolute file so
- *  a later cwd change cannot reinterpret a relative PATH entry. */
+/** Resolve only operating-system helper locations. Ambient PATH is deliberately
+ * ignored: npm/npx put project executables there, and Browse must never run one. */
 export function locateExecutable(
   file: string,
   platform: NodeJS.Platform = process.platform,
   env: NodeJS.ProcessEnv = process.env,
 ): string | undefined {
-  const names =
-    platform === "win32" && !path.extname(file)
-      ? (env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD")
-          .split(";")
-          .filter(Boolean)
-          .map((ext) => file + ext.toLowerCase())
-      : [file];
-  const direct = path.isAbsolute(file) || file.includes("/") || file.includes("\\");
-  const dirs = direct ? [""] : (env.PATH ?? "").split(path.delimiter).filter(Boolean);
-  for (const dir of dirs) {
-    for (const name of names) {
-      const candidate = direct ? name : path.resolve(dir, name);
-      try {
-        if (!statSync(candidate).isFile()) continue;
-        accessSync(candidate, platform === "win32" ? constants.F_OK : constants.X_OK);
-        return candidate;
-      } catch {
-        // Missing, a directory, or not executable — normal lookup continues.
-      }
-    }
-  }
-  return undefined;
+  return locateTrustedExecutable(file, {
+    platform,
+    env,
+    directories: platform === "linux" ? LINUX_SYSTEM_BIN_DIRS : [],
+    includePath: false,
+  });
 }
 
 export function folderPickerAvailable(
@@ -229,11 +254,13 @@ export function folderPickerAvailable(
 export function folderPickerEnvironment(
   source: NodeJS.ProcessEnv = process.env,
   additions: NodeJS.ProcessEnv = {},
+  platform: NodeJS.Platform = process.platform,
 ): Record<string, string> {
   const safe: Record<string, string> = {};
   for (const [key, value] of Object.entries({ ...source, ...additions })) {
     if (value !== undefined && PICKER_ENV_KEYS.has(key.toUpperCase())) safe[key] = value;
   }
+  safe.PATH = nativeHelperPath(platform, source);
   return safe;
 }
 
@@ -252,23 +279,63 @@ export function runFolderPickerCommand(
   return new Promise((resolve, reject) => {
     const child = spawn(command.file, command.args, {
       env: folderPickerEnvironment(process.env, command.env),
+      // The selected start directory is already an argv/env value. Keeping the
+      // native program out of an untrusted repository also prevents accidental
+      // project-local config/module discovery inside otherwise trusted helpers.
+      cwd: os.homedir(),
       stdio: ["ignore", "pipe", "pipe"],
-      ...(signal ? { signal } : {}),
+      detached: process.platform !== "win32",
+      windowsHide: true,
     });
     let stdout = Buffer.alloc(0);
     let stderr = Buffer.alloc(0);
-    let settled = false;
-    const finish = (err: Error | null, result?: FolderPickerProcessResult) => {
-      if (settled) return;
-      settled = true;
-      if (err) reject(err);
-      else resolve(result!);
+    let pendingError: Error | undefined;
+    let closing = false;
+    let closed = false;
+    let hardKill: NodeJS.Timeout | undefined;
+
+    const signalChild = (killSignal: NodeJS.Signals) => {
+      if (process.platform !== "win32" && child.pid) {
+        try {
+          process.kill(-child.pid, killSignal);
+          return;
+        } catch {
+          // The child can be signaled before its new process group is visible.
+        }
+      }
+      child.kill(killSignal);
     };
+
+    const requestStop = (err: Error) => {
+      pendingError ??= err;
+      if (closing || closed) return;
+      closing = true;
+      try {
+        signalChild("SIGTERM");
+      } catch {
+        // A natural exit may have won the race; close still settles truthfully.
+      }
+      hardKill = setTimeout(() => {
+        if (closed) return;
+        try {
+          signalChild("SIGKILL");
+        } catch {
+          // As above, close is authoritative; ESRCH means it is already coming.
+        }
+      }, PICKER_TERMINATE_GRACE_MS);
+      hardKill.unref();
+    };
+
+    const onAbort = () => requestStop(abortError());
+    signal?.addEventListener("abort", onAbort, { once: true });
+    // The signal can flip between the pre-spawn guard and listener attachment.
+    if (signal?.aborted) onAbort();
+
     const capture = (which: "stdout" | "stderr", chunk: Buffer) => {
+      if (closing) return;
       const next = Buffer.concat([which === "stdout" ? stdout : stderr, chunk]);
       if (next.byteLength > PICKER_OUTPUT_MAX_BYTES) {
-        child.kill();
-        finish(new Error("The system folder picker returned too much output."));
+        requestStop(new Error("The system folder picker returned too much output."));
         return;
       }
       if (which === "stdout") stdout = next;
@@ -276,14 +343,25 @@ export function runFolderPickerCommand(
     };
     child.stdout.on("data", (chunk: Buffer) => capture("stdout", chunk));
     child.stderr.on("data", (chunk: Buffer) => capture("stderr", chunk));
-    child.once("error", (err) => finish(err));
-    child.once("close", (code) =>
-      finish(null, {
+    child.once("error", (err) => {
+      // Spawn failures have no live child to terminate, but Node still follows
+      // with close; waiting for it keeps one authoritative settlement path.
+      pendingError ??= err;
+    });
+    child.once("close", (code) => {
+      closed = true;
+      if (hardKill) clearTimeout(hardKill);
+      signal?.removeEventListener("abort", onAbort);
+      if (pendingError) {
+        reject(pendingError);
+        return;
+      }
+      resolve({
         code,
         stdout: stdout.toString("utf8"),
         stderr: stderr.toString("utf8"),
-      }),
-    );
+      });
+    });
   });
 }
 
@@ -315,9 +393,7 @@ export type PickHostDirectory = (
   signal?: AbortSignal,
 ) => Promise<string | undefined>;
 
-/** One shared service instance means two tabs cannot stack native dialogs on
- *  the host. Dependencies are injectable so tests never open a real GUI. */
-export function createFolderPicker(opts: {
+type FolderPickerOptions = {
   platform?: NodeJS.Platform;
   env?: NodeJS.ProcessEnv;
   locate?: LocateExecutable;
@@ -325,11 +401,30 @@ export function createFolderPicker(opts: {
   fallbackDir?: () => string;
   homeDir?: () => string;
   directoryExists?: (candidate: string) => boolean;
-} = {}): PickHostDirectory {
+};
+
+function resolveSelectedDirectory(
+  output: string,
+  directoryExists: (candidate: string) => boolean,
+): string | undefined {
+  // Windows cancellation is a successful process with empty stdout; all
+  // three platform tools append at most one line ending on success.
+  const selected = output.replace(/\r?\n$/, "");
+  if (!selected) return undefined;
+  const absolute = path.resolve(selected);
+  if (!directoryExists(absolute)) {
+    throw new Error("The system folder picker returned a path that is not a directory.");
+  }
+  return absolute;
+}
+
+/** One shared service instance means two tabs cannot stack native dialogs on
+ *  the host. Dependencies are injectable so tests never open a real GUI. */
+export function createFolderPicker(opts: FolderPickerOptions = {}): PickHostDirectory {
   const platform = opts.platform ?? process.platform;
   const env = opts.env ?? process.env;
-  const locate = opts.locate ?? locateExecutable;
-  const run = opts.run ?? runFolderPickerCommand;
+  const findExecutable = opts.locate ?? locateExecutable;
+  const runCommand = opts.run ?? runFolderPickerCommand;
   const fallbackDir = opts.fallbackDir ?? (() => process.cwd());
   const homeDir = opts.homeDir ?? os.homedir;
   const directoryExists = opts.directoryExists ?? isDirectory;
@@ -349,12 +444,12 @@ export function createFolderPicker(opts: {
       const commands = folderPickerCommands(startDir, platform, env);
       let lastFailure: Error | undefined;
       for (const recipe of commands) {
-        const executable = locate(recipe.file, platform, env);
+        const executable = findExecutable(recipe.file, platform, env);
         if (!executable) continue;
         const command = { ...recipe, file: executable };
         let result: FolderPickerProcessResult;
         try {
-          result = await run(command, signal);
+          result = await runCommand(command, signal);
         } catch (err) {
           if (signal?.aborted || (err instanceof Error && err.name === "AbortError")) throw err;
           if ((err as NodeJS.ErrnoException)?.code === "ENOENT") continue;
@@ -370,15 +465,7 @@ export function createFolderPicker(opts: {
           if (platform === "linux") continue;
           throw lastFailure;
         }
-        // Windows cancellation is a successful process with empty stdout;
-        // all three platform tools append at most one line ending on success.
-        const selected = result.stdout.replace(/\r?\n$/, "");
-        if (!selected) return undefined;
-        const absolute = path.resolve(selected);
-        if (!directoryExists(absolute)) {
-          throw new Error("The system folder picker returned a path that is not a directory.");
-        }
-        return absolute;
+        return resolveSelectedDirectory(result.stdout, directoryExists);
       }
       if (lastFailure) throw lastFailure;
       throw new Error(

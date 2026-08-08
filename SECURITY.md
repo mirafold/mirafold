@@ -45,6 +45,13 @@ things follow, and they are the whole list:
   browser is confined to the session's workspace, but the agent keeps its own
   tools behind the permission prompts. A secrets directory, a mounted share,
   or a production checkout is a poor first choice.
+- **Use the installed command for an unfamiliar checkout.** `npx`/`npm exec`
+  deliberately put a project's local package executables in `PATH` and may
+  choose a project-local `mirafold` package. `npx mirafold` is therefore only a
+  convenience for a directory you already trust, never a safe first look at
+  someone else's repository. Install globally from a neutral directory, then
+  enter the checkout and run `mirafold`. The official launcher additionally
+  ignores project/npm-bin candidates for its own host chrome and agent lookup.
 - **Keys stay server-side.** Credentials come from the environment or a `.env`
   in the launch directory and are never serialized to the browser. That `.env`
   is the supported place for them; what matters is that the directory is one

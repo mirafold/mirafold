@@ -1,6 +1,6 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { type Browser, type Page } from "playwright-core";
@@ -65,6 +65,27 @@ after(async () => {
   await browser?.close();
   await d?.stop();
 });
+
+async function withFreshMockSession(
+  token: string,
+  run: (isolatedPage: Page) => Promise<void>,
+): Promise<void> {
+  const daemon = await startDaemon({ MIRAFOLD_TOKEN: token });
+  let isolatedPage: Page | undefined;
+  try {
+    isolatedPage = await browser.newPage();
+    await isolatedPage.goto(`http://127.0.0.1:${daemon.port}/?token=${token}`);
+    await isolatedPage.locator(".onb-agent", { hasText: "Claude Code" }).click();
+    await isolatedPage.waitForURL(/\/s\/[\w-]+/);
+    await run(isolatedPage);
+  } finally {
+    try {
+      await isolatedPage?.close();
+    } finally {
+      await daemon.stop();
+    }
+  }
+}
 
 test("no token → 403, nothing served", async () => {
   const lockedOut = await browser.newPage();
@@ -138,45 +159,31 @@ test("the agent picker flexes to the window — no internal scrollbar through th
 });
 
 test(
-  "N2: browse opens the host picker, fills cwd, and creates the session there",
-  { skip: process.platform !== "linux" && "the harmless Zenity fixture is Linux-specific" },
+  "N2: replacing a rejected cwd clears its stale error and creates there",
   async () => {
-    // Substitute Zenity at the ordinary PATH seam: production still invokes
-    // the real platform helper, while this child prints one known directory
-    // and opens no GUI. The browser + daemon + WebSocket path remain real.
     const fixture = mkdtempSync(path.join(os.tmpdir(), "mirafold-folder-picker-e2e-"));
     const picked = path.join(fixture, "picked project");
-    const zenity = path.join(fixture, "zenity");
+    const missing = path.join(fixture, "does not exist");
     mkdirSync(picked);
-    writeFileSync(
-      zenity,
-      `#!/usr/bin/env node\n` +
-        `if ("OPENAI_API_KEY" in process.env || "MIRAFOLD_TEST_PICKER_SECRET" in process.env) process.exit(9);\n` +
-        `process.stdout.write(${JSON.stringify(picked)});\n`,
-    );
-    chmodSync(zenity, 0o755);
     const token = "e2e-folder-picker-9c2f";
-    const d2 = await startDaemon({
-      MIRAFOLD_TOKEN: token,
-      MIRAFOLD_TEST_PICKER_SECRET: "must-not-cross",
-      DISPLAY: ":99",
-      PATH: `${fixture}${path.delimiter}${process.env.PATH ?? ""}`,
-    });
+    const d2 = await startDaemon({ MIRAFOLD_TOKEN: token });
     const page2 = await browser.newPage();
     try {
       await page2.goto(`http://127.0.0.1:${d2.port}/?token=${token}`);
-      await page2.waitForSelector(".onb-cwd-browse");
       await page2.setViewportSize({ width: 390, height: 844 });
       await noSideScroll(page2);
-      await assertAxeClean(page2, "onboarding folder picker");
+      await assertAxeClean(page2, "onboarding working directory");
 
-      await page2.locator(".onb-cwd-browse").click();
-      await page2.waitForFunction(
-        (expected) =>
-          (document.querySelector("#onb-cwd") as HTMLInputElement | null)?.value === expected,
-        picked,
-      );
+      // A rejected cwd belongs to the value that was submitted. Replacing the
+      // value must remove that stale error before the user retries creation.
+      await page2.locator("#onb-cwd").fill(missing);
+      await page2.locator(".onb-agent", { hasText: "Claude Code" }).click();
+      await page2.waitForSelector(".onb-error");
+      assert.match(await page2.locator(".onb-error").innerText(), /no such directory/i);
+
+      await page2.locator("#onb-cwd").fill(picked);
       assert.equal(await page2.locator("#onb-cwd").inputValue(), picked);
+      await page2.locator(".onb-error").waitFor({ state: "detached" });
 
       await page2.setViewportSize({ width: 1100, height: 800 });
       await page2.locator(".onb-agent", { hasText: "Claude Code" }).click();
@@ -453,44 +460,32 @@ test("diagram component: mermaid renders as SVG inside the sandbox; broken sourc
   // Own a session so this test reaches the renderer or fails for a renderer
   // reason; the actual lazy chunk, iframe, CSP, postMessage, and parse error
   // paths below remain production-real.
-  const token = "e2e-diagram-9c2f";
-  const d2 = await startDaemon({ MIRAFOLD_TOKEN: token });
-  try {
-    const page2 = await browser.newPage();
-    try {
-      await page2.goto(`http://127.0.0.1:${d2.port}/?token=${token}`);
-      await page2.locator(".onb-agent", { hasText: "Claude Code" }).click();
-      await page2.waitForURL(/\/s\/[\w-]+/);
-      await page2.waitForSelector("textarea");
-      await page2.locator("textarea").fill("diagram demo");
-      await page2.keyboard.press("Enter");
+  await withFreshMockSession("e2e-diagram-9c2f", async (page2) => {
+    await page2.waitForSelector("textarea");
+    await page2.locator("textarea").fill("diagram demo");
+    await page2.keyboard.press("Enter");
 
-      const block = page2.locator(".rc-diagram", { hasText: "Relay pairing flow" });
-      await block.waitFor({ timeout: 20_000 });
-      // The runtime is a lazy ~3.6 MB chunk — give the first render room.
-      const frame = block.locator("iframe.rc-diagram-frame");
-      await frame.waitFor({ timeout: 20_000 });
-      const svg = page2
-        .frameLocator(".rc-diagram:has-text('Relay pairing flow') iframe")
-        .locator("#host svg");
-      await svg.waitFor({ timeout: 20_000 });
-      // The frame reported its measured height back — the host sized to fit.
-      const h = await frame.evaluate((el) => el.getBoundingClientRect().height);
-      assert.ok(h > 130, `frame did not grow to the diagram (h=${h})`);
-      // The shell-drawn chrome badges the sandbox, outside the frame.
-      assert.match(await block.locator(".rc-diagram-badge").innerText(), /sandboxed/);
+    const block = page2.locator(".rc-diagram", { hasText: "Relay pairing flow" });
+    await block.waitFor({ timeout: 20_000 });
+    // The runtime is a lazy ~3.6 MB chunk — give the first render room.
+    const frame = block.locator("iframe.rc-diagram-frame");
+    await frame.waitFor({ timeout: 20_000 });
+    const svg = page2
+      .frameLocator(".rc-diagram:has-text('Relay pairing flow') iframe")
+      .locator("#host svg");
+    await svg.waitFor({ timeout: 20_000 });
+    // The frame reported its measured height back — the host sized to fit.
+    const h = await frame.evaluate((el) => el.getBoundingClientRect().height);
+    assert.ok(h > 130, `frame did not grow to the diagram (h=${h})`);
+    // The shell-drawn chrome badges the sandbox, outside the frame.
+    assert.match(await block.locator(".rc-diagram-badge").innerText(), /sandboxed/);
 
-      // Broken source: the failure state carries the message AND the source text.
-      const failed = page2.locator(".rc-diagram-failed", { hasText: "broken diagram" });
-      await failed.waitFor({ timeout: 20_000 });
-      assert.match(await failed.innerText(), /diagram didn't render/);
-      assert.ok((await failed.locator(".rc-diagram-source").innerText()).includes("nope"));
-    } finally {
-      await page2.close();
-    }
-  } finally {
-    await d2.stop();
-  }
+    // Broken source: the failure state carries the message AND the source text.
+    const failed = page2.locator(".rc-diagram-failed", { hasText: "broken diagram" });
+    await failed.waitFor({ timeout: 20_000 });
+    assert.match(await failed.innerText(), /diagram didn't render/);
+    assert.ok((await failed.locator(".rc-diagram-source").innerText()).includes("nope"));
+  });
 });
 
 test("image component: a resolved shot renders as a real <img>; a refused one says why", async () => {
@@ -1365,185 +1360,274 @@ test("streaming holds a scrolled-up reader in place, and re-follows once back at
   // version borrowed 40 prior tests' worth of content, then jumped to the
   // bottom programmatically and sampled once; neither is a user's re-arm
   // path, and the delayed scroll event raced the next streamed paint.
-  const token = "e2e-follow-tail-9c2f";
-  const d2 = await startDaemon({ MIRAFOLD_TOKEN: token });
-  try {
-    const page2 = await browser.newPage();
-    try {
-      await page2.goto(`http://127.0.0.1:${d2.port}/?token=${token}`);
-      await page2.locator(".onb-agent", { hasText: "Claude Code" }).click();
-      await page2.waitForURL(/\/s\/[\w-]+/);
-      await page2.setViewportSize({ width: 900, height: 520 });
-      await page2.waitForSelector("textarea");
+  await withFreshMockSession("e2e-follow-tail-9c2f", async (page2) => {
+    await page2.setViewportSize({ width: 900, height: 520 });
+    await page2.waitForSelector("textarea");
 
-      const zone = page2.locator(".render-zone");
-      const geom = () =>
-        zone.evaluate((el) => ({ top: el.scrollTop, h: el.scrollHeight, view: el.clientHeight }));
-      const sendPlan = async () => {
-        const before = await page2.locator(".turn-user", { hasText: "plan it step by step" }).count();
-        await page2.locator("textarea").fill("plan it step by step");
-        await page2.keyboard.press("Enter");
-        await page2.waitForFunction(
-          (n) =>
-            [...document.querySelectorAll(".turn-user")].filter((el) =>
-              el.textContent?.includes("plan it step by step"),
-            ).length > n,
-          before,
-          { timeout: 15_000 },
-        );
-      };
-
-      // Two completed turns supply deterministic scrollback; the next is the
-      // live stream under test. One turn measured only 28px taller than this
-      // fixed viewport, too little for a meaningful 100px upward-wheel proof.
-      for (let i = 0; i < 2; i++) {
-        const completeBefore = await page2
-          .locator(".turn-assistant", { hasText: "Plan complete — all four steps done." })
-          .count();
-        await sendPlan();
-        await page2.waitForFunction(
-          (n) =>
-            [...document.querySelectorAll(".turn-assistant")].filter((el) =>
-              el.textContent?.includes("Plan complete — all four steps done."),
-            ).length > n,
-          completeBefore,
-          { timeout: 30_000 },
-        );
-        await page2.waitForFunction(() => !document.querySelector(".stop-btn"), undefined, {
-          timeout: 15_000,
-        });
-      }
-      const seeded = await geom();
-      assert.ok(
-        seeded.h - seeded.view > 300,
-        `seed turn did not make scrollback (content ${seeded.h}px, viewport ${seeded.view}px)`,
+    const zone = page2.locator(".render-zone");
+    const geom = () =>
+      zone.evaluate((el) => ({ top: el.scrollTop, h: el.scrollHeight, view: el.clientHeight }));
+    const sendPlan = async () => {
+      const before = await page2.locator(".turn-user", { hasText: "plan it step by step" }).count();
+      await page2.locator("textarea").fill("plan it step by step");
+      await page2.keyboard.press("Enter");
+      await page2.waitForFunction(
+        (n) =>
+          [...document.querySelectorAll(".turn-user")].filter((el) =>
+            el.textContent?.includes("plan it step by step"),
+          ).length > n,
+        before,
+        { timeout: 15_000 },
       );
+    };
 
-      const todoBefore = await page2.locator(".rc-todos").count();
-      const finalBefore = await page2
+    // Two completed turns supply deterministic scrollback; the next is the
+    // live stream under test. One turn measured only 28px taller than this
+    // fixed viewport, too little for a meaningful 100px upward-wheel proof.
+    for (let i = 0; i < 2; i++) {
+      const completeBefore = await page2
         .locator(".turn-assistant", { hasText: "Plan complete — all four steps done." })
         .count();
       await sendPlan();
-      await page2.waitForFunction(
-        (n) => document.querySelectorAll(".rc-todos").length > n,
-        todoBefore,
-        { timeout: 15_000 },
-      );
-
-      // A real wheel up over the transcript: the reader is steering into
-      // scrollback while the agent is still producing output.
-      await zone.hover();
-      const atWheel = await geom();
-      await page2.mouse.wheel(0, -1_000);
-      await page2.waitForFunction(
-        ({ top }) => {
-          const el = document.querySelector(".render-zone");
-          return Boolean(
-            el &&
-              el.scrollTop < top - 100 &&
-              el.scrollHeight - el.scrollTop - el.clientHeight > 200,
-          );
-        },
-        atWheel,
-        { timeout: 5_000 },
-      );
-      const before = await geom();
-
-      // New output must grow below without moving the scrolled-up reader.
-      await page2.waitForFunction(
-        ({ top, h }) => {
-          const el = document.querySelector(".render-zone");
-          return Boolean(el && el.scrollHeight > h && Math.abs(el.scrollTop - top) <= 1);
-        },
-        before,
-        { timeout: 5_000 },
-      );
-
-      // Let that timed turn finish, then use a permission request as a latch
-      // for the re-arm half. Sending the request legitimately returns to the
-      // tail; scroll up once more while the engine is guaranteed to remain
-      // busy until this test answers.
       await page2.waitForFunction(
         (n) =>
           [...document.querySelectorAll(".turn-assistant")].filter((el) =>
             el.textContent?.includes("Plan complete — all four steps done."),
           ).length > n,
-        finalBefore,
+        completeBefore,
         { timeout: 30_000 },
       );
       await page2.waitForFunction(() => !document.querySelector(".stop-btn"), undefined, {
         timeout: 15_000,
       });
-      await page2.locator("textarea").fill("run something dangerous");
+    }
+    const seeded = await geom();
+    assert.ok(
+      seeded.h - seeded.view > 300,
+      `seed turn did not make scrollback (content ${seeded.h}px, viewport ${seeded.view}px)`,
+    );
+
+    const todoBefore = await page2.locator(".rc-todos").count();
+    const finalBefore = await page2
+      .locator(".turn-assistant", { hasText: "Plan complete — all four steps done." })
+      .count();
+    await sendPlan();
+    await page2.waitForFunction(
+      (n) => document.querySelectorAll(".rc-todos").length > n,
+      todoBefore,
+      { timeout: 15_000 },
+    );
+
+    // A real wheel up over the transcript: the reader is steering into
+    // scrollback while the agent is still producing output.
+    await zone.hover();
+    const atWheel = await geom();
+    await page2.mouse.wheel(0, -1_000);
+    await page2.waitForFunction(
+      ({ top }) => {
+        const el = document.querySelector(".render-zone");
+        return Boolean(
+          el &&
+            el.scrollTop < top - 100 &&
+            el.scrollHeight - el.scrollTop - el.clientHeight > 200,
+        );
+      },
+      atWheel,
+      { timeout: 5_000 },
+    );
+    const before = await geom();
+
+    // New output must grow below without moving the scrolled-up reader.
+    await page2.waitForFunction(
+      ({ top, h }) => {
+        const el = document.querySelector(".render-zone");
+        return Boolean(el && el.scrollHeight > h && Math.abs(el.scrollTop - top) <= 1);
+      },
+      before,
+      { timeout: 5_000 },
+    );
+
+    // Let that timed turn finish, then use a permission request as a latch
+    // for the re-arm half. Sending the request legitimately returns to the
+    // tail; scroll up once more while the engine is guaranteed to remain
+    // busy until this test answers.
+    await page2.waitForFunction(
+      (n) =>
+        [...document.querySelectorAll(".turn-assistant")].filter((el) =>
+          el.textContent?.includes("Plan complete — all four steps done."),
+        ).length > n,
+      finalBefore,
+      { timeout: 30_000 },
+    );
+    await page2.waitForFunction(() => !document.querySelector(".stop-btn"), undefined, {
+      timeout: 15_000,
+    });
+    await page2.locator("textarea").fill("run something dangerous");
+    await page2.keyboard.press("Enter");
+    await page2.waitForSelector(".perm-bar", { timeout: 15_000 });
+
+    await zone.hover();
+    const latchedAtWheel = await geom();
+    await page2.mouse.wheel(0, -1_000);
+    await page2.waitForFunction(
+      ({ top }) => {
+        const el = document.querySelector(".render-zone");
+        return Boolean(
+          el &&
+            el.scrollTop < top - 100 &&
+            el.scrollHeight - el.scrollTop - el.clientHeight > 200,
+        );
+      },
+      latchedAtWheel,
+      { timeout: 5_000 },
+    );
+
+    // A real downward gesture that reaches the current tail arms from its
+    // pre-input geometry. The unanswered permission keeps the premise
+    // stable; no timer can end the turn between the gesture and assertion.
+    const beforeReturn = await geom();
+    await page2.mouse.wheel(0, beforeReturn.h + beforeReturn.view);
+    await page2.waitForFunction(
+      () => {
+        const el = document.querySelector(".render-zone");
+        return Boolean(
+          el &&
+            document.querySelector(".stop-btn") &&
+            document.querySelector(".perm-bar") &&
+            el.scrollHeight - el.scrollTop - el.clientHeight <= 60,
+        );
+      },
+      undefined,
+      { timeout: 5_000 },
+    );
+    const rearmed = await geom();
+
+    // Allowing resolves the latch and starts tool/output frames without a
+    // new user prompt (which would arm following independently). Do not
+    // merely prove one scroll landed: that later content must carry the
+    // viewport with it.
+    await page2.locator(".perm-allow").click();
+    await page2.waitForFunction(
+      (h) => {
+        const el = document.querySelector(".render-zone");
+        return Boolean(
+          el &&
+            el.scrollHeight > h &&
+            el.scrollHeight - el.scrollTop - el.clientHeight <= 60,
+        );
+      },
+      rearmed.h,
+      { timeout: 5_000 },
+    );
+    await page2.waitForFunction(() => !document.querySelector(".stop-btn"), undefined, {
+      timeout: 15_000,
+    });
+    await page2.waitForFunction(() => {
+      const el = document.querySelector(".render-zone");
+      return Boolean(el && el.scrollHeight - el.scrollTop - el.clientHeight <= 60);
+    });
+  });
+});
+
+test("an overflowing prose transcript supports keyboard scrolling and End re-arms following", async () => {
+  await withFreshMockSession("e2e-transcript-keyboard-9c2f", async (page2) => {
+    await page2.setViewportSize({ width: 900, height: 520 });
+    await page2.waitForSelector("textarea");
+    const zone = page2.locator(".render-zone");
+    const geom = () =>
+      zone.evaluate((el) => ({ top: el.scrollTop, h: el.scrollHeight, view: el.clientHeight }));
+
+    // Make deterministic overflow out of inert prose only. With no link or
+    // button inside the log, the scroller itself is the keyboard access path
+    // axe's scrollable-region-focusable rule requires.
+    for (let i = 0; i < 8; i++) {
+      const before = await page2.locator(".notice-line[data-source]").count();
+      await page2.locator("textarea").fill(`notice attribution ${i}`);
       await page2.keyboard.press("Enter");
-      await page2.waitForSelector(".perm-bar", { timeout: 15_000 });
-
-      await zone.hover();
-      const latchedAtWheel = await geom();
-      await page2.mouse.wheel(0, -1_000);
       await page2.waitForFunction(
-        ({ top }) => {
-          const el = document.querySelector(".render-zone");
-          return Boolean(
-            el &&
-              el.scrollTop < top - 100 &&
-              el.scrollHeight - el.scrollTop - el.clientHeight > 200,
-          );
-        },
-        latchedAtWheel,
-        { timeout: 5_000 },
-      );
-
-      // A real downward gesture that reaches the current tail arms from its
-      // pre-input geometry. The unanswered permission keeps the premise
-      // stable; no timer can end the turn between the gesture and assertion.
-      const beforeReturn = await geom();
-      await page2.mouse.wheel(0, beforeReturn.h + beforeReturn.view);
-      await page2.waitForFunction(
-        () => {
-          const el = document.querySelector(".render-zone");
-          return Boolean(
-            el &&
-              document.querySelector(".stop-btn") &&
-              document.querySelector(".perm-bar") &&
-              el.scrollHeight - el.scrollTop - el.clientHeight <= 60,
-          );
-        },
-        undefined,
-        { timeout: 5_000 },
-      );
-      const rearmed = await geom();
-
-      // Allowing resolves the latch and starts tool/output frames without a
-      // new user prompt (which would arm following independently). Do not
-      // merely prove one scroll landed: that later content must carry the
-      // viewport with it.
-      await page2.locator(".perm-allow").click();
-      await page2.waitForFunction(
-        (h) => {
-          const el = document.querySelector(".render-zone");
-          return Boolean(
-            el &&
-              el.scrollHeight > h &&
-              el.scrollHeight - el.scrollTop - el.clientHeight <= 60,
-          );
-        },
-        rearmed.h,
-        { timeout: 5_000 },
+        (n) => document.querySelectorAll(".notice-line[data-source]").length > n,
+        before,
+        { timeout: 15_000 },
       );
       await page2.waitForFunction(() => !document.querySelector(".stop-btn"), undefined, {
         timeout: 15_000,
       });
-      await page2.waitForFunction(() => {
+    }
+    const seeded = await geom();
+    assert.ok(
+      seeded.h - seeded.view > 300,
+      `notice turns did not make scrollback (content ${seeded.h}px, viewport ${seeded.view}px)`,
+    );
+    assert.equal(await zone.getAttribute("tabindex"), "0");
+    assert.equal(
+      await zone.locator("a, button, input, select, textarea, [tabindex]").count(),
+      0,
+      "fixture unexpectedly gained a focusable transcript descendant",
+    );
+    await assertAxeClean(page2, "overflowing prose-only transcript");
+
+    // Hold a turn open so output after End can prove follow-tail was re-armed,
+    // not just that the browser performed one isolated scroll.
+    await page2.locator("textarea").fill("run something dangerous");
+    await page2.keyboard.press("Enter");
+    await page2.waitForSelector(".perm-bar", { timeout: 15_000 });
+
+    await zone.focus();
+    const focus = await zone.evaluate((el) => {
+      const style = getComputedStyle(el);
+      return {
+        active: document.activeElement === el,
+        visible: el.matches(":focus-visible"),
+        outline: style.outlineStyle,
+      };
+    });
+    assert.ok(focus.active, "transcript did not accept focus");
+    assert.ok(focus.visible, "transcript focus ring was not keyboard-visible");
+    assert.notEqual(focus.outline, "none", "transcript has no visible focus outline");
+
+    const atBottom = await geom();
+    await page2.keyboard.press("PageUp");
+    await page2.waitForFunction(
+      ({ top }) => {
+        const el = document.querySelector(".render-zone");
+        return Boolean(
+          el &&
+            el.scrollTop < top - 100 &&
+            el.scrollHeight - el.scrollTop - el.clientHeight > 200,
+        );
+      },
+      atBottom,
+      { timeout: 5_000 },
+    );
+
+    await page2.keyboard.press("End");
+    await page2.waitForFunction(
+      () => {
         const el = document.querySelector(".render-zone");
         return Boolean(el && el.scrollHeight - el.scrollTop - el.clientHeight <= 60);
-      });
-    } finally {
-      await page2.close();
-    }
-  } finally {
-    await d2.stop();
-  }
+      },
+      undefined,
+      { timeout: 5_000 },
+    );
+    const rearmed = await geom();
+
+    await page2.locator(".perm-allow").click();
+    await page2.waitForFunction(
+      (h) => {
+        const el = document.querySelector(".render-zone");
+        return Boolean(
+          el &&
+            el.scrollHeight > h &&
+            el.scrollHeight - el.scrollTop - el.clientHeight <= 60,
+        );
+      },
+      rearmed.h,
+      { timeout: 5_000 },
+    );
+    await page2.waitForFunction(() => !document.querySelector(".stop-btn"), undefined, {
+      timeout: 15_000,
+    });
+  });
 });
 
 // The frame sampler's in-page globals (armed before the prompt, read after).
@@ -1572,92 +1656,80 @@ test("a busy turn never looks idle: the indicator is up, moving, and on screen w
   // correctly remove the line, and make textContent() wait 30 seconds for an
   // element that was supposed to stay gone. A permission request is the
   // mock's deterministic latch: the turn cannot end until this test answers.
-  const token = "e2e-busy-indicator-9c2f";
-  const d2 = await startDaemon({ MIRAFOLD_TOKEN: token });
-  try {
-    const page2 = await browser.newPage();
-    try {
-      await page2.goto(`http://127.0.0.1:${d2.port}/?token=${token}`);
-      await page2.locator(".onb-agent", { hasText: "Claude Code" }).click();
-      await page2.waitForURL(/\/s\/[\w-]+/);
-      await page2.waitForSelector("textarea");
+  await withFreshMockSession("e2e-busy-indicator-9c2f", async (page2) => {
+    await page2.waitForSelector("textarea");
 
-      // Frame-by-frame watcher, armed BEFORE the prompt goes out: any frame
-      // where the turn is in flight (stop button present) but no activity line
-      // is painted is the 2026-07-28 bug — work happening with nothing showing.
-      // It also counts glyph frame CHANGES: a present-but-frozen line is the
-      // 2026-07-29 bug. The callback stays anonymous because tsx's keepNames
-      // wrapper does not exist inside the page.
-      await page2.evaluate(() => {
-        const w = window as unknown as BusyWatch;
-        w.__busyFrames = 0;
-        w.__blankFrames = 0;
-        w.__glyphFlips = 0;
-        w.__lastGlyph = "";
-        w.__watch = window.setInterval(() => {
-          if (document.querySelector(".stop-btn")) {
-            w.__busyFrames++;
-            const glyph = document.querySelector(".activity-glyph")?.textContent;
-            if (glyph === undefined) w.__blankFrames++;
-            else if (glyph !== w.__lastGlyph) {
-              if (w.__lastGlyph !== "") w.__glyphFlips++;
-              w.__lastGlyph = glyph;
-            }
+    // Frame-by-frame watcher, armed BEFORE the prompt goes out: any frame
+    // where the turn is in flight (stop button present) but no activity line
+    // is painted is the 2026-07-28 bug — work happening with nothing showing.
+    // It also counts glyph frame CHANGES: a present-but-frozen line is the
+    // 2026-07-29 bug. The callback stays anonymous because tsx's keepNames
+    // wrapper does not exist inside the page.
+    await page2.evaluate(() => {
+      const w = window as unknown as BusyWatch;
+      w.__busyFrames = 0;
+      w.__blankFrames = 0;
+      w.__glyphFlips = 0;
+      w.__lastGlyph = "";
+      w.__watch = window.setInterval(() => {
+        if (document.querySelector(".stop-btn")) {
+          w.__busyFrames++;
+          const glyph = document.querySelector(".activity-glyph")?.textContent;
+          if (glyph === undefined) w.__blankFrames++;
+          else if (glyph !== w.__lastGlyph) {
+            if (w.__lastGlyph !== "") w.__glyphFlips++;
+            w.__lastGlyph = glyph;
           }
-        }, 16);
-      });
+        }
+      }, 16);
+    });
 
-      await page2.locator("textarea").fill("run something dangerous");
-      await page2.keyboard.press("Enter");
-      await page2.waitForSelector(".perm-bar", { timeout: 15_000 });
-      // The permission bar holds the busy state open, so this waits for real
-      // movement rather than betting that a timed mock reply stays alive long
-      // enough for two browser round-trips.
-      await page2.waitForFunction(
-        () => (window as unknown as BusyWatch).__glyphFlips >= 3,
-        undefined,
-        { timeout: 5_000 },
-      );
+    await page2.locator("textarea").fill("run something dangerous");
+    await page2.keyboard.press("Enter");
+    await page2.waitForSelector(".perm-bar", { timeout: 15_000 });
+    // The permission bar holds the busy state open, so this waits for real
+    // movement rather than betting that a timed mock reply stays alive long
+    // enough for two browser round-trips.
+    await page2.waitForFunction(
+      () => (window as unknown as BusyWatch).__glyphFlips >= 3,
+      undefined,
+      { timeout: 5_000 },
+    );
 
-      // Scroll and snapshot in one page task while the latch is still held.
-      // The elapsed text and viewport placement cannot disappear between two
-      // Playwright calls now.
-      const held = await page2.evaluate(() => {
-        document.querySelector(".render-zone")!.scrollTop = 0;
-        const line = document.querySelector(".activity-line");
-        const r = line?.getBoundingClientRect();
-        return {
-          text: line?.textContent ?? "",
-          visible: Boolean(r && r.height > 0 && r.top >= 0 && r.bottom <= window.innerHeight),
-        };
-      });
-      assert.match(held.text, /\(\d+s\)/, "no elapsed counter in the activity line");
-      assert.ok(held.visible, "indicator off screen while the transcript is scrolled up");
+    // Scroll and snapshot in one page task while the latch is still held.
+    // The elapsed text and viewport placement cannot disappear between two
+    // Playwright calls now.
+    const held = await page2.evaluate(() => {
+      document.querySelector(".render-zone")!.scrollTop = 0;
+      const line = document.querySelector(".activity-line");
+      const r = line?.getBoundingClientRect();
+      return {
+        text: line?.textContent ?? "",
+        visible: Boolean(r && r.height > 0 && r.top >= 0 && r.bottom <= window.innerHeight),
+      };
+    });
+    assert.match(held.text, /\(\d+s\)/, "no elapsed counter in the activity line");
+    assert.ok(held.visible, "indicator off screen while the transcript is scrolled up");
 
-      await page2.locator(".perm-deny").click();
-      await page2.waitForFunction(() => !document.querySelector(".stop-btn"), undefined, {
-        timeout: 15_000,
-      });
-      await page2.waitForSelector(".activity-line", { state: "detached", timeout: 5_000 });
-      const frames = await page2.evaluate(() => {
-        const w = window as unknown as BusyWatch;
-        window.clearInterval(w.__watch);
-        return { busy: w.__busyFrames, blank: w.__blankFrames, flips: w.__glyphFlips };
-      });
-      assert.ok(frames.busy > 0, "the sampler never saw the turn in flight");
-      assert.equal(
-        frames.blank,
-        0,
-        `${frames.blank} frame(s) had a turn in flight with no activity line painted`,
-      );
-      assert.ok(frames.flips >= 3, `the glyph moved only ${frames.flips} time(s) while held busy`);
-      assert.equal(await page2.locator(".activity-line").count(), 0);
-    } finally {
-      await page2.close();
-    }
-  } finally {
-    await d2.stop();
-  }
+    await page2.locator(".perm-deny").click();
+    await page2.waitForFunction(() => !document.querySelector(".stop-btn"), undefined, {
+      timeout: 15_000,
+    });
+    await page2.waitForSelector(".activity-line", { state: "detached", timeout: 5_000 });
+    const frames = await page2.evaluate(() => {
+      const w = window as unknown as BusyWatch;
+      window.clearInterval(w.__watch);
+      return { busy: w.__busyFrames, blank: w.__blankFrames, flips: w.__glyphFlips };
+    });
+    assert.ok(frames.busy > 0, "the sampler never saw the turn in flight");
+    assert.equal(
+      frames.blank,
+      0,
+      `${frames.blank} frame(s) had a turn in flight with no activity line painted`,
+    );
+    assert.ok(frames.flips >= 3, `the glyph moved only ${frames.flips} time(s) while held busy`);
+    assert.equal(await page2.locator(".activity-line").count(), 0);
+  });
 });
 
 // In-page globals for the queued-follow-up sampler below.

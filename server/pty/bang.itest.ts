@@ -234,12 +234,19 @@ test("bang burst throttle: a too-fast second bang is refused with a clean end (a
   await bd.stop();
 });
 
-test("one bang at a time; bang_kill ends it with a null exit code", async () => {
+test("one bang at a time; bang_kill force-stops even a HUP-ignoring command", async () => {
   // `echo up` first: bang_start alone doesn't prove the child is attached,
   // and killing a PTY before its process fully spawns can surface as a clean
   // exit instead of signal death under CPU load (the C.1 runner flake) —
   // wait for output, which only a live process can produce.
-  c.send({ type: "bang", id: "b2", command: "echo up && sleep 30" } as never);
+  // The PTY library's default kill is SIGHUP. A shell can ignore it, so the
+  // old implementation left this command running and later called its
+  // natural exit "killed" merely because Stop had once been requested.
+  c.send({
+    type: "bang",
+    id: "b2",
+    command: "trap '' HUP; echo up; sleep 30; exit 7",
+  } as never);
   await c.type("bang_start");
   await c.waitFor((m) => m.type === "bang_output" && /up/.test((m as Any).data), "b2 live");
   c.send({ type: "bang", id: "b3", command: "echo nope" } as never);

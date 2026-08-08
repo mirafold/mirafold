@@ -549,6 +549,10 @@ export function RenderZone({
         role="log"
         aria-live="off"
         aria-label="Conversation transcript"
+        // An overflowing transcript can contain only inert prose. Keep the
+        // scroller itself in the tab order so keyboard users can PageUp/End;
+        // the global :focus-visible rule supplies its visible focus ring.
+        tabIndex={0}
         ref={tail.scrollerRef}
         onScroll={tail.onScroll}
         onWheel={tail.onWheel}

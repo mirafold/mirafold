@@ -392,6 +392,7 @@ export function Shell() {
           agents={daemonInfo.agents}
           defaultCwd={tildify(daemonInfo.cwd, daemonInfo.home)}
           error={notices.onboarding}
+          onCwdChange={() => setNotices((n) => ({ ...n, onboarding: null }))}
           onBrowse={daemonInfo.folderPicker ? bus.pickFolder : undefined}
           onPick={(agent, cwd, backend) => {
             setNotices((n) => ({ ...n, onboarding: null }));

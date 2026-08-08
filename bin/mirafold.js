@@ -7,6 +7,7 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { openBrowser } from "./browser-open.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const daemon = path.resolve(HERE, "..", "dist-server", "index.js");
@@ -53,6 +54,12 @@ if (!existsSync(daemon)) {
 }
 
 const noOpen = process.argv.includes("--no-open");
+if (process.env.npm_command === "exec" || process.env.npm_lifecycle_event === "npx") {
+  console.warn(
+    "[mirafold] npx exposes executables from the current project's node_modules; " +
+      "use this convenience only in a project you trust (the global install is the safe default)",
+  );
+}
 // --verbose rides to the daemon as MIRAFOLD_DEBUG=1 — one debug switch, two spellings.
 const child = spawn(process.execPath, [daemon], {
   stdio: ["inherit", "pipe", "inherit"],
@@ -79,25 +86,19 @@ child.stdout.on("data", (buf) => {
     opened = true;
     bootTail = "";
     if (!noOpen) {
-      // Say it, because the open is often invisible: a compositor won't let a
-      // background process raise a window, so an already-running browser just
-      // gains a tab somewhere behind everything. Without this line a silent
-      // success and a failed opener look identical, and the user reads a
-      // working launch as broken (2026-07-30, Kyle's own first run).
-      console.log("[mirafold] opening it in your browser — check your tabs if no window appears");
-      openBrowser(m[0]);
+      const opener = openBrowser(m[0]);
+      if (!opener) {
+        console.log("[mirafold] no trusted system browser opener found — open the URL above");
+      } else {
+        // Say it, because the open is often invisible: a compositor won't let
+        // a background process raise a window, so an already-running browser
+        // can gain a tab behind everything (2026-07-30, first tester run).
+        console.log("[mirafold] opening it in your browser — check your tabs if no window appears");
+        opener.once("error", () =>
+          console.log("[mirafold] the system browser opener failed — open the URL above"),
+        );
+      }
     }
   }
 });
 child.on("exit", (code, signal) => process.exit(signal ? 1 : (code ?? 0)));
-
-function openBrowser(url) {
-  const [cmd, args] =
-    process.platform === "darwin"
-      ? ["open", [url]]
-      : process.platform === "win32"
-        ? ["cmd", ["/c", "start", "", url]]
-        : ["xdg-open", [url]];
-  // Best-effort: a headless box has no opener — the printed URL is the fallback.
-  spawn(cmd, args, { stdio: "ignore", detached: true }).on("error", () => {});
-}

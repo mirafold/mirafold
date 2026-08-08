@@ -192,19 +192,14 @@ function BackendMenu({
   );
 }
 
-export function Onboarding({
-  agents,
-  defaultCwd,
-  error,
-  onPick,
-  onBrowse,
-  onRefresh,
-  onDismiss,
-}: {
+type OnboardingProps = {
   agents: AgentInfo[] | null;
   defaultCwd?: string;
   error?: string | null;
   onPick: (agent: AgentName, cwd?: string, backend?: BackendChoice) => void;
+  // A create error describes the cwd that was submitted. Once the user
+  // edits or replaces that cwd, its owner must discard the stale error.
+  onCwdChange?: () => void;
   // Present only when this LOCAL daemon advertised a host-native picker.
   // Cancel resolves undefined; errors reject and stay inside this card.
   onBrowse?: (cwd?: string) => Promise<string | undefined>;
@@ -216,7 +211,18 @@ export function Onboarding({
   // Absent on first run / a sessionless shell, where dismissing would leave
   // a dead page.
   onDismiss?: () => void;
-}) {
+};
+
+export function Onboarding({
+  agents,
+  defaultCwd,
+  error,
+  onPick,
+  onCwdChange,
+  onBrowse,
+  onRefresh,
+  onDismiss,
+}: OnboardingProps) {
   const [cwd, setCwd] = useState("");
   const [browsing, setBrowsing] = useState(false);
   const [browseError, setBrowseError] = useState<string | null>(null);
@@ -252,20 +258,23 @@ export function Onboarding({
   const pickingRow = picking ? agents?.find((a) => a.agent === picking) : undefined;
   const pick = (agent: AgentName, backend?: BackendChoice) =>
     onPick(agent, cwd.trim() || undefined, backend);
-  const browse = async () => {
+  const browseForDirectory = async () => {
     if (!onBrowse || browsing) return;
     setBrowseError(null);
     setBrowsing(true);
     try {
       const selected = await onBrowse(cwd.trim() || undefined);
-      if (selected) setCwd(selected);
+      if (selected) {
+        setCwd(selected);
+        onCwdChange?.();
+      }
     } catch (err) {
       setBrowseError(err instanceof Error ? err.message : String(err));
     } finally {
       setBrowsing(false);
     }
   };
-  const shownError = browseError ?? error;
+  const currentError = browseError ?? error;
 
   return (
     // Esc/backdrop walk back the same steps (stepBack above), so the modal's
@@ -294,10 +303,11 @@ export function Onboarding({
           value={cwd}
           spellCheck={false}
           placeholder={defaultCwd ?? "~/path/to/project"}
-          aria-describedby={shownError ? "onb-cwd-error" : undefined}
+          aria-describedby={currentError ? "onb-cwd-error" : undefined}
           onChange={(e) => {
             setCwd(e.target.value);
             setBrowseError(null);
+            onCwdChange?.();
           }}
         />
         {onBrowse && (
@@ -305,15 +315,15 @@ export function Onboarding({
             type="button"
             className="onb-cwd-browse"
             disabled={browsing}
-            onClick={() => void browse()}
+            onClick={() => void browseForDirectory()}
           >
             {browsing ? "choosing…" : "browse…"}
           </button>
         )}
       </div>
-      {shownError && (
+      {currentError && (
         <div className="onb-error" id="onb-cwd-error">
-          {shownError}
+          {currentError}
         </div>
       )}
       {pickingRow ? (

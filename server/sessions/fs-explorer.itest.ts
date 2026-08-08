@@ -245,12 +245,17 @@ test("E2.1: an fs_listdir burst drains the token bucket but is ANSWERED — and 
   for (let i = 0; i < N; i++) c.send({ type: "fs_listdir", id: `q${i}`, path: "" } as ClientMsg);
   const replies: Any[] = [];
   for (let i = 0; i < N; i++) {
-    replies.push(
-      (await c.waitFor((m) => m.type === "fs_dir" && (m as Any).id === `q${i}`, `fs_dir q${i}`)) as Any,
-    );
+    replies.push((await c.type("fs_dir")) as Any);
   }
-  assert.equal(replies[0].error, undefined, "the burst's first request is served");
-  const refused = replies.filter((m) => typeof m.error === "string");
+  const byId = new Map<string, Any>(replies.map((m) => [m.id, m]));
+  assert.deepEqual(
+    [...byId.keys()].sort(),
+    Array.from({ length: N }, (_, i) => `q${i}`),
+    "one correlated reply per burst request",
+  );
+  const ordered = Array.from({ length: N }, (_, i) => byId.get(`q${i}`)!);
+  assert.equal(ordered[0].error, undefined, "the burst's first request is served");
+  const refused = ordered.filter((m) => typeof m.error === "string");
   assert.ok(refused.length >= 1, "a same-instant burst past the bucket is refused, never silently dropped");
   assert.ok(refused.every((m) => /too fast/.test(String(m.error))));
   await settle(1_000); // one full refill window

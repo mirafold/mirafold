@@ -2159,6 +2159,14 @@ was added. Protected Tier 1/2/3 checks, Cloudflare, and DCO passed on PR #22.
   tests, real-daemon browser proof, accessibility/phone checks, typecheck,
   build/package, production audit, README, and protected CI complete.
   → PLAN-ARCHIVE.md.
+- [x] **N2.4 — Post-refactor executable-trust remediation** — done 2026-08-08;
+  browser and native-dialog identity now comes only from fixed system paths,
+  agent discovery rejects project/npm-controlled candidates, helper processes
+  use a neutral cwd/scrubbed environment and confirm exit after cancellation or
+  output overflow, and the `npx` trust boundary is explicit. Local proof:
+  Tier 1 561/561, Tier 2 143/143, Tier 3 82/82, typecheck, build, 19-file
+  package dry-run, secret scan, and production audit (0 vulnerabilities).
+  → PLAN-ARCHIVE.md.
 
 ## Phase N3 — Stable Tier-3 browser gates (✅ COMPLETE 2026-08-08)
 
