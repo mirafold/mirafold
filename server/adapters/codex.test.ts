@@ -653,6 +653,18 @@ function withOpenAiKey(value: string | undefined, fn: () => void) {
   }
 }
 
+test("F.10: the installed Codex executable drives the SDK engine", () => {
+  const saved = process.env.MIRAFOLD_CODEX_BIN;
+  try {
+    process.env.MIRAFOLD_CODEX_BIN = "/operator/chosen/codex";
+    const o = capturedCodexOptions({ kind: "subscription" });
+    assert.equal(o.codexPathOverride, "/operator/chosen/codex");
+  } finally {
+    if (saved === undefined) delete process.env.MIRAFOLD_CODEX_BIN;
+    else process.env.MIRAFOLD_CODEX_BIN = saved;
+  }
+});
+
 test("N.5: a subscription choice withholds the env API key — the explicit pick beats env precedence", () => {
   withOpenAiKey("sk-env", () => {
     const o = capturedCodexOptions({ kind: "subscription" });

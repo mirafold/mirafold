@@ -142,7 +142,7 @@ processes, clear timers. After `close()`, no further messages may be emitted.
 
 | Capability | `claude-code` | `codex` | `gemini-cli` | `mock` |
 |---|---|---|---|---|
-| Drive surface | `@anthropic-ai/claude-agent-sdk`, one warm `query()` for the session's life | `@openai/codex-sdk` (spawns `codex` CLI), one warm `Thread`, `runStreamed` per turn | `gemini` CLI headless: `-p … -o stream-json`, one process **per turn** | scripted timers |
+| Drive surface | `@anthropic-ai/claude-agent-sdk`, one warm `query()` for the session's life | `@openai/codex-sdk`, pointed at the user's installed `codex` CLI when present (SDK-bundled fallback), one warm `Thread`, `runStreamed` per turn | `gemini` CLI headless: `-p … -o stream-json`, one process **per turn** | scripted timers |
 | Warm-conversation mechanism | never-ending query + async prompt queue (prompt cache preserved) | persistent `Thread` (`thread.id` resumable) | `--session-id` first turn, `--resume` after | n/a |
 | Text streaming granularity | token-level (`includePartialMessages`) | **buffered** — one `text_delta` per completed item (SDK emits no token deltas today) | chunked `message` events | 16-char chunks |
 | Thinking stream (`thinking_delta`) | ✅ full fidelity | ✅ when reasoning items appear | ❌ observed absent → never fires (I3 proof) | ✅ scripted |
@@ -163,6 +163,16 @@ process spawn per turn; Codex text arrives buffered rather than token-streamed
 from the Codex spike remains **unverified live**: the `requestApproval` shape
 (probe ran with `approval_policy:"never"`, which skips execution) — if the SDK
 ever grows an approval callback, capture it before wiring `permission_request`.
+
+**Codex executable parity (F.10, 2026-08-08):** `CodexSession` resolves the
+user's installed `codex` executable (including `MIRAFOLD_CODEX_BIN`) and passes
+it as the SDK's `codexPathOverride`. The SDK's bundled engine is only the
+fallback when no external executable exists. Turns, `/model`, and engine-default
+resolution all query that one resolved executable. This is load-bearing: two
+Codex versions share `~/.codex/config.toml` and `models_cache.json`; letting a
+newer terminal write those files while an older SDK engine reads them caused a
+cache-schema failure, an older fallback model, and an invalid inherited
+reasoning effort. Do not reintroduce separate "picker" and "engine" binaries.
 
 ## 5. Generative UI: the MCP contract
 

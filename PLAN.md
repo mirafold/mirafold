@@ -2456,6 +2456,14 @@ fix restores what that agent's *terminal* user already sees — nothing invented
 
 - [x] **Step F.8 — `!` terminal parity + hardening** — done 2026-07-17 (Kyle: "we must never hide ANYTHING"); bang `cd` persists inside the workspace (EXIT-trap cwd handoff; an escape resets with the terminal's own notice), silent success renders "(completed with no output)", and the transcript reaches the agent immediately as its own turn (the engine's internal shell can't follow a bang `cd` — the one disclosed divergence). Same-day hardening: 0700 handoff dir, FIFO-stall gate, closing-fence escaping, 400ms bang throttle. F.3 extended: `session_created` carries the model label (status bar + fleet show agent → model from attach). SECURITY.md disclosure note queued under R.7. Tests in all three tiers. → PLAN-ARCHIVE.md.
 
+- [x] **Step F.10 — Codex runtime/version parity hotfix** — done 2026-08-08;
+  Mirafold now points the SDK at the user's installed Codex when present,
+  retains the current SDK binary as fallback, and asks that one engine for
+  both model catalogs. A live subscription prompt with Kyle's unchanged
+  `max` setting resolved GPT-5.6 Sol and replied `ok`; focused tests (53/53),
+  Tier 1 (536/536), typecheck, build, package dry-run, and production audit
+  (0 vulnerabilities) passed. → PLAN-ARCHIVE.md.
+
 - [ ] **Step F.5 — Codex app-server migration (approvals, streaming, visible
   reasoning)** *(post-launch, demand-gated — the big one)*
   - Goal: close the three live-confirmed divergences from terminal Codex, all
@@ -2467,10 +2475,11 @@ fix restores what that agent's *terminal* user already sees — nothing invented
     path). (2) **No streaming** — the reply lands as one buffered
     `item.completed` lump. (3) **Reasoning can be entirely absent** — observed:
     79 reasoning tokens spent, no `reasoning` item emitted at all.
-    (4, added 2026-07-16 via F.7) **the SDK vendors its own codex binary**, so
-    sessions can run an older default model than the user's terminal codex —
-    observed: vendored 0.142.5 → gpt-5.5 vs terminal 0.144.5 → gpt-5.6-sol;
-    the app-server surface drives the system codex and closes this too.
+    (4, added 2026-07-16 via F.7) ~~**the SDK vendors its own codex binary**,
+    so sessions can run an older default model than the user's terminal
+    codex~~ — closed by F.10 on 2026-08-08: SDK turns and catalogs now use the
+    installed Codex when present, with the current bundled binary retained
+    only as fallback. F.5 still owns the first three app-server divergences.
   - Build: drive Codex's **app-server** (JSON-RPC 2.0, the surface behind the
     VS Code extension — see codex.spike.md's original event table):
     `requestApproval` → `permission_request` (the browser bar + wire machinery
