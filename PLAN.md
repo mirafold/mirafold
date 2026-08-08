@@ -1291,7 +1291,10 @@ with it. Both sequence BEFORE R.5.**
     4. Enable the DCO sign-off check on both repos — *Kyle*.
     5. ~~Re-enable the cross-repo relay itest in CI~~ — ✅ **DONE 2026-08-02**
        (*assistant*); see the resolution note under "Owed at the public flip"
-       below. ⬜ Not yet opened as a PR, so not yet exercised on a runner.
+       below. ~~⬜ Not yet opened as a PR, so not yet exercised on a runner.~~
+       *(Stale — it WAS exercised: `f30a6dc` was pushed to `main` 2026-08-02
+       and its CI run passed on the real runner, sibling relay checkout and
+       all. Verified from the run list 2026-08-07.)*
     6. Push the signed `v0.3.0` tag — *Kyle*. **This is the publish**: the
        tag push triggers `release.yml`, which builds and runs
        `npm publish --provenance`. No hand-run `npm publish`, ever. Expect
@@ -2348,12 +2351,15 @@ bodies + dated history → PLAN-ARCHIVE.md ("Moved 2026-07-24").
     `yarn test:server` **142/142** in ~231s — 130 of which is what CI's
     `find … ! -name relay-service.itest.ts` used to run, so the change is
     strictly additive in coverage.
-- **Branch protection is BLOCKED by GitHub's paywall** — classic protection and
-  rulesets both 403 ("Upgrade to GitHub Pro or make this repository public")
-  on free-plan private repos. Kyle's intended shape when available: required
-  checks (unit + integration), NO review requirement (solo dev), admin bypass
-  for direct pushes, no force-push/delete. Options: pay (org → GitHub Team) or
-  wait for the public flip, when it's free. Revisit at R.5b.
+- **✅ Branch protection LIVE 2026-08-07** (the paywall block expired at the
+  2026-07-31 public flip; landed via two rulesets, effective rules re-measured
+  from the API after creation). `main`: required checks (Tier 1, Tier 2+3,
+  DCO), no review requirement, repo-admin bypass for direct pushes, no
+  force-push/delete — the exact shape recorded here on 07-22. `next` (created
+  2026-08-07 at `main`'s head): PR-only entry (0 approvals), same required
+  checks, NO bypass for anyone. Feature branches stay unprotected; convention
+  is to cut them from `next`. Commits headed for PRs need `git commit -s`
+  (DCO now blocks). Still unwritten: the `release/x.y.z` mechanics.
 - **✅ CI flake fully resolved 2026-07-23** (PR `mirafold/mirafold#5`): six
   flaky tests, three root causes, each reproduced under CPU pinning before
   fixing — **no product code changed** (every fix was in test/harness code),
