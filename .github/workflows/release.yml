@@ -36,6 +36,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+
+      # A release is exactly what main says right now — nothing else. The tag
+      # trigger above is branch-blind by platform design (any pushed v* tag
+      # starts this workflow, whatever commit it points at), so without this
+      # gate a tag aimed at any branch's commit — or an old main commit —
+      # would publish it. Flow b (2026-08-07): main advances only at release
+      # time, so main's tip and the published package are the same thing.
+      # Dispatch rehearsals run from a branch ref and skip this.
+      - name: Tag must be main's current tip
+        if: github.event_name == 'push'
+        run: |
+          git fetch --depth=1 origin main
+          TIP="$(git rev-parse origin/main)"
+          if [ "$(git rev-parse HEAD)" != "$TIP" ]; then
+            echo "tag $GITHUB_REF_NAME points at $(git rev-parse HEAD), not main's tip $TIP — refusing to publish" >&2
+            exit 1
+          fi
+
       - uses: actions/setup-node@v5
         with:
           node-version: 22
@@ -58,8 +76,9 @@ jobs:
             exit 1
           fi
 
-      # The fast gates re-run here even though CI ran on the commit — a tag
-      # can point anywhere, and the publish must verify what it publishes.
+      # The fast gates re-run here even though CI ran on the commit — the
+      # main-tip gate above pins WHERE the tag points, but pushes to main only
+      # run Tier 1, and the publish must verify exactly what it publishes.
       # tsconfig.ci.json == tsconfig.json minus the cross-repo sibling itest,
       # and this workflow keeps it on purpose: a single-repo checkout means no
       # other repo's branch can block a publish, and the excluded file is a
