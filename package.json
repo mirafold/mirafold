@@ -1,6 +1,6 @@
 {
   "name": "mirafold",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "A faithful browser re-skin of the terminal coding agent you already use — Claude Code, Codex, or Gemini CLI — with generative UI layered on top.",
   "license": "MIT",
   "type": "module",
