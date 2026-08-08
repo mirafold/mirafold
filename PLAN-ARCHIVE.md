@@ -6915,3 +6915,63 @@ vulnerabilities), the real-daemon/real-browser picker proof, phone no-overflow,
 axe, and protected GitHub Tier 1/2/3 checks passed. The direct local full Tier 2
 and Tier 3 runs also exposed four unchanged baseline failures, each reproduced
 from an isolated `origin/next`; PR #22 records those controls explicitly.
+
+## Moved 2026-08-08 (stable Tier-3 browser gates — full body)
+
+### Phase N3 — Stable Tier-3 browser gates (opened + done 2026-08-08)
+
+**Goal:** keep the browser suite's real guarantees while removing the three
+observed timing/state races that intermittently blocked otherwise-good PRs.
+
+**Proven causes:**
+
+- Activity: the test waited for the transient `.activity-line`, then made a
+  second Playwright round-trip to read it. On the failed PR #22 run the first
+  wait succeeded, the scripted turn correctly ended and removed the line, and
+  the second call waited 30 seconds for an element that was supposed to stay
+  gone. The unchanged executable head had passed immediately before the
+  docs-only commit that caused the rerun.
+- Mermaid: the failed run never reached the outer `.rc-diagram`; the shared
+  session could carry a preceding turn across the test boundary and leave the
+  diagram prompt contending with the one-follow-up gate. The lazy Mermaid
+  runtime was never implicated by the trace.
+- Follow-tail: re-arming only in the delayed `scroll` event let streamed paint
+  move the bottom beyond the 24px slack after the user's downward gesture but
+  before that event measured it. This one was a narrow product race, not only
+  a test race; it matched the watch item root-caused on 2026-07-24.
+
+- [x] **N3.1 — Replace elapsed-time luck with a controlled busy state**
+  - The activity test now owns its daemon, page, and session and uses the mock
+    permission request as a deterministic latch. It asserts presence, elapsed
+    text, glyph movement, viewport placement, no blank busy frames, and clean
+    teardown while the test—not timer scheduling—controls when the turn ends.
+
+- [x] **N3.2 — Isolate the Mermaid renderer proof**
+  - The diagram test now owns its session, so it reaches the renderer or fails
+    for a renderer reason. Its guarantee is otherwise unchanged: it drives the
+    production lazy chunk, sandboxed iframe, CSP, postMessage sizing handshake,
+    SVG render, and parse-error fallback.
+
+- [x] **N3.3 — Close the real follow-tail re-arm race**
+  - Instant following and input-based upward detachment remain intact.
+    Downward wheel/touch intent that will reach the current bottom now arms
+    synchronously against the geometry at input time, before streamed paint
+    can move the target ahead of a later `scroll` event. Pure Tier-1 tests pin
+    pixel, line, page, direction, and exact boundary decisions. The browser
+    test owns deterministic scrollback, proves a real upward wheel detaches
+    during growth, then uses a permission latch and real downward wheel to
+    prove later tool/output frames keep following without a new prompt.
+
+- [x] **N3.4 — Prove the flakes are gone**
+  - Focused unchanged repetition: activity 6/6, Mermaid 5/5, follow-tail 6/6;
+    pure intent boundaries 3/3. Full Tier 1 passed 554/554, typecheck and
+    diff validation passed, and two consecutive unchanged full Tier-3 runs
+    passed 78/78 in 183s and 186s. PR #22's implementation head `a091ba1`
+    then passed DCO, Cloudflare Pages, Tier 1 (1m23s), and the combined Tier
+    2 + Tier 3 protected job (6m41s) on the loaded GitHub runner.
+
+**Outcome:** the two test-only flakes now synchronize on owned state instead
+of shared-session timing, while the follow-tail watch item is fixed in product
+code. No dependency was added. The checks retain their original user-visible
+guarantees and now fail at the component they name: busy chrome, Mermaid
+rendering, or follow-tail behavior.

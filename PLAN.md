@@ -2160,50 +2160,19 @@ was added. Protected Tier 1/2/3 checks, Cloudflare, and DCO passed on PR #22.
   build/package, production audit, README, and protected CI complete.
   → PLAN-ARCHIVE.md.
 
-## Phase N3 — Stable Tier-3 browser gates (opened 2026-08-08)
+## Phase N3 — Stable Tier-3 browser gates (✅ COMPLETE 2026-08-08)
 
-**Goal:** keep the browser suite's real guarantees while removing the three
-observed timing/state races that intermittently block otherwise-good PRs.
-
-**Proven causes:**
-
-- Activity: the test waited for the transient `.activity-line`, then made a
-  second Playwright round-trip to read it. On the failed PR #22 run the first
-  wait succeeded, the scripted turn correctly ended and removed the line, and
-  the second call waited 30 seconds for an element that was supposed to stay
-  gone.
-- Mermaid: the failed run never reached the outer `.rc-diagram`; the shared
-  session could carry a preceding turn across the test boundary and leave the
-  diagram prompt contending with the one-follow-up gate.
-- Follow-tail: re-arming only in the delayed `scroll` event let streamed paint
-  move the bottom beyond the 24px slack after the user's downward gesture but
-  before that event measured it. This one was a narrow product race, not only
-  a test race.
-
-- [x] **N3.1 — Replace elapsed-time luck with a controlled busy state**
-  - Give the test its own daemon/page/session and use the mock permission ask
-    as a deterministic latch. Assert presence, elapsed text, movement,
-    viewport placement, no blank busy frames, and clean teardown while the
-    test—not timer scheduling—controls when the turn may end.
-- [x] **N3.2 — Isolate the Mermaid renderer proof**
-  - Give the diagram test its own session so it reaches the real lazy chunk,
-    sandbox, postMessage handshake, and parse-error path without inheriting a
-    prior test's one-follow-up prompt-gate state.
-- [x] **N3.3 — Close the real follow-tail re-arm race**
-  - Preserve instant following and input-based upward detachment. When a
-    downward wheel/touch gesture will reach the current bottom, arm following
-    synchronously against that pre-input geometry so streamed paint cannot
-    move the target before a later `scroll` event measures it. Pin the
-    decision as a pure Tier-1 rule and drive it with real wheel input in an
-    isolated browser test.
-- [ ] **N3.4 — Prove the flakes are gone**
-  - Run each isolated test repeatedly, then the full Tier-3 suite and all
-    protected PR checks. Archive this phase only after the exact final head is
-    green.
-  - Local proof complete: activity 6/6, Mermaid 5/5, follow-tail 6/6, pure
-    intent boundaries 3/3, Tier 1 554/554, typecheck, and two consecutive
-    unchanged full Tier-3 runs at 78/78. Remaining: protected PR checks on the
-    pushed code head.
+- [x] **N3.1 — Controlled busy-state proof** — own session + permission latch;
+  no transient-locator race. → PLAN-ARCHIVE.md.
+- [x] **N3.2 — Isolated Mermaid renderer proof** — own session, production
+  lazy chunk/sandbox/CSP/postMessage paths retained. → PLAN-ARCHIVE.md.
+- [x] **N3.3 — Deterministic follow-tail re-arm** — wheel/touch intent arms
+  synchronously against pre-input geometry; pure boundaries + real-wheel e2e.
+  → PLAN-ARCHIVE.md.
+- [x] **N3.4 — Repetition + protected proof** — focused activity 6/6,
+  Mermaid 5/5, follow-tail 6/6; Tier 1 554/554; two unchanged full Tier-3
+  runs 78/78; PR #22's DCO, Cloudflare, Tier 1, and combined Tier 2/3 checks
+  passed on implementation head `a091ba1`. → PLAN-ARCHIVE.md.
 
 ## Phase V — Visual + fidelity gaps flagged by Kyle (opened 2026-07-17; ✅ COMPLETE)
 
