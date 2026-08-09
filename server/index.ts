@@ -1,3 +1,4 @@
+import "./project-env-loader";
 import { createServer, type IncomingMessage } from "node:http";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
@@ -13,7 +14,15 @@ import { startRelayClient } from "./relay/relay-client";
 import { createEntitlementTokenSource } from "./relay/entitlement";
 import { MIN_PAIRING_CODE_LENGTH, resolvePairingCode } from "./relay/relay-protocol";
 import { resolveRelayPlan } from "./relay/relay-url";
-import { COOKIE_NAME, cookieToken, isAllowedOrigin, safeRedirectPath, tokensMatch, verifyToken } from "./security/auth";
+import {
+  COOKIE_NAME,
+  cookieToken,
+  isAllowedOrigin,
+  safeRedirectPath,
+  startupUrl,
+  tokensMatch,
+  verifyToken,
+} from "./security/auth";
 import { createLogger, logFile, print } from "./log";
 import { envInt } from "./env";
 import { VERSION } from "./version";
@@ -35,22 +44,6 @@ const lastGasp = (kind: string) => (err: unknown) => {
 };
 process.on("uncaughtException", lastGasp("uncaughtException"));
 process.on("unhandledRejection", lastGasp("unhandledRejection"));
-
-// .env is optional — without an API key we fall back to the mock session.
-// On Node < 20.12 loadEnvFile doesn't exist; swallowing that silently
-// strands a valid key in .env in mock mode with no clue why — say so (R.4g).
-if (typeof process.loadEnvFile === "function") {
-  try {
-    process.loadEnvFile();
-  } catch {
-    /* no .env yet */
-  }
-} else {
-  log.warn(
-    `this Node (${process.version}) can't read .env (needs >= 20.12) — ` +
-      "credentials set in .env were NOT loaded; export them in the environment or upgrade Node",
-  );
-}
 
 const app = express();
 
@@ -332,7 +325,7 @@ const listen = (port: number) => {
     server.removeListener("error", onBusy); // later errors stay loud, as before
     // The token rides the URL so the launcher opens an authenticated page; the
     // browser trades it for the cookie on first load (see the auth block above).
-    const url = `http://127.0.0.1:${port}/${AUTH_ENABLED ? `?token=${AUTH_TOKEN}` : ""}`;
+    const url = startupUrl(port, AUTH_TOKEN);
     // print(): the launcher greps this stdout line for the URL, and the token
     // must never reach the log file — its file twin below is sanitized.
     print(`[mirafold] v${VERSION} — server on ${url} (ws at /ws)`);

@@ -6911,7 +6911,8 @@ Linux dialog helper is installed, the existing editable path remains available.
     receive a credential-free system path plus a neutral home-directory cwd.
     Filter relative, project-contained, symlink-back-into-project, and every
     `node_modules/.bin` candidate from Codex/Gemini executable discovery while
-    preserving explicit operator overrides and legitimate global installs.
+    preserving parent-process operator overrides and legitimate global
+    installs.
   - Native-dialog abort/output overflow must settle only after `close`, with a
     short graceful request followed by forced termination. Replace the tests
     that depended on PATH substitution with injected process seams and add
@@ -6921,13 +6922,66 @@ Linux dialog helper is installed, the existing editable path remains available.
     only fixed operating-system locations and inherit a fixed system path,
     credential-scrubbed desktop state, and the user's home as cwd. Shared agent
     lookup rejects relative, project-contained, npm-bin, and symlink-back-into-
-    project candidates while retaining explicit operator overrides. Abort and
-    output overflow request process-group termination, escalate after 250 ms,
-    and reject only after the child closes. Adversarial lookup, environment,
-    cwd, and force-kill regressions replaced the unsafe PATH-substitution seams;
+    project candidates while retaining parent-process operator overrides.
+    Abort and output overflow request process-group termination, escalate after
+    250 ms, and reject only after the child closes. Adversarial lookup,
+    environment, cwd, and force-kill regressions replaced the unsafe
+    PATH-substitution seams;
     README and SECURITY record the `npx` boundary. Local verification passed:
     Tier 1 561/561, Tier 2 143/143, Tier 3 82/82, typecheck, build, 19-file
     package dry-run, secret scan, and production audit (0 vulnerabilities).
+
+- [x] **N2.5 — Keep the chosen folder leaf visible in long paths**
+  - Goal: when the startup working-directory field cannot fit the whole path,
+    show its rightmost leaf folder instead of the filesystem root.
+  - Build: scroll the unfocused controlled input to its logical end after a
+    programmatic path replacement and whenever editing finishes; do not fight
+    the user's caret while they are editing.
+  - Files: `web/src/components/Onboarding.tsx`, `server/testing/app.e2e.ts`.
+  - Done when: a real-browser narrow-width regression proves that the complete
+    value remains intact, the leaf is visible after blur/programmatic state
+    updates, and refocusing still permits ordinary editing.
+  - **Outcome (2026-08-08):** the controlled startup input now moves its
+    viewport to the logical path end after a native selection or other
+    unfocused value replacement, and again when editing ends. While the field
+    has focus, its caret remains authoritative, so the root and middle remain
+    normally editable. A narrow-width browser regression synthesizes the
+    existing correlated folder-pick reply, proves the overflowing input is at
+    its maximum horizontal offset without changing the value, edits at the
+    root, proves blur restores the leaf, and creates the session at the full
+    chosen path. Tier 1 passed 561/561; the focused Tier-3 browser regression
+    passed 1/1; typecheck and the production build passed.
+
+- [x] **N2.6 — Close the post-audit environment and Windows-opener execution
+  paths**
+  - The follow-up audit found that N2.4's executable filter could still be
+    bypassed through the launch checkout's `.env`: `process.loadEnvFile()`
+    copied `MIRAFOLD_CODEX_BIN` and runtime loader controls into the parent
+    environment, after which agent resolution treated them as operator intent.
+    It also found that an unencoded `MIRAFOLD_TOKEN` reached Windows
+    `cmd.exe /c start`, where shell metacharacters became commands.
+  - Replace ambient `.env` mutation with Node's dotenv parser plus an explicit
+    allowlist of supported Mirafold data settings. Load it before dependency
+    modules initialize, keep parent-process values authoritative, and ignore
+    executable overrides, path/shell controls, runtime loader hooks, and
+    unrelated repository variables. Explicit binary overrides exported by the
+    operator continue to work.
+  - Build the startup URL through `URLSearchParams`, then open it on Windows by
+    passing one argument directly to fixed-system `explorer.exe`; no command
+    interpreter remains in the browser-opening path. Pin the hostile `.env`,
+    token round-trip, and Windows metacharacter cases. Correct README, SECURITY,
+    `.env.example`, and the runtime `npx` warning: an installed command prevents
+    package/executable shadowing but does not make a checkout's active `.env`
+    configuration trustworthy.
+  - **Outcome (2026-08-08):** repository `.env` files can configure only the
+    supported data surface and can no longer select agent executables or Node
+    loaders; parent-process overrides retain precedence. Tokens containing
+    command metacharacters are percent-encoded and still authenticate after URL
+    decoding, while Windows sends the resulting URL straight to
+    `%SystemRoot%\\explorer.exe`. Local verification passed Tier 1 563/563,
+    Tier 2 143/143, Tier 3 82/82, typecheck, production build, the 19-file
+    package dry-run, secret/diff scans, and the production dependency audit
+    with 0 vulnerabilities.
 
 **Outcome:** both startup routes now offer a compact native `browse…` control
 while preserving the editable absolute-path field. Mirafold opens the host
@@ -6937,12 +6991,16 @@ disconnect, and gives the child a strict desktop/session allowlist rather than
 the daemon's credential-bearing environment. The correlated response is sent
 only to the requesting local viewport and clicks are never queued across a
 reconnect; relay, unsupported-platform, and helper-missing cases retain manual
-entry without claiming a picker exists. No package was added. Focused tests
-(51/51), Tier 1 (551/551), typecheck, package dry-run, production audit (0
-vulnerabilities), the real-daemon/real-browser picker proof, phone no-overflow,
-axe, and protected GitHub Tier 1/2/3 checks passed. The direct local full Tier 2
-and Tier 3 runs also exposed four unchanged baseline failures, each reproduced
-from an isolated `origin/next`; PR #22 records those controls explicitly.
+entry without claiming a picker exists. Long paths keep their rightmost leaf
+visible whenever the field is not actively being edited. No package was added.
+The original N2 delivery passed focused tests (51/51), Tier 1 (551/551),
+typecheck, package dry-run, production audit (0 vulnerabilities), the
+real-daemon/real-browser picker proof, phone no-overflow, axe, and protected
+GitHub Tier 1/2/3 checks. The direct local full Tier 2 and Tier 3 runs also
+exposed four unchanged baseline failures, each reproduced from an isolated
+`origin/next`; PR #22 records those controls explicitly. N2.5's separate
+follow-up verification is recorded directly above. N2.6's post-audit closure
+is likewise recorded above with the complete 563/143/82 proof.
 
 ## Moved 2026-08-08 (stable Tier-3 browser gates — full body)
 

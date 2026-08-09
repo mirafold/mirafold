@@ -72,6 +72,17 @@ function runnable(candidate: string, platform: NodeJS.Platform): boolean {
   }
 }
 
+function resolveTrustedCandidate(
+  candidate: string,
+  platform: NodeJS.Platform,
+  launchDir: string,
+): string | undefined {
+  if (!runnable(candidate, platform) || isProjectExecutablePath(candidate, launchDir)) {
+    return undefined;
+  }
+  return canonical(candidate);
+}
+
 /** Resolve an executable without accepting relative PATH entries, npm bins,
  * launch-repository files, or symlinks back into the launch repository.
  * Returned paths are canonical and absolute, closing later cwd reinterpretation. */
@@ -84,8 +95,7 @@ export function locateTrustedExecutable(
   const launchDir = opts.launchDir ?? process.cwd();
 
   if (path.isAbsolute(file)) {
-    if (!runnable(file, platform) || isProjectExecutablePath(file, launchDir)) return undefined;
-    return canonical(file);
+    return resolveTrustedCandidate(file, platform, launchDir);
   }
   // A slash-bearing relative command is explicitly cwd-dependent. Mirafold's
   // daemon-owned launches must either use an absolute file or a filtered name.
@@ -95,6 +105,7 @@ export function locateTrustedExecutable(
     ? []
     : (env.PATH ?? "").split(path.delimiter).filter(Boolean);
   const dirs = [...(opts.directories ?? []), ...pathDirs];
+  const names = namesFor(file, platform, env);
   const seen = new Set<string>();
   for (const rawDir of dirs) {
     // Relative and empty PATH entries mean the current project directory.
@@ -102,10 +113,9 @@ export function locateTrustedExecutable(
     const dir = canonical(rawDir);
     if (seen.has(dir) || isProjectExecutablePath(dir, launchDir)) continue;
     seen.add(dir);
-    for (const name of namesFor(file, platform, env)) {
-      const candidate = path.join(dir, name);
-      if (!runnable(candidate, platform) || isProjectExecutablePath(candidate, launchDir)) continue;
-      return canonical(candidate);
+    for (const name of names) {
+      const resolved = resolveTrustedCandidate(path.join(dir, name), platform, launchDir);
+      if (resolved) return resolved;
     }
   }
   return undefined;

@@ -90,8 +90,8 @@ export function browserOpenCommand(
   if (platform === "win32") {
     const root = windowsRoot(env);
     if (!root) return undefined;
-    const file = path.win32.join(root, "System32", "cmd.exe");
-    return canRun(file) ? { file, args: ["/d", "/c", "start", "", url] } : undefined;
+    const file = path.win32.join(root, "explorer.exe");
+    return canRun(file) ? { file, args: [url] } : undefined;
   }
   if (platform === "linux") {
     const file = LINUX_OPENERS.find(canRun);
@@ -118,7 +118,6 @@ export function browserOpenEnvironment(
     safe.PATH = root
       ? [path.win32.join(root, "System32"), root].join(path.win32.delimiter)
       : "";
-    if (root) safe.COMSPEC = path.win32.join(root, "System32", "cmd.exe");
   } else {
     safe.PATH = platform === "darwin" ? MAC_SYSTEM_PATH : LINUX_SYSTEM_PATH;
   }

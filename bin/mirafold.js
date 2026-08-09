@@ -57,7 +57,8 @@ const noOpen = process.argv.includes("--no-open");
 if (process.env.npm_command === "exec" || process.env.npm_lifecycle_event === "npx") {
   console.warn(
     "[mirafold] npx exposes executables from the current project's node_modules; " +
-      "use this convenience only in a project you trust (the global install is the safe default)",
+      "use it only in a project you trust. An installed command avoids package shadowing, " +
+      "but review or rename the checkout's .env before first launch",
   );
 }
 // --verbose rides to the daemon as MIRAFOLD_DEBUG=1 — one debug switch, two spellings.

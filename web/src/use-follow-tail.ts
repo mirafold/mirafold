@@ -41,8 +41,10 @@ const WHEEL_LINE_PX = 16;
 
 type ScrollGeometry = Pick<HTMLElement, "scrollHeight" | "scrollTop" | "clientHeight">;
 type WheelIntent = { deltaY: number; deltaMode?: number };
+type TouchIntent = { touches: ArrayLike<{ clientY: number }> };
 
 const bottomGap = (el: ScrollGeometry) => el.scrollHeight - el.scrollTop - el.clientHeight;
+const firstTouchY = (event: TouchIntent) => event.touches[0]?.clientY;
 
 const intentReachesBottom = (el: ScrollGeometry, deltaPx: number) =>
   deltaPx > 0 && bottomGap(el) <= deltaPx + BOTTOM_SLACK_PX;
@@ -101,8 +103,8 @@ export function useFollowTail() {
     if (el && wheelIntentReachesBottom(el, e)) following.current = true;
   };
 
-  const onTouchStart = (e: { touches: { clientY: number }[] | ArrayLike<{ clientY: number }> }) => {
-    touchY.current = e.touches[0]?.clientY ?? null;
+  const onTouchStart = (e: TouchIntent) => {
+    touchY.current = firstTouchY(e) ?? null;
   };
 
   // Dragging the content DOWN scrolls the transcript up — the touch equivalent
@@ -114,8 +116,8 @@ export function useFollowTail() {
   // wheel was (Chrome/Linux, 2026-07-20). Kept as a guard for the platform
   // that can't be tested here — iOS Safari, which the relay's phone viewport
   // actually targets, and whose momentum scrolling is a different animal.
-  const onTouchMove = (e: { touches: ArrayLike<{ clientY: number }> }) => {
-    const y = e.touches[0]?.clientY;
+  const onTouchMove = (e: TouchIntent) => {
+    const y = firstTouchY(e);
     if (y === undefined) return;
     const previousY = touchY.current;
     if (previousY !== null && y > previousY) following.current = false;

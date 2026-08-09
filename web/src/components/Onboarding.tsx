@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { AgentBackend, AgentInfo, AgentName, BackendChoice } from "@protocol";
 import {
   agentLabel,
@@ -36,6 +36,10 @@ const REFRESH_POLL_MS = 3_000;
 // Names the dialog for a screen reader (A.2b). A constant is safe: only one
 // onboarding card is ever mounted.
 const TITLE_ID = "onb-card-title";
+
+function revealPathEnd(input: HTMLInputElement | null): void {
+  if (input) input.scrollLeft = input.scrollWidth;
+}
 
 /** A second step only when there's a genuine choice: more than one usable way
  *  to run, or a discovered server whose model must be picked. A single usable
@@ -226,6 +230,7 @@ export function Onboarding({
   const [cwd, setCwd] = useState("");
   const [browsing, setBrowsing] = useState(false);
   const [browseError, setBrowseError] = useState<string | null>(null);
+  const cwdInput = useRef<HTMLInputElement>(null);
   // Which agent's backend menu is open (the second step), if any.
   const [picking, setPicking] = useState<AgentName | null>(null);
   // Which discovered server's model catalog is open (the third step) — its
@@ -236,6 +241,16 @@ export function Onboarding({
   useEffect(() => {
     if (defaultCwd) setCwd((c) => c || defaultCwd);
   }, [defaultCwd]);
+
+  // A native pick replaces this controlled input while focus remains on the
+  // browse button. With no caret to reveal, browsers otherwise leave the
+  // input at scrollLeft 0 and show the filesystem root instead of the folder
+  // that identifies the project. Keep caret-driven scrolling while editing;
+  // whenever an unfocused value lands (or editing ends), reveal its leaf.
+  useLayoutEffect(() => {
+    const input = cwdInput.current;
+    if (document.activeElement !== input) revealPathEnd(input);
+  }, [cwd]);
 
   // The live "it will show here" promise: poll while open. The hello is
   // re-sent whole, so rows update in place (including mid-second-step).
@@ -258,16 +273,18 @@ export function Onboarding({
   const pickingRow = picking ? agents?.find((a) => a.agent === picking) : undefined;
   const pick = (agent: AgentName, backend?: BackendChoice) =>
     onPick(agent, cwd.trim() || undefined, backend);
+  const updateCwd = (next: string) => {
+    setCwd(next);
+    setBrowseError(null);
+    onCwdChange?.();
+  };
   const browseForDirectory = async () => {
     if (!onBrowse || browsing) return;
     setBrowseError(null);
     setBrowsing(true);
     try {
       const selected = await onBrowse(cwd.trim() || undefined);
-      if (selected) {
-        setCwd(selected);
-        onCwdChange?.();
-      }
+      if (selected) updateCwd(selected);
     } catch (err) {
       setBrowseError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -297,6 +314,7 @@ export function Onboarding({
       </label>
       <div className="onb-cwd-row">
         <input
+          ref={cwdInput}
           id="onb-cwd"
           className="onb-cwd"
           type="text"
@@ -304,11 +322,8 @@ export function Onboarding({
           spellCheck={false}
           placeholder={defaultCwd ?? "~/path/to/project"}
           aria-describedby={currentError ? "onb-cwd-error" : undefined}
-          onChange={(e) => {
-            setCwd(e.target.value);
-            setBrowseError(null);
-            onCwdChange?.();
-          }}
+          onChange={(e) => updateCwd(e.target.value)}
+          onBlur={(e) => revealPathEnd(e.currentTarget)}
         />
         {onBrowse && (
           <button

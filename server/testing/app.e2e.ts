@@ -51,6 +51,76 @@ const installFsRecorder = (p: Page) =>
 const fsSent = (p: Page) =>
   p.evaluate(() => (window as unknown as { __fsSent: { type: string; path?: string }[] }).__fsSent);
 
+type FolderPickerStubWindow = Window & {
+  __pickerSocket?: WebSocket;
+  __pickerAgents?: Record<string, unknown>;
+  __pickerChoice?: string;
+};
+
+// The operating-system service has injected-process coverage in Tier 1. This
+// stub keeps the browser proof on the real SocketClient -> Onboarding path
+// while replacing only the native dialog's correlated reply.
+const installFolderPickerWireStub = (p: Page) =>
+  p.addInitScript(() => {
+    const w = window as FolderPickerStubWindow;
+    const NativeWebSocket = window.WebSocket;
+    const nativeSend = NativeWebSocket.prototype.send;
+
+    window.WebSocket = new Proxy(NativeWebSocket, {
+      construct(Target, args) {
+        const socket = Reflect.construct(Target, args) as WebSocket;
+        w.__pickerSocket = socket;
+        socket.addEventListener("message", (event) => {
+          try {
+            const message = JSON.parse(String(event.data)) as Record<string, unknown>;
+            if (message.type === "agents") w.__pickerAgents = message;
+          } catch {
+            // Non-JSON frames are unrelated to this local plain-wire test.
+          }
+        });
+        return socket;
+      },
+    }) as typeof WebSocket;
+
+    NativeWebSocket.prototype.send = function (data: Parameters<WebSocket["send"]>[0]) {
+      try {
+        const message = JSON.parse(String(data)) as { type?: string; id?: string };
+        if (message.type === "pick_folder" && message.id && w.__pickerChoice) {
+          queueMicrotask(() =>
+            this.dispatchEvent(
+              new MessageEvent("message", {
+                data: JSON.stringify({
+                  type: "folder_picked",
+                  id: message.id,
+                  path: w.__pickerChoice,
+                }),
+              }),
+            ),
+          );
+          return;
+        }
+      } catch {
+        // Preserve every ordinary frame unchanged.
+      }
+      nativeSend.call(this, data);
+    };
+  });
+
+async function advertiseStubbedFolderPicker(p: Page, choice: string): Promise<void> {
+  await p.waitForFunction(
+    () => Boolean((window as FolderPickerStubWindow).__pickerAgents),
+  );
+  await p.evaluate((selected) => {
+    const w = window as FolderPickerStubWindow;
+    w.__pickerChoice = selected;
+    w.__pickerSocket!.dispatchEvent(
+      new MessageEvent("message", {
+        data: JSON.stringify({ ...w.__pickerAgents, folderPicker: true }),
+      }),
+    );
+  }, choice);
+}
+
 before(async () => {
   // MIRAFOLD_DEBUG makes the registry log every WireMsg it broadcasts, per
   // session (registry.ts). That is the SERVER's half of the flake-watch
@@ -159,30 +229,87 @@ test("the agent picker flexes to the window — no internal scrollbar through th
 });
 
 test(
-  "N2: replacing a rejected cwd clears its stale error and creates there",
+  "N2: a picked long cwd keeps its leaf visible, remains editable, and creates there",
   async () => {
     const fixture = mkdtempSync(path.join(os.tmpdir(), "mirafold-folder-picker-e2e-"));
-    const picked = path.join(fixture, "picked project");
+    const picked = path.join(
+      fixture,
+      "a deliberately long parent directory",
+      "picked leaf project",
+    );
     const missing = path.join(fixture, "does not exist");
-    mkdirSync(picked);
+    mkdirSync(picked, { recursive: true });
     const token = "e2e-folder-picker-9c2f";
     const d2 = await startDaemon({ MIRAFOLD_TOKEN: token });
     const page2 = await browser.newPage();
     try {
+      await installFolderPickerWireStub(page2);
       await page2.goto(`http://127.0.0.1:${d2.port}/?token=${token}`);
       await page2.setViewportSize({ width: 390, height: 844 });
       await noSideScroll(page2);
       await assertAxeClean(page2, "onboarding working directory");
 
+      await advertiseStubbedFolderPicker(page2, picked);
+
+      const cwdInput = page2.locator("#onb-cwd");
+      await page2.locator(".onb-cwd-browse").click();
+      await page2.waitForFunction(
+        (expected) =>
+          (document.querySelector("#onb-cwd") as HTMLInputElement | null)?.value === expected,
+        picked,
+      );
+      const chosenView = await cwdInput.evaluate((element) => {
+        const input = element as HTMLInputElement;
+        return {
+          value: input.value,
+          left: input.scrollLeft,
+          max: input.scrollWidth - input.clientWidth,
+          focused: document.activeElement === input,
+        };
+      });
+      assert.equal(chosenView.value, picked, "leaf reveal must not shorten the actual cwd");
+      assert.ok(chosenView.max > 40, `fixture did not overflow the input (${chosenView.max}px)`);
+      assert.equal(chosenView.focused, false, "browse button should retain focus after the pick");
+      assert.ok(
+        chosenView.left >= chosenView.max - 1,
+        `picked cwd showed its root (scrollLeft ${chosenView.left}px of ${chosenView.max}px)`,
+      );
+
+      // Focusing restores ordinary caret control: editing at the root must
+      // not be dragged back to the leaf by the controlled-state update.
+      await cwdInput.focus();
+      await page2.keyboard.press("Home");
+      await page2.keyboard.type("x");
+      const editingView = await cwdInput.evaluate((element) => {
+        const input = element as HTMLInputElement;
+        return { value: input.value, left: input.scrollLeft, caret: input.selectionStart };
+      });
+      assert.equal(editingView.value, `x${picked}`);
+      assert.equal(editingView.caret, 1);
+      assert.ok(
+        editingView.left <= 1,
+        `active root edit was forced ${editingView.left}px to the leaf`,
+      );
+
+      await cwdInput.evaluate((element) => (element as HTMLInputElement).blur());
+      const blurredView = await cwdInput.evaluate((element) => {
+        const input = element as HTMLInputElement;
+        return { left: input.scrollLeft, max: input.scrollWidth - input.clientWidth };
+      });
+      assert.ok(
+        blurredView.left >= blurredView.max - 1,
+        `blurred cwd did not return to its leaf (${blurredView.left}px of ${blurredView.max}px)`,
+      );
+
       // A rejected cwd belongs to the value that was submitted. Replacing the
       // value must remove that stale error before the user retries creation.
-      await page2.locator("#onb-cwd").fill(missing);
+      await cwdInput.fill(missing);
       await page2.locator(".onb-agent", { hasText: "Claude Code" }).click();
       await page2.waitForSelector(".onb-error");
       assert.match(await page2.locator(".onb-error").innerText(), /no such directory/i);
 
-      await page2.locator("#onb-cwd").fill(picked);
-      assert.equal(await page2.locator("#onb-cwd").inputValue(), picked);
+      await cwdInput.fill(picked);
+      assert.equal(await cwdInput.inputValue(), picked);
       await page2.locator(".onb-error").waitFor({ state: "detached" });
 
       await page2.setViewportSize({ width: 1100, height: 800 });

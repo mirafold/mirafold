@@ -22,6 +22,21 @@ import {
   type FolderPickerProcessResult,
 } from "./folder-picker";
 
+function hangingHelperScript(pidFile: string, beforeHang = ""): string {
+  return (
+    `const fs=require("node:fs");` +
+    `process.on("SIGTERM",()=>{});` +
+    `fs.writeFileSync(${JSON.stringify(pidFile)},String(process.pid));` +
+    beforeHang +
+    `setInterval(()=>{},1000)`
+  );
+}
+
+function assertHelperExited(pidFile: string): void {
+  const pid = Number(readFileSync(pidFile, "utf8"));
+  assert.throws(() => process.kill(pid, 0), { code: "ESRCH" });
+}
+
 test("N2 native recipes: macOS, Windows, and both Linux desktop dialogs", () => {
   const mac = folderPickerCommands("/Users/kyle/project", "darwin", {});
   assert.equal(mac.length, 1);
@@ -214,14 +229,13 @@ test("picker output overflow force-stops a helper that ignores SIGTERM before re
         file: process.execPath,
         args: [
           "-e",
-          `const fs=require("node:fs");process.on("SIGTERM",()=>{});fs.writeFileSync(${JSON.stringify(pidFile)},String(process.pid));process.stdout.write("x".repeat(20000));setInterval(()=>{},1000)`,
+          hangingHelperScript(pidFile, `process.stdout.write("x".repeat(20000));`),
         ],
         canceled: () => false,
       }),
       /too much output/,
     );
-    const pid = Number(readFileSync(pidFile, "utf8"));
-    assert.throws(() => process.kill(pid, 0), { code: "ESRCH" });
+    assertHelperExited(pidFile);
   } finally {
     rmSync(fixture, { recursive: true, force: true });
   }
@@ -235,10 +249,7 @@ test("picker abort waits for forced helper exit before rejecting", async () => {
     const pending = runFolderPickerCommand(
       {
         file: process.execPath,
-        args: [
-          "-e",
-          `const fs=require("node:fs");process.on("SIGTERM",()=>{});fs.writeFileSync(${JSON.stringify(pidFile)},String(process.pid));setInterval(()=>{},1000)`,
-        ],
+        args: ["-e", hangingHelperScript(pidFile)],
         canceled: () => false,
       },
       controller.signal,
@@ -250,8 +261,7 @@ test("picker abort waits for forced helper exit before rejecting", async () => {
     assert.ok(existsSync(pidFile), "helper did not start");
     controller.abort();
     await assert.rejects(pending, { name: "AbortError" });
-    const pid = Number(readFileSync(pidFile, "utf8"));
-    assert.throws(() => process.kill(pid, 0), { code: "ESRCH" });
+    assertHelperExited(pidFile);
   } finally {
     rmSync(fixture, { recursive: true, force: true });
   }

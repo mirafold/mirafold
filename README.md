@@ -1137,11 +1137,13 @@ headless box, open the exact printed URL (it has the token);
 `npx mirafold` is a convenience only inside a project you already trust. npm
 adds that project's `node_modules/.bin` executables to the launched process and
 may select a project-local `mirafold` package before registry code; the official
-launcher prints this warning when it detects npm exec. Do not use `npx` as a
-way to inspect an unfamiliar checkout. Install Mirafold globally from a neutral
-directory first, then enter the project and run `mirafold`; Mirafold itself
-also refuses project/npm-bin candidates when resolving host chrome and agent
-CLIs.
+launcher prints this warning when it detects npm exec. For an unfamiliar
+checkout, install Mirafold globally from a neutral directory first, then enter
+the project and run `mirafold`; Mirafold refuses project/npm-bin candidates
+when resolving host chrome and agent CLIs. That removes executable shadowing,
+not the need to inspect the checkout: review or temporarily rename its `.env`
+before first launch because supported settings can select endpoints, relay
+access, resource limits, and whether local socket authentication is enabled.
 
 The package ships only the launcher + the two esbuild bundles + the built front
 end; agent credentials come from your environment exactly as in a terminal
@@ -1215,11 +1217,15 @@ third-party app, so the picker shows it as `blocked` and points you at the API
 key (a Codex/ChatGPT subscription works locally, but not over the paid relay).
 Point an agent at a local endpoint (Ollama, a proxy — e.g. `ANTHROPIC_BASE_URL`)
 and it's BYO, no restriction. The one dated source of truth for the whole rule
-is `server/provider-policy.ts`. The env file is
-loaded with `process.loadEnvFile()` and is optional by design. Also settable
-there: `MIRAFOLD_AGENT` (the default agent offered at onboarding), the per-agent
-model overrides `DEFAULT_MODEL` / `CODEX_MODEL` / `GEMINI_MODEL` (unset →
-that agent's own default), `PORT`, the local-server discovery knobs
+is `server/provider-policy.ts`. The optional env file is parsed with Node's
+dotenv parser, then only documented Mirafold data settings are copied into the
+daemon environment; an existing parent-process value always wins. Executable
+overrides, `PATH`/shell controls, runtime loader hooks, and unrelated project
+variables are deliberately ignored there and must be exported by the operator
+before launch. Also settable in `.env`: `MIRAFOLD_AGENT` (the default agent
+offered at onboarding), the per-agent model overrides `DEFAULT_MODEL` /
+`CODEX_MODEL` / `GEMINI_MODEL` (unset → that agent's own default), `PORT`, the
+local-server discovery knobs
 `MIRAFOLD_LOCAL_ENDPOINTS` / `MIRAFOLD_LOCAL_DISCOVERY` (Phase N — the
 onboarding picker probes localhost's well-known runtime ports and offers a
 running Ollama/LM Studio/vLLM per session; see `docs/local-models.md`), and

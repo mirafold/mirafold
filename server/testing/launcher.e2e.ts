@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import {
   chmodSync,
   cpSync,
@@ -33,6 +33,24 @@ const DAEMON = path.join(ROOT, "dist-server", "index.js");
 // /proc: the process-state guarantee is exercised on Linux, the CI platform.
 const linuxOnly = { skip: process.platform !== "linux" };
 
+async function stopProcessGroup(child: ChildProcess): Promise<void> {
+  try {
+    process.kill(-child.pid!, "SIGTERM");
+  } catch {}
+  await new Promise<void>((done) => {
+    const hard = setTimeout(() => {
+      try {
+        process.kill(-child.pid!, "SIGKILL");
+      } catch {}
+      done();
+    }, 3_000);
+    child.once("exit", () => {
+      clearTimeout(hard);
+      done();
+    });
+  });
+}
+
 test("launcher ignores project PATH when resolving host browser chrome", () => {
   const inspected: string[] = [];
   const fakePath = "/hostile/project/node_modules/.bin";
@@ -57,10 +75,15 @@ test("launcher ignores project PATH when resolving host browser chrome", () => {
     args: [url],
   });
   assert.deepEqual(
-    browserOpenCommand(url, "win32", { PATH: fakePath, SystemRoot: "C:\\Windows" }, () => true),
+    browserOpenCommand(
+      `${url}&calc|whoami`,
+      "win32",
+      { PATH: fakePath, SystemRoot: "C:\\Windows" },
+      () => true,
+    ),
     {
-      file: "C:\\Windows\\System32\\cmd.exe",
-      args: ["/d", "/c", "start", "", url],
+      file: "C:\\Windows\\explorer.exe",
+      args: [`${url}&calc|whoami`],
     },
   );
   assert.equal(browserOpenCommand(url, "win32", { PATH: fakePath }, () => true), undefined);
@@ -161,24 +184,11 @@ test("the official launcher warns when npm exec supplies project binaries", asyn
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
     assert.match(log, /npx exposes executables from the current project's node_modules/i);
-    assert.match(log, /global install is the safe default/i);
+    assert.match(log, /installed command avoids package shadowing/i);
+    assert.match(log, /review or rename the checkout's \.env/i);
     assert.match(log, /http:\/\/127\.0\.0\.1:\d+\//);
   } finally {
-    try {
-      process.kill(-child.pid!, "SIGTERM");
-    } catch {}
-    await new Promise<void>((done) => {
-      const hard = setTimeout(() => {
-        try {
-          process.kill(-child.pid!, "SIGKILL");
-        } catch {}
-        done();
-      }, 3_000);
-      child.once("exit", () => {
-        clearTimeout(hard);
-        done();
-      });
-    });
+    await stopProcessGroup(child);
     rmSync(tmp, { recursive: true, force: true });
   }
 });
@@ -235,21 +245,7 @@ test("SPA fallback serves from an install path containing a dot-directory", asyn
     assert.equal(res.status, 200, `SPA fallback 404s from a dot-path install:\n${log}`);
     assert.match(body, /<div id="root">/, "served the real app shell, not an error page");
   } finally {
-    try {
-      process.kill(-child.pid!, "SIGTERM");
-    } catch {}
-    await new Promise<void>((done) => {
-      const hard = setTimeout(() => {
-        try {
-          process.kill(-child.pid!, "SIGKILL");
-        } catch {}
-        done();
-      }, 3_000);
-      child.once("exit", () => {
-        clearTimeout(hard);
-        done();
-      });
-    });
+    await stopProcessGroup(child);
     rmSync(tmp, { recursive: true, force: true });
   }
 });
