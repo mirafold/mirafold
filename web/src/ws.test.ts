@@ -624,15 +624,24 @@ function setupRelay(t: TestContext) {
   return { dom, client, sock: () => FakeWS.instances.at(-1)! };
 }
 
-/** Complete the daemon half of the handshake on `s`; returns the daemon-side
- *  cipher so tests can open the client's subsequent ciphertext frames. */
-async function answerHandshake(s: FakeWS) {
+/** Complete the daemon half of the handshake on `s`, waiting for the client's
+ *  public open signal rather than a fixed number of event-loop turns; returns
+ *  the daemon-side cipher for opening subsequent client ciphertext frames. */
+async function answerHandshake(s: FakeWS, client: SocketClient) {
   const pair = await derivePair(PAIR_CODE);
   await drainUntil(() => s.sent.length >= 1, "client handshake frame sent");
   const clientNonce = await openHandshake(pair, "c", s.sent[0]);
   const daemonNonce = randomBytes(32);
-  s.receiveRaw(await sealHandshake(pair, "d", daemonNonce));
-  await drain();
+  let opened = false;
+  const stopWatchingOpen = client.onOpen(() => {
+    opened = true;
+  });
+  try {
+    s.receiveRaw(await sealHandshake(pair, "d", daemonNonce));
+    await drainUntil(() => opened, "client handshake completed");
+  } finally {
+    stopWatchingOpen();
+  }
   return frameCiphers(pair, clientNonce, daemonNonce, "d");
 }
 
@@ -675,7 +684,7 @@ test("relay path: a completed handshake resets the ladder (health = usable chann
   // …then a healthy handshaken connect resets it.
   const healthy = sock();
   healthy.open();
-  await answerHandshake(healthy);
+  await answerHandshake(healthy, client);
   healthy.finishClose(); // ordinary drop after a healthy session
   const before = FakeWS.instances.length;
   let waited = 0;
@@ -729,7 +738,7 @@ test("relay path: a handshake completion racing a close keeps the pending queue 
   const two = sock();
   assert.notEqual(two, one);
   two.open();
-  const daemonCipher = await answerHandshake(two);
+  const daemonCipher = await answerHandshake(two, client);
   await drainUntil(() => two.sent.length >= 2, "queued prompt re-sent on the new life");
   const first = JSON.parse(await daemonCipher.open(two.sent[1])) as { type: string; text?: string };
   assert.equal(first.type, "prompt");
