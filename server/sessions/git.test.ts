@@ -1,6 +1,6 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { cleanRelPath, decorateGitDir, findRepoRoot, parseStatusIgnoredZ, parseStatusZ } from "./git";
@@ -165,6 +165,11 @@ test("decorateGitDir: a nested dir keys repo-root-relative — same names, diffe
 test("findRepoRoot: nearest .git wins; no .git anywhere is null", () => {
   const base = mkdtempSync(path.join(os.tmpdir(), "gitfind-"));
   after(() => rmSync(base, { recursive: true, force: true }));
+  // The host running the suite may itself have an ancestor marker (for
+  // example a sandbox-owned /tmp/.git). This probe keeps the fixture's
+  // filesystem real while making its declared root the test boundary.
+  const fixtureExists = (candidate: string) =>
+    candidate.startsWith(`${base}${path.sep}`) && existsSync(candidate);
   mkdirSync(path.join(base, "outer", ".git"), { recursive: true });
   mkdirSync(path.join(base, "outer", "src", "deep"), { recursive: true });
   mkdirSync(path.join(base, "outer", "inner", ".git"), { recursive: true });
@@ -172,13 +177,20 @@ test("findRepoRoot: nearest .git wins; no .git anywhere is null", () => {
   mkdirSync(path.join(base, "plain", "sub"), { recursive: true });
   const outer = path.join(base, "outer");
   const inner = path.join(outer, "inner");
-  assert.equal(findRepoRoot(outer), outer);
-  assert.equal(findRepoRoot(path.join(outer, "src", "deep")), outer);
-  assert.equal(findRepoRoot(inner), inner, "a repo nested in a repo resolves to ITS OWN root");
-  assert.equal(findRepoRoot(path.join(inner, "lib")), inner);
-  assert.equal(findRepoRoot(path.join(base, "plain", "sub")), null);
+  assert.equal(findRepoRoot(outer, fixtureExists), outer);
+  assert.equal(findRepoRoot(path.join(outer, "src", "deep"), fixtureExists), outer);
+  assert.equal(
+    findRepoRoot(inner, fixtureExists),
+    inner,
+    "a repo nested in a repo resolves to ITS OWN root",
+  );
+  assert.equal(findRepoRoot(path.join(inner, "lib"), fixtureExists), inner);
+  assert.equal(findRepoRoot(path.join(base, "plain", "sub"), fixtureExists), null);
   // A .git FILE (worktree/submodule form) marks a boundary too.
   mkdirSync(path.join(base, "worktree"));
   writeFileSync(path.join(base, "worktree", ".git"), "gitdir: /elsewhere\n");
-  assert.equal(findRepoRoot(path.join(base, "worktree")), path.join(base, "worktree"));
+  assert.equal(
+    findRepoRoot(path.join(base, "worktree"), fixtureExists),
+    path.join(base, "worktree"),
+  );
 });

@@ -401,10 +401,22 @@ export class SocketClient {
       : msg;
   }
 
+  private transmitIfOpen(msg: ClientMsg): boolean {
+    if (!this.ready || this.ws?.readyState !== WebSocket.OPEN) return false;
+    this.transmit(msg);
+    return true;
+  }
+
   send(msg: ClientMsg) {
     msg = this.stamp(msg);
-    if (this.ready && this.ws?.readyState === WebSocket.OPEN) this.transmit(msg);
-    else this.pending.push(msg);
+    if (!this.transmitIfOpen(msg)) this.pending.push(msg);
+  }
+
+  /** Send a user-gesture side effect only while the channel is usable. Unlike
+   *  send(), this never queues a click to run after a later reconnect. The
+   *  native folder dialog is local-only, so transmit is synchronous here. */
+  sendIfOpen(msg: ClientMsg): boolean {
+    return this.transmitIfOpen(this.stamp(msg));
   }
 
   close() {

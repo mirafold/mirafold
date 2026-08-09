@@ -1,9 +1,82 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { capOutput, toolDetail } from "./types";
+import path from "node:path";
+import os from "node:os";
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { agentBin, capOutput, installedAgentBin, toolDetail } from "./types";
 
 // The default cap is 64 KB (TOOL_OUTPUT_CAP_BYTES), read at module load.
 const CAP = 64_000;
+
+function withEnv(patch: NodeJS.ProcessEnv, run: () => void): void {
+  const saved = new Map(Object.keys(patch).map((key) => [key, process.env[key]]));
+  try {
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    run();
+  } finally {
+    for (const [key, value] of saved) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
+function executable(file: string): void {
+  writeFileSync(file, "");
+  if (process.platform !== "win32") chmodSync(file, 0o755);
+}
+
+test("installedAgentBin honors the explicit operator override", () => {
+  const key = "MIRAFOLD_TEST_AGENT_BIN";
+  withEnv({ [key]: "/operator/chosen/agent" }, () => {
+    assert.equal(installedAgentBin(key, "agent"), "/operator/chosen/agent");
+    assert.equal(agentBin(key, "agent"), "/operator/chosen/agent");
+  });
+});
+
+test("installedAgentBin finds PATH executables and preserves the non-SDK ENOENT fallback", () => {
+  const key = "MIRAFOLD_TEST_AGENT_BIN";
+  const name = `mirafold-agent-${process.pid}`;
+  const shadowDir = mkdtempSync(path.join(os.tmpdir(), "mirafold-agent-shadow-"));
+  // A same-named directory can be searchable (`X_OK`) but is not executable.
+  // PATH lookup must keep going to the real file in the next directory.
+  mkdirSync(path.join(shadowDir, name));
+  const dir = mkdtempSync(path.join(os.tmpdir(), "mirafold-agent-bin-"));
+  const file = path.join(dir, process.platform === "win32" ? `${name}.cmd` : name);
+  executable(file);
+  try {
+    withEnv({ [key]: undefined, PATH: `${shadowDir}${path.delimiter}${dir}` }, () => {
+      assert.equal(installedAgentBin(key, name), realpathSync.native(file));
+      assert.equal(agentBin(key, name), realpathSync.native(file));
+      assert.equal(installedAgentBin(key, `${name}-missing`), undefined);
+      assert.equal(agentBin(key, `${name}-missing`), `${name}-missing`);
+    });
+  } finally {
+    rmSync(shadowDir, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("installedAgentBin ignores the project-local executables npm adds to PATH", () => {
+  const key = "MIRAFOLD_TEST_AGENT_BIN";
+  const name = `mirafold-local-agent-${process.pid}`;
+  const root = mkdtempSync(path.join(os.tmpdir(), "mirafold-agent-project-"));
+  const npmBin = path.join(root, "node_modules", ".bin");
+  mkdirSync(npmBin, { recursive: true });
+  const file = path.join(npmBin, process.platform === "win32" ? `${name}.cmd` : name);
+  executable(file);
+  try {
+    withEnv({ [key]: undefined, PATH: npmBin }, () => {
+      assert.equal(installedAgentBin(key, name), undefined);
+      assert.equal(agentBin(key, name), name);
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test("capOutput leaves sub-cap text untouched", () => {
   const r = capOutput("hello");

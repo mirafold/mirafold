@@ -1,6 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cookieToken, isAllowedOrigin, safeRedirectPath, verifyToken } from "./auth";
+import { cookieToken, isAllowedOrigin, safeRedirectPath, startupUrl, verifyToken } from "./auth";
+
+test("startupUrl percent-encodes a token instead of creating new URL syntax", () => {
+  const token = "x&calc|whoami (proof)";
+  const url = startupUrl(3000, token);
+  assert.equal(new URL(url).searchParams.get("token"), token);
+  assert.equal(url.includes(token), false);
+  assert.match(url, /token=x%26calc%7Cwhoami/);
+  assert.equal(startupUrl(3000, ""), "http://127.0.0.1:3000/");
+});
 
 test("cookieToken extracts the mirafold_token value", () => {
   assert.equal(cookieToken("mirafold_token=abc"), "abc");

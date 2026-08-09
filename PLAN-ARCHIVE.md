@@ -6805,3 +6805,259 @@ per-repo `git status --ignored` runs in **40 ms** and emits **<400 bytes**
     `footer`; follows the dataviz stat-tile guidance.
   - Done when: a mock turn renders the tile, it pins to the dock, and an
     update-in-place re-send (same wire id) changes the value live.
+
+## Moved 2026-08-08 (seventh lean-out pass — verbatim original)
+
+### Step F.10 — Codex runtime/version parity hotfix (full body)
+
+- [x] **Step F.10 — Codex runtime/version parity hotfix (opened 2026-08-08)**
+  - **Goal:** restore the product's faithful-skin promise for Codex sessions:
+    the engine Mirafold drives must be the same installed Codex the user drives
+    in a terminal, so one version owns the config, model cache, model default,
+    and accepted reasoning efforts.
+  - **Proven cause:** Kyle's `config.toml` sets
+    `model_reasoning_effort = "max"`; terminal Codex 0.147.0 wrote the current
+    `models_cache.json` and defaults to GPT-5.6 Sol, which supports `max`.
+    Mirafold 0.3.4 instead launches the SDK-vendored Codex 0.142.5. That older
+    engine logs `missing field base_instructions` while parsing the 0.147.0
+    cache, falls back to its built-in GPT-5.5 default, then sends the inherited
+    `max` effort to a model that accepts only through `xhigh`. The resulting
+    API 400 and cache warning are therefore one version-skew chain, not two
+    independent failures.
+  - **Build:** resolve the user's installed `codex` executable (honoring
+    `MIRAFOLD_CODEX_BIN`) and pass it through the SDK's
+    `codexPathOverride`; if none exists, retain the SDK's bundled fallback.
+    Ask that resolved engine for both model catalogs so picker and turns cannot
+    split across versions. Raise the existing `@openai/codex-sdk` floor from
+    0.142.5 to the current stable 0.147.0 so the fallback is compatible too.
+    No new dependency: the SDK remains six files with one transitive
+    `@openai/codex`; wrapper unpacked size is 77,268 bytes versus 76,741
+    (+527 bytes). The separate per-model `/effort` picker redesign remains
+    V.2/F.5 follow-up; it did not set the inherited value in this failure.
+  - **Files:** `server/adapters/types.ts`, `server/adapters/codex.ts`, their
+    focused tests, `package.json`, `yarn.lock`, `docs/ADAPTERS.md`, this plan.
+  - **Done when:** a regression test pins the external executable through
+    `CodexOptions` and the engine/catalog single-source rule; focused tests,
+    typecheck, Tier 1, build, and dependency audit are green; then one live
+    subscription-backed prompt succeeds with Kyle's unchanged `max` setting
+    and resolves GPT-5.6 rather than the vendored GPT-5.5. Land through a
+    DCO-signed feature-branch PR into `next` under `docs/RELEASING.md` flow b.
+  - **Outcome:** Mirafold now uses one resolved executable for SDK turns and
+    both model-catalog paths, preferring the installed Codex and falling back
+    to the SDK's updated 0.147.0 binary. The unchanged live subscription setup
+    selected GPT-5.6 Sol and replied `ok` without an error. Focused tests
+    (53/53), Tier 1 (536/536), typecheck, build, package dry-run, and the
+    production dependency audit (0 vulnerabilities) passed.
+
+## Moved 2026-08-08 (native working-directory picker — full body)
+
+### Phase N2 — Native working-directory picker (opened 2026-08-08)
+
+**Goal:** keep the launch directory as the honest default, but make changing it
+a normal graphical choice instead of requiring the user to type a filesystem
+path. Manual entry stays beside the picker for precision and as the fallback.
+
+**Proven constraint:** Mirafold's browser UI cannot use `showDirectoryPicker()`
+for this job: the web API returns a capability-scoped directory handle and its
+leaf name, not the host's absolute path that the local agent process needs as
+`cwd`. The authenticated local daemon must therefore open the host operating
+system's own folder dialog and return only the path the user explicitly chose.
+Remote relay viewports may still type a host path, but must never pop a dialog
+on the unattended host.
+
+**Dependency call:** add no package. macOS already supplies AppleScript's
+`choose folder`; Windows supplies `FolderBrowserDialog` through Windows
+PowerShell; Linux desktop users commonly have Zenity or KDialog, tried in that
+order. A native-dialog package would add platform binaries and supply-chain
+surface merely to wrap facilities the operating systems already provide. If no
+Linux dialog helper is installed, the existing editable path remains available.
+
+- [x] **N2.1 — Host-native picker service + local-only wire**
+  - Build: bounded, shell-free child processes for macOS (`osascript`), Windows
+    (`FolderBrowserDialog`), and Linux (`zenity`, then `kdialog`); one global
+    dialog at a time, cancellation as a quiet result, selected-directory
+    validation, output caps, and abort on viewport close. Add an additive
+    correlated `pick_folder` / `folder_picked` request-reply pair. Advertise
+    availability in the `agents` hello; refuse the request over the relay.
+  - Files: `server/folder-picker.ts`, a small session handler,
+    `server/sessions/connection.ts`, `server/protocol.ts`, focused tests.
+
+- [x] **N2.2 — Onboarding browse control**
+  - Build: put a real `browse…` button beside the still-editable working-dir
+    field; click opens the host dialog at the field's current valid directory,
+    a choice replaces the field, cancel changes nothing, errors stay in the
+    card, and the button cannot stack dialogs. Hide it when the daemon says no
+    native picker is available (including relay viewports).
+  - Files: `web/src/components/Onboarding.tsx`, `web/src/components/Shell.tsx`,
+    `web/src/session-bus.ts`, `web/src/styles.css`.
+
+- [x] **N2.3 — Regression proof + documentation**
+  - Done when: Tier 1 pins every platform recipe, cancellation, fallback,
+    validation, and concurrency; a real-daemon browser test substitutes a
+    harmless Zenity fixture, clicks `browse…`, observes the chosen absolute
+    path in the field, and creates the session in that directory; remote and
+    hostile request behavior are pinned; typecheck, all three automated tiers,
+    build/package, and accessibility checks are green. README's working-dir
+    contract names the graphical path and its manual fallback. Land via a
+    DCO-signed `feature/*` PR into `next`; `main` and release state stay put.
+
+- [x] **N2.4 — Post-refactor executable-trust remediation**
+  - The 2026-08-08 defensive audit proved that npm exec always exposes local
+    package binaries in the child `PATH`. The published launcher resolved its
+    browser opener from that path, and the new Linux picker did the same for
+    Zenity/KDialog; a hostile checkout could therefore run code as the user.
+  - Remove ambient `PATH` from operating-system chrome entirely. Browser
+    openers and native-dialog helpers resolve only fixed system locations and
+    receive a credential-free system path plus a neutral home-directory cwd.
+    Filter relative, project-contained, symlink-back-into-project, and every
+    `node_modules/.bin` candidate from Codex/Gemini executable discovery while
+    preserving parent-process operator overrides and legitimate global
+    installs.
+  - Native-dialog abort/output overflow must settle only after `close`, with a
+    short graceful request followed by forced termination. Replace the tests
+    that depended on PATH substitution with injected process seams and add
+    adversarial resolution/cleanup proofs. README and SECURITY must state that
+    plain `npx mirafold` is for already-trusted directories only.
+  - **Outcome (2026-08-08):** browser openers and native dialogs now resolve
+    only fixed operating-system locations and inherit a fixed system path,
+    credential-scrubbed desktop state, and the user's home as cwd. Shared agent
+    lookup rejects relative, project-contained, npm-bin, and symlink-back-into-
+    project candidates while retaining parent-process operator overrides.
+    Abort and output overflow request process-group termination, escalate after
+    250 ms, and reject only after the child closes. Adversarial lookup,
+    environment, cwd, and force-kill regressions replaced the unsafe
+    PATH-substitution seams;
+    README and SECURITY record the `npx` boundary. Local verification passed:
+    Tier 1 561/561, Tier 2 143/143, Tier 3 82/82, typecheck, build, 19-file
+    package dry-run, secret scan, and production audit (0 vulnerabilities).
+
+- [x] **N2.5 — Keep the chosen folder leaf visible in long paths**
+  - Goal: when the startup working-directory field cannot fit the whole path,
+    show its rightmost leaf folder instead of the filesystem root.
+  - Build: scroll the unfocused controlled input to its logical end after a
+    programmatic path replacement and whenever editing finishes; do not fight
+    the user's caret while they are editing.
+  - Files: `web/src/components/Onboarding.tsx`, `server/testing/app.e2e.ts`.
+  - Done when: a real-browser narrow-width regression proves that the complete
+    value remains intact, the leaf is visible after blur/programmatic state
+    updates, and refocusing still permits ordinary editing.
+  - **Outcome (2026-08-08):** the controlled startup input now moves its
+    viewport to the logical path end after a native selection or other
+    unfocused value replacement, and again when editing ends. While the field
+    has focus, its caret remains authoritative, so the root and middle remain
+    normally editable. A narrow-width browser regression synthesizes the
+    existing correlated folder-pick reply, proves the overflowing input is at
+    its maximum horizontal offset without changing the value, edits at the
+    root, proves blur restores the leaf, and creates the session at the full
+    chosen path. Tier 1 passed 561/561; the focused Tier-3 browser regression
+    passed 1/1; typecheck and the production build passed.
+
+- [x] **N2.6 — Close the post-audit environment and Windows-opener execution
+  paths**
+  - The follow-up audit found that N2.4's executable filter could still be
+    bypassed through the launch checkout's `.env`: `process.loadEnvFile()`
+    copied `MIRAFOLD_CODEX_BIN` and runtime loader controls into the parent
+    environment, after which agent resolution treated them as operator intent.
+    It also found that an unencoded `MIRAFOLD_TOKEN` reached Windows
+    `cmd.exe /c start`, where shell metacharacters became commands.
+  - Replace ambient `.env` mutation with Node's dotenv parser plus an explicit
+    allowlist of supported Mirafold data settings. Load it before dependency
+    modules initialize, keep parent-process values authoritative, and ignore
+    executable overrides, path/shell controls, runtime loader hooks, and
+    unrelated repository variables. Explicit binary overrides exported by the
+    operator continue to work.
+  - Build the startup URL through `URLSearchParams`, then open it on Windows by
+    passing one argument directly to fixed-system `explorer.exe`; no command
+    interpreter remains in the browser-opening path. Pin the hostile `.env`,
+    token round-trip, and Windows metacharacter cases. Correct README, SECURITY,
+    `.env.example`, and the runtime `npx` warning: an installed command prevents
+    package/executable shadowing but does not make a checkout's active `.env`
+    configuration trustworthy.
+  - **Outcome (2026-08-08):** repository `.env` files can configure only the
+    supported data surface and can no longer select agent executables or Node
+    loaders; parent-process overrides retain precedence. Tokens containing
+    command metacharacters are percent-encoded and still authenticate after URL
+    decoding, while Windows sends the resulting URL straight to
+    `%SystemRoot%\\explorer.exe`. Local verification passed Tier 1 563/563,
+    Tier 2 143/143, Tier 3 82/82, typecheck, production build, the 19-file
+    package dry-run, secret/diff scans, and the production dependency audit
+    with 0 vulnerabilities.
+
+**Outcome:** both startup routes now offer a compact native `browse…` control
+while preserving the editable absolute-path field. Mirafold opens the host
+dialog with fixed executable/argument arrays, validates the selected directory,
+caps output, allows only one dialog globally and per connection, aborts on
+disconnect, and gives the child a strict desktop/session allowlist rather than
+the daemon's credential-bearing environment. The correlated response is sent
+only to the requesting local viewport and clicks are never queued across a
+reconnect; relay, unsupported-platform, and helper-missing cases retain manual
+entry without claiming a picker exists. Long paths keep their rightmost leaf
+visible whenever the field is not actively being edited. No package was added.
+The original N2 delivery passed focused tests (51/51), Tier 1 (551/551),
+typecheck, package dry-run, production audit (0 vulnerabilities), the
+real-daemon/real-browser picker proof, phone no-overflow, axe, and protected
+GitHub Tier 1/2/3 checks. The direct local full Tier 2 and Tier 3 runs also
+exposed four unchanged baseline failures, each reproduced from an isolated
+`origin/next`; PR #22 records those controls explicitly. N2.5's separate
+follow-up verification is recorded directly above. N2.6's post-audit closure
+is likewise recorded above with the complete 563/143/82 proof.
+
+## Moved 2026-08-08 (stable Tier-3 browser gates — full body)
+
+### Phase N3 — Stable Tier-3 browser gates (opened + done 2026-08-08)
+
+**Goal:** keep the browser suite's real guarantees while removing the three
+observed timing/state races that intermittently blocked otherwise-good PRs.
+
+**Proven causes:**
+
+- Activity: the test waited for the transient `.activity-line`, then made a
+  second Playwright round-trip to read it. On the failed PR #22 run the first
+  wait succeeded, the scripted turn correctly ended and removed the line, and
+  the second call waited 30 seconds for an element that was supposed to stay
+  gone. The unchanged executable head had passed immediately before the
+  docs-only commit that caused the rerun.
+- Mermaid: the failed run never reached the outer `.rc-diagram`; the shared
+  session could carry a preceding turn across the test boundary and leave the
+  diagram prompt contending with the one-follow-up gate. The lazy Mermaid
+  runtime was never implicated by the trace.
+- Follow-tail: re-arming only in the delayed `scroll` event let streamed paint
+  move the bottom beyond the 24px slack after the user's downward gesture but
+  before that event measured it. This one was a narrow product race, not only
+  a test race; it matched the watch item root-caused on 2026-07-24.
+
+- [x] **N3.1 — Replace elapsed-time luck with a controlled busy state**
+  - The activity test now owns its daemon, page, and session and uses the mock
+    permission request as a deterministic latch. It asserts presence, elapsed
+    text, glyph movement, viewport placement, no blank busy frames, and clean
+    teardown while the test—not timer scheduling—controls when the turn ends.
+
+- [x] **N3.2 — Isolate the Mermaid renderer proof**
+  - The diagram test now owns its session, so it reaches the renderer or fails
+    for a renderer reason. Its guarantee is otherwise unchanged: it drives the
+    production lazy chunk, sandboxed iframe, CSP, postMessage sizing handshake,
+    SVG render, and parse-error fallback.
+
+- [x] **N3.3 — Close the real follow-tail re-arm race**
+  - Instant following and input-based upward detachment remain intact.
+    Downward wheel/touch intent that will reach the current bottom now arms
+    synchronously against the geometry at input time, before streamed paint
+    can move the target ahead of a later `scroll` event. Pure Tier-1 tests pin
+    pixel, line, page, direction, and exact boundary decisions. The browser
+    test owns deterministic scrollback, proves a real upward wheel detaches
+    during growth, then uses a permission latch and real downward wheel to
+    prove later tool/output frames keep following without a new prompt.
+
+- [x] **N3.4 — Prove the flakes are gone**
+  - Focused unchanged repetition: activity 6/6, Mermaid 5/5, follow-tail 6/6;
+    pure intent boundaries 3/3. Full Tier 1 passed 554/554, typecheck and
+    diff validation passed, and two consecutive unchanged full Tier-3 runs
+    passed 78/78 in 183s and 186s. PR #22's implementation head `a091ba1`
+    then passed DCO, Cloudflare Pages, Tier 1 (1m23s), and the combined Tier
+    2 + Tier 3 protected job (6m41s) on the loaded GitHub runner.
+
+**Outcome:** the two test-only flakes now synchronize on owned state instead
+of shared-session timing, while the follow-tail watch item is fixed in product
+code. No dependency was added. The checks retain their original user-visible
+guarantees and now fail at the component they name: busy chrome, Mermaid
+rendering, or follow-tail behavior.

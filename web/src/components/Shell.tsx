@@ -88,6 +88,7 @@ export function Shell() {
     agents: AgentInfo[] | null;
     cwd?: string;
     home?: string;
+    folderPicker?: boolean;
     relay?: { url: string; code: string; ws?: string };
     version?: string;
   }>({ agents: null });
@@ -254,6 +255,7 @@ export function Shell() {
             agents: m.agents,
             cwd: m.cwd,
             home: m.home,
+            folderPicker: m.folderPicker,
             relay: m.relay,
             version: m.version,
           });
@@ -390,6 +392,8 @@ export function Shell() {
           agents={daemonInfo.agents}
           defaultCwd={tildify(daemonInfo.cwd, daemonInfo.home)}
           error={notices.onboarding}
+          onCwdChange={() => setNotices((n) => ({ ...n, onboarding: null }))}
+          onBrowse={daemonInfo.folderPicker ? bus.pickFolder : undefined}
           onPick={(agent, cwd, backend) => {
             setNotices((n) => ({ ...n, onboarding: null }));
             bus.createSession(agent, cwd, backend);

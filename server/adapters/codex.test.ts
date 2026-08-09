@@ -641,17 +641,27 @@ function capturedCodexOptions(opts: {
   return captured;
 }
 
-function withOpenAiKey(value: string | undefined, fn: () => void) {
-  const saved = process.env.OPENAI_API_KEY;
+function withEnvVar(name: string, value: string | undefined, fn: () => void) {
+  const saved = process.env[name];
   try {
-    if (value === undefined) delete process.env.OPENAI_API_KEY;
-    else process.env.OPENAI_API_KEY = value;
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
     fn();
   } finally {
-    if (saved === undefined) delete process.env.OPENAI_API_KEY;
-    else process.env.OPENAI_API_KEY = saved;
+    if (saved === undefined) delete process.env[name];
+    else process.env[name] = saved;
   }
 }
+
+const withOpenAiKey = (value: string | undefined, fn: () => void) =>
+  withEnvVar("OPENAI_API_KEY", value, fn);
+
+test("F.10: the installed Codex executable drives the SDK engine", () => {
+  withEnvVar("MIRAFOLD_CODEX_BIN", "/operator/chosen/codex", () => {
+    const o = capturedCodexOptions({ kind: "subscription" });
+    assert.equal(o.codexPathOverride, "/operator/chosen/codex");
+  });
+});
 
 test("N.5: a subscription choice withholds the env API key — the explicit pick beats env precedence", () => {
   withOpenAiKey("sk-env", () => {

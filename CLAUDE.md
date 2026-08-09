@@ -23,6 +23,16 @@ off with a dated status note. **BUSINESS.md** — why and in what sequence
 - No `ANTHROPIC_API_KEY` in `.env` → `MockSession`. Build and verify every
   UI capability against the mock first; live verification (real key) last.
 
+## Git workflow
+
+- Normal work branches (`feature/*`, `fix/*`, `refactor/*`) start from
+  `next` and open pull requests back into `next`.
+- A feature pull request stays open even after its checks pass. Complete the
+  requested review and refactor work there, then ask Kyle explicitly whether
+  to merge when it appears ready. Opening the pull request or getting green
+  checks is not merge approval; merge only after Kyle says yes.
+- `docs/RELEASING.md` is the canonical branch and release runbook.
+
 ## Non-negotiables
 
 - **Wire protocol** (`server/protocol.ts`): later work ADDS message types,

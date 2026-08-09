@@ -7,6 +7,14 @@ import { timingSafeEqual } from "node:crypto";
 
 export const COOKIE_NAME = "mirafold_token";
 
+/** The one startup URL printed for the launcher. URLSearchParams keeps an
+ *  operator-supplied token as data, even when it contains shell metacharacters. */
+export function startupUrl(port: number, token: string): string {
+  const url = new URL(`http://127.0.0.1:${port}/`);
+  if (token !== "") url.searchParams.set("token", token);
+  return url.href;
+}
+
 /**
  * Constant-time token comparison. A plain `===` on a secret can leak it one
  * character at a time via how long the mismatch takes to reject; comparing in

@@ -17,13 +17,16 @@ rebuilds on every push to `main`). Flow b keeps them in lockstep by making a
 | --- | --- | --- |
 | `main` | the production mirror — every commit on it is inside some release | required checks (Tier 1, Tier 2+3, DCO), no force-push/delete; repo-admin bypass exists for emergencies but a direct push breaks the flow-b invariant — don't, except as step one of an immediate release |
 | `next` | staging — day-to-day work accumulates here | PR-only for everyone (0 approvals, same required checks), no bypass, no force-push/delete |
-| `feature/*` | working branches, cut from `next` | none — name them anything, force-push freely |
+| `feature/*`, `fix/*`, `refactor/*` | working branches, cut from `next` | none — name them anything, force-push freely |
 | `release/x.y.z` | short-lived release prep, cut from `next` (or from `main` for a hotfix) | none — it exists for hours |
 
 Two mechanics to know:
 
 - **Every commit headed for a PR needs a DCO sign-off** — commit with
   `git commit -s`. The DCO check is required on both protected branches.
+- **An open or green feature PR is not approval to merge it.** Keep the PR
+  open through the requested review and refactor passes. When it appears
+  ready, ask Kyle explicitly whether to merge; merge only after he approves.
 - **A `v*` tag publishes only `main`'s current tip.** The release workflow's
   first step fails any tag pointing elsewhere (a feature branch, an old `main`
   commit). The tag trigger itself is branch-blind by platform design; the
@@ -32,8 +35,11 @@ Two mechanics to know:
 
 ## The release cycle
 
-1. **Feature work**: branch off `next`, commit with `-s`, PR into `next`,
-   merge on green. Repeat until `next` holds the release you want.
+1. **Feature work**: branch off `next`, commit with `-s`, and open a PR into
+   `next`. Keep implementation follow-ups and refactors on that open PR.
+   Once the work and required checks appear ready, ask Kyle explicitly for
+   merge approval; leave the PR open until he gives it. Repeat until `next`
+   holds the release you want.
 2. **Cut the release branch**: `git switch -c release/x.y.z origin/next`.
 3. **Bump the version** in `package.json` to `x.y.z` on that branch — commit
    `release: vx.y.z` (signed off). npm refuses to republish an existing
@@ -64,7 +70,8 @@ Two mechanics to know:
    Push `main`'s tip to a `sync/*` branch first
    (`git push origin main:refs/heads/sync/main-into-next-vx.y.z`) so the PR is
    a fixed snapshot rather than tracking `main`.
-8. Delete the merged `feature/*`, `release/*`, and `sync/*` branches.
+8. Delete the merged work (`feature/*`, `fix/*`, `refactor/*`), `release/*`,
+   and `sync/*` branches.
 
 ## Hotfixes
 

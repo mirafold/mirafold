@@ -204,8 +204,11 @@ type WireMsg =
                                                    //  true ⇒ tail replay, don't reset)
   | { type: "agents"; agents: { agent: AgentName; live: boolean }[]; // P.4: onboarding
       default: AgentName; cwd?: string; home?: string;             //   (4.8: + cwd/home)
+      folderPicker?: boolean;                         // N2: host dialog is available
       relay?: { url: string; code: string } }        // R.4: pairing info for the QR —
                                                      //   local viewports only
+  | { type: "folder_picked"; id: string; path?: string; // N2: local, per-viewport
+      canceled?: true; error?: string }                 //   reply; never replayed
   | { type: "usage"; model?: string; inputTokens: number;          // T2.6: status-bar
       outputTokens: number; costUsd?: number }                     //   accounting
   // 4.9: the `!` passthrough's lifecycle + OUTPUT stream (broadcast, replayed).
@@ -239,7 +242,8 @@ type ClientMsg =
   | { type: "bang_kill"; id: string }
   | { type: "ping" }                                     // 4.4: liveness probe
   | { type: "watch_sessions" }             // 4.6: be a fleet watcher, not a viewport
-  | { type: "rename"; sessionId: string; name: string }; // 4.6: fleet rename
+  | { type: "rename"; sessionId: string; name: string }  // 4.6: fleet rename
+  | { type: "pick_folder"; id: string; cwd?: string };   // N2: explicit local GUI request
 ```
 
 `Action` (also in `protocol.ts`) is the complete vocabulary of what a
@@ -258,6 +262,10 @@ connection metadata any forwarder handles — IPs, timing, byte counts — never
 content or keys. R.4 added exactly one optional field
 (`agents.relay`, the pairing info for the connect-a-device QR — sent to
 local viewports only, never across the relay).
+N2 likewise added only `agents.folderPicker` plus the correlated
+`pick_folder`/`folder_picked` pair. The reply is local plumbing: it goes only
+to the viewport that clicked Browse and is never broadcast, buffered, or
+replayed.
 
 **The `!` passthrough (Step 4.9).** A prompt starting with `!` is
 intercepted by the trusted shell and the server runs the rest in a
@@ -467,6 +475,8 @@ server/            the local daemon (Node, run with tsx)
   render-tools.ts    render_* tools as an in-process MCP server (Claude
                      adapter) + RENDER_GUIDANCE
   protocol.ts        WireMsg/ClientMsg/Action — the shared wire contract
+  folder-picker.ts   local-only host dialog recipes (macOS/Windows/Linux),
+                     executable lookup, validation, and credential-safe spawn
   registry-spec.ts   zod shapes per component — spec = tool schema = validation
   provider-policy.ts the dated per-provider credential-policy matrix (R.4i) —
                      cited by path from CLAUDE.md/BUSINESS.md; stays at root
@@ -481,6 +491,9 @@ server/            the local daemon (Node, run with tsx)
                        cockpit derivation and every viewport (2026-07-29)
     connection.ts      one viewport's server side, transport-agnostic (R.1) —
                        shared verbatim by local sockets and relay viewports
+    folder-picker-handler.ts
+                       per-viewport native-picker request/reply boundary;
+                       explicitly unavailable through the relay
     actions.ts         Phase 2 mediation: allowlisted tools component actions may run
     bang-handlers.ts   the `!` passthrough's request layer (4.9): the bang/
                        bang_input/bang_kill handlers connection.ts delegates to,
@@ -624,6 +637,9 @@ web/               the browser app (React 19 + Vite)
                      bytes)
   src/session-bus.ts the shell's message bus (H.9): one SocketClient + the
                      pub/sub fan-out and senders Shell.tsx consumes
+  src/folder-picker-requests.ts
+                     correlated local picker requests shared by the session
+                     shell and the fleet's new-session card
   src/tab-status.ts  the tab status light: brand-M favicon + corner badge
                      (busy / permission) and title, painted from wire state
   src/use-escape.ts  useEscapeKey — the one Esc idiom behind every overlay
@@ -1111,16 +1127,28 @@ beta, so a Windows issue report is a gift, not an imposition.
 
 Like launching `claude`/`codex`/`gemini`: sessions default to the directory
 you ran it from, and a second `mirafold` in another project walks to the
-next port (3001, …) and runs independently. `npx mirafold` is the
-zero-install try path; `--no-open` skips the browser; `PORT` moves the base
-port. The daemon prints (and opens) a URL carrying a per-launch auth token
-(§3) — that token, held as a browser cookie, is what keeps another account on
-a shared machine off your socket. With `--no-open` or on a headless box, open
-the exact printed URL (it has the token); `MIRAFOLD_TOKEN=""` disables the token
-on a single-user machine. The package ships only the launcher + the two esbuild bundles + the
-built front end (14 files, ~324 KB tarball); agent credentials come from your
-environment exactly as in a terminal (`ANTHROPIC_API_KEY`, `codex login`,
-`GEMINI_API_KEY`) — none live in the package. **Native-module note:**
+next port (3001, …) and runs independently. `--no-open` skips the browser;
+`PORT` moves the base port. The daemon prints (and opens) a URL carrying a
+per-launch auth token (§3) — that token, held as a browser cookie, is what keeps
+another account on a shared machine off your socket. With `--no-open` or on a
+headless box, open the exact printed URL (it has the token);
+`MIRAFOLD_TOKEN=""` disables the token on a single-user machine.
+
+`npx mirafold` is a convenience only inside a project you already trust. npm
+adds that project's `node_modules/.bin` executables to the launched process and
+may select a project-local `mirafold` package before registry code; the official
+launcher prints this warning when it detects npm exec. For an unfamiliar
+checkout, install Mirafold globally from a neutral directory first, then enter
+the project and run `mirafold`; Mirafold refuses project/npm-bin candidates
+when resolving host chrome and agent CLIs. That removes executable shadowing,
+not the need to inspect the checkout: review or temporarily rename its `.env`
+before first launch because supported settings can select endpoints, relay
+access, resource limits, and whether local socket authentication is enabled.
+
+The package ships only the launcher + the two esbuild bundles + the built front
+end; agent credentials come from your environment exactly as in a terminal
+(`ANTHROPIC_API_KEY`, `codex login`, `GEMINI_API_KEY`) — none live in the
+package. **Native-module note:**
 the `!` PTY ships as `@lydell/node-pty` (swapped 2026-07-23) — prebuilt
 binaries for linux/macOS/Windows × x64/arm64 as platform
 `optionalDependencies`, no install scripts. Nothing compiles at install,
@@ -1189,11 +1217,15 @@ third-party app, so the picker shows it as `blocked` and points you at the API
 key (a Codex/ChatGPT subscription works locally, but not over the paid relay).
 Point an agent at a local endpoint (Ollama, a proxy — e.g. `ANTHROPIC_BASE_URL`)
 and it's BYO, no restriction. The one dated source of truth for the whole rule
-is `server/provider-policy.ts`. The env file is
-loaded with `process.loadEnvFile()` and is optional by design. Also settable
-there: `MIRAFOLD_AGENT` (the default agent offered at onboarding), the per-agent
-model overrides `DEFAULT_MODEL` / `CODEX_MODEL` / `GEMINI_MODEL` (unset →
-that agent's own default), `PORT`, the local-server discovery knobs
+is `server/provider-policy.ts`. The optional env file is parsed with Node's
+dotenv parser, then only documented Mirafold data settings are copied into the
+daemon environment; an existing parent-process value always wins. Executable
+overrides, `PATH`/shell controls, runtime loader hooks, and unrelated project
+variables are deliberately ignored there and must be exported by the operator
+before launch. Also settable in `.env`: `MIRAFOLD_AGENT` (the default agent
+offered at onboarding), the per-agent model overrides `DEFAULT_MODEL` /
+`CODEX_MODEL` / `GEMINI_MODEL` (unset → that agent's own default), `PORT`, the
+local-server discovery knobs
 `MIRAFOLD_LOCAL_ENDPOINTS` / `MIRAFOLD_LOCAL_DISCOVERY` (Phase N — the
 onboarding picker probes localhost's well-known runtime ports and offers a
 running Ollama/LM Studio/vLLM per session; see `docs/local-models.md`), and
@@ -1332,12 +1364,31 @@ against the mock before the live agent.
 
 A session's working directory defaults to the directory the daemon was
 launched from (`process.cwd()`) — terminal parity, Step 4.8 — and the
-onboarding picker takes any existing path (`~` expands; a typo'd path rejects
-the create instead of silently creating a stray dir). The trusted shell shows
-the session's cwd at the prompt (`~/Projects/foo ❯`) and its leaf in the
-status bar. File mutation and bash ask for approval on the shell's permission
-bar exactly as in the terminal, honoring the allowlists in your inherited
-`settings.json`.
+onboarding card accepts any existing path (`~` expands; a typo'd path rejects
+the create instead of silently creating a stray dir). On a local viewport,
+**browse…** opens the host operating system's normal folder dialog and puts the
+chosen absolute path into that same field; typing remains available. macOS and
+Windows use their built-in dialogs. Linux uses Zenity when available, then
+KDialog as a fallback; if neither is installed, the card simply keeps the
+manual field. The same is true when a Linux daemon has no graphical desktop
+session. A relay viewport cannot open desktop UI on the daemon's computer, so
+it also keeps manual entry for a path on that host.
+
+The browser does not open this dialog itself: browser directory handles do not
+reveal the absolute host path an agent process needs as its `cwd`. The explicit
+click makes one authenticated, local WebSocket request to the daemon, which
+opens the native dialog without a shell and returns only the selected directory.
+The dialog child receives desktop-session variables but no model credentials,
+relay credentials, custom provider environment variables, or caller-supplied
+`PATH`. macOS and Windows helpers use their fixed operating-system locations;
+Linux searches only fixed system binary directories, never the project or an
+npm-injected `node_modules/.bin`. The helper starts from the user's home rather
+than the project, and cancellation/output overflow wait for confirmed exit with
+forced termination as the backstop. The trusted shell
+then shows the session's cwd at the prompt (`~/Projects/foo ❯`) and its leaf in
+the status bar. File mutation and bash ask for approval on the shell's
+permission bar exactly as in the terminal, honoring the allowlists in your
+inherited `settings.json`.
 
 ## 9. Life of a turn (end to end)
 

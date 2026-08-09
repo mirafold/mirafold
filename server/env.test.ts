@@ -1,6 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { envFlag, envInt } from "./env";
+import { loadProjectEnv } from "./project-env";
 
 // 2026-07-29 bughunt: Number(garbage) is NaN, and NaN WIDENED two policies —
 // ws treats maxPayload NaN|0=0 as UNLIMITED, and setInterval(fn, NaN) clamps
@@ -39,4 +43,45 @@ test("envFlag: 0/false/blank are OFF, anything else set is ON", () => {
   assert.equal(envFlag("FALSE"), false);
   assert.equal(envFlag("1"), true);
   assert.equal(envFlag("true"), true);
+});
+
+test("project .env imports supported data but never process identity", () => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "mirafold-project-env-"));
+  const file = path.join(tmp, ".env");
+  writeFileSync(
+    file,
+    [
+      "OPENAI_API_KEY=from-project",
+      "PORT=4321",
+      'MIRAFOLD_TOKEN="x&calc|whoami"',
+      "MIRAFOLD_CODEX_BIN=./repo-codex",
+      "MIRAFOLD_GEMINI_BIN=./repo-gemini",
+      "NODE_OPTIONS=--require=./repo-loader.cjs",
+      "NODE_PATH=./repo-modules",
+      "PATH=./node_modules/.bin",
+      "SHELL=./repo-shell",
+      "UNRELATED_PROJECT_SETTING=untouched",
+    ].join("\n"),
+  );
+  const target: NodeJS.ProcessEnv = {
+    OPENAI_API_KEY: "from-parent",
+    NODE_OPTIONS: "--trace-warnings",
+    MIRAFOLD_CODEX_BIN: "/operator/codex",
+  };
+
+  try {
+    loadProjectEnv(file, target);
+    assert.equal(target.OPENAI_API_KEY, "from-parent", "parent-process values win");
+    assert.equal(target.PORT, "4321");
+    assert.equal(target.MIRAFOLD_TOKEN, "x&calc|whoami");
+    assert.equal(target.MIRAFOLD_CODEX_BIN, "/operator/codex");
+    assert.equal(target.MIRAFOLD_GEMINI_BIN, undefined);
+    assert.equal(target.NODE_OPTIONS, "--trace-warnings", "the file cannot replace a loader hook");
+    assert.equal(target.NODE_PATH, undefined);
+    assert.equal(target.PATH, undefined);
+    assert.equal(target.SHELL, undefined);
+    assert.equal(target.UNRELATED_PROJECT_SETTING, undefined);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
 });

@@ -1,20 +1,30 @@
 import path from "node:path";
-import { existsSync } from "node:fs";
 import type { AgentName, WireMsg } from "../protocol";
 import type { CredentialKind } from "../provider-policy";
+import { locateTrustedExecutable } from "../security/executable-trust";
 
 export type { AgentName } from "../protocol";
 import { envInt } from "../env";
 
-/** Resolve which `name`d agent binary to spawn: the env override wins (an
- *  operator knob, and the seam the adapter tests use to substitute a scripted
- *  stub), else the copy installed beside node (nvm global installs land
- *  there), else PATH. Resolved per call so a test can flip the env var. */
-export function agentBin(envVar: string, name: string): string {
+/** Resolve an agent executable that is actually installed outside an SDK.
+ *  The env override is explicit operator intent, so return it even when it is
+ *  a bare name or currently missing (the eventual spawn then fails honestly).
+ *  Otherwise mirror normal command lookup: beside node first (global npm/nvm
+ *  installs), then filtered PATH. Project files, relative entries, and npm's
+ *  injected node_modules bins are never agent identity. `undefined` lets an
+ *  SDK retain its bundled fallback. */
+export function installedAgentBin(envVar: string, name: string): string | undefined {
   const override = process.env[envVar];
   if (override) return override;
-  const beside = path.join(path.dirname(process.execPath), name);
-  return existsSync(beside) ? beside : name;
+  return locateTrustedExecutable(name, {
+    directories: [path.dirname(process.execPath)],
+  });
+}
+
+/** Resolve which `name`d agent binary to spawn. Non-SDK adapters need a
+ *  command even when lookup misses so their first turn can surface ENOENT. */
+export function agentBin(envVar: string, name: string): string {
+  return installedAgentBin(envVar, name) ?? name;
 }
 
 /** The human-readable message of an unknown catch value. */
