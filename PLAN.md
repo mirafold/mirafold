@@ -652,7 +652,15 @@ notifications are **not** part of the launch and are not sold until built.
     `genui-relay` / `genui-relay-staging`, and the `genui-relay v1`
     key-derivation salt remains frozen as a protocol contract. Verified after
     the rename: Mirafold typecheck; Tier 1 563/563, Tier 2 143/143, Tier 3
-    82/82; relay typecheck and 38/38 relay tests.
+    82/82; relay typecheck and 38/38 relay tests. **Release-gate follow-up
+    (2026-08-09):** release PR #27 exposed a pre-existing test-only race: the
+    relay-handshake helper waited a fixed number of event-loop turns before
+    closing its healthy socket, so delayed WebCrypto work could miss the
+    backoff reset. The helper now waits for `SocketClient.onOpen()` — the
+    product state transition the assertion actually depends on. The exact
+    test went from 4/20 failures under concurrent load before the fix to 0/20
+    after it; the containing file passed 32/32, Tier 1 passed 563/563, and
+    typecheck passed.
   - Done when: a phone on cellular (not the home wifi) drives a home
     session through the deployed relay, and the relay's logs show it
     learned nothing but connection metadata.
