@@ -1,7 +1,10 @@
 import type { ClientMsg, WireMsg } from "@protocol";
 
-type FolderPicked = Extract<WireMsg, { type: "folder_picked" }>;
 type PickFolder = Extract<ClientMsg, { type: "pick_folder" }>;
+type PendingRequest = {
+  resolve: (path: string | undefined) => void;
+  reject: (err: Error) => void;
+};
 
 /** Correlated client half of N2's folder-picker request/reply. Shared by the
  *  session shell and mission control: both surfaces own an Onboarding card. */
@@ -9,10 +12,7 @@ export function createFolderPickerRequests(
   send: (msg: PickFolder) => void | boolean,
   mintId: () => string = () => `fp-${Math.random().toString(36).slice(2, 10)}`,
 ) {
-  const pending = new Map<
-    string,
-    { resolve: (path: string | undefined) => void; reject: (err: Error) => void }
-  >();
+  const pending = new Map<string, PendingRequest>();
 
   return {
     request(cwd?: string): Promise<string | undefined> {
@@ -34,12 +34,11 @@ export function createFolderPickerRequests(
     /** True means this frame belonged to the picker and should not fan out. */
     handle(msg: WireMsg): boolean {
       if (msg.type !== "folder_picked") return false;
-      const reply = msg as FolderPicked;
-      const waiting = pending.get(reply.id);
+      const waiting = pending.get(msg.id);
       if (!waiting) return true;
-      pending.delete(reply.id);
-      if (reply.error) waiting.reject(new Error(reply.error));
-      else waiting.resolve(reply.path);
+      pending.delete(msg.id);
+      if (msg.error) waiting.reject(new Error(msg.error));
+      else waiting.resolve(msg.path);
       return true;
     },
     disconnect(): void {

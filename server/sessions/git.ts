@@ -229,10 +229,13 @@ const gitErr = (op: string, r: { code: number | null; stderr: string }): string 
  * rooted at a SUBDIRECTORY of a repo (the Phase E trap) finds its repo
  * above the jail — same discovery rule git itself uses.
  */
-export const findRepoRoot = (realDir: string): string | null => {
+export const findRepoRoot = (
+  realDir: string,
+  entryExists: (candidate: string) => boolean = existsSync,
+): string | null => {
   let dir = realDir;
   for (;;) {
-    if (existsSync(path.join(dir, ".git"))) return dir;
+    if (entryExists(path.join(dir, ".git"))) return dir;
     const parent = path.dirname(dir);
     if (parent === dir) return null;
     dir = parent;

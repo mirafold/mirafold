@@ -1,7 +1,7 @@
 import path from "node:path";
-import { accessSync, constants, statSync } from "node:fs";
 import type { AgentName, WireMsg } from "../protocol";
 import type { CredentialKind } from "../provider-policy";
+import { locateTrustedExecutable } from "../security/executable-trust";
 
 export type { AgentName } from "../protocol";
 import { envInt } from "../env";
@@ -10,36 +10,15 @@ import { envInt } from "../env";
  *  The env override is explicit operator intent, so return it even when it is
  *  a bare name or currently missing (the eventual spawn then fails honestly).
  *  Otherwise mirror normal command lookup: beside node first (global npm/nvm
- *  installs), then PATH. `undefined` lets an SDK retain its bundled fallback. */
+ *  installs), then filtered PATH. Project files, relative entries, and npm's
+ *  injected node_modules bins are never agent identity. `undefined` lets an
+ *  SDK retain its bundled fallback. */
 export function installedAgentBin(envVar: string, name: string): string | undefined {
   const override = process.env[envVar];
   if (override) return override;
-
-  const names =
-    process.platform === "win32"
-      ? [
-          name,
-          ...(process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD")
-            .split(";")
-            .filter(Boolean)
-            .map((ext) => name + ext.toLowerCase()),
-        ]
-      : [name];
-  const dirs = [path.dirname(process.execPath), ...(process.env.PATH ?? "").split(path.delimiter)];
-  for (const dir of dirs) {
-    if (!dir) continue;
-    for (const file of names) {
-      const candidate = path.join(dir, file);
-      try {
-        if (!statSync(candidate).isFile()) continue;
-        accessSync(candidate, process.platform === "win32" ? constants.F_OK : constants.X_OK);
-        return candidate;
-      } catch {
-        // Not runnable here — continue exactly as normal PATH lookup would.
-      }
-    }
-  }
-  return undefined;
+  return locateTrustedExecutable(name, {
+    directories: [path.dirname(process.execPath)],
+  });
 }
 
 /** Resolve which `name`d agent binary to spawn. Non-SDK adapters need a

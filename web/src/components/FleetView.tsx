@@ -237,6 +237,7 @@ export function FleetView() {
           agents={agents}
           defaultCwd={tildify(daemon.cwd, daemon.home)}
           error={onbError}
+          onCwdChange={() => setOnbError(null)}
           onBrowse={daemon.folderPicker ? browseFolder : undefined}
           onPick={(agent, cwd, backend) => {
             setOnbError(null);

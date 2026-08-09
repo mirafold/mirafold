@@ -2159,6 +2159,27 @@ was added. Protected Tier 1/2/3 checks, Cloudflare, and DCO passed on PR #22.
   tests, real-daemon browser proof, accessibility/phone checks, typecheck,
   build/package, production audit, README, and protected CI complete.
   → PLAN-ARCHIVE.md.
+- [x] **N2.4 — Post-refactor executable-trust remediation** — done 2026-08-08;
+  browser and native-dialog identity now comes only from fixed system paths,
+  agent discovery rejects project/npm-controlled candidates, helper processes
+  use a neutral cwd/scrubbed environment and confirm exit after cancellation or
+  output overflow, and the `npx` trust boundary is explicit. Local proof:
+  Tier 1 561/561, Tier 2 143/143, Tier 3 82/82, typecheck, build, 19-file
+  package dry-run, secret scan, and production audit (0 vulnerabilities).
+  → PLAN-ARCHIVE.md.
+- [x] **N2.5 — Keep the chosen folder leaf visible in long paths** — done
+  2026-08-08; programmatic picks and blurred edits reveal the rightmost folder,
+  focused editing retains ordinary caret control, and the complete path still
+  creates the session. Local proof: Tier 1 561/561, focused Tier 3 1/1,
+  typecheck, and production build. → PLAN-ARCHIVE.md.
+- [x] **N2.6 — Close the post-audit environment and Windows-opener execution
+  paths** — done 2026-08-08; checkout `.env` loading is data-only and
+  provenance-aware, startup tokens are percent-encoded, Windows opens URLs
+  directly through fixed-system `explorer.exe`, and the trust guidance names
+  the remaining `.env` boundary honestly. Local proof: Tier 1 563/563, Tier 2
+  143/143, Tier 3 82/82, typecheck, production build, 19-file package dry-run,
+  secret/diff scans, and production audit (0 vulnerabilities). →
+  PLAN-ARCHIVE.md.
 
 ## Phase N3 — Stable Tier-3 browser gates (✅ COMPLETE 2026-08-08)
 
