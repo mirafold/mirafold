@@ -1,7 +1,7 @@
 {
   // Single-repo typecheck config. Identical to tsconfig.json except it excludes
   // the one cross-repo file: server/relay/relay-service.itest.ts imports the
-  // relay under test from the SIBLING ../genui-relay checkout (README §"sibling
+  // relay under test from the SIBLING ../mirafold-relay checkout (README §"sibling
   // itest"), which a lone checkout of this repo doesn't have.
   //
   // Used by .github/workflows/release.yml ONLY, and now for a different reason

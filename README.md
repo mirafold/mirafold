@@ -541,11 +541,11 @@ server/            the local daemon (Node, run with tsx)
                        the encrypted relay channel) used by relay.itest.ts and
                        relay-service.itest.ts
                      NOTE: the hosted relay itself lives in the SIBLING repo
-                     `genui-relay` (its single source of truth; MIT since K.1,
-                     private until the R.5b/R.7 flip). relay-service.itest.ts
+                     `mirafold-relay` (its single source of truth; MIT since K.1,
+                     public since 2026-07-31). relay-service.itest.ts
                      (Tier 2) imports the relay under test from
-                     ../genui-relay/src/ and guards the routing contract
-                     against relay-protocol.ts — clone genui-relay next to
+                     ../mirafold-relay/src/ and guards the routing contract
+                     against relay-protocol.ts — clone mirafold-relay next to
                      this repo + `npm install` inside it to run that test;
                      without the sibling, the rest of Tier 2 is unaffected
   testing/           cross-cutting test infrastructure (H.8): itest-harness.ts
@@ -1319,7 +1319,7 @@ stub's ack contract over a real MCP handshake, the relay path over the
 in-repo stub: byte-for-byte local/remote mirror, a ciphertext-only tap audit
 of what the relay can observe, fail-closed tamper/wrong-code, daemon re-dial,
 and — against the actual DEPLOYED relay's code, imported from the sibling
-`genui-relay` checkout (not just the stub) — its own caps/rate-limit/
+`mirafold-relay` checkout (not just the stub) — its own caps/rate-limit/
 health-check hardening and a routing-contract guard), and `*.e2e.ts` (Tier 3 — token→cookie boot, a full turn
 rendering in the DOM, the artifact iframe executing under the CSP with a
 hostile-artifact containment proof (each defense verified by flipping it),
@@ -1467,7 +1467,7 @@ Read PLAN.md for the real thing; the shape in one breath:
   no longer leaves a fake "still working" state (R.4c); and the artifact
   sandbox's containment properties are now proven by tests that fail when
   each defense is flipped (R.4e). Also: **R.2's code half** — the
-  deployable relay service (the sibling `genui-relay` repo), hardened (caps,
+  deployable relay service (the sibling `mirafold-relay` repo), hardened (caps,
   rate limit, health
   check) and verified against the real daemon, with the "no app bundle
   served" trust decision made and documented; and three **Phase F** fidelity
@@ -1484,10 +1484,10 @@ Read PLAN.md for the real thing; the shape in one breath:
   tiers; docs + BUSINESS.md reconciled to match.
 - **Also shipped (2026-07-12):** **R.2's deploy** — the relay runs hosted
   on Fly.io (`relay.mirafold.sh`), and a real daemon has driven a full turn
-  through it; the box stays open only on a cellular-phone pass and baking
-  the default relay URL.
+  through it. The cellular and wifi→LTE passes plus the default relay URL
+  closed 2026-07-30; the local repository/path rename closed 2026-08-09.
 - **Also shipped (2026-07-14 → 17):** the **maintainability restructure**
-  (Phases G/H/H2 — the sibling `genui-relay` repo became the relay's single
+  (Phases G/H/H2 — the sibling `mirafold-relay` repo became the relay's single
   source of truth, and the server/web layout §4 describes is H's work);
   **Phase S** — the launch theme set on one-file-per-theme plumbing (§7,
   seven themes after V.1's Standard pair + light consolidation);

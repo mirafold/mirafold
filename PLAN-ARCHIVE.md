@@ -1150,8 +1150,8 @@ verbatim, full dated status notes included.
 ## Phase G — Collapse the relay duplication (do before Phase H)
 
 Origin: same 2026-07-14 review. The relay's shared source is vendored
-byte-identically in TWO places — `genui-shell/relay-service/` and
-`genui-relay/src/` — held in lockstep by a sync script; Kyle called the
+byte-identically in TWO places — `mirafold/relay-service/` and
+`mirafold-relay/src/` — held in lockstep by a sync script; Kyle called the
 "keep two copies consistent" arrangement a maintainability wart. It was always
 explicitly temporary: `relay-service/` was the dev source of truth *only until
 the relay's first deploy* (the umbrella `genui/CLAUDE.md` + DEPLOY.md §5),
@@ -1180,7 +1180,7 @@ detail, not this phase's concern.
   becomes the single source of truth**
   - Goal: one home for the relay service. No more byte-identical second copy
     kept in lockstep; the maintainability burden is gone.
-  - Build: make `genui-relay/src/` the canonical source. In `genui-shell`,
+  - Build: make `mirafold-relay/src/` the canonical source. In `genui-shell`,
     reduce the top-level `relay-service/` from a full vendored copy to a thin
     pointer (a short README stating the relay now lives in the `genui-relay`
     repo and how the local itest sources it) — keeping NO duplicated `src/`,
@@ -1188,7 +1188,7 @@ detail, not this phase's concern.
     test `server/relay-service.itest.ts` to obtain the relay under test from
     the canonical sibling `genui-relay` (the sibling-directory relationship the
     umbrella already relies on) instead of the vendored copy. Retire the now-
-    unnecessary sync machinery: `genui-relay/scripts/sync-from-genui-shell.sh`
+    unnecessary sync machinery: `mirafold-relay/scripts/sync-from-genui-shell.sh`
     and the `sync` / `sync:check` npm scripts (nothing to keep in sync once
     there is a single copy). Update every doc that describes the sync
     arrangement (this repo's README + DEPLOY.md §5, `genui-relay`'s README +
@@ -1199,9 +1199,9 @@ detail, not this phase's concern.
     `relay-service.itest.ts` still verifies the relay against a REAL daemon, now
     sourced from the sibling. `npm run smoke` (against the deployed relay) still
     passes.
-  - Files: `genui-shell/relay-service/` (collapsed to a pointer),
+  - Files: `mirafold/relay-service/` (collapsed to a pointer),
     `server/relay-service.itest.ts` (rewired), `README.md`, `DEPLOY.md`;
-    `genui-relay/scripts/`, its `package.json`, README + ARCHITECTURE.md; the
+    `mirafold-relay/scripts/`, its `package.json`, README + ARCHITECTURE.md; the
     umbrella `genui/CLAUDE.md`.
   - Done when: no byte-identical relay duplication remains (a diff confirms
     `genui-shell` holds no second copy of the relay `src/`), `genui-relay` is
@@ -1212,7 +1212,7 @@ detail, not this phase's concern.
     `src/` trees byte-identical, then `relay-service/` was collapsed to a
     pointer README (src/, Dockerfile, fly.toml, package/tsconfig all removed);
     `relay-service.itest.ts` now imports `startRelay` + the contract from the
-    sibling `../../genui-relay/src/`, and the sync script + `sync`/`sync:check`
+    sibling `../../mirafold-relay/src/`, and the sync script + `sync`/`sync:check`
     npm scripts are deleted. Docs updated in the same pass: this repo's README
     (§tree + §8), `genui-relay`'s README/ARCHITECTURE §6/DEPLOY §5, and the
     umbrella CLAUDE.md (sync section → sibling-itest section). Verified both
@@ -1726,13 +1726,13 @@ hits named in the step.
     the pointer as current state: README §10's R.2 narrative, two stale
     bullets in `docs/RENAME.md` (the dev copy's package name + the retired
     sync scripts), the umbrella `CLAUDE.md` sibling-itest paragraph, and
-    `genui-relay/DEPLOY.md` §5's dated bullet (amended in its own repo).
+    `mirafold-relay/DEPLOY.md` §5's dated bullet (amended in its own repo).
     Dated history (PLAN/PLAN-ARCHIVE/ROADMAP records, the relay repo's
     past-tense README/ARCHITECTURE notes) stays verbatim; the itest KEEPS
     its `relay-service.itest.ts` name (it tests the relay service — the
     name describes the subject, not a path).
   - Files: `relay-service/` (deleted), `README.md`, `docs/RENAME.md`,
-    `../CLAUDE.md`, `../ROADMAP.md`, `../genui-relay/DEPLOY.md`.
+    `../CLAUDE.md`, `../ROADMAP.md`, `../mirafold-relay/DEPLOY.md`.
   - Done when: the directory is gone, no live doc claims it exists, the
     sibling-itest instructions survive in README §4, and typecheck + Tier 1
     pass (docs + deletion only).
@@ -2385,7 +2385,7 @@ order. Nothing was dropped — only relocated.
     free-LOCAL-only; the relay is sold as BYO-API-key remote access; name the
     day-one-user shift (was "the Pro/Max subscriber," now "the API-key holder")
     and revisit any pricing/reach copy that assumed subscription users.
-    (3) `genui-shell/CLAUDE.md` + umbrella `genui/CLAUDE.md`: add a short
+    (3) `mirafold/CLAUDE.md` + umbrella `genui/CLAUDE.md`: add a short
     non-negotiable — "genui-shell must not enable prohibited subscription use;
     the dated, revisit-able matrix lives in `server/provider-policy.ts`."
     (4) `.env.example`: Claude presents the **API key** as the live path again
@@ -2397,7 +2397,7 @@ order. Nothing was dropped — only relocated.
     BYO-endpoint escape hatch). (6) One line in the relay/DEPLOY story: the
     relay admits only api-key/local sessions — subscription pairings are refused
     by the DAEMON (R.4i), independent of Stripe entitlement (R.5).
-  - Files: `PLAN.md` (Locked decisions), `BUSINESS.md`, `genui-shell/CLAUDE.md`,
+  - Files: `PLAN.md` (Locked decisions), `BUSINESS.md`, `mirafold/CLAUDE.md`,
     `../CLAUDE.md` (umbrella), `.env.example`, `README.md`, relevant `docs/`.
   - Done when: no shipped doc or example offers a Claude/Gemini subscription as
     a way to run genui-shell; BUSINESS.md names the BYOK day-one user and the
@@ -2422,7 +2422,7 @@ order. Nothing was dropped — only relocated.
     the "to go live" section states closed-models-are-API-key with the local/BYO
     escape hatch, the R.4b changelog line's reversed half is marked, and a new
     2026-07-10 changelog entry summarizes R.4i/R.4j. (6) The private
-    `genui-relay/README.md` "deliberately does not" list gained a line: the
+    `mirafold-relay/README.md` "deliberately does not" list gained a line: the
     relay enforces no credential policy — the daemon refuses subscription
     sessions before any frame, independent of entitlement. `provider-policy.ts`
     is now cited as the source of truth in all six places. **The 2026-07-10
@@ -5199,7 +5199,7 @@ rule]] in memory):
 ## Phase C — CI/CD (opened 2026-07-20; pre-launch)
 
 Kyle is standing up CI/CD shortly. As of 2026-07-20 there is **none** in any
-of the three repos: `genui-shell/.github/` holds only an issue template, there
+of the three repos: `mirafold/.github/` holds only an issue template, there
 are no workflows and no git hooks, and neither `genui-relay` nor
 `mirafold-site` has a `.github/` at all. Verification today is Kyle running
 `yarn test` / `test:server` / `test:e2e` by hand — a good habit, but a habit.
@@ -5260,7 +5260,7 @@ uncharacterized sighting of the Tier-2 per-pair viewport-cap test.
       today).
   - **The one thing CI surfaced (a real cross-repo finding):** the shell's
     first run went red because `server/relay/relay-service.itest.ts` imports
-    the relay under test from the **sibling `../genui-relay` checkout**, which
+    the relay under test from the **sibling `../mirafold-relay` checkout**, which
     a single-repo CI job doesn't have — and the relay repo is private
     pre-launch, so cloning it in CI would need a secret (contradicting this
     phase's no-secrets sizing). This tripped BOTH typecheck (tsconfig includes
@@ -5365,7 +5365,7 @@ uncharacterized sighting of the Tier-2 per-pair viewport-cap test.
       work in every repo** (his job's `on-prod.yml` pattern: a human clicks
       Run workflow and picks the ref; nothing ever deploys on push, merge,
       or schedule). Scaffolded for the relay same day:
-      `genui-relay/.github/workflows/deploy.yml` (`9162fa1`), inert until a
+      `mirafold-relay/.github/workflows/deploy.yml` (`9162fa1`), inert until a
       `FLY_API_TOKEN` secret exists; the one-time deploy-day steps stay
       manual per that repo's `DEPLOY.md`.
 
@@ -6216,7 +6216,7 @@ server sends no timers.
     there), so it idles at near-zero cost. The `*.fly.dev` URL is fine:
     the own-domain rule exists so installed daemons never depend on the
     platform's name, and nothing installed ever points at staging. The
-    `Deploy` workflow (`genui-relay/.github/workflows/deploy.yml`) grows an
+    `Deploy` workflow (`mirafold-relay/.github/workflows/deploy.yml`) grows an
     environment input on the dispatch form — staging or production, each a
     GitHub Environment with its own Fly deploy token — same manual-click
     pattern, one more dropdown. Fly-side one-time steps (app create, token)
@@ -6226,7 +6226,7 @@ server sends no timers.
     check → dispatch the same ref to production.
   - Done when: deploying any ref to staging is one workflow dispatch, a
     smoke run (`npm run smoke`) against the staging URL passes, and the
-    staging half is documented in `genui-relay/DEPLOY.md` alongside the
+    staging half is documented in `mirafold-relay/DEPLOY.md` alongside the
     production runbook.
 
 
