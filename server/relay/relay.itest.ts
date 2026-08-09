@@ -237,7 +237,7 @@ test("a weak pinned MIRAFOLD_RELAY_CODE is refused: the daemon mints and the wea
 
 test("R.5: a gated relay refuses a token-less daemon (actionable line) and admits one with MIRAFOLD_ENTITLEMENT_TOKEN", async () => {
   // The stub's exact-match gate models the real relay's refusal shape (the
-  // real signature check is pinned in genui-relay's own suite + the sibling
+  // real signature check is pinned in mirafold-relay's own suite + the sibling
   // service itest). This is the CI-runnable proof of the daemon's SEND path.
   const TOKEN = "itest-beta-token";
   const GATED_CODE = "itest-gated-code-8c2e1b";

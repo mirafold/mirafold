@@ -1972,7 +1972,7 @@ const eventually = async (check: () => boolean, message: string, timeout = 10_00
 };
 
 test("E.3: the files panel lists the working tree, opens a file beside the transcript, drills back", async () => {
-  // The e2e daemon runs in the genui-shell repo itself — a real git repo — so
+  // The e2e daemon runs in the Mirafold repo itself — a real git repo — so
   // the tree is live git data. package.json is always tracked and top-level.
   await page.locator(".ab-files").click();
   await page.waitForSelector(".files-panel");

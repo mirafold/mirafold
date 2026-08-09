@@ -14,13 +14,13 @@ name: CI
 # it when the repo goes public (R.7).
 #
 # ONE cross-repo arrangement: server/relay/relay-service.itest.ts imports the
-# relay under test from the SIBLING ../genui-relay checkout (README §"sibling
-# itest"). Both jobs therefore check this repo out into genui-shell/ and
-# mirafold-relay into genui-relay/, making them siblings under the workspace
+# relay under test from the SIBLING ../mirafold-relay checkout (README §"sibling
+# itest"). Both jobs therefore check this repo out into mirafold/ and
+# mirafold-relay into mirafold-relay/, making them siblings under the workspace
 # exactly as they are on a dev machine, and run with working-directory
-# genui-shell. The relay is public since 2026-07-31, so the checkout needs no
+# mirafold. The relay is public since 2026-07-31, so the checkout needs no
 # secret. It tracks the relay's default branch on purpose: the itest carries the
-# contract guard that fails on drift between genui-relay/src/contract.ts and
+# contract guard that fails on drift between mirafold-relay/src/contract.ts and
 # server/relay/relay-protocol.ts, and pinning a ref would blind it to exactly
 # the drift it exists to catch. Consequence, accepted: a contract-breaking push
 # to the relay turns this repo's CI red, which is the intended alarm.
@@ -52,28 +52,29 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: genui-shell
+        working-directory: mirafold
     steps:
       - uses: actions/checkout@v5
         with:
-          path: genui-shell
+          path: mirafold
       # The sibling the itest imports from. Public since 2026-07-31 — the
       # default GITHUB_TOKEN reads it without any added secret.
       - uses: actions/checkout@v5
         with:
           repository: mirafold/mirafold-relay
-          path: genui-relay
+          path: mirafold-relay
       - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: yarn
-          cache-dependency-path: genui-shell/yarn.lock
+          cache-dependency-path: mirafold/yarn.lock
       # The relay's own install: the typecheck follows the itest's imports into
-      # genui-relay/src, which resolves `ws` and its types from genui-relay's
+      # mirafold-relay/src, which resolves `ws` and its types from
+      # mirafold-relay's
       # node_modules — module resolution walks up from that file and never
       # reaches this repo's node_modules, so the sibling needs its own install.
       - run: npm ci
-        working-directory: genui-relay
+        working-directory: mirafold-relay
       - run: yarn install --frozen-lockfile
       # Full tsconfig.json now — the sibling is present, so nothing is excluded.
       - run: yarn typecheck
@@ -87,22 +88,22 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: genui-shell
+        working-directory: mirafold
     steps:
       - uses: actions/checkout@v5
         with:
-          path: genui-shell
+          path: mirafold
       - uses: actions/checkout@v5
         with:
           repository: mirafold/mirafold-relay
-          path: genui-relay
+          path: mirafold-relay
       - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: yarn
-          cache-dependency-path: genui-shell/yarn.lock
+          cache-dependency-path: mirafold/yarn.lock
       - run: npm ci
-        working-directory: genui-relay
+        working-directory: mirafold-relay
       - run: yarn install --frozen-lockfile
       # Tier 3 drives real headless Chrome via playwright-core; the harness
       # reads CHROME_BIN (default /usr/bin/google-chrome). ubuntu-latest ships

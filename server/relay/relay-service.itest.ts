@@ -17,8 +17,8 @@ import {
   MIN_PAIR_ID_LENGTH,
 } from "./relay-protocol";
 import { MAX_ENVELOPE } from "./relay-client";
-import { startRelay, type Relay } from "../../../genui-relay/src/relay";
-import { LIMITS as SERVICE_LIMITS } from "../../../genui-relay/src/limits";
+import { startRelay, type Relay } from "../../../mirafold-relay/src/relay";
+import { LIMITS as SERVICE_LIMITS } from "../../../mirafold-relay/src/limits";
 import {
   CLOSE_FORBIDDEN_ORIGIN as SERVICE_CLOSE_FORBIDDEN_ORIGIN,
   CLOSE_OVERLOADED,
@@ -26,7 +26,7 @@ import {
   CLOSE_UNENTITLED,
   SHARED_CONTRACT,
   MIN_PAIR_ID_LENGTH as SERVICE_MIN_PAIR_ID_LENGTH,
-} from "../../../genui-relay/src/contract";
+} from "../../../mirafold-relay/src/contract";
 import { viewportRefusalReason } from "../../web/src/ws";
 
 // Mints a token the exact way the R.5 billing backend does — the compact
@@ -38,7 +38,7 @@ const mintToken = (priv: KeyObject, expSeconds: number): string => {
 };
 
 // The DEPLOYED relay service, verified against the real daemon locally —
-// sourced from the sibling `genui-relay` repo, the relay's single home since
+// sourced from the sibling `mirafold-relay` repo, the relay's single home since
 // Phase G retired the vendored `relay-service/` copy. The R.3 crypto path and
 // byte-for-byte parity are already proven against the stub (relay.itest.ts);
 // here we prove the grown-up service is a faithful forwarder AND that its

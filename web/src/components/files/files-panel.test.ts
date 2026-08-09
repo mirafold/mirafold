@@ -12,7 +12,7 @@ test("isCurrentReply: only the awaited id is accepted", () => {
 });
 
 test("rootNameOf: the root row carries the folder's name, not the path", () => {
-  assert.equal(rootNameOf("~/Projects/mirafold/genui-shell"), "genui-shell");
+  assert.equal(rootNameOf("~/Projects/mirafold/mirafold"), "mirafold");
   assert.equal(rootNameOf("~/Projects/x/"), "x", "trailing slash is ignored");
   assert.equal(rootNameOf("~"), "~", "home itself keeps the tilde");
   assert.equal(rootNameOf("/"), "/", "filesystem root stays legible");
