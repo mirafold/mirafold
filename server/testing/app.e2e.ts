@@ -2433,35 +2433,41 @@ test("W.2: the live tree — a write behind the UI's back appears with zero clic
 });
 
 test("a notice in the engine's own words is badged; the shell's own words aren't", async () => {
-  await page.locator("textarea").click();
-  await page.keyboard.type("show me a notice");
-  await page.keyboard.press("Enter");
-  await page.waitForSelector(".notice-line[data-source]", { timeout: 15_000 });
+  // Own the session whose output is under test. The shared page has just
+  // navigated through two Explorer fixtures; under runner load its attach /
+  // replay can still be settling when this prompt is typed, so a timeout can
+  // happen before the notice path runs and say nothing about attribution.
+  await withFreshMockSession("e2e-notice-attribution-9c2f", async (page2) => {
+    await page2.waitForSelector("textarea");
+    await page2.locator("textarea").fill("show me a notice");
+    await page2.keyboard.press("Enter");
+    await page2.waitForSelector(".notice-line[data-source]", { timeout: 15_000 });
 
-  // The engine's line carries its name and no shell glyph…
-  const engine = page.locator(".notice-line[data-source]").last();
-  assert.equal(await engine.getAttribute("data-source"), "mock-engine");
-  assert.equal(await engine.locator(".notice-source").innerText(), "mock-engine");
-  assert.equal(await engine.locator(".notice-glyph").count(), 0);
-  assert.match(await engine.innerText(), /re-enter your API key/);
+    // The engine's line carries its name and no shell glyph…
+    const engine = page2.locator(".notice-line[data-source]").last();
+    assert.equal(await engine.getAttribute("data-source"), "mock-engine");
+    assert.equal(await engine.locator(".notice-source").innerText(), "mock-engine");
+    assert.equal(await engine.locator(".notice-glyph").count(), 0);
+    assert.match(await engine.innerText(), /re-enter your API key/);
 
-  // …and Mirafold's own line carries the glyph and no badge, so the two can't
-  // be confused: an engine string can't render as the shell speaking (2026-07-20).
-  const shell = page
-    .locator(".notice-line:not([data-source])")
-    .filter({ hasText: "context compacted" })
-    .last();
-  assert.equal(await shell.locator(".notice-source").count(), 0);
-  assert.equal(await shell.locator(".notice-glyph").count(), 1);
-  // The difference is visible, not just structural.
-  assert.equal(
-    await engine.evaluate((el) => getComputedStyle(el).borderLeftStyle),
-    "dashed",
-  );
-  assert.equal(
-    await shell.evaluate((el) => getComputedStyle(el).borderLeftStyle),
-    "solid",
-  );
+    // …and Mirafold's own line carries the glyph and no badge, so the two can't
+    // be confused: an engine string can't render as the shell speaking (2026-07-20).
+    const shell = page2
+      .locator(".notice-line:not([data-source])")
+      .filter({ hasText: "context compacted" })
+      .last();
+    assert.equal(await shell.locator(".notice-source").count(), 0);
+    assert.equal(await shell.locator(".notice-glyph").count(), 1);
+    // The difference is visible, not just structural.
+    assert.equal(
+      await engine.evaluate((el) => getComputedStyle(el).borderLeftStyle),
+      "dashed",
+    );
+    assert.equal(
+      await shell.evaluate((el) => getComputedStyle(el).borderLeftStyle),
+      "solid",
+    );
+  });
 });
 
 // C.2 — the automated Phase-A regression guard; assertAxeClean (scope, tags,
