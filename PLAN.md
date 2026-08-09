@@ -600,10 +600,10 @@ notifications are **not** part of the launch and are not sold until built.
 
 - [x] **Step R.1 — Relay envelope + daemon dial-out** — done 2026-07-07; the relay envelope + outbound WSS dial-out, remote viewports multiplexed as ordinary Connections, verified across all tiers against the in-repo stub. Full status → PLAN-ARCHIVE.md.
 
-- [ ] **Step R.2 — The relay service, deployed**
+- [x] **Step R.2 — The relay service, deployed** — completed 2026-08-09.
   - Goal: the dumb forwarder, running in the world.
   - Status: **DEPLOYED and verified in production.** The standalone
-    `genui-relay` repo (single source of truth since G.1) is a
+    `mirafold-relay` repo (single source of truth since G.1) is a
     dependency-light (`ws` only) portable Node process — a PURE forwarder:
     parses no frames, stores nothing, serves NO app bundle (the phone app
     loads from the separate static origin, then opens the encrypted
@@ -616,7 +616,7 @@ notifications are **not** part of the launch and are not sold until built.
     in production). Full build/deploy/rename history (incl. the GENUI® →
     Mirafold naming story) → PLAN-ARCHIVE.md ("Step R.2 — status history"
     + the 2026-07-17 move).
-  - Open to close the box: (1) the **cellular-phone pass** — ✅ **FIRST HALF
+  - Closure record: (1) the **cellular-phone pass** — ✅ **FIRST HALF
     DONE 2026-07-30**: Kyle paired his phone and ran a session over
     **cellular with wifi off**, on the fixed 0.3.0 build. Notable because
     his house is rural with near-unusable data — he found one spot with
@@ -644,9 +644,23 @@ notifications are **not** part of the launch and are not sold until built.
     earns only the "paired" log; the backoff decision moved to close (a
     refusal never resets, a confirmed ordinary drop still does).
     Mutation-tested pin + live-verified against production: gaps double
-    1s→16s+ toward the 30s ceiling.* (3) The codebase/npm/GitHub **rename**
-    genui-shell → mirafold rides this step (domains bought 2026-07-11;
-    the Fly app name stays `genui-relay`, internal rename optional).
+    1s→16s+ toward the 30s ceiling.* (3) ✅ **Rename completed 2026-08-09:**
+    the product package and GitHub repositories already carried the Mirafold
+    name; the local repositories are now `mirafold/` and `mirafold-relay/`,
+    with the sibling integration test, CI checkout layout, and current
+    workspace paths updated to match. The deployed Fly app names remain
+    `genui-relay` / `genui-relay-staging`, and the `genui-relay v1`
+    key-derivation salt remains frozen as a protocol contract. Verified after
+    the rename: Mirafold typecheck; Tier 1 563/563, Tier 2 143/143, Tier 3
+    82/82; relay typecheck and 38/38 relay tests. **Release-gate follow-up
+    (2026-08-09):** release PR #27 exposed a pre-existing test-only race: the
+    relay-handshake helper waited a fixed number of event-loop turns before
+    closing its healthy socket, so delayed WebCrypto work could miss the
+    backoff reset. The helper now waits for `SocketClient.onOpen()` — the
+    product state transition the assertion actually depends on. The exact
+    test went from 4/20 failures under concurrent load before the fix to 0/20
+    after it; the containing file passed 32/32, Tier 1 passed 563/563, and
+    typecheck passed.
   - Done when: a phone on cellular (not the home wifi) drives a home
     session through the deployed relay, and the relay's logs show it
     learned nothing but connection metadata.
@@ -715,7 +729,7 @@ with it. Both sequence BEFORE R.5.**
 
 - [x] **Step R.4i — Per-provider credential policy** — done 2026-07-10; `server/provider-policy.ts` is the one source of truth: Claude/Gemini subscription blocked, no subscription over the relay, tri-state onboarding (`live`/`blocked`/`none`), the relay gate in `connection.ts`. Verified all three tiers. → PLAN-ARCHIVE.md.
 
-- [x] **Step R.4j — Reconcile docs & business to the provider policy** — done 2026-07-10 (prose-only); PLAN Auth decision, BUSINESS.md §2/§7/§8.5, both CLAUDE.md files, `.env.example`, README, and the private `genui-relay/README` all cite `provider-policy.ts`. → PLAN-ARCHIVE.md.
+- [x] **Step R.4j — Reconcile docs & business to the provider policy** — done 2026-07-10 (prose-only); PLAN Auth decision, BUSINESS.md §2/§7/§8.5, both CLAUDE.md files, `.env.example`, README, and the private `mirafold-relay/README` all cite `provider-policy.ts`. → PLAN-ARCHIVE.md.
 
 - [x] **Step R.4k — Onboarding honesty + local-model discoverability** — done 2026-07-10; live-row endpoint/model `detail`, a named local-model signpost under the picker, where-to-get-it credential links, and the Codex subscription "could change" disclosure. Verified Tier 1 + Tier 3. → PLAN-ARCHIVE.md.
 
@@ -1048,7 +1062,7 @@ with it. Both sequence BEFORE R.5.**
     (+ `npm deprecate` on the bad one), never an unpublish (npm barely
     permits it and installed users aren't affected either way); for the
     relay it's `fly deploy --image <prev>` (already in
-    `genui-relay/DEPLOY.md`); for the site it's the Pages one-click
+    `mirafold-relay/DEPLOY.md`); for the site it's the Pages one-click
     deployment rollback (KV does NOT roll back with it — see R.6's KV note)*; (d) how the codebase/npm/GitHub rename (R.2) is
     sequenced into all of the above; (e) *already decided 2026-07-15
     (K.9): contributor policy is **DCO**, not CLA* — `Signed-off-by` per
@@ -1592,7 +1606,7 @@ with it. Both sequence BEFORE R.5.**
     carries that work rather than trusting the pack. ⬜ **Kyle still owes the
     replace-in-place upload to Drive.**
   - **Where the version lives, for whenever it IS bumped (swept
-    2026-07-25):** `genui-shell/package.json` is the single source of truth —
+    2026-07-25):** `mirafold/package.json` is the single source of truth —
     `bin/mirafold.js` reads it at runtime for `--version` and the boot banner,
     `web/src/version.ts` imports it at build time for the version the browser
     announces, and `npm pack` names the tarball from it. Since 2026-07-29
@@ -1646,7 +1660,7 @@ with it. Both sequence BEFORE R.5.**
       `/api/entitlement` is the only public surface doing per-request work
       on attacker-suppliable input; the rule is the throttle in front of it.
     - [x] **DDoS acceptance + exit path — DOCUMENTED 2026-07-23** in
-      `genui-relay/DEPLOY.md` §8: the accepted-risk position (stateless,
+      `mirafold-relay/DEPLOY.md` §8: the accepted-risk position (stateless,
       E2E-blind relay; local sessions untouched; blast radius = remote
       uptime) plus the ready-to-execute Cloudflare-fronting shelf plan —
       DNS proxied to the Fly origin, `RELAY_CLIENT_IP_HEADER` →
@@ -1687,7 +1701,7 @@ with it. Both sequence BEFORE R.5.**
     `PADDLE_WEBHOOK_SECRET`) are in `mirafold-site/PLAN.md` "Standing-secrets
     rotation runbook"; the deploy-side two (`FLY_API_TOKEN` per environment,
     and the relay's `RELAY_ENTITLEMENT_PUBLIC_KEY` half of the coupled
-    entitlement-keypair cutover) are in `genui-relay/DEPLOY.md` §7. Key
+    entitlement-keypair cutover) are in `mirafold-relay/DEPLOY.md` §7. Key
     findings captured: the webhook-secret rotation is zero-downtime (Paddle
     allows multiple active `h1=` and `verifyWebhookSignature` already loops
     them); the entitlement-keypair cutover has no overlap window (the relay
@@ -1832,7 +1846,7 @@ with it. Both sequence BEFORE R.5.**
       `connections()`); a client-side harness was unreliable for the
       refuse-after-handshake pattern (relay `close(4004)`s just after the WS
       `open`, so the client briefly sees "open"). **That harness now exists and
-      handles exactly that pattern — `genui-relay/scripts/load.mjs`, added
+      handles exactly that pattern — `mirafold-relay/scripts/load.mjs`, added
       2026-07-28 (`npm run load -- <staging-url>`).** It reads a refusal by
       waiting out a grace window after `open` instead of racing it, so an
       "open" that is about to be closed is counted correctly; four phases
@@ -1841,7 +1855,7 @@ with it. Both sequence BEFORE R.5.**
       phase hits NO cap. Validated against a deliberately tiny-capped local
       relay — reported thresholds matched the configured caps exactly, and the
       no-cap-fired path was confirmed to FAIL rather than pass. Run it on
-      STAGING, never production (runbook: `genui-relay/DEPLOY.md` §6), after any
+      STAGING, never production (runbook: `mirafold-relay/DEPLOY.md` §6), after any
       cap retune or machine resize, and compare the numbers. The client can't
       tell the three capacity caps apart (all close 4004), so read the relay's
       own log line alongside it. Side effect: the live relay
@@ -2359,16 +2373,16 @@ bodies + dated history → PLAN-ARCHIVE.md ("Moved 2026-07-24").
   governs all future CD work in every repo (his job's `on-prod.yml` pattern: a
   human clicks *Run workflow* and picks the ref; nothing deploys on
   push/merge/schedule). Scaffolded for the relay in
-  `genui-relay/.github/workflows/deploy.yml` (`9162fa1`), with the R.5d
+  `mirafold-relay/.github/workflows/deploy.yml` (`9162fa1`), with the R.5d
   staging/production environment dropdown on it.
 - ~~**Owed at the public flip (carried in R.5b):** re-enable the cross-repo
   relay itest.~~ ✅ **DONE 2026-08-02.** Both exclusions are gone from `ci.yml`:
-  its two jobs check this repo out to `genui-shell/` and
-  `mirafold/mirafold-relay` to `genui-relay/` — siblings under the workspace,
+  its two jobs check this repo out to `mirafold/` and
+  `mirafold/mirafold-relay` to `mirafold-relay/` — siblings under the workspace,
   the same shape as a dev machine — then `npm ci` the relay, typecheck the
   **full** `tsconfig.json`, and run Tier 2 as plain `yarn test:server`. The
   relay needs its own install because module resolution walks up from
-  `genui-relay/src/` and never reaches this repo's `node_modules`. The relay is
+  `mirafold-relay/src/` and never reaches this repo's `node_modules`. The relay is
   public since 2026-07-31, so the default `GITHUB_TOKEN` reads it with no added
   secret.
   - **The checkout tracks the relay's default branch on purpose.** Pinning a
@@ -3425,7 +3439,7 @@ refusals → restored). Tier-1 443/443, Tier-2 137/137 with the gate in.
    exposure is harmless by construction (E2E keys derive from the code
    the relay never sees; ids die on daemon restart) — hiding the id
    better is defense-in-depth on a denial-only vector.
-3. **Stale `genui-relay/dist/` — deleted**, and `npm start` now runs a
+3. **Stale `mirafold-relay/dist/` — deleted**, and `npm start` now runs a
    `prestart` build, so a local run can never again execute months-old
    code (verified: `npm start` rebuilt dist with the new limits in it).
 

@@ -175,7 +175,7 @@ test("spawnBang throws the same clean error for a bare missing shell name", () =
 });
 
 test("shellFound walks PATH for bare names and PATHEXT on win32", () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "genui-shellfound-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mirafold-shellfound-"));
   try {
     fs.writeFileSync(path.join(dir, "myshell"), "#!/bin/sh\n");
     fs.writeFileSync(path.join(dir, "wshell.EXE"), "");

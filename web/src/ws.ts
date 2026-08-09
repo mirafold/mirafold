@@ -14,7 +14,7 @@ import {
 type Listener = (msg: WireMsg) => void;
 
 // The relay's stable close codes a VIEWPORT can be refused with. A small
-// hand-mirror of the relay's contract (genui-relay contract.ts — 4006 has no
+// hand-mirror of the relay's contract (mirafold-relay contract.ts — 4006 has no
 // constant in relay-protocol.ts at all) — relay-protocol.ts pulls in
 // node:crypto and can't cross into the web bundle, so these three codes are
 // duplicated. Pinned DIRECTLY against contract.ts by relay-service.itest.ts,
