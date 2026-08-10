@@ -56,6 +56,18 @@ type ClientByType = { [T in ClientMsg["type"]]: Extract<ClientMsg, { type: T }> 
 // fixture = compile error (see tooth #1).
 const WIRE: WireByType = {
   text_delta: { type: "text_delta", text: "hello world" },
+  prompt_options: {
+    type: "prompt_options",
+    options: [
+      {
+        trigger: "$",
+        value: "$audit",
+        label: "audit",
+        description: "perform a defensive security audit",
+        kind: "skill",
+      },
+    ],
+  },
   status: { type: "status", state: "thinking", label: "pondering" },
   turn_end: { type: "turn_end" },
   error: { type: "error", message: "something broke" },

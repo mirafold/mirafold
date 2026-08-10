@@ -7061,3 +7061,63 @@ of shared-session timing, while the follow-tail watch item is fixed in product
 code. No dependency was added. The checks retain their original user-visible
 guarantees and now fail at the component they name: busy chrome, Mermaid
 rendering, or follow-tail behavior.
+
+## Moved 2026-08-09 (native prompt discovery, transcript fidelity, and session recovery — full body)
+
+### Phase UX — Native prompt discovery, transcript fidelity, and session recovery (opened + done 2026-08-09)
+
+**Goal:** close the four gaps found in real use without inventing a generic
+Mirafold command language: provider-native prompt choices appear before submit,
+completed engine activity occupies no more transcript space than its terminal,
+the prompt is always one keyboard gesture away, and a daemon restart never
+silently replaces a recoverable agent conversation.
+
+- [x] **Step UX.1 — Provider-native prompt catalog.** Add one additive wire
+  catalog for command/skill completions. Claude reads its live Agent SDK
+  command list (including `commands_changed`); Codex exposes `/` commands and
+  its app-server `skills/list` results under `$`; Gemini reads the command list
+  its ACP session advertises. The browser opens the matching listbox on the
+  first trigger character, filters as the user types, and supports mouse,
+  arrows, Tab, Enter, and Escape without submitting a partial choice.
+- [x] **Step UX.2 — Terminal-sized activity.** Keep in-flight tool state and
+  failures visible, but collapse a completed turn's successful tool events to
+  one expandable activity line. Nested provider/subagent churn stays inside
+  that line instead of becoming extra top-level transcript rows; expansion
+  preserves the full normalized detail so Mirafold shows no less on demand.
+- [x] **Step UX.3 — Prompt focus keyboard path.** `Shift+Escape` focuses the
+  prompt from anywhere outside an open modal/editable control; typing a valid
+  provider trigger while the page itself has focus both focuses the prompt and
+  opens its catalog. Existing plain-Escape interrupt behavior remains intact.
+- [x] **Step UX.4 — Durable provider recovery.** Checkpoint bounded transcript
+  state and the provider's real resume identifier in the platform state
+  directory with owner-only permissions and atomic replacement. Idle timeout
+  unloads the engine but keeps the checkpoint; daemon startup lists dormant
+  sessions; opening one lazily resumes Claude, Codex, or Gemini. Explicit End
+  Session is the only normal deletion path, and an unavailable/corrupt resume
+  is surfaced without silently creating a blank replacement.
+- [x] **Step UX.5 — Proof and contract sync.** Pin catalog keyboard behavior,
+  settled activity compaction, checkpoint bounds/deletion/reload, provider
+  resume plumbing, and stale-URL recovery with focused unit/integration/e2e
+  tests; update README and `docs/ADAPTERS.md` to the new fidelity and recovery
+  contracts.
+
+**Outcome:** Mirafold now learns each provider's pre-submit vocabulary before
+the prompt is sent: Claude Code and Gemini CLI expose live slash catalogs,
+while Codex exposes its version-matched broad slash surface plus live `$`
+skills. Completion is keyboard- and mouse-operable, opens on the first trigger,
+and inserts without submitting. `Shift+Escape` returns focus to the prompt;
+typing a supported trigger from page chrome preserves the draft and opens the
+catalog. Successful tool churn folds at the real turn boundary into one
+expandable `worked · N actions` line while live work and failures remain
+explicit.
+
+Sessions now checkpoint a bounded transcript, exact non-secret backend choice,
+and native provider resume id in owner-only atomically replaced records. Idle
+timeout unloads rather than deletes; daemon startup indexes dormant sessions
+and lazily resumes the same provider conversation and URL. A mid-turn restart
+forces a full replay across the daemon stream-epoch boundary, closes the browser
+turn with an honest interruption notice, and never falls through to a blank
+session. Explicit End Session deletes the record; corrupt or unavailable
+recovery stays visible in place. No dependency was added. Verification passed
+typecheck, production build, Tier 1 (583/583), Tier 2 (144/144), and Tier 3
+(83/83), including real daemon death/restart and the full axe-core sweep.

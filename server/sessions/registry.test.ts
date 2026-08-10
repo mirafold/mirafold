@@ -58,6 +58,68 @@ function freshSession() {
 
 const delta = (): WireMsg => ({ type: "text_delta", text: "x" });
 
+test("prompt options are a replaceable unsequenced session snapshot, not transcript history", () => {
+  const { reg, entry } = freshSession();
+  reg.broadcast(entry, {
+    type: "prompt_options",
+    options: [{ trigger: "/", value: "/review", label: "review", kind: "command" }],
+  });
+  assert.equal(entry.buffer.length, 0);
+  assert.equal(entry.nextSeq, 1);
+  const seen: WireMsg[] = [];
+  reg.attach(entry, (msg) => seen.push(msg));
+  assert.deepEqual(seen, [
+    {
+      type: "prompt_options",
+      options: [{ trigger: "/", value: "/review", label: "review", kind: "command" }],
+    },
+  ]);
+  reg.end(entry.id);
+});
+
+test("prompt option metadata is bounded before fanout or persistence", () => {
+  const { reg, entry } = freshSession();
+  const seen: WireMsg[] = [];
+  reg.attach(entry, (msg) => seen.push(msg));
+  reg.broadcast(entry, {
+    type: "prompt_options",
+    options: [
+      {
+        trigger: "/",
+        value: "/review",
+        label: "r".repeat(500),
+        description: "d".repeat(1_000),
+        argumentHint: "a".repeat(500),
+        aliases: Array.from({ length: 40 }, (_, index) => `alias-${index}`),
+        kind: "command",
+      },
+      {
+        trigger: "$",
+        value: `$${"x".repeat(500)}`,
+        label: "too large to be a real command",
+        kind: "skill",
+      },
+      ...Array.from({ length: 600 }, (_, index) => ({
+        trigger: "/" as const,
+        value: `/command-${index}`,
+        label: `command-${index}`,
+        kind: "command" as const,
+      })),
+    ],
+  });
+
+  const catalog = seen.at(-1);
+  assert.equal(catalog?.type, "prompt_options");
+  if (catalog?.type !== "prompt_options") return;
+  assert.equal(catalog.options.length, 499); // invalid oversized value was dropped after the 500-row cap
+  assert.equal(catalog.options[0].label.length, 121);
+  assert.equal(catalog.options[0].description?.length, 501);
+  assert.equal(catalog.options[0].argumentHint?.length, 201);
+  assert.equal(catalog.options[0].aliases?.length, 20);
+  assert.deepEqual(entry.promptOptions, catalog.options);
+  reg.end(entry.id);
+});
+
 // Mirror of BUFFER_MAX_BYTES, same hand-kept convention as BUFFER_CAP above.
 const BUFFER_MAX_BYTES = 32_000_000;
 
@@ -68,6 +130,17 @@ const bigRender = (mb: number): WireMsg => ({
   component: "image",
   props: { path: "shot.png", alt: "x", src: `data:image/png;base64,${"A".repeat(mb * 1_000_000)}` },
   id: "img",
+});
+
+test("the replay byte budget counts UTF-8 bytes, not JavaScript code units", () => {
+  const { reg, entry } = freshSession();
+  reg.broadcast(entry, { type: "text_delta", text: "😀" });
+  assert.equal(
+    entry.bufferBytes,
+    Buffer.byteLength(JSON.stringify(entry.buffer[0])),
+  );
+  assert.ok(entry.bufferBytes > JSON.stringify(entry.buffer[0]).length);
+  reg.end(entry.id);
 });
 
 // 2026-07-27 audit. The count cap alone assumed every message was text the
@@ -87,7 +160,10 @@ test("audit: the ring is capped by BYTES too — image renders can't grow the se
   assert.ok(entry.buffer.length < BUFFER_CAP, "count cap did the trimming, not the byte cap");
   assert.ok(entry.buffer.length > 0, "the ring must not empty itself");
   // The running total stays honest against a recount of what's retained.
-  const recounted = entry.buffer.reduce((sum, m) => sum + JSON.stringify(m).length, 0);
+  const recounted = entry.buffer.reduce(
+    (sum, m) => sum + Buffer.byteLength(JSON.stringify(m)),
+    0,
+  );
   assert.equal(entry.bufferBytes, recounted);
   // Newest is always kept; eviction is oldest-first, so seqs stay contiguous.
   assert.equal(entry.buffer[entry.buffer.length - 1].seq, 60);
@@ -145,7 +221,9 @@ test("Q.3 a late attach (no afterSeq) replays exactly the retained window, in or
   const cap = entry.buffer.length;
 
   const seen: number[] = [];
-  reg.attach(entry, (m) => seen.push(m.seq!));
+  reg.attach(entry, (m) => {
+    if (m.seq !== undefined) seen.push(m.seq);
+  });
   assert.equal(seen.length, cap);
   assert.equal(seen[0], PUSH - cap + 1);
   assert.equal(seen[seen.length - 1], PUSH);
@@ -181,7 +259,9 @@ test("Q.3 a valid post-eviction tail resume replays exactly the unseen tail", ()
 
   // Resume from the exact edge → the whole retained window, nothing dropped.
   const fromEdge: number[] = [];
-  const vp1 = (m: WireMsg) => fromEdge.push(m.seq!);
+  const vp1 = (m: WireMsg) => {
+    if (m.seq !== undefined) fromEdge.push(m.seq);
+  };
   reg.attach(entry, vp1, firstBuffered - 1);
   assert.equal(fromEdge[0], firstBuffered);
   assert.equal(fromEdge[fromEdge.length - 1], PUSH);
@@ -191,7 +271,9 @@ test("Q.3 a valid post-eviction tail resume replays exactly the unseen tail", ()
   // Resume from a mid-window seq → only strictly-greater seqs replay.
   const mid = firstBuffered + 100;
   const fromMid: number[] = [];
-  reg.attach(entry, (m) => fromMid.push(m.seq!), mid);
+  reg.attach(entry, (m) => {
+    if (m.seq !== undefined) fromMid.push(m.seq);
+  }, mid);
   assert.equal(fromMid[0], mid + 1);
   assert.equal(fromMid[fromMid.length - 1], PUSH);
   assert.ok(fromMid.every((s) => s > mid));
@@ -207,7 +289,9 @@ test("Q.3 canResume on a small (un-evicted) buffer: seq 0 replays from the very 
   assert.equal(reg.canResume(entry, 6), false); // beyond what was issued
 
   const seen: number[] = [];
-  reg.attach(entry, (m) => seen.push(m.seq!), 0);
+  reg.attach(entry, (m) => {
+    if (m.seq !== undefined) seen.push(m.seq);
+  }, 0);
   assert.deepEqual(seen, [1, 2, 3, 4, 5]);
   reg.end(entry.id);
 });
@@ -222,6 +306,7 @@ function coalescingSession(windowMs: number) {
   const entry = reg.create({ cwd: dir });
   const seen: WireMsg[] = [];
   reg.attach(entry, (m) => seen.push(m));
+  seen.length = 0; // prompt_options is attach metadata, not transcript traffic
   return { reg, entry, seen };
 }
 
@@ -279,7 +364,9 @@ test("coalescing: attach, detach, and end flush the open window", () => {
   reg.broadcast(entry, { type: "text_delta", text: "tail" });
   // A new viewport's replay must include the held tail.
   const replayed: WireMsg[] = [];
-  const vp = (m: WireMsg) => replayed.push(m);
+  const vp = (m: WireMsg) => {
+    if (m.type !== "prompt_options") replayed.push(m);
+  };
   reg.attach(entry, vp);
   // 2026-07-29: frames arriving via attach-replay carry the replay stamp.
   assert.deepEqual(replayed, [{ type: "text_delta", text: "tail", seq: 1, replay: true }]);

@@ -6,14 +6,16 @@ import {
   type Query,
   type SDKResultMessage,
   type SDKUserMessage,
+  type SlashCommand,
 } from "@anthropic-ai/claude-agent-sdk";
-import type { WireMsg } from "../protocol";
+import type { PromptOption, WireMsg } from "../protocol";
 import { makeCanUseTool } from "../security/permissions";
 import { makeRenderServer, RENDER_GUIDANCE } from "../render-tools";
 import {
   type AgentSession,
   type TodoItem,
   capOutput,
+  emitPromptOptions,
   envWithout,
   errText,
   joinTextBlocks,
@@ -112,9 +114,21 @@ export class ClaudeCodeSession implements AgentSession {
   // UI shows nothing, never a stand-in that reads as a model name
   // (2026-07-23, Kyle; was the "default" stand-in, T2.6).
   private modelLabel: string | undefined;
+  private providerSessionId: string;
+  private resumeReady: boolean;
+  private resumeListeners = new Set<(id: string) => void>();
 
   get modelName(): string | undefined {
     return this.modelLabel;
+  }
+
+  get resumeId(): string | undefined {
+    return this.resumeReady ? this.providerSessionId : undefined;
+  }
+
+  onResumeId(cb: (id: string) => void) {
+    this.resumeListeners.add(cb);
+    if (this.resumeReady) cb(this.providerSessionId);
   }
 
   // `engine` is the test seam (like Codex's thread swap / MIRAFOLD_GEMINI_BIN):
@@ -127,15 +141,21 @@ export class ClaudeCodeSession implements AgentSession {
     model?: string;
     kind?: "api-key" | "subscription" | "local";
     endpoint?: string;
+    resumeId?: string;
     engine?: typeof query;
   }) {
     const workspaceDir = path.resolve(opts.workspaceDir);
     mkdirSync(workspaceDir, { recursive: true }); // spawn fails on a missing cwd
     const model = opts.model ?? process.env.DEFAULT_MODEL;
     this.modelLabel = model;
+    this.providerSessionId = opts.resumeId ?? randomUUID();
+    this.resumeReady = Boolean(opts.resumeId);
     this.engine = (opts.engine ?? query)({
       prompt: this.promptStream(),
       options: {
+        ...(opts.resumeId
+          ? { resume: opts.resumeId }
+          : { sessionId: this.providerSessionId }),
         model,
         cwd: workspaceDir,
         // The chosen backend, enforced per-session through the SDK's own env
@@ -183,6 +203,39 @@ export class ClaudeCodeSession implements AgentSession {
       },
     });
     void this.pump();
+  }
+
+  refreshPromptOptions() {
+    this.engine
+      .supportedCommands()
+      .then((commands) => {
+        if (!this.closed) this.emitCommandCatalog(commands);
+      })
+      .catch((err) => log.debug(`command catalog unavailable — ${errText(err)}`));
+  }
+
+  private emitCommandCatalog(commands: SlashCommand[]) {
+    const options: PromptOption[] = commands.flatMap((rawCommand) => {
+      const command = rawCommand as Partial<SlashCommand>;
+      if (typeof command.name !== "string" || !command.name) return [];
+      const aliases = Array.isArray(command.aliases)
+        ? command.aliases.filter((alias): alias is string => typeof alias === "string")
+        : [];
+      return [{
+        trigger: "/",
+        value: `/${command.name}`,
+        label: command.name,
+        ...(typeof command.description === "string"
+          ? { description: command.description }
+          : {}),
+        ...(typeof command.argumentHint === "string" && command.argumentHint
+          ? { argumentHint: command.argumentHint }
+          : {}),
+        kind: "command",
+        ...(aliases.length ? { aliases } : {}),
+      }];
+    });
+    emitPromptOptions((msg) => this.emit(msg), options);
   }
 
   pushPrompt(text: string) {
@@ -495,7 +548,19 @@ export class ClaudeCodeSession implements AgentSession {
    *  status-bar/notice composition (F.2/F.3). */
   private handleSystemMsg(msg: object) {
     const sub = (msg as { subtype?: unknown }).subtype;
-    if (sub === "init") {
+    if (sub === "commands_changed") {
+      const commands = (msg as { commands?: unknown }).commands;
+      if (Array.isArray(commands)) this.emitCommandCatalog(commands as SlashCommand[]);
+    } else if (sub === "init") {
+      const sessionId = (msg as { session_id?: unknown }).session_id;
+      if (typeof sessionId === "string" && sessionId) {
+        const changed = !this.resumeReady || this.providerSessionId !== sessionId;
+        this.providerSessionId = sessionId;
+        this.resumeReady = true;
+        if (changed) {
+          for (const cb of this.resumeListeners) cb(sessionId);
+        }
+      }
       // system/init carries the model the engine ACTUALLY resolved
       // (e.g. "claude-fable-5"), which differs from the configured value
       // or the "default" placeholder we start with — show the truth in

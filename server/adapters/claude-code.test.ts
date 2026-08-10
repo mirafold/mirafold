@@ -636,3 +636,54 @@ test("checklist: an empty TodoWrite with nothing painted stays silent", async ()
   assert.ok(!msgs.some((m) => m.type === "render"), "no empty checklist is ever PAINTED");
   s.close();
 });
+
+test("recovery: Claude receives the saved SDK resume id and exposes its live command catalog", async () => {
+  let options: Options | undefined;
+  const engine = ((args: { prompt: AsyncIterable<unknown>; options: Options }) => {
+    options = args.options;
+    const stream = (async function* () {
+      for await (const _prompt of args.prompt) {
+        // This proof does not run a turn.
+      }
+    })();
+    return Object.assign(stream, {
+      interrupt: async () => {},
+      supportedCommands: async () => [
+        {
+          name: "review",
+          description: "review current changes",
+          argumentHint: "[instructions]",
+        },
+      ],
+    });
+  }) as unknown as typeof query;
+  const s = new ClaudeCodeSession({
+    workspaceDir: tmp,
+    resumeId: "11111111-1111-4111-8111-111111111111",
+    engine,
+  });
+  const seen: WireMsg[] = [];
+  s.onMessage((msg) => seen.push(msg));
+  s.refreshPromptOptions();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(options?.resume, s.resumeId);
+  assert.equal(options?.sessionId, undefined);
+  assert.deepEqual(
+    seen.find((msg) => msg.type === "prompt_options"),
+    {
+      type: "prompt_options",
+      options: [
+        {
+          trigger: "/",
+          value: "/review",
+          label: "review",
+          description: "review current changes",
+          argumentHint: "[instructions]",
+          kind: "command",
+        },
+      ],
+    },
+  );
+  s.close();
+});

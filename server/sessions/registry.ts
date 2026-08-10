@@ -2,12 +2,13 @@ import { randomUUID } from "node:crypto";
 import { statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { SessionMeta, WireMsg } from "../protocol";
+import type { PromptOption, SessionMeta, WireMsg } from "../protocol";
 import {
   createSession,
   errText,
   resolveBackend,
   resolveBackendFor,
+  resolveChosenBackend,
   type AgentName,
   type AgentSession,
   type Backend,
@@ -19,6 +20,7 @@ import { createLogger, verbose } from "../log";
 import { startWatch, type FsWatchHandle } from "./fs-watch";
 import { invalidateRepoStatusCache } from "./git";
 import { envInt } from "../env";
+import { SessionCheckpointStore, type StoredSession } from "./session-store";
 
 // Replay depth: enough to reconstruct a long working session; beyond it the
 // oldest messages fall off and a late viewport sees a truncated head.
@@ -38,9 +40,23 @@ const BUFFER_MAX_BYTES = envInt("SESSION_BUFFER_MAX_BYTES", 32_000_000);
  *  costs one serialization per broadcast — the same work the verbose logger
  *  already does per message. */
 function msgBytes(msg: WireMsg): number {
-  return JSON.stringify(msg).length;
+  return Buffer.byteLength(JSON.stringify(msg));
 }
-// A session with no viewports survives this long, then dies for real.
+
+/** The one `!` process that was still open at a checkpoint boundary, if any.
+ * The ring may have trimmed its start while retaining later output, so output
+ * also establishes the id until a matching bang_end closes it. */
+function unclosedBangId(buffer: WireMsg[]): string | undefined {
+  let open: string | undefined;
+  for (const msg of buffer) {
+    if (msg.type === "bang_start" || msg.type === "bang_output") open = msg.id;
+    else if (msg.type === "bang_end" && msg.id === open) open = undefined;
+  }
+  return open;
+}
+// A session with no viewports keeps a warm engine this long. With the
+// production checkpoint store it then unloads to a dormant resumable record;
+// registries without a store (focused tests) retain the historical teardown.
 const IDLE_TIMEOUT_MS = envInt("SESSION_IDLE_TIMEOUT_MS", 4 * 60 * 60_000);
 // The one refusal line for a prompt the burst gate rejects (dispatchPrompt) —
 // shared so every path (prompt, grid dispatch, component action) refuses
@@ -84,6 +100,45 @@ const MAX_SESSIONS = envInt("MAX_SESSIONS", 100);
 // React already renders a hostile string inert.
 const LABEL_CAP = 120;
 const capLabel = (s: string) => (s.length > LABEL_CAP ? s.slice(0, LABEL_CAP) + "…" : s);
+const PROMPT_OPTION_CAP = 500;
+const PROMPT_VALUE_CAP = 200;
+const PROMPT_DESCRIPTION_CAP = 500;
+const PROMPT_ALIAS_CAP = 20;
+
+const capText = (value: string, cap: number) =>
+  value.length > cap ? value.slice(0, cap) + "…" : value;
+
+function capPromptOptions(options: PromptOption[]): PromptOption[] {
+  return options.slice(0, PROMPT_OPTION_CAP).flatMap((option) => {
+    // `value` is what gets sent to the provider. Truncating it would create a
+    // different command, so an impossible metadata-sized value is dropped.
+    if (
+      option.value.length > PROMPT_VALUE_CAP ||
+      !option.value.startsWith(option.trigger)
+    ) {
+      return [];
+    }
+    return [
+      {
+        ...option,
+        label: capLabel(option.label),
+        ...(option.description !== undefined
+          ? { description: capText(option.description, PROMPT_DESCRIPTION_CAP) }
+          : {}),
+        ...(option.argumentHint !== undefined
+          ? { argumentHint: capText(option.argumentHint, PROMPT_VALUE_CAP) }
+          : {}),
+        ...(option.aliases !== undefined
+          ? {
+              aliases: option.aliases
+                .slice(0, PROMPT_ALIAS_CAP)
+                .filter((alias) => alias.length <= PROMPT_VALUE_CAP),
+            }
+          : {}),
+      },
+    ];
+  });
+}
 
 /**
  * Bound the engine-supplied labels on a wire message, if it carries any.
@@ -91,6 +146,9 @@ const capLabel = (s: string) => (s.length > LABEL_CAP ? s.slice(0, LABEL_CAP) + 
  * allocates nothing.
  */
 function capWireLabels(msg: WireMsg): WireMsg {
+  if (msg.type === "prompt_options") {
+    return { ...msg, options: capPromptOptions(msg.options) };
+  }
   if (msg.type === "status") {
     if (msg.label === undefined || msg.label.length <= LABEL_CAP) return msg;
     return { ...msg, label: capLabel(msg.label) };
@@ -141,7 +199,11 @@ export type SessionEntry = {
   // The credential kind behind this session — read by the relay gate in
   // connection.ts to refuse a subscription-backed session over the paid relay (R.4i).
   kind: CredentialKind;
+  // Exact non-secret backend selection, persisted so recovery cannot silently
+  // move the conversation to a different credential/provider/model server.
+  backend: Backend;
   session: AgentSession;
+  promptOptions: PromptOption[];
   buffer: WireMsg[];
   /** Running sum of `msgBytes` over `buffer` — kept incrementally so the byte
    *  cap costs one serialization per broadcast, not a walk of the whole ring. */
@@ -150,6 +212,11 @@ export type SessionEntry = {
   // Next session-scoped sequence number; broadcast stamps it onto every
   // message so a reconnecting viewport can name where its stream broke off (4.4).
   nextSeq: number;
+  /** A tail cursor is meaningful only inside one daemon's stream epoch. A
+   *  checkpoint can lag already-fanned high-volume frames by the debounce
+   *  window, so a session reopened from disk must full-replay for this engine
+   *  lifetime instead of comparing a prior daemon's cursor to reused seqs. */
+  tailResumeSafe: boolean;
   // 4.6 fleet metadata: display name (defaults to the cwd leaf, renamable),
   // coarse activity state derived from the broadcast stream, and when the
   // stream last moved.
@@ -185,6 +252,7 @@ export type SessionEntry = {
   // message — flushes them as one WireMsg.
   pendingDelta?: Extract<WireMsg, { type: "text_delta" | "thinking_delta" }>;
   deltaTimer?: NodeJS.Timeout;
+  checkpointTimer?: NodeJS.Timeout;
 };
 
 /**
@@ -209,11 +277,14 @@ export function foldUsage(
  * Sessions decoupled from connections (Step 4.2). A session outlives any
  * socket: connections attach as viewports, every emitted WireMsg is fanned
  * out to all of them and kept in a ring buffer that replays on attach, and
- * closing a tab merely detaches. Sessions die only on idle timeout.
+ * closing a tab merely detaches. Idle timeout unloads a warm engine to its
+ * durable dormant record; explicit End Session removes the conversation.
  * Mental model: session ≈ project — each gets its own working dir.
  */
 export class SessionRegistry {
   private entries = new Map<string, SessionEntry>();
+  private dormant = new Map<string, StoredSession>();
+  private restoreErrors = new Map<string, string>();
 
   // Which agent every session in this registry runs, resolved once from
   // config (Phase P.1). The agent is chosen here, not hardcoded downstream.
@@ -222,10 +293,17 @@ export class SessionRegistry {
   constructor(
     private backend: Backend = resolveBackend(),
     private deltaCoalesceMs: number = DELTA_COALESCE_MS,
-  ) {}
+    private store?: SessionCheckpointStore,
+  ) {
+    if (store) {
+      const loaded = store.loadAll();
+      this.dormant = loaded.sessions;
+      this.restoreErrors = loaded.errors;
+    }
+  }
 
   create(opts?: { cwd?: string; agent?: AgentName; backend?: Backend }): SessionEntry {
-    if (this.entries.size >= MAX_SESSIONS) {
+    if (this.entries.size + this.dormant.size >= MAX_SESSIONS) {
       throw new Error(`session limit reached (${MAX_SESSIONS})`);
     }
     const id = randomUUID().slice(0, 8);
@@ -256,11 +334,14 @@ export class SessionRegistry {
       agent: backend.agent,
       live: backend.live,
       kind: backend.kind,
+      backend,
       session,
+      promptOptions: [],
       buffer: [],
       bufferBytes: 0,
       viewports: new Set(),
       nextSeq: 1,
+      tailResumeSafe: true,
       name: path.basename(dir) || dir,
       status: "idle",
       lastActivity: Date.now(),
@@ -269,12 +350,197 @@ export class SessionRegistry {
     };
     session.onMessage((msg) => this.broadcast(entry, msg));
     this.entries.set(id, entry);
+    session.onResumeId?.(() => {
+      if (this.entries.get(id) === entry) this.checkpoint(entry);
+    });
+    session.refreshPromptOptions?.();
+    this.checkpoint(entry);
     this.notifyWatchers();
     return entry;
   }
 
   get(id: string): SessionEntry | undefined {
     return this.entries.get(id);
+  }
+
+  /** Active entry or a lazily reopened checkpoint. A saved-but-unavailable
+   * session throws so callers can surface the reason without falling through
+   * to the stale-URL "make a blank session" branch. */
+  open(id: string): SessionEntry | undefined {
+    const active = this.entries.get(id);
+    if (active) return active;
+    const loadError = this.restoreErrors.get(id);
+    if (loadError) {
+      throw new Error(`session ${id} is saved but its checkpoint is unavailable: ${loadError}`);
+    }
+    const stored = this.dormant.get(id);
+    if (!stored) return undefined;
+
+    const backend = this.backendForRestore(stored);
+    const cwd = resolveCwd(stored.cwd);
+    const model = stored.model ?? backend.model;
+    const restoredBackend = { ...backend, ...(model ? { model } : {}) };
+    const session = createSession(restoredBackend, { cwd, resumeId: stored.resumeId });
+    const buffer = stored.buffer.map((msg) => ({ ...msg }));
+    let nextSeq = Math.max(
+      stored.nextSeq,
+      (buffer[buffer.length - 1]?.seq ?? 0) + 1,
+    );
+    const interruptedBang = unclosedBangId(buffer);
+    if (interruptedBang) {
+      buffer.push({ type: "bang_end", id: interruptedBang, exitCode: null, seq: nextSeq++ });
+    }
+    // A daemon cannot reattach to the middle of a provider turn. Close the
+    // browser grammar honestly. A real provider normally supplied its resume
+    // id before this boundary; if it did not, say that instead of implying a
+    // fresh provider conversation is the old one.
+    if (stored.status !== "idle") {
+      const continuation =
+        !stored.backend.live || stored.resumeId
+          ? "the provider conversation is ready to continue."
+          : "the transcript was preserved, but the provider had not supplied a resumable conversation id, so the next prompt starts a new provider conversation.";
+      buffer.push({
+        type: "notice",
+        text: `Mirafold restarted while this ${interruptedBang ? "work" : "turn"} was running — that ${interruptedBang ? "work" : "turn"} was interrupted; ${continuation}`,
+        kind: "warning",
+        seq: nextSeq++,
+      });
+      buffer.push({ type: "turn_end", seq: nextSeq++ });
+    } else if (interruptedBang) {
+      buffer.push({
+        type: "notice",
+        text: "Mirafold restarted while a shell command was running — that command was interrupted.",
+        kind: "warning",
+        seq: nextSeq++,
+      });
+    }
+    const bangCwd = this.restoredBangCwd(cwd, stored.bangCwd);
+    const entry: SessionEntry = {
+      id: stored.id,
+      cwd,
+      bangCwd,
+      agent: restoredBackend.agent,
+      live: restoredBackend.live,
+      kind: restoredBackend.kind,
+      backend: restoredBackend,
+      session,
+      promptOptions: capPromptOptions(stored.promptOptions).map((option) => ({ ...option })),
+      buffer,
+      bufferBytes: buffer.reduce((sum, msg) => sum + msgBytes(msg), 0),
+      viewports: new Set(),
+      nextSeq,
+      tailResumeSafe: false,
+      name: stored.name,
+      status: "idle",
+      lastActivity: stored.lastActivity,
+      createdAt: stored.createdAt,
+      permissions: [],
+      ...(stored.usage ? { usage: { ...stored.usage } } : {}),
+    };
+    this.trimBuffer(entry);
+    session.onMessage((msg) => this.broadcast(entry, msg));
+    this.entries.set(id, entry);
+    this.dormant.delete(id);
+    session.onResumeId?.(() => {
+      if (this.entries.get(id) === entry) this.checkpoint(entry);
+    });
+    session.refreshPromptOptions?.();
+    this.checkpoint(entry);
+    this.notifyWatchers();
+    return entry;
+  }
+
+  private backendForRestore(stored: StoredSession): Backend {
+    const saved = stored.backend;
+    if (!saved.live) return saved;
+    // A discovered endpoint was an explicit user choice. Preserve it exactly;
+    // discovery may still be warming at daemon startup and the adapter will
+    // surface an actual connection failure without substituting a backend.
+    if (saved.kind === "local" && saved.endpoint) return saved;
+    const resolved = resolveChosenBackend(saved.agent, {
+      kind: saved.kind,
+      endpoint: saved.endpoint,
+      provider: saved.provider,
+      model: stored.model ?? saved.model,
+    });
+    if ("error" in resolved) {
+      throw new Error(
+        `session ${stored.id} is saved but its original backend is unavailable: ${resolved.error}. The saved session was not replaced.`,
+      );
+    }
+    return resolved;
+  }
+
+  private restoredBangCwd(root: string, candidate: string): string {
+    const resolved = path.resolve(candidate);
+    const inside = resolved === root || resolved.startsWith(`${root}${path.sep}`);
+    if (!inside) return root;
+    try {
+      return statSync(resolved).isDirectory() ? resolved : root;
+    } catch {
+      return root;
+    }
+  }
+
+  private snapshot(entry: SessionEntry): StoredSession {
+    return {
+      version: 1,
+      id: entry.id,
+      cwd: entry.cwd,
+      bangCwd: entry.bangCwd,
+      backend: { ...entry.backend },
+      ...(entry.session.resumeId ? { resumeId: entry.session.resumeId } : {}),
+      promptOptions: entry.promptOptions,
+      buffer: entry.buffer,
+      nextSeq: entry.nextSeq,
+      name: entry.name,
+      status: entry.status,
+      lastActivity: entry.lastActivity,
+      createdAt: entry.createdAt,
+      ...(entry.session.modelName ? { model: entry.session.modelName } : {}),
+      ...(entry.usage ? { usage: { ...entry.usage } } : {}),
+    };
+  }
+
+  /** Synchronous at user/terminal boundaries; high-volume interior stream
+   * frames share a short debounce and are caught by the terminal boundary. */
+  private checkpoint(entry: SessionEntry): StoredSession | undefined {
+    if (!this.store) return undefined;
+    clearTimeout(entry.checkpointTimer);
+    entry.checkpointTimer = undefined;
+    const stored = this.snapshot(entry);
+    try {
+      this.store.write(stored);
+      this.restoreErrors.delete(entry.id);
+      return stored;
+    } catch (err) {
+      createLogger(`session ${entry.id}`).error(
+        `could not checkpoint session: ${errText(err)}`,
+      );
+      return undefined;
+    }
+  }
+
+  private scheduleCheckpoint(entry: SessionEntry, msg: WireMsg) {
+    if (!this.store) return;
+    const synchronous =
+      msg.type === "user_prompt" ||
+      msg.type === "turn_end" ||
+      msg.type === "error" ||
+      msg.type === "permission_request" ||
+      msg.type === "permission_resolved" ||
+      msg.type === "bang_start" ||
+      msg.type === "bang_end";
+    if (synchronous) {
+      this.checkpoint(entry);
+      return;
+    }
+    if (entry.checkpointTimer) return;
+    entry.checkpointTimer = setTimeout(() => {
+      entry.checkpointTimer = undefined;
+      this.checkpoint(entry);
+    }, 250);
+    entry.checkpointTimer.unref();
   }
 
   /**
@@ -285,9 +551,22 @@ export class SessionRegistry {
    * the adapter's exact order.
    */
   broadcast(entry: SessionEntry, msg: WireMsg) {
-    // Before the buffer, the cockpit derivation and every viewport — so the
-    // cap holds on replay and in fleet snapshots too, not just live paint.
+    // Adapter callbacks can settle after close (catalog probes, permission
+    // denial, an aborted child). Once teardown has removed this exact entry,
+    // none of those callbacks may fan out or recreate its deleted checkpoint.
+    if (this.entries.get(entry.id) !== entry) return;
+    // Before persistence, buffering, or any viewport. Catalog metadata can
+    // originate in user-installed skills/MCP servers, so it shares the same
+    // bounded choke point as engine-authored tool and status labels.
     msg = capWireLabels(msg);
+    // Replaceable shell metadata, not transcript history: one catalog is
+    // enough, and it must not consume a resume sequence number.
+    if (msg.type === "prompt_options") {
+      entry.promptOptions = msg.options;
+      this.checkpoint(entry);
+      this.fanout(entry, msg);
+      return;
+    }
     if (
       this.deltaCoalesceMs > 0 &&
       (msg.type === "text_delta" || msg.type === "thinking_delta")
@@ -341,7 +620,7 @@ export class SessionRegistry {
     entry.buffer.push(msg);
     entry.bufferBytes += msgBytes(msg);
     this.trimBuffer(entry);
-    entry.lastActivity = Date.now();
+    if (msg.type !== "prompt_options") entry.lastActivity = Date.now();
     // Coarse fleet status, derived from the stream itself — no adapter
     // cooperation needed. Terminal states first; a permission hold sticks
     // until the turn moves again (4.6).
@@ -363,14 +642,19 @@ export class SessionRegistry {
       // Bang traffic is not the turn moving: it must not lift a permission
       // hold (the row keeps sorting needs-you-first while the ask pends).
       if (entry.status !== "permission") entry.status = "working";
-    } else if (msg.type !== "permission_resolved") {
+    } else if (msg.type !== "permission_resolved" && msg.type !== "prompt_options") {
       // permission_resolved decides its own status in captureCockpit — it
       // must not blanket-flip to "working" while a SECOND ask still pends.
       entry.status = "working";
     }
-    if (this.captureCockpit(entry, msg) || entry.status !== prev) {
-      this.notifyWatchers();
-    }
+    const cockpitChanged = this.captureCockpit(entry, msg) || entry.status !== prev;
+    // Semantic boundaries write their atomic checkpoint synchronously before
+    // the browser can observe the frame. In particular, `turn_end` must not
+    // reach a viewport while the complete record is still only a .tmp file:
+    // an immediate daemon death in that window would acknowledge a finished
+    // turn and reopen the previous partial checkpoint on restart.
+    this.scheduleCheckpoint(entry, msg);
+    if (cockpitChanged) this.notifyWatchers();
     this.fanout(entry, msg);
   }
 
@@ -478,6 +762,7 @@ export class SessionRegistry {
    * from some other life (a seq we never issued) (4.4).
    */
   canResume(entry: SessionEntry, afterSeq: number): boolean {
+    if (!entry.tailResumeSafe) return false;
     if (!Number.isInteger(afterSeq) || afterSeq < 0 || afterSeq >= entry.nextSeq) return false;
     const firstBuffered = entry.buffer[0]?.seq ?? entry.nextSeq;
     return afterSeq >= firstBuffered - 1;
@@ -503,6 +788,9 @@ export class SessionRegistry {
       }
     }
     entry.viewports.add(viewport);
+    if (entry.promptOptions.length) {
+      viewport({ type: "prompt_options", options: entry.promptOptions });
+    }
     // First viewport in → the doorbell starts (W.1); last detach stops it.
     if (entry.viewports.size === 1 && !entry.fsWatch) {
       entry.fsWatch = this.startFsWatch(entry);
@@ -562,25 +850,51 @@ export class SessionRegistry {
       entry.fsWatch?.stop(); // nobody listening → no watches held (W.1)
       entry.fsWatch = undefined;
     }
+    this.checkpoint(entry);
     this.notifyWatchers(); // viewport counts are fleet metadata
     // The `=== entry` guard skips this for a session already ended (#11):
     // end() deletes it from the map, so a later detach mustn't re-arm the idle
     // timer or double-close the engine.
     if (entry.viewports.size === 0 && this.entries.get(entry.id) === entry) {
-      entry.idleTimer = setTimeout(() => {
-        this.teardown(entry);
-        this.notifyWatchers();
-      }, IDLE_TIMEOUT_MS);
-      entry.idleTimer.unref();
+      this.armIdleUnload(entry);
     }
+  }
+
+  private armIdleUnload(entry: SessionEntry) {
+    clearTimeout(entry.idleTimer);
+    entry.idleTimer = setTimeout(() => {
+      if (entry.viewports.size !== 0 || this.entries.get(entry.id) !== entry) return;
+      this.flushDeltas(entry);
+      if (this.store) {
+        const stored = this.checkpoint(entry);
+        // Never trade a failed disk write for data loss. Keep the warm engine
+        // and retry after another idle window instead.
+        if (!stored) {
+          this.armIdleUnload(entry);
+          return;
+        }
+        this.teardown(entry);
+        this.dormant.set(entry.id, stored);
+      } else {
+        this.teardown(entry);
+      }
+      this.notifyWatchers();
+    }, IDLE_TIMEOUT_MS);
+    entry.idleTimer.unref();
   }
 
   /** The death core both paths share: kill any running PTY (no orphaned PTYs
    *  past the session's life), close the engine, drop it from the fleet. */
   private teardown(entry: SessionEntry) {
+    clearTimeout(entry.idleTimer);
+    clearTimeout(entry.checkpointTimer);
+    entry.checkpointTimer = undefined;
     entry.bang?.proc.kill();
-    entry.session.close();
+    // Remove first: close() may synchronously resolve pending permissions, and
+    // asynchronous catalog/engine callbacks can arrive later. broadcast()'s
+    // identity guard then makes all of them inert.
     this.entries.delete(entry.id);
+    entry.session.close();
   }
 
   /**
@@ -591,12 +905,26 @@ export class SessionRegistry {
    */
   end(id: string): boolean {
     const entry = this.entries.get(id);
-    if (!entry) return false;
+    if (!entry) {
+      const existed = this.dormant.has(id) || this.restoreErrors.has(id);
+      if (!existed) return false;
+      this.store?.delete(id);
+      this.dormant.delete(id);
+      this.restoreErrors.delete(id);
+      this.notifyWatchers();
+      return true;
+    }
     clearTimeout(entry.idleTimer);
     this.flushDeltas(entry); // pending stream text lands before session_ended
     entry.fsWatch?.stop();
     entry.fsWatch = undefined;
+    // Delete the durable copy BEFORE dropping the live engine. If disk
+    // refuses the explicit delete, the session remains usable and the caller
+    // gets an error instead of being told it ended while it can reappear.
+    this.store?.delete(id);
     this.teardown(entry);
+    this.dormant.delete(id);
+    this.restoreErrors.delete(id);
     this.fanout(entry, { type: "session_ended", sessionId: id });
     this.notifyWatchers();
     return true;
@@ -609,8 +937,7 @@ export class SessionRegistry {
   private notifyTimer: NodeJS.Timeout | null = null;
 
   summary(): SessionMeta[] {
-    return [...this.entries.values()]
-      .map((e) => ({
+    const active: SessionMeta[] = [...this.entries.values()].map((e) => ({
         sessionId: e.id,
         name: e.name,
         cwd: e.cwd,
@@ -629,8 +956,20 @@ export class SessionRegistry {
           ? { permissions: e.permissions.map(({ id, tool, detail }) => ({ id, tool, detail })) }
           : {}),
         ...(e.usage ? { usage: { ...e.usage } } : {}),
-      }))
-      .sort((a, b) => b.lastActivity - a.lastActivity);
+      }));
+    const dormant: SessionMeta[] = [...this.dormant.values()].map((stored) => ({
+      sessionId: stored.id,
+      name: stored.name,
+      cwd: stored.cwd,
+      agent: stored.backend.agent,
+      model: stored.model,
+      status: "idle",
+      lastActivity: stored.lastActivity,
+      viewports: 0,
+      createdAt: stored.createdAt,
+      ...(stored.usage ? { usage: { ...stored.usage } } : {}),
+    }));
+    return [...active, ...dormant].sort((a, b) => b.lastActivity - a.lastActivity);
   }
 
   watch(viewport: Viewport) {
@@ -645,8 +984,22 @@ export class SessionRegistry {
   rename(id: string, name: string): boolean {
     const entry = this.entries.get(id);
     const clean = name.trim().slice(0, 60);
-    if (!entry || !clean) return false;
-    entry.name = clean;
+    if (!clean) return false;
+    if (entry) {
+      entry.name = clean;
+      this.checkpoint(entry);
+    } else {
+      const stored = this.dormant.get(id);
+      if (!stored || !this.store) return false;
+      const renamed = { ...stored, name: clean };
+      try {
+        this.store.write(renamed);
+      } catch (err) {
+        createLogger(`session ${id}`).error(`could not save session rename: ${errText(err)}`);
+        return false;
+      }
+      this.dormant.set(id, renamed);
+    }
     this.notifyWatchers();
     return true;
   }

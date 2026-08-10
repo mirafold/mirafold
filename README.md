@@ -61,11 +61,13 @@ the known trade-offs we've chosen to disclose rather than paper over.
 > `server/adapters/gemini-cli.ts`).
 
 Think of it as a terminal successor, not a chat app: monospace command strips
-in, rich rendered output back. The vision is a **strict superset of the
-terminal** — same engine, and never *less* visibility than the terminal gives:
-thinking, full tool detail and diffs, subagent progress, the live task list,
-and token/cost usage are all surfaced (Phase T2, shipped). Richness is added
-on top of raw visibility, never traded against it.
+in, rich rendered output back. Its transcript contract is **provider-native
+fidelity** — show the work state that the selected terminal agent exposes,
+neither raw adapter churn the terminal hides nor less useful information.
+In-flight work and failures stay visible; when a turn finishes, successful
+tool activity folds to one expandable line whose full normalized details are
+still available. Rich generative UI is added around that transcript, never in
+exchange for it.
 
 ![Mirafold demo — a repo overview as a card and a table; a test-and-fix run with a permission strip, console output, a diff and a green re-run; a sudo password answered in the shell's own masked bar; a bundle pie chart pinned and updated in place](demo/demo.gif)
 
@@ -162,6 +164,9 @@ The contract between server and browser. Currently on the wire:
 // Server → browser
 type WireMsg =
   | { type: "text_delta"; text: string }                           // streamed markdown
+  | { type: "prompt_options"; options: PromptOption[] }             // provider-owned
+                                                                    // pre-submit / + $
+                                                                    // completion catalog
   | { type: "thinking_delta"; text: string }                       // T2.1: reasoning stream
   | { type: "status"; state: "thinking" | "tool"; label?: string } // activity line
   | { type: "turn_end" }                                           // finalize the turn
@@ -303,6 +308,9 @@ interface AgentSession {
   onMessage(cb: (msg: WireMsg) => void): void; // subscribe to normalized output
   interrupt(): void;                           // T.2: halt the turn; stay warm
   resolvePermission(id: string, allow: boolean): void; // T.3: browser's answer
+  readonly resumeId?: string;                  // provider conversation identity
+  onResumeId?(cb: (id: string) => void): void; // async identity-ready boundary
+  refreshPromptOptions?(): void;               // native command/skill catalog
   close(): void;
 }
 ```
@@ -334,7 +342,7 @@ This is a deliberate development strategy, not a testing afterthought:
 verification with a real key comes last. You can develop the whole front end
 without spending a token.
 
-**What agent #N actually requires (R.4h).** The five method signatures above
+**What agent #N actually requires (R.4h).** The seam above
 undersell the seam's real contract — these properties of the underlying
 engine are load-bearing in every shipped adapter, and an agent that lacks one
 needs a workaround (or isn't a fit) *before* the adapter is started:
@@ -349,13 +357,20 @@ needs a workaround (or isn't a fit) *before* the adapter is started:
   means "this turn is over", to emit `turn_end` from.
 - **A warm-session mechanism** — either a long-lived process or a
   resume-by-id flag (Gemini's `--session-id`/`--resume`), so a session
-  survives across prompts without replaying history.
+  survives across prompts without replaying history. The provider's durable
+  conversation identifier must be exposed as `resumeId`; if it becomes real
+  only after engine initialization, `onResumeId` announces that exact boundary.
+- **A provider-owned pre-submit catalog** when the terminal has one.
+  `refreshPromptOptions()` emits a replaceable `prompt_options` snapshot:
+  Claude Code reads `supportedCommands()` and `commands_changed`; Codex pairs
+  its broad `/` command surface with live app-server `skills/list` results
+  under `$`; Gemini reads ACP's `available_commands_update` notification.
 - **An interrupt** that halts the current turn while keeping the session warm.
 - **A way to auto-trust the injected MCP server** (config file, CLI flag, or
   settings merge) — a first-turn interactive "trust this server?" prompt has
   no terminal to answer it here.
 
-The full adapter contract — semantics beyond these five method signatures,
+The full adapter contract — semantics beyond this TypeScript shape,
 the per-provider capability matrix, and the add-a-provider checklist — is
 **[docs/ADAPTERS.md](docs/ADAPTERS.md)**, the normative document for this
 seam.
@@ -483,12 +498,16 @@ server/            the local daemon (Node, run with tsx)
   version.ts         reads package.json's version at build time (R.4g)
   adapters/          one AgentSession per agent: claude-code.ts, codex.ts,
                      gemini-cli.ts, mock.ts (+ index.ts seam, types.ts,
-                     async-queue.ts, render-mcp-cmd.ts, *.spike.md probe notes)
+                     async-queue.ts, render-mcp-cmd.ts, provider command/skill
+                     catalog helpers, *.spike.md probe notes)
   sessions/          the session state core (H.4/H.5):
     registry.ts        SessionRegistry: sessions decoupled from connections (4.2);
                        broadcast() is also where engine-supplied labels are
                        length-capped (LABEL_CAP), ahead of the ring, the
                        cockpit derivation and every viewport (2026-07-29)
+    session-store.ts   owner-only atomic checkpoints: bounded transcript,
+                       exact backend metadata, and provider resume id; startup
+                       indexes them as dormant sessions for lazy recovery
     connection.ts      one viewport's server side, transport-agnostic (R.1) —
                        shared verbatim by local sockets and relay viewports
     folder-picker-handler.ts
@@ -570,7 +589,8 @@ web/               the browser app (React 19 + Vite)
                        credentials + discovered local model servers (P.4/4.8/N.4)
     PromptBox.tsx      the command bar (auto-grows to 8 lines; Enter sends on
                        desktop — on phone Enter is a newline and the ↑ button
-                       sends, R.4l)
+                       sends, R.4l); native pre-submit / and $ completions +
+                       Shift+Escape focus path
     BangBar.tsx        the `!` command's stdin bar (4.9): per-viewport input
                        with password auto-masking — ephemeral, never broadcast
     PermBar.tsx        the permission strip + its full-command card (2026-07-28):
@@ -578,7 +598,8 @@ web/               the browser app (React 19 + Vite)
                        command in a ModalCard — the phone's truncated preview
                        was unreadable; Shell keeps owning asks + the wire answer
     RenderZone.tsx     OUTPUT ZONE: WireMsg interpreter → entries, incl.
-                       thinking blocks, artifacts, and subagent grouping
+                       thinking blocks, artifacts, subagent grouping, and the
+                       completed-turn activity fold
     ActivityLine.tsx   the always-visible work indicator (4.14): cycling
                        asterisk + label + elapsed seconds, prompt-area chrome
                        above the box — never a transcript entry, so no scroll
@@ -749,13 +770,35 @@ last seq it saw and, when the tail is still buffered, the server replays
 only the unseen messages under `session_created{resumed:true}` — mid-turn
 streaming continues into the same DOM block, pins and scroll survive. A
 cursor that has fallen off the ring (or a fresh page) takes the full-replay
-path as before. Closing a tab merely detaches; a session with no viewports dies
-only after an idle timeout (default 4 h, `SESSION_IDLE_TIMEOUT_MS`). Each
-session runs in a real working dir — default: the directory the daemon was
-launched from, exactly like a terminal agent (Step 4.8) — or any existing
-directory typed at onboarding (`~` expands; a missing path rejects the
-create, like `cd`). Mental model: session ≈ project. A stale/unknown attach
-id falls back to a fresh session rather than an error page.
+path as before.
+
+The ring and provider identity are also checkpointed to the platform state
+directory (`$XDG_STATE_HOME/mirafold/sessions`, normally
+`~/.local/state/mirafold/sessions`; `%LOCALAPPDATA%\mirafold\sessions` on
+Windows; `MIRAFOLD_SESSION_DIR` overrides it). The directory is owner-only and
+each bounded JSON record is replaced atomically with owner-only permissions.
+These files necessarily contain the transcript—user prompts, normalized tool
+inputs/results, and assistant output—plus the exact non-secret backend choice
+and Claude/Codex/Gemini resume identifier; they never contain provider
+credentials. User prompts and terminal boundaries are durable before their
+wire acknowledgment, while high-volume interior stream frames share a short
+checkpoint debounce.
+
+Closing a tab merely detaches. After the idle timeout (default 4 h,
+`SESSION_IDLE_TIMEOUT_MS`) the warm engine unloads but its dormant checkpoint
+stays in mission control. Daemon startup indexes those records without eagerly
+launching agents; opening one lazily reconstructs the bounded transcript and
+resumes the same provider conversation. A restart during a turn closes that
+browser turn with an explicit interruption notice, then leaves the provider
+conversation ready to continue. **End Session is the normal deletion path.**
+A corrupt checkpoint or unavailable original backend errors in place and is
+never silently replaced; only a genuinely unknown id falls back to a fresh
+session with the shell-owned explanation.
+
+Each session runs in a real working dir — default: the directory the daemon
+was launched from, exactly like a terminal agent (Step 4.8) — or any existing
+directory typed at onboarding (`~` expands; a missing path rejects the create,
+like `cd`). Mental model: session ≈ project.
 
 Inbound messages route accordingly: `prompt` is echoed onto the session
 stream as `user_prompt` (all viewports render the command strip identically —
@@ -981,13 +1024,14 @@ subscription handles each `ZoneMsg`:
   code, and a component that throws anyway is caught by a per-block error
   boundary — a malformed instruction can never break the UI.
 - `tool_use` / `tool_result` → append a tool entry, then complete it by id
-  when the result lands. Tool entries render through `ToolBlock.tsx` as dim
-  one-line monospace records, collapsed by default (errors arrive expanded);
-  the expansion shows the full input — Edit/Write as a colored diff / code
-  (T2.2) — and any `truncatedBytes` as an explicit elision marker (T2.3). A
-  tool with `parentId` isn't rendered top-level: it's grouped under its Task
-  row in a collapsible `SubagentGroup` (the gear glyph + "subagent · N
-  calls", T2.4).
+  when the result lands. In-flight rows remain visible, and errors remain
+  expanded top-level. At `turn_end`, two or more successful calls from that
+  turn fold into one terminal-sized, expandable `worked · N actions` record;
+  opening it preserves every normalized input and result. `ToolBlock.tsx`
+  renders those details — Edit/Write as a colored diff / code (T2.2), with
+  any `truncatedBytes` as an explicit elision marker (T2.3). Calls tagged
+  with `parentId` stay inside the turn's activity rather than becoming extra
+  top-level churn (T2.4).
 - `artifact` → route to `Artifact.tsx` (the sandboxed iframe, Phase 3);
   re-sending an id replaces it in place, same as `render`.
 - `picker` → append a `PickerBlock.tsx` entry: the SHELL-owned selector
@@ -1002,8 +1046,8 @@ subscription handles each `ZoneMsg`:
   affordance — it's chrome, not content.
 - `status` → set the activity line (`✳ thinking…` / the gear glyph + a tool
   label such as `Bash`).
-- `turn_end` → mark the streaming block done, finalize any dangling tool
-  entries, clear the ref and status.
+- `turn_end` → mark the streaming block done, finalize dangling tool entries,
+  fold that turn's successful activity, and clear the ref and status.
 - `error` → rendered as a bold-prefixed assistant entry.
 - `notice` → append a dim system-status line (F.2: retry / compaction /
   rate-limit / refusal — the events the terminal shows in degraded service).
@@ -1054,6 +1098,21 @@ button — that's part of the identity, not an omission. While a turn is in
 flight a `■ esc` stop affordance appears (T.2); it and the page-wide Esc key
 both interrupt the turn, leaving the session warm.
 
+The command language remains the selected provider's, not Mirafold's. Typing
+the first `/` opens Claude Code's or Gemini CLI's live slash-command catalog,
+or Codex's broad command catalog; typing `$` opens Codex's live skill catalog.
+Slash completion is a whole-prompt prefix, while `$skill` can complete at any
+whitespace-delimited token. The shell filters as you type; arrows move,
+Tab/Enter insert without submitting, Escape closes, and clicking works too.
+Catalog replacement is live (including Claude's `commands_changed`) and never
+enters transcript history.
+
+`Shift+Escape` is the global "back to the prompt" shortcut. From transcript
+or other non-editable page chrome it focuses the textarea without triggering
+plain-Escape interrupt; typing a supported `/` or `$` there routes that exact
+keystroke into the existing draft and opens completion immediately. Open
+dialogs and other editable controls retain their own focus.
+
 ## 7. Design identity (locked)
 
 The visual language is a **terminal transcript, not a chat app** — worth
@@ -1101,14 +1160,13 @@ knowing because it constrains future UI work:
   (2026-07-25). Mission control renders a notch larger than the in-session
   workbench (`zoom: 1.15`, reset on phone; the agent picker hosted inside it
   compensates via the fluid `--onb-squeeze` chrome).
-- **Visibility superset + collapse-on-finalize** (the Phase T2 rule): the
-  browser must never show *less* than the terminal — thinking, full tool
-  detail, diffs, subagent progress, todos, and usage are all surfaced — but
-  noisy-but-faithful streams render live during the turn, then fold to a dim
-  expandable one-liner once the answer lands. Total fidelity, clean
-  transcript; the web skin gets to do both, which the terminal can't. Every
-  stream-handling decision passes one check: *would a terminal user miss
-  this line?*
+- **Provider-native transcript fidelity + collapse-on-finalize**: mirror the
+  selected terminal's user-visible work state, not every raw adapter event.
+  Live activity and failures stay explicit; successful tool churn folds at
+  the real turn boundary into one dim expandable record, with full inputs,
+  outputs, diffs, subagent calls, todos, and usage retained where the provider
+  exposes them. Every stream decision passes both checks: *is this something
+  the native terminal presents?* and *would hiding it remove useful state?*
 
 ## 8. Running it
 
@@ -1230,7 +1288,8 @@ local-server discovery knobs
 onboarding picker probes localhost's well-known runtime ports and offers a
 running Ollama/LM Studio/vLLM per session; see `docs/local-models.md`), and
 these tuning knobs:
-`SESSION_IDLE_TIMEOUT_MS` (unattended-session lifetime),
+`SESSION_IDLE_TIMEOUT_MS` (warm-engine idle-unload delay; the dormant
+checkpoint remains),
 `PERMISSION_TIMEOUT_MS` (how long a permission prompt waits before denying),
 `TOOL_OUTPUT_CAP_BYTES` (per-result output cap before the elision marker,
 default 64 KB), `BANG_CONTEXT_CAP` (tail of a `!` transcript injected into
@@ -1314,7 +1373,8 @@ reconnect state machine on a stubbed WebSocket, and the R.3 E2E crypto —
 tamper/replay/reorder/wrong-key all rejected), `*.itest.ts` (Tier 2,
 integration — the auth gate, DoS caps, the mock-turn wire grammar, the
 interrupt/component-action wire paths, the permission deny-on-timeout,
-registry replay/resume, the bang-secrets invariant, the stdio render-MCP
+registry replay/resume plus daemon-restart provider recovery, the
+bang-secrets invariant, the stdio render-MCP
 stub's ack contract over a real MCP handshake, the relay path over the
 in-repo stub: byte-for-byte local/remote mirror, a ciphertext-only tap audit
 of what the relay can observe, fail-closed tamper/wrong-code, daemon re-dial,
@@ -1324,7 +1384,9 @@ health-check hardening and a routing-contract guard), and `*.e2e.ts` (Tier 3 —
 rendering in the DOM, the artifact iframe executing under the CSP with a
 hostile-artifact containment proof (each defense verified by flipping it),
 a second browser mirrored through the relay stub, a killed-mid-turn daemon
-restart showing an honest "session ended" notice, the launcher's browser-open
+restart preserving the URL/transcript and closing the interrupted turn
+honestly, provider-native pre-submit completion + prompt-focus keyboard paths,
+settled activity compaction, the launcher's browser-open
 guarantee (a stub `xdg-open` proves, from inside the spawned opener, stdio →
 `/dev/null` + own session — a cold-started browser can never chatter into the
 user's terminal), and the phone suite:
@@ -1392,7 +1454,8 @@ inherited `settings.json`.
 
 ## 9. Life of a turn (end to end)
 
-1. User types in `PromptBox`, hits Enter → `Shell.sendPrompt(text)`.
+1. User types in `PromptBox` (provider `/` commands and Codex `$` skills are
+   completed locally before submit), hits Enter → `Shell.sendPrompt(text)`.
 2. Shell sends `{type:"prompt", text}` over the socket; the server
    broadcasts `{type:"user_prompt"}` onto the session stream → the command
    strip appears in every attached viewport, status shows `✳ thinking…`.
@@ -1406,15 +1469,17 @@ inherited `settings.json`.
    stream events flow through `pump()`: reasoning → `thinking_delta`, full
    tool calls → `tool_use`/`tool_result` records (subagent calls tagged with
    `parentId`), TaskCreate/Update → the live `todo-list`, text → `text_delta`.
-6. Every `WireMsg` is buffered in the session's ring buffer and fanned out
-   to all viewports; `SocketClient` dispatches to the bus; `RenderZone`
-   interprets: the thinking block streams then folds, tool records append as
-   collapsed rows, deltas accumulate into the streaming assistant turn,
-   markdown re-renders as it grows.
+6. Every transcript `WireMsg` is buffered in the session's bounded ring and
+   checkpointed; prompts and terminal boundaries reach durable storage before
+   their viewport acknowledgment. The message fans out to all viewports;
+   `SocketClient` dispatches to the bus; `RenderZone` interprets: thinking
+   streams then folds, live/error tools remain explicit, deltas accumulate
+   into the assistant turn, and markdown re-renders as it grows.
 7. The SDK emits `result` → server sends (`error` if failed, then) a `usage`
    record (feeding the status bar) then `turn_end` → RenderZone finalizes the
-   turn, clears status. The session stays warm, waiting on the queue for the
-   next prompt.
+   turn, folds its successful tool activity to one expandable line, clears
+   status, and commits the completed transcript boundary. The session stays
+   warm, waiting on the queue for the next prompt.
 
 ## 10. Where the code is going (orientation, not a roadmap copy)
 
@@ -1429,10 +1494,11 @@ Read PLAN.md for the real thing; the shape in one breath:
   **all of Phase 3** — the sandboxed artifact host (verified against a
   hostile artifact), the `emit_artifact` capability, the nonce-stamped
   action bridge, and graceful failure fallbacks; and **all of Phase T2** —
-  full-stream visibility parity: thinking text (collapse-on-finalize),
+  the original full-stream fidelity foundation: thinking text,
   Edit/Write diffs, honest output truncation, subagent nesting, the live
-  todo checklist, and the status bar with usage. The browser now shows
-  strictly more than the terminal, never less.
+  todo checklist, and the status bar with usage. Phase UX later tightened
+  its presentation to provider-native visibility with turn-final activity
+  compaction.
 - **Also shipped (2026-07-06, the identity + the product path):** **Phase P**
   — faithful browser skins for Codex (OpenAI) and Gemini CLI beside Claude
   Code, one adapter each (drive that agent's engine, normalize to `WireMsg`,
@@ -1464,7 +1530,8 @@ Read PLAN.md for the real thing; the shape in one breath:
   ignore-unknown on both ends (R.4h); version everywhere plus timestamped
   error mirroring and `MIRAFOLD_DEBUG=1` (R.4g); an honest "session ended,
   started a new one" notice replaces a silent URL swap, and a dead daemon
-  no longer leaves a fake "still working" state (R.4c); and the artifact
+  no longer leaves a fake "still working" state (R.4c; Phase UX later limits
+  that fresh-session fallback to truly unknown ids); and the artifact
   sandbox's containment properties are now proven by tests that fail when
   each defense is flipped (R.4e). Also: **R.2's code half** — the
   deployable relay service (the sibling `mirafold-relay` repo), hardened (caps,
@@ -1512,6 +1579,13 @@ Read PLAN.md for the real thing; the shape in one breath:
   a cockpit** (**Phase M** — answer permissions, interrupt, and dispatch
   prompts from the grid without entering a session); and the workbench-frame
   polish + the by-surface `styles.css` reorganization (2026-07-25, §7).
+- **Also shipped (2026-08-09): Phase UX** — provider-owned pre-submit command
+  discovery (Claude/Gemini `/`, Codex `/` plus live `$` skills),
+  `Shift+Escape` prompt focus, completed-turn activity folded to one
+  expandable terminal-sized line, and owner-only atomic session checkpoints
+  that lazily resume the same Claude/Codex/Gemini conversation after a daemon
+  restart. Explicit End Session deletes; corrupt/unavailable recovery never
+  falls through to a blank replacement.
 - **Now (as of 2026-07-25):** finishing **Phase R**. The billing vendor is
   locked (Paddle, as merchant of record; account created and both
   verification reviews approved 2026-07-19). The build steps that remain: the R.4l

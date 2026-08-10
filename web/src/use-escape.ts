@@ -20,7 +20,7 @@ export function useEscapeKey(
   useEffect(() => {
     if (!onEscape) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
+      if (e.key !== "Escape" || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return;
       if (exclusive) e.stopPropagation();
       onEscape();
     };

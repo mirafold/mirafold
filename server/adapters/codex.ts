@@ -12,12 +12,13 @@ import {
   type ThreadEvent,
   type ThreadItem,
 } from "@openai/codex-sdk";
-import type { WireMsg } from "../protocol";
+import type { PromptOption, WireMsg } from "../protocol";
 import { RENDER_GUIDANCE } from "../render-tools";
 import {
   type AgentSession,
   type TodoItem,
   capOutput,
+  emitPromptOptions,
   envWithout,
   errText,
   installedAgentBin,
@@ -29,6 +30,8 @@ import { listCodexModels, type CodexModel } from "./codex-model-list";
 import { emitModelPicker } from "./model-picker";
 import { codexProviders } from "./codex-config";
 import { AsyncQueue, CLOSE } from "./async-queue";
+import { codexSlashOptions } from "./codex-prompt-options";
+import { listCodexSkills, type CodexSkill } from "./codex-skills-list";
 
 // The generative-UI MCP server injected into Codex (P.3). Codex loads MCP
 // servers as stdio subprocesses, so Mirafold's render tools live in a
@@ -271,9 +274,20 @@ export class CodexSession implements AgentSession {
    *  what makes a foreign id detectable below. */
   private firstPartyOpenAI = false;
   private listEngineModels: () => Promise<CodexModel[]>;
+  private listSkills: () => Promise<CodexSkill[]>;
+  private resumeListeners = new Set<(id: string) => void>();
 
   get modelName(): string | undefined {
     return this.modelLabel === MODEL_STAND_IN ? undefined : this.modelLabel;
+  }
+
+  get resumeId(): string | undefined {
+    return this.threadId;
+  }
+
+  onResumeId(cb: (id: string) => void) {
+    this.resumeListeners.add(cb);
+    if (this.threadId) cb(this.threadId);
   }
 
   // N.5: `kind`/`endpoint` carry the onboarding picker's backend choice;
@@ -286,9 +300,11 @@ export class CodexSession implements AgentSession {
     kind?: "api-key" | "subscription" | "local";
     endpoint?: string;
     provider?: string;
+    resumeId?: string;
     makeCodex?: (options: CodexOptions) => Codex;
     listModels?: () => Promise<CodexModel[]>;
     listEngineModels?: () => Promise<CodexModel[]>;
+    listSkills?: () => Promise<CodexSkill[]>;
   }) {
     const workspaceDir = path.resolve(opts.workspaceDir);
     mkdirSync(workspaceDir, { recursive: true });
@@ -358,6 +374,7 @@ export class CodexSession implements AgentSession {
       },
     });
     this.codex = codex;
+    this.threadId = opts.resumeId;
     // Both catalogs ask the exact binary the SDK actually spawns and carry the
     // same provider binding. A picker row from one version followed by a turn
     // on another is the version-skew bug F.10 removes. The private-field read
@@ -369,6 +386,7 @@ export class CodexSession implements AgentSession {
     this.listModels = opts.listModels ?? engineModels;
     this.listEngineModels =
       opts.listEngineModels ?? engineModels;
+    this.listSkills = opts.listSkills ?? (() => listCodexSkills(workspaceDir, undefined, engineBin));
     // Model-axis neutralization: only when the pick forces the first-party
     // provider away from a CUSTOM config default whose top-level model would
     // ride along wrongly. An explicit model override wins outright.
@@ -384,8 +402,28 @@ export class CodexSession implements AgentSession {
       // sandboxMode / approvalPolicy intentionally UNSET — inherited from the
       // user's own Codex config (faithful skin; see the class doc).
     };
-    this.thread = codex.startThread(this.threadOpts);
+    this.thread = this.threadId
+      ? codex.resumeThread(this.threadId, this.threadOpts)
+      : codex.startThread(this.threadOpts);
     void this.worker();
+  }
+
+  refreshPromptOptions() {
+    const slash = codexSlashOptions();
+    emitPromptOptions((msg) => this.emit(msg), slash);
+    this.listSkills()
+      .then((skills) => {
+        if (this.closed) return;
+        const skillOptions: PromptOption[] = skills.map((skill) => ({
+          trigger: "$",
+          value: `$${skill.name}`,
+          label: skill.name,
+          description: skill.description,
+          kind: "skill",
+        }));
+        emitPromptOptions((msg) => this.emit(msg), [...slash, ...skillOptions]);
+      })
+      .catch(() => {}); // slash commands remain useful if skill discovery is unavailable
   }
 
   pushPrompt(text: string) {
@@ -677,7 +715,11 @@ export class CodexSession implements AgentSession {
         // records the model it actually resolved. Learn it there
         // (fleet/status-bar parity with Claude's system/init, F.3), unless a
         // model was configured — then the label already tells the truth.
+        const changed = this.threadId !== ev.thread_id;
         this.threadId = ev.thread_id;
+        if (changed) {
+          for (const cb of this.resumeListeners) cb(ev.thread_id);
+        }
         if (this.modelLabel === MODEL_STAND_IN) void this.learnModel();
         break;
     }

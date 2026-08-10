@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { AgentInfo, AgentName } from "@protocol";
+import type { AgentInfo, AgentName, PromptOption } from "@protocol";
 import { ActivityLine, activityLabel, type Activity } from "./ActivityLine";
 import { BangBar } from "./BangBar";
 import { FilesGlyph } from "./FilesGlyph";
@@ -79,6 +79,9 @@ export function Shell() {
     demo?: boolean;
   }>({});
   const [usage, setUsage] = useState<Usage>(ZERO_USAGE);
+  // Provider-owned pre-submit catalog (`/` commands, Codex `$` skills).
+  // Replaced whole whenever the adapter reports a changed catalog.
+  const [promptOptions, setPromptOptions] = useState<PromptOption[]>([]);
   // Everything the daemon's `agents` hello carries, kept together: which
   // agents it offers (P.4 onboarding; a URL that already names a session
   // skips the picker), where it was launched (4.8 — the default session cwd)
@@ -95,11 +98,11 @@ export function Shell() {
 
   // ── The dismissable notices (all SHELL-OWNED — the agent paints none) ───
   const [notices, setNotices] = useState<{
-    // The server took the attach-fallback branch — the session this tab
-    // asked for is gone (daemon restart, expiry) and this is a FRESH one. A
-    // silent URL swap over a blank transcript reads as data loss with no
-    // explanation; this shell-drawn notice says what happened. Cleared on
-    // dismiss or on the first prompt into the new session (R.4c).
+    // The server took the attach-fallback branch — the session this tab asked
+    // for is genuinely unknown (ended/removed, or predates durable recovery)
+    // and this is a FRESH one. A silent URL swap over a blank transcript reads
+    // as data loss with no explanation; this shell-drawn notice says what
+    // happened. Cleared on dismiss or the first prompt into the new session.
     session: boolean;
     // The daemon refused this REMOTE viewport because the session runs
     // on a subscription login, which can't be driven over the paid relay.
@@ -259,6 +262,8 @@ export function Shell() {
             relay: m.relay,
             version: m.version,
           });
+        } else if (m.type === "prompt_options") {
+          setPromptOptions(m.options);
         } else if (m.type === "session_created") {
           setMeta({ sessionId: m.sessionId, cwd: m.cwd, agent: m.agent, model: m.model, demo: m.demo });
           setNotices((n) => ({
@@ -309,6 +314,7 @@ export function Shell() {
           setActivity(null);
           setAsks([]);
           setUsage(ZERO_USAGE);
+          setPromptOptions([]);
           turnText.current = "";
         }
       }),
@@ -406,7 +412,7 @@ export function Shell() {
           // SHELL-OWNED notice — honest about the swap the server made (R.4c).
           <NoticeLine
             text={
-              "that session ended — started a new one (the daemon restarted or the session expired; the previous transcript wasn't saved)"
+              "that session no longer exists — started a new one (it was ended, removed, or predates durable recovery)"
             }
             onDismiss={() => setNotices((n) => ({ ...n, session: false }))}
           />
@@ -476,6 +482,8 @@ export function Shell() {
               busy={busy}
               onInterrupt={interrupt}
               cwd={tildify(meta.cwd, daemonInfo.home)}
+              options={promptOptions}
+              shortcutDisabled={showOnboarding || settingsOpen}
             />
             <StatusBar
               connected={connected}

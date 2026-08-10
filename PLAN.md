@@ -110,9 +110,10 @@ richer, maintained copies in README; the duplicates were retired 2026-07-15
 to end the drift risk of two copies. The locked content, and where it lives:
 
 - **Design identity** → README §7 — terminal successor, not a chat app:
-  mono-in / rich-out, no bubbles ever, and the **visibility superset +
-  collapse-on-finalize** rule (never show less than the terminal; noisy
-  streams render live, then fold to a dim expandable line).
+  mono-in / rich-out, no bubbles ever, and **provider-native transcript
+  fidelity + collapse-on-finalize**: show the same user-visible activity the
+  selected terminal agent shows, neither raw adapter internals nor less useful
+  state; noisy live activity folds to one expandable record when it settles.
 - **The core security model** → README §3 — trusted shell vs. sandboxed
   output zone; the boundary is inviolable, and the API key never reaches
   the browser.
@@ -144,7 +145,8 @@ faithful per-agent skins) · **4** except 4.7 (→ Phase R) · **G, H, H2**
 (relay dedup + human legibility) · **S** (theme system) · **N** (onboarding
 backend picker) · **V** (visual + fidelity gaps) · **A** (accessibility) ·
 **C** (CI/CD) · **E** (Explorer) · **M** (Mission control) · **E2** (Explorer at scale) ·
-**W** (live tree), plus the finished
+**W** (live tree), **UX** (native prompt discovery, transcript fidelity, and
+durable provider recovery), plus the finished
 steps of the still-open Phases **K, R, F, Q, L**.
 
 Archive passes, each a section header in PLAN-ARCHIVE.md you can navigate to:
@@ -152,7 +154,36 @@ Archive passes, each a section header in PLAN-ARCHIVE.md you can navigate to:
 · "Moved 2026-07-24" (Phases A/C/E/M + V.4–V.6, and the completed material
 lifted out of the still-open Phase R steps) · "Moved 2026-07-27" (Phases
 E2/W step bodies, the Phase E/M narrative passes, the R.4l item-5
-investigation, the CI-flake breakdown, and finished stretch-goal specs).
+investigation, the CI-flake breakdown, and finished stretch-goal specs) ·
+"Moved 2026-08-09" (Phase UX).
+
+---
+
+## Phase UX — Native prompt discovery, transcript fidelity, and session recovery
+
+- [x] **Phase UX implementation complete (2026-08-09).** Provider-native
+  pre-submit catalogs, terminal-sized settled activity, and durable
+  provider-conversation recovery are implemented across Claude Code, Codex,
+  and Gemini CLI. Full specification, implementation record, and proof moved
+  to **PLAN-ARCHIVE.md** under “Moved 2026-08-09.” The prompt-focus mechanism
+  works technically, but its key binding is explicitly reopened below because
+  `Shift+Escape` was chosen without Kyle's approval.
+- [ ] **Step UX.6 — Settle prompt return behavior, then refactor Phase UX.**
+  Treat the current `Shift+Escape` binding as provisional: it is not a standard
+  Codex/Claude/Gemini/terminal convention and was never approved. Begin the
+  next session by choosing the interaction with Kyle before changing it.
+  Preserve normal `Tab` traversal through links, buttons, permissions, and
+  interactive response components; never globally hijack `Tab` to jump to the
+  prompt. Do not add more permanent copy to the already-busy prompt line.
+  `Cmd/Ctrl+K` was discussed but is not self-discovering for terminal users
+  (`Ctrl+K` commonly kills to end-of-line; `Cmd+K` commonly clears terminal
+  scrollback). The remaining candidate, not yet approved, is a standard
+  keyboard-only “Skip to prompt” link: normally invisible, temporarily shown
+  at the top-left when keyboard-focused, then `Enter` moves the cursor to the
+  prompt. Its limitation is that it is not a one-keystroke jump from anywhere.
+  Once Kyle decides, implement and pin the accepted behavior, then run a
+  behavior-preserving refactor/review of the full Phase UX diff and repeat its
+  unit, server-integration, browser, typecheck, build, and accessibility proof.
 
 ---
 

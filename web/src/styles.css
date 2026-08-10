@@ -2327,6 +2327,7 @@ body {
 /* The command bar: prompt glyph + monospace input, submits on Enter.
    Grows with content up to ~8 lines, then scrolls internally. */
 .prompt-box {
+  position: relative;
   display: flex;
   align-items: flex-start;
   gap: 10px;
@@ -2335,6 +2336,63 @@ body {
   background: var(--surface-3);
   border: 1px solid var(--border);
   border-radius: 8px;
+}
+
+.prompt-options {
+  position: absolute;
+  z-index: 30;
+  left: 12px;
+  right: 12px;
+  bottom: calc(100% + 6px);
+  max-height: min(46vh, 360px);
+  overflow-y: auto;
+  padding: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-hover);
+  border-radius: 8px;
+  box-shadow: 0 12px 34px rgb(0 0 0 / 28%);
+}
+
+.prompt-options button {
+  display: grid;
+  grid-template-columns: max-content max-content minmax(0, 1fr);
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  color: var(--fg-body);
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.prompt-options button.is-active,
+.prompt-options button:hover {
+  background: var(--surface-hover);
+}
+
+.prompt-option-value,
+.prompt-option-hint {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.prompt-option-value {
+  color: var(--accent);
+}
+
+.prompt-option-hint,
+.prompt-option-description {
+  color: var(--fg-faint);
+}
+
+.prompt-option-description {
+  grid-column: 3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .prompt-box:focus-within {
@@ -2654,6 +2712,50 @@ body {
 .stop-btn:hover {
   color: var(--error);
   border-color: var(--err-border);
+}
+
+.tool-activity-group {
+  margin: 3px 0 7px;
+}
+
+.tool-activity-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 4px 7px;
+  color: var(--fg-faint);
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  font: 0.82em/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tool-activity-head:hover {
+  color: var(--fg-dim);
+  background: var(--surface-hover);
+}
+
+.tool-activity-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.tool-activity-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-activity-calls {
+  margin: 4px 0 2px 16px;
+  padding-left: 8px;
+  border-left: 1px solid var(--border-faint);
 }
 
 /* ---- Status bar (T2.6) ---------------------------------------------------

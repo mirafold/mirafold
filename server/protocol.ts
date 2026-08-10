@@ -18,6 +18,19 @@
  */
 export type AgentName = "claude-code" | "codex" | "gemini-cli";
 
+/** One provider-owned completion shown by the trusted prompt shell before a
+ * prompt is submitted. `value` includes its trigger (`/model`, `$audit`), so
+ * insertion is mechanical and never reconstructed by the browser. */
+export type PromptOption = {
+  trigger: "/" | "$";
+  value: string;
+  label: string;
+  description?: string;
+  argumentHint?: string;
+  kind: "command" | "skill";
+  aliases?: string[];
+};
+
 /**
  * Server → browser.
  * Step 4.4 (additive): every message BROADCAST onto a session's stream also
@@ -39,6 +52,12 @@ export type WireMsg = WireMsgBody & { seq?: number; replay?: true };
 
 type WireMsgBody =
   | { type: "text_delta"; text: string }
+  // Phase UX.1: the selected provider's live prompt-completion catalog.
+  // This is shell data, not agent-authored UI: the browser opens it as soon
+  // as the trigger is typed, before anything is sent to the provider. A new
+  // message replaces the prior catalog whole (Claude commands may change as
+  // the working directory changes).
+  | { type: "prompt_options"; options: PromptOption[] }
   | { type: "status"; state: "thinking" | "tool"; label?: string }
   | { type: "turn_end" }
   | { type: "error"; message: string }
@@ -115,9 +134,10 @@ type WireMsgBody =
   // mock — the shell draws a persistent demo banner the agent can't fake or
   // clear (same trust rule as the permission bar). Step R.4c adds `fallback`
   // (optional/additive): true means the viewport asked to attach to a
-  // session this registry doesn't have (daemon restarted, session expired)
-  // and got a FRESH one instead — the shell must say so, never silently
-  // swap the URL over a blank transcript.
+  // session this registry and its durable store don't have (explicitly
+  // ended, removed, or created before durable recovery) and got a FRESH one
+  // instead — the shell must say so, never silently swap the URL over a blank
+  // transcript.
   | {
       type: "session_created";
       sessionId: string;

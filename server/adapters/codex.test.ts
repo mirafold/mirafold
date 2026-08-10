@@ -240,6 +240,55 @@ function makeModelSession(listModels: () => Promise<any[]>) {
   return { s, msgs, calls, prompts, awaitTurnEnd };
 }
 
+test("recovery and discovery: Codex resumes the saved thread and combines / commands with $ skills", async () => {
+  const { calls, makeCodex } = recordingCodex();
+  const s = new CodexSession({
+    workspaceDir: tmp,
+    resumeId: "codex-thread-saved",
+    makeCodex,
+    listSkills: async () => [{ name: "audit", description: "defensive security audit" }],
+  });
+  assert.deepEqual(calls.map((call) => [call.kind, call.id]), [
+    ["resume", "codex-thread-saved"],
+  ]);
+  assert.equal(s.resumeId, "codex-thread-saved");
+
+  const seen: WireMsg[] = [];
+  s.onMessage((msg) => seen.push(msg));
+  s.refreshPromptOptions();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const catalogs = seen.filter((msg) => msg.type === "prompt_options");
+  const latest = catalogs.at(-1);
+  assert.ok(latest?.type === "prompt_options");
+  assert.ok(latest.options.some((option) => option.value === "/model"));
+  assert.ok(latest.options.some((option) => option.value === "$audit"));
+  s.close();
+});
+
+test("Codex announces its provider resume id at thread.started", async () => {
+  const { s, awaitTurnEnd } = makeSession([
+    ev({ type: "thread.started", thread_id: "codex-thread-new" }),
+    ev({
+      type: "turn.completed",
+      usage: {
+        input_tokens: 1,
+        cached_input_tokens: 0,
+        output_tokens: 1,
+        reasoning_output_tokens: 0,
+      },
+    }),
+  ]);
+  // Avoid the unrelated rollout-file model lookup in this identity test.
+  (s as unknown as { modelLabel: string }).modelLabel = "gpt-test";
+  const resumeIds: string[] = [];
+  s.onResumeId((id) => resumeIds.push(id));
+  s.pushPrompt("start the thread");
+  await awaitTurnEnd();
+  assert.deepEqual(resumeIds, ["codex-thread-new"]);
+  assert.equal(s.resumeId, "codex-thread-new");
+  s.close();
+});
+
 const CATALOG = [
   { id: "gpt-9-sol", displayName: "GPT-9-Sol", description: "frontier", isDefault: true },
   { id: "gpt-9-terra", displayName: "GPT-9-Terra", description: "balanced", isDefault: false },

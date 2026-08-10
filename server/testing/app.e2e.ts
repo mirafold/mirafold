@@ -139,13 +139,14 @@ after(async () => {
 async function withFreshMockSession(
   token: string,
   run: (isolatedPage: Page) => Promise<void>,
+  agent = "Claude Code",
 ): Promise<void> {
   const daemon = await startDaemon({ MIRAFOLD_TOKEN: token });
   let isolatedPage: Page | undefined;
   try {
     isolatedPage = await browser.newPage();
     await isolatedPage.goto(`http://127.0.0.1:${daemon.port}/?token=${token}`);
-    await isolatedPage.locator(".onb-agent", { hasText: "Claude Code" }).click();
+    await isolatedPage.locator(".onb-agent", { hasText: agent }).click();
     await isolatedPage.waitForURL(/\/s\/[\w-]+/);
     await run(isolatedPage);
   } finally {
@@ -178,6 +179,67 @@ test("?token= mints the cookie, cleans the URL, boots the shell", async () => {
   const cookies = await page.context().cookies(base);
   assert.ok(cookies.some((c) => c.name === "mirafold_token" && c.value === TOKEN));
   assert.equal(await page.locator(".fleet-title").textContent(), "Mirafold");
+});
+
+test("provider completions open before submit, Shift+Escape focuses, and settled activity compacts", async () => {
+  const token = "e2e-native-prompt-9c2f";
+  await withFreshMockSession(
+    token,
+    async (page2) => {
+      const prompt = page2.locator(".prompt-box textarea");
+      const transcript = page2.locator(".render-zone");
+
+      // A trigger typed into page chrome is moved into the prompt and paints
+      // the provider catalog without sending a turn.
+      await transcript.click();
+      await page2.keyboard.press("/");
+      await page2.locator(".prompt-options").waitFor();
+      assert.equal(await prompt.inputValue(), "/");
+      assert.ok(await page2.locator(".prompt-options [role=option]").count() > 20);
+      assert.equal(await page2.locator(".prompt-option-value", { hasText: "/model" }).count(), 1);
+      assert.equal(await page2.locator(".turn-user").count(), 0, "opening a catalog submitted a turn");
+
+      await page2.keyboard.press("Escape");
+      await page2.locator(".prompt-options").waitFor({ state: "detached" });
+      await prompt.fill("");
+      await transcript.click();
+      await page2.keyboard.press("$");
+      await page2.locator(".prompt-options").waitFor();
+      await page2.keyboard.type("n");
+      assert.equal(await page2.locator(".prompt-options [role=option]").count(), 1);
+      assert.equal(await page2.locator(".prompt-option-value").textContent(), "$next");
+      await page2.keyboard.press("Tab");
+      assert.equal(await prompt.inputValue(), "$next ");
+      assert.equal(await page2.locator(".turn-user").count(), 0, "Tab completion submitted a turn");
+
+      // Moving focus away and typing another trigger must preserve the draft,
+      // not replace it while routing the keystroke back to the composer.
+      await transcript.click();
+      await page2.keyboard.press("$");
+      assert.equal(await prompt.inputValue(), "$next $");
+
+      // One explicit shortcut returns the caret from transcript chrome.
+      await transcript.click();
+      await page2.keyboard.press("Shift+Escape");
+      assert.equal(
+        await page2.evaluate(() => document.activeElement?.matches(".prompt-box textarea")),
+        true,
+      );
+
+      // Successful provider activity becomes one terminal-sized record only
+      // when the turn settles. A failure remains visible at top level.
+      await prompt.fill("show transcript compact tool activity");
+      await prompt.press("Enter");
+      await page2.locator(".stop-btn").waitFor();
+      await page2.locator(".stop-btn").waitFor({ state: "detached" });
+      assert.equal(await page2.locator(".tool-activity-group").count(), 1);
+      assert.equal(await page2.locator(".tool-group").count(), 1);
+      assert.match(await page2.locator(".tool-group").textContent() ?? "", /No matching test file/);
+      await page2.locator(".tool-activity-head").click();
+      assert.equal(await page2.locator(".tool-activity-calls .tool-block").count(), 2);
+    },
+    "Codex",
+  );
 });
 
 test("the agent picker flexes to the window — no internal scrollbar through the squeeze ramp", async () => {

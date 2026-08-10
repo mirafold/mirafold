@@ -457,8 +457,11 @@ export function resolveChosenBackend(
  * backend passes its precedence kind, which the adapters treat exactly as the
  * pre-N behavior.
  */
-export function createSession(backend: Backend, opts: { cwd: string }): AgentSession {
-  if (!backend.live) return new MockSession();
+export function createSession(
+  backend: Backend,
+  opts: { cwd: string; resumeId?: string },
+): AgentSession {
+  if (!backend.live) return new MockSession(backend.agent);
   const kind = backend.kind === "none" ? undefined : backend.kind;
   switch (backend.agent) {
     case "claude-code":
@@ -467,6 +470,7 @@ export function createSession(backend: Backend, opts: { cwd: string }): AgentSes
         model: backend.model,
         kind,
         endpoint: backend.endpoint,
+        resumeId: opts.resumeId,
       });
     case "codex":
       return new CodexSession({
@@ -475,8 +479,13 @@ export function createSession(backend: Backend, opts: { cwd: string }): AgentSes
         kind,
         endpoint: backend.endpoint,
         provider: backend.provider,
+        resumeId: opts.resumeId,
       });
     case "gemini-cli":
-      return new GeminiCliSession({ workspaceDir: opts.cwd, model: backend.model });
+      return new GeminiCliSession({
+        workspaceDir: opts.cwd,
+        model: backend.model,
+        resumeId: opts.resumeId,
+      });
   }
 }

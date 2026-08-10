@@ -1,5 +1,5 @@
 import path from "node:path";
-import type { AgentName, WireMsg } from "../protocol";
+import type { AgentName, PromptOption, WireMsg } from "../protocol";
 import type { CredentialKind } from "../provider-policy";
 import { locateTrustedExecutable } from "../security/executable-trust";
 
@@ -53,7 +53,35 @@ export interface AgentSession {
    *  (Claude, Gemini, Codex) (#6). `undefined` = not yet known — the UI shows
    *  nothing, never a stand-in that reads as a model name (2026-07-23, Kyle). */
   readonly modelName: string | undefined;
+  /** Provider-owned id that can reopen this conversation after Mirafold's
+   * daemon process is gone. Undefined only until a provider assigns one. */
+  readonly resumeId?: string;
+  /** Some providers only make a freshly chosen id resumable after engine
+   * initialization. This callback lets the registry durably capture that
+   * identity at the readiness boundary instead of guessing from a later
+   * unrelated wire event. */
+  onResumeId?(cb: (id: string) => void): void;
+  /** Re-read and emit the provider's pre-submit command/skill catalog. */
+  refreshPromptOptions?(): void;
   close(): void;
+}
+
+/** Replace the browser's catalog in one atomic message. Kept here so every
+ * adapter applies the same deterministic sort/dedupe rule. */
+export function emitPromptOptions(
+  emit: (msg: WireMsg) => void,
+  options: PromptOption[],
+) {
+  const seen = new Set<string>();
+  emit({
+    type: "prompt_options",
+    options: options.filter((option) => {
+      const key = `${option.trigger}\0${option.value}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }),
+  });
 }
 
 /**

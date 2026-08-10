@@ -4,6 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import { mkdtempSync, writeFileSync, chmodSync } from "node:fs";
 import { listGeminiModels } from "./gemini-model-list";
+import { listGeminiCommands } from "./gemini-command-list";
 
 // V.2 (Gemini half): the ACP initialize → session/new exchange against a stub
 // binary (the MIRAFOLD_GEMINI_BIN seam): catalog parse, error response, and
@@ -45,6 +46,17 @@ rl.on("line", (line) => {
         },
       }) + "\\n",
     );
+    setTimeout(() => process.stdout.write(JSON.stringify({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: { sessionId: "s1", update: {
+        sessionUpdate: "available_commands_update",
+        availableCommands: [
+          { name: "memory", description: "manage saved context" },
+          { name: "restore", description: "restore a checkpoint", input: { hint: "<id>" } },
+        ],
+      } },
+    }) + "\\n"), 5);
   }
 });
 `,
@@ -61,6 +73,18 @@ test("happy exchange: handshake, catalog + currentModelId parsed", async () => {
       ],
       currentModelId: "auto",
     });
+  } finally {
+    delete process.env.MIRAFOLD_GEMINI_BIN;
+  }
+});
+
+test("ACP available_commands_update becomes Gemini's pre-submit slash catalog", async () => {
+  process.env.MIRAFOLD_GEMINI_BIN = HAPPY_BIN;
+  try {
+    assert.deepEqual(await listGeminiCommands(tmp, 5_000), [
+      { name: "memory", description: "manage saved context" },
+      { name: "restore", description: "restore a checkpoint", argumentHint: "<id>" },
+    ]);
   } finally {
     delete process.env.MIRAFOLD_GEMINI_BIN;
   }

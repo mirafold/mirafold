@@ -1,12 +1,14 @@
 import { randomUUID } from "node:crypto";
-import type { WireMsg } from "../protocol";
+import type { AgentName, PromptOption, WireMsg } from "../protocol";
 import {
   type AgentSession,
   type TodoItem,
   capOutput,
+  emitPromptOptions,
   PERMISSION_TIMEOUT_MS,
 } from "./types";
 import { RENDER_TOOL_COMPONENT } from "./render-mcp-cmd";
+import { codexSlashOptions } from "./codex-prompt-options";
 
 // component → its real render_* tool name, inverted from the one mapping
 // (2026-07-28 fix: a hand-rolled inverse here produced tool names no agent
@@ -476,8 +478,28 @@ export class MockSession implements AgentSession {
   private openTurns = 0;
   private pendingAsks = new Map<string, (allow: boolean) => void>();
 
+  constructor(private agent: AgentName = "claude-code") {}
+
   get modelName(): string {
     return "mock-sonnet";
+  }
+
+  refreshPromptOptions() {
+    const genericSlash: PromptOption[] = [
+      { trigger: "/", value: "/model", label: "model", description: "choose a model", kind: "command" },
+      { trigger: "/", value: "/help", label: "help", description: "show available commands", kind: "command" },
+      { trigger: "/", value: "/skills", label: "skills", description: "show available skills", kind: "command" },
+    ];
+    const slash = this.agent === "codex" ? codexSlashOptions() : genericSlash;
+    const options =
+      this.agent === "codex"
+        ? [
+            ...slash,
+            { trigger: "$" as const, value: "$audit", label: "audit", description: "run a security audit", kind: "skill" as const },
+            { trigger: "$" as const, value: "$next", label: "next", description: "execute the next plan chunk", kind: "skill" as const },
+          ]
+        : slash;
+    emitPromptOptions((msg) => this.emit(msg), options);
   }
 
   // Each deterministic hook exercises one UI capability API-free; anything
@@ -518,6 +540,7 @@ export class MockSession implements AgentSession {
     if (/picker/i.test(text)) return this.playPicker();
     if (/chart demo/i.test(text)) return this.playCharts();
     if (/console/i.test(text)) return this.playConsole();
+    if (/tool activity|transcript compact/i.test(text)) return this.playToolActivity();
     if (/screenshot/i.test(text)) return this.playImage();
     if (/diagram/i.test(text)) return this.playDiagram();
     if (/kpi/i.test(text)) return this.playStat();
@@ -1110,6 +1133,60 @@ export class MockSession implements AgentSession {
       delay + 20,
     );
     this.endTurn(delay);
+  }
+
+  /** Deterministic UX.2 hook: two successful actions fold together after the
+   * turn, while the failed action remains an honest top-level row. */
+  private playToolActivity() {
+    const calls = [
+      {
+        name: "Read",
+        detail: "server/protocol.ts",
+        output: "Read 42 lines",
+      },
+      {
+        name: "Bash",
+        detail: "yarn typecheck",
+        output: "Done in 1.2s",
+      },
+      {
+        name: "Bash",
+        detail: "yarn test focused-missing.test.ts",
+        output: "No matching test file",
+        isError: true,
+      },
+    ];
+    this.beginTurn();
+    let delay = 80;
+    for (const call of calls) {
+      const id = randomUUID();
+      this.schedule(() => {
+        this.emit({ type: "status", state: "tool", label: call.name });
+        this.emit({
+          type: "tool_use",
+          name: call.name,
+          detail: call.detail,
+          id,
+        });
+      }, delay);
+      delay += 90;
+      this.schedule(
+        () =>
+          this.emit({
+            type: "tool_result",
+            output: call.output,
+            ...(call.isError ? { isError: true } : {}),
+            id,
+          }),
+        delay,
+      );
+      delay += 40;
+    }
+    this.schedule(
+      () => this.emit({ type: "text_delta", text: "Tool activity complete." }),
+      delay,
+    );
+    this.endTurn(delay + 40);
   }
 
   /** Emit a one-artifact turn: brief text, then the artifact (Step 3.4 hooks). */
