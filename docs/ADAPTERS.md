@@ -8,8 +8,8 @@ checklist for landing provider #4. It exists so that a future session — human
 or agent, on any model — can extend the provider surface without re-deriving
 the architecture or violating an invariant that only lived in someone's head.
 
-Grounded in the shipped code through 2026-08-09 (Phase P's providers plus
-Phase UX's native prompt catalogs and durable resume contract: `claude-code`,
+Grounded in the shipped code through 2026-08-10 (Phase P's providers plus
+Phase UX's native prompt catalogs, durable resume contract, and UX.8 security closure: `claude-code`,
 `codex`, `gemini-cli`, plus `mock`). File references are the source of truth
 if this document and the code ever disagree — then fix this document.
 
@@ -53,17 +53,23 @@ These restate the CLAUDE.md non-negotiables as testable adapter requirements.
   own terminal makes useful (thinking, tool arguments/results, diffs,
   subagent progress, usage), but do not turn raw adapter/SDK churn into extra
   top-level transcript. The client keeps in-flight work and failures visible,
-  then folds a settled turn's successful tool activity to one expandable
-  record with the complete normalized details. A subagent's text/thinking
+  then folds only contiguous runs of a settled turn's successful tool activity
+  into expandable records with the complete normalized details. A failure,
+  in-flight call, batch change, or non-tool transcript row is a hard boundary,
+  so compaction never changes chronology. A subagent's text/thinking
   monologue remains dropped while its **tool calls** carry `parentId`, matching
   terminals that do not interleave subagent prose into the main transcript.
 - **I5 — Wire discipline.** Adapters only ever ADD to what travels on existing
   message types; existing `WireMsg` shapes never change. Adding a provider adds
   one value to the `AgentName` union — an additive wire change, allowed.
-- **I6 — Secrets stay server-side.** Credentials are read from the environment
-  or the provider's own auth files, per adapter, and are never serialized into
-  a `WireMsg` or a `Backend` sent to the browser. Provider CLIs are spawned
-  with the daemon's env; nothing more is forwarded.
+- **I6 — Secrets and configured destinations stay server-side.** Credentials
+  are read from the environment or the provider's own auth files, per adapter,
+  and are never serialized into a `WireMsg` or a `Backend` sent to the browser.
+  Configured endpoint URLs are sensitive too (userinfo/query data can be
+  authentication), so browser choices use an opaque daemon id. A discovered
+  endpoint is revalidated against the current probe cache and receives neither
+  real Anthropic credential variable. A configured Claude destination receives
+  only the header-credential mode explicitly bound to that exact endpoint.
 - **I7 — Agent-neutral shared code.** `protocol.ts`, `registry.ts`,
   `permissions.ts` posture, `capOutput`, `toolDetail`, the render-tool schemas,
   and everything in `web/` must compile and behave identically with any
@@ -96,6 +102,23 @@ provider conversation with the provider's native resume mechanism. Construction
 must not throw on a missing binary or bad credentials — surface those as an
 `error` WireMsg on first use, so the viewport sees a readable failure instead
 of a dead socket.
+
+**Backend environment binding** — adapter construction receives an already
+validated server-side `Backend`. Claude's `endpointSource` distinguishes a
+configured destination from a probe-discovered one; `endpointAuth` is exactly
+`api-key`, `auth-token`, or `none`. Build the SDK environment by first removing
+`ANTHROPIC_BASE_URL`, `ANTHROPIC_API_KEY`, and `ANTHROPIC_AUTH_TOKEN`, then add
+back the exact destination and only its bound credential mode. `none` gets the
+fixed dummy token required by Anthropic-compatible local servers. Never recover
+an authenticated configured endpoint against a different current endpoint or
+credential mode. A checkout-supplied endpoint may use only a credential that
+the same constrained project configuration supplied; it cannot redirect a
+parent-only daemon secret.
+
+Configured destinations are sensitive diagnostic context too. Picker labels
+must not derive their hostnames, and adapter error/notice paths must remove the
+exact selected Claude endpoint or Codex provider base URL before emitting a
+`WireMsg`; the generic registry/log scrubber is only the final backstop.
 
 **`pushPrompt(text)`** — feeds one user turn. Must accept a prompt while a
 turn is in flight: queue it (Claude: async-generator queue; Codex/Gemini: a
@@ -138,11 +161,19 @@ substitute.
 
 **`refreshPromptOptions()`** — when the provider terminal has pre-submit
 commands, emit one replaceable `prompt_options` catalog rather than waiting
-for the user to submit a partial command. Use provider metadata: Claude SDK
-`supportedCommands()` plus `commands_changed`; Codex's `/` TUI registry plus
-app-server `skills/list` for `$`; Gemini ACP
-`available_commands_update`. Catalogs are shell metadata, not sequenced
-transcript history, and must fail soft without inventing provider commands.
+for the user to submit a partial command. Every advertised command must be
+intercepted and executed as that command on the adapter's active drive surface;
+never copy a TUI/ACP catalog onto an SDK/stream-json surface that will send the
+text to the model as prose. Today Claude uses SDK `supportedCommands()` plus
+`commands_changed`; Codex emits its shell-reimplemented `/model` plus live
+app-server `skills/list` for `$`; Gemini emits its shell-reimplemented `/model`.
+Catalogs are shell metadata, not sequenced transcript history, and must fail
+soft without inventing provider commands. Any provider/workspace-supplied
+catalog text must carry a fixed adapter-assigned `PromptOption.source` (Claude
+commands → `claude-code`; Codex skills → `codex`) so trusted prompt chrome
+renders an attribution badge. Never copy a source label from provider metadata.
+The registry drops an entire option containing line, direction, or invisible
+display controls rather than rewriting the command value.
 
 **`interrupt()`** — halt the in-flight turn using the provider's own mechanism
 (Claude SDK `interrupt()`, Codex `AbortController`, Gemini child-process kill);
@@ -170,7 +201,7 @@ processes, clear timers. After `close()`, no further messages may be emitted.
 | Drive surface | `@anthropic-ai/claude-agent-sdk`, one warm `query()` for the session's life | `@openai/codex-sdk`, pointed at the user's installed `codex` CLI when present (SDK-bundled fallback), one warm `Thread`, `runStreamed` per turn | `gemini` CLI headless: `-p … -o stream-json`, one process **per turn** | scripted timers |
 | Warm-conversation mechanism | never-ending query + async prompt queue (prompt cache preserved) | persistent `Thread` (`thread.id` resumable) | `--session-id` first turn, `--resume` after | n/a |
 | Daemon-restart resume id | SDK `session_id` after init; restored with `resume` | `thread.started.thread_id`; restored with `resumeThread` | accepted UUID; restored with `--resume` (fatal id-mode self-heals) | transcript only |
-| Pre-submit catalog | live SDK slash commands + `commands_changed` | built-in `/` commands + live app-server `$` skills | live ACP slash commands | scripted provider-shaped catalog |
+| Pre-submit catalog | live SDK slash commands + `commands_changed` | implemented `/model` + live app-server `$` skills | implemented `/model` | scripted supported catalog |
 | Text streaming granularity | token-level (`includePartialMessages`) | **buffered** — one `text_delta` per completed item (SDK emits no token deltas today) | chunked `message` events | 16-char chunks |
 | Thinking stream (`thinking_delta`) | ✅ full fidelity | ✅ when reasoning items appear | ❌ observed absent → never fires (I3 proof) | ✅ scripted |
 | Tool records (`tool_use`/`tool_result`) | ✅ full input, diffs | ✅ (`command_execution`, `file_change`, `mcp_tool_call`, `web_search`) | ✅ | ✅ |

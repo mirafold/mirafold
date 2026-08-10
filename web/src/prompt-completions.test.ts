@@ -32,6 +32,11 @@ test("a lone provider trigger matches immediately, before submit", () => {
 
 test("slash commands are prompt prefixes; Codex skills may be token completions", () => {
   assert.equal(promptCompletionMatch("explain /mo", 11, OPTIONS), null);
+  assert.equal(
+    promptCompletionMatch("price$ne", 8, OPTIONS),
+    null,
+    "a dollar sign inside an ordinary word is not a skill token",
+  );
   assert.deepEqual(promptCompletionMatch("please $ne", 10, OPTIONS), {
     trigger: "$",
     query: "ne",

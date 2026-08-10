@@ -240,7 +240,7 @@ function makeModelSession(listModels: () => Promise<any[]>) {
   return { s, msgs, calls, prompts, awaitTurnEnd };
 }
 
-test("recovery and discovery: Codex resumes the saved thread and combines / commands with $ skills", async () => {
+test("recovery and discovery: Codex resumes and advertises only implemented / commands plus live $ skills", async () => {
   const { calls, makeCodex } = recordingCodex();
   const s = new CodexSession({
     workspaceDir: tmp,
@@ -260,8 +260,16 @@ test("recovery and discovery: Codex resumes the saved thread and combines / comm
   const catalogs = seen.filter((msg) => msg.type === "prompt_options");
   const latest = catalogs.at(-1);
   assert.ok(latest?.type === "prompt_options");
-  assert.ok(latest.options.some((option) => option.value === "/model"));
-  assert.ok(latest.options.some((option) => option.value === "$audit"));
+  assert.deepEqual(
+    latest.options.filter((option) => option.trigger === "/").map((option) => option.value),
+    ["/model"],
+    "TUI-only commands must never be advertised then sent to the model as prose",
+  );
+  assert.equal(
+    latest.options.find((option) => option.value === "$audit")?.source,
+    "codex",
+    "workspace/provider skill text must carry fixed catalog provenance",
+  );
   s.close();
 });
 
@@ -529,6 +537,51 @@ test("turn.failed: error before the single turn_end", async () => {
   assert.ok(types.indexOf("error") < types.indexOf("turn_end"));
   assert.equal(msgs.find((m) => m.type === "error")!.message, "boom");
   assert.equal(turnEnds(), 1); // end() from turn.failed + finally must not double-fire
+  s.close();
+});
+
+test("UX.8: a configured provider failure cannot echo its exact base URL", async () => {
+  const home = mkdtempSync(path.join(os.tmpdir(), "mcp-codex-provider-redaction-"));
+  const endpoint = "https://tenant.example/private/token-path";
+  writeFileSync(
+    path.join(home, "config.toml"),
+    [
+      'model_provider = "private"',
+      "[model_providers.private]",
+      `base_url = "${endpoint}"`,
+    ].join("\n"),
+  );
+  const savedHome = process.env.CODEX_HOME;
+  let s: CodexSession;
+  try {
+    process.env.CODEX_HOME = home;
+    s = new CodexSession({
+      workspaceDir: tmp,
+      kind: "local",
+      provider: "private",
+      makeCodex: () => ({ startThread: () => ({}) }) as unknown as Codex,
+    });
+  } finally {
+    if (savedHome === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = savedHome;
+  }
+  const msgs: Any[] = [];
+  s.onMessage((msg) => msgs.push(msg as Any));
+  (s as unknown as { thread: unknown }).thread = {
+    runStreamed: async () => ({
+      events: (async function* () {
+        yield ev({
+          type: "turn.failed",
+          error: { message: `request ${endpoint}/responses failed` },
+        });
+      })(),
+    }),
+  };
+  s.pushPrompt("go");
+  await waitForTurnEnds(msgs);
+  const message = msgs.find((msg) => msg.type === "error")?.message ?? "";
+  assert.equal(message, "request [selected endpoint]/responses failed");
+  assert.doesNotMatch(message, /tenant|private|token-path/);
   s.close();
 });
 

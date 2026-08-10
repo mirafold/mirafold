@@ -145,8 +145,8 @@ faithful per-agent skins) · **4** except 4.7 (→ Phase R) · **G, H, H2**
 (relay dedup + human legibility) · **S** (theme system) · **N** (onboarding
 backend picker) · **V** (visual + fidelity gaps) · **A** (accessibility) ·
 **C** (CI/CD) · **E** (Explorer) · **M** (Mission control) · **E2** (Explorer at scale) ·
-**W** (live tree), **UX** (native prompt discovery, transcript fidelity, and
-durable provider recovery), plus the finished
+**W** (live tree), **UX** (native prompt discovery, transcript fidelity,
+durable provider recovery, and branch test-audit closure), plus the finished
 steps of the still-open Phases **K, R, F, Q, L**.
 
 Archive passes, each a section header in PLAN-ARCHIVE.md you can navigate to:
@@ -161,29 +161,35 @@ investigation, the CI-flake breakdown, and finished stretch-goal specs) ·
 
 ## Phase UX — Native prompt discovery, transcript fidelity, and session recovery
 
-- [x] **Phase UX implementation complete (2026-08-09).** Provider-native
-  pre-submit catalogs, terminal-sized settled activity, and durable
-  provider-conversation recovery are implemented across Claude Code, Codex,
-  and Gemini CLI. Full specification, implementation record, and proof moved
-  to **PLAN-ARCHIVE.md** under “Moved 2026-08-09.” The prompt-focus mechanism
-  works technically, but its key binding is explicitly reopened below because
-  `Shift+Escape` was chosen without Kyle's approval.
-- [ ] **Step UX.6 — Settle prompt return behavior, then refactor Phase UX.**
-  Treat the current `Shift+Escape` binding as provisional: it is not a standard
-  Codex/Claude/Gemini/terminal convention and was never approved. Begin the
-  next session by choosing the interaction with Kyle before changing it.
-  Preserve normal `Tab` traversal through links, buttons, permissions, and
-  interactive response components; never globally hijack `Tab` to jump to the
-  prompt. Do not add more permanent copy to the already-busy prompt line.
-  `Cmd/Ctrl+K` was discussed but is not self-discovering for terminal users
-  (`Ctrl+K` commonly kills to end-of-line; `Cmd+K` commonly clears terminal
-  scrollback). The remaining candidate, not yet approved, is a standard
-  keyboard-only “Skip to prompt” link: normally invisible, temporarily shown
-  at the top-left when keyboard-focused, then `Enter` moves the cursor to the
-  prompt. Its limitation is that it is not a one-keystroke jump from anywhere.
-  Once Kyle decides, implement and pin the accepted behavior, then run a
-  behavior-preserving refactor/review of the full Phase UX diff and repeat its
-  unit, server-integration, browser, typecheck, build, and accessibility proof.
+- [x] **Phase UX implementation, approved follow-up, correctness closure, and security closure complete (2026-08-10).**
+  Provider-native pre-submit catalogs, terminal-sized settled activity, durable
+  provider-conversation recovery, and scroll-preserving transcript-click prompt
+  focus are implemented across Claude Code, Codex, and Gemini CLI. The eight
+  follow-up correctness findings and every security-audit item—including the
+  hardening-only and theoretical findings—are closed with direct regressions. Full
+  specification, implementation/refactor/correctness/security record, and proof live in
+  **PLAN-ARCHIVE.md** under “Moved 2026-08-09.”
+- [x] **Step UX.6 — Settle prompt return behavior, then refactor Phase UX** —
+  done 2026-08-10; accepted desktop transcript-click behavior replaced the
+  provisional binding, and the full Phase UX diff received a verified
+  behavior-preserving refactor. → **PLAN-ARCHIVE.md**.
+- [x] **Step UX.7 — Close the eight Phase UX correctness findings** — done
+  2026-08-10; backend identity, faithful catalogs, dormant idle unload,
+  completion visibility, chronology-safe compaction, defensive decoding, and
+  delete-failure recovery are fixed and regression-pinned. →
+  **PLAN-ARCHIVE.md**.
+
+- [x] **Step UX.8 — Close the Phase UX security audit findings** — done
+  2026-08-10; credential/destination binding, fully opaque configured endpoint
+  identity and diagnostics, exact loopback classification, prompt-catalog
+  provenance/control safety, and strict checkpoint decoding are regression-pinned.
+  → **PLAN-ARCHIVE.md**.
+
+- [x] **Step UX.9 — Audit and repair the Phase UX branch tests** — done
+  2026-08-10; repeated all safe test tiers, mutation-proved and closed six
+  regression gaps, and made the live Codex/Ollama timeout clean up immediately.
+  The remaining real-turn instability is tracked as Step L.4 rather than hidden
+  as a test-suite success. → **PLAN-ARCHIVE.md**.
 
 ---
 
@@ -2760,6 +2766,23 @@ shows which matter — not a launch prerequisite.
     backend choice at onboarding (N.5 is exactly the "registry passes
     per-session env/config" build). What remains of L.3 afterward is only
     whatever mixing ergonomics Phase N's shipped form still leaves wanting.
+
+- [ ] **Step L.4 — Diagnose intermittent Codex → Ollama real turns (test-audit follow-up)**
+  - Goal: make the shipped local Codex path reliably complete or fail with a
+    specific actionable diagnosis; do not weaken the live test into accepting
+    a stalled turn.
+  - Evidence (2026-08-10): with identical code, credentials stripped, a
+    throwaway Codex home, and the first installed local model
+    (`qwen3-1.7b-32k:latest`), the Tier 4 turn timed out at 300 seconds in three
+    of four attempts and passed once after 145.5 seconds. The catalog query
+    remained fast. Test-abort cleanup is fixed and separately proven; this open
+    item is the underlying real integration behavior, not a leaked runner.
+  - Build: instrument the real Codex/Ollama event boundary without changing
+    behavior, establish whether the stall is in Codex SDK event delivery,
+    Ollama generation, or model-specific reasoning, then fix the named cause.
+  - Done when: the same local turn completes repeatedly under the Tier 4 bound,
+    the exact former stall is regression-pinned, and a genuine unavailable or
+    hung local engine exits promptly with an actionable error.
 
 ---
 

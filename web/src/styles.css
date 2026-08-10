@@ -2388,8 +2388,28 @@ body {
   color: var(--fg-faint);
 }
 
-.prompt-option-description {
+.prompt-option-meta {
   grid-column: 3;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+}
+
+.prompt-option-source {
+  flex: none;
+  padding: 1px 5px;
+  color: var(--fg-muted);
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.72em;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.prompt-option-description {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

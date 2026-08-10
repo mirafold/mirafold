@@ -54,6 +54,7 @@ function choiceOf(b: AgentBackend, model?: string): BackendChoice {
   return {
     kind: b.kind,
     ...(b.endpoint ? { endpoint: b.endpoint } : {}),
+    ...(b.backendId ? { backendId: b.backendId } : {}),
     ...(b.provider ? { provider: b.provider } : {}),
     ...(model ? { model } : {}),
   };
@@ -73,26 +74,18 @@ function hostOf(endpoint: string): string {
  *  endpoint / declared-provider row's `detail` IS its full label ("OpenRouter ·
  *  openrouter.ai"); everything else gets the credential's product name. */
 function backendName(agent: AgentName, b: AgentBackend): string {
-  if (b.endpoint) return `${b.runtime ?? "local server"} · ${hostOf(b.endpoint)}`;
+  if (b.endpoint && (b.runtime || b.models?.length)) {
+    return `${b.runtime ?? "local server"} · ${hostOf(b.endpoint)}`;
+  }
   if (b.kind === "local") return localBackendLabel(agent, b.detail);
   return backendLabel(agent, b.kind);
 }
 
-/** Does this row run on the user's own machine (2026-07-20)? Rows are one per
- *  DISCOVERED server, so the answer can't live in a row's name — with Ollama
- *  and LM Studio both up you'd have two rows each claiming to be "local
- *  models". It's a per-row tag instead, and it's the honest reading of the
- *  endpoint: `MIRAFOLD_LOCAL_ENDPOINTS` can point the probe at a box down the
- *  hall, which is not the free-and-private promise this tag makes. Same
- *  loopback test the server's endpointDetail() uses for BYO env rows. */
+/** Does this row run on the user's own machine (2026-07-20)? This privacy
+ * claim comes only from the daemon's exact IP classification. Re-parsing a
+ * hostname in the browser once treated `127.attacker.test` as local. */
 function runsOnThisMachine(b: AgentBackend): boolean {
-  if (!b.endpoint) return false;
-  try {
-    const { hostname } = new URL(b.endpoint);
-    return hostname === "localhost" || hostname === "[::1]" || hostname.startsWith("127.");
-  } catch {
-    return false;
-  }
+  return b.onDevice === true;
 }
 
 /** What model this row runs — the line that makes the rows comparable
@@ -189,7 +182,7 @@ function BackendMenu({
           OpenRouter to config.toml while their OpenRouter row sits directly
           above it was the single most confusing thing in this menu. */}
       {localCapable(row.agent) &&
-        !backends.some((b) => b.models?.length || b.provider || b.endpoint) && (
+        !backends.some((b) => b.models?.length || b.provider || b.endpoint || b.backendId) && (
           <p className="onb-live-hint">{localLiveHint(row.agent)}</p>
         )}
     </div>

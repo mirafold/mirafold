@@ -16,11 +16,13 @@ import {
 import { PERMISSION_TIMEOUT_MS } from "../adapters/types";
 import type { CredentialKind } from "../provider-policy";
 import type { BangProc } from "../pty/pty";
-import { createLogger, verbose } from "../log";
+import { createLogger, scrub, verbose } from "../log";
 import { startWatch, type FsWatchHandle } from "./fs-watch";
 import { invalidateRepoStatusCache } from "./git";
 import { envInt } from "../env";
+import { recoverStoredTranscript } from "./session-recovery";
 import { SessionCheckpointStore, type StoredSession } from "./session-store";
+import { normalizePromptOptions } from "../prompt-options";
 
 // Replay depth: enough to reconstruct a long working session; beyond it the
 // oldest messages fall off and a late viewport sees a truncated head.
@@ -43,17 +45,6 @@ function msgBytes(msg: WireMsg): number {
   return Buffer.byteLength(JSON.stringify(msg));
 }
 
-/** The one `!` process that was still open at a checkpoint boundary, if any.
- * The ring may have trimmed its start while retaining later output, so output
- * also establishes the id until a matching bang_end closes it. */
-function unclosedBangId(buffer: WireMsg[]): string | undefined {
-  let open: string | undefined;
-  for (const msg of buffer) {
-    if (msg.type === "bang_start" || msg.type === "bang_output") open = msg.id;
-    else if (msg.type === "bang_end" && msg.id === open) open = undefined;
-  }
-  return open;
-}
 // A session with no viewports keeps a warm engine this long. With the
 // production checkpoint store it then unloads to a dormant resumable record;
 // registries without a store (focused tests) retain the historical teardown.
@@ -100,54 +91,13 @@ const MAX_SESSIONS = envInt("MAX_SESSIONS", 100);
 // React already renders a hostile string inert.
 const LABEL_CAP = 120;
 const capLabel = (s: string) => (s.length > LABEL_CAP ? s.slice(0, LABEL_CAP) + "…" : s);
-const PROMPT_OPTION_CAP = 500;
-const PROMPT_VALUE_CAP = 200;
-const PROMPT_DESCRIPTION_CAP = 500;
-const PROMPT_ALIAS_CAP = 20;
 
-const capText = (value: string, cap: number) =>
-  value.length > cap ? value.slice(0, cap) + "…" : value;
-
-function capPromptOptions(options: PromptOption[]): PromptOption[] {
-  return options.slice(0, PROMPT_OPTION_CAP).flatMap((option) => {
-    // `value` is what gets sent to the provider. Truncating it would create a
-    // different command, so an impossible metadata-sized value is dropped.
-    if (
-      option.value.length > PROMPT_VALUE_CAP ||
-      !option.value.startsWith(option.trigger)
-    ) {
-      return [];
-    }
-    return [
-      {
-        ...option,
-        label: capLabel(option.label),
-        ...(option.description !== undefined
-          ? { description: capText(option.description, PROMPT_DESCRIPTION_CAP) }
-          : {}),
-        ...(option.argumentHint !== undefined
-          ? { argumentHint: capText(option.argumentHint, PROMPT_VALUE_CAP) }
-          : {}),
-        ...(option.aliases !== undefined
-          ? {
-              aliases: option.aliases
-                .slice(0, PROMPT_ALIAS_CAP)
-                .filter((alias) => alias.length <= PROMPT_VALUE_CAP),
-            }
-          : {}),
-      },
-    ];
-  });
-}
-
-/**
- * Bound the engine-supplied labels on a wire message, if it carries any.
- * Returns the SAME object when nothing needed capping — the common path
- * allocates nothing.
- */
-function capWireLabels(msg: WireMsg): WireMsg {
+/** Bound engine-supplied shell metadata and scrub credential-bearing provider
+ * errors before wire/checkpoint/log fanout. Returns the same object on the
+ * common no-change path. */
+function normalizeWireMetadata(msg: WireMsg): WireMsg {
   if (msg.type === "prompt_options") {
-    return { ...msg, options: capPromptOptions(msg.options) };
+    return { ...msg, options: normalizePromptOptions(msg.options) };
   }
   if (msg.type === "status") {
     if (msg.label === undefined || msg.label.length <= LABEL_CAP) return msg;
@@ -160,6 +110,14 @@ function capWireLabels(msg: WireMsg): WireMsg {
   if (msg.type === "usage") {
     if (msg.model === undefined || msg.model.length <= LABEL_CAP) return msg;
     return { ...msg, model: capLabel(msg.model) };
+  }
+  if (msg.type === "error") {
+    const message = scrub(msg.message);
+    return message === msg.message ? msg : { ...msg, message };
+  }
+  if (msg.type === "notice" && msg.source) {
+    const text = scrub(msg.text);
+    return text === msg.text ? msg : { ...msg, text };
   }
   return msg;
 }
@@ -199,8 +157,9 @@ export type SessionEntry = {
   // The credential kind behind this session — read by the relay gate in
   // connection.ts to refuse a subscription-backed session over the paid relay (R.4i).
   kind: CredentialKind;
-  // Exact non-secret backend selection, persisted so recovery cannot silently
+  // Exact server-side backend selection, persisted so recovery cannot silently
   // move the conversation to a different credential/provider/model server.
+  // A configured endpoint URL can itself be sensitive; it never rides the wire.
   backend: Backend;
   session: AgentSession;
   promptOptions: PromptOption[];
@@ -294,6 +253,7 @@ export class SessionRegistry {
     private backend: Backend = resolveBackend(),
     private deltaCoalesceMs: number = DELTA_COALESCE_MS,
     private store?: SessionCheckpointStore,
+    private idleTimeoutMs: number = IDLE_TIMEOUT_MS,
   ) {
     if (store) {
       const loaded = store.loadAll();
@@ -348,15 +308,7 @@ export class SessionRegistry {
       createdAt: Date.now(),
       permissions: [],
     };
-    session.onMessage((msg) => this.broadcast(entry, msg));
-    this.entries.set(id, entry);
-    session.onResumeId?.(() => {
-      if (this.entries.get(id) === entry) this.checkpoint(entry);
-    });
-    session.refreshPromptOptions?.();
-    this.checkpoint(entry);
-    this.notifyWatchers();
-    return entry;
+    return this.activate(entry);
   }
 
   get(id: string): SessionEntry | undefined {
@@ -381,39 +333,7 @@ export class SessionRegistry {
     const model = stored.model ?? backend.model;
     const restoredBackend = { ...backend, ...(model ? { model } : {}) };
     const session = createSession(restoredBackend, { cwd, resumeId: stored.resumeId });
-    const buffer = stored.buffer.map((msg) => ({ ...msg }));
-    let nextSeq = Math.max(
-      stored.nextSeq,
-      (buffer[buffer.length - 1]?.seq ?? 0) + 1,
-    );
-    const interruptedBang = unclosedBangId(buffer);
-    if (interruptedBang) {
-      buffer.push({ type: "bang_end", id: interruptedBang, exitCode: null, seq: nextSeq++ });
-    }
-    // A daemon cannot reattach to the middle of a provider turn. Close the
-    // browser grammar honestly. A real provider normally supplied its resume
-    // id before this boundary; if it did not, say that instead of implying a
-    // fresh provider conversation is the old one.
-    if (stored.status !== "idle") {
-      const continuation =
-        !stored.backend.live || stored.resumeId
-          ? "the provider conversation is ready to continue."
-          : "the transcript was preserved, but the provider had not supplied a resumable conversation id, so the next prompt starts a new provider conversation.";
-      buffer.push({
-        type: "notice",
-        text: `Mirafold restarted while this ${interruptedBang ? "work" : "turn"} was running — that ${interruptedBang ? "work" : "turn"} was interrupted; ${continuation}`,
-        kind: "warning",
-        seq: nextSeq++,
-      });
-      buffer.push({ type: "turn_end", seq: nextSeq++ });
-    } else if (interruptedBang) {
-      buffer.push({
-        type: "notice",
-        text: "Mirafold restarted while a shell command was running — that command was interrupted.",
-        kind: "warning",
-        seq: nextSeq++,
-      });
-    }
+    const { buffer, nextSeq } = recoverStoredTranscript(stored);
     const bangCwd = this.restoredBangCwd(cwd, stored.bangCwd);
     const entry: SessionEntry = {
       id: stored.id,
@@ -424,7 +344,7 @@ export class SessionRegistry {
       kind: restoredBackend.kind,
       backend: restoredBackend,
       session,
-      promptOptions: capPromptOptions(stored.promptOptions).map((option) => ({ ...option })),
+      promptOptions: normalizePromptOptions(stored.promptOptions).map((option) => ({ ...option })),
       buffer,
       bufferBytes: buffer.reduce((sum, msg) => sum + msgBytes(msg), 0),
       viewports: new Set(),
@@ -438,25 +358,62 @@ export class SessionRegistry {
       ...(stored.usage ? { usage: { ...stored.usage } } : {}),
     };
     this.trimBuffer(entry);
-    session.onMessage((msg) => this.broadcast(entry, msg));
-    this.entries.set(id, entry);
-    this.dormant.delete(id);
-    session.onResumeId?.(() => {
-      if (this.entries.get(id) === entry) this.checkpoint(entry);
+    return this.activate(entry);
+  }
+
+  /** Register either a fresh or recovered engine at the one lifecycle seam. */
+  private activate(entry: SessionEntry): SessionEntry {
+    entry.session.onMessage((msg) => this.broadcast(entry, msg));
+    this.entries.set(entry.id, entry);
+    this.dormant.delete(entry.id);
+    entry.session.onResumeId?.(() => {
+      if (this.entries.get(entry.id) === entry) this.checkpoint(entry);
     });
-    session.refreshPromptOptions?.();
+    entry.session.refreshPromptOptions?.();
     this.checkpoint(entry);
     this.notifyWatchers();
+    // create() is normally followed immediately by attach(), which clears
+    // this timer. open() can also be reached by a fleet quick prompt with no
+    // viewport at all; that path still needs the same eventual unload as a
+    // detached session instead of pinning a revived engine forever.
+    if (entry.viewports.size === 0) this.armIdleUnload(entry);
     return entry;
   }
 
   private backendForRestore(stored: StoredSession): Backend {
     const saved = stored.backend;
     if (!saved.live) return saved;
-    // A discovered endpoint was an explicit user choice. Preserve it exactly;
-    // discovery may still be warming at daemon startup and the adapter will
-    // surface an actual connection failure without substituting a backend.
-    if (saved.kind === "local" && saved.endpoint) return saved;
+    if (saved.kind === "local" && saved.endpoint) {
+      // A discovered endpoint was an explicit user choice. Preserve it
+      // exactly even while discovery warms, but force the no-real-credential
+      // invariant for legacy checkpoints that predate endpointSource.
+      if (saved.agent !== "claude-code" || saved.endpointSource !== "configured") {
+        return saved.agent === "claude-code"
+          ? { ...saved, endpointSource: "discovered", endpointAuth: "none" }
+          : saved;
+      }
+
+      // An unauthenticated configured endpoint is safe to preserve even when
+      // daemon configuration changes: the adapter will continue stripping
+      // both real credentials and use only its fixed dummy token.
+      if ((saved.endpointAuth ?? "none") === "none") return saved;
+
+      // Never combine endpoint A from an owner-only checkpoint with the
+      // current credential selected for endpoint B. Recovery is allowed only
+      // when destination and bound credential mode are still exact.
+      const current = resolveBackendFor("claude-code");
+      if (
+        current.kind !== "local" ||
+        current.endpointSource !== "configured" ||
+        current.endpoint !== saved.endpoint ||
+        current.endpointAuth !== saved.endpointAuth
+      ) {
+        throw new Error(
+          `session ${stored.id} is saved but its authenticated Claude endpoint or credential mode changed. Restore the original daemon configuration or end the saved session; no current credential was sent to the saved endpoint.`,
+        );
+      }
+      return saved;
+    }
     const resolved = resolveChosenBackend(saved.agent, {
       kind: saved.kind,
       endpoint: saved.endpoint,
@@ -558,7 +515,7 @@ export class SessionRegistry {
     // Before persistence, buffering, or any viewport. Catalog metadata can
     // originate in user-installed skills/MCP servers, so it shares the same
     // bounded choke point as engine-authored tool and status labels.
-    msg = capWireLabels(msg);
+    msg = normalizeWireMetadata(msg);
     // Replaceable shell metadata, not transcript history: one catalog is
     // enough, and it must not consume a resume sequence number.
     if (msg.type === "prompt_options") {
@@ -620,7 +577,7 @@ export class SessionRegistry {
     entry.buffer.push(msg);
     entry.bufferBytes += msgBytes(msg);
     this.trimBuffer(entry);
-    if (msg.type !== "prompt_options") entry.lastActivity = Date.now();
+    entry.lastActivity = Date.now();
     // Coarse fleet status, derived from the stream itself — no adapter
     // cooperation needed. Terminal states first; a permission hold sticks
     // until the turn moves again (4.6).
@@ -642,7 +599,7 @@ export class SessionRegistry {
       // Bang traffic is not the turn moving: it must not lift a permission
       // hold (the row keeps sorting needs-you-first while the ask pends).
       if (entry.status !== "permission") entry.status = "working";
-    } else if (msg.type !== "permission_resolved" && msg.type !== "prompt_options") {
+    } else if (msg.type !== "permission_resolved") {
       // permission_resolved decides its own status in captureCockpit — it
       // must not blanket-flip to "working" while a SECOND ask still pends.
       entry.status = "working";
@@ -879,7 +836,7 @@ export class SessionRegistry {
         this.teardown(entry);
       }
       this.notifyWatchers();
-    }, IDLE_TIMEOUT_MS);
+    }, this.idleTimeoutMs);
     entry.idleTimer.unref();
   }
 
@@ -914,14 +871,14 @@ export class SessionRegistry {
       this.notifyWatchers();
       return true;
     }
-    clearTimeout(entry.idleTimer);
     this.flushDeltas(entry); // pending stream text lands before session_ended
-    entry.fsWatch?.stop();
-    entry.fsWatch = undefined;
     // Delete the durable copy BEFORE dropping the live engine. If disk
     // refuses the explicit delete, the session remains usable and the caller
     // gets an error instead of being told it ended while it can reappear.
     this.store?.delete(id);
+    clearTimeout(entry.idleTimer);
+    entry.fsWatch?.stop();
+    entry.fsWatch = undefined;
     this.teardown(entry);
     this.dormant.delete(id);
     this.restoreErrors.delete(id);
@@ -938,25 +895,25 @@ export class SessionRegistry {
 
   summary(): SessionMeta[] {
     const active: SessionMeta[] = [...this.entries.values()].map((e) => ({
-        sessionId: e.id,
-        name: e.name,
-        cwd: e.cwd,
-        agent: e.agent,
-        model: e.session.modelName,
-        status: e.status,
-        lastActivity: e.lastActivity,
-        viewports: e.viewports.size,
-        createdAt: e.createdAt,
-        // Copies, and absent-when-empty (M.1): a watcher's serialized
-        // snapshot must not alias entry state, and old clients strip fields
-        // they don't know rather than seeing empty placeholders.
-        ...(e.activity ? { activity: { ...e.activity } } : {}),
-        // askedAt stays server-side — the wire shape is unchanged (M.1).
-        ...(e.permissions.length
-          ? { permissions: e.permissions.map(({ id, tool, detail }) => ({ id, tool, detail })) }
-          : {}),
-        ...(e.usage ? { usage: { ...e.usage } } : {}),
-      }));
+      sessionId: e.id,
+      name: e.name,
+      cwd: e.cwd,
+      agent: e.agent,
+      model: e.session.modelName,
+      status: e.status,
+      lastActivity: e.lastActivity,
+      viewports: e.viewports.size,
+      createdAt: e.createdAt,
+      // Copies, and absent-when-empty (M.1): a watcher's serialized
+      // snapshot must not alias entry state, and old clients strip fields
+      // they don't know rather than seeing empty placeholders.
+      ...(e.activity ? { activity: { ...e.activity } } : {}),
+      // askedAt stays server-side — the wire shape is unchanged (M.1).
+      ...(e.permissions.length
+        ? { permissions: e.permissions.map(({ id, tool, detail }) => ({ id, tool, detail })) }
+        : {}),
+      ...(e.usage ? { usage: { ...e.usage } } : {}),
+    }));
     const dormant: SessionMeta[] = [...this.dormant.values()].map((stored) => ({
       sessionId: stored.id,
       name: stored.name,

@@ -107,7 +107,7 @@ test(
         : false,
     timeout: 300_000,
   },
-  () =>
+  (t) =>
     withCodexHome(undefined, async () => {
       const workspace = mkdtempSync(path.join(os.tmpdir(), "mirafold-live-ws-"));
       try {
@@ -119,29 +119,39 @@ test(
             endpoint: "http://127.0.0.1:11434",
             model: LOCAL_MODELS[0],
           });
-          const done = new Promise<void>((resolve) => {
+          let abortTurn: (() => void) | undefined;
+          const done = new Promise<void>((resolve, reject) => {
+            abortTurn = () => {
+              s.close();
+              reject(t.signal.reason ?? new Error("local turn test aborted"));
+            };
+            t.signal.addEventListener("abort", abortTurn, { once: true });
             s.onMessage((m) => {
               msgs.push(m);
               if (m.type === "turn_end") resolve();
             });
           });
-          s.pushPrompt("Reply with exactly: ok");
-          await done;
-          s.close();
+          try {
+            s.pushPrompt("Reply with exactly: ok");
+            await done;
 
-          const errors = msgs.filter((m) => m.type === "error");
-          assert.deepEqual(errors, [], `a local turn must not error: ${JSON.stringify(errors)}`);
-          assert.equal(msgs.filter((m) => m.type === "turn_end").length, 1);
-          const text = msgs
-            .filter((m): m is Extract<WireMsg, { type: "text_delta" }> => m.type === "text_delta")
-            .map((m) => m.text)
-            .join("");
-          assert.ok(text.trim().length > 0, "the model must actually say something");
-          // Codex has no metadata for a local model's slug and says so. That is
-          // an advisory the terminal shows as a warning — a NOTICE here, never
-          // the red error line it used to render as (2026-07-20).
-          for (const n of msgs.filter((m) => m.type === "notice")) {
-            assert.ok(n.kind !== undefined, "a notice must be tagged so the UI can style it");
+            const errors = msgs.filter((m) => m.type === "error");
+            assert.deepEqual(errors, [], `a local turn must not error: ${JSON.stringify(errors)}`);
+            assert.equal(msgs.filter((m) => m.type === "turn_end").length, 1);
+            const text = msgs
+              .filter((m): m is Extract<WireMsg, { type: "text_delta" }> => m.type === "text_delta")
+              .map((m) => m.text)
+              .join("");
+            assert.ok(text.trim().length > 0, "the model must actually say something");
+            // Codex has no metadata for a local model's slug and says so. That is
+            // an advisory the terminal shows as a warning — a NOTICE here, never
+            // the red error line it used to render as (2026-07-20).
+            for (const n of msgs.filter((m) => m.type === "notice")) {
+              assert.ok(n.kind !== undefined, "a notice must be tagged so the UI can style it");
+            }
+          } finally {
+            if (abortTurn) t.signal.removeEventListener("abort", abortTurn);
+            s.close();
           }
         });
       } finally {

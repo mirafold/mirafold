@@ -111,6 +111,16 @@ test("phone: pairs by URL, opens the session, drives a turn with a rendered comp
   assert.ok(await phone.locator("text=Verify end to end").count());
   await noSideScroll(phone);
 
+  // Desktop transcript clicks focus the prompt; a touch on the same inert
+  // surface must not summon the phone keyboard.
+  const transcript = phone.locator(".render-zone");
+  await transcript.tap({ position: { x: 2, y: 2 } });
+  assert.equal(
+    await phone.evaluate(() => document.activeElement?.matches(".prompt-box textarea") ?? false),
+    false,
+    "touching the transcript focused the phone prompt",
+  );
+
   // R.4l: the status bar is ONE row of thumb-sized targets — a wrapped
   // stray control is the "haphazard" look this pass removed. (No .sb-pair
   // here: pairing info rides to local viewports only. No .sb-theme: the

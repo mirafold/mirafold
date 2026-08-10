@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { escapeTranscriptFence } from "./connection";
+import { describeBackendForLog, escapeTranscriptFence } from "./connection";
 
 // 2026-07-17 audit, finding 4: a `!` command's output rides to the agent
 // inside <bash-input>/<bash-output> fences — the output must not be able to
@@ -18,4 +18,18 @@ test("escapeTranscriptFence neutralizes closing fences only", () => {
   );
   // Opening tags are honest content — untouched.
   assert.equal(escapeTranscriptFence("<bash-output>"), "<bash-output>");
+});
+
+test("UX.8: backend logs never contain configured URL authentication or query data", () => {
+  const summary = describeBackendForLog({
+    agent: "claude-code",
+    kind: "local",
+    live: true,
+    endpoint: "https://alice:password@example.test/v1?sig=topsecret",
+    endpointSource: "configured",
+    endpointAuth: "auth-token",
+    model: "model\nforged-log-line",
+  });
+  assert.equal(summary, "local via configured endpoint (model forged-log-line)");
+  assert.doesNotMatch(summary, /alice|password|example\.test|topsecret|\n/);
 });

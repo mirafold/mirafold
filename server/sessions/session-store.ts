@@ -14,10 +14,12 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { z } from "zod";
 
 import type { PromptOption, SessionMeta, WireMsg } from "../protocol";
 import type { Backend } from "../adapters";
-import { createLogger, stateDir } from "../log";
+import { createLogger, scrubSelectedEndpoint, stateDir } from "../log";
+import { promptOptionIsControlSafe } from "../prompt-options";
 
 const log = createLogger("session-store");
 const SCHEMA_VERSION = 1;
@@ -55,6 +57,300 @@ export type StoredSessionIndex = {
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+const sequenceSchema = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
+const nonnegativeIntSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+const idSchema = z.string().min(1).max(1_024);
+const jsonRecordSchema = z.record(z.string(), z.unknown());
+const pickerRowSchema = z
+  .object({
+    label: z.string(),
+    detail: z.string().optional(),
+    current: z.boolean().optional(),
+    text: z.string(),
+  })
+  .strict();
+
+// Only messages that pass through SessionRegistry.deliver() belong in a
+// checkpoint transcript. Per-viewport plumbing (agents, session_created,
+// fs_*, pong, fleet snapshots) and replaceable prompt_options are excluded.
+// Every object is strict and sequenced: a locally tampered/corrupt record can
+// never smuggle an arbitrary frame back into the trusted browser shell.
+const storedWireMessageSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("text_delta"), text: z.string(), seq: sequenceSchema }).strict(),
+  z
+    .object({
+      type: z.literal("status"),
+      state: z.enum(["thinking", "tool"]),
+      label: z.string().optional(),
+      seq: sequenceSchema,
+    })
+    .strict(),
+  z.object({ type: z.literal("turn_end"), seq: sequenceSchema }).strict(),
+  z.object({ type: z.literal("error"), message: z.string(), seq: sequenceSchema }).strict(),
+  z
+    .object({
+      type: z.literal("render"),
+      component: z.string(),
+      props: jsonRecordSchema,
+      id: idSchema,
+      seq: sequenceSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("picker"),
+      id: idSchema,
+      title: z.string(),
+      rows: z.array(pickerRowSchema).max(10_000),
+      hint: z.string().optional(),
+      seq: sequenceSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("tool_use"),
+      name: z.string(),
+      detail: z.string().optional(),
+      id: idSchema,
+      input: jsonRecordSchema.optional(),
+      parentId: idSchema.optional(),
+      seq: sequenceSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("tool_result"),
+      output: z.string(),
+      isError: z.boolean().optional(),
+      id: idSchema,
+      truncatedBytes: nonnegativeIntSchema.optional(),
+      parentId: idSchema.optional(),
+      seq: sequenceSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("permission_request"),
+      tool: z.string(),
+      detail: z.string(),
+      id: idSchema,
+      seq: sequenceSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("permission_resolved"),
+      id: idSchema,
+      allow: z.boolean(),
+      seq: sequenceSchema,
+    })
+    .strict(),
+  z.object({ type: z.literal("user_prompt"), text: z.string(), seq: sequenceSchema }).strict(),
+  z
+    .object({
+      type: z.literal("artifact"),
+      html: z.string(),
+      id: idSchema,
+      title: z.string().optional(),
+      seq: sequenceSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("usage"),
+      model: z.string().optional(),
+      inputTokens: nonnegativeIntSchema,
+      outputTokens: nonnegativeIntSchema,
+      costUsd: z.number().nonnegative().optional(),
+      seq: sequenceSchema,
+    })
+    .strict(),
+  z.object({ type: z.literal("thinking_delta"), text: z.string(), seq: sequenceSchema }).strict(),
+  z
+    .object({
+      type: z.literal("notice"),
+      text: z.string(),
+      kind: z.enum(["retry", "compaction", "rate_limit", "refusal", "warning"]).optional(),
+      source: z.string().max(120).optional(),
+      seq: sequenceSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("bang_start"),
+      command: z.string(),
+      id: idSchema,
+      seq: sequenceSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("bang_output"),
+      data: z.string(),
+      id: idSchema,
+      seq: sequenceSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("bang_end"),
+      id: idSchema,
+      exitCode: z.union([nonnegativeIntSchema, z.null()]),
+      seq: sequenceSchema,
+    })
+    .strict(),
+]);
+
+const promptOptionSchema = z
+  .object({
+    trigger: z.enum(["/", "$"]),
+    value: z.string().min(2).max(200),
+    label: z.string().min(1).max(121),
+    description: z.string().max(501).optional(),
+    argumentHint: z.string().max(201).optional(),
+    kind: z.enum(["command", "skill"]),
+    aliases: z.array(z.string().max(200)).max(20).optional(),
+    source: z.enum(["claude-code", "codex", "gemini-cli", "mirafold"]).optional(),
+  })
+  .strict()
+  .refine(
+    (option) =>
+      option.value.startsWith(option.trigger) &&
+      ((option.trigger === "/" && option.kind === "command") ||
+        (option.trigger === "$" && option.kind === "skill")) &&
+      promptOptionIsControlSafe(option),
+    { message: "unsafe prompt catalog entry" },
+  );
+
+function decodeBackend(raw: unknown): Backend {
+  if (!isObject(raw)) throw new Error("malformed checkpoint backend");
+  const agent = raw.agent;
+  const kind = raw.kind;
+  if (
+    (agent !== "claude-code" && agent !== "codex" && agent !== "gemini-cli") ||
+    (kind !== "none" && kind !== "api-key" && kind !== "subscription" && kind !== "local") ||
+    typeof raw.live !== "boolean"
+  ) {
+    throw new Error("malformed checkpoint backend");
+  }
+  for (const key of ["model", "endpoint", "provider", "endpointSource", "endpointAuth"] as const) {
+    if (raw[key] !== undefined && typeof raw[key] !== "string") {
+      throw new Error("malformed checkpoint backend");
+    }
+  }
+  const endpoint = typeof raw.endpoint === "string" ? raw.endpoint : undefined;
+  const provider = typeof raw.provider === "string" ? raw.provider : undefined;
+  const rawSource = raw.endpointSource;
+  const rawAuth = raw.endpointAuth;
+  if (
+    (rawSource !== undefined && rawSource !== "configured" && rawSource !== "discovered") ||
+    (rawAuth !== undefined && rawAuth !== "api-key" && rawAuth !== "auth-token" && rawAuth !== "none") ||
+    (endpoint !== undefined && provider !== undefined) ||
+    ((endpoint !== undefined || provider !== undefined || rawSource !== undefined || rawAuth !== undefined) &&
+      kind !== "local") ||
+    (rawSource !== undefined && endpoint === undefined) ||
+    (rawSource === "configured" && agent !== "claude-code") ||
+    (rawAuth !== undefined && agent !== "claude-code") ||
+    (rawAuth !== undefined && rawSource !== "configured" && rawAuth !== "none")
+  ) {
+    throw new Error("malformed checkpoint backend");
+  }
+  if (endpoint !== undefined) {
+    try {
+      const protocol = new URL(endpoint).protocol;
+      if (protocol !== "http:" && protocol !== "https:") {
+        throw new Error("unsupported endpoint protocol");
+      }
+    } catch {
+      throw new Error("malformed checkpoint backend");
+    }
+  }
+  // A pre-UX.8 Claude endpoint had no source/auth fields. Recover it as a
+  // discovered, unauthenticated target: preserving the conversation is safe,
+  // silently attaching a current credential would not be.
+  const legacyClaudeEndpoint =
+    agent === "claude-code" && kind === "local" && endpoint !== undefined && rawSource === undefined;
+  const endpointSource = legacyClaudeEndpoint ? "discovered" : rawSource;
+  const endpointAuth = legacyClaudeEndpoint ? "none" : rawAuth;
+  return {
+    agent,
+    kind,
+    live: raw.live,
+    ...(typeof raw.model === "string" ? { model: raw.model } : {}),
+    ...(endpoint !== undefined ? { endpoint } : {}),
+    ...(endpointSource === "configured" || endpointSource === "discovered"
+      ? { endpointSource }
+      : {}),
+    ...(endpointAuth === "api-key" || endpointAuth === "auth-token" || endpointAuth === "none"
+      ? { endpointAuth }
+      : {}),
+    ...(provider !== undefined ? { provider } : {}),
+  };
+}
+
+function decodeTranscript(raw: unknown[], backend: Backend): WireMsg[] {
+  let decoded: z.infer<typeof storedWireMessageSchema>[];
+  try {
+    decoded = z.array(storedWireMessageSchema).parse(raw);
+  } catch {
+    throw new Error("malformed checkpoint transcript");
+  }
+  let previous = 0;
+  for (const msg of decoded) {
+    if (msg.seq <= previous) {
+      throw new Error("malformed checkpoint sequence");
+    }
+    previous = msg.seq;
+  }
+  return decoded.map((msg) => {
+    if (msg.type === "error") {
+      return { ...msg, message: scrubSelectedEndpoint(msg.message, backend.endpoint) };
+    }
+    if (msg.type === "notice" && msg.source) {
+      return { ...msg, text: scrubSelectedEndpoint(msg.text, backend.endpoint) };
+    }
+    return msg;
+  });
+}
+
+function decodePromptOptions(raw: unknown[], backend: Backend): PromptOption[] {
+  try {
+    return z.array(promptOptionSchema).parse(raw).map((option) => {
+      // Provenance is recomputed from trusted checkpoint backend identity,
+      // never trusted from the mutable record itself. This also migrates
+      // pre-UX.8 catalogs before their first replay.
+      const { source: _storedSource, ...catalog } = option;
+      const source =
+        backend.live && backend.agent === "claude-code"
+          ? ("claude-code" as const)
+          : backend.live && backend.agent === "codex" && option.trigger === "$"
+            ? ("codex" as const)
+            : !backend.live && option.trigger === "$"
+              ? ("mirafold" as const)
+              : undefined;
+      return source ? { ...catalog, source } : catalog;
+    });
+  } catch {
+    throw new Error("malformed prompt catalog");
+  }
+}
+
+function decodeUsage(raw: unknown): StoredSession["usage"] {
+  if (
+    raw !== undefined &&
+    (!isObject(raw) ||
+      !Number.isSafeInteger(raw.inputTokens) ||
+      (raw.inputTokens as number) < 0 ||
+      !Number.isSafeInteger(raw.outputTokens) ||
+      (raw.outputTokens as number) < 0 ||
+      (raw.costUsd !== undefined &&
+        (typeof raw.costUsd !== "number" || !Number.isFinite(raw.costUsd) || raw.costUsd < 0)))
+  ) {
+    throw new Error("malformed checkpoint usage");
+  }
+  return raw as StoredSession["usage"];
+}
+
 function decodeStoredSession(raw: unknown, expectedId: string): StoredSession {
   if (!isObject(raw) || raw.version !== SCHEMA_VERSION || raw.id !== expectedId) {
     throw new Error("unsupported or mismatched checkpoint");
@@ -63,10 +359,14 @@ function decodeStoredSession(raw: unknown, expectedId: string): StoredSession {
     typeof raw.cwd !== "string" ||
     typeof raw.bangCwd !== "string" ||
     typeof raw.name !== "string" ||
-    !Number.isInteger(raw.nextSeq) ||
+    !Number.isSafeInteger(raw.nextSeq) ||
     (raw.nextSeq as number) < 1 ||
     typeof raw.lastActivity !== "number" ||
+    !Number.isFinite(raw.lastActivity) ||
+    raw.lastActivity < 0 ||
     typeof raw.createdAt !== "number" ||
+    !Number.isFinite(raw.createdAt) ||
+    raw.createdAt < 0 ||
     !Array.isArray(raw.buffer) ||
     raw.buffer.length > MAX_BUFFER_MESSAGES ||
     !Array.isArray(raw.promptOptions) ||
@@ -78,22 +378,7 @@ function decodeStoredSession(raw: unknown, expectedId: string): StoredSession {
   if (status !== "idle" && status !== "working" && status !== "permission") {
     throw new Error("malformed checkpoint status");
   }
-  const backend = raw.backend;
-  if (!isObject(backend)) throw new Error("malformed checkpoint backend");
-  const agent = backend.agent;
-  const kind = backend.kind;
-  if (
-    (agent !== "claude-code" && agent !== "codex" && agent !== "gemini-cli") ||
-    (kind !== "none" && kind !== "api-key" && kind !== "subscription" && kind !== "local") ||
-    typeof backend.live !== "boolean"
-  ) {
-    throw new Error("malformed checkpoint backend");
-  }
-  for (const key of ["model", "endpoint", "provider"] as const) {
-    if (backend[key] !== undefined && typeof backend[key] !== "string") {
-      throw new Error("malformed checkpoint backend");
-    }
-  }
+  const backend = decodeBackend(raw.backend);
   if (
     (raw.resumeId !== undefined &&
       (typeof raw.resumeId !== "string" || raw.resumeId.length === 0 || raw.resumeId.length > 512)) ||
@@ -101,65 +386,28 @@ function decodeStoredSession(raw: unknown, expectedId: string): StoredSession {
   ) {
     throw new Error("malformed checkpoint provider identity");
   }
-  const buffer = raw.buffer as unknown[];
-  for (const msg of buffer) {
-    if (!isObject(msg) || typeof msg.type !== "string") {
-      throw new Error("malformed checkpoint transcript");
-    }
-    if (msg.seq !== undefined && (!Number.isInteger(msg.seq) || (msg.seq as number) < 1)) {
-      throw new Error("malformed checkpoint sequence");
-    }
+  const buffer = decodeTranscript(raw.buffer as unknown[], backend);
+  if ((buffer.at(-1)?.seq ?? 0) >= (raw.nextSeq as number)) {
+    throw new Error("malformed checkpoint sequence");
   }
-  const promptOptions = raw.promptOptions as unknown[];
-  for (const rawOption of promptOptions) {
-    if (!isObject(rawOption)) throw new Error("malformed prompt catalog");
-    if (
-      (rawOption.trigger !== "/" && rawOption.trigger !== "$") ||
-      typeof rawOption.value !== "string" ||
-      typeof rawOption.label !== "string" ||
-      (rawOption.kind !== "command" && rawOption.kind !== "skill") ||
-      (rawOption.description !== undefined && typeof rawOption.description !== "string") ||
-      (rawOption.argumentHint !== undefined && typeof rawOption.argumentHint !== "string") ||
-      (rawOption.aliases !== undefined &&
-        (!Array.isArray(rawOption.aliases) ||
-          rawOption.aliases.some((alias) => typeof alias !== "string")))
-    ) {
-      throw new Error("malformed prompt catalog");
-    }
-  }
-  const usage = raw.usage;
-  if (
-    usage !== undefined &&
-    (!isObject(usage) ||
-      typeof usage.inputTokens !== "number" ||
-      typeof usage.outputTokens !== "number" ||
-      (usage.costUsd !== undefined && typeof usage.costUsd !== "number"))
-  ) {
-    throw new Error("malformed checkpoint usage");
-  }
+  const promptOptions = decodePromptOptions(raw.promptOptions as unknown[], backend);
+  const usage = decodeUsage(raw.usage);
   return {
     version: SCHEMA_VERSION,
     id: expectedId,
     cwd: raw.cwd,
     bangCwd: raw.bangCwd,
-    backend: {
-      agent,
-      kind,
-      live: backend.live,
-      ...(typeof backend.model === "string" ? { model: backend.model } : {}),
-      ...(typeof backend.endpoint === "string" ? { endpoint: backend.endpoint } : {}),
-      ...(typeof backend.provider === "string" ? { provider: backend.provider } : {}),
-    },
+    backend,
     ...(typeof raw.resumeId === "string" ? { resumeId: raw.resumeId } : {}),
-    promptOptions: promptOptions as PromptOption[],
-    buffer: buffer as WireMsg[],
+    promptOptions,
+    buffer,
     nextSeq: raw.nextSeq as number,
     name: raw.name,
     status,
     lastActivity: raw.lastActivity,
     createdAt: raw.createdAt,
     ...(typeof raw.model === "string" ? { model: raw.model } : {}),
-    ...(usage ? { usage: usage as StoredSession["usage"] } : {}),
+    ...(usage ? { usage } : {}),
   };
 }
 

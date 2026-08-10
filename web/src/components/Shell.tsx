@@ -37,6 +37,10 @@ const ZERO_USAGE: Usage = { turnIn: 0, turnOut: 0, sumIn: 0, sumOut: 0, cost: 0 
  * the session identity (/s/<id>) — refresh-safe and shareable across tabs (4.2).
  */
 export function Shell() {
+  const promptRef = useRef<HTMLTextAreaElement>(null);
+  const focusPrompt = useCallback(() => {
+    promptRef.current?.focus({ preventScroll: true });
+  }, []);
   // ── The turn ──────────────────────────────────────────────────────────
   // Whether a turn is in flight — drives the stop affordance, Esc, and the
   // activity indicator. Derived entirely from the wire: user_prompt sets it,
@@ -465,7 +469,12 @@ export function Shell() {
                 rootLabel={tildify(meta.cwd, daemonInfo.home)}
                 sessionKey={meta.sessionId}
               />
-              <RenderZone subscribe={bus.subscribe} sendAction={bus.sendAction} busy={busy} />
+              <RenderZone
+                subscribe={bus.subscribe}
+                sendAction={bus.sendAction}
+                busy={busy}
+                focusPrompt={focusPrompt}
+              />
             </div>
             <ActivityLine busy={busy} label={activityLabel(activity)} />
             <PermBar asks={asks} onAnswer={answer} />
@@ -483,7 +492,8 @@ export function Shell() {
               onInterrupt={interrupt}
               cwd={tildify(meta.cwd, daemonInfo.home)}
               options={promptOptions}
-              shortcutDisabled={showOnboarding || settingsOpen}
+              textareaRef={promptRef}
+              globalTriggersDisabled={showOnboarding || settingsOpen}
             />
             <StatusBar
               connected={connected}

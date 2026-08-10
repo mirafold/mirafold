@@ -3,8 +3,16 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { availableAgents, backendOptions, mergeBackends, resolveChosenBackend } from "./index";
+import {
+  availableAgents,
+  backendOptions,
+  isLoopbackEndpointUrl,
+  mergeBackends,
+  resolveBackendFor,
+  resolveChosenBackend,
+} from "./index";
 import type { LocalServer } from "../local-models";
+import { loadProjectEnv } from "../project-env";
 
 // The per-provider policy, at the detection layer. This REVERSES the R.4b
 // behavior (a Claude subscription login used to count as live): Anthropic's
@@ -114,13 +122,13 @@ test("claude-code: a local/BYO endpoint (ANTHROPIC_BASE_URL) is live — even ov
   });
 });
 
-test("R.4k: a local endpoint shows its host as the picker detail", () => {
+test("UX.8: a configured local endpoint gets a generic picker detail", () => {
   withTempDir((empty) => {
     withEnv({ CLAUDE_CONFIG_DIR: empty, ANTHROPIC_BASE_URL: "http://localhost:11434" }, () => {
       const c = claude();
       assert.equal(c.live, true);
-      assert.match(String(c.detail), /local endpoint/);
-      assert.match(String(c.detail), /localhost:11434/);
+      assert.equal(c.detail, "local endpoint");
+      assert.doesNotMatch(String(c.detail), /localhost|11434/);
     });
   });
 });
@@ -130,12 +138,12 @@ test("a remote BYO endpoint (hosted open model) is labeled custom, not local", (
     withEnv({ CLAUDE_CONFIG_DIR: empty, ANTHROPIC_BASE_URL: "https://api.deepseek.com/anthropic" }, () => {
       const c = claude();
       assert.equal(c.live, true);
-      assert.match(String(c.detail), /custom endpoint/);
-      assert.match(String(c.detail), /api\.deepseek\.com/);
+      assert.equal(c.detail, "custom endpoint");
+      assert.doesNotMatch(String(c.detail), /deepseek/);
       assert.doesNotMatch(String(c.detail), /local endpoint/);
-      // The second-step row carries the same honest label.
+      // The second-step row carries the same opaque label.
       const row = backendOptions("claude-code").find((o) => o.kind === "local")!;
-      assert.match(String(row.detail), /custom endpoint · api\.deepseek\.com/);
+      assert.equal(row.detail, "custom endpoint");
     });
   });
 });
@@ -229,7 +237,8 @@ test("N.1 claude-code: endpoint + key + login → THREE options; subscription bl
         );
         const [local, key, sub] = opts;
         assert.equal(local.usable, true);
-        assert.match(String(local.detail), /localhost:11434/);
+        assert.equal(local.detail, "local endpoint");
+        assert.equal(local.endpointUrl, "http://localhost:11434");
         assert.equal(key.usable, true);
         assert.equal(sub.usable, false, "an Anthropic subscription must not run — written terms");
         assert.equal(sub.blocked, true, "and it's listed blocked, never hidden");
@@ -287,7 +296,7 @@ test("a declared provider row names the model codex would resolve for it", () =>
     withEnv({ CODEX_HOME: home, OPENROUTER_API_KEY: "x" }, () => {
       const row = backendOptions("codex").find((o) => o.provider === "openrouter");
       assert.equal(row?.usable, true);
-      assert.equal(row?.detail, "OpenRouter · openrouter.ai");
+      assert.equal(row?.detail, "OpenRouter");
       assert.equal(row?.model, "qwen/qwen3-coder");
     });
   });
@@ -380,14 +389,20 @@ test("codex: a config.toml default provider ALONE is live — no dummy key neede
     withEnv({ CODEX_HOME: dir }, () => {
       const c = codexAgent();
       assert.equal(c.live, true);
-      assert.match(String(c.detail), /custom endpoint/);
-      assert.match(String(c.detail), /openrouter\.ai/);
+      assert.equal(c.detail, "custom endpoint");
+      assert.doesNotMatch(String(c.detail), /openrouter\.ai/);
       const opts = backendOptions("codex");
       assert.deepEqual(
         opts.map((o) => o.kind),
         ["local"],
       );
       assert.equal(opts[0].usable, true);
+      assert.equal(opts[0].detail, "openrouter");
+      assert.equal(
+        resolveBackendFor("codex").provider,
+        "openrouter",
+        "the one-click path pins the configured provider identity",
+      );
     });
   });
 });
@@ -453,8 +468,8 @@ test("codex: one row per declared provider — default first, first-party rows b
             ["local", "deepseek"], // declared but not default — after first-party
           ],
         );
-        assert.equal(opts[0].detail, "OpenRouter · openrouter.ai");
-        assert.equal(opts[3].detail, "deepseek · api.deepseek.com");
+        assert.equal(opts[0].detail, "OpenRouter");
+        assert.equal(opts[3].detail, "deepseek");
         assert.ok(opts.every((o) => o.usable));
       },
     );
@@ -614,13 +629,46 @@ test("N.5 resolve: a discovered endpoint is validated against the live list — 
   });
 });
 
-test("N.5 resolve: the env-configured endpoint (local, no endpoint named) resolves off detection", () => {
+test("UX.8: a configured endpoint is opaque on the wire and resolves to the exact server-side URL", () => {
   withTempDir((empty) => {
-    withEnv({ CLAUDE_CONFIG_DIR: empty, ANTHROPIC_BASE_URL: "http://localhost:9999" }, () => {
-      const r = resolveChosenBackend("claude-code", { kind: "local" }, []);
+    const secretUrl = "https://alice:password@example.test/v1?sig=topsecret";
+    withEnv({ CLAUDE_CONFIG_DIR: empty, ANTHROPIC_BASE_URL: secretUrl }, () => {
+      const advertised = mergeBackends(
+        "claude-code",
+        backendOptions("claude-code"),
+        [],
+      )[0];
+      assert.equal(advertised.endpoint, undefined);
+      assert.match(advertised.backendId ?? "", /^[0-9a-f-]{36}$/);
+      assert.doesNotMatch(JSON.stringify(advertised), /alice|password|example\.test|topsecret/);
+      const r = resolveChosenBackend(
+        "claude-code",
+        { kind: "local", backendId: advertised.backendId },
+        [],
+      );
       assert.ok(!("error" in r));
       assert.equal(r.kind, "local");
-      assert.equal(r.endpoint, undefined); // the adapter inherits the env URL
+      assert.equal(r.endpoint, secretUrl);
+      assert.equal(r.endpointSource, "configured");
+      assert.equal(r.endpointAuth, "none");
+      assert.equal(
+        resolveBackendFor("claude-code").endpoint,
+        secretUrl,
+        "the one-click path must pin the same endpoint without a choice frame",
+      );
+    });
+  });
+});
+
+test("N.5 resolve: a forged endpoint cannot masquerade as the configured Claude URL", () => {
+  withTempDir((empty) => {
+    withEnv({ CLAUDE_CONFIG_DIR: empty, ANTHROPIC_BASE_URL: "http://localhost:9999" }, () => {
+      const r = resolveChosenBackend(
+        "claude-code",
+        { kind: "local", endpoint: "http://localhost:8888" },
+        [],
+      );
+      assert.ok("error" in r);
     });
   });
 });
@@ -635,9 +683,46 @@ test("N.3: an env endpoint the probe did NOT find stays its own row", () => {
           merged.map((b) => b.kind),
           ["local", "local"],
         );
-        assert.match(String(merged[0].detail), /localhost:9999/); // the env row
+        assert.equal(merged[0].detail, "local endpoint"); // the opaque env row
+        assert.equal(merged[0].endpoint, undefined);
+        assert.ok(merged[0].backendId, "the env row has only an opaque browser identity");
+        assert.equal(merged[0].onDevice, true);
         assert.equal(merged[1].runtime, "ollama"); // the discovered row
       },
     );
+  });
+});
+
+test("UX.8: loopback classification is IP-exact, never a hostname prefix", () => {
+  assert.equal(isLoopbackEndpointUrl("http://127.0.0.1:11434"), true);
+  assert.equal(isLoopbackEndpointUrl("http://127.42.0.9"), true);
+  assert.equal(isLoopbackEndpointUrl("http://[::1]:11434"), true);
+  assert.equal(isLoopbackEndpointUrl("http://[::ffff:127.0.0.1]:11434"), true);
+  assert.equal(isLoopbackEndpointUrl("https://127.attacker.test"), false);
+  assert.equal(isLoopbackEndpointUrl("https://localhost.attacker.test"), false);
+
+  const [lookalike] = mergeBackends(
+    "claude-code",
+    [{ kind: "local", usable: true, endpointUrl: "https://127.attacker.test" }],
+    [],
+  );
+  assert.equal(lookalike.onDevice, undefined);
+});
+
+test("UX.8: a project-selected endpoint cannot inherit a parent-only Anthropic token", () => {
+  withTempDir((dir) => {
+    const config = path.join(dir, "project-config.txt");
+    writeFileSync(config, "ANTHROPIC_BASE_URL=https://checkout.example/anthropic\n");
+    withEnv({ CLAUDE_CONFIG_DIR: dir, ANTHROPIC_AUTH_TOKEN: "parent-secret" }, () => {
+      loadProjectEnv(config);
+      const backend = resolveBackendFor("claude-code");
+      assert.equal(backend.endpoint, "https://checkout.example/anthropic");
+      assert.equal(backend.endpointSource, "configured");
+      assert.equal(
+        backend.endpointAuth,
+        "none",
+        "checkout-selected destinations must not receive a parent-only token",
+      );
+    });
   });
 });

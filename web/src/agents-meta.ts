@@ -96,10 +96,9 @@ export function backendLabel(agent: string, kind: "api-key" | "subscription" | "
   return "subscription";
 }
 
-/** A `local` row's label. Its `detail` is already a full label of its own
- *  ("local endpoint · localhost:11434", "OpenRouter · openrouter.ai" — the
- *  server composes it), so it REPLACES the generic name rather than being
- *  appended to it. Both surfaces that name a backing need this rule. */
+/** A `local` row's label. Its `detail` is already a full, opaque label of its
+ * own ("local endpoint", "custom endpoint", or a configured provider name),
+ * so it REPLACES the generic name rather than being appended to it. */
 export function localBackendLabel(agent: string, detail: string | undefined): string {
   return detail ?? backendLabel(agent, "local");
 }

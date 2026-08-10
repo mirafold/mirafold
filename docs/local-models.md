@@ -164,8 +164,16 @@ export DEFAULT_MODEL=kimi-k2.7-code
 mirafold
 ```
 
-The onboarding picker shows this as **custom endpoint · \<host\>** (a
-loopback URL shows as *local endpoint* instead).
+The onboarding picker shows this as **custom endpoint** (an exact-loopback URL
+shows as *local endpoint* instead). The browser receives that generic label
+plus an opaque daemon identifier—never the configured URL or hostname, since
+URLs can contain authentication, signed queries, and private tenant/network
+identity. Mirafold binds the
+selected Anthropic key/token mode to this exact destination. If the endpoint
+comes from project configuration, its credential must come from that same
+project configuration—the endpoint cannot inherit a parent-only daemon secret.
+Probe-discovered local servers always receive only Mirafold's fixed dummy
+token.
 
 **Codex** takes a hosted provider the same way as Path B — an entry in
 `~/.codex/config.toml` with the provider's `base_url` and your key — with the
@@ -193,7 +201,8 @@ mirafold
 ```
 
 No `OPENAI_API_KEY` is involved: Mirafold sees the config.toml provider and
-the onboarding picker offers it as **custom endpoint · openrouter.ai**. The
+the onboarding picker offers it by its provider name, **OpenRouter**, without
+exposing the configured base URL. The
 key can also live in the `.env` where you launch Mirafold instead of an
 `export` — the daemon loads it, and Codex reads whichever variable your
 `env_key` names.
