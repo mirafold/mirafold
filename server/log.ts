@@ -106,6 +106,17 @@ const clip = (msg: string) => (msg.length > MAX_LINE ? `${msg.slice(0, MAX_LINE)
 export function scrub(msg: string): string {
   return (
     msg
+      // URL userinfo. Configured endpoints are allowed to contain it, and an
+      // SDK failure can echo the destination even when no Authorization
+      // header is present.
+      .replace(/(https?:\/\/)[^\s/"'`@]+@/gi, "$1[redacted]@")
+      // Any URL-style query value is potentially a signed/credential value;
+      // preserving parameter names keeps the diagnostic useful. Requiring ?
+      // or & avoids mangling ordinary `key=value` prose.
+      .replace(/([?&][A-Za-z0-9_.~-]{1,80}=)[^&\s"'`#]+/g, "$1[redacted]")
+      // Fragments do not reach HTTP, but a raw configured URL may use one as
+      // local secret-bearing metadata and logs are promised paste-safe.
+      .replace(/(https?:\/\/[^\s"'`#]+)#[^\s"'`]+/gi, "$1#[redacted]")
       // ?key=… / &api_key=… / ?access_token=… — the Gemini-style query credential
       .replace(/([?&](?:key|api[-_]?key|access[-_]?token|auth|token)=)[^&\s"'`]+/gi, "$1[redacted]")
       // Authorization headers echoed into an error string
@@ -117,6 +128,25 @@ export function scrub(msg: string): string {
       // GitHub tokens (ghp_/gho_/ghu_/ghs_/ghr_)
       .replace(/\bgh[pousr]_[A-Za-z0-9]{20,}\b/g, "[redacted-key]")
   );
+}
+
+/** Scrub a provider diagnostic while also removing this session's exact
+ * selected endpoint (including a secret-bearing path). URL normalization can
+ * add a trailing slash, so cover both operator and normalized spellings. */
+export function scrubSelectedEndpoint(msg: string, endpoint?: string): string {
+  let redacted = msg;
+  if (endpoint) {
+    const spellings = new Set([endpoint]);
+    try {
+      spellings.add(new URL(endpoint).href);
+    } catch {
+      // The exact raw spelling below still gets removed.
+    }
+    for (const spelling of spellings) {
+      if (spelling) redacted = redacted.split(spelling).join("[selected endpoint]");
+    }
+  }
+  return scrub(redacted);
 }
 
 /** Scrub BEFORE clipping — clipping first could sever a credential mid-string

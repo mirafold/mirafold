@@ -4,6 +4,8 @@ import path from "node:path";
 import os from "node:os";
 import { mkdtempSync, writeFileSync, chmodSync } from "node:fs";
 import { listCodexModels } from "./codex-model-list";
+import { listCodexSkills } from "./codex-skills-list";
+import { jsonRpcOneShot } from "./jsonrpc-oneshot";
 
 // V.2: the app-server model/list exchange against a stub binary (the
 // MIRAFOLD_CODEX_BIN seam — the bangShell/MIRAFOLD_GEMINI_BIN pattern):
@@ -99,6 +101,81 @@ test("happy exchange: handshake, parse, hidden models filtered", async () => {
   } finally {
     delete process.env.MIRAFOLD_CODEX_BIN;
   }
+});
+
+test("skills/list returns enabled $ completions for the requested workspace", async () => {
+  const bin = stubBin(
+    "codex-skills",
+    `
+const rl = require("node:readline").createInterface({ input: process.stdin });
+rl.on("line", (line) => {
+  const msg = JSON.parse(line);
+  if (msg.method === "initialize") {
+    process.stdout.write(JSON.stringify({ id: msg.id, result: {} }) + "\\n");
+  } else if (msg.method === "skills/list") {
+    process.stdout.write(JSON.stringify({
+      id: msg.id,
+      result: { data: [{ cwd: msg.params.cwds[0], errors: [], skills: [
+        { name: "next", description: "continue the plan", enabled: true },
+        { name: "hidden", description: "disabled", enabled: false },
+      ] }] },
+    }) + "\\n");
+  }
+});
+`,
+  );
+  assert.deepEqual(await listCodexSkills(tmp, 5_000, bin), [
+    { name: "next", description: "continue the plan" },
+  ]);
+});
+
+test("skills/list skips malformed nested rows instead of throwing from the daemon stream", async () => {
+  const bin = stubBin(
+    "codex-skills-malformed",
+    `
+const rl = require("node:readline").createInterface({ input: process.stdin });
+rl.on("line", (line) => {
+  const msg = JSON.parse(line);
+  if (msg.method === "initialize") {
+    process.stdout.write(JSON.stringify({ id: msg.id, result: {} }) + "\\n");
+  } else if (msg.method === "skills/list") {
+    process.stdout.write(JSON.stringify({
+      id: msg.id,
+      result: { data: [null, { cwd: msg.params.cwds[0], skills: [
+        null,
+        { name: "next", description: "continue", enabled: true },
+      ] }] },
+    }) + "\\n");
+  }
+});
+`,
+  );
+  assert.deepEqual(await listCodexSkills(tmp, 5_000, bin), [
+    { name: "next", description: "continue" },
+  ]);
+});
+
+test("an unexpected decoder throw rejects its one-shot lookup instead of escaping the stream callback", async () => {
+  const bin = stubBin(
+    "jsonrpc-decoder-throw",
+    `
+const rl = require("node:readline").createInterface({ input: process.stdin });
+rl.once("line", () => process.stdout.write(JSON.stringify({ result: {} }) + "\\n"));
+`,
+  );
+  await assert.rejects(
+    jsonRpcOneShot({
+      command: bin,
+      args: [],
+      timeoutMs: 5_000,
+      label: "decoder probe",
+      start: (send) => send({ probe: true }),
+      onMessage: () => {
+        throw new Error("decoder exploded");
+      },
+    }),
+    /decoder exploded/,
+  );
 });
 
 test("stray scalar/null stdout lines are skipped — never a daemon crash (2026-07-19 audit)", async () => {

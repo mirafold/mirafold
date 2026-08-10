@@ -1,4 +1,11 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -13,6 +20,8 @@ import { PickerBlock, type PickerRow } from "./PickerBlock";
 import { GearGlyph } from "./GearGlyph";
 import { useFollowTail } from "../use-follow-tail";
 import { queueDelta, type QueuedDelta } from "../delta-queue";
+import { groupSettledTools } from "../tool-visibility";
+import { shouldFocusPromptFromTranscriptPointer } from "../transcript-focus";
 
 // The scrollback is a flat list of entries: text blocks and rendered
 // components, in the exact order they arrived on the wire.
@@ -36,6 +45,8 @@ type Entry =
       truncatedBytes?: number; // T2.3: bytes elided past the cap, if any
       parentId?: string; // T2.4: Task wire id if this is a subagent's call
       isError?: boolean;
+      batchId: number; // user-turn batch; successful calls fold together at its end
+      settled: boolean;
     }
   | {
       kind: "artifact";
@@ -117,6 +128,7 @@ const ThinkingBlock = memo(function ThinkingBlock({
         (folded ? " thinking-folded" : "") +
         (entry.done ? " thinking-done" : "")
       }
+      data-transcript-control={entry.done ? "" : undefined}
       onClick={entry.done ? () => onToggle(entry.id) : undefined}
       title={entry.done ? (folded ? "Expand thinking" : "Collapse thinking") : undefined}
     >
@@ -127,6 +139,24 @@ const ThinkingBlock = memo(function ThinkingBlock({
 
 /** A Task's subagent tool calls (T2.4): collapsed by default — a subagent's
  *  churn shouldn't crowd the transcript — expandable to the nested rows. */
+function ToolCallList({ calls, className }: { calls: ToolCall[]; className: string }) {
+  return (
+    <div className={className}>
+      {calls.map((call) => (
+        <ToolBlock
+          key={call.id}
+          name={call.name}
+          detail={call.detail}
+          input={call.input}
+          output={call.output}
+          truncatedBytes={call.truncatedBytes}
+          isError={call.isError}
+        />
+      ))}
+    </div>
+  );
+}
+
 function SubagentGroup({ calls }: { calls: ToolCall[] }) {
   const [open, setOpen] = useState(false);
   const pending = calls.some((c) => c.output === undefined);
@@ -139,21 +169,35 @@ function SubagentGroup({ calls }: { calls: ToolCall[] }) {
           {pending ? " …" : ""}
         </span>
       </button>
-      {open && (
-        <div className="subagent-calls">
-          {calls.map((c) => (
-            <ToolBlock
-              key={c.id}
-              name={c.name}
-              detail={c.detail}
-              input={c.input}
-              output={c.output}
-              truncatedBytes={c.truncatedBytes}
-              isError={c.isError}
-            />
-          ))}
-        </div>
-      )}
+      {open && <ToolCallList calls={calls} className="subagent-calls" />}
+    </div>
+  );
+}
+
+/** A completed turn's successful engine activity: one terminal-sized line by
+ * default, with every normalized call still available on demand. */
+function ToolActivityGroup({ calls }: { calls: ToolCall[] }) {
+  const [open, setOpen] = useState(false);
+  const counts = new Map<string, number>();
+  for (const call of calls) counts.set(call.name, (counts.get(call.name) ?? 0) + 1);
+  const summary = [...counts]
+    .slice(0, 3)
+    .map(([name, count]) => `${name}${count > 1 ? ` ×${count}` : ""}`)
+    .join(" · ");
+  return (
+    <div className="tool-activity-group">
+      <button
+        className="tool-activity-head"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+      >
+        <span className="subagent-caret">{open ? "▾" : "▸"}</span>
+        <span className="tool-activity-label">
+          <GearGlyph size="1em" /> worked · {calls.length} action{calls.length === 1 ? "" : "s"}
+        </span>
+        <span className="tool-activity-summary">{summary}</span>
+      </button>
+      {open && <ToolCallList calls={calls} className="tool-activity-calls" />}
     </div>
   );
 }
@@ -167,6 +211,7 @@ export function RenderZone({
   subscribe,
   sendAction,
   busy,
+  focusPrompt,
 }: {
   subscribe: (l: (m: ZoneMsg) => void) => () => void;
   // Shell-provided sender for prompt/tool actions (Phase 2); state actions
@@ -177,6 +222,7 @@ export function RenderZone({
   // indicator itself is Shell chrome (ActivityLine), not a transcript entry,
   // so no scroll position can hide it (2026-07-29, Kyle).
   busy: boolean;
+  focusPrompt: () => void;
 }) {
   const [entries, setEntries] = useState<Entry[]>([]);
   // Pinning is pure output-zone state: wire ids (render or artifact) in pin
@@ -191,6 +237,11 @@ export function RenderZone({
   const streamingId = useRef<number | null>(null);
   // The thinking block currently receiving deltas (T2.1).
   const thinkingId = useRef<number | null>(null);
+  // User prompts may queue while a turn is running. Tool events still belong
+  // to the OLDEST open turn, so a FIFO — not "latest prompt" — assigns the
+  // compaction batch correctly.
+  const openToolBatches = useRef<number[]>([]);
+  const orphanToolBatch = useRef(-1);
 
   useEffect(
     () => {
@@ -221,6 +272,7 @@ export function RenderZone({
             // the conversation, so jump to the tail even if you'd scrolled up.
             tail.armFollow();
             const id = nextId++;
+            openToolBatches.current.push(id);
             setEntries((es) => [
               ...es,
               { kind: "text", id, role: "user", text: msg.text, done: true },
@@ -322,9 +374,20 @@ export function RenderZone({
             // later deltas must open a new block after this record.
             streamingId.current = null;
             const id = nextId++;
+            const batchId = openToolBatches.current[0] ?? orphanToolBatch.current;
             setEntries((es) => [
               ...es,
-              { kind: "tool", id, toolId: msg.id, name: msg.name, detail: msg.detail, input: msg.input, parentId: msg.parentId },
+              {
+                kind: "tool",
+                id,
+                toolId: msg.id,
+                name: msg.name,
+                detail: msg.detail,
+                input: msg.input,
+                parentId: msg.parentId,
+                batchId,
+                settled: false,
+              },
             ]);
             break;
           }
@@ -343,13 +406,21 @@ export function RenderZone({
           case "turn_end": {
             const id = streamingId.current;
             streamingId.current = null;
+            const batchId = openToolBatches.current.shift() ?? orphanToolBatch.current--;
             setEntries((es) =>
               es.map((e) => {
                 if (e.kind === "text" && e.id === id) return { ...e, done: true };
                 // A tool still pending at turn end was interrupted — settle
                 // its record so the row doesn't pulse forever.
-                if (e.kind === "tool" && e.output === undefined)
-                  return { ...e, output: "(interrupted — no result)" };
+                if (e.kind === "tool" && e.batchId === batchId) {
+                  return {
+                    ...e,
+                    settled: true,
+                    ...(e.output === undefined
+                      ? { output: "(interrupted — no result)", isError: true }
+                      : {}),
+                  };
+                }
                 return e;
               }),
             );
@@ -419,6 +490,8 @@ export function RenderZone({
             // A (re)attach replays the session's history from scratch.
             streamingId.current = null;
             thinkingId.current = null;
+            openToolBatches.current = [];
+            orphanToolBatch.current = -1;
             tail.resetTail(); // a replayed transcript lands at its end
             setEntries([]);
             // pinned renderIds survive — the replayed render entries carry
@@ -529,7 +602,10 @@ export function RenderZone({
   const childrenByParent = useMemo(() => {
     const byParent = new Map<string, ToolCall[]>();
     for (const e of entries) {
-      if (e.kind === "tool" && e.parentId) {
+      // A failed child moves to its own expanded top-level row. Keeping it in
+      // the parent group too would show the same failure twice between result
+      // and turn_end.
+      if (e.kind === "tool" && e.parentId && !e.isError) {
         const arr = byParent.get(e.parentId) ?? [];
         arr.push(e);
         byParent.set(e.parentId, arr);
@@ -537,6 +613,26 @@ export function RenderZone({
     }
     return byParent;
   }, [entries]);
+
+  const compactedTools = useMemo(
+    () =>
+      groupSettledTools(
+        entries.map((entry) => (entry.kind === "tool" ? entry : null)),
+      ),
+    [entries],
+  );
+
+  const handleTranscriptPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (
+      shouldFocusPromptFromTranscriptPointer(
+        event,
+        event.currentTarget,
+        window.getSelection()?.isCollapsed === false,
+      )
+    ) {
+      focusPrompt();
+    }
+  };
 
   return (
     <div className="zone-row">
@@ -558,6 +654,7 @@ export function RenderZone({
         onWheel={tail.onWheel}
         onTouchStart={tail.onTouchStart}
         onTouchMove={tail.onTouchMove}
+        onPointerUp={handleTranscriptPointerUp}
       >
         {entries.length === 0 && !busy && (
           // A fresh session (no transcript yet) shows an inviting welcome
@@ -609,6 +706,7 @@ export function RenderZone({
             entry={entry}
             toggleThinking={toggleThinking}
             childrenByParent={childrenByParent}
+            compactedTools={compactedTools}
             activePickerId={activePickerId}
             handleAction={handleAction}
             pinned={pinned}
@@ -645,6 +743,7 @@ function ZoneEntry({
   entry,
   toggleThinking,
   childrenByParent,
+  compactedTools,
   activePickerId,
   handleAction,
   pinned,
@@ -653,6 +752,7 @@ function ZoneEntry({
   entry: Entry;
   toggleThinking: (id: number) => void;
   childrenByParent: Map<string, ToolCall[]>;
+  compactedTools: ReturnType<typeof groupSettledTools<ToolCall>>;
   activePickerId: number | null;
   handleAction: (action: Action, sourceId: string) => void;
   pinned: string[];
@@ -709,9 +809,12 @@ function ZoneEntry({
     );
   }
   if (entry.kind === "tool") {
+    const compacted = compactedTools.anchors.get(entry.id);
+    if (compacted) return <ToolActivityGroup calls={compacted} />;
+    if (compactedTools.hidden.has(entry.id)) return null;
     // Subagent calls are rendered nested under their Task (below),
     // not at the top level.
-    if (entry.parentId) return null;
+    if (entry.parentId && !entry.isError) return null;
     const children = childrenByParent.get(entry.toolId);
     return (
       <div className="tool-group">

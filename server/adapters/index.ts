@@ -1,6 +1,8 @@
 import path from "node:path";
 import os from "node:os";
 import { existsSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { isIP } from "node:net";
 import { ClaudeCodeSession } from "./claude-code";
 import { CodexSession } from "./codex";
 import { GeminiCliSession } from "./gemini-cli";
@@ -10,6 +12,7 @@ import type { AgentBackend, AgentInfo } from "../protocol";
 import { allowedLocally, type CredentialKind } from "../provider-policy";
 import { cachedLocalServers, hostKey, type LocalDialect, type LocalServer } from "../local-models";
 import { codexConfigProvider, codexProviders, type CodexProviderEntry } from "./codex-config";
+import { wasLoadedFromProjectEnv } from "../project-env";
 
 export type { AgentName, AgentSession, Backend } from "./types";
 export { errText } from "./types";
@@ -21,6 +24,43 @@ import { envInt } from "../env";
 // of seconds, which is the poll's whole point.
 const CRED_PROBE_TTL_MS = envInt("CRED_PROBE_TTL_MS", 2_000);
 const credProbeCache = new Map<string, { at: number; value: boolean }>();
+
+// Configured endpoint URLs are server-side configuration and may themselves
+// carry URL auth or signed query parameters. The browser gets only a stable
+// per-daemon handle. Bounded because tests and unusual process.env mutation
+// can cycle configuration even though production loads it once at startup.
+const configuredBackendIds = new Map<string, string>();
+
+function opaqueConfiguredBackendId(
+  agent: AgentName,
+  endpoint: string,
+  auth: NonNullable<Backend["endpointAuth"]>,
+): string {
+  const key = `${agent}\0${auth}\0${endpoint}`;
+  const existing = configuredBackendIds.get(key);
+  if (existing) return existing;
+  if (configuredBackendIds.size >= 128) configuredBackendIds.clear();
+  const id = randomUUID();
+  configuredBackendIds.set(key, id);
+  return id;
+}
+
+/** Which credential, if any, is allowed to accompany the configured Claude
+ * endpoint. A checkout-supplied endpoint may use only a credential supplied
+ * by that same constrained project configuration; it can never redirect a
+ * parent-only daemon secret. */
+function configuredClaudeEndpointAuth(): NonNullable<Backend["endpointAuth"]> {
+  const endpointFromProject = wasLoadedFromProjectEnv("ANTHROPIC_BASE_URL");
+  const apiKeyAllowed =
+    Boolean(process.env.ANTHROPIC_API_KEY) &&
+    (!endpointFromProject || wasLoadedFromProjectEnv("ANTHROPIC_API_KEY"));
+  const authTokenAllowed =
+    Boolean(process.env.ANTHROPIC_AUTH_TOKEN) &&
+    (!endpointFromProject || wasLoadedFromProjectEnv("ANTHROPIC_AUTH_TOKEN"));
+  if (apiKeyAllowed) return "api-key";
+  if (authTokenAllowed) return "auth-token";
+  return "none";
+}
 
 /** Does `<$envDir | ~/subdir>/file` exist — the shape a terminal login writes
  *  (Claude's `.credentials.json`, Codex's `auth.json`)? `envDir` is each agent's
@@ -111,7 +151,28 @@ export function resolveBackendFor(agent: AgentName): Backend {
   // written bans; codex only if provider-policy ever flips it) is NOT live —
   // it falls back to the mock, so we never actually drive it — and onboarding
   // shows it as `blocked` with the API-key fix (R.4i).
-  return { agent, kind, live: allowedLocally(agent, kind), model: modelFor(agent) };
+  const backend: Backend = {
+    agent,
+    kind,
+    live: allowedLocally(agent, kind),
+    model: modelFor(agent),
+  };
+  if (kind === "local" && agent === "claude-code") {
+    const endpoint = validEndpointUrl(process.env.ANTHROPIC_BASE_URL);
+    if (endpoint) {
+      backend.endpoint = endpoint;
+      backend.endpointSource = "configured";
+      backend.endpointAuth = configuredClaudeEndpointAuth();
+    } else {
+      // Malformed configured input still reaches the adapter's honest error
+      // path, but it never inherits either real credential while doing so.
+      backend.endpointAuth = "none";
+    }
+  } else if (kind === "local" && agent === "codex") {
+    const provider = codexConfigProvider()?.provider;
+    if (provider) backend.provider = provider;
+  }
+  return backend;
 }
 
 // Agents with a landed adapter — the onboarding picker's universe.
@@ -121,8 +182,8 @@ export const ADAPTER_AGENTS: AgentName[] = ["claude-code", "codex", "gemini-cli"
  *  verdict; a present-but-prohibited subscription rides as `blocked` —
  *  listed visible, never hidden (Kyle's requirement (c), Phase N charter).
  *  `provider`/`hint` ride to the wire (a config-declared provider row and
- *  why it's unusable); `endpointUrl` is server-side only — mergeBackends
- *  dedupes on it against discovered servers, then strips it. */
+ *  why it's unusable); `endpointUrl` and its auth/source are internal-only.
+ *  A Claude configured row exposes `backendId`, an opaque daemon handle. */
 export type BackendOption = {
   kind: Exclude<CredentialKind, "none">;
   usable: boolean;
@@ -132,6 +193,9 @@ export type BackendOption = {
   provider?: string;
   hint?: string;
   endpointUrl?: string;
+  backendId?: string;
+  endpointSource?: Backend["endpointSource"];
+  endpointAuth?: Backend["endpointAuth"];
 };
 
 /**
@@ -149,7 +213,12 @@ export function backendOptions(agent: AgentName): BackendOption[] {
   // the agent resolves its own default and the row stays silent rather than
   // guess. (Codex's config `model` is deliberately NOT it: a pick that forces
   // the first-party provider neutralizes that model — codex.ts.)
-  const addCredentialRow = (kind: Exclude<CredentialKind, "none">, detail?: string) => {
+  const addCredentialRow = (
+    kind: Exclude<CredentialKind, "none">,
+    detail?: string,
+    endpointUrl?: string,
+    endpointAuth?: Backend["endpointAuth"],
+  ) => {
     const usable = allowedLocally(agent, kind);
     const model = modelFor(agent);
     options.push({
@@ -158,11 +227,26 @@ export function backendOptions(agent: AgentName): BackendOption[] {
       ...(kind === "subscription" && !usable ? { blocked: true } : {}),
       ...(detail ? { detail } : {}),
       ...(model ? { model } : {}),
+      ...(endpointUrl ? { endpointUrl } : {}),
+      ...(endpointUrl && kind === "local" && agent === "claude-code"
+        ? {
+            backendId: opaqueConfiguredBackendId(agent, endpointUrl, endpointAuth ?? "none"),
+            endpointSource: "configured" as const,
+            endpointAuth: endpointAuth ?? "none",
+          }
+        : {}),
     });
   };
   switch (agent) {
     case "claude-code": {
-      if (process.env.ANTHROPIC_BASE_URL) addCredentialRow("local", endpointDetail(agent));
+      if (process.env.ANTHROPIC_BASE_URL) {
+        addCredentialRow(
+          "local",
+          endpointDetail(agent),
+          validEndpointUrl(process.env.ANTHROPIC_BASE_URL),
+          configuredClaudeEndpointAuth(),
+        );
+      }
       if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) addCredentialRow("api-key");
       if (loginFileExists(process.env.CLAUDE_CONFIG_DIR, ".claude", ".credentials.json"))
         addCredentialRow("subscription");
@@ -225,20 +309,11 @@ function codexProviderRows(): { defaultRow?: BackendOption; otherRows: BackendOp
   return { defaultRow, otherRows: [...rows.values()].filter((r) => r !== defaultRow) };
 }
 
-/** A provider row's full label: the display name the user gave it (else its
- *  id), plus the host it points at when a `base_url` is declared — same
- *  local/custom distinction as endpointDetail. Malformed URLs fall back to
- *  the bare name — never echo raw config input onto the wire. */
+/** A provider row's browser-safe label: the display name the user gave it
+ * (else its id). Its configured base URL remains server-side because even a
+ * hostname can disclose private tenant or network identity. */
 function providerRowDetail(e: CodexProviderEntry): string {
-  const name = e.name ?? e.id;
-  if (e.baseUrl) {
-    try {
-      return `${name} · ${new URL(e.baseUrl).host}`;
-    } catch {
-      // fall through to the bare name
-    }
-  }
-  return name;
+  return e.name ?? e.id;
 }
 
 // Which local-server API dialect each agent can drive (N.3): compatibility is
@@ -273,19 +348,24 @@ export function mergeBackends(
   const creds = options
     .filter((o) => {
       if (o.kind !== "local") return true;
-      // A provider row knows its own URL; claude's env row falls back to the
-      // agent-level lookup (its option carries no endpointUrl).
+      // A provider row and Claude's env row both know their exact URL. The
+      // fallback retains compatibility with callers constructing old-style
+      // BackendOption fixtures without endpointUrl.
       const url = o.endpointUrl ?? byoEndpointUrl(agent);
       const host = url ? hostKey(url) : undefined;
       return !(host !== undefined && discoveredHosts.has(host));
     })
-    .map(({ endpointUrl: _endpointUrl, ...wire }) => wire);
+    .map(({ endpointUrl, endpointSource: _source, endpointAuth: _auth, ...wire }) => ({
+      ...wire,
+      ...(endpointUrl && isLoopbackEndpointUrl(endpointUrl) ? { onDevice: true as const } : {}),
+    }));
   return [
     ...creds,
     ...discovered.map((s) => ({
       kind: "local" as const,
       usable: true,
       endpoint: s.endpoint,
+      ...(isLoopbackEndpointUrl(s.endpoint) ? { onDevice: true as const } : {}),
       runtime: s.runtime,
       models: s.models,
     })),
@@ -350,20 +430,49 @@ function byoEndpointUrl(agent: AgentName): string | undefined {
   return undefined;
 }
 
-/** Picker label for the agent's configured BYO endpoint. The `local`
- *  credential kind covers any BYO endpoint, so the label says where it
- *  actually points: "local endpoint" for a loopback host (Ollama), "custom
- *  endpoint" for a remote one (a hosted open-model API, e.g. DeepSeek or
- *  OpenRouter). A malformed value falls back to the plain label — never echo
- *  raw config input onto the wire. */
+/** A configured endpoint is safe to advertise only when it is a real URL.
+ * Malformed operator input still gets the existing generic local row and
+ * adapter error path; its raw bytes never become browser-visible metadata. */
+function validEndpointUrl(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return undefined;
+    return value;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Exact, DNS-independent loopback classification for UI privacy claims.
+ * Hostname prefixes are never enough: `127.attacker.test` is an ordinary
+ * remote DNS name. URL parsing canonicalizes numeric IPv4 spellings first. */
+export function isLoopbackEndpointUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    const hostname = parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+    if (hostname === "localhost" || hostname === "::1") return true;
+    if (isIP(hostname) === 4) return Number(hostname.split(".", 1)[0]) === 127;
+    if (isIP(hostname) !== 6) return false;
+    // Node canonicalizes IPv4-mapped addresses to ::ffff:7f00:1 form. They
+    // still route to the IPv4 loopback and deserve the same on-device tag.
+    const mapped = /^::ffff:([0-9a-f]{1,4}):[0-9a-f]{1,4}$/.exec(hostname);
+    return mapped ? (Number.parseInt(mapped[1], 16) >>> 8) === 0x7f : false;
+  } catch {
+    return false;
+  }
+}
+
+/** Picker label for the agent's configured BYO endpoint. The browser learns
+ * only whether the destination is exact loopback: configured hostnames can
+ * disclose tenant or private-network identity even after URL auth/query data
+ * is removed. A malformed value falls back to the plain local label. */
 function endpointDetail(agent: AgentName): string {
   const url = byoEndpointUrl(agent);
   if (url) {
     try {
-      const u = new URL(url);
-      const loopback =
-        u.hostname === "localhost" || u.hostname === "[::1]" || u.hostname.startsWith("127.");
-      return `${loopback ? "local" : "custom"} endpoint · ${u.host}`;
+      new URL(url);
+      return isLoopbackEndpointUrl(url) ? "local endpoint" : "custom endpoint";
     } catch {
       // fall through to the plain label
     }
@@ -405,15 +514,51 @@ export function resolveChosenBackend(
   const c = (typeof choice === "object" && choice !== null ? choice : {}) as {
     kind?: unknown;
     endpoint?: unknown;
+    backendId?: unknown;
     provider?: unknown;
     model?: unknown;
   };
   const kind = c.kind;
   if (kind !== "api-key" && kind !== "subscription" && kind !== "local")
     return { error: "unknown backend choice" };
+  if (
+    (c.endpoint !== undefined && typeof c.endpoint !== "string") ||
+    (c.backendId !== undefined && typeof c.backendId !== "string") ||
+    (c.provider !== undefined && typeof c.provider !== "string") ||
+    (c.model !== undefined && typeof c.model !== "string")
+  ) {
+    return { error: "unknown backend choice" };
+  }
   const endpoint = typeof c.endpoint === "string" ? c.endpoint : undefined;
+  const backendId = typeof c.backendId === "string" ? c.backendId : undefined;
   const provider = typeof c.provider === "string" ? c.provider : undefined;
   const model = typeof c.model === "string" ? c.model : undefined;
+  const identityCount = [endpoint, backendId, provider].filter((value) => value !== undefined).length;
+  if (identityCount > 1 || (kind !== "local" && identityCount > 0)) {
+    return { error: "unknown backend choice" };
+  }
+  if (kind === "local" && backendId) {
+    if (agent !== "claude-code") return { error: "unknown backend choice" };
+    const configured = backendOptions(agent).find(
+      (option) =>
+        option.kind === "local" &&
+        option.usable &&
+        option.backendId === backendId &&
+        option.endpointUrl,
+    );
+    if (!configured?.endpointUrl) {
+      return { error: "that configured endpoint is no longer available — pick again" };
+    }
+    return {
+      agent,
+      kind: "local",
+      live: true,
+      model: model ?? configured.model ?? modelFor(agent),
+      endpoint: configured.endpointUrl,
+      endpointSource: "configured",
+      endpointAuth: configured.endpointAuth ?? "none",
+    };
+  }
   if (kind === "local" && provider) {
     // A config-declared provider: must still be in the user's config.toml
     // (they may have edited it since the hello), and its env key — the pick's
@@ -430,7 +575,28 @@ export function resolveChosenBackend(
     return { agent, kind: "local", live: true, model, provider };
   }
   if (kind === "local" && endpoint) {
-    // A discovered server: must still be running, dialect-compatible, and
+    // Compatibility with a cached pre-UX.8 picker: accept a configured URL
+    // only when it still exactly matches this daemon's current internal row.
+    // New hellos never reveal this URL and use backendId above.
+    const configured =
+      agent === "claude-code"
+        ? backendOptions(agent).find(
+            (option) =>
+              option.kind === "local" && option.usable && option.endpointUrl === endpoint,
+          )
+        : undefined;
+    if (configured?.endpointUrl) {
+      return {
+        agent,
+        kind: "local",
+        live: true,
+        model: model ?? configured.model ?? modelFor(agent),
+        endpoint: configured.endpointUrl,
+        endpointSource: "configured",
+        endpointAuth: configured.endpointAuth ?? "none",
+      };
+    }
+    // A discovered server must still be running, dialect-compatible, and
     // serving the named model — the pick may be stale (picker raced a stop).
     const dialect = AGENT_DIALECT[agent];
     const server = dialect
@@ -440,7 +606,34 @@ export function resolveChosenBackend(
       return { error: "that local server is no longer running — start it and pick again" };
     if (model && !server.models.includes(model))
       return { error: "that model is no longer served — refresh and pick again" };
-    return { agent, kind: "local", live: true, model, endpoint };
+    return {
+      agent,
+      kind: "local",
+      live: true,
+      model,
+      endpoint,
+      endpointSource: "discovered",
+      ...(agent === "claude-code" ? { endpointAuth: "none" as const } : {}),
+    };
+  }
+  if (kind === "local" && agent === "claude-code") {
+    // Old clients represent the daemon's single configured row by kind alone.
+    // Resolve that identifier-free choice to the CURRENT internal row; never
+    // fall back to inheriting credentials independently from its endpoint.
+    const configured = backendOptions(agent).find(
+      (option) => option.kind === "local" && option.usable && option.endpointUrl,
+    );
+    if (configured?.endpointUrl) {
+      return {
+        agent,
+        kind: "local",
+        live: true,
+        model: model ?? configured.model ?? modelFor(agent),
+        endpoint: configured.endpointUrl,
+        endpointSource: "configured",
+        endpointAuth: configured.endpointAuth ?? "none",
+      };
+    }
   }
   // A credential (or the env-configured endpoint): must be detected right now
   // AND usable under provider policy — a blocked subscription refuses here.
@@ -457,8 +650,11 @@ export function resolveChosenBackend(
  * backend passes its precedence kind, which the adapters treat exactly as the
  * pre-N behavior.
  */
-export function createSession(backend: Backend, opts: { cwd: string }): AgentSession {
-  if (!backend.live) return new MockSession();
+export function createSession(
+  backend: Backend,
+  opts: { cwd: string; resumeId?: string },
+): AgentSession {
+  if (!backend.live) return new MockSession(backend.agent);
   const kind = backend.kind === "none" ? undefined : backend.kind;
   switch (backend.agent) {
     case "claude-code":
@@ -467,6 +663,8 @@ export function createSession(backend: Backend, opts: { cwd: string }): AgentSes
         model: backend.model,
         kind,
         endpoint: backend.endpoint,
+        endpointAuth: backend.endpointAuth,
+        resumeId: opts.resumeId,
       });
     case "codex":
       return new CodexSession({
@@ -475,8 +673,13 @@ export function createSession(backend: Backend, opts: { cwd: string }): AgentSes
         kind,
         endpoint: backend.endpoint,
         provider: backend.provider,
+        resumeId: opts.resumeId,
       });
     case "gemini-cli":
-      return new GeminiCliSession({ workspaceDir: opts.cwd, model: backend.model });
+      return new GeminiCliSession({
+        workspaceDir: opts.cwd,
+        model: backend.model,
+        resumeId: opts.resumeId,
+      });
   }
 }

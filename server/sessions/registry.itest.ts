@@ -132,11 +132,19 @@ test("rename updates fleet metadata", async () => {
   w.close();
 });
 
-test("an unwatched session dies at the idle timeout; its id then creates fresh", async () => {
-  const { client: g, sessionId: dying } = await createSession(d.port);
+test("an unwatched session unloads at the idle timeout; its id and transcript reopen", async () => {
+  const { client: g, sessionId: dormant } = await createSession(d.port);
+  g.send({ type: "prompt", text: "survive the idle unload" });
+  await g.type("turn_end", 20_000);
   g.close();
   await new Promise((r) => setTimeout(r, 2_500)); // past the 1200ms override
-  const { client: h, created } = await attach({ sessionId: dying });
-  assert.notEqual(created.sessionId, dying); // the old session is gone
+  const { client: h, created } = await attach({ sessionId: dormant });
+  assert.equal(created.sessionId, dormant);
+  assert.equal("fallback" in created, false);
+  const prompt = await h.waitFor(
+    (m) => m.type === "user_prompt" && m.text === "survive the idle unload",
+    "replayed prompt",
+  );
+  assert.equal(prompt.replay, true);
   h.close();
 });

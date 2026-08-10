@@ -18,6 +18,24 @@
  */
 export type AgentName = "claude-code" | "codex" | "gemini-cli";
 
+/** One provider-owned completion shown by the trusted prompt shell before a
+ * prompt is submitted. `value` includes its trigger (`/model`, `$audit`), so
+ * insertion is mechanical and never reconstructed by the browser. */
+export type PromptOption = {
+  trigger: "/" | "$";
+  value: string;
+  label: string;
+  description?: string;
+  argumentHint?: string;
+  kind: "command" | "skill";
+  aliases?: string[];
+  // Fixed by the adapter/daemon, never copied from provider metadata. When
+  // provider- or checkout-supplied text is present, the trusted prompt shell
+  // turns this enum into a visible attribution badge so that text cannot pose
+  // as Mirafold's own instruction. Optional for older daemons/checkpoints.
+  source?: AgentName | "mirafold";
+};
+
 /**
  * Server → browser.
  * Step 4.4 (additive): every message BROADCAST onto a session's stream also
@@ -39,6 +57,12 @@ export type WireMsg = WireMsgBody & { seq?: number; replay?: true };
 
 type WireMsgBody =
   | { type: "text_delta"; text: string }
+  // Phase UX.1: the selected provider's live prompt-completion catalog.
+  // This is shell data, not agent-authored UI: the browser opens it as soon
+  // as the trigger is typed, before anything is sent to the provider. A new
+  // message replaces the prior catalog whole (Claude commands may change as
+  // the working directory changes).
+  | { type: "prompt_options"; options: PromptOption[] }
   | { type: "status"; state: "thinking" | "tool"; label?: string }
   | { type: "turn_end" }
   | { type: "error"; message: string }
@@ -115,9 +139,10 @@ type WireMsgBody =
   // mock — the shell draws a persistent demo banner the agent can't fake or
   // clear (same trust rule as the permission bar). Step R.4c adds `fallback`
   // (optional/additive): true means the viewport asked to attach to a
-  // session this registry doesn't have (daemon restarted, session expired)
-  // and got a FRESH one instead — the shell must say so, never silently
-  // swap the URL over a blank transcript.
+  // session this registry and its durable store don't have (explicitly
+  // ended, removed, or created before durable recovery) and got a FRESH one
+  // instead — the shell must say so, never silently swap the URL over a blank
+  // transcript.
   | {
       type: "session_created";
       sessionId: string;
@@ -349,11 +374,15 @@ export type AgentInfo = {
 /**
  * One way an agent could run (N.3) — a row in the second-step picker. A
  * detected credential (`api-key` / `subscription`) or a local endpoint:
- * env-configured, or a probe-discovered running server (then `endpoint` /
- * `runtime` / `models` are set — pick a model to pick the backend). `usable`
- * is provider-policy's verdict; `blocked` marks a present-but-prohibited
- * subscription, listed visible-but-gray, never hidden. Never carries a
- * secret — kinds and labels only.
+ * env-configured, or a probe-discovered running server (`runtime` / `models`
+ * are then set — pick a model to pick the backend). A probe-discovered server
+ * carries `endpoint`; a configured Claude endpoint carries only an opaque
+ * daemon-scoped `backendId`, while a Codex config row carries its provider id
+ * but never its base URL. Configured URLs can contain credentials, private
+ * hosts, or signed queries. `usable` is provider-policy's verdict; `blocked` marks a
+ * present-but-prohibited subscription, listed visible-but-gray, never hidden.
+ * `onDevice` is derived by the daemon from exact IP loopback classification;
+ * the browser never infers this privacy claim from a hostname prefix.
  */
 export type AgentBackend = {
   kind: "api-key" | "subscription" | "local";
@@ -361,6 +390,8 @@ export type AgentBackend = {
   blocked?: boolean;
   detail?: string;
   endpoint?: string;
+  backendId?: string;
+  onDevice?: true;
   runtime?: string;
   models?: string[];
   // The single model this row will run, when config/env determines it — the
@@ -379,12 +410,14 @@ export type AgentBackend = {
 };
 
 /** The onboarding picker's backend choice (N.4), riding `create`. `endpoint`
- *  names a discovered local server (absent = the env-configured one for kind
- *  `local`); `provider` names a config-declared provider row; `model` is the
- *  picked catalog entry. Labels only — never a secret. */
+ *  names a probe-discovered local server; `backendId` names a configured
+ *  endpoint opaquely; `provider` names a config-declared provider row; `model`
+ *  is the picked catalog entry. Labels and opaque identifiers only — never a
+ *  configured URL or credential. */
 export type BackendChoice = {
   kind: "api-key" | "subscription" | "local";
   endpoint?: string;
+  backendId?: string;
   provider?: string;
   model?: string;
 };

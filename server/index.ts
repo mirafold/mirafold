@@ -7,6 +7,7 @@ import express from "express";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { WireMsg } from "./protocol";
 import { SessionRegistry } from "./sessions/registry";
+import { SessionCheckpointStore } from "./sessions/session-store";
 import { openConnection } from "./sessions/connection";
 import { probeLocalServers } from "./local-models";
 import { sweepLiveness } from "./sessions/ws-liveness";
@@ -212,7 +213,7 @@ wss.on("error", (err: NodeJS.ErrnoException) => {
   if (err.code !== "EADDRINUSE") log.error(`[ws] ${err.stack ?? String(err)}`);
 });
 
-const registry = new SessionRegistry();
+const registry = new SessionRegistry(undefined, undefined, new SessionCheckpointStore());
 
 // Local model server discovery (N.3): fire-and-forget so a server already
 // running lands in the first hello's `backends`; never awaited — startup

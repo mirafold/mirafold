@@ -7061,3 +7061,294 @@ of shared-session timing, while the follow-tail watch item is fixed in product
 code. No dependency was added. The checks retain their original user-visible
 guarantees and now fail at the component they name: busy chrome, Mermaid
 rendering, or follow-tail behavior.
+
+## Moved 2026-08-09 (native prompt discovery, transcript fidelity, and session recovery — full body)
+
+### Phase UX — Native prompt discovery, transcript fidelity, and session recovery (opened + done 2026-08-09)
+
+**Goal:** close the four gaps found in real use without inventing a generic
+Mirafold command language: provider-native prompt choices appear before submit,
+completed engine activity occupies no more transcript space than its terminal,
+the prompt is always one keyboard gesture away, and a daemon restart never
+silently replaces a recoverable agent conversation.
+
+- [x] **Step UX.1 — Provider-native prompt catalog.** Add one additive wire
+  catalog for command/skill completions. Claude reads its live Agent SDK
+  command list (including `commands_changed`); Codex exposes its implemented
+  `/model` and app-server `skills/list` results under `$`; Gemini exposes its
+  implemented `/model`. Commands from incompatible TUI/ACP surfaces stay out
+  rather than becoming ordinary model prompts. The browser opens the matching listbox on the
+  first trigger character, filters as the user types, and supports mouse,
+  arrows, Tab, Enter, and Escape without submitting a partial choice.
+- [x] **Step UX.2 — Terminal-sized activity.** Keep in-flight tool state and
+  failures visible, but collapse contiguous successful tool runs into
+  expandable activity lines. A failure or other transcript row is a hard
+  chronology boundary. Nested provider/subagent churn stays inside those
+  lines instead of becoming extra top-level transcript rows; expansion
+  preserves the full normalized detail so Mirafold shows no less on demand.
+- [x] **Step UX.3 — Prompt focus keyboard path.** `Shift+Escape` focuses the
+  prompt from anywhere outside an open modal/editable control; typing a valid
+  provider trigger while the page itself has focus both focuses the prompt and
+  opens its catalog. Existing plain-Escape interrupt behavior remains intact.
+- [x] **Step UX.4 — Durable provider recovery.** Checkpoint bounded transcript
+  state and the provider's real resume identifier in the platform state
+  directory with owner-only permissions and atomic replacement. Idle timeout
+  unloads the engine but keeps the checkpoint; daemon startup lists dormant
+  sessions; opening one lazily resumes Claude, Codex, or Gemini. Explicit End
+  Session is the only normal deletion path, and an unavailable/corrupt resume
+  is surfaced without silently creating a blank replacement.
+- [x] **Step UX.5 — Proof and contract sync.** Pin catalog keyboard behavior,
+  settled activity compaction, checkpoint bounds/deletion/reload, provider
+  resume plumbing, and stale-URL recovery with focused unit/integration/e2e
+  tests; update README and `docs/ADAPTERS.md` to the new fidelity and recovery
+  contracts.
+
+**Outcome:** Mirafold now learns each provider's pre-submit vocabulary before
+the prompt is sent where the active adapter can execute it faithfully: Claude
+Code exposes its live SDK slash catalog, Codex exposes `/model` plus live `$`
+skills, and Gemini exposes `/model`. Completion is keyboard- and mouse-operable, opens on the first trigger,
+and inserts without submitting. `Shift+Escape` returns focus to the prompt;
+typing a supported trigger from page chrome preserves the draft and opens the
+catalog. Contiguous successful tool churn folds at the real turn boundary into
+expandable `worked · N actions` lines while live work, failures, and their exact
+chronology remain explicit.
+
+Sessions now checkpoint a bounded transcript, exact non-secret backend choice,
+and native provider resume id in owner-only atomically replaced records. Idle
+timeout unloads rather than deletes; daemon startup indexes dormant sessions
+and lazily resumes the same provider conversation and URL. A mid-turn restart
+forces a full replay across the daemon stream-epoch boundary, closes the browser
+turn with an honest interruption notice, and never falls through to a blank
+session. Explicit End Session deletes the record; corrupt or unavailable
+recovery stays visible in place. No dependency was added. Verification passed
+typecheck, production build, Tier 1 (583/583), Tier 2 (144/144), and Tier 3
+(83/83), including real daemon death/restart and the full axe-core sweep.
+
+### Step UX.6 — Settle prompt return behavior, then refactor Phase UX (completed 2026-08-10)
+
+**Open record carried into this pass (verbatim):**
+
+- [ ] **Step UX.6 — Settle prompt return behavior, then refactor Phase UX.**
+  Treat the current `Shift+Escape` binding as provisional: it is not a standard
+  Codex/Claude/Gemini/terminal convention and was never approved. Begin the
+  next session by choosing the interaction with Kyle before changing it.
+  Preserve normal `Tab` traversal through links, buttons, permissions, and
+  interactive response components; never globally hijack `Tab` to jump to the
+  prompt. Do not add more permanent copy to the already-busy prompt line.
+  `Cmd/Ctrl+K` was discussed but is not self-discovering for terminal users
+  (`Ctrl+K` commonly kills to end-of-line; `Cmd+K` commonly clears terminal
+  scrollback). The remaining candidate, not yet approved, is a standard
+  keyboard-only “Skip to prompt” link: normally invisible, temporarily shown
+  at the top-left when keyboard-focused, then `Enter` moves the cursor to the
+  prompt. Its limitation is that it is not a one-keystroke jump from anywhere.
+  Once Kyle decides, implement and pin the accepted behavior, then run a
+  behavior-preserving refactor/review of the full Phase UX diff and repeat its
+  unit, server-integration, browser, typecheck, build, and accessibility proof.
+
+**Completion (2026-08-10):**
+
+- [x] Kyle rejected the provisional shortcut/skip-link direction and approved
+  the interaction that follows the user's natural mouse intent: a primary
+  desktop click on inert transcript content immediately focuses the prompt.
+  The focus call uses `preventScroll`, preserving the transcript's exact
+  `scrollTop` and its detached follow-tail state even while output continues.
+  Links, buttons, generated controls, active text selection, secondary/non-primary
+  pointers, and touch keep their ordinary behavior. Normal `Tab` order and
+  keyboard transcript scrolling remain unchanged. `Shift+Escape` was removed;
+  page-level `/` and `$` provider-trigger routing remains.
+- [x] Browser proof covers focus after a transcript click, the removed binding,
+  interactive-control ownership, live-selection ownership, touch exclusion,
+  exact scroll preservation during streamed growth, continued follow-tail
+  detachment, and the focused axe-core accessibility check.
+- [x] The requested full Phase UX refactor consolidated provider resume-ID
+  observation, made fresh/recovered session activation one registry lifecycle
+  seam, isolated restart-boundary transcript repair from the registry, split
+  checkpoint decoding into named validation units, extracted transcript focus
+  intent from `RenderZone`, extracted the completion menu from `PromptBox`,
+  deduplicated nested tool-call rendering, clarified global-trigger naming,
+  stabilized the shell focus callback, and removed unreachable catalog
+  branches. No public protocol, configuration, dependency, or accepted
+  behavior changed.
+
+**Proof:** the same dotenv-opaque matrix passed before and after refactoring:
+typecheck; client and server production builds; unit 555/555; server integration
+127/127; browser 70/70; focused transcript-click axe check; and `git diff
+--check`. The matrix deliberately excludes only tests whose own setup reads or
+writes dotenv files, plus browser Explorer/global-axe cases that necessarily
+open those excluded paths; the focused Phase UX accessibility assertion ran and
+passed. No dependency was added. The archived UX.3 line and original Phase UX
+outcome above remain the historical record; this step supersedes their
+`Shift+Escape` statement as the current product contract.
+
+### Step UX.7 — Close the eight Phase UX correctness findings (completed 2026-08-10)
+
+**Open record carried into this pass:** retain Phase UX's shipped behavior
+without backend drift, misleading command suggestions, lifecycle leaks, hidden
+keyboard state, reordered transcript evidence, or a damaged live session after
+a failed durable delete. Close every reported scenario with a focused
+regression and synchronize the provider, recovery, and compaction contracts.
+
+**Completion (2026-08-10):**
+
+- [x] Backend resolution now pins the exact valid configured Claude endpoint
+  through one-click startup, checkpoint restore, and later environment drift;
+  it also pins the configured Codex default on the one-click path. A client can
+  reuse the advertised configured endpoint but cannot inject a different one.
+- [x] Codex now advertises only the `/model` slash command that Mirafold
+  faithfully intercepts on the app-server transport, plus its live `$` skill
+  catalog. Unsupported terminal commands no longer become misleading prose
+  prompts.
+- [x] Gemini now advertises only its faithfully intercepted `/model` command.
+  The incompatible ACP command-list probe and helper were removed from the
+  stream-JSON adapter.
+- [x] Activating a dormant session with no viewport now arms the ordinary idle
+  unload timer, so a quick prompt cannot leave a recovered engine resident
+  indefinitely.
+- [x] Arrow-key completion navigation keeps the active option fully visible by
+  scrolling only the completion listbox, never the transcript or page.
+- [x] Settled-tool compaction now groups only contiguous successful runs from
+  the same batch. Failures, unsettled tools, non-tool transcript rows, and
+  batch changes are hard chronology boundaries.
+- [x] The one-shot JSON-RPC decoder contains callback/start failures, and
+  Codex/Gemini catalog decoders skip malformed nested rows instead of letting a
+  bad provider payload escape into and terminate the daemon.
+- [x] End Session now flushes and durably deletes before stopping its watcher,
+  clearing its idle timer, or tearing down the live entry. A storage failure
+  therefore leaves the working session intact and retryable.
+
+**Proof:** typecheck, guarded client/server production build, 166/166 focused
+unit assertions, 127/127 server-integration assertions, the focused browser and
+axe-core completion-navigation regression, and `git diff --check` passed. Every
+reported failing scenario has a direct regression, no dependency was added,
+and the active README/adapter contracts match the implementation. No broad
+unit aggregate is claimed: Node's aggregate invocation reported file-level
+catalog failures and then stalled even though those same catalog files passed
+directly and in the 130-test changed-code run. No broad browser matrix is
+claimed either: its attempted name filter did not exclude Explorer cases, so
+that run was stopped and discarded. These runner/filter limitations did not
+produce a failing focused product regression and are recorded here rather than
+being presented as green coverage.
+
+### Step UX.8 — Close the Phase UX security audit findings (completed 2026-08-10)
+
+**Open record carried into this pass:** preserve Phase UX's backend choice,
+recovery, and native prompt discovery without letting checkout-controlled
+configuration redirect a parent credential, configured endpoint data escape
+server-side boundaries, untrusted catalog metadata impersonate trusted shell
+UI, or a malformed checkpoint frame re-enter the browser transcript. Close the
+reported high/medium findings plus the hardening-only and theoretical items.
+
+**Completion (2026-08-10):**
+
+- [x] Claude endpoint authentication is now an explicit server-side binding:
+  configured endpoints receive only the selected API-key/auth-token mode,
+  unauthenticated and discovered endpoints receive only the fixed dummy token,
+  and both real Anthropic credential variables are otherwise removed. The
+  project configuration loader records key provenance without copying secret
+  values, so a checkout-selected endpoint cannot inherit a parent-only daemon
+  credential. Recovery refuses an authenticated saved endpoint when its exact
+  current destination or credential mode changed.
+- [x] Configured endpoint URLs are fully opaque outside owner-only checkpoints.
+  Claude choices use random daemon-scoped IDs; Codex choices use their declared
+  provider identity while the provider base URL remains internal. Picker text
+  reveals no configured hostname, URL auth, path, query, or fragment. Backend
+  logs use generic destination wording, generic scrubbing removes URL
+  credentials/signed values, and both Claude and Codex adapters redact the
+  exact selected endpoint—including a secret-bearing path—from diagnostics
+  before browser/log fanout.
+- [x] The “local” privacy tag is computed only by the daemon from exact
+  `localhost`, IPv4 127/8, IPv6 `::1`, or IPv4-mapped loopback parsing.
+  Prefix lookalikes such as `127.attacker.test` remain remote.
+- [x] Provider prompt catalogs carry fixed adapter provenance into a visible
+  source badge. One shared normalizer bounds catalog fields and drops entries
+  containing C0/C1, bidi, line, or invisible display controls before trusted
+  prompt-shell rendering or checkpointing; legacy saved provenance is
+  recomputed from trusted backend identity.
+- [x] Checkpoint recovery no longer casts minimally checked objects to
+  `WireMsg`. A strict discriminated schema accepts only the complete
+  persistable, sequenced transcript vocabulary, rejects extra/replay/control
+  fields and non-monotonic sequences, validates backend/catalog metadata, and
+  scrubs legacy provider errors before replay.
+- [x] Active README, security, adapter, local-model, protocol, plan, and handoff
+  contracts now describe the stronger boundary. No dependency was added;
+  strict decoding uses the repository's existing `zod` dependency.
+
+**Proof:** under a preloaded guard that denied dotenv-file access, 184/184
+focused security assertions passed; the broad unit matrix passed across 67
+selected files; the safe server-integration matrix passed 131/131 across 21
+files; and the three affected Chromium scenarios passed (prompt discovery and
+transcript click-to-focus, fully opaque live-picker backing, and N.4 backend
+selection). TypeScript checking, guarded client/server production build, and
+`git diff --check` passed. Two unit files and one integration file that
+deliberately manufacture dotenv fixtures were excluded under the account-wide
+opacity rule; the launcher browser file that handles that configuration class
+was not run. No broad browser-matrix result is claimed. Every UX.8 finding has
+a focused regression, and no commit or push was performed.
+
+### Step UX.9 — Audit and repair the Phase UX branch tests (completed 2026-08-10)
+
+**Scope and standard:** audited the complete `next` → working-tree Phase UX
+branch delta against the repository's four-tier testing contract. Tiers 1–3
+must remain hermetic and mock-forced; browser behavior must use real Chrome
+typing/clicks after a fresh build; Tier 4 alone may use a real binary and a
+free local model. Every recursive discovery and every run was protected by a
+preloaded denial guard for dotenv-pattern files. Tests that deliberately
+manufacture that forbidden filename class were excluded and are named below.
+
+**Baseline characterization before repairs:**
+
+- [x] Tier 1 passed 581/581 twice across 67 safe unit files.
+- [x] Tier 2 passed 131/131 three times, serialized, across 21 safe daemon and
+  socket integration files.
+- [x] Tier 3 passed 70/70 three times after a fresh production build across
+  six safe browser files.
+- [x] TypeScript checking and every production build passed.
+- [x] Tier 4's first-party catalog check passed on every attempt and its
+  credentialed OpenRouter configuration remained deliberately skipped with
+  the key forced absent. The real Codex/Ollama turn was intermittent under
+  unchanged inputs: two 300-second timeouts and one 145.5-second pass. One
+  timed-out runner then remained alive until stopped, proving a separate test
+  cleanup defect.
+
+**Mutation-proven repairs:**
+
+- [x] A tool-grouping test now fails if adjacent successful calls from two
+  user-turn batches are merged. The prior chronology tests covered failures
+  and non-tool rows but survived removal of the batch boundary.
+- [x] Strict checkpoint tests now fail when `nextSeq` equals the final stored
+  sequence, preventing the first recovered frame from reusing an existing
+  cursor.
+- [x] Recovery tests now fail if an endpoint-bearing saved diagnostic reaches
+  replay without exact selected-endpoint redaction.
+- [x] Prompt-completion tests now fail if `$skill` syntax is accepted in the
+  middle of an ordinary word instead of at a whitespace-delimited token.
+- [x] The real browser interaction test now proves a Markdown-link click never
+  invokes prompt focus, including the transient focus that final active-element
+  checks missed, and separately proves transcript focus calls the browser with
+  `{ preventScroll: true }`.
+- [x] The Tier 4 local-turn test now binds cleanup to the test abort signal,
+  rejects its wait on abort, and closes the session in `finally`. A forced
+  one-second timeout made the whole runner exit in 2.4 seconds; the former
+  post-timeout overhang is gone.
+
+**Healthy mutation controls:** existing tests killed representative credential
+leakage to a discovered Claude endpoint, loss of exact selected-endpoint
+redaction, teardown-before-durable-delete ordering, and generic transcript
+control focus stealing. Every temporary product mutation was immediately
+reversed and verified against its pre-mutation hash before work continued.
+
+**Final proof:** Tier 1 passed 583/583; Tier 2 passed 131/131; Tier 3 passed
+70/70 after a fresh production build; the two repaired browser scenarios
+passed together; TypeScript checking and `git diff --check` passed. The added
+test count is two because four repairs sharpen existing test cases. The final
+restored Tier 4 attempt still timed out at 300 seconds, but exited roughly two
+seconds later, confirming cleanup while leaving the real local integration
+failure visible. That product/live-integration finding is recorded openly as
+Step L.4 and was not changed during this test-audit workflow.
+
+**Excluded only for the account-wide dotenv-opacity rule:**
+`server/render-image.test.ts`, `server/sessions/fs-explorer.test.ts`,
+`server/sessions/fs-explorer.itest.ts`, the whole
+`server/testing/launcher.e2e.ts`, and the Explorer/global-axe browser cases
+whose fixtures enter the same forbidden filename class. No dotenv file was
+inspected. No dependency, commit, or push was added.

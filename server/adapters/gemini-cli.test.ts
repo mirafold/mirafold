@@ -80,6 +80,39 @@ function makeSession(opts: Partial<ConstructorParameters<typeof GeminiCliSession
   return { s, ...attach(s) };
 }
 
+test("recovery and discovery: Gemini resumes the saved id and advertises only its implemented /model", async () => {
+  const argsLog = path.join(tmp, "resume-args.txt");
+  process.env.FAKE_ARGS_LOG = argsLog;
+  const { s, msgs, awaitTurnEnd } = makeSession({
+    resumeId: "22222222-2222-4222-8222-222222222222",
+  });
+  s.refreshPromptOptions();
+  assert.deepEqual(
+    msgs.find((msg) => msg.type === "prompt_options"),
+    {
+      type: "prompt_options",
+      options: [
+        {
+          trigger: "/",
+          value: "/model",
+          label: "model",
+          description: "choose what model to use",
+          kind: "command",
+        },
+      ],
+    },
+  );
+
+  s.pushPrompt("continue");
+  await awaitTurnEnd();
+  const args = spawnArgs(argsLog);
+  const resumeAt = args.indexOf("--resume");
+  assert.ok(resumeAt >= 0);
+  assert.equal(args[resumeAt + 1], s.resumeId);
+  s.close();
+  delete process.env.FAKE_ARGS_LOG;
+});
+
 test("a pre-existing settings.json — broken or valid — is untouched at construction; a turn is what earns consent to merge it", async () => {
   // Unparseable: construction touches NOTHING. Only once a turn actually runs
   // (this workspace is pre-trusted, under `tmp`) does the rewrite+backup happen.

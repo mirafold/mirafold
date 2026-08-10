@@ -43,6 +43,22 @@ const OFFERABLE = new Set(ADAPTER_AGENTS);
 const asAgent = (v: unknown): AgentName | undefined =>
   typeof v === "string" && OFFERABLE.has(v as AgentName) ? (v as AgentName) : undefined;
 
+/** Human diagnostics for a backend choice without ever interpolating the
+ * configured/discovered URL. Configured URLs can contain userinfo or signed
+ * query parameters and are sensitive even when no separate key exists. */
+export function describeBackendForLog(backend: Backend): string {
+  const source =
+    backend.endpointSource === "configured"
+      ? " via configured endpoint"
+      : backend.endpointSource === "discovered"
+        ? " via discovered local server"
+        : "";
+  const model = backend.model
+    ? ` (${backend.model.replace(/[\u0000-\u001f\u007f-\u009f]/gu, " ").slice(0, 120)})`
+    : "";
+  return `${backend.kind}${source}${model}`;
+}
+
 export type Connection = {
   /** Feed one raw client frame (JSON text) into this viewport. */
   handleMessage: (raw: string) => void;
@@ -197,13 +213,23 @@ export function openConnection(
   // and when the act would DRIVE the model, a remote connection gets the
   // R.4i gate, exactly like attach. Returns undefined when refused.
   const actTarget = (sessionId: string, drivesModel: boolean): SessionEntry | undefined => {
-    const target = registry.get(sessionId);
+    let target: SessionEntry | undefined;
+    try {
+      target = registry.open(sessionId);
+    } catch (err) {
+      sendError(errText(err));
+      return undefined;
+    }
     if (!target) {
       sendError(`no such session: ${sessionId}`);
       return undefined;
     }
     if (drivesModel && remote && !allowedOverRelay(target.kind)) {
       sendError(RELAY_GATE_REFUSAL);
+      // `open()` may just have lazily revived a dormant engine. A refused
+      // remote act owns no viewport, so return that engine to the ordinary
+      // idle-unload path instead of leaving it warm indefinitely.
+      if (target.viewports.size === 0) registry.detach(target, viewport);
       return undefined;
     }
     return target;
@@ -246,11 +272,7 @@ export function openConnection(
             break;
           }
           backend = resolved;
-          log.info(
-            `create → ${agent} on chosen backend ${backend.kind}` +
-              (backend.endpoint ? ` @ ${backend.endpoint}` : "") +
-              (backend.model ? ` (${backend.model})` : ""),
-          );
+          log.info(`create → ${agent} on chosen backend ${describeBackendForLog(backend)}`);
         }
         try {
           attachOrReap(
@@ -266,21 +288,23 @@ export function openConnection(
         break;
       }
       case "attach": {
-        // A stale/unknown id (old bookmark, server restart) gets a fresh
-        // session rather than an error page — unless the session cap rejects
-        // the fallback create, which surfaces as an error (not a crash).
+        // A saved id lazily reopens its provider conversation. Only a truly
+        // unknown id (old bookmark / explicit end) gets the historical fresh
+        // fallback; a corrupt or unavailable saved session errors in place.
         noteClientVersion(msg.clientVersion);
-        const existing =
-          typeof msg.sessionId === "string" ? registry.get(msg.sessionId) : undefined;
-        const afterSeq =
-          existing && typeof msg.afterSeq === "number" ? msg.afterSeq : undefined;
         try {
+          const existing =
+            typeof msg.sessionId === "string" ? registry.open(msg.sessionId) : undefined;
+          const afterSeq =
+            existing && typeof msg.afterSeq === "number" ? msg.afterSeq : undefined;
           // fallback only when a session was actually ASKED for and is gone —
           // an id-less attach never had a transcript to lose. An EXISTING
           // session refused by the relay gate is left alone (a local tab may
           // own it); only a fallback-created one is reaped.
           if (existing) {
-            attachTo(existing, afterSeq, false);
+            if (!attachTo(existing, afterSeq, false) && existing.viewports.size === 0) {
+              registry.detach(existing, viewport);
+            }
           } else {
             attachOrReap(registry.create(), afterSeq, typeof msg.sessionId === "string");
           }
@@ -328,8 +352,12 @@ export function openConnection(
         // Usable from a session viewport or a fleet watcher — the registry
         // tears the session down and signals any attached viewports (#11).
         if (typeof msg.sessionId === "string") {
-          registry.end(msg.sessionId);
-          log.info(`end_session → ${msg.sessionId}`);
+          try {
+            registry.end(msg.sessionId);
+            log.info(`end_session → ${msg.sessionId}`);
+          } catch (err) {
+            sendError(`could not end session ${msg.sessionId}: ${errText(err)}`);
+          }
         }
         break;
       // ---- Cockpit acts (M.2): sessionId-addressed like end_session, so a

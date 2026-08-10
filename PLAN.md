@@ -110,9 +110,10 @@ richer, maintained copies in README; the duplicates were retired 2026-07-15
 to end the drift risk of two copies. The locked content, and where it lives:
 
 - **Design identity** → README §7 — terminal successor, not a chat app:
-  mono-in / rich-out, no bubbles ever, and the **visibility superset +
-  collapse-on-finalize** rule (never show less than the terminal; noisy
-  streams render live, then fold to a dim expandable line).
+  mono-in / rich-out, no bubbles ever, and **provider-native transcript
+  fidelity + collapse-on-finalize**: show the same user-visible activity the
+  selected terminal agent shows, neither raw adapter internals nor less useful
+  state; noisy live activity folds to one expandable record when it settles.
 - **The core security model** → README §3 — trusted shell vs. sandboxed
   output zone; the boundary is inviolable, and the API key never reaches
   the browser.
@@ -144,7 +145,8 @@ faithful per-agent skins) · **4** except 4.7 (→ Phase R) · **G, H, H2**
 (relay dedup + human legibility) · **S** (theme system) · **N** (onboarding
 backend picker) · **V** (visual + fidelity gaps) · **A** (accessibility) ·
 **C** (CI/CD) · **E** (Explorer) · **M** (Mission control) · **E2** (Explorer at scale) ·
-**W** (live tree), plus the finished
+**W** (live tree), **UX** (native prompt discovery, transcript fidelity,
+durable provider recovery, and branch test-audit closure), plus the finished
 steps of the still-open Phases **K, R, F, Q, L**.
 
 Archive passes, each a section header in PLAN-ARCHIVE.md you can navigate to:
@@ -152,7 +154,42 @@ Archive passes, each a section header in PLAN-ARCHIVE.md you can navigate to:
 · "Moved 2026-07-24" (Phases A/C/E/M + V.4–V.6, and the completed material
 lifted out of the still-open Phase R steps) · "Moved 2026-07-27" (Phases
 E2/W step bodies, the Phase E/M narrative passes, the R.4l item-5
-investigation, the CI-flake breakdown, and finished stretch-goal specs).
+investigation, the CI-flake breakdown, and finished stretch-goal specs) ·
+"Moved 2026-08-09" (Phase UX).
+
+---
+
+## Phase UX — Native prompt discovery, transcript fidelity, and session recovery
+
+- [x] **Phase UX implementation, approved follow-up, correctness closure, and security closure complete (2026-08-10).**
+  Provider-native pre-submit catalogs, terminal-sized settled activity, durable
+  provider-conversation recovery, and scroll-preserving transcript-click prompt
+  focus are implemented across Claude Code, Codex, and Gemini CLI. The eight
+  follow-up correctness findings and every security-audit item—including the
+  hardening-only and theoretical findings—are closed with direct regressions. Full
+  specification, implementation/refactor/correctness/security record, and proof live in
+  **PLAN-ARCHIVE.md** under “Moved 2026-08-09.”
+- [x] **Step UX.6 — Settle prompt return behavior, then refactor Phase UX** —
+  done 2026-08-10; accepted desktop transcript-click behavior replaced the
+  provisional binding, and the full Phase UX diff received a verified
+  behavior-preserving refactor. → **PLAN-ARCHIVE.md**.
+- [x] **Step UX.7 — Close the eight Phase UX correctness findings** — done
+  2026-08-10; backend identity, faithful catalogs, dormant idle unload,
+  completion visibility, chronology-safe compaction, defensive decoding, and
+  delete-failure recovery are fixed and regression-pinned. →
+  **PLAN-ARCHIVE.md**.
+
+- [x] **Step UX.8 — Close the Phase UX security audit findings** — done
+  2026-08-10; credential/destination binding, fully opaque configured endpoint
+  identity and diagnostics, exact loopback classification, prompt-catalog
+  provenance/control safety, and strict checkpoint decoding are regression-pinned.
+  → **PLAN-ARCHIVE.md**.
+
+- [x] **Step UX.9 — Audit and repair the Phase UX branch tests** — done
+  2026-08-10; repeated all safe test tiers, mutation-proved and closed six
+  regression gaps, and made the live Codex/Ollama timeout clean up immediately.
+  The remaining real-turn instability is tracked as Step L.4 rather than hidden
+  as a test-suite success. → **PLAN-ARCHIVE.md**.
 
 ---
 
@@ -2729,6 +2766,23 @@ shows which matter — not a launch prerequisite.
     backend choice at onboarding (N.5 is exactly the "registry passes
     per-session env/config" build). What remains of L.3 afterward is only
     whatever mixing ergonomics Phase N's shipped form still leaves wanting.
+
+- [ ] **Step L.4 — Diagnose intermittent Codex → Ollama real turns (test-audit follow-up)**
+  - Goal: make the shipped local Codex path reliably complete or fail with a
+    specific actionable diagnosis; do not weaken the live test into accepting
+    a stalled turn.
+  - Evidence (2026-08-10): with identical code, credentials stripped, a
+    throwaway Codex home, and the first installed local model
+    (`qwen3-1.7b-32k:latest`), the Tier 4 turn timed out at 300 seconds in three
+    of four attempts and passed once after 145.5 seconds. The catalog query
+    remained fast. Test-abort cleanup is fixed and separately proven; this open
+    item is the underlying real integration behavior, not a leaked runner.
+  - Build: instrument the real Codex/Ollama event boundary without changing
+    behavior, establish whether the stall is in Codex SDK event delivery,
+    Ollama generation, or model-specific reasoning, then fix the named cause.
+  - Done when: the same local turn completes repeatedly under the Tier 4 bound,
+    the exact former stall is regression-pinned, and a genuine unavailable or
+    hung local engine exits promptly with an actionable error.
 
 ---
 

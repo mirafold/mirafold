@@ -240,6 +240,63 @@ function makeModelSession(listModels: () => Promise<any[]>) {
   return { s, msgs, calls, prompts, awaitTurnEnd };
 }
 
+test("recovery and discovery: Codex resumes and advertises only implemented / commands plus live $ skills", async () => {
+  const { calls, makeCodex } = recordingCodex();
+  const s = new CodexSession({
+    workspaceDir: tmp,
+    resumeId: "codex-thread-saved",
+    makeCodex,
+    listSkills: async () => [{ name: "audit", description: "defensive security audit" }],
+  });
+  assert.deepEqual(calls.map((call) => [call.kind, call.id]), [
+    ["resume", "codex-thread-saved"],
+  ]);
+  assert.equal(s.resumeId, "codex-thread-saved");
+
+  const seen: WireMsg[] = [];
+  s.onMessage((msg) => seen.push(msg));
+  s.refreshPromptOptions();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const catalogs = seen.filter((msg) => msg.type === "prompt_options");
+  const latest = catalogs.at(-1);
+  assert.ok(latest?.type === "prompt_options");
+  assert.deepEqual(
+    latest.options.filter((option) => option.trigger === "/").map((option) => option.value),
+    ["/model"],
+    "TUI-only commands must never be advertised then sent to the model as prose",
+  );
+  assert.equal(
+    latest.options.find((option) => option.value === "$audit")?.source,
+    "codex",
+    "workspace/provider skill text must carry fixed catalog provenance",
+  );
+  s.close();
+});
+
+test("Codex announces its provider resume id at thread.started", async () => {
+  const { s, awaitTurnEnd } = makeSession([
+    ev({ type: "thread.started", thread_id: "codex-thread-new" }),
+    ev({
+      type: "turn.completed",
+      usage: {
+        input_tokens: 1,
+        cached_input_tokens: 0,
+        output_tokens: 1,
+        reasoning_output_tokens: 0,
+      },
+    }),
+  ]);
+  // Avoid the unrelated rollout-file model lookup in this identity test.
+  (s as unknown as { modelLabel: string }).modelLabel = "gpt-test";
+  const resumeIds: string[] = [];
+  s.onResumeId((id) => resumeIds.push(id));
+  s.pushPrompt("start the thread");
+  await awaitTurnEnd();
+  assert.deepEqual(resumeIds, ["codex-thread-new"]);
+  assert.equal(s.resumeId, "codex-thread-new");
+  s.close();
+});
+
 const CATALOG = [
   { id: "gpt-9-sol", displayName: "GPT-9-Sol", description: "frontier", isDefault: true },
   { id: "gpt-9-terra", displayName: "GPT-9-Terra", description: "balanced", isDefault: false },
@@ -480,6 +537,51 @@ test("turn.failed: error before the single turn_end", async () => {
   assert.ok(types.indexOf("error") < types.indexOf("turn_end"));
   assert.equal(msgs.find((m) => m.type === "error")!.message, "boom");
   assert.equal(turnEnds(), 1); // end() from turn.failed + finally must not double-fire
+  s.close();
+});
+
+test("UX.8: a configured provider failure cannot echo its exact base URL", async () => {
+  const home = mkdtempSync(path.join(os.tmpdir(), "mcp-codex-provider-redaction-"));
+  const endpoint = "https://tenant.example/private/token-path";
+  writeFileSync(
+    path.join(home, "config.toml"),
+    [
+      'model_provider = "private"',
+      "[model_providers.private]",
+      `base_url = "${endpoint}"`,
+    ].join("\n"),
+  );
+  const savedHome = process.env.CODEX_HOME;
+  let s: CodexSession;
+  try {
+    process.env.CODEX_HOME = home;
+    s = new CodexSession({
+      workspaceDir: tmp,
+      kind: "local",
+      provider: "private",
+      makeCodex: () => ({ startThread: () => ({}) }) as unknown as Codex,
+    });
+  } finally {
+    if (savedHome === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = savedHome;
+  }
+  const msgs: Any[] = [];
+  s.onMessage((msg) => msgs.push(msg as Any));
+  (s as unknown as { thread: unknown }).thread = {
+    runStreamed: async () => ({
+      events: (async function* () {
+        yield ev({
+          type: "turn.failed",
+          error: { message: `request ${endpoint}/responses failed` },
+        });
+      })(),
+    }),
+  };
+  s.pushPrompt("go");
+  await waitForTurnEnds(msgs);
+  const message = msgs.find((msg) => msg.type === "error")?.message ?? "";
+  assert.equal(message, "request [selected endpoint]/responses failed");
+  assert.doesNotMatch(message, /tenant|private|token-path/);
   s.close();
 });
 

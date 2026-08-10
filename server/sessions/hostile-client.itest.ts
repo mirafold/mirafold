@@ -124,12 +124,15 @@ test("Q.4 garbage frames mid-session: daemon survives, 2nd viewport stays quiet,
   a.send({ type: "prompt", text: "still alive" });
   await a.waitFor((m) => m.type === "turn_end", "turn_end", 20_000);
 
-  // The second viewport got the valid turn — and it is the FIRST thing B saw
-  // after bMark, proving no garbage frame broadcast to it (broadcasts to a
-  // session arrive at every viewport in emission order).
+  // The second viewport got the valid turn — and it is the first SEQUENCED
+  // transcript frame B saw after bMark, proving no garbage frame broadcast
+  // to it. Replaceable shell metadata such as a late provider command catalog
+  // is deliberately unsequenced and may arrive independently of transcript
+  // order.
   await b.waitFor((m) => m.type === "user_prompt", "B user_prompt", 20_000);
-  assert.equal(b.received[bMark].type, "user_prompt");
-  assert.equal((b.received[bMark] as Any).text, "still alive");
+  const firstBroadcast = b.received.slice(bMark).find((m) => typeof m.seq === "number");
+  assert.equal(firstBroadcast?.type, "user_prompt");
+  assert.equal((firstBroadcast as Any).text, "still alive");
 
   a.close();
   b.close();
