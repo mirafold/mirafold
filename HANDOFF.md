@@ -1,7 +1,8 @@
-# Session handoff — Phase UX / agent-session-continuity
+# Session handoff — Phase UX integrated / next work
 
-This handoff is current as of 2026-08-10. It becomes stale when the feature
-branch is integrated, replaced, or receives later Phase UX changes.
+This handoff is current as of 2026-08-10 after Phase UX was integrated into
+`next`. It becomes stale when `next` receives later work or the roadmap priority
+changes.
 
 **Project**: Mirafold, a browser re-skin of Claude Code, Codex, and Gemini CLI.
 Phase UX and its UX.6/UX.7/UX.8/UX.9 follow-ups are complete: faithful pre-submit
@@ -69,11 +70,13 @@ recovery, and the approved transcript-click prompt return behavior.
 
 **Current state**
 
-- Branch: `feature/agent-session-continuity`, based on `next`.
-- The 2026-08-09 Phase UX implementation is committed and pushed. The UX.6
-  implementation/refactor, UX.7/UX.8 fixes, and UX.9 test repairs and records
-  from 2026-08-10 are in the working tree and have not been committed or
-  pushed; neither action was requested in this pass.
+- Phase UX and its UX.6–UX.9 follow-ups are committed, pushed, and integrated
+  into `next` through PR #31 (`9e833849`). All implementation, test, and
+  product-documentation changes from the completed feature work are integrated;
+  this documentation-only wrapup corrects the stale plan and handoff metadata.
+- PR #31 carried the same product tree as closed draft PR #30, replacing that
+  draft only so the final follow-up commit could carry the repository's
+  required DCO sign-off.
 - Main seams: `server/sessions/session-store.ts`, transcript repair in
   `server/sessions/session-recovery.ts`, lifecycle in `server/sessions/registry.ts`,
   provider plumbing under `server/adapters/`, `web/src/prompt-completions.ts`,
@@ -92,6 +95,16 @@ recovery, and the approved transcript-click prompt return behavior.
   final guarded gates passed at 583/583 unit, 131/131 server integration, and
   70/70 browser, plus TypeScript checking, fresh client/server production
   builds, focused mutation reruns, and `git diff --check`.
+- PR #31 passed every reported merge check: DCO, Cloudflare Pages, Tier 1
+  typecheck/unit, and combined Tier 2/Tier 3 integration/browser. GitHub then
+  merged it into `next` as `9e833849`.
+- The first PR #32 wrapup check exposed a pre-existing Tier 2 hermeticity
+  flake after every `backend-choice.itest.ts` assertion passed: session
+  activation had started the host Codex prompt-catalog process, which could
+  still write into its temporary `CODEX_HOME` while the suite removed that
+  directory. The backend-routing test now points catalog discovery at a
+  deliberately missing binary, so no host process can outlive daemon cleanup;
+  the focused file passed 10/10 unchanged repetitions after the fix.
 - Tier 4 remains intentionally red rather than hidden: the real local
   Codex/Ollama turn timed out in three of four unchanged attempts and passed
   once after 145.5 seconds. Its timeout cleanup is fixed and forced-abort
