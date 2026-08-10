@@ -98,6 +98,13 @@ recovery, and the approved transcript-click prompt return behavior.
 - PR #31 passed every reported merge check: DCO, Cloudflare Pages, Tier 1
   typecheck/unit, and combined Tier 2/Tier 3 integration/browser. GitHub then
   merged it into `next` as `9e833849`.
+- The first PR #32 wrapup check exposed a pre-existing Tier 2 hermeticity
+  flake after every `backend-choice.itest.ts` assertion passed: session
+  activation had started the host Codex prompt-catalog process, which could
+  still write into its temporary `CODEX_HOME` while the suite removed that
+  directory. The backend-routing test now points catalog discovery at a
+  deliberately missing binary, so no host process can outlive daemon cleanup;
+  the focused file passed 10/10 unchanged repetitions after the fix.
 - Tier 4 remains intentionally red rather than hidden: the real local
   Codex/Ollama turn timed out in three of four unchanged attempts and passed
   once after 145.5 seconds. Its timeout cleanup is fixed and forced-abort

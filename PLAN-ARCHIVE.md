@@ -7358,3 +7358,11 @@ UX.6 refactor, UX.7 correctness repairs, UX.8 security hardening, and UX.9
 test-audit repairs landed in `next` through PR #31 at merge commit `9e833849`.
 DCO, Cloudflare Pages, Tier 1 typecheck/unit, and combined Tier 2/Tier 3
 integration/browser checks all passed before merge.
+
+The documentation wrapup PR #32 then exposed one test-only hermeticity flake:
+all backend-choice assertions passed, but the suite's real host Codex
+prompt-catalog process could outlive the daemon and race removal of its
+temporary `CODEX_HOME` (`ENOTEMPTY`). The backend-routing integration test now
+uses a deliberately missing Codex binary for catalog discovery; it never drives
+a provider process, retains the exact backend-choice assertions, and passed
+10/10 unchanged focused repetitions after the fix.
