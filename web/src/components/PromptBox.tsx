@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { PromptOption } from "@protocol";
 import {
   insertPromptOption,
@@ -18,15 +18,24 @@ const PLACEHOLDER = IS_PHONE
 
 // Persists the collapsible-cwd choice; anything but "hidden" means shown.
 const CWD_SHOWN_KEY = "mirafold-prompt-cwd";
+const PROMPT_OPTIONS_ID = "prompt-options";
 
-export function PromptBox({
-  onSend,
-  busy,
-  onInterrupt,
-  cwd,
-  options,
-  shortcutDisabled = false,
-}: {
+function promptSourceLabel(option: PromptOption): string | undefined {
+  switch (option.source) {
+    case "claude-code":
+      return "Claude Code command";
+    case "codex":
+      return option.kind === "skill" ? "Codex skill" : "Codex command";
+    case "gemini-cli":
+      return "Gemini CLI command";
+    case "mirafold":
+      return "Mirafold demo";
+    default:
+      return undefined;
+  }
+}
+
+type PromptBoxProps = {
   onSend: (text: string) => void;
   busy: boolean;
   onInterrupt: () => void;
@@ -35,8 +44,90 @@ export function PromptBox({
   // so it can't be spoofed (4.8).
   cwd?: string;
   options: PromptOption[];
-  shortcutDisabled?: boolean;
+  textareaRef: RefObject<HTMLTextAreaElement | null>;
+  globalTriggersDisabled?: boolean;
+};
+
+function PromptOptionsMenu({
+  options,
+  selectedIndex,
+  onChoose,
+  onActive,
+}: {
+  options: PromptOption[];
+  selectedIndex: number;
+  onChoose: (option: PromptOption) => void;
+  onActive: (index: number) => void;
 }) {
+  const menuRef = useRef<HTMLDivElement>(null);
+  const activeRef = useRef<HTMLButtonElement>(null);
+
+  // Keyboard selection must remain visible inside the listbox. Adjust only
+  // this menu's own scrollTop: scrollIntoView() can also move the transcript
+  // page, which would be surprising while the user is reading above.
+  useLayoutEffect(() => {
+    const menu = menuRef.current;
+    const active = activeRef.current;
+    if (!menu || !active) return;
+    const menuRect = menu.getBoundingClientRect();
+    const activeRect = active.getBoundingClientRect();
+    if (activeRect.top < menuRect.top) {
+      menu.scrollTop += activeRect.top - menuRect.top;
+    } else if (activeRect.bottom > menuRect.bottom) {
+      menu.scrollTop += activeRect.bottom - menuRect.bottom;
+    }
+  }, [selectedIndex, options]);
+
+  return (
+    <div
+      ref={menuRef}
+      className="prompt-options"
+      id={PROMPT_OPTIONS_ID}
+      role="listbox"
+      aria-label="Prompt options"
+    >
+      {options.map((option, index) => (
+        <button
+          ref={index === selectedIndex ? activeRef : undefined}
+          type="button"
+          role="option"
+          aria-selected={index === selectedIndex}
+          id={`${PROMPT_OPTIONS_ID}-${index}`}
+          className={index === selectedIndex ? "is-active" : ""}
+          key={`${option.trigger}:${option.value}`}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => onChoose(option)}
+          onMouseEnter={() => onActive(index)}
+        >
+          <span className="prompt-option-value">{option.value}</span>
+          {option.argumentHint && (
+            <span className="prompt-option-hint">{option.argumentHint}</span>
+          )}
+          {(option.source || option.description) && (
+            <span className="prompt-option-meta">
+              {promptSourceLabel(option) && (
+                <span className="prompt-option-source">{promptSourceLabel(option)}</span>
+              )}
+              {option.description && (
+                <span className="prompt-option-description">{option.description}</span>
+              )}
+            </span>
+          )}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function PromptBox({
+  onSend,
+  busy,
+  onInterrupt,
+  cwd,
+  options,
+  textareaRef: ref,
+  globalTriggersDisabled = false,
+}: PromptBoxProps) {
   const [text, setText] = useState("");
   const [cursor, setCursor] = useState(0);
   const [activeOption, setActiveOption] = useState(0);
@@ -47,7 +138,6 @@ export function PromptBox({
   const [cwdShown, setCwdShown] = useState(
     () => localStorage.getItem(CWD_SHOWN_KEY) !== "hidden",
   );
-  const ref = useRef<HTMLTextAreaElement>(null);
   const pendingCursor = useRef<number | null>(null);
   const completion = useMemo(
     () => promptCompletionMatch(text, cursor, options),
@@ -59,7 +149,6 @@ export function PromptBox({
   );
   const menuOpen = !menuDismissed && matches.length > 0;
   const selectedIndex = Math.min(activeOption, Math.max(0, matches.length - 1));
-  const listboxId = "prompt-options";
 
   // A live provider catalog can replace itself while the menu is open
   // (`commands_changed`, or Codex skills arriving after built-ins). Keep the
@@ -109,30 +198,21 @@ export function PromptBox({
     ref.current?.setSelectionRange(at, at);
   }, [text, cursor]);
 
-  // One reliable route back to the composer: Shift+Escape. A provider trigger
-  // typed while page chrome/transcript has focus starts the prompt and opens
-  // its catalog immediately. Never steal from another editable or an overlay.
+  // A provider trigger typed while page chrome/transcript has focus starts the
+  // prompt and opens its catalog immediately. Never steal from another
+  // editable or an overlay.
   useEffect(() => {
     const onGlobalKey = (e: KeyboardEvent) => {
-      if (shortcutDisabled) return;
+      if (globalTriggersDisabled) return;
       const target = e.target;
-      // A focus-trapped card owns every key while it is open. In particular,
-      // Shift+Escape must not punch through a permission/file/device dialog
-      // and move the caret into inert page chrome behind it.
+      // A focus-trapped card owns every key while it is open. Provider
+      // triggers must not punch through a permission/file/device dialog and
+      // move the caret into inert page chrome behind it.
       if (target instanceof Element && target.closest('[role="dialog"]')) return;
       const editable =
         target instanceof HTMLElement &&
         (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
       if (editable && target !== ref.current) return;
-      if (e.key === "Escape" && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        ref.current?.focus();
-        const at = ref.current?.value.length ?? text.length;
-        ref.current?.setSelectionRange(at, at);
-        setCursor(at);
-        return;
-      }
       if (
         (e.key === "/" || e.key === "$") &&
         options.some((option) => option.trigger === e.key) &&
@@ -159,7 +239,7 @@ export function PromptBox({
     };
     window.addEventListener("keydown", onGlobalKey, true);
     return () => window.removeEventListener("keydown", onGlobalKey, true);
-  }, [options, shortcutDisabled, text]);
+  }, [options, globalTriggersDisabled, text]);
 
   const submit = () => {
     const trimmed = text.trim();
@@ -183,29 +263,12 @@ export function PromptBox({
   return (
     <div className="prompt-box">
       {menuOpen && (
-        <div className="prompt-options" id={listboxId} role="listbox" aria-label="Prompt options">
-          {matches.map((option, index) => (
-            <button
-              type="button"
-              role="option"
-              aria-selected={index === selectedIndex}
-              id={`${listboxId}-${index}`}
-              className={index === selectedIndex ? "is-active" : ""}
-              key={`${option.trigger}:${option.value}`}
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => choose(option)}
-              onMouseEnter={() => setActiveOption(index)}
-            >
-              <span className="prompt-option-value">{option.value}</span>
-              {option.argumentHint && (
-                <span className="prompt-option-hint">{option.argumentHint}</span>
-              )}
-              {option.description && (
-                <span className="prompt-option-description">{option.description}</span>
-              )}
-            </button>
-          ))}
-        </div>
+        <PromptOptionsMenu
+          options={matches}
+          selectedIndex={selectedIndex}
+          onChoose={choose}
+          onActive={setActiveOption}
+        />
       )}
       {/* The cwd crumb and its collapse-to-caret trick are desktop-only:
           on phone it ate a third of the typing width and the caret toggle
@@ -241,11 +304,10 @@ export function PromptBox({
         value={text}
         rows={1}
         placeholder={PLACEHOLDER}
-        aria-keyshortcuts="Shift+Escape"
         aria-autocomplete="list"
         aria-expanded={menuOpen}
-        aria-controls={menuOpen ? listboxId : undefined}
-        aria-activedescendant={menuOpen ? `${listboxId}-${selectedIndex}` : undefined}
+        aria-controls={menuOpen ? PROMPT_OPTIONS_ID : undefined}
+        aria-activedescendant={menuOpen ? `${PROMPT_OPTIONS_ID}-${selectedIndex}` : undefined}
         onChange={(e) => {
           setText(e.target.value);
           setCursor(e.target.selectionStart);

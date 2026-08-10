@@ -32,6 +32,8 @@ import { codexProviders } from "./codex-config";
 import { AsyncQueue, CLOSE } from "./async-queue";
 import { codexSlashOptions } from "./codex-prompt-options";
 import { listCodexSkills, type CodexSkill } from "./codex-skills-list";
+import { ResumeIdState } from "./resume-id";
+import { scrubSelectedEndpoint } from "../log";
 
 // The generative-UI MCP server injected into Codex (P.3). Codex loads MCP
 // servers as stdio subprocesses, so Mirafold's render tools live in a
@@ -240,6 +242,7 @@ export class CodexSession implements AgentSession {
     modelReasoningEffort?: ModelReasoningEffort;
   };
   private threadId?: string;
+  private resumeIdState: ResumeIdState;
   private listModels: () => Promise<CodexModel[]>;
   private closed = false;
   private currentAbort?: AbortController;
@@ -275,7 +278,10 @@ export class CodexSession implements AgentSession {
   private firstPartyOpenAI = false;
   private listEngineModels: () => Promise<CodexModel[]>;
   private listSkills: () => Promise<CodexSkill[]>;
-  private resumeListeners = new Set<(id: string) => void>();
+  // Configured provider URLs can carry private hosts, paths, URL auth, or
+  // signed queries. Keep the exact selected destination only for redacting
+  // SDK diagnostics before they become browser messages or logs.
+  private endpointForRedaction?: string;
 
   get modelName(): string | undefined {
     return this.modelLabel === MODEL_STAND_IN ? undefined : this.modelLabel;
@@ -286,8 +292,7 @@ export class CodexSession implements AgentSession {
   }
 
   onResumeId(cb: (id: string) => void) {
-    this.resumeListeners.add(cb);
-    if (this.threadId) cb(this.threadId);
+    this.resumeIdState.onChange(cb, this.threadId);
   }
 
   // N.5: `kind`/`endpoint` carry the onboarding picker's backend choice;
@@ -331,6 +336,11 @@ export class CodexSession implements AgentSession {
     //   Default: inherit process.env, so the CLI finds the user's own auth +
     //     config, exactly as before.
     const kind = opts.kind ?? (process.env.OPENAI_API_KEY ? "api-key" : undefined);
+    const providerConfig = codexProviders();
+    const selectedProvider =
+      opts.provider ?? (kind === "local" && !opts.endpoint ? providerConfig.defaultProvider : undefined);
+    this.endpointForRedaction =
+      opts.endpoint ?? providerConfig.entries.find((entry) => entry.id === selectedProvider)?.baseUrl;
     // The session's provider binding, kept so every catalog question is asked
     // of the SAME provider the turns run on (2026-07-20). Asking unpinned let
     // the user's config.toml answer for us.
@@ -375,6 +385,7 @@ export class CodexSession implements AgentSession {
     });
     this.codex = codex;
     this.threadId = opts.resumeId;
+    this.resumeIdState = new ResumeIdState(opts.resumeId);
     // Both catalogs ask the exact binary the SDK actually spawns and carry the
     // same provider binding. A picker row from one version followed by a turn
     // on another is the version-skew bug F.10 removes. The private-field read
@@ -391,7 +402,7 @@ export class CodexSession implements AgentSession {
     // provider away from a CUSTOM config default whose top-level model would
     // ride along wrongly. An explicit model override wins outright.
     if ((kind === "api-key" || kind === "subscription") && !opts.model) {
-      const cfg = codexProviders();
+      const cfg = providerConfig;
       this.needsEngineDefaultModel =
         cfg.defaultProvider !== undefined && cfg.defaultProvider !== "openai" && cfg.model !== undefined;
     }
@@ -420,6 +431,7 @@ export class CodexSession implements AgentSession {
           label: skill.name,
           description: skill.description,
           kind: "skill",
+          source: "codex",
         }));
         emitPromptOptions((msg) => this.emit(msg), [...slash, ...skillOptions]);
       })
@@ -453,6 +465,13 @@ export class CodexSession implements AgentSession {
 
   private emit(msg: WireMsg) {
     for (const cb of this.listeners) cb(msg);
+  }
+
+  private providerDiagnostic(value: unknown): string {
+    return scrubSelectedEndpoint(
+      typeof value === "string" ? value : errText(value),
+      this.endpointForRedaction,
+    );
   }
 
   /** Serial turn loop — Codex runs one turn per prompt on the warm thread.
@@ -507,7 +526,7 @@ export class CodexSession implements AgentSession {
         } catch (err) {
           this.emit({
             type: "error",
-            message: `Could not read the model list from codex: ${errText(err)}`,
+            message: `Could not read the model list from codex: ${this.providerDiagnostic(err)}`,
           });
           return;
         }
@@ -630,7 +649,7 @@ export class CodexSession implements AgentSession {
         type: "error",
         message:
           "This backend runs OpenAI's own provider, but its default model could not be " +
-          `resolved: ${errText(err)}. ` +
+          `resolved: ${this.providerDiagnostic(err)}. ` +
           "Send `/model <model-id>` to set one.",
       });
       return false;
@@ -662,7 +681,7 @@ export class CodexSession implements AgentSession {
       for await (const ev of events) this.handleEvent(ev, end);
     } catch (err) {
       if (!this.closed && !abort.signal.aborted) {
-        this.emit({ type: "error", message: errText(err) });
+        this.emit({ type: "error", message: this.providerDiagnostic(err) });
       }
     } finally {
       end(); // guarantees exactly one turn_end (interrupt, error, or normal)
@@ -701,11 +720,11 @@ export class CodexSession implements AgentSession {
         break;
       }
       case "turn.failed":
-        this.emit({ type: "error", message: ev.error.message });
+        this.emit({ type: "error", message: this.providerDiagnostic(ev.error.message) });
         end();
         break;
       case "error": // fatal stream error
-        this.emit({ type: "error", message: ev.message });
+        this.emit({ type: "error", message: this.providerDiagnostic(ev.message) });
         end();
         break;
       case "thread.started":
@@ -715,10 +734,9 @@ export class CodexSession implements AgentSession {
         // records the model it actually resolved. Learn it there
         // (fleet/status-bar parity with Claude's system/init, F.3), unless a
         // model was configured — then the label already tells the truth.
-        const changed = this.threadId !== ev.thread_id;
-        this.threadId = ev.thread_id;
-        if (changed) {
-          for (const cb of this.resumeListeners) cb(ev.thread_id);
+        if (this.threadId !== ev.thread_id) {
+          this.threadId = ev.thread_id;
+          this.resumeIdState.publish(ev.thread_id);
         }
         if (this.modelLabel === MODEL_STAND_IN) void this.learnModel();
         break;
@@ -842,7 +860,12 @@ export class CodexSession implements AgentSession {
         // line is otherwise Mirafold's voice, and unattributed engine words
         // there can pose as ours (2026-07-20 audit).
         if (phase === "completed")
-          this.emit({ type: "notice", text: item.message, kind: "warning", source: "codex" });
+          this.emit({
+            type: "notice",
+            text: this.providerDiagnostic(item.message),
+            kind: "warning",
+            source: "codex",
+          });
         break;
     }
   }

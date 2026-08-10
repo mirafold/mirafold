@@ -80,17 +80,13 @@ function makeSession(opts: Partial<ConstructorParameters<typeof GeminiCliSession
   return { s, ...attach(s) };
 }
 
-test("recovery and discovery: Gemini resumes the saved id and emits ACP commands", async () => {
+test("recovery and discovery: Gemini resumes the saved id and advertises only its implemented /model", async () => {
   const argsLog = path.join(tmp, "resume-args.txt");
   process.env.FAKE_ARGS_LOG = argsLog;
   const { s, msgs, awaitTurnEnd } = makeSession({
     resumeId: "22222222-2222-4222-8222-222222222222",
-    listCommands: async () => [
-      { name: "memory", description: "manage saved context" },
-    ],
   });
   s.refreshPromptOptions();
-  await new Promise((resolve) => setTimeout(resolve, 0));
   assert.deepEqual(
     msgs.find((msg) => msg.type === "prompt_options"),
     {
@@ -98,9 +94,9 @@ test("recovery and discovery: Gemini resumes the saved id and emits ACP commands
       options: [
         {
           trigger: "/",
-          value: "/memory",
-          label: "memory",
-          description: "manage saved context",
+          value: "/model",
+          label: "model",
+          description: "choose what model to use",
           kind: "command",
         },
       ],

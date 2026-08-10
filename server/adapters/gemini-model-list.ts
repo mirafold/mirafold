@@ -80,11 +80,19 @@ export function listGeminiModels(workspaceDir: string, timeoutMs = 15_000): Prom
           return;
         }
         finish(null, {
-          models: (models.availableModels as RawGeminiModelRow[]).map((m) => ({
-            id: String(m.modelId),
-            displayName: String(m.name ?? m.modelId),
-            description: String(m.description ?? ""),
-          })),
+          models: models.availableModels
+            .filter(
+              (row): row is RawGeminiModelRow =>
+                typeof row === "object" &&
+                row !== null &&
+                typeof (row as { modelId?: unknown }).modelId === "string" &&
+                Boolean((row as { modelId: string }).modelId),
+            )
+            .map((m) => ({
+              id: m.modelId as string,
+              displayName: String(m.name ?? m.modelId),
+              description: String(m.description ?? ""),
+            })),
           currentModelId: String(models.currentModelId ?? ""),
         });
       }

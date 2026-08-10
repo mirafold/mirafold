@@ -43,6 +43,22 @@ const OFFERABLE = new Set(ADAPTER_AGENTS);
 const asAgent = (v: unknown): AgentName | undefined =>
   typeof v === "string" && OFFERABLE.has(v as AgentName) ? (v as AgentName) : undefined;
 
+/** Human diagnostics for a backend choice without ever interpolating the
+ * configured/discovered URL. Configured URLs can contain userinfo or signed
+ * query parameters and are sensitive even when no separate key exists. */
+export function describeBackendForLog(backend: Backend): string {
+  const source =
+    backend.endpointSource === "configured"
+      ? " via configured endpoint"
+      : backend.endpointSource === "discovered"
+        ? " via discovered local server"
+        : "";
+  const model = backend.model
+    ? ` (${backend.model.replace(/[\u0000-\u001f\u007f-\u009f]/gu, " ").slice(0, 120)})`
+    : "";
+  return `${backend.kind}${source}${model}`;
+}
+
 export type Connection = {
   /** Feed one raw client frame (JSON text) into this viewport. */
   handleMessage: (raw: string) => void;
@@ -256,11 +272,7 @@ export function openConnection(
             break;
           }
           backend = resolved;
-          log.info(
-            `create → ${agent} on chosen backend ${backend.kind}` +
-              (backend.endpoint ? ` @ ${backend.endpoint}` : "") +
-              (backend.model ? ` (${backend.model})` : ""),
-          );
+          log.info(`create → ${agent} on chosen backend ${describeBackendForLog(backend)}`);
         }
         try {
           attachOrReap(

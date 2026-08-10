@@ -11,6 +11,7 @@ import {
 import type { PromptOption, WireMsg } from "../protocol";
 import { makeCanUseTool } from "../security/permissions";
 import { makeRenderServer, RENDER_GUIDANCE } from "../render-tools";
+import { ResumeIdState } from "./resume-id";
 import {
   type AgentSession,
   type TodoItem,
@@ -23,7 +24,7 @@ import {
   PERMISSION_TIMEOUT_MS,
 } from "./types";
 import { AsyncQueue, CLOSE } from "./async-queue";
-import { createLogger, verbose } from "../log";
+import { createLogger, scrubSelectedEndpoint, verbose } from "../log";
 
 const log = createLogger("claude-code");
 
@@ -72,6 +73,43 @@ export function resultText(content: unknown): string {
   return content == null ? "" : JSON.stringify(content);
 }
 
+type ClaudeEndpointAuth = "api-key" | "auth-token" | "none";
+
+/** Build the SDK environment for an explicitly chosen backend. Start with
+ * both Anthropic credentials and the ambient endpoint removed, then add back
+ * only the one credential mode the server bound to this exact destination. */
+function localEndpointEnv(
+  endpoint: string | undefined,
+  auth: ClaudeEndpointAuth,
+): Record<string, string> {
+  const env = envWithout(
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_BASE_URL",
+  );
+  const destination = endpoint ?? process.env.ANTHROPIC_BASE_URL;
+  if (destination !== undefined) env.ANTHROPIC_BASE_URL = destination;
+  if (auth === "api-key" && process.env.ANTHROPIC_API_KEY) {
+    env.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+  } else if (auth === "auth-token" && process.env.ANTHROPIC_AUTH_TOKEN) {
+    env.ANTHROPIC_AUTH_TOKEN = process.env.ANTHROPIC_AUTH_TOKEN;
+  } else if (auth === "none") {
+    // Claude's Anthropic-compatible local path requires a present token even
+    // when the target ignores it. This fixed dummy is never a daemon secret.
+    env.ANTHROPIC_AUTH_TOKEN = "ollama";
+  }
+  return env;
+}
+
+/** A first-party key/token choice must not inherit a custom endpoint or a
+ * second ambiguous Anthropic credential. */
+function firstPartyCredentialEnv(): Record<string, string> {
+  if (process.env.ANTHROPIC_API_KEY) {
+    return envWithout("ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN");
+  }
+  return envWithout("ANTHROPIC_BASE_URL", "ANTHROPIC_API_KEY");
+}
+
 /**
  * The reference agent adapter: Claude Code, driven through its own Agent SDK
  * engine. A single query() runs for the life of the object; prompts are fed
@@ -115,20 +153,19 @@ export class ClaudeCodeSession implements AgentSession {
   // (2026-07-23, Kyle; was the "default" stand-in, T2.6).
   private modelLabel: string | undefined;
   private providerSessionId: string;
-  private resumeReady: boolean;
-  private resumeListeners = new Set<(id: string) => void>();
+  private resumeIdState: ResumeIdState;
+  private endpointForRedaction?: string;
 
   get modelName(): string | undefined {
     return this.modelLabel;
   }
 
   get resumeId(): string | undefined {
-    return this.resumeReady ? this.providerSessionId : undefined;
+    return this.resumeIdState.value;
   }
 
   onResumeId(cb: (id: string) => void) {
-    this.resumeListeners.add(cb);
-    if (this.resumeReady) cb(this.providerSessionId);
+    this.resumeIdState.onChange(cb);
   }
 
   // `engine` is the test seam (like Codex's thread swap / MIRAFOLD_GEMINI_BIN):
@@ -141,6 +178,7 @@ export class ClaudeCodeSession implements AgentSession {
     model?: string;
     kind?: "api-key" | "subscription" | "local";
     endpoint?: string;
+    endpointAuth?: ClaudeEndpointAuth;
     resumeId?: string;
     engine?: typeof query;
   }) {
@@ -148,8 +186,10 @@ export class ClaudeCodeSession implements AgentSession {
     mkdirSync(workspaceDir, { recursive: true }); // spawn fails on a missing cwd
     const model = opts.model ?? process.env.DEFAULT_MODEL;
     this.modelLabel = model;
+    this.endpointForRedaction =
+      opts.kind === "local" ? (opts.endpoint ?? process.env.ANTHROPIC_BASE_URL) : undefined;
     this.providerSessionId = opts.resumeId ?? randomUUID();
-    this.resumeReady = Boolean(opts.resumeId);
+    this.resumeIdState = new ResumeIdState(opts.resumeId || undefined);
     this.engine = (opts.engine ?? query)({
       prompt: this.promptStream(),
       options: {
@@ -158,24 +198,14 @@ export class ClaudeCodeSession implements AgentSession {
           : { sessionId: this.providerSessionId }),
         model,
         cwd: workspaceDir,
-        // The chosen backend, enforced per-session through the SDK's own env
-        // (never a process.env mutation — sessions on different backends
-        // coexist in one daemon). A DISCOVERED endpoint gets the documented
-        // Ollama recipe (docs/local-models.md: BASE_URL + a required-but-
-        // ignored auth token; the real API key is withheld — it has no
-        // business reaching a local server). An explicit api-key choice
-        // strips a globally-set BASE_URL so the session truly runs on the
-        // key. No choice (or the env-endpoint local) inherits, as always.
-        ...(opts.kind === "local" && opts.endpoint
-          ? {
-              env: {
-                ...envWithout("ANTHROPIC_API_KEY"),
-                ANTHROPIC_BASE_URL: opts.endpoint,
-                ANTHROPIC_AUTH_TOKEN: process.env.ANTHROPIC_AUTH_TOKEN ?? "ollama",
-              },
-            }
+        // The chosen backend is enforced per-session through the SDK's own
+        // env (never a process.env mutation). Discovered/unauthenticated
+        // endpoints get only the fixed dummy token; configured endpoints get
+        // exactly the credential MODE the server bound to that destination.
+        ...(opts.kind === "local"
+          ? { env: localEndpointEnv(opts.endpoint, opts.endpointAuth ?? "none") }
           : opts.kind === "api-key"
-            ? { env: envWithout("ANTHROPIC_BASE_URL") }
+            ? { env: firstPartyCredentialEnv() }
             : {}),
         canUseTool: makeCanUseTool(workspaceDir, this.ask),
         // settingSources is intentionally UNSET so it matches the CLI default
@@ -192,7 +222,7 @@ export class ClaudeCodeSession implements AgentSession {
         includePartialMessages: true, // gives us token-level text deltas
         // MIRAFOLD_DEBUG=1 surfaces the engine's own stderr (the SDK
         // swallows it otherwise) — where a bad key or dead CLI explains itself (R.4g).
-        ...(verbose ? { stderr: (data: string) => log.debug(`stderr — ${data}`) } : {}),
+        ...(verbose ? { stderr: (data: string) => log.debug(`stderr — ${this.safeEngineText(data)}`) } : {}),
         // Opt-in extended thinking; unset leaves the preset's behavior
         // (trigger words like "think hard" still work either way).
         ...(process.env.MAX_THINKING_TOKENS
@@ -211,7 +241,7 @@ export class ClaudeCodeSession implements AgentSession {
       .then((commands) => {
         if (!this.closed) this.emitCommandCatalog(commands);
       })
-      .catch((err) => log.debug(`command catalog unavailable — ${errText(err)}`));
+      .catch((err) => log.debug(`command catalog unavailable — ${this.safeEngineText(errText(err))}`));
   }
 
   private emitCommandCatalog(commands: SlashCommand[]) {
@@ -232,10 +262,18 @@ export class ClaudeCodeSession implements AgentSession {
           ? { argumentHint: command.argumentHint }
           : {}),
         kind: "command",
+        source: "claude-code",
         ...(aliases.length ? { aliases } : {}),
       }];
     });
     emitPromptOptions((msg) => this.emit(msg), options);
+  }
+
+  /** Provider failures and stderr can echo the request destination. Replace
+   * this session's exact selected endpoint before either the browser or logger
+   * sees the text, then apply the daemon's generic credential scrubber. */
+  private safeEngineText(value: unknown): string {
+    return scrubSelectedEndpoint(String(value), this.endpointForRedaction);
   }
 
   pushPrompt(text: string) {
@@ -482,7 +520,7 @@ export class ClaudeCodeSession implements AgentSession {
       }
     } catch (err) {
       if (!this.closed) {
-        this.emit({ type: "error", message: errText(err) });
+        this.emit({ type: "error", message: this.safeEngineText(errText(err)) });
         this.emit({ type: "turn_end" });
       }
     } finally {
@@ -516,7 +554,7 @@ export class ClaudeCodeSession implements AgentSession {
   private handleResultMsg(msg: SDKResultMessage) {
     if (msg.is_error) {
       const detail = "result" in msg ? msg.result : msg.subtype;
-      this.emit({ type: "error", message: String(detail) });
+      this.emit({ type: "error", message: this.safeEngineText(detail) });
     }
     // Per-turn usage for the status bar. Input includes cache
     // tokens — that's the real context weight the user is paying for (T2.6).
@@ -554,12 +592,8 @@ export class ClaudeCodeSession implements AgentSession {
     } else if (sub === "init") {
       const sessionId = (msg as { session_id?: unknown }).session_id;
       if (typeof sessionId === "string" && sessionId) {
-        const changed = !this.resumeReady || this.providerSessionId !== sessionId;
         this.providerSessionId = sessionId;
-        this.resumeReady = true;
-        if (changed) {
-          for (const cb of this.resumeListeners) cb(sessionId);
-        }
+        this.resumeIdState.publish(sessionId);
       }
       // system/init carries the model the engine ACTUALLY resolved
       // (e.g. "claude-fable-5"), which differs from the configured value

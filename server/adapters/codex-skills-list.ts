@@ -7,6 +7,9 @@ import { jsonRpcOneShot } from "./jsonrpc-oneshot";
 
 export type CodexSkill = { name: string; description: string };
 
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
 export function listCodexSkills(
   workspaceDir: string,
   timeoutMs = 10_000,
@@ -42,9 +45,12 @@ export function listCodexSkills(
           return;
         }
         const out: CodexSkill[] = [];
-        for (const entry of data as Array<{ cwd?: unknown; skills?: unknown }>) {
+        for (const rawEntry of data) {
+          if (!isObject(rawEntry)) continue;
+          const entry = rawEntry as { cwd?: unknown; skills?: unknown };
           if (entry.cwd !== workspaceDir || !Array.isArray(entry.skills)) continue;
           for (const rawSkill of entry.skills) {
+            if (!isObject(rawSkill)) continue;
             const skill = rawSkill as {
               name?: unknown;
               description?: unknown;

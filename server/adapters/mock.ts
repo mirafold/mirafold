@@ -495,8 +495,8 @@ export class MockSession implements AgentSession {
       this.agent === "codex"
         ? [
             ...slash,
-            { trigger: "$" as const, value: "$audit", label: "audit", description: "run a security audit", kind: "skill" as const },
-            { trigger: "$" as const, value: "$next", label: "next", description: "execute the next plan chunk", kind: "skill" as const },
+            { trigger: "$" as const, value: "$audit", label: "audit", description: "run a security audit", kind: "skill" as const, source: "mirafold" as const },
+            { trigger: "$" as const, value: "$next", label: "next", description: "execute the next plan chunk", kind: "skill" as const, source: "mirafold" as const },
           ]
         : slash;
     emitPromptOptions((msg) => this.emit(msg), options);

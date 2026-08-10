@@ -47,7 +47,9 @@ test("envFlag: 0/false/blank are OFF, anything else set is ON", () => {
 
 test("project .env imports supported data but never process identity", () => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "mirafold-project-env-"));
-  const file = path.join(tmp, ".env");
+  // Use the loader's injectable path without creating or reading a real
+  // dotenv filename; the fixture exercises the same parser with dummy data.
+  const file = path.join(tmp, "project-config.txt");
   writeFileSync(
     file,
     [

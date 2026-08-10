@@ -1,78 +1,125 @@
 # Session handoff — Phase UX / agent-session-continuity
 
-This handoff is current as of 2026-08-09. It becomes stale once Step UX.6 in
-`PLAN.md` is completed and the feature branch is integrated or replaced.
+This handoff is current as of 2026-08-10. It becomes stale when the feature
+branch is integrated, replaced, or receives later Phase UX changes.
 
 **Project**: Mirafold, a browser re-skin of Claude Code, Codex, and Gemini CLI.
-This session implemented native pre-submit discovery, quieter provider-faithful
-tool presentation, and durable provider-session recovery.
+Phase UX and its UX.6/UX.7/UX.8/UX.9 follow-ups are complete: faithful pre-submit
+discovery, quieter provider-faithful tool presentation, durable provider-session
+recovery, and the approved transcript-click prompt return behavior.
 
-**Completed this session**
+**Completed**
 
-- Created `feature/agent-session-continuity` from `next`; `next` is verified as
-  an ancestor.
 - Added additive `prompt_options` wire data. Claude consumes the SDK's live
-  supported-command updates, Gemini consumes ACP command updates, Codex uses a
-  version-matched broad slash catalog, and Codex `$` skills come from the live
-  app-server skills list. The browser opens and filters the appropriate picker
-  from the first trigger character, before submission, with mouse, arrow,
-  Tab/Enter insertion, and Escape dismissal.
-- Collapsed each completed turn's successful tool churn into one expandable
-  `worked · N actions` row. In-flight work and failures remain visible, and the
-  normalized details remain available on expansion.
+  supported-command updates; Codex and Gemini expose the `/model` command they
+  faithfully reimplement on their current headless surfaces; Codex `$` skills
+  come from live app-server metadata. The browser filters from the first
+  trigger character and supports mouse, visible arrow-key selection,
+  Tab/Enter insertion, and Escape dismissal before submission.
+- Collapsed contiguous successful tool runs into expandable `worked · N
+  actions` rows. In-flight work, failures, and intervening transcript rows are
+  hard chronology boundaries, with every normalized detail available on
+  expansion.
 - Added bounded, owner-only, atomically replaced session checkpoints containing
-  transcript state, exact non-secret backend selection, and native provider
-  resume identifiers. Idle timeout unloads the engine without deleting the
-  checkpoint. Daemon restart reindexes dormant sessions, reopens the same URL,
-  and resumes Claude, Codex, or Gemini when that provider supplied a resume id.
-  Explicit End Session deletes the record; corrupt/unavailable recovery is
-  shown instead of silently creating a blank conversation.
-- Added restart correctness for mid-turn death: full replay across daemon
-  epochs, an honest interruption/turn boundary, and closure of unmatched shell
-  activity. Added deterministic provider/picker/tool/recovery coverage and
-  synchronized `README.md`, `docs/ADAPTERS.md`, `PLAN.md`, and
-  `PLAN-ARCHIVE.md`. No dependency was added.
-- Verified the exact final implementation before this handoff: typecheck,
-  production build, unit 583/583, server integration 144/144, browser
-  end-to-end 83/83, the full axe-core accessibility sweep, and `git diff
-  --check` all passed.
+  transcript state, exact server-side backend selection, and native provider
+  resume identifiers. Idle timeout unloads without deletion; daemon restart
+  reindexes dormant sessions and resumes the same provider conversation when a
+  resume id exists. Configured endpoints remain exact through one-click startup
+  and environment drift; viewportless quick prompts still unload. Explicit End
+  Session deletes, but a failed durable delete leaves the live session intact;
+  unavailable recovery never silently creates a blank replacement.
+- Completed Step UX.6 after Kyle approved the replacement for provisional
+  `Shift+Escape`: a primary desktop mouse click on inert transcript content
+  focuses the prompt with `preventScroll`. Exact transcript position and
+  detached follow-tail state remain unchanged during streaming. Interactive
+  controls, live text selection, secondary/non-primary pointers, and touch keep
+  control. Normal `Tab` traversal and keyboard scrolling are untouched. The
+  global `/` and `$` provider-trigger path remains.
+- Refactored the full Phase UX diff without intended behavior change: shared
+  provider resume-ID observation, one fresh/recovered registry activation seam,
+  isolated restart transcript repair, named checkpoint validation units,
+  isolated transcript-click intent, a separated prompt-completion menu, shared
+  nested tool-call rendering, clearer global-trigger naming, a stable shell
+  focus callback, and removal of unreachable catalog branches. No dependency
+  or wire/config contract changed.
+- Closed all eight Step UX.7 correctness findings. Configured backend identity
+  survives one-click startup and recovery; Codex/Gemini expose only commands
+  their headless transports execute faithfully; viewportless dormant sessions
+  regain idle unload; keyboard completion remains visible without page scroll;
+  tool compaction preserves chronology; malformed catalog payloads fail
+  locally; and failed durable deletion leaves the live session usable.
+- Closed the complete Step UX.8 security audit, including its hardening-only
+  and theoretical findings. A checkout-selected Claude endpoint cannot receive a parent-only
+  Anthropic credential; configured endpoint URLs and hostnames (including URL
+  auth/path/query data) stay server-side behind generic labels and opaque
+  selection identities, and exact Claude/Codex destinations are removed from
+  provider diagnostics and raw logs; authenticated recovery refuses
+  endpoint/credential-mode drift;
+  discovered endpoints receive neither real Anthropic credential; the local
+  tag uses exact daemon-side loopback classification; Claude/Codex catalog
+  metadata is visibly source-badged and display-control-safe; and checkpoints
+  strictly decode only the complete sequenced transcript vocabulary before
+  replay. Legacy saved catalogs have provenance recomputed from their trusted
+  backend identity.
+- Completed Step UX.9's branch test audit. Mutation-proven regressions now pin
+  cross-turn tool grouping, checkpoint cursor collision and replay redaction,
+  whitespace-delimited `$` completion, transcript-link focus ownership, and
+  the `preventScroll` focus contract. Tier 4 aborts now close their Codex
+  session and settle immediately instead of leaking the runner.
 
 **Current state**
 
 - Branch: `feature/agent-session-continuity`, based on `next`.
-- The 2026-08-09 wrapup committed and pushed all Phase UX implementation,
-  tests, documentation, plan, and handoff state to this feature branch.
-- Main new seams are `server/sessions/session-store.ts`, session lifecycle in
-  `server/sessions/registry.ts`, provider catalog plumbing under
-  `server/adapters/`, `web/src/prompt-completions.ts`, prompt UI in
-  `web/src/components/PromptBox.tsx`, and settled tool presentation in
-  `web/src/tool-visibility.ts` / `web/src/components/RenderZone.tsx`.
-- The current code binds `Shift+Escape` to focus the prompt. That mechanism
-  works and is tested, but the binding is not an accepted product decision.
+- The 2026-08-09 Phase UX implementation is committed and pushed. The UX.6
+  implementation/refactor, UX.7/UX.8 fixes, and UX.9 test repairs and records
+  from 2026-08-10 are in the working tree and have not been committed or
+  pushed; neither action was requested in this pass.
+- Main seams: `server/sessions/session-store.ts`, transcript repair in
+  `server/sessions/session-recovery.ts`, lifecycle in `server/sessions/registry.ts`,
+  provider plumbing under `server/adapters/`, `web/src/prompt-completions.ts`,
+  `web/src/transcript-focus.ts`, prompt UI in `web/src/components/PromptBox.tsx`,
+  and settled activity in `web/src/tool-visibility.ts` /
+  `web/src/components/RenderZone.tsx`.
+- `PLAN.md` marks UX.6 through UX.9 complete. Step L.4 is an explicit open
+  follow-up for the real Codex/Ollama turn instability found by the test audit;
+  the next earlier open roadmap pointer in document order remains Step 4.7,
+  expanded into Phase R.
 
-**Next step**
+**Verification**
 
-- Continue **PLAN.md Step UX.6**. First discuss and obtain Kyle's decision on
-  how a keyboard user returns to the prompt; do not assume a binding. Then
-  implement and test that decision and run the `refactor` skill over the Phase
-  UX / agent-session-continuity diff without changing its accepted behavior.
+- Test-audit baselines passed twice at Tier 1 (581/581), three times at Tier 2
+  (131/131), and three times at Tier 3 (70/70). After the test repairs, the
+  final guarded gates passed at 583/583 unit, 131/131 server integration, and
+  70/70 browser, plus TypeScript checking, fresh client/server production
+  builds, focused mutation reruns, and `git diff --check`.
+- Tier 4 remains intentionally red rather than hidden: the real local
+  Codex/Ollama turn timed out in three of four unchanged attempts and passed
+  once after 145.5 seconds. Its timeout cleanup is fixed and forced-abort
+  tested; Step L.4 owns diagnosis of the underlying real integration.
+- Two unit files and one integration file that deliberately manufacture dotenv
+  fixtures were excluded under the account-wide opacity rule. The launcher
+  browser file and Explorer/global-axe cases that handle that configuration
+  class were excluded from the otherwise-complete safe 70-test browser matrix.
+  The temporary denial guard lives only under `/tmp`.
 
 **Watch-outs**
 
-- Never describe the focus issue as resolved while `Shift+Escape` remains
-  provisional. It was invented during implementation and was not confirmed.
-- Normal `Tab` order is accessibility-critical because response content has
-  interactive links, buttons, permissions, and generated controls. Do not
-  redirect every Tab press to the prompt.
-- Kyle does not want another permanent hint in the prompt line. A keyboard-only
-  “Skip to prompt” link was explained as a possible compromise: hidden normally,
-  visible at the top-left only while focused, activated with Enter. It was not
-  approved, and its inability to jump from anywhere was acknowledged.
-- `Cmd/Ctrl+K` was also discussed but terminal users may understand those keys
-  as kill-to-end-of-line or clear-scrollback, not focus-prompt.
-- Recovery can protect only sessions checkpointed by this implementation; it
-  cannot resurrect the session that died before this code existed. If a
-  provider dies before ever yielding a native resume identifier, Mirafold must
-  remain honest about that rather than promise the same provider conversation.
+- Do not restore `Shift+Escape`, globally hijack `Tab`, add a skip link, or add a
+  permanent prompt hint as if any were the accepted behavior. The transcript
+  click is deliberate mouse intent; keyboard users retain ordinary traversal
+  and the provider's naturally typed `/` or `$` discovery path.
+- A click-to-focus change must keep `preventScroll`, control/selection ownership,
+  and touch exclusion together. Losing any one changes the approved contract.
+- Recovery protects only sessions checkpointed by this implementation. If a
+  provider dies before yielding a native resume identifier, Mirafold must remain
+  honest rather than promise the same provider conversation.
+- Catalog suggestions are promises about the current headless transport. Do not
+  re-advertise Codex terminal commands or Gemini ACP commands unless Mirafold
+  implements their exact behavior on the transport it actually runs.
+- Settled-tool compaction must never cross a failure, unsettled tool, non-tool
+  transcript row, or batch boundary; those rows are chronology evidence.
+- Do not weaken or skip the Tier 4 local-turn assertion to make the suite
+  green. Diagnose Step L.4's real Codex/Ollama stall; the test now cleans up
+  correctly and is exposing an unresolved live behavior.
 - Preserve dotenv opacity: never inspect `.env`, `*.env`, `.env.*`, or
   `*.env.*`, and explicitly exclude them from recursive searches/listings.

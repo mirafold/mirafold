@@ -1,4 +1,11 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -14,6 +21,7 @@ import { GearGlyph } from "./GearGlyph";
 import { useFollowTail } from "../use-follow-tail";
 import { queueDelta, type QueuedDelta } from "../delta-queue";
 import { groupSettledTools } from "../tool-visibility";
+import { shouldFocusPromptFromTranscriptPointer } from "../transcript-focus";
 
 // The scrollback is a flat list of entries: text blocks and rendered
 // components, in the exact order they arrived on the wire.
@@ -120,6 +128,7 @@ const ThinkingBlock = memo(function ThinkingBlock({
         (folded ? " thinking-folded" : "") +
         (entry.done ? " thinking-done" : "")
       }
+      data-transcript-control={entry.done ? "" : undefined}
       onClick={entry.done ? () => onToggle(entry.id) : undefined}
       title={entry.done ? (folded ? "Expand thinking" : "Collapse thinking") : undefined}
     >
@@ -130,6 +139,24 @@ const ThinkingBlock = memo(function ThinkingBlock({
 
 /** A Task's subagent tool calls (T2.4): collapsed by default — a subagent's
  *  churn shouldn't crowd the transcript — expandable to the nested rows. */
+function ToolCallList({ calls, className }: { calls: ToolCall[]; className: string }) {
+  return (
+    <div className={className}>
+      {calls.map((call) => (
+        <ToolBlock
+          key={call.id}
+          name={call.name}
+          detail={call.detail}
+          input={call.input}
+          output={call.output}
+          truncatedBytes={call.truncatedBytes}
+          isError={call.isError}
+        />
+      ))}
+    </div>
+  );
+}
+
 function SubagentGroup({ calls }: { calls: ToolCall[] }) {
   const [open, setOpen] = useState(false);
   const pending = calls.some((c) => c.output === undefined);
@@ -142,21 +169,7 @@ function SubagentGroup({ calls }: { calls: ToolCall[] }) {
           {pending ? " …" : ""}
         </span>
       </button>
-      {open && (
-        <div className="subagent-calls">
-          {calls.map((c) => (
-            <ToolBlock
-              key={c.id}
-              name={c.name}
-              detail={c.detail}
-              input={c.input}
-              output={c.output}
-              truncatedBytes={c.truncatedBytes}
-              isError={c.isError}
-            />
-          ))}
-        </div>
-      )}
+      {open && <ToolCallList calls={calls} className="subagent-calls" />}
     </div>
   );
 }
@@ -184,21 +197,7 @@ function ToolActivityGroup({ calls }: { calls: ToolCall[] }) {
         </span>
         <span className="tool-activity-summary">{summary}</span>
       </button>
-      {open && (
-        <div className="tool-activity-calls">
-          {calls.map((call) => (
-            <ToolBlock
-              key={call.id}
-              name={call.name}
-              detail={call.detail}
-              input={call.input}
-              output={call.output}
-              truncatedBytes={call.truncatedBytes}
-              isError={call.isError}
-            />
-          ))}
-        </div>
-      )}
+      {open && <ToolCallList calls={calls} className="tool-activity-calls" />}
     </div>
   );
 }
@@ -212,6 +211,7 @@ export function RenderZone({
   subscribe,
   sendAction,
   busy,
+  focusPrompt,
 }: {
   subscribe: (l: (m: ZoneMsg) => void) => () => void;
   // Shell-provided sender for prompt/tool actions (Phase 2); state actions
@@ -222,6 +222,7 @@ export function RenderZone({
   // indicator itself is Shell chrome (ActivityLine), not a transcript entry,
   // so no scroll position can hide it (2026-07-29, Kyle).
   busy: boolean;
+  focusPrompt: () => void;
 }) {
   const [entries, setEntries] = useState<Entry[]>([]);
   // Pinning is pure output-zone state: wire ids (render or artifact) in pin
@@ -614,9 +615,24 @@ export function RenderZone({
   }, [entries]);
 
   const compactedTools = useMemo(
-    () => groupSettledTools(entries.filter((entry): entry is ToolCall => entry.kind === "tool")),
+    () =>
+      groupSettledTools(
+        entries.map((entry) => (entry.kind === "tool" ? entry : null)),
+      ),
     [entries],
   );
+
+  const handleTranscriptPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (
+      shouldFocusPromptFromTranscriptPointer(
+        event,
+        event.currentTarget,
+        window.getSelection()?.isCollapsed === false,
+      )
+    ) {
+      focusPrompt();
+    }
+  };
 
   return (
     <div className="zone-row">
@@ -638,6 +654,7 @@ export function RenderZone({
         onWheel={tail.onWheel}
         onTouchStart={tail.onTouchStart}
         onTouchMove={tail.onTouchMove}
+        onPointerUp={handleTranscriptPointerUp}
       >
         {entries.length === 0 && !busy && (
           // A fresh session (no transcript yet) shows an inviting welcome

@@ -120,6 +120,40 @@ test("prompt option metadata is bounded before fanout or persistence", () => {
   reg.end(entry.id);
 });
 
+test("UX.8: prompt catalog rendering controls are dropped before trusted-shell fanout", () => {
+  const { reg, entry } = freshSession();
+  const seen: WireMsg[] = [];
+  reg.attach(entry, (msg) => seen.push(msg));
+  reg.broadcast(entry, {
+    type: "prompt_options",
+    options: [
+      {
+        trigger: "$",
+        value: "$safe",
+        label: "safe",
+        description: "Codex-provided but visibly attributed",
+        kind: "skill",
+        source: "codex",
+      },
+      {
+        trigger: "$",
+        value: "$deceptive",
+        label: "Mirafold says yes\u202Etxt",
+        kind: "skill",
+        source: "codex",
+      },
+    ],
+  });
+
+  const catalog = seen.at(-1);
+  assert.equal(catalog?.type, "prompt_options");
+  if (catalog?.type !== "prompt_options") return;
+  assert.deepEqual(catalog.options.map((option) => option.value), ["$safe"]);
+  assert.equal(catalog.options[0].source, "codex");
+  assert.deepEqual(entry.promptOptions, catalog.options);
+  reg.end(entry.id);
+});
+
 // Mirror of BUFFER_MAX_BYTES, same hand-kept convention as BUFFER_CAP above.
 const BUFFER_MAX_BYTES = 32_000_000;
 
@@ -615,6 +649,26 @@ test("audit: ordinary labels pass through untouched (the cap is not a rewrite)",
   ];
   assert.equal(status.label, "Bash");
   assert.equal(toolUse.name, "mcp__github__create_issue");
+  reg.end(entry.id);
+});
+
+test("UX.8: provider error URL credentials are scrubbed before wire, checkpoint ring, and logs", () => {
+  const { reg, entry } = freshSession();
+  const seen: WireMsg[] = [];
+  reg.attach(entry, (msg) => seen.push(msg));
+  reg.broadcast(entry, {
+    type: "error",
+    message: "failed https://alice:password@example.test/v1?sig=topsecret#fragment",
+  });
+  const wireError = seen.find((msg) => msg.type === "error");
+  const storedError = entry.buffer.find((msg) => msg.type === "error");
+  for (const msg of [wireError, storedError]) {
+    assert.equal(msg?.type, "error");
+    if (msg?.type === "error") {
+      assert.doesNotMatch(msg.message, /alice|password|topsecret|fragment/);
+      assert.match(msg.message, /\[redacted\]/);
+    }
+  }
   reg.end(entry.id);
 });
 

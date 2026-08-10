@@ -11,7 +11,7 @@ import { geminiBin, listGeminiModels, type GeminiModelCatalog } from "./gemini-m
 import { emitModelPicker } from "./model-picker";
 import { isWorkspaceTrusted, trustWorkspace } from "../sessions/workspace-trust";
 import { AsyncQueue, CLOSE } from "./async-queue";
-import { listGeminiCommands, type GeminiCommand } from "./gemini-command-list";
+import { ResumeIdState } from "./resume-id";
 
 // Same generative-UI stdio MCP server the Codex adapter injects (P.3). Gemini
 // loads MCP servers from settings.json, so we write a per-session project
@@ -58,8 +58,7 @@ export class GeminiCliSession implements AgentSession {
   private child?: ChildProcessWithoutNullStreams;
   private sessionId: string;
   private started: boolean; // first turn creates the session, later turns resume
-  private resumeReady: boolean;
-  private resumeListeners = new Set<(id: string) => void>();
+  private resumeIdState: ResumeIdState;
   // RENDER_GUIDANCE rides ahead of the first NON-slash turn (V.2): headless
   // Gemini only recognizes a slash command at position 0 of the prompt, so
   // prepending to a slash turn would silently turn it into chat (observed
@@ -69,7 +68,6 @@ export class GeminiCliSession implements AgentSession {
   private model?: string;
   private workspaceDir: string;
   private listModels: () => Promise<GeminiModelCatalog>;
-  private listCommands: () => Promise<GeminiCommand[]>;
   // Non-genui tool ids we announced, and buffered genui render calls awaiting
   // their tool_result (which carries the assigned component id).
   private announced = new Set<string>();
@@ -94,12 +92,11 @@ export class GeminiCliSession implements AgentSession {
   }
 
   get resumeId(): string | undefined {
-    return this.resumeReady ? this.sessionId : undefined;
+    return this.resumeIdState.value;
   }
 
   onResumeId(cb: (id: string) => void) {
-    this.resumeListeners.add(cb);
-    if (this.resumeReady) cb(this.sessionId);
+    this.resumeIdState.onChange(cb);
   }
 
   constructor(opts: {
@@ -107,7 +104,6 @@ export class GeminiCliSession implements AgentSession {
     model?: string;
     resumeId?: string;
     listModels?: () => Promise<GeminiModelCatalog>;
-    listCommands?: () => Promise<GeminiCommand[]>;
   }) {
     this.workspaceDir = path.resolve(opts.workspaceDir);
     mkdirSync(this.workspaceDir, { recursive: true });
@@ -115,9 +111,8 @@ export class GeminiCliSession implements AgentSession {
     this.modelLabel = opts.model;
     this.sessionId = opts.resumeId ?? randomUUID();
     this.started = Boolean(opts.resumeId);
-    this.resumeReady = Boolean(opts.resumeId);
+    this.resumeIdState = new ResumeIdState(opts.resumeId || undefined);
     this.listModels = opts.listModels ?? (() => listGeminiModels(this.workspaceDir));
-    this.listCommands = opts.listCommands ?? (() => listGeminiCommands(this.workspaceDir));
     // Only ever creates a settings.json that didn't already exist (K.2,
     // 2026-08-06): a file that predates this session is the user's, and
     // consent to modify it — same as the MCP entry below — doesn't exist
@@ -128,22 +123,21 @@ export class GeminiCliSession implements AgentSession {
   }
 
   refreshPromptOptions() {
-    this.listCommands()
-      .then((commands) => {
-        if (this.closed) return;
-        const options: PromptOption[] = commands.map((command) => ({
-          trigger: "/",
-          value: `/${command.name}`,
-          label: command.name,
-          description: command.description,
-          ...(command.argumentHint ? { argumentHint: command.argumentHint } : {}),
-          kind: "command",
-        }));
-        emitPromptOptions((msg) => this.emit(msg), options);
-      })
-      .catch((err) =>
-        createLogger("gemini-cli").debug(`command catalog unavailable — ${errText(err)}`),
-      );
+    // ACP commands belong to ACP's prompt/command execution surface. This
+    // adapter drives stream-json, where sending those strings makes the model
+    // answer them as prose. `/model` is the one terminal command Mirafold
+    // faithfully implements on this surface with its own provider-backed
+    // picker, so it is the only command the shell advertises.
+    const options: PromptOption[] = [
+      {
+        trigger: "/",
+        value: "/model",
+        label: "model",
+        description: "choose what model to use",
+        kind: "command",
+      },
+    ];
+    emitPromptOptions((msg) => this.emit(msg), options);
   }
 
   private settingsFile(): string {
@@ -521,15 +515,14 @@ export class GeminiCliSession implements AgentSession {
     // daemon restart try `--resume` against an id Gemini never wrote.
     const eventType = ev["type"];
     if (
-      !this.resumeReady &&
+      !this.resumeId &&
       (eventType === "init" ||
         eventType === "message" ||
         eventType === "tool_use" ||
         eventType === "tool_result" ||
         eventType === "result")
     ) {
-      this.resumeReady = true;
-      for (const cb of this.resumeListeners) cb(this.sessionId);
+      this.resumeIdState.publish(this.sessionId);
     }
     switch (eventType) {
       case "init":

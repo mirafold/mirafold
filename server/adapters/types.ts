@@ -67,7 +67,7 @@ export interface AgentSession {
 }
 
 /** Replace the browser's catalog in one atomic message. Kept here so every
- * adapter applies the same deterministic sort/dedupe rule. */
+ * adapter applies the same stable dedupe rule. */
 export function emitPromptOptions(
   emit: (msg: WireMsg) => void,
   options: PromptOption[],
@@ -99,9 +99,16 @@ export type Backend = {
   kind: CredentialKind;
   live: boolean;
   model?: string;
-  // N.5: the chosen DISCOVERED local server (picker second step). Absent for
-  // kind `local` means the env-configured endpoint, exactly as before.
+  // N.5/UX.7: the exact chosen local server or configured Claude endpoint.
+  // This is sensitive server-side configuration: it may contain URL auth or a
+  // signed query and is never serialized onto the browser wire. Persisting it
+  // in the owner-only checkpoint prevents recovery from silently drifting.
   endpoint?: string;
+  // UX.8: why an endpoint is here. A discovered endpoint is always driven
+  // with both real Anthropic credentials withheld. A configured endpoint may
+  // use only the credential MODE explicitly bound to it at selection time.
+  endpointSource?: "configured" | "discovered";
+  endpointAuth?: "api-key" | "auth-token" | "none";
   // The chosen config-declared provider (codex `[model_providers.<id>]`) —
   // the adapter forces it per-session so the pick's label stays true.
   provider?: string;

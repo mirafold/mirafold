@@ -22,6 +22,12 @@ raw agent HTML must never escape the sandboxed iframe. Anything that lets
 model-controlled output cross that line is a vulnerability, and exactly the
 kind of report we want.
 
+Provider/repository prompt catalogs also render inside trusted shell chrome.
+Their descriptions are inert React text, visibly attributed with a fixed
+adapter-owned badge, and entries containing invisible direction/line controls
+are dropped. A provider cannot choose the badge text or present its metadata as
+an unattributed Mirafold instruction.
+
 ## Running it safely
 
 Mirafold drives an agent that has your filesystem and your shell. That is the
@@ -55,13 +61,32 @@ things follow, and they are the whole list:
   checkout trusted: inspect or temporarily rename its `.env` before first
   launch because supported settings can still select endpoints, relay access,
   resource limits, and authentication posture.
-- **Keys stay server-side.** Credentials come from the environment or a `.env`
-  in the launch directory and are never serialized to the browser. Mirafold
+- **Keys and configured endpoint URLs stay server-side.** Credentials come
+  from the environment or a `.env` in the launch directory and are never
+  serialized to the browser. Configured URLs are sensitive too: userinfo or a
+  signed query can carry authentication, and a hostname can expose private
+  tenant/network identity. A configured Claude row therefore receives only a
+  random daemon-scoped identifier; a Codex row uses its declared provider name
+  while its base URL remains internal. Raw logs name only “configured endpoint.” Mirafold
   parses that file through an explicit allowlist of documented data settings;
   parent-process values win, and executable overrides, `PATH`/shell controls,
   runtime loader hooks, and arbitrary project variables are ignored. The file
   remains active application configuration, so review it before launching an
-  unfamiliar checkout.
+  unfamiliar checkout. Crucially, a checkout-supplied `ANTHROPIC_BASE_URL`
+  cannot inherit an Anthropic key/token supplied only by the parent daemon: it
+  may use a credential supplied by that same constrained project configuration
+  or the fixed local dummy token. Discovered endpoints always receive the
+  dummy and have both real Anthropic credential variables removed.
+- **Saved transcripts are treated as untrusted input on recovery.** Session
+  checkpoints are owner-only, bounded, and atomically replaced, but local
+  corruption/tampering is still decoded through a strict allowlist of every
+  persistable sequenced message shape. Per-viewport/control frames, replay
+  stamps, malformed payloads, unsafe catalog controls, and non-monotonic
+  sequences make the saved session unavailable instead of replaying into the
+  trusted shell. Checkpoints contain no standalone provider keys/tokens, but
+  can contain a sensitive configured endpoint URL; keep the state directory
+  private. An authenticated saved Claude endpoint is reopened only when the
+  current endpoint and header-credential mode still match exactly.
 
 ## Known trust decisions (disclosed, not bugs)
 
@@ -76,9 +101,13 @@ agent pointed at localhost has, and it requires a hostile process already
 running on your machine (or another user on a shared one). On shared
 machines, verify what's serving a port before picking it. Mirafold's side
 of the guard: your real API keys are withheld from sessions pointed at
-local servers, the browser can only ever pick endpoints the daemon itself
-discovered, and the agent's permission prompts still gate consequential
-actions. `MIRAFOLD_LOCAL_DISCOVERY=off` disables the probing entirely.
+discovered local servers, the browser can only ever pick addresses the daemon
+itself discovered (configured endpoints use an opaque identifier), and the
+agent's permission prompts still gate consequential actions.
+`MIRAFOLD_LOCAL_DISCOVERY=off` disables the probing entirely. The “local”
+privacy tag is derived server-side from exact `localhost`, IPv4 127/8, or IPv6
+loopback parsing; hostname lookalikes such as `127.attacker.test` are never
+classified as on-device.
 
 **A `!` command's finished output is fed to the agent.** A `!` (bang)
 command's transcript is delivered to the agent as its own turn once the

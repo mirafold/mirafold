@@ -5,25 +5,33 @@ export type CompactableTool = {
   isError?: boolean;
 };
 
-/** Completed successful provider activity collapses per turn. Failures and
- * in-flight calls never enter a group, so the default surface remains honest. */
-export function groupSettledTools<T extends CompactableTool>(tools: T[]): {
+/** Completed successful provider activity collapses only across a contiguous
+ * transcript run. A failure, in-flight call, or non-tool row is a boundary:
+ * grouping across one would move later work ahead of the visible boundary. */
+export function groupSettledTools<T extends CompactableTool>(tools: Array<T | null>): {
   anchors: Map<number, T[]>;
   hidden: Set<number>;
 } {
-  const batches = new Map<number, T[]>();
-  for (const tool of tools) {
-    if (!tool.settled || tool.isError) continue;
-    const batch = batches.get(tool.batchId) ?? [];
-    batch.push(tool);
-    batches.set(tool.batchId, batch);
-  }
   const anchors = new Map<number, T[]>();
   const hidden = new Set<number>();
-  for (const batch of batches.values()) {
-    if (batch.length < 2) continue;
-    anchors.set(batch[0].id, batch);
-    for (const tool of batch.slice(1)) hidden.add(tool.id);
+  let run: T[] = [];
+
+  const flush = () => {
+    if (run.length >= 2) {
+      anchors.set(run[0].id, run);
+      for (const tool of run.slice(1)) hidden.add(tool.id);
+    }
+    run = [];
+  };
+
+  for (const tool of tools) {
+    if (!tool || !tool.settled || tool.isError) {
+      flush();
+      continue;
+    }
+    if (run.length && run[0].batchId !== tool.batchId) flush();
+    run.push(tool);
   }
+  flush();
   return { anchors, hidden };
 }
