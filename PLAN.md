@@ -168,7 +168,9 @@ investigation, the CI-flake breakdown, and finished stretch-goal specs) ·
   follow-up correctness findings and every security-audit item—including the
   hardening-only and theoretical findings—are closed with direct regressions. Full
   specification, implementation/refactor/correctness/security record, and proof live in
-  **PLAN-ARCHIVE.md** under “Moved 2026-08-09.”
+  **PLAN-ARCHIVE.md** under “Moved 2026-08-09.” The complete phase and its
+  UX.6–UX.9 follow-ups landed in `next` through PR #31 (`9e833849`) after DCO,
+  Cloudflare Pages, Tier 1, and combined Tier 2/Tier 3 all passed.
 - [x] **Step UX.6 — Settle prompt return behavior, then refactor Phase UX** —
   done 2026-08-10; accepted desktop transcript-click behavior replaced the
   provisional binding, and the full Phase UX diff received a verified

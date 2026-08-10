@@ -7352,3 +7352,9 @@ Step L.4 and was not changed during this test-audit workflow.
 `server/testing/launcher.e2e.ts`, and the Explorer/global-axe browser cases
 whose fixtures enter the same forbidden filename class. No dotenv file was
 inspected. No dependency, commit, or push was added.
+
+**Integration closure (2026-08-10):** the complete Phase UX implementation,
+UX.6 refactor, UX.7 correctness repairs, UX.8 security hardening, and UX.9
+test-audit repairs landed in `next` through PR #31 at merge commit `9e833849`.
+DCO, Cloudflare Pages, Tier 1 typecheck/unit, and combined Tier 2/Tier 3
+integration/browser checks all passed before merge.
