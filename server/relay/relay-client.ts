@@ -9,9 +9,9 @@ import {
   DAEMON_PATH,
   ENTITLEMENT_HEADER,
   HANDSHAKE_TIMEOUT_MS,
+  isRelayToDaemon,
   PAIR_PARAM,
   type DaemonToRelay,
-  type RelayToDaemon,
 } from "./relay-protocol";
 import {
   derivePair,
@@ -177,12 +177,14 @@ export function startRelayClient(opts: {
       }, PAIR_CONFIRM_MS);
     });
     ws.on("message", (data) => {
-      let env: RelayToDaemon;
+      let parsed: unknown;
       try {
-        env = JSON.parse(String(data)) as RelayToDaemon;
+        parsed = JSON.parse(String(data));
       } catch {
         return;
       }
+      if (!isRelayToDaemon(parsed)) return;
+      const env = parsed;
       switch (env.t) {
         case "open":
           if (typeof env.v === "string" && !remotes.has(env.v)) {

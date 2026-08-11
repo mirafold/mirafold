@@ -345,7 +345,9 @@ export function openConnection(
         break;
       case "rename":
         if (typeof msg.sessionId === "string" && typeof msg.name === "string") {
-          registry.rename(msg.sessionId, msg.name);
+          if (!registry.rename(msg.sessionId, msg.name)) {
+            sendError("Could not save the session name. The previous name is unchanged.");
+          }
         }
         break;
       case "end_session":

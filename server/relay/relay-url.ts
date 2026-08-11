@@ -28,6 +28,36 @@ export type RelayPlan =
    *  = nothing configured, so the bake stood down (one actionable boot line). */
   | { kind: "off"; reason: "opt-out" | "unentitled-default" };
 
+/**
+ * True when a bearer credential riding this URL would cross the network in the
+ * clear: a non-TLS scheme (`http:`/`ws:`) to a host that is not loopback. The
+ * relay's E2E seal protects the *session*, but the entitlement token (relay
+ * dial header) and the license key (entitlement-exchange POST body) travel
+ * OUTSIDE that seal — over plaintext to a real host, anyone on the path reads
+ * them and can impersonate the paying customer to the relay. Defaults are
+ * `wss:`/`https:`, so this only fires when a user explicitly points a credential
+ * at a plaintext non-loopback endpoint. Loopback is exempt: the dev stub and a
+ * self-hosted relay on the same box carry nothing off-machine. A malformed URL
+ * returns false — other code already refuses it. (2026-08-11 audit.)
+ */
+export function carriesCredentialInClear(urlString: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(urlString);
+  } catch {
+    return false;
+  }
+  if (u.protocol === "https:" || u.protocol === "wss:") return false;
+  if (u.protocol !== "http:" && u.protocol !== "ws:") return false;
+  const host = u.hostname;
+  const loopback =
+    host === "localhost" ||
+    host === "[::1]" ||
+    host === "::1" ||
+    /^127(?:\.\d{1,3}){3}$/.test(host);
+  return !loopback;
+}
+
 export function resolveRelayPlan(env: {
   MIRAFOLD_RELAY_URL?: string;
   MIRAFOLD_APP_URL?: string;

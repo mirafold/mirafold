@@ -23,6 +23,12 @@ test("cookieToken returns undefined when absent/malformed", () => {
   assert.equal(cookieToken("foo=1"), undefined);
   assert.equal(cookieToken("no-equals-sign"), undefined);
   assert.equal(cookieToken("mirafold_tokenX=abc"), undefined); // must be an exact name match
+  assert.equal(cookieToken("mirafold_token=%"), undefined, "a malformed URI escape is invalid, not fatal");
+  assert.equal(
+    cookieToken("mirafold_token=%; mirafold_token=healed"),
+    "healed",
+    "a later valid duplicate can recover from a malformed stale value",
+  );
 });
 
 const authOn = { port: 3000, authEnabled: true };
@@ -64,6 +70,11 @@ test("verifyToken accepts a matching cookie or ?token= query", () => {
   const T = "secret";
   assert.equal(verifyToken({ headers: { cookie: "mirafold_token=secret" } }, T, true), true);
   assert.equal(verifyToken({ headers: {}, url: "/ws?token=secret" }, T, true), true);
+  assert.equal(
+    verifyToken({ headers: { cookie: "mirafold_token=%" }, url: "/ws?token=secret" }, T, true),
+    true,
+    "a malformed cookie does not block valid query-token recovery",
+  );
 });
 
 test("verifyToken rejects a wrong or missing token when enabled", () => {

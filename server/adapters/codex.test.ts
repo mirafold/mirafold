@@ -1082,6 +1082,34 @@ for (const kind of ["subscription", "api-key"] as const) {
     s.close();
   });
 
+  test(`model axis (${kind}): a transient catalog failure is retried before the next prompt`, async () => {
+    let lookups = 0;
+    const { s, msgs, prompts, awaitTurnEnd } = makeBindingSession(FOREIGN_MODEL_TOML, {
+      kind,
+      listEngineModels: async () => {
+        lookups += 1;
+        if (lookups === 1) throw new Error("temporary catalog failure");
+        return CATALOG;
+      },
+    });
+
+    s.pushPrompt("first");
+    await awaitTurnEnd(1);
+    assert.equal(lookups, 1);
+    assert.equal(prompts.length, 0, "the unresolved first-party model blocks the first prompt");
+    assert.match(msgs.find((m) => m.type === "error")!.message, /default model could not be resolved/);
+
+    s.pushPrompt("second");
+    await awaitTurnEnd(2);
+    assert.equal(lookups, 2, "the failed lookup did not disable the guard");
+    assert.equal(prompts.length, 1);
+    assert.ok(prompts[0].includes("## Generative UI"));
+    assert.ok(prompts[0].includes("DEFERRED"));
+    assert.ok(prompts[0].endsWith("second"));
+    assert.equal(s.modelName, "gpt-9-sol");
+    s.close();
+  });
+
   test(`model axis (${kind}): a catalog with NO default row is a failure, never a guess`, async () => {
     // Observed live 2026-07-19: an unmarked catalog row ('thinkingmachines/
     // inkling') is exactly the kind of thing a row-0 guess would run.

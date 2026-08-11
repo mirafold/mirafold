@@ -128,15 +128,53 @@ Treat the QR like a password field: show it only to the device you're
 pairing, and relaunch the daemon (which mints a fresh code) if it may have
 been captured.
 
-**The `.env` guard is path-based; symlinks are the accepted residual.**
-The daemon denies its auto-allowed read-only tools (Read, NotebookRead,
-Grep, Glob) access to its own `.env`/`.env.local` by resolved path —
-direct paths, `../` traversals, and cross-cwd routes are all denied and
-pinned by tests. A symlink pointing at those files is not caught. The
-guard is defense-in-depth, not the boundary: creating a symlink or running
-`cat .env` takes a tool that prompts (Bash, Write), so the closed routes
-are the zero-click ones. A prompt-free path to the daemon's secrets is a
-vulnerability we want reported.
+**A user-PINNED pairing code is trusted for its strength; only length and
+charset are enforced (accepted, 2026-08-11 audit).** The default code is a
+random 128-bit value — nobody guesses it. A power user may instead pin one via
+`MIRAFOLD_RELAY_CODE`, and that value is refused only if it is shorter than 16
+characters or carries characters the pairing link can't encode. It is NOT
+scored for entropy, so a long-but-guessable code (`passwordpassword`) is
+accepted. Because the relay identifies a pair by `SHA-256(code)` — a value the
+relay operator logs by design — a low-entropy pinned code is offline-crackable
+by whoever holds those logs, and a crack is full remote drive of the session.
+Accepted rather than fixed: any automated entropy gate on a user-chosen string
+either false-rejects legitimate strong passphrases or is trivially gamed, and
+the safe default (random 128-bit) is what everyone who doesn't pin a code gets.
+If you pin one, pin a random one — treat it exactly like a password.
+
+**A credential pointed at a plaintext non-loopback endpoint is sent in the
+clear; the daemon warns but still proceeds (2026-08-11 audit).** The relay is
+end-to-end-encrypted, but two paid-tier bearer credentials travel OUTSIDE that
+seal: the entitlement token rides the relay dial as a header, and the license
+key POSTs to the entitlement exchange. Both default to TLS (`wss://` /
+`https://`). If an operator overrides `MIRAFOLD_RELAY_URL` or
+`MIRAFOLD_ENTITLEMENT_URL` with a plaintext (`ws://` / `http://`) address to a
+real (non-loopback) host — a self-host misconfiguration — that credential
+crosses the network readable, and a thief can impersonate the paying customer
+to the relay (no API-key or shell exposure: those never leave the machine).
+The daemon now prints a loud warning at boot in that case
+(`carriesCredentialInClear`, `server/relay/relay-url.ts`) and continues, the
+same posture it takes for a disabled auth token or a weak pin — self-hosting
+over plaintext on a trusted network stays possible, just noisy. Loopback is
+exempt (the dev stub and same-box self-host carry nothing off-machine).
+
+**The `.env` guard is path-based; symlinks and hardlinks are the accepted
+residual.** The daemon denies its auto-allowed read-only tools (Read,
+NotebookRead, Grep, Glob) access to its own `.env`/`.env.local` by resolved
+path — direct paths, `../` traversals, cross-cwd routes, AND case-variant
+spellings (`.Env`/`.ENV`) on a case-insensitive filesystem are all denied and
+pinned by tests. The case-variant route was a real zero-click gap on
+macOS/Windows: the guard compared the resolved path against a case-sensitive
+set, so `Read(".Env")` resolved to a name not in the set, passed, and read the
+real `.env` (the API key) back with no prompt. Fixed 2026-08-11 by folding case
+exactly where the host filesystem does (`resolvesToSecretFile` /
+`makeCanUseTool`'s `caseInsensitiveFs`, `server/security/permissions.ts`),
+pinned by mutation-verified regressions in `permissions.test.ts`. A **symlink**
+or a **hardlink** pointing at those files is still not caught. The guard is
+defense-in-depth, not the boundary: creating either takes a tool that prompts
+(Bash, Write) or pre-existing local write access to the daemon's own directory,
+so the closed routes are the zero-click ones. A prompt-free path to the
+daemon's secrets is a vulnerability we want reported.
 
 The **Explorer's** read-only file browser (`fs_list`/`fs_listdir`/`fs_read`/
 `fs_diff`, Phases E and E2) shares this same guard: it refuses

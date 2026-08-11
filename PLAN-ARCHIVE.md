@@ -7465,15 +7465,16 @@ Mirafold uses those conventions through its own theme tokens and glyph shapes,
 not another product's icon set.
 
 **Executable changes:** `FilesPanel.tsx` now renders matching inline-SVG
-chevrons, quiet per-depth guides, and one decorative glyph immediately after
+chevrons, quiet per-depth guides, and one decorative glyph immediately before
 each node name. New `ExplorerNodeGlyph.tsx` classifies only broad families:
 open/closed folder, symlink, code, configuration/data, documentation, styles,
-images, and generic file. `styles.css` gives desktop and phone frames an inset
-surface, stronger sticky root strip, compact row rhythm, theme-token glyph
-colors, hover/active treatment, thin tree scrollbar, and compact Git-status
-chips. The minimum dock width grows from 140px to 190px. Server, wire protocol,
-directory state/fetching, sort order, status semantics, read-only behavior,
-file view/lightbox, refresh, and phone navigation are behaviorally unchanged.
+images, and generic file. `styles.css` gives the stable desktop dock and phone
+frame a compact Files toolbar, separate sticky workspace-root strip, inset
+surface, compact row rhythm, theme-token glyph colors, hover/active treatment,
+thin tree scrollbar, and quiet aligned Git markers. Refresh and the phone close
+action live in the toolbar. Server, wire protocol, directory state/fetching,
+sort order, status semantics, read-only behavior, file view/lightbox, refresh
+behavior, and phone navigation are behaviorally unchanged.
 
 **Dependency decision:** no package. Mirafold already owns small inline SVG
 glyph components; a bounded set of paths and a pure classifier are safe local
@@ -7497,5 +7498,91 @@ configuration, documentation, and stylesheet families; the phone frame stayed
 390px wide with no side-scroll. Dark and light appearances resolved panel and
 glyph colors through their theme tokens. Focused headless-Chrome desktop and
 phone rendered-contract assertions plus axe serious/critical sweeps passed.
-`git diff --check` passed. No dependency, wire shape, server behavior, project
-file, or user data changed.
+`git diff --check` passed. PR #34's corrected replacement run then passed DCO,
+Cloudflare Pages, Tier 1, and combined Tier 2/Tier 3 before merge at `21b5f33`.
+No dependency, wire shape, server behavior, project file, or user data changed.
+
+## Moved 2026-08-11 (whole-codebase correctness closure — full body)
+
+### Phase BC — Whole-codebase correctness closure (completed 2026-08-11)
+
+**Goal and approved boundary:** after the repository-wide bughunt reported eight
+confirmed correctness failures, Kyle approved fixing all eight on a new branch
+from the updated `next`. This phase modifies the existing failing paths and
+their regression tests only. It creates no user feature, dependency, provider
+protocol, persisted-session schema field, or write capability.
+
+**Verified starting state:**
+
+- `GeminiCliSession.worker()` was a fire-and-forget promise whose rejected
+  turn-preparation work escaped the worker and killed every later queued turn.
+- `CodexSession.applyEngineDefaultModel()` cleared its retry guard before the
+  engine catalog lookup succeeded, so one transient failure disabled all later
+  retries for both subscription and API-key first-party sessions.
+- `startRelayClient()` cast any successful `JSON.parse()` result to an envelope;
+  JSON `null` therefore reached an unguarded property read in the socket
+  callback.
+- `cookieToken()` let malformed percent escapes throw before a valid query token
+  could recover the request.
+- `SessionRegistry` derived the prompt-burst gate from composite fleet status;
+  a neighboring `bang_end` could report idle and reopen the gate while active
+  and queued model turns still existed.
+- `listTree()` and `gitTree()` compared JavaScript character counts at admission
+  even though their accumulated budget used UTF-8 bytes, allowing multibyte
+  paths past the documented byte ceiling.
+- home/root rendering assumed `/`, so Windows backslash paths failed to shorten
+  or display their leaf; a broad first repair was directly probed and shown to
+  misclassify legal POSIX backslashes, then narrowed before commit.
+- active `SessionRegistry.rename()` changed the live name even when its durable
+  checkpoint write failed, while the connection gave no failure feedback.
+
+**Executable changes:** Gemini contains each queued item, emits one terminal
+error grammar for preparation failure, and retries the settings merge on the
+next prompt. Codex leaves the engine-default guard armed until a successful
+model selection. The relay now validates runtime envelope shape, and cookie
+decoding treats malformed values as absent. The registry counts pending model
+turns independently from bang/permission status and pairs adapter `error` plus
+`turn_end` without double-decrementing. Both filesystem tree implementations
+admit paths by `Buffer.byteLength(..., "utf8")`. Explorer/root/home helpers
+recognize drive, UNC, mixed-separator, and tildified Windows paths while
+preserving POSIX case and literal-backslash semantics. Active rename restores
+the previous name on checkpoint failure and sends an actionable viewport error.
+
+**Test changes:** focused regressions cover Gemini worker survival, Codex retry
+under both credential modes, valid-JSON scalar relay input through a real local
+socket, malformed and duplicate cookies, active/queued/error model-turn
+grammar beside bang traffic, real failed checkpoint rename, plain-walk and real
+Git UTF-8 admission, and Windows/mixed-separator/root/boundary paths plus the
+POSIX-backslash counterexample. No existing assertion was weakened to make a
+fix pass.
+
+**Documentation changes:** `PLAN.md` records the completed single-pass phase and
+the final PR #34 merge state; `HANDOFF.md` replaces its stale uncommitted-branch
+state with PR #35's review state. README and product documentation are unchanged
+because no public contract or workflow was added.
+
+**Proof:** 577/577 ordinary safe unit assertions passed; the aggregate-sensitive
+Codex catalog, Gemini catalog, and version files passed independently (17/17),
+and the final affected-unit run passed 151/151. The guarded Tier 2 matrix passed
+131/131. The correctly filtered guarded Tier 3 matrix passed 70/70 across six
+browser files. TypeScript, direct guarded Vite and esbuild production builds,
+and `git diff --check` passed. The one new plain-walk UTF-8 case also passed
+alone under the denial guard without running its file's dotenv-manufacturing
+fixtures. The dotenv-manufacturing tests, launcher browser file, and eight
+Explorer/global-axe browser cases remain excluded.
+
+During the first Tier 3 attempt, a negative run-pattern matched the file-level
+parent and unintentionally selected six Explorer cases. The run was stopped as
+soon as their names appeared. The preloaded guard prevented dotenv content
+reads, but those cases may have listed a forbidden filename; this was reported
+immediately. A harmless unit probe established the cause, and the replacement
+used Node's dedicated positive skip pattern: 66/66 app/bundle/fleet/phone/
+recovery plus the already-passed 4/4 relay cases. No product code changed in
+response to either orchestration error.
+
+**Git state:** PR #34's rendered-title CI assertion was corrected in signed,
+DCO-signed-off commit `5de3f2e`; its replacement DCO, Cloudflare, Tier 1, and
+combined Tier 2/Tier 3 checks passed before merge into `next` at `21b5f33`.
+The eight correctness repairs are signed and DCO-signed-off in `3ed7236` and
+published as open PR #35 into `next`. Per Kyle's instruction, PR #35 remains
+unmerged for review.

@@ -297,7 +297,6 @@ export class CodexSession implements AgentSession {
 
   /** Resolve the engine's marked default before a forced first-party turn. */
   private async applyEngineDefaultModel(): Promise<boolean> {
-    this.needsEngineDefaultModel = false;
     try {
       const models = await this.listEngineModels();
       this.setThreadModel(codexEngineDefaultModel(models, this.firstPartyOpenAI));
