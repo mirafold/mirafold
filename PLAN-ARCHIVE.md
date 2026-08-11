@@ -7366,3 +7366,77 @@ temporary `CODEX_HOME` (`ENOTEMPTY`). The backend-routing integration test now
 uses a deliberately missing Codex binary for catalog discovery; it never drives
 a provider process, retains the exact backend-choice assertions, and passed
 10/10 unchanged focused repetitions after the fix.
+
+## Moved 2026-08-11 (Codex → Ollama intermittent-turn diagnosis — full body)
+
+### Step L.4 — Diagnose intermittent Codex → Ollama real turns (completed 2026-08-11)
+
+**Goal:** make the shipped local Codex path reliably complete or fail with a
+specific actionable diagnosis; do not weaken the live test into accepting a
+stalled or truncated turn.
+
+**Starting evidence (2026-08-10):** with identical code, credentials stripped,
+a throwaway Codex home, and `qwen3-1.7b-32k:latest`, the Tier 4 turn timed out at
+300 seconds in three of four attempts and passed once after 145.5 seconds. The
+catalog stayed fast. Test-abort cleanup was already fixed and separately
+proven; the open item was the underlying integration behavior.
+
+**Observed cause, before product changes:** the Codex SDK starts the installed
+CLI and buffers a reasoning/message item until that item completes. Ollama's
+own trace showed the request active throughout: a 7,674–7,708-token Codex +
+Mirafold prompt was being prefilled on a four-core CPU, followed by Qwen
+reasoning at roughly 1.3 tokens/second. A direct Responses probe proved
+`reasoning.effort = "none"` is accepted by Codex 0.147.0 and forwarded to
+Ollama, while `low` still reasons and `/no_think` in prose does not disable the
+API's reasoning mode. Canonical `codex exec --oss --local-provider ollama`
+showed the same default reasoning, ruling out Mirafold's provider binding.
+
+The first five-minute implementation attempt failed, and its failure was kept
+visible: `none` was correctly forwarded (`thinking = 0`), but a cold 32K runner
+had reached only 6,144 of 7,676 prompt tokens when the deadline aborted it. Two
+unchanged reruns appeared to pass in roughly one minute, but Ollama's trace
+proved those were false greens: `/api/tags` recency order had moved the base
+`qwen3:1.7b` model to row zero, it loaded at 4K, and Ollama silently truncated
+the ~7.5K prompt to 2,050 tokens. Both passes were discarded. The live helper
+now sorts names and accepts only `/api/show` metadata with an explicit
+`num_ctx >= 32768`; the parser has its own unit regression.
+
+**Executable changes:**
+
+- [x] A probe-discovered local Codex session adds `none` to its existing
+  `/effort` picker. Nothing is forced: the user's configured/model default
+  remains in effect until they explicitly select it. First-party sessions and
+  config-declared providers keep the SDK's ordinary effort catalog.
+- [x] Only probe-discovered local Codex turns receive an outer deadline,
+  defaulting to eight minutes (`MIRAFOLD_CODEX_LOCAL_TURN_TIMEOUT_MS=0`
+  disables it). The measured cold full-context turn needed 385.9 seconds, so
+  the former five-minute assumption was replaced rather than stacked.
+- [x] A deadline abort uses the existing `AbortController`, emits one specific
+  prefill/reasoning recovery message, and closes with exactly one `turn_end`.
+  Other local provider failures add the concrete server-running/model-served
+  check after endpoint redaction. The documented timeout key is included in
+  the existing constrained project-setting allowlist. No package or wire shape
+  changed.
+
+**Test changes:**
+
+- [x] Unit coverage pins local-vs-nonlocal effort catalogs, `none` reaching
+  thread options, actionable local provider failures, the timeout abort, and
+  one-error/one-`turn_end` grammar while preserving silent user interrupt.
+- [x] Tier 4 first sends the shipped `/effort none` command, then requires real
+  model text, zero errors, and one `turn_end` from a deterministically selected
+  non-truncating model. A real installed-Codex probe against an OS-selected and
+  then closed loopback port separately proves unavailable-engine behavior.
+
+**Documentation changes:** README's Tier 4 contract, `docs/local-models.md`,
+and `docs/ADAPTERS.md` now state the buffered-item behavior, explicit reasoning
+control, context gate, local-only deadline, and recovery choices.
+
+**Proof:** Ollama reported `n_ctx = 32768`, 7,674–7,678 prompt tokens, no
+truncation, and `thinking = 0`. The same valid full-context Tier 4 turn passed
+cold/warm/warm in 385.9/90.3/90.3 seconds. The real unavailable endpoint failed
+actionably in 4.9 seconds; the complete Tier 4 wrapper passed 3, skipped its
+credential-required OpenRouter case, and failed 0. Tier 1 passed 615/615;
+TypeScript checking, the client/server production build, and `git diff --check`
+passed. No metered model, dependency, wire protocol, user config file, or
+dotenv file was touched.

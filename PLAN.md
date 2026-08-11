@@ -190,8 +190,8 @@ investigation, the CI-flake breakdown, and finished stretch-goal specs) ·
 - [x] **Step UX.9 — Audit and repair the Phase UX branch tests** — done
   2026-08-10; repeated all safe test tiers, mutation-proved and closed six
   regression gaps, and made the live Codex/Ollama timeout clean up immediately.
-  The remaining real-turn instability is tracked as Step L.4 rather than hidden
-  as a test-suite success. → **PLAN-ARCHIVE.md**.
+  The real-turn instability it exposed was kept visible and is now diagnosed
+  and closed in Step L.4. → **PLAN-ARCHIVE.md**.
 
 ---
 
@@ -2769,22 +2769,16 @@ shows which matter — not a launch prerequisite.
     per-session env/config" build). What remains of L.3 afterward is only
     whatever mixing ergonomics Phase N's shipped form still leaves wanting.
 
-- [ ] **Step L.4 — Diagnose intermittent Codex → Ollama real turns (test-audit follow-up)**
-  - Goal: make the shipped local Codex path reliably complete or fail with a
-    specific actionable diagnosis; do not weaken the live test into accepting
-    a stalled turn.
-  - Evidence (2026-08-10): with identical code, credentials stripped, a
-    throwaway Codex home, and the first installed local model
-    (`qwen3-1.7b-32k:latest`), the Tier 4 turn timed out at 300 seconds in three
-    of four attempts and passed once after 145.5 seconds. The catalog query
-    remained fast. Test-abort cleanup is fixed and separately proven; this open
-    item is the underlying real integration behavior, not a leaked runner.
-  - Build: instrument the real Codex/Ollama event boundary without changing
-    behavior, establish whether the stall is in Codex SDK event delivery,
-    Ollama generation, or model-specific reasoning, then fix the named cause.
-  - Done when: the same local turn completes repeatedly under the Tier 4 bound,
-    the exact former stall is regression-pinned, and a genuine unavailable or
-    hung local engine exits promptly with an actionable error.
+- [x] **Step L.4 — Diagnose intermittent Codex → Ollama real turns** — done
+  2026-08-11; direct Ollama traces isolated cold prompt prefill plus Qwen's
+  unbounded default reasoning (not an SDK event-delivery stall). Discovered
+  local Codex sessions now offer explicit `/effort none`, retain inherited
+  defaults until selected, end unfinished turns at an evidence-based eight
+  minutes with actionable recovery, and fail unavailable endpoints clearly.
+  Tier 4 pins an explicit 32K model so recency order or silent 4K truncation
+  cannot false-green; valid full-context runs passed cold/warm/warm in
+  385.9/90.3/90.3 seconds and a real unavailable endpoint failed in 4.9
+  seconds. → PLAN-ARCHIVE.md.
 
 ---
 
