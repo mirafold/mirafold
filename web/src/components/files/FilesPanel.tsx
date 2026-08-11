@@ -317,9 +317,33 @@ export function FilesPanel({
           over it, so back reveals the tree at its prior scroll (E.4). */}
       <div className="files-main">
         <div className="files-tree">
+          <header className="files-panel-head">
+            <h2 className="files-panel-title">Files</h2>
+            <div className="files-panel-actions">
+              <button
+                className="files-panel-action files-refresh"
+                onClick={refresh}
+                title="Refresh"
+                aria-label="Refresh files"
+              >
+                <ExplorerRefreshIcon />
+              </button>
+              {phone && (
+                <button
+                  className="files-panel-action"
+                  onClick={onClose}
+                  title="Close files"
+                  aria-label="Close files"
+                >
+                  <ExplorerCloseIcon />
+                </button>
+              )}
+            </div>
+          </header>
           {/* The session's checked-out root leads the tree as its top node
-              (VS Code convention) — no path header; the full ~-path lives in
-              the row's tooltip. The panel's actions ride the same row. ARIA:
+              (VS Code convention) — the title bar above is panel chrome, not
+              a duplicate path header; the full ~-path lives in this row's
+              tooltip. ARIA:
               it's a disclosure button OVER the tree widget, not a treeitem
               inside it — role=tree owns only treeitems/groups (axe, C.2). */}
           <div className="files-root">
@@ -332,16 +356,9 @@ export function FilesPanel({
               <span className="files-caret">
                 <ExplorerChevron open={rootOpen} />
               </span>
-              <span className="files-name">{rootName}</span>
               <ExplorerNodeGlyph name={rootName} entryKind="dir" open={rootOpen} />
+              <span className="files-name">{rootName}</span>
             </button>
-            {/* Desktop closes from the activity-bar toggle; the phone dialog
-                still needs its own close. */}
-            {phone && (
-              <button className="files-btn" onClick={onClose} title="Close files" aria-label="Close files">
-                ✕
-              </button>
-            )}
           </div>
           {rootOpen &&
             (rootState?.error && !rootState.entries ? (
@@ -367,17 +384,6 @@ export function FilesPanel({
               <div className="files-empty">…</div>
             ))}
         </div>
-
-        {/* Pinned to the panel's bottom-left corner, floating over the tree;
-            the file-view overlay (z-index above) covers it, same as the tree. */}
-        <button
-          className="files-btn files-refresh"
-          onClick={refresh}
-          title="Refresh"
-          aria-label="Refresh files"
-        >
-          ⟳
-        </button>
 
         {selected && (
           <>
@@ -463,6 +469,23 @@ export function FilesPanel({
   );
 }
 
+function ExplorerRefreshIcon() {
+  return (
+    <svg className="files-action-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <path d="M13.4 7A5.5 5.5 0 1 0 13 10.2" />
+      <path d="M10.1 3.8h3.3V.5" />
+    </svg>
+  );
+}
+
+function ExplorerCloseIcon() {
+  return (
+    <svg className="files-action-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <path d="m4 4 8 8M12 4l-8 8" />
+    </svg>
+  );
+}
+
 /** Quiet vertical hierarchy guides, like the optional guides in established
  * IDE project trees. The width keeps the established 12px-per-depth rhythm;
  * the lazy tree's data and interaction model do not know about them. */
@@ -528,8 +551,8 @@ function DirChildren({
                 <span className="files-caret">
                   <ExplorerChevron open={isOpen} />
                 </span>
-                <span className="files-name">{e.name}</span>
                 <ExplorerNodeGlyph name={e.name} entryKind="dir" open={isOpen} />
+                <span className="files-name">{e.name}</span>
               </button>
               {isOpen && (
                 <DirChildren
@@ -555,8 +578,8 @@ function DirChildren({
             >
               <ExplorerIndent depth={depth} />
               <span className="files-caret" />
-              <span className="files-name">{e.name}</span>
               <ExplorerNodeGlyph name={e.name} entryKind={e.kind} />
+              <span className="files-name">{e.name}</span>
               {e.status && (
                 <span className={`files-status files-status-${e.status}`} title={statusLabel(e.status)}>
                   {e.status}

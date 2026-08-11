@@ -2179,17 +2179,24 @@ test("E.3: the files panel lists the working tree, opens a file beside the trans
   // from any of them.
   const root = page.locator(".files-root-row");
   const repoDir = path.basename(path.resolve(import.meta.dirname, "..", ".."));
+  const panelHead = page.locator(".files-panel-head");
+  assert.equal(await panelHead.locator(".files-panel-title").innerText(), "Files");
+  assert.equal(
+    await panelHead.locator(".files-refresh[aria-label='Refresh files']").count(),
+    1,
+    "the Explorer title bar owns its refresh action",
+  );
   assert.ok((await root.innerText()).includes(repoDir), `root row names the checkout folder (${repoDir})`);
   assert.equal(await page.locator(".files-title").count(), 0, "the old path header is gone");
   assert.equal(
-    await root.locator(".files-node-icon-folder-open").count(),
+    await root.locator(".files-caret + .files-node-icon-folder-open + .files-name").count(),
     1,
-    "the expanded root carries the open-folder glyph after its name",
+    "the expanded root orders its chevron, open-folder glyph, then name",
   );
   assert.equal(
-    await pkg.locator(".files-node-icon-config[aria-hidden=true]").count(),
+    await pkg.locator(".files-caret + .files-node-icon-config[aria-hidden=true] + .files-name").count(),
     1,
-    "package.json carries one decorative configuration glyph",
+    "package.json carries its decorative configuration glyph before its name",
   );
   await root.click();
   await eventually(
@@ -2605,8 +2612,8 @@ test("W.2: the live tree — a write behind the UI's back appears with zero clic
       "nothing expanded shows the hidden file — correct",
     );
 
-    // The refresh button is unchanged beside the bell: a click still
-    // refetches (fresh root request on the wire) and the tree stays whole.
+    // The refresh action remains beside the bell: a click still refetches
+    // (fresh root request on the wire) and the tree stays whole.
     const rootFetches = () =>
       page.evaluate(
         () =>
