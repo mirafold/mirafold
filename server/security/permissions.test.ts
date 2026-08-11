@@ -3,7 +3,12 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import os from "node:os";
 import { mkdtempSync } from "node:fs";
-import { isSecretFile, makeCanUseTool, type PermissionAsker } from "./permissions";
+import {
+  isSecretFile,
+  makeCanUseTool,
+  resolvesToSecretFile,
+  type PermissionAsker,
+} from "./permissions";
 
 // The SDK's canUseTool passes an options object; our policy ignores it, so a
 // minimal-but-complete stub is enough to exercise the callback.
@@ -19,13 +24,13 @@ const READERS: [string, string][] = [
   ["Glob", "path"],
 ];
 
-function harness(answer: boolean, root = ROOT) {
+function harness(answer: boolean, root = ROOT, caseInsensitiveFs = false) {
   const asked: string[] = [];
   const ask: PermissionAsker = async (tool) => {
     asked.push(tool);
     return answer;
   };
-  const canUse = makeCanUseTool(root, ask);
+  const canUse = makeCanUseTool(root, ask, caseInsensitiveFs);
   const call = async (tool: string, input: Record<string, unknown>) => {
     const r = await canUse(tool, input, opts);
     assert.ok(r, "canUseTool unexpectedly returned null");
@@ -90,6 +95,52 @@ test("Q.5 cross-cwd: absolute + traversal routes to the daemon .env still deny; 
   // A bare ".env" now resolves to otherDir/.env — a DIFFERENT file, outside the
   // guard's scope (it protects the daemon's own secrets), so it is not denied.
   assert.notEqual((await call("Read", { file_path: ".env" })).behavior, "deny");
+});
+
+// 2026-08-11 audit: on a case-insensitive filesystem (macOS default, Windows)
+// `.Env`/`.ENV` name the SAME file as `.env`, so a case-sensitive string match
+// let an auto-allowed `Read(".Env")` read the daemon's secret with no prompt —
+// the exact zero-click route the guard exists to close. The compare must fold
+// case exactly where the host filesystem does.
+test("audit 2026-08-11: case-variant .env spellings deny on a case-insensitive FS", async () => {
+  const { call } = harness(true, ROOT, true);
+  const variants = [".Env", ".ENV", ".eNv", ".env.LOCAL", ".ENV.LOCAL"];
+  for (const name of variants) {
+    for (const [tool, field] of READERS) {
+      assert.equal(
+        (await call(tool, { [field]: name })).behavior,
+        "deny",
+        `${tool} @ ${name} must deny on a case-insensitive FS`,
+      );
+    }
+  }
+  // The absolute-path route folds too.
+  const absUpper = path.resolve(process.cwd(), ".ENV");
+  assert.equal((await call("Read", { file_path: absUpper })).behavior, "deny");
+});
+
+test("audit 2026-08-11: a case-sensitive FS keeps .ENV as a different, allowed file", async () => {
+  // Linux resolves `.ENV` to a genuinely different file; folding it in would
+  // wrongly deny a legitimate workspace file, so case-sensitive stays exact.
+  const { call } = harness(false, ROOT, false);
+  assert.notEqual((await call("Read", { file_path: ".ENV" })).behavior, "deny");
+  // The real secret is still denied regardless.
+  assert.equal((await call("Read", { file_path: ".env" })).behavior, "deny");
+});
+
+test("audit 2026-08-11: resolvesToSecretFile folds case only when told to", () => {
+  const secret = path.resolve(process.cwd(), ".env");
+  const upper = path.resolve(process.cwd(), ".ENV");
+  assert.equal(resolvesToSecretFile(secret, false), true);
+  assert.equal(resolvesToSecretFile(upper, false), false);
+  assert.equal(resolvesToSecretFile(upper, true), true);
+});
+
+test("audit 2026-08-11: isSecretFile folds case only when told to", () => {
+  assert.equal(isSecretFile("/x/.ENV", false), false);
+  assert.equal(isSecretFile("/x/.ENV", true), true);
+  assert.equal(isSecretFile("/x/.Env.Local", true), true);
+  assert.equal(isSecretFile("/x/.env", false), true);
 });
 
 test("local read-only tools and mcp__ui__* are allowed without asking", async () => {

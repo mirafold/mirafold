@@ -42,10 +42,42 @@ const DETAIL_FIELD: Record<string, string> = {
 const SECRET_FILE_BASENAMES = new Set([".env", ".env.local"]);
 const SECRET_PATHS = new Set([...SECRET_FILE_BASENAMES].map((n) => path.resolve(n)));
 
+// macOS and Windows resolve `.Env` and `.ENV` to the SAME file as `.env`, but a
+// case-sensitive string compare treats them as different names — so a purely
+// lexical guard misses `Read(".Env")` on those platforms and reads the secret
+// back through an auto-allowed tool with no prompt, exactly the zero-click route
+// this guard exists to close. Compare the way the host filesystem does. Linux is
+// case-sensitive, so `.ENV` there is a genuinely different file and stays out of
+// scope. Derived once from the platform; injectable so a case-sensitive CI host
+// can still pin the case-insensitive behavior. (2026-08-11 audit.)
+const CASE_INSENSITIVE_FS = process.platform === "darwin" || process.platform === "win32";
+
 /** True when `p` names a secret env file (by basename) — the Explorer's
  *  content-read denial. Listing may still SHOW the file (honesty over
- *  hiding); only reading its contents is refused. */
-export const isSecretFile = (p: string) => SECRET_FILE_BASENAMES.has(path.basename(p));
+ *  hiding); only reading its contents is refused. On a case-insensitive
+ *  filesystem `.Env`/`.ENV` name the same file as `.env`, so they match too. */
+export const isSecretFile = (p: string, caseInsensitiveFs = CASE_INSENSITIVE_FS): boolean => {
+  const base = path.basename(p);
+  if (SECRET_FILE_BASENAMES.has(base)) return true;
+  return caseInsensitiveFs && SECRET_FILE_BASENAMES.has(base.toLowerCase());
+};
+
+/** Does an auto-allowed reader's resolved target land on one of the daemon's
+ *  own secret files? Case-folds on a case-insensitive filesystem so a
+ *  case-variant spelling can't slip past the exact-string set. Exported for
+ *  the guard's regression pin. */
+export const resolvesToSecretFile = (
+  resolvedTarget: string,
+  caseInsensitiveFs = CASE_INSENSITIVE_FS,
+): boolean => {
+  if (SECRET_PATHS.has(resolvedTarget)) return true;
+  if (!caseInsensitiveFs) return false;
+  const lowered = resolvedTarget.toLowerCase();
+  for (const secret of SECRET_PATHS) {
+    if (secret.toLowerCase() === lowered) return true;
+  }
+  return false;
+};
 const READ_PATH_FIELD: Record<string, string> = {
   Read: "file_path",
   NotebookRead: "notebook_path",
@@ -74,7 +106,11 @@ export type PermissionAsker = (tool: string, detail: string) => Promise<boolean>
  *     doesn't do that, so neither do we; a user allowlists the commands they
  *     want promptless in their settings.json exactly as in the terminal.
  */
-export function makeCanUseTool(workspaceDir: string, ask: PermissionAsker): CanUseTool {
+export function makeCanUseTool(
+  workspaceDir: string,
+  ask: PermissionAsker,
+  caseInsensitiveFs = CASE_INSENSITIVE_FS,
+): CanUseTool {
   const root = path.resolve(workspaceDir);
   const denied = (message: string) => ({ behavior: "deny" as const, message });
 
@@ -89,7 +125,7 @@ export function makeCanUseTool(workspaceDir: string, ask: PermissionAsker): CanU
     const readField = READ_PATH_FIELD[toolName];
     if (readField) {
       const target = input[readField];
-      if (typeof target === "string" && SECRET_PATHS.has(path.resolve(root, target))) {
+      if (typeof target === "string" && resolvesToSecretFile(path.resolve(root, target), caseInsensitiveFs)) {
         return denied("Reading the daemon's environment file is not permitted.");
       }
     }

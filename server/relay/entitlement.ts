@@ -19,6 +19,7 @@
 // relay-client already prints the actionable line.
 
 import { createLogger } from "../log";
+import { carriesCredentialInClear } from "./relay-url";
 
 const log = createLogger("relay");
 
@@ -61,6 +62,18 @@ export function createEntitlementTokenSource(env: {
   }
   if (!licenseKey) {
     return { mode: "none", get: async () => undefined, stop: () => {} };
+  }
+
+  // The license key POSTs to the exchange in the clear if the operator pointed
+  // MIRAFOLD_ENTITLEMENT_URL at a plaintext non-loopback host — anyone on the
+  // path then reads the key. Warn loudly; still proceed (self-host is a real
+  // path), matching the weak-pin / auth-off posture in index.ts (2026-08-11 audit).
+  if (carriesCredentialInClear(url)) {
+    log.warn(
+      `MIRAFOLD_ENTITLEMENT_URL is a plaintext (http://) address to a non-local host — ` +
+        `your license key would be sent in the clear and could be stolen in transit. ` +
+        `Use https:// for a remote entitlement endpoint.`,
+    );
   }
 
   let cached: { token: string; expMs: number } | undefined;
