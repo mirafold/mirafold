@@ -34,12 +34,17 @@ provider injected — no env vars, no `config.toml` edit, no dummy API key.
 Start your server while the picker is open and it appears within a few
 seconds, no reload.
 
-Two knobs, both optional:
+Three knobs, all optional:
 
 - `MIRAFOLD_LOCAL_ENDPOINTS` — comma-separated URLs to probe *in addition*
   to the well-known ports (a server on a nonstandard port).
 - `MIRAFOLD_LOCAL_DISCOVERY=off` — disable the well-known-port probing
   entirely (env-listed endpoints are still honored).
+- `MIRAFOLD_CODEX_LOCAL_TURN_TIMEOUT_MS` — the outer deadline for one Codex
+  turn on a discovered server (default `480000`, or eight minutes). Set it to
+  `0` to disable the deadline for a model or machine that legitimately needs
+  longer. This does not apply to OpenAI or to providers declared in Codex's
+  own `config.toml`.
 
 Discovery only finds a *running* server — model files on disk with no
 server serving them are invisible (and unusable anyway). The two paths
@@ -136,6 +141,26 @@ Responses API for your model).
 3. Verify in the terminal first if anything misbehaves: plain `codex` in the
    same directory should chat with your local model. If it does and Mirafold
    doesn't, that's a Mirafold bug — please report it.
+
+### When a discovered Codex turn looks stuck
+
+Codex's SDK emits an agent message only after the message item completes; it
+does not expose token deltas. A CPU-bound Ollama request can therefore look
+silent while Ollama pre-fills Codex's agent context, then remain silent longer
+while a reasoning model thinks. Direct measurements on the ThinkPad described
+below separated those two costs: the request was active in Ollama throughout,
+not stalled between Mirafold and the Codex SDK.
+
+Mirafold leaves Codex's configured reasoning default untouched. On a
+probe-discovered local endpoint, `/effort` additionally offers `none`; choosing
+it explicitly restarts the same warm Codex thread with reasoning disabled.
+Ollama supports that Responses-API value; another local runtime may reject it,
+which Codex reports as an ordinary provider error. If a discovered local turn
+still does not finish within eight minutes, Mirafold ends it with a message that
+names the concrete choices: use `/effort none`, choose a faster model or
+machine, or raise/disable `MIRAFOLD_CODEX_LOCAL_TURN_TIMEOUT_MS`. The limit is
+outside Codex's own request retries, so one slow request cannot silently turn
+into many retries before the browser becomes usable again.
 
 ## Hosted open models — the same knobs, pointed at a provider you pay
 

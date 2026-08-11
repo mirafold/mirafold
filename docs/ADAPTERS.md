@@ -8,7 +8,7 @@ checklist for landing provider #4. It exists so that a future session — human
 or agent, on any model — can extend the provider surface without re-deriving
 the architecture or violating an invariant that only lived in someone's head.
 
-Grounded in the shipped code through 2026-08-10 (Phase P's providers plus
+Grounded in the shipped code through 2026-08-11 (Phase P's providers plus
 Phase UX's native prompt catalogs, durable resume contract, and UX.8 security closure: `claude-code`,
 `codex`, `gemini-cli`, plus `mock`). File references are the source of truth
 if this document and the code ever disagree — then fix this document.
@@ -201,7 +201,7 @@ processes, clear timers. After `close()`, no further messages may be emitted.
 | Drive surface | `@anthropic-ai/claude-agent-sdk`, one warm `query()` for the session's life | `@openai/codex-sdk`, pointed at the user's installed `codex` CLI when present (SDK-bundled fallback), one warm `Thread`, `runStreamed` per turn | `gemini` CLI headless: `-p … -o stream-json`, one process **per turn** | scripted timers |
 | Warm-conversation mechanism | never-ending query + async prompt queue (prompt cache preserved) | persistent `Thread` (`thread.id` resumable) | `--session-id` first turn, `--resume` after | n/a |
 | Daemon-restart resume id | SDK `session_id` after init; restored with `resume` | `thread.started.thread_id`; restored with `resumeThread` | accepted UUID; restored with `--resume` (fatal id-mode self-heals) | transcript only |
-| Pre-submit catalog | live SDK slash commands + `commands_changed` | implemented `/model` + live app-server `$` skills | implemented `/model` | scripted supported catalog |
+| Pre-submit catalog | live SDK slash commands + `commands_changed` | implemented `/model` + `/effort` + live app-server `$` skills | implemented `/model` | scripted supported catalog |
 | Text streaming granularity | token-level (`includePartialMessages`) | **buffered** — one `text_delta` per completed item (SDK emits no token deltas today) | chunked `message` events | 16-char chunks |
 | Thinking stream (`thinking_delta`) | ✅ full fidelity | ✅ when reasoning items appear | ❌ observed absent → never fires (I3 proof) | ✅ scripted |
 | Tool records (`tool_use`/`tool_result`) | ✅ full input, diffs | ✅ (`command_execution`, `file_change`, `mcp_tool_call`, `web_search`) | ✅ | ✅ |
@@ -209,7 +209,7 @@ processes, clear timers. After `close()`, no further messages may be emitted.
 | Live todo checklist (`render` todo-list) | ✅ (TaskCreate/Update fold) | ✅ (`todo_list` item) | ❌ | ✅ |
 | Interactive permissions (`permission_request`) | ✅ full round-trip via `canUseTool` + inherited `settings.json` | ❌ SDK exposes no approval callback → inherits user's Codex approval config (I3) | ❌ headless can't prompt → user's own tool approvals inherited; only our render server is scoped-allowed | ✅ (`dangerous` keyword) |
 | Usage (`usage` msg) | ✅ tokens + cumulative `total_cost_usd` | ✅ tokens (`cached_input_tokens` is a subset of input — never re-added) | ✅ per-model token breakdown | ✅ |
-| Interrupt | SDK `interrupt()` | `AbortController` | kill child process | clear timers |
+| Interrupt | SDK `interrupt()` | `AbortController`; discovered-local turns also use it at the configurable eight-minute outer deadline | kill child process | clear timers |
 | Render-MCP injection | **in-process** SDK MCP server (`render-tools.ts`) | subprocess stdio MCP via SDK `config.mcp_servers` (`render-mcp.ts`) | subprocess stdio MCP via **per-session `<cwd>/.gemini/settings.json`** (merged non-destructively; note: drops a file in the user's project dir) | emits `render` directly |
 | Model override env | `DEFAULT_MODEL` | `CODEX_MODEL` | `GEMINI_MODEL` | — |
 | Credential signal (`agentHasCredentials`) | `ANTHROPIC_API_KEY` \|\| `ANTHROPIC_AUTH_TOKEN` \|\| `ANTHROPIC_BASE_URL` | `OPENAI_API_KEY` \|\| `$CODEX_HOME/auth.json` (ChatGPT login) | `GEMINI_API_KEY` \|\| `GOOGLE_API_KEY` (Google OAuth path deprecated by Google, 2026) | none → mock is the fallback for every agent |
@@ -231,6 +231,18 @@ Codex versions share `~/.codex/config.toml` and `models_cache.json`; letting a
 newer terminal write those files while an older SDK engine reads them caused a
 cache-schema failure, an older fallback model, and an invalid inherited
 reasoning effort. Do not reintroduce separate "picker" and "engine" binaries.
+
+**Codex discovered-local completion bound (L.4, 2026-08-11):** a real
+Codex→Ollama trace proved that the former silent Tier-4 timeout was not an
+adapter event-delivery stall. Ollama was pre-filling the full Codex prompt on
+CPU, then Qwen was generating a long reasoning item; the SDK buffers that item
+until completion. `CodexSession` therefore preserves the user's reasoning
+default, exposes the Codex/Ollama-proven `none` extension only on a discovered
+local endpoint, and places an eight-minute outer bound around those turns. The
+bound aborts through the same `AbortController` as an interrupt and emits one
+actionable error before the required single `turn_end`; configured providers
+and first-party sessions receive neither override nor deadline. The deadline
+is `MIRAFOLD_CODEX_LOCAL_TURN_TIMEOUT_MS` (`0` disables it).
 
 ## 5. Generative UI: the MCP contract
 

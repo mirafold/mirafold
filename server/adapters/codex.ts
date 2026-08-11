@@ -34,6 +34,7 @@ import { codexSlashOptions } from "./codex-prompt-options";
 import { listCodexSkills, type CodexSkill } from "./codex-skills-list";
 import { ResumeIdState } from "./resume-id";
 import { scrubSelectedEndpoint } from "../log";
+import { envInt } from "../env";
 
 // The generative-UI MCP server injected into Codex (P.3). Codex loads MCP
 // servers as stdio subprocesses, so Mirafold's render tools live in a
@@ -60,8 +61,16 @@ const MODEL_STAND_IN = "codex";
 //      chain the model pick into this picker (vs. keep it standalone) is that
 //      pass's call.
 const EFFORTS: readonly ModelReasoningEffort[] = ["minimal", "low", "medium", "high", "xhigh"];
+// Ollama's Responses API also accepts `none`, and Codex 0.147.0 forwards it
+// unchanged even though the SDK's published TypeScript union omits it. This
+// was verified against a real custom-provider turn on 2026-08-11. Keep the
+// extension local to a discovered endpoint: first-party/configured-provider
+// sessions continue to expose only the SDK's documented union.
+type CodexReasoningEffort = ModelReasoningEffort | "none";
+const LOCAL_EFFORTS: readonly CodexReasoningEffort[] = ["none", ...EFFORTS];
 // Short Mirafold-side descriptions (NOT claimed to mirror the terminal's copy).
-const EFFORT_DESC: Record<ModelReasoningEffort, string> = {
+const EFFORT_DESC: Record<CodexReasoningEffort, string> = {
+  none: "Disable model reasoning (when supported)",
   minimal: "Least reasoning, fastest",
   low: "Light reasoning",
   medium: "Balanced reasoning",
@@ -72,8 +81,22 @@ const EFFORT_DESC: Record<ModelReasoningEffort, string> = {
 // can't name it (app-server doesn't surface the resolved effort), so like
 // MODEL_STAND_IN this is an is-it-still-unset sentinel, never sent to Codex.
 const EFFORT_STAND_IN = "default";
-const isEffort = (s: string): s is ModelReasoningEffort =>
-  (EFFORTS as readonly string[]).includes(s);
+const isEffort = (
+  s: string,
+  efforts: readonly CodexReasoningEffort[],
+): s is CodexReasoningEffort => (efforts as readonly string[]).includes(s);
+
+// The Codex CLI's provider-level retry/idle policy can turn one slow local
+// request into many silent minutes. Mirafold owns the browser turn envelope,
+// so discovered local endpoints get one outer bound and an actionable exit.
+// Zero is an explicit opt-out for hardware/models that legitimately need more
+// than the default eight minutes. The bound is evidence-based: the cold 7,676
+// token prompt took about 6.5 minutes on the supported CPU-only test machine;
+// five minutes cut it off at 6,144 tokens and was disproven live.
+const DEFAULT_LOCAL_TURN_TIMEOUT_MS = envInt(
+  "MIRAFOLD_CODEX_LOCAL_TURN_TIMEOUT_MS",
+  8 * 60_000,
+);
 
 /**
  * V.2: on OpenAI-provider models, Codex defers ALL MCP tools behind its
@@ -282,6 +305,11 @@ export class CodexSession implements AgentSession {
   // signed queries. Keep the exact selected destination only for redacting
   // SDK diagnostics before they become browser messages or logs.
   private endpointForRedaction?: string;
+  // Only probe-discovered local servers carry an endpoint into CodexSession;
+  // config.toml providers carry a provider id instead. This distinction keeps
+  // the local-only effort extension and watchdog off every inherited provider.
+  private discoveredLocalEndpoint = false;
+  private localTurnTimeoutMs = 0;
 
   get modelName(): string | undefined {
     return this.modelLabel === MODEL_STAND_IN ? undefined : this.modelLabel;
@@ -310,6 +338,8 @@ export class CodexSession implements AgentSession {
     listModels?: () => Promise<CodexModel[]>;
     listEngineModels?: () => Promise<CodexModel[]>;
     listSkills?: () => Promise<CodexSkill[]>;
+    /** Unit-test seam; production uses MIRAFOLD_CODEX_LOCAL_TURN_TIMEOUT_MS. */
+    localTurnTimeoutMs?: number;
   }) {
     const workspaceDir = path.resolve(opts.workspaceDir);
     mkdirSync(workspaceDir, { recursive: true });
@@ -336,6 +366,14 @@ export class CodexSession implements AgentSession {
     //   Default: inherit process.env, so the CLI finds the user's own auth +
     //     config, exactly as before.
     const kind = opts.kind ?? (process.env.OPENAI_API_KEY ? "api-key" : undefined);
+    this.discoveredLocalEndpoint = kind === "local" && opts.endpoint !== undefined;
+    if (this.discoveredLocalEndpoint) {
+      const configuredTimeout = opts.localTurnTimeoutMs ?? DEFAULT_LOCAL_TURN_TIMEOUT_MS;
+      this.localTurnTimeoutMs =
+        Number.isFinite(configuredTimeout) && configuredTimeout >= 0
+          ? configuredTimeout
+          : DEFAULT_LOCAL_TURN_TIMEOUT_MS;
+    }
     const providerConfig = codexProviders();
     const selectedProvider =
       opts.provider ?? (kind === "local" && !opts.endpoint ? providerConfig.defaultProvider : undefined);
@@ -474,6 +512,30 @@ export class CodexSession implements AgentSession {
     );
   }
 
+  /** Add the concrete recovery step only for Mirafold-discovered local turns.
+   * Configured providers retain Codex's own diagnostic verbatim. */
+  private turnDiagnostic(value: unknown): string {
+    const diagnostic = this.providerDiagnostic(value);
+    return this.discoveredLocalEndpoint
+      ? `Local Codex could not complete the turn: ${diagnostic}. ` +
+          "Check that the local model server is running and still serves the selected model."
+      : diagnostic;
+  }
+
+  private localTurnTimeoutDiagnostic(): string {
+    const seconds = Math.ceil(this.localTurnTimeoutMs / 1_000);
+    const reasoningAction =
+      this.effortLabel === "none"
+        ? "Reasoning is already disabled; choose a faster model or machine"
+        : "Send `/effort none` and retry if the server supports reasoning control, choose a faster model or machine";
+    return (
+      `The local Codex turn did not finish within ${seconds} seconds. ` +
+      "The engine may still be pre-filling Codex's context, or the model may be reasoning too slowly. " +
+      `${reasoningAction}, or raise MIRAFOLD_CODEX_LOCAL_TURN_TIMEOUT_MS ` +
+      "(set it to 0 to disable the limit)."
+    );
+  }
+
   /** Serial turn loop — Codex runs one turn per prompt on the warm thread.
    *  `/model` is handled here, between turns, so a switch queued behind a
    *  running turn applies in order like any other input. */
@@ -581,16 +643,18 @@ export class CodexSession implements AgentSession {
    * The reasoning-effort axis of the /model picker (SCAFFOLD — see EFFORTS).
    * Mirrors runModelCommand: bare `/effort` paints the picker (a click sends
    * `/effort <level>`), `/effort <level>` applies it, anything else is a usage
-   * line. The catalog is the SDK's ModelReasoningEffort union rather than an
-   * app-server round-trip — Codex has no `effort/list`, and these five are the
-   * engine's own type. Per-model availability is NOT yet filtered.
+   * line. The ordinary catalog is the SDK's ModelReasoningEffort union rather
+   * than an app-server round-trip — Codex has no `effort/list`. A discovered
+   * local endpoint additionally gets `none`, a real Codex/Ollama value omitted
+   * from the SDK type. Per-model availability is NOT yet filtered.
    */
   private async runEffortCommand(arg: string) {
     await this.runSlashTurn(() => {
+      const efforts = this.discoveredLocalEndpoint ? LOCAL_EFFORTS : EFFORTS;
       if (arg === "") {
         emitModelPicker(
           (msg) => this.emit(msg),
-          EFFORTS.map((e) => ({
+          efforts.map((e) => ({
             id: e,
             displayName: e,
             description: EFFORT_DESC[e],
@@ -602,13 +666,13 @@ export class CodexSession implements AgentSession {
             question: "Select reasoning effort",
           },
         );
-      } else if (isEffort(arg)) {
+      } else if (isEffort(arg, efforts)) {
         this.setThreadEffort(arg);
         this.emit({ type: "text_delta", text: `Reasoning effort set to ${arg}.` });
       } else {
         this.emit({
           type: "text_delta",
-          text: `Usage: \`/effort\` to pick, or \`/effort <level>\` (${EFFORTS.join(", ")}).`,
+          text: `Usage: \`/effort\` to pick, or \`/effort <level>\` (${efforts.join(", ")}).`,
         });
       }
     });
@@ -616,8 +680,14 @@ export class CodexSession implements AgentSession {
 
   /** The reasoning-effort analog of setThreadModel: switch the warm thread onto
    *  the new effort, history intact. */
-  private setThreadEffort(effort: ModelReasoningEffort) {
-    this.threadOpts = { ...this.threadOpts, modelReasoningEffort: effort };
+  private setThreadEffort(effort: CodexReasoningEffort) {
+    // Codex 0.147.0 accepts and forwards `none`; the SDK union has not caught
+    // up. Keep the cast at this single boundary instead of widening every
+    // ThreadOptions use in the adapter.
+    this.threadOpts = {
+      ...this.threadOpts,
+      modelReasoningEffort: effort as ModelReasoningEffort,
+    };
     this.restartThread();
     this.effortLabel = effort;
   }
@@ -660,12 +730,21 @@ export class CodexSession implements AgentSession {
     const abort = new AbortController();
     this.currentAbort = abort;
     let ended = false;
+    let timeoutFired = false;
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
     const end = () => {
       if (ended) return;
       ended = true;
       this.todoRenderId = undefined; // next turn starts a fresh checklist
       this.emit({ type: "turn_end" });
     };
+    if (this.localTurnTimeoutMs > 0) {
+      timeoutHandle = setTimeout(() => {
+        if (ended || this.closed) return;
+        timeoutFired = true;
+        abort.abort();
+      }, this.localTurnTimeoutMs);
+    }
     try {
       if (this.needsEngineDefaultModel && !(await this.applyEngineDefaultModel())) return;
       const prompt = this.firstTurn
@@ -680,10 +759,13 @@ export class CodexSession implements AgentSession {
       this.firstTurn = false;
       for await (const ev of events) this.handleEvent(ev, end);
     } catch (err) {
-      if (!this.closed && !abort.signal.aborted) {
-        this.emit({ type: "error", message: this.providerDiagnostic(err) });
+      if (!this.closed && timeoutFired) {
+        this.emit({ type: "error", message: this.localTurnTimeoutDiagnostic() });
+      } else if (!this.closed && !abort.signal.aborted) {
+        this.emit({ type: "error", message: this.turnDiagnostic(err) });
       }
     } finally {
+      if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
       end(); // guarantees exactly one turn_end (interrupt, error, or normal)
       if (this.currentAbort === abort) this.currentAbort = undefined;
     }
@@ -720,11 +802,11 @@ export class CodexSession implements AgentSession {
         break;
       }
       case "turn.failed":
-        this.emit({ type: "error", message: this.providerDiagnostic(ev.error.message) });
+        this.emit({ type: "error", message: this.turnDiagnostic(ev.error.message) });
         end();
         break;
       case "error": // fatal stream error
-        this.emit({ type: "error", message: this.providerDiagnostic(ev.message) });
+        this.emit({ type: "error", message: this.turnDiagnostic(ev.message) });
         end();
         break;
       case "thread.started":

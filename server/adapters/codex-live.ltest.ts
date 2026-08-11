@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createServer } from "node:net";
 import type { WireMsg } from "../protocol";
 import { CodexSession } from "./codex";
 import { listCodexModels } from "./codex-model-list";
@@ -29,7 +30,11 @@ import { codexInstalled, ollamaModels, withCodexHome, withoutCredentials } from 
 // Everything skips cleanly when the tool isn't installed.
 
 const HAVE_CODEX = codexInstalled();
-const LOCAL_MODELS = await ollamaModels();
+// A 4K Ollama runner reserves roughly half its window for output and silently
+// truncated the ~7.7K Codex prompt to 2,050 tokens in two false-green runs.
+// Tier 4 accepts only a model whose `/api/show` proves a 32K override.
+const MIN_LOCAL_CONTEXT = 32_768;
+const LOCAL_MODELS = await ollamaModels(MIN_LOCAL_CONTEXT);
 
 /** A config whose default provider is NOT first-party — the shape that made
  *  an unpinned catalog question answer with the wrong provider's models. */
@@ -41,6 +46,23 @@ const OPENROUTER_DEFAULT_TOML =
   'base_url = "https://openrouter.ai/api/v1"\n' +
   'env_key = "OPENROUTER_API_KEY"\n' +
   'wire_api = "responses"\n';
+
+/** Ask the OS for a currently free loopback port, then close it. The returned
+ * endpoint is genuinely unavailable when the real Codex probe starts; no
+ * hardcoded port can make that guarantee on an arbitrary developer machine. */
+async function closedLoopbackPort(): Promise<number> {
+  const server = createServer();
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const address = server.address();
+  assert.ok(address && typeof address === "object", "the loopback fixture must have an address");
+  await new Promise<void>((resolve, reject) =>
+    server.close((err) => (err ? reject(err) : resolve())),
+  );
+  return address.port;
+}
 
 test(
   "the real binary answers a PINNED catalog question with first-party models only",
@@ -98,14 +120,71 @@ test(
 );
 
 test(
-  "a real turn on a real local model: text arrives, one turn_end, no error",
+  "a real Codex turn against an unavailable local engine fails promptly and actionably",
+  { skip: HAVE_CODEX ? false : "codex is not installed", timeout: 30_000 },
+  (t) =>
+    withCodexHome(undefined, async () => {
+      const workspace = mkdtempSync(path.join(os.tmpdir(), "mirafold-live-unavailable-"));
+      try {
+        await withoutCredentials(async () => {
+          const port = await closedLoopbackPort();
+          const msgs: WireMsg[] = [];
+          const s = new CodexSession({
+            workspaceDir: workspace,
+            kind: "local",
+            endpoint: `http://127.0.0.1:${port}`,
+            model: "unavailable-local-model",
+            // A test backstop only. The assertion below requires Codex's own
+            // provider failure, not the adapter watchdog message.
+            localTurnTimeoutMs: 15_000,
+          });
+          let abortTurn: (() => void) | undefined;
+          const done = new Promise<void>((resolve, reject) => {
+            abortTurn = () => {
+              s.close();
+              reject(t.signal.reason ?? new Error("unavailable-engine test aborted"));
+            };
+            t.signal.addEventListener("abort", abortTurn, { once: true });
+            s.onMessage((message) => {
+              msgs.push(message);
+              if (message.type === "turn_end") resolve();
+            });
+          });
+          try {
+            const startedAt = Date.now();
+            s.pushPrompt("Reply with exactly: ok");
+            await done;
+            const elapsedMs = Date.now() - startedAt;
+            const errors = msgs.filter((message) => message.type === "error");
+            assert.equal(errors.length, 1);
+            assert.match(errors[0].message, /^Local Codex could not complete the turn:/);
+            assert.doesNotMatch(errors[0].message, /did not finish within/);
+            assert.match(errors[0].message, /server is running and still serves the selected model/);
+            assert.ok(elapsedMs < 15_000, `the unavailable engine took ${elapsedMs} ms to fail`);
+            assert.equal(msgs.filter((message) => message.type === "turn_end").length, 1);
+          } finally {
+            if (abortTurn) t.signal.removeEventListener("abort", abortTurn);
+            s.close();
+          }
+        });
+      } finally {
+        rmSync(workspace, { recursive: true, force: true });
+      }
+    }),
+);
+
+test(
+  "a real local turn with reasoning disabled: text arrives, one turn_end, no error",
   {
     skip: !HAVE_CODEX
       ? "codex is not installed"
       : LOCAL_MODELS.length === 0
-        ? "no Ollama server on 127.0.0.1:11434"
+        ? `no Ollama model with an explicit num_ctx >= ${MIN_LOCAL_CONTEXT}`
         : false,
-    timeout: 300_000,
+    // The adapter itself ends an unfinished discovered-local turn at 480 s.
+    // The extra 30 s lets that actionable product error reach the assertion
+    // instead of letting node:test erase it with its own timeout first.
+    timeout: 510_000,
   },
   (t) =>
     withCodexHome(undefined, async () => {
@@ -120,20 +199,39 @@ test(
             model: LOCAL_MODELS[0],
           });
           let abortTurn: (() => void) | undefined;
-          const done = new Promise<void>((resolve, reject) => {
+          const aborted = new Promise<never>((_, reject) => {
             abortTurn = () => {
               s.close();
               reject(t.signal.reason ?? new Error("local turn test aborted"));
             };
             t.signal.addEventListener("abort", abortTurn, { once: true });
-            s.onMessage((m) => {
-              msgs.push(m);
-              if (m.type === "turn_end") resolve();
-            });
           });
+          const turnWaiters: Array<() => void> = [];
+          s.onMessage((m) => {
+            msgs.push(m);
+            if (m.type === "turn_end") turnWaiters.shift()?.();
+          });
+          const nextTurnEnd = () => new Promise<void>((resolve) => turnWaiters.push(resolve));
           try {
+            // Qwen's default Responses behavior can spend minutes generating
+            // hidden reasoning after prompt prefill. `/effort none` is the
+            // shipped, explicit local control verified by this test; the
+            // adapter still inherits the user's default until they choose it.
+            const effortDone = nextTurnEnd();
+            s.pushPrompt("/effort none");
+            await Promise.race([effortDone, aborted]);
+            assert.ok(
+              msgs.some(
+                (m) => m.type === "text_delta" && m.text.includes("Reasoning effort set to none"),
+              ),
+              "the real local session must accept the reasoning-off control",
+            );
+            assert.deepEqual(msgs.filter((m) => m.type === "error"), []);
+            msgs.length = 0;
+
+            const done = nextTurnEnd();
             s.pushPrompt("Reply with exactly: ok");
-            await done;
+            await Promise.race([done, aborted]);
 
             const errors = msgs.filter((m) => m.type === "error");
             assert.deepEqual(errors, [], `a local turn must not error: ${JSON.stringify(errors)}`);

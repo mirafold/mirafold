@@ -1332,7 +1332,9 @@ offered at onboarding), the per-agent model overrides `DEFAULT_MODEL` /
 local-server discovery knobs
 `MIRAFOLD_LOCAL_ENDPOINTS` / `MIRAFOLD_LOCAL_DISCOVERY` (Phase N — the
 onboarding picker probes localhost's well-known runtime ports and offers a
-running Ollama/LM Studio/vLLM per session; see `docs/local-models.md`), and
+running Ollama/LM Studio/vLLM per session),
+`MIRAFOLD_CODEX_LOCAL_TURN_TIMEOUT_MS` (discovered-local Codex turn deadline;
+default 480000 ms, `0` disables it; see `docs/local-models.md`), and
 these tuning knobs:
 `SESSION_IDLE_TIMEOUT_MS` (warm-engine idle-unload delay; the dormant
 checkpoint remains),
@@ -1450,8 +1452,12 @@ OpenRouter, and a ChatGPT-account session was handed `meituan/longcat-2.0`
 with every mock green. Today it covers a pinned catalog question (first-party
 ids only, exactly one default row), the same question in the configuration
 that actually broke (skipped without an `OPENROUTER_API_KEY`), and a full turn
-driven through a real local model. Each test skips with a reason when its tool
-isn't installed, so a bare machine stays green.
+driven through a real local model after exercising the shipped, explicit
+`/effort none` control (the product default remains inherited). The local test
+accepts only a model whose Ollama metadata proves an explicit 32K context and
+sorts the eligible names, so recency ordering or silent 4K prompt truncation
+cannot produce a false green. Each test skips with a reason when its tool isn't
+installed, so a bare machine stays green.
 
 Three rules the suite is built on: **no test may reach a metered model** —
 Tier 2/3 spawn the daemon with every provider credential forced empty (a set

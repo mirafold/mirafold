@@ -1,8 +1,8 @@
-# Session handoff — Phase UX integrated / next work
+# Session handoff — Phase UX integrated / Codex local-turn diagnosis complete
 
-This handoff is current as of 2026-08-10 after Phase UX was integrated into
-`next`. It becomes stale when `next` receives later work or the roadmap priority
-changes.
+This handoff is current as of 2026-08-11 after Step L.4 was completed on branch
+`fix/codex-ollama-turn-stall`. It becomes stale when that work is integrated,
+`next` receives later work, or the roadmap priority changes.
 
 **Project**: Mirafold, a browser re-skin of Claude Code, Codex, and Gemini CLI.
 Phase UX and its UX.6/UX.7/UX.8/UX.9 follow-ups are complete: faithful pre-submit
@@ -67,13 +67,23 @@ recovery, and the approved transcript-click prompt return behavior.
   whitespace-delimited `$` completion, transcript-link focus ownership, and
   the `preventScroll` focus contract. Tier 4 aborts now close their Codex
   session and settle immediately instead of leaking the runner.
+- Completed Step L.4's real Codex→Ollama diagnosis. Ollama traces proved the
+  silence was cold prompt prefill followed by Qwen reasoning while the Codex
+  SDK buffered the unfinished item—not an adapter event-delivery stall.
+  Discovered local Codex sessions now offer explicit `/effort none` without
+  overriding the user's default, bound unfinished turns at eight minutes with
+  an actionable error, and clarify ordinary local-server failures. Tier 4 now
+  selects only an explicitly 32K-configured model in stable order, preventing
+  both recency drift and silent 4K prompt truncation from producing a false
+  green; a real closed-port case pins unavailable-engine behavior.
 
 **Current state**
 
 - Phase UX and its UX.6–UX.9 follow-ups are committed, pushed, and integrated
-  into `next` through PR #31 (`9e833849`). All implementation, test, and
-  product-documentation changes from the completed feature work are integrated;
-  this documentation-only wrapup corrects the stale plan and handoff metadata.
+  into `next` through PR #31 (`9e833849`), with the documentation wrapup in PR
+  #32. Step L.4 is complete in the current working tree on
+  `fix/codex-ollama-turn-stall`; this `$next` pass did not commit, push, or open
+  a pull request.
 - PR #31 carried the same product tree as closed draft PR #30, replacing that
   draft only so the final follow-up commit could carry the repository's
   required DCO sign-off.
@@ -83,10 +93,11 @@ recovery, and the approved transcript-click prompt return behavior.
   `web/src/transcript-focus.ts`, prompt UI in `web/src/components/PromptBox.tsx`,
   and settled activity in `web/src/tool-visibility.ts` /
   `web/src/components/RenderZone.tsx`.
-- `PLAN.md` marks UX.6 through UX.9 complete. Step L.4 is an explicit open
-  follow-up for the real Codex/Ollama turn instability found by the test audit;
-  the next earlier open roadmap pointer in document order remains Step 4.7,
-  expanded into Phase R.
+- `PLAN.md` marks UX.6 through UX.9 and L.4 complete. The earlier open roadmap
+  pointer in document order remains Step 4.7, expanded into Phase R; Phase R's
+  remaining steps include Kyle-led/manual release work, so the next executable
+  chunk must be selected from current prerequisites rather than inferred from
+  checkbox order alone.
 
 **Verification**
 
@@ -105,10 +116,13 @@ recovery, and the approved transcript-click prompt return behavior.
   directory. The backend-routing test now points catalog discovery at a
   deliberately missing binary, so no host process can outlive daemon cleanup;
   the focused file passed 10/10 unchanged repetitions after the fix.
-- Tier 4 remains intentionally red rather than hidden: the real local
-  Codex/Ollama turn timed out in three of four unchanged attempts and passed
-  once after 145.5 seconds. Its timeout cleanup is fixed and forced-abort
-  tested; Step L.4 owns diagnosis of the underlying real integration.
+- Step L.4's corrected Tier 4 turn passed three times on the same pinned 32K
+  model: 385.9 seconds cold, then 90.3 and 90.3 seconds warm. Ollama reported
+  7,674–7,678 prompt tokens, `n_ctx=32768`, no truncation, and reasoning off.
+  The real unavailable endpoint failed actionably in 4.9 seconds. The complete
+  Tier 4 wrapper passed 3, skipped the credential-required OpenRouter case, and
+  failed 0; Tier 1 passed 615/615, and TypeScript, production build, and diff
+  whitespace checks passed.
 - Two unit files and one integration file that deliberately manufacture dotenv
   fixtures were excluded under the account-wide opacity rule. The launcher
   browser file and Explorer/global-axe cases that handle that configuration
@@ -131,8 +145,11 @@ recovery, and the approved transcript-click prompt return behavior.
   implements their exact behavior on the transport it actually runs.
 - Settled-tool compaction must never cross a failure, unsettled tool, non-tool
   transcript row, or batch boundary; those rows are chronology evidence.
-- Do not weaken or skip the Tier 4 local-turn assertion to make the suite
-  green. Diagnose Step L.4's real Codex/Ollama stall; the test now cleans up
-  correctly and is exposing an unresolved live behavior.
+- Do not weaken the Tier 4 local-turn gate back to “first model in `/api/tags`.”
+  Ollama order is recency-dependent, and a base 4K runner silently truncated
+  the Codex prompt to 2,050 tokens while still answering. Preserve the explicit
+  `num_ctx >= 32768` proof, stable sorting, real text/no-error assertion, and
+  abort cleanup. `/effort none` must remain an explicit local choice—not a
+  silent override of inherited Codex behavior.
 - Preserve dotenv opacity: never inspect `.env`, `*.env`, `.env.*`, or
   `*.env.*`, and explicitly exclude them from recursive searches/listings.
