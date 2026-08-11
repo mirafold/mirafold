@@ -8,11 +8,14 @@ import { startOllamaFixture, type OllamaFixture } from "../testing/ollama-fixtur
 import type { ClientMsg, WireMsg } from "../protocol";
 
 // N.5 against the real daemon: the create.backend choice is honored (the log
-// names the resolved backend; a local pick's model label reaches
+// names the resolved backend without exposing its URL; a local pick's model label reaches
 // session_created on the wire) and NEVER trusted (a prohibited or stale
 // choice refuses with an error frame, no session). Codex only on the live
-// paths — its engine constructs lazily (no process, no network until a turn),
-// so creating sessions here stays hermetic; claude exercises refusal only.
+// paths. Engine turns remain lazy, but session activation also starts Codex's
+// provider-owned prompt catalog. This backend-routing suite points that catalog
+// at a deliberately missing binary so it never launches the host Codex process;
+// catalog process behavior is covered separately and this suite stays hermetic.
+// Claude exercises refusal only.
 
 let fixture: OllamaFixture;
 let origin = "";
@@ -30,6 +33,7 @@ before(async () => {
   daemon = await startDaemon({
     OPENAI_API_KEY: "sk-dummy",
     CODEX_HOME: codexDir,
+    MIRAFOLD_CODEX_BIN: path.join(codexDir, "missing-codex"),
     CLAUDE_CONFIG_DIR: claudeDir,
     MIRAFOLD_LOCAL_ENDPOINTS: origin,
     REFRESH_MIN_INTERVAL_MS: "50",
@@ -100,7 +104,7 @@ test("N.5: a discovered-server pick rides to the engine — the picked model IS 
   const created = (await client.type("session_created")) as WireMsg & { model?: string };
   assert.equal(created.model, "llama3.2:3b"); // wire-observable proof of the pick
   await daemon.waitForLog(
-    new RegExp(`chosen backend local @ ${origin} \\(llama3\\.2:3b\\)`),
+    /chosen backend local via discovered local server \(llama3\.2:3b\)/,
     "local pick logged",
   );
   client.close();

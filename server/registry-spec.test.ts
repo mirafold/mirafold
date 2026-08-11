@@ -1,7 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { z } from "zod";
-import { clientSchemas, registrySchemas, registryShapes, type ComponentName } from "./registry-spec";
+import { clientSchemas, registrySchemas, type ComponentName } from "./registry-spec";
 import { MOCK_RENDERS } from "./adapters/mock";
 
 test("every MOCK_RENDERS payload satisfies its component schema", () => {
@@ -184,42 +183,35 @@ test("every schema rejects wrong-shaped payloads, not just card", () => {
   }
 });
 
-test("old-client simulation: yesterday's chart schema strips S.2 flags to a plain bar (R.4h)", () => {
-  // Rebuild "yesterday's" tolerant chart twin — today's shape minus the S.2
-  // props — and feed it today's payload. The flags must strip silently
-  // (grouped/vertical bar), never reject into the fallback.
-  const { stacked, horizontal, ...yesterdayShape } = registryShapes.chart;
-  void stacked;
-  void horizontal;
-  const yesterday = z.object(yesterdayShape);
-  const today = {
-    kind: "bar",
+test("chart forward-compat: the tolerant twin strips an unknown prop, the strict source rejects it (R.4h)", () => {
+  // The same compat contract the card test above pins, on the REAL chart twins
+  // (2026-08-11 test-audit: this used to hand-build a `z.object(shape)` and a
+  // `z.enum(["line","bar"])` and assert on THOSE — testing zod, not the product;
+  // a mutation to registrySchemas/clientSchemas.chart could not fail it).
+  const valid = {
+    kind: "bar" as const,
     x: ["a"],
     series: [
       { name: "s", values: [1] },
       { name: "t", values: [2] },
     ],
-    stacked: true,
-    horizontal: true,
   };
-  const parsed = yesterday.safeParse(today);
-  assert.ok(parsed.success);
-  assert.ok(!("stacked" in parsed.data) && !("horizontal" in parsed.data));
-  // kind "pie" on that same old client fails the enum parse whole — the
-  // designed degradation is the legible raw-props fallback, not a wrong chart.
-  assert.equal(
-    yesterday.safeParse({ kind: "pie", x: ["a"], series: [{ name: "s", values: [1] }] })
-      .success,
-    true, // NB: yesterdayShape still has TODAY'S kind enum — pie passes here…
-  );
-  const { kind, ...rest } = yesterdayShape;
-  void kind;
-  const yesterdayEnum = z.object({ ...rest, kind: z.enum(["line", "bar"]) });
-  assert.equal(
-    yesterdayEnum.safeParse({ kind: "pie", x: ["a"], series: [{ name: "s", values: [1] }] })
-      .success,
-    false, // …the true old enum rejects it into the fallback.
-  );
+  // A future optional prop the client doesn't know yet: strict authoring schema
+  // rejects it; the tolerant twin the browser actually validates with strips it
+  // and keeps the rest, so a newer daemon's chart still renders on an old client.
+  const withFuture = { ...valid, futuristicFlag: true };
+  assert.equal(registrySchemas.chart.safeParse(withFuture).success, false);
+  const tolerant = clientSchemas.chart.safeParse(withFuture);
+  assert.ok(tolerant.success);
+  assert.ok(!("futuristicFlag" in tolerant.data));
+  assert.deepEqual(tolerant.data.series, valid.series);
+  // Today's real S.2 flags are accepted (not stripped) by both twins.
+  assert.equal(registrySchemas.chart.safeParse({ ...valid, stacked: true, horizontal: true }).success, true);
+  // Tolerance is about UNKNOWN KEYS only: an unknown chart KIND is a broken
+  // payload, and even the tolerant twin rejects it — the designed degradation
+  // is the legible raw-props fallback, not a wrong chart.
+  assert.equal(clientSchemas.chart.safeParse({ ...valid, kind: "donut" }).success, false);
+  assert.equal(registrySchemas.chart.safeParse({ ...valid, kind: "donut" }).success, false);
 });
 
 test("card actions: the agent may author prompt|tool only, max 3 buttons", () => {

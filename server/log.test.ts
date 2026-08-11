@@ -5,7 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { scrub } from "./log";
+import { scrub, scrubSelectedEndpoint } from "./log";
 
 // The flight-recorder file is what "attach your log" points at, so it must
 // stay safe to paste publicly. Our own secrets never reach the logger, but
@@ -21,6 +21,24 @@ test("scrub redacts a credential carried in a query string", () => {
   assert.ok(!out.includes("AIzaSyA1B2C3D4E5F6G7H8I9J0K1L2M3N4O5P6Q"), out);
   assert.match(out, /key=\[redacted\]/);
   assert.match(out, /gemini exited 1/); // the diagnostic survives
+});
+
+test("UX.8: scrub treats configured URL userinfo, arbitrary signed queries, and fragments as sensitive", () => {
+  const raw =
+    "failed https://alice:password@example.test/v1?sig=topsecret&region=west#local-secret";
+  const out = scrub(raw);
+  assert.equal(
+    out,
+    "failed https://[redacted]@example.test/v1?sig=[redacted]&region=[redacted]#[redacted]",
+  );
+  assert.doesNotMatch(out, /alice|password|topsecret|local-secret/);
+});
+
+test("UX.8: selected-endpoint scrubbing also removes secret-bearing URL paths", () => {
+  const endpoint = "https://tenant.example/private/token-path";
+  const out = scrubSelectedEndpoint(`request ${endpoint}/messages failed`, endpoint);
+  assert.equal(out, "request [selected endpoint]/messages failed");
+  assert.doesNotMatch(out, /tenant|private|token-path/);
 });
 
 test("scrub redacts known provider key shapes anywhere in the line", () => {

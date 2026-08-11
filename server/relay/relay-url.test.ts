@@ -1,6 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DEFAULT_APP_URL, DEFAULT_RELAY_URL, resolveRelayPlan } from "./relay-url";
+import {
+  carriesCredentialInClear,
+  DEFAULT_APP_URL,
+  DEFAULT_RELAY_URL,
+  resolveRelayPlan,
+} from "./relay-url";
 
 // The bake's load-bearing rule: the default engages ONLY when a dial could
 // succeed (an entitlement is configured). An unentitled daemon must never
@@ -71,6 +76,28 @@ test("empty / whitespace URL means unset, not opt-out", () => {
   });
   const entitled = resolveRelayPlan({ MIRAFOLD_RELAY_URL: "", MIRAFOLD_LICENSE_KEY: "mf_abc" });
   assert.equal(entitled.kind === "dial" && entitled.url, DEFAULT_RELAY_URL);
+});
+
+// 2026-08-11 audit: a bearer credential (entitlement token / license key)
+// riding a plaintext non-loopback URL is stealable on the path. TLS and
+// loopback are exempt; a plaintext remote host warns.
+test("audit 2026-08-11: cleartext-credential detection covers scheme and host", () => {
+  // Exempt: TLS anywhere.
+  assert.equal(carriesCredentialInClear("wss://relay.example"), false);
+  assert.equal(carriesCredentialInClear("https://mirafold.com/api/entitlement"), false);
+  // Exempt: plaintext but loopback (dev stub / same-box self-host).
+  assert.equal(carriesCredentialInClear("ws://127.0.0.1:9100"), false);
+  assert.equal(carriesCredentialInClear("ws://localhost:9100"), false);
+  assert.equal(carriesCredentialInClear("http://127.0.0.1:8000/api"), false);
+  assert.equal(carriesCredentialInClear("ws://[::1]:9100"), false);
+  // Exposed: plaintext to a real host.
+  assert.equal(carriesCredentialInClear("ws://relay.example"), true);
+  assert.equal(carriesCredentialInClear("http://entitlement.example/api"), true);
+  assert.equal(carriesCredentialInClear("ws://10.0.0.5:9100"), true);
+  // A host that only LOOKS loopback is still remote.
+  assert.equal(carriesCredentialInClear("ws://127.0.0.1.evil.test"), true);
+  // Malformed → false (other code refuses it).
+  assert.equal(carriesCredentialInClear("not a url"), false);
 });
 
 // A malformed explicit URL still reaches index.ts's REFUSED path (relayOrigin

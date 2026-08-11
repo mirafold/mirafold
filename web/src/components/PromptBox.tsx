@@ -1,4 +1,10 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
+import type { PromptOption } from "@protocol";
+import {
+  insertPromptOption,
+  matchingPromptOptions,
+  promptCompletionMatch,
+} from "../prompt-completions";
 
 // Phone vs. desktop is decided once at module load (a mid-session resize
 // isn't worth a listener, R.4) and drives two deliberate divergences:
@@ -12,13 +18,24 @@ const PLACEHOLDER = IS_PHONE
 
 // Persists the collapsible-cwd choice; anything but "hidden" means shown.
 const CWD_SHOWN_KEY = "mirafold-prompt-cwd";
+const PROMPT_OPTIONS_ID = "prompt-options";
 
-export function PromptBox({
-  onSend,
-  busy,
-  onInterrupt,
-  cwd,
-}: {
+function promptSourceLabel(option: PromptOption): string | undefined {
+  switch (option.source) {
+    case "claude-code":
+      return "Claude Code command";
+    case "codex":
+      return option.kind === "skill" ? "Codex skill" : "Codex command";
+    case "gemini-cli":
+      return "Gemini CLI command";
+    case "mirafold":
+      return "Mirafold demo";
+    default:
+      return undefined;
+  }
+}
+
+type PromptBoxProps = {
   onSend: (text: string) => void;
   busy: boolean;
   onInterrupt: () => void;
@@ -26,15 +43,119 @@ export function PromptBox({
   // `~/Projects/foo ❯`. Shell-owned — rendered here, never by agent output,
   // so it can't be spoofed (4.8).
   cwd?: string;
+  options: PromptOption[];
+  textareaRef: RefObject<HTMLTextAreaElement | null>;
+  globalTriggersDisabled?: boolean;
+};
+
+function PromptOptionsMenu({
+  options,
+  selectedIndex,
+  onChoose,
+  onActive,
+}: {
+  options: PromptOption[];
+  selectedIndex: number;
+  onChoose: (option: PromptOption) => void;
+  onActive: (index: number) => void;
 }) {
+  const menuRef = useRef<HTMLDivElement>(null);
+  const activeRef = useRef<HTMLButtonElement>(null);
+
+  // Keyboard selection must remain visible inside the listbox. Adjust only
+  // this menu's own scrollTop: scrollIntoView() can also move the transcript
+  // page, which would be surprising while the user is reading above.
+  useLayoutEffect(() => {
+    const menu = menuRef.current;
+    const active = activeRef.current;
+    if (!menu || !active) return;
+    const menuRect = menu.getBoundingClientRect();
+    const activeRect = active.getBoundingClientRect();
+    if (activeRect.top < menuRect.top) {
+      menu.scrollTop += activeRect.top - menuRect.top;
+    } else if (activeRect.bottom > menuRect.bottom) {
+      menu.scrollTop += activeRect.bottom - menuRect.bottom;
+    }
+  }, [selectedIndex, options]);
+
+  return (
+    <div
+      ref={menuRef}
+      className="prompt-options"
+      id={PROMPT_OPTIONS_ID}
+      role="listbox"
+      aria-label="Prompt options"
+    >
+      {options.map((option, index) => (
+        <button
+          ref={index === selectedIndex ? activeRef : undefined}
+          type="button"
+          role="option"
+          aria-selected={index === selectedIndex}
+          id={`${PROMPT_OPTIONS_ID}-${index}`}
+          className={index === selectedIndex ? "is-active" : ""}
+          key={`${option.trigger}:${option.value}`}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => onChoose(option)}
+          onMouseEnter={() => onActive(index)}
+        >
+          <span className="prompt-option-value">{option.value}</span>
+          {option.argumentHint && (
+            <span className="prompt-option-hint">{option.argumentHint}</span>
+          )}
+          {(option.source || option.description) && (
+            <span className="prompt-option-meta">
+              {promptSourceLabel(option) && (
+                <span className="prompt-option-source">{promptSourceLabel(option)}</span>
+              )}
+              {option.description && (
+                <span className="prompt-option-description">{option.description}</span>
+              )}
+            </span>
+          )}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function PromptBox({
+  onSend,
+  busy,
+  onInterrupt,
+  cwd,
+  options,
+  textareaRef: ref,
+  globalTriggersDisabled = false,
+}: PromptBoxProps) {
   const [text, setText] = useState("");
+  const [cursor, setCursor] = useState(0);
+  const [activeOption, setActiveOption] = useState(0);
+  const [menuDismissed, setMenuDismissed] = useState(false);
   // The cwd is collapsible down to just the ❯ caret — reader's choice,
   // persisted (2026-07-16). The status bar still carries the folder leaf,
   // so a collapsed prompt never hides which project this is.
   const [cwdShown, setCwdShown] = useState(
     () => localStorage.getItem(CWD_SHOWN_KEY) !== "hidden",
   );
-  const ref = useRef<HTMLTextAreaElement>(null);
+  const pendingCursor = useRef<number | null>(null);
+  const completion = useMemo(
+    () => promptCompletionMatch(text, cursor, options),
+    [text, cursor, options],
+  );
+  const matches = useMemo(
+    () => matchingPromptOptions(options, completion),
+    [options, completion],
+  );
+  const menuOpen = !menuDismissed && matches.length > 0;
+  const selectedIndex = Math.min(activeOption, Math.max(0, matches.length - 1));
+
+  // A live provider catalog can replace itself while the menu is open
+  // (`commands_changed`, or Codex skills arriving after built-ins). Keep the
+  // highlighted row valid across that replacement.
+  useEffect(() => {
+    setActiveOption((active) => Math.min(active, Math.max(0, matches.length - 1)));
+  }, [matches.length]);
 
   const toggleCwd = () => {
     setCwdShown((shown) => {
@@ -68,15 +189,87 @@ export function PromptBox({
     el.style.height = `${el.scrollHeight}px`;
   }, [text]);
 
+  // Restore the caret after a completion or a global trigger changes the
+  // controlled textarea value.
+  useLayoutEffect(() => {
+    const at = pendingCursor.current;
+    if (at === null) return;
+    pendingCursor.current = null;
+    ref.current?.setSelectionRange(at, at);
+  }, [text, cursor]);
+
+  // A provider trigger typed while page chrome/transcript has focus starts the
+  // prompt and opens its catalog immediately. Never steal from another
+  // editable or an overlay.
+  useEffect(() => {
+    const onGlobalKey = (e: KeyboardEvent) => {
+      if (globalTriggersDisabled) return;
+      const target = e.target;
+      // A focus-trapped card owns every key while it is open. Provider
+      // triggers must not punch through a permission/file/device dialog and
+      // move the caret into inert page chrome behind it.
+      if (target instanceof Element && target.closest('[role="dialog"]')) return;
+      const editable =
+        target instanceof HTMLElement &&
+        (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
+      if (editable && target !== ref.current) return;
+      if (
+        (e.key === "/" || e.key === "$") &&
+        options.some((option) => option.trigger === e.key) &&
+        !editable &&
+        !e.ctrlKey &&
+        !e.altKey &&
+        !e.metaKey
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        const el = ref.current;
+        const current = el?.value ?? text;
+        const start = el?.selectionStart ?? current.length;
+        const end = el?.selectionEnd ?? start;
+        const next = current.slice(0, start) + e.key + current.slice(end);
+        const nextCursor = start + 1;
+        setText(next);
+        setCursor(nextCursor);
+        setActiveOption(0);
+        setMenuDismissed(false);
+        pendingCursor.current = nextCursor;
+        ref.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", onGlobalKey, true);
+    return () => window.removeEventListener("keydown", onGlobalKey, true);
+  }, [options, globalTriggersDisabled, text]);
+
   const submit = () => {
-    const t = text.trim();
-    if (!t) return;
-    onSend(t);
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    onSend(trimmed);
     setText("");
+    setCursor(0);
+    setMenuDismissed(false);
+  };
+
+  const choose = (option: PromptOption) => {
+    if (!completion) return;
+    const inserted = insertPromptOption(text, completion, option);
+    setText(inserted.text);
+    setCursor(inserted.cursor);
+    setMenuDismissed(true);
+    pendingCursor.current = inserted.cursor;
+    ref.current?.focus();
   };
 
   return (
     <div className="prompt-box">
+      {menuOpen && (
+        <PromptOptionsMenu
+          options={matches}
+          selectedIndex={selectedIndex}
+          onChoose={choose}
+          onActive={setActiveOption}
+        />
+      )}
       {/* The cwd crumb and its collapse-to-caret trick are desktop-only:
           on phone it ate a third of the typing width and the caret toggle
           isn't discoverable by touch — the folder lives in the settings
@@ -107,11 +300,44 @@ export function PromptBox({
       )}
       <textarea
         ref={ref}
+        role="combobox"
         value={text}
         rows={1}
         placeholder={PLACEHOLDER}
-        onChange={(e) => setText(e.target.value)}
+        aria-autocomplete="list"
+        aria-expanded={menuOpen}
+        aria-controls={menuOpen ? PROMPT_OPTIONS_ID : undefined}
+        aria-activedescendant={menuOpen ? `${PROMPT_OPTIONS_ID}-${selectedIndex}` : undefined}
+        onChange={(e) => {
+          setText(e.target.value);
+          setCursor(e.target.selectionStart);
+          setActiveOption(0);
+          setMenuDismissed(false);
+        }}
+        onSelect={(e) => setCursor(e.currentTarget.selectionStart)}
         onKeyDown={(e) => {
+          if (menuOpen && e.key === "ArrowDown") {
+            e.preventDefault();
+            setActiveOption((selectedIndex + 1) % matches.length);
+            return;
+          }
+          if (menuOpen && e.key === "ArrowUp") {
+            e.preventDefault();
+            setActiveOption((selectedIndex - 1 + matches.length) % matches.length);
+            return;
+          }
+          if (menuOpen && (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey))) {
+            e.preventDefault();
+            e.stopPropagation();
+            choose(matches[selectedIndex]);
+            return;
+          }
+          if (menuOpen && e.key === "Escape") {
+            e.preventDefault();
+            e.stopPropagation();
+            setMenuDismissed(true);
+            return;
+          }
           // Phone: Enter NEVER submits — it inserts a newline (the native
           // textarea behavior, deliberately left alone) and the ↑ button is
           // the one way to send, matching every mobile chat app (R.4l,

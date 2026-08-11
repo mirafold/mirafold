@@ -111,6 +111,16 @@ test("phone: pairs by URL, opens the session, drives a turn with a rendered comp
   assert.ok(await phone.locator("text=Verify end to end").count());
   await noSideScroll(phone);
 
+  // Desktop transcript clicks focus the prompt; a touch on the same inert
+  // surface must not summon the phone keyboard.
+  const transcript = phone.locator(".render-zone");
+  await transcript.tap({ position: { x: 2, y: 2 } });
+  assert.equal(
+    await phone.evaluate(() => document.activeElement?.matches(".prompt-box textarea") ?? false),
+    false,
+    "touching the transcript focused the phone prompt",
+  );
+
   // R.4l: the status bar is ONE row of thumb-sized targets — a wrapped
   // stray control is the "haphazard" look this pass removed. (No .sb-pair
   // here: pairing info rides to local viewports only. No .sb-theme: the
@@ -202,6 +212,11 @@ test("phone (E.4): the files panel is a full-screen drill-in — tree → file �
   // The tree is live git data (the daemon runs in the repo) — drill into a file.
   const pkg = phone.locator(".files-file-row", { hasText: "package.json" }).first();
   await pkg.waitFor({ timeout: 15_000 });
+  assert.equal(
+    await pkg.locator(".files-caret + .files-node-icon-config[aria-hidden=true] + .files-name").count(),
+    1,
+    "phone tree keeps the decorative configuration glyph before the name",
+  );
   await pkg.tap();
   await phone.waitForSelector(".files-view .fv-content");
   await noSideScroll(phone);

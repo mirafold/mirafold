@@ -27,6 +27,7 @@ export const PROJECT_ENV_KEYS: ReadonlySet<string> = new Set([
   "MIRAFOLD_LOG_FILE",
   "MIRAFOLD_LOCAL_ENDPOINTS",
   "MIRAFOLD_LOCAL_DISCOVERY",
+  "MIRAFOLD_CODEX_LOCAL_TURN_TIMEOUT_MS",
   "MIRAFOLD_RELAY_URL",
   "MIRAFOLD_APP_URL",
   "MIRAFOLD_RELAY_CODE",
@@ -47,6 +48,17 @@ export const PROJECT_ENV_KEYS: ReadonlySet<string> = new Set([
   "RELAY_VIEWPORT_IDLE_MS",
 ]);
 
+// Keep provenance, never a duplicate of secret contents: endpoint
+// authentication must distinguish an operator-supplied daemon value from one
+// a checkout supplied through the constrained project configuration.
+const loadedProjectKeys = new Set<string>();
+
+/** Did the constrained project configuration supply this process.env key at
+ * startup? Parent-process values always win and therefore never enter it. */
+export function wasLoadedFromProjectEnv(key: string): boolean {
+  return loadedProjectKeys.has(key);
+}
+
 /** Load supported project settings without letting the checkout modify process
  *  identity. Existing values win, matching Node's process.loadEnvFile() rule:
  *  an explicit parent-process value always beats the file. Missing, unreadable,
@@ -65,6 +77,7 @@ export function loadProjectEnv(
   for (const [key, value] of Object.entries(parsed)) {
     if (value !== undefined && PROJECT_ENV_KEYS.has(key) && target[key] === undefined) {
       target[key] = value;
+      if (target === process.env) loadedProjectKeys.add(key);
     }
   }
 }

@@ -7,13 +7,14 @@ import express from "express";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { WireMsg } from "./protocol";
 import { SessionRegistry } from "./sessions/registry";
+import { SessionCheckpointStore } from "./sessions/session-store";
 import { openConnection } from "./sessions/connection";
 import { probeLocalServers } from "./local-models";
 import { sweepLiveness } from "./sessions/ws-liveness";
 import { startRelayClient } from "./relay/relay-client";
 import { createEntitlementTokenSource } from "./relay/entitlement";
 import { MIN_PAIRING_CODE_LENGTH, resolvePairingCode } from "./relay/relay-protocol";
-import { resolveRelayPlan } from "./relay/relay-url";
+import { carriesCredentialInClear, resolveRelayPlan } from "./relay/relay-url";
 import {
   COOKIE_NAME,
   cookieToken,
@@ -212,7 +213,7 @@ wss.on("error", (err: NodeJS.ErrnoException) => {
   if (err.code !== "EADDRINUSE") log.error(`[ws] ${err.stack ?? String(err)}`);
 });
 
-const registry = new SessionRegistry();
+const registry = new SessionRegistry(undefined, undefined, new SessionCheckpointStore());
 
 // Local model server discovery (N.3): fire-and-forget so a server already
 // running lands in the first hello's `backends`; never awaited — startup
@@ -361,6 +362,16 @@ if (RELAY_URL && RELAY_CODE) {
   // exchanged at the billing backend, or nothing (a gated relay will refuse
   // the dial with an actionable line; local sessions never depend on this).
   const entitlement = createEntitlementTokenSource(process.env);
+  // The entitlement token rides the dial as a plaintext header (relay-client.ts);
+  // over a non-TLS non-loopback relay it can be read and replayed by anyone on
+  // the path. Warn loudly, still dial (self-host is a real path) — 2026-08-11 audit.
+  if (entitlement.mode !== "none" && carriesCredentialInClear(RELAY_URL)) {
+    createLogger("relay").warn(
+      `MIRAFOLD_RELAY_URL is a plaintext (ws://) address to a non-local host — ` +
+        `your entitlement token would be sent in the clear and could be stolen and ` +
+        `reused. Use wss:// for a remote relay.`,
+    );
+  }
   startRelayClient({ url: RELAY_URL, code: RELAY_CODE, registry, token: entitlement.get });
   const modeLine = {
     "token-override": "entitlement: hand-issued token (MIRAFOLD_ENTITLEMENT_TOKEN)",

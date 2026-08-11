@@ -14,6 +14,25 @@ export type RelayToDaemon =
   | { t: "close"; v: string } // that viewport is gone
   | { t: "ping" }; // relay-side liveness
 
+/** Runtime boundary for the untrusted relay socket. JSON.parse only proves
+ * syntax: scalars, null, arrays, and wrong-shaped objects are all valid JSON
+ * but none may reach the multiplexer's property reads or session actions. */
+export function isRelayToDaemon(value: unknown): value is RelayToDaemon {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const env = value as Record<string, unknown>;
+  switch (env.t) {
+    case "ping":
+      return true;
+    case "open":
+    case "close":
+      return typeof env.v === "string";
+    case "frame":
+      return typeof env.v === "string" && typeof env.p === "string";
+    default:
+      return false;
+  }
+}
+
 /** Daemon → relay. */
 export type DaemonToRelay =
   | { t: "frame"; v: string; p: string } // one WireMsg for that viewport

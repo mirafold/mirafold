@@ -3,14 +3,16 @@ import assert from "node:assert/strict";
 import { niceTicks, fmt, pieSlices, arcPath, stackSegments } from "./Chart";
 
 test("niceTicks spans the range and the top tick clears the data max", () => {
-  const ticks = niceTicks(0, 100);
-  assert.ok(ticks.length >= 2);
-  assert.equal(ticks[0], 0);
-  assert.ok(ticks[ticks.length - 1] >= 100);
+  // 2026-08-11 test-audit: exact output is deterministic and knowable, so pin
+  // it — the old `length>=2 / [0]===0 / last>=100` bounds survived a wrong step
+  // count or spacing.
+  assert.deepEqual(niceTicks(0, 100), [0, 50, 100]);
 });
 
 test("niceTicks tolerates a flat range", () => {
-  assert.ok(niceTicks(5, 5).length >= 1);
+  // A flat range must still yield a usable spread around the value, not a
+  // single degenerate tick (the old `length>=1` accepted `[5]`).
+  assert.deepEqual(niceTicks(5, 5), [4, 6]);
 });
 
 test("fmt abbreviates magnitudes", () => {

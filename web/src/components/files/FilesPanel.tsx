@@ -14,6 +14,7 @@ import { useEscapeKey } from "../../use-escape";
 import { useFocusTrap } from "../../use-focus-trap";
 import { useIsPhone } from "../../use-is-phone";
 import { FileView, fileToState, diffToState, type FileViewState } from "./FileView";
+import { ExplorerChevron, ExplorerNodeGlyph } from "./ExplorerNodeGlyph";
 
 // The Explorer's shell-owned panel (E.3 desktop, E.4 phone; lazy since
 // E2.2): a read-only browser of the session's working tree, built
@@ -43,8 +44,16 @@ export const isCurrentReply = (awaited: string | null, replyId: string): boolean
 
 /** The root row shows just the checked-out folder's NAME; the full ~-path
  *  stays in its tooltip. Pure, for Tier-1. */
-export const rootNameOf = (rootLabel?: string): string =>
-  rootLabel?.replace(/\/+$/, "").split("/").pop() || rootLabel || "files";
+export const rootNameOf = (rootLabel?: string): string => {
+  if (!rootLabel) return "files";
+  const windowsStyle =
+    /^[A-Za-z]:[\\/]/.test(rootLabel) || rootLabel.startsWith("\\\\") || rootLabel.startsWith("~\\");
+  const trimmed = windowsStyle
+    ? rootLabel.replace(/[\\/]+$/, "")
+    : rootLabel.replace(/\/+$/, "");
+  if (!trimmed || /^[A-Za-z]:$/.test(trimmed)) return rootLabel;
+  return trimmed.split(windowsStyle ? /[\\/]/ : /\//).pop() || rootLabel;
+};
 
 // The open-panel prefetch fetches the root's child dirs so their first
 // expand is instant — capped under the server's token bucket (default 32/s)
@@ -300,6 +309,7 @@ export function FilesPanel({
   };
 
   const rootState = store.get("");
+  const rootName = rootNameOf(rootLabel);
 
   return (
     <aside
@@ -315,9 +325,33 @@ export function FilesPanel({
           over it, so back reveals the tree at its prior scroll (E.4). */}
       <div className="files-main">
         <div className="files-tree">
+          <header className="files-panel-head">
+            <h2 className="files-panel-title">Files</h2>
+            <div className="files-panel-actions">
+              <button
+                className="files-panel-action files-refresh"
+                onClick={refresh}
+                title="Refresh"
+                aria-label="Refresh files"
+              >
+                <ExplorerRefreshIcon />
+              </button>
+              {phone && (
+                <button
+                  className="files-panel-action"
+                  onClick={onClose}
+                  title="Close files"
+                  aria-label="Close files"
+                >
+                  <ExplorerCloseIcon />
+                </button>
+              )}
+            </div>
+          </header>
           {/* The session's checked-out root leads the tree as its top node
-              (VS Code convention) — no path header; the full ~-path lives in
-              the row's tooltip. The panel's actions ride the same row. ARIA:
+              (VS Code convention) — the title bar above is panel chrome, not
+              a duplicate path header; the full ~-path lives in this row's
+              tooltip. ARIA:
               it's a disclosure button OVER the tree widget, not a treeitem
               inside it — role=tree owns only treeitems/groups (axe, C.2). */}
           <div className="files-root">
@@ -327,16 +361,12 @@ export function FilesPanel({
               title={rootLabel}
               aria-expanded={rootOpen}
             >
-              <span className="files-caret">{rootOpen ? "▾" : "▸"}</span>
-              <span className="files-name">{rootNameOf(rootLabel)}</span>
+              <span className="files-caret">
+                <ExplorerChevron open={rootOpen} />
+              </span>
+              <ExplorerNodeGlyph name={rootName} entryKind="dir" open={rootOpen} />
+              <span className="files-name">{rootName}</span>
             </button>
-            {/* Desktop closes from the activity-bar toggle; the phone dialog
-                still needs its own close. */}
-            {phone && (
-              <button className="files-btn" onClick={onClose} title="Close files" aria-label="Close files">
-                ✕
-              </button>
-            )}
           </div>
           {rootOpen &&
             (rootState?.error && !rootState.entries ? (
@@ -362,17 +392,6 @@ export function FilesPanel({
               <div className="files-empty">…</div>
             ))}
         </div>
-
-        {/* Pinned to the panel's bottom-left corner, floating over the tree;
-            the file-view overlay (z-index above) covers it, same as the tree. */}
-        <button
-          className="files-btn files-refresh"
-          onClick={refresh}
-          title="Refresh"
-          aria-label="Refresh files"
-        >
-          ⟳
-        </button>
 
         {selected && (
           <>
@@ -458,6 +477,36 @@ export function FilesPanel({
   );
 }
 
+function ExplorerRefreshIcon() {
+  return (
+    <svg className="files-action-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <path d="M13.4 7A5.5 5.5 0 1 0 13 10.2" />
+      <path d="M10.1 3.8h3.3V.5" />
+    </svg>
+  );
+}
+
+function ExplorerCloseIcon() {
+  return (
+    <svg className="files-action-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <path d="m4 4 8 8M12 4l-8 8" />
+    </svg>
+  );
+}
+
+/** Quiet vertical hierarchy guides, like the optional guides in established
+ * IDE project trees. The width keeps the established 12px-per-depth rhythm;
+ * the lazy tree's data and interaction model do not know about them. */
+function ExplorerIndent({ depth }: { depth: number }) {
+  return (
+    <span
+      className="files-indent-guides"
+      style={{ width: `${depth * 12}px` }}
+      aria-hidden="true"
+    />
+  );
+}
+
 // One directory's children, rendered from the store — recursion IS the tree
 // (E2.2): an expanded child dir renders its own DirChildren, which shows a
 // loading row until its fs_dir lands, then its listing. The wire stays
@@ -505,8 +554,12 @@ function DirChildren({
           const isOpen = expanded.has(p);
           return (
             <li key={e.name} role="treeitem" aria-expanded={isOpen}>
-              <button className="files-row files-dir" style={pad} onClick={() => onToggleDir(p)}>
-                <span className="files-caret">{isOpen ? "▾" : "▸"}</span>
+              <button className="files-row files-dir" onClick={() => onToggleDir(p)}>
+                <ExplorerIndent depth={depth} />
+                <span className="files-caret">
+                  <ExplorerChevron open={isOpen} />
+                </span>
+                <ExplorerNodeGlyph name={e.name} entryKind="dir" open={isOpen} />
                 <span className="files-name">{e.name}</span>
               </button>
               {isOpen && (
@@ -529,10 +582,11 @@ function DirChildren({
           <li key={e.name} role="treeitem">
             <button
               className="files-row files-file-row"
-              style={pad}
               onClick={() => onOpenFile(p, e.status)}
             >
+              <ExplorerIndent depth={depth} />
               <span className="files-caret" />
+              <ExplorerNodeGlyph name={e.name} entryKind={e.kind} />
               <span className="files-name">{e.name}</span>
               {e.status && (
                 <span className={`files-status files-status-${e.status}`} title={statusLabel(e.status)}>

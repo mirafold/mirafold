@@ -55,7 +55,7 @@ test("backingLine names the credential a one-click row would use", () => {
   assert.equal(backingLine("claude-code", "api-key", "claude-sonnet-5"), "Claude API key · claude-sonnet-5");
   assert.equal(backingLine("codex", "subscription", undefined), "ChatGPT subscription");
   // A local detail already leads with its own label — never prefixed twice.
-  assert.equal(backingLine("claude-code", "local", "local endpoint · localhost:11434"), "local endpoint · localhost:11434");
+  assert.equal(backingLine("claude-code", "local", "local endpoint"), "local endpoint");
   assert.equal(backingLine("claude-code", "local", undefined), "local endpoint");
   // An older daemon sends no kind: the detail rides alone, exactly as before.
   assert.equal(backingLine("gemini-cli", undefined, "gemini-2.5-pro"), "gemini-2.5-pro");

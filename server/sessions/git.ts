@@ -136,7 +136,12 @@ export type GitTree =
  * trap). Staged deletions are gone from ls-files but still real: status-only
  * D paths are merged in, so a deleted file stays visible in the tree.
  */
-export async function gitTree(root: string): Promise<GitTree> {
+export async function gitTree(
+  root: string,
+  caps: { maxEntries?: number; maxPathBytes?: number } = {},
+): Promise<GitTree> {
+  const maxEntries = caps.maxEntries ?? FS_TREE_MAX_ENTRIES;
+  const maxPathBytes = caps.maxPathBytes ?? FS_TREE_MAX_PATH_BYTES;
   const ls = await runGit(root, ["ls-files", "--cached", "--others", "--exclude-standard", "-z"]);
   if (!ls.ok) return ls.notGit ? { notGit: true } : { error: gitErr("ls-files", ls) };
   const [status, prefixRes] = await Promise.all([
@@ -172,13 +177,14 @@ export async function gitTree(root: string): Promise<GitTree> {
   const push = (rel: string) => {
     if (rel === "" || seen.has(rel)) return;
     seen.add(rel);
-    if (entries.length >= FS_TREE_MAX_ENTRIES || pathBytes + rel.length > FS_TREE_MAX_PATH_BYTES) {
+    const relBytes = Buffer.byteLength(rel, "utf8");
+    if (entries.length >= maxEntries || pathBytes + relBytes > maxPathBytes) {
       truncated = true;
       return;
     }
     const status = statusByRel.get(rel) ?? (inUntrackedDir(rel) ? "U" : undefined);
     entries.push({ path: rel, ...(status ? { status } : {}) });
-    pathBytes += Buffer.byteLength(rel, "utf8");
+    pathBytes += relBytes;
   };
   for (const rel of String(ls.stdout).split("\0")) push(rel);
   // Status-only paths: staged deletes (and rename sources) missing from

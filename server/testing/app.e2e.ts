@@ -139,13 +139,14 @@ after(async () => {
 async function withFreshMockSession(
   token: string,
   run: (isolatedPage: Page) => Promise<void>,
+  agent = "Claude Code",
 ): Promise<void> {
   const daemon = await startDaemon({ MIRAFOLD_TOKEN: token });
   let isolatedPage: Page | undefined;
   try {
     isolatedPage = await browser.newPage();
     await isolatedPage.goto(`http://127.0.0.1:${daemon.port}/?token=${token}`);
-    await isolatedPage.locator(".onb-agent", { hasText: "Claude Code" }).click();
+    await isolatedPage.locator(".onb-agent", { hasText: agent }).click();
     await isolatedPage.waitForURL(/\/s\/[\w-]+/);
     await run(isolatedPage);
   } finally {
@@ -178,6 +179,173 @@ test("?token= mints the cookie, cleans the URL, boots the shell", async () => {
   const cookies = await page.context().cookies(base);
   assert.ok(cookies.some((c) => c.name === "mirafold_token" && c.value === TOKEN));
   assert.equal(await page.locator(".fleet-title").textContent(), "Mirafold");
+});
+
+test("provider completions open before submit, transcript click focuses, and settled activity compacts", async () => {
+  const token = "e2e-native-prompt-9c2f";
+  await withFreshMockSession(
+    token,
+    async (page2) => {
+      const prompt = page2.locator(".prompt-box textarea");
+      const transcript = page2.locator(".render-zone");
+
+      // A trigger typed into page chrome is moved into the prompt and paints
+      // the provider catalog without sending a turn.
+      // Constrain the real listbox to force overflow with the mock catalog;
+      // this exercises the same keyboard scroll path as a long live catalog.
+      await page2.addStyleTag({
+        content: ".prompt-options { max-height: 48px !important; }",
+      });
+      await transcript.focus();
+      await page2.keyboard.press("/");
+      await page2.locator(".prompt-options").waitFor();
+      assert.equal(await prompt.inputValue(), "/");
+      assert.equal(await page2.locator(".prompt-options [role=option]").count(), 1);
+      assert.equal(await page2.locator(".prompt-option-value", { hasText: "/model" }).count(), 1);
+      assert.equal(await page2.locator(".turn-user").count(), 0, "opening a catalog submitted a turn");
+
+      await page2.keyboard.press("Escape");
+      await page2.locator(".prompt-options").waitFor({ state: "detached" });
+      await prompt.fill("");
+      await transcript.focus();
+      await page2.keyboard.press("$");
+      await page2.locator(".prompt-options").waitFor();
+      assert.equal(await page2.locator(".prompt-options [role=option]").count(), 2);
+      await page2.keyboard.press("ArrowDown");
+      const menuVisibility = await page2
+        .locator('.prompt-options [role="option"][aria-selected="true"]')
+        .evaluate((active) => {
+          const menu = active.parentElement!;
+          const activeRect = active.getBoundingClientRect();
+          const menuRect = menu.getBoundingClientRect();
+          return {
+            scrollTop: menu.scrollTop,
+            fullyVisible:
+              activeRect.top >= menuRect.top - 1 && activeRect.bottom <= menuRect.bottom + 1,
+          };
+        });
+      assert.ok(menuVisibility.scrollTop > 0, "keyboard selection did not scroll the listbox");
+      assert.equal(menuVisibility.fullyVisible, true, "active completion stayed offscreen");
+      await page2.keyboard.type("n");
+      assert.equal(await page2.locator(".prompt-options [role=option]").count(), 1);
+      assert.equal(await page2.locator(".prompt-option-value").textContent(), "$next");
+      assert.equal(
+        await page2.locator(".prompt-option-source").textContent(),
+        "Mirafold demo",
+        "catalog metadata must be visibly attributed inside trusted prompt chrome",
+      );
+      await page2.keyboard.press("Tab");
+      assert.equal(await prompt.inputValue(), "$next ");
+      assert.equal(await page2.locator(".turn-user").count(), 0, "Tab completion submitted a turn");
+
+      // Moving focus away and typing another trigger must preserve the draft,
+      // not replace it while routing the keystroke back to the composer.
+      await transcript.focus();
+      await page2.keyboard.press("$");
+      assert.equal(await prompt.inputValue(), "$next $");
+
+      // Shift+Escape was provisional and is deliberately gone. A plain
+      // desktop click on inert transcript chrome is the accepted return path.
+      await transcript.focus();
+      await page2.keyboard.press("Shift+Escape");
+      assert.equal(await transcript.evaluate((el) => document.activeElement === el), true);
+      await transcript.click({ position: { x: 2, y: 2 } });
+      assert.equal(
+        await page2.evaluate(() => document.activeElement?.matches(".prompt-box textarea")),
+        true,
+      );
+
+      // Successful provider activity becomes one terminal-sized record only
+      // when the turn settles. A failure remains visible at top level.
+      await prompt.fill("show transcript compact tool activity");
+      await prompt.press("Enter");
+      await page2.locator(".stop-btn").waitFor();
+      await page2.locator(".stop-btn").waitFor({ state: "detached" });
+      assert.equal(await page2.locator(".tool-activity-group").count(), 1);
+      assert.equal(await page2.locator(".tool-group").count(), 1);
+      assert.match(await page2.locator(".tool-group").textContent() ?? "", /No matching test file/);
+      await page2.locator(".tool-activity-head").click();
+      assert.equal(
+        await page2.evaluate(() => document.activeElement?.classList.contains("tool-activity-head")),
+        true,
+        "a transcript control click was redirected to the prompt",
+      );
+      assert.equal(await page2.locator(".tool-activity-calls .tool-block").count(), 2);
+
+      // Event delegation must treat ordinary transcript links as controls too.
+      // The real click path (pointerdown → pointerup → click) must leave focus
+      // on the link instead of redirecting it into the prompt.
+      const transcriptLink = page2.locator(".turn-assistant").last().locator("a").last();
+      await page2.locator(".turn-assistant").last().evaluate((el) => {
+        const link = document.createElement("a");
+        link.id = "transcript-control-fixture";
+        link.href = "#transcript-control-fixture";
+        link.textContent = "transcript link";
+        el.append(" ", link);
+      });
+      await prompt.evaluate((element) => {
+        const textarea = element as HTMLTextAreaElement;
+        const nativeFocus = textarea.focus.bind(textarea);
+        textarea.focus = (options?: FocusOptions) => {
+          textarea.dataset.transcriptLinkFocusCalls = String(
+            Number(textarea.dataset.transcriptLinkFocusCalls ?? "0") + 1,
+          );
+          nativeFocus(options);
+        };
+      });
+      await transcriptLink.click();
+      assert.equal(
+        await prompt.getAttribute("data-transcript-link-focus-calls"),
+        null,
+        "a transcript link click invoked prompt focus before restoring link focus",
+      );
+      assert.equal(
+        await transcriptLink.evaluate((el) => document.activeElement === el),
+        true,
+        "a transcript link click was redirected to the prompt",
+      );
+
+      // A text-selection gesture ends with the same pointerup event as a
+      // click. A live selection must win so copying transcript text remains
+      // possible and prompt focus does not collapse it.
+      const selected = await page2.locator(".turn-assistant").last().evaluate((el) => {
+        const text = document.createTreeWalker(el, NodeFilter.SHOW_TEXT).nextNode();
+        if (!text || !text.textContent) return { text: "", promptFocused: false };
+        const range = document.createRange();
+        range.setStart(text, 0);
+        range.setEnd(text, Math.min(12, text.textContent.length));
+        const selection = window.getSelection()!;
+        selection.removeAllRanges();
+        selection.addRange(range);
+        el.dispatchEvent(
+          new PointerEvent("pointerup", {
+            bubbles: true,
+            pointerType: "mouse",
+            button: 0,
+            isPrimary: true,
+          }),
+        );
+        return {
+          text: selection.toString(),
+          promptFocused: document.activeElement?.matches(".prompt-box textarea") ?? false,
+        };
+      });
+      assert.ok(selected.text.length > 0, "selection fixture did not select transcript text");
+      assert.equal(selected.promptFocused, false, "text selection was collapsed into prompt focus");
+      await page2.evaluate(() => window.getSelection()?.removeAllRanges());
+
+      // Touch must never summon the phone keyboard by focusing the prompt.
+      await transcript.focus();
+      await transcript.dispatchEvent("pointerup", {
+        pointerType: "touch",
+        button: 0,
+        isPrimary: true,
+      });
+      assert.equal(await transcript.evaluate((el) => document.activeElement === el), true);
+      await assertAxeClean(page2, "transcript click-to-focus");
+    },
+    "Codex",
+  );
 });
 
 test("the agent picker flexes to the window — no internal scrollbar through the squeeze ramp", async () => {
@@ -739,10 +907,10 @@ test("R.4i: a subscription-only Claude shows a BLOCKED row with the API-key fix,
   }
 });
 
-test("R.4k: a live picker row names its backing — the endpoint, or the credential", async () => {
+test("UX.8: a live picker names its backing without exposing a configured host", async () => {
   // Point Claude Code at a local endpoint (ANTHROPIC_BASE_URL) → kind `local`,
-  // live, and the picker must show the endpoint so the local-model user sees
-  // their setup was picked up (not a bare "ready"). The URL need not resolve —
+  // live, and the picker must identify an endpoint without disclosing its
+  // configured hostname. The URL need not resolve —
   // we only read onboarding, never drive a turn.
   const token = "e2e-local-9c2f";
   const d2 = await startDaemon({
@@ -760,8 +928,8 @@ test("R.4k: a live picker row names its backing — the endpoint, or the credent
     await claudeRow.waitFor();
     assert.match(await claudeRow.locator(".onb-agent-status").innerText(), /ready/);
     const detail = await claudeRow.locator(".onb-agent-detail").innerText();
-    assert.match(detail, /local endpoint/);
-    assert.match(detail, /localhost:11434/);
+    assert.equal(detail, "local endpoint");
+    assert.doesNotMatch(detail, /localhost|11434/);
     const geminiRow = page2.locator(".onb-agent", { hasText: "Gemini CLI" });
     assert.match(await geminiRow.locator(".onb-agent-status").innerText(), /ready/);
     assert.match(await geminiRow.locator(".onb-agent-detail").innerText(), /Gemini API key/);
@@ -859,11 +1027,13 @@ test("N.4: a genuine choice opens the second step; a local server appears LIVE; 
     assert.ok(await blocked.isDisabled(), "a prohibited subscription must not be clickable");
     assert.match(await blocked.innerText(), /Claude subscription/);
     assert.match(await blocked.innerText(), /third-party apps/);
-    // The env endpoint the probe never found keeps its own row.
-    assert.match(
-      await page2.locator(".onb-backend", { hasText: "local endpoint" }).innerText(),
-      /localhost:9999/,
-    );
+    // The env endpoint the probe never found keeps its own row without
+    // disclosing its configured hostname or port.
+    const configuredLocal = page2.locator(".onb-backend", { hasText: "local endpoint" });
+    const configuredLocalText = await configuredLocal.innerText();
+    assert.match(configuredLocalText, /local endpoint/);
+    assert.doesNotMatch(configuredLocalText, /localhost|9999/);
+    assert.equal(await configuredLocal.locator(".onb-backend-tag").innerText(), "local");
 
     // Gemini: no credentials, no dialect → no second step; the click-through
     // demo create still works one-click (and proves the panel isn't sticky).
@@ -1564,6 +1734,29 @@ test("streaming holds a scrolled-up reader in place, and re-follows once back at
     );
     const before = await geom();
 
+    // Clicking back into the session focuses the prompt without moving the
+    // reader even one pixel or re-arming follow-tail. The subsequent growth
+    // assertion proves output still lands below the detached viewport.
+    await page2.locator("textarea").evaluate((element) => {
+      const textarea = element as HTMLTextAreaElement;
+      const nativeFocus = textarea.focus.bind(textarea);
+      textarea.focus = (options?: FocusOptions) => {
+        textarea.dataset.focusPreventScroll = String(options?.preventScroll === true);
+        nativeFocus(options);
+      };
+    });
+    await zone.click({ position: { x: 2, y: 2 } });
+    assert.equal(
+      await page2.evaluate(() => document.activeElement?.matches(".prompt-box textarea")),
+      true,
+    );
+    assert.equal(
+      await page2.locator("textarea").getAttribute("data-focus-prevent-scroll"),
+      "true",
+      "transcript focus did not request the browser's no-scroll focus mode",
+    );
+    assert.equal((await geom()).top, before.top, "focusing the prompt moved transcript scrollTop");
+
     // New output must grow below without moving the scrolled-up reader.
     await page2.waitForFunction(
       ({ top, h }) => {
@@ -1986,12 +2179,34 @@ test("E.3: the files panel lists the working tree, opens a file beside the trans
   // from any of them.
   const root = page.locator(".files-root-row");
   const repoDir = path.basename(path.resolve(import.meta.dirname, "..", ".."));
+  const panelHead = page.locator(".files-panel-head");
+  assert.equal(await panelHead.locator(".files-panel-title").innerText(), "FILES");
+  assert.equal(
+    await panelHead.locator(".files-refresh[aria-label='Refresh files']").count(),
+    1,
+    "the Explorer title bar owns its refresh action",
+  );
   assert.ok((await root.innerText()).includes(repoDir), `root row names the checkout folder (${repoDir})`);
   assert.equal(await page.locator(".files-title").count(), 0, "the old path header is gone");
+  assert.equal(
+    await root.locator(".files-caret + .files-node-icon-folder-open + .files-name").count(),
+    1,
+    "the expanded root orders its chevron, open-folder glyph, then name",
+  );
+  assert.equal(
+    await pkg.locator(".files-caret + .files-node-icon-config[aria-hidden=true] + .files-name").count(),
+    1,
+    "package.json carries its decorative configuration glyph before its name",
+  );
   await root.click();
   await eventually(
     () => document.querySelectorAll(".files-file-row").length === 0,
     "collapsed root still lists files",
+  );
+  assert.equal(
+    await root.locator(".files-node-icon-folder").count(),
+    1,
+    "the collapsed root carries the closed-folder glyph",
   );
   await root.click();
   await pkg.waitFor({ timeout: 15_000 });
@@ -2397,8 +2612,8 @@ test("W.2: the live tree — a write behind the UI's back appears with zero clic
       "nothing expanded shows the hidden file — correct",
     );
 
-    // The refresh button is unchanged beside the bell: a click still
-    // refetches (fresh root request on the wire) and the tree stays whole.
+    // The refresh action remains beside the bell: a click still refetches
+    // (fresh root request on the wire) and the tree stays whole.
     const rootFetches = () =>
       page.evaluate(
         () =>

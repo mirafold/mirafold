@@ -1,6 +1,6 @@
 {
   "name": "mirafold",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "description": "A faithful browser re-skin of the terminal coding agent you already use — Claude Code, Codex, or Gemini CLI — with generative UI layered on top.",
   "license": "MIT",
   "type": "module",
@@ -38,11 +38,13 @@
   "packageManager": "yarn@1.22.22",
   "resolutions": {
     "@hono/node-server": "^2.0.5",
-    "shell-quote": "^1.9.0"
+    "shell-quote": "^1.9.0",
+    "nanoid": "^3.3.17"
   },
   "overrides": {
     "@hono/node-server": "^2.0.5",
-    "shell-quote": "^1.9.0"
+    "shell-quote": "^1.9.0",
+    "nanoid": "^3.3.17"
   },
   "scripts": {
     "dev:server": "MIRAFOLD_TOKEN= tsx watch server/index.ts",

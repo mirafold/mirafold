@@ -1,9 +1,10 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { cleanRelPath, decorateGitDir, findRepoRoot, parseStatusIgnoredZ, parseStatusZ } from "./git";
+import { cleanRelPath, decorateGitDir, findRepoRoot, gitTree, parseStatusIgnoredZ, parseStatusZ } from "./git";
 
 // E.2's pure parsing pins: the -z rename two-field trap, status collapsing,
 // and the textual path containment that guards `git show`. E2.3 adds the
@@ -193,4 +194,18 @@ test("findRepoRoot: nearest .git wins; no .git anywhere is null", () => {
     findRepoRoot(path.join(base, "worktree"), fixtureExists),
     path.join(base, "worktree"),
   );
+});
+
+test("gitTree: path-byte admission counts UTF-8 bytes, not JavaScript characters", async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "gittree-bytes-"));
+  after(() => rmSync(root, { recursive: true, force: true }));
+  execFileSync("git", ["init", "--quiet"], { cwd: root });
+  const name = "é.txt";
+  writeFileSync(path.join(root, name), "x");
+  assert.ok(Buffer.byteLength(name, "utf8") > name.length, "fixture distinguishes bytes from characters");
+  const result = await gitTree(root, { maxPathBytes: name.length });
+  assert.ok("entries" in result);
+  if (!("entries" in result)) return;
+  assert.deepEqual(result.entries, [], "a path larger than the byte budget is never admitted");
+  assert.equal(result.truncated, true);
 });

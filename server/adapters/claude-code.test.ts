@@ -514,6 +514,7 @@ test("close() is quiet: no error from the ending stream, later prompts are dropp
 function capturedEnv(opts: {
   kind?: "api-key" | "subscription" | "local";
   endpoint?: string;
+  endpointAuth?: "api-key" | "auth-token" | "none";
 }): Record<string, string | undefined> | undefined {
   let env: Record<string, string | undefined> | undefined;
   let sawOptions = false;
@@ -548,14 +549,95 @@ function withAnthropicEnv(patch: Record<string, string | undefined>, fn: () => v
   }
 }
 
-test("N.5: a discovered-endpoint choice sets BASE_URL + the dummy auth token and WITHHOLDS the real key", () => {
-  withAnthropicEnv({ ANTHROPIC_API_KEY: "real-key" }, () => {
+test("UX.8: a discovered endpoint gets the dummy token and WITHHOLDS both real credentials", () => {
+  withAnthropicEnv({ ANTHROPIC_API_KEY: "real-key", ANTHROPIC_AUTH_TOKEN: "real-token" }, () => {
     const env = capturedEnv({ kind: "local", endpoint: "http://127.0.0.1:11434" });
     assert.ok(env, "a local choice must pass a per-session env");
     assert.equal(env.ANTHROPIC_BASE_URL, "http://127.0.0.1:11434");
     assert.equal(env.ANTHROPIC_API_KEY, undefined, "the real key must not reach a local server");
-    assert.equal(env.ANTHROPIC_AUTH_TOKEN, "ollama"); // required-but-ignored (docs recipe)
+    assert.equal(env.ANTHROPIC_AUTH_TOKEN, "ollama", "the real token is replaced, not inherited");
   });
+});
+
+test("UX.8: a configured endpoint receives only its explicitly bound API key mode", () => {
+  withAnthropicEnv(
+    { ANTHROPIC_API_KEY: "bound-key", ANTHROPIC_AUTH_TOKEN: "other-token" },
+    () => {
+      const env = capturedEnv({
+        kind: "local",
+        endpoint: "https://configured.example/v1",
+        endpointAuth: "api-key",
+      });
+      assert.equal(env?.ANTHROPIC_BASE_URL, "https://configured.example/v1");
+      assert.equal(env?.ANTHROPIC_API_KEY, "bound-key");
+      assert.equal(env?.ANTHROPIC_AUTH_TOKEN, undefined);
+    },
+  );
+});
+
+test("UX.8: a configured endpoint receives only its explicitly bound auth-token mode", () => {
+  withAnthropicEnv(
+    { ANTHROPIC_API_KEY: "other-key", ANTHROPIC_AUTH_TOKEN: "bound-token" },
+    () => {
+      const env = capturedEnv({
+        kind: "local",
+        endpoint: "https://configured.example/v1",
+        endpointAuth: "auth-token",
+      });
+      assert.equal(env?.ANTHROPIC_BASE_URL, "https://configured.example/v1");
+      assert.equal(env?.ANTHROPIC_API_KEY, undefined);
+      assert.equal(env?.ANTHROPIC_AUTH_TOKEN, "bound-token");
+    },
+  );
+});
+
+test("UX.8: an unauthenticated configured endpoint cannot inherit either ambient credential", () => {
+  withAnthropicEnv(
+    { ANTHROPIC_API_KEY: "parent-key", ANTHROPIC_AUTH_TOKEN: "parent-token" },
+    () => {
+      const env = capturedEnv({
+        kind: "local",
+        endpoint: "https://checkout.example/v1",
+        endpointAuth: "none",
+      });
+      assert.equal(env?.ANTHROPIC_API_KEY, undefined);
+      assert.equal(env?.ANTHROPIC_AUTH_TOKEN, "ollama");
+    },
+  );
+});
+
+test("UX.8: an SDK failure cannot echo a sensitive configured endpoint onto the wire", async () => {
+  const endpoint = "https://alice:password@example.test/private-base?sig=topsecret";
+  const engine = ((args: { prompt: AsyncIterable<unknown> }) => {
+    const gen = (async function* () {
+      for await (const _prompt of args.prompt) {
+        throw new Error(`fetch failed at ${endpoint}`);
+      }
+    })();
+    return Object.assign(gen, { interrupt: async () => {} });
+  }) as unknown as typeof query;
+  const s = new ClaudeCodeSession({
+    workspaceDir: tmp,
+    model: "m",
+    kind: "local",
+    endpoint,
+    endpointAuth: "none",
+    engine,
+  });
+  const seen: WireMsg[] = [];
+  s.onMessage((msg) => seen.push(msg));
+  s.pushPrompt("go");
+  for (let i = 0; i < 50 && !seen.some((msg) => msg.type === "turn_end"); i++) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  const error = seen.find((msg) => msg.type === "error");
+  assert.equal(error?.type, "error");
+  if (error?.type === "error") {
+    assert.match(error.message, /\[selected endpoint\]/);
+    assert.doesNotMatch(error.message, /alice|password|private-base|topsecret|example\.test/);
+  }
+  assert.ok(seen.some((msg) => msg.type === "turn_end"));
+  s.close();
 });
 
 test("N.5: an explicit api-key choice strips a globally-set BASE_URL — the session truly runs on the key", () => {
@@ -570,11 +652,13 @@ test("N.5: an explicit api-key choice strips a globally-set BASE_URL — the ses
   );
 });
 
-test("N.5: no choice → no env override at all (inherit — the pre-N default, byte-identical)", () => {
+test("N.5: no explicit choice inherits; an identifier-free local choice is credential-safe", () => {
   withAnthropicEnv({ ANTHROPIC_BASE_URL: "http://localhost:11434" }, () => {
     assert.equal(capturedEnv({}), undefined);
-    // The env-configured local kind (no discovered endpoint) also inherits.
-    assert.equal(capturedEnv({ kind: "local" }), undefined);
+    const env = capturedEnv({ kind: "local" });
+    assert.equal(env?.ANTHROPIC_BASE_URL, "http://localhost:11434");
+    assert.equal(env?.ANTHROPIC_API_KEY, undefined);
+    assert.equal(env?.ANTHROPIC_AUTH_TOKEN, "ollama");
   });
 });
 
@@ -634,5 +718,57 @@ test("checklist: an empty TodoWrite with nothing painted stays silent", async ()
   s.pushPrompt("go");
   await awaitTurnEnd();
   assert.ok(!msgs.some((m) => m.type === "render"), "no empty checklist is ever PAINTED");
+  s.close();
+});
+
+test("recovery: Claude receives the saved SDK resume id and exposes its live command catalog", async () => {
+  let options: Options | undefined;
+  const engine = ((args: { prompt: AsyncIterable<unknown>; options: Options }) => {
+    options = args.options;
+    const stream = (async function* () {
+      for await (const _prompt of args.prompt) {
+        // This proof does not run a turn.
+      }
+    })();
+    return Object.assign(stream, {
+      interrupt: async () => {},
+      supportedCommands: async () => [
+        {
+          name: "review",
+          description: "review current changes",
+          argumentHint: "[instructions]",
+        },
+      ],
+    });
+  }) as unknown as typeof query;
+  const s = new ClaudeCodeSession({
+    workspaceDir: tmp,
+    resumeId: "11111111-1111-4111-8111-111111111111",
+    engine,
+  });
+  const seen: WireMsg[] = [];
+  s.onMessage((msg) => seen.push(msg));
+  s.refreshPromptOptions();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(options?.resume, s.resumeId);
+  assert.equal(options?.sessionId, undefined);
+  assert.deepEqual(
+    seen.find((msg) => msg.type === "prompt_options"),
+    {
+      type: "prompt_options",
+      options: [
+        {
+          trigger: "/",
+          value: "/review",
+          label: "review",
+          description: "review current changes",
+          argumentHint: "[instructions]",
+          kind: "command",
+          source: "claude-code",
+        },
+      ],
+    },
+  );
   s.close();
 });

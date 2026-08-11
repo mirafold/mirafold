@@ -110,9 +110,10 @@ richer, maintained copies in README; the duplicates were retired 2026-07-15
 to end the drift risk of two copies. The locked content, and where it lives:
 
 - **Design identity** → README §7 — terminal successor, not a chat app:
-  mono-in / rich-out, no bubbles ever, and the **visibility superset +
-  collapse-on-finalize** rule (never show less than the terminal; noisy
-  streams render live, then fold to a dim expandable line).
+  mono-in / rich-out, no bubbles ever, and **provider-native transcript
+  fidelity + collapse-on-finalize**: show the same user-visible activity the
+  selected terminal agent shows, neither raw adapter internals nor less useful
+  state; noisy live activity folds to one expandable record when it settles.
 - **The core security model** → README §3 — trusted shell vs. sandboxed
   output zone; the boundary is inviolable, and the API key never reaches
   the browser.
@@ -144,7 +145,8 @@ faithful per-agent skins) · **4** except 4.7 (→ Phase R) · **G, H, H2**
 (relay dedup + human legibility) · **S** (theme system) · **N** (onboarding
 backend picker) · **V** (visual + fidelity gaps) · **A** (accessibility) ·
 **C** (CI/CD) · **E** (Explorer) · **M** (Mission control) · **E2** (Explorer at scale) ·
-**W** (live tree), plus the finished
+**E3** (Explorer visual polish) · **W** (live tree), **UX** (native prompt discovery, transcript fidelity,
+durable provider recovery, and branch test-audit closure), plus the finished
 steps of the still-open Phases **K, R, F, Q, L**.
 
 Archive passes, each a section header in PLAN-ARCHIVE.md you can navigate to:
@@ -152,7 +154,44 @@ Archive passes, each a section header in PLAN-ARCHIVE.md you can navigate to:
 · "Moved 2026-07-24" (Phases A/C/E/M + V.4–V.6, and the completed material
 lifted out of the still-open Phase R steps) · "Moved 2026-07-27" (Phases
 E2/W step bodies, the Phase E/M narrative passes, the R.4l item-5
-investigation, the CI-flake breakdown, and finished stretch-goal specs).
+investigation, the CI-flake breakdown, and finished stretch-goal specs) ·
+"Moved 2026-08-09" (Phase UX).
+
+---
+
+## Phase UX — Native prompt discovery, transcript fidelity, and session recovery
+
+- [x] **Phase UX implementation, approved follow-up, correctness closure, and security closure complete (2026-08-10).**
+  Provider-native pre-submit catalogs, terminal-sized settled activity, durable
+  provider-conversation recovery, and scroll-preserving transcript-click prompt
+  focus are implemented across Claude Code, Codex, and Gemini CLI. The eight
+  follow-up correctness findings and every security-audit item—including the
+  hardening-only and theoretical findings—are closed with direct regressions. Full
+  specification, implementation/refactor/correctness/security record, and proof live in
+  **PLAN-ARCHIVE.md** under “Moved 2026-08-09.” The complete phase and its
+  UX.6–UX.9 follow-ups landed in `next` through PR #31 (`9e833849`) after DCO,
+  Cloudflare Pages, Tier 1, and combined Tier 2/Tier 3 all passed.
+- [x] **Step UX.6 — Settle prompt return behavior, then refactor Phase UX** —
+  done 2026-08-10; accepted desktop transcript-click behavior replaced the
+  provisional binding, and the full Phase UX diff received a verified
+  behavior-preserving refactor. → **PLAN-ARCHIVE.md**.
+- [x] **Step UX.7 — Close the eight Phase UX correctness findings** — done
+  2026-08-10; backend identity, faithful catalogs, dormant idle unload,
+  completion visibility, chronology-safe compaction, defensive decoding, and
+  delete-failure recovery are fixed and regression-pinned. →
+  **PLAN-ARCHIVE.md**.
+
+- [x] **Step UX.8 — Close the Phase UX security audit findings** — done
+  2026-08-10; credential/destination binding, fully opaque configured endpoint
+  identity and diagnostics, exact loopback classification, prompt-catalog
+  provenance/control safety, and strict checkpoint decoding are regression-pinned.
+  → **PLAN-ARCHIVE.md**.
+
+- [x] **Step UX.9 — Audit and repair the Phase UX branch tests** — done
+  2026-08-10; repeated all safe test tiers, mutation-proved and closed six
+  regression gaps, and made the live Codex/Ollama timeout clean up immediately.
+  The real-turn instability it exposed was kept visible and is now diagnosed
+  and closed in Step L.4. → **PLAN-ARCHIVE.md**.
 
 ---
 
@@ -344,6 +383,52 @@ records of later unplanned polish batches.
   bites. Full verified ledger: session scratchpad; findings' file:line
   detail rides each fix's test comments.
 
+- [ ] **Step 4.17 — Relay hello freshness (deferred hardening, 2026-08-11
+  audit)** — the daemon's relay hello (`relay-crypto.ts` / `relay-client.ts`)
+  carries no relay-supplied freshness (nonce/timestamp challenge), so a hostile
+  or compromised relay can REPLAY a recorded hello and open up to
+  MAX_REMOTE_VIEWPORTS (16) zombie viewport channels, each held ~90 s. Bounded
+  and resource-only: the replayer gains no confidentiality or integrity — the
+  per-connection E2E keys derive from `nonceD`, which travels sealed, so the
+  replayer can't read or drive any session; it only ties up viewport slots
+  against a party (the relay) that can already withhold service by refusing to
+  forward. Acknowledged inline in `relay-client.ts`. The fix is a real protocol
+  change — a relay→daemon challenge the hello must echo — so it is sized as a
+  step, not folded into a bugfix: add a server-issued nonce to the pre-hello
+  frame, bind it into the hello's AAD, and reject a hello whose challenge the
+  daemon didn't just issue. **Trigger:** before the relay carries non-trivial
+  third-party traffic, or any time the relay operator is less trusted than
+  today (it's ours). Sized ~half a day incl. a sibling-itest pin (recorded
+  hello + fresh challenge → refused).
+
+- [x] **Step 4.18 — Test-audit pass (2026-08-11)** — judged the tests, not the
+  product: read the tiering rules (README §8), ran Tier 1 (631/631, ~16s, x2
+  deterministic), Tier 2 (144/144, x3, ~3:48 each, zero flakiness), Tier 3
+  (e2e, 83/83, x2, ~3:20 each incl. build, zero flakiness), and **falsified 10
+  stated invariants by mutating the product** — the
+  E2E counter (replay/reorder), the tool-output cap, the replay-ring byte cap,
+  the fs-explorer realpath jail, checkpoint seq-monotonicity, the WS
+  origin guard, the ws backoff ladder, `cleanRelPath` traversal, and the
+  IP-exact loopback classifier all fail cleanly when their target breaks.
+  **Two real repairs, each mutation-proven after:** (1) `registry-spec.test.ts`'s
+  chart "old-client" test asserted on a hand-built `z.enum(["line","bar"])` — it
+  tested zod, not the product; rewritten to drive the real
+  `clientSchemas.chart`/`registrySchemas.chart` twins (now fails when the chart
+  kind enum changes). (2) `fs-explorer.test.ts`'s "small tree not truncated"
+  test wrote into the already-capped dir (a dead write), listed a fresh EMPTY
+  dir, and never asserted `truncated === false` — the guarantee was untested;
+  rewritten to list a real small tree and pin `truncated === false` + the entry
+  list (now fails on spurious truncation). **Three assertions tightened**
+  (loose bounds → exact, each proven to catch a regression the old form missed):
+  `niceTicks` ticks (Chart.test.ts) and the Gemini honest-model label.
+  **Left as-is, backstopped, reported not repaired** (deleting/weakening waits
+  for Kyle; each is redundant with a stronger test, not a gap):
+  `provider-policy.test.ts` "every cell is a boolean" (the exact agent×kind
+  truth matrix above it is stronger), `version.test.ts` semver-shape regex
+  (the `CLIENT_VERSION===VERSION` + launcher `--version` neighbors have the
+  teeth), the claude-code/gemini truncation *bounds* (exact byte math pinned in
+  `types.test.ts`), and `files-tree.test.ts`'s "too fast" substring. No product
+  bug surfaced; no test was deleted.
 
 ---
 
@@ -2437,19 +2522,14 @@ bodies + dated history → PLAN-ARCHIVE.md ("Moved 2026-07-24").
 
 ## Phase D — Decompose the Codex adapter (opened 2026-07-20)
 
-`server/adapters/codex.ts` is **824 lines** and carries at least five separable
-concerns. For scale, the other two real adapters are 499 (`claude-code.ts`) and
-382 (`gemini-cli.ts`) — it isn't merely the biggest, it's nearly the other two
-combined, and it grew again on 2026-07-20 (provider binding + the notice fix).
-Size alone wouldn't justify a step; the reason it's worth doing **now** is that
-two separate 2026-07-20 bugs both lived in the seams between those concerns —
-the engine-default lookup didn't know what the provider binding had decided,
-and a non-fatal engine item was classified where the fatal ones are handled.
-Concerns that can't see each other's decisions are exactly what splitting makes
-visible.
+At the 2026-08-11 refactor start, `server/adapters/codex.ts` was **1,004 lines**
+and carried at least five separable concerns. Size alone did not justify the
+step; two separate 2026-07-20 bugs both lived in the seams between those
+concerns — the engine-default lookup did not know what provider binding had
+decided, and a non-fatal engine item was classified beside the fatal ones.
 
-Do it now, before Phase F widens the adapter's event vocabulary further: every
-type added to `handleEvent`/`onItem` afterwards makes the split more expensive.
+The local split now isolates the event mapper before Phase F widens Codex's
+event vocabulary further.
 
 **This is a pure refactor — zero functional change.** It is well protected:
 298 Tier-1 tests, the Tier-2 and Tier-3 suites, and the Tier-4 live tier, all
@@ -2493,6 +2573,17 @@ list honored; all tiers green (318/86/37). Full detail → PLAN-ARCHIVE.md
     `yarn test:live` still 2 pass / 1 skip; and one real subscription turn plus
     one real OpenRouter turn verified by hand, since those are the paths the
     binding cluster governs and no mock covers them.
+  - **2026-08-11 integrated; live closure outstanding.**
+    `codex.ts` is now 382 lines and retains `CodexSession`, its public
+    `AgentSession` surface, test-observed thread state, and lifecycle. Named
+    sibling modules now own provider/runtime binding, slash commands and prompt
+    discovery, diagnostics, SDK-event normalization, prompt constants, and
+    rollout lookup; none exceeds 250 lines. Existing public re-exports remain
+    at `codex.ts`; D.1 changed no assertion or test file and added no
+    dependency. PR #34 passed DCO, Cloudflare Pages, Tier 1, and the combined
+    Tier 2/Tier 3 check before merging into `next` at `21b5f33`. Keep this step
+    unchecked until its Tier 4 and manual subscription/OpenRouter done-when
+    checks are actually completed.
 
 ---
 
@@ -2729,6 +2820,17 @@ shows which matter — not a launch prerequisite.
     backend choice at onboarding (N.5 is exactly the "registry passes
     per-session env/config" build). What remains of L.3 afterward is only
     whatever mixing ergonomics Phase N's shipped form still leaves wanting.
+
+- [x] **Step L.4 — Diagnose intermittent Codex → Ollama real turns** — done
+  2026-08-11; direct Ollama traces isolated cold prompt prefill plus Qwen's
+  unbounded default reasoning (not an SDK event-delivery stall). Discovered
+  local Codex sessions now offer explicit `/effort none`, retain inherited
+  defaults until selected, end unfinished turns at an evidence-based eight
+  minutes with actionable recovery, and fail unavailable endpoints clearly.
+  Tier 4 pins an explicit 32K model so recency order or silent 4K truncation
+  cannot false-green; valid full-context runs passed cold/warm/warm in
+  385.9/90.3/90.3 seconds and a real unavailable endpoint failed in 4.9
+  seconds. → PLAN-ARCHIVE.md.
 
 ---
 
@@ -2999,6 +3101,39 @@ Full bodies + original findings → PLAN-ARCHIVE.md ("Moved 2026-07-27").
   samples). Tiers 458/139/54 green. Same-day audit: nothing exploitable;
   the lightbox-over-permission-bar layering recorded as an accepted
   decision in SECURITY.md.
+
+## Phase E3 — Explorer visual polish
+
+- [x] **Step E3.1 — Refine the tree surface and add node-type glyphs** — done
+  2026-08-11; the existing read-only tree now uses Mirafold's inset surface,
+  compact row/guide treatment, SVG chevrons, and decorative open/closed-folder,
+  symlink, and broad file-family glyphs immediately after names. No dependency,
+  server/wire, lazy-fetch, sort, Git-status, drill-in, refresh, or phone-flow
+  behavior changed. Desktop, phone, dark/light, overflow, and axe proofs pass.
+  → PLAN-ARCHIVE.md.
+- [x] **Step E3.2 — Integrate the Explorer visually with the workbench** —
+  visually approved by Kyle 2026-08-11. The dock now has a stable responsive
+  width, compact Files title/action bar, separate sticky workspace-root strip,
+  inset tree-row rhythm, quieter unboxed Git markers, and conventional
+  `chevron → type glyph → name → status` ordering. Refresh and the phone close
+  action moved into the title bar without changing their behavior; the stacked
+  phone file drill-in remains intact. The accepted revision and the D.1 Codex
+  refactor merged through PR #34 at `21b5f33` after DCO, Cloudflare Pages,
+  Tier 1, and combined Tier 2/Tier 3 passed.
+
+## Phase BC — Whole-codebase correctness closure
+
+- [x] **Step BC.1 — Repair the eight confirmed whole-codebase findings** —
+  done 2026-08-11. Gemini turn preparation and Codex default-model resolution
+  now recover from transient failures; the relay and cookie boundaries reject
+  malformed-but-valid inputs safely; model-turn state no longer collapses at a
+  neighboring bang lifecycle boundary; active rename failure rolls back instead
+  of claiming durability; filesystem/Git caps count UTF-8 bytes; and Explorer
+  path presentation accepts Windows shapes without changing POSIX filename
+  semantics. Each finding has a concrete regression. No dependency, provider
+  protocol, stored-session schema, or filesystem write feature was added.
+  Published as open PR #35 into `next`; deliberately unmerged pending Kyle's
+  review. → PLAN-ARCHIVE.md.
 
 ## Phase W — Live tree (the filesystem watcher; the refresh button goes vestigial)
 

@@ -15,6 +15,7 @@ import { MIRAFOLD_MCP } from "./render-mcp-cmd";
 
 type Any = WireMsg & Record<string, any>;
 type Turn = ThreadEvent[] | ((signal: AbortSignal) => AsyncGenerator<ThreadEvent>);
+type SessionOpts = Omit<ConstructorParameters<typeof CodexSession>[0], "workspaceDir">;
 
 const tmp = mkdtempSync(path.join(os.tmpdir(), "mcp-codex-test-"));
 const ev = (e: Record<string, unknown>) => e as unknown as ThreadEvent;
@@ -36,8 +37,8 @@ const waitForTurnEnds = (msgs: Any[], count = 1, timeoutMs = 5_000) =>
 
 /** A CodexSession on a stubbed thread; each pushPrompt consumes the next turn.
  *  `prompts` records the exact text each turn sent to the engine (V.2). */
-function makeSession(...turns: Turn[]) {
-  const s = new CodexSession({ workspaceDir: tmp });
+function makeSessionWithOptions(opts: SessionOpts, ...turns: Turn[]) {
+  const s = new CodexSession({ workspaceDir: tmp, ...opts });
   const msgs: Any[] = [];
   const prompts: string[] = [];
   s.onMessage((m) => msgs.push(m as Any));
@@ -58,6 +59,10 @@ function makeSession(...turns: Turn[]) {
   const turnEnds = () => msgs.filter((m) => m.type === "turn_end").length;
   const awaitTurnEnd = (count = 1) => waitForTurnEnds(msgs, count);
   return { s, msgs, prompts, turnEnds, awaitTurnEnd };
+}
+
+function makeSession(...turns: Turn[]) {
+  return makeSessionWithOptions({}, ...turns);
 }
 
 const HAPPY: ThreadEvent[] = [
@@ -231,14 +236,71 @@ function recordingCodex() {
   return { calls, prompts, makeCodex };
 }
 
-function makeModelSession(listModels: () => Promise<any[]>) {
+function makeModelSession(listModels: () => Promise<any[]>, opts: SessionOpts = {}) {
   const { calls, prompts, makeCodex } = recordingCodex();
-  const s = new CodexSession({ workspaceDir: tmp, listModels, makeCodex });
+  const s = new CodexSession({ workspaceDir: tmp, ...opts, listModels, makeCodex });
   const msgs: Any[] = [];
   s.onMessage((m) => msgs.push(m as Any));
   const awaitTurnEnd = (count = 1) => waitForTurnEnds(msgs, count);
   return { s, msgs, calls, prompts, awaitTurnEnd };
 }
+
+test("recovery and discovery: Codex resumes and advertises only implemented / commands plus live $ skills", async () => {
+  const { calls, makeCodex } = recordingCodex();
+  const s = new CodexSession({
+    workspaceDir: tmp,
+    resumeId: "codex-thread-saved",
+    makeCodex,
+    listSkills: async () => [{ name: "audit", description: "defensive security audit" }],
+  });
+  assert.deepEqual(calls.map((call) => [call.kind, call.id]), [
+    ["resume", "codex-thread-saved"],
+  ]);
+  assert.equal(s.resumeId, "codex-thread-saved");
+
+  const seen: WireMsg[] = [];
+  s.onMessage((msg) => seen.push(msg));
+  s.refreshPromptOptions();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const catalogs = seen.filter((msg) => msg.type === "prompt_options");
+  const latest = catalogs.at(-1);
+  assert.ok(latest?.type === "prompt_options");
+  assert.deepEqual(
+    latest.options.filter((option) => option.trigger === "/").map((option) => option.value),
+    ["/model"],
+    "TUI-only commands must never be advertised then sent to the model as prose",
+  );
+  assert.equal(
+    latest.options.find((option) => option.value === "$audit")?.source,
+    "codex",
+    "workspace/provider skill text must carry fixed catalog provenance",
+  );
+  s.close();
+});
+
+test("Codex announces its provider resume id at thread.started", async () => {
+  const { s, awaitTurnEnd } = makeSession([
+    ev({ type: "thread.started", thread_id: "codex-thread-new" }),
+    ev({
+      type: "turn.completed",
+      usage: {
+        input_tokens: 1,
+        cached_input_tokens: 0,
+        output_tokens: 1,
+        reasoning_output_tokens: 0,
+      },
+    }),
+  ]);
+  // Avoid the unrelated rollout-file model lookup in this identity test.
+  (s as unknown as { modelLabel: string }).modelLabel = "gpt-test";
+  const resumeIds: string[] = [];
+  s.onResumeId((id) => resumeIds.push(id));
+  s.pushPrompt("start the thread");
+  await awaitTurnEnd();
+  assert.deepEqual(resumeIds, ["codex-thread-new"]);
+  assert.equal(s.resumeId, "codex-thread-new");
+  s.close();
+});
 
 const CATALOG = [
   { id: "gpt-9-sol", displayName: "GPT-9-Sol", description: "frontier", isDefault: true },
@@ -338,6 +400,33 @@ test("bare /effort paints the effort picker; no engine turn runs", async () => {
   s.close();
 });
 
+test("a discovered local /effort picker adds none and passes it to Codex", async () => {
+  const { s, msgs, calls, prompts, awaitTurnEnd } = makeModelSession(async () => CATALOG, {
+    kind: "local",
+    endpoint: "http://127.0.0.1:11434",
+    localTurnTimeoutMs: 0,
+  });
+
+  s.pushPrompt("/effort");
+  await awaitTurnEnd();
+  const picker = msgs.find((m) => m.type === "picker")!;
+  assert.deepEqual(
+    (picker.rows as any[]).map((row) => row.label),
+    ["none", "minimal", "low", "medium", "high", "xhigh"],
+  );
+  assert.equal((picker.rows as any[])[0].text, "/effort none");
+
+  s.pushPrompt("/effort none");
+  await awaitTurnEnd(2);
+  assert.deepEqual(calls.at(-1), {
+    kind: "start",
+    options: { workingDirectory: tmp, skipGitRepoCheck: true, modelReasoningEffort: "none" },
+  });
+  assert.ok(msgs.some((m) => m.type === "text_delta" && m.text.includes("effort set to none")));
+  assert.equal(prompts.length, 0, "the local slash command never becomes model prose");
+  s.close();
+});
+
 test("/effort <level>: unstarted restarts, started resumes; threadOpts carries the effort", async () => {
   const { s, msgs, calls, awaitTurnEnd } = makeModelSession(async () => CATALOG);
   assert.equal(calls.length, 1); // constructor's startThread
@@ -377,6 +466,7 @@ test("/effort <bad>: an unknown level gets a usage line, never reaches the engin
   const usage = msgs.find((m) => m.type === "text_delta" && m.text.includes("Usage:"))!;
   assert.ok(usage, "usage line emitted");
   assert.ok(usage.text.includes("minimal, low, medium, high, xhigh"), "lists the valid levels");
+  assert.ok(!usage.text.includes("none"), "non-local sessions do not advertise the extension");
   assert.equal(prompts.length, 0);
   s.close();
 });
@@ -480,6 +570,123 @@ test("turn.failed: error before the single turn_end", async () => {
   assert.ok(types.indexOf("error") < types.indexOf("turn_end"));
   assert.equal(msgs.find((m) => m.type === "error")!.message, "boom");
   assert.equal(turnEnds(), 1); // end() from turn.failed + finally must not double-fire
+  s.close();
+});
+
+test("a discovered local provider failure names the server/model recovery check", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSessionWithOptions(
+    {
+      kind: "local",
+      endpoint: "http://127.0.0.1:11434",
+      localTurnTimeoutMs: 0,
+    },
+    [
+      ev({ type: "turn.started" }),
+      ev({ type: "turn.failed", error: { message: "connection refused" } }),
+    ],
+  );
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const error = msgs.find((m) => m.type === "error")!;
+  assert.match(error.message, /^Local Codex could not complete the turn: connection refused/);
+  assert.match(error.message, /server is running and still serves the selected model/);
+  s.close();
+});
+
+test("a discovered local turn timeout aborts with one actionable error and one turn_end", async () => {
+  const { s, msgs, turnEnds, awaitTurnEnd } = makeSessionWithOptions(
+    {
+      kind: "local",
+      endpoint: "http://127.0.0.1:11434",
+      localTurnTimeoutMs: 25,
+    },
+    (signal) =>
+      (async function* (): AsyncGenerator<ThreadEvent> {
+        yield ev({ type: "turn.started" });
+        await new Promise<never>((_, reject) =>
+          signal.addEventListener("abort", () =>
+            reject(Object.assign(new Error("aborted"), { name: "AbortError" })),
+          ),
+        );
+      })(),
+  );
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+
+  const errors = msgs.filter((m) => m.type === "error");
+  assert.equal(errors.length, 1);
+  assert.match(errors[0].message, /local Codex turn did not finish/i);
+  assert.match(errors[0].message, /\/effort none/);
+  assert.match(errors[0].message, /MIRAFOLD_CODEX_LOCAL_TURN_TIMEOUT_MS/);
+  assert.equal(turnEnds(), 1);
+  s.close();
+});
+
+test("a local timeout does not recommend /effort none when reasoning is already disabled", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSessionWithOptions(
+    {
+      kind: "local",
+      endpoint: "http://127.0.0.1:11434",
+      localTurnTimeoutMs: 25,
+    },
+    (signal) =>
+      (async function* (): AsyncGenerator<ThreadEvent> {
+        await new Promise<never>((_, reject) =>
+          signal.addEventListener("abort", () => reject(new Error("aborted"))),
+        );
+      })(),
+  );
+  (s as unknown as { effortLabel: string }).effortLabel = "none";
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const error = msgs.find((m) => m.type === "error")!;
+  assert.match(error.message, /Reasoning is already disabled/);
+  assert.doesNotMatch(error.message, /Send `\/effort none`/);
+  s.close();
+});
+
+test("UX.8: a configured provider failure cannot echo its exact base URL", async () => {
+  const home = mkdtempSync(path.join(os.tmpdir(), "mcp-codex-provider-redaction-"));
+  const endpoint = "https://tenant.example/private/token-path";
+  writeFileSync(
+    path.join(home, "config.toml"),
+    [
+      'model_provider = "private"',
+      "[model_providers.private]",
+      `base_url = "${endpoint}"`,
+    ].join("\n"),
+  );
+  const savedHome = process.env.CODEX_HOME;
+  let s: CodexSession;
+  try {
+    process.env.CODEX_HOME = home;
+    s = new CodexSession({
+      workspaceDir: tmp,
+      kind: "local",
+      provider: "private",
+      makeCodex: () => ({ startThread: () => ({}) }) as unknown as Codex,
+    });
+  } finally {
+    if (savedHome === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = savedHome;
+  }
+  const msgs: Any[] = [];
+  s.onMessage((msg) => msgs.push(msg as Any));
+  (s as unknown as { thread: unknown }).thread = {
+    runStreamed: async () => ({
+      events: (async function* () {
+        yield ev({
+          type: "turn.failed",
+          error: { message: `request ${endpoint}/responses failed` },
+        });
+      })(),
+    }),
+  };
+  s.pushPrompt("go");
+  await waitForTurnEnds(msgs);
+  const message = msgs.find((msg) => msg.type === "error")?.message ?? "";
+  assert.equal(message, "request [selected endpoint]/responses failed");
+  assert.doesNotMatch(message, /tenant|private|token-path/);
   s.close();
 });
 
@@ -872,6 +1079,34 @@ for (const kind of ["subscription", "api-key"] as const) {
       /default model could not be resolved/,
     );
     assert.equal(prompts.length, 0);
+    s.close();
+  });
+
+  test(`model axis (${kind}): a transient catalog failure is retried before the next prompt`, async () => {
+    let lookups = 0;
+    const { s, msgs, prompts, awaitTurnEnd } = makeBindingSession(FOREIGN_MODEL_TOML, {
+      kind,
+      listEngineModels: async () => {
+        lookups += 1;
+        if (lookups === 1) throw new Error("temporary catalog failure");
+        return CATALOG;
+      },
+    });
+
+    s.pushPrompt("first");
+    await awaitTurnEnd(1);
+    assert.equal(lookups, 1);
+    assert.equal(prompts.length, 0, "the unresolved first-party model blocks the first prompt");
+    assert.match(msgs.find((m) => m.type === "error")!.message, /default model could not be resolved/);
+
+    s.pushPrompt("second");
+    await awaitTurnEnd(2);
+    assert.equal(lookups, 2, "the failed lookup did not disable the guard");
+    assert.equal(prompts.length, 1);
+    assert.ok(prompts[0].includes("## Generative UI"));
+    assert.ok(prompts[0].includes("DEFERRED"));
+    assert.ok(prompts[0].endsWith("second"));
+    assert.equal(s.modelName, "gpt-9-sol");
     s.close();
   });
 

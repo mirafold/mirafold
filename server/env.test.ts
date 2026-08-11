@@ -47,12 +47,15 @@ test("envFlag: 0/false/blank are OFF, anything else set is ON", () => {
 
 test("project .env imports supported data but never process identity", () => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "mirafold-project-env-"));
-  const file = path.join(tmp, ".env");
+  // Use the loader's injectable path without creating or reading a real
+  // dotenv filename; the fixture exercises the same parser with dummy data.
+  const file = path.join(tmp, "project-config.txt");
   writeFileSync(
     file,
     [
       "OPENAI_API_KEY=from-project",
       "PORT=4321",
+      "MIRAFOLD_CODEX_LOCAL_TURN_TIMEOUT_MS=480000",
       'MIRAFOLD_TOKEN="x&calc|whoami"',
       "MIRAFOLD_CODEX_BIN=./repo-codex",
       "MIRAFOLD_GEMINI_BIN=./repo-gemini",
@@ -73,6 +76,7 @@ test("project .env imports supported data but never process identity", () => {
     loadProjectEnv(file, target);
     assert.equal(target.OPENAI_API_KEY, "from-parent", "parent-process values win");
     assert.equal(target.PORT, "4321");
+    assert.equal(target.MIRAFOLD_CODEX_LOCAL_TURN_TIMEOUT_MS, "480000");
     assert.equal(target.MIRAFOLD_TOKEN, "x&calc|whoami");
     assert.equal(target.MIRAFOLD_CODEX_BIN, "/operator/codex");
     assert.equal(target.MIRAFOLD_GEMINI_BIN, undefined);

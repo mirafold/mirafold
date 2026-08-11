@@ -41,7 +41,14 @@ export function cookieToken(cookieHeader?: string): string | undefined {
     const eq = part.indexOf("=");
     if (eq < 0) continue;
     if (part.slice(0, eq).trim() === COOKIE_NAME) {
-      return decodeURIComponent(part.slice(eq + 1).trim());
+      try {
+        return decodeURIComponent(part.slice(eq + 1).trim());
+      } catch {
+        // A malformed stale cookie must behave like no cookie. In particular,
+        // the startup URL's valid ?token= can then mint a clean replacement
+        // instead of every request dying in decodeURIComponent first.
+        continue;
+      }
     }
   }
   return undefined;

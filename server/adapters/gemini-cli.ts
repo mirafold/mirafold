@@ -3,14 +3,15 @@ import { createLogger, verbose } from "../log";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import type { WireMsg } from "../protocol";
+import type { PromptOption, WireMsg } from "../protocol";
 import { RENDER_GUIDANCE } from "../render-tools";
-import { type AgentSession, capOutput, errText, toolDetail } from "./types";
+import { type AgentSession, capOutput, emitPromptOptions, errText, toolDetail } from "./types";
 import { MIRAFOLD_MCP, RENDER_ID_RE, generativeUIMsg, renderMcpCommand } from "./render-mcp-cmd";
 import { geminiBin, listGeminiModels, type GeminiModelCatalog } from "./gemini-model-list";
 import { emitModelPicker } from "./model-picker";
 import { isWorkspaceTrusted, trustWorkspace } from "../sessions/workspace-trust";
 import { AsyncQueue, CLOSE } from "./async-queue";
+import { ResumeIdState } from "./resume-id";
 
 // Same generative-UI stdio MCP server the Codex adapter injects (P.3). Gemini
 // loads MCP servers from settings.json, so we write a per-session project
@@ -55,8 +56,9 @@ export class GeminiCliSession implements AgentSession {
   private listeners = new Set<(msg: WireMsg) => void>();
   private closed = false;
   private child?: ChildProcessWithoutNullStreams;
-  private sessionId = randomUUID();
-  private started = false; // first turn creates the session, later turns resume
+  private sessionId: string;
+  private started: boolean; // first turn creates the session, later turns resume
+  private resumeIdState: ResumeIdState;
   // RENDER_GUIDANCE rides ahead of the first NON-slash turn (V.2): headless
   // Gemini only recognizes a slash command at position 0 of the prompt, so
   // prepending to a slash turn would silently turn it into chat (observed
@@ -89,15 +91,27 @@ export class GeminiCliSession implements AgentSession {
     return this.modelLabel;
   }
 
+  get resumeId(): string | undefined {
+    return this.resumeIdState.value;
+  }
+
+  onResumeId(cb: (id: string) => void) {
+    this.resumeIdState.onChange(cb);
+  }
+
   constructor(opts: {
     workspaceDir: string;
     model?: string;
+    resumeId?: string;
     listModels?: () => Promise<GeminiModelCatalog>;
   }) {
     this.workspaceDir = path.resolve(opts.workspaceDir);
     mkdirSync(this.workspaceDir, { recursive: true });
     this.model = opts.model;
     this.modelLabel = opts.model;
+    this.sessionId = opts.resumeId ?? randomUUID();
+    this.started = Boolean(opts.resumeId);
+    this.resumeIdState = new ResumeIdState(opts.resumeId || undefined);
     this.listModels = opts.listModels ?? (() => listGeminiModels(this.workspaceDir));
     // Only ever creates a settings.json that didn't already exist (K.2,
     // 2026-08-06): a file that predates this session is the user's, and
@@ -106,6 +120,24 @@ export class GeminiCliSession implements AgentSession {
     // anything pre-existing until ensureTrusted() actually resolves true.
     this.writeAuthSettingsIfAbsent();
     void this.worker();
+  }
+
+  refreshPromptOptions() {
+    // ACP commands belong to ACP's prompt/command execution surface. This
+    // adapter drives stream-json, where sending those strings makes the model
+    // answer them as prose. `/model` is the one terminal command Mirafold
+    // faithfully implements on this surface with its own provider-backed
+    // picker, so it is the only command the shell advertises.
+    const options: PromptOption[] = [
+      {
+        trigger: "/",
+        value: "/model",
+        label: "model",
+        description: "choose what model to use",
+        kind: "command",
+      },
+    ];
+    emitPromptOptions((msg) => this.emit(msg), options);
   }
 
   private settingsFile(): string {
@@ -243,11 +275,21 @@ export class GeminiCliSession implements AgentSession {
     while (!this.closed) {
       const item = await this.queue.next();
       if (item === CLOSE) return;
-      const trimmed = item.trim();
-      if (trimmed === "/model" || trimmed.startsWith("/model ")) {
-        await this.runModelCommand(trimmed.slice("/model".length).trim());
-      } else {
-        await this.runTurn(item);
+      try {
+        const trimmed = item.trim();
+        if (trimmed === "/model" || trimmed.startsWith("/model ")) {
+          await this.runModelCommand(trimmed.slice("/model".length).trim());
+        } else {
+          await this.runTurn(item);
+        }
+      } catch (err) {
+        if (this.closed) return;
+        // The worker is launched fire-and-forget from the constructor. A
+        // preparation failure (most notably an unwritable project settings
+        // file) must terminate THIS turn, not escape as an unhandled rejection
+        // into index.ts's process-wide last-gasp handler.
+        this.emit({ type: "error", message: `Gemini could not start this turn: ${errText(err)}` });
+        this.emit({ type: "turn_end" });
       }
     }
   }
@@ -478,7 +520,21 @@ export class GeminiCliSession implements AgentSession {
 
   /** Normalize one JSONL event into WireMsg. */
   private handleEvent(ev: Record<string, unknown>) {
-    switch (ev["type"]) {
+    // A session-bearing event proves the CLI accepted/created this id. An
+    // error event alone does not: persisting after bad auth/input could make a
+    // daemon restart try `--resume` against an id Gemini never wrote.
+    const eventType = ev["type"];
+    if (
+      !this.resumeId &&
+      (eventType === "init" ||
+        eventType === "message" ||
+        eventType === "tool_use" ||
+        eventType === "tool_result" ||
+        eventType === "result")
+    ) {
+      this.resumeIdState.publish(this.sessionId);
+    }
+    switch (eventType) {
       case "init":
         if (typeof ev["model"] === "string") this.modelLabel = ev["model"] as string;
         break;

@@ -14,8 +14,13 @@ test("isCurrentReply: only the awaited id is accepted", () => {
 test("rootNameOf: the root row carries the folder's name, not the path", () => {
   assert.equal(rootNameOf("~/Projects/mirafold/mirafold"), "mirafold");
   assert.equal(rootNameOf("~/Projects/x/"), "x", "trailing slash is ignored");
+  assert.equal(rootNameOf("C:\\Users\\Kyle\\Projects\\mirafold"), "mirafold");
+  assert.equal(rootNameOf("C:\\Users\\Kyle\\Projects\\x\\"), "x", "Windows trailing slash is ignored");
+  assert.equal(rootNameOf("~\\Projects\\mirafold"), "mirafold", "a tildified Windows path stays legible");
   assert.equal(rootNameOf("~"), "~", "home itself keeps the tilde");
   assert.equal(rootNameOf("/"), "/", "filesystem root stays legible");
+  assert.equal(rootNameOf("C:\\"), "C:\\", "Windows filesystem root stays legible");
+  assert.equal(rootNameOf("/tmp/folder\\name"), "folder\\name", "POSIX backslashes stay filename data");
   assert.equal(rootNameOf(undefined), "files", "no label yet → a neutral name");
 });
 

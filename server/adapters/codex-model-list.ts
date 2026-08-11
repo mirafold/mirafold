@@ -91,7 +91,14 @@ export function listCodexModels(
         }
         finish(
           null,
-          (data as RawCodexModelRow[])
+          data
+            .filter(
+              (row): row is RawCodexModelRow =>
+                typeof row === "object" &&
+                row !== null &&
+                typeof (row as { id?: unknown }).id === "string" &&
+                Boolean((row as { id: string }).id),
+            )
             .filter((m) => !m.hidden)
             .map((m) => ({
               id: String(m.id),

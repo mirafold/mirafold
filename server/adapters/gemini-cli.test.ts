@@ -80,6 +80,39 @@ function makeSession(opts: Partial<ConstructorParameters<typeof GeminiCliSession
   return { s, ...attach(s) };
 }
 
+test("recovery and discovery: Gemini resumes the saved id and advertises only its implemented /model", async () => {
+  const argsLog = path.join(tmp, "resume-args.txt");
+  process.env.FAKE_ARGS_LOG = argsLog;
+  const { s, msgs, awaitTurnEnd } = makeSession({
+    resumeId: "22222222-2222-4222-8222-222222222222",
+  });
+  s.refreshPromptOptions();
+  assert.deepEqual(
+    msgs.find((msg) => msg.type === "prompt_options"),
+    {
+      type: "prompt_options",
+      options: [
+        {
+          trigger: "/",
+          value: "/model",
+          label: "model",
+          description: "choose what model to use",
+          kind: "command",
+        },
+      ],
+    },
+  );
+
+  s.pushPrompt("continue");
+  await awaitTurnEnd();
+  const args = spawnArgs(argsLog);
+  const resumeAt = args.indexOf("--resume");
+  assert.ok(resumeAt >= 0);
+  assert.equal(args[resumeAt + 1], s.resumeId);
+  s.close();
+  delete process.env.FAKE_ARGS_LOG;
+});
+
 test("a pre-existing settings.json — broken or valid — is untouched at construction; a turn is what earns consent to merge it", async () => {
   // Unparseable: construction touches NOTHING. Only once a turn actually runs
   // (this workspace is pre-trusted, under `tmp`) does the rewrite+backup happen.
@@ -121,6 +154,33 @@ test("a pre-existing settings.json — broken or valid — is untouched at const
   assert.equal(bAfterTurn.security.auth.selectedType, "gemini-api-key");
   assert.throws(() => readFileSync(`${file2}.mirafold-backup`), "valid JSON never gets a backup");
   b.close();
+});
+
+test("a settings write failure ends only that turn and the next prompt retries", async () => {
+  fixture("settings-write-retry.jsonl", [
+    { type: "result", stats: { input_tokens: 1, output_tokens: 1 } },
+  ]);
+  const { s, msgs, awaitTurnEnd } = makeSession();
+  const internals = s as unknown as { writeMcpSettings: () => void };
+  const realWrite = internals.writeMcpSettings.bind(s);
+  let attempts = 0;
+  internals.writeMcpSettings = () => {
+    attempts += 1;
+    if (attempts === 1) throw new Error("read-only settings file");
+    realWrite();
+  };
+
+  s.pushPrompt("first");
+  await awaitTurnEnd(1);
+  assert.equal(attempts, 1);
+  assert.match(msgs.find((m) => m.type === "error")!.message, /read-only settings file/);
+
+  s.pushPrompt("second");
+  await awaitTurnEnd(2);
+  assert.equal(attempts, 2, "a failed merge is not marked complete — the next turn retries it");
+  assert.equal(msgs.filter((m) => m.type === "error").length, 1);
+  assert.equal(msgs.filter((m) => m.type === "usage").length, 1, "the healed turn reaches Gemini");
+  s.close();
 });
 
 test("a pre-existing settings.json is never touched at all when trust is denied", async () => {
@@ -243,8 +303,9 @@ test("F.3 honest model: init 'auto' is replaced by the real models from result.s
   await awaitTurnEnd();
   const model = msgs.find((m) => m.type === "usage")!.model;
   assert.notEqual(model, "auto");
-  assert.match(model!, /gemini-2\.5-flash/);
-  assert.match(model!, /gemini-2\.5-pro/);
+  // 2026-08-11 test-audit: the join is insertion-ordered and exact, so pin it —
+  // two loose `.match` calls survived a wrong separator or reversed order.
+  assert.equal(model, "gemini-2.5-flash, gemini-2.5-pro");
   // The fleet/status-bar label follows the refinement too (2026-07-28 fix:
   // modelName stayed "auto" while only the usage line named what ran).
   assert.equal(s.modelName, model);

@@ -116,12 +116,13 @@ export function listTree(
         if (!SKIP_DIRS.has(d.name)) walk(path.join(dir, d.name), rel);
         continue;
       }
-      if (entries.length >= maxEntries || pathBytes + rel.length > maxPathBytes) {
+      const relBytes = Buffer.byteLength(rel, "utf8");
+      if (entries.length >= maxEntries || pathBytes + relBytes > maxPathBytes) {
         truncated = true;
         return;
       }
       entries.push({ path: rel });
-      pathBytes += Buffer.byteLength(rel, "utf8");
+      pathBytes += relBytes;
     }
   };
   walk(realRoot, "");

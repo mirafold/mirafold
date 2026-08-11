@@ -61,11 +61,14 @@ the known trade-offs we've chosen to disclose rather than paper over.
 > `server/adapters/gemini-cli.ts`).
 
 Think of it as a terminal successor, not a chat app: monospace command strips
-in, rich rendered output back. The vision is a **strict superset of the
-terminal** — same engine, and never *less* visibility than the terminal gives:
-thinking, full tool detail and diffs, subagent progress, the live task list,
-and token/cost usage are all surfaced (Phase T2, shipped). Richness is added
-on top of raw visibility, never traded against it.
+in, rich rendered output back. Its transcript contract is **provider-native
+fidelity** — show the work state that the selected terminal agent exposes,
+neither raw adapter churn the terminal hides nor less useful information.
+In-flight work and failures stay visible; when a turn finishes, contiguous
+runs of successful tool activity fold to expandable lines whose full normalized
+details are still available. A fold never crosses a failure or other visible
+transcript row, so chronology stays exact. Rich generative UI is added around
+that transcript, never in exchange for it.
 
 ![Mirafold demo — a repo overview as a card and a table; a test-and-fix run with a permission strip, console output, a diff and a green re-run; a sudo password answered in the shell's own masked bar; a bundle pie chart pinned and updated in place](demo/demo.gif)
 
@@ -162,6 +165,9 @@ The contract between server and browser. Currently on the wire:
 // Server → browser
 type WireMsg =
   | { type: "text_delta"; text: string }                           // streamed markdown
+  | { type: "prompt_options"; options: PromptOption[] }             // provider-owned
+                                                                    // pre-submit / + $
+                                                                    // completion catalog
   | { type: "thinking_delta"; text: string }                       // T2.1: reasoning stream
   | { type: "status"; state: "thinking" | "tool"; label?: string } // activity line
   | { type: "turn_end" }                                           // finalize the turn
@@ -303,6 +309,9 @@ interface AgentSession {
   onMessage(cb: (msg: WireMsg) => void): void; // subscribe to normalized output
   interrupt(): void;                           // T.2: halt the turn; stay warm
   resolvePermission(id: string, allow: boolean): void; // T.3: browser's answer
+  readonly resumeId?: string;                  // provider conversation identity
+  onResumeId?(cb: (id: string) => void): void; // async identity-ready boundary
+  refreshPromptOptions?(): void;               // native command/skill catalog
   close(): void;
 }
 ```
@@ -334,7 +343,7 @@ This is a deliberate development strategy, not a testing afterthought:
 verification with a real key comes last. You can develop the whole front end
 without spending a token.
 
-**What agent #N actually requires (R.4h).** The five method signatures above
+**What agent #N actually requires (R.4h).** The seam above
 undersell the seam's real contract — these properties of the underlying
 engine are load-bearing in every shipped adapter, and an agent that lacks one
 needs a workaround (or isn't a fit) *before* the adapter is started:
@@ -349,13 +358,23 @@ needs a workaround (or isn't a fit) *before* the adapter is started:
   means "this turn is over", to emit `turn_end` from.
 - **A warm-session mechanism** — either a long-lived process or a
   resume-by-id flag (Gemini's `--session-id`/`--resume`), so a session
-  survives across prompts without replaying history.
+  survives across prompts without replaying history. The provider's durable
+  conversation identifier must be exposed as `resumeId`; if it becomes real
+  only after engine initialization, `onResumeId` announces that exact boundary.
+- **A provider-owned pre-submit catalog** when the terminal has one.
+  `refreshPromptOptions()` emits a replaceable `prompt_options` snapshot:
+  Claude Code reads `supportedCommands()` and `commands_changed`; Codex emits
+  its faithfully reimplemented `/model` plus live app-server `skills/list`
+  results under `$`; Gemini emits its faithfully reimplemented `/model`.
+  Terminal-only commands are omitted when the active headless surface cannot
+  execute them as commands—suggesting one and sending it to the model as prose
+  would not be provider fidelity.
 - **An interrupt** that halts the current turn while keeping the session warm.
 - **A way to auto-trust the injected MCP server** (config file, CLI flag, or
   settings merge) — a first-turn interactive "trust this server?" prompt has
   no terminal to answer it here.
 
-The full adapter contract — semantics beyond these five method signatures,
+The full adapter contract — semantics beyond this TypeScript shape,
 the per-provider capability matrix, and the add-a-provider checklist — is
 **[docs/ADAPTERS.md](docs/ADAPTERS.md)**, the normative document for this
 seam.
@@ -376,9 +395,16 @@ Two zones in the browser, hard boundary between them:
 
 The invariants, and where each is enforced today:
 
-- **The API key never reaches the browser.** It lives only in the server
-  process (`server/index.ts` reads env; nothing ever serializes it into a
-  `WireMsg`).
+- **Provider credentials and configured endpoint URLs never reach the
+  browser.** They live only in the server process. A configured endpoint may
+  itself contain URL authentication, a signed query, or a private hostname.
+  A configured Claude row exposes only a random daemon-scoped `backendId`; a
+  Codex row exposes its declared provider identity while keeping the provider
+  base URL internal. The daemon resolves either selection against current
+  server-side configuration.
+  Probe-discovered local servers still carry their explicit address so the
+  browser can distinguish their live model catalogs, and the server validates
+  every such choice against the current probe cache.
 - **The agent only emits content into the output zone.** `RenderZone` is the
   sole consumer of agent output, and it only ever renders — it holds no
   socket, no credentials, no callbacks into the shell beyond subscription.
@@ -395,9 +421,13 @@ The invariants, and where each is enforced today:
   attributed to that engine, visibly, or it can pose as us: a model — or
   whatever a model just read in some repo — could emit "session credential
   expired, re-enter your key at …" and have it render as a system line.
-  Today exactly one string qualifies: Codex's non-fatal `ErrorItem`, which
-  rides `notice.source: "codex"` and renders badged behind a dashed rule
-  instead of the shell glyph. Anything engine-supplied that already sits in an
+  Codex's non-fatal `ErrorItem` rides `notice.source: "codex"` and renders
+  badged behind a dashed rule instead of the shell glyph. Provider/repository
+  prompt-catalog metadata follows the same rule: Claude commands and Codex
+  skills carry a fixed adapter-assigned source badge, never a provider-chosen
+  attribution; invisible direction/line controls cause the entire option to
+  be dropped before trusted-shell rendering or persistence. Anything
+  engine-supplied that already sits in an
   agent-attributed frame (assistant turns, tool blocks, the permission bar,
   which announces itself as the agent asking) needs nothing further. **Adding
   an adapter: compose the sentence yourself and it's ours; pass the engine's
@@ -482,13 +512,19 @@ server/            the local daemon (Node, run with tsx)
                      cited by path from CLAUDE.md/BUSINESS.md; stays at root
   version.ts         reads package.json's version at build time (R.4g)
   adapters/          one AgentSession per agent: claude-code.ts, codex.ts,
-                     gemini-cli.ts, mock.ts (+ index.ts seam, types.ts,
-                     async-queue.ts, render-mcp-cmd.ts, *.spike.md probe notes)
+                     gemini-cli.ts, mock.ts. Codex's lifecycle stays in
+                     codex.ts; codex-{binding,commands,diagnostics,events,
+                     prompt,rollout}.ts own its named internal seams. Shared
+                     index/types/queue/render-MCP and provider catalog helpers
+                     live beside them, with *.spike.md probe notes.
   sessions/          the session state core (H.4/H.5):
     registry.ts        SessionRegistry: sessions decoupled from connections (4.2);
                        broadcast() is also where engine-supplied labels are
                        length-capped (LABEL_CAP), ahead of the ring, the
                        cockpit derivation and every viewport (2026-07-29)
+    session-store.ts   owner-only atomic checkpoints: bounded transcript,
+                       exact backend metadata, and provider resume id; startup
+                       indexes them as dormant sessions for lazy recovery
     connection.ts      one viewport's server side, transport-agnostic (R.1) —
                        shared verbatim by local sockets and relay viewports
     folder-picker-handler.ts
@@ -570,7 +606,8 @@ web/               the browser app (React 19 + Vite)
                        credentials + discovered local model servers (P.4/4.8/N.4)
     PromptBox.tsx      the command bar (auto-grows to 8 lines; Enter sends on
                        desktop — on phone Enter is a newline and the ↑ button
-                       sends, R.4l)
+                       sends, R.4l); native pre-submit / and $ completions +
+                       transcript-click focus path
     BangBar.tsx        the `!` command's stdin bar (4.9): per-viewport input
                        with password auto-masking — ephemeral, never broadcast
     PermBar.tsx        the permission strip + its full-command card (2026-07-28):
@@ -578,7 +615,8 @@ web/               the browser app (React 19 + Vite)
                        command in a ModalCard — the phone's truncated preview
                        was unreadable; Shell keeps owning asks + the wire answer
     RenderZone.tsx     OUTPUT ZONE: WireMsg interpreter → entries, incl.
-                       thinking blocks, artifacts, and subagent grouping
+                       thinking blocks, artifacts, subagent grouping, and the
+                       completed-turn activity fold
     ActivityLine.tsx   the always-visible work indicator (4.14): cycling
                        asterisk + label + elapsed seconds, prompt-area chrome
                        above the box — never a transcript entry, so no scroll
@@ -624,7 +662,8 @@ web/               the browser app (React 19 + Vite)
                        drill-in — docked left column on desktop, full-screen
                        dialog on phone; desktop ⤢ enlarges the file box into
                        a dimmed lightbox, E.6) + FileView.tsx (content /
-                       diff / binary)
+                       diff / binary) + ExplorerNodeGlyph.tsx (small
+                       dependency-free folder/symlink/file-family glyphs)
   src/registry/      Card, List, Table, LinkGroup, Chart, TodoList, KeyValue,
                      Progress, Timeline, FileTree, Question, Diff, Stat, Code,
                      StatusList, Console, Image, Diagram, Md, CopyButton +
@@ -749,13 +788,48 @@ last seq it saw and, when the tail is still buffered, the server replays
 only the unseen messages under `session_created{resumed:true}` — mid-turn
 streaming continues into the same DOM block, pins and scroll survive. A
 cursor that has fallen off the ring (or a fresh page) takes the full-replay
-path as before. Closing a tab merely detaches; a session with no viewports dies
-only after an idle timeout (default 4 h, `SESSION_IDLE_TIMEOUT_MS`). Each
-session runs in a real working dir — default: the directory the daemon was
-launched from, exactly like a terminal agent (Step 4.8) — or any existing
-directory typed at onboarding (`~` expands; a missing path rejects the
-create, like `cd`). Mental model: session ≈ project. A stale/unknown attach
-id falls back to a fresh session rather than an error page.
+path as before.
+
+The ring and provider identity are also checkpointed to the platform state
+directory (`$XDG_STATE_HOME/mirafold/sessions`, normally
+`~/.local/state/mirafold/sessions`; `%LOCALAPPDATA%\mirafold\sessions` on
+Windows; `MIRAFOLD_SESSION_DIR` overrides it). The directory is owner-only and
+each bounded JSON record is replaced atomically with owner-only permissions.
+These files necessarily contain the transcript—user prompts, normalized tool
+inputs/results, and assistant output—plus the exact server-side backend choice
+and Claude/Codex/Gemini resume identifier. They do not contain standalone
+provider API keys/tokens, but a configured endpoint URL can itself contain URL
+authentication or a signed query and is therefore sensitive; this is why the
+record and directory are owner-only and the URL never rides the browser wire
+or raw logs. User prompts and terminal boundaries are durable before their
+wire acknowledgment, while high-volume interior stream frames share a short
+checkpoint debounce. Persisted transcript frames are decoded through a strict
+allowlist of sequenced transcript message schemas; malformed frames,
+per-viewport plumbing, replay stamps, unsafe catalog controls, and out-of-order
+sequences make the checkpoint unavailable rather than re-entering trusted
+shell state. A configured Claude endpoint is pinned through the one-click path.
+Its selected header-credential mode is bound to that exact destination:
+recovery refuses if an authenticated endpoint or mode changed, while a saved
+discovered/unauthenticated endpoint always strips both real Anthropic
+credentials.
+
+Closing a tab merely detaches. After the idle timeout (default 4 h,
+`SESSION_IDLE_TIMEOUT_MS`) the warm engine unloads but its dormant checkpoint
+stays in mission control. Daemon startup indexes those records without eagerly
+launching agents; opening one lazily reconstructs the bounded transcript and
+resumes the same provider conversation. Viewportless fleet quick prompts arm
+the same unload timer as ordinary detached sessions. A restart during a turn closes that
+browser turn with an explicit interruption notice, then leaves the provider
+conversation ready to continue. **End Session is the normal deletion path.**
+A corrupt checkpoint or unavailable original backend errors in place and is
+never silently replaced; a failed checkpoint deletion likewise leaves the live
+engine and watcher usable instead of half-ending the session. Only a genuinely
+unknown id falls back to a fresh session with the shell-owned explanation.
+
+Each session runs in a real working dir — default: the directory the daemon
+was launched from, exactly like a terminal agent (Step 4.8) — or any existing
+directory typed at onboarding (`~` expands; a missing path rejects the create,
+like `cd`). Mental model: session ≈ project.
 
 Inbound messages route accordingly: `prompt` is echoed onto the session
 stream as `user_prompt` (all viewports render the command strip identically —
@@ -981,13 +1055,16 @@ subscription handles each `ZoneMsg`:
   code, and a component that throws anyway is caught by a per-block error
   boundary — a malformed instruction can never break the UI.
 - `tool_use` / `tool_result` → append a tool entry, then complete it by id
-  when the result lands. Tool entries render through `ToolBlock.tsx` as dim
-  one-line monospace records, collapsed by default (errors arrive expanded);
-  the expansion shows the full input — Edit/Write as a colored diff / code
-  (T2.2) — and any `truncatedBytes` as an explicit elision marker (T2.3). A
-  tool with `parentId` isn't rendered top-level: it's grouped under its Task
-  row in a collapsible `SubagentGroup` (the gear glyph + "subagent · N
-  calls", T2.4).
+  when the result lands. In-flight rows remain visible, and errors remain
+  expanded top-level. At `turn_end`, two or more contiguous successful calls
+  from that turn fold into a terminal-sized, expandable `worked · N actions`
+  record. Failures, in-flight calls, batch changes, and non-tool transcript
+  rows break a run, so compaction cannot reorder evidence; opening a fold
+  preserves every normalized input and result. `ToolBlock.tsx`
+  renders those details — Edit/Write as a colored diff / code (T2.2), with
+  any `truncatedBytes` as an explicit elision marker (T2.3). Calls tagged
+  with `parentId` stay inside the turn's activity rather than becoming extra
+  top-level churn (T2.4).
 - `artifact` → route to `Artifact.tsx` (the sandboxed iframe, Phase 3);
   re-sending an id replaces it in place, same as `render`.
 - `picker` → append a `PickerBlock.tsx` entry: the SHELL-owned selector
@@ -1002,8 +1079,8 @@ subscription handles each `ZoneMsg`:
   affordance — it's chrome, not content.
 - `status` → set the activity line (`✳ thinking…` / the gear glyph + a tool
   label such as `Bash`).
-- `turn_end` → mark the streaming block done, finalize any dangling tool
-  entries, clear the ref and status.
+- `turn_end` → mark the streaming block done, finalize dangling tool entries,
+  fold that turn's successful activity, and clear the ref and status.
 - `error` → rendered as a bold-prefixed assistant entry.
 - `notice` → append a dim system-status line (F.2: retry / compaction /
   rate-limit / refusal — the events the terminal shows in degraded service).
@@ -1054,6 +1131,28 @@ button — that's part of the identity, not an omission. While a turn is in
 flight a `■ esc` stop affordance appears (T.2); it and the page-wide Esc key
 both interrupt the turn, leaving the session warm.
 
+The command language remains the selected provider's, not Mirafold's. Typing
+the first `/` opens Claude Code's live SDK catalog or the faithfully
+reimplemented `/model` choice for Codex/Gemini; typing `$` opens Codex's live
+skill catalog. Slash completion is a whole-prompt prefix, while `$skill` can
+complete at any whitespace-delimited token. The shell filters as you type;
+arrows move and keep the active row visible inside an overflowing list,
+Tab/Enter insert without submitting, Escape closes, and clicking works too.
+Catalog replacement is live (including Claude's `commands_changed`) and never
+enters transcript history. Provider- or workspace-supplied catalog text is
+visibly badged with its fixed source (`Claude Code command`, `Codex skill`);
+the source label is chosen by Mirafold, not copied from that metadata.
+
+A primary desktop mouse click on inert transcript content focuses the prompt
+without moving the transcript at all — its exact scroll position and detached
+follow-tail state are preserved while output continues. Links, buttons,
+generated controls, live text selection, secondary pointers, and touch retain
+their ordinary behavior; normal `Tab` traversal and keyboard scrolling are not
+redirected. Typing a supported `/` or `$` while non-editable page chrome has
+focus still routes that exact keystroke into the existing draft and opens
+completion immediately. Open dialogs and other editable controls retain their
+own focus.
+
 ## 7. Design identity (locked)
 
 The visual language is a **terminal transcript, not a chat app** — worth
@@ -1101,14 +1200,14 @@ knowing because it constrains future UI work:
   (2026-07-25). Mission control renders a notch larger than the in-session
   workbench (`zoom: 1.15`, reset on phone; the agent picker hosted inside it
   compensates via the fluid `--onb-squeeze` chrome).
-- **Visibility superset + collapse-on-finalize** (the Phase T2 rule): the
-  browser must never show *less* than the terminal — thinking, full tool
-  detail, diffs, subagent progress, todos, and usage are all surfaced — but
-  noisy-but-faithful streams render live during the turn, then fold to a dim
-  expandable one-liner once the answer lands. Total fidelity, clean
-  transcript; the web skin gets to do both, which the terminal can't. Every
-  stream-handling decision passes one check: *would a terminal user miss
-  this line?*
+- **Provider-native transcript fidelity + collapse-on-finalize**: mirror the
+  selected terminal's user-visible work state, not every raw adapter event.
+  Live activity and failures stay explicit; contiguous successful tool runs
+  fold at the real turn boundary into dim expandable records, with full inputs,
+  outputs, diffs, subagent calls, todos, and usage retained where the provider
+  exposes them. A visible failure or intervening transcript row is always a
+  fold boundary. Every stream decision passes both checks: *is this something
+  the native terminal presents?* and *would hiding it remove useful state?*
 
 ## 8. Running it
 
@@ -1144,6 +1243,11 @@ when resolving host chrome and agent CLIs. That removes executable shadowing,
 not the need to inspect the checkout: review or temporarily rename its `.env`
 before first launch because supported settings can select endpoints, relay
 access, resource limits, and whether local socket authentication is enabled.
+If a checkout supplies `ANTHROPIC_BASE_URL`, Mirafold will not attach an
+Anthropic API key/auth token inherited only from the parent daemon process to
+that checkout-selected destination. The endpoint can use a credential supplied
+by the same constrained project configuration, or it runs with the fixed local
+dummy token; the first-party credential remains separately selectable.
 
 The package ships only the launcher + the two esbuild bundles + the built front
 end; agent credentials come from your environment exactly as in a terminal
@@ -1216,7 +1320,10 @@ a live path — those providers' terms don't allow subscription use in a
 third-party app, so the picker shows it as `blocked` and points you at the API
 key (a Codex/ChatGPT subscription works locally, but not over the paid relay).
 Point an agent at a local endpoint (Ollama, a proxy — e.g. `ANTHROPIC_BASE_URL`)
-and it's BYO, no restriction. The one dated source of truth for the whole rule
+and it's BYO, no restriction. Configured endpoint URLs remain server-side—even
+when they contain URL auth/query data—and the picker carries only an opaque
+identifier. A checkout-selected Claude endpoint cannot inherit a parent-only
+Anthropic credential. The one dated source of truth for the whole rule
 is `server/provider-policy.ts`. The optional env file is parsed with Node's
 dotenv parser, then only documented Mirafold data settings are copied into the
 daemon environment; an existing parent-process value always wins. Executable
@@ -1228,9 +1335,12 @@ offered at onboarding), the per-agent model overrides `DEFAULT_MODEL` /
 local-server discovery knobs
 `MIRAFOLD_LOCAL_ENDPOINTS` / `MIRAFOLD_LOCAL_DISCOVERY` (Phase N — the
 onboarding picker probes localhost's well-known runtime ports and offers a
-running Ollama/LM Studio/vLLM per session; see `docs/local-models.md`), and
+running Ollama/LM Studio/vLLM per session),
+`MIRAFOLD_CODEX_LOCAL_TURN_TIMEOUT_MS` (discovered-local Codex turn deadline;
+default 480000 ms, `0` disables it; see `docs/local-models.md`), and
 these tuning knobs:
-`SESSION_IDLE_TIMEOUT_MS` (unattended-session lifetime),
+`SESSION_IDLE_TIMEOUT_MS` (warm-engine idle-unload delay; the dormant
+checkpoint remains),
 `PERMISSION_TIMEOUT_MS` (how long a permission prompt waits before denying),
 `TOOL_OUTPUT_CAP_BYTES` (per-result output cap before the elision marker,
 default 64 KB), `BANG_CONTEXT_CAP` (tail of a `!` transcript injected into
@@ -1314,7 +1424,8 @@ reconnect state machine on a stubbed WebSocket, and the R.3 E2E crypto —
 tamper/replay/reorder/wrong-key all rejected), `*.itest.ts` (Tier 2,
 integration — the auth gate, DoS caps, the mock-turn wire grammar, the
 interrupt/component-action wire paths, the permission deny-on-timeout,
-registry replay/resume, the bang-secrets invariant, the stdio render-MCP
+registry replay/resume plus daemon-restart provider recovery, the
+bang-secrets invariant, the stdio render-MCP
 stub's ack contract over a real MCP handshake, the relay path over the
 in-repo stub: byte-for-byte local/remote mirror, a ciphertext-only tap audit
 of what the relay can observe, fail-closed tamper/wrong-code, daemon re-dial,
@@ -1324,7 +1435,9 @@ health-check hardening and a routing-contract guard), and `*.e2e.ts` (Tier 3 —
 rendering in the DOM, the artifact iframe executing under the CSP with a
 hostile-artifact containment proof (each defense verified by flipping it),
 a second browser mirrored through the relay stub, a killed-mid-turn daemon
-restart showing an honest "session ended" notice, the launcher's browser-open
+restart preserving the URL/transcript and closing the interrupted turn
+honestly, provider-native pre-submit completion + prompt-focus keyboard paths,
+settled activity compaction, the launcher's browser-open
 guarantee (a stub `xdg-open` proves, from inside the spawned opener, stdio →
 `/dev/null` + own session — a cold-started browser can never chatter into the
 user's terminal), and the phone suite:
@@ -1342,8 +1455,12 @@ OpenRouter, and a ChatGPT-account session was handed `meituan/longcat-2.0`
 with every mock green. Today it covers a pinned catalog question (first-party
 ids only, exactly one default row), the same question in the configuration
 that actually broke (skipped without an `OPENROUTER_API_KEY`), and a full turn
-driven through a real local model. Each test skips with a reason when its tool
-isn't installed, so a bare machine stays green.
+driven through a real local model after exercising the shipped, explicit
+`/effort none` control (the product default remains inherited). The local test
+accepts only a model whose Ollama metadata proves an explicit 32K context and
+sorts the eligible names, so recency ordering or silent 4K prompt truncation
+cannot produce a false green. Each test skips with a reason when its tool isn't
+installed, so a bare machine stays green.
 
 Three rules the suite is built on: **no test may reach a metered model** —
 Tier 2/3 spawn the daemon with every provider credential forced empty (a set
@@ -1392,7 +1509,8 @@ inherited `settings.json`.
 
 ## 9. Life of a turn (end to end)
 
-1. User types in `PromptBox`, hits Enter → `Shell.sendPrompt(text)`.
+1. User types in `PromptBox` (provider `/` commands and Codex `$` skills are
+   completed locally before submit), hits Enter → `Shell.sendPrompt(text)`.
 2. Shell sends `{type:"prompt", text}` over the socket; the server
    broadcasts `{type:"user_prompt"}` onto the session stream → the command
    strip appears in every attached viewport, status shows `✳ thinking…`.
@@ -1406,14 +1524,17 @@ inherited `settings.json`.
    stream events flow through `pump()`: reasoning → `thinking_delta`, full
    tool calls → `tool_use`/`tool_result` records (subagent calls tagged with
    `parentId`), TaskCreate/Update → the live `todo-list`, text → `text_delta`.
-6. Every `WireMsg` is buffered in the session's ring buffer and fanned out
-   to all viewports; `SocketClient` dispatches to the bus; `RenderZone`
-   interprets: the thinking block streams then folds, tool records append as
-   collapsed rows, deltas accumulate into the streaming assistant turn,
-   markdown re-renders as it grows.
+6. Every transcript `WireMsg` is buffered in the session's bounded ring and
+   checkpointed; prompts and terminal boundaries reach durable storage before
+   their viewport acknowledgment. The message fans out to all viewports;
+   `SocketClient` dispatches to the bus; `RenderZone` interprets: thinking
+   streams then folds, live/error tools remain explicit, deltas accumulate
+   into the assistant turn, and markdown re-renders as it grows.
 7. The SDK emits `result` → server sends (`error` if failed, then) a `usage`
    record (feeding the status bar) then `turn_end` → RenderZone finalizes the
-   turn, clears status. The session stays warm, waiting on the queue for the
+   turn, folds each contiguous successful tool run without crossing visible
+   failures or transcript rows, clears status, and commits the completed
+   transcript boundary. The session stays warm, waiting on the queue for the
    next prompt.
 
 ## 10. Where the code is going (orientation, not a roadmap copy)
@@ -1429,10 +1550,11 @@ Read PLAN.md for the real thing; the shape in one breath:
   **all of Phase 3** — the sandboxed artifact host (verified against a
   hostile artifact), the `emit_artifact` capability, the nonce-stamped
   action bridge, and graceful failure fallbacks; and **all of Phase T2** —
-  full-stream visibility parity: thinking text (collapse-on-finalize),
+  the original full-stream fidelity foundation: thinking text,
   Edit/Write diffs, honest output truncation, subagent nesting, the live
-  todo checklist, and the status bar with usage. The browser now shows
-  strictly more than the terminal, never less.
+  todo checklist, and the status bar with usage. Phase UX later tightened
+  its presentation to provider-native visibility with turn-final activity
+  compaction.
 - **Also shipped (2026-07-06, the identity + the product path):** **Phase P**
   — faithful browser skins for Codex (OpenAI) and Gemini CLI beside Claude
   Code, one adapter each (drive that agent's engine, normalize to `WireMsg`,
@@ -1464,7 +1586,8 @@ Read PLAN.md for the real thing; the shape in one breath:
   ignore-unknown on both ends (R.4h); version everywhere plus timestamped
   error mirroring and `MIRAFOLD_DEBUG=1` (R.4g); an honest "session ended,
   started a new one" notice replaces a silent URL swap, and a dead daemon
-  no longer leaves a fake "still working" state (R.4c); and the artifact
+  no longer leaves a fake "still working" state (R.4c; Phase UX later limits
+  that fresh-session fallback to truly unknown ids); and the artifact
   sandbox's containment properties are now proven by tests that fail when
   each defense is flipped (R.4e). Also: **R.2's code half** — the
   deployable relay service (the sibling `mirafold-relay` repo), hardened (caps,
@@ -1508,10 +1631,24 @@ Read PLAN.md for the real thing; the shape in one breath:
   panel behind the activity bar: jailed listing, file view, HEAD-vs-working
   diffs, now fetched one directory per expand with each nested repo's own
   statuses and ignore rules, so a session can root at a folder of many
-  repos); **mission control grown into
+  repos; Phase E3 adds the compact inset tree surface and alongside-name
+  folder/file-family glyphs); **mission control grown into
   a cockpit** (**Phase M** — answer permissions, interrupt, and dispatch
   prompts from the grid without entering a session); and the workbench-frame
   polish + the by-surface `styles.css` reorganization (2026-07-25, §7).
+- **Also shipped (2026-08-09 → 10): Phase UX** — pre-submit discovery for
+  faithfully executable provider choices (Claude's live SDK `/` catalog,
+  Codex `/model` plus live `$` skills, and Gemini `/model`),
+  scroll-preserving desktop transcript-click prompt focus, completed-turn
+  activity folded into chronology-preserving terminal-sized lines, and owner-only atomic
+  session checkpoints that lazily resume the same Claude/Codex/Gemini
+  conversation after a daemon restart. Explicit End Session deletes;
+  corrupt/unavailable recovery never falls through to a blank replacement.
+  The UX.8 security closure binds Claude credentials to their configured
+  destination, makes configured endpoint identity opaque on the browser wire
+  and raw logs, derives local-device claims with exact loopback parsing,
+  attributes provider catalog metadata in trusted prompt chrome, and strictly
+  decodes every checkpointed transcript frame before replay.
 - **Now (as of 2026-07-25):** finishing **Phase R**. The billing vendor is
   locked (Paddle, as merchant of record; account created and both
   verification reviews approved 2026-07-19). The build steps that remain: the R.4l

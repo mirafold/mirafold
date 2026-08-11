@@ -60,10 +60,21 @@ export function jsonRpcOneShot<T>(opts: {
         // would throw inside this stream listener and crash the whole daemon
         // (reproduced live, 2026-07-19 audit).
         if (typeof msg !== "object" || msg === null) continue;
-        opts.onMessage(msg, send, finish);
+        try {
+          opts.onMessage(msg, send, finish);
+        } catch (err) {
+          // Provider catalogs are untrusted process output. A decoder bug or
+          // malformed nested row must reject this one-shot lookup, never throw
+          // out of a stream callback and terminate the Mirafold daemon.
+          finish(err instanceof Error ? err : new Error(String(err)));
+        }
       }
     });
 
-    opts.start(send);
+    try {
+      opts.start(send);
+    } catch (err) {
+      finish(err instanceof Error ? err : new Error(String(err)));
+    }
   });
 }

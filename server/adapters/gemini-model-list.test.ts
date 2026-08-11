@@ -37,6 +37,7 @@ rl.on("line", (line) => {
           sessionId: "s1",
           models: {
             availableModels: [
+              null,
               { modelId: "auto", name: "Auto", description: "Let Gemini CLI decide" },
               { modelId: "gemini-x-pro", name: "gemini-x-pro" },
             ],

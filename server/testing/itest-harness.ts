@@ -4,6 +4,8 @@
 // mock adapter behind the AgentSession seam.
 
 import { execFileSync, spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
@@ -41,6 +43,7 @@ export const SCRUBBED_CREDENTIAL_ENV = {
   GOOGLE_API_KEY: "",
   CODEX_HOME: path.join(ROOT, "itest-no-codex-home"), // no auth.json here
   MIRAFOLD_LOG_FILE: "", // never write the real flight-recorder file from tests
+  MIRAFOLD_SESSION_DIR: path.join(os.tmpdir(), `mirafold-itest-${process.pid}`),
   // R.4b made a `claude` subscription login count as live credentials —
   // point the check at an empty dir so a logged-in dev machine (the
   // usual case) still runs every test against the mock.
@@ -78,6 +81,12 @@ export function startDaemon(env: Record<string, string> = {}): Promise<Daemon> {
       // TTL's — fixture servers appear/disappear mid-test and the
       // assertions watch for exactly that.
       MIRAFOLD_LOCAL_PROBE_TTL_MS: "0",
+      // Session checkpoints are production state. Every daemon test gets an
+      // isolated temp store unless a recovery test deliberately supplies one.
+      MIRAFOLD_SESSION_DIR: path.join(
+        os.tmpdir(),
+        `mirafold-itest-${process.pid}-${randomUUID()}`,
+      ),
       // Random base + the daemon's own EADDRINUSE walk absorbs collisions
       // between parallel test files; the real port is read off stdout.
       PORT: String(3900 + Math.floor(Math.random() * 90)),

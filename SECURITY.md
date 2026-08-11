@@ -22,6 +22,12 @@ raw agent HTML must never escape the sandboxed iframe. Anything that lets
 model-controlled output cross that line is a vulnerability, and exactly the
 kind of report we want.
 
+Provider/repository prompt catalogs also render inside trusted shell chrome.
+Their descriptions are inert React text, visibly attributed with a fixed
+adapter-owned badge, and entries containing invisible direction/line controls
+are dropped. A provider cannot choose the badge text or present its metadata as
+an unattributed Mirafold instruction.
+
 ## Running it safely
 
 Mirafold drives an agent that has your filesystem and your shell. That is the
@@ -55,13 +61,32 @@ things follow, and they are the whole list:
   checkout trusted: inspect or temporarily rename its `.env` before first
   launch because supported settings can still select endpoints, relay access,
   resource limits, and authentication posture.
-- **Keys stay server-side.** Credentials come from the environment or a `.env`
-  in the launch directory and are never serialized to the browser. Mirafold
+- **Keys and configured endpoint URLs stay server-side.** Credentials come
+  from the environment or a `.env` in the launch directory and are never
+  serialized to the browser. Configured URLs are sensitive too: userinfo or a
+  signed query can carry authentication, and a hostname can expose private
+  tenant/network identity. A configured Claude row therefore receives only a
+  random daemon-scoped identifier; a Codex row uses its declared provider name
+  while its base URL remains internal. Raw logs name only “configured endpoint.” Mirafold
   parses that file through an explicit allowlist of documented data settings;
   parent-process values win, and executable overrides, `PATH`/shell controls,
   runtime loader hooks, and arbitrary project variables are ignored. The file
   remains active application configuration, so review it before launching an
-  unfamiliar checkout.
+  unfamiliar checkout. Crucially, a checkout-supplied `ANTHROPIC_BASE_URL`
+  cannot inherit an Anthropic key/token supplied only by the parent daemon: it
+  may use a credential supplied by that same constrained project configuration
+  or the fixed local dummy token. Discovered endpoints always receive the
+  dummy and have both real Anthropic credential variables removed.
+- **Saved transcripts are treated as untrusted input on recovery.** Session
+  checkpoints are owner-only, bounded, and atomically replaced, but local
+  corruption/tampering is still decoded through a strict allowlist of every
+  persistable sequenced message shape. Per-viewport/control frames, replay
+  stamps, malformed payloads, unsafe catalog controls, and non-monotonic
+  sequences make the saved session unavailable instead of replaying into the
+  trusted shell. Checkpoints contain no standalone provider keys/tokens, but
+  can contain a sensitive configured endpoint URL; keep the state directory
+  private. An authenticated saved Claude endpoint is reopened only when the
+  current endpoint and header-credential mode still match exactly.
 
 ## Known trust decisions (disclosed, not bugs)
 
@@ -76,9 +101,13 @@ agent pointed at localhost has, and it requires a hostile process already
 running on your machine (or another user on a shared one). On shared
 machines, verify what's serving a port before picking it. Mirafold's side
 of the guard: your real API keys are withheld from sessions pointed at
-local servers, the browser can only ever pick endpoints the daemon itself
-discovered, and the agent's permission prompts still gate consequential
-actions. `MIRAFOLD_LOCAL_DISCOVERY=off` disables the probing entirely.
+discovered local servers, the browser can only ever pick addresses the daemon
+itself discovered (configured endpoints use an opaque identifier), and the
+agent's permission prompts still gate consequential actions.
+`MIRAFOLD_LOCAL_DISCOVERY=off` disables the probing entirely. The “local”
+privacy tag is derived server-side from exact `localhost`, IPv4 127/8, or IPv6
+loopback parsing; hostname lookalikes such as `127.attacker.test` are never
+classified as on-device.
 
 **A `!` command's finished output is fed to the agent.** A `!` (bang)
 command's transcript is delivered to the agent as its own turn once the
@@ -99,15 +128,53 @@ Treat the QR like a password field: show it only to the device you're
 pairing, and relaunch the daemon (which mints a fresh code) if it may have
 been captured.
 
-**The `.env` guard is path-based; symlinks are the accepted residual.**
-The daemon denies its auto-allowed read-only tools (Read, NotebookRead,
-Grep, Glob) access to its own `.env`/`.env.local` by resolved path —
-direct paths, `../` traversals, and cross-cwd routes are all denied and
-pinned by tests. A symlink pointing at those files is not caught. The
-guard is defense-in-depth, not the boundary: creating a symlink or running
-`cat .env` takes a tool that prompts (Bash, Write), so the closed routes
-are the zero-click ones. A prompt-free path to the daemon's secrets is a
-vulnerability we want reported.
+**A user-PINNED pairing code is trusted for its strength; only length and
+charset are enforced (accepted, 2026-08-11 audit).** The default code is a
+random 128-bit value — nobody guesses it. A power user may instead pin one via
+`MIRAFOLD_RELAY_CODE`, and that value is refused only if it is shorter than 16
+characters or carries characters the pairing link can't encode. It is NOT
+scored for entropy, so a long-but-guessable code (`passwordpassword`) is
+accepted. Because the relay identifies a pair by `SHA-256(code)` — a value the
+relay operator logs by design — a low-entropy pinned code is offline-crackable
+by whoever holds those logs, and a crack is full remote drive of the session.
+Accepted rather than fixed: any automated entropy gate on a user-chosen string
+either false-rejects legitimate strong passphrases or is trivially gamed, and
+the safe default (random 128-bit) is what everyone who doesn't pin a code gets.
+If you pin one, pin a random one — treat it exactly like a password.
+
+**A credential pointed at a plaintext non-loopback endpoint is sent in the
+clear; the daemon warns but still proceeds (2026-08-11 audit).** The relay is
+end-to-end-encrypted, but two paid-tier bearer credentials travel OUTSIDE that
+seal: the entitlement token rides the relay dial as a header, and the license
+key POSTs to the entitlement exchange. Both default to TLS (`wss://` /
+`https://`). If an operator overrides `MIRAFOLD_RELAY_URL` or
+`MIRAFOLD_ENTITLEMENT_URL` with a plaintext (`ws://` / `http://`) address to a
+real (non-loopback) host — a self-host misconfiguration — that credential
+crosses the network readable, and a thief can impersonate the paying customer
+to the relay (no API-key or shell exposure: those never leave the machine).
+The daemon now prints a loud warning at boot in that case
+(`carriesCredentialInClear`, `server/relay/relay-url.ts`) and continues, the
+same posture it takes for a disabled auth token or a weak pin — self-hosting
+over plaintext on a trusted network stays possible, just noisy. Loopback is
+exempt (the dev stub and same-box self-host carry nothing off-machine).
+
+**The `.env` guard is path-based; symlinks and hardlinks are the accepted
+residual.** The daemon denies its auto-allowed read-only tools (Read,
+NotebookRead, Grep, Glob) access to its own `.env`/`.env.local` by resolved
+path — direct paths, `../` traversals, cross-cwd routes, AND case-variant
+spellings (`.Env`/`.ENV`) on a case-insensitive filesystem are all denied and
+pinned by tests. The case-variant route was a real zero-click gap on
+macOS/Windows: the guard compared the resolved path against a case-sensitive
+set, so `Read(".Env")` resolved to a name not in the set, passed, and read the
+real `.env` (the API key) back with no prompt. Fixed 2026-08-11 by folding case
+exactly where the host filesystem does (`resolvesToSecretFile` /
+`makeCanUseTool`'s `caseInsensitiveFs`, `server/security/permissions.ts`),
+pinned by mutation-verified regressions in `permissions.test.ts`. A **symlink**
+or a **hardlink** pointing at those files is still not caught. The guard is
+defense-in-depth, not the boundary: creating either takes a tool that prompts
+(Bash, Write) or pre-existing local write access to the daemon's own directory,
+so the closed routes are the zero-click ones. A prompt-free path to the
+daemon's secrets is a vulnerability we want reported.
 
 The **Explorer's** read-only file browser (`fs_list`/`fs_listdir`/`fs_read`/
 `fs_diff`, Phases E and E2) shares this same guard: it refuses
