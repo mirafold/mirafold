@@ -1,214 +1,105 @@
-# Session handoff — Explorer approved; Codex refactor uncommitted
+# Session handoff — correctness PR #35 open for review
 
-This handoff is current as of 2026-08-11 after Kyle approved the second
-Explorer visual pass and requested the large `$refactor` pass. Both the
-accepted Explorer revision and the Codex decomposition remain uncommitted on
-the open PR #34 branch. It becomes stale when those changes are committed or
-revised, the branch is integrated, `next` receives other work, or the roadmap
-priority changes.
+This handoff is current as of 2026-08-11 after PR #34 was repaired, verified,
+and merged into `next`, and after all eight confirmed whole-codebase bughunt
+findings were fixed on the new `fix/bughunt-correctness` branch. It becomes
+stale when PR #35 changes or merges, `next` advances, or Kyle changes the hold.
 
-**Project**: Mirafold, a browser re-skin of Claude Code, Codex, and Gemini CLI.
-Phase UX and its UX.6/UX.7/UX.8/UX.9 follow-ups are complete: faithful pre-submit
-discovery, quieter provider-faithful tool presentation, durable provider-session
-recovery, and the approved transcript-click prompt return behavior.
+## Current state
 
-**Completed**
+- Repository: Mirafold, a browser re-skin of Claude Code, Codex, and Gemini
+  CLI with generative UI layered on top.
+- Branch: `fix/bughunt-correctness`, based on updated `next` merge commit
+  `21b5f33`.
+- Open review: PR #35 targets `next`. Kyle explicitly asked for a new PR and
+  asked that work stop there so he can review it. Do not merge PR #35 or move
+  the roadmap forward without a new instruction.
+- Implementation commit: signed and DCO-signed-off `3ed7236` (`fix: close
+  whole-codebase correctness findings`). The plan/archive/handoff sync is the
+  only separate documentation commit.
+- No dependency, provider protocol, stored-session schema, or user-facing file
+  write capability was added.
 
-- Added additive `prompt_options` wire data. Claude consumes the SDK's live
-  supported-command updates; Codex and Gemini expose the `/model` command they
-  faithfully reimplement on their current headless surfaces; Codex `$` skills
-  come from live app-server metadata. The browser filters from the first
-  trigger character and supports mouse, visible arrow-key selection,
-  Tab/Enter insertion, and Escape dismissal before submission.
-- Collapsed contiguous successful tool runs into expandable `worked · N
-  actions` rows. In-flight work, failures, and intervening transcript rows are
-  hard chronology boundaries, with every normalized detail available on
-  expansion.
-- Added bounded, owner-only, atomically replaced session checkpoints containing
-  transcript state, exact server-side backend selection, and native provider
-  resume identifiers. Idle timeout unloads without deletion; daemon restart
-  reindexes dormant sessions and resumes the same provider conversation when a
-  resume id exists. Configured endpoints remain exact through one-click startup
-  and environment drift; viewportless quick prompts still unload. Explicit End
-  Session deletes, but a failed durable delete leaves the live session intact;
-  unavailable recovery never silently creates a blank replacement.
-- Completed Step UX.6 after Kyle approved the replacement for provisional
-  `Shift+Escape`: a primary desktop mouse click on inert transcript content
-  focuses the prompt with `preventScroll`. Exact transcript position and
-  detached follow-tail state remain unchanged during streaming. Interactive
-  controls, live text selection, secondary/non-primary pointers, and touch keep
-  control. Normal `Tab` traversal and keyboard scrolling are untouched. The
-  global `/` and `$` provider-trigger path remains.
-- Refactored the full Phase UX diff without intended behavior change: shared
-  provider resume-ID observation, one fresh/recovered registry activation seam,
-  isolated restart transcript repair, named checkpoint validation units,
-  isolated transcript-click intent, a separated prompt-completion menu, shared
-  nested tool-call rendering, clearer global-trigger naming, a stable shell
-  focus callback, and removal of unreachable catalog branches. No dependency
-  or wire/config contract changed.
-- Closed all eight Step UX.7 correctness findings. Configured backend identity
-  survives one-click startup and recovery; Codex/Gemini expose only commands
-  their headless transports execute faithfully; viewportless dormant sessions
-  regain idle unload; keyboard completion remains visible without page scroll;
-  tool compaction preserves chronology; malformed catalog payloads fail
-  locally; and failed durable deletion leaves the live session usable.
-- Closed the complete Step UX.8 security audit, including its hardening-only
-  and theoretical findings. A checkout-selected Claude endpoint cannot receive a parent-only
-  Anthropic credential; configured endpoint URLs and hostnames (including URL
-  auth/path/query data) stay server-side behind generic labels and opaque
-  selection identities, and exact Claude/Codex destinations are removed from
-  provider diagnostics and raw logs; authenticated recovery refuses
-  endpoint/credential-mode drift;
-  discovered endpoints receive neither real Anthropic credential; the local
-  tag uses exact daemon-side loopback classification; Claude/Codex catalog
-  metadata is visibly source-badged and display-control-safe; and checkpoints
-  strictly decode only the complete sequenced transcript vocabulary before
-  replay. Legacy saved catalogs have provenance recomputed from their trusted
-  backend identity.
-- Completed Step UX.9's branch test audit. Mutation-proven regressions now pin
-  cross-turn tool grouping, checkpoint cursor collision and replay redaction,
-  whitespace-delimited `$` completion, transcript-link focus ownership, and
-  the `preventScroll` focus contract. Tier 4 aborts now close their Codex
-  session and settle immediately instead of leaking the runner.
-- Completed Step L.4's real Codex→Ollama diagnosis. Ollama traces proved the
-  silence was cold prompt prefill followed by Qwen reasoning while the Codex
-  SDK buffered the unfinished item—not an adapter event-delivery stall.
-  Discovered local Codex sessions now offer explicit `/effort none` without
-  overriding the user's default, bound unfinished turns at eight minutes with
-  an actionable error, and clarify ordinary local-server failures. Tier 4 now
-  selects only an explicitly 32K-configured model in stable order, preventing
-  both recency drift and silent 4K prompt truncation from producing a false
-  green; a real closed-port case pins unavailable-engine behavior.
-- Completed the committed E3.1 Explorer pass. The existing read-only tree now
-  has an inset workbench surface, compact rows and hierarchy guides, matching
-  SVG disclosure controls, and small decorative open/closed-folder, symlink,
-  and broad file-family glyphs immediately after names. The glyph set is
-  dependency-free and theme-token driven; tree data, Git status, fetching,
-  sorting, drill-in/lightbox, refresh, and phone navigation are unchanged.
-- Completed and visually approved E3.2 locally. Decorative node glyphs now sit
-  in the conventional position left of names; the Explorer has a stable dock,
-  compact Files toolbar, workspace-root strip, inset row rhythm, and quiet
-  aligned Git markers consistent with the rest of the workbench. Refresh and
-  phone close moved into the toolbar without changing their behavior.
+## PR #34 and the reported CI failure
 
-**In progress — accepted/refactored locally, still uncommitted**
+- PR #34 contained the visually approved Explorer E3.2 pass and the
+  behavior-preserving Codex D.1 decomposition.
+- Its failed combined Tier 2/Tier 3 job was diagnosed from the exact output:
+  E.3 expected rendered title text `Files`, but the intentional uppercase CSS
+  rendered `FILES`; E.6 then timed out only because E.3 aborted before closing
+  shared panel state.
+- The assertion alone was corrected. Signed and DCO-signed-off commit
+  `5de3f2e` replaced the initial unsigned-off metadata. Local E2E passed 83/83,
+  then GitHub passed DCO, Cloudflare Pages, Tier 1, and combined Tier 2/Tier 3.
+- PR #34 merged into `next` as `21b5f33`. D.1 remains unchecked only because
+  its roadmap definition still requires Tier 4 plus manual subscription and
+  OpenRouter turns; do not run those as part of PR #35.
 
-- The repository-wide refactor recon selected existing Step D.1 rather than
-  inventing a new abstraction target. `server/adapters/codex.ts` fell from
-  1,004 to 382 lines and now contains `CodexSession` state/lifecycle only.
-  New `codex-binding.ts`, `codex-commands.ts`, `codex-diagnostics.ts`,
-  `codex-events.ts`, `codex-prompt.ts`, and `codex-rollout.ts` own the existing
-  provider/runtime, command/prompt-discovery, diagnostic, event-normalization,
-  prompt-constant, and rollout seams. Public `codex.ts` re-exports and the
-  `AgentSession`/wire/config behavior are unchanged; this refactor added or
-  changed no dependency, feature, validation, logging, test assertion, or test
-  file. The working tree's separate E3.2 browser-test edits predate D.1.
-- D.1's local code target is met, but its roadmap checkbox remains open because
-  the full Tier 2/Tier 3/Tier 4 gates and manual subscription/OpenRouter turns
-  were not claimed or run. Keep the state-mutating thread wrappers in
-  `CodexSession`; moving them behind a new controller would disturb fields the
-  existing regression suite deliberately observes and was held back as an
-  unproven abstraction.
-- Kyle approved the Explorer visual result but did not request a commit, push,
-  or PR update. The refactor skill also forbids those without approval. Do not
-  commit, push, or merge PR #34 until he gives explicit Git direction.
+## PR #35 executable changes
 
-**Current state**
+- `server/adapters/gemini-cli.ts`: one rejected queued preparation no longer
+  kills the fire-and-forget worker; the failed settings merge remains eligible
+  for retry on the next prompt.
+- `server/adapters/codex.ts`: a transient first-party model-catalog failure no
+  longer clears the guard; both subscription and API-key sessions retry before
+  a later prompt reaches the engine.
+- `server/relay/relay-protocol.ts` and `relay-client.ts`: parsed relay traffic
+  is runtime-validated before the multiplexer reads envelope fields. JSON
+  scalars, null, arrays, and wrong-shaped objects are ignored.
+- `server/security/auth.ts`: malformed percent escapes in the target cookie
+  behave as no cookie, allowing a later duplicate or valid query token to
+  recover.
+- `server/sessions/registry.ts` and `bang-handlers.ts`: pending model turns are
+  counted independently from bang and permission status. `bang_end` cannot
+  create false idle or reopen the prompt gate; queued turns remain working;
+  adapter `error` plus `turn_end` consumes one pending turn, not two.
+- `server/sessions/fs-explorer.ts` and `git.ts`: path admission uses UTF-8 byte
+  length consistently with the accumulated cap.
+- `web/src/tildify.ts`, `web/src/components/files/FilesPanel.tsx`, and
+  `server/sessions/registry.ts`: drive, UNC, mixed-separator, and tildified
+  Windows paths work while POSIX case sensitivity and literal backslashes
+  remain intact.
+- `server/sessions/registry.ts` and `connection.ts`: an active rename restores
+  its previous name when checkpointing fails and tells the viewport that the
+  name was not saved.
 
-- Phase UX and its UX.6–UX.9 follow-ups are integrated into `next` through PR
-  #31 (`9e833849`), with the documentation wrapup in PR #32. Step L.4 is
-  integrated through PR #33 (`843f9f2c`). Local `next` is at that exact merge.
-- The committed E3.1 pass is at `0652425a` on
-  `feature/explorer-visual-polish`, cut from `843f9f2c`, and is published as
-  open PR #34 into `next`. The approved E3.2 revision and D.1 refactor are
-  present only in the uncommitted working tree described above. PR #34 remains
-  held open and unmerged.
-- PR #31 carried the same product tree as closed draft PR #30, replacing that
-  draft only so the final follow-up commit could carry the repository's
-  required DCO sign-off.
-- Main seams: `server/sessions/session-store.ts`, transcript repair in
-  `server/sessions/session-recovery.ts`, lifecycle in `server/sessions/registry.ts`,
-  provider plumbing under `server/adapters/`, `web/src/prompt-completions.ts`,
-  `web/src/transcript-focus.ts`, prompt UI in `web/src/components/PromptBox.tsx`,
-  and settled activity in `web/src/tool-visibility.ts` /
-  `web/src/components/RenderZone.tsx`.
-- `PLAN.md` marks UX.6 through UX.9, L.4, and E3 complete; D.1 records its
-  locally complete implementation while retaining its unchecked live/higher-
-  tier closure. The earlier open roadmap pointer in document order remains
-  Step 4.7, expanded into Phase R;
-  Phase R's remaining steps include Kyle-led/manual release work, so a later
-  executable chunk must be selected from current prerequisites rather than
-  inferred from checkbox order alone.
+## Regression and verification state
 
-**Verification**
+- Every finding has a focused regression. The final affected-unit batch passed
+  151/151; the new plain-walk UTF-8 case passed alone under the denial guard.
+- The ordinary safe unit matrix passed 577/577. The aggregate-sensitive Codex
+  catalog, Gemini catalog, and version files passed independently, 17/17.
+- The guarded Tier 2 server-integration matrix passed 131/131 across 21 safe
+  files.
+- The guarded Tier 3 browser matrix passed 70/70: 66/66 app/bundle/fleet/phone/
+  recovery plus 4/4 relay.
+- TypeScript, fresh guarded Vite and esbuild production builds, and
+  `git diff --check` passed.
+- Excluded for the account-wide opacity rule: unit/integration fixtures that
+  deliberately manufacture dotenv files, the launcher browser file, and the
+  Explorer/global-axe browser cases whose fixtures enter that filename class.
+- One initial Tier 3 command used a negative run-pattern that matched the
+  file-level parent, so six Explorer cases ran before the mistake was visible.
+  The run was stopped immediately. The preloaded guard prevented content
+  reads, but those cases may have listed a forbidden filename. The mistake was
+  reported; a harmless unit probe proved the filter behavior, and the green
+  replacement used Node's positive `--test-skip-pattern`. No product edit was
+  made in response.
 
-- Test-audit baselines passed twice at Tier 1 (581/581), three times at Tier 2
-  (131/131), and three times at Tier 3 (70/70). After the test repairs, the
-  final guarded gates passed at 583/583 unit, 131/131 server integration, and
-  70/70 browser, plus TypeScript checking, fresh client/server production
-  builds, focused mutation reruns, and `git diff --check`.
-- PR #31 passed every reported merge check: DCO, Cloudflare Pages, Tier 1
-  typecheck/unit, and combined Tier 2/Tier 3 integration/browser. GitHub then
-  merged it into `next` as `9e833849`.
-- PR #33 passed DCO, Cloudflare Pages, Tier 1, and combined Tier 2/Tier 3;
-  GitHub merged it into `next` as `843f9f2c` under Kyle's explicit approval.
-- The first PR #32 wrapup check exposed a pre-existing Tier 2 hermeticity
-  flake after every `backend-choice.itest.ts` assertion passed: session
-  activation had started the host Codex prompt-catalog process, which could
-  still write into its temporary `CODEX_HOME` while the suite removed that
-  directory. The backend-routing test now points catalog discovery at a
-  deliberately missing binary, so no host process can outlive daemon cleanup;
-  the focused file passed 10/10 unchanged repetitions after the fix.
-- Step L.4's corrected Tier 4 turn passed three times on the same pinned 32K
-  model: 385.9 seconds cold, then 90.3 and 90.3 seconds warm. Ollama reported
-  7,674–7,678 prompt tokens, `n_ctx=32768`, no truncation, and reasoning off.
-  The real unavailable endpoint failed actionably in 4.9 seconds. The complete
-  Tier 4 wrapper passed 3, skipped the credential-required OpenRouter case, and
-  failed 0; Tier 1 passed 615/615, and TypeScript, production build, and diff
-  whitespace checks passed.
-- Phase E3 passed all 162 front-end unit tests, TypeScript checking, and the
-  client/server production build. A controlled no-dotenv fixture rendered the
-  correct glyph families at desktop and phone widths; the 390px phone frame
-  had no side-scroll; dark and light theme-token rendering passed; and focused
-  desktop/phone browser assertions plus axe serious/critical sweeps passed.
-- The Codex refactor passed 603 safe unit tests (178 adapter/session tests, the
-  9 Codex and 4 Gemini catalog tests independently, 4 version tests, 246 other
-  server tests, and 162 web tests), TypeScript, the production client/server
-  build, and `git diff --check`. The aggregate runner's previously characterized
-  catalog/version interaction was not treated as a product failure: each of
-  those unchanged files passed alone. No live or metered provider was called.
-- Two unit files and one integration file that deliberately manufacture dotenv
-  fixtures were excluded under the account-wide opacity rule. The launcher
-  browser file and Explorer/global-axe cases that handle that configuration
-  class were excluded from the otherwise-complete safe 70-test browser matrix.
-  The temporary denial guard lives only under `/tmp`.
+## Important invariants
 
-**Watch-outs**
-
-- Do not restore `Shift+Escape`, globally hijack `Tab`, add a skip link, or add a
-  permanent prompt hint as if any were the accepted behavior. The transcript
-  click is deliberate mouse intent; keyboard users retain ordinary traversal
-  and the provider's naturally typed `/` or `$` discovery path.
-- A click-to-focus change must keep `preventScroll`, control/selection ownership,
-  and touch exclusion together. Losing any one changes the approved contract.
-- Recovery protects only sessions checkpointed by this implementation. If a
-  provider dies before yielding a native resume identifier, Mirafold must remain
-  honest rather than promise the same provider conversation.
-- Catalog suggestions are promises about the current headless transport. Do not
-  re-advertise Codex terminal commands or Gemini ACP commands unless Mirafold
-  implements their exact behavior on the transport it actually runs.
-- Settled-tool compaction must never cross a failure, unsettled tool, non-tool
-  transcript row, or batch boundary; those rows are chronology evidence.
-- Do not weaken the Tier 4 local-turn gate back to “first model in `/api/tags`.”
-  Ollama order is recency-dependent, and a base 4K runner silently truncated
-  the Codex prompt to 2,050 tokens while still answering. Preserve the explicit
-  `num_ctx >= 32768` proof, stable sorting, real text/no-error assertion, and
-  abort cleanup. `/effort none` must remain an explicit local choice—not a
-  silent override of inherited Codex behavior.
-- Keep Explorer glyphs decorative, left of their names, and bounded to broad
-  families. Do not turn
-  `ExplorerNodeGlyph.tsx` into a claimed exhaustive language detector or add an
-  icon dependency for this small local surface; filename text and tree
-  semantics remain the accessible source of truth.
-- Preserve dotenv opacity: never inspect `.env`, `*.env`, `.env.*`, or
-  `*.env.*`, and explicitly exclude them from recursive searches/listings.
+- Never inspect, search, print, diff, parse, source, or otherwise read dotenv
+  contents. Every recursive search/listing must explicitly exclude `.env`,
+  `*.env`, `.env.*`, and `*.env.*`. The temporary denial guard lives only at
+  `/tmp/mirafold-deny-dotenv.cjs` and is not repository state.
+- `modelTurnsPending` is live-only and initializes to zero for fresh and
+  recovered sessions. `midTurnPromptUsed` is derived from whether more than one
+  model turn is pending. Only model-terminal grammar decrements the count;
+  `bang_end` derives display status without consuming it.
+- Keep adapter `error` plus `turn_end` paired as one model terminal event in the
+  registry. A queued next turn must remain `working` and earn exactly one new
+  follow-up slot when the prior turn ends.
+- Windows recognition must require a drive/UNC shape (or a `~\\` root label),
+  not merely any backslash. Backslash is legal filename data on POSIX.
+- PR #35 is intentionally open and unmerged. The next action is Kyle's review,
+  not another roadmap phase, Tier 4 spend, manual provider turn, or merge.

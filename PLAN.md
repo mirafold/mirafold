@@ -2527,20 +2527,17 @@ list honored; all tiers green (318/86/37). Full detail → PLAN-ARCHIVE.md
     `yarn test:live` still 2 pass / 1 skip; and one real subscription turn plus
     one real OpenRouter turn verified by hand, since those are the paths the
     binding cluster governs and no mock covers them.
-  - **2026-08-11 local implementation complete; live closure outstanding.**
+  - **2026-08-11 integrated; live closure outstanding.**
     `codex.ts` is now 382 lines and retains `CodexSession`, its public
     `AgentSession` surface, test-observed thread state, and lifecycle. Named
     sibling modules now own provider/runtime binding, slash commands and prompt
     discovery, diagnostics, SDK-event normalization, prompt constants, and
     rollout lookup; none exceeds 250 lines. Existing public re-exports remain
     at `codex.ts`; D.1 changed no assertion or test file and added no
-    dependency. Separate E3.2 browser assertions remain in the same working
-    tree. Safe verification passed 603 unit tests, TypeScript, the production
-    client/server build, and `git diff --check`; the three aggregate-runner
-    sensitive files passed independently. The two dotenv-manipulating unit
-    files were not run. Keep this step unchecked until its full Tier 2/Tier 3/
-    Tier 4 and manual subscription/OpenRouter done-when checks are actually
-    completed.
+    dependency. PR #34 passed DCO, Cloudflare Pages, Tier 1, and the combined
+    Tier 2/Tier 3 check before merging into `next` at `21b5f33`. Keep this step
+    unchecked until its Tier 4 and manual subscription/OpenRouter done-when
+    checks are actually completed.
 
 ---
 
@@ -3074,9 +3071,23 @@ Full bodies + original findings → PLAN-ARCHIVE.md ("Moved 2026-07-27").
   inset tree-row rhythm, quieter unboxed Git markers, and conventional
   `chevron → type glyph → name → status` ordering. Refresh and the phone close
   action moved into the title bar without changing their behavior; the stacked
-  phone file drill-in remains intact. The accepted revision is deliberately
-  still uncommitted, and PR #34 remains open and unmerged pending explicit Git
-  direction.
+  phone file drill-in remains intact. The accepted revision and the D.1 Codex
+  refactor merged through PR #34 at `21b5f33` after DCO, Cloudflare Pages,
+  Tier 1, and combined Tier 2/Tier 3 passed.
+
+## Phase BC — Whole-codebase correctness closure
+
+- [x] **Step BC.1 — Repair the eight confirmed whole-codebase findings** —
+  done 2026-08-11. Gemini turn preparation and Codex default-model resolution
+  now recover from transient failures; the relay and cookie boundaries reject
+  malformed-but-valid inputs safely; model-turn state no longer collapses at a
+  neighboring bang lifecycle boundary; active rename failure rolls back instead
+  of claiming durability; filesystem/Git caps count UTF-8 bytes; and Explorer
+  path presentation accepts Windows shapes without changing POSIX filename
+  semantics. Each finding has a concrete regression. No dependency, provider
+  protocol, stored-session schema, or filesystem write feature was added.
+  Published as open PR #35 into `next`; deliberately unmerged pending Kyle's
+  review. → PLAN-ARCHIVE.md.
 
 ## Phase W — Live tree (the filesystem watcher; the refresh button goes vestigial)
 
