@@ -174,10 +174,12 @@ body {
      never beyond the old fixed width, where names go back to ellipsizing. */
   width: max-content;
   max-width: min(340px, 42vw);
-  min-width: 140px;
+  min-width: 190px;
   display: flex;
   flex-direction: column;
+  background: var(--bg-inset);
   border-right: 1px solid var(--border);
+  box-shadow: inset -1px 0 0 var(--border-ghost);
   overflow: hidden;
   animation: files-in 0.18s ease-out;
 }
@@ -197,9 +199,10 @@ body {
   z-index: 1;
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 24px 0 4px;
-  background: var(--bg);
+  gap: 3px;
+  padding: 24px 6px 6px 0;
+  background: var(--bg-inset);
+  border-bottom: 1px solid var(--border-faint);
 }
 
 .files-root-row {
@@ -209,6 +212,8 @@ body {
 
 .files-root-row .files-name {
   font-weight: 600;
+  color: var(--fg-strong);
+  letter-spacing: 0.01em;
 }
 
 .files-root .files-btn {
@@ -259,7 +264,8 @@ body {
   overflow: auto;
   /* The right padding is the "little bit more" the fit-content panel adds
      past its longest name; the left stays tight to the panel edge. */
-  padding: 0 14px 12px 0;
+  padding: 0 10px 48px 0;
+  scrollbar-width: thin;
 }
 
 .files-ul {
@@ -269,32 +275,73 @@ body {
 }
 
 .files-row {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   width: 100%;
-  padding: 3px 6px;
+  min-height: 27px;
+  padding: 4px 7px 4px 6px;
   background: transparent;
   border: none;
   color: var(--fg-body);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.86em;
+  font-size: 0.85em;
+  line-height: 1.2;
   text-align: left;
   cursor: pointer;
-  border-radius: 5px;
+  border-radius: 6px;
+  transition: background-color 0.12s ease, color 0.12s ease;
 }
 
 .files-row:hover {
-  background: var(--surface);
+  background: var(--surface-hover);
+}
+
+.files-row:active {
+  background: var(--surface-2);
 }
 
 .files-caret {
   flex-shrink: 0;
-  width: 1em;
+  display: grid;
+  place-items: center;
+  width: 12px;
+  height: 14px;
   color: var(--fg-dim);
 }
 
+.files-chevron {
+  display: block;
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.35;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transform-origin: center;
+  transition: transform 0.12s ease;
+}
+
+.files-chevron.is-open {
+  transform: rotate(90deg);
+}
+
+.files-indent-guides {
+  align-self: stretch;
+  flex-shrink: 0;
+  background: repeating-linear-gradient(
+    to right,
+    transparent 0,
+    transparent 11px,
+    var(--border-ghost) 11px,
+    var(--border-ghost) 12px
+  );
+}
+
 .files-name {
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -304,12 +351,61 @@ body {
   color: var(--fg-body);
 }
 
+.files-node-icon {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  opacity: 0.82;
+  transition: opacity 0.12s ease, color 0.12s ease;
+}
+
+.files-root-row .files-node-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.files-row:hover .files-node-icon {
+  opacity: 1;
+}
+
+.files-node-icon-folder,
+.files-node-icon-folder-open {
+  color: var(--info);
+}
+
+.files-node-icon-code,
+.files-node-icon-image {
+  color: var(--accent);
+}
+
+.files-node-icon-config {
+  color: var(--warn-fg);
+}
+
+.files-node-icon-style {
+  color: var(--info);
+}
+
+.files-node-icon-document {
+  color: var(--fg-mid);
+}
+
+.files-node-icon-file,
+.files-node-icon-symlink {
+  color: var(--fg-dimmer);
+}
+
 .files-status {
   margin-left: auto;
   flex-shrink: 0;
-  font-size: 0.9em;
+  min-width: 17px;
+  padding: 2px 4px;
+  background: var(--surface);
+  border-radius: 4px;
+  font-size: 0.76em;
   font-weight: 600;
-  padding-left: 6px;
+  line-height: 1;
+  text-align: center;
 }
 
 .files-status-M {
@@ -4502,7 +4598,7 @@ html {
     max-width: none;
     z-index: 55; /* above the transcript + status bar, below the 60 modals */
     border-right: none;
-    background: var(--bg);
+    background: var(--bg-inset);
     padding-top: env(safe-area-inset-top);
     padding-bottom: env(safe-area-inset-bottom);
   }
@@ -4514,7 +4610,7 @@ html {
   }
 
   .files-root {
-    padding: 8px 4px 4px;
+    padding: 8px 6px 5px 2px;
   }
 
   /* Refresh moves under the thumb on the full-screen layer — bottom RIGHT

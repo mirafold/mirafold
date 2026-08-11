@@ -1,8 +1,9 @@
-# Session handoff — Phase UX integrated / Codex local-turn diagnosis complete
+# Session handoff — Codex local-turn fix integrated / Explorer polish complete
 
-This handoff is current as of 2026-08-11 after Step L.4 was completed on branch
-`fix/codex-ollama-turn-stall`. It becomes stale when that work is integrated,
-`next` receives later work, or the roadmap priority changes.
+This handoff is current as of 2026-08-11 after PR #33 integrated Step L.4 and
+Phase E3 was completed on branch `feature/explorer-visual-polish`. It becomes
+stale when that branch is integrated, `next` receives other work, or the
+roadmap priority changes.
 
 **Project**: Mirafold, a browser re-skin of Claude Code, Codex, and Gemini CLI.
 Phase UX and its UX.6/UX.7/UX.8/UX.9 follow-ups are complete: faithful pre-submit
@@ -76,14 +77,22 @@ recovery, and the approved transcript-click prompt return behavior.
   selects only an explicitly 32K-configured model in stable order, preventing
   both recency drift and silent 4K prompt truncation from producing a false
   green; a real closed-port case pins unavailable-engine behavior.
+- Completed Phase E3's Explorer visual polish. The existing read-only tree now
+  has an inset workbench surface, compact rows and hierarchy guides, matching
+  SVG disclosure controls, and small decorative open/closed-folder, symlink,
+  and broad file-family glyphs immediately after names. The glyph set is
+  dependency-free and theme-token driven; tree data, Git status, fetching,
+  sorting, drill-in/lightbox, refresh, and phone navigation are unchanged.
 
 **Current state**
 
-- Phase UX and its UX.6–UX.9 follow-ups are committed, pushed, and integrated
-  into `next` through PR #31 (`9e833849`), with the documentation wrapup in PR
-  #32. Step L.4 is complete in the current working tree on
-  `fix/codex-ollama-turn-stall`; this `$next` pass did not commit, push, or open
-  a pull request.
+- Phase UX and its UX.6–UX.9 follow-ups are integrated into `next` through PR
+  #31 (`9e833849`), with the documentation wrapup in PR #32. Step L.4 is
+  integrated through PR #33 (`843f9f2c`). Local `next` is at that exact merge.
+- Phase E3 is complete on `feature/explorer-visual-polish`, cut from
+  `843f9f2c`. Its destination is one focused PR into `next`; Kyle explicitly
+  wants that PR held unmerged until a new instruction, and no roadmap `$next`
+  chunk should start before then.
 - PR #31 carried the same product tree as closed draft PR #30, replacing that
   draft only so the final follow-up commit could carry the repository's
   required DCO sign-off.
@@ -93,11 +102,11 @@ recovery, and the approved transcript-click prompt return behavior.
   `web/src/transcript-focus.ts`, prompt UI in `web/src/components/PromptBox.tsx`,
   and settled activity in `web/src/tool-visibility.ts` /
   `web/src/components/RenderZone.tsx`.
-- `PLAN.md` marks UX.6 through UX.9 and L.4 complete. The earlier open roadmap
-  pointer in document order remains Step 4.7, expanded into Phase R; Phase R's
-  remaining steps include Kyle-led/manual release work, so the next executable
-  chunk must be selected from current prerequisites rather than inferred from
-  checkbox order alone.
+- `PLAN.md` marks UX.6 through UX.9, L.4, and E3 complete. The earlier open
+  roadmap pointer in document order remains Step 4.7, expanded into Phase R;
+  Phase R's remaining steps include Kyle-led/manual release work, so a later
+  executable chunk must be selected from current prerequisites rather than
+  inferred from checkbox order alone.
 
 **Verification**
 
@@ -109,6 +118,8 @@ recovery, and the approved transcript-click prompt return behavior.
 - PR #31 passed every reported merge check: DCO, Cloudflare Pages, Tier 1
   typecheck/unit, and combined Tier 2/Tier 3 integration/browser. GitHub then
   merged it into `next` as `9e833849`.
+- PR #33 passed DCO, Cloudflare Pages, Tier 1, and combined Tier 2/Tier 3;
+  GitHub merged it into `next` as `843f9f2c` under Kyle's explicit approval.
 - The first PR #32 wrapup check exposed a pre-existing Tier 2 hermeticity
   flake after every `backend-choice.itest.ts` assertion passed: session
   activation had started the host Codex prompt-catalog process, which could
@@ -123,6 +134,11 @@ recovery, and the approved transcript-click prompt return behavior.
   Tier 4 wrapper passed 3, skipped the credential-required OpenRouter case, and
   failed 0; Tier 1 passed 615/615, and TypeScript, production build, and diff
   whitespace checks passed.
+- Phase E3 passed all 162 front-end unit tests, TypeScript checking, and the
+  client/server production build. A controlled no-dotenv fixture rendered the
+  correct glyph families at desktop and phone widths; the 390px phone frame
+  had no side-scroll; dark and light theme-token rendering passed; and focused
+  desktop/phone browser assertions plus axe serious/critical sweeps passed.
 - Two unit files and one integration file that deliberately manufacture dotenv
   fixtures were excluded under the account-wide opacity rule. The launcher
   browser file and Explorer/global-axe cases that handle that configuration
@@ -151,5 +167,9 @@ recovery, and the approved transcript-click prompt return behavior.
   `num_ctx >= 32768` proof, stable sorting, real text/no-error assertion, and
   abort cleanup. `/effort none` must remain an explicit local choice—not a
   silent override of inherited Codex behavior.
+- Keep Explorer glyphs decorative and bounded to broad families. Do not turn
+  `ExplorerNodeGlyph.tsx` into a claimed exhaustive language detector or add an
+  icon dependency for this small local surface; filename text and tree
+  semantics remain the accessible source of truth.
 - Preserve dotenv opacity: never inspect `.env`, `*.env`, `.env.*`, or
   `*.env.*`, and explicitly exclude them from recursive searches/listings.

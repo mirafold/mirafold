@@ -145,7 +145,7 @@ faithful per-agent skins) · **4** except 4.7 (→ Phase R) · **G, H, H2**
 (relay dedup + human legibility) · **S** (theme system) · **N** (onboarding
 backend picker) · **V** (visual + fidelity gaps) · **A** (accessibility) ·
 **C** (CI/CD) · **E** (Explorer) · **M** (Mission control) · **E2** (Explorer at scale) ·
-**W** (live tree), **UX** (native prompt discovery, transcript fidelity,
+**E3** (Explorer visual polish) · **W** (live tree), **UX** (native prompt discovery, transcript fidelity,
 durable provider recovery, and branch test-audit closure), plus the finished
 steps of the still-open Phases **K, R, F, Q, L**.
 
@@ -3049,6 +3049,16 @@ Full bodies + original findings → PLAN-ARCHIVE.md ("Moved 2026-07-27").
   samples). Tiers 458/139/54 green. Same-day audit: nothing exploitable;
   the lightbox-over-permission-bar layering recorded as an accepted
   decision in SECURITY.md.
+
+## Phase E3 — Explorer visual polish
+
+- [x] **Step E3.1 — Refine the tree surface and add node-type glyphs** — done
+  2026-08-11; the existing read-only tree now uses Mirafold's inset surface,
+  compact row/guide treatment, SVG chevrons, and decorative open/closed-folder,
+  symlink, and broad file-family glyphs immediately after names. No dependency,
+  server/wire, lazy-fetch, sort, Git-status, drill-in, refresh, or phone-flow
+  behavior changed. Desktop, phone, dark/light, overflow, and axe proofs pass.
+  → PLAN-ARCHIVE.md.
 
 ## Phase W — Live tree (the filesystem watcher; the refresh button goes vestigial)
 

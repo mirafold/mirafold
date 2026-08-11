@@ -660,7 +660,8 @@ web/               the browser app (React 19 + Vite)
                        drill-in — docked left column on desktop, full-screen
                        dialog on phone; desktop ⤢ enlarges the file box into
                        a dimmed lightbox, E.6) + FileView.tsx (content /
-                       diff / binary)
+                       diff / binary) + ExplorerNodeGlyph.tsx (small
+                       dependency-free folder/symlink/file-family glyphs)
   src/registry/      Card, List, Table, LinkGroup, Chart, TodoList, KeyValue,
                      Progress, Timeline, FileTree, Question, Diff, Stat, Code,
                      StatusList, Console, Image, Diagram, Md, CopyButton +
@@ -1628,7 +1629,8 @@ Read PLAN.md for the real thing; the shape in one breath:
   panel behind the activity bar: jailed listing, file view, HEAD-vs-working
   diffs, now fetched one directory per expand with each nested repo's own
   statuses and ignore rules, so a session can root at a folder of many
-  repos); **mission control grown into
+  repos; Phase E3 adds the compact inset tree surface and alongside-name
+  folder/file-family glyphs); **mission control grown into
   a cockpit** (**Phase M** — answer permissions, interrupt, and dispatch
   prompts from the grid without entering a session); and the workbench-frame
   polish + the by-surface `styles.css` reorganization (2026-07-25, §7).

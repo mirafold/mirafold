@@ -14,6 +14,7 @@ import { useEscapeKey } from "../../use-escape";
 import { useFocusTrap } from "../../use-focus-trap";
 import { useIsPhone } from "../../use-is-phone";
 import { FileView, fileToState, diffToState, type FileViewState } from "./FileView";
+import { ExplorerChevron, ExplorerNodeGlyph } from "./ExplorerNodeGlyph";
 
 // The Explorer's shell-owned panel (E.3 desktop, E.4 phone; lazy since
 // E2.2): a read-only browser of the session's working tree, built
@@ -300,6 +301,7 @@ export function FilesPanel({
   };
 
   const rootState = store.get("");
+  const rootName = rootNameOf(rootLabel);
 
   return (
     <aside
@@ -327,8 +329,11 @@ export function FilesPanel({
               title={rootLabel}
               aria-expanded={rootOpen}
             >
-              <span className="files-caret">{rootOpen ? "▾" : "▸"}</span>
-              <span className="files-name">{rootNameOf(rootLabel)}</span>
+              <span className="files-caret">
+                <ExplorerChevron open={rootOpen} />
+              </span>
+              <span className="files-name">{rootName}</span>
+              <ExplorerNodeGlyph name={rootName} entryKind="dir" open={rootOpen} />
             </button>
             {/* Desktop closes from the activity-bar toggle; the phone dialog
                 still needs its own close. */}
@@ -458,6 +463,19 @@ export function FilesPanel({
   );
 }
 
+/** Quiet vertical hierarchy guides, like the optional guides in established
+ * IDE project trees. The width keeps the established 12px-per-depth rhythm;
+ * the lazy tree's data and interaction model do not know about them. */
+function ExplorerIndent({ depth }: { depth: number }) {
+  return (
+    <span
+      className="files-indent-guides"
+      style={{ width: `${depth * 12}px` }}
+      aria-hidden="true"
+    />
+  );
+}
+
 // One directory's children, rendered from the store — recursion IS the tree
 // (E2.2): an expanded child dir renders its own DirChildren, which shows a
 // loading row until its fs_dir lands, then its listing. The wire stays
@@ -505,9 +523,13 @@ function DirChildren({
           const isOpen = expanded.has(p);
           return (
             <li key={e.name} role="treeitem" aria-expanded={isOpen}>
-              <button className="files-row files-dir" style={pad} onClick={() => onToggleDir(p)}>
-                <span className="files-caret">{isOpen ? "▾" : "▸"}</span>
+              <button className="files-row files-dir" onClick={() => onToggleDir(p)}>
+                <ExplorerIndent depth={depth} />
+                <span className="files-caret">
+                  <ExplorerChevron open={isOpen} />
+                </span>
                 <span className="files-name">{e.name}</span>
+                <ExplorerNodeGlyph name={e.name} entryKind="dir" open={isOpen} />
               </button>
               {isOpen && (
                 <DirChildren
@@ -529,11 +551,12 @@ function DirChildren({
           <li key={e.name} role="treeitem">
             <button
               className="files-row files-file-row"
-              style={pad}
               onClick={() => onOpenFile(p, e.status)}
             >
+              <ExplorerIndent depth={depth} />
               <span className="files-caret" />
               <span className="files-name">{e.name}</span>
+              <ExplorerNodeGlyph name={e.name} entryKind={e.kind} />
               {e.status && (
                 <span className={`files-status files-status-${e.status}`} title={statusLabel(e.status)}>
                   {e.status}

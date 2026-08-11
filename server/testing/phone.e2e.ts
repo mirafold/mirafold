@@ -212,6 +212,11 @@ test("phone (E.4): the files panel is a full-screen drill-in — tree → file �
   // The tree is live git data (the daemon runs in the repo) — drill into a file.
   const pkg = phone.locator(".files-file-row", { hasText: "package.json" }).first();
   await pkg.waitFor({ timeout: 15_000 });
+  assert.equal(
+    await pkg.locator(".files-node-icon-config[aria-hidden=true]").count(),
+    1,
+    "phone tree keeps the same decorative configuration glyph",
+  );
   await pkg.tap();
   await phone.waitForSelector(".files-view .fv-content");
   await noSideScroll(phone);

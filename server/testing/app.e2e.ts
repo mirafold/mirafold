@@ -2181,10 +2181,25 @@ test("E.3: the files panel lists the working tree, opens a file beside the trans
   const repoDir = path.basename(path.resolve(import.meta.dirname, "..", ".."));
   assert.ok((await root.innerText()).includes(repoDir), `root row names the checkout folder (${repoDir})`);
   assert.equal(await page.locator(".files-title").count(), 0, "the old path header is gone");
+  assert.equal(
+    await root.locator(".files-node-icon-folder-open").count(),
+    1,
+    "the expanded root carries the open-folder glyph after its name",
+  );
+  assert.equal(
+    await pkg.locator(".files-node-icon-config[aria-hidden=true]").count(),
+    1,
+    "package.json carries one decorative configuration glyph",
+  );
   await root.click();
   await eventually(
     () => document.querySelectorAll(".files-file-row").length === 0,
     "collapsed root still lists files",
+  );
+  assert.equal(
+    await root.locator(".files-node-icon-folder").count(),
+    1,
+    "the collapsed root carries the closed-folder glyph",
   );
   await root.click();
   await pkg.waitFor({ timeout: 15_000 });
