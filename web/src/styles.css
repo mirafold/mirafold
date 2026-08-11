@@ -127,7 +127,7 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding-top: 24px; /* same top offset as the tree's root row (.files-root) */
+  padding-top: 20px; /* aligns the toggle with the Explorer title bar */
   border-right: 1px solid var(--border);
 }
 
@@ -165,19 +165,18 @@ body {
 
 .files-panel {
   flex-shrink: 0;
-  /* Give back all but 5px of .main-col's content air: the panel sits
-     near-flush against the activity bar's border line (VS Code-style),
-     while the transcript and prompt box keep the full amount. */
-  margin-left: calc(5px - var(--content-air));
-  /* Fit the widest visible row (indentation included) plus the tree's own
-     right padding — expanding a deep dir widens the panel to match — but
-     never beyond the old fixed width, where names go back to ellipsizing. */
-  width: max-content;
-  max-width: min(340px, 42vw);
-  min-width: 140px;
+  /* Cancel the transcript's air completely: rail + Explorer are one stable
+     workbench unit, while the transcript and prompt retain their gutter. */
+  margin-left: calc(-1 * var(--content-air));
+  /* A professional project tree does not resize as folders are expanded.
+     Keep a useful, responsive dock width and ellipsize exceptional names. */
+  width: clamp(244px, 20vw, 292px);
+  max-width: 42vw;
   display: flex;
   flex-direction: column;
+  background: var(--bg);
   border-right: 1px solid var(--border);
+  box-shadow: inset -1px 0 0 var(--border-ghost);
   overflow: hidden;
   animation: files-in 0.18s ease-out;
 }
@@ -189,17 +188,83 @@ body {
   }
 }
 
-/* The tree's root row — the session's checked-out directory. Sticky, so the
-   root (and the panel's actions riding it) survive a deep scroll. */
-.files-root {
+/* A proper tool-window header separates the Explorer itself from the checked-
+   out workspace root. It echoes the pin dock's compact uppercase title and
+   moves refresh out of the tree's bottom corner into predictable chrome. */
+.files-panel-head {
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: 3;
+  height: 56px;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 16px 8px 8px 12px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.files-panel-title {
+  margin: 0;
+  min-width: 0;
+  padding-bottom: 5px;
+  color: var(--fg-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.72em;
+  font-weight: 650;
+  letter-spacing: 0.11em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.files-panel-actions {
+  margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 24px 0 4px;
-  background: var(--bg);
+  gap: 2px;
+}
+
+.files-panel-action {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: var(--fg-dim);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color 0.12s ease, background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.files-panel-action:hover {
+  color: var(--fg-body);
+  background: var(--surface-hover);
+  border-color: var(--border-2);
+}
+
+.files-action-icon {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* The tree's root row — the session's checked-out directory. Sticky, so the
+   workspace identity survives a deep scroll beneath the title bar. */
+.files-root {
+  position: sticky;
+  top: 56px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  padding: 5px 6px;
+  background: var(--bg-inset);
+  border-bottom: 1px solid var(--border-faint);
 }
 
 .files-root-row {
@@ -209,22 +274,8 @@ body {
 
 .files-root-row .files-name {
   font-weight: 600;
-}
-
-.files-root .files-btn {
-  flex-shrink: 0;
-  border: none;
-}
-
-/* Refresh floats in the panel's bottom-left corner; the surface background
-   keeps it legible over rows scrolling beneath it. */
-.files-refresh {
-  position: absolute;
-  left: 4px;
-  bottom: 10px;
-  z-index: 1;
-  padding: 4px 9px;
-  background: var(--surface);
+  color: var(--fg-strong);
+  letter-spacing: 0.01em;
 }
 
 .files-back,
@@ -257,9 +308,10 @@ body {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  /* The right padding is the "little bit more" the fit-content panel adds
-     past its longest name; the left stays tight to the panel edge. */
-  padding: 0 14px 12px 0;
+  padding: 0 0 16px;
+  background: var(--bg-inset);
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hover) transparent;
 }
 
 .files-ul {
@@ -269,32 +321,78 @@ body {
 }
 
 .files-row {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   width: 100%;
-  padding: 3px 6px;
+  min-height: 29px;
+  padding: 5px 7px 5px 6px;
   background: transparent;
   border: none;
   color: var(--fg-body);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.86em;
+  font-size: 0.82em;
+  line-height: 1.2;
   text-align: left;
   cursor: pointer;
   border-radius: 5px;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.files-ul .files-row {
+  width: calc(100% - 12px);
+  margin: 1px 6px;
 }
 
 .files-row:hover {
-  background: var(--surface);
+  background: var(--surface-hover);
+}
+
+.files-row:active {
+  background: var(--surface-2);
 }
 
 .files-caret {
   flex-shrink: 0;
-  width: 1em;
+  display: grid;
+  place-items: center;
+  width: 12px;
+  height: 14px;
   color: var(--fg-dim);
 }
 
+.files-chevron {
+  display: block;
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.35;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transform-origin: center;
+  transition: transform 0.12s ease;
+}
+
+.files-chevron.is-open {
+  transform: rotate(90deg);
+}
+
+.files-indent-guides {
+  align-self: stretch;
+  flex-shrink: 0;
+  background: repeating-linear-gradient(
+    to right,
+    transparent 0,
+    transparent 11px,
+    var(--border-ghost) 11px,
+    var(--border-ghost) 12px
+  );
+}
+
 .files-name {
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -302,14 +400,66 @@ body {
 
 .files-dir .files-name {
   color: var(--fg-body);
+  font-weight: 550;
+}
+
+.files-file-row .files-name {
+  color: var(--fg-mid);
+}
+
+.files-node-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  opacity: 0.82;
+  transition: opacity 0.12s ease, color 0.12s ease;
+}
+
+.files-root-row .files-node-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.files-row:hover .files-node-icon {
+  opacity: 1;
+}
+
+.files-node-icon-folder,
+.files-node-icon-folder-open {
+  color: var(--info);
+}
+
+.files-node-icon-code,
+.files-node-icon-image {
+  color: var(--accent);
+}
+
+.files-node-icon-config {
+  color: var(--warn-fg);
+}
+
+.files-node-icon-style {
+  color: var(--info);
+}
+
+.files-node-icon-document {
+  color: var(--fg-mid);
+}
+
+.files-node-icon-file,
+.files-node-icon-symlink {
+  color: var(--fg-dimmer);
 }
 
 .files-status {
   margin-left: auto;
   flex-shrink: 0;
-  font-size: 0.9em;
-  font-weight: 600;
-  padding-left: 6px;
+  min-width: 16px;
+  padding: 0 2px;
+  font-size: 0.78em;
+  font-weight: 650;
+  line-height: 1;
+  text-align: center;
 }
 
 .files-status-M {
@@ -354,7 +504,9 @@ body {
 .files-file {
   position: absolute;
   inset: 0;
-  z-index: 2; /* above the sticky root row, or it steals the back button's clicks */
+  /* Above both sticky tree strips (workspace z2, title bar z3), or their
+     chrome covers the file path and steals the back button's clicks. */
+  z-index: 4;
   background: var(--bg);
   display: flex;
   flex-direction: column;
@@ -4500,9 +4652,10 @@ html {
     inset: 0;
     width: 100%;
     max-width: none;
+    margin-left: 0;
     z-index: 55; /* above the transcript + status bar, below the 60 modals */
     border-right: none;
-    background: var(--bg);
+    background: var(--bg-inset);
     padding-top: env(safe-area-inset-top);
     padding-bottom: env(safe-area-inset-bottom);
   }
@@ -4511,25 +4664,20 @@ html {
      pass) without disturbing the desktop density. */
   .files-row {
     padding: 9px 8px;
+    min-height: 42px;
+  }
+
+  .files-panel-head {
+    padding: 8px 8px 7px 14px;
+  }
+
+  .files-panel-action {
+    width: 40px;
+    height: 40px;
   }
 
   .files-root {
-    padding: 8px 4px 4px;
-  }
-
-  /* Refresh moves under the thumb on the full-screen layer — bottom RIGHT
-     here, where the desktop panel keeps it bottom-left (2026-07-25, Kyle). */
-  .files-refresh {
-    left: auto;
-    right: 4px;
-  }
-
-  /* The phone-only close ✕ at twice its size: it's the one way out of a
-     full-screen layer, so it earns a real tap target. */
-  .files-root .files-btn {
-    padding: 4px 10px;
-    font-size: 1.64em;
-    line-height: 1;
+    padding: 4px 6px 5px;
   }
 
   /* The rail is a desktop affordance — a permanent 46px strip is too much

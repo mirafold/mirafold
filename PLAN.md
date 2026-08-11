@@ -145,7 +145,7 @@ faithful per-agent skins) · **4** except 4.7 (→ Phase R) · **G, H, H2**
 (relay dedup + human legibility) · **S** (theme system) · **N** (onboarding
 backend picker) · **V** (visual + fidelity gaps) · **A** (accessibility) ·
 **C** (CI/CD) · **E** (Explorer) · **M** (Mission control) · **E2** (Explorer at scale) ·
-**W** (live tree), **UX** (native prompt discovery, transcript fidelity,
+**E3** (Explorer visual polish) · **W** (live tree), **UX** (native prompt discovery, transcript fidelity,
 durable provider recovery, and branch test-audit closure), plus the finished
 steps of the still-open Phases **K, R, F, Q, L**.
 
@@ -2476,19 +2476,14 @@ bodies + dated history → PLAN-ARCHIVE.md ("Moved 2026-07-24").
 
 ## Phase D — Decompose the Codex adapter (opened 2026-07-20)
 
-`server/adapters/codex.ts` is **824 lines** and carries at least five separable
-concerns. For scale, the other two real adapters are 499 (`claude-code.ts`) and
-382 (`gemini-cli.ts`) — it isn't merely the biggest, it's nearly the other two
-combined, and it grew again on 2026-07-20 (provider binding + the notice fix).
-Size alone wouldn't justify a step; the reason it's worth doing **now** is that
-two separate 2026-07-20 bugs both lived in the seams between those concerns —
-the engine-default lookup didn't know what the provider binding had decided,
-and a non-fatal engine item was classified where the fatal ones are handled.
-Concerns that can't see each other's decisions are exactly what splitting makes
-visible.
+At the 2026-08-11 refactor start, `server/adapters/codex.ts` was **1,004 lines**
+and carried at least five separable concerns. Size alone did not justify the
+step; two separate 2026-07-20 bugs both lived in the seams between those
+concerns — the engine-default lookup did not know what provider binding had
+decided, and a non-fatal engine item was classified beside the fatal ones.
 
-Do it now, before Phase F widens the adapter's event vocabulary further: every
-type added to `handleEvent`/`onItem` afterwards makes the split more expensive.
+The local split now isolates the event mapper before Phase F widens Codex's
+event vocabulary further.
 
 **This is a pure refactor — zero functional change.** It is well protected:
 298 Tier-1 tests, the Tier-2 and Tier-3 suites, and the Tier-4 live tier, all
@@ -2532,6 +2527,20 @@ list honored; all tiers green (318/86/37). Full detail → PLAN-ARCHIVE.md
     `yarn test:live` still 2 pass / 1 skip; and one real subscription turn plus
     one real OpenRouter turn verified by hand, since those are the paths the
     binding cluster governs and no mock covers them.
+  - **2026-08-11 local implementation complete; live closure outstanding.**
+    `codex.ts` is now 382 lines and retains `CodexSession`, its public
+    `AgentSession` surface, test-observed thread state, and lifecycle. Named
+    sibling modules now own provider/runtime binding, slash commands and prompt
+    discovery, diagnostics, SDK-event normalization, prompt constants, and
+    rollout lookup; none exceeds 250 lines. Existing public re-exports remain
+    at `codex.ts`; D.1 changed no assertion or test file and added no
+    dependency. Separate E3.2 browser assertions remain in the same working
+    tree. Safe verification passed 603 unit tests, TypeScript, the production
+    client/server build, and `git diff --check`; the three aggregate-runner
+    sensitive files passed independently. The two dotenv-manipulating unit
+    files were not run. Keep this step unchecked until its full Tier 2/Tier 3/
+    Tier 4 and manual subscription/OpenRouter done-when checks are actually
+    completed.
 
 ---
 
@@ -3049,6 +3058,25 @@ Full bodies + original findings → PLAN-ARCHIVE.md ("Moved 2026-07-27").
   samples). Tiers 458/139/54 green. Same-day audit: nothing exploitable;
   the lightbox-over-permission-bar layering recorded as an accepted
   decision in SECURITY.md.
+
+## Phase E3 — Explorer visual polish
+
+- [x] **Step E3.1 — Refine the tree surface and add node-type glyphs** — done
+  2026-08-11; the existing read-only tree now uses Mirafold's inset surface,
+  compact row/guide treatment, SVG chevrons, and decorative open/closed-folder,
+  symlink, and broad file-family glyphs immediately after names. No dependency,
+  server/wire, lazy-fetch, sort, Git-status, drill-in, refresh, or phone-flow
+  behavior changed. Desktop, phone, dark/light, overflow, and axe proofs pass.
+  → PLAN-ARCHIVE.md.
+- [x] **Step E3.2 — Integrate the Explorer visually with the workbench** —
+  visually approved by Kyle 2026-08-11. The dock now has a stable responsive
+  width, compact Files title/action bar, separate sticky workspace-root strip,
+  inset tree-row rhythm, quieter unboxed Git markers, and conventional
+  `chevron → type glyph → name → status` ordering. Refresh and the phone close
+  action moved into the title bar without changing their behavior; the stacked
+  phone file drill-in remains intact. The accepted revision is deliberately
+  still uncommitted, and PR #34 remains open and unmerged pending explicit Git
+  direction.
 
 ## Phase W — Live tree (the filesystem watcher; the refresh button goes vestigial)
 

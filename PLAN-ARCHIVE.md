@@ -7440,3 +7440,62 @@ credential-required OpenRouter case, and failed 0. Tier 1 passed 615/615;
 TypeScript checking, the client/server production build, and `git diff --check`
 passed. No metered model, dependency, wire protocol, user config file, or
 dotenv file was touched.
+
+## Moved 2026-08-11 (Explorer visual polish — full body)
+
+### Phase E3 — Explorer visual polish (completed 2026-08-11)
+
+**Goal:** make the existing read-only Explorer feel like a finished part of
+Mirafold's workbench while preserving its interaction and data contracts.
+
+**Verified starting state:** `web/src/components/files/FilesPanel.tsx` rendered
+the root, directories, files, and symlinks as text rows with Unicode disclosure
+carets, indentation, hover fill, and optional Git status letters. The Explorer
+block in `web/src/styles.css` left `.files-panel` transparent and supplied no
+node-type glyph or hierarchy guide. A controlled 1440×900 browser baseline
+showed six rows, zero `.files-node-icon` elements, and a transparent computed
+panel background. Lazy fetching, read-only drill-in, file lightbox, and phone
+dialog behavior already existed and were not defects in this phase.
+
+**References:** VS Code's official file-icon-theme documentation establishes
+alongside-name icons as type signals in Explorer; JetBrains' official Project
+tool-window documentation establishes compact project trees and optional
+indent guides; GitHub's repository tree supplied the quieter web-facing bound.
+Mirafold uses those conventions through its own theme tokens and glyph shapes,
+not another product's icon set.
+
+**Executable changes:** `FilesPanel.tsx` now renders matching inline-SVG
+chevrons, quiet per-depth guides, and one decorative glyph immediately after
+each node name. New `ExplorerNodeGlyph.tsx` classifies only broad families:
+open/closed folder, symlink, code, configuration/data, documentation, styles,
+images, and generic file. `styles.css` gives desktop and phone frames an inset
+surface, stronger sticky root strip, compact row rhythm, theme-token glyph
+colors, hover/active treatment, thin tree scrollbar, and compact Git-status
+chips. The minimum dock width grows from 140px to 190px. Server, wire protocol,
+directory state/fetching, sort order, status semantics, read-only behavior,
+file view/lightbox, refresh, and phone navigation are behaviorally unchanged.
+
+**Dependency decision:** no package. Mirafold already owns small inline SVG
+glyph components; a bounded set of paths and a pure classifier are safe local
+presentation. An icon library would add bundle, transitive, audit, and
+supply-chain surface for no protocol or correctness depth.
+
+**Test changes:** new `ExplorerNodeGlyph.test.ts` pins hierarchy precedence,
+symlink precedence, case-insensitive extension handling, configuration
+basenames, every broad file family, and the generic fallback. Existing desktop
+and phone browser proofs now require the open/closed root glyph and the
+decorative configuration glyph for `package.json`.
+
+**Documentation changes:** README's file map names the new glyph module and
+the shipped-feature summary names the inset/type-signal polish; `PLAN.md`
+compresses the completed phase to this archive pointer.
+
+**Proof:** all 162 front-end unit tests passed; TypeScript checking and the
+client/server production build passed. A controlled fixture containing no
+dotenv file rendered nine glyphs at desktop width across open-folder, code,
+configuration, documentation, and stylesheet families; the phone frame stayed
+390px wide with no side-scroll. Dark and light appearances resolved panel and
+glyph colors through their theme tokens. Focused headless-Chrome desktop and
+phone rendered-contract assertions plus axe serious/critical sweeps passed.
+`git diff --check` passed. No dependency, wire shape, server behavior, project
+file, or user data changed.
