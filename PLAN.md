@@ -383,6 +383,52 @@ records of later unplanned polish batches.
   bites. Full verified ledger: session scratchpad; findings' file:line
   detail rides each fix's test comments.
 
+- [ ] **Step 4.17 — Relay hello freshness (deferred hardening, 2026-08-11
+  audit)** — the daemon's relay hello (`relay-crypto.ts` / `relay-client.ts`)
+  carries no relay-supplied freshness (nonce/timestamp challenge), so a hostile
+  or compromised relay can REPLAY a recorded hello and open up to
+  MAX_REMOTE_VIEWPORTS (16) zombie viewport channels, each held ~90 s. Bounded
+  and resource-only: the replayer gains no confidentiality or integrity — the
+  per-connection E2E keys derive from `nonceD`, which travels sealed, so the
+  replayer can't read or drive any session; it only ties up viewport slots
+  against a party (the relay) that can already withhold service by refusing to
+  forward. Acknowledged inline in `relay-client.ts`. The fix is a real protocol
+  change — a relay→daemon challenge the hello must echo — so it is sized as a
+  step, not folded into a bugfix: add a server-issued nonce to the pre-hello
+  frame, bind it into the hello's AAD, and reject a hello whose challenge the
+  daemon didn't just issue. **Trigger:** before the relay carries non-trivial
+  third-party traffic, or any time the relay operator is less trusted than
+  today (it's ours). Sized ~half a day incl. a sibling-itest pin (recorded
+  hello + fresh challenge → refused).
+
+- [x] **Step 4.18 — Test-audit pass (2026-08-11)** — judged the tests, not the
+  product: read the tiering rules (README §8), ran Tier 1 (631/631, ~16s, x2
+  deterministic), Tier 2 (144/144, x3, ~3:48 each, zero flakiness), Tier 3
+  (e2e, 83/83, x2, ~3:20 each incl. build, zero flakiness), and **falsified 10
+  stated invariants by mutating the product** — the
+  E2E counter (replay/reorder), the tool-output cap, the replay-ring byte cap,
+  the fs-explorer realpath jail, checkpoint seq-monotonicity, the WS
+  origin guard, the ws backoff ladder, `cleanRelPath` traversal, and the
+  IP-exact loopback classifier all fail cleanly when their target breaks.
+  **Two real repairs, each mutation-proven after:** (1) `registry-spec.test.ts`'s
+  chart "old-client" test asserted on a hand-built `z.enum(["line","bar"])` — it
+  tested zod, not the product; rewritten to drive the real
+  `clientSchemas.chart`/`registrySchemas.chart` twins (now fails when the chart
+  kind enum changes). (2) `fs-explorer.test.ts`'s "small tree not truncated"
+  test wrote into the already-capped dir (a dead write), listed a fresh EMPTY
+  dir, and never asserted `truncated === false` — the guarantee was untested;
+  rewritten to list a real small tree and pin `truncated === false` + the entry
+  list (now fails on spurious truncation). **Three assertions tightened**
+  (loose bounds → exact, each proven to catch a regression the old form missed):
+  `niceTicks` ticks (Chart.test.ts) and the Gemini honest-model label.
+  **Left as-is, backstopped, reported not repaired** (deleting/weakening waits
+  for Kyle; each is redundant with a stronger test, not a gap):
+  `provider-policy.test.ts` "every cell is a boolean" (the exact agent×kind
+  truth matrix above it is stronger), `version.test.ts` semver-shape regex
+  (the `CLIENT_VERSION===VERSION` + launcher `--version` neighbors have the
+  teeth), the claude-code/gemini truncation *bounds* (exact byte math pinned in
+  `types.test.ts`), and `files-tree.test.ts`'s "too fast" substring. No product
+  bug surfaced; no test was deleted.
 
 ---
 

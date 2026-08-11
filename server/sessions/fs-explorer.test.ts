@@ -91,10 +91,23 @@ test("listTree: the walk is node-bounded — a tree of empty dirs can't be walke
   const r = listTree(root, { maxNodes: 10 });
   assert.ok(!("error" in r));
   assert.equal(r.truncated, true, "the node cap must trip on a file-less tree");
-  // And a normal small tree with room to spare is NOT flagged truncated.
-  writeFileSync(path.join(root, "a.txt"), "a");
-  const ok = listTree(tmp());
+  // And a normal small tree with room to spare is NOT flagged truncated
+  // (2026-08-11 test-audit: this used to write into the already-capped `root`
+  // — a dead write — then list a FRESH EMPTY dir and assert only "no error",
+  // so the stated "not truncated" guarantee went untested; a bug that
+  // spuriously truncated a small tree would have passed).
+  const small = tmp();
+  writeFileSync(path.join(small, "a.txt"), "a");
+  mkdirSync(path.join(small, "sub"));
+  writeFileSync(path.join(small, "sub", "b.txt"), "b");
+  const ok = listTree(small);
   assert.ok(!("error" in ok));
+  assert.equal("error" in ok ? undefined : ok.truncated, false, "a small tree is not truncated");
+  assert.deepEqual(
+    "error" in ok ? [] : ok.entries.map((e) => e.path).sort(),
+    ["a.txt", "sub/b.txt"],
+    "the small tree lists in full",
+  );
 });
 
 test("listTree: unreadable root is the error case, not a throw", () => {
