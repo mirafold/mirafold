@@ -2180,7 +2180,7 @@ test("E.3: the files panel lists the working tree, opens a file beside the trans
   const root = page.locator(".files-root-row");
   const repoDir = path.basename(path.resolve(import.meta.dirname, "..", ".."));
   const panelHead = page.locator(".files-panel-head");
-  assert.equal(await panelHead.locator(".files-panel-title").innerText(), "Files");
+  assert.equal(await panelHead.locator(".files-panel-title").innerText(), "FILES");
   assert.equal(
     await panelHead.locator(".files-refresh[aria-label='Refresh files']").count(),
     1,
