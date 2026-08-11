@@ -44,8 +44,16 @@ export const isCurrentReply = (awaited: string | null, replyId: string): boolean
 
 /** The root row shows just the checked-out folder's NAME; the full ~-path
  *  stays in its tooltip. Pure, for Tier-1. */
-export const rootNameOf = (rootLabel?: string): string =>
-  rootLabel?.replace(/\/+$/, "").split("/").pop() || rootLabel || "files";
+export const rootNameOf = (rootLabel?: string): string => {
+  if (!rootLabel) return "files";
+  const windowsStyle =
+    /^[A-Za-z]:[\\/]/.test(rootLabel) || rootLabel.startsWith("\\\\") || rootLabel.startsWith("~\\");
+  const trimmed = windowsStyle
+    ? rootLabel.replace(/[\\/]+$/, "")
+    : rootLabel.replace(/\/+$/, "");
+  if (!trimmed || /^[A-Za-z]:$/.test(trimmed)) return rootLabel;
+  return trimmed.split(windowsStyle ? /[\\/]/ : /\//).pop() || rootLabel;
+};
 
 // The open-panel prefetch fetches the root's child dirs so their first
 // expand is instant — capped under the server's token bucket (default 32/s)

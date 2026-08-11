@@ -131,7 +131,7 @@ export type Viewport = (msg: WireMsg) => void;
  */
 export function resolveCwd(cwd?: string): string {
   if (!cwd) return process.cwd();
-  const expanded = cwd.replace(/^~(?=\/|$)/, os.homedir());
+  const expanded = expandHomePath(cwd);
   const dir = path.resolve(expanded);
   let stat;
   try {
@@ -141,6 +141,12 @@ export function resolveCwd(cwd?: string): string {
   }
   if (!stat.isDirectory()) throw new Error(`not a directory: ${dir}`);
   return dir;
+}
+
+/** Expand terminal-style home syntax without assuming the host separator.
+ * The optional home makes Windows-shaped behavior testable on every runner. */
+export function expandHomePath(cwd: string, home = os.homedir()): string {
+  return cwd.replace(/^~(?=[\\/]|$)/, home);
 }
 
 export type SessionEntry = {
@@ -190,8 +196,16 @@ export type SessionEntry = {
   // (each bang costs a model turn, so bursts burn tokens).
   lastBangAt?: number;
   // The prompt-burst gate (dispatchPrompt): has the running turn already
-  // accepted its one queued follow-up? Cleared where status returns to idle.
+  // accepted its one queued follow-up? Cleared only by model turn grammar.
   midTurnPromptUsed?: boolean;
+  // Enqueued + running model turns, independent from the composite fleet
+  // status: a permission hold or a `!` PTY can temporarily own `status` while
+  // model work remains underneath. Never persisted — recovery starts idle.
+  modelTurnsPending: number;
+  // Adapters emit error + turn_end for one failed turn. The error provides
+  // immediate terminal feedback; this marker keeps its following turn_end
+  // from decrementing the pending count a second time.
+  errorAwaitingTurnEnd?: boolean;
   // The live-tree doorbell (W.1): running exactly while viewports are
   // attached — first attach starts it, last detach (and end) stops it — so a
   // dormant session holds no inotify watches.
@@ -304,6 +318,7 @@ export class SessionRegistry {
       tailResumeSafe: true,
       name: path.basename(dir) || dir,
       status: "idle",
+      modelTurnsPending: 0,
       lastActivity: Date.now(),
       createdAt: Date.now(),
       permissions: [],
@@ -352,6 +367,7 @@ export class SessionRegistry {
       tailResumeSafe: false,
       name: stored.name,
       status: "idle",
+      modelTurnsPending: 0,
       lastActivity: stored.lastActivity,
       createdAt: stored.createdAt,
       permissions: [],
@@ -583,8 +599,18 @@ export class SessionRegistry {
     // until the turn moves again (4.6).
     const prev = entry.status;
     if (msg.type === "turn_end" || msg.type === "error") {
-      entry.status = "idle";
-      entry.midTurnPromptUsed = false; // the burst gate clears on the turn grammar, never a clock
+      if (msg.type === "error") {
+        if (!entry.errorAwaitingTurnEnd) {
+          entry.modelTurnsPending = Math.max(0, entry.modelTurnsPending - 1);
+        }
+        entry.errorAwaitingTurnEnd = true;
+      } else if (entry.errorAwaitingTurnEnd) {
+        entry.errorAwaitingTurnEnd = false;
+      } else {
+        entry.modelTurnsPending = Math.max(0, entry.modelTurnsPending - 1);
+      }
+      entry.midTurnPromptUsed = entry.modelTurnsPending > 1;
+      entry.status = entry.modelTurnsPending > 0 ? "working" : "idle";
     } else if (msg.type === "bang_end") {
       // The `!` PTY is its own lifecycle running BESIDE the model turn — its
       // end is NOT the turn reaching a terminal state. Treating it as one
@@ -592,7 +618,11 @@ export class SessionRegistry {
       // allow/deny while the ask was still live at the adapter — the
       // 2026-07-24 bug class through a different door) and re-opened the
       // mid-turn burst gate (2026-07-29 bughunt).
-      entry.status = entry.permissions.length ? "permission" : "idle";
+      entry.status = entry.permissions.length
+        ? "permission"
+        : entry.modelTurnsPending > 0
+          ? "working"
+          : "idle";
     } else if (msg.type === "permission_request") {
       entry.status = "permission";
     } else if (msg.type === "bang_start" || msg.type === "bang_output") {
@@ -692,10 +722,13 @@ export class SessionRegistry {
       if (entry.status === "permission" && entry.permissions.length === 0) {
         entry.status = "working";
       }
+    } else if (msg.type === "turn_end" || msg.type === "error") {
+      // The turn that owned these asks ended. A queued next turn may keep the
+      // session working, but none of the prior turn's approvals survive into it.
+      entry.permissions = [];
     } else if (entry.status === "idle") {
-      // turn_end / error: nothing can still be pending. (bang_end only lands
-      // here when no ask pends — the status derivation keeps "permission"
-      // through a bang, so a live ask is never wiped by one.)
+      // bang_end only lands here when no ask pends — the status derivation
+      // keeps "permission" through a bang, so a live ask is never wiped by one.
       entry.permissions = [];
     } else if (entry.permissions.length) {
       // The adapter auto-denies an unanswered ask at PERMISSION_TIMEOUT_MS
@@ -943,8 +976,12 @@ export class SessionRegistry {
     const clean = name.trim().slice(0, 60);
     if (!clean) return false;
     if (entry) {
+      const previous = entry.name;
       entry.name = clean;
-      this.checkpoint(entry);
+      if (this.store && !this.checkpoint(entry)) {
+        entry.name = previous;
+        return false;
+      }
     } else {
       const stored = this.dormant.get(id);
       if (!stored || !this.store) return false;
@@ -1009,18 +1046,29 @@ export class SessionRegistry {
    * turn; ONE more may arrive while it runs — the terminal agents queue
    * typed-mid-turn input, so refusing a single queued follow-up would break
    * parity (desktop Enter still sends while busy); anything past that is
-   * refused until a terminal event (turn_end / error / bang_end) clears the
+   * refused until a model-terminal event (turn_end / error) clears the
    * gate in broadcast(). Burn is capped near one turn per completed turn,
    * and no human pace — nor the suite's — can trip it.
    */
   dispatchPrompt(entry: SessionEntry, text: string): boolean {
-    if (entry.status !== "idle") {
-      if (entry.midTurnPromptUsed) return false;
-      entry.midTurnPromptUsed = true;
-    }
+    if (entry.modelTurnsPending > 1) return false;
+    entry.modelTurnsPending += 1;
+    entry.midTurnPromptUsed = entry.modelTurnsPending > 1;
+    entry.errorAwaitingTurnEnd = false;
     this.broadcast(entry, { type: "user_prompt", text });
     entry.session.pushPrompt(text);
     return true;
+  }
+
+  /** Record a model turn started outside dispatchPrompt — currently the
+   * transcript a completed `!` command sends directly to the adapter. If a
+   * turn is already active, that transcript consumes its queued-follow-up
+   * slot just like typed input would. */
+  markModelTurnStarted(entry: SessionEntry) {
+    if (this.entries.get(entry.id) !== entry) return;
+    entry.modelTurnsPending += 1;
+    entry.midTurnPromptUsed = entry.modelTurnsPending > 1;
+    entry.errorAwaitingTurnEnd = false;
   }
 
   /** Push a fresh snapshot to every watcher, coalescing bursts. */

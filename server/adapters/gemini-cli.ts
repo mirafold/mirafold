@@ -275,11 +275,21 @@ export class GeminiCliSession implements AgentSession {
     while (!this.closed) {
       const item = await this.queue.next();
       if (item === CLOSE) return;
-      const trimmed = item.trim();
-      if (trimmed === "/model" || trimmed.startsWith("/model ")) {
-        await this.runModelCommand(trimmed.slice("/model".length).trim());
-      } else {
-        await this.runTurn(item);
+      try {
+        const trimmed = item.trim();
+        if (trimmed === "/model" || trimmed.startsWith("/model ")) {
+          await this.runModelCommand(trimmed.slice("/model".length).trim());
+        } else {
+          await this.runTurn(item);
+        }
+      } catch (err) {
+        if (this.closed) return;
+        // The worker is launched fire-and-forget from the constructor. A
+        // preparation failure (most notably an unwritable project settings
+        // file) must terminate THIS turn, not escape as an unhandled rejection
+        // into index.ts's process-wide last-gasp handler.
+        this.emit({ type: "error", message: `Gemini could not start this turn: ${errText(err)}` });
+        this.emit({ type: "turn_end" });
       }
     }
   }

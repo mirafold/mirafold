@@ -181,6 +181,11 @@ const startBang = (registry: SessionRegistry, e: SessionEntry, command: string, 
             id,
           });
         }
+        // The transcript below starts a model turn of its own. Record that
+        // before bang_end derives fleet/gate state so there is no false-idle
+        // window, and so a bang beside an existing turn consumes the one
+        // queued-follow-up slot instead of silently adding another.
+        registry.markModelTurnStarted(e);
         registry.broadcast(e, { type: "bang_end", id, exitCode });
         applyCwdHandoff(registry, e, runCwd, cwdFile);
         // The transcript goes to the agent NOW, as its own turn — the

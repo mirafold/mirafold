@@ -70,6 +70,17 @@ test("listTree: path-byte cap trips honestly", () => {
   assert.ok(r.entries.length < 5);
 });
 
+test("listTree: path-byte admission counts UTF-8 bytes, not JavaScript characters", () => {
+  const root = tmp();
+  const name = "é.txt";
+  writeFileSync(path.join(root, name), "x");
+  assert.ok(Buffer.byteLength(name, "utf8") > name.length, "fixture distinguishes bytes from characters");
+  const r = listTree(root, { maxPathBytes: name.length });
+  assert.ok(!("error" in r));
+  assert.deepEqual(r.entries, [], "a path larger than the byte budget is never admitted");
+  assert.equal(r.truncated, true);
+});
+
 test("listTree: the walk is node-bounded — a tree of empty dirs can't be walked without limit (audit 2026-07-24)", () => {
   const root = tmp();
   // 30 sibling directories, each with a nested empty child — NO files, so the

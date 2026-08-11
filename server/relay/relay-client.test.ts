@@ -10,6 +10,7 @@ import {
   CLOSE_OVERLOADED,
   CLOSE_UNENTITLED,
   ENTITLEMENT_HEADER,
+  isRelayToDaemon,
 } from "./relay-protocol";
 
 // The dial-out refusal map: a relay close code the daemon can EXPLAIN vs. a
@@ -27,6 +28,46 @@ test("relayRefusalReason: an ordinary drop is not a refusal (null → retry quie
   assert.equal(relayRefusalReason(1000), null); // normal close
   assert.equal(relayRefusalReason(1006), null); // abnormal/transport drop
   assert.equal(relayRefusalReason(CLOSE_BAD_CODE), null); // no daemon under that id — transient race
+});
+
+test("relay envelopes reject valid-JSON scalars and wrong-shaped objects", () => {
+  for (const value of [null, true, "open", [], {}, { t: 1 }, { t: "open" }, { t: "frame", v: "v", p: 1 }]) {
+    assert.equal(isRelayToDaemon(value), false, JSON.stringify(value));
+  }
+  assert.equal(isRelayToDaemon({ t: "ping" }), true);
+  assert.equal(isRelayToDaemon({ t: "open", v: "v1" }), true);
+  assert.equal(isRelayToDaemon({ t: "frame", v: "v1", p: "ciphertext" }), true);
+  assert.equal(isRelayToDaemon({ t: "close", v: "v1" }), true);
+});
+
+test("a relay sending JSON null is ignored without escaping the socket handler", async () => {
+  let observed!: () => void;
+  const survived = new Promise<void>((resolve) => (observed = resolve));
+  const server = createServer();
+  const wss = new WebSocketServer({ noServer: true });
+  server.on("upgrade", (req, socket, head) => {
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      ws.send("null");
+      setTimeout(observed, 25);
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = (server.address() as { port: number }).port;
+  const client = startRelayClient({
+    url: `ws://127.0.0.1:${port}`,
+    code: "a-strong-pairing-code-for-tests",
+    registry: {} as SessionRegistry,
+  });
+  try {
+    await survived;
+  } finally {
+    client.stop();
+    wss.close();
+    await new Promise<void>((resolve) => {
+      server.close(() => resolve());
+      server.closeAllConnections?.();
+    });
+  }
 });
 
 // R.5: the dial-out presents the entitlement token as an upgrade header — and

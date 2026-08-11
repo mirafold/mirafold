@@ -156,6 +156,33 @@ test("a pre-existing settings.json — broken or valid — is untouched at const
   b.close();
 });
 
+test("a settings write failure ends only that turn and the next prompt retries", async () => {
+  fixture("settings-write-retry.jsonl", [
+    { type: "result", stats: { input_tokens: 1, output_tokens: 1 } },
+  ]);
+  const { s, msgs, awaitTurnEnd } = makeSession();
+  const internals = s as unknown as { writeMcpSettings: () => void };
+  const realWrite = internals.writeMcpSettings.bind(s);
+  let attempts = 0;
+  internals.writeMcpSettings = () => {
+    attempts += 1;
+    if (attempts === 1) throw new Error("read-only settings file");
+    realWrite();
+  };
+
+  s.pushPrompt("first");
+  await awaitTurnEnd(1);
+  assert.equal(attempts, 1);
+  assert.match(msgs.find((m) => m.type === "error")!.message, /read-only settings file/);
+
+  s.pushPrompt("second");
+  await awaitTurnEnd(2);
+  assert.equal(attempts, 2, "a failed merge is not marked complete — the next turn retries it");
+  assert.equal(msgs.filter((m) => m.type === "error").length, 1);
+  assert.equal(msgs.filter((m) => m.type === "usage").length, 1, "the healed turn reaches Gemini");
+  s.close();
+});
+
 test("a pre-existing settings.json is never touched at all when trust is denied", async () => {
   const ws = mkdtempSync(path.join(os.tmpdir(), "genui-gemini-untrusted-"));
   const dir = path.join(ws, ".gemini");

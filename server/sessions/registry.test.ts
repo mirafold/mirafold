@@ -3,10 +3,11 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { foldUsage, resolveCwd, SessionRegistry } from "./registry";
+import { expandHomePath, foldUsage, resolveCwd, SessionRegistry } from "./registry";
 import { PERMISSION_TIMEOUT_MS } from "../adapters/types";
 import type { Backend } from "../adapters";
 import type { WireMsg } from "../protocol";
+import { SessionCheckpointStore } from "./session-store";
 
 test("resolveCwd defaults to the process cwd", () => {
   assert.equal(resolveCwd(undefined), process.cwd());
@@ -19,6 +20,10 @@ test("resolveCwd resolves an existing dir to an absolute path", () => {
 
 test("resolveCwd expands a leading ~", () => {
   assert.equal(resolveCwd("~"), os.homedir());
+  assert.equal(
+    expandHomePath("~\\Projects\\mirafold", "C:\\Users\\Kyle"),
+    "C:\\Users\\Kyle\\Projects\\mirafold",
+  );
 });
 
 test("resolveCwd throws on a missing directory", () => {
@@ -55,6 +60,22 @@ function freshSession() {
   assert.equal(entry.nextSeq, 1);
   return { reg, entry };
 }
+
+test("an active rename rolls back when its checkpoint cannot be written", () => {
+  const store = new SessionCheckpointStore(mkdtempSync(path.join(os.tmpdir(), "genui-rename-store-")));
+  const reg = new SessionRegistry(MOCK_BACKEND, 0, store);
+  const dir = mkdtempSync(path.join(os.tmpdir(), "genui-rename-root-"));
+  const entry = reg.create({ cwd: dir });
+  const previous = entry.name;
+  (store as unknown as { write: () => void }).write = () => {
+    throw new Error("disk is read-only");
+  };
+
+  assert.equal(reg.rename(entry.id, "name that must not lie"), false);
+  assert.equal(entry.name, previous);
+  assert.equal(reg.summary().find((row) => row.sessionId === entry.id)?.name, previous);
+  reg.end(entry.id);
+});
 
 const delta = (): WireMsg => ({ type: "text_delta", text: "x" });
 
@@ -706,6 +727,52 @@ test("bang_end on an ask-free session still reads idle (the M.1 behavior stands)
   reg.broadcast(entry, { type: "bang_end", id: "b1", exitCode: 0 });
   assert.equal(entry.status, "idle");
   assert.equal(entry.activity, undefined);
+  reg.end(entry.id);
+});
+
+test("bang_end beside an active model turn stays working and never reopens the prompt gate", () => {
+  const { reg, entry } = freshSession();
+  assert.equal(reg.dispatchPrompt(entry, "first"), true);
+  assert.equal(entry.modelTurnsPending, 1);
+  assert.equal(reg.dispatchPrompt(entry, "queued"), true);
+  assert.equal(entry.modelTurnsPending, 2);
+  assert.equal(entry.midTurnPromptUsed, true);
+  assert.equal(reg.dispatchPrompt(entry, "refused before bang"), false);
+
+  reg.broadcast(entry, { type: "bang_start", command: "git status", id: "b1" });
+  reg.broadcast(entry, { type: "bang_end", id: "b1", exitCode: 0 });
+  assert.equal(entry.status, "working", "the original model turn still owns the session");
+  assert.equal(entry.modelTurnsPending, 2);
+  assert.equal(entry.midTurnPromptUsed, true, "bang lifecycle is not model turn grammar");
+  assert.equal(reg.dispatchPrompt(entry, "refused after bang"), false);
+
+  reg.broadcast(entry, { type: "turn_end" });
+  assert.equal(entry.status, "working", "the queued turn becomes current without a false-idle boundary");
+  assert.equal(entry.modelTurnsPending, 1);
+  assert.equal(entry.midTurnPromptUsed, false, "the new current turn earns one queued-follow-up slot");
+  assert.equal(reg.dispatchPrompt(entry, "follow-up for queued turn"), true);
+  assert.equal(entry.modelTurnsPending, 2);
+  reg.broadcast(entry, { type: "turn_end" });
+  assert.equal(entry.modelTurnsPending, 1);
+  reg.broadcast(entry, { type: "turn_end" });
+  assert.equal(entry.status, "idle");
+  assert.equal(entry.modelTurnsPending, 0);
+  reg.end(entry.id);
+});
+
+test("an adapter error plus its turn_end completes one pending turn, not two", () => {
+  const { reg, entry } = freshSession();
+  assert.equal(reg.dispatchPrompt(entry, "first"), true);
+  assert.equal(reg.dispatchPrompt(entry, "queued"), true);
+  reg.broadcast(entry, { type: "error", message: "first failed" });
+  assert.equal(entry.modelTurnsPending, 1);
+  assert.equal(entry.status, "working");
+  reg.broadcast(entry, { type: "turn_end" });
+  assert.equal(entry.modelTurnsPending, 1, "turn_end pairs with the preceding error");
+  assert.equal(entry.status, "working");
+  reg.broadcast(entry, { type: "turn_end" });
+  assert.equal(entry.modelTurnsPending, 0);
+  assert.equal(entry.status, "idle");
   reg.end(entry.id);
 });
 
