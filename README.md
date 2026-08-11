@@ -512,9 +512,11 @@ server/            the local daemon (Node, run with tsx)
                      cited by path from CLAUDE.md/BUSINESS.md; stays at root
   version.ts         reads package.json's version at build time (R.4g)
   adapters/          one AgentSession per agent: claude-code.ts, codex.ts,
-                     gemini-cli.ts, mock.ts (+ index.ts seam, types.ts,
-                     async-queue.ts, render-mcp-cmd.ts, provider command/skill
-                     catalog helpers, *.spike.md probe notes)
+                     gemini-cli.ts, mock.ts. Codex's lifecycle stays in
+                     codex.ts; codex-{binding,commands,diagnostics,events,
+                     prompt,rollout}.ts own its named internal seams. Shared
+                     index/types/queue/render-MCP and provider catalog helpers
+                     live beside them, with *.spike.md probe notes.
   sessions/          the session state core (H.4/H.5):
     registry.ts        SessionRegistry: sessions decoupled from connections (4.2);
                        broadcast() is also where engine-supplied labels are
