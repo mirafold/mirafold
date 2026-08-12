@@ -680,6 +680,7 @@ body {
    changed-file rail is compact; the diff receives the majority of the width.
    `max-width` protects a readable conversation column at the 641px boundary. */
 .changes-panel {
+  position: relative;
   flex: 0 1 clamp(370px, 55vw, 760px);
   width: clamp(370px, 55vw, 760px);
   max-width: calc(100% - 220px);
@@ -701,6 +702,41 @@ body {
     opacity: 0;
     transform: translateX(-12px);
   }
+}
+
+/* The desktop resize handle rides the panel's right border (the panel clips
+   overflow, so it sits fully inside). Its grab area is wider than its
+   visible affordance, which lights up on hover and keyboard focus. */
+.changes-resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+  z-index: 6;
+  outline: none;
+}
+
+.changes-resize::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 3px;
+  background: transparent;
+  transition: background 0.12s ease;
+}
+
+.changes-resize:hover::after {
+  background: var(--border-hover);
+}
+
+.changes-resize:focus-visible::after {
+  background: var(--accent);
 }
 
 .changes-head {
@@ -5271,6 +5307,12 @@ html {
     border-right: none;
     padding-top: env(safe-area-inset-top);
     padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* Full-screen already; nothing to resize. (Not rendered on phone either —
+     this pins the takeover against any userWidth inline style.) */
+  .changes-resize {
+    display: none;
   }
 
   .changes-head {

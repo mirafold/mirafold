@@ -481,6 +481,88 @@ test("CR.3 hunk navigation reaches terminal hunks, opens on the first hunk, and 
   await page.close();
 });
 
+test("CR.2 desktop: the panel resizes by drag and keyboard, clamps to a conversation reserve, and persists", async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  const widths = () =>
+    page.evaluate(() => ({
+      panel: document.querySelector(".changes-panel")?.getBoundingClientRect().width ?? -1,
+      zone: document.querySelector(".zone-outer")?.getBoundingClientRect().width ?? -1,
+    }));
+  const openChanges = async () => {
+    await page.waitForSelector(".ab-changes");
+    await page.locator(".ab-changes").click();
+    await page.waitForSelector(".changes-resize");
+  };
+  const dragHandleBy = async (dx: number) => {
+    // hover() waits for a stable bounding box — the panel's 0.18s slide-in
+    // otherwise yields coordinates the 8px handle has already left.
+    await page.locator(".changes-resize").hover();
+    const box = await page.locator(".changes-resize").boundingBox();
+    assert.ok(box, "resize handle not visible");
+    await page.mouse.move(box!.x + box!.width / 2, box!.y + 300);
+    await page.mouse.down();
+    await page.mouse.move(box!.x + box!.width / 2 + dx, box!.y + 300, { steps: 4 });
+    await page.mouse.up();
+  };
+
+  await page.goto(sessionUrl(hunkSession));
+  await openChanges();
+  const base = await widths();
+
+  // Drag far right: the panel absorbs everything except the 380px reserve —
+  // an absolute conversation column, deliberately not a screen fraction.
+  await dragHandleBy(2000);
+  const stretched = await widths();
+  assert.ok(stretched.panel > base.panel + 100, "drag right did not widen the panel");
+  assert.ok(
+    Math.abs(stretched.panel - (stretched.zone - 380)) <= 2,
+    `drag right must stop 380px short of the edge (panel ${stretched.panel}, zone ${stretched.zone})`,
+  );
+
+  // Drag far left: the untouched default width is the floor.
+  await dragHandleBy(-2000);
+  const floored = await widths();
+  assert.ok(
+    Math.abs(floored.panel - base.panel) <= 2,
+    `drag-left floor is the default width (got ${floored.panel}, default ${base.panel})`,
+  );
+
+  // The separator is a keyboard control.
+  await page.locator(".changes-resize").focus();
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowRight");
+  const stepped = await widths();
+  assert.ok(
+    Math.abs(stepped.panel - (floored.panel + 64)) <= 2,
+    `two ArrowRight steps should add 64px (got ${stepped.panel}, from ${floored.panel})`,
+  );
+
+  // The chosen width survives a reload.
+  await page.reload();
+  await openChanges();
+  const restored = await widths();
+  assert.ok(
+    Math.abs(restored.panel - stepped.panel) <= 2,
+    `width did not persist across reload (got ${restored.panel}, want ${stepped.panel})`,
+  );
+
+  // Double-click resets to the default and leaves nothing stored.
+  await page.locator(".changes-resize").dblclick();
+  const reset = await widths();
+  assert.ok(
+    Math.abs(reset.panel - base.panel) <= 2,
+    `double-click should reset to the default width (got ${reset.panel}, default ${base.panel})`,
+  );
+  assert.equal(
+    await page.evaluate(() => localStorage.getItem("mirafold-changes-panel-width")),
+    null,
+    "reset left a stored width behind",
+  );
+  await assertAxeClean(page, "resizable changes panel");
+  await noSideScroll(page);
+  await page.close();
+});
+
 test("CR.2 phone: full-screen one-file review has persistent navigation and preserves conversation scroll", async () => {
   phoneContext = await browser.newContext({
     viewport: { width: 390, height: 844 },

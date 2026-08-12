@@ -3357,6 +3357,22 @@ both acceptance requirements, not a later responsive cleanup.
   every jump asserts the hunk's rows are inside the scroller's visible box,
   never just the label. changes 11/11, app 54/54, phone 8/8, Tier-1 clean.
 
+- [x] **Step CR.8 — Resizable desktop review panel** — completed 2026-08-12
+  (Kyle-directed). The desktop Changes panel gains a drag handle on its
+  transcript edge: floor = the untouched default width (`clamp(370px, 55vw,
+  760px)`), ceiling = `calc(100% - 380px)` — an absolute phone-sized
+  conversation reserve rather than a screen fraction, because a percentage
+  leaves a useless sliver on laptops and cramped space on ultrawides; CSS
+  `clamp()` lets the floor win on windows too narrow for both. Drag mutates
+  the panel style directly (no per-frame React commit through a thousand
+  diff rows); the chosen width persists in `localStorage`
+  (`mirafold-changes-panel-width`); double-click/Home resets; the handle is
+  a keyboard `role="separator"` (arrows step 32px, End = max) with live
+  aria-value geometry. Phone remains the full-screen takeover — no handle
+  rendered and a CSS pin. e2e covers drag clamping both directions, keyboard
+  steps, persistence across reload, reset, axe, and no side-scroll. changes
+  12/12, phone 8/8, app 54/54, Tier-1 clean.
+
 ## Phase PN — Panes (file views beside the transcript)
 
 **Why.** Kyle (2026-07-26): open a file and see it in its own pane. Also the
