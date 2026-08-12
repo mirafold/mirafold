@@ -5,6 +5,7 @@ import {
   matchingPromptOptions,
   promptCompletionMatch,
 } from "../prompt-completions";
+import { mergePromptDraft } from "../prompt-draft";
 
 // Phone vs. desktop is decided once at module load (a mid-session resize
 // isn't worth a listener, R.4) and drives two deliberate divergences:
@@ -45,8 +46,12 @@ type PromptBoxProps = {
   cwd?: string;
   options: PromptOption[];
   textareaRef: RefObject<HTMLTextAreaElement | null>;
+  containerRef?: RefObject<HTMLDivElement | null>;
+  draft?: PromptDraft;
   globalTriggersDisabled?: boolean;
 };
+
+export type PromptDraft = { id: number; text: string };
 
 function PromptOptionsMenu({
   options,
@@ -126,6 +131,8 @@ export function PromptBox({
   cwd,
   options,
   textareaRef: ref,
+  containerRef,
+  draft,
   globalTriggersDisabled = false,
 }: PromptBoxProps) {
   const [text, setText] = useState("");
@@ -139,6 +146,8 @@ export function PromptBox({
     () => localStorage.getItem(CWD_SHOWN_KEY) !== "hidden",
   );
   const pendingCursor = useRef<number | null>(null);
+  const textRef = useRef(text);
+  textRef.current = text;
   const completion = useMemo(
     () => promptCompletionMatch(text, cursor, options),
     [text, cursor, options],
@@ -196,7 +205,22 @@ export function PromptBox({
     if (at === null) return;
     pendingCursor.current = null;
     ref.current?.setSelectionRange(at, at);
+    ref.current?.focus({ preventScroll: true });
   }, [text, cursor]);
+
+  // Review actions can only propose text. Merge it after anything the user
+  // was already composing, show it in this trusted textarea, and leave the
+  // ordinary edit/send path entirely in the user's hands.
+  useEffect(() => {
+    if (!draft) return;
+    const next = mergePromptDraft(textRef.current, draft.text);
+    textRef.current = next;
+    setText(next);
+    setCursor(next.length);
+    setActiveOption(0);
+    setMenuDismissed(true);
+    pendingCursor.current = next.length;
+  }, [draft]);
 
   // A provider trigger typed while page chrome/transcript has focus starts the
   // prompt and opens its catalog immediately. Never steal from another
@@ -261,7 +285,7 @@ export function PromptBox({
   };
 
   return (
-    <div className="prompt-box">
+    <div className="prompt-box" ref={containerRef}>
       {menuOpen && (
         <PromptOptionsMenu
           options={matches}

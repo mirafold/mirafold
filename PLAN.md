@@ -3282,6 +3282,26 @@ both acceptance requirements, not a later responsive cleanup.
 ### Phase CR.3 — Code-context navigation + transparent agent feedback
 
 - [ ] **Step CR.3 — Make a diff directly conversational**
+  - **In progress — session handoff 2026-08-11.** The selectable review diff,
+    stable HEAD/working-tree line coordinates, two-hunk navigation, shipped-stack
+    syntax highlighting, desktop pointer/keyboard ranges, phone line/hunk taps,
+    and visible unsent `Explain` / `Request change` prompt drafts are implemented
+    on `feature/changes-workspace`. Existing prompt text is preserved, invalid
+    selections clear with an explicit notice, and the focused unit, typecheck,
+    production-build, desktop-browser, and phone-browser checks pass. CR.3 stays
+    unchecked because its ordered browser suite is not yet reliably green.
+  - **Next `$next` action — diagnose before changing code.** Re-run the smallest
+    ordered Changes-browser subset enough times, without product edits, to
+    characterize an intermittent axe `scrollable-region-focusable` result. After
+    CR.3's desktop flow sends a mock turn, the later phone checks sometimes report
+    two serious findings at highlighted transcript code nodes (`.language-diff`
+    and `.language-ts`). Each phone test passes alone, and the same ordered subset
+    has both passed and failed with no code change. Two CSS hypotheses were tested
+    separately and reverted after they failed: making `.markdown pre code.hljs`
+    non-scrolling, then making `.rc-code-body code.hljs` non-scrolling. Before a
+    third hypothesis, capture the flagged nodes' dimensions, computed overflow,
+    and scroll ancestry inside the same axe evaluation that reports the result.
+    Do not mark CR.3 complete until the ordered suite passes repeatedly.
   - **Goal:** turn "I object to these lines" into a precise, ordinary follow-up
     to the same terminal agent without copying paths and snippets by hand.
   - **Build:** add stable line numbers, changed-hunk navigation, enough context

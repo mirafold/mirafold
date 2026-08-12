@@ -1,105 +1,80 @@
-# Session handoff — correctness PR #35 open for review
+# Session handoff — Changes CR.3 axe investigation is next
 
-This handoff is current as of 2026-08-11 after PR #34 was repaired, verified,
-and merged into `next`, and after all eight confirmed whole-codebase bughunt
-findings were fixed on the new `fix/bughunt-correctness` branch. It becomes
-stale when PR #35 changes or merges, `next` advances, or Kyle changes the hold.
+This handoff is current as of 2026-08-11. It becomes stale when
+`feature/changes-workspace` advances, CR.3's ordered browser failure is
+diagnosed, or Kyle changes the requested work.
 
 ## Current state
 
-- Repository: Mirafold, a browser re-skin of Claude Code, Codex, and Gemini
-  CLI with generative UI layered on top.
-- Branch: `fix/bughunt-correctness`, based on updated `next` merge commit
-  `21b5f33`.
-- Open review: PR #35 targets `next`. Kyle explicitly asked for a new PR and
-  asked that work stop there so he can review it. Do not merge PR #35 or move
-  the roadmap forward without a new instruction.
-- Implementation commit: signed and DCO-signed-off `3ed7236` (`fix: close
-  whole-codebase correctness findings`). The plan/archive/handoff sync is the
-  only separate documentation commit.
-- No dependency, provider protocol, stored-session schema, or user-facing file
-  write capability was added.
+- Repository: Mirafold, a faithful browser re-skin of Claude Code, Codex, and
+  Gemini CLI with generative UI layered on top.
+- Branch: `feature/changes-workspace`, based directly on `next` commit
+  `923d1ec`. Push this branch itself; no pull request was requested or created
+  during this wrap-up.
+- CR.1 and CR.2 are complete. Commit `6832caf` contains the reusable file-view
+  foundation and the responsive Workspace changes surface.
+- CR.3 is implemented but deliberately remains unchecked in `PLAN.md` because
+  the ordered browser suite has an intermittent accessibility result. A new
+  session invoking `$next` must stay on CR.3 and diagnose that result before
+  adding CR.4 or any unrelated roadmap work.
+- No dependency, server protocol, agent adapter, permission path, or
+  user-facing filesystem write capability was added by CR.3.
 
-## PR #34 and the reported CI failure
+## CR.3 implementation present on the branch
 
-- PR #34 contained the visually approved Explorer E3.2 pass and the
-  behavior-preserving Codex D.1 decomposition.
-- Its failed combined Tier 2/Tier 3 job was diagnosed from the exact output:
-  E.3 expected rendered title text `Files`, but the intentional uppercase CSS
-  rendered `FILES`; E.6 then timed out only because E.3 aborted before closing
-  shared panel state.
-- The assertion alone was corrected. Signed and DCO-signed-off commit
-  `5de3f2e` replaced the initial unsigned-off metadata. Local E2E passed 83/83,
-  then GitHub passed DCO, Cloudflare Pages, Tier 1, and combined Tier 2/Tier 3.
-- PR #34 merged into `next` as `21b5f33`. D.1 remains unchecked only because
-  its roadmap definition still requires Tier 4 plus manual subscription and
-  OpenRouter turns; do not run those as part of PR #35.
+- `web/src/change-review.ts` derives stable HEAD/current line coordinates,
+  navigable hunks, bounded selections, syntax-language names, and exact
+  path/range/diff prompt text from the existing diff data.
+- `web/src/components/changes/ReviewDiff.tsx` renders the full contextual diff
+  with the existing highlighting stack. Desktop supports pointer drag and
+  keyboard ranges; phone supports one-line taps and whole-hunk selection.
+- `Explain` and `Request change` append visible text to the trusted prompt,
+  preserve text already being composed, focus the textarea, and never send.
+  The user still edits and submits through the ordinary prompt path.
+- Selection state survives an identical refresh and clears with an explicit
+  notice when the file content, selected file, or selected textual view changes.
+- The phone Changes surface and raised prompt act as one focus-contained review
+  surface while a draft is visible. Rapid file navigation is coalesced beyond
+  the daemon's 250 ms diff-request floor.
+- Focused unit coverage and real-browser desktop/phone coverage are present in
+  `web/src/change-review.test.ts`, `web/src/prompt-draft.test.ts`, and
+  `server/testing/changes.e2e.ts`.
 
-## PR #35 executable changes
+## Unresolved failure — first task for the next `$next`
 
-- `server/adapters/gemini-cli.ts`: one rejected queued preparation no longer
-  kills the fire-and-forget worker; the failed settings merge remains eligible
-  for retry on the next prompt.
-- `server/adapters/codex.ts`: a transient first-party model-catalog failure no
-  longer clears the guard; both subscription and API-key sessions retry before
-  a later prompt reaches the engine.
-- `server/relay/relay-protocol.ts` and `relay-client.ts`: parsed relay traffic
-  is runtime-validated before the multiplexer reads envelope fields. JSON
-  scalars, null, arrays, and wrong-shaped objects are ignored.
-- `server/security/auth.ts`: malformed percent escapes in the target cookie
-  behave as no cookie, allowing a later duplicate or valid query token to
-  recover.
-- `server/sessions/registry.ts` and `bang-handlers.ts`: pending model turns are
-  counted independently from bang and permission status. `bang_end` cannot
-  create false idle or reopen the prompt gate; queued turns remain working;
-  adapter `error` plus `turn_end` consumes one pending turn, not two.
-- `server/sessions/fs-explorer.ts` and `git.ts`: path admission uses UTF-8 byte
-  length consistently with the accumulated cap.
-- `web/src/tildify.ts`, `web/src/components/files/FilesPanel.tsx`, and
-  `server/sessions/registry.ts`: drive, UNC, mixed-separator, and tildified
-  Windows paths work while POSIX case sensitivity and literal backslashes
-  remain intact.
-- `server/sessions/registry.ts` and `connection.ts`: an active rename restores
-  its previous name when checkpointing fails and tells the viewport that the
-  name was not saved.
+- In the ordered Changes browser suite, after CR.3's desktop case sends a mock
+  turn, a later phone axe check intermittently reports the serious
+  `scrollable-region-focusable` rule twice. The reported targets are highlighted
+  transcript code nodes with `.language-diff` and `.language-ts`, not the new
+  selectable diff rows.
+- The CR.2 phone test passes alone. The CR.3 phone test passes alone. The
+  desktop-then-phone subset has both passed and failed without a code change,
+  so no product cause is established yet.
+- Two hypotheses were tested independently and reverted after the failure
+  persisted: an inner scroller on `.markdown pre code.hljs`, then an inner
+  scroller on `.rc-code-body code.hljs`. Do not restore or stack either edit.
+- First, characterize the recurrence rate on the smallest ordered subset with
+  no code changes. Then capture each flagged node's `clientHeight`,
+  `scrollHeight`, computed overflow, focusability, and ancestor scroll chain
+  inside the same axe evaluation that reports it. Name the causal chain before
+  making a third fix attempt.
+- Keep CR.3 unchecked until the ordered suite passes repeatedly. Do not start
+  CR.4 merely because the focused cases are green.
 
-## Regression and verification state
+## Verification at handoff
 
-- Every finding has a focused regression. The final affected-unit batch passed
-  151/151; the new plain-walk UTF-8 case passed alone under the denial guard.
-- The ordinary safe unit matrix passed 577/577. The aggregate-sensitive Codex
-  catalog, Gemini catalog, and version files passed independently, 17/17.
-- The guarded Tier 2 server-integration matrix passed 131/131 across 21 safe
-  files.
-- The guarded Tier 3 browser matrix passed 70/70: 66/66 app/bundle/fleet/phone/
-  recovery plus 4/4 relay.
-- TypeScript, fresh guarded Vite and esbuild production builds, and
-  `git diff --check` passed.
-- Excluded for the account-wide opacity rule: unit/integration fixtures that
-  deliberately manufacture dotenv files, the launcher browser file, and the
-  Explorer/global-axe browser cases whose fixtures enter that filename class.
-- One initial Tier 3 command used a negative run-pattern that matched the
-  file-level parent, so six Explorer cases ran before the mistake was visible.
-  The run was stopped immediately. The preloaded guard prevented content
-  reads, but those cases may have listed a forbidden filename. The mistake was
-  reported; a harmless unit probe proved the filter behavior, and the green
-  replacement used Node's positive `--test-skip-pattern`. No product edit was
-  made in response.
+- Focused CR.3 and directly affected Tier 1 tests passed 25/25.
+- TypeScript typecheck, the production Vite build with dotenv loading disabled,
+  the server production build, and `git diff --check` passed.
+- The focused CR.3 desktop browser case passed, and the focused CR.3 phone
+  browser case passed.
+- The complete Changes browser suite is not considered green because the
+  intermittent ordered axe result above remains unresolved.
 
-## Important invariants
+## Standing safety boundary
 
 - Never inspect, search, print, diff, parse, source, or otherwise read dotenv
-  contents. Every recursive search/listing must explicitly exclude `.env`,
-  `*.env`, `.env.*`, and `*.env.*`. The temporary denial guard lives only at
-  `/tmp/mirafold-deny-dotenv.cjs` and is not repository state.
-- `modelTurnsPending` is live-only and initializes to zero for fresh and
-  recovered sessions. `midTurnPromptUsed` is derived from whether more than one
-  model turn is pending. Only model-terminal grammar decrements the count;
-  `bang_end` derives display status without consuming it.
-- Keep adapter `error` plus `turn_end` paired as one model terminal event in the
-  registry. A queued next turn must remain `working` and earn exactly one new
-  follow-up slot when the prior turn ends.
-- Windows recognition must require a drive/UNC shape (or a `~\\` root label),
-  not merely any backslash. Backslash is legal filename data on POSIX.
-- PR #35 is intentionally open and unmerged. The next action is Kyle's review,
-  not another roadmap phase, Tier 4 spend, manual provider turn, or merge.
+  contents. Every recursive search or listing must explicitly exclude `.env`,
+  `*.env`, `.env.*`, and `*.env.*`. The temporary denial guard used this
+  session lives only at `/tmp/mirafold-deny-dotenv.cjs`; it is not repository
+  state and may not exist in the next session.

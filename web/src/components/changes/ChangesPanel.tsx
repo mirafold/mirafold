@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { FsChangeRepo, WireMsg } from "@protocol";
 import type { ZoneMsg } from "../../session-bus";
+import type { VersionedReviewSelection } from "../../change-review";
 import {
   changeCountLabel,
   changeItems,
@@ -16,6 +17,7 @@ import { useFocusTrap } from "../../use-focus-trap";
 import { useIsPhone } from "../../use-is-phone";
 import { FileView } from "../files/FileView";
 import { useFileView } from "../files/use-file-view";
+import { ReviewDiff } from "./ReviewDiff";
 
 type ChangeSetReply = Extract<WireMsg, { type: "fs_change_set" }>;
 
@@ -38,6 +40,9 @@ const EMPTY: ChangeSetState = {
 // Keep the follow-up outside the daemon's min-interval/git-in-flight window,
 // and collapse bursts onto one fresh snapshot.
 const CHANGE_REFRESH_GAP_MS = 1_000;
+// The daemon's per-viewport fs_diff floor is 250ms. Keep a little scheduling
+// headroom and coalesce rapid navigation onto the newest requested file.
+const CHANGE_FILE_REQUEST_GAP_MS = 350;
 
 export function ChangesPanel({
   open,
@@ -46,6 +51,9 @@ export function ChangesPanel({
   requestRead,
   requestDiff,
   onClose,
+  onCreateDraft,
+  promptContainerRef,
+  promptVisible,
   rootLabel,
   sessionKey,
 }: {
@@ -55,10 +63,17 @@ export function ChangesPanel({
   requestRead: (path: string) => string;
   requestDiff: (path: string) => string;
   onClose: () => void;
+  onCreateDraft: (text: string) => void;
+  promptContainerRef?: RefObject<HTMLElement | null>;
+  promptVisible?: boolean;
   rootLabel?: string;
   sessionKey?: string;
 }) {
   const [set, setSet] = useState<ChangeSetState>(EMPTY);
+  const [reviewSelection, setReviewSelection] = useState<VersionedReviewSelection>();
+  const reviewSelectionRef = useRef(reviewSelection);
+  reviewSelectionRef.current = reviewSelection;
+  const [reviewNotice, setReviewNotice] = useState<string>();
   const file = useFileView({ subscribe, requestRead, requestDiff, scopeKey: sessionKey });
   const items = useMemo(() => changeItems(set.repos), [set.repos]);
   const itemsByPath = useMemo(
@@ -83,6 +98,31 @@ export function ChangesPanel({
   const lastRequestAt = useRef(0);
   const refreshQueued = useRef(false);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const queuedFile = useRef<ChangeItem | null>(null);
+  const fileTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastFileRequestAt = useRef(0);
+
+  const requestChangeFile = useCallback((item: ChangeItem) => {
+    queuedFile.current = item;
+    if (fileTimer.current) return;
+    const run = () => {
+      fileTimer.current = null;
+      const next = queuedFile.current;
+      queuedFile.current = null;
+      if (!next || !openRef.current) return;
+      lastFileRequestAt.current = Date.now();
+      openFileRef.current(next.path, next.status, "diff");
+    };
+    const delay = bellRefreshDelay(
+      Date.now(),
+      lastFileRequestAt.current,
+      CHANGE_FILE_REQUEST_GAP_MS,
+    );
+    if (delay === 0) run();
+    else fileTimer.current = setTimeout(run, delay);
+  }, []);
+  const requestChangeFileRef = useRef(requestChangeFile);
+  requestChangeFileRef.current = requestChangeFile;
 
   const requestSet = useCallback(() => {
     if (pending.current || !sessionKey) {
@@ -140,7 +180,7 @@ export function ChangesPanel({
             });
             const next = chooseChange(changeItems(reply.repos), selectedRef.current?.path);
             if (next && openRef.current) {
-              openFileRef.current(next.path, next.status, "diff");
+              requestChangeFileRef.current(next);
             } else if (!next) {
               resetFileRef.current();
             }
@@ -168,6 +208,43 @@ export function ChangesPanel({
     refreshQueued.current = false;
     if (refreshTimer.current) clearTimeout(refreshTimer.current);
     refreshTimer.current = null;
+    if (fileTimer.current) clearTimeout(fileTimer.current);
+    fileTimer.current = null;
+    queuedFile.current = null;
+  }, [sessionKey]);
+
+  useEffect(() => {
+    const current = reviewSelectionRef.current;
+    if (!current || current.path === file.selected?.path) return;
+    reviewSelectionRef.current = undefined;
+    setReviewSelection(undefined);
+    setReviewNotice(
+      file.selected
+        ? "Selection cleared because another file was opened."
+        : "Selection cleared because that file is no longer in workspace changes.",
+    );
+  }, [file.selected?.path]);
+
+  useEffect(() => {
+    if (file.view.kind !== "diff") return;
+    const current = reviewSelectionRef.current;
+    if (!current) return;
+    const nextNotice =
+      current.path !== file.view.path
+        ? "Selection cleared because another file was opened."
+        : current.before !== file.view.before || current.after !== file.view.after
+          ? "Selection cleared because this file changed."
+          : undefined;
+    if (!nextNotice) return;
+    reviewSelectionRef.current = undefined;
+    setReviewSelection(undefined);
+    setReviewNotice(nextNotice);
+  }, [file.view]);
+
+  useEffect(() => {
+    reviewSelectionRef.current = undefined;
+    setReviewSelection(undefined);
+    setReviewNotice(undefined);
   }, [sessionKey]);
 
   useEffect(() => {
@@ -175,6 +252,9 @@ export function ChangesPanel({
       if (refreshTimer.current) clearTimeout(refreshTimer.current);
       refreshTimer.current = null;
       refreshQueued.current = false;
+      if (fileTimer.current) clearTimeout(fileTimer.current);
+      fileTimer.current = null;
+      queuedFile.current = null;
       return;
     }
     scheduleRefreshRef.current();
@@ -183,6 +263,7 @@ export function ChangesPanel({
   useEffect(
     () => () => {
       if (refreshTimer.current) clearTimeout(refreshTimer.current);
+      if (fileTimer.current) clearTimeout(fileTimer.current);
     },
     [],
   );
@@ -190,7 +271,7 @@ export function ChangesPanel({
   const phone = useIsPhone();
   const panelRef = useRef<HTMLElement>(null);
   const modal = phone && open;
-  useFocusTrap(panelRef, modal);
+  useFocusTrap(panelRef, modal, promptVisible ? promptContainerRef : undefined);
   useEscapeKey(modal ? onClose : undefined, { exclusive: true });
 
   if (!open) return null;
@@ -201,7 +282,7 @@ export function ChangesPanel({
     // inside the daemon's throttle window and replace a good result with an
     // error. An errored view remains deliberately retryable by clicking it.
     if (file.selected?.path === item.path && file.view.kind !== "error") return;
-    file.openFile(item.path, item.status, "diff");
+    requestChangeFile(item);
   };
   const move = (delta: number) => {
     const next = items[selectedIndex + delta];
@@ -246,7 +327,7 @@ export function ChangesPanel({
       aria-label="Workspace changes"
       ref={panelRef}
       role={phone ? "dialog" : undefined}
-      aria-modal={phone ? true : undefined}
+      aria-modal={phone && !promptVisible ? true : undefined}
       tabIndex={phone ? -1 : undefined}
     >
       <header className="changes-head">
@@ -360,13 +441,27 @@ export function ChangesPanel({
                   </button>
                 )}
               </div>
+              {reviewNotice && (
+                <div className="changes-review-notice" role="status">{reviewNotice}</div>
+              )}
               <div
                 className="changes-view"
                 tabIndex={0}
                 role="region"
                 aria-label={`${selectedItem.path} — diff`}
               >
-                <FileView state={file.view} />
+                {file.view.kind === "diff" ? (
+                  <ReviewDiff
+                    state={file.view}
+                    phone={phone}
+                    onCreateDraft={onCreateDraft}
+                    selection={reviewSelection}
+                    onSelectionChange={setReviewSelection}
+                    onNoticeChange={setReviewNotice}
+                  />
+                ) : (
+                  <FileView state={file.view} />
+                )}
               </div>
             </>
           ) : null}

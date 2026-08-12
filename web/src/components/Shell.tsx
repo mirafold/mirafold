@@ -5,7 +5,7 @@ import { BangBar } from "./BangBar";
 import { ChangesGlyph } from "./ChangesGlyph";
 import { FilesGlyph } from "./FilesGlyph";
 import { Onboarding } from "./Onboarding";
-import { PromptBox } from "./PromptBox";
+import { PromptBox, type PromptDraft } from "./PromptBox";
 import { RenderZone } from "./RenderZone";
 import { FilesPanel } from "./files/FilesPanel";
 import { ChangesPanel } from "./changes/ChangesPanel";
@@ -40,6 +40,7 @@ const ZERO_USAGE: Usage = { turnIn: 0, turnOut: 0, sumIn: 0, sumOut: 0, cost: 0 
  */
 export function Shell() {
   const promptRef = useRef<HTMLTextAreaElement>(null);
+  const promptContainerRef = useRef<HTMLDivElement>(null);
   const focusPrompt = useCallback(() => {
     promptRef.current?.focus({ preventScroll: true });
   }, []);
@@ -140,8 +141,22 @@ export function Shell() {
   const [auxiliary, setAuxiliary] = useState<"files" | "changes" | null>(null);
   const filesOpen = auxiliary === "files";
   const changesOpen = auxiliary === "changes";
-  const toggleAuxiliary = (surface: "files" | "changes") =>
+  const [reviewPromptVisible, setReviewPromptVisible] = useState(false);
+  const [promptDraft, setPromptDraft] = useState<PromptDraft>();
+  const promptDraftId = useRef(0);
+  const createReviewDraft = useCallback((text: string) => {
+    promptDraftId.current += 1;
+    setPromptDraft({ id: promptDraftId.current, text });
+    setReviewPromptVisible(true);
+  }, []);
+  const toggleAuxiliary = (surface: "files" | "changes") => {
+    if (surface !== "changes" || auxiliary !== "changes") setReviewPromptVisible(false);
     setAuxiliary((current) => (current === surface ? null : surface));
+  };
+  const closeAuxiliary = () => {
+    setAuxiliary(null);
+    setReviewPromptVisible(false);
+  };
 
   // ── The theme (4.3; two-slot model S.3) ─────────────────────────────────
   // Theme is shell-owned UI state. Dark is the default and the identity;
@@ -389,6 +404,7 @@ export function Shell() {
   // shell command (4.9); the finished transcript then reaches the agent as
   // its own turn, exactly as the terminal harness does.
   const send = (text: string) => {
+    setReviewPromptVisible(false);
     const m = text.match(/^!\s*(.+)$/s);
     if (m) {
       const command = m[1].trim();
@@ -403,7 +419,7 @@ export function Shell() {
   const showOnboarding = !hasUrlSession && !meta.sessionId;
 
   return (
-    <div className="shell">
+    <div className={"shell" + (changesOpen && reviewPromptVisible ? " changes-draft-visible" : "")}>
       <Announcer message={announcement} />
       {showOnboarding && (
         <Onboarding
@@ -475,7 +491,7 @@ export function Shell() {
                 requestListdir={bus.requestFsListdir}
                 requestRead={bus.requestFsRead}
                 requestDiff={bus.requestFsDiff}
-                onClose={() => setAuxiliary(null)}
+                onClose={closeAuxiliary}
                 rootLabel={tildify(meta.cwd, daemonInfo.home)}
                 sessionKey={meta.sessionId}
               />
@@ -485,7 +501,10 @@ export function Shell() {
                 requestChanges={bus.requestFsChanges}
                 requestRead={bus.requestFsRead}
                 requestDiff={bus.requestFsDiff}
-                onClose={() => setAuxiliary(null)}
+                onClose={closeAuxiliary}
+                onCreateDraft={createReviewDraft}
+                promptContainerRef={promptContainerRef}
+                promptVisible={reviewPromptVisible}
                 rootLabel={tildify(meta.cwd, daemonInfo.home)}
                 sessionKey={meta.sessionId}
               />
@@ -513,6 +532,8 @@ export function Shell() {
               cwd={tildify(meta.cwd, daemonInfo.home)}
               options={promptOptions}
               textareaRef={promptRef}
+              containerRef={promptContainerRef}
+              draft={promptDraft}
               globalTriggersDisabled={showOnboarding || settingsOpen}
             />
             <StatusBar

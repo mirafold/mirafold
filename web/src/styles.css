@@ -995,6 +995,185 @@ body {
   overflow-y: visible;
 }
 
+/* CR.3 review tools stay inside the diff's one scroller. The source itself is
+   a four-column code surface: HEAD line, working-tree line, sign, highlighted
+   text. Full-file context remains present so hunk jumps never strand a change
+   outside the function that explains it. */
+.changes-diff-review {
+  min-width: 0;
+}
+
+.changes-review-tools {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  display: grid;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding: 7px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  box-shadow: var(--shadow-pop);
+}
+
+.changes-hunk-nav,
+.changes-draft-actions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.changes-hunk-nav > span,
+.changes-selection-count {
+  color: var(--fg-dimmer);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.67em;
+  white-space: nowrap;
+}
+
+.changes-hunk-nav > span {
+  min-width: 76px;
+  text-align: center;
+}
+
+.changes-selection-count {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.changes-hunk-nav button,
+.changes-draft-actions button {
+  min-height: 30px;
+  padding: 4px 8px;
+  color: var(--fg-dim);
+  background: var(--surface);
+  border: 1px solid var(--border-2);
+  border-radius: 5px;
+  font: inherit;
+  font-size: 0.7em;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.changes-hunk-nav button:first-child,
+.changes-hunk-nav button:nth-child(3) {
+  width: 30px;
+  padding: 0;
+  font-size: 1em;
+}
+
+.changes-hunk-nav button:hover:not(:disabled),
+.changes-draft-actions button:hover:not(:disabled) {
+  color: var(--fg-body);
+  background: var(--surface-hover);
+  border-color: var(--border-hover);
+}
+
+.changes-hunk-nav button:disabled,
+.changes-draft-actions button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.changes-draft-actions button:last-child {
+  color: var(--accent);
+}
+
+.changes-review-notice {
+  flex-shrink: 0;
+  padding: 6px 9px;
+  color: var(--fg-dim);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border-faint);
+  font-size: 0.69em;
+  line-height: 1.35;
+}
+
+.changes-diff-lines {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--code-fg);
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.76em;
+}
+
+.changes-review-line {
+  min-height: 27px;
+  display: grid;
+  grid-template-columns: 3.2em 3.2em 1.4em minmax(0, 1fr);
+  align-items: stretch;
+  cursor: default;
+  line-height: 1.45;
+}
+
+.changes-review-line + .changes-review-line {
+  border-top: 1px solid var(--border-faint);
+}
+
+.changes-review-line.is-add {
+  color: var(--diff-add-fg);
+  background: var(--diff-add-bg);
+}
+
+.changes-review-line.is-del {
+  color: var(--diff-del-fg);
+  background: var(--diff-del-bg);
+}
+
+.changes-review-line.is-context {
+  color: var(--code-fg);
+  background: var(--code-bg);
+}
+
+.changes-review-line.is-selected {
+  box-shadow:
+    inset 3px 0 0 var(--accent),
+    inset 0 0 0 1px var(--border-hover);
+  filter: brightness(1.13);
+}
+
+.changes-line-no,
+.changes-line-sign {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding: 4px 6px;
+  color: var(--fg-faint);
+  background: var(--surface-3);
+  border-right: 1px solid var(--border-faint);
+  user-select: none;
+}
+
+.changes-line-sign {
+  justify-content: center;
+  color: currentColor;
+  background: transparent;
+}
+
+.changes-line-code {
+  min-width: 0;
+  padding: 4px 8px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.changes-line-code code.hljs {
+  display: inline;
+  overflow: visible;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  white-space: inherit;
+}
+
 .changes-state {
   flex: 1;
   min-height: 180px;
@@ -5080,6 +5259,72 @@ html {
   .changes-view {
     padding: 8px 7px 14px;
     overscroll-behavior: contain;
+  }
+
+  .changes-review-tools {
+    gap: 7px;
+    padding: 7px;
+  }
+
+  .changes-hunk-nav,
+  .changes-draft-actions {
+    gap: 4px;
+  }
+
+  .changes-hunk-nav button,
+  .changes-draft-actions button {
+    min-width: 40px;
+    min-height: 40px;
+    padding: 5px 8px;
+  }
+
+  .changes-hunk-nav button:first-child,
+  .changes-hunk-nav button:nth-child(3) {
+    width: 40px;
+  }
+
+  .changes-select-hunk {
+    margin-left: auto;
+  }
+
+  .changes-review-line {
+    min-height: 40px;
+    grid-template-columns: 2.5em 2.5em 1.2em minmax(0, 1fr);
+    font-size: 0.96em;
+  }
+
+  .changes-line-no,
+  .changes-line-sign {
+    padding: 9px 3px;
+  }
+
+  .changes-line-code {
+    padding: 9px 6px;
+  }
+
+  /* A review action does not close the phone diff. It lifts the one trusted
+     PromptBox above the full-screen layer and reserves scroll room beneath it,
+     keeping both the exact selected context and editable draft visible. */
+  .changes-draft-visible .prompt-box {
+    position: fixed;
+    z-index: 56;
+    right: max(8px, env(safe-area-inset-right));
+    bottom: max(8px, env(safe-area-inset-bottom));
+    left: max(8px, env(safe-area-inset-left));
+    margin: 0;
+    background: var(--surface-3);
+    border-color: var(--border-hover);
+    box-shadow: var(--shadow-card);
+  }
+
+  .changes-draft-visible .changes-view {
+    padding-bottom: min(230px, 38dvh);
+    scroll-padding-bottom: min(230px, 38dvh);
+  }
+
+  .changes-draft-visible .prompt-send {
+    width: 40px;
+    height: 40px;
   }
 
   .changes-view .fv-content {
