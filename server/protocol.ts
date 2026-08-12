@@ -331,6 +331,9 @@ type WireMsgBody =
       beforeTruncatedBytes?: number;
       afterTruncatedBytes?: number;
       binary?: boolean;
+      // CR.4: opaque keyed identity of the exact HEAD + working-tree bytes.
+      // Absent when the bounded reader cannot establish an exact revision.
+      revision?: string;
       error?: string;
     }
   // Phase CR.1: the complete Git change set for the session workspace.
@@ -357,7 +360,16 @@ type WireMsgBody =
   // refetch what you show. Consumers must never require the hint; this is
   // a doorbell, not a per-file event feed (the no-extensions decision is
   // what makes that sufficient permanently).
-  | { type: "fs_changed"; paths?: string[]; truncated?: boolean }
+  | {
+      type: "fs_changed";
+      paths?: string[];
+      truncated?: boolean;
+      // A bounded fs_listdir reply shipped before Git status was ready. The
+      // settled cache should refresh visible badges, but no disk mutation is
+      // being reported and review progress must not be invalidated. Optional
+      // so older clients still perform their existing safe refresh.
+      reason?: "status";
+    }
   // Reply to a client ping — connection liveness only, never
   // buffered or sequenced (4.4).
   | { type: "pong" }

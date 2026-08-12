@@ -259,6 +259,29 @@ test("gitChanges: returns only changed files, including expanded untracked files
   assert.equal(result.truncated, false);
 });
 
+test("gitChanges: reports the net HEAD-versus-working-tree state across index-only edge states", async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "gitchanges-net-"));
+  after(() => rmSync(root, { recursive: true, force: true }));
+  initRepo(root);
+  writeFileSync(path.join(root, "restored.txt"), "same as HEAD\n");
+  writeFileSync(path.join(root, "assumed.txt"), "before\n");
+  commitAll(root);
+
+  execFileSync("git", ["rm", "--cached", "--quiet", "restored.txt"], { cwd: root });
+  writeFileSync(path.join(root, "vanished-after-add.txt"), "temporary\n");
+  execFileSync("git", ["add", "vanished-after-add.txt"], { cwd: root });
+  rmSync(path.join(root, "vanished-after-add.txt"));
+  execFileSync("git", ["update-index", "--assume-unchanged", "assumed.txt"], { cwd: root });
+  writeFileSync(path.join(root, "assumed.txt"), "after\n");
+
+  const result = await gitChanges(root);
+  assert.ok("entries" in result);
+  if (!("entries" in result)) return;
+  assert.deepEqual(result.entries, [
+    { path: "assumed.txt", status: "M" },
+  ]);
+});
+
 test("gitChanges: a subdirectory session excludes changes above it and returns scope-relative paths", async () => {
   const root = mkdtempSync(path.join(os.tmpdir(), "gitchanges-scope-"));
   after(() => rmSync(root, { recursive: true, force: true }));
@@ -327,6 +350,30 @@ test("discoverNestedRepoRoots: finds sibling repos, stops inside each, skips nod
     roots: [],
     truncated: true,
   });
+});
+
+test("repository discovery ignores malformed .git markers and keeps looking for real repositories", () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "gitdiscover-malformed-"));
+  after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(path.join(root, ".git"));
+  const nested = path.join(root, "group", "real");
+  initRepo(nested);
+
+  assert.deepEqual(discoverNestedRepoRoots(root), {
+    roots: [nested],
+    truncated: false,
+  });
+});
+
+test("findRepoRoot skips a malformed child marker and resolves the real owning repository", () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "gitfind-malformed-"));
+  after(() => rmSync(root, { recursive: true, force: true }));
+  initRepo(root);
+  const child = path.join(root, "child");
+  mkdirSync(child);
+  writeFileSync(path.join(child, ".git"), "not a gitdir marker\n");
+
+  assert.equal(findRepoRoot(child), root);
 });
 
 test("workspaceChanges: a parent workspace groups nested repos and maps entries to session-relative paths", async () => {

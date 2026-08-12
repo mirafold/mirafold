@@ -3,10 +3,13 @@ import assert from "node:assert/strict";
 import {
   closestHunk,
   formatReviewDraft,
+  interactiveReviewTooLarge,
   languageForPath,
+  MAX_INTERACTIVE_REVIEW_LINES,
   reviewHunks,
   reviewLines,
   reviewSelection,
+  reviewScrollBehavior,
 } from "./change-review";
 
 test("reviewLines: stable HEAD/current line numbers survive additions and deletions", () => {
@@ -15,8 +18,42 @@ test("reviewLines: stable HEAD/current line numbers survive additions and deleti
     { id: "-:2:", index: 1, oldLine: 2, newLine: undefined, sign: "-", text: "two" },
     { id: "+::2", index: 2, oldLine: undefined, newLine: 2, sign: "+", text: "TWO" },
     { id: " :3:3", index: 3, oldLine: 3, newLine: 3, sign: " ", text: "three" },
-    { id: "+::4", index: 4, oldLine: undefined, newLine: 4, sign: "+", text: "four" },
+    {
+      id: "+::4",
+      index: 4,
+      oldLine: undefined,
+      newLine: 4,
+      sign: "+",
+      text: "four",
+      noNewline: true,
+    },
   ]);
+});
+
+test("reviewLines: terminal newline changes replace the real final line, never invent a blank line", () => {
+  assert.deepEqual(reviewLines("a\n", "a"), [
+    { id: "-:1:", index: 0, oldLine: 1, newLine: undefined, sign: "-", text: "a" },
+    {
+      id: "+::1",
+      index: 1,
+      oldLine: undefined,
+      newLine: 1,
+      sign: "+",
+      text: "a",
+      noNewline: true,
+    },
+  ]);
+  assert.deepEqual(reviewLines("", "x\n"), [
+    { id: "+::1", index: 0, oldLine: undefined, newLine: 1, sign: "+", text: "x" },
+  ]);
+  assert.doesNotMatch(
+    formatReviewDraft("explain", "a.txt", reviewLines("a\n", "a")),
+    /HEAD line 2|working tree line 2/,
+  );
+  assert.match(
+    formatReviewDraft("explain", "a.txt", reviewLines("a\n", "a")),
+    /\\ No newline at end of file/,
+  );
 });
 
 test("reviewHunks: nearby edits group, distant edits navigate independently", () => {
@@ -73,4 +110,18 @@ test("languageForPath: uses the shipped highlighter's language names", () => {
   assert.equal(languageForPath("scripts/run.sh"), "bash");
   assert.equal(languageForPath("Dockerfile"), "dockerfile");
   assert.equal(languageForPath("LICENSE"), undefined);
+});
+
+test("interactiveReviewTooLarge: caps linear added/deleted diffs before row rendering", () => {
+  const manyLines = Array.from(
+    { length: MAX_INTERACTIVE_REVIEW_LINES + 1 },
+    (_, index) => `line ${index}`,
+  ).join("\n");
+  assert.equal(interactiveReviewTooLarge("", manyLines), true);
+  assert.equal(interactiveReviewTooLarge("", "one\ntwo"), false);
+});
+
+test("reviewScrollBehavior: reduced motion turns hunk jumps into immediate scrolling", () => {
+  assert.equal(reviewScrollBehavior(true), "auto");
+  assert.equal(reviewScrollBehavior(false), "smooth");
 });

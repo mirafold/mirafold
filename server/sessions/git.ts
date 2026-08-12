@@ -8,13 +8,24 @@
 // Nothing here touches the wire or the registry; connection.ts composes.
 
 import { execFile } from "node:child_process";
-import { existsSync, readdirSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  readFileSync,
+  readdirSync,
+} from "node:fs";
 import path from "node:path";
 import type { FsChangeRepo, FsDirEntry, FsEntry } from "../protocol";
 import { GIT_TIMEOUT_MS, invalidateRepoTrustCache, repoTrust } from "./git-trust";
 // The walk's caps, shared (fs-explorer.ts) — both replies ride the same wire.
-import { FS_TREE_MAX_ENTRIES, FS_TREE_MAX_PATH_BYTES } from "./fs-explorer";
+import {
+  contentRevision,
+  FS_TREE_MAX_ENTRIES,
+  FS_TREE_MAX_PATH_BYTES,
+  readWorkspaceDiffEntry,
+} from "./fs-explorer";
 import { envInt } from "../env";
+import { isSecretFile } from "../security/permissions";
 
 // `git show` of a big blob is the largest legitimate output; the caller caps
 // content for the wire — this only bounds process memory.
@@ -105,9 +116,15 @@ export const cleanRelPath = (rel: string): string | null => {
  */
 export const parseStatusZ = (
   out: string,
-): { files: Map<string, string>; untrackedDirs: Set<string> } => {
+): { files: Map<string, string>; untrackedDirs: Set<string>; records: Map<string, string[]> } => {
   const files = new Map<string, string>();
   const untrackedDirs = new Set<string>();
+  const records = new Map<string, string[]>();
+  const remember = (p: string, xy: string) => {
+    const current = records.get(p);
+    if (current) current.push(xy);
+    else records.set(p, [xy]);
+  };
   const fields = out.split("\0");
   for (let i = 0; i < fields.length; i++) {
     const rec = fields[i];
@@ -116,20 +133,108 @@ export const parseStatusZ = (
     const p = rec.slice(3);
     if (xy.includes("R") || xy.includes("C")) {
       const from = fields[++i]; // the second field of this record
+      remember(p, xy);
       files.set(p, "A");
       // Rename: the source is gone → D. Copy: the source still exists,
       // unchanged — marking it D would lie about a file sitting on disk.
-      if (xy.includes("R") && from) files.set(from, "D");
+      if (xy.includes("R") && from) {
+        remember(from, xy);
+        files.set(from, "D");
+      }
       continue;
     }
     if (xy === "??") {
       if (p.endsWith("/")) untrackedDirs.add(p.slice(0, -1));
-      else files.set(p, "U");
-    } else if (xy.includes("D")) files.set(p, "D");
-    else if (xy.includes("A")) files.set(p, "A");
-    else files.set(p, "M");
+      else {
+        remember(p, xy);
+        files.set(p, "U");
+      }
+    } else {
+      remember(p, xy);
+      if (xy.includes("D")) files.set(p, "D");
+      else if (xy.includes("A")) files.set(p, "A");
+      else files.set(p, "M");
+    }
   }
-  return { files, untrackedDirs };
+  return { files, untrackedDirs, records };
+};
+
+type WorkingTreeEntry =
+  | { kind: "absent" }
+  | { kind: "content"; revision: string }
+  | { kind: "unverified" };
+
+/** Read the Git entry itself, not a symlink target. This is used only for
+ * exceptional index states that porcelain cannot collapse into the promised
+ * HEAD-versus-working-tree answer. Ordinary change enumeration remains one
+ * status subprocess and does not read every changed file. */
+const readWorkingTreeEntry = (root: string, rel: string): WorkingTreeEntry => {
+  if (!cleanRelPath(rel)) return { kind: "unverified" };
+  const result = readWorkspaceDiffEntry(root, rel, {
+    revision: true,
+    revisionCapBytes: GIT_MAX_BUFFER,
+  });
+  if ("absent" in result) return { kind: "absent" };
+  if ("error" in result || !result.revision) return { kind: "unverified" };
+  return { kind: "content", revision: result.revision };
+};
+
+type NetChange = { status?: string; verified: boolean };
+
+const isDotenvPath = (rel: string): boolean => {
+  const base = path.posix.basename(rel);
+  return (
+    base === ".env" ||
+    base.endsWith(".env") ||
+    base.startsWith(".env.") ||
+    base.includes(".env.")
+  );
+};
+
+const netChangeAgainstHead = async (
+  root: string,
+  rel: string,
+  fallback?: string,
+): Promise<NetChange> => {
+  // Listing a secret path is permitted, but Changes must not inspect its
+  // contents merely to repair an unusual index flag. Keep porcelain's answer
+  // when one exists and mark an otherwise-hidden flagged path incomplete.
+  if (isSecretFile(rel) || isDotenvPath(rel)) {
+    return { status: fallback, verified: false };
+  }
+  const [head, working] = await Promise.all([
+    gitShowHead(root, rel),
+    Promise.resolve(readWorkingTreeEntry(root, rel)),
+  ]);
+  if ("error" in head || "notGit" in head || working.kind === "unverified") {
+    return { status: fallback, verified: false };
+  }
+  const headPresent = "content" in head;
+  const workingPresent = working.kind === "content";
+  if (!headPresent && !workingPresent) return { verified: true };
+  if (!headPresent && workingPresent) {
+    return { status: fallback === "U" ? "U" : "A", verified: true };
+  }
+  if (headPresent && !workingPresent) return { status: "D", verified: true };
+  if ("content" in head && working.kind === "content") {
+    return {
+      ...(contentRevision(head.content) === working.revision ? {} : { status: "M" }),
+      verified: true,
+    };
+  }
+  return { status: fallback, verified: false };
+};
+
+const exceptionalTrackedPaths = (out: string): string[] => {
+  const paths: string[] = [];
+  for (const record of out.split("\0")) {
+    if (record.length < 3 || record[1] !== " ") continue;
+    // H is an ordinary cached path. Lowercase tags are assume-unchanged;
+    // S is skip-worktree. Other non-H tags are exceptional enough that an
+    // exact comparison is safer than trusting an index-oriented label.
+    if (record[0] !== "H") paths.push(record.slice(2));
+  }
+  return paths;
 };
 
 export type GitTree =
@@ -226,25 +331,54 @@ export async function gitChanges(
   if (trust.unscannable) {
     return { error: "repository Git settings could not be inspected safely" };
   }
-  const [status, prefixRes] = await Promise.all([
+  const [status, prefixRes, trackedFlags] = await Promise.all([
     runGit(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--", "."]),
     runGit(root, ["rev-parse", "--show-prefix"]),
+    runGit(root, ["ls-files", "-v", "-z", "--", "."]),
   ]);
   if (!status.ok) return status.notGit ? { notGit: true } : { error: gitErr("status", status) };
   if (!prefixRes.ok) return { error: gitErr("rev-parse", prefixRes) };
+  if (!trackedFlags.ok) return { error: gitErr("ls-files", trackedFlags) };
   const prefix = prefixRes.ok ? String(prefixRes.stdout).trim() : "";
   const parsed = parseStatusZ(String(status.stdout));
+  const statusByRel = new Map<string, string>();
+  const exceptional = new Set<string>();
+  for (const [repoPath, statusChar] of parsed.files) {
+    const rel = prefix === "" ? repoPath : repoPath.startsWith(prefix) ? repoPath.slice(prefix.length) : "";
+    if (!rel) continue;
+    statusByRel.set(rel, statusChar);
+    const records = parsed.records.get(repoPath) ?? [];
+    if (
+      records.length > 1 ||
+      records.some((xy) => xy.includes("A") && xy.includes("D"))
+    ) {
+      exceptional.add(rel);
+    }
+  }
+  for (const rel of exceptionalTrackedPaths(String(trackedFlags.stdout))) {
+    if (rel) exceptional.add(rel);
+  }
+
+  // Porcelain describes index + worktree state. For the exceptional cases
+  // where that differs from the product's actual promise, compare the path's
+  // current bytes directly with HEAD and replace/omit the label accordingly.
+  let netStateIncomplete = false;
+  for (const rel of [...exceptional].sort()) {
+    const net = await netChangeAgainstHead(root, rel, statusByRel.get(rel));
+    if (!net.verified) netStateIncomplete = true;
+    if (net.status) statusByRel.set(rel, net.status);
+    else statusByRel.delete(rel);
+  }
+
   const entries: FsEntry[] = [];
   let pathBytes = 0;
   // -uall should make this empty. If a git implementation still collapses a
   // special nested repository, omit the non-file prefix and say the answer is
   // incomplete rather than presenting a directory as reviewable code.
-  let truncated = parsed.untrackedDirs.size > 0;
-  for (const [repoPath, statusChar] of [...parsed.files.entries()].sort(([a], [b]) =>
+  let truncated = parsed.untrackedDirs.size > 0 || netStateIncomplete;
+  for (const [rel, statusChar] of [...statusByRel.entries()].sort(([a], [b]) =>
     a < b ? -1 : a > b ? 1 : 0,
   )) {
-    const rel = prefix === "" ? repoPath : repoPath.startsWith(prefix) ? repoPath.slice(prefix.length) : "";
-    if (!rel) continue;
     const bytes = Buffer.byteLength(rel, "utf8");
     if (entries.length >= maxEntries || pathBytes + bytes > maxPathBytes) {
       truncated = true;
@@ -259,6 +393,50 @@ export async function gitChanges(
 export type RepoDiscovery =
   | { roots: string[]; truncated: boolean }
   | { error: string };
+
+const gitAdminDirLooksValid = (adminDir: string): boolean => {
+  try {
+    const head = lstatSync(path.join(adminDir, "HEAD"));
+    if (!head.isFile()) return false;
+    // Ordinary repositories own objects directly. Linked worktrees point at
+    // a per-worktree admin dir whose `commondir` names the shared object dir.
+    try {
+      if (lstatSync(path.join(adminDir, "objects")).isDirectory()) return true;
+    } catch {
+      // Linked worktrees legitimately have no local objects directory.
+    }
+    try {
+      return lstatSync(path.join(adminDir, "commondir")).isFile();
+    } catch {
+      return false;
+    }
+  } catch {
+    return false;
+  }
+};
+
+/** A marker is a repository boundary only when it has Git's minimum admin
+ * shape. Mere `.git` existence is insufficient: stale empty directories and
+ * malformed gitdir files must not hide valid repositories below/above them. */
+const hasValidGitMarker = (dir: string): boolean => {
+  const marker = path.join(dir, ".git");
+  let stat;
+  try {
+    stat = lstatSync(marker);
+  } catch {
+    return false;
+  }
+  if (stat.isDirectory()) return gitAdminDirLooksValid(marker);
+  if (!stat.isFile() || stat.size > 4_096) return false;
+  try {
+    const match = /^gitdir:\s*(.+?)\s*$/i.exec(readFileSync(marker, "utf8"));
+    if (!match) return false;
+    const adminDir = path.resolve(dir, match[1]);
+    return gitAdminDirLooksValid(adminDir);
+  } catch {
+    return false;
+  }
+};
 
 /**
  * Find repositories BELOW a non-repo session root. Symlinks are never
@@ -292,11 +470,7 @@ export function discoverNestedRepoRoots(
       truncated = true;
       continue;
     }
-    if (
-      children.some(
-        (child) => child.name === ".git" && (child.isDirectory() || child.isFile()),
-      )
-    ) {
+    if (hasValidGitMarker(dir)) {
       if (roots.length >= maxRepos) {
         truncated = true;
         stopped = true;
@@ -470,8 +644,14 @@ export const findRepoRoot = (
   entryExists: (candidate: string) => boolean = existsSync,
 ): string | null => {
   let dir = realDir;
+  const validateMarker = entryExists === existsSync;
   for (;;) {
-    if (entryExists(path.join(dir, ".git"))) return dir;
+    if (
+      entryExists(path.join(dir, ".git")) &&
+      (!validateMarker || hasValidGitMarker(dir))
+    ) {
+      return dir;
+    }
     const parent = path.dirname(dir);
     if (parent === dir) return null;
     dir = parent;

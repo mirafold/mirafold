@@ -75,8 +75,23 @@ groups every visible working-tree change by Git repository and opens the real
 HEAD-versus-working-tree diff without attributing shared-disk edits to the
 agent. On desktop it is a wide split beside the still-visible conversation; on
 phone it is a full-screen, one-file-at-a-time review with persistent previous
-and next controls. The existing Files view remains the separate answer to
-"what exists here?" while Changes answers "what differs from HEAD?"
+and next controls. Stable HEAD/current line numbers and hunk navigation keep
+the code context exact: desktop supports pointer and keyboard range selection,
+while phone supports line and whole-hunk taps. **Explain** and **Request
+change** append the selected path, range, and diff to the visible editable
+prompt without sending, so feedback still travels through the ordinary trusted
+prompt path. Review progress stays local to one browser viewport and binds each
+checkmark to the exact bounded HEAD + working-tree bytes the daemon observed;
+`R` marks or unmarks that revision and `N` advances to the next unreviewed file
+only while focus is outside the prompt. A later disk or HEAD change visibly
+removes stale checkmarks: a complete path hint preserves unrelated progress,
+while a HEAD change or incomplete hint conservatively clears every marker. The
+same conservative reset happens after a reconnect or an explicit Refresh,
+when events may have been missed; a late Git-status decoration refresh does
+not impersonate a disk mutation. Terminal-newline changes render against the
+real final source line with an explicit no-newline marker, never a phantom
+blank line. The existing Files view remains the separate answer to "what
+exists here?" while Changes answers "what differs from HEAD?"
 
 ![Mirafold demo — a repo overview as a card and a table; a test-and-fix run with a permission strip, console output, a diff and a green re-run; a sudo password answered in the shell's own masked bar; a bundle pie chart pinned and updated in place](demo/demo.gif)
 
@@ -103,8 +118,9 @@ codebase. Companion documents:
   **C** (CI on every push), **E** + **E2** + **W** (the Explorer — the
   read-only files panel, lazy per-directory since E2 with per-repo git
   fidelity, and self-refreshing since W's filesystem watcher),
-  **CR.1–CR.2** (the bounded multi-repository change query and responsive,
-  live Changes review workspace),
+  **CR.1–CR.4** (the bounded multi-repository change query, responsive live
+  Changes review workspace, visible unsent code-context feedback, and
+  revision-keyed review progress),
   **M** (mission control grown into a cockpit: act on sessions from the grid),
   L.1, most of the Phase F fidelity fixes, and the working core of
   **Phase R** (the hosted relay: R.1 dial-out + envelope, R.3 per-pair E2E
@@ -548,10 +564,12 @@ server/            the local daemon (Node, run with tsx)
     fs-handlers.ts     Explorer + Changes request layer: the fs_list/fs_listdir/
                        fs_read/fs_diff/fs_changes handlers connection.ts
                        delegates to — per-viewport replies, jailed + throttled,
-                       one reply each
+                       one reply each; fs_diff also returns the bounded exact
+                       revision token used by viewport-local review progress
     fs-explorer.ts     Explorer data layer: the capped tree walk (E.1) + the
                        per-directory lister behind the lazy tree (E2.1) +
-                       jailed, secret-safe, binary-sniffing file reads
+                       jailed, secret-safe, binary-sniffing file reads; Changes
+                       can opt into a 1 MB-bounded opaque content revision
     git.ts             Explorer/Changes git layer: bounded one-shot git calls for the
                        tracked tree + statuses + HEAD-vs-working diffs (E.2),
                        plus the per-repo view the lazy tree uses — nearest-.git
@@ -681,9 +699,13 @@ web/               the browser app (React 19 + Vite)
                        dependency-free folder/symlink/file-family glyphs) +
                        use-file-view.ts (the reusable correlated read/diff
                        lifecycle shared with the Changes surface, CR.1)
-    changes/           ChangesPanel.tsx: the live shell-owned repository/file
-                       review workspace — desktop split rail + diff, phone
-                       full-screen single-file navigation (CR.2)
+    changes/           the live shell-owned repository/file review workspace:
+                       ChangesPanel.tsx composes the surface,
+                       use-changes-controller.ts owns requests/live state,
+                       ChangesChrome.tsx owns its responsive panel chrome,
+                       ReviewDiff.tsx owns line/hunk selection and drafts, and
+                       ReviewRows.tsx owns bounded shared syntax rendering
+                       (CR.2–CR.4)
   src/registry/      Card, List, Table, LinkGroup, Chart, TodoList, KeyValue,
                      Progress, Timeline, FileTree, Question, Diff, Stat, Code,
                      StatusList, Console, Image, Diagram, Md, CopyButton +
@@ -699,6 +721,16 @@ web/               the browser app (React 19 + Vite)
                      correlated Explorer/Changes filesystem queries
   src/changes.ts     pure changed-file grouping, deterministic selection,
                      count honesty, status labels, and repository labels
+  src/change-review.ts
+                     pure versioned-line, hunk, selection, and exact feedback-
+                     draft model plus interactive-size and reduced-motion
+                     policy for conversational change review
+  src/review-progress.ts
+                     pure viewport-local reviewed-revision, watcher
+                     invalidation, pruning, count, and next-unreviewed model
+  src/prompt-draft.ts
+                     preserves composed prompt text while appending a visible,
+                     unsent Changes feedback draft
   src/folder-picker-requests.ts
                      correlated local picker requests shared by the session
                      shell and the fleet's new-session card

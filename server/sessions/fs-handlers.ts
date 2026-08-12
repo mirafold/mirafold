@@ -13,11 +13,20 @@
 // runs on the local WS path, which has no try/catch above it, so an escaped
 // throw would exit the daemon.
 
-import { lstatSync } from "node:fs";
 import path from "node:path";
 import type { ClientMsg, FsDirEntry, FsEntry, WireMsg } from "../protocol";
 import type { SessionEntry } from "./registry";
-import { capBuffer, listTree, readDirRaw, readWorkspaceFile, sniffBinary, sortAndCapDir } from "./fs-explorer";
+import {
+  capBuffer,
+  contentRevision,
+  listTree,
+  readDirRaw,
+  readWorkspaceDiffEntry,
+  readWorkspaceFile,
+  reviewDiffRevision,
+  sniffBinary,
+  sortAndCapDir,
+} from "./fs-explorer";
 import {
   cleanRelPath,
   decorateGitDir,
@@ -60,34 +69,34 @@ const FS_LISTDIR_STATUS_WAIT_MS = envInt("FS_LISTDIR_STATUS_WAIT_MS", 300);
 // short and word-safe or the message is dropped whole.
 export const CLIENT_ID_RE = /^[\w-]{1,64}$/;
 
-const fileExists = (abs: string): boolean => {
-  try {
-    lstatSync(abs);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
 // E2.4: HEAD's version comes from the repo that CONTAINS the file —
 // nearest .git above its directory — so a file in a NESTED repo diffs
 // through that repo, closing E2.3's recorded gap. The wire path is
 // already textually contained (cleanRelPath), and the directory
-// resolves through the realpath jail before any discovery; if it can't
-// (say the whole directory was deleted), fall back to the session root,
-// which is exactly the pre-E2.4 behavior. repoRel stays clean by
-// construction: realDir is jailed under the root and repoRoot is an
-// ancestor of realDir, so the relative path has no `..` to offer git.
+// resolves through the realpath jail before any discovery. For a deleted
+// subtree, walk upward to the nearest surviving ancestor and carry the
+// missing suffix forward; that preserves ownership by a nested repo instead
+// of incorrectly falling back to a non-repo Projects root.
 const resolveDiffRepo = (
   root: string,
   rel: string,
 ): { repoRoot: string | null; repoRel: string } => {
   const cut = rel.lastIndexOf("/");
-  const realDir = inside(root, cut === -1 ? "." : rel.slice(0, cut));
+  const leaf = rel.slice(cut + 1);
+  let parentRel = cut === -1 ? "" : rel.slice(0, cut);
+  const missing: string[] = [];
+  let realDir: string | null = null;
+  for (;;) {
+    realDir = inside(root, parentRel || ".");
+    if (realDir || !parentRel) break;
+    const parent = path.posix.dirname(parentRel);
+    missing.unshift(path.posix.basename(parentRel));
+    parentRel = parent === "." ? "" : parent;
+  }
   const repoRoot = realDir ? findRepoRoot(realDir) : null;
   const repoRel =
     repoRoot && realDir
-      ? [repoRelPath(repoRoot, realDir), rel.slice(cut + 1)].filter(Boolean).join("/")
+      ? [repoRelPath(repoRoot, realDir), ...missing, leaf].filter(Boolean).join("/")
       : rel;
   return { repoRoot, repoRel };
 };
@@ -273,7 +282,7 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
           }
           const owed = lateStatusBells.delete(repoRoot);
           if (owed && !("notGit" in st) && !("error" in st)) {
-            viewport({ type: "fs_changed", truncated: true });
+            viewport({ type: "fs_changed", reason: "status" });
           }
         })
         .catch(() => {
@@ -347,23 +356,33 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
         if ("error" in show) return sendErr(rel, show.error);
 
         const beforeBuf = "content" in show ? show.content : Buffer.alloc(0);
-        if (sniffBinary(beforeBuf)) {
-          return viewport({ type: "fs_file_diff", id: msg.id, path: rel, binary: true });
-        }
         // The after side. A missing working file is a REAL case (deleted →
         // after ""), not an error — but only plain absence; an existing-but-
         // unreadable path stays an error.
         let after = "";
         let afterTruncatedBytes: number | undefined;
-        const exists = fileExists(path.join(root, rel));
-        if (exists) {
-          const r = readWorkspaceFile(root, rel);
-          if ("error" in r) return sendErr(rel, r.error);
-          if ("binary" in r) {
-            return viewport({ type: "fs_file_diff", id: msg.id, path: rel, binary: true });
+        let afterBinary = false;
+        let afterRevision = contentRevision(Buffer.alloc(0));
+        const working = readWorkspaceDiffEntry(root, rel, { revision: true });
+        if ("error" in working) return sendErr(rel, working.error);
+        if (!("absent" in working)) {
+          if ("binary" in working) {
+            afterBinary = true;
+          } else {
+            after = working.content;
+            afterTruncatedBytes = working.truncatedBytes;
           }
-          after = r.content;
-          afterTruncatedBytes = r.truncatedBytes;
+          afterRevision = working.revision ?? "";
+        }
+        const revision = reviewDiffRevision(beforeBuf, afterRevision);
+        if (sniffBinary(beforeBuf) || afterBinary) {
+          return viewport({
+            type: "fs_file_diff",
+            id: msg.id,
+            path: rel,
+            binary: true,
+            ...(revision ? { revision } : {}),
+          });
         }
         const before = capBuffer(beforeBuf);
         viewport({
@@ -372,6 +391,7 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
           path: rel,
           before: before.text,
           after,
+          ...(revision ? { revision } : {}),
           ...(before.truncatedBytes ? { beforeTruncatedBytes: before.truncatedBytes } : {}),
           ...(afterTruncatedBytes ? { afterTruncatedBytes } : {}),
         });

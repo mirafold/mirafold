@@ -229,8 +229,9 @@ export function FilesPanel({
         } else if (m.type === "fs_changed") {
           // W.2: disk changed behind the UI — same refresh unit as turn-end
           // (root + expanded; a new file in a collapsed, unfetched dir
-          // rightly causes no fetch), coalesced through the gap above. The
-          // hint isn't consulted: doorbell contract, refetch what you show.
+          // rightly causes no fetch), coalesced through the gap above. A
+          // status-ready signal uses the same refresh without claiming a disk
+          // mutation. The watcher hint isn't consulted: refetch what you show.
           onBell();
         }
       }),

@@ -2727,8 +2727,15 @@ test("C.2: axe-core finds no serious/critical WCAG violations across the app", a
     // first time 2026-07-30 (the accessibility statement named it as unswept).
     await p.locator(".ab-files").click();
     await p.waitForSelector(".files-panel .files-row");
-    await p.locator(".files-file-row").first().click();
-    await p.waitForSelector(".files-view .fv-content");
+    // Pick a named safe fixture. Alphabetical-first is `.env.example` in this
+    // checkout, and dotenv files are intentionally opaque to this test run.
+    await p.locator(".files-file-row", { hasText: "README.md" }).click();
+    await p.waitForSelector(".files-view .fv-content").catch(async () =>
+      assert.fail(
+        `enlarged-view fixture did not open; selected=${JSON.stringify(await p.locator(".files-file-name").allInnerTexts())} ` +
+          `view=${JSON.stringify(await p.locator(".files-view").allInnerTexts())}`,
+      ),
+    );
     await p.locator(".files-enlarge").click();
     await p.waitForSelector(".files-file.is-maximized");
     await assertAxeClean(p, "enlarged file view");

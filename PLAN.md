@@ -3281,56 +3281,47 @@ both acceptance requirements, not a later responsive cleanup.
 
 ### Phase CR.3 — Code-context navigation + transparent agent feedback
 
-- [ ] **Step CR.3 — Make a diff directly conversational**
-  - **In progress — session handoff 2026-08-11.** The selectable review diff,
-    stable HEAD/working-tree line coordinates, two-hunk navigation, shipped-stack
-    syntax highlighting, desktop pointer/keyboard ranges, phone line/hunk taps,
-    and visible unsent `Explain` / `Request change` prompt drafts are implemented
-    on `feature/changes-workspace`. Existing prompt text is preserved, invalid
-    selections clear with an explicit notice, and the focused unit, typecheck,
-    production-build, desktop-browser, and phone-browser checks pass. CR.3 stays
-    unchecked because its ordered browser suite is not yet reliably green.
-  - **Next `$next` action — diagnose before changing code.** Re-run the smallest
-    ordered Changes-browser subset enough times, without product edits, to
-    characterize an intermittent axe `scrollable-region-focusable` result. After
-    CR.3's desktop flow sends a mock turn, the later phone checks sometimes report
-    two serious findings at highlighted transcript code nodes (`.language-diff`
-    and `.language-ts`). Each phone test passes alone, and the same ordered subset
-    has both passed and failed with no code change. Two CSS hypotheses were tested
-    separately and reverted after they failed: making `.markdown pre code.hljs`
-    non-scrolling, then making `.rc-code-body code.hljs` non-scrolling. Before a
-    third hypothesis, capture the flagged nodes' dimensions, computed overflow,
-    and scroll ancestry inside the same axe evaluation that reports the result.
-    Do not mark CR.3 complete until the ordered suite passes repeatedly.
-  - **Goal:** turn "I object to these lines" into a precise, ordinary follow-up
-    to the same terminal agent without copying paths and snippets by hand.
-  - **Build:** add stable line numbers, changed-hunk navigation, enough context
-    to read the surrounding function, and syntax-aware code presentation using
-    the already-shipped highlighting stack (no dependency). Desktop supports
-    pointer/keyboard range selection; mobile supports tap-selected lines or a
-    whole hunk without drag precision. `Explain` and `Request change` create a
-    **visible editable draft** in the trusted prompt box containing the exact
-    path/range/snippet; neither action sends automatically or hides context.
-  - **Done when:** desktop keyboard and pointer plus phone taps can select a
-    range, create the exact visible draft, edit it, and send through the normal
-    prompt path; changing files clears an invalid selection honestly; all
-    existing agent/permission behavior is unchanged and all three tiers pass.
+- [x] **Step CR.3 — Make a diff directly conversational** — completed
+  2026-08-12. Stable HEAD/working-tree line coordinates, hunk navigation,
+  syntax-aware desktop/phone selection, visible editable `Explain` / `Request
+  change` drafts, honest selection invalidation, and normal prompt submission
+  are shipped. The intermittent phone axe result was diagnosed as a shuffled
+  mock response exposing two unfocusable Highlight.js scrollers; highlighted
+  fenced code is now keyboard-reachable and the regression fixture is
+  deterministic. Full specification, diagnosis, implementation boundary, and
+  proof → **PLAN-ARCHIVE.md, “Moved 2026-08-12 (Conversational Changes review —
+  CR.3).”**
 
 ### Phase CR.4 — Review progress, live invalidation, and closure
 
-- [ ] **Step CR.4 — Make large reviews resumable and trustworthy**
-  - **Goal:** show what the user has actually reviewed without letting later
-    agent edits hide behind a stale checkmark.
-  - **Build:** viewport-local reviewed state keyed to a file-content revision;
-    mark/unmark file and next-unreviewed navigation; any new revision visibly
-    returns that file to unreviewed while preserving unrelated progress. Add
-    keyboard shortcuts only when focus is outside the prompt, finish reduced-
-    motion/overflow/performance work, and run a focused correctness/security/
-    test-quality closure over the new read-only surface.
-  - **Done when:** a multi-file browser flow reviews files, mutates one behind
-    the UI, observes only that file become unreviewed, resumes on desktop and
-    phone, and passes all safe unit/integration/e2e tiers, typecheck, production
-    build, axe, and the repository's dotenv-opacity guard.
+- [x] **Step CR.4 — Make large reviews resumable and trustworthy** — completed
+  2026-08-12. Review decisions are viewport-local and keyed to an opaque,
+  server-minted identity of the exact bounded HEAD + working-tree bytes;
+  unverifiable revisions cannot be marked. The desktop rail and phone review
+  show progress, mark/unmark, and next-unreviewed navigation, with `R` / `N`
+  disabled throughout the prompt and other editable controls. Watcher hints
+  invalidate only affected reviewed files (including while the surface is
+  closed), HEAD/incomplete hints invalidate all, and a subsequently loaded
+  revision is reconciled before it can remain reviewed. Reduced-motion hunk
+  navigation, 641px/390px overflow, and the large-diff render path are closed;
+  one shared syntax pipeline replaces per-row highlighting and an honest
+  1,000-line interactive cap bounds the surface. Focused correctness,
+  security, and mutation-backed test-quality audits have no unresolved
+  finding. Full starting state, implementation boundary, audit record, and
+  proof → **PLAN-ARCHIVE.md, “Moved 2026-08-12 (Trustworthy review progress —
+  CR.4).”**
+
+### Phase CR.5 — Correctness remediation
+
+- [x] **Step CR.5 — Close the whole-feature bughunt findings** — completed
+  2026-08-12. All ten reproduced failures are repaired and regression-pinned:
+  Git/index edge states, malformed and nested repository resolution, deleted/
+  symlink/unreadable diffs, reconnect and manual-refresh trust, status-only
+  refreshes, zero-visible incomplete results, and terminal-newline modeling.
+  The complete Changes browser suite and dotenv-safe aggregate tiers pass.
+  Full verified baseline, executable/test/documentation boundary, and proof →
+  **PLAN-ARCHIVE.md, “Moved 2026-08-12 (Changes correctness remediation —
+  CR.5).”**
 
 ## Phase PN — Panes (file views beside the transcript)
 

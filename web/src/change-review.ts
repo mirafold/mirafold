@@ -1,7 +1,8 @@
-import { diffLines, type DiffLine } from "./diff";
+import { diffLines, splitTextLines, type DiffLine } from "./diff";
 import { codeFence } from "./registry/Code";
 
 export const MAX_REVIEW_SELECTION = 80;
+export const MAX_INTERACTIVE_REVIEW_LINES = 1_000;
 
 export type ReviewLine = DiffLine & {
   id: string;
@@ -31,11 +32,25 @@ export type VersionedReviewSelection = ReviewSelection & {
 };
 
 function rawDiff(before: string, after: string): DiffLine[] {
-  if (before === "" && after === "") return [];
-  if (before === "") return after.split("\n").map((text) => ({ sign: "+", text }));
-  if (after === "") return before.split("\n").map((text) => ({ sign: "-", text }));
   return diffLines(before, after);
 }
+
+/** Bound the DOM/highlighting cost before constructing the LCS diff. One
+ * changed line can otherwise turn a many-thousand-line file into thousands
+ * of ReactMarkdown/highlight instances even when the matrix itself is cheap
+ * (notably added/deleted files, where one side is empty). */
+export function interactiveReviewTooLarge(
+  before: string,
+  after: string,
+  maxLines = MAX_INTERACTIVE_REVIEW_LINES,
+): boolean {
+  const beforeLines = splitTextLines(before).lines.length;
+  const afterLines = splitTextLines(after).lines.length;
+  return beforeLines + afterLines > maxLines;
+}
+
+export const reviewScrollBehavior = (prefersReducedMotion: boolean): ScrollBehavior =>
+  prefersReducedMotion ? "auto" : "smooth";
 
 /** Add stable source coordinates to the shared line diff. Line ids are tied
  * to their HEAD/current coordinates rather than their rendered array offset. */
@@ -138,7 +153,12 @@ export function formatReviewDraft(
       lines.flatMap((line) => (line.newLine === undefined ? [] : [line.newLine])),
     ),
   ].filter((range): range is string => Boolean(range));
-  const snippet = lines.map((line) => `${line.sign} ${line.text}`).join("\n");
+  const snippet = lines
+    .map(
+      (line) =>
+        `${line.sign} ${line.text}${line.noNewline ? "\n\\ No newline at end of file" : ""}`,
+    )
+    .join("\n");
   const instruction =
     intent === "explain"
       ? "Explain the selected workspace change."

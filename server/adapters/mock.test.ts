@@ -54,3 +54,18 @@ test("close() with a pending ask announces the deny too", async () => {
     "the teardown deny is announced",
   );
 });
+
+test("a CR.3 Request change draft deterministically returns both highlighted markdown fences", async () => {
+  const s = new MockSession();
+  const msgs: Any[] = [];
+  s.onMessage((m) => msgs.push(m as Any));
+  s.pushPrompt('Please revise the selected workspace change.\n\nFile: "src/review.ts"');
+  await waitFor(msgs, (m) => m.type === "turn_end", "turn_end");
+  const text = msgs
+    .filter((m) => m.type === "text_delta")
+    .map((m) => String(m.text))
+    .join("");
+  assert.match(text, /```diff/);
+  assert.match(text, /```ts/);
+  s.close();
+});

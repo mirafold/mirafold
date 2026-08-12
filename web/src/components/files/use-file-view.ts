@@ -47,6 +47,13 @@ export function useFileView({
     setView({ kind: "empty" });
   }, []);
 
+  // A transport reconnect can orphan an in-flight reply while keeping the
+  // same session identity. Leave the last resolved view visible, but make the
+  // lost correlation id non-authoritative so the host can request it afresh.
+  const cancelPending = useCallback(() => {
+    requestId.current = null;
+  }, []);
+
   const openFile = useCallback(
     (path: string, status: string | undefined, nextMode: FileViewMode) => {
       setSelected({ path, status });
@@ -73,5 +80,5 @@ export function useFileView({
 
   useEffect(() => reset(), [scopeKey, reset]);
 
-  return { selected, mode, view, openFile, close, reset };
+  return { selected, mode, view, openFile, close, reset, cancelPending };
 }

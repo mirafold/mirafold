@@ -198,6 +198,7 @@ const WIRE: WireByType = {
     beforeTruncatedBytes: 0,
     afterTruncatedBytes: 0,
     binary: false,
+    revision: "revision:v1:0123456789abcdef",
     error: "no diff available for this entry",
   },
   fs_change_set: {
@@ -225,6 +226,7 @@ const WIRE: WireByType = {
     type: "fs_changed",
     paths: ["src/app.ts", ".git/index"],
     truncated: true,
+    reason: "status",
   },
   sessions: { type: "sessions", sessions: [SESSION_META] },
   session_ended: { type: "session_ended", sessionId: "s1" },

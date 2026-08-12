@@ -14,8 +14,7 @@ test("diffLines marks context, deletion, and addition", () => {
 
 test("diffLines handles an empty side", () => {
   assert.deepEqual(diffLines("", "x"), [
-    { sign: "-", text: "" },
-    { sign: "+", text: "x" },
+    { sign: "+", text: "x", noNewline: true },
   ]);
 });
 

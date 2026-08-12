@@ -40,6 +40,17 @@ export const mdOverrides = {
     ) : (
       <span>{children}</span>
     ),
+  code: ({ node: _node, className, children, ...props }: ComponentProps<"code"> & { node?: unknown }) => (
+    <code
+      {...props}
+      className={className}
+      // Highlight.js makes fenced code its own horizontal scroller. Keep the
+      // real scroll container keyboard-reachable; inline code remains inert.
+      tabIndex={className?.split(/\s+/).includes("hljs") ? 0 : undefined}
+    >
+      {children}
+    </code>
+  ),
   li: ({ node: _node, children, ...props }: ComponentProps<"li"> & { node?: unknown }) => {
     const kids = Children.toArray(children);
     const checkbox = kids[0];

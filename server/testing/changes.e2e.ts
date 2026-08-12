@@ -8,8 +8,9 @@ import type { ClientMsg } from "../protocol";
 import { assertAxeClean, launchChrome, noSideScroll } from "./e2e-harness";
 import { fixtureGit as git, startDaemon, TestClient, type Daemon } from "./itest-harness";
 
-// CR.2/CR.3 in a real browser against a real daemon and real Git: responsive
-// review, every honest state, line/hunk selection, and editable prompt drafts.
+// CR.2–CR.4 in a real browser against a real daemon and real Git: responsive
+// review, every honest state, line/hunk selection, editable prompt drafts,
+// and revision-keyed viewport-local review progress.
 
 const TOKEN = "changes-e2e-token";
 
@@ -20,10 +21,18 @@ let changedRepo: string;
 let plainRoot: string;
 let cleanRepo: string;
 let unsafeRepo: string;
+let lifecycleRepo: string;
+let manualRepo: string;
+let incompleteRepo: string;
+let statusRepo: string;
 let changedSession: string;
 let plainSession: string;
 let cleanSession: string;
 let unsafeSession: string;
+let lifecycleSession: string;
+let manualSession: string;
+let incompleteSession: string;
+let statusSession: string;
 let desktop: Page;
 let phoneContext: BrowserContext;
 let phone: Page;
@@ -77,7 +86,20 @@ before(async () => {
   plainRoot = path.join(fixtureRoot, "plain-workspace");
   cleanRepo = path.join(fixtureRoot, "clean-repo");
   unsafeRepo = path.join(fixtureRoot, "unscannable-repo");
-  for (const root of [changedRepo, plainRoot, cleanRepo, unsafeRepo]) mkdirSync(root);
+  lifecycleRepo = path.join(fixtureRoot, "lifecycle-repo");
+  manualRepo = path.join(fixtureRoot, "manual-repo");
+  incompleteRepo = path.join(fixtureRoot, "incomplete-repo");
+  statusRepo = path.join(fixtureRoot, "status-repo");
+  for (const root of [
+    changedRepo,
+    plainRoot,
+    cleanRepo,
+    unsafeRepo,
+    lifecycleRepo,
+    manualRepo,
+    incompleteRepo,
+    statusRepo,
+  ]) mkdirSync(root);
 
   git(changedRepo, "init", "--quiet");
   writeFileSync(path.join(changedRepo, "d-deleted.ts"), "deleted before\n");
@@ -109,14 +131,53 @@ before(async () => {
     git(unsafeRepo, "config", `filter.fixture${i}.clean`, "not-a-real-program");
   }
 
+  git(lifecycleRepo, "init", "--quiet");
+  writeFileSync(path.join(lifecycleRepo, "tracked.ts"), "before\n");
+  git(lifecycleRepo, "add", "--all");
+  git(lifecycleRepo, "commit", "--quiet", "-m", "baseline");
+  writeFileSync(path.join(lifecycleRepo, "tracked.ts"), "after first connection\n");
+
+  git(manualRepo, "init", "--quiet");
+  mkdirSync(path.join(manualRepo, "scope"));
+  writeFileSync(path.join(manualRepo, "scope", "a.ts"), "a: baseline\n");
+  writeFileSync(path.join(manualRepo, "scope", "b.ts"), "b: baseline\n");
+  git(manualRepo, "add", "--all");
+  git(manualRepo, "commit", "--quiet", "-m", "baseline");
+  writeFileSync(path.join(manualRepo, "scope", "a.ts"), "a: second commit\n");
+  writeFileSync(path.join(manualRepo, "scope", "b.ts"), "b: second commit\n");
+  git(manualRepo, "add", "--all");
+  git(manualRepo, "commit", "--quiet", "-m", "second");
+  writeFileSync(path.join(manualRepo, "scope", "a.ts"), "a: working tree\n");
+  writeFileSync(path.join(manualRepo, "scope", "b.ts"), "b: working tree\n");
+
+  git(incompleteRepo, "init", "--quiet");
+  writeFileSync(path.join(incompleteRepo, "tracked.txt"), "clean\n");
+  git(incompleteRepo, "add", "--all");
+  git(incompleteRepo, "commit", "--quiet", "-m", "baseline");
+  const embedded = path.join(incompleteRepo, "embedded");
+  mkdirSync(embedded);
+  git(embedded, "init", "--quiet");
+  writeFileSync(path.join(embedded, "only-inside.txt"), "nested\n");
+
+  git(statusRepo, "init", "--quiet");
+  writeFileSync(path.join(statusRepo, "tracked.ts"), "before\n");
+  git(statusRepo, "add", "--all");
+  git(statusRepo, "commit", "--quiet", "-m", "baseline");
+  writeFileSync(path.join(statusRepo, "tracked.ts"), "after\n");
+
   daemon = await startDaemon({
     MIRAFOLD_TOKEN: TOKEN,
     FS_CHANGES_MAX_ENTRIES: "5",
+    FS_LISTDIR_STATUS_WAIT_MS: "0",
   });
   changedSession = await createSession(changedRepo);
   plainSession = await createSession(plainRoot);
   cleanSession = await createSession(cleanRepo);
   unsafeSession = await createSession(unsafeRepo);
+  lifecycleSession = await createSession(lifecycleRepo);
+  manualSession = await createSession(path.join(manualRepo, "scope"));
+  incompleteSession = await createSession(incompleteRepo);
+  statusSession = await createSession(statusRepo);
   browser = await launchChrome();
 });
 
@@ -285,6 +346,17 @@ test("CR.3 desktop: pointer and keyboard ranges create editable prompt drafts an
   await prompt.press("Enter");
   await desktop.locator(".turn-user", { hasText: "Use clearer naming." }).waitFor();
   await desktop.locator(".activity-line").waitFor({ state: "detached", timeout: 30_000 });
+  const highlightedMarkdown = desktop.locator(".turn-assistant code.hljs");
+  assert.equal(
+    await highlightedMarkdown.count(),
+    2,
+    "the deterministic CR.3 response did not exercise both highlighted markdown scrollers",
+  );
+  assert.deepEqual(
+    await highlightedMarkdown.evaluateAll((nodes) => nodes.map((node) => node.getAttribute("tabindex"))),
+    ["0", "0"],
+    "highlighted markdown scrollers are not keyboard-reachable",
+  );
   assert.equal(
     await desktop.locator(".changes-selection-count").innerText(),
     "2 selected",
@@ -502,6 +574,362 @@ test("CR.3 phone: tap and whole-hunk selection keep context beside the editable 
     await noSideScroll(page);
   } finally {
     await context.close();
+  }
+});
+
+test("CR.4: review progress resumes and only the changed revision reopens on desktop and phone", async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    deviceScaleFactor: 3,
+    isMobile: true,
+    hasTouch: true,
+  });
+  const mobile = await context.newPage();
+  const waitForRevision = async (target: Page) => {
+    await target.waitForFunction(() => {
+      const button = document.querySelector(".changes-review-toggle") as HTMLButtonElement | null;
+      return Boolean(button && !button.disabled);
+    });
+  };
+  const progressText = (target: Page) => target.locator(".changes-progress").innerText();
+  try {
+    await page.goto(sessionUrl(changedSession));
+    await page.waitForSelector(".ab-changes");
+    await page.locator(".ab-changes").click();
+    await page.waitForSelector(".changes-current-path");
+
+    // Review three exact revisions, then inspect a different file while one
+    // of those revisions changes behind the UI.
+    for (const name of ["a-added.ts", "d-deleted.ts", "m-modified.ts"]) {
+      await page.locator(".changes-file", { hasText: name }).click();
+      await page.waitForFunction(
+        (suffix) => document.querySelector(".changes-current-path")?.textContent?.endsWith(String(suffix)),
+        name,
+      );
+      await waitForRevision(page);
+      await page.locator(".changes-review-toggle").click();
+      assert.equal(await page.locator(".changes-review-toggle").getAttribute("aria-pressed"), "true");
+    }
+    assert.equal(await progressText(page), "3 / 5 reviewed");
+    await page.locator(".changes-file", { hasText: "a-added.ts" }).click();
+    await page.waitForFunction(
+      () => document.querySelector(".changes-current-path")?.textContent?.endsWith("a-added.ts"),
+    );
+    writeFileSync(
+      path.join(changedRepo, "m-modified.ts"),
+      modifiedSource("modified after CR.4 desktop refresh", "tail after"),
+    );
+    await page.locator(".changes-review-notice", { hasText: "m-modified.ts changed and is unreviewed again." }).waitFor({ timeout: 15_000 });
+    assert.equal(await progressText(page), "2 / 5 reviewed");
+    assert.match((await page.locator(".changes-file", { hasText: "a-added.ts" }).getAttribute("class")) ?? "", /is-reviewed/);
+    assert.match((await page.locator(".changes-file", { hasText: "d-deleted.ts" }).getAttribute("class")) ?? "", /is-reviewed/);
+    assert.doesNotMatch((await page.locator(".changes-file", { hasText: "m-modified.ts" }).getAttribute("class")) ?? "", /is-reviewed/);
+
+    // Next-unreviewed lands on the invalidated file. Reduced-motion preference
+    // reaches the hunk jump itself, not only the CSS animation kill switch.
+    await page.locator(".changes-next-unreviewed").click();
+    await page.waitForFunction(
+      () => document.querySelector(".changes-current-path")?.textContent?.endsWith("m-modified.ts"),
+    );
+    await waitForRevision(page);
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.evaluate(() => {
+      const original = Element.prototype.scrollIntoView;
+      Element.prototype.scrollIntoView = function (options?: boolean | ScrollIntoViewOptions) {
+        document.documentElement.dataset.reviewScrollBehavior =
+          typeof options === "object" ? String(options.behavior) : "missing";
+        Element.prototype.scrollIntoView = original;
+      };
+    });
+    await page.locator('[aria-label="Next changed hunk"]').click();
+    assert.equal(
+      await page.locator("html").getAttribute("data-review-scroll-behavior"),
+      "auto",
+      "reduced-motion hunk navigation still requested smooth scrolling",
+    );
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+
+    // R/N are review shortcuts only outside editable controls. In the prompt,
+    // the same keys remain ordinary authored text.
+    await page.locator(".changes-view").focus();
+    await page.keyboard.press("r");
+    assert.equal(await progressText(page), "3 / 5 reviewed");
+    await page.keyboard.press("n");
+    await page.waitForFunction(
+      () => document.querySelector(".changes-current-path")?.textContent?.endsWith("u-untracked.ts"),
+    );
+    const prompt = page.locator(".prompt-box textarea");
+    await prompt.fill("");
+    await prompt.press("r");
+    assert.equal(await prompt.inputValue(), "r");
+    assert.equal(await progressText(page), "3 / 5 reviewed", "typing in the prompt marked a file reviewed");
+    await prompt.fill("Keep this unsent draft.");
+    await page.locator(".prompt-caret").focus();
+    await page.keyboard.press("r");
+    assert.equal(
+      await progressText(page),
+      "3 / 5 reviewed",
+      "focus elsewhere inside the prompt activated a review shortcut",
+    );
+    await prompt.fill("");
+    await page.locator(".changes-view").dispatchEvent("keydown", { key: "r", repeat: true });
+    assert.equal(await progressText(page), "3 / 5 reviewed", "a held shortcut toggled progress repeatedly");
+    await page.locator(".changes-view").focus();
+    await page.keyboard.press("r");
+    assert.equal(await progressText(page), "4 / 5 reviewed");
+    await page.keyboard.press("n");
+    await page.waitForFunction(
+      () => document.querySelector(".changes-current-path")?.textContent?.endsWith("z-binary.bin"),
+    );
+    await waitForRevision(page);
+    await page.locator(".changes-review-toggle").click();
+    assert.equal(await progressText(page), "5 / 5 reviewed");
+    assert.equal(await page.locator(".changes-next-unreviewed").isDisabled(), true);
+
+    // Closing the surface does not stop its viewport-local watcher bookkeeping:
+    // a revision changed while hidden must be reopened honestly on return.
+    await page.locator(".ab-changes").click();
+    await page.waitForSelector(".changes-panel", { state: "detached" });
+    writeFileSync(path.join(changedRepo, "d-deleted.ts"), "deleted path restored during closed review\n");
+    await page.waitForTimeout(1_500);
+    await page.locator(".ab-changes").click();
+    await page.waitForSelector(".changes-current-path");
+    assert.equal(await progressText(page), "4 / 5 reviewed");
+    await page.locator(".changes-review-notice", { hasText: "d-deleted.ts changed and is unreviewed again." }).waitFor();
+    assert.ok((await page.locator(".changes-current-path").innerText()).endsWith("z-binary.bin"));
+    await page.locator(".changes-next-unreviewed").click();
+    await page.waitForFunction(
+      () => document.querySelector(".changes-current-path")?.textContent?.endsWith("d-deleted.ts"),
+    );
+    await waitForRevision(page);
+    await page.locator(".changes-review-toggle").click();
+    assert.equal(await progressText(page), "5 / 5 reviewed");
+
+    // At the narrowest desktop width, the added controls introduce no overflow.
+    await page.setViewportSize({ width: 641, height: 780 });
+    const desktopOverflow = await page.locator(".changes-panel").evaluate((element) => ({
+      clientWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+    }));
+    assert.ok(
+      desktopOverflow.scrollWidth <= desktopOverflow.clientWidth,
+      `641px Changes surface overflows ${desktopOverflow.clientWidth}→${desktopOverflow.scrollWidth}`,
+    );
+    await noSideScroll(page);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await assertAxeClean(page, "desktop resumable change review");
+
+    // A second viewport starts with no borrowed checkmarks. Review every file
+    // on phone, change one behind it, then wrap directly to that sole reopened
+    // revision and resume after closing/reopening the full-screen layer.
+    await mobile.goto(sessionUrl(changedSession));
+    await mobile.waitForSelector(".sb-changes");
+    await mobile.locator(".sb-changes").tap();
+    await mobile.waitForSelector(".changes-current-path");
+    assert.equal(await progressText(mobile), "0 / 5 reviewed", "review progress leaked between viewports");
+    for (let index = 0; index < 5; index += 1) {
+      await waitForRevision(mobile);
+      await mobile.locator(".changes-review-toggle").tap();
+      if (index < 4) {
+        await mobile.locator('[aria-label="Next changed file"]').tap();
+        await mobile.waitForFunction(
+          (position) => document.querySelector(".changes-position")?.textContent?.includes(`${position} / 5`),
+          index + 2,
+        );
+      }
+    }
+    assert.equal(await progressText(mobile), "5 / 5 reviewed");
+    writeFileSync(path.join(changedRepo, "a-added.ts"), "added after CR.4 phone refresh\n");
+    await mobile.locator(".changes-review-notice", { hasText: "a-added.ts changed and is unreviewed again." }).waitFor({ timeout: 15_000 });
+    assert.equal(await progressText(mobile), "4 / 5 reviewed");
+    await mobile.locator(".changes-next-unreviewed").tap();
+    await mobile.waitForFunction(
+      () => document.querySelector(".changes-current-path")?.textContent?.endsWith("a-added.ts"),
+    );
+    await waitForRevision(mobile);
+    assert.match(await mobile.locator(".changes-view").innerText(), /CR\.4 phone refresh/);
+    await mobile.locator(".changes-review-toggle").tap();
+    assert.equal(await progressText(mobile), "5 / 5 reviewed");
+
+    const phoneTargets = await mobile.evaluate(() =>
+      [".changes-review-toggle", ".changes-next-unreviewed"].map((selector) => {
+        const rect = document.querySelector(selector)!.getBoundingClientRect();
+        return { selector, width: rect.width, height: rect.height };
+      }),
+    );
+    for (const target of phoneTargets) {
+      assert.ok(target.width >= 40 && target.height >= 40, `${target.selector} is ${target.width}×${target.height}`);
+    }
+    await noSideScroll(mobile);
+    await assertAxeClean(mobile, "phone resumable change review");
+    await mobile.locator(".changes-close").tap();
+    await mobile.waitForSelector(".changes-panel", { state: "detached" });
+    await mobile.locator(".sb-changes").tap();
+    await mobile.waitForSelector(".changes-current-path");
+    assert.equal(await progressText(mobile), "5 / 5 reviewed");
+    assert.ok((await mobile.locator(".changes-current-path").innerText()).endsWith("a-added.ts"));
+  } finally {
+    await page.close();
+    await context.close();
+  }
+});
+
+test("CR.5: reconnect abandons lost requests, refreshes bytes, and clears unverifiable review progress", async () => {
+  const page = await browser.newPage({ viewport: { width: 1100, height: 760 } });
+  await page.addInitScript(() => {
+    const controlled = window as typeof window & {
+      __changesSocket?: WebSocket;
+      __dropNextChanges?: boolean;
+    };
+    const NativeWebSocket = window.WebSocket;
+    const nativeSend = NativeWebSocket.prototype.send;
+    NativeWebSocket.prototype.send = function (
+      this: WebSocket,
+      data: Parameters<WebSocket["send"]>[0],
+    ) {
+      if (controlled.__dropNextChanges && typeof data === "string") {
+        try {
+          if (JSON.parse(data).type === "fs_changes") {
+            controlled.__dropNextChanges = false;
+            this.close();
+            return;
+          }
+        } catch {
+          // Non-JSON transport frames use the native path.
+        }
+      }
+      nativeSend.call(this, data);
+    };
+    window.WebSocket = new Proxy(NativeWebSocket, {
+      construct(Target, args, NewTarget) {
+        const socket = Reflect.construct(Target, args, NewTarget) as WebSocket;
+        controlled.__changesSocket = socket;
+        return socket;
+      },
+    }) as typeof WebSocket;
+  });
+  try {
+    await page.goto(sessionUrl(lifecycleSession));
+    await page.waitForSelector(".ab-changes");
+    await page.locator(".ab-changes").click();
+    await page.waitForSelector(".changes-current-path");
+    await page.waitForFunction(
+      () => !(document.querySelector(".changes-review-toggle") as HTMLButtonElement)?.disabled,
+    );
+    await page.locator(".changes-review-toggle").click();
+    assert.equal(await page.locator(".changes-progress").innerText(), "1 / 1 reviewed");
+
+    await page.evaluate(() => {
+      (window as typeof window & { __changesSocket?: WebSocket }).__changesSocket?.close();
+    });
+    await page.waitForFunction(
+      () => document.querySelector(".sb-dot")?.getAttribute("title") !== "connected",
+    );
+    writeFileSync(path.join(lifecycleRepo, "tracked.ts"), "after reconnect\n");
+    await page.waitForFunction(
+      () =>
+        document.querySelector(".sb-dot")?.getAttribute("title") === "connected" &&
+        document.querySelector(".changes-view")?.textContent?.includes("after reconnect"),
+      undefined,
+      { timeout: 15_000 },
+    );
+    assert.equal(await page.locator(".changes-progress").innerText(), "0 / 1 reviewed");
+
+    // Lose an fs_changes reply itself. The reattach must release the pending
+    // gate, enable Refresh again, and show the mutation made while offline.
+    await page.evaluate(() => {
+      (window as typeof window & { __dropNextChanges?: boolean }).__dropNextChanges = true;
+    });
+    await page.locator(".changes-refresh").click();
+    await page.waitForFunction(
+      () => document.querySelector(".sb-dot")?.getAttribute("title") !== "connected",
+    );
+    writeFileSync(path.join(lifecycleRepo, "tracked.ts"), "after lost request\n");
+    await page.waitForFunction(
+      () =>
+        document.querySelector(".sb-dot")?.getAttribute("title") === "connected" &&
+        document.querySelector(".changes-view")?.textContent?.includes("after lost request"),
+      undefined,
+      { timeout: 15_000 },
+    );
+    assert.equal(await page.locator(".changes-refresh").isDisabled(), false);
+    assert.doesNotMatch(await page.locator(".changes-review").innerText(), /Loading workspace changes/);
+  } finally {
+    await page.close();
+  }
+});
+
+test("CR.5: manual refresh invalidates every review claim before an unwatched HEAD change", async () => {
+  const page = await browser.newPage({ viewport: { width: 1100, height: 760 } });
+  try {
+    await page.goto(sessionUrl(manualSession));
+    await page.waitForSelector(".ab-changes");
+    await page.locator(".ab-changes").click();
+    await page.waitForSelector(".changes-current-path");
+    for (const name of ["a.ts", "b.ts"]) {
+      await page.locator(".changes-file", { hasText: name }).click();
+      await page.waitForFunction(
+        (suffix) => document.querySelector(".changes-current-path")?.textContent?.endsWith(String(suffix)),
+        name,
+      );
+      await page.waitForFunction(
+        () => !(document.querySelector(".changes-review-toggle") as HTMLButtonElement)?.disabled,
+      );
+      await page.locator(".changes-review-toggle").click();
+    }
+    assert.equal(await page.locator(".changes-progress").innerText(), "2 / 2 reviewed");
+
+    git(manualRepo, "reset", "--soft", "HEAD^");
+    await page.locator(".changes-refresh").click();
+    assert.equal(await page.locator(".changes-progress").innerText(), "0 / 2 reviewed");
+    await page.waitForFunction(
+      () => document.querySelector(".changes-view .diff-del")?.textContent?.includes("baseline"),
+      undefined,
+      { timeout: 10_000 },
+    );
+    assert.equal(await page.locator(".changes-refresh").isDisabled(), false);
+  } finally {
+    await page.close();
+  }
+});
+
+test("CR.5: late Git decoration refreshes Files without invalidating Changes review", async () => {
+  const page = await browser.newPage({ viewport: { width: 1100, height: 760 } });
+  try {
+    await page.goto(sessionUrl(statusSession));
+    await page.waitForSelector(".ab-changes");
+    await page.locator(".ab-changes").click();
+    await page.waitForSelector(".changes-current-path");
+    await page.waitForFunction(
+      () => !(document.querySelector(".changes-review-toggle") as HTMLButtonElement)?.disabled,
+    );
+    await page.locator(".changes-review-toggle").click();
+    assert.equal(await page.locator(".changes-progress").innerText(), "1 / 1 reviewed");
+
+    await page.locator(".ab-files").click();
+    await page.waitForSelector(".files-file-row");
+    await page.waitForTimeout(1_500);
+    await page.locator(".ab-changes").click();
+    await page.waitForSelector(".changes-current-path");
+    assert.equal(await page.locator(".changes-progress").innerText(), "1 / 1 reviewed");
+  } finally {
+    await page.close();
+  }
+});
+
+test("CR.5: zero visible entries in an incomplete result never claim the tree is clean", async () => {
+  const page = await browser.newPage({ viewport: { width: 1100, height: 760 } });
+  try {
+    await page.goto(sessionUrl(incompleteSession));
+    await page.waitForSelector(".ab-changes");
+    await page.locator(".ab-changes").click();
+    await page.locator(".changes-state strong", { hasText: "Change list is incomplete" }).waitFor();
+    assert.equal(await page.locator(".changes-count").innerText(), "0 visible");
+    assert.match(await page.locator(".changes-warning").innerText(), /incomplete/i);
+    assert.doesNotMatch(await page.locator(".changes-state").innerText(), /working tree is clean/i);
+  } finally {
+    await page.close();
   }
 });
 

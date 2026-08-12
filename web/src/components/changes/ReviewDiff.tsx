@@ -1,55 +1,27 @@
 import {
-  memo,
   useEffect,
   useMemo,
   useRef,
   useState,
   type KeyboardEvent,
-  type ReactNode,
 } from "react";
-import ReactMarkdown from "react-markdown";
-import rehypeHighlight from "rehype-highlight";
 import {
   MAX_REVIEW_SELECTION,
   closestHunk,
   formatReviewDraft,
+  interactiveReviewTooLarge,
   languageForPath,
   reviewHunks,
   reviewLines,
   reviewSelection,
-  type ReviewLine,
+  reviewScrollBehavior,
   type VersionedReviewSelection,
 } from "../../change-review";
-import { codeFence, splitNodeLines } from "../../registry/Code";
 import { formatBytes } from "../ToolBlock";
 import { diffTooLarge, FileView, type FileViewState } from "../files/FileView";
+import { ReviewRows } from "./ReviewRows";
 
 type DiffState = Extract<FileViewState, { kind: "diff" }>;
-
-const syntaxComponents = {
-  pre: ({ children }: { children?: ReactNode }) => <>{children}</>,
-  code: ({ children, className }: { children?: ReactNode; className?: string }) => {
-    const line = splitNodeLines(children)[0] ?? [];
-    return <code className={className}>{line.length > 0 ? line : " "}</code>;
-  },
-};
-
-const SyntaxLine = memo(function SyntaxLine({ text, language }: { text: string; language?: string }) {
-  return (
-    <ReactMarkdown rehypePlugins={[rehypeHighlight]} components={syntaxComponents}>
-      {codeFence(text, language)}
-    </ReactMarkdown>
-  );
-});
-
-function lineLabel(line: ReviewLine): string {
-  const kind = line.sign === "+" ? "Added" : line.sign === "-" ? "Deleted" : "Context";
-  const coordinates = [
-    line.oldLine === undefined ? undefined : `HEAD line ${line.oldLine}`,
-    line.newLine === undefined ? undefined : `working tree line ${line.newLine}`,
-  ].filter(Boolean);
-  return `${kind}, ${coordinates.join(", ")}: ${line.text || "blank line"}`;
-}
 
 export function ReviewDiff({
   state,
@@ -66,7 +38,12 @@ export function ReviewDiff({
   onSelectionChange: (selection: VersionedReviewSelection | undefined) => void;
   onNoticeChange: (notice: string | undefined) => void;
 }) {
-  const lines = useMemo(() => reviewLines(state.before, state.after), [state.before, state.after]);
+  const matrixTooLarge = diffTooLarge(state.before, state.after);
+  const rowCountTooLarge = interactiveReviewTooLarge(state.before, state.after);
+  const lines = useMemo(
+    () => (matrixTooLarge || rowCountTooLarge ? [] : reviewLines(state.before, state.after)),
+    [state.before, state.after, matrixTooLarge, rowCountTooLarge],
+  );
   const hunks = useMemo(() => reviewHunks(lines), [lines]);
   const language = useMemo(() => languageForPath(state.path), [state.path]);
   const [currentHunk, setCurrentHunk] = useState(0);
@@ -144,7 +121,11 @@ export function ReviewDiff({
     if (!hunk) return;
     setCurrentHunk(next);
     setFocusIndex(hunk.start);
-    rowRefs.current[hunk.start]?.scrollIntoView({ block: "center", behavior: "smooth" });
+    const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    rowRefs.current[hunk.start]?.scrollIntoView({
+      block: "center",
+      behavior: reviewScrollBehavior(reducedMotion),
+    });
   };
 
   const createDraft = (intent: "explain" | "request-change") => {
@@ -153,9 +134,26 @@ export function ReviewDiff({
     onNoticeChange("Draft added to the prompt — it has not been sent.");
   };
 
-  if (diffTooLarge(state.before, state.after) || lines.length === 0) {
+  if (matrixTooLarge) {
     return <FileView state={state} />;
   }
+
+  if (rowCountTooLarge) {
+    return (
+      <>
+        {(state.beforeTruncatedBytes || state.afterTruncatedBytes) && (
+          <div className="fv-note">
+            Diff is truncated — {formatBytes((state.beforeTruncatedBytes ?? 0) + (state.afterTruncatedBytes ?? 0))}
+            {" "}elided. Changes past the cap may be overstated.
+          </div>
+        )}
+        <div className="fv-note">Too many lines for interactive review — showing current contents.</div>
+        <pre className="tool-code fv-content">{state.after}</pre>
+      </>
+    );
+  }
+
+  if (lines.length === 0) return <FileView state={state} />;
 
   const hunk = hunks[currentHunk];
   return (
@@ -219,59 +217,18 @@ export function ReviewDiff({
         aria-label={`${state.path} changed lines`}
         aria-multiselectable="true"
       >
-        {lines.map((line, index) => {
-          const selected = Boolean(
-            currentSelection && index >= currentSelection.start && index <= currentSelection.end,
-          );
-          return (
-            <div
-              key={line.id}
-              ref={(node) => {
-                rowRefs.current[index] = node;
-              }}
-              className={
-                "changes-review-line" +
-                (line.sign === "+"
-                  ? " is-add diff-add"
-                  : line.sign === "-"
-                    ? " is-del diff-del"
-                    : " is-context diff-ctx") +
-                (selected ? " is-selected" : "")
-              }
-              role="option"
-              aria-selected={selected}
-              aria-label={lineLabel(line)}
-              tabIndex={focusIndex === index ? 0 : -1}
-              data-review-index={index}
-              data-old-line={line.oldLine}
-              data-new-line={line.newLine}
-              onFocus={() => setFocusIndex(index)}
-              onKeyDown={(event) => onLineKey(event, index)}
-              onMouseDown={(event) => {
-                if (phone || event.button !== 0) return;
-                event.preventDefault();
-                const anchor = event.shiftKey ? currentSelection?.anchor ?? index : index;
-                dragAnchor.current = anchor;
-                select(anchor, index);
-              }}
-              onMouseEnter={() => {
-                if (phone || dragAnchor.current === null) return;
-                select(dragAnchor.current, index);
-              }}
-              onClick={() => {
-                if (!phone) return;
-                select(index, index);
-              }}
-            >
-              <span className="changes-line-no changes-line-old" aria-hidden="true">{line.oldLine ?? ""}</span>
-              <span className="changes-line-no changes-line-new" aria-hidden="true">{line.newLine ?? ""}</span>
-              <span className="changes-line-sign" aria-hidden="true">{line.sign}</span>
-              <span className="changes-line-code" aria-hidden="true">
-                <SyntaxLine text={line.text} language={language} />
-              </span>
-            </div>
-          );
-        })}
+        <ReviewRows
+          language={language}
+          lines={lines}
+          selection={currentSelection}
+          focusIndex={focusIndex}
+          phone={phone}
+          rowRefs={rowRefs}
+          dragAnchor={dragAnchor}
+          select={select}
+          setFocusIndex={setFocusIndex}
+          onLineKey={onLineKey}
+        />
       </div>
     </div>
   );

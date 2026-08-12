@@ -757,6 +757,18 @@ body {
   white-space: nowrap;
 }
 
+.changes-progress {
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 108px;
+  overflow: hidden;
+  color: var(--fg-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.68em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .changes-icon-btn,
 .changes-nav-btn {
   flex-shrink: 0;
@@ -912,6 +924,17 @@ body {
   white-space: nowrap;
 }
 
+.changes-reviewed-mark {
+  flex-shrink: 0;
+  margin-left: auto;
+  color: var(--fg-faint);
+  font-size: 1.05em;
+}
+
+.changes-file.is-reviewed .changes-reviewed-mark {
+  color: var(--ok, var(--accent));
+}
+
 .changes-repo-note {
   padding: 5px 9px;
   color: var(--fg-dimmer);
@@ -979,6 +1002,47 @@ body {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.69em;
   white-space: nowrap;
+}
+
+.changes-progress-tools {
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 6px 9px;
+  background: var(--bg-inset);
+  border-bottom: 1px solid var(--border-faint);
+}
+
+.changes-progress-tools button {
+  min-width: 0;
+  min-height: 30px;
+  padding: 4px 7px;
+  overflow-wrap: anywhere;
+  color: var(--fg-dim);
+  background: var(--surface);
+  border: 1px solid var(--border-2);
+  border-radius: 5px;
+  font: inherit;
+  font-size: 0.7em;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.changes-progress-tools button:hover:not(:disabled) {
+  color: var(--fg-body);
+  background: var(--surface-hover);
+  border-color: var(--border-hover);
+}
+
+.changes-progress-tools button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.changes-review-toggle[aria-pressed="true"] {
+  color: var(--ok, var(--accent));
+  border-color: var(--ok, var(--border-hover));
 }
 
 .changes-view {
@@ -1162,6 +1226,12 @@ body {
   padding: 4px 8px;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+
+.changes-eof-note {
+  margin-left: 1ch;
+  color: var(--fg-faint);
+  font-style: italic;
 }
 
 .changes-line-code code.hljs {
@@ -1580,6 +1650,11 @@ body {
 .diff-del {
   background: var(--diff-del-bg);
   color: var(--diff-del-fg);
+}
+
+.diff-eof {
+  color: var(--fg-faint);
+  font-style: italic;
 }
 
 .diff-ctx {
@@ -5199,8 +5274,26 @@ html {
   }
 
   .changes-head {
-    min-height: 58px;
+    min-height: 68px;
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr) auto 42px;
+    grid-template-areas:
+      "close title count refresh"
+      "close progress progress refresh";
+    gap: 2px 6px;
     padding: 7px 8px;
+  }
+
+  .changes-head .changes-close {
+    grid-area: close;
+  }
+
+  .changes-title-block {
+    grid-area: title;
+  }
+
+  .changes-head .changes-refresh {
+    grid-area: refresh;
   }
 
   .changes-subtitle {
@@ -5212,8 +5305,15 @@ html {
   }
 
   .changes-count {
+    grid-area: count;
     padding: 3px 6px;
     font-size: 0.66em;
+  }
+
+  .changes-progress {
+    grid-area: progress;
+    max-width: none;
+    font-size: 0.63em;
   }
 
   .changes-icon-btn,
@@ -5259,6 +5359,15 @@ html {
   .changes-view {
     padding: 8px 7px 14px;
     overscroll-behavior: contain;
+  }
+
+  .changes-progress-tools {
+    padding: 6px 7px;
+  }
+
+  .changes-progress-tools button {
+    min-height: 40px;
+    padding: 5px 7px;
   }
 
   .changes-review-tools {

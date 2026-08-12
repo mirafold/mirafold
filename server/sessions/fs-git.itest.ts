@@ -1,7 +1,15 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { ClientMsg, WireMsg } from "../protocol";
@@ -50,6 +58,15 @@ const fsDiff = async (c: TestClient, id: string, p: string) => {
   return (await c.waitFor(
     (m) => m.type === "fs_file_diff" && (m as Any).id === id,
     `fs_file_diff ${id}`,
+  )) as Any;
+};
+
+const fsChanges = async (c: TestClient, id: string) => {
+  await settle(THROTTLE_MS + 30);
+  c.send({ type: "fs_changes", id } as ClientMsg);
+  return (await c.waitFor(
+    (m) => m.type === "fs_change_set" && (m as Any).id === id,
+    `fs_change_set ${id}`,
   )) as Any;
 };
 
@@ -122,15 +139,18 @@ test("E.2: diffs — modified, added, deleted, rename target", async () => {
   const mod = await fsDiff(c, "d1", "tracked.txt");
   assert.equal(mod.before, "one\n");
   assert.equal(mod.after, "one\ntwo\n");
+  assert.match(mod.revision, /^revision:v1:[a-f0-9]{64}$/);
   assert.ok(!("seq" in mod));
 
   const added = await fsDiff(c, "d2", "untracked.txt");
   assert.equal(added.before, "", "absent in HEAD diffs against empty");
   assert.equal(added.after, "new\n");
+  assert.notEqual(added.revision, mod.revision);
 
   const deleted = await fsDiff(c, "d3", "gone.txt");
   assert.equal(deleted.before, "bye\n");
   assert.equal(deleted.after, "", "deleted diffs to empty — not an error");
+  assert.match(deleted.revision, /^revision:v1:[a-f0-9]{64}$/);
 
   const renamed = await fsDiff(c, "d4", "moved.txt");
   assert.equal(renamed.before, "");
@@ -171,5 +191,98 @@ test("E.2: unborn HEAD — tree works, everything diffs against empty, never cra
   assert.equal(diff.before, "");
   assert.equal(diff.after, "fresh\n");
   assert.doesNotMatch(d.logs(), /crashed \(uncaughtException\)/);
+  c.close();
+});
+
+test("Changes: a deleted subtree still resolves to its owning nested repository", async () => {
+  const workspace = mkdtempSync(path.join(os.tmpdir(), "fsg-deleted-nested-"));
+  after(() => rmSync(workspace, { recursive: true, force: true }));
+  const nested = path.join(workspace, "project");
+  mkdirSync(nested);
+  git(nested, "init", "-q");
+  mkdirSync(path.join(nested, "removed", "deep"), { recursive: true });
+  writeFileSync(path.join(nested, "removed", "deep", "tracked.txt"), "before\n");
+  git(nested, "add", "-A");
+  git(nested, "commit", "-q", "-m", "baseline");
+  rmSync(path.join(nested, "removed"), { recursive: true });
+
+  const c = await openSession(workspace);
+  const changes = await fsChanges(c, "nested-set");
+  assert.deepEqual(changes.repos[0].entries, [
+    { path: "project/removed/deep/tracked.txt", status: "D" },
+  ]);
+  const diff = await fsDiff(c, "nested-diff", "project/removed/deep/tracked.txt");
+  assert.equal(diff.error, undefined);
+  assert.equal(diff.before, "before\n");
+  assert.equal(diff.after, "");
+  c.close();
+});
+
+test("Changes: a tracked symlink diffs its link text instead of its target bytes", async (t) => {
+  if (process.platform === "win32") return t.skip("symlink fixture requires POSIX semantics");
+  const root = mkdtempSync(path.join(os.tmpdir(), "fsg-symlink-"));
+  after(() => rmSync(root, { recursive: true, force: true }));
+  git(root, "init", "-q");
+  writeFileSync(path.join(root, "target-a.txt"), "TARGET A BYTES\n");
+  writeFileSync(path.join(root, "target-b.txt"), "TARGET B BYTES\n");
+  symlinkSync("target-a.txt", path.join(root, "current.txt"));
+  git(root, "add", "-A");
+  git(root, "commit", "-q", "-m", "baseline");
+  unlinkSync(path.join(root, "current.txt"));
+  symlinkSync("target-b.txt", path.join(root, "current.txt"));
+
+  const c = await openSession(root);
+  const diff = await fsDiff(c, "symlink-diff", "current.txt");
+  assert.equal(diff.error, undefined);
+  assert.equal(diff.before, "target-a.txt");
+  assert.equal(diff.after, "target-b.txt");
+  c.close();
+});
+
+test("Changes: an unreadable working path is an error, never a fake deletion", async (t) => {
+  if (process.platform === "win32") return t.skip("permission fixture requires POSIX modes");
+  const root = mkdtempSync(path.join(os.tmpdir(), "fsg-unreadable-"));
+  const locked = path.join(root, "locked");
+  after(() => {
+    try {
+      chmodSync(locked, 0o700);
+    } catch {
+      // The fixture may already have been removed after an early failure.
+    }
+    rmSync(root, { recursive: true, force: true });
+  });
+  git(root, "init", "-q");
+  mkdirSync(locked);
+  writeFileSync(path.join(locked, "tracked.txt"), "before\n");
+  git(root, "add", "-A");
+  git(root, "commit", "-q", "-m", "baseline");
+  writeFileSync(path.join(locked, "tracked.txt"), "after\n");
+  chmodSync(locked, 0o000);
+
+  const c = await openSession(root);
+  const diff = await fsDiff(c, "unreadable-diff", "locked/tracked.txt");
+  assert.match(diff.error, /not readable/i);
+  assert.equal(diff.before, undefined);
+  assert.equal(diff.after, undefined);
+  c.close();
+});
+
+test("Changes: a malformed child .git file does not steal a file from its real outer repo", async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "fsg-malformed-owner-"));
+  after(() => rmSync(root, { recursive: true, force: true }));
+  git(root, "init", "-q");
+  const child = path.join(root, "child");
+  mkdirSync(child);
+  writeFileSync(path.join(child, "tracked.txt"), "before\n");
+  git(root, "add", "-A");
+  git(root, "commit", "-q", "-m", "baseline");
+  writeFileSync(path.join(child, "tracked.txt"), "after\n");
+  writeFileSync(path.join(child, ".git"), "not a gitdir marker\n");
+
+  const c = await openSession(root);
+  const diff = await fsDiff(c, "malformed-owner", "child/tracked.txt");
+  assert.equal(diff.error, undefined);
+  assert.equal(diff.before, "before\n");
+  assert.equal(diff.after, "after\n");
   c.close();
 });

@@ -505,6 +505,7 @@ export class MockSession implements AgentSession {
   // Each deterministic hook exercises one UI capability API-free; anything
   // else is a canned reply drawn from the template deck.
   pushPrompt(text: string) {
+    if (/revise the selected workspace change/i.test(text)) return this.playMarkdownReview();
     if (/interactive|button/i.test(text)) return this.playActionCard();
     if (/todo|checklist|step by step|plan it/i.test(text)) return this.playChecklist();
     if (/subagent|delegate/i.test(text)) return this.playSubagent();
@@ -913,6 +914,15 @@ export class MockSession implements AgentSession {
       highlight: [{ start: 4, end: 5 }],
     });
     this.endTurn(d, 300);
+  }
+
+  /** Deterministic CR.3 hook: the ordinary Request change draft receives
+   * highlighted markdown code, so phone accessibility never depends on which
+   * shuffled demo template happened to answer. */
+  private playMarkdownReview() {
+    this.beginTurn();
+    const d = this.streamText(codeReviewTemplate(), 200);
+    this.endTurn(d);
   }
 
   /** Deterministic hook: check rows with verdict pills — one row per status
