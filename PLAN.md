@@ -3337,6 +3337,26 @@ both acceptance requirements, not a later responsive cleanup.
   No product bug, no fragile/worthless/redundant test found. Tier-1 666 pass,
   Tier-2 150 pass.
 
+- [x] **Step CR.7 — Terminal hunk navigation + first-hunk positioning** —
+  completed 2026-08-12, from Kyle's live report ("says 4, shows 3, next does
+  nothing at the last hunk"). Root cause, proven by headless-Chrome probes
+  against the real daemon: `goToHunk`'s smooth `scrollIntoView` starts before
+  the click's React commit, and arriving at a terminal hunk disables the very
+  button being clicked — Chromium blurs a focused element that becomes
+  disabled, and that focus change cancels the in-flight smooth scroll at zero
+  pixels. Symmetric at both ends (Next→last, Previous→first); invisible under
+  reduced motion (instant scroll finishes pre-commit), which is why the
+  existing label-only e2e assertions passed. Fixes: hunk scrolling now runs
+  post-commit from a pending-scroll effect in `ReviewDiff`; the stale
+  `rowRefs` wipe (which destroyed freshly attached refs) is removed; a diff
+  opens positioned on its first hunk so "Hunk 1 of N" is what the viewport
+  shows; and `useFileView.openFile` keeps a same-path resolved view mounted
+  through a re-request, so live/manual refresh neither flickers through
+  "loading" nor repositions the reader. Pinned by a new geometry-asserting
+  e2e ("CR.3 hunk navigation reaches terminal hunks…", `hunk-repo` fixture):
+  every jump asserts the hunk's rows are inside the scroller's visible box,
+  never just the label. changes 11/11, app 54/54, phone 8/8, Tier-1 clean.
+
 ## Phase PN — Panes (file views beside the transcript)
 
 **Why.** Kyle (2026-07-26): open a file and see it in its own pane. Also the

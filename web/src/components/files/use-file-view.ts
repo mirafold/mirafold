@@ -58,7 +58,15 @@ export function useFileView({
     (path: string, status: string | undefined, nextMode: FileViewMode) => {
       setSelected({ path, status });
       setMode(nextMode);
-      setView({ kind: "loading", path });
+      // A same-path re-request (live/manual refresh) keeps the resolved view
+      // on screen until the fresh reply lands: flipping to "loading" would
+      // unmount the presenter mid-read — a flicker, and the reader's place
+      // (scroll position, review-position memory) dies with the instance.
+      setView((prev) =>
+        (prev.kind === (nextMode === "diff" ? "diff" : "content")) && prev.path === path
+          ? prev
+          : { kind: "loading", path },
+      );
       requestId.current = nextMode === "diff" ? requestDiff(path) : requestRead(path);
     },
     [requestDiff, requestRead],

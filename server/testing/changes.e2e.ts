@@ -25,7 +25,9 @@ let lifecycleRepo: string;
 let manualRepo: string;
 let incompleteRepo: string;
 let statusRepo: string;
+let hunkRepo: string;
 let changedSession: string;
+let hunkSession: string;
 let plainSession: string;
 let cleanSession: string;
 let unsafeSession: string;
@@ -54,6 +56,13 @@ const modifiedSource = (primary: string, tail: string): string =>
     "}",
     "",
   ].join("\n");
+
+// A file long enough that no two hunks share a 900px viewport, with the
+// first hunk far below the fold — the geometry that exposed the terminal
+// hunk-navigation and initial-position bugs (2026-08-12).
+const walkSource = (tags: Record<number, string>): string =>
+  Array.from({ length: 160 }, (_, k) => `const line${k + 1} = "${tags[k + 1] ?? "base"}";`).join("\n") +
+  "\n";
 
 const createSession = async (cwd: string): Promise<string> => {
   const client = new TestClient(daemon.port, { token: TOKEN });
@@ -90,6 +99,7 @@ before(async () => {
   manualRepo = path.join(fixtureRoot, "manual-repo");
   incompleteRepo = path.join(fixtureRoot, "incomplete-repo");
   statusRepo = path.join(fixtureRoot, "status-repo");
+  hunkRepo = path.join(fixtureRoot, "hunk-repo");
   for (const root of [
     changedRepo,
     plainRoot,
@@ -99,6 +109,7 @@ before(async () => {
     manualRepo,
     incompleteRepo,
     statusRepo,
+    hunkRepo,
   ]) mkdirSync(root);
 
   git(changedRepo, "init", "--quiet");
@@ -165,6 +176,12 @@ before(async () => {
   git(statusRepo, "commit", "--quiet", "-m", "baseline");
   writeFileSync(path.join(statusRepo, "tracked.ts"), "after\n");
 
+  git(hunkRepo, "init", "--quiet");
+  writeFileSync(path.join(hunkRepo, "walk.ts"), walkSource({}));
+  git(hunkRepo, "add", "--all");
+  git(hunkRepo, "commit", "--quiet", "-m", "baseline");
+  writeFileSync(path.join(hunkRepo, "walk.ts"), walkSource({ 60: "edit", 130: "edit" }));
+
   daemon = await startDaemon({
     MIRAFOLD_TOKEN: TOKEN,
     FS_CHANGES_MAX_ENTRIES: "5",
@@ -178,6 +195,7 @@ before(async () => {
   manualSession = await createSession(path.join(manualRepo, "scope"));
   incompleteSession = await createSession(incompleteRepo);
   statusSession = await createSession(statusRepo);
+  hunkSession = await createSession(hunkRepo);
   browser = await launchChrome();
 });
 
@@ -394,6 +412,73 @@ test("CR.3 desktop: pointer and keyboard ranges create editable prompt drafts an
     "Selection cleared because another file was opened.",
   );
   await noSideScroll(desktop);
+});
+
+test("CR.3 hunk navigation reaches terminal hunks, opens on the first hunk, and survives live refresh", async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  // The label alone is not the oracle — it updated correctly while the
+  // viewport stayed behind (2026-08-12). Every jump asserts the hunk's rows
+  // are inside the review scroller's visible box.
+  const hunkVisible = (oldLine: number) =>
+    page.waitForFunction(
+      (line) => {
+        const row = document.querySelector(`.changes-review-line.is-del[data-old-line="${line}"]`);
+        const view = document.querySelector(".changes-view");
+        if (!row || !view) return false;
+        const r = row.getBoundingClientRect();
+        const v = view.getBoundingClientRect();
+        return r.bottom > v.top && r.top < v.bottom;
+      },
+      oldLine,
+      { timeout: 5_000 },
+    );
+  const hunkLabel = () => page.locator(".changes-hunk-nav > span").innerText();
+
+  await page.goto(sessionUrl(hunkSession));
+  await page.waitForSelector(".ab-changes");
+  await page.locator(".ab-changes").click();
+  await page.waitForSelector(".changes-review-line");
+
+  // Opening a file lands on its first hunk, not the top of the file, so
+  // "Hunk 1 of N" is what the viewport actually shows.
+  assert.equal(await hunkLabel(), "Hunk 1 of 2");
+  await hunkVisible(60).catch(() => assert.fail("opening the diff did not position on the first hunk"));
+
+  // The terminal jump is the one that disables the button being clicked;
+  // the smooth scroll must survive that (blur-on-disable cancellation).
+  await page.locator('[aria-label="Next changed hunk"]').click();
+  assert.equal(await hunkLabel(), "Hunk 2 of 2");
+  await hunkVisible(130).catch(() => assert.fail("next-hunk never brought the last hunk into view"));
+  assert.ok(await page.locator('[aria-label="Next changed hunk"]').isDisabled());
+
+  // Mirror image: previous-to-first disables Previous on arrival.
+  await page.locator('[aria-label="Previous changed hunk"]').click();
+  assert.equal(await hunkLabel(), "Hunk 1 of 2");
+  await hunkVisible(60).catch(() => assert.fail("previous-hunk never brought the first hunk into view"));
+  assert.ok(await page.locator('[aria-label="Previous changed hunk"]').isDisabled());
+
+  // A live rewrite must refresh the diff in place: no loading flicker that
+  // unmounts the renderer, and no repositioning onto the first hunk.
+  await page.evaluate(() => {
+    const view = document.querySelector(".changes-view");
+    if (view) view.scrollTop = 0;
+  });
+  writeFileSync(path.join(hunkRepo, "walk.ts"), walkSource({ 60: "edit refreshed", 130: "edit" }));
+  await page.waitForFunction(
+    () =>
+      Array.from(document.querySelectorAll(".changes-review-line .changes-line-code")).some((node) =>
+        (node.textContent ?? "").includes("edit refreshed"),
+      ),
+    undefined,
+    { timeout: 15_000 },
+  );
+  await page.waitForTimeout(300);
+  assert.equal(
+    await page.evaluate(() => document.querySelector(".changes-view")?.scrollTop ?? -1),
+    0,
+    "live refresh yanked the review viewport away from the reader's position",
+  );
+  await page.close();
 });
 
 test("CR.2 phone: full-screen one-file review has persistent navigation and preserves conversation scroll", async () => {
