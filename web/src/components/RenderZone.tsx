@@ -20,7 +20,7 @@ import { PickerBlock, type PickerRow } from "./PickerBlock";
 import { GearGlyph } from "./GearGlyph";
 import { useFollowTail } from "../use-follow-tail";
 import { queueDelta, type QueuedDelta } from "../delta-queue";
-import { groupSettledTools } from "../tool-visibility";
+import { groupSettledTools, type FoldedActivity } from "../tool-visibility";
 import { shouldFocusPromptFromTranscriptPointer } from "../transcript-focus";
 
 // The scrollback is a flat list of entries: text blocks and rendered
@@ -91,6 +91,7 @@ type Entry =
       hint?: string;
     };
 type ToolCall = Extract<Entry, { kind: "tool" }>;
+type ThinkingEntry = Extract<Entry, { kind: "thinking" }>;
 
 let nextId = 0;
 
@@ -175,9 +176,19 @@ function SubagentGroup({ calls }: { calls: ToolCall[] }) {
 }
 
 /** A completed turn's successful engine activity: one terminal-sized line by
- * default, with every normalized call still available on demand. */
-function ToolActivityGroup({ calls }: { calls: ToolCall[] }) {
+ * default, with every normalized call still available on demand. The fold can
+ * carry the engine's interleaved narration (Codex thinks before nearly every
+ * command); expansion replays calls and thinking in true transcript order.
+ * The count and summary speak of ACTIONS only — narration isn't one. */
+function ToolActivityGroup({
+  items,
+  onToggleThinking,
+}: {
+  items: Array<FoldedActivity<ToolCall, ThinkingEntry>>;
+  onToggleThinking: (id: number) => void;
+}) {
   const [open, setOpen] = useState(false);
+  const calls = items.flatMap((item) => (item.kind === "tool" ? [item.tool] : []));
   const counts = new Map<string, number>();
   for (const call of calls) counts.set(call.name, (counts.get(call.name) ?? 0) + 1);
   const summary = [...counts]
@@ -197,7 +208,25 @@ function ToolActivityGroup({ calls }: { calls: ToolCall[] }) {
         </span>
         <span className="tool-activity-summary">{summary}</span>
       </button>
-      {open && <ToolCallList calls={calls} className="tool-activity-calls" />}
+      {open && (
+        <div className="tool-activity-calls">
+          {items.map((item) =>
+            item.kind === "tool" ? (
+              <ToolBlock
+                key={item.tool.id}
+                name={item.tool.name}
+                detail={item.tool.detail}
+                input={item.tool.input}
+                output={item.tool.output}
+                truncatedBytes={item.tool.truncatedBytes}
+                isError={item.tool.isError}
+              />
+            ) : (
+              <ThinkingBlock key={item.thinking.id} entry={item.thinking} onToggle={onToggleThinking} />
+            ),
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -617,7 +646,13 @@ export function RenderZone({
   const compactedTools = useMemo(
     () =>
       groupSettledTools(
-        entries.map((entry) => (entry.kind === "tool" ? entry : null)),
+        entries.map((entry) =>
+          entry.kind === "tool"
+            ? { kind: "tool" as const, tool: entry }
+            : entry.kind === "thinking"
+              ? { kind: "thinking" as const, thinking: entry }
+              : null,
+        ),
       ),
     [entries],
   );
@@ -752,13 +787,15 @@ function ZoneEntry({
   entry: Entry;
   toggleThinking: (id: number) => void;
   childrenByParent: Map<string, ToolCall[]>;
-  compactedTools: ReturnType<typeof groupSettledTools<ToolCall>>;
+  compactedTools: ReturnType<typeof groupSettledTools<ToolCall, ThinkingEntry>>;
   activePickerId: number | null;
   handleAction: (action: Action, sourceId: string) => void;
   pinned: string[];
   togglePin: (renderId: string) => void;
 }) {
   if (entry.kind === "thinking") {
+    // Narration absorbed into a "worked" fold renders inside that fold.
+    if (compactedTools.hidden.has(entry.id)) return null;
     return <ThinkingBlock entry={entry} onToggle={toggleThinking} />;
   }
   if (entry.kind === "notice") {
@@ -810,7 +847,7 @@ function ZoneEntry({
   }
   if (entry.kind === "tool") {
     const compacted = compactedTools.anchors.get(entry.id);
-    if (compacted) return <ToolActivityGroup calls={compacted} />;
+    if (compacted) return <ToolActivityGroup items={compacted} onToggleThinking={toggleThinking} />;
     if (compactedTools.hidden.has(entry.id)) return null;
     // Subagent calls are rendered nested under their Task (below),
     // not at the top level.

@@ -256,7 +256,9 @@ test("provider completions open before submit, transcript click focuses, and set
       );
 
       // Successful provider activity becomes one terminal-sized record only
-      // when the turn settles. A failure remains visible at top level.
+      // when the turn settles. A failure remains visible at top level, and
+      // narration between commands (Codex's cadence) rides inside the fold
+      // instead of shattering it into singletons.
       await prompt.fill("show transcript compact tool activity");
       await prompt.press("Enter");
       await page2.locator(".stop-btn").waitFor();
@@ -264,6 +266,11 @@ test("provider completions open before submit, transcript click focuses, and set
       assert.equal(await page2.locator(".tool-activity-group").count(), 1);
       assert.equal(await page2.locator(".tool-group").count(), 1);
       assert.match(await page2.locator(".tool-group").textContent() ?? "", /No matching test file/);
+      assert.equal(
+        await page2.locator(".thinking-block", { hasText: "Weighing which check" }).count(),
+        0,
+        "interleaved narration leaked outside the settled fold",
+      );
       await page2.locator(".tool-activity-head").click();
       assert.equal(
         await page2.evaluate(() => document.activeElement?.classList.contains("tool-activity-head")),
@@ -271,6 +278,11 @@ test("provider completions open before submit, transcript click focuses, and set
         "a transcript control click was redirected to the prompt",
       );
       assert.equal(await page2.locator(".tool-activity-calls .tool-block").count(), 2);
+      assert.equal(
+        await page2.locator(".tool-activity-calls .thinking-block", { hasText: "Weighing which check" }).count(),
+        1,
+        "the fold's expansion must replay the interleaved narration in place",
+      );
 
       // Event delegation must treat ordinary transcript links as controls too.
       // The real click path (pointerdown → pointerup → click) must leave focus

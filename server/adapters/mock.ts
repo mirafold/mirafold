@@ -1148,7 +1148,14 @@ export class MockSession implements AgentSession {
   /** Deterministic UX.2 hook: two successful actions fold together after the
    * turn, while the failed action remains an honest top-level row. */
   private playToolActivity() {
-    const calls = [
+    const calls: Array<{
+      name: string;
+      detail: string;
+      output: string;
+      isError?: boolean;
+      // Codex-style narration between commands: the fold must absorb it.
+      thinkBefore?: string;
+    }> = [
       {
         name: "Read",
         detail: "server/protocol.ts",
@@ -1158,6 +1165,7 @@ export class MockSession implements AgentSession {
         name: "Bash",
         detail: "yarn typecheck",
         output: "Done in 1.2s",
+        thinkBefore: "Weighing which check to run next.",
       },
       {
         name: "Bash",
@@ -1170,6 +1178,11 @@ export class MockSession implements AgentSession {
     let delay = 80;
     for (const call of calls) {
       const id = randomUUID();
+      if (call.thinkBefore) {
+        const text = call.thinkBefore;
+        this.schedule(() => this.emit({ type: "thinking_delta", text }), delay);
+        delay += 30;
+      }
       this.schedule(() => {
         this.emit({ type: "status", state: "tool", label: call.name });
         this.emit({

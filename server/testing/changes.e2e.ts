@@ -423,7 +423,7 @@ test("CR.3 hunk navigation reaches terminal hunks, opens on the first hunk, and 
     page.waitForFunction(
       (line) => {
         const row = document.querySelector(`.changes-review-line.is-del[data-old-line="${line}"]`);
-        const view = document.querySelector(".changes-view");
+        const view = document.querySelector(".changes-diff-lines");
         if (!row || !view) return false;
         const r = row.getBoundingClientRect();
         const v = view.getBoundingClientRect();
@@ -457,10 +457,22 @@ test("CR.3 hunk navigation reaches terminal hunks, opens on the first hunk, and 
   await hunkVisible(60).catch(() => assert.fail("previous-hunk never brought the first hunk into view"));
   assert.ok(await page.locator('[aria-label="Previous changed hunk"]').isDisabled());
 
+  // "Select hunk" is a toggle: the same button unselects the exact range
+  // it selected, and says which of the two it will do.
+  const selectHunk = page.locator(".changes-select-hunk");
+  await selectHunk.click();
+  assert.match(await page.locator(".changes-selection-count").innerText(), /\d+ selected/);
+  assert.equal(await selectHunk.getAttribute("aria-pressed"), "true");
+  assert.equal(await selectHunk.innerText(), "Unselect hunk");
+  await selectHunk.click();
+  assert.equal(await page.locator(".changes-selection-count").innerText(), "Select lines to respond");
+  assert.equal(await selectHunk.getAttribute("aria-pressed"), "false");
+  assert.equal(await selectHunk.innerText(), "Select hunk");
+
   // A live rewrite must refresh the diff in place: no loading flicker that
   // unmounts the renderer, and no repositioning onto the first hunk.
   await page.evaluate(() => {
-    const view = document.querySelector(".changes-view");
+    const view = document.querySelector(".changes-diff-lines");
     if (view) view.scrollTop = 0;
   });
   writeFileSync(path.join(hunkRepo, "walk.ts"), walkSource({ 60: "edit refreshed", 130: "edit" }));
@@ -474,7 +486,7 @@ test("CR.3 hunk navigation reaches terminal hunks, opens on the first hunk, and 
   );
   await page.waitForTimeout(300);
   assert.equal(
-    await page.evaluate(() => document.querySelector(".changes-view")?.scrollTop ?? -1),
+    await page.evaluate(() => document.querySelector(".changes-diff-lines")?.scrollTop ?? -1),
     0,
     "live refresh yanked the review viewport away from the reader's position",
   );

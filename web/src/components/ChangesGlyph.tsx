@@ -1,19 +1,24 @@
-export function ChangesGlyph({ size = 22 }: { size?: number }) {
+/** The Changes glyph is a unified-diff fragment: a deleted line, an added
+ * line, and trailing context, each code line beside its gutter mark. Drawn
+ * on FilesGlyph's exact 14×20 artwork box with the same 1.5 stroke, so the
+ * two icons occupy the same footprint at the same `size` — equal width,
+ * equal height, equal stroke weight. */
+export function ChangesGlyph({ size = 28 }: { size?: number }) {
   return (
     <svg
+      viewBox="0 0 14 20"
       width={size}
       height={size}
-      viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.55"
+      strokeWidth="1.5"
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
-      focusable="false"
     >
-      <path d="M6.5 4.5h11a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2h-11a2 2 0 0 1-2-2v-11a2 2 0 0 1 2-2Z" />
-      <path d="M8 9.25h4M10 7.25v4M14.75 14.75H18" />
+      <path d="M0.75 2.5h3M6.5 2.5h6.75" />
+      <path d="M0.75 10h3M2.25 8.5v3M6.5 10h6.75" />
+      <path d="M6.5 17.5h4.5" />
     </svg>
   );
 }

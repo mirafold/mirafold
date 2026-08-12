@@ -193,6 +193,26 @@ investigation, the CI-flake breakdown, and finished stretch-goal specs) ·
   The real-turn instability it exposed was kept visible and is now diagnosed
   and closed in Step L.4. → **PLAN-ARCHIVE.md**.
 
+- [x] **Step UX.10 — Make collapse-on-finalize survive narrating engines** —
+  completed 2026-08-12, from Kyle's live Codex report (every shell/apply_patch
+  call visible individually). Diagnosis: the "worked · N actions" fold only
+  grouped ≥2 *contiguous* tool rows, and (a) Codex narrates a reasoning item
+  before nearly every command — each thinking row broke contiguity, leaving
+  unfoldable singletons; (b) the Codex adapter branded every nonzero exit an
+  error (`codex-events.ts`), and error rows deliberately stay expanded and
+  break runs, so routine probes (grep no-match, failing test runs) shattered
+  the rest. Fixes: `groupSettledTools` now absorbs INTERIOR thinking into the
+  fold in true transcript order (expansion replays narration between calls;
+  leading/trailing thinking keeps its own row; text/notice/failure boundaries
+  unchanged — nothing reorders), and Codex `status:"completed"` with nonzero
+  exit is no longer an error — the exit code is annotated in the output
+  (`(exit 1)`), matching the Codex TUI's own presentation; `status:"failed"`
+  still is. Claude sessions with interleaved thinking benefit identically;
+  Gemini emits no thinking rows and already folded best. Pinned in Tier-1
+  (5 new grouping cases, 1 codex exit case) and e2e (mock now narrates
+  between commands; the fold must absorb it and replay it on expansion).
+  Tier-1 672, Tier-2 150, app 54, changes+phone 20 — all pass.
+
 ---
 
 ## Phase 4 — Product hardening (the "others would want it" path)
@@ -3372,6 +3392,46 @@ both acceptance requirements, not a later responsive cleanup.
   rendered and a CSS pin. e2e covers drag clamping both directions, keyboard
   steps, persistence across reload, reset, axe, and no side-scroll. changes
   12/12, phone 8/8, app 54/54, Tier-1 clean.
+
+- [x] **Step CR.9 — Diff-gutter Changes glyph, size-matched to Files** —
+  completed 2026-08-12 (Kyle-directed, replacing the box-with-± mark that
+  read as a sparkle box). The new `ChangesGlyph` is a unified-diff fragment
+  (deleted line, added line, trailing context, gutter marks) drawn on
+  `FilesGlyph`'s exact 14×20 artwork box with the same 1.5 stroke, so equal
+  `size` props render the same footprint — equal width, height, and stroke
+  weight (a first 20-wide draft rendered wider than Files; corrected same
+  day). Activity bar uses the same 28 default for both and its gap widened
+  4→28px in two Kyle-directed rounds (the two toggles must read clearly
+  separate); the status-bar (phone) pair was already 20/20. Verified by
+  headless screenshots of the rendered rail.
+
+- [x] **Step CR.10 — Dock the hunk toolbar; align the progress buttons** —
+  completed 2026-08-12 (Kyle-directed, two rounds: first halve the band,
+  then remove it). The sticky hunk toolbar was a floating rounded card
+  inside the padded diff scroller; the scroller's top padding read as a
+  see-through band with sliced diff rows visible through it. Now the
+  scroller has zero top padding and the toolbar is a docked full-bleed
+  strip (negative side margins cancel the scroller padding; border-bottom,
+  no radius/shadow) glued under the review-progress bar, desktop and phone.
+  "Next unreviewed" also overhung the diff rows' right edge, and a first
+  fix (measuring the wrapper's scrollbar into a CSS var) left the panel-
+  height scrollbar running up beside the docked toolbar. Final
+  architecture (Kyle-approved on sight): the diff's ONE vertical scroller
+  is the bordered code card itself (`.changes-diff-lines`, flex column via
+  `:has()` on the wrapper) — its scrollbar starts under the hunk toolbar
+  and rides inside the card border, so no measurement is needed; the
+  wrapper and progress bar share symmetric 9px side insets (7px phone), so
+  "Next unreviewed" ends exactly on the card's border line and mirrors
+  "Mark reviewed". Phone draft-mode scroll room moved into the card.
+  Measured: button edge == card border; card top 6px under the toolbar.
+  changes+phone e2e 20/20.
+
+- [x] **Step CR.11 — "Select hunk" toggles** — completed 2026-08-12
+  (Kyle-directed). Clicking the button while its exact range is selected
+  unselects and clears the notice; the label swaps to "Unselect hunk" with
+  `aria-pressed`. The match compares against the CLAMPED selection range,
+  so an over-80-line hunk still reads as selected and can be unselected.
+  Pinned in the hunk-navigation e2e; changes+phone 20/20, Tier-1 672.
 
 ## Phase PN — Panes (file views beside the transcript)
 

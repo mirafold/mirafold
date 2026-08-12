@@ -493,6 +493,29 @@ test("failed command: isError; completion without a start still announces", asyn
   s.close();
 });
 
+test("a completed command with a nonzero exit is not an error — the exit code is annotated", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ev({
+      type: "item.completed",
+      item: {
+        type: "command_execution",
+        id: "c10",
+        command: "grep -r missing src/",
+        aggregated_output: "",
+        exit_code: 1,
+        status: "completed",
+      },
+    }),
+    ev({ type: "turn.completed", usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1, reasoning_output_tokens: 0 } }),
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const result = msgs.find((m) => m.type === "tool_result" && m.id === "c10")!;
+  assert.ok(!result.isError, "a probe's nonzero exit was branded an error");
+  assert.equal(result.output, "(exit 1)");
+  s.close();
+});
+
 test("mcp MCP calls paint render/artifact, never tool rows; failures and unknowns are suppressed", async () => {
   const mcp = (tool: string, args: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
     ev({

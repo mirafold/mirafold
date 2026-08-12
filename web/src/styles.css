@@ -127,7 +127,7 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 28px;
   padding-top: 20px; /* aligns the toggle with the Explorer title bar */
   border-right: 1px solid var(--border);
 }
@@ -1045,6 +1045,10 @@ body {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
+  /* Symmetric 9px insets: "Mark reviewed" sits 9px from the panel's left
+     edge, "Next unreviewed" ends 9px from the right — exactly on the diff
+     card's border line below (the card shares the 9px side insets, and its
+     scrollbar lives inside the border, so nothing shifts this edge). */
   padding: 6px 9px;
   background: var(--bg-inset);
   border-bottom: 1px solid var(--border-faint);
@@ -1085,9 +1089,22 @@ body {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 10px 10px 16px;
+  /* No top padding: it would open a see-through band above the docked
+     hunk toolbar, with sliced diff rows reading through it. Side insets
+     match the review-progress bar's 9px, so the diff card's border lines
+     up under "Mark reviewed" / "Next unreviewed" symmetrically. */
+  padding: 0 9px 16px;
   scrollbar-width: thin;
   scrollbar-color: var(--border-hover) transparent;
+}
+
+/* For a diff, the SCROLLER is the code card itself (below), never this
+   wrapper — the scrollbar must start under the docked hunk toolbar and
+   stay inside the card's border, not run the panel's full height. */
+.changes-view:has(> .changes-diff-review) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .changes-view .fv-content {
@@ -1101,20 +1118,23 @@ body {
    outside the function that explains it. */
 .changes-diff-review {
   min-width: 0;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
+/* Docked, not hovering: a full-bleed strip glued under the review-progress
+   bar (negative margins cancel the wrapper's side padding). It sits OUTSIDE
+   the scrolling code card, so the scrollbar can never rise beside it. */
 .changes-review-tools {
-  position: sticky;
-  z-index: 2;
-  top: 0;
+  flex-shrink: 0;
   display: grid;
   gap: 6px;
-  margin-bottom: 8px;
-  padding: 7px;
+  margin: 0 -9px 6px;
+  padding: 7px 9px;
   background: var(--bg-inset);
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  box-shadow: var(--shadow-pop);
+  border-bottom: 1px solid var(--border);
 }
 
 .changes-hunk-nav,
@@ -1195,7 +1215,14 @@ body {
 
 .changes-diff-lines {
   min-width: 0;
-  overflow: hidden;
+  flex: 1;
+  min-height: 0;
+  /* The card is the diff's one vertical scroller; its scrollbar rides
+     inside the border, under the hunk toolbar, never up the panel edge. */
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hover) transparent;
   color: var(--code-fg);
   background: var(--code-bg);
   border: 1px solid var(--border);
@@ -5399,7 +5426,7 @@ html {
   }
 
   .changes-view {
-    padding: 8px 7px 14px;
+    padding: 0 7px 14px;
     overscroll-behavior: contain;
   }
 
@@ -5414,6 +5441,7 @@ html {
 
   .changes-review-tools {
     gap: 7px;
+    margin: 0 -7px 6px;
     padding: 7px;
   }
 
@@ -5468,7 +5496,14 @@ html {
     box-shadow: var(--shadow-card);
   }
 
-  .changes-draft-visible .changes-view {
+  /* Scroll room above the docked draft prompt: for a diff it belongs to
+     the scrolling code card; for other file views the wrapper scrolls. */
+  .changes-draft-visible .changes-view:not(:has(> .changes-diff-review)) {
+    padding-bottom: min(230px, 38dvh);
+    scroll-padding-bottom: min(230px, 38dvh);
+  }
+
+  .changes-draft-visible .changes-diff-lines {
     padding-bottom: min(230px, 38dvh);
     scroll-padding-bottom: min(230px, 38dvh);
   }

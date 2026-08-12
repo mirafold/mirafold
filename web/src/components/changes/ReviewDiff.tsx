@@ -151,6 +151,28 @@ export function ReviewDiff({
     setFocusIndex(hunk.start);
   };
 
+  // "Select hunk" toggles: clicking it while its exact range is selected
+  // unselects. Compare against the CLAMPED range — an over-cap hunk selects
+  // fewer lines than it spans, and that clamped selection must still read
+  // as "this hunk is selected" or the button could never unselect it.
+  const hunk = hunks[currentHunk];
+  const hunkTarget = hunk ? reviewSelection(hunk.start, hunk.end, lines.length) : undefined;
+  const hunkSelected = Boolean(
+    hunkTarget &&
+      currentSelection &&
+      currentSelection.start === hunkTarget.start &&
+      currentSelection.end === hunkTarget.end,
+  );
+  const toggleHunkSelection = () => {
+    if (!hunk) return;
+    if (hunkSelected) {
+      onSelectionChange(undefined);
+      onNoticeChange(undefined);
+    } else {
+      select(hunk.start, hunk.end);
+    }
+  };
+
   const createDraft = (intent: "explain" | "request-change") => {
     if (selectedLines.length === 0) return;
     onCreateDraft(formatReviewDraft(intent, state.path, selectedLines));
@@ -178,7 +200,6 @@ export function ReviewDiff({
 
   if (lines.length === 0) return <FileView state={state} />;
 
-  const hunk = hunks[currentHunk];
   return (
     <div className="changes-diff-review">
       {(state.beforeTruncatedBytes || state.afterTruncatedBytes) && (
@@ -212,9 +233,10 @@ export function ReviewDiff({
             type="button"
             className="changes-select-hunk"
             disabled={!hunk}
-            onClick={() => hunk && select(hunk.start, hunk.end)}
+            aria-pressed={hunkSelected}
+            onClick={toggleHunkSelection}
           >
-            Select hunk
+            {hunkSelected ? "Unselect hunk" : "Select hunk"}
           </button>
         </div>
         <div className="changes-draft-actions">
