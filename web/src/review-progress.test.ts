@@ -18,6 +18,12 @@ test("review progress: a mark belongs to one exact file revision and can be remo
   assert.equal(fileIsReviewed(marked, "a.ts", "rev-2"), false);
   assert.equal(fileIsReviewed(marked, "other.ts", "rev-1"), false);
   assert.equal(setFileReviewed(marked, "a.ts", "rev-1", false).size, 0);
+  // A file with no server-minted revision (over the hash cap, binary, or the
+  // diff not yet loaded) can NEVER read as reviewed — the CR.4 trust floor.
+  // Without the `revision &&` guard, an unmarked such file compares
+  // undefined === undefined and would falsely show reviewed.
+  assert.equal(fileIsReviewed(emptyReviewProgress(), "big.bin", undefined), false);
+  assert.equal(fileIsReviewed(marked, "a.ts", undefined), false);
 });
 
 test("review progress: an exact disk hint invalidates only the touched file", () => {
