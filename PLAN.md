@@ -3323,6 +3323,20 @@ both acceptance requirements, not a later responsive cleanup.
   **PLAN-ARCHIVE.md, “Moved 2026-08-12 (Changes correctness remediation —
   CR.5).”**
 
+- [x] **Step CR.6 — Whole-branch security + test audits** — completed
+  2026-08-12. Security audit of the branch delta found no exploitable
+  vulnerability and no new ship-time gap: the read-only Changes surface reuses
+  the existing jail (`inside()`), secret-file denial, `repoTrust` program
+  neutralization, per-daemon revision key, and byte/count caps; verified by
+  trace and by re-probing the subdirectory jail. Test audit (mutation-based)
+  confirmed seven load-bearing invariants each fail their test when broken, and
+  found ONE untested guard: `fileIsReviewed`'s `revision &&` floor — a file with
+  no server-minted revision could read as reviewed with the guard removed and
+  all five existing tests still passed. Pinned by two assertions in
+  `web/src/review-progress.test.ts` (fails under the mutation, passes clean).
+  No product bug, no fragile/worthless/redundant test found. Tier-1 666 pass,
+  Tier-2 150 pass.
+
 ## Phase PN — Panes (file views beside the transcript)
 
 **Why.** Kyle (2026-07-26): open a file and see it in its own pane. Also the
