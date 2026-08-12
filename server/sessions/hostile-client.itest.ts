@@ -79,6 +79,9 @@ test("Q.4 garbage frames mid-session: daemon survives, 2nd viewport stays quiet,
   a.send({ type: "fs_list", id: 7 } as never);
   a.send({ type: "fs_list", id: "bad id !!" } as never);
   a.send({ type: "fs_list" } as never);
+  a.send({ type: "fs_changes", id: 7 } as never);
+  a.send({ type: "fs_changes", id: "bad id !!" } as never);
+  a.send({ type: "fs_changes" } as never);
   a.send({ type: "fs_read", id: "ok-1", path: 42 } as never);
   a.send({ type: "fs_read", id: "ok-2" } as never);
   a.send({ type: "fs_read", id: "ok-3", path: "x".repeat(5_000) } as never);
@@ -106,11 +109,12 @@ test("Q.4 garbage frames mid-session: daemon survives, 2nd viewport stays quiet,
   const malformed = aTail.filter((m) => m.type === "error" && m.message === "malformed client message");
   assert.equal(malformed.length, 4);
   // The three valid-id/bad-path fs_reads each got exactly one error reply;
-  // the three bad-id Explorer frames got nothing at all (E.1).
+  // the bad-id Explorer/Changes frames got nothing at all.
   const fsFiles = aTail.filter((m) => m.type === "fs_file") as Any[];
   assert.equal(fsFiles.length, 3);
   assert.ok(fsFiles.every((m) => typeof m.error === "string"));
   assert.equal(aTail.filter((m) => m.type === "fs_tree").length, 0);
+  assert.equal(aTail.filter((m) => m.type === "fs_change_set").length, 0);
   // Same shape for the lazy pair (E2.1): two valid-id/bad-path error replies,
   // nothing at all for the bad-id frames.
   const fsDirs = aTail.filter((m) => m.type === "fs_dir") as Any[];

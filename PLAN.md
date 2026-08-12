@@ -2991,6 +2991,12 @@ deliberately **separate phases, implemented in stages, never as one push**
 
 > **E2 (Explorer at scale) → W (live tree) → PN (panes) → TP (terminal pane)**
 
+**2026-08-11 amendment (Kyle-directed):** the new Changes-review work below
+now runs before the two remaining phases, PN → TP. This does not reorder or
+combine those phases: CR.1 deliberately completes PN.1's reusable-file-view
+seam, CR.2 uses one purpose-built review surface rather than PN's later tabbed
+file panes, and PN.2/PN.3 remain the next general-pane work afterward.
+
 E2/PN/TP is Kyle's stated feature order (lazy explorer first, then a pane to
 view files, then vim in a pane); W slots second because its client half depends
 on E2's lazy shape (the refetch unit becomes "expanded directories", not "the
@@ -3212,6 +3218,100 @@ The E.5 turn-end refresh stays as belt-and-suspenders.
   file written behind the UI's back appears with zero clicks. All tiers
   389/123/57. → PLAN-ARCHIVE.md.
 
+## Changes review workspace (opened 2026-08-11; Kyle-directed)
+
+**Product call.** The target user prefers the real terminal coding agent but
+wants a more visual and functional interface than its native terminal UI. The
+next feature is therefore a first-class, read-only review surface for the code
+changing in the session: the existing Files view remains the answer to "what
+exists in this workspace?"; Changes becomes the answer to "what differs from
+Git HEAD, and what do I need to inspect?" This reopens only the diff-review
+half of BUSINESS.md's former editing/diff-review non-goal. Mirafold still does
+not become a code editor, and it never writes, accepts, rejects, reverts, or
+attributes a working-tree change on the user's behalf.
+
+**Original verified starting state (before CR.1).**
+`web/src/components/files/FilesPanel.tsx` provided a shell-owned, read-only,
+lazy tree and one-file drill-in; changed files led with a
+HEAD-versus-working-tree diff. `FileView.tsx` was the pure presenter, while
+`FilesPanel` owned the one outstanding read/diff request. The server could
+decorate one requested directory with Git status and return one file's
+`{before, after}` diff, but no request returned the complete changed set. No
+Changes control, Changes surface, review progress, hunk navigation, or
+selected-code feedback path existed at that point.
+
+**Honesty boundary.** The surface is named **Workspace changes** in its own
+chrome and means exactly "this Git working tree versus HEAD." It must never say
+"changes made by Claude/Codex/Gemini" because pre-existing edits, another
+session, a terminal, or an external editor can share that tree. A Projects-style
+session root groups nested repositories explicitly. Agent adapters, native
+permission behavior, and how each agent edits files remain behaviorally
+unchanged.
+
+**Responsive contract (applies to every CR phase).** Desktop (>640px) opens a
+wider Changes workspace beside the still-visible conversation; Files and
+Changes share one auxiliary-workspace slot and are mutually exclusive, so the
+UI never becomes Explorer + Changes + transcript. Mobile (≤640px) opens the
+same data as a full-screen layer, one file at a time, with a vertical unified
+diff, persistent back/file/change navigation, safe-area padding, ≥40px touch
+targets, and no page-level horizontal overflow. Desktop and phone behavior are
+both acceptance requirements, not a later responsive cleanup.
+
+### Phase CR.1 — Reusable file view + complete change-set query
+
+- [x] **Step CR.1 — Cut the shared foundation without changing the shipped UI**
+  — completed 2026-08-11. The reusable correlated file-view controller and
+  bounded `fs_changes` → `fs_change_set` multi-repository query are implemented;
+  focused unit/integration, malformed-client, desktop Explorer, 390px phone,
+  production client build, and typecheck proofs pass. No user-facing control or
+  surface was added. Full specification and implementation record →
+  **PLAN-ARCHIVE.md, “Moved 2026-08-11 (Changes review foundation — CR.1).”**
+
+### Phase CR.2 — The useful Changes view, desktop and mobile
+
+- [x] **Step CR.2 — Ship the complete changed-set review surface** — completed
+  2026-08-11. The trusted shell now opens one live, repository-grouped Changes
+  workspace: a wide transcript-preserving split on desktop and a safe-area,
+  one-file full-screen review on phone. Deterministic selection, honest counts
+  and incomplete/error/empty states, live disk/turn refresh, and Files/Changes
+  mutual exclusion are implemented. Real-daemon Chromium proves the complete
+  behavior at 641px desktop and 390px phone, including dark/light screenshots
+  and axe. Full specification and implementation record → **PLAN-ARCHIVE.md,
+  “Moved 2026-08-11 (Useful Changes view — CR.2).”**
+
+### Phase CR.3 — Code-context navigation + transparent agent feedback
+
+- [ ] **Step CR.3 — Make a diff directly conversational**
+  - **Goal:** turn "I object to these lines" into a precise, ordinary follow-up
+    to the same terminal agent without copying paths and snippets by hand.
+  - **Build:** add stable line numbers, changed-hunk navigation, enough context
+    to read the surrounding function, and syntax-aware code presentation using
+    the already-shipped highlighting stack (no dependency). Desktop supports
+    pointer/keyboard range selection; mobile supports tap-selected lines or a
+    whole hunk without drag precision. `Explain` and `Request change` create a
+    **visible editable draft** in the trusted prompt box containing the exact
+    path/range/snippet; neither action sends automatically or hides context.
+  - **Done when:** desktop keyboard and pointer plus phone taps can select a
+    range, create the exact visible draft, edit it, and send through the normal
+    prompt path; changing files clears an invalid selection honestly; all
+    existing agent/permission behavior is unchanged and all three tiers pass.
+
+### Phase CR.4 — Review progress, live invalidation, and closure
+
+- [ ] **Step CR.4 — Make large reviews resumable and trustworthy**
+  - **Goal:** show what the user has actually reviewed without letting later
+    agent edits hide behind a stale checkmark.
+  - **Build:** viewport-local reviewed state keyed to a file-content revision;
+    mark/unmark file and next-unreviewed navigation; any new revision visibly
+    returns that file to unreviewed while preserving unrelated progress. Add
+    keyboard shortcuts only when focus is outside the prompt, finish reduced-
+    motion/overflow/performance work, and run a focused correctness/security/
+    test-quality closure over the new read-only surface.
+  - **Done when:** a multi-file browser flow reviews files, mutates one behind
+    the UI, observes only that file become unreviewed, resumes on desktop and
+    phone, and passes all safe unit/integration/e2e tiers, typecheck, production
+    build, axe, and the repository's dotenv-opacity guard.
+
 ## Phase PN — Panes (file views beside the transcript)
 
 **Why.** Kyle (2026-07-26): open a file and see it in its own pane. Also the
@@ -3222,19 +3322,16 @@ desktop, tabs within it** — NOT a VS Code-style divisible split grid (can
 grow later without rework if PN.1's seam is respected). Phone keeps the
 existing drill-in unchanged — no panes at phone widths.
 
-**The seam this phase exists to cut:** today `FileView` is welded inside the
-explorer panel with ONE outstanding-file correlation ref. Panes mean N
-independent viewers, each with its own request lifecycle.
+**Current seam:** CR.1 extracted the independent read/diff request lifecycle
+and CR.2 proved it in both Files and Changes. PN.2 can therefore start at the
+pane frame itself; multiple simultaneous panes still mean one controller
+instance per viewer.
 
-- [ ] **Step PN.1 — FileView extraction (behavior-preserving)**
-  - Goal: `FileView` becomes a self-contained unit — own subscribe, own
-    correlation ids, own loading/stale state — usable by any host; the
-    explorer panel becomes merely its first host. Zero visual change.
-  - Build: lift the request bookkeeping (fileId ref, openFile, mode,
-    fs_read/fs_diff correlation) out of `FilesPanel` into the extracted
-    component/hook; panel consumes it exactly as before.
-  - Done when: all three tiers green with no e2e assertion changed — the
-    proof of behavior preservation.
+- [x] **Step PN.1 — FileView extraction (behavior-preserving)** — completed by
+  CR.1 on 2026-08-11. `use-file-view.ts` owns independent selection,
+  read/diff correlation, loading/stale state, and reset lifecycle; Files and
+  Changes are its first two hosts. Full record → **PLAN-ARCHIVE.md, “Moved
+  2026-08-11 (Changes review foundation — CR.1).”**
 
 - [ ] **Step PN.2 — the pane frame**
   - Goal: "open in pane" from the explorer puts the file in a tabbed pane

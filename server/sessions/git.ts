@@ -1,15 +1,16 @@
-// The Explorer's git layer (Phase E.2): one-shot, bounded `git` invocations
-// for the session root — the tracked+untracked tree with change status
-// behind `fs_list`, and HEAD's version of a file behind `fs_diff`. Every
+// The Explorer/Changes git layer: one-shot, bounded `git` invocations for the
+// session root — the tracked+untracked tree with change status behind
+// `fs_list`, the complete changed set behind `fs_changes`, and HEAD's version
+// of a file behind `fs_diff`. Every
 // call is execFile (no shell), timeboxed, buffer-capped, and settles to a
 // TYPED result — "not a repo" and "no git binary" are ordinary degrade
 // values, never throws, so a non-repo workspace falls back to the walk.
 // Nothing here touches the wire or the registry; connection.ts composes.
 
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
-import type { FsDirEntry, FsEntry } from "../protocol";
+import type { FsChangeRepo, FsDirEntry, FsEntry } from "../protocol";
 import { GIT_TIMEOUT_MS, invalidateRepoTrustCache, repoTrust } from "./git-trust";
 // The walk's caps, shared (fs-explorer.ts) — both replies ride the same wire.
 import { FS_TREE_MAX_ENTRIES, FS_TREE_MAX_PATH_BYTES } from "./fs-explorer";
@@ -18,6 +19,15 @@ import { envInt } from "../env";
 // `git show` of a big blob is the largest legitimate output; the caller caps
 // content for the wire — this only bounds process memory.
 const GIT_MAX_BUFFER = 10 * 1024 * 1024;
+
+// CR.1's complete change-set bounds. Unlike gitTree, this query carries only
+// changed paths, but a generated/vendor churn burst can still be enormous.
+// Count and UTF-8 bytes cap the reply; repo/node caps bound Projects-root
+// discovery before any git child runs. All four can be tightened in tests.
+const FS_CHANGES_MAX_ENTRIES = envInt("FS_CHANGES_MAX_ENTRIES", 4_000);
+const FS_CHANGES_MAX_PATH_BYTES = envInt("FS_CHANGES_MAX_PATH_BYTES", 400_000);
+const FS_CHANGES_MAX_REPOS = envInt("FS_CHANGES_MAX_REPOS", 64);
+const FS_CHANGES_MAX_DISCOVERY_NODES = envInt("FS_CHANGES_MAX_DISCOVERY_NODES", 40_000);
 
 type RunResult =
   | { ok: true; stdout: Buffer }
@@ -192,6 +202,226 @@ export async function gitTree(
   for (const rel of [...statusByRel.keys()].sort()) push(rel);
   entries.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   return { entries, truncated };
+}
+
+export type GitChanges =
+  | { entries: FsEntry[]; truncated: boolean }
+  | { notGit: true }
+  | { error: string };
+
+/**
+ * Changed FILES only for `root`'s repo scope. `--untracked-files=all` is
+ * load-bearing: ordinary untracked directories expand to their files rather
+ * than arriving as a phantom `dir/` entry. Porcelain -z paths are repo-root
+ * relative, so the same show-prefix reconciliation as gitTree keeps a session
+ * rooted at a subdirectory from naming dirt above its scope.
+ */
+export async function gitChanges(
+  root: string,
+  caps: { maxEntries?: number; maxPathBytes?: number } = {},
+): Promise<GitChanges> {
+  const maxEntries = caps.maxEntries ?? FS_CHANGES_MAX_ENTRIES;
+  const maxPathBytes = caps.maxPathBytes ?? FS_CHANGES_MAX_PATH_BYTES;
+  const trust = await repoTrust(root);
+  if (trust.unscannable) {
+    return { error: "repository Git settings could not be inspected safely" };
+  }
+  const [status, prefixRes] = await Promise.all([
+    runGit(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--", "."]),
+    runGit(root, ["rev-parse", "--show-prefix"]),
+  ]);
+  if (!status.ok) return status.notGit ? { notGit: true } : { error: gitErr("status", status) };
+  if (!prefixRes.ok) return { error: gitErr("rev-parse", prefixRes) };
+  const prefix = prefixRes.ok ? String(prefixRes.stdout).trim() : "";
+  const parsed = parseStatusZ(String(status.stdout));
+  const entries: FsEntry[] = [];
+  let pathBytes = 0;
+  // -uall should make this empty. If a git implementation still collapses a
+  // special nested repository, omit the non-file prefix and say the answer is
+  // incomplete rather than presenting a directory as reviewable code.
+  let truncated = parsed.untrackedDirs.size > 0;
+  for (const [repoPath, statusChar] of [...parsed.files.entries()].sort(([a], [b]) =>
+    a < b ? -1 : a > b ? 1 : 0,
+  )) {
+    const rel = prefix === "" ? repoPath : repoPath.startsWith(prefix) ? repoPath.slice(prefix.length) : "";
+    if (!rel) continue;
+    const bytes = Buffer.byteLength(rel, "utf8");
+    if (entries.length >= maxEntries || pathBytes + bytes > maxPathBytes) {
+      truncated = true;
+      break;
+    }
+    entries.push({ path: rel, status: statusChar });
+    pathBytes += bytes;
+  }
+  return { entries, truncated };
+}
+
+export type RepoDiscovery =
+  | { roots: string[]; truncated: boolean }
+  | { error: string };
+
+/**
+ * Find repositories BELOW a non-repo session root. Symlinks are never
+ * followed. Once a repo is found its contents are not scanned: Git owns that
+ * subtree, while the discovery walk continues through sibling directories.
+ * This is the Projects-root shape; a session already inside a repo bypasses
+ * this walk entirely in workspaceChanges below.
+ */
+export function discoverNestedRepoRoots(
+  root: string,
+  caps: { maxRepos?: number; maxNodes?: number } = {},
+): RepoDiscovery {
+  const maxRepos = caps.maxRepos ?? FS_CHANGES_MAX_REPOS;
+  const maxNodes = caps.maxNodes ?? FS_CHANGES_MAX_DISCOVERY_NODES;
+  const pending = [path.resolve(root)];
+  let nextPending = 0;
+  const roots: string[] = [];
+  let nodes = 0;
+  let truncated = false;
+  let stopped = false;
+  while (nextPending < pending.length && !stopped) {
+    const dir = pending[nextPending++];
+    let children;
+    try {
+      children = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      if (dir === path.resolve(root)) return { error: "the session workspace is not readable" };
+      // An unreadable descendant makes discovery incomplete, but remaining
+      // siblings can still be useful. Keep scanning and say the answer was
+      // truncated rather than silently presenting it as complete.
+      truncated = true;
+      continue;
+    }
+    if (
+      children.some(
+        (child) => child.name === ".git" && (child.isDirectory() || child.isFile()),
+      )
+    ) {
+      if (roots.length >= maxRepos) {
+        truncated = true;
+        stopped = true;
+        continue;
+      }
+      roots.push(dir);
+      continue;
+    }
+    children.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    for (const child of children) {
+      if (!child.isDirectory() || child.name === ".git" || child.name === "node_modules") continue;
+      if (++nodes > maxNodes) {
+        truncated = true;
+        stopped = true;
+        break;
+      }
+      pending.push(path.join(dir, child.name));
+    }
+  }
+  roots.sort();
+  return { roots, truncated };
+}
+
+export type WorkspaceChanges =
+  | { repos: FsChangeRepo[]; truncated: boolean }
+  | { error: string };
+
+/**
+ * The complete session-scoped change set. A normal repo (including a session
+ * rooted at one of its subdirectories) is one group rooted at "". A parent
+ * directory outside Git discovers bounded nested repos and maps every path
+ * back to the immutable session root for the existing fs_diff jail.
+ */
+export async function workspaceChanges(
+  root: string,
+  caps: {
+    maxEntries?: number;
+    maxPathBytes?: number;
+    maxRepos?: number;
+    maxDiscoveryNodes?: number;
+  } = {},
+): Promise<WorkspaceChanges> {
+  const maxEntries = caps.maxEntries ?? FS_CHANGES_MAX_ENTRIES;
+  const maxPathBytes = caps.maxPathBytes ?? FS_CHANGES_MAX_PATH_BYTES;
+  const sessionRoot = path.resolve(root);
+
+  // Git, not the mere presence of an ancestor `.git` entry, decides whether
+  // this workspace is one repository scope. A stale/malformed ancestor marker
+  // is not a repository; treating it as one would suppress valid nested repos.
+  // gitChanges already reconciles a real subdirectory session to that repo's
+  // root while keeping the returned paths session-relative.
+  const direct = await gitChanges(sessionRoot, { maxEntries, maxPathBytes });
+  if ("entries" in direct) {
+    return {
+      repos: [
+        {
+          root: "",
+          entries: direct.entries,
+          ...(direct.truncated ? { truncated: true } : {}),
+        },
+      ],
+      truncated: direct.truncated,
+    };
+  }
+  if ("error" in direct) {
+    return { repos: [{ root: "", entries: [], error: direct.error }], truncated: false };
+  }
+
+  const discovery = discoverNestedRepoRoots(sessionRoot, {
+    maxRepos: caps.maxRepos,
+    maxNodes: caps.maxDiscoveryNodes,
+  });
+  if ("error" in discovery) return discovery;
+
+  const repos: FsChangeRepo[] = [];
+  let totalEntries = 0;
+  let totalPathBytes = 0;
+  let truncated = discovery.truncated;
+  for (const scopeRoot of discovery.roots) {
+    if (totalEntries >= maxEntries || totalPathBytes >= maxPathBytes) {
+      truncated = true;
+      break;
+    }
+    const repoLabel = path.relative(sessionRoot, scopeRoot).split(path.sep).join("/");
+    const repoLabelBytes = Buffer.byteLength(repoLabel, "utf8");
+    if (totalPathBytes + repoLabelBytes > maxPathBytes) {
+      truncated = true;
+      break;
+    }
+    totalPathBytes += repoLabelBytes;
+    const result = await gitChanges(scopeRoot, {
+      maxEntries: maxEntries - totalEntries,
+      maxPathBytes: maxPathBytes - totalPathBytes,
+    });
+    if ("notGit" in result) {
+      truncated = true;
+      repos.push({ root: repoLabel, entries: [], error: "not a git repository" });
+      continue;
+    }
+    if ("error" in result) {
+      repos.push({ root: repoLabel, entries: [], error: result.error });
+      continue;
+    }
+    const entries: FsEntry[] = [];
+    let groupTruncated = result.truncated;
+    for (const entry of result.entries) {
+      const sessionPath = repoLabel ? `${repoLabel}/${entry.path}` : entry.path;
+      const bytes = Buffer.byteLength(sessionPath, "utf8");
+      if (totalEntries >= maxEntries || totalPathBytes + bytes > maxPathBytes) {
+        groupTruncated = true;
+        truncated = true;
+        break;
+      }
+      entries.push({ ...entry, path: sessionPath });
+      totalEntries += 1;
+      totalPathBytes += bytes;
+    }
+    if (groupTruncated) truncated = true;
+    repos.push({
+      root: repoLabel,
+      entries,
+      ...(groupTruncated ? { truncated: true } : {}),
+    });
+  }
+  return { repos, truncated };
 }
 
 export type GitShow =

@@ -13,8 +13,11 @@ import {
 import { useEscapeKey } from "../../use-escape";
 import { useFocusTrap } from "../../use-focus-trap";
 import { useIsPhone } from "../../use-is-phone";
-import { FileView, fileToState, diffToState, type FileViewState } from "./FileView";
+import { FileView } from "./FileView";
 import { ExplorerChevron, ExplorerNodeGlyph } from "./ExplorerNodeGlyph";
+import { isCurrentReply, useFileView } from "./use-file-view";
+
+export { isCurrentReply };
 
 // The Explorer's shell-owned panel (E.3 desktop, E.4 phone; lazy since
 // E2.2): a read-only browser of the session's working tree, built
@@ -35,12 +38,6 @@ import { ExplorerChevron, ExplorerNodeGlyph } from "./ExplorerNodeGlyph";
 // since-switched session) is dropped, never rendered.
 
 type FsDir = Extract<WireMsg, { type: "fs_dir" }>;
-
-/** Accept a reply only when it answers the request we're currently awaiting —
- *  a superseded click or a since-switched session mints a new id, so its late
- *  reply is dropped, never rendered (E.3). Pure, for Tier-1. */
-export const isCurrentReply = (awaited: string | null, replyId: string): boolean =>
-  awaited !== null && awaited === replyId;
 
 /** The root row shows just the checked-out folder's NAME; the full ~-path
  *  stays in its tooltip. Pure, for Tier-1. */
@@ -92,9 +89,8 @@ export function FilesPanel({
   const [store, setStore] = useState<DirStore>(emptyDirStore());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [rootOpen, setRootOpen] = useState(true);
-  const [selected, setSelected] = useState<{ path: string; status?: string } | null>(null);
-  const [mode, setMode] = useState<"content" | "diff">("content");
-  const [view, setView] = useState<FileViewState>({ kind: "empty" });
+  const file = useFileView({ subscribe, requestRead, requestDiff, scopeKey: sessionKey });
+  const { selected, mode, view, openFile } = file;
   // E.6: the deliberate desktop enlarge — the file box lifted out of the
   // narrow column into a near-full-screen lightbox over the dimmed
   // workspace. User-initiated only (the ⤢ button); every path that closes
@@ -105,16 +101,21 @@ export function FilesPanel({
   // behind every close path (back button, phone Esc drill-back, session
   // switch, panel open). Setters only, so any render's copy is current.
   const closeFile = () => {
-    setSelected(null);
+    file.close();
+    setMaximized(false);
+  };
+
+  const resetFile = () => {
+    file.reset();
     setMaximized(false);
   };
 
   // Correlation ids: one outstanding fs_listdir PER DIRECTORY (the E.3-era
   // single listId ref is gone — the lazy tree legitimately has several
-  // fetches in flight), one for the file view. A reply whose id doesn't
-  // match its directory's current id is stale and is ignored.
+  // fetches in flight). The extracted file controller owns its one correlated
+  // request independently. A directory reply whose id doesn't match its
+  // directory's current id is stale and is ignored.
   const dirReqIds = useRef<Map<string, string>>(new Map());
-  const fileId = useRef<string | null>(null);
   // When true, the next root reply fans out the first-level prefetch —
   // armed by opening (and session switch), not by turn-end refreshes.
   const prefetchArmed = useRef(false);
@@ -216,12 +217,6 @@ export function FilesPanel({
               }
             }
           }
-        } else if (m.type === "fs_file") {
-          if (!isCurrentReply(fileId.current, m.id)) return;
-          setView(fileToState(m));
-        } else if (m.type === "fs_file_diff") {
-          if (!isCurrentReply(fileId.current, m.id)) return;
-          setView(diffToState(m));
         } else if (m.type === "turn_end" && openRef.current) {
           // E.5: the agent likely just touched files — refetch the root and
           // the EXPANDED dirs only (the lazy refresh unit), pruning stale
@@ -255,8 +250,7 @@ export function FilesPanel({
   // dirs included. (Kept separate from the open effect below so expanded state
   // SURVIVES a close/reopen within one session — E.5.)
   useEffect(() => {
-    closeFile();
-    setView({ kind: "empty" });
+    setMaximized(false);
     // The ref mirror is cleared alongside the state: the open effect below
     // runs in the same commit and reads expandedRef — it must not refetch
     // the OLD session's expanded dirs against the new root.
@@ -274,8 +268,7 @@ export function FilesPanel({
   // expanded dirs intact across a close/reopen.
   useEffect(() => {
     if (!open || !sessionKey) return;
-    closeFile();
-    setView({ kind: "empty" });
+    resetFile();
     refreshRef.current(true);
   }, [open, sessionKey, requestListdir]);
 
@@ -284,13 +277,6 @@ export function FilesPanel({
   const refresh = () => {
     refreshTree(true);
     if (selected) openFile(selected.path, selected.status, mode);
-  };
-
-  const openFile = (path: string, status: string | undefined, m: "content" | "diff") => {
-    setSelected({ path, status });
-    setMode(m);
-    setView({ kind: "loading", path });
-    fileId.current = m === "diff" ? requestDiff(path) : requestRead(path);
   };
 
   const toggleDir = (path: string) => {

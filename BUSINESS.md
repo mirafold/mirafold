@@ -100,8 +100,13 @@ already domain-agnostic (registry components are just components). Only
 pursue after wedges 1–2 prove the engine; this is where the market stops
 being a niche, and also where big-platform competition is hottest.
 
-**Explicit non-goal:** competing with IDEs on code editing/diff review.
-Link out to the user's editor; don't rebuild it.
+**Explicit non-goal:** competing with IDEs on code editing. Link out to the
+user's editor for manual changes; don't rebuild it. **Visual diff review is now
+in scope** (2026-08-11, PLAN Phases CR.1–CR.4): for the target user who wants
+the real terminal agent behind a better graphical workbench, understanding and
+steering the working-tree changes is supervision, not editing. The surface
+stays read-only and describes workspace changes versus Git HEAD, never
+unsupported "changes made by this agent" ownership.
 
 ## 4. Differentiation & moat
 

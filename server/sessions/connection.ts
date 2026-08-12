@@ -98,10 +98,10 @@ export function openConnection(
   // hostile client could spam — bound the probe rate per connection. A
   // throttled refresh still answers, from the cache.
   let lastProbeAt = 0;
-  // The Explorer's fs_list/fs_listdir/fs_read/fs_diff handling (Phase E), with its own
-  // per-connection throttle + git-in-flight state (fs-handlers.ts). `entry`
-  // and `closed` are read through getters because both change over the
-  // connection's life.
+  // The Explorer/Changes fs_list/fs_listdir/fs_read/fs_diff/fs_changes
+  // handling, with its own per-connection throttle + git-in-flight state
+  // (fs-handlers.ts). `entry` and `closed` are read through getters because
+  // both change over the connection's life.
   const fs = createFsHandlers({
     viewport,
     getEntry: () => entry,
@@ -476,6 +476,9 @@ export function openConnection(
         break;
       case "fs_diff":
         fs.diff(msg);
+        break;
+      case "fs_changes":
+        fs.changes(msg);
         break;
       case "client_error":
         // The browser half's uncaught errors, landing in the flight-recorder

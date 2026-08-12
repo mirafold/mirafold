@@ -7586,3 +7586,175 @@ combined Tier 2/Tier 3 checks passed before merge into `next` at `21b5f33`.
 The eight correctness repairs are signed and DCO-signed-off in `3ed7236` and
 published as open PR #35 into `next`. Per Kyle's instruction, PR #35 remains
 unmerged for review.
+
+## Moved 2026-08-11 (Changes review foundation — CR.1)
+
+### Phase CR.1 — Reusable file view + complete change-set query (completed 2026-08-11)
+
+- [x] **Step CR.1 — Cut the shared foundation without changing the shipped UI**
+  - **Goal:** make Files and the later Changes surface consume one request/view
+    lifecycle, and give any viewport one bounded, honest query for all changed
+    files in the session's repository or nested repositories.
+  - **Build:** extract the correlated `fs_read`/`fs_diff` state from
+    `FilesPanel` into a reusable hook/controller while keeping its current
+    desktop and phone rendering byte-for-behavior equivalent. Add an additive
+    `fs_changes` → `fs_change_set` request/reply: changed paths only
+    (M/A/D/U), grouped by their session-relative repository root, capped by
+    count and UTF-8 path bytes, with truncation/errors explicit. A session
+    inside one repo scopes the answer to its session root; a non-repo parent
+    discovers bounded nested repos without following symlinks or descending
+    into repo contents. Reuse the existing Git trust controls, subprocess
+    timeout, secret-file refusal, per-viewport correlation, and Git-in-flight
+    throttle. No dependency.
+  - **Modify existing:** `server/protocol.ts`, `server/sessions/git.ts`,
+    `server/sessions/fs-handlers.ts`, `server/sessions/connection.ts`,
+    `web/src/session-bus.ts`, `FilesPanel.tsx`, and their tests.
+  - **Create new:** the reusable file-view request controller and its focused
+    tests. No user-facing control or surface is created in this phase.
+  - **Leave behaviorally unchanged:** `FileView` presentation, Explorer
+    interactions and styling on desktop/phone, every adapter, prompt behavior,
+    filesystem writes, and the relay transport.
+  - **Done when:** focused unit and server-integration tests prove root-repo,
+    subdirectory, nested-repo, rename/delete/untracked, caps, malformed-id,
+    throttle, and stale-reply behavior; existing Explorer browser assertions
+    pass unchanged at desktop and phone widths; typecheck is clean.
+
+**Executable changes:** `server/protocol.ts` adds only the correlated
+`fs_changes` request and `fs_change_set` reply, with explicit repository groups
+and truncation/error fields. `server/sessions/git.ts` now obtains changed files
+through the existing timeout-bounded, config-neutralized Git runner; scopes a
+repo-subdirectory session correctly; discovers nested repositories beneath a
+non-repo parent with repo/node/count/UTF-8-byte caps and no symlink traversal;
+and treats incomplete discovery as incomplete rather than silently complete.
+`fs-handlers.ts` and `connection.ts` expose the per-viewport throttled request
+without broadcasting or replaying it, and `session-bus.ts` mints its client
+correlation id. `web/src/components/files/use-file-view.ts` now owns the shared
+read/diff selection, mode, request correlation, stale-reply gate, and reset
+lifecycle; `FilesPanel.tsx` consumes it with its existing rendered structure and
+styling. No dependency, write path, adapter behavior, prompt behavior, relay
+shape, or visible Changes control was added.
+
+**Test changes:** protocol fixtures pin both additive frames. Git tests cover a
+real root repo, repo-subdirectory scoping, modified/deleted/untracked files,
+rename parsing, UTF-8/count caps, nested siblings, repo-boundary stopping,
+ignored dependency trees, symlink exclusion, and global repository-label path
+budgets. A new real-daemon/WebSocket integration covers grouped parent-workspace
+results, rename source/target, throttle replies, and subdirectory paths. The
+hostile-client integration now proves malformed `fs_changes` ids produce no
+reply and no crash. The existing stale-reply unit pin now imports the extracted
+controller directly.
+
+**Documentation changes:** `PLAN.md` records the four responsive Changes
+phases and keeps desktop and ≤640px mobile behavior as acceptance requirements
+throughout. `BUSINESS.md` narrows the IDE non-goal to keep editing out while
+bringing honest read-only visual diff review into scope. `README.md` records
+the new filesystem query and reusable controller in the architecture map.
+
+**Proof:** TypeScript passed. The focused protocol/Git/file-view run passed
+26/26; the new real-daemon Changes integration passed 2/2; the hostile-client
+integration passed 4/4. A Vite production build passed with dotenv loading
+explicitly disabled (`envDir: false`). The existing desktop Explorer drill-in
+browser flow passed with its required setup (3/3), and the existing 390px phone
+full-screen drill-in/no-side-scroll flow passed with its required pairing setup
+(3/3). `git diff --check` passed. No dotenv file was opened or read.
+
+## Moved 2026-08-11 (Useful Changes view — CR.2)
+
+### Phase CR.2 — The useful Changes view, desktop and mobile (completed 2026-08-11)
+
+- [x] **Step CR.2 — Ship the complete changed-set review surface**
+  - **Goal:** open Changes at will, move through every changed file, and read
+    its current HEAD-versus-working-tree diff without leaving the session.
+  - **Build:** add a shell-owned Changes control and honest changed-file count;
+    group files by repo, select the first change deterministically, and reuse
+    the CR.1 file-view controller. `fs_changed` and turn-end refresh the set and
+    the open diff without losing a still-valid selection. Empty, loading,
+    binary, truncated, error, and no-repository states all speak plainly.
+  - **Desktop styling:** a wider split workspace beside the transcript, compact
+    changed-file rail + readable diff, Files/Changes mutual exclusion, visible
+    active state, and a deliberate close path. It remains usable at the
+    narrowest desktop width and never silently hides the conversation.
+  - **Mobile styling:** a full-screen safe-area-aware layer, one file at a time,
+    vertical unified diff, fixed back + file counter + previous/next controls,
+    ≥40px targets, preserved scroll when returning to chat, and zero page-level
+    side-scroll at 390px.
+  - **Done when:** headless Chrome drives the real control and reviews added,
+    modified, deleted, and untracked files at desktop and 390px; a disk rewrite
+    updates the open view without a click; Files still follows its existing
+    drill-in behavior; dark/light screenshots and axe pass on both surfaces.
+
+**Verified starting state:** CR.1 had added the correlated, bounded
+`fs_changes` → `fs_change_set` multi-repository query in
+`server/protocol.ts`, `server/sessions/fs-handlers.ts`, and
+`server/sessions/git.ts`. It had also extracted the reusable correlated
+read/diff lifecycle into `web/src/components/files/use-file-view.ts`, with
+`FilesPanel.tsx` as its only host. `web/src/components/Shell.tsx` still owned a
+single `filesOpen` boolean; `ActivityBar` and `StatusBar.tsx` exposed only the
+Files control; and no Changes component, control, stylesheet, selection model,
+or browser scenario existed. `FileView.tsx` already presented text, unified
+diffs, binary refusal, loading, and errors. These were observed components,
+not inferred planned behavior.
+
+**Approved boundary:** modify `Shell.tsx`, `StatusBar.tsx`, and structural CSS
+to give Files and Changes one mutually exclusive shell-owned workspace slot;
+create the pure changed-file view model, Changes glyph, responsive Changes
+panel, focused unit tests, and real-daemon browser proof. Reuse the CR.1 wire,
+Git, session bus, and file-view controller without changing their behavior.
+Leave every adapter, prompt-send path, permission policy, filesystem write
+path, relay frame, and Files interaction behaviorally unchanged. Add no
+dependency.
+
+**Executable changes:** `web/src/components/Shell.tsx` now owns one
+`files | changes | null` auxiliary-workspace state and exposes mutually
+exclusive desktop activity-bar and phone status-bar controls.
+`web/src/components/changes/ChangesPanel.tsx` requests the complete set only
+while open, accepts only its correlated reply, groups the server's explicit
+repository results, opens the deterministic first change, and preserves a
+still-valid selected file across refresh. A one-second coalesced refresh reacts
+to live `fs_changed` bells and non-replayed turn ends, re-querying both the set
+and selected diff. Loading, clean tree, no repository, incomplete/truncated,
+partial refresh failure, refused Git configuration, binary file, and ordinary
+request errors are distinct visible states. `web/src/changes.ts` owns pure
+sorting, selection, status/count honesty, and repository-label helpers;
+`ChangesGlyph.tsx` supplies the dependency-free shell glyph.
+
+Desktop CSS supplies a `clamp(370px, 55vw, 760px)` split workspace with a
+compact repository/file rail and a readable independently scrolling review
+column while the transcript stays present. The 641px browser contract keeps at
+least 155px for review and 200px for conversation. At ≤640px the same surface
+becomes a fixed safe-area-aware dialog: the rail disappears, exactly one file
+is shown, previous/next and position remain fixed, all persistent controls are
+at least 40px, and only the file view scrolls. Closing it preserves the mounted
+conversation's scroll position. No server, adapter, write, permission, prompt,
+relay, or package behavior changed.
+
+**Test changes:** `web/src/changes.test.ts` pins deterministic repository/file
+ordering, selection preservation/fallback, exact versus incomplete counts,
+the four trusted status labels, hostile-status fallback, and POSIX/Windows
+repository labels. `server/testing/changes.e2e.ts` builds real Git fixtures for
+added, deleted, modified, untracked, binary, and deliberately truncated
+results; drives the real daemon and Chromium controls; proves Files/Changes
+mutual exclusion, every review state, selection preservation after a live disk
+rewrite, and unchanged Files drill-in. Its 1280px and 641px desktop checks keep
+the transcript visible; its 390×844 phone check proves full-screen geometry,
+no side-scroll, ≥40px controls, one-file navigation, binary state, close/reopen
+selection, and transcript-scroll preservation. Separate real workspaces prove
+no-repository, clean-tree, and safely refused Git-configuration states. Both
+desktop and phone switch through the real theme control, capture dark and light
+screenshots, and run axe in both appearances.
+
+**Documentation changes:** `README.md` now names Workspace changes in the
+product orientation and architecture map, records the responsive behavior, and
+distinguishes it from Files. `PLAN.md` marks CR.2 complete, advances CR.3, and
+turns PN.1 into the completed CR.1 pointer its scheduling note required. This
+archive preserves CR.2's full specification, starting state, actual boundary,
+and evidence. `BUSINESS.md` needed no CR.2 change because CR.1 had already
+recorded the read-only visual-review scope and honesty boundary.
+
+**Proof:** TypeScript passed. The focused changed-file and shared file-view
+unit run passed 8/8. A Vite production build passed with dotenv loading
+explicitly disabled (`envDir: false`). The final combined CR.2 real-daemon
+Chromium run passed 3/3, covering desktop, phone, and honest states; its four
+dark/light axe gates passed. The existing desktop token/onboarding/Explorer
+regression slice passed 3/3, and the existing paired-phone/Explorer slice
+passed 3/3. `git diff --check` passed. No dotenv file was opened or read.

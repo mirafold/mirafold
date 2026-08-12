@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isCurrentReply, rootNameOf } from "./FilesPanel";
+import { rootNameOf } from "./FilesPanel";
 import { diffTooLarge } from "./FileView";
+import { isCurrentReply } from "./use-file-view";
 
 // E.3 pure logic: the stale-reply gate and the client-side diff-size guard.
 

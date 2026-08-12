@@ -2,11 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentInfo, AgentName, PromptOption } from "@protocol";
 import { ActivityLine, activityLabel, type Activity } from "./ActivityLine";
 import { BangBar } from "./BangBar";
+import { ChangesGlyph } from "./ChangesGlyph";
 import { FilesGlyph } from "./FilesGlyph";
 import { Onboarding } from "./Onboarding";
 import { PromptBox } from "./PromptBox";
 import { RenderZone } from "./RenderZone";
 import { FilesPanel } from "./files/FilesPanel";
+import { ChangesPanel } from "./changes/ChangesPanel";
 import { StatusBar, type Usage } from "./StatusBar";
 import { createSessionBus } from "../session-bus";
 import { nextOpenTurns } from "../turn-busy";
@@ -130,10 +132,16 @@ export function Shell() {
 
   const hasUrlSession = useMemo(() => /^\/s\/[\w-]+/.test(location.pathname), []);
 
-  // ── The Explorer (Phase E) ──────────────────────────────────────────────
-  // The read-only files panel, collapsed by default (nothing changes for a
-  // user who never opens it). Shell-owned; the agent paints nothing in it.
-  const [filesOpen, setFilesOpen] = useState(false);
+  // ── The auxiliary workspace ─────────────────────────────────────────────
+  // Exactly one shell-owned side surface can be open: Files answers what
+  // exists; Changes answers what differs from Git HEAD. This single slot is
+  // the invariant that keeps the transcript visible on desktop and prevents
+  // stacked full-screen layers on phone.
+  const [auxiliary, setAuxiliary] = useState<"files" | "changes" | null>(null);
+  const filesOpen = auxiliary === "files";
+  const changesOpen = auxiliary === "changes";
+  const toggleAuxiliary = (surface: "files" | "changes") =>
+    setAuxiliary((current) => (current === surface ? null : surface));
 
   // ── The theme (4.3; two-slot model S.3) ─────────────────────────────────
   // Theme is shell-owned UI state. Dark is the default and the identity;
@@ -448,14 +456,16 @@ export function Shell() {
         {/* The activity bar (VS Code convention) is the workbench's permanent
             left edge — it spans transcript, prompt box AND status bar,
             everything to its strict right; only banners run full-width. Its
-            files icon opens/collapses the Explorer panel (E.3), which sits
-            left of the transcript in a flex row so the transcript keeps
-            rendering beside it; panel closed = transcript full-width. */}
+            Files and Changes icons share one auxiliary workspace slot, which
+            sits left of the transcript in a flex row so the transcript keeps
+            rendering beside it; both closed = transcript full-width. */}
         <div className="main-row">
           <ActivityBar
             filesOpen={filesOpen}
+            changesOpen={changesOpen}
             disabled={!meta.sessionId}
-            onToggleFiles={() => setFilesOpen((f) => !f)}
+            onToggleFiles={() => toggleAuxiliary("files")}
+            onToggleChanges={() => toggleAuxiliary("changes")}
           />
           <div className="main-col">
             <div className="zone-outer">
@@ -465,7 +475,17 @@ export function Shell() {
                 requestListdir={bus.requestFsListdir}
                 requestRead={bus.requestFsRead}
                 requestDiff={bus.requestFsDiff}
-                onClose={() => setFilesOpen(false)}
+                onClose={() => setAuxiliary(null)}
+                rootLabel={tildify(meta.cwd, daemonInfo.home)}
+                sessionKey={meta.sessionId}
+              />
+              <ChangesPanel
+                open={changesOpen && Boolean(meta.sessionId)}
+                subscribe={bus.subscribe}
+                requestChanges={bus.requestFsChanges}
+                requestRead={bus.requestFsRead}
+                requestDiff={bus.requestFsDiff}
+                onClose={() => setAuxiliary(null)}
                 rootLabel={tildify(meta.cwd, daemonInfo.home)}
                 sessionKey={meta.sessionId}
               />
@@ -513,7 +533,10 @@ export function Shell() {
               version={daemonInfo.version}
               filesOpen={filesOpen}
               filesDisabled={!meta.sessionId}
-              onToggleFiles={() => setFilesOpen((f) => !f)}
+              onToggleFiles={() => toggleAuxiliary("files")}
+              changesOpen={changesOpen}
+              changesDisabled={!meta.sessionId}
+              onToggleChanges={() => toggleAuxiliary("changes")}
             />
           </div>
         </div>
@@ -559,19 +582,23 @@ function NoticeLine({ text, onDismiss }: { text: string; onDismiss: () => void }
 }
 
 /** The workbench's permanent left strip (VS Code's activity-bar convention):
- *  always present so the affordance never moves; its files icon opens or
- *  collapses the Explorer panel (E.3). Disabled until there's a session.
+ *  always present so the affordance never moves; its Files and Changes icons
+ *  share one auxiliary workspace slot. Disabled until there's a session.
  *  DESKTOP ONLY (2026-07-25, Kyle): on ≤640px the strip is hidden — a
- *  permanent 46px rail is too much of a 390px screen — and the same toggle
- *  lives in the status bar instead (StatusBar's sb-files). */
+ *  permanent 46px rail is too much of a 390px screen — and both toggles live
+ *  in the status bar instead. */
 function ActivityBar({
   filesOpen,
+  changesOpen,
   disabled,
   onToggleFiles,
+  onToggleChanges,
 }: {
   filesOpen: boolean;
+  changesOpen: boolean;
   disabled: boolean;
   onToggleFiles: () => void;
+  onToggleChanges: () => void;
 }) {
   return (
     <div className="activity-bar">
@@ -584,6 +611,16 @@ function ActivityBar({
         aria-expanded={filesOpen}
       >
         <FilesGlyph />
+      </button>
+      <button
+        className={"ab-btn ab-changes" + (changesOpen ? " is-active" : "")}
+        onClick={onToggleChanges}
+        disabled={disabled}
+        title={changesOpen ? "Hide workspace changes" : "Show workspace changes"}
+        aria-label="Workspace changes"
+        aria-expanded={changesOpen}
+      >
+        <ChangesGlyph />
       </button>
     </div>
   );

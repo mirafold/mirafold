@@ -1,9 +1,9 @@
 // The Explorer's per-viewport request layer (Phase E) — the fs_list /
-// fs_listdir / fs_read / fs_diff message handlers, lifted out of
+// fs_listdir / fs_read / fs_diff / fs_changes message handlers, lifted out of
 // connection.ts's switch so the Explorer's
 // request handling lives beside its data layer (fs-explorer.ts,
 // git.ts) instead of swelling the dispatcher. connection.ts builds one of
-// these per connection and delegates the four cases to it.
+// these per connection and delegates the five cases to it.
 //
 // Every reply is per-viewport: answered on THIS connection only (like
 // pong/sessions), never broadcast, never replay-buffered — disk state is a
@@ -26,6 +26,7 @@ import {
   gitTree,
   repoRelPath,
   repoStatus,
+  workspaceChanges,
 } from "./git";
 import { repoTrust, trustFile } from "./git-trust";
 import { inside } from "./actions";
@@ -95,6 +96,7 @@ type FsList = Extract<ClientMsg, { type: "fs_list" }>;
 type FsListdir = Extract<ClientMsg, { type: "fs_listdir" }>;
 type FsRead = Extract<ClientMsg, { type: "fs_read" }>;
 type FsDiff = Extract<ClientMsg, { type: "fs_diff" }>;
+type FsChanges = Extract<ClientMsg, { type: "fs_changes" }>;
 
 type FsDeps = {
   /** Send one frame to this viewport (never the broadcast path). */
@@ -110,15 +112,17 @@ export type FsHandlers = {
   listdir: (msg: FsListdir) => void;
   read: (msg: FsRead) => void;
   diff: (msg: FsDiff) => void;
+  changes: (msg: FsChanges) => void;
 };
 
 export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHandlers {
   // Per-connection state: one throttle clock per request type, and at most one
-  // git child in flight (shared by list + diff, like the bang already-running
-  // refusal).
+  // git child in flight (shared by list + diff + changes, like the bang
+  // already-running refusal).
   let lastListAt = 0;
   let lastReadAt = 0;
   let lastDiffAt = 0;
+  let lastChangesAt = 0;
   let gitInFlight = false;
   // fs_listdir's token bucket (see FS_LISTDIR_MAX_PER_SEC above): fractional
   // tokens accrue continuously, capped at one full burst.
@@ -380,5 +384,49 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
       });
   };
 
-  return { list, listdir, read, diff };
+  const changes = (msg: FsChanges): void => {
+    if (badId(msg.id)) return;
+    const sendErr = (error: string) =>
+      viewport({ type: "fs_change_set", id: msg.id, repos: [], error });
+    const entry = getEntry();
+    if (!entry) return sendErr("no session attached");
+    if (tooSoon(lastChangesAt)) {
+      return sendErr("requests are arriving too fast — retry shortly");
+    }
+    lastChangesAt = Date.now();
+    if (gitInFlight) return sendErr("a git query is already running — retry shortly");
+
+    // Capture the immutable workspace root before awaiting. The query uses the
+    // same trusted, hook-disabled git runner as the Explorer's existing tree
+    // and diff paths, but returns all changed files grouped by repository.
+    const root = entry.cwd;
+    gitInFlight = true;
+    void workspaceChanges(root)
+      .then((result) => {
+        if (isClosed()) return;
+        if ("error" in result) return sendErr(result.error);
+        // The query itself already neutralized repo-configured programs. Match
+        // the Files tree's user-facing half of that trust control for every
+        // repository the Changes query reached.
+        for (const repo of result.repos) {
+          const discoveredRoot = path.join(root, repo.root || ".");
+          const repoRoot = findRepoRoot(discoveredRoot);
+          if (repoRoot) void noticeRefusedPrograms(repoRoot);
+        }
+        viewport({
+          type: "fs_change_set",
+          id: msg.id,
+          repos: result.repos,
+          ...(result.truncated ? { truncated: true } : {}),
+        });
+      })
+      .catch((err) => {
+        if (!isClosed()) sendErr(errText(err));
+      })
+      .finally(() => {
+        gitInFlight = false;
+      });
+  };
+
+  return { list, listdir, read, diff, changes };
 }

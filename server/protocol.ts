@@ -333,6 +333,20 @@ type WireMsgBody =
       binary?: boolean;
       error?: string;
     }
+  // Phase CR.1: the complete Git change set for the session workspace.
+  // `root` is each repository's session-root-relative directory ("" when
+  // the session itself is in one repo); entry paths are session-root-relative
+  // so they can ride the existing fs_read/fs_diff jail unchanged. A parent
+  // directory holding several repos gets one explicit group per repo. Like
+  // every fs_* query this is per-viewport, correlated, never replayed, and
+  // cap/error honest.
+  | {
+      type: "fs_change_set";
+      id: string;
+      repos: FsChangeRepo[];
+      truncated?: boolean;
+      error?: string;
+    }
   // The live-tree doorbell (Phase W): something under the session root
   // changed on disk. Pushed to every ATTACHED viewport — per-viewport
   // plumbing like the fs_* replies, never buffered or sequenced (a bell
@@ -428,6 +442,15 @@ export type BackendChoice = {
  *  known cost is that empty directories are invisible). `status` arrives with
  *  E.2's git layer: a single collapsed change char (M/A/D/U). */
 export type FsEntry = { path: string; status?: string };
+
+/** One repository in the CR.1 workspace change set. Both `root` and every
+ *  entry path are relative to the immutable session root and /-separated. */
+export type FsChangeRepo = {
+  root: string;
+  entries: FsEntry[];
+  truncated?: boolean;
+  error?: string;
+};
 
 /** One child in an fs_dir reply (E2.1): a NAME within the listed directory —
  *  never a path; the client owns nesting (the lazy-tree inversion of
@@ -565,6 +588,9 @@ export type ClientMsg =
   // files; the client is never trusted with a path. Both types are throttled
   // per connection (throttled requests still get an error reply).
   | { type: "fs_list"; id: string }
+  // CR.1: all changed files, grouped by repository; answered as
+  // fs_change_set. No path argument: the immutable session root is the scope.
+  | { type: "fs_changes"; id: string }
   | { type: "fs_read"; id: string; path: string }
   // E.2: "what changed in this file" — answered as fs_file_diff. Same id
   // grammar, same jail, same throttle family as fs_read.

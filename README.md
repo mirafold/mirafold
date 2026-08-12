@@ -70,6 +70,14 @@ details are still available. A fold never crosses a failure or other visible
 transcript row, so chronology stays exact. Rich generative UI is added around
 that transcript, never in exchange for it.
 
+The trusted shell also owns a live **Workspace changes** review surface. It
+groups every visible working-tree change by Git repository and opens the real
+HEAD-versus-working-tree diff without attributing shared-disk edits to the
+agent. On desktop it is a wide split beside the still-visible conversation; on
+phone it is a full-screen, one-file-at-a-time review with persistent previous
+and next controls. The existing Files view remains the separate answer to
+"what exists here?" while Changes answers "what differs from HEAD?"
+
 ![Mirafold demo — a repo overview as a card and a table; a test-and-fix run with a permission strip, console output, a diff and a green re-run; a sudo password answered in the shell's own masked bar; a bundle pie chart pinned and updated in place](demo/demo.gif)
 
 *The real UI, driven end to end: ask about a repo → an overview card, a
@@ -95,6 +103,8 @@ codebase. Companion documents:
   **C** (CI on every push), **E** + **E2** + **W** (the Explorer — the
   read-only files panel, lazy per-directory since E2 with per-repo git
   fidelity, and self-refreshing since W's filesystem watcher),
+  **CR.1–CR.2** (the bounded multi-repository change query and responsive,
+  live Changes review workspace),
   **M** (mission control grown into a cockpit: act on sessions from the grid),
   L.1, most of the Phase F fidelity fixes, and the working core of
   **Phase R** (the hosted relay: R.1 dial-out + envelope, R.3 per-pair E2E
@@ -535,17 +545,21 @@ server/            the local daemon (Node, run with tsx)
                        bang_input/bang_kill handlers connection.ts delegates to,
                        plus the output budgets, cwd handoff, and agent-turn
                        transcript (the PTY runner itself stays in pty/)
-    fs-handlers.ts     Explorer request layer (Phase E): the fs_list/fs_listdir/
-                       fs_read/fs_diff handlers connection.ts delegates to —
-                       per-viewport replies, jailed + throttled, one reply each
+    fs-handlers.ts     Explorer + Changes request layer: the fs_list/fs_listdir/
+                       fs_read/fs_diff/fs_changes handlers connection.ts
+                       delegates to — per-viewport replies, jailed + throttled,
+                       one reply each
     fs-explorer.ts     Explorer data layer: the capped tree walk (E.1) + the
                        per-directory lister behind the lazy tree (E2.1) +
                        jailed, secret-safe, binary-sniffing file reads
-    git.ts             Explorer git layer: bounded one-shot git calls for the
+    git.ts             Explorer/Changes git layer: bounded one-shot git calls for the
                        tracked tree + statuses + HEAD-vs-working diffs (E.2),
                        plus the per-repo view the lazy tree uses — nearest-.git
                        discovery, cached+serialized status, ignore-aware
-                       decoration (E2.3). NOTE: that discovery walks ABOVE the
+                       decoration (E2.3) — and the complete changed-file query,
+                       with bounded nested-repo discovery below a non-repo
+                       workspace root (CR.1). NOTE: nearest-repo discovery
+                       walks ABOVE the
                        session root when the session is scoped inside a repo;
                        SECURITY.md states the bound (nothing outside the scope
                        reaches the wire), pinned by a Tier-2 test
@@ -596,11 +610,11 @@ web/               the browser app (React 19 + Vite)
   src/components/    the shell-owned components — trusted UI, every file here
                      (H2.1); the agent-paintable vocabulary is its SIBLING,
                      registry/, so the trust split reads in the tree
-    Shell.tsx          TRUSTED SHELL: prompt box + notices +
-                       status bar + the activity bar (the left strip that
-                       toggles the Explorer — desktop only; on phone the
-                       toggle folds into the status bar, 2026-07-25);
-                       consumes the session bus (H.9)
+    Shell.tsx          TRUSTED SHELL: prompt box + notices + status bar + the
+                       activity bar (desktop's left strip for the mutually
+                       exclusive Files and Changes workspaces; on phone both
+                       toggles fold into the status bar); consumes the session
+                       bus (H.9)
     Onboarding.tsx     first-run card: pick the agent + working directory, then
                        how it's backed when there's a choice — detected
                        credentials + discovered local model servers (P.4/4.8/N.4)
@@ -630,9 +644,8 @@ web/               the browser app (React 19 + Vite)
                        right; sits INSIDE the workbench column (2026-07-25) so the
                        activity bar's border line runs unbroken to the window
                        bottom; folds to one row of controls at phone width
-                       (R.4l), where it also hosts the Explorer toggle
-                       (.sb-files, boxed at the far left — the rail is
-                       desktop-only, 2026-07-25)
+                       (R.4l), where it also hosts the Files and Changes
+                       workspace toggles (the activity rail is desktop-only)
     GearGlyph.tsx      the settings/tool gear as a flat outline drawing, three
                        homes: the settings button, the subagent head, the
                        fleet activity line (2026-07-25 — the ⚙ character
@@ -640,6 +653,8 @@ web/               the browser app (React 19 + Vite)
                        every glyph beside it)
     FilesGlyph.tsx     the Explorer/files glyph drawing — the activity-bar
                        toggle and the status bar's phone-width .sb-files
+    ChangesGlyph.tsx   the workspace-changes glyph drawing — the activity-bar
+                       toggle and the status bar's phone-width .sb-changes
     ArmedButton.tsx    the two-click destructive button (#11's arm → 3s
                        auto-disarm), shared by StatusBar + FleetView's end/stop
     PinDock.tsx        right-side dock for pinned components (live via entries)
@@ -663,7 +678,12 @@ web/               the browser app (React 19 + Vite)
                        dialog on phone; desktop ⤢ enlarges the file box into
                        a dimmed lightbox, E.6) + FileView.tsx (content /
                        diff / binary) + ExplorerNodeGlyph.tsx (small
-                       dependency-free folder/symlink/file-family glyphs)
+                       dependency-free folder/symlink/file-family glyphs) +
+                       use-file-view.ts (the reusable correlated read/diff
+                       lifecycle shared with the Changes surface, CR.1)
+    changes/           ChangesPanel.tsx: the live shell-owned repository/file
+                       review workspace — desktop split rail + diff, phone
+                       full-screen single-file navigation (CR.2)
   src/registry/      Card, List, Table, LinkGroup, Chart, TodoList, KeyValue,
                      Progress, Timeline, FileTree, Question, Diff, Stat, Code,
                      StatusList, Console, Image, Diagram, Md, CopyButton +
@@ -675,7 +695,10 @@ web/               the browser app (React 19 + Vite)
                      does the jailed read; the agent authors a path, never
                      bytes)
   src/session-bus.ts the shell's message bus (H.9): one SocketClient + the
-                     pub/sub fan-out and senders Shell.tsx consumes
+                     pub/sub fan-out and senders Shell.tsx consumes, including
+                     correlated Explorer/Changes filesystem queries
+  src/changes.ts     pure changed-file grouping, deterministic selection,
+                     count honesty, status labels, and repository labels
   src/folder-picker-requests.ts
                      correlated local picker requests shared by the session
                      shell and the fleet's new-session card
