@@ -773,10 +773,14 @@ web/               the browser app (React 19 + Vite)
                      reached only via agentLabel()/connectHint() so an
                      unknown agent name degrades to its raw string (R.4h)
   src/version.ts     the web bundle's own build version (R.4g)
-  src/styles.css     structural CSS only — every color via var(...) (see §7);
-                     organized by surface, top of the screen down, with ONE
-                     phone media block at the end (its header comment maps the
-                     sections and the order-sensitive spots, 2026-07-25)
+  src/styles.css     the import spine: numbered @imports of src/styles/, one
+                     file per surface, top of the screen down (split 2026-08-12
+                     from the former single file; same cascade, byte-identical
+                     bundle). Its header maps the surfaces and the
+                     order-sensitive spots. Structural CSS only — every color
+                     via var(...) (see §7) — and the ONE phone media block
+                     stays last as styles/15-phone.css
+  src/styles/        the 15 surface files the spine imports, in cascade order
   src/themes/        the palettes (Phase S): base.css (pinned code/diff
                      tokens) + one self-contained file per theme; manifest.ts
                      is the single source (THEMES, the token contract, the

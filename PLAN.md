@@ -3433,6 +3433,21 @@ both acceptance requirements, not a later responsive cleanup.
   so an over-80-line hunk still reads as selected and can be unselected.
   Pinned in the hunk-navigation e2e; changes+phone 20/20, Tier-1 672.
 
+## Stylesheet decomposition (2026-08-12, Kyle-directed)
+
+- [x] **Split the 5,639-line styles.css into an import spine + 15 surface
+  files** (`web/src/styles/01-frame.css` … `15-phone.css`), one per surface
+  in the 2026-07-25 ordering, with the phone media block staying one file,
+  last. `styles.css` is now the numbered @import spine and carries the
+  surface map and the two order-sensitive cascade notes. Pure relocation —
+  proven twice: the concatenation of the split files is byte-identical to
+  the original source, and the built dist CSS bundle is byte-identical to
+  the pre-split build (comment edits vanish in minification). Deliberately
+  NO dedup/consolidation (small savings, real visual-regression risk) and
+  NO phone-override colocation yet — colocating would dismantle the
+  one-phone-block convention and is a separately-verified decision for
+  later. e2e 74/74 (changes/app/phone), Tier-1 672/672.
+
 ## Phase PN — Panes (file views beside the transcript)
 
 **Why.** Kyle (2026-07-26): open a file and see it in its own pane. Also the

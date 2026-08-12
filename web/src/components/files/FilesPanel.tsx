@@ -428,7 +428,7 @@ export function FilesPanel({
                 )}
               </div>
               {/* tabIndex + a named region because this div SCROLLS
-                  (styles.css `.files-view { overflow: auto }`): without a tab
+                  (02-explorer.css `.files-view { overflow: auto }`): without a tab
                   stop, a keyboard-only user could open a file or a diff and
                   never scroll it — axe `scrollable-region-focusable`, serious,
                   found 2026-07-30 when the sweep was extended to the enlarged
