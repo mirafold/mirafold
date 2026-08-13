@@ -752,6 +752,9 @@ web/               the browser app (React 19 + Vite)
                      shell and the fleet's new-session card
   src/tab-status.ts  the tab status light: brand-M favicon + corner badge
                      (busy / permission) and title, painted from wire state
+  src/notify.ts      needs-you notifications (Phase NF): OS toasts when a
+                     hidden tab's session hits a permission or finishes a
+                     turn — pure transition reducer + injectable binder
   src/use-escape.ts  useEscapeKey — the one Esc idiom behind every overlay
                      and the busy interrupt
   src/use-focus-trap.ts  useFocusTrap — focus in on open, Tab cycles inside,
@@ -1075,6 +1078,16 @@ colored corner badge when busy or awaiting permission, so a row of tabs reads as
 fleet view). Busy state is derived entirely from the wire — `user_prompt`
 sets it, `turn_end` clears it — so a replayed in-flight turn restores it
 correctly.
+
+The same idle/busy/permission tri-state feeds **needs-you notifications**
+(`notify.ts`, Phase NF): with the settings-card toggle on (off by default —
+enabling is the only thing that asks the browser for permission), a *hidden*
+tab raises an OS notification when a session hits a permission prompt or
+finishes a turn, one per session (`tag` = session id), self-closing when the
+cause resolves elsewhere or the tab becomes visible again. Both routes wire
+it — the session viewport from its own `asks`/`busy`, the fleet from every
+`sessions` snapshot — and titles/bodies are shell-composed with engine
+strings carried as inert plain text (the trusted-shell rule, §3).
 
 ### 6.2 `ws.ts` — `SocketClient`
 

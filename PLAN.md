@@ -3381,6 +3381,101 @@ both acceptance requirements, not a later responsive cleanup.
   a separately-verified decision for later. → **PLAN-ARCHIVE.md, "Moved
   2026-08-12 (Changes polish + branch closure)."**
 
+## Needs-you notifications (opened 2026-08-12; Kyle-directed)
+
+**Product call.** The remote/away story is the product's spine — fleet view,
+relay viewport, desktop app all assume the user steps away — yet every surface
+so far answers "what's happening when I look?" and nothing answers "tell me
+when I need to look." The next feature is OS-level notifications when a
+session needs the user: a permission prompt appears, or a turn finishes. Scope
+is the local tiers only (any open Mirafold page: local tab, desktop app, relay
+viewport open on a phone — all the same Notification API code path). True
+closed-browser Web Push (service worker + push service + E2E payload story) is
+deliberately parked in Post-release ideas until the habit loop proves out.
+
+**Triggers — exactly two, by design.** (1) A session enters `permission`;
+(2) a session's turn ends (`busy`/`working` → `idle`). NOT per-tool chatter,
+and NOT socket disconnects: a phone backgrounding its tab drops the socket
+routinely, so a "disconnected" toast would train users to disable the feature.
+Session-death notification waits until the wire carries a distinct exit signal.
+
+**The suppression rule (most of the design).** A notification fires only for
+state the user cannot already see: nothing fires while the firing tab is
+visible (`document.visibilityState`), and gaining visibility closes every
+toast that tab created. One notification per session (`tag` = session id), a
+newer event replacing the older; a toast whose cause resolves elsewhere
+(answered on another device, agent prompted from the terminal) closes itself
+the moment the state moves on. Accepted v1 sharp edge: a hidden fleet tab can
+toast about a session visible in another tab — same tag keeps it to one toast,
+and cross-tab suppression is noted in Post-release ideas, not built.
+
+**Trust boundary.** Notifications are shell-owned chrome: titles/bodies are
+composed by the shell, and every engine-derived string (tool name, permission
+detail) is carried as inert plain text into an OS surface that never
+interprets markup. The preference is off by default; flipping it on is the
+only thing that triggers the browser's permission prompt (never page load).
+No secret ever enters a notification body — tool + detail are already
+user-visible PermBar strings.
+
+### Phase NF.1 — The notify engine + both surfaces wired
+
+- [x] **Step NF.1 — Pure decision core, DOM binder, Shell + fleet wiring** —
+  completed 2026-08-12: `web/src/notify.ts` (reducer + binder + DOM wiring)
+  landed with 23 Tier-1 tests covering the full matrix below; both routes
+  wired exactly as specified, `yarn test` 695 green, typecheck clean. —
+  **Goal:** notifications actually fire from both routes, correctly
+  suppressed, coalesced, and self-closing, behind a preference that defaults
+  off. **Build:** `web/src/notify.ts`: (a) a pure transition reducer — given
+  the previous per-session state map, fresh session snapshots
+  (`{id, state: idle|busy|permission, title, agent?, detail?}`), and flags
+  `{enabled, granted, visible}`, return show/close actions plus the next map —
+  every rule above lives here; (b) `createNotifier(deps)` binding the reducer
+  to injected `{isVisible, permission, spawn, onVisibilityChange}` with a
+  `reset()` that reseeds state without emitting (used across socket
+  drop/reconnect so a forced `busy→idle` never fakes a turn-end). Wire Shell
+  (its `asks`/`busy` tri-state, title from the cwd basename, detail from
+  `asks[0]`) and FleetView (per-session from the `sessions` snapshot,
+  `wantsAnswer` for the permission side, close toasts for sessions that leave
+  the list). Clicking focuses the firing tab. **Files:** `web/src/notify.ts`,
+  `web/src/notify.test.ts`, `web/src/components/Shell.tsx`,
+  `web/src/components/FleetView.tsx`. **Done when:** Tier-1 tests prove the
+  reducer's full matrix (permission shown once; answered-elsewhere closes;
+  turn-end shown on `busy→idle` and `permission→idle`; visible suppresses
+  shows but still advances state; disabled/ungranted emit nothing; per-session
+  independence; vanished session closes; reset never emits) and the binder's
+  lifecycle against fakes; `yarn typecheck` passes.
+
+### Phase NF.2 — The settings affordance + end-to-end proof
+
+- [x] **Step NF.2 — Toggle in the settings card, e2e, docs** — completed
+  2026-08-12: Notifications section shipped in the settings card (switch row
+  + blocked hint), Shell owns preference/permission logic, e2e proves the
+  full hidden-tab loop (toggle → permission toast → answered → turn-end
+  toast → visibility closes all). One diagnosed trap recorded for future e2e
+  work: tsx's esbuild keepNames injects a module-scope `__name` helper into
+  compiled classes/accessor properties, which Playwright then serializes
+  WITHOUT the helper — init scripts and evaluates containing them die on a
+  ReferenceError, so the Notification stub and the visibility override are
+  plain-JS strings. — **Goal:** a
+  user can find and flip the feature, and headless Chrome proves the visible
+  behavior. **Build:** a Notifications section in the settings card
+  (`ThemePicker.tsx`, prop-driven — the card stays Vite-only and dumb): one
+  toggle row ("Notify me when a session needs me"), `aria-pressed`, a plain
+  hint line when the browser has the permission hard-denied ("blocked in
+  browser settings") or the API is absent. Shell owns the logic: preference in
+  `localStorage["mirafold-notify"]`, enabling requests browser permission when
+  still undecided. Fleet honors the same stored preference with no UI of its
+  own. Settings-card CSS additions in `web/src/styles/12-dialogs.css`.
+  **Files:** `web/src/components/ThemePicker.tsx`,
+  `web/src/components/Shell.tsx`, `web/src/notify.ts` (preference helpers),
+  `web/src/styles/12-dialogs.css`, `server/testing/app.e2e.ts`, README.
+  **Done when:** the e2e opens settings, sees the section, flips the toggle
+  (Notification API stubbed via init script), asserts the stored preference
+  and `aria-pressed`, and a stubbed-notification assertion proves a hidden-tab
+  permission event spawns exactly one tagged toast; axe stays clean;
+  `yarn test` + `yarn test:e2e` + `yarn typecheck` pass; README's shell-UI
+  section gains the tab-status-adjacent paragraph.
+
 ## Phase PN — Panes (file views beside the transcript)
 
 **Why.** Kyle (2026-07-26): open a file and see it in its own pane. Also the
