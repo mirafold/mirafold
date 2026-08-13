@@ -470,11 +470,27 @@ test("CR.3 hunk navigation reaches terminal hunks, opens on the first hunk, and 
   assert.equal(await selectHunk.innerText(), "Select hunk");
 
   // A live rewrite must refresh the diff in place: no loading flicker that
-  // unmounts the renderer, and no repositioning onto the first hunk.
-  await page.evaluate(() => {
-    const view = document.querySelector(".changes-diff-lines");
-    if (view) view.scrollTop = 0;
-  });
+  // unmounts the renderer, no repositioning onto the first hunk, and the
+  // hunk COUNTER keeps the reader's place too (it used to reset to
+  // "Hunk 1 of N" while the viewport stayed put — the BUG-3 fix's pin).
+  await page.locator('[aria-label="Next changed hunk"]').click();
+  assert.equal(await hunkLabel(), "Hunk 2 of 2");
+  // Plant the sentinel position: the click's smooth scroll is still
+  // animating, and a single scrollTop write loses to its remaining frames —
+  // re-zero every frame until it holds through one full frame.
+  await page.waitForFunction(
+    () => {
+      const view = document.querySelector(".changes-diff-lines");
+      if (!view) return false;
+      if (view.scrollTop !== 0) {
+        view.scrollTop = 0;
+        return false;
+      }
+      return true;
+    },
+    undefined,
+    { polling: "raf", timeout: 5_000 },
+  );
   writeFileSync(path.join(hunkRepo, "walk.ts"), walkSource({ 60: "edit refreshed", 130: "edit" }));
   await page.waitForFunction(
     () =>
@@ -489,6 +505,11 @@ test("CR.3 hunk navigation reaches terminal hunks, opens on the first hunk, and 
     await page.evaluate(() => document.querySelector(".changes-diff-lines")?.scrollTop ?? -1),
     0,
     "live refresh yanked the review viewport away from the reader's position",
+  );
+  assert.equal(
+    await hunkLabel(),
+    "Hunk 2 of 2",
+    "live refresh reset the hunk counter while the viewport stayed put",
   );
   await page.close();
 });

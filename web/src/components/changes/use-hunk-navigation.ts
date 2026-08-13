@@ -30,15 +30,21 @@ export function useHunkNavigation({
   // fresh refs that a wipe would destroy (they attach during commit,
   // before effects run).
   useEffect(() => {
-    setCurrentHunk(0);
-    setFocusIndex(hunks[0]?.start ?? 0);
     // Review starts on the first hunk, so "Hunk 1 of N" is what the viewport
     // shows. Only on a real file switch — a live content refresh under the
-    // reader must never yank the view back to the first hunk.
+    // reader must never yank the view back to the first hunk. (The counter
+    // reset used to run unconditionally, so a refresh relabeled the reader's
+    // position "Hunk 1 of N" while the viewport stayed put — BUG-3.)
     if (positionedPath.current !== path) {
       positionedPath.current = path;
+      setCurrentHunk(0);
+      setFocusIndex(hunks[0]?.start ?? 0);
       if (hunks[0]) rowRefs.current[hunks[0].start]?.scrollIntoView({ block: "center" });
+      return;
     }
+    // Same file, fresh content: keep the reader's place; only clamp when the
+    // refresh shrank the hunk count below where they stood.
+    setCurrentHunk((current) => Math.min(current, Math.max(0, hunks.length - 1)));
   }, [path, before, after, hunks, rowRefs, setFocusIndex]);
 
   // Hunk-navigation scrolling is deferred past this click's commit: arriving
