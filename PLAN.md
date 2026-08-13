@@ -2662,6 +2662,81 @@ first, measurement second, new paintings demand-gated.
   (housekeeping); HBar tooltip parks at `left: 40%`. Each is a candidate
   for a follow-up surfacing-parity step.
 
+## Phase OC — OpenCode adapter (opened 2026-08-13; Kyle-directed)
+
+**Product call.** Kyle, from a 2026-08-13 market check: OpenCode (~195k
+GitHub stars) is now the dominant open-source terminal agent — the largest
+user population Mirafold doesn't cover — and becomes the fourth adapter.
+(Same check surfaced that Gemini CLI was retired upstream 2026-06-18,
+replaced by the closed-source Antigravity CLI; Gemini-adapter sunset is
+agreed but explicitly deferred — NOT part of this phase.) The feasibility
+spike is **`server/adapters/opencode.spike.md`** (verdict GREEN): the
+event→`WireMsg` table, the `OPENCODE_CONFIG_CONTENT` MCP-injection path,
+the permission reply round-trip, and the provider-keyed credential-policy
+design all live there — the steps below execute that doc, and its two live
+gates come first.
+
+- [ ] **Step OC.0 — Live gates + shape capture** — **Goal:** de-risk the
+  two spike gates and lock real shapes before adapter code exists.
+  **Build:** run `opencode serve` (scratchpad-local install is fine; no
+  global mutation) and confirm: (1) `OPENCODE_CONFIG_CONTENT` loads the
+  mirafold render MCP and its tools appear (exact tool-name prefix
+  captured); (2) a permission ask surfaces as `permission.updated` headless
+  and the reply endpoint resolves it; plus capture the provider catalog's
+  auth exposure (oauth-vs-api visible without reading `auth.json`?), the
+  streaming part-update granularity, and usage field names. A $0 provider
+  (Ollama or an existing API key) is needed for gate 2 only. **Done when:**
+  the spike doc's "confirm live" flags are each resolved GREEN/RED with
+  captured payloads appended to the doc.
+- [ ] **Step OC.1 — Core adapter + Tier-1** — **Goal:** an OpenCode session
+  behind the `AgentSession` seam, mock-verified. **Build:**
+  `server/adapters/opencode.ts` — spawn `opencode serve` on a free port
+  with a per-session `OPENCODE_SERVER_PASSWORD`, create the session, prompt
+  via `prompt_async` with the pinned `model`, normalize the SSE stream per
+  the spike table (text/reasoning accrual → deltas, tool parts →
+  `tool_use`/`tool_result` with `capOutput`, `todo.updated` → checklist,
+  `session.idle` → `turn_end`, `session.error` → sourced notice),
+  `interrupt()` → abort, `resumeId` = session id. SDK-vs-raw call finalized
+  at install per the spike. **Files:** `server/adapters/opencode.ts`
+  (+ `.test.ts` with a fake SSE feed), `server/protocol.ts` (`AgentName` +
+  fixtures — additive only). **Done when:** Tier-1 drives the full table
+  through a fake event feed; `yarn typecheck` green.
+- [ ] **Step OC.2 — Render MCP + permission bridge** — **Goal:** generative
+  UI and the permission bar, faithfully. **Build:** inject
+  `renderMcpCommand()` under `MIRAFOLD_MCP` via `OPENCODE_CONFIG_CONTENT`
+  (additive merge; user config untouched); recognize mirafold tool parts by
+  the OC.0-confirmed prefix → `generativeUIMsg` (skip the raw tool block);
+  `permission.updated` → `permission_request`, `resolvePermission` → reply
+  `once`/`reject` (**never `always`** — that writes the user's own approval
+  state), `PERMISSION_TIMEOUT_MS` deny-by-default. **Done when:** Tier-1
+  proves render-call recognition + both permission outcomes + timeout; a
+  live render paints end-to-end.
+- [ ] **Step OC.3 — Credential policy + registry wiring** — **Goal:** the
+  policy matrix applied provider-aware, fail-closed. **Build:**
+  `provider-policy.ts` gains the OpenCode provider classification
+  (anthropic/google oauth → blocked; openai oauth → disclosed gray area;
+  api-key/env → `api-key`; local → `local`; **unclassified oauth →
+  blocked**), detection per the OC.0-confirmed path (server catalog
+  preferred; `auth.json` only with explicit consent); model pinned
+  per-prompt so the session provider is the one Mirafold set; registry:
+  `createSession` case, `agentHasCredentials("opencode")`, `Backend.provider`
+  carries the pick. Relay gate unchanged (already refuses `subscription`).
+  **Done when:** Tier-1 covers every matrix row incl. the fail-closed
+  default; blocked/gray states render their correct copy.
+- [ ] **Step OC.4 — Fidelity surface** — **Goal:** what an OpenCode user
+  expects. **Build:** onboarding card + agents-meta entry (gray-area
+  disclosure only when the chosen provider needs it), build/plan agent
+  toggle (per-prompt `agent`), cross-provider model picker from the server
+  catalog, command catalog → `emitPromptOptions` (optional-feature rule if
+  unexposed). **Done when:** onboarding→session flow works live; pickers
+  reflect the user's own config (whitelists, custom agents).
+- [ ] **Step OC.5 — Tier-2/Tier-3 + live end-to-end** — **Goal:** the
+  proof. **Build:** Tier-2 itest against a real spawned `opencode serve`
+  (mock-forced provider if feasible); Tier-3 e2e onboarding→prompt→render;
+  live run on the $0 provider: one tool call, one permission round-trip,
+  one render, usage + resume verified. README/ADAPTERS.md updated. **Done
+  when:** all three tiers green and the live loop observed.
+
 ## Phase PN — Panes (file views beside the transcript)
 
 **Why.** Kyle (2026-07-26): open a file and see it in its own pane. Also the
