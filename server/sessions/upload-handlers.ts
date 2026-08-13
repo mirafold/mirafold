@@ -102,7 +102,12 @@ export function createUploadHandlers({ viewport, getEntry, remote }: UploadDeps)
 
   const armStall = (id: string, up: ActiveUpload) => {
     clearTimeout(up.stall);
+    // unref: a pending stall reaper must never hold the process open — the
+    // daemon's server handle keeps its loop alive, and a test child that
+    // leaves an upload mid-flight would otherwise idle ~30s before exiting
+    // (measured: one leaked pair cost every Tier-1 run 30s — bughunt).
     up.stall = setTimeout(() => fail(id, "upload stalled — dropped"), FILE_UPLOAD_STALL_MS);
+    up.stall.unref?.();
   };
 
   // Completion path, shared by an ordinary final chunk and the zero-byte
@@ -145,7 +150,10 @@ export function createUploadHandlers({ viewport, getEntry, remote }: UploadDeps)
         return;
       }
       if (active.has(msg.id)) {
-        fail(msg.id, "duplicate upload id");
+        // Refuse the NEW begin only — `fail` would tear down the healthy
+        // in-flight upload that legitimately owns this id (bughunt: a client
+        // id-collision destroyed the original transfer mid-flight).
+        viewport({ type: "file_upload_error", id: msg.id, message: "duplicate upload id" });
         return;
       }
       if (active.size >= FILE_UPLOAD_MAX_CONCURRENT) {

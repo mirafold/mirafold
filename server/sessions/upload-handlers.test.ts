@@ -33,7 +33,12 @@ function harness(over: { remote?: boolean; kind?: string; entry?: boolean } = {}
     getEntry: () => entry,
     remote: over.remote ?? false,
   });
-  const cleanup = () => fs.rmSync(stagingDir(sessionId), { recursive: true, force: true });
+  const cleanup = () => {
+    // Dispose first: it clears every armed stall reaper, so a test that
+    // leaves an upload mid-flight can't hold the child process open.
+    handlers.dispose();
+    fs.rmSync(stagingDir(sessionId), { recursive: true, force: true });
+  };
   return { handlers, sent, sessionId, cleanup };
 }
 
@@ -184,6 +189,28 @@ test("concurrency past the cap refuses the extra upload only", () => {
     assert.equal(sent.length, 1);
     assert.equal(sent[0].type, "file_upload_error");
     if (sent[0].type === "file_upload_error") assert.equal(sent[0].id, `c${FILE_UPLOAD_MAX_CONCURRENT}`);
+  } finally {
+    cleanup();
+  }
+});
+
+test("a duplicate begin id is refused without killing the in-flight original", () => {
+  const { handlers, sent, sessionId, cleanup } = harness();
+  try {
+    handlers.begin({ type: "file_upload_begin", id: "u1", name: "keep.txt", size: 11 });
+    handlers.begin({ type: "file_upload_begin", id: "u1", name: "imposter.txt", size: 3 });
+    assert.deepEqual(sent, [
+      { type: "file_upload_error", id: "u1", message: "duplicate upload id" },
+    ]);
+    // The original still completes — its state survived the collision.
+    handlers.chunk({ type: "file_upload_chunk", id: "u1", data: b64("hello ") });
+    handlers.chunk({ type: "file_upload_chunk", id: "u1", data: b64("world") });
+    assert.equal(sent.length, 2);
+    assert.equal(sent[1].type, "file_upload_done");
+    if (sent[1].type === "file_upload_done") {
+      assert.equal(fs.readFileSync(sent[1].path, "utf8"), "hello world");
+      assert.ok(sent[1].path.startsWith(stagingDir(sessionId)));
+    }
   } finally {
     cleanup();
   }
