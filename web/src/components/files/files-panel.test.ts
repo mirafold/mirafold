@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { rootNameOf } from "./FilesPanel";
+import { rootNameOf } from "../../files-tree";
 import { diffTooLarge } from "./FileView";
 import { isCurrentReply } from "./use-file-view";
 

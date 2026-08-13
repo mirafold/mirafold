@@ -2,9 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FsChangeRepo, WireMsg } from "@protocol";
 import type { VersionedReviewSelection } from "../../change-review";
 import {
-  changeCountLabel,
   changeItems,
   changeSetIncomplete,
+  changesHeaderCount,
+  changesStateMessage,
   chooseChange,
   type ChangeItem,
 } from "../../changes";
@@ -409,41 +410,15 @@ export function useChangesController({
 
   const incomplete = changeSetIncomplete(changeSet.repos, changeSet.truncated);
   const hasRepoError = changeSet.repos.some((repo) => Boolean(repo.error));
-  const count = changeCountLabel(changeSet.repos, changeSet.truncated);
-  const headerCount =
-    changeSet.error && changeSet.repos.length === 0
-      ? "unavailable"
-      : changeSet.repos.length === 0
-        ? "no repository"
-        : count;
-
-  let stateMessage: { title: string; detail: string } | undefined;
-  if (!changeSet.loaded) {
-    stateMessage = {
-      title: "Loading workspace changes…",
-      detail: "Comparing the working tree with Git HEAD.",
-    };
-  } else if (changeSet.repos.length === 0 && !changeSet.error) {
-    stateMessage = {
-      title: "No Git repositories found",
-      detail: "This workspace is not inside a Git repository and contains no discoverable repositories.",
-    };
-  } else if (items.length === 0 && (hasRepoError || changeSet.error)) {
-    stateMessage = {
-      title: "Changes could not be loaded",
-      detail: changeSet.error ?? "Git could not inspect one or more repositories safely.",
-    };
-  } else if (items.length === 0 && incomplete) {
-    stateMessage = {
-      title: "Change list is incomplete",
-      detail: "No changed files are visible, but Git could not return a complete comparison.",
-    };
-  } else if (items.length === 0) {
-    stateMessage = {
-      title: "Working tree is clean",
-      detail: "No files differ from Git HEAD in this workspace.",
-    };
-  }
+  const headerCount = changesHeaderCount(changeSet.repos, changeSet.truncated, changeSet.error);
+  const stateMessage = changesStateMessage({
+    loaded: changeSet.loaded,
+    repoCount: changeSet.repos.length,
+    error: changeSet.error,
+    itemCount: items.length,
+    hasRepoError,
+    incomplete,
+  });
 
   return {
     changeSet,

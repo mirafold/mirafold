@@ -8,6 +8,7 @@ import {
   childDirPaths,
   emptyDirStore,
   pruneDirStore,
+  rootNameOf,
   type DirStore,
 } from "../../files-tree";
 import { useEscapeKey } from "../../use-escape";
@@ -15,6 +16,7 @@ import { useFocusTrap } from "../../use-focus-trap";
 import { useIsPhone } from "../../use-is-phone";
 import { FileView } from "./FileView";
 import { ExplorerChevron, ExplorerNodeGlyph } from "./ExplorerNodeGlyph";
+import { DirChildren } from "./FilesTreeRows";
 import { RefreshIcon } from "../RefreshIcon";
 import { useFileView } from "./use-file-view";
 
@@ -37,19 +39,6 @@ import { useFileView } from "./use-file-view";
 // since-switched session) is dropped, never rendered.
 
 type FsDir = Extract<WireMsg, { type: "fs_dir" }>;
-
-/** The root row shows just the checked-out folder's NAME; the full ~-path
- *  stays in its tooltip. Pure, for Tier-1. */
-export const rootNameOf = (rootLabel?: string): string => {
-  if (!rootLabel) return "files";
-  const windowsStyle =
-    /^[A-Za-z]:[\\/]/.test(rootLabel) || rootLabel.startsWith("\\\\") || rootLabel.startsWith("~\\");
-  const trimmed = windowsStyle
-    ? rootLabel.replace(/[\\/]+$/, "")
-    : rootLabel.replace(/\/+$/, "");
-  if (!trimmed || /^[A-Za-z]:$/.test(trimmed)) return rootLabel;
-  return trimmed.split(windowsStyle ? /[\\/]/ : /\//).pop() || rootLabel;
-};
 
 // The open-panel prefetch fetches the root's child dirs so their first
 // expand is instant — capped under the server's token bucket (default 32/s)
@@ -472,117 +461,4 @@ function ExplorerCloseIcon() {
   );
 }
 
-/** Quiet vertical hierarchy guides, like the optional guides in established
- * IDE project trees. The width keeps the established 12px-per-depth rhythm;
- * the lazy tree's data and interaction model do not know about them. */
-function ExplorerIndent({ depth }: { depth: number }) {
-  return (
-    <span
-      className="files-indent-guides"
-      style={{ width: `${depth * 12}px` }}
-      aria-hidden="true"
-    />
-  );
-}
 
-// One directory's children, rendered from the store — recursion IS the tree
-// (E2.2): an expanded child dir renders its own DirChildren, which shows a
-// loading row until its fs_dir lands, then its listing. The wire stays
-// non-recursive; nesting exists only here.
-function DirChildren({
-  path,
-  depth,
-  store,
-  expanded,
-  onToggleDir,
-  onOpenFile,
-}: {
-  path: string;
-  depth: number;
-  store: DirStore;
-  expanded: Set<string>;
-  onToggleDir: (path: string) => void;
-  onOpenFile: (path: string, status?: string) => void;
-}) {
-  const st = store.get(path);
-  const pad = { paddingLeft: `${depth * 12 + 6}px` };
-  if (!st?.entries) {
-    // Nothing usable yet: an inline loading row while the fetch flies, an
-    // error row if it refused. Non-interactive rows are aria-disabled
-    // treeitems — still part of the tree for the reading order.
-    if (!st) return null;
-    return (
-      <ul className="files-ul" role="group">
-        <li role="treeitem" aria-disabled="true" className="files-note-row" style={pad}>
-          {st.loading ? "…" : (st.error ?? "…")}
-        </li>
-      </ul>
-    );
-  }
-  return (
-    <ul className="files-ul" role="group">
-      {st.entries.length === 0 && (
-        <li role="treeitem" aria-disabled="true" className="files-note-row" style={pad}>
-          (empty)
-        </li>
-      )}
-      {st.entries.map((e) => {
-        const p = path ? `${path}/${e.name}` : e.name;
-        if (e.kind === "dir") {
-          const isOpen = expanded.has(p);
-          return (
-            <li key={e.name} role="treeitem" aria-expanded={isOpen}>
-              <button className="files-row files-dir" onClick={() => onToggleDir(p)}>
-                <ExplorerIndent depth={depth} />
-                <span className="files-caret">
-                  <ExplorerChevron open={isOpen} />
-                </span>
-                <ExplorerNodeGlyph name={e.name} entryKind="dir" open={isOpen} />
-                <span className="files-name">{e.name}</span>
-              </button>
-              {isOpen && (
-                <DirChildren
-                  path={p}
-                  depth={depth + 1}
-                  store={store}
-                  expanded={expanded}
-                  onToggleDir={onToggleDir}
-                  onOpenFile={onOpenFile}
-                />
-              )}
-            </li>
-          );
-        }
-        // Files and symlinks are both leaves (E2.1's kind rule); a symlink
-        // click goes through fs_read like any file — the daemon's jail
-        // decides whether its target is readable.
-        return (
-          <li key={e.name} role="treeitem">
-            <button
-              className="files-row files-file-row"
-              onClick={() => onOpenFile(p, e.status)}
-            >
-              <ExplorerIndent depth={depth} />
-              <span className="files-caret" />
-              <ExplorerNodeGlyph name={e.name} entryKind={e.kind} />
-              <span className="files-name">{e.name}</span>
-              {e.status && (
-                <span className={`files-status files-status-${e.status}`} title={statusLabel(e.status)}>
-                  {e.status}
-                </span>
-              )}
-            </button>
-          </li>
-        );
-      })}
-      {st.truncated && (
-        <li role="treeitem" aria-disabled="true" className="files-note-row" style={pad}>
-          …more entries than can be listed
-        </li>
-      )}
-    </ul>
-  );
-}
-
-const statusLabel = (s: string) =>
-  ({ M: "modified", A: "added", D: "deleted", U: "untracked" })[s] ?? s;

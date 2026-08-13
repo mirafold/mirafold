@@ -99,3 +99,16 @@ export function childDirPaths(parent: string, entries: FsDirEntry[]): string[] {
     .filter((e) => e.kind === "dir")
     .map((e) => (parent ? `${parent}/${e.name}` : e.name));
 }
+
+/** The root row shows just the checked-out folder's NAME; the full ~-path
+ *  stays in its tooltip. Pure, for Tier-1. */
+export const rootNameOf = (rootLabel?: string): string => {
+  if (!rootLabel) return "files";
+  const windowsStyle =
+    /^[A-Za-z]:[\\/]/.test(rootLabel) || rootLabel.startsWith("\\\\") || rootLabel.startsWith("~\\");
+  const trimmed = windowsStyle
+    ? rootLabel.replace(/[\\/]+$/, "")
+    : rootLabel.replace(/\/+$/, "");
+  if (!trimmed || /^[A-Za-z]:$/.test(trimmed)) return rootLabel;
+  return trimmed.split(windowsStyle ? /[\\/]/ : /\//).pop() || rootLabel;
+};

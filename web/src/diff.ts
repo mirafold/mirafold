@@ -49,7 +49,19 @@ export function diffLines(oldText: string, newText: string): DiffLine[] {
   }
   while (i < n) out.push({ sign: "-", text: a[i++] });
   while (j < m) out.push({ sign: "+", text: b[j++] });
+  return markNoNewline(out, oldSource.endsWithNewline, newSource.endsWithNewline);
+}
 
+/** The `\ No newline at end of file` reconciliation, applied to the walked
+ *  diff in place: tag each side's final source line when unterminated, and
+ *  split the one shape the walk can't express — equal final text whose
+ *  TERMINATION differs, which is a real one-line replacement, never a fake
+ *  blank source line at N+1. */
+function markNoNewline(
+  out: DiffLine[],
+  oldEndsWithNewline: boolean,
+  newEndsWithNewline: boolean,
+): DiffLine[] {
   const findLastSourceLine = (excluded: DiffLine["sign"]): number => {
     for (let index = out.length - 1; index >= 0; index -= 1) {
       if (out[index].sign !== excluded) return index;
@@ -59,14 +71,11 @@ export function diffLines(oldText: string, newText: string): DiffLine[] {
   const oldLast = findLastSourceLine("+");
   const newLast = findLastSourceLine("-");
   if (
-    oldSource.endsWithNewline !== newSource.endsWithNewline &&
+    oldEndsWithNewline !== newEndsWithNewline &&
     oldLast >= 0 &&
     oldLast === newLast &&
     out[oldLast].sign === " "
   ) {
-    // Equal final text with different termination is still a real one-line
-    // replacement. A trailing split sentinel must never become a fake blank
-    // source line with line number N+1.
     const text = out[oldLast].text;
     out.splice(
       oldLast,
@@ -74,27 +83,19 @@ export function diffLines(oldText: string, newText: string): DiffLine[] {
       {
         sign: "-",
         text,
-        ...(!oldSource.endsWithNewline ? { noNewline: true as const } : {}),
+        ...(!oldEndsWithNewline ? { noNewline: true as const } : {}),
       },
       {
         sign: "+",
         text,
-        ...(!newSource.endsWithNewline ? { noNewline: true as const } : {}),
+        ...(!newEndsWithNewline ? { noNewline: true as const } : {}),
       },
     );
   } else {
-    if (
-      oldLast >= 0 &&
-      !oldSource.endsWithNewline &&
-      out[oldLast].sign !== " "
-    ) {
+    if (oldLast >= 0 && !oldEndsWithNewline && out[oldLast].sign !== " ") {
       out[oldLast] = { ...out[oldLast], noNewline: true };
     }
-    if (
-      newLast >= 0 &&
-      !newSource.endsWithNewline &&
-      out[newLast].sign !== " "
-    ) {
+    if (newLast >= 0 && !newEndsWithNewline && out[newLast].sign !== " ") {
       out[newLast] = { ...out[newLast], noNewline: true };
     }
   }

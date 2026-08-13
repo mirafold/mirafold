@@ -79,3 +79,60 @@ export function repoLabel(root: string, workspaceLabel?: string): string {
   const trimmed = workspaceLabel.replace(windows ? /[\\/]+$/ : /\/+$/, "");
   return trimmed.split(windows ? /[\\/]/ : "/").pop() || "Repository";
 }
+
+/** The Changes header's count slot: an honest word when there's nothing to
+ *  count (no repo, or the whole comparison failed), else the count label. */
+export function changesHeaderCount(
+  repos: readonly FsChangeRepo[],
+  truncated: boolean,
+  error: string | undefined,
+): string {
+  if (error && repos.length === 0) return "unavailable";
+  if (repos.length === 0) return "no repository";
+  return changeCountLabel(repos, truncated);
+}
+
+/** The panel's one empty/exception message, or undefined when the list
+ *  itself is the content — every state names what the reader can conclude. */
+export function changesStateMessage(inputs: {
+  loaded: boolean;
+  repoCount: number;
+  error?: string;
+  itemCount: number;
+  hasRepoError: boolean;
+  incomplete: boolean;
+}): { title: string; detail: string } | undefined {
+  const { loaded, repoCount, error, itemCount, hasRepoError, incomplete } = inputs;
+  if (!loaded) {
+    return {
+      title: "Loading workspace changes…",
+      detail: "Comparing the working tree with Git HEAD.",
+    };
+  }
+  if (repoCount === 0 && !error) {
+    return {
+      title: "No Git repositories found",
+      detail:
+        "This workspace is not inside a Git repository and contains no discoverable repositories.",
+    };
+  }
+  if (itemCount === 0 && (hasRepoError || error)) {
+    return {
+      title: "Changes could not be loaded",
+      detail: error ?? "Git could not inspect one or more repositories safely.",
+    };
+  }
+  if (itemCount === 0 && incomplete) {
+    return {
+      title: "Change list is incomplete",
+      detail: "No changed files are visible, but Git could not return a complete comparison.",
+    };
+  }
+  if (itemCount === 0) {
+    return {
+      title: "Working tree is clean",
+      detail: "No files differ from Git HEAD in this workspace.",
+    };
+  }
+  return undefined;
+}
