@@ -14,14 +14,24 @@ import {
   reviewHunks,
   reviewLines,
   reviewSelection,
-  reviewScrollBehavior,
   type VersionedReviewSelection,
 } from "../../change-review";
 import { formatBytes } from "../ToolBlock";
 import { diffTooLarge, FileView, type FileViewState } from "../files/FileView";
 import { ReviewRows } from "./ReviewRows";
+import { useHunkNavigation } from "./use-hunk-navigation";
 
 type DiffState = Extract<FileViewState, { kind: "diff" }>;
+
+function TruncationNote({ state }: { state: DiffState }) {
+  if (!state.beforeTruncatedBytes && !state.afterTruncatedBytes) return null;
+  return (
+    <div className="fv-note">
+      Diff is truncated — {formatBytes((state.beforeTruncatedBytes ?? 0) + (state.afterTruncatedBytes ?? 0))}
+      {" "}elided. Changes past the cap may be overstated.
+    </div>
+  );
+}
 
 export function ReviewDiff({
   state,
@@ -46,12 +56,17 @@ export function ReviewDiff({
   );
   const hunks = useMemo(() => reviewHunks(lines), [lines]);
   const language = useMemo(() => languageForPath(state.path), [state.path]);
-  const [currentHunk, setCurrentHunk] = useState(0);
   const [focusIndex, setFocusIndex] = useState(0);
   const rowRefs = useRef<Array<HTMLDivElement | null>>([]);
   const dragAnchor = useRef<number | null>(null);
-  const pendingHunkScroll = useRef<number | null>(null);
-  const positionedPath = useRef<string | null>(null);
+  const { currentHunk, setCurrentHunk, goToHunk } = useHunkNavigation({
+    path: state.path,
+    before: state.before,
+    after: state.after,
+    hunks,
+    rowRefs,
+    setFocusIndex,
+  });
 
   const currentSelection =
     selection &&
@@ -63,37 +78,6 @@ export function ReviewDiff({
   const selectedLines = currentSelection
     ? lines.slice(currentSelection.start, currentSelection.end + 1)
     : [];
-
-  // Row refs are NOT wiped here: removed rows already null their slots via
-  // React's ref detach, and the effects below need the fresh refs that a
-  // wipe would destroy (they attach during commit, before effects run).
-  useEffect(() => {
-    setCurrentHunk(0);
-    setFocusIndex(hunks[0]?.start ?? 0);
-    // Review starts on the first hunk, so "Hunk 1 of N" is what the viewport
-    // shows. Only on a real file switch — a live content refresh under the
-    // reader must never yank the view back to the first hunk.
-    if (positionedPath.current !== state.path) {
-      positionedPath.current = state.path;
-      if (hunks[0]) rowRefs.current[hunks[0].start]?.scrollIntoView({ block: "center" });
-    }
-  }, [state.path, state.before, state.after, hunks]);
-
-  // Hunk-navigation scrolling is deferred past this click's commit: arriving
-  // at a terminal hunk disables the very button being clicked, Chromium blurs
-  // a focused element that becomes disabled, and that focus change cancels a
-  // smooth scroll already in flight (probed 2026-08-12 — the animation dies
-  // at zero pixels). After the commit the blur has already happened.
-  useEffect(() => {
-    const target = pendingHunkScroll.current;
-    if (target === null) return;
-    pendingHunkScroll.current = null;
-    const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-    rowRefs.current[target]?.scrollIntoView({
-      block: "center",
-      behavior: reviewScrollBehavior(reducedMotion),
-    });
-  }, [currentHunk]);
 
   useEffect(() => {
     const finishDrag = () => {
@@ -142,15 +126,6 @@ export function ReviewDiff({
     }
   };
 
-  const goToHunk = (index: number) => {
-    const next = Math.max(0, Math.min(hunks.length - 1, index));
-    const hunk = hunks[next];
-    if (!hunk) return;
-    pendingHunkScroll.current = hunk.start;
-    setCurrentHunk(next);
-    setFocusIndex(hunk.start);
-  };
-
   // "Select hunk" toggles: clicking it while its exact range is selected
   // unselects. Compare against the CLAMPED range — an over-cap hunk selects
   // fewer lines than it spans, and that clamped selection must still read
@@ -186,12 +161,7 @@ export function ReviewDiff({
   if (rowCountTooLarge) {
     return (
       <>
-        {(state.beforeTruncatedBytes || state.afterTruncatedBytes) && (
-          <div className="fv-note">
-            Diff is truncated — {formatBytes((state.beforeTruncatedBytes ?? 0) + (state.afterTruncatedBytes ?? 0))}
-            {" "}elided. Changes past the cap may be overstated.
-          </div>
-        )}
+        <TruncationNote state={state} />
         <div className="fv-note">Too many lines for interactive review — showing current contents.</div>
         <pre className="tool-code fv-content">{state.after}</pre>
       </>
@@ -202,12 +172,7 @@ export function ReviewDiff({
 
   return (
     <div className="changes-diff-review">
-      {(state.beforeTruncatedBytes || state.afterTruncatedBytes) && (
-        <div className="fv-note">
-          Diff is truncated — {formatBytes((state.beforeTruncatedBytes ?? 0) + (state.afterTruncatedBytes ?? 0))}
-          {" "}elided. Changes past the cap may be overstated.
-        </div>
-      )}
+      <TruncationNote state={state} />
       <div className="changes-review-tools">
         <div className="changes-hunk-nav" aria-label="Changed hunk navigation">
           <button
