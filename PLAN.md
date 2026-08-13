@@ -194,24 +194,10 @@ investigation, the CI-flake breakdown, and finished stretch-goal specs) ·
   and closed in Step L.4. → **PLAN-ARCHIVE.md**.
 
 - [x] **Step UX.10 — Make collapse-on-finalize survive narrating engines** —
-  completed 2026-08-12, from Kyle's live Codex report (every shell/apply_patch
-  call visible individually). Diagnosis: the "worked · N actions" fold only
-  grouped ≥2 *contiguous* tool rows, and (a) Codex narrates a reasoning item
-  before nearly every command — each thinking row broke contiguity, leaving
-  unfoldable singletons; (b) the Codex adapter branded every nonzero exit an
-  error (`codex-events.ts`), and error rows deliberately stay expanded and
-  break runs, so routine probes (grep no-match, failing test runs) shattered
-  the rest. Fixes: `groupSettledTools` now absorbs INTERIOR thinking into the
-  fold in true transcript order (expansion replays narration between calls;
-  leading/trailing thinking keeps its own row; text/notice/failure boundaries
-  unchanged — nothing reorders), and Codex `status:"completed"` with nonzero
-  exit is no longer an error — the exit code is annotated in the output
-  (`(exit 1)`), matching the Codex TUI's own presentation; `status:"failed"`
-  still is. Claude sessions with interleaved thinking benefit identically;
-  Gemini emits no thinking rows and already folded best. Pinned in Tier-1
-  (5 new grouping cases, 1 codex exit case) and e2e (mock now narrates
-  between commands; the fold must absorb it and replay it on expansion).
-  Tier-1 672, Tier-2 150, app 54, changes+phone 20 — all pass.
+  done 2026-08-12; the "worked · N actions" fold now absorbs interior
+  thinking in true transcript order, and Codex completed-with-nonzero-exit
+  is annotated, not branded an error. Pinned in Tier-1 + e2e. →
+  **PLAN-ARCHIVE.md, "Moved 2026-08-12 (Changes polish + branch closure)."**
 
 ---
 
@@ -3250,15 +3236,8 @@ half of BUSINESS.md's former editing/diff-review non-goal. Mirafold still does
 not become a code editor, and it never writes, accepts, rejects, reverts, or
 attributes a working-tree change on the user's behalf.
 
-**Original verified starting state (before CR.1).**
-`web/src/components/files/FilesPanel.tsx` provided a shell-owned, read-only,
-lazy tree and one-file drill-in; changed files led with a
-HEAD-versus-working-tree diff. `FileView.tsx` was the pure presenter, while
-`FilesPanel` owned the one outstanding read/diff request. The server could
-decorate one requested directory with Git status and return one file's
-`{before, after}` diff, but no request returned the complete changed set. No
-Changes control, Changes surface, review progress, hunk navigation, or
-selected-code feedback path existed at that point.
+**Original verified starting state (before CR.1)** → archived verbatim in
+**PLAN-ARCHIVE.md, "Moved 2026-08-12 (Changes polish + branch closure)."**
 
 **Honesty boundary.** The surface is named **Workspace changes** in its own
 chrome and means exactly "this Git working tree versus HEAD." It must never say
@@ -3343,110 +3322,64 @@ both acceptance requirements, not a later responsive cleanup.
   **PLAN-ARCHIVE.md, “Moved 2026-08-12 (Changes correctness remediation —
   CR.5).”**
 
-- [x] **Step CR.6 — Whole-branch security + test audits** — completed
-  2026-08-12. Security audit of the branch delta found no exploitable
-  vulnerability and no new ship-time gap: the read-only Changes surface reuses
-  the existing jail (`inside()`), secret-file denial, `repoTrust` program
-  neutralization, per-daemon revision key, and byte/count caps; verified by
-  trace and by re-probing the subdirectory jail. Test audit (mutation-based)
-  confirmed seven load-bearing invariants each fail their test when broken, and
-  found ONE untested guard: `fileIsReviewed`'s `revision &&` floor — a file with
-  no server-minted revision could read as reviewed with the guard removed and
-  all five existing tests still passed. Pinned by two assertions in
-  `web/src/review-progress.test.ts` (fails under the mutation, passes clean).
-  No product bug, no fragile/worthless/redundant test found. Tier-1 666 pass,
-  Tier-2 150 pass.
+- [x] **Step CR.6 — Whole-branch security + test audits** — done 2026-08-12;
+  no exploitable vulnerability, one untested guard found and pinned. →
+  **PLAN-ARCHIVE.md, "Moved 2026-08-12 (Changes polish + branch closure)."**
 
 - [x] **Step CR.7 — Terminal hunk navigation + first-hunk positioning** —
-  completed 2026-08-12, from Kyle's live report ("says 4, shows 3, next does
-  nothing at the last hunk"). Root cause, proven by headless-Chrome probes
-  against the real daemon: `goToHunk`'s smooth `scrollIntoView` starts before
-  the click's React commit, and arriving at a terminal hunk disables the very
-  button being clicked — Chromium blurs a focused element that becomes
-  disabled, and that focus change cancels the in-flight smooth scroll at zero
-  pixels. Symmetric at both ends (Next→last, Previous→first); invisible under
-  reduced motion (instant scroll finishes pre-commit), which is why the
-  existing label-only e2e assertions passed. Fixes: hunk scrolling now runs
-  post-commit from a pending-scroll effect in `ReviewDiff`; the stale
-  `rowRefs` wipe (which destroyed freshly attached refs) is removed; a diff
-  opens positioned on its first hunk so "Hunk 1 of N" is what the viewport
-  shows; and `useFileView.openFile` keeps a same-path resolved view mounted
-  through a re-request, so live/manual refresh neither flickers through
-  "loading" nor repositions the reader. Pinned by a new geometry-asserting
-  e2e ("CR.3 hunk navigation reaches terminal hunks…", `hunk-repo` fixture):
-  every jump asserts the hunk's rows are inside the scroller's visible box,
-  never just the label. changes 11/11, app 54/54, phone 8/8, Tier-1 clean.
+  done 2026-08-12; blur-on-disable was killing the terminal smooth scroll
+  (probed); scrolling now runs post-commit, diffs open on their first hunk,
+  and same-path refreshes keep the view mounted. Geometry-asserting e2e. →
+  **PLAN-ARCHIVE.md, "Moved 2026-08-12 (Changes polish + branch closure)."**
 
-- [x] **Step CR.8 — Resizable desktop review panel** — completed 2026-08-12
-  (Kyle-directed). The desktop Changes panel gains a drag handle on its
-  transcript edge: floor = the untouched default width (`clamp(370px, 55vw,
-  760px)`), ceiling = `calc(100% - 380px)` — an absolute phone-sized
-  conversation reserve rather than a screen fraction, because a percentage
-  leaves a useless sliver on laptops and cramped space on ultrawides; CSS
-  `clamp()` lets the floor win on windows too narrow for both. Drag mutates
-  the panel style directly (no per-frame React commit through a thousand
-  diff rows); the chosen width persists in `localStorage`
-  (`mirafold-changes-panel-width`); double-click/Home resets; the handle is
-  a keyboard `role="separator"` (arrows step 32px, End = max) with live
-  aria-value geometry. Phone remains the full-screen takeover — no handle
-  rendered and a CSS pin. e2e covers drag clamping both directions, keyboard
-  steps, persistence across reload, reset, axe, and no side-scroll. changes
-  12/12, phone 8/8, app 54/54, Tier-1 clean.
+- [x] **Step CR.8 — Resizable desktop review panel** — done 2026-08-12; drag
+  handle with floor = default width, ceiling = 100% − 380px conversation
+  reserve, persisted per browser; keyboard separator with live aria
+  geometry. e2e-pinned. → PLAN-ARCHIVE.md (same section).
 
 - [x] **Step CR.9 — Diff-gutter Changes glyph, size-matched to Files** —
-  completed 2026-08-12 (Kyle-directed, replacing the box-with-± mark that
-  read as a sparkle box). The new `ChangesGlyph` is a unified-diff fragment
-  (deleted line, added line, trailing context, gutter marks) drawn on
-  `FilesGlyph`'s exact 14×20 artwork box with the same 1.5 stroke, so equal
-  `size` props render the same footprint — equal width, height, and stroke
-  weight (a first 20-wide draft rendered wider than Files; corrected same
-  day). Activity bar uses the same 28 default for both and its gap widened
-  4→28px in two Kyle-directed rounds (the two toggles must read clearly
-  separate); the status-bar (phone) pair was already 20/20. Verified by
-  headless screenshots of the rendered rail.
+  done 2026-08-12; unified-diff fragment on FilesGlyph's 14×20 artwork box,
+  rail gap 4→28px. → PLAN-ARCHIVE.md (same section).
 
 - [x] **Step CR.10 — Dock the hunk toolbar; align the progress buttons** —
-  completed 2026-08-12 (Kyle-directed, two rounds: first halve the band,
-  then remove it). The sticky hunk toolbar was a floating rounded card
-  inside the padded diff scroller; the scroller's top padding read as a
-  see-through band with sliced diff rows visible through it. Now the
-  scroller has zero top padding and the toolbar is a docked full-bleed
-  strip (negative side margins cancel the scroller padding; border-bottom,
-  no radius/shadow) glued under the review-progress bar, desktop and phone.
-  "Next unreviewed" also overhung the diff rows' right edge, and a first
-  fix (measuring the wrapper's scrollbar into a CSS var) left the panel-
-  height scrollbar running up beside the docked toolbar. Final
-  architecture (Kyle-approved on sight): the diff's ONE vertical scroller
-  is the bordered code card itself (`.changes-diff-lines`, flex column via
-  `:has()` on the wrapper) — its scrollbar starts under the hunk toolbar
-  and rides inside the card border, so no measurement is needed; the
-  wrapper and progress bar share symmetric 9px side insets (7px phone), so
-  "Next unreviewed" ends exactly on the card's border line and mirrors
-  "Mark reviewed". Phone draft-mode scroll room moved into the card.
-  Measured: button edge == card border; card top 6px under the toolbar.
-  changes+phone e2e 20/20.
+  done 2026-08-12; the diff's one scroller is the bordered code card
+  itself, the toolbar docks outside it, and the wrapper + progress bar
+  share symmetric 9px insets (7px phone). → PLAN-ARCHIVE.md (same section).
 
-- [x] **Step CR.11 — "Select hunk" toggles** — completed 2026-08-12
-  (Kyle-directed). Clicking the button while its exact range is selected
-  unselects and clears the notice; the label swaps to "Unselect hunk" with
-  `aria-pressed`. The match compares against the CLAMPED selection range,
-  so an over-80-line hunk still reads as selected and can be unselected.
-  Pinned in the hunk-navigation e2e; changes+phone 20/20, Tier-1 672.
+- [x] **Step CR.11 — "Select hunk" toggles** — done 2026-08-12; clicking
+  the exact (clamped) selected range unselects, with aria-pressed and a
+  label swap. e2e-pinned. → PLAN-ARCHIVE.md (same section).
+
+- [x] **Step CR.12 — Branch bughunt (post-audit delta)** — done 2026-08-12;
+  two confirmed resize-handle bugs fixed with born-failing pins (stale
+  separator aria after drags; a bare click freezing the responsive width),
+  one candidate disproven by forced reproduction. → PLAN-ARCHIVE.md (same
+  section). **WATCH ITEM (live):** one unattributed intermittent
+  full-ordered Tier-3 failure — observed 1-in-6 runs on 2026-08-12, failing
+  test unnamed (the first run's log was summary-filtered); every later run
+  keeps the complete TAP log, so the next occurrence names itself.
+
+- [x] **Step CR.13 — Security audit of the post-CR.6 delta** — done
+  2026-08-12; every new input path traced with concrete values, ZERO
+  findings in every class, nothing deferred. → PLAN-ARCHIVE.md (same
+  section).
+
+- [x] **Step CR.14 — Test audit of the post-CR.6 delta** — done 2026-08-12;
+  five falsifications each fail exactly the right tests; one proven gap
+  closed (the fold label is now pinned to count actions only). Standing
+  note: hunk navigation's deferred scroll is redundant protection since
+  CR.10's layout removed the blur-cancellation trigger — kept deliberately.
+  → PLAN-ARCHIVE.md (same section).
 
 ## Stylesheet decomposition (2026-08-12, Kyle-directed)
 
 - [x] **Split the 5,639-line styles.css into an import spine + 15 surface
-  files** (`web/src/styles/01-frame.css` … `15-phone.css`), one per surface
-  in the 2026-07-25 ordering, with the phone media block staying one file,
-  last. `styles.css` is now the numbered @import spine and carries the
-  surface map and the two order-sensitive cascade notes. Pure relocation —
-  proven twice: the concatenation of the split files is byte-identical to
-  the original source, and the built dist CSS bundle is byte-identical to
-  the pre-split build (comment edits vanish in minification). Deliberately
-  NO dedup/consolidation (small savings, real visual-regression risk) and
-  NO phone-override colocation yet — colocating would dismantle the
-  one-phone-block convention and is a separately-verified decision for
-  later. e2e 74/74 (changes/app/phone), Tier-1 672/672.
+  files** — done 2026-08-12; pure relocation, proven byte-identical at the
+  source and in the built bundle. Standing decisions: NO dedup/consolidation
+  (small savings, real visual-regression risk), and NO phone-override
+  colocation yet — it would dismantle the one-phone-block convention and is
+  a separately-verified decision for later. → **PLAN-ARCHIVE.md, "Moved
+  2026-08-12 (Changes polish + branch closure)."**
 
 ## Phase PN — Panes (file views beside the transcript)
 
