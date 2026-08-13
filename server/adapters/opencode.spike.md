@@ -192,6 +192,14 @@ The relay gate is untouched: `allowedOverRelay` already refuses
 
 ## SDK vs raw HTTP — recommendation: take `@opencode-ai/sdk`
 
+*(REVERSED at OC.1, 2026-08-13: the adapter drives the surface RAW, zero
+dependencies. The live probe below caught the published types drifting from
+the real server — `permission.asked` vs the types' `permission.updated` —
+which inverts this section's core argument: the generated types are not
+compile-time truth, and the shapes we actually rely on are the OC.0
+captures. Six endpoints + an SSE parse is squarely self-writable.
+opencode-client.ts records the decision at the seam.)*
+
 The dependency test, run explicitly: this is a **vendor's own SDK** (the
 "take it" case), and the sliver argument cuts the other way here — the value
 isn't the fetch wrapper (self-writable in an afternoon), it's the

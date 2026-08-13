@@ -93,6 +93,12 @@ const SUBSCRIPTION_LOCAL_OK: Record<AgentName, boolean> = {
   "claude-code": false,
   "gemini-cli": false,
   codex: true,
+  // OpenCode is a multi-provider harness: whether a subscription OAuth may
+  // drive it locally is a fact about the UNDERLYING provider, not the agent
+  // (anthropic/google → prohibited in writing; openai → the disclosed gray
+  // area; copilot and others → unread, so blocked). Until PLAN OC.3 lands the
+  // provider-keyed classification here, the agent-level answer fails closed.
+  opencode: false,
 };
 
 /** May a session with this credential run for LOCAL (free) use? */

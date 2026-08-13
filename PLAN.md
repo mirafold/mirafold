@@ -2700,7 +2700,19 @@ gates come first.
   (Ollama or an existing API key) is needed for gate 2 only. **Done when:**
   the spike doc's "confirm live" flags are each resolved GREEN/RED with
   captured payloads appended to the doc.
-- [ ] **Step OC.1 — Core adapter + Tier-1** — **Goal:** an OpenCode session
+- [x] **Step OC.1 — Core adapter + Tier-1** — completed 2026-08-13:
+  `opencode.ts` (session: lazy spawn-with-retry latch, serial queue,
+  first-turn guidance flipped only after prompt acceptance, permission
+  bridge with deny-by-default timeout + external-reply handling +
+  interrupt grace fallback) + `opencode-events.ts` (mapper: delta/snapshot
+  text accrual, tool lifecycle, mirafold `render_*` recognition with
+  honest fallback, todo checklist, per-turn usage summing) +
+  `opencode-client.ts` (raw HTTP+SSE transport — the spike's SDK
+  recommendation REVERSED with the reason recorded there: live shapes
+  beat drifting generated types). 22 Tier-1 tests on captured shapes;
+  full Tier-1 suite 746/746; typecheck green. `AgentName` grew additively
+  (policy row fails closed, agent not in ADAPTER_AGENTS, so nothing is
+  offered before OC.3/OC.4). — **Goal:** an OpenCode session
   behind the `AgentSession` seam, mock-verified. **Build:**
   `server/adapters/opencode.ts` — spawn `opencode serve` on a free port
   with a per-session `OPENCODE_SERVER_PASSWORD`, create the session, prompt

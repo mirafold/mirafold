@@ -9,6 +9,7 @@ export const LABEL: Record<AgentName, string> = {
   "claude-code": "Claude Code",
   codex: "Codex",
   "gemini-cli": "Gemini CLI",
+  opencode: "OpenCode",
 };
 
 // R.4i/R.4k: the hint for a NO-credentials agent — the one action that makes it
@@ -26,6 +27,9 @@ export const CONNECT_HINT: Record<AgentName, string> = {
     "run `codex login` (ChatGPT subscription — not clearly permitted by OpenAI's terms, tolerated in practice; your account, your call) or set OPENAI_API_KEY (platform.openai.com/api-keys) — or point Codex at a local model (Ollama/LM Studio/vLLM) or any OpenAI-compatible provider (e.g. OpenRouter) via ~/.codex/config.toml (recipe: docs/local-models.md)",
   "gemini-cli":
     "set GEMINI_API_KEY (free key at aistudio.google.com/apikey) — Gemini has no local path",
+  // Placeholder until PLAN OC.4 writes the real onboarding surface (the
+  // agent isn't offered before then — not in ADAPTER_AGENTS).
+  opencode: "install opencode (opencode.ai) and connect a provider with `opencode auth login`",
 };
 
 // The hint for a BLOCKED agent — a prohibited subscription credential is

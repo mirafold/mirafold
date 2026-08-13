@@ -1,0 +1,285 @@
+import path from "node:path";
+import { mkdirSync } from "node:fs";
+import type { WireMsg } from "../protocol";
+import { RENDER_GUIDANCE } from "../render-tools";
+import { envInt } from "../env";
+import { agentBin, errText, PERMISSION_TIMEOUT_MS, type AgentSession } from "./types";
+import { AsyncQueue, CLOSE } from "./async-queue";
+import { ResumeIdState } from "./resume-id";
+import { renderMcpCommand, MIRAFOLD_MCP } from "./render-mcp-cmd";
+import {
+  OpenCodeServerProcess,
+  type OpenCodeEvent,
+  type OpenCodeTransport,
+} from "./opencode-client";
+import { OpenCodeEventMapper } from "./opencode-events";
+
+// An aborted turn normally ends via the engine's own `session.idle`; this is
+// the honest fallback if that event never comes, so an interrupt can't wedge
+// the serial prompt queue forever.
+const INTERRUPT_GRACE_MS = envInt("MIRAFOLD_OPENCODE_INTERRUPT_GRACE_MS", 5_000);
+
+/**
+ * The OpenCode adapter: the opencode engine driven through its own
+ * `opencode serve` HTTP + SSE surface (raw, no SDK — see opencode-client.ts),
+ * one server per session, project-scoped by the session's cwd.
+ *
+ * Faithful-skin posture: we pass only Mirafold's genuine concerns — the
+ * working directory and, when configured, a `provider/model` pin per prompt.
+ * The user's own OpenCode config (their MCP servers, permission rules,
+ * custom agents) loads untouched; the render MCP arrives additively via
+ * OPENCODE_CONFIG_CONTENT, never by writing a file they own. Permission asks
+ * bridge to the shell's bar and are answered `once`/`reject` — never
+ * `always`, which would persist an approval into their own OpenCode state.
+ */
+export class OpenCodeSession implements AgentSession {
+  private queue = new AsyncQueue<string | typeof CLOSE>();
+  private listeners = new Set<(msg: WireMsg) => void>();
+  private workspaceDir: string;
+  private transport: OpenCodeTransport;
+  private mapper: OpenCodeEventMapper;
+  private resumeIdState: ResumeIdState;
+  private sessionID?: string;
+  private wantedResumeId?: string;
+  private started?: Promise<void>;
+  private closed = false;
+  private firstTurn = true;
+  private modelLabel?: string;
+  private permissionTimeoutMs: number;
+  private pendingPermissions = new Map<string, ReturnType<typeof setTimeout>>();
+  // Per-turn end latch: exactly one turn_end per prompt (idle, error,
+  // interrupt fallback, or close — whichever comes first).
+  private turnActive = false;
+  private turnDone?: () => void;
+  private turnToken = 0;
+
+  get modelName(): string | undefined {
+    return this.modelLabel;
+  }
+
+  get resumeId(): string | undefined {
+    return this.resumeIdState.value;
+  }
+
+  onResumeId(cb: (id: string) => void) {
+    this.resumeIdState.onChange(cb);
+  }
+
+  // `makeTransport` and `permissionTimeoutMs` are test seams.
+  constructor(opts: {
+    workspaceDir: string;
+    model?: string;
+    resumeId?: string;
+    makeTransport?: (config: Record<string, unknown>) => OpenCodeTransport;
+    permissionTimeoutMs?: number;
+  }) {
+    const workspaceDir = path.resolve(opts.workspaceDir);
+    mkdirSync(workspaceDir, { recursive: true });
+    this.workspaceDir = workspaceDir;
+    this.modelLabel = modelIdOf(opts.model);
+    this.wantedResumeId = opts.resumeId;
+    this.resumeIdState = new ResumeIdState(opts.resumeId);
+    this.permissionTimeoutMs = opts.permissionTimeoutMs ?? PERMISSION_TIMEOUT_MS;
+    this.modelPin = parseModelPin(opts.model);
+    const render = renderMcpCommand();
+    const configContent = {
+      mcp: {
+        [MIRAFOLD_MCP]: {
+          type: "local",
+          command: [render.command, ...render.args],
+          enabled: true,
+        },
+      },
+    };
+    this.transport =
+      opts.makeTransport?.(configContent) ??
+      new OpenCodeServerProcess({
+        bin: agentBin("OPENCODE_BIN", "opencode"),
+        cwd: workspaceDir,
+        configContent,
+      });
+    this.mapper = new OpenCodeEventMapper({
+      emit: (msg) => this.emit(msg),
+      workspaceDir,
+      isOurs: (id) => this.sessionID !== undefined && id === this.sessionID,
+      learnModel: (modelID) => {
+        this.modelLabel = modelID;
+      },
+      onPermissionAsked: (ask) => this.onPermissionAsked(ask),
+      onPermissionReplied: (requestID, reply) => this.onPermissionReplied(requestID, reply),
+      endTurn: () => this.endTurn(),
+    });
+    void this.worker();
+  }
+
+  private modelPin?: { providerID: string; modelID: string };
+
+  pushPrompt(text: string) {
+    if (!this.closed) this.queue.push(text);
+  }
+
+  onMessage(cb: (msg: WireMsg) => void) {
+    this.listeners.add(cb);
+  }
+
+  interrupt() {
+    if (!this.turnActive) return;
+    const token = this.turnToken;
+    this.denyPendingPermissions();
+    const fallback = () => {
+      if (this.turnActive && this.turnToken === token) this.endTurn();
+    };
+    if (this.sessionID) {
+      void this.transport
+        .abort(this.sessionID)
+        .catch(() => fallback())
+        .then(() => setTimeout(fallback, INTERRUPT_GRACE_MS));
+    } else {
+      fallback();
+    }
+  }
+
+  resolvePermission(id: string, allow: boolean) {
+    const timer = this.pendingPermissions.get(id);
+    if (timer === undefined) return; // stale/unknown — already resolved
+    this.resolvePermissionInternal(id, allow, timer, true);
+  }
+
+  close() {
+    if (this.closed) return;
+    this.closed = true;
+    this.denyPendingPermissions();
+    this.endTurn(); // release a worker awaiting an in-flight turn
+    this.transport.close();
+    this.queue.push(CLOSE);
+  }
+
+  private emit(msg: WireMsg) {
+    for (const cb of this.listeners) cb(msg);
+  }
+
+  private handleEvent(ev: OpenCodeEvent) {
+    if (!this.closed) this.mapper.handle(ev);
+  }
+
+  /** Spawn/attach lazily on the first turn; a failure resets the latch so a
+   *  later prompt retries (the user may have installed the binary meanwhile). */
+  private ensureStarted(): Promise<void> {
+    this.started ??= (async () => {
+      await this.transport.start((ev) => this.handleEvent(ev));
+      if (this.wantedResumeId && (await this.transport.sessionExists(this.wantedResumeId))) {
+        this.sessionID = this.wantedResumeId;
+      } else {
+        this.sessionID = (await this.transport.createSession()).id;
+      }
+      this.resumeIdState.publish(this.sessionID);
+    })();
+    return this.started.catch((err) => {
+      this.started = undefined;
+      throw err;
+    });
+  }
+
+  /** Serial queue: turns apply in prompt order, one at a time. */
+  private async worker() {
+    while (!this.closed) {
+      const item = await this.queue.next();
+      if (item === CLOSE) return;
+      await this.runTurn(item);
+    }
+  }
+
+  private async runTurn(text: string) {
+    this.turnToken += 1;
+    this.turnActive = true;
+    this.mapper.startTurn();
+    const done = new Promise<void>((resolve) => {
+      this.turnDone = resolve;
+    });
+    try {
+      await this.ensureStarted();
+      const prompt = this.firstTurn ? `${RENDER_GUIDANCE}\n\n---\n\n${text}` : text;
+      await this.transport.prompt(this.sessionID as string, {
+        parts: [{ type: "text", text: prompt }],
+        ...(this.modelPin ? { model: this.modelPin } : {}),
+      });
+      // Flipped only once the engine ACCEPTED the prompt: flipping before the
+      // await burns the guidance on a failed first turn and every later turn
+      // runs bare (the codex adapter's 2026-07-29 lesson, inherited).
+      this.firstTurn = false;
+      await done;
+    } catch (err) {
+      if (!this.closed) this.emit({ type: "error", message: errText(err) });
+      this.endTurn();
+    }
+  }
+
+  private endTurn() {
+    if (!this.turnActive) return;
+    this.turnActive = false;
+    this.mapper.endTurn();
+    if (!this.closed) this.emit({ type: "turn_end" });
+    this.turnDone?.();
+    this.turnDone = undefined;
+  }
+
+  private onPermissionAsked(ask: { id: string; permission: string; detail: string }) {
+    if (this.closed || this.pendingPermissions.has(ask.id)) return;
+    // Deny-by-default: an unanswered ask must not pin the turn open forever.
+    const timer = setTimeout(() => {
+      const pending = this.pendingPermissions.get(ask.id);
+      if (pending !== undefined) this.resolvePermissionInternal(ask.id, false, pending, true);
+    }, this.permissionTimeoutMs);
+    this.pendingPermissions.set(ask.id, timer);
+    this.emit({ type: "permission_request", tool: ask.permission, detail: ask.detail, id: ask.id });
+  }
+
+  /** protocol.ts contract: permission_request MUST resolve visibly on EVERY
+   *  path — browser answer, timeout, external reply, interrupt, close. */
+  private resolvePermissionInternal(
+    id: string,
+    allow: boolean,
+    timer: ReturnType<typeof setTimeout>,
+    replyToEngine: boolean,
+  ) {
+    clearTimeout(timer);
+    this.pendingPermissions.delete(id);
+    if (replyToEngine && this.sessionID) {
+      void this.transport
+        .replyPermission(this.sessionID, id, allow ? "once" : "reject")
+        .catch((err) => {
+          if (!this.closed)
+            this.emit({ type: "error", message: `permission reply failed: ${errText(err)}` });
+        });
+    }
+    if (!this.closed) this.emit({ type: "permission_resolved", id, allow });
+  }
+
+  /** The stream reported a reply we didn't send (another attached client). */
+  private onPermissionReplied(requestID: string, reply: string) {
+    const timer = this.pendingPermissions.get(requestID);
+    if (timer === undefined) return; // our own echo — already resolved
+    this.resolvePermissionInternal(requestID, reply !== "reject", timer, false);
+  }
+
+  private denyPendingPermissions() {
+    for (const [id, timer] of [...this.pendingPermissions])
+      this.resolvePermissionInternal(id, false, timer, true);
+  }
+}
+
+/** A configured model pin. OpenCode addresses models as `provider/model`
+ *  (the id itself may contain further slashes); a bare value can't name a
+ *  provider, so it pins nothing and the engine's own default runs —
+ *  inherit, never invent. */
+function parseModelPin(model?: string): { providerID: string; modelID: string } | undefined {
+  if (!model) return undefined;
+  const slash = model.indexOf("/");
+  if (slash <= 0 || slash === model.length - 1) return undefined;
+  return { providerID: model.slice(0, slash), modelID: model.slice(slash + 1) };
+}
+
+/** The label half of a pin, for `modelName` before the engine reports. */
+function modelIdOf(model?: string): string | undefined {
+  return parseModelPin(model)?.modelID;
+}

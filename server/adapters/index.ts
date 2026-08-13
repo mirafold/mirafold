@@ -6,6 +6,7 @@ import { isIP } from "node:net";
 import { ClaudeCodeSession } from "./claude-code";
 import { CodexSession } from "./codex";
 import { GeminiCliSession } from "./gemini-cli";
+import { OpenCodeSession } from "./opencode";
 import { MockSession } from "./mock";
 import type { AgentName, AgentSession, Backend } from "./types";
 import type { AgentBackend, AgentInfo } from "../protocol";
@@ -125,6 +126,12 @@ function credentialKind(agent: AgentName): CredentialKind {
       // prohibits subscription use in third-party tools — so there is no
       // subscription kind to detect. GOOGLE_API_KEY is the CLI's other name.
       return process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY ? "api-key" : "none";
+    case "opencode":
+      // Detection lands in PLAN OC.3 (the provider-keyed policy: which of
+      // OpenCode's connected providers backs the session, and with what kind
+      // of credential). Until then the agent detects as credential-less, is
+      // absent from ADAPTER_AGENTS, and never resolves live.
+      return "none";
   }
 }
 
@@ -324,6 +331,9 @@ const AGENT_DIALECT: Record<AgentName, LocalDialect | null> = {
   "claude-code": "anthropic",
   codex: "openai",
   "gemini-cli": null,
+  // OpenCode reaches local servers through its own provider config, not a
+  // Mirafold-injected endpoint — no discovered-server rows until OC.4 decides.
+  opencode: null,
 };
 
 /**
@@ -494,6 +504,10 @@ function modelFor(agent: AgentName): string | undefined {
       return process.env.CODEX_MODEL;
     case "gemini-cli":
       return process.env.GEMINI_MODEL;
+    case "opencode":
+      // `provider/model` (OpenCode's own addressing); a bare model id pins
+      // nothing and the engine default runs — opencode.ts parseModelPin.
+      return process.env.OPENCODE_MODEL;
   }
 }
 
@@ -677,6 +691,12 @@ export function createSession(
       });
     case "gemini-cli":
       return new GeminiCliSession({
+        workspaceDir: opts.cwd,
+        model: backend.model,
+        resumeId: opts.resumeId,
+      });
+    case "opencode":
+      return new OpenCodeSession({
         workspaceDir: opts.cwd,
         model: backend.model,
         resumeId: opts.resumeId,

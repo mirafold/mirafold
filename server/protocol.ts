@@ -16,7 +16,7 @@
  * since Phase P.4 — the browser picks which agent a session runs at onboarding,
  * so the name is part of the shared contract (adapters/types.ts re-exports it).
  */
-export type AgentName = "claude-code" | "codex" | "gemini-cli";
+export type AgentName = "claude-code" | "codex" | "gemini-cli" | "opencode";
 
 /** One provider-owned completion shown by the trusted prompt shell before a
  * prompt is submitted. `value` includes its trigger (`/model`, `$audit`), so
