@@ -1013,47 +1013,44 @@ test("BUGFIX2: a reasoning part whose delta beat its snapshot recovers the lane"
   session.close();
 });
 
-test("AUDIT: the minted server password is redacted from a crash's stderr before the wire", async () => {
-  const { session, fake, msgs, prompt, awaitTurnEnd } = makeSession();
-  // Reach into the REAL transport path: a crash detail that embeds the secret.
-  // The fake here can't know the real password, so prove the redactor on the
-  // production class directly.
-  const { OpenCodeServerProcess } = await import("./opencode-client");
-  const proc = new OpenCodeServerProcess({ bin: "/nonexistent", cwd: tmp, configContent: {} });
+test("AUDIT: the minted server password is redacted from a stderr tail (pure)", async () => {
+  // The redactor is a pure exported helper — test it on real inputs, no
+  // reaching into a live transport's private state.
+  const { redactSecret } = await import("./opencode-client");
   const secret = "deadbeefdeadbeefdeadbeefdeadbeef";
-  (proc as unknown as { authSecret: string }).authSecret = secret;
-  (proc as unknown as { stderrTail: string }).stderrTail =
-    `panic: OPENCODE_SERVER_PASSWORD=${secret} leaked into a log line`;
-  const safe = (proc as unknown as { safeStderr(): string }).safeStderr();
-  assert.ok(!safe.includes(secret), "the minted password never rides an error string");
-  assert.ok(safe.includes("[redacted]"));
-  // keep the fake-driven session healthy so the suite's teardown is clean
-  await prompt("hi");
-  fake.onEvent(idle());
-  await awaitTurnEnd();
-  session.close();
+  const out = redactSecret(`panic: OPENCODE_SERVER_PASSWORD=${secret} in a log line`, secret);
+  assert.ok(!out.includes(secret), "the minted password never rides an error string");
+  assert.ok(out.includes("[redacted]"));
+  // Two occurrences both go; an empty secret is a no-op (pre-mint path).
+  assert.equal(redactSecret(`${secret} and ${secret}`, secret), "[redacted] and [redacted]");
+  assert.equal(redactSecret("nothing to redact", ""), "nothing to redact");
 });
 
-test("AUDIT: a permission-ask flood auto-denies past the cap — bounded map and timers", async () => {
+test("AUDIT: a permission-ask flood auto-denies past the cap — observable at the wire", async () => {
   const { session, fake, msgs, prompt } = makeSession({ permissionTimeoutMs: 60_000 });
   await prompt("hi");
   for (let i = 0; i < 200; i++) fake.onEvent(asked(`per-flood-${i}`));
   await waitFor(() => fake.replies.length > 0, "the cap starts auto-denying");
-  const pending = (session as unknown as { pendingPermissions: Map<string, unknown> })
-    .pendingPermissions;
-  assert.ok(pending.size <= 64, `pending asks bounded at the cap, saw ${pending.size}`);
+  // Observable signal of the cap: at most 64 asks ever surface to the browser
+  // as a permission_request; the rest are rejected at the engine, never shown.
+  const shown = msgs.filter((m) => m.type === "permission_request").length;
+  assert.ok(shown <= 64, `permission_requests bounded at the cap, saw ${shown}`);
+  assert.equal(shown + fake.replies.length, 200, "every ask is either shown or engine-rejected");
   assert.ok(fake.replies.every((r) => r.response === "reject"), "overflow asks reject at the engine");
   session.close();
 });
 
-test("AUDIT: a part-id flood is bounded within one turn", async () => {
-  const { session, prompt, feed, awaitTurnEnd } = makeSession();
+test("AUDIT: a part-id flood is bounded within one turn — observable at the wire", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
   await prompt("hi");
   for (let i = 0; i < 5_000; i++) {
     feed(snap({ type: "text", text: "x", id: `flood-${i}` }));
   }
-  const mapper = (session as unknown as { mapper: { parts: Map<string, unknown> } }).mapper;
-  assert.ok(mapper.parts.size <= 2_000, `tracked parts bounded, saw ${mapper.parts.size}`);
+  // Observable signal: a dropped part relays no text, so the count of
+  // text_delta messages is bounded by the per-turn part cap.
+  const emitted = msgs.filter((m) => m.type === "text_delta").length;
+  assert.ok(emitted <= 2_000, `relayed parts bounded at the cap, saw ${emitted}`);
+  assert.ok(emitted > 0, "parts under the cap still stream");
   feed(idle());
   await awaitTurnEnd();
   session.close();

@@ -13,6 +13,14 @@ import { errText } from "./types";
  *  the seam we verified rather than trust a generated union. */
 export type OpenCodeEvent = { type: string; properties: Record<string, unknown> };
 
+/** Remove the minted per-session server password from a stderr tail before it
+ *  can ride into an error WireMsg (broadcast + checkpointed). Pure and
+ *  exported so the redaction is testable without poking a live transport
+ *  (audit 2026-08-13). `scrub()` in the log layer catches Basic/sk- shapes;
+ *  this removes the exact bare-hex secret we generated, which scrub can't. */
+export const redactSecret = (tail: string, secret: string): string =>
+  secret ? tail.split(secret).join("[redacted]") : tail;
+
 /** The transport seam between OpenCodeSession and a live `opencode serve` —
  *  swapped for a fake in Tier-1 tests. */
 export interface OpenCodeTransport {
@@ -137,8 +145,7 @@ export class OpenCodeServerProcess implements OpenCodeTransport {
   /** The stderr tail with our own minted secret removed, before it ever
    *  reaches an error WireMsg (which is broadcast AND checkpointed). */
   private safeStderr(): string {
-    const tail = this.stderrTail.trim().slice(-300);
-    return this.authSecret ? tail.split(this.authSecret).join("[redacted]") : tail;
+    return redactSecret(this.stderrTail.trim().slice(-300), this.authSecret);
   }
 
   start(onEvent: (ev: OpenCodeEvent) => void, onDied?: (detail: string) => void): Promise<void> {

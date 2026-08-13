@@ -148,13 +148,18 @@ test("OC.5: real engine — render, permission, usage, resume, all through the s
   };
 
   const first = makeSession();
+  // On a live-tier timeout, dump the WireMsg types actually seen so a rare
+  // timing wobble is diagnosable at a glance rather than a bare timeout
+  // (test-audit 2026-08-13).
+  const seenTypes = (s: { msgs: { type: string }[] }) =>
+    "saw: " + (s.msgs.map((m) => m.type).join(",") || "nothing");
   try {
     const published: { kind: string; provider?: string }[] = [];
     first.session.onBackendKind?.((u) => published.push(u));
 
     // Turn 1: the render paints through the real MCP stub.
     first.session.pushPrompt("paint a card please");
-    await waitFor(() => first.turnEnds() >= 1, "turn 1 (render)", 120_000);
+    await waitFor(() => first.turnEnds() >= 1, "turn 1 (render)", 120_000, () => seenTypes(first));
     const render = first.msgs.find((m) => m.type === "render" && m.component === "card");
     assert.ok(render, "card rendered through the real engine");
     assert.equal(render?.props?.["title"], "Live Probe");
@@ -165,11 +170,16 @@ test("OC.5: real engine — render, permission, usage, resume, all through the s
 
     // Turn 2: the permission round-trip, answered through the bridge.
     first.session.pushPrompt("now run the probe command");
-    await waitFor(() => first.msgs.some((m) => m.type === "permission_request"), "the ask", 60_000);
+    await waitFor(
+      () => first.msgs.some((m) => m.type === "permission_request"),
+      "the ask",
+      60_000,
+      () => seenTypes(first),
+    );
     const ask = first.msgs.find((m) => m.type === "permission_request");
     assert.equal(ask?.tool, "bash");
     first.session.resolvePermission(ask!.id, true);
-    await waitFor(() => first.turnEnds() >= 2, "turn 2 (bash)", 120_000);
+    await waitFor(() => first.turnEnds() >= 2, "turn 2 (bash)", 120_000, () => seenTypes(first));
     assert.ok(first.msgs.some((m) => m.type === "permission_resolved" && m.allow === true));
     assert.ok(
       first.msgs.some((m) => m.type === "tool_result" && /oc5-live/.test(m.output)),
@@ -186,7 +196,7 @@ test("OC.5: real engine — render, permission, usage, resume, all through the s
     const second = makeSession(resumeId);
     try {
       second.session.pushPrompt("still with me?");
-      await waitFor(() => second.turnEnds() >= 1, "resumed turn", 120_000);
+      await waitFor(() => second.turnEnds() >= 1, "resumed turn", 120_000, () => seenTypes(second));
       assert.equal(second.session.resumeId, resumeId, "reattached, not recreated");
       assert.ok(second.msgs.some((m) => m.type === "text_delta" && /BASH DONE/.test(m.text)));
     } finally {
