@@ -532,18 +532,6 @@ test("policy refusals at start: each names its reason and frees the turn", async
       catalog: [{ id: "github-copilot", source: "custom", apiKeyOption: "opencode-oauth-dummy-key" }],
       expect: /API key/,
     },
-    // the openai gray area: allowed by policy, refused until OC.4 wires kind
-    {
-      model: "openai/gpt-5.5",
-      catalog: [{ id: "openai", source: "custom", apiKeyOption: "opencode-oauth-dummy-key" }],
-      expect: /ChatGPT login .* isn't wired up/,
-    },
-    // the built-in Zen gateway — terms unread, fail-closed
-    {
-      model: "opencode/big-pickle",
-      catalog: [{ id: "opencode", source: "custom", apiKeyOption: "public" }],
-      expect: /Zen/,
-    },
   ];
   for (const c of cases) {
     const { session, fake, msgs, awaitTurnEnd } = makeSession({ model: c.model });
@@ -564,19 +552,21 @@ test("/model with no arg paints the picker from allowed providers only", async (
   fake.catalog = [
     { id: "fake", source: "config" },
     { id: "deepseek", source: "api" },
-    { id: "opencode", source: "custom", apiKeyOption: "public" }, // Zen — refused, so never offered
+    { id: "opencode", source: "custom", apiKeyOption: "public" }, // Zen — open (2026-08-13), so offered
+    { id: "github-copilot", source: "custom", apiKeyOption: "opencode-oauth-dummy-key" }, // blocked — never offered
   ];
   fake.models = [
     { providerID: "fake", modelID: "fake-model" },
     { providerID: "deepseek", modelID: "deepseek-v4" },
     { providerID: "opencode", modelID: "laguna-s-2.1-free" },
+    { providerID: "github-copilot", modelID: "gpt-5" },
   ];
   session.pushPrompt("/model");
   await awaitTurnEnd();
   const picker = msgs.find((m) => m.type === "picker");
   assert.deepEqual(
     picker?.rows.map((r: { label: string }) => r.label),
-    ["fake/fake-model", "deepseek/deepseek-v4"],
+    ["fake/fake-model", "deepseek/deepseek-v4", "opencode/laguna-s-2.1-free"],
   );
   assert.equal(picker?.rows.find((r: { current?: boolean }) => r.current)?.label, "fake/fake-model");
   session.close();
@@ -587,16 +577,16 @@ test("/model switches to an allowed provider; a blocked pick refuses and keeps t
   fake.catalog = [
     { id: "fake", source: "config" },
     { id: "deepseek", source: "api" },
-    { id: "opencode", source: "custom", apiKeyOption: "public" },
+    { id: "github-copilot", source: "custom", apiKeyOption: "opencode-oauth-dummy-key" },
   ];
   session.pushPrompt("/model deepseek/deepseek-v4");
   await awaitTurnEnd();
   assert.ok(msgs.some((m) => m.type === "text_delta" && /Model set to deepseek/.test(m.text)));
   assert.equal(session.modelName, "deepseek-v4");
 
-  session.pushPrompt("/model opencode/laguna-s-2.1-free");
+  session.pushPrompt("/model github-copilot/gpt-5");
   await awaitTurnEnd(2);
-  assert.match(msgs.find((m) => m.type === "error")?.message ?? "", /Zen/);
+  assert.match(msgs.find((m) => m.type === "error")?.message ?? "", /API key/);
   assert.equal(session.modelName, "deepseek-v4", "blocked pick must not move the pin");
 
   session.pushPrompt("hi");
@@ -674,6 +664,73 @@ test("prompt options: our re-skins immediately, the engine catalog behind them",
   assert.equal(options.find((o) => o.value === "/init")?.source, "opencode");
   assert.equal(options.find((o) => o.value === "/model")?.source, undefined, "our re-skin, no badge");
   assert.equal(fake.commands.length, 0);
+  session.close();
+});
+
+test("OC.4c: gray/gateway providers RUN, publish their true kind, and disclose once", async () => {
+  const cases = [
+    {
+      model: "openai/gpt-5.5",
+      catalog: [
+        { id: "openai", source: "custom" as const, apiKeyOption: "opencode-oauth-dummy-key" },
+      ],
+      kind: "subscription",
+      disclosure: /not clearly\s+permitted .* your account, your\s+call/s,
+    },
+    {
+      model: "opencode/big-pickle",
+      catalog: [{ id: "opencode", source: "custom" as const, apiKeyOption: "public" }],
+      kind: "gateway",
+      disclosure: /improve the model/,
+    },
+  ];
+  for (const c of cases) {
+    const { session, fake, msgs, prompt, feed, awaitTurnEnd } = makeSession({ model: c.model });
+    fake.catalog = c.catalog;
+    const published: { kind: string; provider?: string }[] = [];
+    session.onBackendKind?.((u) => published.push(u));
+    await prompt("hi");
+    feed(idle());
+    await awaitTurnEnd();
+    assert.deepEqual(published, [{ kind: c.kind, provider: c.catalog[0].id }]);
+    const notices = msgs.filter((m) => m.type === "notice");
+    assert.equal(notices.length, 1, "the disclosure rides exactly once");
+    assert.match(notices[0].text, c.disclosure);
+    assert.equal(notices[0].source, undefined, "Mirafold-composed — no engine badge");
+    // A second turn must not re-disclose.
+    await prompt("again");
+    feed(idle());
+    await awaitTurnEnd(2);
+    assert.equal(msgs.filter((m) => m.type === "notice").length, 1);
+    session.close();
+  }
+});
+
+test("OC.4c: an api-key provider publishes api-key; a /model switch re-publishes", async () => {
+  const { session, fake, msgs, prompt, feed, awaitTurnEnd } = makeSession({
+    model: "deepseek/deepseek-v4",
+  });
+  fake.catalog = [
+    { id: "deepseek", source: "api" },
+    { id: "opencode", source: "custom", apiKeyOption: "public" },
+  ];
+  fake.models = [
+    { providerID: "deepseek", modelID: "deepseek-v4" },
+    { providerID: "opencode", modelID: "big-pickle" },
+  ];
+  const published: { kind: string; provider?: string }[] = [];
+  session.onBackendKind?.((u) => published.push(u));
+  await prompt("hi");
+  feed(idle());
+  await awaitTurnEnd();
+  assert.deepEqual(published, [{ kind: "api-key", provider: "deepseek" }]);
+  session.pushPrompt("/model opencode/big-pickle");
+  await awaitTurnEnd(2);
+  assert.deepEqual(published.at(-1), { kind: "gateway", provider: "opencode" });
+  assert.ok(
+    msgs.some((m) => m.type === "notice" && /improve the model/.test(m.text)),
+    "the switch to Zen carries its disclosure",
+  );
   session.close();
 });
 

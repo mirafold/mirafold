@@ -61,6 +61,12 @@ export interface AgentSession {
    * identity at the readiness boundary instead of guessing from a later
    * unrelated wire event. */
   onResumeId?(cb: (id: string) => void): void;
+  /** OC.4c: an adapter whose hello-time credential kind is OPTIMISTIC
+   * (OpenCode — the provider-resolved truth needs the running engine)
+   * publishes the classified kind here at session start. The registry
+   * updates its entry so the relay gate judges truth; until the first
+   * publish such entries are `kindPending` and refuse remote actions. */
+  onBackendKind?(cb: (update: { kind: CredentialKind; provider?: string }) => void): void;
   /** Re-read and emit the provider's pre-submit command/skill catalog. */
   refreshPromptOptions?(): void;
   close(): void;

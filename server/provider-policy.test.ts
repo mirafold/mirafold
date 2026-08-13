@@ -4,6 +4,7 @@ import {
   allowedLocally,
   allowedOverRelay,
   classifyOpenCodeProvider,
+  relayGateRefusal,
   type OpenCodeProviderEntry,
 } from "./provider-policy";
 
@@ -56,10 +57,32 @@ test("anthropic/google oauth are refused naming the written terms", () => {
   }
 });
 
-test("the built-in Zen gateway fails closed until its terms are read", () => {
+test("the Zen gateway is open (Kyle 2026-08-13): gateway kind, local-only, disclosed", () => {
   const v = classifyOpenCodeProvider(entry({ id: "opencode", source: "custom", apiKeyOption: "public" }));
-  assert.equal(v.allowed, false);
-  assert.match(v.reason ?? "", /Zen/);
+  assert.deepEqual({ kind: v.kind, allowed: v.allowed }, { kind: "gateway", allowed: true });
+  // The disclosure must state uncertainty AND the training caveat, and must
+  // never read as permission.
+  assert.match(v.disclosure ?? "", /don't\s+clearly address/);
+  assert.match(v.disclosure ?? "", /improve the model/);
+  assert.match(v.disclosure ?? "", /never run over the relay/);
+  assert.equal(allowedLocally("opencode", "gateway"), true);
+  assert.equal(allowedOverRelay("gateway"), false, "gateway never relay-eligible");
+});
+
+test("the openai gray verdict carries its uncertainty disclosure", () => {
+  const v = classifyOpenCodeProvider(
+    entry({ id: "openai", source: "custom", apiKeyOption: "opencode-oauth-dummy-key" }),
+  );
+  assert.match(v.disclosure ?? "", /not clearly\s+permitted/);
+  assert.match(v.disclosure ?? "", /your account, your\s+call/);
+});
+
+test("relayGateRefusal: pending refuses outright; kinds refuse per the allow-list", () => {
+  assert.match(relayGateRefusal({ kind: "api-key", kindPending: true }) ?? "", /still verifying/);
+  assert.equal(relayGateRefusal({ kind: "api-key" }), undefined);
+  assert.equal(relayGateRefusal({ kind: "local" }), undefined);
+  assert.match(relayGateRefusal({ kind: "subscription" }) ?? "", /subscription login/);
+  assert.match(relayGateRefusal({ kind: "gateway" }) ?? "", /free-gateway/);
 });
 
 test("an unrecognized custom shape is refused, never guessed", () => {

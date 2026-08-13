@@ -28,7 +28,7 @@ export const CONNECT_HINT: Record<AgentName, string> = {
   "gemini-cli":
     "set GEMINI_API_KEY (free key at aistudio.google.com/apikey) — Gemini has no local path",
   opencode:
-    "install opencode (opencode.ai), connect a provider with an API key via `opencode auth login` — or declare a local/BYO provider (Ollama, OpenRouter, …) in your opencode config — then set OPENCODE_MODEL=<provider>/<model>. Subscription logins (ChatGPT, Copilot) and the built-in free Zen models aren't usable here yet",
+    "install opencode (opencode.ai) — its built-in free Zen models then work out of the box (set OPENCODE_MODEL=<provider>/<model>, e.g. opencode/big-pickle; free-period prompts may train the models). Or connect a provider API key via `opencode auth login`, or declare a local/BYO provider (Ollama, OpenRouter, …) in your opencode config. A ChatGPT login works too — not clearly permitted by OpenAI's terms, tolerated in practice; your account, your call. Other subscription logins (Copilot, …) aren't usable",
 };
 
 // The hint for a BLOCKED agent — a prohibited subscription credential is
@@ -85,7 +85,13 @@ export function blockedHint(agent: string): string | undefined {
  *  "OpenAI API key" — ChatGPT is their SUBSCRIPTION brand and they keep the
  *  two apart, which is why the subscription labels below don't match these
  *  one-for-one. That asymmetry is theirs, and inheriting it is the point. */
-export function backendLabel(agent: string, kind: "api-key" | "subscription" | "local"): string {
+export function backendLabel(
+  agent: string,
+  kind: "api-key" | "subscription" | "local" | "gateway",
+): string {
+  // OpenCode Zen (2026-08-13): the engine's built-in free gateway — no user
+  // account behind it, so neither "API key" nor "subscription" is honest.
+  if (kind === "gateway") return "OpenCode Zen (free models)";
   if (kind === "api-key") {
     if (agent === "codex") return "OpenAI API key";
     if (agent === "claude-code") return "Claude API key";
@@ -118,7 +124,7 @@ export function localBackendLabel(agent: string, detail: string | undefined): st
  *  routes name the backing identically. */
 export function backingLine(
   agent: string,
-  kind: "api-key" | "subscription" | "local" | undefined,
+  kind: "api-key" | "subscription" | "local" | "gateway" | undefined,
   detail: string | undefined,
 ): string | undefined {
   if (!kind) return detail;

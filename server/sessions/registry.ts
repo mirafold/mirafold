@@ -163,6 +163,12 @@ export type SessionEntry = {
   // The credential kind behind this session — read by the relay gate in
   // connection.ts to refuse a subscription-backed session over the paid relay (R.4i).
   kind: CredentialKind;
+  // OC.4c: true while `kind` is the hello-time OPTIMISTIC answer for an
+  // adapter that can only classify truthfully once its engine starts
+  // (OpenCode). The relay gate refuses remote actions outright until the
+  // session's onBackendKind publish clears it — provider-policy.ts
+  // relayGateRefusal.
+  kindPending?: boolean;
   // Exact server-side backend selection, persisted so recovery cannot silently
   // move the conversation to a different credential/provider/model server.
   // A configured endpoint URL can itself be sensitive; it never rides the wire.
@@ -385,6 +391,22 @@ export class SessionRegistry {
     entry.session.onResumeId?.(() => {
       if (this.entries.get(entry.id) === entry) this.checkpoint(entry);
     });
+    // OC.4c: an adapter with an optimistic hello-time kind publishes the
+    // truthful one once its engine classifies the pinned provider. Until
+    // then the entry is kindPending and the relay gate refuses remote
+    // actions (provider-policy.ts relayGateRefusal). The truthful kind is
+    // checkpointed so recovery starts from it — and re-verifies anyway.
+    if (entry.session.onBackendKind) {
+      entry.kindPending = true;
+      entry.session.onBackendKind((update) => {
+        if (this.entries.get(entry.id) !== entry) return;
+        entry.kind = update.kind;
+        entry.kindPending = false;
+        entry.backend.kind = update.kind;
+        if (update.provider) entry.backend.provider = update.provider;
+        this.checkpoint(entry);
+      });
+    }
     entry.session.refreshPromptOptions?.();
     this.checkpoint(entry);
     this.notifyWatchers();

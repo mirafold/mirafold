@@ -15,7 +15,7 @@ import {
   resolveChosenBackend,
   type Backend,
 } from "../adapters";
-import { allowedOverRelay } from "../provider-policy";
+import { relayGateRefusal } from "../provider-policy";
 import { probeLocalServers } from "../local-models";
 import { createLogger } from "../log";
 import { VERSION } from "../version";
@@ -31,12 +31,9 @@ import { folderPickerAvailable } from "../folder-picker";
 // cached answer instead of re-probing localhost.
 const REFRESH_MIN_INTERVAL_MS = envInt("REFRESH_MIN_INTERVAL_MS", 1_000);
 
-// What a remote (relay) connection is told when a cockpit act would drive a
-// subscription-backed session (M.2) — the same reasoning as the attach gate's
-// refusal (R.4i), phrased for an action instead of an attach.
-const RELAY_GATE_REFUSAL =
-  "This session runs on a subscription login, which can't be driven over the relay. " +
-  "Use an API key to drive an agent remotely.";
+// The relay refusal copy now lives with the rule (provider-policy.ts
+// relayGateRefusal, OC.4c) so the attach gate, cockpit acts, and uploads say
+// the same words about the same verdict — pending-kind included.
 
 // Agents the browser is allowed to name at onboarding (P.4). A create message
 // naming anything else falls back to the daemon default rather than erroring.
@@ -139,14 +136,16 @@ export function openConnection(
     // creates too — 2026-07-29 bughunt. The important case this gate closes
     // is a phone attaching to a subscription session a local tab started.)
     // (R.4i)
-    if (remote && !allowedOverRelay(e.kind)) {
+    const relayRefusal = remote ? relayGateRefusal(e) : undefined;
+    if (relayRefusal) {
       viewport({
         type: "refused",
         reason: "subscription-relay",
-        message:
-          "This session runs on a subscription login, which can't be used over the relay. Use an API key to drive an agent remotely.",
+        message: relayRefusal,
       });
-      log.info(`refused remote viewport → session ${e.id} (${e.kind})`);
+      log.info(
+        `refused remote viewport → session ${e.id} (${e.kind}${e.kindPending ? ", pending" : ""})`,
+      );
       return false;
     }
     if (entry) registry.detach(entry, viewport);
@@ -232,8 +231,9 @@ export function openConnection(
       sendError(`no such session: ${sessionId}`);
       return undefined;
     }
-    if (drivesModel && remote && !allowedOverRelay(target.kind)) {
-      sendError(RELAY_GATE_REFUSAL);
+    const actRefusal = drivesModel && remote ? relayGateRefusal(target) : undefined;
+    if (actRefusal) {
+      sendError(actRefusal);
       // `open()` may just have lazily revived a dormant engine. A refused
       // remote act owns no viewport, so return that engine to the ordinary
       // idle-unload path instead of leaving it warm indefinitely.

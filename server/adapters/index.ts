@@ -143,9 +143,12 @@ function credentialKind(agent: AgentName): CredentialKind {
       const dataDir = process.env.XDG_DATA_HOME
         ? path.join(process.env.XDG_DATA_HOME, "opencode")
         : undefined;
+      // No stored credential ⇒ the built-in free Zen gateway still backs the
+      // engine out of the box — "gateway", the Zen-opened kind (2026-08-13):
+      // usable locally with its disclosure, never over the relay.
       return loginFileExists(dataDir, path.join(".local", "share", "opencode"), "auth.json")
         ? "api-key"
-        : "none";
+        : "gateway";
     }
   }
 }
@@ -297,11 +300,12 @@ export function backendOptions(agent: AgentName): BackendOption[] {
       if (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY) addCredentialRow("api-key");
       break;
     case "opencode": {
-      // One shallow row: a stored credential exists (existence only — the
-      // provider-resolved truth is enforced at session start, OC.3). Richer
-      // per-provider rows need a running engine; that probe is a post-OC.5
-      // idea, not a hello-time cost.
-      if (credentialKind("opencode") === "api-key") addCredentialRow("api-key");
+      // One shallow row: a stored credential (or the built-in Zen gateway) —
+      // existence only; the provider-resolved truth is enforced at session
+      // start (OC.3). Richer per-provider rows need a running engine; that
+      // probe is a post-OC.5 idea, not a hello-time cost.
+      const kind = credentialKind("opencode");
+      if (kind === "api-key" || kind === "gateway") addCredentialRow(kind);
       break;
     }
   }
@@ -563,7 +567,7 @@ export function resolveChosenBackend(
     model?: unknown;
   };
   const kind = c.kind;
-  if (kind !== "api-key" && kind !== "subscription" && kind !== "local")
+  if (kind !== "api-key" && kind !== "subscription" && kind !== "local" && kind !== "gateway")
     return { error: "unknown backend choice" };
   if (
     (c.endpoint !== undefined && typeof c.endpoint !== "string") ||
@@ -699,7 +703,11 @@ export function createSession(
   opts: { cwd: string; resumeId?: string },
 ): AgentSession {
   if (!backend.live) return new MockSession(backend.agent);
-  const kind = backend.kind === "none" ? undefined : backend.kind;
+  // "gateway" is OpenCode-only (Zen) and the OpenCode adapter classifies its
+  // own backing at start — the per-adapter `kind` option below is for the
+  // engines that take one, and none of them can be gateway-backed.
+  const kind =
+    backend.kind === "none" || backend.kind === "gateway" ? undefined : backend.kind;
   switch (backend.agent) {
     case "claude-code":
       return new ClaudeCodeSession({

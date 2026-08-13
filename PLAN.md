@@ -2810,8 +2810,22 @@ gates come first.
   full post-fix e2e run were stopped externally mid-run (6/6 ok at each
   stop), so ONE clean full-suite pass is still owed; folded into OC.5's
   tier sweep.
-- [ ] **Step OC.4c — Classified kind into Backend (the ChatGPT-gray
-  unlock)** — **Goal:** the gray path runs under its TRUE kind. **Build:**
+- [x] **Step OC.4c — Classified kind into Backend + ZEN OPENED** —
+  completed 2026-08-13, same day Kyle said "open Zen" (the decision the
+  OC.4b citation was waiting on). Built exactly per the design below:
+  `onBackendKind` seam + registry adoption at `activate()` (truthful kind
+  checkpointed), `kindPending` refusing remote actions pre-verification,
+  and the three relay-gate sites (attach, cockpit acts, uploads) unified
+  on one `relayGateRefusal` verdict in provider-policy.ts. The ChatGPT
+  gray now RUNS locally with its uncertainty disclosure (once per
+  provider, Mirafold-composed, no badge). **Zen**: new `gateway`
+  CredentialKind (additive on every wire union) — allowed locally for
+  opencode with the uncertainty + training-data disclosure, NEVER
+  relay-eligible (the allow-list refuses it by design); fresh
+  binary-only installs now detect live out of the box, and the /model
+  picker offers Zen rows. 761/761 + 152/152 green; the full-e2e sweep
+  remains owed to OC.5 (two prior runs externally stopped). — original
+  goal + design: **Goal:** the gray path runs under its TRUE kind. **Build:**
   an optional `AgentSession.onBackendKind` seam (like `onResumeId`): the
   OpenCode session publishes the OC.3-classified kind + provider at start;
   the registry updates its `Backend` so the relay gate judges truth.

@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import type { WireMsg } from "../protocol";
 import { RENDER_GUIDANCE } from "../render-tools";
 import { envInt } from "../env";
-import { classifyOpenCodeProvider } from "../provider-policy";
+import { classifyOpenCodeProvider, type CredentialKind } from "../provider-policy";
 import { agentBin, errText, PERMISSION_TIMEOUT_MS, type AgentSession } from "./types";
 import { AsyncQueue, CLOSE } from "./async-queue";
 import { ResumeIdState } from "./resume-id";
@@ -59,6 +59,10 @@ export class OpenCodeSession implements AgentSession {
   // The engine's command catalog, learned at start — routes `/name` inputs
   // to the engine's dispatcher and feeds the prompt-options catalog.
   private engineCommands: OpenCodeCommandEntry[] = [];
+  // OC.4c: the classified backend kind, published to the registry once the
+  // provider verdict lands (and re-published on a /model provider switch).
+  private kindListeners = new Set<(u: { kind: CredentialKind; provider?: string }) => void>();
+  private lastKind?: { kind: CredentialKind; provider?: string };
   private permissionTimeoutMs: number;
   private pendingPermissions = new Map<string, ReturnType<typeof setTimeout>>();
   // Per-turn end latch: exactly one turn_end per prompt (idle, error,
@@ -77,6 +81,16 @@ export class OpenCodeSession implements AgentSession {
 
   onResumeId(cb: (id: string) => void) {
     this.resumeIdState.onChange(cb);
+  }
+
+  onBackendKind(cb: (update: { kind: CredentialKind; provider?: string }) => void) {
+    this.kindListeners.add(cb);
+    if (this.lastKind) cb(this.lastKind);
+  }
+
+  private publishKind(kind: CredentialKind, provider: string) {
+    this.lastKind = { kind, provider };
+    for (const cb of this.kindListeners) cb(this.lastKind);
   }
 
   // `makeTransport` and `permissionTimeoutMs` are test seams.
@@ -210,19 +224,24 @@ export class OpenCodeSession implements AgentSession {
       throw new Error(
         "no model is pinned for this OpenCode session — set OPENCODE_MODEL=<provider>/<model> " +
           "(or `model` in your opencode config) so Mirafold knows which provider will run; " +
-          "the provider determines whether the session may run at all",
+          "the provider determines whether the session may run at all. The built-in free " +
+          "models work too, e.g. OPENCODE_MODEL=opencode/big-pickle",
       );
     }
-    const reason = await this.pinRefusalReason(pin);
+    const reason = await this.adoptPin(pin);
     if (reason) throw new Error(reason);
-    this.modelPin = pin;
-    this.modelLabel ??= pin.modelID;
   }
 
-  /** Why `pin` may not run, or undefined when it may — the shared verdict
-   *  behind session start and a `/model` switch (a switch must never reach a
-   *  provider the start gate would have refused). */
-  private async pinRefusalReason(pin: {
+  // Providers whose gray-area disclosure already ran this session — the
+  // notice states standing terms, so it rides once per provider, not per turn.
+  private disclosedProviders = new Set<string>();
+
+  /** Classify `pin`, and on an allowed verdict make it THIS session's pin:
+   *  publish the truthful kind to the registry (OC.4c — the relay gate's
+   *  input) and emit the gray-area disclosure when the provider carries one.
+   *  Returns the refusal reason instead when the pin may not run — the
+   *  shared verdict behind session start and a `/model` switch. */
+  private async adoptPin(pin: {
     providerID: string;
     modelID: string;
   }): Promise<string | undefined> {
@@ -235,17 +254,14 @@ export class OpenCodeSession implements AgentSession {
     }
     const verdict = classifyOpenCodeProvider(entry);
     if (!verdict.allowed) return verdict.reason ?? "provider refused by policy";
-    if (verdict.kind === "subscription") {
-      // The ChatGPT gray area needs the classified kind to flow into the
-      // session's Backend before it may run (the relay gate reads
-      // Backend.kind, and this session was resolved optimistically as
-      // api-key) — that wiring plus the required disclosure is PLAN OC.4b.
-      // Until then the gray path refuses honestly rather than run under a
-      // kind that would overstate its relay rights.
-      return (
-        "a ChatGPT login through OpenCode isn't wired up in Mirafold yet — " +
-        "connect OpenAI (or another provider) with an API key in opencode to run this session"
-      );
+    this.modelPin = pin;
+    this.modelLabel = pin.modelID;
+    this.publishKind(verdict.kind, pin.providerID);
+    if (verdict.disclosure && !this.disclosedProviders.has(pin.providerID)) {
+      this.disclosedProviders.add(pin.providerID);
+      // Mirafold-composed (no source badge): the disclosed-uncertainty
+      // rule's required disclosure — uncertainty stated, never permission.
+      this.emit({ type: "notice", text: verdict.disclosure });
     }
     return undefined;
   }
@@ -296,14 +312,12 @@ export class OpenCodeSession implements AgentSession {
       emit: (msg) => this.emit(msg),
       listModels: async () => {
         await this.ensureStarted();
+        // Every ALLOWED provider rows here — gray areas included, since
+        // OC.4c flows their true kind to the registry and their disclosure
+        // rides the pick (the picker offers only what a pick can run).
         const allowed = new Set(
           (await this.transport.providerCatalog())
-            .filter((entry) => {
-              const verdict = classifyOpenCodeProvider(entry);
-              // The gray subscription is excluded with the blocked rows: the
-              // picker offers only what a pick can actually run (OC.4b).
-              return verdict.allowed && verdict.kind !== "subscription";
-            })
+            .filter((entry) => classifyOpenCodeProvider(entry).allowed)
             .map((entry) => entry.id),
         );
         return (await this.transport.modelCatalog()).filter((m) => allowed.has(m.providerID));
@@ -315,14 +329,10 @@ export class OpenCodeSession implements AgentSession {
         if (!pin) return "Usage: `/model` to pick, or `/model <provider>/<model>`.";
         try {
           await this.ensureStarted();
-          const reason = await this.pinRefusalReason(pin);
-          if (reason) return reason;
+          return await this.adoptPin(pin);
         } catch (err) {
           return errText(err);
         }
-        this.modelPin = pin;
-        this.modelLabel = pin.modelID;
-        return undefined;
       },
     });
   }

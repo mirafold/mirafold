@@ -82,7 +82,13 @@ import type { AgentName } from "./protocol";
 // API-key-only = the user pays the provider directly for metered use and we sell
 // only transport — the defensible line.
 
-export type CredentialKind = "api-key" | "subscription" | "local" | "none";
+// "gateway" (added 2026-08-13, OC.4c/Zen): a vendor-hosted gateway the
+// harness itself is credentialed for (OpenCode Zen's free models — no user
+// account at all). Allowed locally as a disclosed gray area (Kyle's call,
+// 2026-08-13 — see the Zen row below); NEVER relay-eligible: the allow-list
+// in allowedOverRelay was designed so a new kind defaults to refused, and
+// gateway deliberately stays off it.
+export type CredentialKind = "api-key" | "subscription" | "local" | "gateway" | "none";
 
 // Whether a SUBSCRIPTION may drive a third-party app for free LOCAL use.
 // Anthropic + Google: NO, prohibited in writing. OpenAI: YES as a disclosed
@@ -153,6 +159,10 @@ export type OpenCodeProviderVerdict = {
   allowed: boolean;
   /** Human copy for a refusal — shown down the create-error path. */
   reason?: string;
+  /** The disclosed-uncertainty rule's required disclosure for an ALLOWED
+   *  gray-area provider — Mirafold-composed (no source badge), emitted once
+   *  at session start. States uncertainty, never permission. */
+  disclosure?: string;
 };
 
 /** Classify one connected OpenCode provider. Fail-closed: any shape this
@@ -176,7 +186,14 @@ export function classifyOpenCodeProvider(entry: OpenCodeProviderEntry): OpenCode
           kind: "subscription",
           allowed: ok,
           ...(ok
-            ? {}
+            ? {
+                // The codex CONNECT_HINT contract, session-time edition:
+                // uncertainty stated, never permission (K.3, 2026-07-15).
+                disclosure:
+                  "This session runs on your ChatGPT login through opencode — not clearly " +
+                  "permitted by OpenAI's terms, tolerated in practice; your account, your " +
+                  "call. It will never run over the relay.",
+              }
             : {
                 reason:
                   `the "${entry.id}" login in opencode is a subscription OAuth, which ` +
@@ -193,18 +210,19 @@ export function classifyOpenCodeProvider(entry: OpenCodeProviderEntry): OpenCode
         // Services for your own internal use, and not on behalf of or for
         // the benefit of any third party" (local personal use reads clean;
         // the paid relay would not); free models "during free periods" may
-        // use collected data to improve the models (a disclosure the user
-        // would need to see). This is the disclosed-uncertainty rule's exact
-        // shape, but opening a NEW provider under that rule is Kyle's call
-        // (the codex precedent, 2026-07-15), not a session's — so the row
-        // stays CLOSED until he makes it. If opened: local-only (never the
-        // relay), with the training-data caveat shown.
+        // use collected data to improve the models (disclosed below).
+        // OPENED by Kyle 2026-08-13 ("open Zen") under the
+        // disclosed-uncertainty rule: local-only — kind "gateway" is not
+        // relay-eligible (allowedOverRelay's allow-list) — with the
+        // uncertainty AND the training-data caveat stated to the user.
         return {
-          kind: "api-key",
-          allowed: false,
-          reason:
-            "the built-in OpenCode Zen free models aren't enabled in Mirafold yet — " +
-            "connect a provider API key in opencode (`opencode auth login`) to run OpenCode here",
+          kind: "gateway",
+          allowed: true,
+          disclosure:
+            "This session runs on OpenCode Zen's free models. opencode's terms don't " +
+            "clearly address third-party apps like Mirafold (our reading: fine for your " +
+            "own local use — your call), and free-period models may use prompts to " +
+            "improve the model. Local only — it will never run over the relay.",
         };
       }
       return {
@@ -224,6 +242,10 @@ export function allowedLocally(agent: AgentName, kind: CredentialKind): boolean 
     case "api-key":
     case "local":
       return true;
+    case "gateway":
+      // Only OpenCode has a gateway path (Zen, opened 2026-08-13 — the row
+      // above carries the citation and disclosure).
+      return agent === "opencode";
     case "subscription":
       return SUBSCRIPTION_LOCAL_OK[agent];
   }
@@ -247,4 +269,32 @@ export function allowedLocally(agent: AgentName, kind: CredentialKind): boolean 
  */
 export function allowedOverRelay(kind: CredentialKind): boolean {
   return kind === "api-key" || kind === "local" || kind === "none";
+}
+
+/**
+ * The relay gate's whole verdict for a session entry, pending-awareness
+ * included (OC.4c). An OpenCode session's hello-time kind is OPTIMISTIC —
+ * the truthful, provider-resolved kind only arrives once the engine starts
+ * and the session publishes it (adapters/opencode.ts) — so until then a
+ * remote viewport is refused outright: without this, a relay prompt racing
+ * the first classification could drive a subscription/gateway session under
+ * the optimistic "api-key". Returns the human refusal, or undefined when the
+ * remote action may proceed.
+ */
+export function relayGateRefusal(entry: {
+  kind: CredentialKind;
+  kindPending?: boolean;
+}): string | undefined {
+  if (entry.kindPending)
+    return (
+      "This session is still verifying which credential backs it — try again in a " +
+      "moment, or drive it from the machine it runs on."
+    );
+  if (!allowedOverRelay(entry.kind))
+    return (
+      "This session runs on a " +
+      (entry.kind === "gateway" ? "free-gateway backing" : "subscription login") +
+      ", which can't be used over the relay. Use an API key to drive an agent remotely."
+    );
+  return undefined;
 }
