@@ -68,36 +68,40 @@ function markNoNewline(
     }
     return -1;
   };
+  // A context line is only honest when BOTH sides' bytes agree, termination
+  // included. Its per-side termination differs from the file flag only when
+  // it is that side's final source line — and at most one of the two finals
+  // can be context when they differ (everything past the smaller index is
+  // single-signed). When the sides disagree, git splits it (`-x` + marker /
+  // `+x`), and so must we: leaving it as context hides a real byte change
+  // behind a "reviewed" mark (bughunt 2026-08-13 — the old code split only
+  // the oldLast === newLast case).
   const oldLast = findLastSourceLine("+");
   const newLast = findLastSourceLine("-");
-  if (
-    oldEndsWithNewline !== newEndsWithNewline &&
-    oldLast >= 0 &&
-    oldLast === newLast &&
-    out[oldLast].sign === " "
-  ) {
-    const text = out[oldLast].text;
-    out.splice(
-      oldLast,
-      1,
-      {
-        sign: "-",
-        text,
-        ...(!oldEndsWithNewline ? { noNewline: true as const } : {}),
-      },
-      {
-        sign: "+",
-        text,
-        ...(!newEndsWithNewline ? { noNewline: true as const } : {}),
-      },
-    );
-  } else {
-    if (oldLast >= 0 && !oldEndsWithNewline && out[oldLast].sign !== " ") {
-      out[oldLast] = { ...out[oldLast], noNewline: true };
+  const contextAt =
+    out[oldLast]?.sign === " " ? oldLast : out[newLast]?.sign === " " ? newLast : -1;
+  if (contextAt >= 0) {
+    const oldTerminated = contextAt === oldLast ? oldEndsWithNewline : true;
+    const newTerminated = contextAt === newLast ? newEndsWithNewline : true;
+    if (oldTerminated !== newTerminated) {
+      const text = out[contextAt].text;
+      out.splice(
+        contextAt,
+        1,
+        { sign: "-", text, ...(!oldTerminated ? { noNewline: true as const } : {}) },
+        { sign: "+", text, ...(!newTerminated ? { noNewline: true as const } : {}) },
+      );
     }
-    if (newLast >= 0 && !newEndsWithNewline && out[newLast].sign !== " ") {
-      out[newLast] = { ...out[newLast], noNewline: true };
-    }
+  }
+  // Each side's final SIGNED source line carries its own marker — indices
+  // recomputed, since the split above may have moved them.
+  const oldFinal = findLastSourceLine("+");
+  const newFinal = findLastSourceLine("-");
+  if (oldFinal >= 0 && !oldEndsWithNewline && out[oldFinal].sign === "-") {
+    out[oldFinal] = { ...out[oldFinal], noNewline: true };
+  }
+  if (newFinal >= 0 && !newEndsWithNewline && out[newFinal].sign === "+") {
+    out[newFinal] = { ...out[newFinal], noNewline: true };
   }
   return out;
 }
