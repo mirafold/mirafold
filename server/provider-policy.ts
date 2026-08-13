@@ -186,8 +186,19 @@ export function classifyOpenCodeProvider(entry: OpenCodeProviderEntry): OpenCode
         };
       }
       if (entry.id === "opencode" && entry.apiKeyOption === OPENCODE_ZEN_MARKER) {
-        // The built-in free Zen gateway. Its terms of use haven't been read
-        // and cited yet (OC.4/OC.5 gate) — fail closed until they are.
+        // The built-in free Zen gateway — TERMS READ 2026-08-13 (OC.4b,
+        // opencode.ai/legal/terms-of-service + opencode.ai/docs/zen):
+        // no prohibition on third-party harnesses (the server API we drive
+        // is opencode's own documented programmatic surface); "only use the
+        // Services for your own internal use, and not on behalf of or for
+        // the benefit of any third party" (local personal use reads clean;
+        // the paid relay would not); free models "during free periods" may
+        // use collected data to improve the models (a disclosure the user
+        // would need to see). This is the disclosed-uncertainty rule's exact
+        // shape, but opening a NEW provider under that rule is Kyle's call
+        // (the codex precedent, 2026-07-15), not a session's — so the row
+        // stays CLOSED until he makes it. If opened: local-only (never the
+        // relay), with the training-data caveat shown.
         return {
           kind: "api-key",
           allowed: false,

@@ -163,7 +163,9 @@ export function resolveBackend(): Backend {
 /** The env-configured default agent — a pre-selection hint, never assumed. */
 export function defaultAgent(): AgentName {
   const requested = process.env.MIRAFOLD_AGENT;
-  return requested === "codex" || requested === "gemini-cli" ? requested : "claude-code";
+  return requested === "codex" || requested === "gemini-cli" || requested === "opencode"
+    ? requested
+    : "claude-code";
 }
 
 /** Resolve one named agent's backend (kind + live + model), per-session (P.4). */
@@ -203,7 +205,7 @@ export function resolveBackendFor(agent: AgentName): Backend {
 }
 
 // Agents with a landed adapter — the onboarding picker's universe.
-export const ADAPTER_AGENTS: AgentName[] = ["claude-code", "codex", "gemini-cli"];
+export const ADAPTER_AGENTS: AgentName[] = ["claude-code", "codex", "gemini-cli", "opencode"];
 
 /** One way an agent could run on this machine. `usable` is provider-policy's
  *  verdict; a present-but-prohibited subscription rides as `blocked` —
@@ -294,6 +296,14 @@ export function backendOptions(agent: AgentName): BackendOption[] {
     case "gemini-cli":
       if (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY) addCredentialRow("api-key");
       break;
+    case "opencode": {
+      // One shallow row: a stored credential exists (existence only — the
+      // provider-resolved truth is enforced at session start, OC.3). Richer
+      // per-provider rows need a running engine; that probe is a post-OC.5
+      // idea, not a hello-time cost.
+      if (credentialKind("opencode") === "api-key") addCredentialRow("api-key");
+      break;
+    }
   }
   return options;
 }

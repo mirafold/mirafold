@@ -381,13 +381,20 @@ test("the agent picker flexes to the window — no internal scrollbar through th
   // are mostly ready (same recipe as the R.4k test below), swept through the
   // squeeze ramp's lower band, where pre-fix EVERY height here scrolled.
   const token = "e2e-squeeze-9c2f";
-  // All three rows ready (one-line details, no paragraph hints) — display
-  // only, nothing is clicked, so no engine ever spawns.
+  // All four rows ready (one-line details, no paragraph hints) — display
+  // only, nothing is clicked, so no engine ever spawns. OpenCode's readiness
+  // is an existence probe (binary + auth.json), so a stand-in binary and an
+  // empty stored-credential file are enough to get the short row.
+  const opencodeData = mkdtempSync(path.join(os.tmpdir(), "mirafold-squeeze-ocd-"));
+  mkdirSync(path.join(opencodeData, "opencode"));
+  writeFileSync(path.join(opencodeData, "opencode", "auth.json"), "{}");
   const d2 = await startDaemon({
     MIRAFOLD_TOKEN: token,
     ANTHROPIC_BASE_URL: "http://localhost:11434",
     OPENAI_API_KEY: "e2e-not-a-real-key",
     GEMINI_API_KEY: "e2e-not-a-real-key",
+    OPENCODE_BIN: "/bin/true", // display-only: never spawned
+    XDG_DATA_HOME: opencodeData,
   });
   const page2 = await browser.newPage();
   try {
@@ -521,7 +528,14 @@ test("onboarding → a full mock turn renders in the DOM", async () => {
   // Every credential-less row carries its one-line fix on the picker
   // itself (the harness forces all three agents credential-less) (R.4b).
   await page.waitForSelector(".onb-agent-hint");
-  assert.equal(await page.locator(".onb-agent-hint").count(), 3);
+  // One hint per offerable agent (the harness forces every agent
+  // credential-less) — four since the OpenCode adapter (PLAN OC.4b).
+  assert.equal(await page.locator(".onb-agent-hint").count(), 4);
+  const opencodeRowText = await page
+    .locator(".onb-agent", { hasText: "OpenCode" })
+    .innerText();
+  assert.match(opencodeRowText, /opencode auth login/);
+  assert.match(opencodeRowText, /OPENCODE_MODEL/);
   const claudeRow = page.locator(".onb-agent", { hasText: "Claude Code" });
   assert.match(await claudeRow.innerText(), /ANTHROPIC_API_KEY|`claude`/);
   // Disclosed-uncertainty rule (K.3 amendment, 2026-07-15): the Codex row

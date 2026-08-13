@@ -27,9 +27,8 @@ export const CONNECT_HINT: Record<AgentName, string> = {
     "run `codex login` (ChatGPT subscription — not clearly permitted by OpenAI's terms, tolerated in practice; your account, your call) or set OPENAI_API_KEY (platform.openai.com/api-keys) — or point Codex at a local model (Ollama/LM Studio/vLLM) or any OpenAI-compatible provider (e.g. OpenRouter) via ~/.codex/config.toml (recipe: docs/local-models.md)",
   "gemini-cli":
     "set GEMINI_API_KEY (free key at aistudio.google.com/apikey) — Gemini has no local path",
-  // Placeholder until PLAN OC.4 writes the real onboarding surface (the
-  // agent isn't offered before then — not in ADAPTER_AGENTS).
-  opencode: "install opencode (opencode.ai) and connect a provider with `opencode auth login`",
+  opencode:
+    "install opencode (opencode.ai), connect a provider with an API key via `opencode auth login` — or declare a local/BYO provider (Ollama, OpenRouter, …) in your opencode config — then set OPENCODE_MODEL=<provider>/<model>. Subscription logins (ChatGPT, Copilot) and the built-in free Zen models aren't usable here yet",
 };
 
 // The hint for a BLOCKED agent — a prohibited subscription credential is
@@ -91,6 +90,10 @@ export function backendLabel(agent: string, kind: "api-key" | "subscription" | "
     if (agent === "codex") return "OpenAI API key";
     if (agent === "claude-code") return "Claude API key";
     if (agent === "gemini-cli") return "Gemini API key";
+    // OpenCode's row backs onto whichever provider credential its own auth
+    // store holds — no single vendor name exists until the session resolves
+    // the pinned provider (OC.3), so the row names the mechanism.
+    if (agent === "opencode") return "API key (via opencode)";
     return "API key";
   }
   if (kind === "local") return "local endpoint";

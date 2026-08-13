@@ -2785,16 +2785,48 @@ gates come first.
   `emitPromptOptions` behind our two re-skins (engine rows badged
   `source: "opencode"`). 6 new Tier-1 tests; suite 757/757; typecheck
   green. — **Goal:** what an OpenCode user expects in-session.
-- [ ] **Step OC.4b — Onboarding + kind-into-Backend + Zen terms** —
-  **Goal:** the agent becomes offerable. **Build:** ADAPTER_AGENTS entry +
-  onboarding card + real agents-meta copy (gray-area disclosure only when
-  the chosen provider needs it); flow the session-start classified kind
-  into `Backend` so the ChatGPT gray path can run under its true kind
-  (relay-gate truth — the OC.3 refusal comes out then, with the
-  disclosure); read and cite OpenCode Zen's terms and either open the
-  free-models row or keep it closed with the citation. **Done when:**
-  onboarding→session flow works live end-to-end and a blocked/gray pick
-  shows its honest copy in the picker.
+- [x] **Step OC.4b — Offerable + Zen terms citation** — completed
+  2026-08-13 (the kind-into-Backend half split to OC.4c; live onboarding
+  proof folds into OC.5): `opencode` joined ADAPTER_AGENTS +
+  `defaultAgent`; one shallow `backendOptions` api-key row (existence
+  probe; the provider-resolved truth stays enforced at session start);
+  real agents-meta copy (connect hint names install + `opencode auth
+  login` + OPENCODE_MODEL and says plainly that subscriptions and Zen
+  aren't usable yet), `backendLabel` "API key (via opencode)", PromptBox
+  source badge. **Zen terms read and cited** in provider-policy.ts
+  (2026-08-13: no third-party-harness prohibition — the server API is
+  opencode's own documented programmatic surface; "own internal use"
+  clause; free-period training-data caveat): the disclosed-uncertainty
+  rule's exact shape, but opening a NEW provider under it is Kyle's call
+  (codex precedent), so the row stays CLOSED pending his decision — if
+  opened, local-only + caveat shown. Also fixed en route: the fourth
+  agent row overflowed the onboarding squeeze ramp by 14px — the
+  squeeze intercept moved 66→70 and the per-row floor metrics shaved
+  (full-chrome values untouched); the squeeze e2e passes with four READY
+  rows. Verification status, honestly: Tier-1 757/757 + Tier-2 152/152
+  green; e2e ran 96/97 before the CSS fix (the squeeze test its only
+  failure, after the hint-count assertion gained the fourth card) and
+  the fixed squeeze test passes in isolation — but two attempts at the
+  full post-fix e2e run were stopped externally mid-run (6/6 ok at each
+  stop), so ONE clean full-suite pass is still owed; folded into OC.5's
+  tier sweep.
+- [ ] **Step OC.4c — Classified kind into Backend (the ChatGPT-gray
+  unlock)** — **Goal:** the gray path runs under its TRUE kind. **Build:**
+  an optional `AgentSession.onBackendKind` seam (like `onResumeId`): the
+  OpenCode session publishes the OC.3-classified kind + provider at start;
+  the registry updates its `Backend` so the relay gate judges truth.
+  **The race that shapes the design:** hello-kind is optimistic
+  ("api-key"), so a relay viewport's FIRST prompt could slip the gate
+  before classification lands — closed by a `kindVerified` flag on
+  opencode Backends (server-side only): relay prompts refuse with an
+  honest "still verifying" message until the session publishes, local
+  viewports unaffected. Then the OC.3 session-level gray refusal lifts,
+  replaced by a Mirafold-composed disclosure notice at session start
+  (uncertainty stated, never permission — the codex CONNECT_HINT contract,
+  session-time edition). **Done when:** Tier-1 covers publish→registry
+  update, the pre-verification relay refusal, and the gray disclosure;
+  the relay itest proves a subscription-classified session never runs a
+  turn from a relay viewport.
 - [ ] **Step OC.5 — Tier-2/Tier-3 + live end-to-end** — **Goal:** the
   proof. **Build:** Tier-2 itest against a real spawned `opencode serve`
   (mock-forced provider if feasible); Tier-3 e2e onboarding→prompt→render;
