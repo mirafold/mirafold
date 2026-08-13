@@ -760,6 +760,10 @@ test("BUGFIX: a checkpointed OpenCode backend restores — provider is annotatio
         provider: "github-copilot",
       });
       assert.ok(!("error" in copilot) && !copilot.live, "unclassified oauth restores to the mock");
+      // Round 2: kind "local" (a BYO config provider like Ollama) fell
+      // through to the codex-only local branch and was unrecoverable.
+      const byo = resolveChosenBackend("opencode", { kind: "local", provider: "ollama" });
+      assert.ok(!("error" in byo) && byo.live && byo.provider === "ollama");
       // Real identity fields still refuse — only provider is annotation.
       assert.ok("error" in resolveChosenBackend("opencode", { kind: "api-key", backendId: "x" }));
     });

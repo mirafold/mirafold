@@ -16,8 +16,12 @@ export type OpenCodeEvent = { type: string; properties: Record<string, unknown> 
 /** The transport seam between OpenCodeSession and a live `opencode serve` —
  *  swapped for a fake in Tier-1 tests. */
 export interface OpenCodeTransport {
-  /** Spawn + health-check the server and subscribe the event stream. */
-  start(onEvent: (ev: OpenCodeEvent) => void): Promise<void>;
+  /** Spawn + health-check the server and subscribe the event stream.
+   *  `onDied` fires if the engine PROCESS exits after a successful start —
+   *  without it a mid-turn crash left the session busy-wedged forever
+   *  (bughunt round 2); the transport clears its own start latch so the
+   *  next start() respawns fresh. */
+  start(onEvent: (ev: OpenCodeEvent) => void, onDied?: (detail: string) => void): Promise<void>;
   createSession(): Promise<{ id: string }>;
   sessionExists(id: string): Promise<boolean>;
   /** POST /session/:id/prompt_async — resolves once the engine ACCEPTED the
@@ -125,8 +129,8 @@ export class OpenCodeServerProcess implements OpenCodeTransport {
     },
   ) {}
 
-  start(onEvent: (ev: OpenCodeEvent) => void): Promise<void> {
-    this.starting ??= this.spawnAndConnect(onEvent).catch((err) => {
+  start(onEvent: (ev: OpenCodeEvent) => void, onDied?: (detail: string) => void): Promise<void> {
+    this.starting ??= this.spawnAndConnect(onEvent, onDied).catch((err) => {
       this.child?.kill();
       this.child = undefined;
       this.starting = undefined;
@@ -135,7 +139,15 @@ export class OpenCodeServerProcess implements OpenCodeTransport {
     return this.starting;
   }
 
-  private async spawnAndConnect(onEvent: (ev: OpenCodeEvent) => void): Promise<void> {
+  // Bumped per spawn AND per observed death: a stale event pump must stop
+  // rather than reconnect forever against a dead (or replacement) server.
+  private generation = 0;
+
+  private async spawnAndConnect(
+    onEvent: (ev: OpenCodeEvent) => void,
+    onDied?: (detail: string) => void,
+  ): Promise<void> {
+    const generation = ++this.generation;
     const port = await freePort();
     // The port is loopback-bound but otherwise open to any local process;
     // basic auth with a per-session secret closes that (spike §surface).
@@ -188,7 +200,19 @@ export class OpenCodeServerProcess implements OpenCodeTransport {
       await delay(250);
     }
     await this.waitForInjectedMcp(deadline);
-    void this.pumpEvents(onEvent);
+    // Startup succeeded — from here, a child exit is a CRASH the session
+    // must hear about (before this, the health loop owns exit reporting).
+    child.once("exit", (code, signal) => {
+      if (this.closed || this.generation !== generation) return;
+      this.generation += 1; // stop this spawn's pump
+      this.starting = undefined; // the next start() respawns fresh
+      this.child = undefined;
+      onDied?.(
+        `opencode serve exited unexpectedly (${signal ?? `code ${code}`})` +
+          (this.stderrTail ? `: ${this.stderrTail.trim().slice(-300)}` : ""),
+      );
+    });
+    void this.pumpEvents(onEvent, generation);
   }
 
   /** The engine's tool registry (and MCP connections) initialize lazily; a
@@ -218,9 +242,9 @@ export class OpenCodeServerProcess implements OpenCodeTransport {
     }
   }
 
-  /** Read the SSE stream for the server's whole life, reconnecting on drops. */
-  private async pumpEvents(onEvent: (ev: OpenCodeEvent) => void): Promise<void> {
-    while (!this.closed) {
+  /** Read the SSE stream for this SPAWN's life, reconnecting on drops. */
+  private async pumpEvents(onEvent: (ev: OpenCodeEvent) => void, generation: number): Promise<void> {
+    while (!this.closed && this.generation === generation) {
       try {
         const res = await fetch(`${this.base}/event`, { headers: { authorization: this.auth } });
         if (!res.ok || !res.body) throw new Error(`event stream HTTP ${res.status}`);
@@ -247,7 +271,7 @@ export class OpenCodeServerProcess implements OpenCodeTransport {
       } catch {
         // fall through to reconnect
       }
-      if (!this.closed) await delay(500);
+      if (!this.closed && this.generation === generation) await delay(500);
     }
   }
 

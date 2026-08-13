@@ -75,6 +75,16 @@ export class OpenCodeSession implements AgentSession {
   private turnActive = false;
   private turnDone?: () => void;
   private turnToken = 0;
+  // Engine idles owed for turns whose send() was accepted. A turn abandoned
+  // by the interrupt grace still owes one — its late idle must consume this
+  // debt instead of ending the NEXT turn (bughunt round 2, reproduced).
+  private pendingEngineIdles = 0;
+  // Whether the ACTIVE turn's request reached the engine — an idle can only
+  // end a turn whose engine work exists.
+  private turnSent = false;
+  // The interrupt grace timer — cleared on close so a dead session never
+  // holds the event loop (ADAPTERS.md close() contract).
+  private graceTimer?: ReturnType<typeof setTimeout>;
 
   get modelName(): string | undefined {
     return this.modelLabel;
@@ -147,6 +157,7 @@ export class OpenCodeSession implements AgentSession {
       },
       onPermissionAsked: (ask) => this.onPermissionAsked(ask),
       onPermissionReplied: (requestID, reply) => this.onPermissionReplied(requestID, reply),
+      onEngineIdle: () => this.onEngineIdle(),
       endTurn: () => this.endTurn(),
     });
     void this.worker();
@@ -176,7 +187,10 @@ export class OpenCodeSession implements AgentSession {
       void this.transport
         .abort(this.sessionID)
         .catch(() => {})
-        .then(() => setTimeout(fallback, INTERRUPT_GRACE_MS));
+        .then(() => {
+          this.graceTimer = setTimeout(fallback, INTERRUPT_GRACE_MS);
+          this.graceTimer.unref?.();
+        });
     } else {
       fallback();
     }
@@ -191,6 +205,7 @@ export class OpenCodeSession implements AgentSession {
   close() {
     if (this.closed) return;
     this.closed = true;
+    clearTimeout(this.graceTimer);
     this.denyPendingPermissions();
     this.endTurn(); // release a worker awaiting an in-flight turn
     this.transport.close();
@@ -216,7 +231,10 @@ export class OpenCodeSession implements AgentSession {
 
   private ensureEngine(): Promise<void> {
     this.engineUp ??= (async () => {
-      await this.transport.start((ev) => this.handleEvent(ev));
+      await this.transport.start(
+        (ev) => this.handleEvent(ev),
+        (detail) => this.onEngineDied(detail),
+      );
       // Non-fatal fidelity: without the catalog, `/name` inputs simply reach
       // the model as prompt text and the options list shows only our rows.
       this.engineCommands = await this.transport.commandCatalog().catch(() => []);
@@ -235,6 +253,7 @@ export class OpenCodeSession implements AgentSession {
   private ensureStarted(): Promise<void> {
     this.started ??= (async () => {
       await this.ensureEngine();
+      if (this.closed) throw new Error("session closed");
       await this.enforceProviderPolicy();
       if (this.wantedResumeId && (await this.transport.sessionExists(this.wantedResumeId))) {
         this.sessionID = this.wantedResumeId;
@@ -315,6 +334,7 @@ export class OpenCodeSession implements AgentSession {
   private async runEngineTurn(send: () => Promise<void>) {
     const token = ++this.turnToken;
     this.turnActive = true;
+    this.turnSent = false;
     this.mapper.startTurn();
     const done = new Promise<void>((resolve) => {
       this.turnDone = resolve;
@@ -328,10 +348,18 @@ export class OpenCodeSession implements AgentSession {
       // first REAL turn still carries it.
       if (!this.turnActive || this.turnToken !== token) return;
       await send();
+      // The engine accepted the request: exactly one idle is now owed, and
+      // only from here can an idle legitimately end this turn.
+      this.pendingEngineIdles += 1;
+      if (this.turnToken === token) this.turnSent = true;
       await done;
     } catch (err) {
-      if (!this.closed) this.emit({ type: "error", message: errText(err) });
-      this.endTurn();
+      // Token-guarded: a send that fails AFTER the grace fallback already
+      // ended this turn must not error-and-end whatever turn now runs.
+      if (this.turnActive && this.turnToken === token) {
+        if (!this.closed) this.emit({ type: "error", message: errText(err) });
+        this.endTurn();
+      }
     }
   }
 
@@ -346,6 +374,16 @@ export class OpenCodeSession implements AgentSession {
       } else if (trimmed === "/agent" || trimmed.startsWith("/agent ")) {
         await this.runAgentCommand(trimmed.slice("/agent".length).trim());
       } else {
+        // Slash-shaped input: the catalog decides whether it is an engine
+        // command — and a RESTORED session replays checkpointed command
+        // options before its engine has started, so the catalog must be
+        // loaded first or an advertised `/init` would reach the model as
+        // prose (bughunt round 2; ADAPTERS.md's interception rule). A
+        // failed engine start falls back to the prompt path, whose own
+        // error surfacing covers it.
+        if (/^\/[\w:-]/.test(trimmed) && this.engineCommands.length === 0) {
+          await this.ensureEngine().catch(() => {});
+        }
         const engine = this.matchEngineCommand(trimmed);
         if (engine) await this.runEngineCommand(engine.name, engine.args);
         else await this.runTurn(item);
@@ -439,6 +477,29 @@ export class OpenCodeSession implements AgentSession {
     });
   }
 
+  /** The engine PROCESS died after a successful start (crash, OOM, kill).
+   *  Surface it, end any live turn, and reset the latches so the next
+   *  prompt respawns a fresh engine — without this the session stayed
+   *  busy-wedged forever (bughunt round 2). */
+  private onEngineDied(detail: string) {
+    if (this.closed) return;
+    this.engineUp = undefined;
+    this.started = undefined;
+    this.sessionID = undefined;
+    this.pendingEngineIdles = 0;
+    this.denyPendingPermissions(false);
+    this.emit({ type: "error", message: detail });
+    this.endTurn();
+  }
+
+  /** One engine idle arrived. It ends the ACTIVE turn only when that turn's
+   *  own request is what just finished — a stale idle from an abandoned turn
+   *  pays down the debt and nothing more. */
+  private onEngineIdle() {
+    if (this.pendingEngineIdles > 0) this.pendingEngineIdles -= 1;
+    if (this.turnActive && this.turnSent && this.pendingEngineIdles === 0) this.endTurn();
+  }
+
   private endTurn() {
     if (!this.turnActive) return;
     this.turnActive = false;
@@ -446,6 +507,9 @@ export class OpenCodeSession implements AgentSession {
     // permission_resolved fired up to PERMISSION_TIMEOUT_MS later, mid-next-
     // turn (bughunt). No engine reply — the engine has already moved on.
     this.denyPendingPermissions(false);
+    // Usage flushes inside the end path — one per completed turn, just
+    // before turn_end, never between turns (bughunt round 2).
+    if (!this.closed) this.mapper.flushUsage();
     this.mapper.endTurn();
     if (!this.closed) this.emit({ type: "turn_end" });
     this.turnDone?.();

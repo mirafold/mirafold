@@ -59,6 +59,9 @@ export class OpenCodeEventMapper {
       /** A reply observed on the stream (answered by another client, e.g. a
        *  TUI attached to the same engine session) — not our own echo. */
       onPermissionReplied: (requestID: string, reply: string) => void;
+      /** One engine `session.idle` for our session — the SESSION scopes it to
+       *  the right turn and flushes usage inside the end path. */
+      onEngineIdle: () => void;
       endTurn: () => void;
     },
   ) {}
@@ -122,8 +125,12 @@ export class OpenCodeEventMapper {
       }
       case "session.idle":
         if (!this.options.isOurs(p["sessionID"])) break;
-        this.flushUsage();
-        this.options.endTurn();
+        // The session decides whether THIS idle ends the active turn — a
+        // stale idle from an interrupt-abandoned turn must not end the next
+        // one, and usage flushes inside the end path so it can never land
+        // between turns (bughunt round 2: error→idle emitted usage AFTER
+        // turn_end and wedged the fleet status "working").
+        this.options.onEngineIdle();
         break;
     }
   }
@@ -163,8 +170,9 @@ export class OpenCodeEventMapper {
     }
   }
 
-  /** The turn's one usage message, just before turn_end (protocol contract). */
-  private flushUsage() {
+  /** The turn's one usage message, just before turn_end (protocol contract) —
+   *  called by the session's end path, never between turns. */
+  flushUsage() {
     if (!this.turnUsage.size) return;
     let input = 0;
     let output = 0;
@@ -207,11 +215,17 @@ export class OpenCodeEventMapper {
         if (fromUser) break; // the prompt's own echo — never replayed as output
         this.emitTextSuffix(this.track(partID, "text"), String(part["text"] ?? ""));
         break;
-      case "reasoning":
+      case "reasoning": {
         if (fromUser) break;
         this.status("thinking");
-        this.emitTextSuffix(this.track(partID, "reasoning"), String(part["text"] ?? ""));
+        const track = this.track(partID, "reasoning");
+        // A delta that beat this snapshot registered the part as "text";
+        // the snapshot is authoritative — correct the lane for the rest of
+        // the stream (bughunt round 2, latent).
+        track.kind = "reasoning";
+        this.emitTextSuffix(track, String(part["text"] ?? ""));
         break;
+      }
       case "tool":
         this.onToolPart(partID, part);
         break;
@@ -270,11 +284,16 @@ export class OpenCodeEventMapper {
       });
     } else if (status === "error") {
       track.finished = true;
+      // Error text is engine/tool output too — same honest cap as success
+      // (ADAPTERS.md: EVERY tool output passes capOutput; bughunt round 2
+      // shipped a 200KB error string uncapped into the replay ring).
+      const { text, truncatedBytes } = capOutput(String(state["error"] ?? "tool failed"));
       this.options.emit({
         type: "tool_result",
-        output: String(state["error"] ?? "tool failed"),
+        output: text,
         isError: true,
         id: partID,
+        ...(truncatedBytes ? { truncatedBytes } : {}),
       });
     }
   }
@@ -324,11 +343,13 @@ export class OpenCodeEventMapper {
     // Unrecognized render ack or a failed call: fall back to the honest tool
     // record rather than silently dropping what the agent did.
     this.announceTool(track, partID, tool, input);
+    const { text, truncatedBytes } = capOutput(String(state["error"] ?? state["output"] ?? ""));
     this.options.emit({
       type: "tool_result",
-      output: String(state["error"] ?? state["output"] ?? ""),
+      output: text,
       ...(status === "error" ? { isError: true as const } : {}),
       id: partID,
+      ...(truncatedBytes ? { truncatedBytes } : {}),
     });
   }
 

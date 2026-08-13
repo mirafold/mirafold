@@ -899,3 +899,116 @@ test("BUGFIX: a turn's end denies its pending ask — no stale resolution later"
   assert.equal(fake.replies.length, 0, "the engine moved on — no pointless reject reply");
   session.close();
 });
+
+test("BUGFIX2: a stale idle from an errored turn never ends the NEXT turn", async () => {
+  const { session, fake, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("turn A");
+  // A ends via session.error — but the engine still owes A's idle.
+  feed(ev("session.error", { sessionID: SES, error: { name: "boom" } }));
+  await awaitTurnEnd();
+  session.pushPrompt("turn B");
+  await waitFor(() => fake.prompts.length === 2, "B sent");
+  feed(idle()); // A's LATE idle — must pay the debt, not end B
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(msgs.filter((m) => m.type === "turn_end").length, 1, "B must still be open");
+  feed(snap({ type: "text", text: "B's reply", id: "pb" }), idle()); // B's own idle
+  await awaitTurnEnd(2);
+  assert.ok(
+    msgs.findIndex((m) => m.type === "text_delta" && m.text === "B's reply") <
+      msgs.map((m) => m.type).lastIndexOf("turn_end"),
+    "B's output lands inside B's envelope",
+  );
+  session.close();
+});
+
+test("BUGFIX2: error→idle keeps usage INSIDE the turn envelope", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("hi");
+  feed(
+    assistant("a1", { input: 9, output: 4 }),
+    ev("session.error", { sessionID: SES, error: { name: "ProviderError", data: { message: "no key" } } }),
+  );
+  await awaitTurnEnd();
+  feed(idle()); // the engine's late idle after the error
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const kinds = msgs.map((m) => m.type);
+  const usageAt = kinds.indexOf("usage");
+  assert.ok(usageAt >= 0, "partial tokens are still honest usage");
+  assert.ok(usageAt < kinds.indexOf("turn_end"), "usage rides before turn_end, never after");
+  assert.equal(kinds.filter((k) => k === "usage").length, 1, "and never re-fires between turns");
+  session.close();
+});
+
+test("BUGFIX2: tool ERROR output is capped with honest truncation", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("hi");
+  feed(
+    snap({
+      type: "tool",
+      id: "t1",
+      tool: "bash",
+      state: { status: "error", input: {}, error: "E".repeat(200_000) },
+    }),
+    idle(),
+  );
+  await awaitTurnEnd();
+  const result = msgs.find((m) => m.type === "tool_result");
+  assert.equal(result?.isError, true);
+  assert.ok(result!.output.length < 200_000, "error text passes the byte cap");
+  assert.ok((result?.truncatedBytes ?? 0) > 0, "the elision is reported, never silent");
+  session.close();
+});
+
+test("BUGFIX2: engine death mid-turn surfaces, ends the turn, and the next prompt respawns", async () => {
+  const { session, fake, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  let starts = 0;
+  let died: ((detail: string) => void) | undefined;
+  const origStart = fake.start.bind(fake);
+  fake.start = async (cb: (ev: OpenCodeEvent) => void, onDied?: (detail: string) => void) => {
+    starts += 1;
+    died = onDied;
+    return origStart(cb);
+  };
+  await prompt("hi");
+  died?.("opencode serve exited unexpectedly (SIGKILL)");
+  await awaitTurnEnd();
+  assert.match(msgs.find((m) => m.type === "error")?.message ?? "", /exited unexpectedly/);
+  session.pushPrompt("after the crash");
+  await waitFor(() => fake.prompts.length === 2, "post-crash prompt");
+  assert.equal(starts, 2, "the crash resets the latch — a fresh engine spawns");
+  feed(idle());
+  await awaitTurnEnd(2);
+  session.close();
+});
+
+test("BUGFIX2: a slash input waits for the catalog — a restored /init never goes as prose", async () => {
+  const { session, fake, feed, awaitTurnEnd } = makeSession();
+  // First-ever input IS the advertised engine command (the restored-session
+  // shape: checkpointed prompt options replayed before the engine started).
+  session.pushPrompt("/init focus");
+  await waitFor(() => fake.commands.length === 1, "engine dispatch");
+  assert.deepEqual(fake.commands[0].name, "init");
+  assert.equal(fake.prompts.length, 0, "never sent to the model as prose");
+  feed(idle());
+  await awaitTurnEnd();
+  session.close();
+});
+
+test("BUGFIX2: a reasoning part whose delta beat its snapshot recovers the lane", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("hi");
+  feed(
+    delta("r9", "early "), // no snapshot yet — defaults to the text lane
+    ev("message.part.updated", {
+      sessionID: SES,
+      part: { sessionID: SES, messageID: "m1", id: "r9", type: "reasoning", text: "early thoughts" },
+    }),
+    idle(),
+  );
+  await awaitTurnEnd();
+  assert.ok(
+    msgs.some((m) => m.type === "thinking_delta" && m.text === "thoughts"),
+    "the authoritative snapshot corrects the stream's lane",
+  );
+  session.close();
+});

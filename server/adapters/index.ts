@@ -589,15 +589,17 @@ export function resolveChosenBackend(
   const backendId = typeof c.backendId === "string" ? c.backendId : undefined;
   const provider = typeof c.provider === "string" ? c.provider : undefined;
   const model = typeof c.model === "string" ? c.model : undefined;
-  if (agent === "opencode" && kind !== "local") {
+  if (agent === "opencode") {
     // An OpenCode backend's `provider` is the session's CLASSIFICATION
     // annotation (OC.4c publishes it), not a picker identity — the generic
     // identity rules below rejected every checkpointed backend, making any
     // session that ever ran a turn unrecoverable once dormant (bughunt
-    // 2026-08-13, reproduced). Validation here is deliberately shallow: the
-    // adapter re-classifies the pinned provider at start and `kindPending`
-    // keeps the relay gate closed until it does, so restore only needs "is
-    // the agent still credentialed at all".
+    // 2026-08-13, reproduced; round 2 caught kind "local" — a BYO config
+    // provider like Ollama — still falling through to the codex-only local
+    // branch). Validation here is deliberately shallow: the adapter
+    // re-classifies the pinned provider at start and `kindPending` keeps the
+    // relay gate closed until it does, so restore only needs "is the agent
+    // still credentialed at all".
     if (backendId !== undefined || endpoint !== undefined) return { error: "unknown backend choice" };
     if (!backendOptions(agent).some((option) => option.usable)) {
       return { error: "opencode has no usable backing right now — connect a provider and re-open" };
