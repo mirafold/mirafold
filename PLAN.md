@@ -2517,6 +2517,89 @@ user-visible PermBar strings.
   `yarn test` + `yarn test:e2e` + `yarn typecheck` pass; README's shell-UI
   section gains the tab-status-adjacent paragraph.
 
+## File drag-and-drop input (opened 2026-08-12; Kyle-directed)
+
+**Product call.** Kyle: take files in by drag and drop, like the terminal.
+In a terminal that feature is mostly the TERMINAL EMULATOR's: dropping a
+file inserts its shell-quoted path at the cursor, and the agent reads the
+path with its own tools. A browser cannot do that — a drop hands over the
+file's NAME and BYTES, never its real filesystem path — so Mirafold's
+faithful equivalent is: catch the drop on shell-owned chrome, ship the
+bytes to the daemon over the existing WebSocket in bounded chunks, stage
+them in a per-session directory OUTSIDE the working tree (no tree
+pollution — the terminal never copies into the repo either), and insert
+the staged file's absolute path into the prompt. The agent then reads it
+exactly as a terminal drop's path — zero adapter changes, agent-neutral by
+construction, and the same mechanism makes drops work from a phone through
+the relay, which a terminal cannot do at all. (Promoted from
+POST-RELEASE.md's "Input augment" entry; clipboard PASTE of files/images
+stays parked there.)
+
+**Bounds.** Staging is `os.tmpdir()/mirafold-uploads/<sessionId>/` (0700);
+v1 cleanup relies on the OS's tmp reaping (recorded decision — per-session
+delete-on-end can ride later). Caps: `FILE_UPLOAD_MAX_BYTES` (10 MB
+default, env), 2 concurrent uploads per connection, chunks bounded well
+under `MAX_WS_PAYLOAD`, a 30s no-chunk stall reaper, sanitized basenames
+(never a path), collision-suffixed. Uploads follow the prompt's relay
+gate: refused on a remote viewport when the session's backend kind is not
+`allowedOverRelay` — an upload is model input staging. Replies are
+correlated per-viewport (echoed client-minted id, `CLIENT_ID_RE` grammar),
+never broadcast, never replay-buffered. The drop overlay, progress strip,
+and path insertion are shell-owned end to end; a staged path enters the
+prompt via the existing draft-merge path, which never discards composed
+text.
+
+### Phase FD.1 — Wire + daemon staging
+
+- [x] **Step FD.1 — Chunked upload messages + the staging writer** —
+  completed 2026-08-12: five additive message types + Q.2 fixtures,
+  `upload-handlers.ts` with 12 Tier-1 tests covering the full refusal
+  matrix, and 2 Tier-2 itests proving byte-exact staging + typed refusals
+  over a real socket. — **Goal:** a client can stream a bounded file to the daemon and get back
+  a staged absolute path, with every abuse path refused loudly. **Build:**
+  additive protocol types (`file_upload_begin {id,name,size}` /
+  `file_upload_chunk {id,data}` / `file_upload_abort {id}` client-side;
+  `file_upload_done {id,path,name}` / `file_upload_error {id,message}`
+  replies) + Q.2 fixtures; `server/sessions/upload-handlers.ts` on the
+  fs-handlers template (per-connection state, never throws, every
+  well-formed request gets exactly one reply); connection.ts delegation +
+  dispose on close. **Files:** `server/protocol.ts`,
+  `server/protocol.test.ts`, `server/sessions/upload-handlers.ts` (+
+  `.test.ts`), `server/sessions/connection.ts`,
+  `server/sessions/file-upload.itest.ts`. **Done when:** Tier-1 covers
+  sanitization (path-stripped names, control chars, dot-names, length
+  cap, collision suffixing), size/concurrency/stall caps, chunk-overflow
+  and chunk-before-begin refusals, and the remote relay gate; a Tier-2
+  itest streams real bytes over a real socket and reads back the exact
+  file from staging; `yarn typecheck` green.
+
+### Phase FD.2 — The drop experience in the shell
+
+- [x] **Step FD.2 — Dropzone, progress, path insertion, e2e, docs** —
+  completed 2026-08-12: window-level drop targets + overlay + upload strip
+  shipped, staged paths quoted into the prompt via the draft merge with a
+  polite announcement, 10 Tier-1 tests on the client core, and the e2e
+  proves the whole loop (synthesized `DataTransfer` drop → overlay →
+  staged-path in textarea → byte-exact file on disk → announcement). One
+  diagnosed trap recorded: the drag listeners attach only after the
+  session attaches, so a dispatch racing the mount fires into the void —
+  the e2e waits for the session UI first. — **Goal:** dragging files onto a session viewport uploads them and puts
+  their staged paths in the prompt, visibly and accessibly. **Build:**
+  `web/src/file-drop.ts` — pure chunking/state core + a
+  folder-picker-style reply router, Tier-1-tested; session-bus gains the
+  three send methods; Shell wires window-level drag listeners (gated off
+  onboarding), a shell-owned drop overlay + a compact upload strip above
+  the prompt (name + progress + dismissible error), quoted-path insertion
+  through the PromptDraft merge, and a polite announcement per attached
+  file; CSS in the prompt-area stylesheet. **Files:**
+  `web/src/file-drop.ts` (+ `.test.ts`), `web/src/session-bus.ts`,
+  `web/src/components/Shell.tsx`, styles, `server/testing/app.e2e.ts`,
+  README, POST-RELEASE.md (annotate the Input augment entry). **Done
+  when:** the e2e drops a real `File` via `DataTransfer` on the live page,
+  watches the strip, reads the staged path out of the textarea, verifies
+  the staged file's exact bytes on disk, and axe stays clean; all three
+  tiers green.
+
 ## Phase PN — Panes (file views beside the transcript)
 
 **Why.** Kyle (2026-07-26): open a file and see it in its own pane. Also the

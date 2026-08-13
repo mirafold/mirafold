@@ -25,6 +25,8 @@ import { tildify } from "../tildify";
 import { agentLabel, connectHint } from "../agents-meta";
 import { paintTabStatus } from "../tab-status";
 import { createDomNotifier, folderTitle, notifyPrefEnabled, setNotifyPref } from "../notify";
+import { createFileDrop, quoteForPrompt, type UploadEntry } from "../file-drop";
+import type { WireMsg } from "@protocol";
 import { useEscapeKey } from "../use-escape";
 import { Announcer, turnResponse, useAnnouncer } from "./Announcer";
 import { PermBar, type PermAsk } from "./PermBar";
@@ -236,9 +238,35 @@ export function Shell() {
   // listener) for the page's life. Null where the API doesn't exist.
   const [notifier] = useState(createDomNotifier);
 
+  // ── File drag-and-drop (Phase FD) ───────────────────────────────────────
+  // Shell chrome end to end: the drop overlay, the upload strip, and the
+  // staged-path insertion are shell-owned; agent output can't reach any of
+  // them. The pure core lives in file-drop.ts; the ref indirection lets the
+  // once-created instance call the latest announce/draft closures.
+  const [uploads, setUploads] = useState<UploadEntry[]>([]);
+  const [dragActive, setDragActive] = useState(false);
+  const attachDroppedPath = useRef<(path: string, name: string) => void>(() => {});
+  const [fileDrop] = useState(() =>
+    createFileDrop({
+      uploadBegin: (name, size) => bus.uploadBegin(name, size),
+      uploadChunk: (id, data) => bus.uploadChunk(id, data),
+      uploadAbort: (id) => bus.uploadAbort(id),
+      onChange: setUploads,
+      onAttached: (path, name) => attachDroppedPath.current(path, name),
+    }),
+  );
+
   // Screen-reader announcements (A.1) — see Announcer.tsx for why the
   // transcript itself stays silent and these speak at turn boundaries.
   const { message: announcement, announce } = useAnnouncer();
+  // Phase FD: a staged path lands in the prompt through the draft merge —
+  // which never discards composed text — quoted the way a terminal drop
+  // quotes, with a polite announcement naming what happened.
+  attachDroppedPath.current = (path, name) => {
+    promptDraftId.current += 1;
+    setPromptDraft({ id: promptDraftId.current, text: quoteForPrompt(path) });
+    announce(`Attached ${name} — its path was added to the prompt.`);
+  };
   // The turn's prose, accumulated from text_delta so turn_end can announce
   // the response once, whole. A ref (not state): nothing renders from it, and
   // it must not re-run the subscription on every token.
@@ -250,6 +278,9 @@ export function Shell() {
   useEffect(
     () =>
       bus.subscribe((m) => {
+        // Upload replies are per-viewport correlation traffic, not session
+        // history — route them before the turn accounting ever sees them.
+        if (fileDrop.handle(m as WireMsg)) return;
         // Replayed history must repaint state but never re-fire live-only
         // side effects: on every reload/reconnect the full-buffer replay
         // re-spoke each historical turn to screen readers, ending with an
@@ -456,6 +487,49 @@ export function Shell() {
     ]);
   }, [notifier, connected, busy, asks, meta]);
 
+  // Phase FD: window-level drag targets — anywhere on the page is the drop
+  // zone (small targets punish drags), gated off onboarding (no session to
+  // stage into). Depth-counted because dragenter/dragleave fire per element
+  // crossed; only file drags participate (text selections drag too).
+  useEffect(() => {
+    if (!meta.sessionId) return;
+    let depth = 0;
+    const hasFiles = (e: DragEvent) =>
+      Array.from(e.dataTransfer?.types ?? []).includes("Files");
+    const enter = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      depth += 1;
+      setDragActive(true);
+    };
+    const over = (e: DragEvent) => {
+      if (hasFiles(e)) e.preventDefault();
+    };
+    const leave = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      depth = Math.max(0, depth - 1);
+      if (depth === 0) setDragActive(false);
+    };
+    const drop = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      depth = 0;
+      setDragActive(false);
+      const files = Array.from(e.dataTransfer?.files ?? []);
+      if (files.length) fileDrop.start(files);
+    };
+    window.addEventListener("dragenter", enter);
+    window.addEventListener("dragover", over);
+    window.addEventListener("dragleave", leave);
+    window.addEventListener("drop", drop);
+    return () => {
+      window.removeEventListener("dragenter", enter);
+      window.removeEventListener("dragover", over);
+      window.removeEventListener("dragleave", leave);
+      window.removeEventListener("drop", drop);
+    };
+  }, [meta.sessionId, fileDrop]);
+
   const answer = (id: string, allow: boolean) => {
     bus.answerPermission(id, allow);
     setAsks((a) => a.filter((x) => x.id !== id));
@@ -586,6 +660,27 @@ export function Shell() {
                 onKill={() => bus.killBang(bang.my!.id)}
               />
             )}
+            {uploads.length > 0 && (
+              <div className="drop-strip">
+                {uploads.map((u) => (
+                  <span
+                    key={u.id}
+                    className={"drop-chip" + (u.status === "error" ? " is-error" : "")}
+                  >
+                    {u.status === "uploading" ? `⇪ ${u.name}…` : `${u.name}: ${u.message}`}
+                    {u.status === "error" && (
+                      <button
+                        className="drop-chip-dismiss"
+                        onClick={() => fileDrop.dismiss(u.id)}
+                        aria-label={`Dismiss the ${u.name} upload error`}
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </span>
+                ))}
+              </div>
+            )}
             <PromptBox
               onSend={send}
               busy={busy}
@@ -622,6 +717,11 @@ export function Shell() {
             />
           </div>
         </div>
+        {dragActive && (
+          <div className="drop-overlay" aria-hidden="true">
+            <div className="drop-overlay-card">Drop files — their paths go to the prompt</div>
+          </div>
+        )}
         {settingsOpen && (
           <ThemePicker
             slots={slots}

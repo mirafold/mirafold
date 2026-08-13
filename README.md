@@ -755,6 +755,9 @@ web/               the browser app (React 19 + Vite)
   src/notify.ts      needs-you notifications (Phase NF): OS toasts when a
                      hidden tab's session hits a permission or finishes a
                      turn — pure transition reducer + injectable binder
+  src/file-drop.ts   file drag-and-drop (Phase FD): chunked upload of a
+                     dropped file's bytes + the staged-path prompt insert
+                     — pure chunk/state core, Shell owns the listeners
   src/use-escape.ts  useEscapeKey — the one Esc idiom behind every overlay
                      and the busy interrupt
   src/use-focus-trap.ts  useFocusTrap — focus in on open, Tab cycles inside,
@@ -1088,6 +1091,19 @@ cause resolves elsewhere or the tab becomes visible again. Both routes wire
 it — the session viewport from its own `asks`/`busy`, the fleet from every
 `sessions` snapshot — and titles/bodies are shell-composed with engine
 strings carried as inert plain text (the trusted-shell rule, §3).
+
+The shell also owns **file drag-and-drop** (`file-drop.ts`, Phase FD). In a
+terminal, dropping a file inserts its path and the agent reads the path
+itself; a browser never exposes a dropped file's real path, so the shell
+streams the bytes over the socket (`file_upload_begin/chunk/abort`, base64
+chunks bounded under the socket payload cap), the daemon stages them in a
+per-session directory under the OS temp dir — never the working tree — and
+the reply's absolute path lands in the prompt, quoted the way a terminal
+quotes it. Zero adapter involvement: the agent reads the staged path with
+its own tools, so all three agents get the feature at once, and the same
+path works from a phone through the relay. Uploads follow the prompt's
+relay gate; caps (10 MB/file, 2 concurrent, stall reaping) and name
+sanitization live in `server/sessions/upload-handlers.ts`.
 
 ### 6.2 `ws.ts` — `SocketClient`
 
