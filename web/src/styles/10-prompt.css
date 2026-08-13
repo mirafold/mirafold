@@ -1,0 +1,459 @@
+/* ---- Prompt area ---------------------------------------------------------
+   The input side of the workbench: the command bar, the `!` command's stdin
+   bar, the permission bar, and the stop affordance — all trusted-shell
+   surfaces agent output can never render or wrap. */
+
+/* The command bar: prompt glyph + monospace input, submits on Enter.
+   Grows with content up to ~8 lines, then scrolls internally. */
+.prompt-box {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  margin: 8px 0 14px;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.prompt-options {
+  position: absolute;
+  z-index: 30;
+  left: 12px;
+  right: 12px;
+  bottom: calc(100% + 6px);
+  max-height: min(46vh, 360px);
+  overflow-y: auto;
+  padding: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-hover);
+  border-radius: 8px;
+  box-shadow: 0 12px 34px rgb(0 0 0 / 28%);
+}
+
+.prompt-options button {
+  display: grid;
+  grid-template-columns: max-content max-content minmax(0, 1fr);
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  color: var(--fg-body);
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.prompt-options button.is-active,
+.prompt-options button:hover {
+  background: var(--surface-hover);
+}
+
+.prompt-option-value,
+.prompt-option-hint {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.prompt-option-value {
+  color: var(--accent);
+}
+
+.prompt-option-hint,
+.prompt-option-description {
+  color: var(--fg-faint);
+}
+
+.prompt-option-meta {
+  grid-column: 3;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+}
+
+.prompt-option-source {
+  flex: none;
+  padding: 1px 5px;
+  color: var(--fg-muted);
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.72em;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.prompt-option-description {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prompt-box:focus-within {
+  border-color: var(--border-hover);
+}
+
+.prompt-box .glyph {
+  font-size: 1em;
+  line-height: 1.5; /* match the textarea so the glyph sits on the first line */
+}
+
+/* The session's working dir at the prompt (Step 4.8) — dim, mono, terminal-
+   prompt style: `~/Projects/foo ❯`. Ellipsizes from the left so the leaf
+   (the part that identifies the project) always stays visible. Collapsible
+   down to just the caret — click the path to hide it, the caret to bring it
+   back; the choice persists (2026-07-16). */
+.prompt-cwd {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  line-height: 1.76; /* baseline-align with the 0.95em textarea text */
+  color: var(--fg-faint);
+  max-width: 34%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  /* Left-side ellipsis — keep the leaf, elide the head. The LRM sentinels
+     PromptBox adds around the text stop RTL from reordering the path. */
+  direction: rtl;
+  text-align: left;
+  flex-shrink: 0;
+}
+
+.prompt-cwd:hover {
+  color: var(--fg-dim);
+}
+
+/* The caret doubles as the cwd toggle when a cwd exists — same glyph look,
+   plus the interactive handshake on hover. */
+.prompt-caret {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.prompt-caret:hover {
+  filter: brightness(1.25);
+}
+
+.prompt-box textarea {
+  flex: 1;
+  resize: none;
+  background: transparent;
+  color: inherit;
+  border: none;
+  padding: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.95em;
+  line-height: 1.5;
+  outline: none;
+  max-height: calc(1.5em * 8);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hover) transparent;
+}
+
+.prompt-box textarea::placeholder {
+  color: var(--fg-faint);
+}
+
+/* Stdin for the running `!` command — shell-owned, ephemeral-path input
+   (never buffered or fanned out). Amber family: it's a live process asking. */
+.bang-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 9px 14px;
+  background: var(--warn-bg-2);
+  border: 1px solid var(--warn-border);
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.bang-bar-badge {
+  color: var(--warn-fg);
+  font-weight: 700;
+}
+
+.bang-bar-cmd {
+  max-width: 30%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--fg-dim);
+  font-size: 0.85em;
+}
+
+.bang-bar-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--fg-strong);
+  font: inherit;
+  font-size: 0.9em;
+}
+
+.bang-bar-input::placeholder {
+  color: var(--fg-faint);
+}
+
+.bang-bar-mask,
+.bang-bar-kill {
+  background: transparent;
+  border: 1px solid var(--warn-border);
+  border-radius: 6px;
+  padding: 3px 10px;
+  color: var(--warn-fg);
+  font-family: inherit;
+  font-size: 0.8em;
+  cursor: pointer;
+}
+
+.bang-bar-kill:hover {
+  border-color: var(--error);
+  color: var(--error);
+}
+
+/* Permission bar (Phase T.3): drawn by the trusted shell above the prompt
+   box — agent output cannot render, wrap, or fake this surface. Amber is
+   the "decision needed" accent. */
+
+/* The always-visible work indicator (2026-07-29): prompt-area chrome, never
+   a transcript entry, so no scroll position can hide it. The glyph frames
+   cycle from ActivityLine.tsx (JS, where reduced motion is honored) — the
+   2026-07-25 lesson baked in: a CSS pulse here was silently killed by the
+   rise-animation override and the line sat frozen. */
+.activity-line {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  margin-top: 8px;
+  padding: 0 15px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  color: var(--fg-dim);
+  animation: rise 0.16s ease-out both;
+  /* The label is engine-supplied (a tool name, MCP servers included) and
+     this line is chrome, not scrollable transcript — so an over-long one
+     must ellipsize here rather than widen the page (2026-07-29 audit).
+     The server cap is the first bound; this is the layout's own. */
+  min-width: 0;
+}
+
+.activity-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.activity-glyph {
+  width: 1.2em;
+  flex-shrink: 0;
+  text-align: center;
+  color: var(--accent);
+}
+
+.activity-elapsed {
+  color: var(--fg-faint);
+}
+
+.perm-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 9px 14px;
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-border);
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  animation: rc-mount 0.18s ease-out;
+}
+
+/* Everything except allow/deny is one button: it opens the full-command
+   card, because the one-line preview truncates (always on phone) and the
+   body is what a thumb tries to tap (2026-07-28, Kyle). */
+.perm-body {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.perm-body:hover .perm-detail {
+  color: var(--fg-strong);
+}
+
+.perm-badge {
+  color: var(--warn-fg);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.78em;
+  flex-shrink: 0;
+}
+
+.perm-tool {
+  color: var(--fg-strong);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.perm-detail {
+  flex: 1;
+  min-width: 0;
+  color: var(--fg-mid);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.perm-more {
+  color: var(--fg-dim);
+  flex-shrink: 0;
+}
+
+.perm-allow,
+.perm-deny {
+  flex-shrink: 0;
+  padding: 3px 12px;
+  font: inherit;
+  border-radius: 6px;
+  cursor: pointer;
+  background: transparent;
+}
+
+.perm-allow {
+  color: var(--accent);
+  border: 1px solid var(--ok-border);
+}
+
+.perm-allow:hover {
+  background: var(--ok-bg);
+  border-color: var(--ok-border-strong);
+}
+
+.perm-deny {
+  color: var(--error);
+  border: 1px solid var(--err-border);
+}
+
+.perm-deny:hover {
+  background: var(--err-bg);
+  border-color: var(--err-border-strong);
+}
+
+/* The full-command card: same modal shell as pairing/settings (backdrop and
+   card rules live with those), plus the command itself — wrapped, scrollable
+   past 60vh, and focusable so a keyboard can scroll it. */
+.perm-modal-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
+}
+
+.perm-modal-detail {
+  display: block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  line-height: 1.5;
+  color: var(--fg-body);
+  background: var(--bg-inset);
+  border: 1px solid var(--border-faint);
+  border-radius: 6px;
+  padding: 10px 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 60vh;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+/* Stop affordance (Phase T.2): shell-drawn, visible only while a turn is
+   in flight. Esc does the same thing from anywhere. */
+.stop-btn {
+  flex-shrink: 0;
+  align-self: flex-start;
+  padding: 2px 9px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82em;
+  line-height: 1.6;
+  color: var(--fg-dim);
+  background: transparent;
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.stop-btn:hover {
+  color: var(--error);
+  border-color: var(--err-border);
+}
+
+.tool-activity-group {
+  margin: 3px 0 7px;
+}
+
+.tool-activity-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 4px 7px;
+  color: var(--fg-faint);
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  font: 0.82em/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tool-activity-head:hover {
+  color: var(--fg-dim);
+  background: var(--surface-hover);
+}
+
+.tool-activity-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.tool-activity-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-activity-calls {
+  margin: 4px 0 2px 16px;
+  padding-left: 8px;
+  border-left: 1px solid var(--border-faint);
+}
+

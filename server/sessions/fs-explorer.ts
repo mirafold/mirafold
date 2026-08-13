@@ -8,7 +8,17 @@
 // so no call holds the event loop meaningfully — and sync means the reply
 // can never race a closed socket.
 
-import { closeSync, openSync, readdirSync, readSync, statSync } from "node:fs";
+import { createHmac, randomBytes } from "node:crypto";
+import {
+  closeSync,
+  constants,
+  fstatSync,
+  lstatSync,
+  openSync,
+  readlinkSync,
+  readdirSync,
+  readSync,
+} from "node:fs";
 import path from "node:path";
 import type { FsDirEntry, FsEntry } from "../protocol";
 import { inside } from "./actions";
@@ -49,6 +59,17 @@ const FS_DIR_MAX_NAME_BYTES = envInt("FS_DIR_MAX_NAME_BYTES", 200_000);
 // so a multi-GB file never gets loaded to be truncated.
 const SNIFF_BYTES = 8_192;
 const FS_FILE_CAP_BYTES = envInt("FS_FILE_CAP_BYTES", 64_000);
+// CR.4 review markers must name actual content, not a path or a timestamp.
+// Hashing is deliberately opt-in (only fs_diff asks) and bounded to 1 MB so
+// four allowed requests per second cannot turn synchronous file hashing into
+// an event-loop denial of service. Larger files remain viewable with the
+// existing honest truncation note, but the client receives no revision and
+// therefore cannot claim they were reviewed.
+export const FS_FILE_REVISION_CAP_BYTES = 1024 * 1024;
+// Per-daemon salt keeps a revision useful only as an equality token. A remote
+// viewport that may view a filename but not its binary bytes must not receive
+// a reusable public content fingerprint.
+const FILE_REVISION_KEY = randomBytes(32);
 
 /** NUL in the sniff window = binary. E.2 applies the same rule to git blobs
  *  (the fd path below sniffs its own window the same way). */
@@ -68,9 +89,37 @@ export type TreeResult = { entries: FsEntry[]; truncated: boolean } | { error: s
 export type DirResult = { entries: FsDirEntry[]; truncated: boolean } | { error: string };
 
 export type FileResult =
-  | { content: string; size: number; truncatedBytes?: number }
-  | { binary: true; size: number }
+  | { content: string; size: number; truncatedBytes?: number; revision?: string }
+  | { binary: true; size: number; revision?: string }
   | { error: string };
+
+export type DiffEntryResult = FileResult | { absent: true };
+
+/** A compact, opaque identity for exact bytes. This is a correctness key,
+ * not exposed file content; keyed SHA-256 makes a stale reviewed marker
+ * depend on the bytes without publishing a reusable content fingerprint. */
+export const contentRevision = (content: Uint8Array): string =>
+  `revision:v1:${createHmac("sha256", FILE_REVISION_KEY).update(content).digest("hex")}`;
+
+/** HEAD + working-tree identity for one diff. Length-framed hashes keep the
+ * two sides unambiguous without retaining either file in browser memory. */
+export const diffContentRevision = (before: Uint8Array, afterRevision: string): string =>
+  `revision:v1:${createHmac("sha256", FILE_REVISION_KEY)
+    .update(String(before.byteLength))
+    .update("\0")
+    .update(before)
+    .update("\0")
+    .update(afterRevision)
+    .digest("hex")}`;
+
+export const reviewDiffRevision = (
+  before: Uint8Array,
+  afterRevision: string | undefined,
+  maxBytes = FS_FILE_REVISION_CAP_BYTES,
+): string | undefined =>
+  afterRevision && before.byteLength <= maxBytes
+    ? diffContentRevision(before, afterRevision)
+    : undefined;
 
 /**
  * Walk the session root and return every FILE as a root-relative /-separated
@@ -217,28 +266,67 @@ export function listDir(
  * sniffed, cap-honest. `rel` is the client's requested root-relative path —
  * a REQUEST, never trusted: it resolves through `inside()` or not at all.
  */
-export function readWorkspaceFile(root: string, rel: string): FileResult {
-  const real = inside(root, rel);
-  if (!real) return { error: "path is outside the session workspace" };
-  if (isSecretFile(real)) return { error: "environment files are never readable here" };
-  let st;
-  try {
-    st = statSync(real);
-  } catch {
-    return { error: "file is not readable" };
-  }
-  if (st.isDirectory()) return { error: "path is a directory" };
-  // A FIFO/socket would stall a read and, with it, the daemon's event loop —
-  // the same lesson as the cwd-handoff lstat gate.
-  if (!st.isFile()) return { error: "not a regular file" };
-  const size = st.size;
+const readRegularFile = (
+  real: string,
+  options: { revision?: boolean; revisionCapBytes?: number },
+): FileResult => {
   let fd;
   try {
-    fd = openSync(real, "r");
+    // O_NOFOLLOW closes the lstat→open race on the diff path: a working file
+    // cannot be swapped for an out-of-workspace symlink between validation
+    // and the descriptor read. O_NONBLOCK keeps a swapped FIFO/device from
+    // stalling before fstat can reject it. `inside()` has already resolved
+    // ordinary Explorer symlinks, preserving that existing behavior there.
+    fd = openSync(
+      real,
+      constants.O_RDONLY |
+        (constants.O_NOFOLLOW ?? 0) |
+        (constants.O_NONBLOCK ?? 0),
+    );
   } catch {
     return { error: "file is not readable" };
   }
   try {
+    const st = fstatSync(fd);
+    if (st.isDirectory()) return { error: "path is a directory" };
+    // A FIFO/socket would stall a read and, with it, the daemon's event loop —
+    // the same lesson as the cwd-handoff lstat gate.
+    if (!st.isFile()) return { error: "not a regular file" };
+    const size = st.size;
+    // The review path reads and hashes one stable, bounded snapshot through
+    // the same descriptor. Ordinary Explorer reads stay on the original 64 KB
+    // path below and pay none of this work.
+    const revisionCap = options.revisionCapBytes ?? FS_FILE_REVISION_CAP_BYTES;
+    if (options.revision && size <= revisionCap) {
+      const opened = fstatSync(fd, { bigint: true });
+      const buf = Buffer.alloc(size);
+      let read = 0;
+      while (read < size) {
+        const n = readSync(fd, buf, read, size - read, read);
+        if (n <= 0) break;
+        read += n;
+      }
+      const finished = fstatSync(fd, { bigint: true });
+      const stable =
+        read === size &&
+        opened.size === BigInt(read) &&
+        opened.size === finished.size &&
+        opened.mtimeNs === finished.mtimeNs &&
+        opened.ctimeNs === finished.ctimeNs;
+      const exact = buf.subarray(0, read);
+      const revision = stable ? contentRevision(exact) : undefined;
+      if (sniffBinary(exact)) {
+        return { binary: true, size, ...(revision ? { revision } : {}) };
+      }
+      const capped = capBuffer(exact);
+      return {
+        content: capped.text,
+        size,
+        ...(capped.truncatedBytes ? { truncatedBytes: capped.truncatedBytes } : {}),
+        ...(revision ? { revision } : {}),
+      };
+    }
+
     const sniffLen = Math.min(size, SNIFF_BYTES);
     const sniff = Buffer.alloc(sniffLen);
     const sniffed = readSync(fd, sniff, 0, sniffLen, 0);
@@ -257,5 +345,72 @@ export function readWorkspaceFile(root: string, rel: string): FileResult {
     return { content, size, ...(size > read ? { truncatedBytes: size - read } : {}) };
   } finally {
     closeSync(fd);
+  }
+};
+
+export function readWorkspaceFile(
+  root: string,
+  rel: string,
+  options: { revision?: boolean; revisionCapBytes?: number } = {},
+): FileResult {
+  const real = inside(root, rel);
+  if (!real) return { error: "path is outside the session workspace" };
+  if (isSecretFile(real)) return { error: "environment files are never readable here" };
+  return readRegularFile(real, options);
+}
+
+const isMissingPath = (err: unknown): boolean => {
+  const code = (err as NodeJS.ErrnoException).code;
+  return code === "ENOENT" || code === "ENOTDIR";
+};
+
+/** Read the working-tree side of a Git diff without following the leaf
+ * symlink. A tracked symlink's content is its link text, exactly as stored in
+ * Git; a genuinely absent path is distinct from an unreadable or escaped one. */
+export function readWorkspaceDiffEntry(
+  root: string,
+  rel: string,
+  options: { revision?: boolean; revisionCapBytes?: number } = {},
+): DiffEntryResult {
+  const parentRel = path.posix.dirname(rel);
+  const realParent = inside(root, parentRel === "." ? "." : parentRel);
+  if (!realParent) {
+    // `inside()` intentionally returns one null for missing, inaccessible,
+    // and escaped paths. Probe only the error class so a deleted directory is
+    // a real empty after-side while EACCES cannot masquerade as deletion.
+    try {
+      lstatSync(path.resolve(root, ...rel.split("/")));
+      return { error: "path is outside the session workspace" };
+    } catch (err) {
+      return isMissingPath(err) ? { absent: true } : { error: "file is not readable" };
+    }
+  }
+
+  const absolute = path.join(realParent, path.posix.basename(rel));
+  if (isSecretFile(absolute)) return { error: "environment files are never readable here" };
+  let stat;
+  try {
+    stat = lstatSync(absolute);
+  } catch (err) {
+    return isMissingPath(err) ? { absent: true } : { error: "file is not readable" };
+  }
+  if (stat.isDirectory()) return { error: "path is a directory" };
+  if (!stat.isSymbolicLink()) return readRegularFile(absolute, options);
+
+  try {
+    const content = readlinkSync(absolute, { encoding: "buffer" });
+    const revisionCap = options.revisionCapBytes ?? FS_FILE_REVISION_CAP_BYTES;
+    const revision = options.revision && content.byteLength <= revisionCap
+      ? contentRevision(content)
+      : undefined;
+    const capped = capBuffer(content);
+    return {
+      content: capped.text,
+      size: content.byteLength,
+      ...(capped.truncatedBytes ? { truncatedBytes: capped.truncatedBytes } : {}),
+      ...(revision ? { revision } : {}),
+    };
+  } catch {
+    return { error: "file is not readable" };
   }
 }

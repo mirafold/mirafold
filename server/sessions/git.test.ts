@@ -1,10 +1,20 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { cleanRelPath, decorateGitDir, findRepoRoot, gitTree, parseStatusIgnoredZ, parseStatusZ } from "./git";
+import {
+  cleanRelPath,
+  decorateGitDir,
+  discoverNestedRepoRoots,
+  findRepoRoot,
+  gitChanges,
+  gitTree,
+  parseStatusIgnoredZ,
+  parseStatusZ,
+  workspaceChanges,
+} from "./git";
 
 // E.2's pure parsing pins: the -z rename two-field trap, status collapsing,
 // and the textual path containment that guards `git show`. E2.3 adds the
@@ -208,4 +218,191 @@ test("gitTree: path-byte admission counts UTF-8 bytes, not JavaScript characters
   if (!("entries" in result)) return;
   assert.deepEqual(result.entries, [], "a path larger than the byte budget is never admitted");
   assert.equal(result.truncated, true);
+});
+
+const initRepo = (root: string): void => {
+  mkdirSync(root, { recursive: true });
+  execFileSync("git", ["init", "--quiet"], { cwd: root });
+};
+
+const commitAll = (root: string, message = "fixture"): void => {
+  execFileSync("git", ["add", "--all"], { cwd: root });
+  execFileSync(
+    "git",
+    ["-c", "user.name=Mirafold Test", "-c", "user.email=test@invalid", "commit", "--quiet", "-m", message],
+    { cwd: root },
+  );
+};
+
+test("gitChanges: returns only changed files, including expanded untracked files and deletions", async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "gitchanges-"));
+  after(() => rmSync(root, { recursive: true, force: true }));
+  initRepo(root);
+  writeFileSync(path.join(root, "changed.txt"), "before\n");
+  writeFileSync(path.join(root, "deleted.txt"), "before\n");
+  writeFileSync(path.join(root, "clean.txt"), "same\n");
+  commitAll(root);
+
+  writeFileSync(path.join(root, "changed.txt"), "after\n");
+  rmSync(path.join(root, "deleted.txt"));
+  mkdirSync(path.join(root, "new", "deep"), { recursive: true });
+  writeFileSync(path.join(root, "new", "deep", "untracked.txt"), "new\n");
+
+  const result = await gitChanges(root);
+  assert.ok("entries" in result);
+  if (!("entries" in result)) return;
+  assert.deepEqual(result.entries, [
+    { path: "changed.txt", status: "M" },
+    { path: "deleted.txt", status: "D" },
+    { path: "new/deep/untracked.txt", status: "U" },
+  ]);
+  assert.equal(result.truncated, false);
+});
+
+test("gitChanges: reports the net HEAD-versus-working-tree state across index-only edge states", async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "gitchanges-net-"));
+  after(() => rmSync(root, { recursive: true, force: true }));
+  initRepo(root);
+  writeFileSync(path.join(root, "restored.txt"), "same as HEAD\n");
+  writeFileSync(path.join(root, "assumed.txt"), "before\n");
+  commitAll(root);
+
+  execFileSync("git", ["rm", "--cached", "--quiet", "restored.txt"], { cwd: root });
+  writeFileSync(path.join(root, "vanished-after-add.txt"), "temporary\n");
+  execFileSync("git", ["add", "vanished-after-add.txt"], { cwd: root });
+  rmSync(path.join(root, "vanished-after-add.txt"));
+  execFileSync("git", ["update-index", "--assume-unchanged", "assumed.txt"], { cwd: root });
+  writeFileSync(path.join(root, "assumed.txt"), "after\n");
+
+  const result = await gitChanges(root);
+  assert.ok("entries" in result);
+  if (!("entries" in result)) return;
+  assert.deepEqual(result.entries, [
+    { path: "assumed.txt", status: "M" },
+  ]);
+});
+
+test("gitChanges: a subdirectory session excludes changes above it and returns scope-relative paths", async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "gitchanges-scope-"));
+  after(() => rmSync(root, { recursive: true, force: true }));
+  initRepo(root);
+  mkdirSync(path.join(root, "app"));
+  writeFileSync(path.join(root, "app", "inside.txt"), "before\n");
+  writeFileSync(path.join(root, "outside.txt"), "before\n");
+  commitAll(root);
+  writeFileSync(path.join(root, "app", "inside.txt"), "after\n");
+  writeFileSync(path.join(root, "outside.txt"), "after\n");
+
+  const result = await gitChanges(path.join(root, "app"));
+  assert.ok("entries" in result);
+  if (!("entries" in result)) return;
+  assert.deepEqual(result.entries, [{ path: "inside.txt", status: "M" }]);
+});
+
+test("gitChanges: entry and UTF-8 path-byte caps are explicit truncation", async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "gitchanges-caps-"));
+  after(() => rmSync(root, { recursive: true, force: true }));
+  initRepo(root);
+  writeFileSync(path.join(root, "a.txt"), "a\n");
+  writeFileSync(path.join(root, "é.txt"), "e\n");
+
+  const countCapped = await gitChanges(root, { maxEntries: 1 });
+  assert.ok("entries" in countCapped);
+  if ("entries" in countCapped) {
+    assert.equal(countCapped.entries.length, 1);
+    assert.equal(countCapped.truncated, true);
+  }
+  const byteCapped = await gitChanges(root, { maxPathBytes: "é.txt".length });
+  assert.ok("entries" in byteCapped);
+  if ("entries" in byteCapped) {
+    assert.ok(!byteCapped.entries.some((entry) => entry.path === "é.txt"));
+    assert.equal(byteCapped.truncated, true);
+  }
+});
+
+test("discoverNestedRepoRoots: finds sibling repos, stops inside each, skips node_modules, and reports caps", () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "gitdiscover-"));
+  after(() => rmSync(root, { recursive: true, force: true }));
+  const linkedTarget = mkdtempSync(path.join(os.tmpdir(), "gitdiscover-linked-"));
+  after(() => rmSync(linkedTarget, { recursive: true, force: true }));
+  const alpha = path.join(root, "alpha");
+  const beta = path.join(root, "group", "beta");
+  initRepo(alpha);
+  initRepo(beta);
+  initRepo(path.join(alpha, "nested-but-owned-by-alpha"));
+  initRepo(path.join(root, "node_modules", "ignored-repo"));
+  initRepo(linkedTarget);
+  if (process.platform !== "win32") {
+    symlinkSync(linkedTarget, path.join(root, "linked-repo"), "dir");
+  }
+
+  assert.deepEqual(discoverNestedRepoRoots(root), {
+    roots: [alpha, beta].sort(),
+    truncated: false,
+  });
+  const repoCapped = discoverNestedRepoRoots(root, { maxRepos: 1 });
+  assert.ok("roots" in repoCapped);
+  if ("roots" in repoCapped) {
+    assert.equal(repoCapped.roots.length, 1);
+    assert.equal(repoCapped.truncated, true);
+  }
+  assert.deepEqual(discoverNestedRepoRoots(root, { maxNodes: 0 }), {
+    roots: [],
+    truncated: true,
+  });
+});
+
+test("repository discovery ignores malformed .git markers and keeps looking for real repositories", () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "gitdiscover-malformed-"));
+  after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(path.join(root, ".git"));
+  const nested = path.join(root, "group", "real");
+  initRepo(nested);
+
+  assert.deepEqual(discoverNestedRepoRoots(root), {
+    roots: [nested],
+    truncated: false,
+  });
+});
+
+test("findRepoRoot skips a malformed child marker and resolves the real owning repository", () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "gitfind-malformed-"));
+  after(() => rmSync(root, { recursive: true, force: true }));
+  initRepo(root);
+  const child = path.join(root, "child");
+  mkdirSync(child);
+  writeFileSync(path.join(child, ".git"), "not a gitdir marker\n");
+
+  assert.equal(findRepoRoot(child), root);
+});
+
+test("workspaceChanges: a parent workspace groups nested repos and maps entries to session-relative paths", async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "workspacechanges-"));
+  after(() => rmSync(root, { recursive: true, force: true }));
+  const alpha = path.join(root, "alpha");
+  const beta = path.join(root, "group", "beta");
+  initRepo(alpha);
+  initRepo(beta);
+  writeFileSync(path.join(alpha, "one.txt"), "one\n");
+  writeFileSync(path.join(beta, "two.txt"), "two\n");
+
+  const result = await workspaceChanges(root);
+  assert.ok("repos" in result);
+  if (!("repos" in result)) return;
+  assert.deepEqual(result, {
+    repos: [
+      { root: "alpha", entries: [{ path: "alpha/one.txt", status: "U" }] },
+      { root: "group/beta", entries: [{ path: "group/beta/two.txt", status: "U" }] },
+    ],
+    truncated: false,
+  });
+
+  const capped = await workspaceChanges(root, { maxEntries: 1 });
+  assert.ok("repos" in capped);
+  if ("repos" in capped) {
+    assert.equal(capped.repos.flatMap((repo) => repo.entries).length, 1);
+    assert.equal(capped.truncated, true);
+  }
+  const labelCapped = await workspaceChanges(root, { maxPathBytes: 4 });
+  assert.deepEqual(labelCapped, { repos: [], truncated: true }, "repository labels spend the path-byte budget too");
 });

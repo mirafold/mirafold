@@ -1,12 +1,10 @@
+import { Fragment } from "react";
 import type { ComponentProps } from "@registry-spec";
 import { diffLines, type DiffLine } from "../diff";
 
 // Empty `before` means a new file and empty `after` a deletion — show pure
 // +/- lines rather than diffing against the empty string's single "" line.
 export function diffSnippet(before: string, after: string): DiffLine[] {
-  if (before === "" && after === "") return [];
-  if (before === "") return after.split("\n").map((text) => ({ sign: "+" as const, text }));
-  if (after === "") return before.split("\n").map((text) => ({ sign: "-" as const, text }));
   return diffLines(before, after);
 }
 
@@ -16,12 +14,14 @@ export function DiffLines({ lines }: { lines: DiffLine[] }) {
   return (
     <>
       {lines.map((l, i) => (
-        <div
-          key={i}
-          className={l.sign === "+" ? "diff-add" : l.sign === "-" ? "diff-del" : "diff-ctx"}
-        >
-          {l.sign} {l.text}
-        </div>
+        <Fragment key={i}>
+          <div
+            className={l.sign === "+" ? "diff-add" : l.sign === "-" ? "diff-del" : "diff-ctx"}
+          >
+            {l.sign} {l.text}
+          </div>
+          {l.noNewline && <div className="diff-eof">\ No newline at end of file</div>}
+        </Fragment>
       ))}
     </>
   );

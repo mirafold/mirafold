@@ -66,9 +66,40 @@ fidelity** — show the work state that the selected terminal agent exposes,
 neither raw adapter churn the terminal hides nor less useful information.
 In-flight work and failures stay visible; when a turn finishes, contiguous
 runs of successful tool activity fold to expandable lines whose full normalized
-details are still available. A fold never crosses a failure or other visible
-transcript row, so chronology stays exact. Rich generative UI is added around
-that transcript, never in exchange for it.
+details are still available. An engine that narrates between commands (Codex
+thinks before nearly every one) has that interior narration folded along in
+true order rather than shattering the run into singletons; the fold's count
+speaks of actions only. A fold never crosses a failure, prose, or any other
+visible transcript row, so chronology stays exact. Rich generative UI is added
+around that transcript, never in exchange for it.
+
+The trusted shell also owns a live **Workspace changes** review surface. It
+groups every visible working-tree change by Git repository and opens the real
+HEAD-versus-working-tree diff without attributing shared-disk edits to the
+agent. On desktop it is a wide split beside the still-visible conversation —
+drag-resizable from its default width up to everything except a phone-sized
+conversation column, the choice persisted per browser; on phone it is a
+full-screen, one-file-at-a-time review with persistent previous and next
+controls. A diff opens positioned on its first hunk, so the hunk counter
+always describes what the viewport shows, and a live disk refresh updates the
+open diff in place without moving the reader. Stable HEAD/current line numbers
+and hunk navigation keep the code context exact: desktop supports pointer and
+keyboard range selection plus a **Select hunk** toggle (click again to
+unselect), while phone supports line and whole-hunk taps. **Explain** and **Request
+change** append the selected path, range, and diff to the visible editable
+prompt without sending, so feedback still travels through the ordinary trusted
+prompt path. Review progress stays local to one browser viewport and binds each
+checkmark to the exact bounded HEAD + working-tree bytes the daemon observed;
+`R` marks or unmarks that revision and `N` advances to the next unreviewed file
+only while focus is outside the prompt. A later disk or HEAD change visibly
+removes stale checkmarks: a complete path hint preserves unrelated progress,
+while a HEAD change or incomplete hint conservatively clears every marker. The
+same conservative reset happens after a reconnect or an explicit Refresh,
+when events may have been missed; a late Git-status decoration refresh does
+not impersonate a disk mutation. Terminal-newline changes render against the
+real final source line with an explicit no-newline marker, never a phantom
+blank line. The existing Files view remains the separate answer to "what
+exists here?" while Changes answers "what differs from HEAD?"
 
 ![Mirafold demo — a repo overview as a card and a table; a test-and-fix run with a permission strip, console output, a diff and a green re-run; a sudo password answered in the shell's own masked bar; a bundle pie chart pinned and updated in place](demo/demo.gif)
 
@@ -95,6 +126,9 @@ codebase. Companion documents:
   **C** (CI on every push), **E** + **E2** + **W** (the Explorer — the
   read-only files panel, lazy per-directory since E2 with per-repo git
   fidelity, and self-refreshing since W's filesystem watcher),
+  **CR.1–CR.4** (the bounded multi-repository change query, responsive live
+  Changes review workspace, visible unsent code-context feedback, and
+  revision-keyed review progress),
   **M** (mission control grown into a cockpit: act on sessions from the grid),
   L.1, most of the Phase F fidelity fixes, and the working core of
   **Phase R** (the hosted relay: R.1 dial-out + envelope, R.3 per-pair E2E
@@ -535,17 +569,23 @@ server/            the local daemon (Node, run with tsx)
                        bang_input/bang_kill handlers connection.ts delegates to,
                        plus the output budgets, cwd handoff, and agent-turn
                        transcript (the PTY runner itself stays in pty/)
-    fs-handlers.ts     Explorer request layer (Phase E): the fs_list/fs_listdir/
-                       fs_read/fs_diff handlers connection.ts delegates to —
-                       per-viewport replies, jailed + throttled, one reply each
+    fs-handlers.ts     Explorer + Changes request layer: the fs_list/fs_listdir/
+                       fs_read/fs_diff/fs_changes handlers connection.ts
+                       delegates to — per-viewport replies, jailed + throttled,
+                       one reply each; fs_diff also returns the bounded exact
+                       revision token used by viewport-local review progress
     fs-explorer.ts     Explorer data layer: the capped tree walk (E.1) + the
                        per-directory lister behind the lazy tree (E2.1) +
-                       jailed, secret-safe, binary-sniffing file reads
-    git.ts             Explorer git layer: bounded one-shot git calls for the
+                       jailed, secret-safe, binary-sniffing file reads; Changes
+                       can opt into a 1 MB-bounded opaque content revision
+    git.ts             Explorer/Changes git layer: bounded one-shot git calls for the
                        tracked tree + statuses + HEAD-vs-working diffs (E.2),
                        plus the per-repo view the lazy tree uses — nearest-.git
                        discovery, cached+serialized status, ignore-aware
-                       decoration (E2.3). NOTE: that discovery walks ABOVE the
+                       decoration (E2.3) — and the complete changed-file query,
+                       with bounded nested-repo discovery below a non-repo
+                       workspace root (CR.1). NOTE: nearest-repo discovery
+                       walks ABOVE the
                        session root when the session is scoped inside a repo;
                        SECURITY.md states the bound (nothing outside the scope
                        reaches the wire), pinned by a Tier-2 test
@@ -596,11 +636,11 @@ web/               the browser app (React 19 + Vite)
   src/components/    the shell-owned components — trusted UI, every file here
                      (H2.1); the agent-paintable vocabulary is its SIBLING,
                      registry/, so the trust split reads in the tree
-    Shell.tsx          TRUSTED SHELL: prompt box + notices +
-                       status bar + the activity bar (the left strip that
-                       toggles the Explorer — desktop only; on phone the
-                       toggle folds into the status bar, 2026-07-25);
-                       consumes the session bus (H.9)
+    Shell.tsx          TRUSTED SHELL: prompt box + notices + status bar + the
+                       activity bar (desktop's left strip for the mutually
+                       exclusive Files and Changes workspaces; on phone both
+                       toggles fold into the status bar); consumes the session
+                       bus (H.9)
     Onboarding.tsx     first-run card: pick the agent + working directory, then
                        how it's backed when there's a choice — detected
                        credentials + discovered local model servers (P.4/4.8/N.4)
@@ -630,9 +670,8 @@ web/               the browser app (React 19 + Vite)
                        right; sits INSIDE the workbench column (2026-07-25) so the
                        activity bar's border line runs unbroken to the window
                        bottom; folds to one row of controls at phone width
-                       (R.4l), where it also hosts the Explorer toggle
-                       (.sb-files, boxed at the far left — the rail is
-                       desktop-only, 2026-07-25)
+                       (R.4l), where it also hosts the Files and Changes
+                       workspace toggles (the activity rail is desktop-only)
     GearGlyph.tsx      the settings/tool gear as a flat outline drawing, three
                        homes: the settings button, the subagent head, the
                        fleet activity line (2026-07-25 — the ⚙ character
@@ -640,6 +679,8 @@ web/               the browser app (React 19 + Vite)
                        every glyph beside it)
     FilesGlyph.tsx     the Explorer/files glyph drawing — the activity-bar
                        toggle and the status bar's phone-width .sb-files
+    ChangesGlyph.tsx   the workspace-changes glyph drawing — the activity-bar
+                       toggle and the status bar's phone-width .sb-changes
     ArmedButton.tsx    the two-click destructive button (#11's arm → 3s
                        auto-disarm), shared by StatusBar + FleetView's end/stop
     PinDock.tsx        right-side dock for pinned components (live via entries)
@@ -663,7 +704,19 @@ web/               the browser app (React 19 + Vite)
                        dialog on phone; desktop ⤢ enlarges the file box into
                        a dimmed lightbox, E.6) + FileView.tsx (content /
                        diff / binary) + ExplorerNodeGlyph.tsx (small
-                       dependency-free folder/symlink/file-family glyphs)
+                       dependency-free folder/symlink/file-family glyphs) +
+                       use-file-view.ts (the reusable correlated read/diff
+                       lifecycle shared with the Changes surface, CR.1)
+    changes/           the live shell-owned repository/file review workspace:
+                       ChangesPanel.tsx composes the surface,
+                       use-changes-controller.ts owns requests/live state,
+                       ChangesChrome.tsx owns its responsive panel chrome,
+                       ReviewDiff.tsx owns line/hunk selection and drafts,
+                       ReviewRows.tsx owns bounded shared syntax rendering,
+                       use-hunk-navigation.ts owns hunk position/scrolling
+                       (first-hunk landing, deferred post-commit jumps), and
+                       panel-resize.tsx owns the desktop drag-to-resize
+                       separator (CR.2–CR.11)
   src/registry/      Card, List, Table, LinkGroup, Chart, TodoList, KeyValue,
                      Progress, Timeline, FileTree, Question, Diff, Stat, Code,
                      StatusList, Console, Image, Diagram, Md, CopyButton +
@@ -675,7 +728,25 @@ web/               the browser app (React 19 + Vite)
                      does the jailed read; the agent authors a path, never
                      bytes)
   src/session-bus.ts the shell's message bus (H.9): one SocketClient + the
-                     pub/sub fan-out and senders Shell.tsx consumes
+                     pub/sub fan-out and senders Shell.tsx consumes, including
+                     correlated Explorer/Changes filesystem queries
+  src/changes.ts     pure changed-file grouping, deterministic selection,
+                     count honesty, status labels, and repository labels
+  src/change-review.ts
+                     pure versioned-line, hunk, selection, and exact feedback-
+                     draft model plus interactive-size and reduced-motion
+                     policy for conversational change review
+  src/review-progress.ts
+                     pure viewport-local reviewed-revision, watcher
+                     invalidation, pruning, count, and next-unreviewed model
+  src/tool-visibility.ts
+                     pure settled-activity fold model: which contiguous
+                     successful calls — with the narration between them
+                     absorbed in order — compact into one `worked · N
+                     actions` record (UX.10)
+  src/prompt-draft.ts
+                     preserves composed prompt text while appending a visible,
+                     unsent Changes feedback draft
   src/folder-picker-requests.ts
                      correlated local picker requests shared by the session
                      shell and the fleet's new-session card
@@ -718,10 +789,14 @@ web/               the browser app (React 19 + Vite)
                      reached only via agentLabel()/connectHint() so an
                      unknown agent name degrades to its raw string (R.4h)
   src/version.ts     the web bundle's own build version (R.4g)
-  src/styles.css     structural CSS only — every color via var(...) (see §7);
-                     organized by surface, top of the screen down, with ONE
-                     phone media block at the end (its header comment maps the
-                     sections and the order-sensitive spots, 2026-07-25)
+  src/styles.css     the import spine: numbered @imports of src/styles/, one
+                     file per surface, top of the screen down (split 2026-08-12
+                     from the former single file; same cascade, byte-identical
+                     bundle). Its header maps the surfaces and the
+                     order-sensitive spots. Structural CSS only — every color
+                     via var(...) (see §7) — and the ONE phone media block
+                     stays last as styles/15-phone.css
+  src/styles/        the 15 surface files the spine imports, in cascade order
   src/themes/        the palettes (Phase S): base.css (pinned code/diff
                      tokens) + one self-contained file per theme; manifest.ts
                      is the single source (THEMES, the token contract, the
@@ -1058,9 +1133,14 @@ subscription handles each `ZoneMsg`:
   when the result lands. In-flight rows remain visible, and errors remain
   expanded top-level. At `turn_end`, two or more contiguous successful calls
   from that turn fold into a terminal-sized, expandable `worked · N actions`
-  record. Failures, in-flight calls, batch changes, and non-tool transcript
-  rows break a run, so compaction cannot reorder evidence; opening a fold
-  preserves every normalized input and result. `ToolBlock.tsx`
+  record. Failures, in-flight calls, batch changes, and other visible
+  transcript rows break a run — with one deliberate exception (UX.10):
+  thinking rows BETWEEN two calls are absorbed into the fold in true
+  transcript order, so a narrating engine still compacts; leading and
+  trailing narration keeps its own visible row, the label counts actions
+  only, and expansion replays calls and narration exactly as they happened
+  (`web/src/tool-visibility.ts`). Compaction cannot reorder evidence;
+  opening a fold preserves every normalized input and result. `ToolBlock.tsx`
   renders those details — Edit/Write as a colored diff / code (T2.2), with
   any `truncatedBytes` as an explicit elision marker (T2.3). Calls tagged
   with `parentId` stay inside the turn's activity rather than becoming extra

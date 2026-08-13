@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ArmedButton } from "./ArmedButton";
+import { ChangesGlyph } from "./ChangesGlyph";
 import { ConnectDevice, type RelayInfo } from "./ConnectDevice";
 import { FilesGlyph } from "./FilesGlyph";
 import { GearGlyph } from "./GearGlyph";
@@ -49,6 +50,9 @@ export function StatusBar({
   filesOpen,
   filesDisabled,
   onToggleFiles,
+  changesOpen,
+  changesDisabled,
+  onToggleChanges,
 }: {
   connected: boolean;
   // Why the socket is down, when the relay refused it (no daemon / at capacity /
@@ -86,6 +90,9 @@ export function StatusBar({
   filesOpen?: boolean;
   filesDisabled?: boolean;
   onToggleFiles?: () => void;
+  changesOpen?: boolean;
+  changesDisabled?: boolean;
+  onToggleChanges?: () => void;
 }) {
   const [open, setOpen] = useState(true);
   const phone = useIsPhone();
@@ -122,20 +129,32 @@ export function StatusBar({
 
   return (
     <div className="status-bar">
-      {/* Phone-only (desktop's activity bar owns this there): the files
-          toggle sits one notch OUTSIDE home — its separator boxes it off as
-          navigation, distinct from the session controls. */}
-      {phone && onToggleFiles && (
-        <button
-          className={"sb-files" + (filesOpen ? " is-active" : "")}
-          onClick={onToggleFiles}
-          disabled={filesDisabled}
-          title={filesOpen ? "Hide files" : "Show files"}
-          aria-label="Files"
-          aria-expanded={filesOpen}
-        >
-          <FilesGlyph size={20} />
-        </button>
+      {/* Phone-only (desktop's activity bar owns these there): the workspace
+          toggles sit one notch OUTSIDE home, boxed off as navigation distinct
+          from the session controls. */}
+      {phone && onToggleFiles && onToggleChanges && (
+        <div className="sb-side-nav" aria-label="Workspace views">
+          <button
+            className={"sb-files" + (filesOpen ? " is-active" : "")}
+            onClick={onToggleFiles}
+            disabled={filesDisabled}
+            title={filesOpen ? "Hide files" : "Show files"}
+            aria-label="Files"
+            aria-expanded={filesOpen}
+          >
+            <FilesGlyph size={20} />
+          </button>
+          <button
+            className={"sb-changes" + (changesOpen ? " is-active" : "")}
+            onClick={onToggleChanges}
+            disabled={changesDisabled}
+            title={changesOpen ? "Hide workspace changes" : "Show workspace changes"}
+            aria-label="Workspace changes"
+            aria-expanded={changesOpen}
+          >
+            <ChangesGlyph size={20} />
+          </button>
+        </div>
       )}
       {/* Home (⌂ → mission control) is the outermost far-LEFT control —
           moved from the far right 2026-07-16 (Kyle); the dot stays glued to

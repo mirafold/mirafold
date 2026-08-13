@@ -256,14 +256,28 @@ test("provider completions open before submit, transcript click focuses, and set
       );
 
       // Successful provider activity becomes one terminal-sized record only
-      // when the turn settles. A failure remains visible at top level.
+      // when the turn settles. A failure remains visible at top level, and
+      // narration between commands (Codex's cadence) rides inside the fold
+      // instead of shattering it into singletons.
       await prompt.fill("show transcript compact tool activity");
       await prompt.press("Enter");
       await page2.locator(".stop-btn").waitFor();
       await page2.locator(".stop-btn").waitFor({ state: "detached" });
       assert.equal(await page2.locator(".tool-activity-group").count(), 1);
+      // The fold's count speaks of ACTIONS only — absorbed narration
+      // (thinking rows riding inside the fold) must never inflate it.
+      assert.match(
+        await page2.locator(".tool-activity-label").innerText(),
+        /worked · 2 actions/,
+        "the fold label must count tool calls only, not absorbed narration",
+      );
       assert.equal(await page2.locator(".tool-group").count(), 1);
       assert.match(await page2.locator(".tool-group").textContent() ?? "", /No matching test file/);
+      assert.equal(
+        await page2.locator(".thinking-block", { hasText: "Weighing which check" }).count(),
+        0,
+        "interleaved narration leaked outside the settled fold",
+      );
       await page2.locator(".tool-activity-head").click();
       assert.equal(
         await page2.evaluate(() => document.activeElement?.classList.contains("tool-activity-head")),
@@ -271,6 +285,11 @@ test("provider completions open before submit, transcript click focuses, and set
         "a transcript control click was redirected to the prompt",
       );
       assert.equal(await page2.locator(".tool-activity-calls .tool-block").count(), 2);
+      assert.equal(
+        await page2.locator(".tool-activity-calls .thinking-block", { hasText: "Weighing which check" }).count(),
+        1,
+        "the fold's expansion must replay the interleaved narration in place",
+      );
 
       // Event delegation must treat ordinary transcript links as controls too.
       // The real click path (pointerdown → pointerup → click) must leave focus
@@ -2727,8 +2746,15 @@ test("C.2: axe-core finds no serious/critical WCAG violations across the app", a
     // first time 2026-07-30 (the accessibility statement named it as unswept).
     await p.locator(".ab-files").click();
     await p.waitForSelector(".files-panel .files-row");
-    await p.locator(".files-file-row").first().click();
-    await p.waitForSelector(".files-view .fv-content");
+    // Pick a named safe fixture. Alphabetical-first is `.env.example` in this
+    // checkout, and dotenv files are intentionally opaque to this test run.
+    await p.locator(".files-file-row", { hasText: "README.md" }).click();
+    await p.waitForSelector(".files-view .fv-content").catch(async () =>
+      assert.fail(
+        `enlarged-view fixture did not open; selected=${JSON.stringify(await p.locator(".files-file-name").allInnerTexts())} ` +
+          `view=${JSON.stringify(await p.locator(".files-view").allInnerTexts())}`,
+      ),
+    );
     await p.locator(".files-enlarge").click();
     await p.waitForSelector(".files-file.is-maximized");
     await assertAxeClean(p, "enlarged file view");

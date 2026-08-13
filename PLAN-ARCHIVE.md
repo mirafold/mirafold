@@ -7586,3 +7586,760 @@ combined Tier 2/Tier 3 checks passed before merge into `next` at `21b5f33`.
 The eight correctness repairs are signed and DCO-signed-off in `3ed7236` and
 published as open PR #35 into `next`. Per Kyle's instruction, PR #35 remains
 unmerged for review.
+
+## Moved 2026-08-11 (Changes review foundation — CR.1)
+
+### Phase CR.1 — Reusable file view + complete change-set query (completed 2026-08-11)
+
+- [x] **Step CR.1 — Cut the shared foundation without changing the shipped UI**
+  - **Goal:** make Files and the later Changes surface consume one request/view
+    lifecycle, and give any viewport one bounded, honest query for all changed
+    files in the session's repository or nested repositories.
+  - **Build:** extract the correlated `fs_read`/`fs_diff` state from
+    `FilesPanel` into a reusable hook/controller while keeping its current
+    desktop and phone rendering byte-for-behavior equivalent. Add an additive
+    `fs_changes` → `fs_change_set` request/reply: changed paths only
+    (M/A/D/U), grouped by their session-relative repository root, capped by
+    count and UTF-8 path bytes, with truncation/errors explicit. A session
+    inside one repo scopes the answer to its session root; a non-repo parent
+    discovers bounded nested repos without following symlinks or descending
+    into repo contents. Reuse the existing Git trust controls, subprocess
+    timeout, secret-file refusal, per-viewport correlation, and Git-in-flight
+    throttle. No dependency.
+  - **Modify existing:** `server/protocol.ts`, `server/sessions/git.ts`,
+    `server/sessions/fs-handlers.ts`, `server/sessions/connection.ts`,
+    `web/src/session-bus.ts`, `FilesPanel.tsx`, and their tests.
+  - **Create new:** the reusable file-view request controller and its focused
+    tests. No user-facing control or surface is created in this phase.
+  - **Leave behaviorally unchanged:** `FileView` presentation, Explorer
+    interactions and styling on desktop/phone, every adapter, prompt behavior,
+    filesystem writes, and the relay transport.
+  - **Done when:** focused unit and server-integration tests prove root-repo,
+    subdirectory, nested-repo, rename/delete/untracked, caps, malformed-id,
+    throttle, and stale-reply behavior; existing Explorer browser assertions
+    pass unchanged at desktop and phone widths; typecheck is clean.
+
+**Executable changes:** `server/protocol.ts` adds only the correlated
+`fs_changes` request and `fs_change_set` reply, with explicit repository groups
+and truncation/error fields. `server/sessions/git.ts` now obtains changed files
+through the existing timeout-bounded, config-neutralized Git runner; scopes a
+repo-subdirectory session correctly; discovers nested repositories beneath a
+non-repo parent with repo/node/count/UTF-8-byte caps and no symlink traversal;
+and treats incomplete discovery as incomplete rather than silently complete.
+`fs-handlers.ts` and `connection.ts` expose the per-viewport throttled request
+without broadcasting or replaying it, and `session-bus.ts` mints its client
+correlation id. `web/src/components/files/use-file-view.ts` now owns the shared
+read/diff selection, mode, request correlation, stale-reply gate, and reset
+lifecycle; `FilesPanel.tsx` consumes it with its existing rendered structure and
+styling. No dependency, write path, adapter behavior, prompt behavior, relay
+shape, or visible Changes control was added.
+
+**Test changes:** protocol fixtures pin both additive frames. Git tests cover a
+real root repo, repo-subdirectory scoping, modified/deleted/untracked files,
+rename parsing, UTF-8/count caps, nested siblings, repo-boundary stopping,
+ignored dependency trees, symlink exclusion, and global repository-label path
+budgets. A new real-daemon/WebSocket integration covers grouped parent-workspace
+results, rename source/target, throttle replies, and subdirectory paths. The
+hostile-client integration now proves malformed `fs_changes` ids produce no
+reply and no crash. The existing stale-reply unit pin now imports the extracted
+controller directly.
+
+**Documentation changes:** `PLAN.md` records the four responsive Changes
+phases and keeps desktop and ≤640px mobile behavior as acceptance requirements
+throughout. `BUSINESS.md` narrows the IDE non-goal to keep editing out while
+bringing honest read-only visual diff review into scope. `README.md` records
+the new filesystem query and reusable controller in the architecture map.
+
+**Proof:** TypeScript passed. The focused protocol/Git/file-view run passed
+26/26; the new real-daemon Changes integration passed 2/2; the hostile-client
+integration passed 4/4. A Vite production build passed with dotenv loading
+explicitly disabled (`envDir: false`). The existing desktop Explorer drill-in
+browser flow passed with its required setup (3/3), and the existing 390px phone
+full-screen drill-in/no-side-scroll flow passed with its required pairing setup
+(3/3). `git diff --check` passed. No dotenv file was opened or read.
+
+## Moved 2026-08-11 (Useful Changes view — CR.2)
+
+### Phase CR.2 — The useful Changes view, desktop and mobile (completed 2026-08-11)
+
+- [x] **Step CR.2 — Ship the complete changed-set review surface**
+  - **Goal:** open Changes at will, move through every changed file, and read
+    its current HEAD-versus-working-tree diff without leaving the session.
+  - **Build:** add a shell-owned Changes control and honest changed-file count;
+    group files by repo, select the first change deterministically, and reuse
+    the CR.1 file-view controller. `fs_changed` and turn-end refresh the set and
+    the open diff without losing a still-valid selection. Empty, loading,
+    binary, truncated, error, and no-repository states all speak plainly.
+  - **Desktop styling:** a wider split workspace beside the transcript, compact
+    changed-file rail + readable diff, Files/Changes mutual exclusion, visible
+    active state, and a deliberate close path. It remains usable at the
+    narrowest desktop width and never silently hides the conversation.
+  - **Mobile styling:** a full-screen safe-area-aware layer, one file at a time,
+    vertical unified diff, fixed back + file counter + previous/next controls,
+    ≥40px targets, preserved scroll when returning to chat, and zero page-level
+    side-scroll at 390px.
+  - **Done when:** headless Chrome drives the real control and reviews added,
+    modified, deleted, and untracked files at desktop and 390px; a disk rewrite
+    updates the open view without a click; Files still follows its existing
+    drill-in behavior; dark/light screenshots and axe pass on both surfaces.
+
+**Verified starting state:** CR.1 had added the correlated, bounded
+`fs_changes` → `fs_change_set` multi-repository query in
+`server/protocol.ts`, `server/sessions/fs-handlers.ts`, and
+`server/sessions/git.ts`. It had also extracted the reusable correlated
+read/diff lifecycle into `web/src/components/files/use-file-view.ts`, with
+`FilesPanel.tsx` as its only host. `web/src/components/Shell.tsx` still owned a
+single `filesOpen` boolean; `ActivityBar` and `StatusBar.tsx` exposed only the
+Files control; and no Changes component, control, stylesheet, selection model,
+or browser scenario existed. `FileView.tsx` already presented text, unified
+diffs, binary refusal, loading, and errors. These were observed components,
+not inferred planned behavior.
+
+**Approved boundary:** modify `Shell.tsx`, `StatusBar.tsx`, and structural CSS
+to give Files and Changes one mutually exclusive shell-owned workspace slot;
+create the pure changed-file view model, Changes glyph, responsive Changes
+panel, focused unit tests, and real-daemon browser proof. Reuse the CR.1 wire,
+Git, session bus, and file-view controller without changing their behavior.
+Leave every adapter, prompt-send path, permission policy, filesystem write
+path, relay frame, and Files interaction behaviorally unchanged. Add no
+dependency.
+
+**Executable changes:** `web/src/components/Shell.tsx` now owns one
+`files | changes | null` auxiliary-workspace state and exposes mutually
+exclusive desktop activity-bar and phone status-bar controls.
+`web/src/components/changes/ChangesPanel.tsx` requests the complete set only
+while open, accepts only its correlated reply, groups the server's explicit
+repository results, opens the deterministic first change, and preserves a
+still-valid selected file across refresh. A one-second coalesced refresh reacts
+to live `fs_changed` bells and non-replayed turn ends, re-querying both the set
+and selected diff. Loading, clean tree, no repository, incomplete/truncated,
+partial refresh failure, refused Git configuration, binary file, and ordinary
+request errors are distinct visible states. `web/src/changes.ts` owns pure
+sorting, selection, status/count honesty, and repository-label helpers;
+`ChangesGlyph.tsx` supplies the dependency-free shell glyph.
+
+Desktop CSS supplies a `clamp(370px, 55vw, 760px)` split workspace with a
+compact repository/file rail and a readable independently scrolling review
+column while the transcript stays present. The 641px browser contract keeps at
+least 155px for review and 200px for conversation. At ≤640px the same surface
+becomes a fixed safe-area-aware dialog: the rail disappears, exactly one file
+is shown, previous/next and position remain fixed, all persistent controls are
+at least 40px, and only the file view scrolls. Closing it preserves the mounted
+conversation's scroll position. No server, adapter, write, permission, prompt,
+relay, or package behavior changed.
+
+**Test changes:** `web/src/changes.test.ts` pins deterministic repository/file
+ordering, selection preservation/fallback, exact versus incomplete counts,
+the four trusted status labels, hostile-status fallback, and POSIX/Windows
+repository labels. `server/testing/changes.e2e.ts` builds real Git fixtures for
+added, deleted, modified, untracked, binary, and deliberately truncated
+results; drives the real daemon and Chromium controls; proves Files/Changes
+mutual exclusion, every review state, selection preservation after a live disk
+rewrite, and unchanged Files drill-in. Its 1280px and 641px desktop checks keep
+the transcript visible; its 390×844 phone check proves full-screen geometry,
+no side-scroll, ≥40px controls, one-file navigation, binary state, close/reopen
+selection, and transcript-scroll preservation. Separate real workspaces prove
+no-repository, clean-tree, and safely refused Git-configuration states. Both
+desktop and phone switch through the real theme control, capture dark and light
+screenshots, and run axe in both appearances.
+
+**Documentation changes:** `README.md` now names Workspace changes in the
+product orientation and architecture map, records the responsive behavior, and
+distinguishes it from Files. `PLAN.md` marks CR.2 complete, advances CR.3, and
+turns PN.1 into the completed CR.1 pointer its scheduling note required. This
+archive preserves CR.2's full specification, starting state, actual boundary,
+and evidence. `BUSINESS.md` needed no CR.2 change because CR.1 had already
+recorded the read-only visual-review scope and honesty boundary.
+
+**Proof:** TypeScript passed. The focused changed-file and shared file-view
+unit run passed 8/8. A Vite production build passed with dotenv loading
+explicitly disabled (`envDir: false`). The final combined CR.2 real-daemon
+Chromium run passed 3/3, covering desktop, phone, and honest states; its four
+dark/light axe gates passed. The existing desktop token/onboarding/Explorer
+regression slice passed 3/3, and the existing paired-phone/Explorer slice
+passed 3/3. `git diff --check` passed. No dotenv file was opened or read.
+
+## Moved 2026-08-12 (Conversational Changes review — CR.3)
+
+### Phase CR.3 — Code-context navigation + transparent agent feedback (completed 2026-08-12)
+
+- [x] **Step CR.3 — Make a diff directly conversational**
+  - **In progress — session handoff 2026-08-11.** The selectable review diff,
+    stable HEAD/working-tree line coordinates, two-hunk navigation, shipped-stack
+    syntax highlighting, desktop pointer/keyboard ranges, phone line/hunk taps,
+    and visible unsent `Explain` / `Request change` prompt drafts are implemented
+    on `feature/changes-workspace`. Existing prompt text is preserved, invalid
+    selections clear with an explicit notice, and the focused unit, typecheck,
+    production-build, desktop-browser, and phone-browser checks pass. CR.3 stays
+    unchecked because its ordered browser suite is not yet reliably green.
+  - **Next `$next` action — diagnose before changing code.** Re-run the smallest
+    ordered Changes-browser subset enough times, without product edits, to
+    characterize an intermittent axe `scrollable-region-focusable` result. After
+    CR.3's desktop flow sends a mock turn, the later phone checks sometimes report
+    two serious findings at highlighted transcript code nodes (`.language-diff`
+    and `.language-ts`). Each phone test passes alone, and the same ordered subset
+    has both passed and failed with no code change. Two CSS hypotheses were tested
+    separately and reverted after they failed: making `.markdown pre code.hljs`
+    non-scrolling, then making `.rc-code-body code.hljs` non-scrolling. Before a
+    third hypothesis, capture the flagged nodes' dimensions, computed overflow,
+    and scroll ancestry inside the same axe evaluation that reports the result.
+    Do not mark CR.3 complete until the ordered suite passes repeatedly.
+  - **Goal:** turn "I object to these lines" into a precise, ordinary follow-up
+    to the same terminal agent without copying paths and snippets by hand.
+  - **Build:** add stable line numbers, changed-hunk navigation, enough context
+    to read the surrounding function, and syntax-aware code presentation using
+    the already-shipped highlighting stack (no dependency). Desktop supports
+    pointer/keyboard range selection; mobile supports tap-selected lines or a
+    whole hunk without drag precision. `Explain` and `Request change` create a
+    **visible editable draft** in the trusted prompt box containing the exact
+    path/range/snippet; neither action sends automatically or hides context.
+  - **Done when:** desktop keyboard and pointer plus phone taps can select a
+    range, create the exact visible draft, edit it, and send through the normal
+    prompt path; changing files clears an invalid selection honestly; all
+    existing agent/permission behavior is unchanged and all three tiers pass.
+
+**Verified starting state:** commit `5ac458d` already contained the CR.3
+interaction itself on `feature/changes-workspace`: `web/src/change-review.ts`
+derived stable versioned lines, hunks, selections, and prompt text;
+`ReviewDiff.tsx` rendered syntax-aware selectable rows; `ChangesPanel.tsx`,
+`Shell.tsx`, and `PromptBox.tsx` kept the selected context visible while a
+trusted-shell draft was edited and sent normally. Focused unit, typecheck,
+production-build, and isolated desktop/phone browser checks passed. The exact
+ordered Changes subset was unverified because its later phone axe scans had
+both passed and failed without a code change. No dependency, server protocol,
+real-agent adapter, permission path, or filesystem write behavior had been
+added.
+
+**Causal diagnosis:** before any product edit, the smallest ordered subset ran
+three valid times and failed twice. Failure-only axe instrumentation captured
+both nodes inside the same evaluation: `.language-diff` held 345px of content
+in 330px and `.language-ts` held 493px in 330px; Highlight.js computed
+`overflow: auto` on each, while both had `tabIndex: -1` and no focusable
+descendant. Their parent `<pre>` elements did not overflow; the outer
+`.render-zone` was already focusable. The intermittent source was
+`MockSession.playTemplateTurn()`: CR.3's submitted draft fell through to a
+shuffled five-template deck, and only `codeReviewTemplate` emitted those exact
+`diff` and `ts` fences. The same session was replayed into both later phone
+tests, so they failed together when that template was drawn and passed when it
+was not. The earlier CSS experiments had been reverted and were not stacked.
+
+**Executable changes:** the CR.3 feature remains the implementation recorded
+in `5ac458d`: stable HEAD/working-tree coordinates and two-hunk navigation;
+desktop pointer and keyboard ranges; phone line and whole-hunk taps; exact
+path/range/snippet drafts appended visibly to any existing prompt; focus moved
+to the editable prompt without sending; and explicit invalidation when the
+selected file, content revision, or textual view changes. The closure adds one
+targeted accessibility behavior in `web/src/registry/Md.tsx`: a fenced code
+node carrying Highlight.js's `hljs` class—the actual horizontal scroller—is in
+the keyboard tab order, while inline code remains inert. `MockSession` now
+answers CR.3's ordinary “Please revise the selected workspace change” draft
+with the existing two-fence code-review template deterministically, removing
+the shuffled-fixture dependency. Real Claude Code, Codex, and Gemini adapters,
+permissions, wire messages, filesystem behavior, and dependencies remain
+unchanged.
+
+**Test changes:** `Md.test.ts` pins the highlighted-versus-inline focusability
+split; `mock.test.ts` pins both deterministic fences. `changes.e2e.ts` proves
+the submitted CR.3 response really contains both highlighted scrollers and
+that each has `tabindex="0"` before its ordered phone axe scans. The shared axe
+helper now preserves failure target, HTML summary, exact client/scroll
+dimensions, computed overflow, focusability, and scrollable-ancestor detail
+instead of collapsing a violation to a count. The global accessibility test
+now chooses the named safe `README.md` Explorer fixture rather than the
+alphabetically first file: under the required dotenv-denial guard, that first
+file was `.env.example`, whose read was correctly blocked before contents were
+accessed. Failure-only selected-path/view diagnostics remain on that wait.
+
+**Documentation changes:** `PLAN.md` marks CR.3 complete and advances to CR.4;
+`README.md` now carries the conversational selection/draft behavior in both
+the product summary and architecture map. `HANDOFF.md` records CR.4 as the next
+single-pass phase and replaces the now-stale axe investigation handoff.
+
+**Proof:** focused mock/markdown unit files passed (8 tests), TypeScript passed,
+both production bundles built with Vite dotenv loading explicitly disabled,
+and `git diff --check` passed. The once-intermittent ordered desktop→phone
+subset passed 5/5 repetitions (15/15 cases), and the complete Changes browser
+file passed twice (5/5 each). The recorded aggregate runs passed 645/645 Tier 1,
+146/146 Tier 2, and 88/88 rebuilt Tier 3, including the global axe sweep and
+both CR.3 phone scans. The read-denial preload blocked attempted dotenv reads
+before contents were accessed.
+
+**2026-08-12 correction to the aggregate-safety claim:** the 645/645 and
+146/146 results above are real green results, but calling them fully safe under
+the account-wide dotenv rule was wrong. The preload used for those runs denied
+reads but not writes. `server/sessions/fs-explorer.test.ts` and
+`server/sessions/fs-explorer.itest.ts`, like the already excluded
+`server/render-image.test.ts`, open and write temporary dotenv-named fixtures.
+CR.4's aggregate proof below uses a stricter read/write/open denial preload and
+excludes all three files. No dotenv content was read during CR.3, but the two
+additional fixture files should not have been run under the literal “never
+open” boundary.
+
+## Moved 2026-08-12 (Trustworthy review progress — CR.4)
+
+### Phase CR.4 — Review progress, live invalidation, and closure (completed 2026-08-12)
+
+- [x] **Step CR.4 — Make large reviews resumable and trustworthy**
+  - **Goal:** show what the user has actually reviewed without letting later
+    agent edits hide behind a stale checkmark.
+  - **Build:** viewport-local reviewed state keyed to a file-content revision;
+    mark/unmark file and next-unreviewed navigation; any new revision visibly
+    returns that file to unreviewed while preserving unrelated progress. Add
+    keyboard shortcuts only when focus is outside the prompt, finish reduced-
+    motion/overflow/performance work, and run a focused correctness/security/
+    test-quality closure over the new read-only surface.
+  - **Done when:** a multi-file browser flow reviews files, mutates one behind
+    the UI, observes only that file become unreviewed, resumes on desktop and
+    phone, and passes all safe unit/integration/e2e tiers, typecheck, production
+    build, axe, and the repository's dotenv-opacity guard.
+
+**Verified starting state:** `server/protocol.ts` already defined
+`fs_file_diff` replies with bounded `before` / `after` text and binary or error
+states, but no revision identity. `web/src/components/files/FileView.tsx`
+carried those replies into the shared view model.
+`web/src/components/changes/ChangesPanel.tsx` was already viewport-mounted
+while visually closed, subscribed to `fs_changed`, and scoped its file-view
+lifecycle by `sessionKey`; it had no reviewed-progress state, reviewed
+controls, next-unreviewed behavior, or keyboard shortcuts.
+`ReviewDiff.tsx` built the line diff before any line-count ceiling and ran a
+complete Markdown/highlight pipeline for every rendered row; its hunk jump
+always requested smooth scrolling. No reviewed state existed in storage, on
+the wire, or in another component.
+
+**Approved boundary:** modify the additive `fs_file_diff` reply,
+`fs-explorer.ts`, `fs-handlers.ts`, `FileView.tsx`, `ChangesPanel.tsx`,
+`ReviewDiff.tsx`, the pure change-review policy, styles, and their tests. Create
+one pure review-progress model and focused tests for the revision and render
+contracts. Leave real Claude Code/Codex/Gemini adapters, ordinary prompt send,
+native permissions, Git trust, filesystem writes, and dependencies
+behaviorally unchanged. No persisted or cross-viewport review state was
+authorized or added.
+
+**Executable changes:** an `fs_diff` reply can now carry a per-daemon,
+HMAC-SHA-256 revision that length-frames the exact HEAD bytes and exact current
+file bytes. Revision work is opt-in and capped at 1 MB per side; the descriptor
+is checked before and after the bounded read, binary revisions remain opaque,
+and an unstable or oversized snapshot receives no revision and therefore
+cannot be marked reviewed. Secret-file refusal still happens before Git or
+filesystem content access. Ordinary Explorer reads retain their previous path
+and do no revision hashing.
+
+`review-progress.ts` owns one viewport's path→revision decisions, exact-match
+checks, pruning, selective watcher invalidation, conservative all-marker
+invalidation for HEAD/incomplete hints, counts, and wrapping
+next-unreviewed navigation. `ChangesPanel.tsx` keeps that state while its
+surface is closed, resets it on session change, listens to disk bells even
+while hidden, reconciles a newly loaded exact revision, exposes visible rail
+markers and `reviewed / visible` progress, and adds mark/unmark plus
+next-unreviewed controls. `R` and `N` work only outside the entire trusted
+prompt and every other editable control; `Alt`, `Control`, and `Meta`
+combinations and held-key repeats are ignored.
+
+`ReviewDiff.tsx` now rejects an over-budget diff before constructing its line
+matrix, mounts at most 1,000 interactive rows, and runs the shipped
+Markdown/Highlight.js stack once for the whole file rather than once per row.
+Selection and focus update row chrome without rerunning syntax highlighting.
+Hunk navigation requests instant scrolling when the viewport prefers reduced
+motion. Desktop at 641px and phone at 390px keep the progress header and both
+controls within the viewport; phone controls retain the 40px touch floor.
+
+**Focused correctness closure:** three concrete implementation defects were
+observed and closed before the final audit. First, the visually closed panel
+discarded watcher bells, so a file changed while hidden could reopen with a
+stale marker; its mounted subscription now always performs invalidation.
+Second, the initial shortcut guard protected editable elements but not an
+ordinary focusable control elsewhere inside the prompt; the whole
+`.prompt-box` is now excluded. Third, direct timing proved the per-row syntax
+pipeline took about 5.9 seconds for 1,000 rows; the shared pipeline brought the
+same fixture to about 0.4 seconds and the 1,000-line ceiling bounds the
+remaining work. The final focused correctness review found no unresolved bug.
+
+**Focused security closure:** the new capability is read-only and adds no
+dependency, persistence, adapter path, permission bypass, Git trust change, or
+filesystem write. Existing textual containment, realpath jail, Git-program
+neutralization, secret-name refusal, one-query-in-flight rule, and request
+throttles remain in front of it. The exact-byte work is capped at 1 MB and the
+token is keyed with a random per-daemon secret so a remote viewport does not
+receive a reusable public fingerprint of binary content. The final focused
+exploitability review found no unresolved security issue.
+
+**Test changes and mutation proof:** `fs-revision.test.ts` pins exact text and
+binary identity, opt-in work, changed bytes, oversized working-file
+withholding, and an oversized HEAD side. Real-Git integration pins revisions
+for modified,
+added, and deleted files. `review-progress.test.ts` pins exact revision
+matching, path-selective/directory/HEAD/incomplete invalidation, pruning, and
+wrapping navigation. `change-review.test.ts` pins the 1,000-line ceiling and
+reduced-motion policy. `ReviewDiff.test.ts` proves a highlighted 1,000-row
+render stays below a deliberately broad four-second regression budget and a
+1,001-row input falls back before selectable rows mount. The suffix was
+corrected from `*.test.tsx` to `*.test.ts` when the audit established that the
+ordinary Tier 1 command would otherwise omit it.
+
+Four temporary mutations were each applied alone and restored immediately:
+forcing all progress invalidation made the focused progress tests fail;
+returning a constant content identity made the revision tests fail; disabling
+the interactive ceiling made both policy and render tests fail; and suppressing
+the Changes-panel invalidation made the real browser flow fail while waiting
+for the changed file to become unreviewed. This proves the new tests detect
+their claimed failures rather than merely execute the code.
+
+`changes.e2e.ts` drives a real daemon, real Git, and Chromium on desktop and
+phone. It marks multiple exact revisions, mutates one nonselected file, proves
+only that file reopens, wraps and resumes, invalidates while visually closed,
+keeps a second viewport independent, handles binary review, protects prompt
+typing and prompt controls from shortcuts, ignores repeated keys, checks
+reduced-motion scrolling, enforces 641px/390px overflow and 40px phone controls,
+and runs axe in both layouts. CR.3's deterministic highlighted-code assertions
+remain in the same complete suite.
+
+**Documentation changes:** `PLAN.md` closes the four-phase Changes workspace
+and advances `$next` to PN.2. `README.md` records revision-keyed progress and
+the server/client ownership seams. `HANDOFF.md` records PN.2 as the next
+single-pass phase. This archive also corrects CR.3's overly broad aggregate
+safety description.
+
+**Proof:** the focused revision/progress/change-review/render/protocol run
+passed; the real-Git integration passed 12/12 across three unchanged runs; the
+isolated CR.4 browser case passed 3/3 across three unchanged runs; and the
+complete Changes browser file passed 6/6. TypeScript and both production
+bundles passed, with Vite dotenv loading redirected to an empty directory.
+Safe Tier 1 passed 634/634 across 75 files, excluding
+`server/render-image.test.ts` and `server/sessions/fs-explorer.test.ts`; safe
+Tier 2 passed 133/133 across 22 files, excluding
+`server/sessions/fs-explorer.itest.ts`; the complete rebuilt Tier 3 passed
+89/89 across all eight files. A stricter preload denied synchronous, callback,
+promise, stream, copy, and open operations targeting dotenv filenames
+throughout. No dotenv file was opened or read.
+
+**Post-completion non-functional refactor (2026-08-12):** the public component,
+wire protocol, DOM contract, CSS selectors, tests, and user behavior remain
+unchanged. `ChangesPanel.tsx` is now the responsive composition layer;
+`use-changes-controller.ts` owns its existing request, watcher, selection,
+review-progress, and shortcut lifecycle; `ChangesChrome.tsx` owns header/rail/
+navigation/progress chrome; and `ReviewRows.tsx` owns the existing memoized
+Markdown/highlight row rendering beneath `ReviewDiff.tsx`. Repeated review
+ref/state commits and the editable shortcut selector were deduplicated. No
+server/Git boundary, dependency, validation, log, or feature changed. Focused
+model/render tests passed, TypeScript and the production client build passed,
+the complete Changes browser file passed 6/6, safe Tier 1 passed 634/634, and
+the complete rebuilt Tier 3 passed 89/89.
+
+## Moved 2026-08-12 (Changes correctness remediation — CR.5)
+
+### Phase CR.5 — Correctness remediation (completed 2026-08-12)
+
+- [x] **Step CR.5 — Close the whole-feature bughunt findings**
+  - **Goal:** repair every reproduced correctness failure in the completed
+    Changes workspace before beginning a new feature.
+  - **Build:** keep the surface read-only while correcting Git/index edge
+    states, repository ownership, deleted/symlink/unreadable diffs, reconnect
+    and refresh trust, status-only refresh semantics, incomplete empty-state
+    language, and terminal-newline modeling. Pin each original failure at its
+    causal layer and repeat the complete Changes browser path.
+  - **Done when:** all ten original scenarios return the correct result; safe
+    focused and aggregate unit/integration suites, the real-daemon Chromium
+    suite, TypeScript, production builds, and the final diff boundary pass.
+
+**Verified starting state:** the whole-feature bughunt reproduced seven
+ordinary and three latent failures against the exact CR.1–CR.4 implementation.
+`gitChanges()` collapsed porcelain records directly, so a staged deletion plus
+an identical untracked working file appeared changed, an added-then-deleted
+path appeared deleted, and an assume-unchanged modification disappeared.
+`discoverNestedRepoRoots()` and `findRepoRoot()` treated mere `.git` existence
+as ownership. `resolveDiffRepo()` required the deleted file's complete parent
+to exist, and the diff after-side used `inside()` plus `stat`/read, following a
+leaf symlink and collapsing every lstat error to absence.
+
+`use-changes-controller.ts` reset request state only when `sessionKey` changed,
+although an ordinary socket reconnect preserves that key. A lost
+`fs_changes` reply therefore left Refresh permanently pending, while a
+successful reconnect could keep stale bytes and review progress. Manual
+refresh reloaded only the selected diff, so review markers for unselected
+files survived a HEAD change outside a subdirectory session's watcher root.
+The late directory-status path emitted a pathless, truncated `fs_changed`,
+which the review model correctly interpreted as unknown disk churn and used to
+invalidate every marker even though the disk had not changed. A truncated
+zero-entry set reached the clean-tree branch. Finally, splitting source text
+on every newline modeled the trailing delimiter as a real blank line, creating
+false line N+1 rows and missing terminal-newline-only changes.
+
+Each fact above was established before modification with a concrete temporary
+Git/daemon/browser probe. The roadmap did not already cover any finding: PN.2
+begins a separate pane feature.
+
+**Approved boundary:** modify the Changes Git/change-set derivation,
+repository discovery and diff read path, additive filesystem signal metadata,
+shared line-diff/review model, Changes request/review lifecycle and honest
+empty state, plus focused tests and Changes documentation. Leave terminal-agent
+adapters, prompt submission, native permissions, filesystem writes,
+dependencies, and PN.2 behaviorally unchanged. Git trust enforcement remains
+in force; the additional `ls-files` form is a command the daemon already ran.
+
+**Executable changes — Git and repository ownership:** `parseStatusZ()` now
+retains the raw records needed to recognize index combinations whose collapsed
+label is not the net result. `gitChanges()` also reads tracked-file flags and
+performs a bounded, jailed, exact revision comparison only for exceptional
+paths (duplicate staged-delete/untracked records, simultaneous add/delete, and
+nonordinary `ls-files -v` flags). Equal HEAD/current bytes are omitted;
+missing/new/changed paths become D/A-or-U/M. Unverifiable exceptional paths
+make the set explicitly incomplete instead of manufacturing certainty, and
+dotenv-pattern paths are never opened for this comparison.
+
+Repository discovery now accepts only a minimum valid Git administration
+shape: an ordinary `.git` directory with HEAD and objects, or a bounded gitdir
+file pointing at an ordinary/linked-worktree admin directory. A malformed
+marker is skipped while discovery continues below or ownership continues
+above. Deleted-path diff resolution walks to the nearest surviving jailed
+ancestor, retains the missing suffix, and resolves the correct nested repo.
+
+**Executable changes — diff semantics:** `readWorkspaceDiffEntry()` preserves
+three distinct states: absent, readable, and error. It validates the parent
+inside the session jail, uses lstat on the leaf, returns a symlink's link text
+as Git does, reports permission failures, and opens regular files with
+no-follow and nonblocking flags before descriptor/type/stability checks. The
+handler therefore treats only ENOENT/ENOTDIR as an empty deleted after-side.
+
+**Executable changes — viewport trust and honest presentation:** a
+`session_created` reattach now cancels socket-orphaned set/file request ids and
+timers, releases pending state, clears review claims whose disk history cannot
+be known, and schedules a fresh set plus selected diff. Explicit Refresh also
+clears all review claims before the query; this is the conservative floor for
+missed watcher events and HEAD changes outside a subdirectory root. Late Git
+decoration remains the backwards-compatible `fs_changed` message but carries
+the additive `reason: "status"`; Files refreshes as before, while Changes does
+not interpret it as disk mutation. A zero-visible incomplete response now says
+exactly that and renders the warning instead of claiming a clean tree.
+
+The shared line differ now separates source lines from the terminal-newline
+bit. Added/deleted files no longer gain a trailing sentinel row; a
+newline-only change replaces the actual final line, and the side lacking the
+delimiter carries a visible and draft-preserved `\\ No newline at end of
+file` marker. Review coordinates, line caps, hunks, syntax rows, and generic
+diff rendering consume the same model.
+
+**Test changes:** Git unit fixtures reproduce the two index-only contradictions
+and assume-unchanged omission, plus malformed markers above and below valid
+repositories. Real-daemon Git integration pins deleted nested directories,
+symlink text, unreadable-path errors, and malformed child ownership. The
+status integration requires `reason: "status"` without truncated/path disk
+hints. Line-model tests pin newline-only coordinates, added-file row counts,
+generic diff output, and feedback markers. Four real-browser cases close both
+reconnect failures, the unselected-marker/manual-HEAD failure, synthetic
+status invalidation, and the zero-visible incomplete wording.
+
+**Documentation changes:** `PLAN.md` closes CR.5 while keeping PN.2 next;
+`README.md` states reconnect/manual-reset, status-only, and terminal-newline
+behavior; `HANDOFF.md` records the repaired boundaries and current proof. No
+adapter, prompt, permission, write, dependency, or PN.2 documentation changed.
+
+**Proof:** the focused Git/protocol/revision/line-model run passed 44/44; the
+dedicated real-Git diff file passed 8/8; the status-signal file passed 5/5;
+TypeScript passed; and both production bundles built. The dotenv-safe Tier 1
+aggregate passed 638/638 across 75 files, explicitly excluding the two unit
+files that create dotenv-named fixtures. The dotenv-safe Tier 2 aggregate
+passed 137/137 across 22 files, explicitly excluding the integration file that
+creates such fixtures. The complete Changes browser file passed 10/10 after a
+fresh production build, with all four CR.5 browser regressions included.
+After a fresh client build whose Vite env directory was a new empty temporary
+directory, complete Tier 3 passed 93/93 across all eight browser files. Final
+`git diff --check` passed; the handoff records the earlier ordinary-build
+invocations whose dotenv-probe behavior is unverified.
+
+## Moved 2026-08-12 (Changes polish + branch closure — UX.10, CR.6–CR.14, stylesheet split)
+
+- [x] **Step UX.10 — Make collapse-on-finalize survive narrating engines** —
+  completed 2026-08-12, from Kyle's live Codex report (every shell/apply_patch
+  call visible individually). Diagnosis: the "worked · N actions" fold only
+  grouped ≥2 *contiguous* tool rows, and (a) Codex narrates a reasoning item
+  before nearly every command — each thinking row broke contiguity, leaving
+  unfoldable singletons; (b) the Codex adapter branded every nonzero exit an
+  error (`codex-events.ts`), and error rows deliberately stay expanded and
+  break runs, so routine probes (grep no-match, failing test runs) shattered
+  the rest. Fixes: `groupSettledTools` now absorbs INTERIOR thinking into the
+  fold in true transcript order (expansion replays narration between calls;
+  leading/trailing thinking keeps its own row; text/notice/failure boundaries
+  unchanged — nothing reorders), and Codex `status:"completed"` with nonzero
+  exit is no longer an error — the exit code is annotated in the output
+  (`(exit 1)`), matching the Codex TUI's own presentation; `status:"failed"`
+  still is. Claude sessions with interleaved thinking benefit identically;
+  Gemini emits no thinking rows and already folded best. Pinned in Tier-1
+  (5 new grouping cases, 1 codex exit case) and e2e (mock now narrates
+  between commands; the fold must absorb it and replay it on expansion).
+  Tier-1 672, Tier-2 150, app 54, changes+phone 20 — all pass.
+
+
+*(from the Changes review workspace intro:)*
+
+**Original verified starting state (before CR.1).**
+`web/src/components/files/FilesPanel.tsx` provided a shell-owned, read-only,
+lazy tree and one-file drill-in; changed files led with a
+HEAD-versus-working-tree diff. `FileView.tsx` was the pure presenter, while
+`FilesPanel` owned the one outstanding read/diff request. The server could
+decorate one requested directory with Git status and return one file's
+`{before, after}` diff, but no request returned the complete changed set. No
+Changes control, Changes surface, review progress, hunk navigation, or
+selected-code feedback path existed at that point.
+
+- [x] **Step CR.6 — Whole-branch security + test audits** — completed
+  2026-08-12. Security audit of the branch delta found no exploitable
+  vulnerability and no new ship-time gap: the read-only Changes surface reuses
+  the existing jail (`inside()`), secret-file denial, `repoTrust` program
+  neutralization, per-daemon revision key, and byte/count caps; verified by
+  trace and by re-probing the subdirectory jail. Test audit (mutation-based)
+  confirmed seven load-bearing invariants each fail their test when broken, and
+  found ONE untested guard: `fileIsReviewed`'s `revision &&` floor — a file with
+  no server-minted revision could read as reviewed with the guard removed and
+  all five existing tests still passed. Pinned by two assertions in
+  `web/src/review-progress.test.ts` (fails under the mutation, passes clean).
+  No product bug, no fragile/worthless/redundant test found. Tier-1 666 pass,
+  Tier-2 150 pass.
+
+- [x] **Step CR.7 — Terminal hunk navigation + first-hunk positioning** —
+  completed 2026-08-12, from Kyle's live report ("says 4, shows 3, next does
+  nothing at the last hunk"). Root cause, proven by headless-Chrome probes
+  against the real daemon: `goToHunk`'s smooth `scrollIntoView` starts before
+  the click's React commit, and arriving at a terminal hunk disables the very
+  button being clicked — Chromium blurs a focused element that becomes
+  disabled, and that focus change cancels the in-flight smooth scroll at zero
+  pixels. Symmetric at both ends (Next→last, Previous→first); invisible under
+  reduced motion (instant scroll finishes pre-commit), which is why the
+  existing label-only e2e assertions passed. Fixes: hunk scrolling now runs
+  post-commit from a pending-scroll effect in `ReviewDiff`; the stale
+  `rowRefs` wipe (which destroyed freshly attached refs) is removed; a diff
+  opens positioned on its first hunk so "Hunk 1 of N" is what the viewport
+  shows; and `useFileView.openFile` keeps a same-path resolved view mounted
+  through a re-request, so live/manual refresh neither flickers through
+  "loading" nor repositions the reader. Pinned by a new geometry-asserting
+  e2e ("CR.3 hunk navigation reaches terminal hunks…", `hunk-repo` fixture):
+  every jump asserts the hunk's rows are inside the scroller's visible box,
+  never just the label. changes 11/11, app 54/54, phone 8/8, Tier-1 clean.
+
+- [x] **Step CR.8 — Resizable desktop review panel** — completed 2026-08-12
+  (Kyle-directed). The desktop Changes panel gains a drag handle on its
+  transcript edge: floor = the untouched default width (`clamp(370px, 55vw,
+  760px)`), ceiling = `calc(100% - 380px)` — an absolute phone-sized
+  conversation reserve rather than a screen fraction, because a percentage
+  leaves a useless sliver on laptops and cramped space on ultrawides; CSS
+  `clamp()` lets the floor win on windows too narrow for both. Drag mutates
+  the panel style directly (no per-frame React commit through a thousand
+  diff rows); the chosen width persists in `localStorage`
+  (`mirafold-changes-panel-width`); double-click/Home resets; the handle is
+  a keyboard `role="separator"` (arrows step 32px, End = max) with live
+  aria-value geometry. Phone remains the full-screen takeover — no handle
+  rendered and a CSS pin. e2e covers drag clamping both directions, keyboard
+  steps, persistence across reload, reset, axe, and no side-scroll. changes
+  12/12, phone 8/8, app 54/54, Tier-1 clean.
+
+- [x] **Step CR.9 — Diff-gutter Changes glyph, size-matched to Files** —
+  completed 2026-08-12 (Kyle-directed, replacing the box-with-± mark that
+  read as a sparkle box). The new `ChangesGlyph` is a unified-diff fragment
+  (deleted line, added line, trailing context, gutter marks) drawn on
+  `FilesGlyph`'s exact 14×20 artwork box with the same 1.5 stroke, so equal
+  `size` props render the same footprint — equal width, height, and stroke
+  weight (a first 20-wide draft rendered wider than Files; corrected same
+  day). Activity bar uses the same 28 default for both and its gap widened
+  4→28px in two Kyle-directed rounds (the two toggles must read clearly
+  separate); the status-bar (phone) pair was already 20/20. Verified by
+  headless screenshots of the rendered rail.
+
+- [x] **Step CR.10 — Dock the hunk toolbar; align the progress buttons** —
+  completed 2026-08-12 (Kyle-directed, two rounds: first halve the band,
+  then remove it). The sticky hunk toolbar was a floating rounded card
+  inside the padded diff scroller; the scroller's top padding read as a
+  see-through band with sliced diff rows visible through it. Now the
+  scroller has zero top padding and the toolbar is a docked full-bleed
+  strip (negative side margins cancel the scroller padding; border-bottom,
+  no radius/shadow) glued under the review-progress bar, desktop and phone.
+  "Next unreviewed" also overhung the diff rows' right edge, and a first
+  fix (measuring the wrapper's scrollbar into a CSS var) left the panel-
+  height scrollbar running up beside the docked toolbar. Final
+  architecture (Kyle-approved on sight): the diff's ONE vertical scroller
+  is the bordered code card itself (`.changes-diff-lines`, flex column via
+  `:has()` on the wrapper) — its scrollbar starts under the hunk toolbar
+  and rides inside the card border, so no measurement is needed; the
+  wrapper and progress bar share symmetric 9px side insets (7px phone), so
+  "Next unreviewed" ends exactly on the card's border line and mirrors
+  "Mark reviewed". Phone draft-mode scroll room moved into the card.
+  Measured: button edge == card border; card top 6px under the toolbar.
+  changes+phone e2e 20/20.
+
+- [x] **Step CR.11 — "Select hunk" toggles** — completed 2026-08-12
+  (Kyle-directed). Clicking the button while its exact range is selected
+  unselects and clears the notice; the label swaps to "Unselect hunk" with
+  `aria-pressed`. The match compares against the CLAMPED selection range,
+  so an over-80-line hunk still reads as selected and can be unselected.
+  Pinned in the hunk-navigation e2e; changes+phone 20/20, Tier-1 672.
+
+- [x] **Step CR.12 — Branch bughunt (post-audit delta)** — completed
+  2026-08-12. Scope: everything landed after the CR.5/CR.6 audits (hunk
+  navigation, keep-view, resize, fold absorption, exit annotation, layout
+  restructure, toggle, the refactor). Two confirmed bugs, both in the
+  resize handle, both proven by a failing pin before the fix: (1) the
+  separator's aria-valuenow/-valuemax stayed at pre-drag geometry after
+  every pointer drag (observer callbacks are skipped mid-drag and nothing
+  refires afterward) — drag end now measures explicitly; (2) a click on
+  the handle with no movement silently persisted the current width,
+  freezing the responsive default — a no-move release no longer persists.
+  A third candidate (mid-drag phone-breakpoint flip stranding drag state)
+  was DISPROVEN by two forced reproductions — Chromium ends the captured
+  pointer sequence on element removal — and its cross-breakpoint pin was
+  kept as regression coverage. Watch item: one unattributed intermittent
+  Tier-3 failure (94/95) in a full ordered run on committed source —
+  hunted with five further full ordered runs the same day, all 95/95, so
+  the observed rate is 1-in-6 and the failing test's name is unknown (the
+  first run's output went through a summary filter; every later run keeps
+  the complete TAP log, so the next natural occurrence names itself). Per
+  the debugging rules, no code was changed against the uncharacterized
+  intermittent. changes+phone 20/20, Tier-1 672, resize test stable ×3.
+
+- [x] **Step CR.13 — Security audit of the post-CR.6 delta** — completed
+  2026-08-12. Scope: commits after the CR.6 whole-branch audit (hunk-nav
+  fix, resizable panel, review chrome + toggle, fold absorption, codex
+  exit annotation, stylesheet split) plus the uncommitted refactor and
+  bughunt fixes. Every new input path traced end-to-end with concrete
+  values: the localStorage panel width (NaN-guarded, numeric-only
+  interpolation, CSS-clamped, same-origin-only writer), the codex
+  exit-code annotation (rendered as escaped text; a malformed engine
+  string degrades to cosmetic noise), and fold-absorbed thinking text
+  (same JSX-escaped path as before). No new server input surface, no new
+  logging, no raw-HTML/eval sinks, no CI/workflow/dependency changes, no
+  secrets in the delta history (fixture tokens are dummies), and the npm
+  publish allowlist (bin/dist/dist-server) excludes all new source. ZERO
+  findings in every class — real, ship-time, and hardening — so nothing
+  to fix and nothing deferred. Prior accepted decisions in SECURITY.md
+  were not re-litigated.
+
+- [x] **Step CR.14 — Test audit of the post-CR.6 delta** — completed
+  2026-08-12, mutation-based like CR.6. Five falsifications: the fold
+  floor, leading-thinking absorption, the live-refresh no-yank guard, and
+  the codex exit-code mapping each fail exactly the tests that claim them;
+  the resize pins were already proven live the same day (both failed
+  before their fixes). One mutation SURVIVED with an investigated
+  environment explanation: restoring the original synchronous hunk scroll
+  no longer breaks behavior because CR.10 moved the toolbar outside the
+  scrolling card, removing the blur-cancellation trigger — the pin still
+  guards the user-visible behavior (it was born failing under the old
+  layout), and the deferred-scroll mechanism is now redundant protection,
+  kept deliberately. One PROVEN gap closed: nothing asserted the fold
+  label counts actions only, so a mutation counting absorbed narration
+  passed the suite — the app e2e now pins "worked · 2 actions" (born
+  failing under the mutation, passes clean). No worthless, wrong-target,
+  or redundant tests found in the delta; suite health: Tier-1 ~15s,
+  Tier-3 full ~12min, flake record = the CR.12 watch item. app+changes+
+  phone 74/74, Tier-1 672.
+
+*(from the Stylesheet decomposition section:)*
+
+- [x] **Split the 5,639-line styles.css into an import spine + 15 surface
+  files** (`web/src/styles/01-frame.css` … `15-phone.css`), one per surface
+  in the 2026-07-25 ordering, with the phone media block staying one file,
+  last. `styles.css` is now the numbered @import spine and carries the
+  surface map and the two order-sensitive cascade notes. Pure relocation —
+  proven twice: the concatenation of the split files is byte-identical to
+  the original source, and the built dist CSS bundle is byte-identical to
+  the pre-split build (comment edits vanish in minification). Deliberately
+  NO dedup/consolidation (small savings, real visual-regression risk) and
+  NO phone-override colocation yet — colocating would dismantle the
+  one-phone-block convention and is a separately-verified decision for
+  later. e2e 74/74 (changes/app/phone), Tier-1 672/672.

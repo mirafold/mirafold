@@ -24,11 +24,18 @@ const FOCUSABLE = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(",");
 
-export function useFocusTrap(ref: RefObject<HTMLElement | null>, active: boolean) {
+export function useFocusTrap(
+  ref: RefObject<HTMLElement | null>,
+  active: boolean,
+  additionalRef?: RefObject<HTMLElement | null>,
+) {
   useEffect(() => {
     if (!active) return;
     const container = ref.current;
     if (!container) return;
+    const containers = [container, additionalRef?.current].filter(
+      (candidate): candidate is HTMLElement => Boolean(candidate),
+    );
 
     // Whatever had focus when we opened — the button that opened us, almost
     // always. Restored on close.
@@ -38,8 +45,10 @@ export function useFocusTrap(ref: RefObject<HTMLElement | null>, active: boolean
     // `offsetParent`, which is null for position:fixed elements — these cards
     // are fixed, so the cheaper check would have found nothing at all.
     const focusable = () =>
-      Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
-        (el) => el.getClientRects().length > 0,
+      containers.flatMap((owner) =>
+        Array.from(owner.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+          (el) => el.getClientRects().length > 0,
+        ),
       );
 
     (focusable()[0] ?? container).focus();
@@ -54,7 +63,7 @@ export function useFocusTrap(ref: RefObject<HTMLElement | null>, active: boolean
       const first = items[0];
       const last = items[items.length - 1];
       const here = document.activeElement;
-      const outside = !container.contains(here);
+      const outside = !containers.some((owner) => owner.contains(here));
       if (e.shiftKey && (here === first || outside)) {
         e.preventDefault();
         last.focus();
@@ -71,5 +80,5 @@ export function useFocusTrap(ref: RefObject<HTMLElement | null>, active: boolean
       document.removeEventListener("keydown", onKey, true);
       opener?.focus?.();
     };
-  }, [ref, active]);
+  }, [ref, active, additionalRef]);
 }
