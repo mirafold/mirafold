@@ -138,6 +138,32 @@ test("an oversized single chunk is refused even under the total cap", () => {
   }
 });
 
+test("a corrupt base64 chunk errors immediately — never a 30s stall-death", () => {
+  const { handlers, sent, cleanup } = harness();
+  try {
+    // Buffer.from would silently DROP the invalid characters, under-count
+    // `received`, and leave the upload to die by stall timeout; the grammar
+    // check turns it into the typed error the module header promises. One
+    // upload per corrupt shape — a failed upload is gone from `active`.
+    const corrupt = ["!!not-base64!!", "abc", "QQ=X", "===="];
+    corrupt.forEach((data, i) => {
+      const id = `u${i + 1}`;
+      handlers.begin({ type: "file_upload_begin", id, name: "n.bin", size: 8 });
+      handlers.chunk({ type: "file_upload_chunk", id, data });
+    });
+    assert.deepEqual(
+      sent,
+      corrupt.map((_, i) => ({
+        type: "file_upload_error",
+        id: `u${i + 1}`,
+        message: "malformed chunk",
+      })),
+    );
+  } finally {
+    cleanup();
+  }
+});
+
 test("a chunk with no begin answers unknown-upload, never hangs correlation", () => {
   const { handlers, sent, cleanup } = harness();
   try {

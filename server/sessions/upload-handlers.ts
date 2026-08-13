@@ -185,17 +185,21 @@ export function createUploadHandlers({ viewport, getEntry, remote }: UploadDeps)
         viewport({ type: "file_upload_error", id: msg.id, message: "unknown upload" });
         return;
       }
-      if (typeof msg.data !== "string") {
+      // Buffer.from(str, "base64") never throws — it silently DROPS invalid
+      // characters, which under-counts `received` and turns a corrupt chunk
+      // into a 30s stall-death instead of this typed error (refactor finding,
+      // BUG-2). Validate the grammar explicitly: the client's encoder emits
+      // exactly canonical unpadded-or-padded base64, so anything else is
+      // corruption.
+      if (
+        typeof msg.data !== "string" ||
+        msg.data.length % 4 !== 0 ||
+        !/^[A-Za-z0-9+/]*={0,2}$/.test(msg.data)
+      ) {
         fail(msg.id, "malformed chunk");
         return;
       }
-      let bytes: Buffer;
-      try {
-        bytes = Buffer.from(msg.data, "base64");
-      } catch {
-        fail(msg.id, "malformed chunk");
-        return;
-      }
+      const bytes = Buffer.from(msg.data, "base64");
       if (bytes.length > FILE_UPLOAD_MAX_CHUNK_BYTES) {
         fail(msg.id, "chunk too large");
         return;
