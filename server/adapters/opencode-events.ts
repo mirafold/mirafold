@@ -222,19 +222,20 @@ export class OpenCodeEventMapper {
     const delta = String(p["delta"] ?? "");
     if (!delta || track.kind === "tool" || track.kind === "other") return;
     track.emitted += delta.length;
-    this.options.emit({
-      type: track.kind === "reasoning" ? "thinking_delta" : "text_delta",
-      text: delta,
-    });
+    this.emitStreamText(track, delta);
   }
 
   private emitTextSuffix(track: PartTrack, text: string) {
     if (text.length <= track.emitted) return;
     const suffix = text.slice(track.emitted);
     track.emitted = text.length;
+    this.emitStreamText(track, suffix);
+  }
+
+  private emitStreamText(track: PartTrack, text: string) {
     this.options.emit({
       type: track.kind === "reasoning" ? "thinking_delta" : "text_delta",
-      text: suffix,
+      text,
     });
   }
 

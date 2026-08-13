@@ -19,21 +19,20 @@ import { createFolderPickerRequests } from "../folder-picker-requests";
 // can never paint here, and every engine-derived string (activity label,
 // permission detail) renders as inert plain text — never markdown.
 
-function ago(ts: number): string {
-  const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
-  if (s < 10) return "now";
-  if (s < 60) return `${s}s ago`;
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-  return `${Math.floor(s / 86400)}d ago`;
-}
-
 /** Elapsed-time readout beside the activity label ("14s", "2m", "1h"). */
-function elapsed(since: number): string {
-  const s = Math.max(0, Math.floor((Date.now() - since) / 1000));
+function elapsed(since: number, now = Date.now()): string {
+  const s = Math.max(0, Math.floor((now - since) / 1000));
   if (s < 60) return `${s}s`;
   if (s < 3600) return `${Math.floor(s / 60)}m`;
   return `${Math.floor(s / 3600)}h`;
+}
+
+function ago(ts: number): string {
+  const now = Date.now();
+  const s = Math.max(0, Math.floor((now - ts) / 1000));
+  if (s < 10) return "now";
+  if (s >= 86400) return `${Math.floor(s / 86400)}d ago`;
+  return `${elapsed(ts, now)} ago`;
 }
 
 /** Compact token count ("870", "12.3k", "1.2M") — the cockpit's own small

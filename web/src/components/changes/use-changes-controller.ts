@@ -32,7 +32,7 @@ type ChangeSetState = {
   error?: string;
 };
 
-const EMPTY: ChangeSetState = {
+const EMPTY_CHANGE_SET: ChangeSetState = {
   repos: [],
   truncated: false,
   loaded: false,
@@ -64,7 +64,7 @@ export function useChangesController({
   requestDiff: (path: string) => string;
   sessionKey?: string;
 }) {
-  const [set, setSet] = useState<ChangeSetState>(EMPTY);
+  const [changeSet, setChangeSet] = useState<ChangeSetState>(EMPTY_CHANGE_SET);
   const [reviewSelection, setReviewSelection] = useState<VersionedReviewSelection>();
   const reviewSelectionRef = useRef(reviewSelection);
   reviewSelectionRef.current = reviewSelection;
@@ -85,7 +85,7 @@ export function useChangesController({
     setReviewNotice(notice);
   }, []);
   const file = useFileView({ subscribe, requestRead, requestDiff, scopeKey: sessionKey });
-  const items = useMemo(() => changeItems(set.repos), [set.repos]);
+  const items = useMemo(() => changeItems(changeSet.repos), [changeSet.repos]);
   const itemsByPath = useMemo(
     () => new Map(items.map((item) => [item.path, item])),
     [items],
@@ -112,6 +112,17 @@ export function useChangesController({
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const queuedFile = useRef<ChangeItem | null>(null);
   const fileTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Every teardown path (disconnect, session switch, panel close, unmount)
+  // drops the same scheduled work: both coalescing timers and the queued
+  // file request they would have fired.
+  const clearScheduledWork = useCallback(() => {
+    if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    refreshTimer.current = null;
+    if (fileTimer.current) clearTimeout(fileTimer.current);
+    fileTimer.current = null;
+    queuedFile.current = null;
+  }, []);
   const lastFileRequestAt = useRef(0);
 
   const requestChangeFile = useCallback((item: ChangeItem) => {
@@ -144,7 +155,7 @@ export function useChangesController({
     pending.current = true;
     lastRequestAt.current = Date.now();
     requestId.current = requestChanges();
-    setSet((current) => ({ ...current, pending: true, error: undefined }));
+    setChangeSet((current) => ({ ...current, pending: true, error: undefined }));
   }, [requestChanges, sessionKey]);
   const requestSetRef = useRef(requestSetNow);
   requestSetRef.current = requestSetNow;
@@ -182,12 +193,8 @@ export function useChangesController({
           lastRequestAt.current = 0;
           lastFileRequestAt.current = 0;
           cancelFileRequestRef.current();
-          if (refreshTimer.current) clearTimeout(refreshTimer.current);
-          refreshTimer.current = null;
-          if (fileTimer.current) clearTimeout(fileTimer.current);
-          fileTimer.current = null;
-          queuedFile.current = null;
-          setSet((current) => ({ ...current, pending: false }));
+          clearScheduledWork();
+          setChangeSet((current) => ({ ...current, pending: false }));
           if (reviewProgressRef.current.size > 0) {
             commitReviewProgress(emptyReviewProgress());
             setReviewNotice(
@@ -202,14 +209,14 @@ export function useChangesController({
           pending.current = false;
 
           if (reply.error) {
-            setSet((current) => ({
+            setChangeSet((current) => ({
               ...current,
               loaded: true,
               pending: false,
               error: reply.error,
             }));
           } else {
-            setSet({
+            setChangeSet({
               repos: reply.repos,
               truncated: Boolean(reply.truncated),
               loaded: true,
@@ -252,17 +259,13 @@ export function useChangesController({
   );
 
   useEffect(() => {
-    setSet(EMPTY);
+    setChangeSet(EMPTY_CHANGE_SET);
     requestId.current = null;
     pending.current = false;
     refreshQueued.current = false;
-    if (refreshTimer.current) clearTimeout(refreshTimer.current);
-    refreshTimer.current = null;
-    if (fileTimer.current) clearTimeout(fileTimer.current);
-    fileTimer.current = null;
-    queuedFile.current = null;
+    clearScheduledWork();
     commitReviewProgress(emptyReviewProgress());
-  }, [commitReviewProgress, sessionKey]);
+  }, [clearScheduledWork, commitReviewProgress, sessionKey]);
 
   useEffect(() => {
     const next = pruneReviewProgress(reviewProgressRef.current, items);
@@ -300,24 +303,14 @@ export function useChangesController({
 
   useEffect(() => {
     if (!open || !sessionKey) {
-      if (refreshTimer.current) clearTimeout(refreshTimer.current);
-      refreshTimer.current = null;
       refreshQueued.current = false;
-      if (fileTimer.current) clearTimeout(fileTimer.current);
-      fileTimer.current = null;
-      queuedFile.current = null;
+      clearScheduledWork();
       return;
     }
     scheduleRefreshRef.current();
-  }, [open, sessionKey]);
+  }, [clearScheduledWork, open, sessionKey]);
 
-  useEffect(
-    () => () => {
-      if (refreshTimer.current) clearTimeout(refreshTimer.current);
-      if (fileTimer.current) clearTimeout(fileTimer.current);
-    },
-    [],
-  );
+  useEffect(() => clearScheduledWork, [clearScheduledWork]);
 
   const requestSet = useCallback(() => {
     // A manual refresh is the user's trust floor when a watcher hint may have
@@ -414,31 +407,31 @@ export function useChangesController({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [items, open, select, selectedRevision, toggleReviewed]);
 
-  const incomplete = changeSetIncomplete(set.repos, set.truncated);
-  const hasRepoError = set.repos.some((repo) => Boolean(repo.error));
-  const count = changeCountLabel(set.repos, set.truncated);
+  const incomplete = changeSetIncomplete(changeSet.repos, changeSet.truncated);
+  const hasRepoError = changeSet.repos.some((repo) => Boolean(repo.error));
+  const count = changeCountLabel(changeSet.repos, changeSet.truncated);
   const headerCount =
-    set.error && set.repos.length === 0
+    changeSet.error && changeSet.repos.length === 0
       ? "unavailable"
-      : set.repos.length === 0
+      : changeSet.repos.length === 0
         ? "no repository"
         : count;
 
   let stateMessage: { title: string; detail: string } | undefined;
-  if (!set.loaded) {
+  if (!changeSet.loaded) {
     stateMessage = {
       title: "Loading workspace changes…",
       detail: "Comparing the working tree with Git HEAD.",
     };
-  } else if (set.repos.length === 0 && !set.error) {
+  } else if (changeSet.repos.length === 0 && !changeSet.error) {
     stateMessage = {
       title: "No Git repositories found",
       detail: "This workspace is not inside a Git repository and contains no discoverable repositories.",
     };
-  } else if (items.length === 0 && (hasRepoError || set.error)) {
+  } else if (items.length === 0 && (hasRepoError || changeSet.error)) {
     stateMessage = {
       title: "Changes could not be loaded",
-      detail: set.error ?? "Git could not inspect one or more repositories safely.",
+      detail: changeSet.error ?? "Git could not inspect one or more repositories safely.",
     };
   } else if (items.length === 0 && incomplete) {
     stateMessage = {
@@ -453,7 +446,7 @@ export function useChangesController({
   }
 
   return {
-    set,
+    changeSet,
     items,
     itemsByPath,
     file,

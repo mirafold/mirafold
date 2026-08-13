@@ -17,7 +17,7 @@ export type ReviewHunk = {
   end: number;
 };
 
-export type ReviewSelection = {
+type ReviewSelection = {
   anchor: number;
   focus: number;
   start: number;
@@ -30,10 +30,6 @@ export type VersionedReviewSelection = ReviewSelection & {
   before: string;
   after: string;
 };
-
-function rawDiff(before: string, after: string): DiffLine[] {
-  return diffLines(before, after);
-}
 
 /** Bound the DOM/highlighting cost before constructing the LCS diff. One
  * changed line can otherwise turn a many-thousand-line file into thousands
@@ -57,7 +53,7 @@ export const reviewScrollBehavior = (prefersReducedMotion: boolean): ScrollBehav
 export function reviewLines(before: string, after: string): ReviewLine[] {
   let oldLine = 0;
   let newLine = 0;
-  return rawDiff(before, after).map((line, index) => {
+  return diffLines(before, after).map((line, index) => {
     const oldAt = line.sign === "+" ? undefined : ++oldLine;
     const newAt = line.sign === "-" ? undefined : ++newLine;
     return {

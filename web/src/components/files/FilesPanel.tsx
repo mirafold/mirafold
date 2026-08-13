@@ -15,9 +15,8 @@ import { useFocusTrap } from "../../use-focus-trap";
 import { useIsPhone } from "../../use-is-phone";
 import { FileView } from "./FileView";
 import { ExplorerChevron, ExplorerNodeGlyph } from "./ExplorerNodeGlyph";
-import { isCurrentReply, useFileView } from "./use-file-view";
-
-export { isCurrentReply };
+import { RefreshIcon } from "../RefreshIcon";
+import { useFileView } from "./use-file-view";
 
 // The Explorer's shell-owned panel (E.3 desktop, E.4 phone; lazy since
 // E2.2): a read-only browser of the session's working tree, built
@@ -321,7 +320,7 @@ export function FilesPanel({
                 title="Refresh"
                 aria-label="Refresh files"
               >
-                <ExplorerRefreshIcon />
+                <RefreshIcon className="files-action-icon" />
               </button>
               {phone && (
                 <button
@@ -464,14 +463,6 @@ export function FilesPanel({
   );
 }
 
-function ExplorerRefreshIcon() {
-  return (
-    <svg className="files-action-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-      <path d="M13.4 7A5.5 5.5 0 1 0 13 10.2" />
-      <path d="M10.1 3.8h3.3V.5" />
-    </svg>
-  );
-}
 
 function ExplorerCloseIcon() {
   return (

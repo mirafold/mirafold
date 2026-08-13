@@ -7,6 +7,7 @@ import type { WireMsg } from "../protocol";
 import { RENDER_GUIDANCE } from "../render-tools";
 import { OpenCodeSession } from "./opencode";
 import type { OpenCodeEvent, OpenCodeTransport } from "./opencode-client";
+import { waitFor } from "../testing/wait-for";
 
 // OC.1: the OpenCode event→WireMsg mapping and the turn grammar, on synthetic
 // events whose shapes are the OC.0 live capture (opencode.spike.md) — no
@@ -17,20 +18,6 @@ type Any = WireMsg & Record<string, any>;
 
 const tmp = mkdtempSync(path.join(os.tmpdir(), "mcp-opencode-test-"));
 const SES = "ses_test";
-
-const waitFor = (cond: () => boolean, what: string, timeoutMs = 5_000) =>
-  new Promise<void>((resolve, reject) => {
-    const t0 = Date.now();
-    const poll = setInterval(() => {
-      if (cond()) {
-        clearInterval(poll);
-        resolve();
-      } else if (Date.now() - t0 > timeoutMs) {
-        clearInterval(poll);
-        reject(new Error(`timed out waiting for ${what}`));
-      }
-    }, 5);
-  });
 
 class FakeTransport implements OpenCodeTransport {
   onEvent: (ev: OpenCodeEvent) => void = () => {};

@@ -65,7 +65,7 @@ const FS_FILE_CAP_BYTES = envInt("FS_FILE_CAP_BYTES", 64_000);
 // an event-loop denial of service. Larger files remain viewable with the
 // existing honest truncation note, but the client receives no revision and
 // therefore cannot claim they were reviewed.
-export const FS_FILE_REVISION_CAP_BYTES = 1024 * 1024;
+const FS_FILE_REVISION_CAP_BYTES = 1024 * 1024;
 // Per-daemon salt keeps a revision useful only as an equality token. A remote
 // viewport that may view a filename but not its binary bytes must not receive
 // a reusable public content fingerprint.
@@ -93,7 +93,7 @@ export type FileResult =
   | { binary: true; size: number; revision?: string }
   | { error: string };
 
-export type DiffEntryResult = FileResult | { absent: true };
+type DiffEntryResult = FileResult | { absent: true };
 
 /** A compact, opaque identity for exact bytes. This is a correctness key,
  * not exposed file content; keyed SHA-256 makes a stale reviewed marker
@@ -295,57 +295,68 @@ const readRegularFile = (
     const size = st.size;
     // The review path reads and hashes one stable, bounded snapshot through
     // the same descriptor. Ordinary Explorer reads stay on the original 64 KB
-    // path below and pay none of this work.
+    // sniffed path and pay none of this work.
     const revisionCap = options.revisionCapBytes ?? FS_FILE_REVISION_CAP_BYTES;
-    if (options.revision && size <= revisionCap) {
-      const opened = fstatSync(fd, { bigint: true });
-      const buf = Buffer.alloc(size);
-      let read = 0;
-      while (read < size) {
-        const n = readSync(fd, buf, read, size - read, read);
-        if (n <= 0) break;
-        read += n;
-      }
-      const finished = fstatSync(fd, { bigint: true });
-      const stable =
-        read === size &&
-        opened.size === BigInt(read) &&
-        opened.size === finished.size &&
-        opened.mtimeNs === finished.mtimeNs &&
-        opened.ctimeNs === finished.ctimeNs;
-      const exact = buf.subarray(0, read);
-      const revision = stable ? contentRevision(exact) : undefined;
-      if (sniffBinary(exact)) {
-        return { binary: true, size, ...(revision ? { revision } : {}) };
-      }
-      const capped = capBuffer(exact);
-      return {
-        content: capped.text,
-        size,
-        ...(capped.truncatedBytes ? { truncatedBytes: capped.truncatedBytes } : {}),
-        ...(revision ? { revision } : {}),
-      };
-    }
-
-    const sniffLen = Math.min(size, SNIFF_BYTES);
-    const sniff = Buffer.alloc(sniffLen);
-    const sniffed = readSync(fd, sniff, 0, sniffLen, 0);
-    if (sniff.subarray(0, sniffed).includes(0)) return { binary: true, size };
-    const keptLen = Math.min(size, FS_FILE_CAP_BYTES);
-    const buf = Buffer.alloc(keptLen);
-    let read = 0;
-    while (read < keptLen) {
-      const n = readSync(fd, buf, read, keptLen - read, read);
-      if (n <= 0) break; // file shrank under us — keep what's real
-      read += n;
-    }
-    // Lossy decode: invalid UTF-8 (and a cap-split trailing char) becomes
-    // U+FFFD rather than an error — same behavior as capOutput's slice.
-    const content = new TextDecoder().decode(buf.subarray(0, read));
-    return { content, size, ...(size > read ? { truncatedBytes: size - read } : {}) };
+    return options.revision && size <= revisionCap
+      ? readSnapshot(fd, size)
+      : readSniffed(fd, size);
   } finally {
     closeSync(fd);
   }
+};
+
+/** The review read: the whole file through one descriptor, with a
+ *  stability check (size + timestamps unchanged across the read) deciding
+ *  whether the content hash may be advertised as a revision. */
+const readSnapshot = (fd: number, size: number): FileResult => {
+  const opened = fstatSync(fd, { bigint: true });
+  const buf = Buffer.alloc(size);
+  let read = 0;
+  while (read < size) {
+    const n = readSync(fd, buf, read, size - read, read);
+    if (n <= 0) break;
+    read += n;
+  }
+  const finished = fstatSync(fd, { bigint: true });
+  const stable =
+    read === size &&
+    opened.size === BigInt(read) &&
+    opened.size === finished.size &&
+    opened.mtimeNs === finished.mtimeNs &&
+    opened.ctimeNs === finished.ctimeNs;
+  const exact = buf.subarray(0, read);
+  const revision = stable ? contentRevision(exact) : undefined;
+  if (sniffBinary(exact)) {
+    return { binary: true, size, ...(revision ? { revision } : {}) };
+  }
+  const capped = capBuffer(exact);
+  return {
+    content: capped.text,
+    size,
+    ...(capped.truncatedBytes ? { truncatedBytes: capped.truncatedBytes } : {}),
+    ...(revision ? { revision } : {}),
+  };
+};
+
+/** The Explorer read: sniff the head for binaryness, then keep at most the
+ *  display cap — never the whole file. */
+const readSniffed = (fd: number, size: number): FileResult => {
+  const sniffLen = Math.min(size, SNIFF_BYTES);
+  const sniff = Buffer.alloc(sniffLen);
+  const sniffed = readSync(fd, sniff, 0, sniffLen, 0);
+  if (sniff.subarray(0, sniffed).includes(0)) return { binary: true, size };
+  const keptLen = Math.min(size, FS_FILE_CAP_BYTES);
+  const buf = Buffer.alloc(keptLen);
+  let read = 0;
+  while (read < keptLen) {
+    const n = readSync(fd, buf, read, keptLen - read, read);
+    if (n <= 0) break; // file shrank under us — keep what's real
+    read += n;
+  }
+  // Lossy decode: invalid UTF-8 (and a cap-split trailing char) becomes
+  // U+FFFD rather than an error — same behavior as capOutput's slice.
+  const content = new TextDecoder().decode(buf.subarray(0, read));
+  return { content, size, ...(size > read ? { truncatedBytes: size - read } : {}) };
 };
 
 export function readWorkspaceFile(

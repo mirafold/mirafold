@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   createNotifier,
-  decide,
+  decideNotifications,
   folderTitle,
   type NotificationHandle,
   type NotifyAction,
@@ -25,7 +25,7 @@ const snap = (over: Partial<SessionSnapshot> = {}): SessionSnapshot => ({
 const prev = (entries: [string, NotifyState][]) => new Map(entries);
 
 test("a permission appearing in a hidden tab toasts once, shell-composed", () => {
-  const { actions, states } = decide(
+  const { actions, states } = decideNotifications(
     prev([["s1", "busy"]]),
     [snap({ state: "permission", tool: "Bash", detail: "git push origin main" })],
     HIDDEN,
@@ -40,19 +40,19 @@ test("a permission appearing in a hidden tab toasts once, shell-composed", () =>
 });
 
 test("a session first seen already blocked on permission toasts — a background tab discovering a stalled session is the point", () => {
-  const { actions } = decide(new Map(), [snap({ state: "permission", tool: "Bash" })], HIDDEN);
+  const { actions } = decideNotifications(new Map(), [snap({ state: "permission", tool: "Bash" })], HIDDEN);
   assert.equal(actions.length, 1);
   assert.equal(actions[0].kind, "show");
   assert.equal(actions[0].kind === "show" && actions[0].body, "claude wants Bash.");
 });
 
 test("first sight of busy or idle stays silent — no evidence a turn just ended", () => {
-  assert.equal(decide(new Map(), [snap({ state: "busy" })], HIDDEN).actions.length, 0);
-  assert.equal(decide(new Map(), [snap({ state: "idle" })], HIDDEN).actions.length, 0);
+  assert.equal(decideNotifications(new Map(), [snap({ state: "busy" })], HIDDEN).actions.length, 0);
+  assert.equal(decideNotifications(new Map(), [snap({ state: "idle" })], HIDDEN).actions.length, 0);
 });
 
 test("busy→idle toasts a turn end", () => {
-  const { actions } = decide(prev([["s1", "busy"]]), [snap()], HIDDEN);
+  const { actions } = decideNotifications(prev([["s1", "busy"]]), [snap()], HIDDEN);
   assert.equal(actions.length, 1);
   const a = actions[0];
   assert.equal(a.kind === "show" && a.event, "turn-end");
@@ -61,13 +61,13 @@ test("busy→idle toasts a turn end", () => {
 });
 
 test("permission→idle toasts the turn end (answered + finished while away)", () => {
-  const { actions } = decide(prev([["s1", "permission"]]), [snap()], HIDDEN);
+  const { actions } = decideNotifications(prev([["s1", "permission"]]), [snap()], HIDDEN);
   assert.equal(actions.length, 1);
   assert.equal(actions[0].kind === "show" && actions[0].event, "turn-end");
 });
 
 test("permission→busy closes — the ask was answered elsewhere", () => {
-  const { actions } = decide(
+  const { actions } = decideNotifications(
     prev([["s1", "permission"]]),
     [snap({ state: "busy" })],
     HIDDEN,
@@ -76,16 +76,16 @@ test("permission→busy closes — the ask was answered elsewhere", () => {
 });
 
 test("a visible tab suppresses shows but still consumes the transition", () => {
-  const first = decide(prev([["s1", "busy"]]), [snap({ state: "permission" })], VISIBLE);
+  const first = decideNotifications(prev([["s1", "busy"]]), [snap({ state: "permission" })], VISIBLE);
   assert.equal(first.actions.length, 0);
   // Backgrounding later must not replay the already-seen edge through decide
   // (the binder's visibility hook owns the still-pending re-toast).
-  const second = decide(first.states, [snap({ state: "permission" })], HIDDEN);
+  const second = decideNotifications(first.states, [snap({ state: "permission" })], HIDDEN);
   assert.equal(second.actions.length, 0);
 });
 
 test("a visible tab still emits the close when a turn ends", () => {
-  const { actions } = decide(prev([["s1", "permission"]]), [snap()], VISIBLE);
+  const { actions } = decideNotifications(prev([["s1", "permission"]]), [snap()], VISIBLE);
   assert.deepEqual(actions, [{ kind: "close", id: "s1" }]);
 });
 
@@ -94,7 +94,7 @@ test("disabled or ungranted emit nothing but keep tracking state", () => {
     { ...HIDDEN, enabled: false },
     { ...HIDDEN, granted: false },
   ]) {
-    const { actions, states } = decide(
+    const { actions, states } = decideNotifications(
       prev([["s1", "busy"]]),
       [snap({ state: "permission" })],
       flags,
@@ -105,13 +105,13 @@ test("disabled or ungranted emit nothing but keep tracking state", () => {
 });
 
 test("a vanished session closes its toast", () => {
-  const { actions, states } = decide(prev([["s1", "permission"]]), [], HIDDEN);
+  const { actions, states } = decideNotifications(prev([["s1", "permission"]]), [], HIDDEN);
   assert.deepEqual(actions, [{ kind: "close", id: "s1" }]);
   assert.equal(states.size, 0);
 });
 
 test("sessions transition independently", () => {
-  const { actions } = decide(
+  const { actions } = decideNotifications(
     prev([
       ["a", "busy"],
       ["b", "permission"],
@@ -129,7 +129,7 @@ test("sessions transition independently", () => {
 });
 
 test("an unchanged state emits nothing", () => {
-  const { actions } = decide(
+  const { actions } = decideNotifications(
     prev([["s1", "permission"]]),
     [snap({ state: "permission" })],
     HIDDEN,
@@ -138,7 +138,7 @@ test("an unchanged state emits nothing", () => {
 });
 
 test("a runaway permission detail is capped for the OS surface", () => {
-  const { actions } = decide(
+  const { actions } = decideNotifications(
     new Map(),
     [snap({ state: "permission", tool: "Bash", detail: "x".repeat(500) })],
     HIDDEN,

@@ -8,6 +8,7 @@ import path from "node:path";
 import type { WireMsg } from "../protocol";
 import { OpenCodeSession } from "./opencode";
 import { OpenCodeServerProcess } from "./opencode-client";
+import { waitFor } from "../testing/wait-for";
 
 // Tier 4 — the REAL opencode binary, driven end to end (PLAN OC.5).
 //
@@ -35,20 +36,6 @@ function opencodeBin(): string | undefined {
 const BIN = opencodeBin();
 
 type Any = WireMsg & Record<string, any>;
-
-const waitFor = (cond: () => boolean, what: string, timeoutMs = 60_000) =>
-  new Promise<void>((resolve, reject) => {
-    const t0 = Date.now();
-    const poll = setInterval(() => {
-      if (cond()) {
-        clearInterval(poll);
-        resolve();
-      } else if (Date.now() - t0 > timeoutMs) {
-        clearInterval(poll);
-        reject(new Error(`timed out waiting for ${what}`));
-      }
-    }, 25);
-  });
 
 /** The scripted model: keeps requesting the render until its ack is in
  *  history (rides out the engine's cold first call carrying zero tools —
@@ -178,7 +165,7 @@ test("OC.5: real engine — render, permission, usage, resume, all through the s
 
     // Turn 2: the permission round-trip, answered through the bridge.
     first.session.pushPrompt("now run the probe command");
-    await waitFor(() => first.msgs.some((m) => m.type === "permission_request"), "the ask");
+    await waitFor(() => first.msgs.some((m) => m.type === "permission_request"), "the ask", 60_000);
     const ask = first.msgs.find((m) => m.type === "permission_request");
     assert.equal(ask?.tool, "bash");
     first.session.resolvePermission(ask!.id, true);

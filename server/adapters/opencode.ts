@@ -63,6 +63,11 @@ export class OpenCodeSession implements AgentSession {
   // provider verdict lands (and re-published on a /model provider switch).
   private kindListeners = new Set<(u: { kind: CredentialKind; provider?: string }) => void>();
   private lastKind?: { kind: CredentialKind; provider?: string };
+  // The judged provider/model pin — every prompt carries it (OC.3).
+  private modelPin?: { providerID: string; modelID: string };
+  // Providers whose gray-area disclosure already ran this session — the
+  // notice states standing terms, so it rides once per provider, not per turn.
+  private disclosedProviders = new Set<string>();
   private permissionTimeoutMs: number;
   private pendingPermissions = new Map<string, ReturnType<typeof setTimeout>>();
   // Per-turn end latch: exactly one turn_end per prompt (idle, error,
@@ -139,8 +144,6 @@ export class OpenCodeSession implements AgentSession {
     });
     void this.worker();
   }
-
-  private modelPin?: { providerID: string; modelID: string };
 
   pushPrompt(text: string) {
     if (!this.closed) this.queue.push(text);
@@ -232,10 +235,6 @@ export class OpenCodeSession implements AgentSession {
     if (reason) throw new Error(reason);
   }
 
-  // Providers whose gray-area disclosure already ran this session — the
-  // notice states standing terms, so it rides once per provider, not per turn.
-  private disclosedProviders = new Set<string>();
-
   /** Classify `pin`, and on an allowed verdict make it THIS session's pin:
    *  publish the truthful kind to the registry (OC.4c — the relay gate's
    *  input) and emit the gray-area disclosure when the provider carries one.
@@ -275,6 +274,26 @@ export class OpenCodeSession implements AgentSession {
         return this.engineCommands;
       },
     });
+  }
+
+  /** One engine turn's envelope: token, mapper reset, the done-latch, and
+   *  the shared failure path — `runTurn` and `runEngineCommand` differ only
+   *  in the request they send once the engine is up. */
+  private async runEngineTurn(send: () => Promise<void>) {
+    this.turnToken += 1;
+    this.turnActive = true;
+    this.mapper.startTurn();
+    const done = new Promise<void>((resolve) => {
+      this.turnDone = resolve;
+    });
+    try {
+      await this.ensureStarted();
+      await send();
+      await done;
+    } catch (err) {
+      if (!this.closed) this.emit({ type: "error", message: errText(err) });
+      this.endTurn();
+    }
   }
 
   /** Serial queue: command switches and engine turns apply in prompt order. */
@@ -354,35 +373,17 @@ export class OpenCodeSession implements AgentSession {
 
   /** An engine command runs as a full turn: same envelope, same event flow —
    *  the engine's own dispatcher does the work (`/init`, custom commands). */
-  private async runEngineCommand(name: string, args: string) {
-    this.turnToken += 1;
-    this.turnActive = true;
-    this.mapper.startTurn();
-    const done = new Promise<void>((resolve) => {
-      this.turnDone = resolve;
-    });
-    try {
-      await this.ensureStarted();
-      await this.transport.command(this.sessionID as string, name, args, {
+  private runEngineCommand(name: string, args: string): Promise<void> {
+    return this.runEngineTurn(() =>
+      this.transport.command(this.sessionID as string, name, args, {
         ...(this.modelPin ? { model: `${this.modelPin.providerID}/${this.modelPin.modelID}` } : {}),
         ...(this.currentAgent ? { agent: this.currentAgent } : {}),
-      });
-      await done;
-    } catch (err) {
-      if (!this.closed) this.emit({ type: "error", message: errText(err) });
-      this.endTurn();
-    }
+      }),
+    );
   }
 
-  private async runTurn(text: string) {
-    this.turnToken += 1;
-    this.turnActive = true;
-    this.mapper.startTurn();
-    const done = new Promise<void>((resolve) => {
-      this.turnDone = resolve;
-    });
-    try {
-      await this.ensureStarted();
+  private runTurn(text: string): Promise<void> {
+    return this.runEngineTurn(async () => {
       const prompt = this.firstTurn ? `${RENDER_GUIDANCE}\n\n---\n\n${text}` : text;
       await this.transport.prompt(this.sessionID as string, {
         parts: [{ type: "text", text: prompt }],
@@ -393,11 +394,7 @@ export class OpenCodeSession implements AgentSession {
       // await burns the guidance on a failed first turn and every later turn
       // runs bare (the codex adapter's 2026-07-29 lesson, inherited).
       this.firstTurn = false;
-      await done;
-    } catch (err) {
-      if (!this.closed) this.emit({ type: "error", message: errText(err) });
-      this.endTurn();
-    }
+    });
   }
 
   private endTurn() {

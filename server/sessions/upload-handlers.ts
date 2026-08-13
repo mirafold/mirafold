@@ -17,7 +17,7 @@ import type { ClientMsg, WireMsg } from "../protocol";
 import type { SessionEntry } from "./registry";
 import { relayGateRefusal } from "../provider-policy";
 import { envInt } from "../env";
-import { CLIENT_ID_RE } from "./fs-handlers";
+import { badClientId } from "./fs-handlers";
 import { createLogger } from "../log";
 
 const log = createLogger("uploads");
@@ -133,9 +133,7 @@ export function createUploadHandlers({ viewport, getEntry, remote }: UploadDeps)
 
   return {
     begin(msg) {
-      // A bad correlation id drops the message whole (nothing to answer) —
-      // the fs-handlers rule, same grammar.
-      if (typeof msg.id !== "string" || !CLIENT_ID_RE.test(msg.id)) return;
+      if (badClientId(msg.id)) return;
       const entry = getEntry();
       if (!entry) {
         fail(msg.id, "no session attached");
@@ -179,7 +177,7 @@ export function createUploadHandlers({ viewport, getEntry, remote }: UploadDeps)
     },
 
     chunk(msg) {
-      if (typeof msg.id !== "string" || !CLIENT_ID_RE.test(msg.id)) return;
+      if (badClientId(msg.id)) return;
       const up = active.get(msg.id);
       if (!up) {
         // Answer, don't hang the client's correlation: a chunk with no
@@ -216,7 +214,7 @@ export function createUploadHandlers({ viewport, getEntry, remote }: UploadDeps)
     },
 
     abort(msg) {
-      if (typeof msg.id !== "string" || !CLIENT_ID_RE.test(msg.id)) return;
+      if (badClientId(msg.id)) return;
       const up = active.get(msg.id);
       if (!up) return; // an abort needs no reply — the client already moved on
       clearTimeout(up.stall);

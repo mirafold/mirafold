@@ -2,6 +2,11 @@ import type { Action, AgentName, BackendChoice, WireMsg } from "@protocol";
 import { SocketClient } from "./ws";
 import { createFolderPickerRequests } from "./folder-picker-requests";
 
+/** A per-viewport correlation id (the sendBang shape, 4.9): minted client-
+ *  side so each surface can match the one reply/stream it asked for. */
+const mintId = (prefix: string): string =>
+  `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
+
 /**
  * What the output zone consumes: the wire protocol plus one local control
  * message — zone_reset clears the transcript before a replay repaints it
@@ -132,7 +137,7 @@ export function createSessionBus(): SessionBus {
     // Run a shell command in the session's cwd (the `!` path). The id
     // is minted here so this viewport can correlate the broadcast stream (4.9).
     sendBang(command: string): string {
-      const id = `bang-${Math.random().toString(36).slice(2, 10)}`;
+      const id = mintId("bang");
       socket.send({ type: "bang", command, id });
       return id;
     },
@@ -161,28 +166,28 @@ export function createSessionBus(): SessionBus {
     // Explorer/Changes requests. Ids are minted here (the sendBang shape) and
     // returned so each shell surface correlates the one reply it gets.
     requestFsListdir(path: string): string {
-      const id = `fsl-${Math.random().toString(36).slice(2, 10)}`;
+      const id = mintId("fsl");
       socket.send({ type: "fs_listdir", id, path });
       return id;
     },
     requestFsChanges(): string {
-      const id = `fsc-${Math.random().toString(36).slice(2, 10)}`;
+      const id = mintId("fsc");
       socket.send({ type: "fs_changes", id });
       return id;
     },
     requestFsRead(path: string): string {
-      const id = `fsr-${Math.random().toString(36).slice(2, 10)}`;
+      const id = mintId("fsr");
       socket.send({ type: "fs_read", id, path });
       return id;
     },
     requestFsDiff(path: string): string {
-      const id = `fsd-${Math.random().toString(36).slice(2, 10)}`;
+      const id = mintId("fsd");
       socket.send({ type: "fs_diff", id, path });
       return id;
     },
     // Phase FD — the sendBang mint shape; per-viewport correlation only.
     uploadBegin(name: string, size: number): string {
-      const id = `up-${Math.random().toString(36).slice(2, 10)}`;
+      const id = mintId("up");
       socket.send({ type: "file_upload_begin", id, name, size });
       return id;
     },

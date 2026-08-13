@@ -86,7 +86,7 @@ export function turnEndToast(s: SessionSnapshot): ShowAction {
  * discovering a stalled session is the feature working), while first sight
  * of "busy" or "idle" stays silent — there's no evidence a turn just ended.
  */
-export function decide(
+export function decideNotifications(
   prev: ReadonlyMap<string, NotifyState>,
   next: SessionSnapshot[],
   flags: NotifyFlags,
@@ -174,7 +174,7 @@ export function createNotifier(deps: NotifierDeps): Notifier {
   return {
     update(next) {
       last = next;
-      const { actions, states: s } = decide(states, next, {
+      const { actions, states: s } = decideNotifications(states, next, {
         enabled: deps.enabled(),
         granted: deps.granted(),
         visible: deps.visible(),

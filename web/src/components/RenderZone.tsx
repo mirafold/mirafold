@@ -91,6 +91,24 @@ type Entry =
       hint?: string;
     };
 type ToolCall = Extract<Entry, { kind: "tool" }>;
+
+/** The transcript fields ToolBlock renders, picked off any tool-shaped
+ *  record — the one spread all three ToolBlock sites share. */
+const toolBlockProps = (call: {
+  name: string;
+  detail?: string;
+  input?: Record<string, unknown>;
+  output?: string;
+  truncatedBytes?: number;
+  isError?: boolean;
+}) => ({
+  name: call.name,
+  detail: call.detail,
+  input: call.input,
+  output: call.output,
+  truncatedBytes: call.truncatedBytes,
+  isError: call.isError,
+});
 type ThinkingEntry = Extract<Entry, { kind: "thinking" }>;
 
 let nextId = 0;
@@ -144,15 +162,7 @@ function ToolCallList({ calls, className }: { calls: ToolCall[]; className: stri
   return (
     <div className={className}>
       {calls.map((call) => (
-        <ToolBlock
-          key={call.id}
-          name={call.name}
-          detail={call.detail}
-          input={call.input}
-          output={call.output}
-          truncatedBytes={call.truncatedBytes}
-          isError={call.isError}
-        />
+        <ToolBlock key={call.id} {...toolBlockProps(call)} />
       ))}
     </div>
   );
@@ -212,15 +222,7 @@ function ToolActivityGroup({
         <div className="tool-activity-calls">
           {items.map((item) =>
             item.kind === "tool" ? (
-              <ToolBlock
-                key={item.tool.id}
-                name={item.tool.name}
-                detail={item.tool.detail}
-                input={item.tool.input}
-                output={item.tool.output}
-                truncatedBytes={item.tool.truncatedBytes}
-                isError={item.tool.isError}
-              />
+              <ToolBlock key={item.tool.id} {...toolBlockProps(item.tool)} />
             ) : (
               <ThinkingBlock key={item.thinking.id} entry={item.thinking} onToggle={onToggleThinking} />
             ),
@@ -855,14 +857,7 @@ function ZoneEntry({
     const children = childrenByParent.get(entry.toolId);
     return (
       <div className="tool-group">
-        <ToolBlock
-          name={entry.name}
-          detail={entry.detail}
-          input={entry.input}
-          output={entry.output}
-          truncatedBytes={entry.truncatedBytes}
-          isError={entry.isError}
-        />
+        <ToolBlock {...toolBlockProps(entry)} />
         {children && children.length > 0 && <SubagentGroup calls={children} />}
       </div>
     );

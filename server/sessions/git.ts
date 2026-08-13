@@ -183,12 +183,7 @@ type NetChange = { status?: string; verified: boolean };
 
 const isDotenvPath = (rel: string): boolean => {
   const base = path.posix.basename(rel);
-  return (
-    base === ".env" ||
-    base.endsWith(".env") ||
-    base.startsWith(".env.") ||
-    base.includes(".env.")
-  );
+  return base.endsWith(".env") || base.includes(".env.");
 };
 
 const netChangeAgainstHead = async (
@@ -202,40 +197,35 @@ const netChangeAgainstHead = async (
   if (isSecretFile(rel) || isDotenvPath(rel)) {
     return { status: fallback, verified: false };
   }
-  const [head, working] = await Promise.all([
-    gitShowHead(root, rel),
-    Promise.resolve(readWorkingTreeEntry(root, rel)),
-  ]);
+  // Start the subprocess first, then read the tree while it runs — the same
+  // interleaving the old Promise.all had, without dressing a synchronous
+  // read up as a concurrent task.
+  const headPromise = gitShowHead(root, rel);
+  const working = readWorkingTreeEntry(root, rel);
+  const head = await headPromise;
   if ("error" in head || "notGit" in head || working.kind === "unverified") {
     return { status: fallback, verified: false };
   }
-  const headPresent = "content" in head;
-  const workingPresent = working.kind === "content";
-  if (!headPresent && !workingPresent) return { verified: true };
-  if (!headPresent && workingPresent) {
-    return { status: fallback === "U" ? "U" : "A", verified: true };
+  if (!("content" in head)) {
+    return working.kind === "content"
+      ? { status: fallback === "U" ? "U" : "A", verified: true }
+      : { verified: true };
   }
-  if (headPresent && !workingPresent) return { status: "D", verified: true };
-  if ("content" in head && working.kind === "content") {
-    return {
-      ...(contentRevision(head.content) === working.revision ? {} : { status: "M" }),
-      verified: true,
-    };
-  }
-  return { status: fallback, verified: false };
+  if (working.kind !== "content") return { status: "D", verified: true };
+  return {
+    ...(contentRevision(head.content) === working.revision ? {} : { status: "M" }),
+    verified: true,
+  };
 };
 
-const exceptionalTrackedPaths = (out: string): string[] => {
-  const paths: string[] = [];
-  for (const record of out.split("\0")) {
-    if (record.length < 3 || record[1] !== " ") continue;
-    // H is an ordinary cached path. Lowercase tags are assume-unchanged;
-    // S is skip-worktree. Other non-H tags are exceptional enough that an
-    // exact comparison is safer than trusting an index-oriented label.
-    if (record[0] !== "H") paths.push(record.slice(2));
-  }
-  return paths;
-};
+// H is an ordinary cached path. Lowercase tags are assume-unchanged;
+// S is skip-worktree. Other non-H tags are exceptional enough that an
+// exact comparison is safer than trusting an index-oriented label.
+const exceptionalTrackedPaths = (out: string): string[] =>
+  out
+    .split("\0")
+    .filter((record) => record.length >= 3 && record[1] === " " && record[0] !== "H")
+    .map((record) => record.slice(2));
 
 export type GitTree =
   | { entries: FsEntry[]; truncated: boolean }
@@ -309,7 +299,7 @@ export async function gitTree(
   return { entries, truncated };
 }
 
-export type GitChanges =
+type GitChanges =
   | { entries: FsEntry[]; truncated: boolean }
   | { notGit: true }
   | { error: string };
@@ -339,7 +329,7 @@ export async function gitChanges(
   if (!status.ok) return status.notGit ? { notGit: true } : { error: gitErr("status", status) };
   if (!prefixRes.ok) return { error: gitErr("rev-parse", prefixRes) };
   if (!trackedFlags.ok) return { error: gitErr("ls-files", trackedFlags) };
-  const prefix = prefixRes.ok ? String(prefixRes.stdout).trim() : "";
+  const prefix = String(prefixRes.stdout).trim();
   const parsed = parseStatusZ(String(status.stdout));
   const statusByRel = new Map<string, string>();
   const exceptional = new Set<string>();
@@ -375,22 +365,24 @@ export async function gitChanges(
   // -uall should make this empty. If a git implementation still collapses a
   // special nested repository, omit the non-file prefix and say the answer is
   // incomplete rather than presenting a directory as reviewable code.
-  let truncated = parsed.untrackedDirs.size > 0 || netStateIncomplete;
+  // "Incomplete" is wider than the wire's `truncated` name: capped output,
+  // unverified net state, or a collapsed untracked dir all raise it.
+  let incomplete = parsed.untrackedDirs.size > 0 || netStateIncomplete;
   for (const [rel, statusChar] of [...statusByRel.entries()].sort(([a], [b]) =>
     a < b ? -1 : a > b ? 1 : 0,
   )) {
     const bytes = Buffer.byteLength(rel, "utf8");
     if (entries.length >= maxEntries || pathBytes + bytes > maxPathBytes) {
-      truncated = true;
+      incomplete = true;
       break;
     }
     entries.push({ path: rel, status: statusChar });
     pathBytes += bytes;
   }
-  return { entries, truncated };
+  return { entries, truncated: incomplete };
 }
 
-export type RepoDiscovery =
+type RepoDiscovery =
   | { roots: string[]; truncated: boolean }
   | { error: string };
 

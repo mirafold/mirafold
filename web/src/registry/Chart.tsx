@@ -112,6 +112,26 @@ export function arcPath(
  *  latency series of 200–210 ms anchored to zero renders as a flat stripe at
  *  the top of the plot, hiding the trend the chart exists to show. Pure, for
  *  Tier-1. */
+/** The drawn-value scale every cartesian mark shares: values clipped to the
+ *  x axis (marks render one value per label, so extras must not stretch the
+ *  axis with invisible data — 2026-07-28), domained, snapped to nice ticks;
+ *  an all-equal domain widens by 1 so the axis never collapses. */
+function chartScale(
+  series: { values: number[] }[],
+  cols: { hi: number }[][] | null,
+  xLen: number,
+  zeroAnchor: boolean,
+): { ticks: number[]; min: number; max: number } {
+  const values = cols
+    ? cols.flatMap((col) => (col.length ? [col[col.length - 1].hi] : []))
+    : series.flatMap((s) => s.values.slice(0, xLen)).filter(Number.isFinite);
+  const [lo, hi] = chartDomain(values, zeroAnchor);
+  const ticks = niceTicks(lo, hi);
+  const min = ticks[0];
+  const max = ticks[ticks.length - 1] === min ? min + 1 : ticks[ticks.length - 1];
+  return { ticks, min, max };
+}
+
 export function chartDomain(values: number[], zeroAnchor: boolean): [number, number] {
   if (values.length === 0) return [0, 0];
   return zeroAnchor
@@ -297,16 +317,7 @@ function HBarChart({ title, x, series, yLabel, stacked }: ComponentProps<"chart"
   const [hover, setHover] = useState<number | null>(null);
   const isStacked = stacked === true && series.length > 1;
   const cols = isStacked ? stackSegments(series, x.length) : null;
-  // Scale on what is DRAWN: every mark renderer clips values to x.length
-  // (one value per x label), so extra values must not stretch the axis with
-  // invisible data (2026-07-28 fix — stacked was already bounded via xLen).
-  const values = cols
-    ? cols.flatMap((col) => (col.length ? [col[col.length - 1].hi] : []))
-    : series.flatMap((s) => s.values.slice(0, x.length)).filter(Number.isFinite);
-  const [dLo, dHi] = chartDomain(values, true);
-  const tks = niceTicks(dLo, dHi);
-  const vMin = tks[0];
-  const vMax = tks[tks.length - 1] === vMin ? vMin + 1 : tks[tks.length - 1];
+  const { ticks: tks, min: vMin, max: vMax } = chartScale(series, cols, x.length, true);
 
   // The left band is the point of horizontal: category labels render whole.
   const labelW = Math.min(
@@ -449,17 +460,7 @@ function VChart({ title, kind, x, series, yLabel, stacked }: ComponentProps<"cha
   // series. A single series has nothing to stack; the flag is a quiet no-op.
   const isStacked = kind === "bar" && stacked === true && series.length > 1;
   const cols = isStacked ? stackSegments(series, x.length) : null;
-  // Same domain rule as HBarChart, including the empty-column [] (an empty
-  // stack contributes nothing; the Math.min/max 0-anchors cover it — the [0]
-  // this once carried was copy-paste drift). Scale on what is DRAWN: marks
-  // clip values to x.length, so extras must not stretch the axis (2026-07-28).
-  const values = cols
-    ? cols.flatMap((col) => (col.length ? [col[col.length - 1].hi] : []))
-    : series.flatMap((s) => s.values.slice(0, x.length)).filter(Number.isFinite);
-  const [dataMin, dataMax] = chartDomain(values, kind !== "line");
-  const tks = niceTicks(dataMin, dataMax);
-  const yMin = tks[0];
-  const yMax = tks[tks.length - 1] === yMin ? yMin + 1 : tks[tks.length - 1];
+  const { ticks: tks, min: yMin, max: yMax } = chartScale(series, cols, x.length, kind !== "line");
 
   const padRight = kind === "line" && series.length >= 2 ? PAD.right : 16;
   const iw = W - PAD.left - padRight;

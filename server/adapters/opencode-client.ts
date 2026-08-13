@@ -265,12 +265,18 @@ export class OpenCodeServerProcess implements OpenCodeTransport {
     }
   }
 
-  async providerCatalog(): Promise<OpenCodeProviderEntry[]> {
+  /** The parsed `/config/providers` list — the raw endpoint also returns the
+   *  user's stored secrets (`key`), so every consumer maps through here and
+   *  only the fields it names ever leave this class. */
+  private async fetchProviders(): Promise<Record<string, unknown>[]> {
     const res = await this.request("/config/providers");
     const data = (await res.json()) as { providers?: unknown };
     const list = Array.isArray(data.providers) ? data.providers : [];
-    return list.map((raw) => {
-      const p = (raw ?? {}) as Record<string, unknown>;
+    return list.map((raw) => (raw ?? {}) as Record<string, unknown>);
+  }
+
+  async providerCatalog(): Promise<OpenCodeProviderEntry[]> {
+    return (await this.fetchProviders()).map((p) => {
       const options = (p["options"] ?? {}) as Record<string, unknown>;
       // Deliberate strip: `p.key` is the user's raw stored secret. Only the
       // classification facts leave this method (provider-policy.ts shape).
@@ -313,23 +319,19 @@ export class OpenCodeServerProcess implements OpenCodeTransport {
   }
 
   async modelCatalog(): Promise<OpenCodeModelEntry[]> {
-    const res = await this.request("/config/providers");
-    const data = (await res.json()) as { providers?: unknown };
-    const list = Array.isArray(data.providers) ? data.providers : [];
-    const models: OpenCodeModelEntry[] = [];
-    for (const raw of list) {
-      const p = (raw ?? {}) as Record<string, unknown>;
+    return (await this.fetchProviders()).flatMap((p) => {
       const providerID = String(p["id"]);
-      for (const [modelID, model] of Object.entries((p["models"] ?? {}) as Record<string, unknown>)) {
-        const name = ((model ?? {}) as Record<string, unknown>)["name"];
-        models.push({
-          providerID,
-          modelID,
-          ...(typeof name === "string" && name ? { name } : {}),
-        });
-      }
-    }
-    return models;
+      return Object.entries((p["models"] ?? {}) as Record<string, unknown>).map(
+        ([modelID, model]) => {
+          const name = ((model ?? {}) as Record<string, unknown>)["name"];
+          return {
+            providerID,
+            modelID,
+            ...(typeof name === "string" && name ? { name } : {}),
+          };
+        },
+      );
+    });
   }
 
   async command(

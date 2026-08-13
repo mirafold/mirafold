@@ -592,12 +592,13 @@ export class SessionRegistry {
   }
 
   private deliver(entry: SessionEntry, msg: WireMsg) {
+    const log = createLogger(`session ${entry.id}`);
     // The likeliest live failures (bad key, engine died, CLI missing)
     // arrive here as adapter-emitted `error` WireMsgs and used to reach only
     // the browser — mirror them to the terminal, timestamped, because the
     // terminal log is what a stranger pastes into a bug report (R.4g).
     if (msg.type === "error") {
-      createLogger(`session ${entry.id}`).error(msg.message);
+      log.error(msg.message);
     }
     // Paintings-adoption instrumentation (2026-08-13 audit): one LOCAL log
     // line per generative-UI paint, from the choke point every adapter's
@@ -605,18 +606,14 @@ export class SessionRegistry {
     // tools" is answerable from the daemon log instead of guessed. Local
     // only; nothing leaves the machine.
     if (msg.type === "render" || msg.type === "artifact") {
-      createLogger(`session ${entry.id}`).info(
-        `paint ${msg.type === "render" ? msg.component : "artifact"} agent=${entry.agent}`,
-      );
+      log.info(`paint ${msg.type === "render" ? msg.component : "artifact"} agent=${entry.agent}`);
     }
     // MIRAFOLD_DEBUG=1 traces every normalized event on the session
     // stream (bang_input never crosses broadcast, so no secret can land
     // here). One line per WireMsg, payload truncated (R.4g).
     if (verbose) {
       const body = JSON.stringify(msg);
-      createLogger(`session ${entry.id}`).debug(
-        `${msg.type} ${body.length > 300 ? body.slice(0, 300) + "…" : body}`,
-      );
+      log.debug(`${msg.type} ${body.length > 300 ? body.slice(0, 300) + "…" : body}`);
     }
     // Resume cursor, one stamp for all viewports. Stamped on a shallow
     // copy — the adapter's object is never mutated or held by the buffer, so

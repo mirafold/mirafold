@@ -40,7 +40,7 @@ export function ChangesPanel({
   sessionKey?: string;
 }) {
   const {
-    set,
+    changeSet,
     items,
     itemsByPath,
     file,
@@ -94,21 +94,21 @@ export function ChangesPanel({
     >
       <ChangesHeader
         phone={phone}
-        loaded={set.loaded}
+        loaded={changeSet.loaded}
         itemCount={items.length}
         reviewedCount={reviewedCount}
         headerCount={headerCount}
-        pending={set.pending}
+        pending={changeSet.pending}
         onRefresh={requestSet}
         onClose={onClose}
       />
 
-      {set.error && items.length > 0 && (
+      {changeSet.error && items.length > 0 && (
         <div className="changes-warning" role="status">
-          Refresh failed: {set.error}. Showing the last complete result.
+          Refresh failed: {changeSet.error}. Showing the last complete result.
         </div>
       )}
-      {incomplete && set.loaded && (
+      {incomplete && changeSet.loaded && (
         <div className="changes-warning" role="status">
           This list is incomplete; only the visible changes can be reviewed here.
         </div>
@@ -117,7 +117,7 @@ export function ChangesPanel({
       <div className="changes-body">
         {!phone && items.length > 0 && (
           <ChangesRail
-            repos={set.repos}
+            repos={changeSet.repos}
             itemsByPath={itemsByPath}
             selectedPath={file.selected?.path}
             reviewProgress={reviewProgress}

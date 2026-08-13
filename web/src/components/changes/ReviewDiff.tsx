@@ -87,7 +87,7 @@ export function ReviewDiff({
     return () => window.removeEventListener("mouseup", finishDrag);
   }, []);
 
-  const select = (anchor: number, focus: number) => {
+  const selectLines = (anchor: number, focus: number) => {
     const next = reviewSelection(anchor, focus, lines.length);
     if (!next) return;
     const versioned = { ...next, path: state.path, before: state.before, after: state.after };
@@ -116,13 +116,13 @@ export function ReviewDiff({
     if (next !== undefined) {
       event.preventDefault();
       const bounded = Math.max(0, Math.min(lines.length - 1, next));
-      if (event.shiftKey) select(currentSelection?.anchor ?? index, bounded);
+      if (event.shiftKey) selectLines(currentSelection?.anchor ?? index, bounded);
       focusRow(bounded);
       return;
     }
     if (event.key === " " || event.key === "Enter") {
       event.preventDefault();
-      select(event.shiftKey ? currentSelection?.anchor ?? index : index, index);
+      selectLines(event.shiftKey ? currentSelection?.anchor ?? index : index, index);
     }
   };
 
@@ -144,7 +144,7 @@ export function ReviewDiff({
       onSelectionChange(undefined);
       onNoticeChange(undefined);
     } else {
-      select(hunk.start, hunk.end);
+      selectLines(hunk.start, hunk.end);
     }
   };
 
@@ -235,7 +235,7 @@ export function ReviewDiff({
           phone={phone}
           rowRefs={rowRefs}
           dragAnchor={dragAnchor}
-          select={select}
+          selectLines={selectLines}
           setFocusIndex={setFocusIndex}
           onLineKey={onLineKey}
         />
