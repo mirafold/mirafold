@@ -264,6 +264,13 @@ test("provider completions open before submit, transcript click focuses, and set
       await page2.locator(".stop-btn").waitFor();
       await page2.locator(".stop-btn").waitFor({ state: "detached" });
       assert.equal(await page2.locator(".tool-activity-group").count(), 1);
+      // The fold's count speaks of ACTIONS only — absorbed narration
+      // (thinking rows riding inside the fold) must never inflate it.
+      assert.match(
+        await page2.locator(".tool-activity-label").innerText(),
+        /worked · 2 actions/,
+        "the fold label must count tool calls only, not absorbed narration",
+      );
       assert.equal(await page2.locator(".tool-group").count(), 1);
       assert.match(await page2.locator(".tool-group").textContent() ?? "", /No matching test file/);
       assert.equal(
