@@ -10,10 +10,17 @@ import { ResumeIdState } from "./resume-id";
 import { renderMcpCommand, MIRAFOLD_MCP } from "./render-mcp-cmd";
 import {
   OpenCodeServerProcess,
+  type OpenCodeCommandEntry,
   type OpenCodeEvent,
   type OpenCodeTransport,
 } from "./opencode-client";
 import { OpenCodeEventMapper } from "./opencode-events";
+import {
+  OPENCODE_DEFAULT_AGENT,
+  refreshOpenCodePromptOptions,
+  runOpenCodeAgentCommand,
+  runOpenCodeModelCommand,
+} from "./opencode-commands";
 
 // An aborted turn normally ends via the engine's own `session.idle`; this is
 // the honest fallback if that event never comes, so an interrupt can't wedge
@@ -46,6 +53,12 @@ export class OpenCodeSession implements AgentSession {
   private closed = false;
   private firstTurn = true;
   private modelLabel?: string;
+  // The picked OpenCode agent (build/plan/custom primary); unset = the
+  // engine's own default rides (no `agent` field on prompts).
+  private currentAgent?: string;
+  // The engine's command catalog, learned at start — routes `/name` inputs
+  // to the engine's dispatcher and feeds the prompt-options catalog.
+  private engineCommands: OpenCodeCommandEntry[] = [];
   private permissionTimeoutMs: number;
   private pendingPermissions = new Map<string, ReturnType<typeof setTimeout>>();
   // Per-turn end latch: exactly one turn_end per prompt (idle, error,
@@ -176,6 +189,9 @@ export class OpenCodeSession implements AgentSession {
         this.sessionID = (await this.transport.createSession()).id;
       }
       this.resumeIdState.publish(this.sessionID);
+      // Non-fatal fidelity: without the catalog, `/name` inputs simply reach
+      // the model as prompt text and the options list shows only our rows.
+      this.engineCommands = await this.transport.commandCatalog().catch(() => []);
     })();
     return this.started.catch((err) => {
       this.started = undefined;
@@ -197,37 +213,154 @@ export class OpenCodeSession implements AgentSession {
           "the provider determines whether the session may run at all",
       );
     }
-    const entry = (await this.transport.providerCatalog()).find((p) => p.id === pin.providerID);
-    if (!entry) {
-      throw new Error(
-        `provider "${pin.providerID}" isn't connected in opencode — connect it with ` +
-          "`opencode auth login` (or declare it in your opencode config), then prompt again",
-      );
-    }
-    const verdict = classifyOpenCodeProvider(entry);
-    if (!verdict.allowed) throw new Error(verdict.reason ?? "provider refused by policy");
-    if (verdict.kind === "subscription") {
-      // The ChatGPT gray area needs the classified kind to flow into the
-      // session's Backend before it may run (the relay gate reads
-      // Backend.kind, and this session was resolved optimistically as
-      // api-key) — that wiring plus the required disclosure is PLAN OC.4.
-      // Until then the gray path refuses honestly rather than run under a
-      // kind that would overstate its relay rights.
-      throw new Error(
-        "a ChatGPT login through OpenCode isn't wired up in Mirafold yet — " +
-          "connect OpenAI (or another provider) with an API key in opencode to run this session",
-      );
-    }
+    const reason = await this.pinRefusalReason(pin);
+    if (reason) throw new Error(reason);
     this.modelPin = pin;
     this.modelLabel ??= pin.modelID;
   }
 
-  /** Serial queue: turns apply in prompt order, one at a time. */
+  /** Why `pin` may not run, or undefined when it may — the shared verdict
+   *  behind session start and a `/model` switch (a switch must never reach a
+   *  provider the start gate would have refused). */
+  private async pinRefusalReason(pin: {
+    providerID: string;
+    modelID: string;
+  }): Promise<string | undefined> {
+    const entry = (await this.transport.providerCatalog()).find((p) => p.id === pin.providerID);
+    if (!entry) {
+      return (
+        `provider "${pin.providerID}" isn't connected in opencode — connect it with ` +
+        "`opencode auth login` (or declare it in your opencode config), then prompt again"
+      );
+    }
+    const verdict = classifyOpenCodeProvider(entry);
+    if (!verdict.allowed) return verdict.reason ?? "provider refused by policy";
+    if (verdict.kind === "subscription") {
+      // The ChatGPT gray area needs the classified kind to flow into the
+      // session's Backend before it may run (the relay gate reads
+      // Backend.kind, and this session was resolved optimistically as
+      // api-key) — that wiring plus the required disclosure is PLAN OC.4b.
+      // Until then the gray path refuses honestly rather than run under a
+      // kind that would overstate its relay rights.
+      return (
+        "a ChatGPT login through OpenCode isn't wired up in Mirafold yet — " +
+        "connect OpenAI (or another provider) with an API key in opencode to run this session"
+      );
+    }
+    return undefined;
+  }
+
+  refreshPromptOptions() {
+    refreshOpenCodePromptOptions({
+      emit: (msg) => this.emit(msg),
+      isClosed: () => this.closed,
+      listCommands: async () => {
+        await this.ensureStarted();
+        return this.engineCommands;
+      },
+    });
+  }
+
+  /** Serial queue: command switches and engine turns apply in prompt order. */
   private async worker() {
     while (!this.closed) {
       const item = await this.queue.next();
       if (item === CLOSE) return;
-      await this.runTurn(item);
+      const trimmed = item.trim();
+      if (trimmed === "/model" || trimmed.startsWith("/model ")) {
+        await this.runModelCommand(trimmed.slice("/model".length).trim());
+      } else if (trimmed === "/agent" || trimmed.startsWith("/agent ")) {
+        await this.runAgentCommand(trimmed.slice("/agent".length).trim());
+      } else {
+        const engine = this.matchEngineCommand(trimmed);
+        if (engine) await this.runEngineCommand(engine.name, engine.args);
+        else await this.runTurn(item);
+      }
+    }
+  }
+
+  /** `/name [args]` for a name in the engine's own catalog. Known only once
+   *  the engine started — a cold session's very first input routes as prompt
+   *  text instead (rare; the model still sees exactly what was typed). */
+  private matchEngineCommand(trimmed: string): { name: string; args: string } | undefined {
+    const match = /^\/([\w:-]+)(?:\s+([^]*))?$/.exec(trimmed);
+    if (!match) return undefined;
+    const name = match[1];
+    if (!this.engineCommands.some((c) => c.name === name)) return undefined;
+    return { name, args: (match[2] ?? "").trim() };
+  }
+
+  private async runModelCommand(arg: string) {
+    await runOpenCodeModelCommand({
+      arg,
+      emit: (msg) => this.emit(msg),
+      listModels: async () => {
+        await this.ensureStarted();
+        const allowed = new Set(
+          (await this.transport.providerCatalog())
+            .filter((entry) => {
+              const verdict = classifyOpenCodeProvider(entry);
+              // The gray subscription is excluded with the blocked rows: the
+              // picker offers only what a pick can actually run (OC.4b).
+              return verdict.allowed && verdict.kind !== "subscription";
+            })
+            .map((entry) => entry.id),
+        );
+        return (await this.transport.modelCatalog()).filter((m) => allowed.has(m.providerID));
+      },
+      isCurrent: (providerID, modelID) =>
+        this.modelPin?.providerID === providerID && this.modelPin?.modelID === modelID,
+      setModel: async (id) => {
+        const pin = parseModelPin(id);
+        if (!pin) return "Usage: `/model` to pick, or `/model <provider>/<model>`.";
+        try {
+          await this.ensureStarted();
+          const reason = await this.pinRefusalReason(pin);
+          if (reason) return reason;
+        } catch (err) {
+          return errText(err);
+        }
+        this.modelPin = pin;
+        this.modelLabel = pin.modelID;
+        return undefined;
+      },
+    });
+  }
+
+  private async runAgentCommand(arg: string) {
+    await runOpenCodeAgentCommand({
+      arg,
+      emit: (msg) => this.emit(msg),
+      listAgents: async () => {
+        await this.ensureStarted();
+        return this.transport.agentCatalog();
+      },
+      currentAgent: this.currentAgent ?? OPENCODE_DEFAULT_AGENT,
+      setAgent: (name) => {
+        this.currentAgent = name;
+      },
+    });
+  }
+
+  /** An engine command runs as a full turn: same envelope, same event flow —
+   *  the engine's own dispatcher does the work (`/init`, custom commands). */
+  private async runEngineCommand(name: string, args: string) {
+    this.turnToken += 1;
+    this.turnActive = true;
+    this.mapper.startTurn();
+    const done = new Promise<void>((resolve) => {
+      this.turnDone = resolve;
+    });
+    try {
+      await this.ensureStarted();
+      await this.transport.command(this.sessionID as string, name, args, {
+        ...(this.modelPin ? { model: `${this.modelPin.providerID}/${this.modelPin.modelID}` } : {}),
+        ...(this.currentAgent ? { agent: this.currentAgent } : {}),
+      });
+      await done;
+    } catch (err) {
+      if (!this.closed) this.emit({ type: "error", message: errText(err) });
+      this.endTurn();
     }
   }
 
@@ -244,6 +377,7 @@ export class OpenCodeSession implements AgentSession {
       await this.transport.prompt(this.sessionID as string, {
         parts: [{ type: "text", text: prompt }],
         ...(this.modelPin ? { model: this.modelPin } : {}),
+        ...(this.currentAgent ? { agent: this.currentAgent } : {}),
       });
       // Flipped only once the engine ACCEPTED the prompt: flipping before the
       // await burns the guidance on a failed first turn and every later turn

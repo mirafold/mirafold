@@ -2773,13 +2773,28 @@ gates come first.
   carries the pick. Relay gate unchanged (already refuses `subscription`).
   **Done when:** Tier-1 covers every matrix row incl. the fail-closed
   default; blocked/gray states render their correct copy.
-- [ ] **Step OC.4 — Fidelity surface** — **Goal:** what an OpenCode user
-  expects. **Build:** onboarding card + agents-meta entry (gray-area
-  disclosure only when the chosen provider needs it), build/plan agent
-  toggle (per-prompt `agent`), cross-provider model picker from the server
-  catalog, command catalog → `emitPromptOptions` (optional-feature rule if
-  unexposed). **Done when:** onboarding→session flow works live; pickers
-  reflect the user's own config (whitelists, custom agents).
+- [x] **Step OC.4 — In-session fidelity surface** — completed 2026-08-13
+  (the original OC.4 split in two; the onboarding half is OC.4b below):
+  `opencode-commands.ts` on the codex picker pattern — `/model` paints the
+  cross-provider catalog (policy-filtered: only providers a pick can
+  actually run; a typed blocked pick refuses with its reason and keeps the
+  pin), `/agent` paints user-facing primaries only (`hidden` internals and
+  subagents excluded; pick rides every subsequent prompt), the engine's
+  own command catalog routes `/name` inputs to `POST /session/:id/command`
+  (the engine's real dispatcher, with pin + agent) and feeds
+  `emitPromptOptions` behind our two re-skins (engine rows badged
+  `source: "opencode"`). 6 new Tier-1 tests; suite 757/757; typecheck
+  green. — **Goal:** what an OpenCode user expects in-session.
+- [ ] **Step OC.4b — Onboarding + kind-into-Backend + Zen terms** —
+  **Goal:** the agent becomes offerable. **Build:** ADAPTER_AGENTS entry +
+  onboarding card + real agents-meta copy (gray-area disclosure only when
+  the chosen provider needs it); flow the session-start classified kind
+  into `Backend` so the ChatGPT gray path can run under its true kind
+  (relay-gate truth — the OC.3 refusal comes out then, with the
+  disclosure); read and cite OpenCode Zen's terms and either open the
+  free-models row or keep it closed with the citation. **Done when:**
+  onboarding→session flow works live end-to-end and a blocked/gray pick
+  shows its honest copy in the picker.
 - [ ] **Step OC.5 — Tier-2/Tier-3 + live end-to-end** — **Goal:** the
   proof. **Build:** Tier-2 itest against a real spawned `opencode serve`
   (mock-forced provider if feasible); Tier-3 e2e onboarding→prompt→render;

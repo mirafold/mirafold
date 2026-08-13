@@ -31,6 +31,17 @@ export interface OpenCodeTransport {
   /** The user's own configured default model (`model` in their opencode
    *  config), `provider/model` form; undefined when they set none. */
   configModel(): Promise<string | undefined>;
+  agentCatalog(): Promise<OpenCodeAgentEntry[]>;
+  commandCatalog(): Promise<OpenCodeCommandEntry[]>;
+  modelCatalog(): Promise<OpenCodeModelEntry[]>;
+  /** Run an engine command (`/init`, a custom command, …) as this session's
+   *  turn — the engine's own dispatcher, not prompt text. */
+  command(
+    sessionID: string,
+    name: string,
+    args: string,
+    opts: { model?: string; agent?: string },
+  ): Promise<void>;
   replyPermission(
     sessionID: string,
     permissionID: string,
@@ -42,6 +53,23 @@ export interface OpenCodeTransport {
 }
 
 const START_DEADLINE_MS = envInt("MIRAFOLD_OPENCODE_START_TIMEOUT_MS", 20_000);
+
+/** One agent from `GET /agent` — `hidden: true` marks the engine's internal
+ *  primaries (compaction/summary/title), which no picker should offer. */
+export type OpenCodeAgentEntry = {
+  name: string;
+  mode: "primary" | "subagent";
+  hidden?: boolean;
+  description?: string;
+};
+
+/** One command from `GET /command` (built-ins + the user's own custom
+ *  commands) — dispatched faithfully via `POST /session/:id/command`. */
+export type OpenCodeCommandEntry = { name: string; description?: string };
+
+/** One model of a CONNECTED provider (`GET /config/providers`), the user's
+ *  own whitelist/blacklist already applied server-side. */
+export type OpenCodeModelEntry = { providerID: string; modelID: string; name?: string };
 
 /** An ephemeral localhost port. Classic listen-then-close: the tiny race
  *  window before opencode binds is acceptable on loopback. */
@@ -254,6 +282,67 @@ export class OpenCodeServerProcess implements OpenCodeTransport {
     const res = await this.request("/config");
     const config = (await res.json()) as { model?: unknown };
     return typeof config.model === "string" && config.model ? config.model : undefined;
+  }
+
+  async agentCatalog(): Promise<OpenCodeAgentEntry[]> {
+    const res = await this.request("/agent");
+    const list = (await res.json()) as Record<string, unknown>[];
+    return list.map((a) => ({
+      name: String(a["name"]),
+      mode: a["mode"] === "subagent" ? "subagent" : "primary",
+      ...(a["hidden"] === true ? { hidden: true } : {}),
+      ...(typeof a["description"] === "string" && a["description"]
+        ? { description: a["description"] }
+        : {}),
+    }));
+  }
+
+  async commandCatalog(): Promise<OpenCodeCommandEntry[]> {
+    const res = await this.request("/command");
+    const list = (await res.json()) as Record<string, unknown>[];
+    return list.map((c) => ({
+      name: String(c["name"]),
+      ...(typeof c["description"] === "string" && c["description"]
+        ? { description: c["description"] }
+        : {}),
+    }));
+  }
+
+  async modelCatalog(): Promise<OpenCodeModelEntry[]> {
+    const res = await this.request("/config/providers");
+    const data = (await res.json()) as { providers?: unknown };
+    const list = Array.isArray(data.providers) ? data.providers : [];
+    const models: OpenCodeModelEntry[] = [];
+    for (const raw of list) {
+      const p = (raw ?? {}) as Record<string, unknown>;
+      const providerID = String(p["id"]);
+      for (const [modelID, model] of Object.entries((p["models"] ?? {}) as Record<string, unknown>)) {
+        const name = ((model ?? {}) as Record<string, unknown>)["name"];
+        models.push({
+          providerID,
+          modelID,
+          ...(typeof name === "string" && name ? { name } : {}),
+        });
+      }
+    }
+    return models;
+  }
+
+  async command(
+    sessionID: string,
+    name: string,
+    args: string,
+    opts: { model?: string; agent?: string },
+  ): Promise<void> {
+    await this.request(`/session/${encodeURIComponent(sessionID)}/command`, {
+      method: "POST",
+      body: JSON.stringify({
+        command: name,
+        ...(args ? { arguments: args } : {}),
+        ...(opts.model ? { model: opts.model } : {}),
+        ...(opts.agent ? { agent: opts.agent } : {}),
+      }),
+    });
   }
 
   async prompt(sessionID: string, body: Record<string, unknown>): Promise<void> {

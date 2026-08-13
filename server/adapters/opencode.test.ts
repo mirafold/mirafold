@@ -48,6 +48,19 @@ class FakeTransport implements OpenCodeTransport {
   ];
   cfgModel: string | undefined = "fake/fake-model";
   sessionsCreated = 0;
+  agents: Awaited<ReturnType<OpenCodeTransport["agentCatalog"]>> = [
+    { name: "build", mode: "primary", description: "The default agent" },
+    { name: "plan", mode: "primary", description: "Plan mode" },
+    { name: "title", mode: "primary", hidden: true },
+    { name: "explore", mode: "subagent" },
+  ];
+  engineCommands: Awaited<ReturnType<OpenCodeTransport["commandCatalog"]>> = [
+    { name: "init", description: "guided AGENTS.md setup" },
+  ];
+  models: Awaited<ReturnType<OpenCodeTransport["modelCatalog"]>> = [
+    { providerID: "fake", modelID: "fake-model", name: "Fake Model" },
+  ];
+  commands: { name: string; args: string; opts: Record<string, unknown> }[] = [];
   async start(cb: (ev: OpenCodeEvent) => void) {
     this.onEvent = cb;
   }
@@ -56,6 +69,18 @@ class FakeTransport implements OpenCodeTransport {
   }
   async configModel() {
     return this.cfgModel;
+  }
+  async agentCatalog() {
+    return this.agents;
+  }
+  async commandCatalog() {
+    return this.engineCommands;
+  }
+  async modelCatalog() {
+    return this.models;
+  }
+  async command(_sessionID: string, name: string, args: string, opts: Record<string, unknown>) {
+    this.commands.push({ name, args, opts });
   }
   async createSession() {
     this.sessionsCreated++;
@@ -532,6 +557,124 @@ test("policy refusals at start: each names its reason and frees the turn", async
     assert.equal(fake.prompts.length, 0, "no prompt reaches a refused provider");
     session.close();
   }
+});
+
+test("/model with no arg paints the picker from allowed providers only", async () => {
+  const { session, fake, msgs, awaitTurnEnd } = makeSession();
+  fake.catalog = [
+    { id: "fake", source: "config" },
+    { id: "deepseek", source: "api" },
+    { id: "opencode", source: "custom", apiKeyOption: "public" }, // Zen — refused, so never offered
+  ];
+  fake.models = [
+    { providerID: "fake", modelID: "fake-model" },
+    { providerID: "deepseek", modelID: "deepseek-v4" },
+    { providerID: "opencode", modelID: "laguna-s-2.1-free" },
+  ];
+  session.pushPrompt("/model");
+  await awaitTurnEnd();
+  const picker = msgs.find((m) => m.type === "picker");
+  assert.deepEqual(
+    picker?.rows.map((r: { label: string }) => r.label),
+    ["fake/fake-model", "deepseek/deepseek-v4"],
+  );
+  assert.equal(picker?.rows.find((r: { current?: boolean }) => r.current)?.label, "fake/fake-model");
+  session.close();
+});
+
+test("/model switches to an allowed provider; a blocked pick refuses and keeps the pin", async () => {
+  const { session, fake, msgs, feed, awaitTurnEnd } = makeSession();
+  fake.catalog = [
+    { id: "fake", source: "config" },
+    { id: "deepseek", source: "api" },
+    { id: "opencode", source: "custom", apiKeyOption: "public" },
+  ];
+  session.pushPrompt("/model deepseek/deepseek-v4");
+  await awaitTurnEnd();
+  assert.ok(msgs.some((m) => m.type === "text_delta" && /Model set to deepseek/.test(m.text)));
+  assert.equal(session.modelName, "deepseek-v4");
+
+  session.pushPrompt("/model opencode/laguna-s-2.1-free");
+  await awaitTurnEnd(2);
+  assert.match(msgs.find((m) => m.type === "error")?.message ?? "", /Zen/);
+  assert.equal(session.modelName, "deepseek-v4", "blocked pick must not move the pin");
+
+  session.pushPrompt("hi");
+  await waitFor(() => fake.prompts.length === 1, "prompt");
+  assert.deepEqual(fake.prompts[0]?.["model"], { providerID: "deepseek", modelID: "deepseek-v4" });
+  feed(idle());
+  await awaitTurnEnd(3);
+  session.close();
+});
+
+test("/agent paints user-facing primaries only; a pick rides subsequent prompts", async () => {
+  const { session, fake, msgs, feed, awaitTurnEnd } = makeSession();
+  session.pushPrompt("/agent");
+  await awaitTurnEnd();
+  const picker = msgs.find((m) => m.type === "picker");
+  assert.deepEqual(
+    picker?.rows.map((r: { label: string }) => r.label),
+    ["build", "plan"],
+    "hidden primaries and subagents never offered",
+  );
+  assert.equal(picker?.rows.find((r: { current?: boolean }) => r.current)?.label, "build");
+
+  session.pushPrompt("/agent plan");
+  await awaitTurnEnd(2);
+  assert.ok(msgs.some((m) => m.type === "text_delta" && /Agent set to plan/.test(m.text)));
+  session.pushPrompt("hi");
+  await waitFor(() => fake.prompts.length === 1, "prompt");
+  assert.equal(fake.prompts[0]?.["agent"], "plan");
+  feed(idle());
+  await awaitTurnEnd(3);
+  session.close();
+});
+
+test("an engine command routes to the engine's dispatcher with pin and agent", async () => {
+  const { session, fake, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("warm up"); // learns the engine command catalog
+  feed(idle());
+  await awaitTurnEnd();
+  session.pushPrompt("/agent plan");
+  await awaitTurnEnd(2);
+  session.pushPrompt("/init focus on tests");
+  await waitFor(() => fake.commands.length === 1, "engine command dispatch");
+  assert.deepEqual(fake.commands[0], {
+    name: "init",
+    args: "focus on tests",
+    opts: { model: "fake/fake-model", agent: "plan" },
+  });
+  feed(idle());
+  await awaitTurnEnd(3);
+  assert.equal(fake.prompts.length, 1, "the command never rides as prompt text");
+  session.close();
+});
+
+test("prompt options: our re-skins immediately, the engine catalog behind them", async () => {
+  const { session, fake, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("warm up");
+  feed(idle());
+  await awaitTurnEnd();
+  session.refreshPromptOptions();
+  await waitFor(
+    () =>
+      msgs.some(
+        (m) => m.type === "prompt_options" && m.options.some((o: { value: string }) => o.value === "/init"),
+      ),
+    "engine catalog options",
+  );
+  const options = msgs.filter((m) => m.type === "prompt_options").at(-1)?.options as {
+    value: string;
+    source?: string;
+  }[];
+  assert.deepEqual(
+    options.map((o) => o.value),
+    ["/model", "/agent", "/init"],
+  );
+  assert.equal(options.find((o) => o.value === "/init")?.source, "opencode");
+  assert.equal(options.find((o) => o.value === "/model")?.source, undefined, "our re-skin, no badge");
+  assert.equal(fake.commands.length, 0);
+  session.close();
 });
 
 test("an allowed stored-key provider runs; the refusal latch retries after a fix", async () => {
