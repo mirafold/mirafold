@@ -220,12 +220,21 @@ const netChangeAgainstHead = async (
 
 // H is an ordinary cached path. Lowercase tags are assume-unchanged;
 // S is skip-worktree. Other non-H tags are exceptional enough that an
-// exact comparison is safer than trusting an index-oriented label.
-const exceptionalTrackedPaths = (out: string): string[] =>
+// exact comparison is safer than trusting an index-oriented label. The tag
+// rides along: for S/h-style entries an ABSENT working file is the state
+// the user configured (sparse checkout, assume-unchanged), not a deletion.
+const exceptionalTrackedPaths = (out: string): { rel: string; tag: string }[] =>
   out
     .split("\0")
     .filter((record) => record.length >= 3 && record[1] === " " && record[0] !== "H")
-    .map((record) => record.slice(2));
+    .map((record) => ({ rel: record.slice(2), tag: record[0] }));
+
+// One direct HEAD-vs-working comparison costs a `git show` subprocess plus a
+// bounded file read. A pathological pile of exceptional paths (a huge
+// mid-merge, an index full of odd flags) must not turn one fs_changes reply
+// into minutes of sequential subprocesses — beyond this many, the answer is
+// honestly incomplete instead (bughunt 2026-08-13).
+const MAX_NET_COMPARISONS = 200;
 
 export type GitTree =
   | { entries: FsEntry[]; truncated: boolean }
@@ -338,22 +347,45 @@ export async function gitChanges(
     if (!rel) continue;
     statusByRel.set(rel, statusChar);
     const records = parsed.records.get(repoPath) ?? [];
+    // Add-like then deleted (AD, and the rename/copy destinations RD/CD —
+    // parseStatusZ collapses R/C to A only in `files`, so the raw tag is
+    // matched here; bughunt: RD produced a phantom "A" for a path absent
+    // from both HEAD and the working tree) nets to nothing-or-something
+    // only a direct comparison can answer.
     if (
       records.length > 1 ||
-      records.some((xy) => xy.includes("A") && xy.includes("D"))
+      records.some((xy) => /[ARC]/.test(xy) && xy.includes("D"))
     ) {
       exceptional.add(rel);
     }
   }
-  for (const rel of exceptionalTrackedPaths(String(trackedFlags.stdout))) {
-    if (rel) exceptional.add(rel);
+  // Skip-worktree / assume-unchanged tags, for the absence rule below.
+  const configuredAbsence = new Set<string>();
+  for (const { rel, tag } of exceptionalTrackedPaths(String(trackedFlags.stdout))) {
+    if (!rel) continue;
+    exceptional.add(rel);
+    if (tag === "S" || tag === tag.toLowerCase()) configuredAbsence.add(rel);
   }
 
   // Porcelain describes index + worktree state. For the exceptional cases
   // where that differs from the product's actual promise, compare the path's
   // current bytes directly with HEAD and replace/omit the label accordingly.
   let netStateIncomplete = false;
+  let comparisons = 0;
   for (const rel of [...exceptional].sort()) {
+    // Sparse checkouts skip-worktree every excluded file and legitimately
+    // leave it off disk — that absence is the configured state, not a
+    // deletion (bughunt: a clean sparse monorepo reported every excluded
+    // file "D", one git-show subprocess each). The cheap existence read
+    // answers it without ever spawning git.
+    if (configuredAbsence.has(rel) && readWorkingTreeEntry(root, rel).kind === "absent") {
+      statusByRel.delete(rel);
+      continue;
+    }
+    if (++comparisons > MAX_NET_COMPARISONS) {
+      netStateIncomplete = true;
+      break;
+    }
     const net = await netChangeAgainstHead(root, rel, statusByRel.get(rel));
     if (!net.verified) netStateIncomplete = true;
     if (net.status) statusByRel.set(rel, net.status);
@@ -636,6 +668,13 @@ export const findRepoRoot = (
   entryExists: (candidate: string) => boolean = existsSync,
 ): string | null => {
   let dir = realDir;
+  // Keyed on function IDENTITY, deliberately: marker validation reads the
+  // REAL filesystem (hasValidGitMarker → lstat/readFile) and cannot be
+  // virtualized through `entryExists`, so it runs only when the caller left
+  // the default oracle in place. Every production call site does; the pure-
+  // walk unit tests inject a jailed oracle over fixtures that are invalid as
+  // real repos, and validation would flip them. Beware: passing a WRAPPER
+  // around existsSync (caching, jailing) silently disables validation too.
   const validateMarker = entryExists === existsSync;
   for (;;) {
     if (

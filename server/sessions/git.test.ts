@@ -259,6 +259,45 @@ test("gitChanges: returns only changed files, including expanded untracked files
   assert.equal(result.truncated, false);
 });
 
+test("gitChanges: a clean sparse checkout reports no phantom deletions", async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "gitchanges-sparse-"));
+  after(() => rmSync(root, { recursive: true, force: true }));
+  initRepo(root);
+  mkdirSync(path.join(root, "kept"));
+  mkdirSync(path.join(root, "excluded"));
+  writeFileSync(path.join(root, "kept", "a.txt"), "kept\n");
+  for (let i = 0; i < 5; i++) writeFileSync(path.join(root, "excluded", `f${i}.txt`), "x\n");
+  commitAll(root);
+  execFileSync("git", ["sparse-checkout", "set", "kept"], { cwd: root });
+
+  // Every excluded/ file is now skip-worktree'd and absent from disk — the
+  // CONFIGURED state, not a deletion (`git status` agrees: empty). The bug
+  // stamped each one "D" and paid a git-show subprocess per file.
+  const result = await gitChanges(root);
+  assert.ok("entries" in result);
+  if (!("entries" in result)) return;
+  assert.deepEqual(result.entries, []);
+  assert.equal(result.truncated, false);
+});
+
+test("gitChanges: a staged rename whose destination was deleted nets to the source deletion only", async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "gitchanges-rd-"));
+  after(() => rmSync(root, { recursive: true, force: true }));
+  initRepo(root);
+  writeFileSync(path.join(root, "orig.txt"), "content\n");
+  commitAll(root);
+  execFileSync("git", ["mv", "orig.txt", "renamed.txt"], { cwd: root });
+  rmSync(path.join(root, "renamed.txt"));
+
+  // Porcelain says `RD orig -> renamed`. The destination exists in neither
+  // HEAD nor the working tree — presenting it as "A" was a phantom (its
+  // diff is "" → ""); the reviewable truth is just orig.txt's deletion.
+  const result = await gitChanges(root);
+  assert.ok("entries" in result);
+  if (!("entries" in result)) return;
+  assert.deepEqual(result.entries, [{ path: "orig.txt", status: "D" }]);
+});
+
 test("gitChanges: reports the net HEAD-versus-working-tree state across index-only edge states", async () => {
   const root = mkdtempSync(path.join(os.tmpdir(), "gitchanges-net-"));
   after(() => rmSync(root, { recursive: true, force: true }));
