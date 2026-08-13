@@ -48,6 +48,16 @@ const CWD_HANDOFF_MAX_BYTES = 4096;
  */
 export const escapeTranscriptFence = (s: string) => s.replaceAll("</bash-", "<\\/bash-");
 
+/** A cwd value safe to interpolate into a `cwd="…"` transcript ATTRIBUTE.
+ *  A workspace directory whose NAME contains a quote, angle bracket, or
+ *  newline realpaths to that literal name, passes the jail, and could
+ *  otherwise forge a `<bash-output>`/`<bash-input>` block the model reads as
+ *  genuine shell I/O — defeating the fence guard's documented structural
+ *  guarantee (audit 2026-08-13). Neutralize the four structural characters;
+ *  the value is oriented context, not a path anything reopens. */
+export const escapeTranscriptAttr = (s: string) =>
+  s.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll("\n", " ").replaceAll("\r", " ");
+
 // Handoff files live in a daemon-owned 0700 directory (mkdtemp's mode), not
 // bare shared /tmp — on a multi-user machine no other user can pre-place,
 // replace, or read them (2026-07-17 audit, finding 1). Lazy so a daemon that
@@ -197,9 +207,10 @@ const startBang = (registry: SessionRegistry, e: SessionEntry, command: string, 
         // echo-off input (passwords) was never in the PTY output, so it
         // can't leak into context here either.
         const tail = elided > 0 ? `(… ${elided} chars elided …)\n` + output : output;
-        const after = e.bangCwd !== runCwd ? ` cwd-after="${e.bangCwd}"` : "";
+        const after =
+          e.bangCwd !== runCwd ? ` cwd-after="${escapeTranscriptAttr(e.bangCwd)}"` : "";
         e.session.pushPrompt(
-          `<bash-input cwd="${runCwd}">${escapeTranscriptFence(command)}</bash-input>\n` +
+          `<bash-input cwd="${escapeTranscriptAttr(runCwd)}">${escapeTranscriptFence(command)}</bash-input>\n` +
             `<bash-output exit-code="${exitCode ?? "killed"}"${after}>\n${escapeTranscriptFence(tail)}</bash-output>`,
         );
       },

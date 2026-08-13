@@ -355,3 +355,41 @@ ChatGPT and the disclosed free-gateway path for Zen; only the paid relay fails
 closed. The window this closes was a real bypass: before the fix, only the
 attach gate ran, so a phone that legitimately attached to an API-key session
 kept driving after a `/model` flip.
+
+**The relay handshake key is one per pairing code, not per connection
+(disclosed hardening, 2026-08-13 audit).** The E2E channel derives its
+handshake key deterministically as `HKDF(code, salt="genui-relay v1")`, so
+every connection of a given pairing code shares that key and encrypts two
+handshake frames under it with random 96-bit GCM nonces. The *data* frames are
+unaffected — they use per-connection nonce-derived salts and counter IVs, so
+`(key, IV)` never repeats there. The residual is the standard GCM random-nonce
+safety bound (~2^32 encryptions per key): reaching it needs ~2^32 handshakes
+under one code, and codes are per-launch by default, so it is physically
+unreachable in a daemon's lifetime. Not fixed pre-1.0 because the fix is a
+change to the security-critical handshake derivation (a per-connection
+cleartext salt) whose own bug risk outweighs an unreachable bound; the crypto
+module's header already parks the related forward-secrecy item for a v2 crypto
+pass, and this joins it. Verified under tamper/replay/forge probes: a hostile,
+E2E-blind relay operator still cannot inject anything the daemon acts on.
+
+**A session's own live transcript grows the browser tab's DOM without a cap
+(disclosed, 2026-08-13 audit).** The daemon's replay ring is byte-capped, so a
+reload is always bounded, but while a tab is open the agent's streamed
+`render_*`/text output appends to the DOM unbounded — an agent looping output
+can grow the page. This is self-DoS of your own session (the agent you are
+driving already has your filesystem and shell; degrading your own tab is not a
+boundary crossing), the same class as the accepted unbounded-terminal-output
+posture. Not fixed because the only correct fix that doesn't silently discard
+the user's visible history is transcript virtualization — a rendering/perf
+feature, not a security filter — which is a product decision, not a one-line
+guard.
+
+**No cap on the number of local WebSocket connections, nor a per-message rate
+limit (disclosed, 2026-08-13 audit).** Only per-frame size (`MAX_WS_PAYLOAD`,
+1 MB) and the consequential resources behind them (`MAX_SESSIONS`,
+`MAX_REMOTE_VIEWPORTS`) are bounded. Not fixed because the only party who can
+open a socket at all is the already-authenticated same-origin user on their own
+machine (the origin+token gate refuses everyone else) — there is no
+cross-origin or other-user adversary in the threat model, so this is
+self-resource-use, not an attack, and a blunt socket cap risks breaking
+legitimate many-tab / fleet-view usage.
