@@ -2725,7 +2725,18 @@ gates come first.
   (+ `.test.ts` with a fake SSE feed), `server/protocol.ts` (`AgentName` +
   fixtures — additive only). **Done when:** Tier-1 drives the full table
   through a fake event feed; `yarn typecheck` green.
-- [ ] **Step OC.2 — Render MCP + permission bridge** — **Goal:** generative
+- [x] **Step OC.2 — Render MCP + permission bridge** — completed
+  2026-08-13. The Tier-1 half had landed inside OC.1; this step ran the
+  live leg, $0 and credential-free (real `OpenCodeSession` → real spawned
+  engine → fake provider): **a card painted end-to-end** through the real
+  render-mcp stub, and **a permission ask round-tripped live** (ask → bar
+  shape → `once` → bash ran). It caught and fixed two adapter bugs
+  (health-poll wedge on pre-ready connections — per-attempt abort is
+  load-bearing; user-message parts echoing as text_delta — roles now
+  tracked, +1 test) and characterized one upstream engine behavior,
+  documented not gated: a cold server's first model call carries zero
+  tools; the engine self-recovers same-turn (spike appendix has the full
+  probe evidence). Suite 747/747, typecheck green. — **Goal:** generative
   UI and the permission bar, faithfully. **Build:** inject
   `renderMcpCommand()` under `MIRAFOLD_MCP` via `OPENCODE_CONFIG_CONTENT`
   (additive merge; user config untouched); recognize mirafold tool parts by

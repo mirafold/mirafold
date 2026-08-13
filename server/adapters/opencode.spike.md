@@ -307,3 +307,34 @@ suggesting a persistent rule — reinforces the never-send-`always` call.
 i.e. Kyle): whether a *stored* credential's kind (oauth vs api) is
 readable from the running server for the OC.3 detection path — the jailed
 home had none to observe. Everything else in OC.0 is resolved.
+
+## OC.2 live leg (2026-08-13) — full loop GREEN through the real adapter
+
+The real `OpenCodeSession` drove a real spawned engine (fake provider, $0):
+a card **rendered end-to-end** (scripted `mirafold_render_card` → engine ran
+the real render-mcp.ts stub over stdio → ack id recognized → `render`
+WireMsg with exact props) and a **permission round-trip completed live**
+(`permission.asked` → shell bar shape → reply `once` → bash ran → result).
+Three findings, two of them adapter bugs fixed on the spot:
+
+1. **Health-poll wedge (fixed)**: a connection made between the port
+   binding and the app serving is never answered; without a per-attempt
+   abort the poll awaited it forever and the deadline never re-evaluated.
+   Per-attempt `AbortSignal.timeout` is load-bearing in the transport.
+2. **User-echo (fixed)**: the stream replays the USER message's parts in
+   the same snapshot/delta shapes as assistant output — without role
+   tracking the user's own prompt (guidance included) re-emitted as
+   `text_delta`. The mapper now records roles from `message.updated`
+   (which always precedes a message's parts) and skips user parts.
+3. **Cold first model call carries ZERO tools (upstream engine behavior,
+   documented not gated)**: on a freshly spawned server the first turn's
+   first model request has no tools — not even builtins — while the
+   engine's own follow-up request in the same turn has all of them.
+   Exhaustively probed: `/mcp` "connected", the `/experimental/tool`
+   preflight, and a 3s settle all pass while the first call still ships
+   toolless; model `toolcall: true` confirmed parsed. The engine
+   self-recovers (an invalid tool call is fed back and re-requested, now
+   with tools; a real model offered no tools just answers in text). Impact:
+   a cold session's first turn may reply without renders; every later turn
+   is fine. The transport's `/mcp` connected gate stays — it's the correct
+   half of readiness we CAN observe.

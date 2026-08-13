@@ -29,6 +29,12 @@ type TurnTokens = { input: number; output: number; cost: number };
  */
 export class OpenCodeEventMapper {
   private parts = new Map<string, PartTrack>();
+  // messageID → role. The stream echoes the USER message's parts exactly like
+  // assistant ones (observed live, OC.2 probe); without this the user's own
+  // prompt — guidance prefix included — replays into the transcript as
+  // text_delta. message.updated always precedes a message's parts (OC.0/OC.2
+  // captures), so an unknown role is treated as assistant.
+  private roles = new Map<string, string>();
   // Per assistant message, latest token/cost report — summed at idle into the
   // turn's one `usage`. Cleared each startTurn so only this turn counts.
   private turnUsage = new Map<string, TurnTokens>();
@@ -132,6 +138,7 @@ export class OpenCodeEventMapper {
   private onMessage(p: Record<string, unknown>) {
     const info = p["info"] as Record<string, unknown> | undefined;
     if (!info || !this.options.isOurs(info["sessionID"] ?? p["sessionID"])) return;
+    if (typeof info["role"] === "string") this.roles.set(String(info["id"]), info["role"]);
     if (info["role"] !== "assistant") return;
     const modelID = typeof info["modelID"] === "string" ? info["modelID"] : undefined;
     if (modelID) {
@@ -185,14 +192,17 @@ export class OpenCodeEventMapper {
     if (!part || !this.options.isOurs(part["sessionID"] ?? p["sessionID"])) return;
     const partID = String(part["id"]);
     const type = String(part["type"]);
+    const fromUser = this.roles.get(String(part["messageID"])) === "user";
     switch (type) {
       case "step-start":
         this.status("thinking");
         break;
       case "text":
+        if (fromUser) break; // the prompt's own echo — never replayed as output
         this.emitTextSuffix(this.track(partID, "text"), String(part["text"] ?? ""));
         break;
       case "reasoning":
+        if (fromUser) break;
         this.status("thinking");
         this.emitTextSuffix(this.track(partID, "reasoning"), String(part["text"] ?? ""));
         break;
@@ -205,6 +215,7 @@ export class OpenCodeEventMapper {
   private onPartDelta(p: Record<string, unknown>) {
     if (!this.options.isOurs(p["sessionID"])) return;
     if (p["field"] !== "text") return;
+    if (this.roles.get(String(p["messageID"])) === "user") return;
     // Deltas can beat the part's first snapshot; an unknown part defaults to
     // text (reasoning parts snapshot before streaming in the OC.0 capture).
     const track = this.track(String(p["partID"]), "text");

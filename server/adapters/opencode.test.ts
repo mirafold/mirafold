@@ -344,6 +344,33 @@ test("a reply observed on the stream (another client) resolves without an engine
   session.close();
 });
 
+test("the user message's own echoed parts never replay as output", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("hi");
+  feed(
+    // The stream announces the user message, then echoes its parts —
+    // observed live (OC.2): snapshot AND delta forms both appear.
+    ev("message.updated", { sessionID: SES, info: { id: "mu", role: "user", sessionID: SES } }),
+    ev("message.part.updated", {
+      sessionID: SES,
+      part: { sessionID: SES, messageID: "mu", id: "pu", type: "text", text: "guidance + hi" },
+    }),
+    ev("message.part.delta", { sessionID: SES, messageID: "mu", partID: "pu", field: "text", delta: "more" }),
+    assistant("ma", { input: 1, output: 1 }),
+    ev("message.part.updated", {
+      sessionID: SES,
+      part: { sessionID: SES, messageID: "ma", id: "pa", type: "text", text: "real reply" },
+    }),
+    idle(),
+  );
+  await awaitTurnEnd();
+  assert.deepEqual(
+    msgs.filter((m) => m.type === "text_delta").map((m) => m.text),
+    ["real reply"],
+  );
+  session.close();
+});
+
 test("subagent child-session events are skipped whole", async () => {
   const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
   await prompt("hi");

@@ -115,18 +115,51 @@ export class OpenCodeServerProcess implements OpenCodeTransport {
             (this.stderrTail ? `: ${this.stderrTail.trim().slice(-300)}` : ""),
         );
       try {
+        // Per-attempt abort is load-bearing, not hygiene: a connection made
+        // in the window between the port binding and the app serving is never
+        // answered, and awaiting it forever wedges start() past the deadline
+        // (observed live, OC.2 probe 2026-08-13). Abandon and re-poll.
         const res = await fetch(`${this.base}/global/health`, {
           headers: { authorization: this.auth },
+          signal: AbortSignal.timeout(1_000),
         });
         if (res.ok) break;
       } catch {
-        // not up yet
+        // not up yet (or the wedged-connection abort above)
       }
       if (Date.now() > deadline)
         throw new Error(`opencode serve did not become healthy within ${START_DEADLINE_MS}ms`);
       await delay(250);
     }
+    await this.waitForInjectedMcp(deadline);
     void this.pumpEvents(onEvent);
+  }
+
+  /** The engine's tool registry (and MCP connections) initialize lazily; a
+   *  prompt sent immediately after health races it and the model is offered
+   *  ZERO tools — observed live (OC.2 probe: request 1 carried no tools, so
+   *  the scripted render call bounced). The injected render server reporting
+   *  "connected" is the readiness signal start() actually promises. On
+   *  deadline we proceed anyway: the engine still converses, renders just
+   *  arrive with a later turn — degraded, not dead. */
+  private async waitForInjectedMcp(deadline: number): Promise<void> {
+    const injected = Object.keys((this.options.configContent["mcp"] as object | undefined) ?? {});
+    if (!injected.length) return;
+    while (Date.now() <= deadline && !this.closed) {
+      try {
+        const res = await fetch(`${this.base}/mcp`, {
+          headers: { authorization: this.auth },
+          signal: AbortSignal.timeout(1_000),
+        });
+        if (res.ok) {
+          const statuses = (await res.json()) as Record<string, { status?: string }>;
+          if (injected.every((name) => statuses[name]?.status === "connected")) return;
+        }
+      } catch {
+        // poll again
+      }
+      await delay(250);
+    }
   }
 
   /** Read the SSE stream for the server's whole life, reconnecting on drops. */
