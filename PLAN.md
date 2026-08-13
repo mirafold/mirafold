@@ -2860,6 +2860,29 @@ gates come first.
   browser session on Zen: "heyyyy it works". Phase OC complete.
   README/ADAPTERS.md refresh rides the wrapup.
 
+## Gemini sunset (opened + ✅ COMPLETE 2026-08-13; Kyle-directed)
+
+**Product call.** From the 2026-08-13 market check: Google retired Gemini
+CLI upstream on 2026-06-18 (closed-source Antigravity replaced it; the
+dated citation lives in provider-policy.ts's R.6 note). Kyle's calls, in
+order: sunset rather than migrate (same day, morning), hold while other
+work was in flight, then "do the gemini sunset" (same day, after Phase OC
+merged). Shape: **gentle** — the API-key path still functions under the
+Gemini API ToS, so nothing is removed or hidden; the adapter is deprecated
+honestly. Removal is parked in POST-RELEASE.md, gated on evidence of
+actual breakage, never on a calendar.
+
+- [x] **Deprecation surface** — completed 2026-08-13: additive
+  `AgentInfo.deprecated` (daemon-composed reason; the picker renders it as
+  a suffix on the existing status line — no new element, the squeeze
+  ramp's height budget holds), connect-hint copy updated with the dated
+  retirement, a once-per-session dated notice in the Gemini adapter
+  (Mirafold-composed, lands before the first turn completes), the
+  provider-policy row annotated (policy itself unchanged), and the
+  POST-RELEASE removal entry with its evidence gate. Tier-1 tests: the
+  notice rides once and unbadged; `deprecated` rides the hello for gemini
+  only.
+
 ## Phase PN — Panes (file views beside the transcript)
 
 **Why.** Kyle (2026-07-26): open a file and see it in its own pane. Also the

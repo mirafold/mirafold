@@ -1,4 +1,5 @@
 import path from "node:path";
+import { existsSync } from "node:fs";
 import type { AgentName, PromptOption, WireMsg } from "../protocol";
 import type { CredentialKind } from "../provider-policy";
 import { locateTrustedExecutable } from "../security/executable-trust";
@@ -6,25 +7,35 @@ import { locateTrustedExecutable } from "../security/executable-trust";
 export type { AgentName } from "../protocol";
 import { envInt } from "../env";
 
-/** Resolve an agent executable that is actually installed outside an SDK.
- *  The env override is explicit operator intent, so return it even when it is
- *  a bare name or currently missing (the eventual spawn then fails honestly).
- *  Otherwise mirror normal command lookup: beside node first (global npm/nvm
- *  installs), then filtered PATH. Project files, relative entries, and npm's
- *  injected node_modules bins are never agent identity. `undefined` lets an
- *  SDK retain its bundled fallback. */
+/** Resolve an agent executable that is actually INSTALLED outside an SDK —
+ *  the detection question ("show this agent as ready?"). An env override is
+ *  explicit operator intent, but an override pointing at a missing file is
+ *  not an installation: advertising "ready" for it would sell a first turn
+ *  that can only ENOENT (revised 2026-08-13, Gemini-sunset sitting — it is
+ *  also how the test harnesses force OpenCode absent on machines that have
+ *  it installed for real). A bare-name override can't be stat'ed and stays
+ *  trusted as-is. Without an override: normal command lookup — beside node
+ *  first (global npm/nvm installs), then filtered PATH. Project files,
+ *  relative entries, and npm's injected node_modules bins are never agent
+ *  identity. `undefined` lets an SDK retain its bundled fallback. */
 export function installedAgentBin(envVar: string, name: string): string | undefined {
   const override = process.env[envVar];
-  if (override) return override;
+  if (override) {
+    if (!path.isAbsolute(override)) return override;
+    return existsSync(override) ? override : undefined;
+  }
   return locateTrustedExecutable(name, {
     directories: [path.dirname(process.execPath)],
   });
 }
 
-/** Resolve which `name`d agent binary to spawn. Non-SDK adapters need a
- *  command even when lookup misses so their first turn can surface ENOENT. */
+/** Resolve which `name`d agent binary to SPAWN. Distinct from detection: the
+ *  operator's explicit override is honored verbatim even when missing, and
+ *  non-SDK adapters need a command even when lookup misses — either way the
+ *  first turn surfaces ENOENT honestly instead of silently running something
+ *  the operator didn't name. */
 export function agentBin(envVar: string, name: string): string {
-  return installedAgentBin(envVar, name) ?? name;
+  return process.env[envVar] || installedAgentBin(envVar, name) || name;
 }
 
 /** The human-readable message of an unknown catch value. */

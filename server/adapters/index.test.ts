@@ -187,6 +187,10 @@ test("a live agent advertises the kind behind it", () => {
       assert.equal(gemini.live, true);
       assert.equal(gemini.kind, "api-key");
       assert.equal(gemini.detail, undefined); // no model override — the kind stands alone
+      // Gemini sunset (2026-08-13): deprecated rides the hello — live or not,
+      // and no other agent carries it.
+      assert.match(gemini.deprecated ?? "", /retired upstream/);
+      assert.ok(availableAgents().every((a) => a.agent === "gemini-cli" || !a.deprecated));
     });
     withEnv({ CLAUDE_CONFIG_DIR: empty, ANTHROPIC_BASE_URL: "http://localhost:11434" }, () => {
       assert.equal(claude().kind, "local");

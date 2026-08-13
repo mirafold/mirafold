@@ -113,6 +113,25 @@ test("recovery and discovery: Gemini resumes the saved id and advertises only it
   delete process.env.FAKE_ARGS_LOG;
 });
 
+test("the sunset notice rides the first turn once — dated, ours, then never again", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession();
+  s.pushPrompt("hello");
+  await awaitTurnEnd();
+  s.pushPrompt("again");
+  await awaitTurnEnd(2);
+  const notices = msgs.filter(
+    (m) => m.type === "notice" && /retired Gemini CLI upstream on 2026-06-18/.test(m.text),
+  );
+  assert.equal(notices.length, 1, "once per session, not per turn");
+  assert.equal(notices[0].source, undefined, "Mirafold-composed — no engine badge");
+  assert.match(notices[0].text, /deprecated/);
+  assert.ok(
+    msgs.findIndex((m) => m.type === "notice") < msgs.findIndex((m) => m.type === "turn_end"),
+    "the notice lands before the first turn completes",
+  );
+  s.close();
+});
+
 test("a pre-existing settings.json — broken or valid — is untouched at construction; a turn is what earns consent to merge it", async () => {
   // Unparseable: construction touches NOTHING. Only once a turn actually runs
   // (this workspace is pre-trusted, under `tmp`) does the rewrite+backup happen.

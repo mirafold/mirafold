@@ -439,6 +439,10 @@ export function availableAgents(): AgentInfo[] {
     return {
       agent,
       live,
+      // Gemini sunset (Kyle, 2026-08-13): Google retired Gemini CLI upstream
+      // on 2026-06-18 (provider-policy.ts R.6 note). The adapter keeps
+      // working while API keys do — deprecated, visible, never hidden.
+      ...(agent === "gemini-cli" ? { deprecated: "retired upstream" } : {}),
       ...(kind === "subscription" && !live ? { blocked: true } : {}),
       // The KIND rides as a fact; the client owns its wording (agents-meta's
       // backendLabel), so the one-click row and the second step say the same

@@ -379,7 +379,23 @@ export class GeminiCliSession implements AgentSession {
     return this.spawnTurn(text);
   }
 
+  // Gemini sunset (2026-08-13): one dated, Mirafold-composed line per
+  // session. Google retired Gemini CLI upstream on 2026-06-18 (the R.6 note
+  // in provider-policy.ts); the API-key path still functions, so the adapter
+  // keeps working — deprecated honestly rather than removed or hidden.
+  private sunsetNoticed = false;
+
   private spawnTurn(text: string): Promise<void> {
+    if (!this.sunsetNoticed) {
+      this.sunsetNoticed = true;
+      this.emit({
+        type: "notice",
+        text:
+          "Google retired Gemini CLI upstream on 2026-06-18 (Antigravity replaced it). " +
+          "Your Gemini API key keeps working here for now, but this adapter is " +
+          "deprecated and will be removed in a future release.",
+      });
+    }
     return new Promise((resolve) => {
       // V.2: the headless stream-json surface has no system-prompt/instructions
       // hook (unlike Claude's `systemPrompt.append`), so RENDER_GUIDANCE rides
