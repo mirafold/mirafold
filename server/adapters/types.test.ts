@@ -29,11 +29,25 @@ function executable(file: string): void {
   if (process.platform !== "win32") chmodSync(file, 0o755);
 }
 
-test("installedAgentBin honors the explicit operator override", () => {
+test("installedAgentBin honors the operator override — but a missing file is not an install", () => {
   const key = "MIRAFOLD_TEST_AGENT_BIN";
+  // Absolute + missing: NOT detected as installed (no "ready" card for a
+  // binary that can only ENOENT) — yet the spawn path keeps the operator's
+  // explicit choice so the first turn fails honestly. This split is also how
+  // the harnesses force an agent absent on machines that really have it.
   withEnv({ [key]: "/operator/chosen/agent" }, () => {
-    assert.equal(installedAgentBin(key, "agent"), "/operator/chosen/agent");
+    assert.equal(installedAgentBin(key, "agent"), undefined);
     assert.equal(agentBin(key, "agent"), "/operator/chosen/agent");
+  });
+  // Absolute + present: both agree.
+  withEnv({ [key]: process.execPath }, () => {
+    assert.equal(installedAgentBin(key, "agent"), process.execPath);
+    assert.equal(agentBin(key, "agent"), process.execPath);
+  });
+  // A bare name can't be stat'ed — trusted as-is (resolved at spawn time).
+  withEnv({ [key]: "custom-agent" }, () => {
+    assert.equal(installedAgentBin(key, "agent"), "custom-agent");
+    assert.equal(agentBin(key, "agent"), "custom-agent");
   });
 });
 

@@ -408,6 +408,11 @@ export type AgentInfo = {
   kind?: "api-key" | "subscription" | "local" | "gateway";
   detail?: string;
   backends?: AgentBackend[];
+  // Additive (2026-08-13, Gemini sunset): a short daemon-composed reason why
+  // this agent is deprecated — the vendor retired it upstream. The picker
+  // shows it beside the status; the agent still works while its credentials
+  // do (gentle sunset, not removal). Absent = not deprecated.
+  deprecated?: string;
 };
 
 /**
