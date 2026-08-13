@@ -429,7 +429,9 @@ test("usage sums the turn's assistant messages and rides just before turn_end", 
     { model: "laguna-s-2.1", input: 31, output: 5 },
   );
   assert.ok(Math.abs((usage?.costUsd ?? 0) - 0.03) < 1e-9);
-  assert.equal(session.modelName, "laguna-s-2.1", "modelName refined from the engine");
+  // Qualified form: bare ids are ambiguous across providers, and the
+  // checkpointed modelName must round-trip parseModelPin on restore.
+  assert.equal(session.modelName, "fake/laguna-s-2.1", "modelName refined, provider-qualified");
   assert.ok(
     msgs.findIndex((m) => m.type === "usage") < msgs.findIndex((m) => m.type === "turn_end"),
   );
@@ -488,7 +490,7 @@ test("a model pin is provider/model per prompt; a bare id falls back to the conf
     providerID: "prov1",
     modelID: "laguna-s-2.1-free",
   });
-  assert.equal(pinned.session.modelName, "laguna-s-2.1-free");
+  assert.equal(pinned.session.modelName, "prov1/laguna-s-2.1-free");
   pinned.session.close();
 
   // A bare id can't name a provider — the user's own opencode config default
@@ -535,7 +537,7 @@ test("policy refusals at start: each names its reason and frees the turn", async
 });
 
 test("/model with no arg paints the picker from allowed providers only", async () => {
-  const { session, fake, msgs, awaitTurnEnd } = makeSession();
+  const { session, fake, msgs, feed, awaitTurnEnd } = makeSession();
   fake.catalog = [
     { id: "fake", source: "config" },
     { id: "deepseek", source: "api" },
@@ -555,7 +557,22 @@ test("/model with no arg paints the picker from allowed providers only", async (
     picker?.rows.map((r: { label: string }) => r.label),
     ["fake/fake-model", "deepseek/deepseek-v4", "opencode/laguna-s-2.1-free"],
   );
-  assert.equal(picker?.rows.find((r: { current?: boolean }) => r.current)?.label, "fake/fake-model");
+  // /model runs on the ENGINE latch alone (so it can rescue a pinless
+  // session) — before any turn adopts a pin, no row is current yet.
+  assert.equal(picker?.rows.some((r: { current?: boolean }) => r.current), false);
+
+  // After a turn adopts the config default, the picker marks it.
+  session.pushPrompt("hi");
+  await waitFor(() => fake.prompts.length === 1, "prompt");
+  feed(idle());
+  await awaitTurnEnd(2);
+  session.pushPrompt("/model");
+  await awaitTurnEnd(3);
+  const second = msgs.filter((m) => m.type === "picker").at(-1);
+  assert.equal(
+    second?.rows.find((r: { current?: boolean }) => r.current)?.label,
+    "fake/fake-model",
+  );
   session.close();
 });
 
@@ -569,12 +586,12 @@ test("/model switches to an allowed provider; a blocked pick refuses and keeps t
   session.pushPrompt("/model deepseek/deepseek-v4");
   await awaitTurnEnd();
   assert.ok(msgs.some((m) => m.type === "text_delta" && /Model set to deepseek/.test(m.text)));
-  assert.equal(session.modelName, "deepseek-v4");
+  assert.equal(session.modelName, "deepseek/deepseek-v4");
 
   session.pushPrompt("/model github-copilot/gpt-5");
   await awaitTurnEnd(2);
   assert.match(msgs.find((m) => m.type === "error")?.message ?? "", /API key/);
-  assert.equal(session.modelName, "deepseek-v4", "blocked pick must not move the pin");
+  assert.equal(session.modelName, "deepseek/deepseek-v4", "blocked pick must not move the pin");
 
   session.pushPrompt("hi");
   await waitFor(() => fake.prompts.length === 1, "prompt");
@@ -781,5 +798,104 @@ test("the render MCP injects additively through config content", () => {
   const mcp = (fake.configContent?.["mcp"] ?? {}) as Record<string, Record<string, unknown>>;
   assert.equal(mcp["mirafold"]?.["type"], "local");
   assert.ok(Array.isArray(mcp["mirafold"]?.["command"]));
+  session.close();
+});
+
+test("BUGFIX: /model rescues a PINLESS session instead of dying on the pin gate", async () => {
+  const { session, fake, msgs, feed, awaitTurnEnd } = makeSession();
+  fake.cfgModel = undefined; // no OPENCODE_MODEL, no config default
+  fake.catalog = [{ id: "deepseek", source: "api" }];
+  fake.models = [{ providerID: "deepseek", modelID: "deepseek-v4" }];
+  session.pushPrompt("/model deepseek/deepseek-v4");
+  await awaitTurnEnd();
+  assert.equal(
+    msgs.some((m) => m.type === "error" && /no model is pinned/.test(m.message)),
+    false,
+    "the rescue command must not hit the no-pin gate it exists to fix",
+  );
+  assert.ok(msgs.some((m) => m.type === "text_delta" && /Model set to deepseek/.test(m.text)));
+  session.pushPrompt("hi");
+  await waitFor(() => fake.prompts.length === 1, "prompt after rescue");
+  assert.deepEqual(fake.prompts[0]?.["model"], { providerID: "deepseek", modelID: "deepseek-v4" });
+  feed(idle());
+  await awaitTurnEnd(2);
+  session.close();
+});
+
+test("BUGFIX: one transport start per engine, even across policy-failure retries", async () => {
+  const { session, fake, msgs, feed, awaitTurnEnd } = makeSession();
+  let starts = 0;
+  const origStart = fake.start.bind(fake);
+  fake.start = async (cb) => {
+    starts += 1;
+    return origStart(cb);
+  };
+  fake.cfgModel = undefined; // first prompt fails the pin gate AFTER start
+  session.pushPrompt("first");
+  await waitFor(() => msgs.some((m) => m.type === "error"), "pin refusal");
+  await awaitTurnEnd();
+  fake.cfgModel = "fake/fake-model"; // user fixed their config
+  session.pushPrompt("second");
+  await waitFor(() => fake.prompts.length === 1, "prompt after fix");
+  feed(idle());
+  await awaitTurnEnd(2);
+  assert.equal(starts, 1, "a policy retry must never respawn the engine");
+  session.close();
+});
+
+test("BUGFIX: an interrupt during startup cancels the send — no ghost turn", async () => {
+  const { session, fake, msgs, feed, awaitTurnEnd } = makeSession();
+  let releaseStart: () => void = () => {};
+  const origStart = fake.start.bind(fake);
+  fake.start = async (cb) => {
+    await new Promise<void>((resolve) => {
+      releaseStart = resolve;
+    });
+    return origStart(cb);
+  };
+  session.pushPrompt("doomed");
+  // Interrupt while the engine is still cold-starting: the turn ends now…
+  await waitFor(() => (session as unknown as { turnActive: boolean }).turnActive, "turn active");
+  session.interrupt();
+  await awaitTurnEnd();
+  releaseStart();
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(fake.prompts.length, 0, "the cancelled prompt must never reach the engine");
+  // …and the NEXT prompt still carries the first-turn guidance (not burned).
+  session.pushPrompt("real first");
+  await waitFor(() => fake.prompts.length === 1, "the real first prompt");
+  const text = (fake.prompts[0]?.["parts"] as { text: string }[])[0]?.text ?? "";
+  assert.ok(text.startsWith(RENDER_GUIDANCE), "guidance survives the cancelled ghost");
+  feed(idle());
+  await awaitTurnEnd(2);
+  session.close();
+});
+
+test("BUGFIX: a FAILED abort leaves the turn open for the engine's own idle", async () => {
+  const { session, fake, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  fake.abort = async () => {
+    throw new Error("HTTP 500");
+  };
+  await prompt("hi");
+  session.interrupt();
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.equal(
+    msgs.filter((m) => m.type === "turn_end").length,
+    0,
+    "a failed abort means the engine is STILL RUNNING — ending now interleaves streams",
+  );
+  feed(idle()); // the engine eventually finishes on its own
+  await awaitTurnEnd();
+  session.close();
+});
+
+test("BUGFIX: a turn's end denies its pending ask — no stale resolution later", async () => {
+  const { session, fake, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("hi");
+  feed(asked(), ev("session.error", { sessionID: SES, error: { name: "boom" } }));
+  await awaitTurnEnd();
+  const resolved = msgs.find((m) => m.type === "permission_resolved");
+  assert.deepEqual({ id: resolved?.id, allow: resolved?.allow }, { id: "per1", allow: false });
+  assert.equal(fake.replies.length, 0, "the engine moved on — no pointless reject reply");
   session.close();
 });

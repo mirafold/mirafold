@@ -66,6 +66,12 @@ export class OpenCodeEventMapper {
   startTurn() {
     this.turnUsage.clear();
     this.lastStatus = undefined;
+    // Part/role tracking resets at the NEXT turn's start, not at turn end:
+    // the maps otherwise grow unboundedly over a long session (bughunt
+    // 2026-08-13), but a straggler snapshot arriving just after idle must
+    // still find its track — a fresh default would re-emit its whole text.
+    this.parts.clear();
+    this.roles.clear();
   }
 
   endTurn() {

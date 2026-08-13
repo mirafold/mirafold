@@ -109,11 +109,17 @@ export class OpenCodeSession implements AgentSession {
     const workspaceDir = path.resolve(opts.workspaceDir);
     mkdirSync(workspaceDir, { recursive: true });
     this.workspaceDir = workspaceDir;
-    this.modelLabel = modelIdOf(opts.model);
+    this.modelPin = parseModelPin(opts.model);
+    // Provider-QUALIFIED, opencode's own addressing: the bare id is
+    // ambiguous across providers, and the checkpointed modelName must
+    // round-trip through parseModelPin on restore (bughunt 2026-08-13 —
+    // a bare label silently lost the pin after recovery).
+    this.modelLabel = this.modelPin
+      ? `${this.modelPin.providerID}/${this.modelPin.modelID}`
+      : undefined;
     this.wantedResumeId = opts.resumeId;
     this.resumeIdState = new ResumeIdState(opts.resumeId);
     this.permissionTimeoutMs = opts.permissionTimeoutMs ?? PERMISSION_TIMEOUT_MS;
-    this.modelPin = parseModelPin(opts.model);
     const render = renderMcpCommand();
     const configContent = {
       mcp: {
@@ -136,7 +142,8 @@ export class OpenCodeSession implements AgentSession {
       workspaceDir,
       isOurs: (id) => this.sessionID !== undefined && id === this.sessionID,
       learnModel: (modelID) => {
-        this.modelLabel = modelID;
+        // Keep the qualified form — the engine reports bare ids.
+        this.modelLabel = this.modelPin ? `${this.modelPin.providerID}/${modelID}` : modelID;
       },
       onPermissionAsked: (ask) => this.onPermissionAsked(ask),
       onPermissionReplied: (requestID, reply) => this.onPermissionReplied(requestID, reply),
@@ -161,9 +168,14 @@ export class OpenCodeSession implements AgentSession {
       if (this.turnActive && this.turnToken === token) this.endTurn();
     };
     if (this.sessionID) {
+      // A FAILED abort must not end the turn instantly — that is the one
+      // case where the engine is still generating, and freeing the worker
+      // interleaves the next prompt with the live stream (bughunt
+      // 2026-08-13). Both outcomes share the bounded grace: the engine's
+      // own idle usually ends the turn first.
       void this.transport
         .abort(this.sessionID)
-        .catch(() => fallback())
+        .catch(() => {})
         .then(() => setTimeout(fallback, INTERRUPT_GRACE_MS));
     } else {
       fallback();
@@ -193,12 +205,36 @@ export class OpenCodeSession implements AgentSession {
     if (!this.closed) this.mapper.handle(ev);
   }
 
-  /** Spawn/attach lazily on the first turn; a failure resets the latch so a
-   *  later prompt retries (the user may have installed the binary, connected
-   *  a provider, or pinned a model meanwhile). */
+  // Two latches, deliberately split (bughunt 2026-08-13). ENGINE: spawn +
+  // event stream + command catalog — needs no pin, so `/model` can rescue a
+  // pinless session instead of dying on the very policy error it exists to
+  // fix. STARTED: policy + engine session on top. A policy/creation failure
+  // resets only the outer latch — re-running the engine latch respawned a
+  // fresh `opencode serve` per retry, orphaning the previous server and
+  // doubling the event pump.
+  private engineUp?: Promise<void>;
+
+  private ensureEngine(): Promise<void> {
+    this.engineUp ??= (async () => {
+      await this.transport.start((ev) => this.handleEvent(ev));
+      // Non-fatal fidelity: without the catalog, `/name` inputs simply reach
+      // the model as prompt text and the options list shows only our rows.
+      this.engineCommands = await this.transport.commandCatalog().catch(() => []);
+    })();
+    return this.engineUp.catch((err) => {
+      // Only a failed ENGINE start may retry the spawn; the transport keeps
+      // its own idempotence guard for the crossing-calls case.
+      this.engineUp = undefined;
+      throw err;
+    });
+  }
+
+  /** Lazily on the first turn; a failure resets the outer latch so a later
+   *  prompt retries (the user may have installed the binary, connected a
+   *  provider, or pinned a model meanwhile). */
   private ensureStarted(): Promise<void> {
     this.started ??= (async () => {
-      await this.transport.start((ev) => this.handleEvent(ev));
+      await this.ensureEngine();
       await this.enforceProviderPolicy();
       if (this.wantedResumeId && (await this.transport.sessionExists(this.wantedResumeId))) {
         this.sessionID = this.wantedResumeId;
@@ -206,9 +242,6 @@ export class OpenCodeSession implements AgentSession {
         this.sessionID = (await this.transport.createSession()).id;
       }
       this.resumeIdState.publish(this.sessionID);
-      // Non-fatal fidelity: without the catalog, `/name` inputs simply reach
-      // the model as prompt text and the options list shows only our rows.
-      this.engineCommands = await this.transport.commandCatalog().catch(() => []);
     })();
     return this.started.catch((err) => {
       this.started = undefined;
@@ -254,7 +287,7 @@ export class OpenCodeSession implements AgentSession {
     const verdict = classifyOpenCodeProvider(entry);
     if (!verdict.allowed) return verdict.reason ?? "provider refused by policy";
     this.modelPin = pin;
-    this.modelLabel = pin.modelID;
+    this.modelLabel = `${pin.providerID}/${pin.modelID}`;
     this.publishKind(verdict.kind, pin.providerID);
     if (verdict.disclosure && !this.disclosedProviders.has(pin.providerID)) {
       this.disclosedProviders.add(pin.providerID);
@@ -270,7 +303,7 @@ export class OpenCodeSession implements AgentSession {
       emit: (msg) => this.emit(msg),
       isClosed: () => this.closed,
       listCommands: async () => {
-        await this.ensureStarted();
+        await this.ensureEngine();
         return this.engineCommands;
       },
     });
@@ -280,7 +313,7 @@ export class OpenCodeSession implements AgentSession {
    *  the shared failure path — `runTurn` and `runEngineCommand` differ only
    *  in the request they send once the engine is up. */
   private async runEngineTurn(send: () => Promise<void>) {
-    this.turnToken += 1;
+    const token = ++this.turnToken;
     this.turnActive = true;
     this.mapper.startTurn();
     const done = new Promise<void>((resolve) => {
@@ -288,6 +321,12 @@ export class OpenCodeSession implements AgentSession {
     });
     try {
       await this.ensureStarted();
+      // An interrupt during startup already ended this turn — sending now
+      // would run a GHOST turn outside any envelope: its stream interleaves
+      // with the next prompt and its eventual idle ends the wrong turn
+      // (bughunt 2026-08-13). The guidance flag is untouched too, so the
+      // first REAL turn still carries it.
+      if (!this.turnActive || this.turnToken !== token) return;
       await send();
       await done;
     } catch (err) {
@@ -330,7 +369,7 @@ export class OpenCodeSession implements AgentSession {
       arg,
       emit: (msg) => this.emit(msg),
       listModels: async () => {
-        await this.ensureStarted();
+        await this.ensureEngine();
         // Every ALLOWED provider rows here — gray areas included, since
         // OC.4c flows their true kind to the registry and their disclosure
         // rides the pick (the picker offers only what a pick can run).
@@ -347,7 +386,10 @@ export class OpenCodeSession implements AgentSession {
         const pin = parseModelPin(id);
         if (!pin) return "Usage: `/model` to pick, or `/model <provider>/<model>`.";
         try {
-          await this.ensureStarted();
+          // Engine latch only: `/model` must be able to RESCUE a pinless
+          // session, and ensureStarted's policy gate throws exactly the
+          // no-pin error this command exists to fix (bughunt 2026-08-13).
+          await this.ensureEngine();
           return await this.adoptPin(pin);
         } catch (err) {
           return errText(err);
@@ -361,7 +403,7 @@ export class OpenCodeSession implements AgentSession {
       arg,
       emit: (msg) => this.emit(msg),
       listAgents: async () => {
-        await this.ensureStarted();
+        await this.ensureEngine();
         return this.transport.agentCatalog();
       },
       currentAgent: this.currentAgent ?? OPENCODE_DEFAULT_AGENT,
@@ -400,6 +442,10 @@ export class OpenCodeSession implements AgentSession {
   private endTurn() {
     if (!this.turnActive) return;
     this.turnActive = false;
+    // A turn's end moots its gated asks: without this, a stale
+    // permission_resolved fired up to PERMISSION_TIMEOUT_MS later, mid-next-
+    // turn (bughunt). No engine reply — the engine has already moved on.
+    this.denyPendingPermissions(false);
     this.mapper.endTurn();
     if (!this.closed) this.emit({ type: "turn_end" });
     this.turnDone?.();
@@ -445,9 +491,9 @@ export class OpenCodeSession implements AgentSession {
     this.resolvePermissionInternal(requestID, reply !== "reject", timer, false);
   }
 
-  private denyPendingPermissions() {
+  private denyPendingPermissions(replyToEngine = true) {
     for (const [id, timer] of [...this.pendingPermissions])
-      this.resolvePermissionInternal(id, false, timer, true);
+      this.resolvePermissionInternal(id, false, timer, replyToEngine);
   }
 }
 
@@ -463,7 +509,3 @@ export function parseModelPin(model?: string): { providerID: string; modelID: st
   return { providerID: model.slice(0, slash), modelID: model.slice(slash + 1) };
 }
 
-/** The label half of a pin, for `modelName` before the engine reports. */
-function modelIdOf(model?: string): string | undefined {
-  return parseModelPin(model)?.modelID;
-}

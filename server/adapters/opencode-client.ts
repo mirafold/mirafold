@@ -102,6 +102,12 @@ export class OpenCodeServerProcess implements OpenCodeTransport {
   private auth = "";
   private closed = false;
   private stderrTail = "";
+  // One spawn per instance, even under concurrent/retried start() calls: a
+  // re-entered start orphaned the previous `opencode serve` (only the latest
+  // child was killed on close) and doubled the event pump (bughunt
+  // 2026-08-13). A FAILED start kills its child and clears the latch so a
+  // later call may retry with a fresh spawn.
+  private starting?: Promise<void>;
 
   constructor(
     private readonly options: {
@@ -119,7 +125,17 @@ export class OpenCodeServerProcess implements OpenCodeTransport {
     },
   ) {}
 
-  async start(onEvent: (ev: OpenCodeEvent) => void): Promise<void> {
+  start(onEvent: (ev: OpenCodeEvent) => void): Promise<void> {
+    this.starting ??= this.spawnAndConnect(onEvent).catch((err) => {
+      this.child?.kill();
+      this.child = undefined;
+      this.starting = undefined;
+      throw err;
+    });
+    return this.starting;
+  }
+
+  private async spawnAndConnect(onEvent: (ev: OpenCodeEvent) => void): Promise<void> {
     const port = await freePort();
     // The port is loopback-bound but otherwise open to any local process;
     // basic auth with a per-session secret closes that (spike §surface).

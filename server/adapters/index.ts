@@ -11,7 +11,11 @@ import { MockSession } from "./mock";
 import { installedAgentBin } from "./types";
 import type { AgentName, AgentSession, Backend } from "./types";
 import type { AgentBackend, AgentInfo } from "../protocol";
-import { allowedLocally, type CredentialKind } from "../provider-policy";
+import {
+  allowedLocally,
+  opencodeSubscriptionAllowed,
+  type CredentialKind,
+} from "../provider-policy";
 import { cachedLocalServers, hostKey, type LocalDialect, type LocalServer } from "../local-models";
 import { codexConfigProvider, codexProviders, type CodexProviderEntry } from "./codex-config";
 import { wasLoadedFromProjectEnv } from "../project-env";
@@ -585,6 +589,23 @@ export function resolveChosenBackend(
   const backendId = typeof c.backendId === "string" ? c.backendId : undefined;
   const provider = typeof c.provider === "string" ? c.provider : undefined;
   const model = typeof c.model === "string" ? c.model : undefined;
+  if (agent === "opencode" && kind !== "local") {
+    // An OpenCode backend's `provider` is the session's CLASSIFICATION
+    // annotation (OC.4c publishes it), not a picker identity — the generic
+    // identity rules below rejected every checkpointed backend, making any
+    // session that ever ran a turn unrecoverable once dormant (bughunt
+    // 2026-08-13, reproduced). Validation here is deliberately shallow: the
+    // adapter re-classifies the pinned provider at start and `kindPending`
+    // keeps the relay gate closed until it does, so restore only needs "is
+    // the agent still credentialed at all".
+    if (backendId !== undefined || endpoint !== undefined) return { error: "unknown backend choice" };
+    if (!backendOptions(agent).some((option) => option.usable)) {
+      return { error: "opencode has no usable backing right now — connect a provider and re-open" };
+    }
+    const live =
+      kind === "subscription" ? opencodeSubscriptionAllowed(provider) : allowedLocally(agent, kind);
+    return { agent, kind, live, model: model ?? modelFor(agent), ...(provider ? { provider } : {}) };
+  }
   const identityCount = [endpoint, backendId, provider].filter((value) => value !== undefined).length;
   if (identityCount > 1 || (kind !== "local" && identityCount > 0)) {
     return { error: "unknown backend choice" };

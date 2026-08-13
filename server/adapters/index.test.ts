@@ -730,3 +730,38 @@ test("UX.8: a project-selected endpoint cannot inherit a parent-only Anthropic t
     });
   });
 });
+
+test("BUGFIX: a checkpointed OpenCode backend restores — provider is annotation, not identity", () => {
+  withTempDir((dataDir) => {
+    // A usable row exists: the binary is "installed" (any real file via the
+    // override) and no auth.json means the Zen gateway backs it.
+    withEnv({ OPENCODE_BIN: process.execPath, XDG_DATA_HOME: dataDir }, () => {
+      // The exact shapes the registry checkpoints after OC.4c publishes the
+      // classified kind — all were rejected as "unknown backend choice",
+      // stranding every dormant session (bughunt 2026-08-13, reproduced).
+      const apiKey = resolveChosenBackend("opencode", {
+        kind: "api-key",
+        provider: "deepseek",
+        model: "deepseek/deepseek-v4",
+      });
+      assert.ok(!("error" in apiKey));
+      if (!("error" in apiKey)) {
+        assert.equal(apiKey.live, true);
+        assert.equal(apiKey.provider, "deepseek");
+        assert.equal(apiKey.model, "deepseek/deepseek-v4");
+      }
+      const gateway = resolveChosenBackend("opencode", { kind: "gateway", provider: "opencode" });
+      assert.ok(!("error" in gateway) && gateway.live, "Zen-classified sessions restore live");
+      // The gray subscription restores live for openai ONLY (provider-keyed).
+      const gray = resolveChosenBackend("opencode", { kind: "subscription", provider: "openai" });
+      assert.ok(!("error" in gray) && gray.live);
+      const copilot = resolveChosenBackend("opencode", {
+        kind: "subscription",
+        provider: "github-copilot",
+      });
+      assert.ok(!("error" in copilot) && !copilot.live, "unclassified oauth restores to the mock");
+      // Real identity fields still refuse — only provider is annotation.
+      assert.ok("error" in resolveChosenBackend("opencode", { kind: "api-key", backendId: "x" }));
+    });
+  });
+});

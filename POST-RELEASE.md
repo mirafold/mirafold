@@ -262,3 +262,12 @@ has a home in this plan, the entry points there instead of duplicating it.
   Gemini API shutoff, or usage signal that nobody runs it. Never silently;
   the removal release notes name the date and the alternative (OpenCode
   drives Gemini-family models via BYO providers).
+
+- [ ] **Remote CREATE of an OpenCode session** — today a relay viewport can
+  only ATTACH to an OpenCode session after its first local turn classifies
+  the credential (`kindPending` refuses remote actions until the publish —
+  the fail-closed OC.4c design; the refusal copy says so honestly since the
+  2026-08-13 bughunt). Supporting remote creation needs classify-BEFORE-
+  create: spawn the engine, read the provider catalog, judge the pin, and
+  only then admit the remote viewport — a create-path redesign, not a
+  gate tweak.
