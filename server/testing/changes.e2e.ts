@@ -521,9 +521,27 @@ test("CR.2 desktop: the panel resizes by drag and keyboard, clamps to a conversa
   await openChanges();
   const base = await widths();
 
+  // A plain click (no movement) is not a resize: it must not convert the
+  // responsive default width into a fixed stored width.
+  await page.locator(".changes-resize").hover();
+  await page.locator(".changes-resize").click();
+  assert.equal(
+    await page.evaluate(() => localStorage.getItem("mirafold-changes-panel-width")),
+    null,
+    "clicking the handle without dragging persisted a fixed width",
+  );
+
   // Drag far right: the panel absorbs everything except the 380px reserve —
   // an absolute conversation column, deliberately not a screen fraction.
   await dragHandleBy(2000);
+  // The separator's accessible geometry must reflect the drag that just
+  // ended, not the pre-drag width.
+  const stretchedNow = Number(await page.locator(".changes-resize").getAttribute("aria-valuenow"));
+  const stretchedPanel = (await widths()).panel;
+  assert.ok(
+    Math.abs(stretchedNow - stretchedPanel) <= 2,
+    `aria-valuenow is stale after a drag (${stretchedNow} vs panel ${stretchedPanel})`,
+  );
   const stretched = await widths();
   assert.ok(stretched.panel > base.panel + 100, "drag right did not widen the panel");
   assert.ok(
@@ -557,6 +575,30 @@ test("CR.2 desktop: the panel resizes by drag and keyboard, clamps to a conversa
     Math.abs(restored.panel - stepped.panel) <= 2,
     `width did not persist across reload (got ${restored.panel}, want ${stepped.panel})`,
   );
+
+  // A drag orphaned by the phone breakpoint (handle unmounts mid-drag, so
+  // no pointerup handler ever runs) must not strand the drag state: after
+  // returning to desktop, measurements and dragging both work.
+  {
+    await page.locator(".changes-resize").hover();
+    const box = await page.locator(".changes-resize").boundingBox();
+    await page.mouse.move(box!.x + box!.width / 2, box!.y + 300);
+    await page.mouse.down();
+    await page.mouse.move(box!.x + box!.width / 2 + 40, box!.y + 300, { steps: 2 });
+    await page.setViewportSize({ width: 600, height: 900 });
+    await page.waitForTimeout(200); // the phone flip commits; the handle is gone
+    await page.mouse.up(); // released into a void — no pointerup handler exists
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.waitForSelector(".changes-resize");
+    await page.waitForTimeout(200);
+    const roundTripNow = Number(await page.locator(".changes-resize").getAttribute("aria-valuenow"));
+    const roundTripPanel = (await widths()).panel;
+    assert.ok(
+      Math.abs(roundTripNow - roundTripPanel) <= 2,
+      `orphaned drag froze the separator's geometry (${roundTripNow} vs panel ${roundTripPanel})`,
+    );
+    await dragHandleBy(120);
+  }
 
   // Double-click resets to the default and leaves nothing stored.
   await page.locator(".changes-resize").dblclick();

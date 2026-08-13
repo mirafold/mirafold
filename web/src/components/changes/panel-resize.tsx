@@ -55,23 +55,31 @@ export function usePanelResize(
 
   // The separator's aria-valuenow/-valuemax track real geometry. Updates are
   // skipped mid-drag: pointer moves mutate the panel style directly (below),
-  // and a per-frame React commit would re-render every diff row.
-  useEffect(() => {
-    if (!enabled || typeof ResizeObserver === "undefined") return;
+  // and a per-frame React commit would re-render every diff row. Because the
+  // observer's callbacks during the drag are all skipped, the drag's END must
+  // measure explicitly — nothing resizes afterward to refire the observer.
+  const measureBounds = () => {
+    if (drag.current) return;
     const panel = panelRef.current;
     const zone = panel?.parentElement;
     if (!panel || !zone) return;
-    const update = () => {
-      if (drag.current) return;
-      setBounds({
-        now: Math.round(panel.getBoundingClientRect().width),
-        max: Math.max(370, Math.round(zone.getBoundingClientRect().width - WIDTH_RESERVE_PX)),
-      });
-    };
-    update();
-    const observer = new ResizeObserver(update);
+    setBounds({
+      now: Math.round(panel.getBoundingClientRect().width),
+      max: Math.max(370, Math.round(zone.getBoundingClientRect().width - WIDTH_RESERVE_PX)),
+    });
+  };
+  const measureRef = useRef(measureBounds);
+  measureRef.current = measureBounds;
+
+  useEffect(() => {
+    if (!enabled || typeof ResizeObserver === "undefined") return;
+    const panel = panelRef.current;
+    if (!panel?.parentElement) return;
+    const measure = () => measureRef.current();
+    measure();
+    const observer = new ResizeObserver(measure);
     observer.observe(panel);
-    observer.observe(zone);
+    observer.observe(panel.parentElement);
     return () => observer.disconnect();
   }, [enabled, panelRef]);
 
@@ -97,9 +105,12 @@ export function usePanelResize(
   };
   const onPointerEnd = () => {
     if (!drag.current) return;
-    const final = drag.current.latest;
+    const { startWidth, latest } = drag.current;
     drag.current = null;
-    persistWidth(final);
+    // A click without movement is not a resize: persisting it would silently
+    // convert the responsive default width into a fixed stored width.
+    if (latest !== startWidth) persistWidth(latest);
+    measureBounds();
   };
   const step = (delta: number) => {
     const measured = panelRef.current?.getBoundingClientRect().width;
