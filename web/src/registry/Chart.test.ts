@@ -1,6 +1,59 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { niceTicks, fmt, pieSlices, arcPath, stackSegments } from "./Chart";
+import {
+  niceTicks,
+  fmt,
+  pieSlices,
+  arcPath,
+  stackSegments,
+  chartDomain,
+  showXLabel,
+  groupedBarLayout,
+} from "./Chart";
+
+test("chartDomain: bars anchor to zero, lines fit the data", () => {
+  // A latency band far from zero: the bar domain must include the honest
+  // baseline; the line domain must NOT flatten the trend against it.
+  assert.deepEqual(chartDomain([200, 210, 205], true), [0, 210]);
+  assert.deepEqual(chartDomain([200, 210, 205], false), [200, 210]);
+  // Negatives anchor symmetrically for bars, fit for lines.
+  assert.deepEqual(chartDomain([-5, -2], true), [-5, 0]);
+  assert.deepEqual(chartDomain([-5, -2], false), [-5, -2]);
+  // No finite values at all: a degenerate but usable domain, never ±Infinity.
+  assert.deepEqual(chartDomain([], false), [0, 0]);
+});
+
+test("showXLabel: the forced last label suppresses a stride label it would collide with", () => {
+  // 17 labels, stride 3: index 15 is a stride hit one band from the forced
+  // 16 — the old `i % stride === 0` clause drew both, overlapping.
+  assert.equal(showXLabel(16, 17, 3), true);
+  assert.equal(showXLabel(15, 17, 3), false);
+  assert.equal(showXLabel(12, 17, 3), true); // a full stride short — keeps
+  // Stride 1 (≤8 categories): every label still draws.
+  for (let i = 0; i < 5; i++) assert.equal(showXLabel(i, 5, 1), true, `i=${i}`);
+});
+
+test("groupedBarLayout: bars plus gaps never exceed the group band", () => {
+  // The old Math.max(2, …) floor with a fixed 2px gap overflowed: 6 series
+  // needed ≥22 units while a 40-category band offers ~11.5 of group width.
+  for (const [band, n] of [
+    [16, 6],
+    [8, 4],
+    [80, 6],
+    [640, 1],
+  ] as const) {
+    const { groupW, barW, gap } = groupedBarLayout(band, n);
+    assert.ok(barW > 0);
+    assert.ok(
+      n * barW + (n - 1) * gap <= groupW + 1e-9,
+      `band=${band} n=${n}: group overflows its band`,
+    );
+  }
+  // Roomy case keeps the classic look: 2px gaps, bars well above the floor.
+  const roomy = groupedBarLayout(200, 3);
+  assert.equal(roomy.gap, 2);
+  assert.ok(roomy.barW > 40);
+});
 
 test("niceTicks spans the range and the top tick clears the data max", () => {
   // 2026-08-11 test-audit: exact output is deterministic and knowable, so pin

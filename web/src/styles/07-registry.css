@@ -14,6 +14,11 @@
   padding: 14px 16px;
   max-width: 720px;
   animation: rc-mount 0.22s ease-out;
+  /* Agent-authored prose routinely carries unbroken tokens (URLs, SHAs, long
+     paths); without a break rule one of them pushes the whole transcript
+     sideways. Inert on the monospace bodies — white-space: pre allows no
+     wrap points — so code/console/diff keep their horizontal scroll. */
+  overflow-wrap: anywhere;
 }
 
 @keyframes rc-mount {

@@ -15,17 +15,27 @@ export function Table({ title, columns, rows }: ComponentProps<"table">) {
             </tr>
           </thead>
           <tbody>
+            {/* Cells align to `columns` by index (the schema's contract), so
+                every row renders exactly columns.length cells: surplus cells
+                would escape the header, missing ones would ragged-shift the
+                columns after them. */}
             {rows.map((row, r) => (
               <tr key={r}>
-                {row.map((cell, c) => (
-                  <td key={c}>
-                    {typeof cell === "number" ? cell : <Md text={cell} inline />}
-                  </td>
-                ))}
+                {columns.map((_, c) => {
+                  const cell = row[c];
+                  return typeof cell === "number" ? (
+                    <td key={c} className="rc-table-num">
+                      {cell}
+                    </td>
+                  ) : (
+                    <td key={c}>{cell !== undefined ? <Md text={cell} inline /> : null}</td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>
         </table>
+        {rows.length === 0 && <div className="rc-table-empty">no rows</div>}
       </div>
     </div>
   );
