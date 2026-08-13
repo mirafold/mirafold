@@ -577,6 +577,16 @@ export class SessionRegistry {
     if (msg.type === "error") {
       createLogger(`session ${entry.id}`).error(msg.message);
     }
+    // Paintings-adoption instrumentation (2026-08-13 audit): one LOCAL log
+    // line per generative-UI paint, from the choke point every adapter's
+    // stream crosses — so "does this engine actually reach for the render
+    // tools" is answerable from the daemon log instead of guessed. Local
+    // only; nothing leaves the machine.
+    if (msg.type === "render" || msg.type === "artifact") {
+      createLogger(`session ${entry.id}`).info(
+        `paint ${msg.type === "render" ? msg.component : "artifact"} agent=${entry.agent}`,
+      );
+    }
     // MIRAFOLD_DEBUG=1 traces every normalized event on the session
     // stream (bang_input never crosses broadcast, so no secret can land
     // here). One line per WireMsg, payload truncated (R.4g).

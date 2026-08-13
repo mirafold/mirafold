@@ -11,7 +11,9 @@ Where things live: **README.md** — architecture, the two load-bearing
 contracts, conventions. **PLAN.md** — work steps in order, one per prompt;
 don't start a step until the previous "Done when" is satisfied; check steps
 off with a dated status note. **BUSINESS.md** — why and in what sequence
-(milestone gates).
+(milestone gates). **GLOSSARY.md** — the decided product vocabulary (paintings
+vs. decks, the surfaces, prompt box, …); use its terms in docs, copy, and
+conversation — the "(was)" column exists to recognize old terms, not reuse them.
 
 ## Environment
 

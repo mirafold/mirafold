@@ -2600,6 +2600,68 @@ text.
   the staged file's exact bytes on disk, and axe stays clean; all three
   tiers green.
 
+## Paintings polish batch (opened + ✅ COMPLETE 2026-08-13; Kyle-directed)
+
+**Origin.** A paintings audit (this session) asked three questions: are the
+existing paintings at the delightful bar, does the agent actually reach for
+them, and are there coverage gaps. Verdict: the registry is strong (fallback
+architecture, CVD-safe charts, never-color-alone) with a short list of
+concrete defects; adoption is UNMEASURABLE (no instrumentation anywhere);
+coverage needs nothing new now (the 2026-07-10 survey already filled the real
+gaps, POST-RELEASE.md's 2026-08-02 growth analysis still governs). So: polish
+first, measurement second, new paintings demand-gated.
+
+- [x] **Fix batch** — completed 2026-08-13, all three tiers green
+  (724/152/97):
+  - `.rc` gains `overflow-wrap: anywhere` — an unbroken token (URL, SHA,
+    long path) in any painting's prose no longer pushes the transcript
+    sideways; inert on the monospace bodies (`white-space: pre` has no wrap
+    points), so code/console/diff keep their horizontal scroll.
+  - Chart: line charts fit the y domain to the DATA (`chartDomain`) — a
+    200–210 ms latency trend is no longer a flat stripe under a forced zero
+    baseline (bars still anchor to zero: a bar's length IS its value);
+    ≤2-point line charts draw always-on dots (a 1-point polyline painted
+    nothing); the forced last x label suppresses a stride label it would
+    collide with (`showXLabel`); grouped bars can no longer bleed past
+    their band at high category×series counts (`groupedBarLayout`). All
+    four pure + Tier-1-pinned.
+  - Table: every row renders exactly `columns.length` cells (surplus
+    truncated, missing padded — misaligned rows used to escape the header
+    silently); number cells right-align with `tabular-nums`
+    (`.rc-table-num`); empty `rows` shows a muted "no rows" instead of a
+    bare header. Tier-1-pinned (`Table.test.ts`, new).
+  - Code + Console bodies: vertical clamp (`max-height: 360px`, scroll) —
+    the diff body's existing treatment; a dumped whole file / 200k-char log
+    scrolls in its panel instead of consuming the transcript.
+  - **Diagram follows the app theme now (decision).** Pinned-dark is the
+    CODE-surface convention (`--code-bg` + ANSI/hljs palettes, manifest
+    PINNED_TOKENS); a diagram is a picture, not a code surface, and on the
+    light themes it rendered as a jarring dark slab. The frame body is
+    transparent (the panel surface is the canvas), mermaid re-initializes
+    per message with the shell-computed dark flag + `--surface` color, and
+    a `data-theme` MutationObserver re-posts on theme switch so baked-in
+    SVG colors follow. Sandbox posture unchanged (strict, no-network CSP,
+    postMessage-only source) — Tier-1 pins the transparent body +
+    per-message init.
+- [x] **Paintings-adoption instrumentation** — completed 2026-08-13: one
+  LOCAL log line per paint (`paint <component> agent=<agent>`) at
+  `registry.deliver()`, the choke point every adapter's stream crosses.
+  Local daemon log only, nothing leaves the machine; cheap enough to keep,
+  one `if` to delete if treated as temporary. Purpose: make "does this
+  engine actually reach for the render tools" answerable from logs — the
+  audit found the Codex/Gemini guidance asymmetry (one-shot first-turn
+  prepend vs. Claude's every-request system-prompt append) impossible to
+  evaluate without it.
+- Audit findings deliberately NOT fixed here (recorded, not lost): the two
+  hand-kept `TOOL_DESCRIPTIONS` maps (render-tools.ts / render-mcp.ts) have
+  drifted in wording with no guard test; no test pins Claude's
+  `mcpServers`/`systemPrompt.append` registration; the stdio
+  `emit_artifact` description omits the `mirafold.prompt/tool` sandbox API
+  that the in-process description documents (Codex/Gemini can't author
+  interactive artifacts); registry CSS half-lives in `08-picker.css`
+  (housekeeping); HBar tooltip parks at `left: 40%`. Each is a candidate
+  for a follow-up surfacing-parity step.
+
 ## Phase PN — Panes (file views beside the transcript)
 
 **Why.** Kyle (2026-07-26): open a file and see it in its own pane. Also the

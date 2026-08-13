@@ -166,6 +166,18 @@
   border-bottom: none;
 }
 
+/* Numeric cells scan as a column: right edge + lining figures. */
+.rc-table-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.rc-table-empty {
+  padding: 8px 12px;
+  color: var(--fg-dimmer);
+  font-size: 0.85em;
+}
+
 /* stat — the single-number KPI tile (S.3), the natural pin-dock resident */
 .rc-stat {
   max-width: 280px;
@@ -258,12 +270,17 @@
   border-color: var(--border-hover);
 }
 
+/* Vertical clamp mirrors the diff body's (06-tools.css): a dumped whole file
+   scrolls inside its panel instead of consuming the transcript; the copy
+   button already guarantees nothing is lost. */
 .rc-code-body {
   margin: 0;
   padding: 10px 0;
   background: var(--code-bg);
   font-size: 0.84em;
   overflow-x: auto;
+  max-height: 360px;
+  overflow-y: auto;
 }
 
 .rc-code-body code {
@@ -323,7 +340,10 @@
   width: 100%;
   height: 120px;
   border: 0;
-  background: #141a26; /* the frame's own pinned canvas, pre-render */
+  /* The frame body stays transparent, so the panel surface IS the diagram's
+     canvas — it follows the theme with no re-render (the diagram's own
+     colors re-render via the theme observer in Diagram.tsx). */
+  background: var(--surface);
 }
 
 .rc-diagram-loading {
@@ -456,6 +476,8 @@
   border-color: var(--err-border-strong);
 }
 
+/* Same vertical clamp as .rc-code-body: a 200k-char log excerpt must not
+   render thousands of lines inline. */
 .rc-console-body {
   margin: 0;
   padding: 10px 12px;
@@ -464,6 +486,8 @@
   font-size: 0.84em;
   line-height: 1.5;
   overflow-x: auto;
+  max-height: 360px;
+  overflow-y: auto;
 }
 
 .rc-console-clip {
