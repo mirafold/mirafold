@@ -29,6 +29,8 @@ function promptSourceLabel(option: PromptOption): string | undefined {
       return option.kind === "skill" ? "Codex skill" : "Codex command";
     case "gemini-cli":
       return "Gemini CLI command";
+    case "opencode":
+      return "OpenCode command";
     case "mirafold":
       return "Mirafold demo";
     default:

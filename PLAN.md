@@ -2662,6 +2662,204 @@ first, measurement second, new paintings demand-gated.
   (housekeeping); HBar tooltip parks at `left: 40%`. Each is a candidate
   for a follow-up surfacing-parity step.
 
+## Phase OC — OpenCode adapter (opened 2026-08-13; Kyle-directed)
+
+**Product call.** Kyle, from a 2026-08-13 market check: OpenCode (~195k
+GitHub stars) is now the dominant open-source terminal agent — the largest
+user population Mirafold doesn't cover — and becomes the fourth adapter.
+(Same check surfaced that Gemini CLI was retired upstream 2026-06-18,
+replaced by the closed-source Antigravity CLI; Gemini-adapter sunset is
+agreed but explicitly deferred — NOT part of this phase.) The feasibility
+spike is **`server/adapters/opencode.spike.md`** (verdict GREEN): the
+event→`WireMsg` table, the `OPENCODE_CONFIG_CONTENT` MCP-injection path,
+the permission reply round-trip, and the provider-keyed credential-policy
+design all live there — the steps below execute that doc, and its two live
+gates come first.
+
+- [x] **Step OC.0 — Live gates + shape capture** — completed 2026-08-13,
+  same day, $0 and credential-free: scratchpad-local `opencode-ai@1.18.18`
+  with HOME jailed; Gate 1 PASSED (`OPENCODE_CONFIG_CONTENT` alone
+  connected the render MCP; tools advertise as `mirafold_render_*`), Gate 2
+  PASSED via a fake OpenAI-compatible provider (ask event is
+  **`permission.asked`** — published SDK types drift — reply `once` ran the
+  tool through to `session.idle`). Streaming is a true delta channel
+  (`message.part.delta`), usage + `modelID` ride each assistant message.
+  Bonuses: 1.18.18 offers no Anthropic/Google OAuth at all, and a fresh
+  install ships the free "OpenCode Zen" provider (needs its own OC.3
+  policy row). One residual folded into OC.3: confirm a stored
+  credential's oauth-vs-api kind is server-readable (needs a real
+  connected credential). Full appendix in the spike doc. — **Goal:** de-risk the
+  two spike gates and lock real shapes before adapter code exists.
+  **Build:** run `opencode serve` (scratchpad-local install is fine; no
+  global mutation) and confirm: (1) `OPENCODE_CONFIG_CONTENT` loads the
+  mirafold render MCP and its tools appear (exact tool-name prefix
+  captured); (2) a permission ask surfaces as `permission.updated` headless
+  and the reply endpoint resolves it; plus capture the provider catalog's
+  auth exposure (oauth-vs-api visible without reading `auth.json`?), the
+  streaming part-update granularity, and usage field names. A $0 provider
+  (Ollama or an existing API key) is needed for gate 2 only. **Done when:**
+  the spike doc's "confirm live" flags are each resolved GREEN/RED with
+  captured payloads appended to the doc.
+- [x] **Step OC.1 — Core adapter + Tier-1** — completed 2026-08-13:
+  `opencode.ts` (session: lazy spawn-with-retry latch, serial queue,
+  first-turn guidance flipped only after prompt acceptance, permission
+  bridge with deny-by-default timeout + external-reply handling +
+  interrupt grace fallback) + `opencode-events.ts` (mapper: delta/snapshot
+  text accrual, tool lifecycle, mirafold `render_*` recognition with
+  honest fallback, todo checklist, per-turn usage summing) +
+  `opencode-client.ts` (raw HTTP+SSE transport — the spike's SDK
+  recommendation REVERSED with the reason recorded there: live shapes
+  beat drifting generated types). 22 Tier-1 tests on captured shapes;
+  full Tier-1 suite 746/746; typecheck green. `AgentName` grew additively
+  (policy row fails closed, agent not in ADAPTER_AGENTS, so nothing is
+  offered before OC.3/OC.4). — **Goal:** an OpenCode session
+  behind the `AgentSession` seam, mock-verified. **Build:**
+  `server/adapters/opencode.ts` — spawn `opencode serve` on a free port
+  with a per-session `OPENCODE_SERVER_PASSWORD`, create the session, prompt
+  via `prompt_async` with the pinned `model`, normalize the SSE stream per
+  the spike table (text/reasoning accrual → deltas, tool parts →
+  `tool_use`/`tool_result` with `capOutput`, `todo.updated` → checklist,
+  `session.idle` → `turn_end`, `session.error` → sourced notice),
+  `interrupt()` → abort, `resumeId` = session id. SDK-vs-raw call finalized
+  at install per the spike. **Files:** `server/adapters/opencode.ts`
+  (+ `.test.ts` with a fake SSE feed), `server/protocol.ts` (`AgentName` +
+  fixtures — additive only). **Done when:** Tier-1 drives the full table
+  through a fake event feed; `yarn typecheck` green.
+- [x] **Step OC.2 — Render MCP + permission bridge** — completed
+  2026-08-13. The Tier-1 half had landed inside OC.1; this step ran the
+  live leg, $0 and credential-free (real `OpenCodeSession` → real spawned
+  engine → fake provider): **a card painted end-to-end** through the real
+  render-mcp stub, and **a permission ask round-tripped live** (ask → bar
+  shape → `once` → bash ran). It caught and fixed two adapter bugs
+  (health-poll wedge on pre-ready connections — per-attempt abort is
+  load-bearing; user-message parts echoing as text_delta — roles now
+  tracked, +1 test) and characterized one upstream engine behavior,
+  documented not gated: a cold server's first model call carries zero
+  tools; the engine self-recovers same-turn (spike appendix has the full
+  probe evidence). Suite 747/747, typecheck green. — **Goal:** generative
+  UI and the permission bar, faithfully. **Build:** inject
+  `renderMcpCommand()` under `MIRAFOLD_MCP` via `OPENCODE_CONFIG_CONTENT`
+  (additive merge; user config untouched); recognize mirafold tool parts by
+  the OC.0-confirmed prefix → `generativeUIMsg` (skip the raw tool block);
+  `permission.updated` → `permission_request`, `resolvePermission` → reply
+  `once`/`reject` (**never `always`** — that writes the user's own approval
+  state), `PERMISSION_TIMEOUT_MS` deny-by-default. **Done when:** Tier-1
+  proves render-call recognition + both permission outcomes + timeout; a
+  live render paints end-to-end.
+- [x] **Step OC.3 — Credential policy + registry wiring** — completed
+  2026-08-13, including the "needs a real credential" residual — resolved
+  with auth.json FIXTURES in the jailed probe home (no real credential
+  needed): the engine's own catalog distinguishes every kind (`source`
+  api/env/config/custom + the `opencode-oauth-dummy-key` OAuth marker), it
+  leaks raw stored secrets (stripped at the transport seam, never past
+  it), and 1.18.18 ignores a stored anthropic OAuth wholesale. Landed:
+  `classifyOpenCodeProvider` matrix in provider-policy.ts (fail-closed:
+  unknown OAuth, Zen-pending-terms, unrecognized shapes all refuse with
+  human copy), session-start enforcement in opencode.ts (pin resolved
+  from OPENCODE_MODEL or the user's config `model`; refusals precede any
+  engine session), shallow hello detection in index.ts (binary +
+  auth.json existence — contents unread), `Backend.provider` from the
+  pin. ChatGPT gray: policy-allowed, session-refused until OC.4 flows
+  classified kind into Backend (relay-gate truth). 8 policy tests + 3
+  session tests; suite 752/752; typecheck green. — **Goal:** the
+  policy matrix applied provider-aware, fail-closed. **Build:**
+  `provider-policy.ts` gains the OpenCode provider classification
+  (anthropic/google oauth → blocked; openai oauth → disclosed gray area;
+  api-key/env → `api-key`; local → `local`; **unclassified oauth →
+  blocked**), detection per the OC.0-confirmed path (server catalog
+  preferred; `auth.json` only with explicit consent); model pinned
+  per-prompt so the session provider is the one Mirafold set; registry:
+  `createSession` case, `agentHasCredentials("opencode")`, `Backend.provider`
+  carries the pick. Relay gate unchanged (already refuses `subscription`).
+  **Done when:** Tier-1 covers every matrix row incl. the fail-closed
+  default; blocked/gray states render their correct copy.
+- [x] **Step OC.4 — In-session fidelity surface** — completed 2026-08-13
+  (the original OC.4 split in two; the onboarding half is OC.4b below):
+  `opencode-commands.ts` on the codex picker pattern — `/model` paints the
+  cross-provider catalog (policy-filtered: only providers a pick can
+  actually run; a typed blocked pick refuses with its reason and keeps the
+  pin), `/agent` paints user-facing primaries only (`hidden` internals and
+  subagents excluded; pick rides every subsequent prompt), the engine's
+  own command catalog routes `/name` inputs to `POST /session/:id/command`
+  (the engine's real dispatcher, with pin + agent) and feeds
+  `emitPromptOptions` behind our two re-skins (engine rows badged
+  `source: "opencode"`). 6 new Tier-1 tests; suite 757/757; typecheck
+  green. — **Goal:** what an OpenCode user expects in-session.
+- [x] **Step OC.4b — Offerable + Zen terms citation** — completed
+  2026-08-13 (the kind-into-Backend half split to OC.4c; live onboarding
+  proof folds into OC.5): `opencode` joined ADAPTER_AGENTS +
+  `defaultAgent`; one shallow `backendOptions` api-key row (existence
+  probe; the provider-resolved truth stays enforced at session start);
+  real agents-meta copy (connect hint names install + `opencode auth
+  login` + OPENCODE_MODEL and says plainly that subscriptions and Zen
+  aren't usable yet), `backendLabel` "API key (via opencode)", PromptBox
+  source badge. **Zen terms read and cited** in provider-policy.ts
+  (2026-08-13: no third-party-harness prohibition — the server API is
+  opencode's own documented programmatic surface; "own internal use"
+  clause; free-period training-data caveat): the disclosed-uncertainty
+  rule's exact shape, but opening a NEW provider under it is Kyle's call
+  (codex precedent), so the row stays CLOSED pending his decision — if
+  opened, local-only + caveat shown. Also fixed en route: the fourth
+  agent row overflowed the onboarding squeeze ramp by 14px — the
+  squeeze intercept moved 66→70 and the per-row floor metrics shaved
+  (full-chrome values untouched); the squeeze e2e passes with four READY
+  rows. Verification status, honestly: Tier-1 757/757 + Tier-2 152/152
+  green; e2e ran 96/97 before the CSS fix (the squeeze test its only
+  failure, after the hint-count assertion gained the fourth card) and
+  the fixed squeeze test passes in isolation — but two attempts at the
+  full post-fix e2e run were stopped externally mid-run (6/6 ok at each
+  stop), so ONE clean full-suite pass is still owed; folded into OC.5's
+  tier sweep.
+- [x] **Step OC.4c — Classified kind into Backend + ZEN OPENED** —
+  completed 2026-08-13, same day Kyle said "open Zen" (the decision the
+  OC.4b citation was waiting on). Built exactly per the design below:
+  `onBackendKind` seam + registry adoption at `activate()` (truthful kind
+  checkpointed), `kindPending` refusing remote actions pre-verification,
+  and the three relay-gate sites (attach, cockpit acts, uploads) unified
+  on one `relayGateRefusal` verdict in provider-policy.ts. The ChatGPT
+  gray now RUNS locally with its uncertainty disclosure (once per
+  provider, Mirafold-composed, no badge). **Zen**: new `gateway`
+  CredentialKind (additive on every wire union) — allowed locally for
+  opencode with the uncertainty + training-data disclosure, NEVER
+  relay-eligible (the allow-list refuses it by design); fresh
+  binary-only installs now detect live out of the box, and the /model
+  picker offers Zen rows. 761/761 + 152/152 green; the full-e2e sweep
+  remains owed to OC.5 (two prior runs externally stopped). — original
+  goal + design: **Goal:** the gray path runs under its TRUE kind. **Build:**
+  an optional `AgentSession.onBackendKind` seam (like `onResumeId`): the
+  OpenCode session publishes the OC.3-classified kind + provider at start;
+  the registry updates its `Backend` so the relay gate judges truth.
+  **The race that shapes the design:** hello-kind is optimistic
+  ("api-key"), so a relay viewport's FIRST prompt could slip the gate
+  before classification lands — closed by a `kindVerified` flag on
+  opencode Backends (server-side only): relay prompts refuse with an
+  honest "still verifying" message until the session publishes, local
+  viewports unaffected. Then the OC.3 session-level gray refusal lifts,
+  replaced by a Mirafold-composed disclosure notice at session start
+  (uncertainty stated, never permission — the codex CONNECT_HINT contract,
+  session-time edition). **Done when:** Tier-1 covers publish→registry
+  update, the pre-verification relay refusal, and the gray disclosure;
+  the relay itest proves a subscription-classified session never runs a
+  turn from a relay viewport.
+- [x] **Step OC.5 — Tier sweep + live end-to-end** — completed 2026-08-13
+  (one residual below): **`opencode-live.ltest.ts`** joins Tier 4 on the
+  codex pattern (real binary, never a hosted model; the scripted
+  OpenAI-compatible provider from the OC.2 probe; HOME/XDG jailed via a
+  new transport `env` seam so a real engine run never touches the
+  developer's own opencode state; skips cleanly when opencode isn't
+  installed). One 17s test drives the WHOLE loop through shipped code:
+  render through the real MCP stub, headless permission ask answered via
+  the bridge, usage, kind publish (config→local), and **resume across a
+  full engine restart**. All tiers green same-sitting: Tier-1 761/761,
+  Tier-2 152/152, Tier-3 97/97 (the sweep owed since OC.4b — paid),
+  Tier-4 1/1 live + verified clean skip. **Residual CONFIRMED by Kyle
+  2026-08-13**: real global install (`npm i -g opencode-ai` — his npm's
+  install-scripts blocking required the manual postinstall, the exact
+  failure the transport's stderr surfacing named; the session's
+  start-latch retry then worked as designed, no restarts) and a live
+  browser session on Zen: "heyyyy it works". Phase OC complete.
+  README/ADAPTERS.md refresh rides the wrapup.
+
 ## Phase PN — Panes (file views beside the transcript)
 
 **Why.** Kyle (2026-07-26): open a file and see it in its own pane. Also the

@@ -9,6 +9,7 @@ export const LABEL: Record<AgentName, string> = {
   "claude-code": "Claude Code",
   codex: "Codex",
   "gemini-cli": "Gemini CLI",
+  opencode: "OpenCode",
 };
 
 // R.4i/R.4k: the hint for a NO-credentials agent — the one action that makes it
@@ -26,6 +27,8 @@ export const CONNECT_HINT: Record<AgentName, string> = {
     "run `codex login` (ChatGPT subscription — not clearly permitted by OpenAI's terms, tolerated in practice; your account, your call) or set OPENAI_API_KEY (platform.openai.com/api-keys) — or point Codex at a local model (Ollama/LM Studio/vLLM) or any OpenAI-compatible provider (e.g. OpenRouter) via ~/.codex/config.toml (recipe: docs/local-models.md)",
   "gemini-cli":
     "set GEMINI_API_KEY (free key at aistudio.google.com/apikey) — Gemini has no local path",
+  opencode:
+    "install opencode (opencode.ai) — its built-in free Zen models then work out of the box (set OPENCODE_MODEL=<provider>/<model>, e.g. opencode/big-pickle; free-period prompts may train the models). Or connect a provider API key via `opencode auth login`, or declare a local/BYO provider (Ollama, OpenRouter, …) in your opencode config. A ChatGPT login works too — not clearly permitted by OpenAI's terms, tolerated in practice; your account, your call. Other subscription logins (Copilot, …) aren't usable",
 };
 
 // The hint for a BLOCKED agent — a prohibited subscription credential is
@@ -82,11 +85,21 @@ export function blockedHint(agent: string): string | undefined {
  *  "OpenAI API key" — ChatGPT is their SUBSCRIPTION brand and they keep the
  *  two apart, which is why the subscription labels below don't match these
  *  one-for-one. That asymmetry is theirs, and inheriting it is the point. */
-export function backendLabel(agent: string, kind: "api-key" | "subscription" | "local"): string {
+export function backendLabel(
+  agent: string,
+  kind: "api-key" | "subscription" | "local" | "gateway",
+): string {
+  // OpenCode Zen (2026-08-13): the engine's built-in free gateway — no user
+  // account behind it, so neither "API key" nor "subscription" is honest.
+  if (kind === "gateway") return "OpenCode Zen (free models)";
   if (kind === "api-key") {
     if (agent === "codex") return "OpenAI API key";
     if (agent === "claude-code") return "Claude API key";
     if (agent === "gemini-cli") return "Gemini API key";
+    // OpenCode's row backs onto whichever provider credential its own auth
+    // store holds — no single vendor name exists until the session resolves
+    // the pinned provider (OC.3), so the row names the mechanism.
+    if (agent === "opencode") return "API key (via opencode)";
     return "API key";
   }
   if (kind === "local") return "local endpoint";
@@ -111,7 +124,7 @@ export function localBackendLabel(agent: string, detail: string | undefined): st
  *  routes name the backing identically. */
 export function backingLine(
   agent: string,
-  kind: "api-key" | "subscription" | "local" | undefined,
+  kind: "api-key" | "subscription" | "local" | "gateway" | undefined,
   detail: string | undefined,
 ): string | undefined {
   if (!kind) return detail;

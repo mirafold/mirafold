@@ -29,7 +29,11 @@
   background: var(--overlay);
   backdrop-filter: blur(3px);
   padding: calc(12px + var(--onb-squeeze) * 0.75) 24px; /* 12→24px */
-  --onb-squeeze: clamp(0px, calc(9.1vh - 66px), 16px);
+  /* Intercept moved 66→70 when the FOURTH agent row landed (OC.4b): the
+     floor now arrives ~44px of window earlier, buying the compression the
+     extra row needs through the 730–760px band. Tall-window chrome (the
+     16px cap) is untouched. */
+  --onb-squeeze: clamp(0px, calc(9.1vh - 70px), 16px);
 }
 
 .onb-card {
@@ -147,7 +151,7 @@
 .onb-list {
   display: flex;
   flex-direction: column;
-  gap: calc(7px + var(--onb-squeeze) * 0.1875); /* 7→10px */
+  gap: calc(5px + var(--onb-squeeze) * 0.3125); /* 5→10px */
 }
 
 .onb-connecting {
@@ -161,8 +165,8 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: calc(3px + var(--onb-squeeze) * 0.25); /* 3→7px */
-  padding: calc(10px + var(--onb-squeeze) * 0.4375) calc(14px + var(--onb-squeeze) * 0.3125); /* 10→17px / 14→19px */
+  gap: calc(2px + var(--onb-squeeze) * 0.3125); /* 2→7px */
+  padding: calc(8px + var(--onb-squeeze) * 0.5625) calc(14px + var(--onb-squeeze) * 0.3125); /* 8→17px / 14→19px */
   background: var(--surface-2);
   border: 1px solid var(--border-mid);
   border-radius: 9px;

@@ -16,7 +16,7 @@
  * since Phase P.4 — the browser picks which agent a session runs at onboarding,
  * so the name is part of the shared contract (adapters/types.ts re-exports it).
  */
-export type AgentName = "claude-code" | "codex" | "gemini-cli";
+export type AgentName = "claude-code" | "codex" | "gemini-cli" | "opencode";
 
 /** One provider-owned completion shown by the trusted prompt shell before a
  * prompt is submitted. `value` includes its trigger (`/model`, `$audit`), so
@@ -403,7 +403,9 @@ export type AgentInfo = {
   agent: AgentName;
   live: boolean;
   blocked?: boolean;
-  kind?: "api-key" | "subscription" | "local";
+  // "gateway" added 2026-08-13 (OpenCode Zen) — additive: an older bundle
+  // shows its generic fallback label for an unknown kind, nothing breaks.
+  kind?: "api-key" | "subscription" | "local" | "gateway";
   detail?: string;
   backends?: AgentBackend[];
 };
@@ -422,7 +424,7 @@ export type AgentInfo = {
  * the browser never infers this privacy claim from a hostname prefix.
  */
 export type AgentBackend = {
-  kind: "api-key" | "subscription" | "local";
+  kind: "api-key" | "subscription" | "local" | "gateway";
   usable: boolean;
   blocked?: boolean;
   detail?: string;
@@ -452,7 +454,7 @@ export type AgentBackend = {
  *  is the picked catalog entry. Labels and opaque identifiers only — never a
  *  configured URL or credential. */
 export type BackendChoice = {
-  kind: "api-key" | "subscription" | "local";
+  kind: "api-key" | "subscription" | "local" | "gateway";
   endpoint?: string;
   backendId?: string;
   provider?: string;

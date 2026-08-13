@@ -15,7 +15,7 @@ import os from "node:os";
 import path from "node:path";
 import type { ClientMsg, WireMsg } from "../protocol";
 import type { SessionEntry } from "./registry";
-import { allowedOverRelay } from "../provider-policy";
+import { relayGateRefusal } from "../provider-policy";
 import { envInt } from "../env";
 import { CLIENT_ID_RE } from "./fs-handlers";
 import { createLogger } from "../log";
@@ -38,11 +38,8 @@ export const FILE_UPLOAD_MAX_CHUNK_BYTES = envInt("FILE_UPLOAD_MAX_CHUNK_BYTES",
 // abort) — reap it so its memory isn't held for the connection's life.
 export const FILE_UPLOAD_STALL_MS = envInt("FILE_UPLOAD_STALL_MS", 30_000);
 
-// Same wording as the prompt/cockpit relay gate (R.4i): an upload is model
-// input staging, so it follows the same rule.
-const UPLOAD_RELAY_REFUSAL =
-  "This session runs on a subscription login, which can't be used over the relay. " +
-  "Use an API key to drive an agent remotely.";
+// An upload is model input staging, so it follows the prompt/cockpit relay
+// gate exactly — one verdict, one wording (provider-policy.ts, OC.4c).
 
 /** Path-free, control-free, bounded display name; never empty. */
 export function safeUploadName(raw: unknown): string {
@@ -144,8 +141,9 @@ export function createUploadHandlers({ viewport, getEntry, remote }: UploadDeps)
         fail(msg.id, "no session attached");
         return;
       }
-      if (remote && !allowedOverRelay(entry.kind)) {
-        fail(msg.id, UPLOAD_RELAY_REFUSAL);
+      const relayRefusal = remote ? relayGateRefusal(entry) : undefined;
+      if (relayRefusal) {
+        fail(msg.id, relayRefusal);
         return;
       }
       if (active.has(msg.id)) {

@@ -6,7 +6,9 @@ import { isIP } from "node:net";
 import { ClaudeCodeSession } from "./claude-code";
 import { CodexSession } from "./codex";
 import { GeminiCliSession } from "./gemini-cli";
+import { OpenCodeSession, parseModelPin } from "./opencode";
 import { MockSession } from "./mock";
+import { installedAgentBin } from "./types";
 import type { AgentName, AgentSession, Backend } from "./types";
 import type { AgentBackend, AgentInfo } from "../protocol";
 import { allowedLocally, type CredentialKind } from "../provider-policy";
@@ -125,6 +127,29 @@ function credentialKind(agent: AgentName): CredentialKind {
       // prohibits subscription use in third-party tools — so there is no
       // subscription kind to detect. GOOGLE_API_KEY is the CLI's other name.
       return process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY ? "api-key" : "none";
+    case "opencode": {
+      // Hello-time detection is deliberately SHALLOW (OC.3): the truthful,
+      // provider-resolved classification needs the engine's own catalog,
+      // which only a running `opencode serve` can give — so it's enforced at
+      // session start (opencode.ts enforceProviderPolicy), the same
+      // never-trust-the-pick posture as resolveChosenBackend. Here: the
+      // binary plus a stored-credential file (existence only, the
+      // claude/codex precedent — its CONTENTS stay unread) reads as
+      // "api-key", and a session whose pinned provider turns out to be a
+      // subscription OAuth or unclassified is refused at start with the
+      // reason. A config-only setup (e.g. Ollama declared in opencode.json,
+      // no auth.json) detects as none until OC.4's picker probes the engine.
+      if (!installedAgentBin("OPENCODE_BIN", "opencode")) return "none";
+      const dataDir = process.env.XDG_DATA_HOME
+        ? path.join(process.env.XDG_DATA_HOME, "opencode")
+        : undefined;
+      // No stored credential ⇒ the built-in free Zen gateway still backs the
+      // engine out of the box — "gateway", the Zen-opened kind (2026-08-13):
+      // usable locally with its disclosure, never over the relay.
+      return loginFileExists(dataDir, path.join(".local", "share", "opencode"), "auth.json")
+        ? "api-key"
+        : "gateway";
+    }
   }
 }
 
@@ -141,7 +166,9 @@ export function resolveBackend(): Backend {
 /** The env-configured default agent — a pre-selection hint, never assumed. */
 export function defaultAgent(): AgentName {
   const requested = process.env.MIRAFOLD_AGENT;
-  return requested === "codex" || requested === "gemini-cli" ? requested : "claude-code";
+  return requested === "codex" || requested === "gemini-cli" || requested === "opencode"
+    ? requested
+    : "claude-code";
 }
 
 /** Resolve one named agent's backend (kind + live + model), per-session (P.4). */
@@ -171,12 +198,17 @@ export function resolveBackendFor(agent: AgentName): Backend {
   } else if (kind === "local" && agent === "codex") {
     const provider = codexConfigProvider()?.provider;
     if (provider) backend.provider = provider;
+  } else if (agent === "opencode") {
+    // The pinned provider (OPENCODE_MODEL's provider half) — the input the
+    // relay gate and the OC.3 session-start classification both judge.
+    const provider = parseModelPin(backend.model)?.providerID;
+    if (provider) backend.provider = provider;
   }
   return backend;
 }
 
 // Agents with a landed adapter — the onboarding picker's universe.
-export const ADAPTER_AGENTS: AgentName[] = ["claude-code", "codex", "gemini-cli"];
+export const ADAPTER_AGENTS: AgentName[] = ["claude-code", "codex", "gemini-cli", "opencode"];
 
 /** One way an agent could run on this machine. `usable` is provider-policy's
  *  verdict; a present-but-prohibited subscription rides as `blocked` —
@@ -267,6 +299,15 @@ export function backendOptions(agent: AgentName): BackendOption[] {
     case "gemini-cli":
       if (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY) addCredentialRow("api-key");
       break;
+    case "opencode": {
+      // One shallow row: a stored credential (or the built-in Zen gateway) —
+      // existence only; the provider-resolved truth is enforced at session
+      // start (OC.3). Richer per-provider rows need a running engine; that
+      // probe is a post-OC.5 idea, not a hello-time cost.
+      const kind = credentialKind("opencode");
+      if (kind === "api-key" || kind === "gateway") addCredentialRow(kind);
+      break;
+    }
   }
   return options;
 }
@@ -324,6 +365,9 @@ const AGENT_DIALECT: Record<AgentName, LocalDialect | null> = {
   "claude-code": "anthropic",
   codex: "openai",
   "gemini-cli": null,
+  // OpenCode reaches local servers through its own provider config, not a
+  // Mirafold-injected endpoint — no discovered-server rows until OC.4 decides.
+  opencode: null,
 };
 
 /**
@@ -494,6 +538,10 @@ function modelFor(agent: AgentName): string | undefined {
       return process.env.CODEX_MODEL;
     case "gemini-cli":
       return process.env.GEMINI_MODEL;
+    case "opencode":
+      // `provider/model` (OpenCode's own addressing); a bare model id pins
+      // nothing and the engine default runs — opencode.ts parseModelPin.
+      return process.env.OPENCODE_MODEL;
   }
 }
 
@@ -519,7 +567,7 @@ export function resolveChosenBackend(
     model?: unknown;
   };
   const kind = c.kind;
-  if (kind !== "api-key" && kind !== "subscription" && kind !== "local")
+  if (kind !== "api-key" && kind !== "subscription" && kind !== "local" && kind !== "gateway")
     return { error: "unknown backend choice" };
   if (
     (c.endpoint !== undefined && typeof c.endpoint !== "string") ||
@@ -655,7 +703,11 @@ export function createSession(
   opts: { cwd: string; resumeId?: string },
 ): AgentSession {
   if (!backend.live) return new MockSession(backend.agent);
-  const kind = backend.kind === "none" ? undefined : backend.kind;
+  // "gateway" is OpenCode-only (Zen) and the OpenCode adapter classifies its
+  // own backing at start — the per-adapter `kind` option below is for the
+  // engines that take one, and none of them can be gateway-backed.
+  const kind =
+    backend.kind === "none" || backend.kind === "gateway" ? undefined : backend.kind;
   switch (backend.agent) {
     case "claude-code":
       return new ClaudeCodeSession({
@@ -677,6 +729,12 @@ export function createSession(
       });
     case "gemini-cli":
       return new GeminiCliSession({
+        workspaceDir: opts.cwd,
+        model: backend.model,
+        resumeId: opts.resumeId,
+      });
+    case "opencode":
+      return new OpenCodeSession({
         workspaceDir: opts.cwd,
         model: backend.model,
         resumeId: opts.resumeId,

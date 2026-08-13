@@ -1,58 +1,101 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import type { AgentName } from "./protocol";
-import { allowedLocally, allowedOverRelay, type CredentialKind } from "./provider-policy";
+import {
+  allowedLocally,
+  allowedOverRelay,
+  classifyOpenCodeProvider,
+  relayGateRefusal,
+  type OpenCodeProviderEntry,
+} from "./provider-policy";
 
-// The whole matrix, cell by cell. This is the single source of truth for
-// which credential runs where — if a provider's terms change, this test is the
-// first thing that must change with it (R.4i).
+// OC.3: the provider-keyed OpenCode matrix. Shapes are the 1.18.18 catalog
+// facts captured with stored-credential fixtures (opencode.spike.md).
 
-const AGENTS: AgentName[] = ["claude-code", "codex", "gemini-cli"];
-const KINDS: CredentialKind[] = ["api-key", "subscription", "local", "none"];
+const entry = (over: Partial<OpenCodeProviderEntry>): OpenCodeProviderEntry => ({
+  id: "p",
+  source: "api",
+  ...over,
+});
 
-test("LOCAL use: api-key and local endpoints always run; none never does", () => {
-  for (const agent of AGENTS) {
-    assert.equal(allowedLocally(agent, "api-key"), true, `${agent} api-key`);
-    assert.equal(allowedLocally(agent, "local"), true, `${agent} local`);
-    assert.equal(allowedLocally(agent, "none"), false, `${agent} none`);
+test("a stored api key and an env key are api-key, allowed", () => {
+  for (const source of ["api", "env"] as const) {
+    const v = classifyOpenCodeProvider(entry({ id: "deepseek", source }));
+    assert.deepEqual({ kind: v.kind, allowed: v.allowed }, { kind: "api-key", allowed: true });
   }
 });
 
-test("LOCAL subscription: written bans honored; codex allowed as a DISCLOSED gray area", () => {
-  // Anthropic + Google prohibit it in writing → refused outright. OpenAI has
-  // no written permission either way but a visibly permissive posture, so the
-  // disclosed-uncertainty rule (K.3 amendment, 2026-07-15) allows it locally —
-  // the codex CONNECT_HINT must carry the uncertainty disclosure (asserted in
-  // web/src/agents-meta.test.ts), and the relay still refuses it below.
-  assert.equal(allowedLocally("codex", "subscription"), true, "disclosed-uncertainty rule");
-  assert.equal(allowedLocally("claude-code", "subscription"), false, "Anthropic ToS ban");
-  assert.equal(allowedLocally("gemini-cli", "subscription"), false, "Gemini ToS ban / tier cutoff");
+test("a user-config provider is BYO local, allowed", () => {
+  const v = classifyOpenCodeProvider(entry({ id: "ollama", source: "config" }));
+  assert.deepEqual({ kind: v.kind, allowed: v.allowed }, { kind: "local", allowed: true });
 });
 
-test("RELAY: the terms gate refuses subscription only — api-key, local, demo pass", () => {
-  for (const agent of AGENTS) {
-    assert.equal(allowedOverRelay("api-key"), true);
-    assert.equal(allowedOverRelay("local"), true);
-    assert.equal(allowedOverRelay("none"), true, "a credential-less demo has no provider/ToS");
-    // The key rule: even OpenAI's subscription — fine locally — is refused over
-    // the paid relay (charging for remote access trips the reselling clauses).
-    assert.equal(allowedOverRelay("subscription"), false, `${agent} subscription over relay`);
+test("openai oauth is the one allowed subscription (the disclosed gray area)", () => {
+  const v = classifyOpenCodeProvider(
+    entry({ id: "openai", source: "custom", apiKeyOption: "opencode-oauth-dummy-key" }),
+  );
+  assert.deepEqual({ kind: v.kind, allowed: v.allowed }, { kind: "subscription", allowed: true });
+});
+
+test("every other oauth is refused with its reason — including ones never classified", () => {
+  for (const id of ["github-copilot", "gitlab", "poe", "some-future-provider"]) {
+    const v = classifyOpenCodeProvider(
+      entry({ id, source: "custom", apiKeyOption: "opencode-oauth-dummy-key" }),
+    );
+    assert.equal(v.kind, "subscription");
+    assert.equal(v.allowed, false, `${id} must fail closed`);
+    assert.match(v.reason ?? "", /API key/);
   }
 });
 
-test("RELAY: the gate is an allow-list — an unrecognized kind fails CLOSED (refused)", () => {
-  // The gate guards a legal/reselling line, so a credential kind added in the
-  // future must default to REFUSED, not allowed. Cast past the closed union to
-  // prove the allow-list keeps an unknown kind off the relay.
-  assert.equal(allowedOverRelay("some-future-kind" as CredentialKind), false);
-  assert.equal(allowedOverRelay("" as CredentialKind), false);
+test("anthropic/google oauth are refused naming the written terms", () => {
+  for (const id of ["anthropic", "google"]) {
+    const v = classifyOpenCodeProvider(
+      entry({ id, source: "custom", apiKeyOption: "opencode-oauth-dummy-key" }),
+    );
+    assert.equal(v.allowed, false);
+    assert.match(v.reason ?? "", /written terms/);
+  }
 });
 
-test("every kind resolves to a boolean for every agent (no unreachable cell)", () => {
-  for (const agent of AGENTS) {
-    for (const kind of KINDS) {
-      assert.equal(typeof allowedLocally(agent, kind), "boolean");
-      assert.equal(typeof allowedOverRelay(kind), "boolean");
-    }
-  }
+test("the Zen gateway is open (Kyle 2026-08-13): gateway kind, local-only, disclosed", () => {
+  const v = classifyOpenCodeProvider(entry({ id: "opencode", source: "custom", apiKeyOption: "public" }));
+  assert.deepEqual({ kind: v.kind, allowed: v.allowed }, { kind: "gateway", allowed: true });
+  // The disclosure must state uncertainty AND the training caveat, and must
+  // never read as permission.
+  assert.match(v.disclosure ?? "", /don't\s+clearly address/);
+  assert.match(v.disclosure ?? "", /improve the model/);
+  assert.match(v.disclosure ?? "", /never run over the relay/);
+  assert.equal(allowedLocally("opencode", "gateway"), true);
+  assert.equal(allowedOverRelay("gateway"), false, "gateway never relay-eligible");
+});
+
+test("the openai gray verdict carries its uncertainty disclosure", () => {
+  const v = classifyOpenCodeProvider(
+    entry({ id: "openai", source: "custom", apiKeyOption: "opencode-oauth-dummy-key" }),
+  );
+  assert.match(v.disclosure ?? "", /not clearly\s+permitted/);
+  assert.match(v.disclosure ?? "", /your account, your\s+call/);
+});
+
+test("relayGateRefusal: pending refuses outright; kinds refuse per the allow-list", () => {
+  assert.match(relayGateRefusal({ kind: "api-key", kindPending: true }) ?? "", /still verifying/);
+  assert.equal(relayGateRefusal({ kind: "api-key" }), undefined);
+  assert.equal(relayGateRefusal({ kind: "local" }), undefined);
+  assert.match(relayGateRefusal({ kind: "subscription" }) ?? "", /subscription login/);
+  assert.match(relayGateRefusal({ kind: "gateway" }) ?? "", /free-gateway/);
+});
+
+test("an unrecognized custom shape is refused, never guessed", () => {
+  const v = classifyOpenCodeProvider(entry({ id: "mystery", source: "custom" }));
+  assert.deepEqual({ kind: v.kind, allowed: v.allowed }, { kind: "none", allowed: false });
+  assert.match(v.reason ?? "", /doesn't recognize/);
+});
+
+test("agent-level opencode subscription stays fail-closed; relay gate unchanged", () => {
+  // Without a provider resolution the agent-level answer is NO (the map's
+  // fail-closed row) — the gray area only opens through the classified path.
+  assert.equal(allowedLocally("opencode", "subscription"), false);
+  assert.equal(allowedLocally("opencode", "api-key"), true);
+  assert.equal(allowedOverRelay("subscription"), false);
+  assert.equal(allowedOverRelay("api-key"), true);
 });
