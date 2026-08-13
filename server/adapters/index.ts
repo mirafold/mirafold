@@ -6,8 +6,9 @@ import { isIP } from "node:net";
 import { ClaudeCodeSession } from "./claude-code";
 import { CodexSession } from "./codex";
 import { GeminiCliSession } from "./gemini-cli";
-import { OpenCodeSession } from "./opencode";
+import { OpenCodeSession, parseModelPin } from "./opencode";
 import { MockSession } from "./mock";
+import { installedAgentBin } from "./types";
 import type { AgentName, AgentSession, Backend } from "./types";
 import type { AgentBackend, AgentInfo } from "../protocol";
 import { allowedLocally, type CredentialKind } from "../provider-policy";
@@ -126,12 +127,26 @@ function credentialKind(agent: AgentName): CredentialKind {
       // prohibits subscription use in third-party tools — so there is no
       // subscription kind to detect. GOOGLE_API_KEY is the CLI's other name.
       return process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY ? "api-key" : "none";
-    case "opencode":
-      // Detection lands in PLAN OC.3 (the provider-keyed policy: which of
-      // OpenCode's connected providers backs the session, and with what kind
-      // of credential). Until then the agent detects as credential-less, is
-      // absent from ADAPTER_AGENTS, and never resolves live.
-      return "none";
+    case "opencode": {
+      // Hello-time detection is deliberately SHALLOW (OC.3): the truthful,
+      // provider-resolved classification needs the engine's own catalog,
+      // which only a running `opencode serve` can give — so it's enforced at
+      // session start (opencode.ts enforceProviderPolicy), the same
+      // never-trust-the-pick posture as resolveChosenBackend. Here: the
+      // binary plus a stored-credential file (existence only, the
+      // claude/codex precedent — its CONTENTS stay unread) reads as
+      // "api-key", and a session whose pinned provider turns out to be a
+      // subscription OAuth or unclassified is refused at start with the
+      // reason. A config-only setup (e.g. Ollama declared in opencode.json,
+      // no auth.json) detects as none until OC.4's picker probes the engine.
+      if (!installedAgentBin("OPENCODE_BIN", "opencode")) return "none";
+      const dataDir = process.env.XDG_DATA_HOME
+        ? path.join(process.env.XDG_DATA_HOME, "opencode")
+        : undefined;
+      return loginFileExists(dataDir, path.join(".local", "share", "opencode"), "auth.json")
+        ? "api-key"
+        : "none";
+    }
   }
 }
 
@@ -177,6 +192,11 @@ export function resolveBackendFor(agent: AgentName): Backend {
     }
   } else if (kind === "local" && agent === "codex") {
     const provider = codexConfigProvider()?.provider;
+    if (provider) backend.provider = provider;
+  } else if (agent === "opencode") {
+    // The pinned provider (OPENCODE_MODEL's provider half) — the input the
+    // relay gate and the OC.3 session-start classification both judge.
+    const provider = parseModelPin(backend.model)?.providerID;
     if (provider) backend.provider = provider;
   }
   return backend;

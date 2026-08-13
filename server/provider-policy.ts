@@ -101,6 +101,110 @@ const SUBSCRIPTION_LOCAL_OK: Record<AgentName, boolean> = {
   opencode: false,
 };
 
+// ---------------------------------------------------------------------------
+// OpenCode: the provider-keyed half of the matrix (PLAN OC.3, 2026-08-13).
+// OpenCode is a multi-provider harness, so the credential question is asked
+// per UNDERLYING provider, answered from the RUNNING ENGINE's own catalog
+// (`GET /config/providers`) — never by parsing the user's auth.json (their
+// file; the server tells us what we need). Verified against opencode 1.18.18
+// with stored-credential fixtures (opencode.spike.md, OC.3 probe):
+//   - a stored API key surfaces as `source: "api"` (an env-var key as "env");
+//   - a ChatGPT OAuth login surfaces as `source: "custom"` with the literal
+//     marker `options.apiKey === "opencode-oauth-dummy-key"`;
+//   - the built-in free "OpenCode Zen" gateway is `source: "custom"` with
+//     `options.apiKey === "public"`;
+//   - a user-config provider (Ollama, OpenRouter, …) is `source: "config"`;
+//   - a stored ANTHROPIC oauth credential is IGNORED WHOLESALE — the
+//     provider never enters the connected set, and /provider/auth offers no
+//     Anthropic (or Google) OAuth flow at all. The blocked rows below are
+//     belt-and-suspenders for other engine versions, not a live path.
+// The oauth marker string is version-specific; classification fails closed
+// on anything unrecognized, so engine drift degrades to "refused with a
+// reason", never to "waved through" (same posture as allowedOverRelay).
+
+/** One row of the engine's provider catalog, pre-stripped by the transport —
+ *  the catalog exposes RAW STORED SECRETS (`key`), which must never travel
+ *  past that seam, so this shape deliberately cannot carry them. */
+export type OpenCodeProviderEntry = {
+  id: string;
+  source: "env" | "config" | "custom" | "api";
+  /** The catalog's `options.apiKey` — a MARKER, not a secret ("public",
+   *  "opencode-oauth-dummy-key"); real keys ride `key`, which is stripped. */
+  apiKeyOption?: string;
+};
+
+const OPENCODE_OAUTH_MARKER = "opencode-oauth-dummy-key";
+const OPENCODE_ZEN_MARKER = "public";
+
+// Which providers' subscription OAuth may drive OpenCode locally. Only
+// OpenAI qualifies (the same disclosed-uncertainty call as the codex
+// adapter's ChatGPT login — uncertain terms, permissive posture, minimal
+// exposure). Everything else — GitHub Copilot, GitLab Duo, Poe,
+// DigitalOcean, Snowflake, xAI, and whatever a future version adds — stays
+// false until its terms have actually been read and cited here.
+const OPENCODE_SUBSCRIPTION_LOCAL_OK: Record<string, boolean | undefined> = {
+  openai: true,
+  anthropic: false, // written prohibition; also not even offered by 1.18.18
+  google: false, // written prohibition; same
+};
+
+export type OpenCodeProviderVerdict = {
+  kind: CredentialKind;
+  allowed: boolean;
+  /** Human copy for a refusal — shown down the create-error path. */
+  reason?: string;
+};
+
+/** Classify one connected OpenCode provider. Fail-closed: any shape this
+ *  version of the matrix doesn't recognize is refused with its reason. */
+export function classifyOpenCodeProvider(entry: OpenCodeProviderEntry): OpenCodeProviderVerdict {
+  switch (entry.source) {
+    case "api":
+    case "env":
+      // The user's own metered key (stored via `opencode auth login` or an
+      // environment variable) — the fully supported path, relay-eligible.
+      return { kind: "api-key", allowed: true };
+    case "config":
+      // A provider the user declared in their own opencode config (Ollama,
+      // OpenRouter, …): they pointed the engine elsewhere — BYO, like a
+      // codex config.toml provider.
+      return { kind: "local", allowed: true };
+    case "custom": {
+      if (entry.apiKeyOption === OPENCODE_OAUTH_MARKER) {
+        const ok = OPENCODE_SUBSCRIPTION_LOCAL_OK[entry.id] ?? false;
+        return {
+          kind: "subscription",
+          allowed: ok,
+          ...(ok
+            ? {}
+            : {
+                reason:
+                  `the "${entry.id}" login in opencode is a subscription OAuth, which ` +
+                  `can't drive a third-party app${entry.id === "anthropic" || entry.id === "google" ? " (provider's written terms)" : " (terms unread — refused until they are)"} — ` +
+                  `connect ${entry.id} with an API key in opencode instead`,
+              }),
+        };
+      }
+      if (entry.id === "opencode" && entry.apiKeyOption === OPENCODE_ZEN_MARKER) {
+        // The built-in free Zen gateway. Its terms of use haven't been read
+        // and cited yet (OC.4/OC.5 gate) — fail closed until they are.
+        return {
+          kind: "api-key",
+          allowed: false,
+          reason:
+            "the built-in OpenCode Zen free models aren't enabled in Mirafold yet — " +
+            "connect a provider API key in opencode (`opencode auth login`) to run OpenCode here",
+        };
+      }
+      return {
+        kind: "none",
+        allowed: false,
+        reason: `provider "${entry.id}" has a credential shape Mirafold doesn't recognize — refused rather than guessed`,
+      };
+    }
+  }
+}
+
 /** May a session with this credential run for LOCAL (free) use? */
 export function allowedLocally(agent: AgentName, kind: CredentialKind): boolean {
   switch (kind) {

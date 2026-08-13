@@ -41,10 +41,24 @@ class FakeTransport implements OpenCodeTransport {
   existing = new Set<string>();
   failPrompt?: Error;
   configContent?: Record<string, unknown>;
+  // OC.3 classification inputs — defaults let a pinless session resolve the
+  // user's config default onto an allowed BYO provider.
+  catalog: Awaited<ReturnType<OpenCodeTransport["providerCatalog"]>> = [
+    { id: "fake", source: "config" },
+  ];
+  cfgModel: string | undefined = "fake/fake-model";
+  sessionsCreated = 0;
   async start(cb: (ev: OpenCodeEvent) => void) {
     this.onEvent = cb;
   }
+  async providerCatalog() {
+    return this.catalog;
+  }
+  async configModel() {
+    return this.cfgModel;
+  }
   async createSession() {
+    this.sessionsCreated++;
     return { id: SES };
   }
   async sessionExists(id: string) {
@@ -454,21 +468,85 @@ test("a failed prompt surfaces honestly and frees the queue for the next turn", 
   session.close();
 });
 
-test("a model pin is provider/model per prompt; a bare id pins nothing", async () => {
-  const pinned = makeSession({ model: "opencode/laguna-s-2.1-free" });
+test("a model pin is provider/model per prompt; a bare id falls back to the config default", async () => {
+  const pinned = makeSession({ model: "prov1/laguna-s-2.1-free" });
+  pinned.fake.catalog = [{ id: "prov1", source: "api" }];
   await pinned.prompt("hi");
   assert.deepEqual(pinned.fake.prompts[0]?.["model"], {
-    providerID: "opencode",
+    providerID: "prov1",
     modelID: "laguna-s-2.1-free",
   });
   assert.equal(pinned.session.modelName, "laguna-s-2.1-free");
   pinned.session.close();
 
+  // A bare id can't name a provider — the user's own opencode config default
+  // resolves instead (inherit, never invent), and the prompt pins THAT.
   const bare = makeSession({ model: "laguna-s-2.1-free" });
   await bare.prompt("hi");
-  assert.equal(bare.fake.prompts[0]?.["model"], undefined);
-  assert.equal(bare.session.modelName, undefined);
+  assert.deepEqual(bare.fake.prompts[0]?.["model"], {
+    providerID: "fake",
+    modelID: "fake-model",
+  });
   bare.session.close();
+});
+
+test("policy refusals at start: each names its reason and frees the turn", async () => {
+  const cases: {
+    catalog?: FakeTransport["catalog"];
+    cfgModel?: string;
+    model?: string;
+    expect: RegExp;
+  }[] = [
+    // no pin anywhere
+    { cfgModel: undefined, expect: /no model is pinned/i },
+    // pinned provider not connected
+    { model: "ghost/some-model", expect: /isn't connected in opencode/ },
+    // a non-openai subscription OAuth — fail-closed
+    {
+      model: "github-copilot/gpt-5",
+      catalog: [{ id: "github-copilot", source: "custom", apiKeyOption: "opencode-oauth-dummy-key" }],
+      expect: /API key/,
+    },
+    // the openai gray area: allowed by policy, refused until OC.4 wires kind
+    {
+      model: "openai/gpt-5.5",
+      catalog: [{ id: "openai", source: "custom", apiKeyOption: "opencode-oauth-dummy-key" }],
+      expect: /ChatGPT login .* isn't wired up/,
+    },
+    // the built-in Zen gateway — terms unread, fail-closed
+    {
+      model: "opencode/big-pickle",
+      catalog: [{ id: "opencode", source: "custom", apiKeyOption: "public" }],
+      expect: /Zen/,
+    },
+  ];
+  for (const c of cases) {
+    const { session, fake, msgs, awaitTurnEnd } = makeSession({ model: c.model });
+    if (c.catalog) fake.catalog = c.catalog;
+    fake.cfgModel = "cfgModel" in c ? c.cfgModel : fake.cfgModel;
+    session.pushPrompt("hi");
+    await waitFor(() => msgs.some((m) => m.type === "error"), `refusal for ${c.expect}`);
+    await awaitTurnEnd();
+    assert.match(msgs.find((m) => m.type === "error")?.message ?? "", c.expect);
+    assert.equal(fake.sessionsCreated, 0, "no engine session before the policy gate");
+    assert.equal(fake.prompts.length, 0, "no prompt reaches a refused provider");
+    session.close();
+  }
+});
+
+test("an allowed stored-key provider runs; the refusal latch retries after a fix", async () => {
+  const { session, fake, msgs, feed, awaitTurnEnd } = makeSession({ model: "deepseek/deepseek-v4" });
+  fake.catalog = []; // not connected yet
+  session.pushPrompt("hi");
+  await waitFor(() => msgs.some((m) => m.type === "error"), "first refusal");
+  await awaitTurnEnd();
+  fake.catalog = [{ id: "deepseek", source: "api" }]; // user connected it
+  session.pushPrompt("hi again");
+  await waitFor(() => fake.prompts.length === 1, "prompt after fix");
+  feed(idle());
+  await awaitTurnEnd(2);
+  assert.deepEqual(fake.prompts[0]?.["model"], { providerID: "deepseek", modelID: "deepseek-v4" });
+  session.close();
 });
 
 test("resume: an existing engine session id is reattached, a dead one recreated", async () => {

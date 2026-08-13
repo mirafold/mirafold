@@ -2746,7 +2746,22 @@ gates come first.
   state), `PERMISSION_TIMEOUT_MS` deny-by-default. **Done when:** Tier-1
   proves render-call recognition + both permission outcomes + timeout; a
   live render paints end-to-end.
-- [ ] **Step OC.3 — Credential policy + registry wiring** — **Goal:** the
+- [x] **Step OC.3 — Credential policy + registry wiring** — completed
+  2026-08-13, including the "needs a real credential" residual — resolved
+  with auth.json FIXTURES in the jailed probe home (no real credential
+  needed): the engine's own catalog distinguishes every kind (`source`
+  api/env/config/custom + the `opencode-oauth-dummy-key` OAuth marker), it
+  leaks raw stored secrets (stripped at the transport seam, never past
+  it), and 1.18.18 ignores a stored anthropic OAuth wholesale. Landed:
+  `classifyOpenCodeProvider` matrix in provider-policy.ts (fail-closed:
+  unknown OAuth, Zen-pending-terms, unrecognized shapes all refuse with
+  human copy), session-start enforcement in opencode.ts (pin resolved
+  from OPENCODE_MODEL or the user's config `model`; refusals precede any
+  engine session), shallow hello detection in index.ts (binary +
+  auth.json existence — contents unread), `Backend.provider` from the
+  pin. ChatGPT gray: policy-allowed, session-refused until OC.4 flows
+  classified kind into Backend (relay-gate truth). 8 policy tests + 3
+  session tests; suite 752/752; typecheck green. — **Goal:** the
   policy matrix applied provider-aware, fail-closed. **Build:**
   `provider-policy.ts` gains the OpenCode provider classification
   (anthropic/google oauth → blocked; openai oauth → disclosed gray area;

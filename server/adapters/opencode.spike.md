@@ -308,6 +308,40 @@ i.e. Kyle): whether a *stored* credential's kind (oauth vs api) is
 readable from the running server for the OC.3 detection path — the jailed
 home had none to observe. Everything else in OC.0 is resolved.
 
+## OC.3 detection probe (2026-08-13) — the residual resolved by FIXTURE
+
+The "needs a real connected credential" residual didn't need one: the
+auth.json FORMAT is known (SDK `Auth` type), so a fixture credential in the
+jailed scratchpad home answers what the server exposes. Findings, all
+against 1.18.18 (`GET /config/providers`, the connected set):
+
+- **Classification needs no auth.json parsing by Mirafold, ever** — the
+  running engine's own catalog distinguishes everything: a stored API key
+  is `source: "api"`, an env key `"env"`, a user-config provider
+  `"config"`, and OAuth logins are `source: "custom"` with the literal
+  marker `options.apiKey === "opencode-oauth-dummy-key"` (Zen: `"public"`).
+- **The catalog leaks the RAW STORED SECRET** (`key: "fixture-key-123"`
+  came back verbatim) — the transport's `providerCatalog()` strips it at
+  the seam; nothing past that method can carry it.
+- **A stored anthropic OAuth credential is ignored wholesale** — the
+  provider never enters the connected set and `/provider/auth` offers no
+  Anthropic/Google OAuth flow. The blocked rows are belt-and-suspenders
+  for other engine versions, not a live path in 1.18.18.
+- `GET /config` exposes the user's own `model` default (absent when unset;
+  the engine's internal fallback pick is unobservable pre-turn) — so a
+  session needs a resolvable pin (OPENCODE_MODEL or config `model`) and
+  refuses with the exact fix named otherwise.
+
+Design landed (provider-policy.ts `classifyOpenCodeProvider` + opencode.ts
+`enforceProviderPolicy`): hello-time detection stays shallow (binary +
+auth.json EXISTENCE, the claude/codex precedent — contents unread), and
+the truthful provider-resolved verdict is enforced at session start from
+the catalog, refusing with human copy. The ChatGPT gray area is
+policy-ALLOWED but session-REFUSED until OC.4 flows the classified kind
+into `Backend` (the relay gate reads `Backend.kind`, and an optimistic
+"api-key" must never overstate a subscription's relay rights). Zen stays
+fail-closed until its terms are read and cited (OC.4/OC.5 gate).
+
 ## OC.2 live leg (2026-08-13) — full loop GREEN through the real adapter
 
 The real `OpenCodeSession` drove a real spawned engine (fake provider, $0):

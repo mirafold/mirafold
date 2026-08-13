@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import type { WireMsg } from "../protocol";
 import { RENDER_GUIDANCE } from "../render-tools";
 import { envInt } from "../env";
+import { classifyOpenCodeProvider } from "../provider-policy";
 import { agentBin, errText, PERMISSION_TIMEOUT_MS, type AgentSession } from "./types";
 import { AsyncQueue, CLOSE } from "./async-queue";
 import { ResumeIdState } from "./resume-id";
@@ -163,10 +164,12 @@ export class OpenCodeSession implements AgentSession {
   }
 
   /** Spawn/attach lazily on the first turn; a failure resets the latch so a
-   *  later prompt retries (the user may have installed the binary meanwhile). */
+   *  later prompt retries (the user may have installed the binary, connected
+   *  a provider, or pinned a model meanwhile). */
   private ensureStarted(): Promise<void> {
     this.started ??= (async () => {
       await this.transport.start((ev) => this.handleEvent(ev));
+      await this.enforceProviderPolicy();
       if (this.wantedResumeId && (await this.transport.sessionExists(this.wantedResumeId))) {
         this.sessionID = this.wantedResumeId;
       } else {
@@ -178,6 +181,45 @@ export class OpenCodeSession implements AgentSession {
       this.started = undefined;
       throw err;
     });
+  }
+
+  /** The R.4i gate, provider-resolved (PLAN OC.3): every turn of this session
+   *  runs on the pinned provider (we set `model` on each prompt), so the pin
+   *  is what the policy judges — classified from the running engine's own
+   *  catalog, never from the user's auth.json. Refusals throw; the message
+   *  travels the honest per-turn error path and names the fix. */
+  private async enforceProviderPolicy(): Promise<void> {
+    const pin = this.modelPin ?? parseModelPin(await this.transport.configModel());
+    if (!pin) {
+      throw new Error(
+        "no model is pinned for this OpenCode session — set OPENCODE_MODEL=<provider>/<model> " +
+          "(or `model` in your opencode config) so Mirafold knows which provider will run; " +
+          "the provider determines whether the session may run at all",
+      );
+    }
+    const entry = (await this.transport.providerCatalog()).find((p) => p.id === pin.providerID);
+    if (!entry) {
+      throw new Error(
+        `provider "${pin.providerID}" isn't connected in opencode — connect it with ` +
+          "`opencode auth login` (or declare it in your opencode config), then prompt again",
+      );
+    }
+    const verdict = classifyOpenCodeProvider(entry);
+    if (!verdict.allowed) throw new Error(verdict.reason ?? "provider refused by policy");
+    if (verdict.kind === "subscription") {
+      // The ChatGPT gray area needs the classified kind to flow into the
+      // session's Backend before it may run (the relay gate reads
+      // Backend.kind, and this session was resolved optimistically as
+      // api-key) — that wiring plus the required disclosure is PLAN OC.4.
+      // Until then the gray path refuses honestly rather than run under a
+      // kind that would overstate its relay rights.
+      throw new Error(
+        "a ChatGPT login through OpenCode isn't wired up in Mirafold yet — " +
+          "connect OpenAI (or another provider) with an API key in opencode to run this session",
+      );
+    }
+    this.modelPin = pin;
+    this.modelLabel ??= pin.modelID;
   }
 
   /** Serial queue: turns apply in prompt order, one at a time. */
@@ -270,9 +312,10 @@ export class OpenCodeSession implements AgentSession {
 
 /** A configured model pin. OpenCode addresses models as `provider/model`
  *  (the id itself may contain further slashes); a bare value can't name a
- *  provider, so it pins nothing and the engine's own default runs —
- *  inherit, never invent. */
-function parseModelPin(model?: string): { providerID: string; modelID: string } | undefined {
+ *  provider, so it pins nothing and the user's own config default is
+ *  resolved instead — inherit, never invent. Exported for the registry's
+ *  `Backend.provider` resolution. */
+export function parseModelPin(model?: string): { providerID: string; modelID: string } | undefined {
   if (!model) return undefined;
   const slash = model.indexOf("/");
   if (slash <= 0 || slash === model.length - 1) return undefined;

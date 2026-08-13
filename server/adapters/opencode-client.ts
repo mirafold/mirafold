@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import net from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 import { envInt } from "../env";
+import type { OpenCodeProviderEntry } from "../provider-policy";
 import { errText } from "./types";
 
 /** One event off `GET /event` — `properties` is the engine's payload,
@@ -23,6 +24,13 @@ export interface OpenCodeTransport {
    *  prompt; the turn itself streams back over events. */
   prompt(sessionID: string, body: Record<string, unknown>): Promise<void>;
   abort(sessionID: string): Promise<void>;
+  /** The engine's connected-provider catalog, STRIPPED to classification
+   *  fields — the raw endpoint exposes stored secrets (`key`), which must
+   *  never travel past this seam. */
+  providerCatalog(): Promise<OpenCodeProviderEntry[]>;
+  /** The user's own configured default model (`model` in their opencode
+   *  config), `provider/model` form; undefined when they set none. */
+  configModel(): Promise<string | undefined>;
   replyPermission(
     sessionID: string,
     permissionID: string,
@@ -223,6 +231,29 @@ export class OpenCodeServerProcess implements OpenCodeTransport {
     } catch {
       return false;
     }
+  }
+
+  async providerCatalog(): Promise<OpenCodeProviderEntry[]> {
+    const res = await this.request("/config/providers");
+    const data = (await res.json()) as { providers?: unknown };
+    const list = Array.isArray(data.providers) ? data.providers : [];
+    return list.map((raw) => {
+      const p = (raw ?? {}) as Record<string, unknown>;
+      const options = (p["options"] ?? {}) as Record<string, unknown>;
+      // Deliberate strip: `p.key` is the user's raw stored secret. Only the
+      // classification facts leave this method (provider-policy.ts shape).
+      return {
+        id: String(p["id"]),
+        source: String(p["source"]) as OpenCodeProviderEntry["source"],
+        ...(typeof options["apiKey"] === "string" ? { apiKeyOption: options["apiKey"] } : {}),
+      };
+    });
+  }
+
+  async configModel(): Promise<string | undefined> {
+    const res = await this.request("/config");
+    const config = (await res.json()) as { model?: unknown };
+    return typeof config.model === "string" && config.model ? config.model : undefined;
   }
 
   async prompt(sessionID: string, body: Record<string, unknown>): Promise<void> {
