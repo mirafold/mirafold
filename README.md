@@ -1,8 +1,8 @@
 # Mirafold
 
 **Mirafold is a browser interface for the terminal coding agent you already
-use — Claude Code, Codex, or Gemini CLI — rendered faithfully, with
-generative UI on top.** The agent runs on your own machine, with your own
+use — Claude Code, Codex, OpenCode, or Gemini CLI — rendered faithfully,
+with generative UI on top.** The agent runs on your own machine, with your own
 credentials, settings, memory, and permission rules, exactly as in the
 terminal — a Codex user gets **Codex** in the browser, never "Claude
 things". As it works, the agent paints live charts, tables, checklists, and
@@ -17,7 +17,7 @@ didn't mean switching to another window (a `!`-prefixed command runs in a
 real PTY, in the same page, with the password prompt in a masked input the
 agent never sees), or that you could check on a long run from your phone
 (Pro) — that's this. And if you've been searching for a web UI, GUI, or
-frontend for Claude Code, Codex, or Gemini CLI: this is that.
+frontend for Claude Code, Codex, OpenCode, or Gemini CLI: this is that.
 
 > **Mirafold is in public beta** — new, moving fast, and issues are wanted:
 > the [issue tracker](https://github.com/mirafold/mirafold/issues) is the
@@ -32,9 +32,9 @@ agent emits sandboxed arbitrary UI into a locked-down iframe. A fixed,
 trusted shell owns the prompt box, the socket, and all credentials, and the
 agent can never touch any of them.
 
-*Claude Code, Codex, and Gemini CLI are trademarks of their respective
-owners; Mirafold is not affiliated with or endorsed by Anthropic, OpenAI, or
-Google.*
+*Claude Code, Codex, OpenCode, and Gemini CLI are trademarks of their
+respective owners; Mirafold is not affiliated with or endorsed by Anthropic,
+OpenAI, the OpenCode project, or Google.*
 
 **Know what you're running.** Mirafold drives a real coding agent on your
 machine: with your permission it reads and writes files, runs shell
@@ -48,17 +48,27 @@ links in agent output like links from a stranger, and read
 the known trade-offs we've chosen to disclose rather than paper over.
 
 > **The faithful-skin-per-agent model is the identity, and it's shipped (PLAN
-> Phase P, complete).** Three terminal agents run behind one front end today —
-> **Claude Code** (Anthropic Agent SDK), **Codex** (OpenAI), and **Gemini CLI**
-> (Google) — each driving its **own** engine, normalizing its event stream to
-> `WireMsg` behind the `AgentSession` seam (§2.2), and carrying Mirafold's
+> Phase P, complete; OpenCode added in Phase OC).** Four terminal agents run
+> behind one front end today — **Claude Code** (Anthropic Agent SDK), **Codex**
+> (OpenAI), **OpenCode** (the open-source multi-provider harness), and **Gemini
+> CLI** (Google) — each driving its **own** engine, normalizing its event stream
+> to `WireMsg` behind the `AgentSession` seam (§2.2), and carrying Mirafold's
 > generative UI via **MCP**. A new agent is one adapter in `server/adapters/`,
 > not a rewrite: the wire protocol, output zone, security model, and generative
 > UI consume `WireMsg` only. No generic homegrown agent, no proxy, no privileged
 > agent — onboarding lets you pick the agent per session. Claude Code is the
 > reference adapter, so this document's deeper sections use it for concrete
-> examples; Codex and Gemini CLI are the same pattern (`server/adapters/codex.ts`,
+> examples; Codex, OpenCode, and Gemini CLI are the same pattern
+> (`server/adapters/codex.ts`, `server/adapters/opencode.ts`,
 > `server/adapters/gemini-cli.ts`).
+>
+> **Gemini CLI is deprecated.** Google retired the open-source Gemini CLI
+> upstream on 2026-06-18 (replaced by the closed-source Antigravity CLI). The
+> adapter still works while a Gemini API key does, and it's marked deprecated
+> in onboarding and with a dated in-session notice; removal is gated on
+> evidence of actual breakage, not a date (POST-RELEASE.md). Note that OpenCode
+> can drive Gemini-family models through its own provider config, so that path
+> outlives the standalone Gemini adapter.
 
 Think of it as a terminal successor, not a chat app: monospace command strips
 in, rich rendered output back. Its transcript contract is **provider-native
@@ -118,7 +128,8 @@ codebase. Companion documents:
 
 - **[PLAN.md](PLAN.md)** — the phased build plan. Every step has
   Goal / Build / Files / Done-when. Shipped so far: **Phases 0, 1, T, 2, 3, T2,
-  and P** (three faithful agent skins — Claude Code, Codex, Gemini CLI), all
+  and P** (the faithful agent skins — Claude Code, Codex, Gemini CLI; OpenCode
+  added later in Phase **OC**), all
   of Phase 4, **G/H/H2** (the 2026-07-15 maintainability restructure this
   document's layout reflects), **S** (the theme system; seven themes at launch),
   **N** (the onboarding backend picker + local-server discovery), **V** (the
@@ -149,8 +160,8 @@ codebase. Companion documents:
   ship the Phase 1 demo before Phase T, and keep every seam local-first.
 - **[docs/ADAPTERS.md](docs/ADAPTERS.md)** — the normative adapter
   specification: what an adapter must/should/may/must-never do, the shipped
-  capability matrix per provider, and the exact checklist for adding
-  provider #4. Read it before touching anything in `server/adapters/`.
+  capability matrix per provider, and the exact checklist for adding the next
+  provider. Read it before touching anything in `server/adapters/`.
 
 ---
 
@@ -162,7 +173,8 @@ codebase. Companion documents:
   browser is a `WireMsg`/`ClientMsg` defined there, and nothing else crosses.
 - `server/index.ts` and `web/src/main.tsx` are the two entry points.
 - `server/adapters/` normalizes each terminal agent (Claude Code, Codex,
-  Gemini CLI, mock) into that one protocol — one adapter each, none privileged.
+  OpenCode, Gemini CLI, mock) into that one protocol — one adapter each, none
+  privileged.
 - `web/src/components/Shell.tsx` is the TRUSTED shell: prompt, permissions, status —
   agent output can never paint or intercept it.
 - `web/src/components/RenderZone.tsx` paints: a pure interpreter of the wire messages.
@@ -173,8 +185,9 @@ The server holds **warm agent sessions** in a registry — each adapter keeps
 its agent warm its own way: Claude Code is one long-lived `query()` from
 `@anthropic-ai/claude-agent-sdk` fed prompts through an async generator (so
 the conversation and prompt cache never reset between turns), Codex a
-persistent SDK `Thread`, Gemini CLI one process per turn resumed via
-`--session-id`/`--resume`;
+persistent SDK `Thread`, OpenCode one `opencode serve` HTTP server per session
+driven over its own HTTP + server-sent-events surface, Gemini CLI one process
+per turn resumed via `--session-id`/`--resume`;
 a WebSocket connection is a *viewport* that attaches to one. The session's
 SDK event stream is **normalized into a tiny wire protocol** (`WireMsg`),
 buffered for replay, and fanned out to every attached viewport. The browser is split into two zones
@@ -359,12 +372,27 @@ else. `createSession()` resolves which one from config + per-session onboarding:
   reference adapter; Claude-specific fidelity is scoped here).
 - **`CodexSession`** — OpenAI's Codex via `@openai/codex-sdk` (spawns the
   `codex` CLI, streams its JSONL events → `WireMsg`).
+- **`OpenCodeSession`** — the open-source OpenCode harness, driven RAW over its
+  own `opencode serve` HTTP + server-sent-events surface (no SDK: the live
+  probe caught the published types drifting from the real server, so the
+  adapter types at the seam it verified — `server/adapters/opencode-client.ts`).
+  Structurally the odd one out: it spawns a per-session HTTP server rather than
+  an SDK/stdio child. OpenCode is a *multi-provider* harness (75+ providers), so
+  it's the only adapter whose credential kind is a fact about the underlying
+  provider, not the agent — classified at session start from the running
+  engine's own catalog and re-checked when a `/model` switch changes it (§ the
+  credential policy). The render MCP is injected additively through the
+  `OPENCODE_CONFIG_CONTENT` environment variable — no file the user owns is
+  read, written, or created.
 - **`GeminiCliSession`** — Google's Gemini CLI via its headless `stream-json`
   interface (one process per turn, warm across turns via `--session-id`/`--resume`).
-  Note: to inject the render MCP server, this adapter writes a
-  `.gemini/settings.json` into the session's working directory (merged
-  non-destructively over anything already there) — so pointing a Gemini session
-  at a project drops that file in it.
+  **Deprecated** (Gemini CLI retired upstream 2026-06-18): still works while a
+  Gemini API key does, flagged in onboarding and a dated session notice, removal
+  gated on evidence (POST-RELEASE.md). Note: to inject the render MCP server,
+  this adapter writes a `.gemini/settings.json` into the session's working
+  directory (merged non-destructively over anything already there, and only
+  after workspace trust is granted) — so pointing a Gemini session at a project
+  drops that file in it.
 - **`MockSession`** — a scripted stand-in used automatically when the chosen
   agent has no credentials. Emits every wire message type with
   realistic pacing, drawing replies from a shuffled deck of five demo
@@ -1100,7 +1128,7 @@ chunks bounded under the socket payload cap), the daemon stages them in a
 per-session directory under the OS temp dir — never the working tree — and
 the reply's absolute path lands in the prompt, quoted the way a terminal
 quotes it. Zero adapter involvement: the agent reads the staged path with
-its own tools, so all three agents get the feature at once, and the same
+its own tools, so every agent gets the feature at once, and the same
 path works from a phone through the relay. Uploads follow the prompt's
 relay gate; caps (10 MB/file, 2 concurrent, stall reaping) and name
 sanitization live in `server/sessions/upload-handlers.ts`.
@@ -1526,9 +1554,10 @@ yarn test:live    # Tier 4 — the REAL agent binary + a real LOCAL model, opt-i
 The suite is **`node:test` + `tsx`, zero test-framework dependencies** — the
 `test*` scripts are just aliases for `node --import tsx --test <glob>`. Tests
 live next to their source; the suffix picks the tier: `*.test.ts` (Tier 1,
-pure logic — security predicates, caps, all three adapters' event mapping on
+pure logic — security predicates, caps, every adapter's event mapping on
 synthetic events (Claude Code through an injected engine seam, Codex through
-a stubbed thread, Gemini through a scripted binary), the `SocketClient`
+a stubbed thread, OpenCode through a fake HTTP+SSE transport, Gemini through
+a scripted binary), the `SocketClient`
 reconnect state machine on a stubbed WebSocket, and the R.3 E2E crypto —
 tamper/replay/reorder/wrong-key all rejected), `*.itest.ts` (Tier 2,
 integration — the auth gate, DoS caps, the mock-turn wire grammar, the
@@ -1569,17 +1598,28 @@ driven through a real local model after exercising the shipped, explicit
 accepts only a model whose Ollama metadata proves an explicit 32K context and
 sorts the eligible names, so recency ordering or silent 4K prompt truncation
 cannot produce a false green. Each test skips with a reason when its tool isn't
-installed, so a bare machine stays green.
+installed, so a bare machine stays green. Tier 4 also carries OpenCode's live
+test (`opencode-live.ltest.ts`): the REAL `opencode serve` binary spawned by
+the production transport, but the model is a scripted OpenAI-compatible
+endpoint on loopback — deterministic turns, zero network, zero spend — with
+`HOME`/`XDG` jailed to throwaway dirs so a real engine run never reads or
+writes the developer's own opencode state. It proves the whole loop end to
+end: render through the real MCP stub, a headless permission round-trip, usage,
+and resume across an engine restart. Skips cleanly when `opencode` isn't
+installed (`OPENCODE_BIN` or PATH).
 
 Three rules the suite is built on: **no test may reach a metered model** —
 Tier 2/3 spawn the daemon with every provider credential forced empty (a set
-env var beats `.env`), so everything runs on the `MockSession`, and Tier 4
-strips credentials and points `CODEX_HOME` at a throwaway with no `auth.json`,
-so its one real model is Ollama's — local, free, and unmetered; **Tier 4 never
-touches your own `~/.codex`**, because the binary writes state there
-(`models_cache.json`, one cache shared across providers, is what made the
-model-binding bug intermittent); and **Tier 3 rebuilds first** because the
-daemon serves `./dist` and a stale build fails silently.
+env var beats `.env`, and the harness scrubs `OPENCODE_BIN` too so a
+dev-installed opencode can't flip a session live), so everything runs on the
+`MockSession`; Tier 4 strips credentials and points `CODEX_HOME` at a throwaway
+with no `auth.json` (its one real Codex model is Ollama's — local, free,
+unmetered) and jails OpenCode's HOME/XDG with a scripted loopback provider;
+**Tier 4 never touches your own `~/.codex` or `~/.config/opencode`**, because
+the binary writes state there (`models_cache.json`, one cache shared across
+providers, is what made the model-binding bug intermittent); and **Tier 3
+rebuilds first** because the daemon serves `./dist` and a stale build fails
+silently.
 
 The project's broader verification convention (from PLAN.md) still applies:
 every front-end step is verified end-to-end in headless Chrome via
@@ -1713,7 +1753,14 @@ Read PLAN.md for the real thing; the shape in one breath:
   R.4b's subscription-as-live), an OpenAI subscription runs locally but not over
   the relay, and no subscription is driven over the paid relay at all — while
   API keys and local/BYO endpoints run everywhere. Verified across all three
-  tiers; docs + BUSINESS.md reconciled to match.
+  tiers; docs + BUSINESS.md reconciled to match. **The credential kinds are
+  `api-key`, `subscription`, `local`, `gateway`, and `none`** — `gateway` (added
+  with OpenCode) is the free OpenCode Zen path: usable locally as a disclosed
+  gray area, never over the relay. Because OpenCode is multi-provider, its kind
+  is judged per underlying provider from the running engine's own catalog
+  (`classifyOpenCodeProvider`), and the relay gate re-checks it at DRIVE time —
+  not just attach — because a `/model` switch can change a session's kind
+  mid-flight (2026-08-13 audit).
 - **Also shipped (2026-07-12):** **R.2's deploy** — the relay runs hosted
   on Fly.io (`relay.mirafold.sh`), and a real daemon has driven a full turn
   through it. The cellular and wifi→LTE passes plus the default relay URL
