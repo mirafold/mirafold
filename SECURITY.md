@@ -335,3 +335,23 @@ renders as plain text, not a clickable dead anchor — pinned by
 sessions become a mainstream path, is an interstitial that reveals the
 link's TRUE target before the hand-off (PLAN.md Step 4.12) — masked link
 text is the deception this class of attack actually uses.
+
+**A subscription/gateway credential is refused over the relay at DRIVE time,
+not just attach time (2026-08-13 audit).** OpenCode is the first agent whose
+credential *kind can change during a session* — a `/model` switch to a ChatGPT
+login (subscription) or the free OpenCode Zen gateway re-classifies a session
+that attached as an API-key one. The absolute bound ("no subscription of any
+kind is driven over the paid relay") is therefore enforced at every model-
+driving path a remote viewport can reach — the in-session `prompt`, the
+component `action{kind:prompt}`, cross-session `prompt_session`, an ALLOW
+`answer_permission`, and uploads — each re-checked against the session's
+*current* kind, not the kind it had at attach. When the kind flips to a relay-
+ineligible one, any already-attached relay viewport is also actively evicted
+(`SessionRegistry.evictRemoteViewports`), matching the posture the attach gate
+already takes for a fresh remote attach: a remote viewport is never even
+present on a subscription/gateway session. Local (same-machine) use of those
+credentials stays allowed — that is the disclosed-uncertainty gray area for
+ChatGPT and the disclosed free-gateway path for Zen; only the paid relay fails
+closed. The window this closes was a real bypass: before the fix, only the
+attach gate ran, so a phone that legitimately attached to an API-key session
+kept driving after a `/model` flip.

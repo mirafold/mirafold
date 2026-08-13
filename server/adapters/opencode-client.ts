@@ -106,6 +106,11 @@ export class OpenCodeServerProcess implements OpenCodeTransport {
   private auth = "";
   private closed = false;
   private stderrTail = "";
+  // The per-session basic-auth secret we mint — redacted from any stderr
+  // that rides into an error WireMsg (audit 2026-08-13: opencode's own
+  // stderr is engine-controlled; scrub() catches Basic/Bearer/sk- shapes
+  // but not this bare hex, so redact the exact value we know).
+  private authSecret = "";
   // One spawn per instance, even under concurrent/retried start() calls: a
   // re-entered start orphaned the previous `opencode serve` (only the latest
   // child was killed on close) and doubled the event pump (bughunt
@@ -128,6 +133,13 @@ export class OpenCodeServerProcess implements OpenCodeTransport {
       env?: Record<string, string | undefined>;
     },
   ) {}
+
+  /** The stderr tail with our own minted secret removed, before it ever
+   *  reaches an error WireMsg (which is broadcast AND checkpointed). */
+  private safeStderr(): string {
+    const tail = this.stderrTail.trim().slice(-300);
+    return this.authSecret ? tail.split(this.authSecret).join("[redacted]") : tail;
+  }
 
   start(onEvent: (ev: OpenCodeEvent) => void, onDied?: (detail: string) => void): Promise<void> {
     this.starting ??= this.spawnAndConnect(onEvent, onDied).catch((err) => {
@@ -152,6 +164,7 @@ export class OpenCodeServerProcess implements OpenCodeTransport {
     // The port is loopback-bound but otherwise open to any local process;
     // basic auth with a per-session secret closes that (spike §surface).
     const password = randomBytes(24).toString("hex");
+    this.authSecret = password;
     this.base = `http://127.0.0.1:${port}`;
     this.auth = "Basic " + Buffer.from(`opencode:${password}`).toString("base64");
     const child = spawn(
@@ -180,7 +193,7 @@ export class OpenCodeServerProcess implements OpenCodeTransport {
       if (child.exitCode !== null)
         throw new Error(
           `opencode serve exited (code ${child.exitCode}) before becoming healthy` +
-            (this.stderrTail ? `: ${this.stderrTail.trim().slice(-300)}` : ""),
+            (this.stderrTail ? `: ${this.safeStderr()}` : ""),
         );
       try {
         // Per-attempt abort is load-bearing, not hygiene: a connection made
@@ -209,7 +222,7 @@ export class OpenCodeServerProcess implements OpenCodeTransport {
       this.child = undefined;
       onDied?.(
         `opencode serve exited unexpectedly (${signal ?? `code ${code}`})` +
-          (this.stderrTail ? `: ${this.stderrTail.trim().slice(-300)}` : ""),
+          (this.stderrTail ? `: ${this.safeStderr()}` : ""),
       );
     });
     void this.pumpEvents(onEvent, generation);

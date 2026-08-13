@@ -27,6 +27,16 @@ import {
 // the serial prompt queue forever.
 const INTERRUPT_GRACE_MS = envInt("MIRAFOLD_OPENCODE_INTERRUPT_GRACE_MS", 5_000);
 
+// Concurrent unanswered permission asks before new ones auto-deny at the
+// engine — bloat insurance against a flooding engine (audit 2026-08-13). A
+// human answers one at a time; a real turn never approaches this.
+const MAX_PENDING_PERMISSIONS = 64;
+
+// Engine commands we advertise, capped to the checkpoint decoder's own
+// prompt-option limit (session-store MAX_PROMPT_OPTIONS) so a user config
+// with a huge /command list can't advertise more than survives a restart.
+const MAX_ENGINE_COMMANDS = 500;
+
 /**
  * The OpenCode adapter: the opencode engine driven through its own
  * `opencode serve` HTTP + SSE surface (raw, no SDK — see opencode-client.ts),
@@ -237,7 +247,10 @@ export class OpenCodeSession implements AgentSession {
       );
       // Non-fatal fidelity: without the catalog, `/name` inputs simply reach
       // the model as prompt text and the options list shows only our rows.
-      this.engineCommands = await this.transport.commandCatalog().catch(() => []);
+      this.engineCommands = (await this.transport.commandCatalog().catch(() => [])).slice(
+        0,
+        MAX_ENGINE_COMMANDS,
+      );
     })();
     return this.engineUp.catch((err) => {
       // Only a failed ENGINE start may retry the spawn; the transport keeps
@@ -518,6 +531,14 @@ export class OpenCodeSession implements AgentSession {
 
   private onPermissionAsked(ask: { id: string; permission: string; detail: string }) {
     if (this.closed || this.pendingPermissions.has(ask.id)) return;
+    // Cap concurrent unanswered asks: a hostile/looping engine spamming
+    // distinct permission ids can't grow this map + its timers without bound
+    // (audit 2026-08-13 hardening). Beyond the cap the ask is auto-denied at
+    // the engine — the same deny-by-default the timeout applies, just now.
+    if (this.pendingPermissions.size >= MAX_PENDING_PERMISSIONS) {
+      if (this.sessionID) void this.transport.replyPermission(this.sessionID, ask.id, "reject").catch(() => {});
+      return;
+    }
     // Deny-by-default: an unanswered ask must not pin the turn open forever.
     const timer = setTimeout(() => {
       const pending = this.pendingPermissions.get(ask.id);

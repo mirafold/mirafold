@@ -164,6 +164,10 @@ export function openConnection(
       ...(fallback ? { fallback: true } : {}),
     });
     registry.attach(e, viewport, resumed ? afterSeq : undefined);
+    // A relay viewport is governed by the R.4i gate even after a mid-session
+    // credential-kind flip: mark it so the registry can evict it if the kind
+    // becomes relay-ineligible (audit 2026-08-13).
+    if (remote) registry.markRemote(e, viewport);
     log.info(
       `viewport ${resumed ? `resumed @${afterSeq}` : "attached"} → session ${e.id} (${e.viewports.size} viewport(s))`,
     );
@@ -324,7 +328,14 @@ export function openConnection(
       case "prompt":
         // Echo + push live in dispatchPrompt, behind the burst gate.
         if (entry && typeof msg.text === "string" && msg.text.trim()) {
-          if (!registry.dispatchPrompt(entry, msg.text)) sendError(PROMPT_GATE_REFUSAL);
+          // R.4i, re-checked at DRIVE time: a session's credential kind can
+          // change mid-session (an OpenCode `/model` switch to a ChatGPT or
+          // Zen provider), so the attach-time gate is not enough — a remote
+          // viewport must never drive a now-subscription/gateway session over
+          // the paid relay (audit 2026-08-13, exploitable).
+          const refusal = remote ? relayGateRefusal(entry) : undefined;
+          if (refusal) sendError(refusal);
+          else if (!registry.dispatchPrompt(entry, msg.text)) sendError(PROMPT_GATE_REFUSAL);
         }
         break;
       case "bang":
@@ -432,9 +443,12 @@ export function openConnection(
         const src = typeof msg.sourceId === "string" ? msg.sourceId : "?";
         if (msg.action.kind === "prompt" && typeof msg.action.text === "string") {
           // The path the burst gate exists for: the bridge reaches here with
-          // no user gesture (its 400ms client-side gate is advisory).
+          // no user gesture (its 400ms client-side gate is advisory). Same
+          // drive-time relay re-check as the plain prompt path above.
           createLogger("action").info(`prompt from render ${src}`);
-          if (!registry.dispatchPrompt(entry, msg.action.text)) sendError(PROMPT_GATE_REFUSAL);
+          const refusal = remote ? relayGateRefusal(entry) : undefined;
+          if (refusal) sendError(refusal);
+          else if (!registry.dispatchPrompt(entry, msg.action.text)) sendError(PROMPT_GATE_REFUSAL);
         } else if (msg.action.kind === "tool" && typeof msg.action.name === "string") {
           const id = `action-${randomUUID().slice(0, 8)}`;
           registry.broadcast(entry, {

@@ -8,6 +8,11 @@ import type { OpenCodeEvent } from "./opencode-client";
 // `mirafold_render_card`), so this prefix is the recognition test.
 const MCP_PREFIX = `${MIRAFOLD_MCP}_`;
 
+// Per-turn ceiling on distinct engine parts/messages we track — bloat
+// insurance against a hostile or looping engine (audit 2026-08-13). A real
+// turn has a handful; both maps clear at the next startTurn.
+const MAX_PARTS_PER_TURN = 2_000;
+
 type PartKind = "text" | "reasoning" | "tool" | "other";
 
 type PartTrack = {
@@ -151,7 +156,8 @@ export class OpenCodeEventMapper {
   private onMessage(p: Record<string, unknown>) {
     const info = p["info"] as Record<string, unknown> | undefined;
     if (!info || !this.options.isOurs(info["sessionID"] ?? p["sessionID"])) return;
-    if (typeof info["role"] === "string") this.roles.set(String(info["id"]), info["role"]);
+    if (typeof info["role"] === "string" && this.roles.size < MAX_PARTS_PER_TURN)
+      this.roles.set(String(info["id"]), info["role"]);
     if (info["role"] !== "assistant") return;
     const modelID = typeof info["modelID"] === "string" ? info["modelID"] : undefined;
     if (modelID) {
@@ -192,9 +198,16 @@ export class OpenCodeEventMapper {
     this.turnUsage.clear();
   }
 
-  private track(partID: string, kind: PartKind): PartTrack {
+  // Per-turn cap on distinct tracked parts: a hostile/looping engine
+  // streaming unbounded distinct part ids can't grow this map (or `roles`)
+  // without limit within one turn (audit 2026-08-13 hardening). Beyond the
+  // cap a new part is dropped — its text isn't relayed; a real turn never
+  // approaches this, so only a flood degrades, and to silence, never to a
+  // corrupt shared counter.
+  private track(partID: string, kind: PartKind): PartTrack | undefined {
     let track = this.parts.get(partID);
     if (!track) {
+      if (this.parts.size >= MAX_PARTS_PER_TURN) return undefined;
       track = { kind, emitted: 0 };
       this.parts.set(partID, track);
     }
@@ -211,14 +224,17 @@ export class OpenCodeEventMapper {
       case "step-start":
         this.status("thinking");
         break;
-      case "text":
+      case "text": {
         if (fromUser) break; // the prompt's own echo — never replayed as output
-        this.emitTextSuffix(this.track(partID, "text"), String(part["text"] ?? ""));
+        const track = this.track(partID, "text");
+        if (track) this.emitTextSuffix(track, String(part["text"] ?? ""));
         break;
+      }
       case "reasoning": {
         if (fromUser) break;
         this.status("thinking");
         const track = this.track(partID, "reasoning");
+        if (!track) break;
         // A delta that beat this snapshot registered the part as "text";
         // the snapshot is authoritative — correct the lane for the rest of
         // the stream (bughunt round 2, latent).
@@ -240,7 +256,7 @@ export class OpenCodeEventMapper {
     // text (reasoning parts snapshot before streaming in the OC.0 capture).
     const track = this.track(String(p["partID"]), "text");
     const delta = String(p["delta"] ?? "");
-    if (!delta || track.kind === "tool" || track.kind === "other") return;
+    if (!track || !delta || track.kind === "tool" || track.kind === "other") return;
     track.emitted += delta.length;
     this.emitStreamText(track, delta);
   }
@@ -261,6 +277,7 @@ export class OpenCodeEventMapper {
 
   private onToolPart(partID: string, part: Record<string, unknown>) {
     const track = this.track(partID, "tool");
+    if (!track) return;
     track.kind = "tool";
     const tool = String(part["tool"] ?? "");
     const state = (part["state"] ?? {}) as Record<string, unknown>;

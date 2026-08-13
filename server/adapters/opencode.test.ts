@@ -1012,3 +1012,60 @@ test("BUGFIX2: a reasoning part whose delta beat its snapshot recovers the lane"
   );
   session.close();
 });
+
+test("AUDIT: the minted server password is redacted from a crash's stderr before the wire", async () => {
+  const { session, fake, msgs, prompt, awaitTurnEnd } = makeSession();
+  // Reach into the REAL transport path: a crash detail that embeds the secret.
+  // The fake here can't know the real password, so prove the redactor on the
+  // production class directly.
+  const { OpenCodeServerProcess } = await import("./opencode-client");
+  const proc = new OpenCodeServerProcess({ bin: "/nonexistent", cwd: tmp, configContent: {} });
+  const secret = "deadbeefdeadbeefdeadbeefdeadbeef";
+  (proc as unknown as { authSecret: string }).authSecret = secret;
+  (proc as unknown as { stderrTail: string }).stderrTail =
+    `panic: OPENCODE_SERVER_PASSWORD=${secret} leaked into a log line`;
+  const safe = (proc as unknown as { safeStderr(): string }).safeStderr();
+  assert.ok(!safe.includes(secret), "the minted password never rides an error string");
+  assert.ok(safe.includes("[redacted]"));
+  // keep the fake-driven session healthy so the suite's teardown is clean
+  await prompt("hi");
+  fake.onEvent(idle());
+  await awaitTurnEnd();
+  session.close();
+});
+
+test("AUDIT: a permission-ask flood auto-denies past the cap — bounded map and timers", async () => {
+  const { session, fake, msgs, prompt } = makeSession({ permissionTimeoutMs: 60_000 });
+  await prompt("hi");
+  for (let i = 0; i < 200; i++) fake.onEvent(asked(`per-flood-${i}`));
+  await waitFor(() => fake.replies.length > 0, "the cap starts auto-denying");
+  const pending = (session as unknown as { pendingPermissions: Map<string, unknown> })
+    .pendingPermissions;
+  assert.ok(pending.size <= 64, `pending asks bounded at the cap, saw ${pending.size}`);
+  assert.ok(fake.replies.every((r) => r.response === "reject"), "overflow asks reject at the engine");
+  session.close();
+});
+
+test("AUDIT: a part-id flood is bounded within one turn", async () => {
+  const { session, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("hi");
+  for (let i = 0; i < 5_000; i++) {
+    feed(snap({ type: "text", text: "x", id: `flood-${i}` }));
+  }
+  const mapper = (session as unknown as { mapper: { parts: Map<string, unknown> } }).mapper;
+  assert.ok(mapper.parts.size <= 2_000, `tracked parts bounded, saw ${mapper.parts.size}`);
+  feed(idle());
+  await awaitTurnEnd();
+  session.close();
+});
+
+test("AUDIT: an oversized engine command catalog is capped to what a checkpoint can hold", async () => {
+  const { session, fake, prompt, feed, awaitTurnEnd } = makeSession();
+  fake.engineCommands = Array.from({ length: 900 }, (_, i) => ({ name: `cmd${i}` }));
+  await prompt("hi"); // ensureStarted loads (and now caps) the catalog
+  feed(idle());
+  await awaitTurnEnd();
+  const cmds = (session as unknown as { engineCommands: unknown[] }).engineCommands;
+  assert.ok(cmds.length <= 500, `advertised commands capped, saw ${cmds.length}`);
+  session.close();
+});
