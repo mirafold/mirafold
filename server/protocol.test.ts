@@ -145,6 +145,14 @@ const WIRE: WireByType = {
     version: "0.0.1",
   },
   folder_picked: { type: "folder_picked", id: "fp1", path: "/home/u/other-project" },
+  // Phase FD: staged-upload replies (correlated, per-viewport).
+  file_upload_done: {
+    type: "file_upload_done",
+    id: "u1",
+    path: "/tmp/mirafold-uploads/s1/notes.txt",
+    name: "notes.txt",
+  },
+  file_upload_error: { type: "file_upload_error", id: "u1", message: "file too large" },
   refused: {
     type: "refused",
     reason: "subscription_over_relay",
@@ -264,6 +272,10 @@ const CLIENT: ClientByType = {
   fs_listdir: { type: "fs_listdir", id: "f4", path: "src" },
   fs_read: { type: "fs_read", id: "f2", path: "src/app.ts" },
   fs_diff: { type: "fs_diff", id: "f3", path: "src/app.ts" },
+  // Phase FD: a dropped file's bytes, chunked (base64), declared size first.
+  file_upload_begin: { type: "file_upload_begin", id: "u1", name: "notes.txt", size: 11 },
+  file_upload_chunk: { type: "file_upload_chunk", id: "u1", data: "aGVsbG8gd29ybGQ=" },
+  file_upload_abort: { type: "file_upload_abort", id: "u1" },
   client_error: { type: "client_error", message: "TypeError: x is undefined", clientVersion: "0.0.1" },
 };
 

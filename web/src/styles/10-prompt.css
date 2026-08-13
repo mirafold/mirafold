@@ -457,3 +457,65 @@
   border-left: 1px solid var(--border-faint);
 }
 
+
+/* ---- File drag-and-drop (Phase FD) --------------------------------------
+   Shell-owned drop affordances: a full-window overlay while a file drag is
+   over the page, and a compact upload strip above the prompt box. */
+
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--overlay);
+  /* The overlay must never steal the drop from the window handlers. */
+  pointer-events: none;
+}
+
+.drop-overlay-card {
+  padding: 14px 22px;
+  background: var(--surface);
+  border: 1px dashed var(--accent);
+  border-radius: 10px;
+  color: var(--fg-strong);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 14px;
+}
+
+.drop-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 2px;
+}
+
+.drop-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border: 1px solid var(--border-mid);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--fg-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.drop-chip.is-error {
+  border-color: var(--warn-border, var(--border-mid));
+  color: var(--warn-fg);
+}
+
+.drop-chip-dismiss {
+  background: transparent;
+  border: 0;
+  padding: 0 2px;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}

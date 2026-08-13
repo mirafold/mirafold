@@ -1,6 +1,6 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { type Browser, type Page } from "playwright-core";
@@ -1337,6 +1337,53 @@ test("NF: hidden viewport toasts a permission then the turn end; visibility clos
       `);
     },
   );
+});
+
+test("FD: a dropped file uploads, stages on disk, and its quoted path lands in the prompt", async () => {
+  const token = "e2e-filedrop-4a19";
+  await withFreshMockSession(token, async (page2) => {
+    // The drag listeners attach only once the session is attached
+    // (meta.sessionId) — a dispatch racing the mount fires into the void,
+    // so wait for the session UI first (diagnosed 2026-08-12 by probe).
+    await page2.waitForSelector(".prompt-box textarea");
+    // Synthesize a real file drag: DataTransfer + File are native in
+    // Chromium. A JS string, not a function — the keepNames __name trap
+    // (see the NF test above) breaks serialized closures.
+    await page2.evaluate(`
+      window.__DT__ = (() => {
+        const dt = new DataTransfer();
+        dt.items.add(new File(["drag and drop payload snowman"], "dropped notes.txt", { type: "text/plain" }));
+        return dt;
+      })();
+      document.body.dispatchEvent(new DragEvent("dragenter", { bubbles: true, cancelable: true, dataTransfer: window.__DT__ }));
+    `);
+    // Mid-drag, the shell-owned overlay invites the drop.
+    await page2.waitForSelector(".drop-overlay");
+    await page2.evaluate(`
+      document.body.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: window.__DT__ }));
+    `);
+    // The staged path lands in the prompt, quoted (the name carries a space).
+    await page2.waitForFunction(
+      () => {
+        const el = document.querySelector(".prompt-box textarea") as HTMLTextAreaElement | null;
+        return el?.value.includes("mirafold-uploads") ?? false;
+      },
+      undefined,
+      { timeout: 15_000 },
+    );
+    assert.equal(await page2.locator(".drop-overlay").count(), 0, "overlay clears on drop");
+    const value = await page2.locator(".prompt-box textarea").inputValue();
+    const m = value.match(/'([^']*mirafold-uploads[^']*)'/);
+    assert.ok(m, `expected a quoted staged path in the prompt, got: ${value}`);
+    const staged = m![1];
+    assert.match(staged, /dropped notes\.txt$/);
+    // The path is honest: the exact dropped bytes sit at it on disk.
+    assert.equal(readFileSync(staged, "utf8"), "drag and drop payload snowman");
+    // The attach announced politely (the screen-reader path).
+    const status = await page2.locator('[role="status"]').innerText();
+    assert.match(status, /Attached dropped notes\.txt/);
+    rmSync(path.dirname(staged), { recursive: true, force: true });
+  });
 });
 
 test("Esc on an open card is exclusive — it dismisses without interrupting the turn", async () => {

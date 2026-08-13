@@ -370,6 +370,17 @@ type WireMsgBody =
       // so older clients still perform their existing safe refresh.
       reason?: "status";
     }
+  // File drag-and-drop input (Phase FD): the staged-upload replies. A drop
+  // ships the file's BYTES (browsers never expose a dropped file's real
+  // path) in bounded chunks; `done` answers with the absolute path the
+  // daemon staged them at — OUTSIDE the working tree — which the shell
+  // inserts into the prompt for the agent to read with its own tools,
+  // exactly like a terminal drop's inserted path. Correlated per-viewport
+  // request/reply (echoed client-minted id) — never broadcast, never
+  // replay-buffered. `name` rides `done` so the strip can label the result
+  // without holding client state hostage to it.
+  | { type: "file_upload_done"; id: string; path: string; name: string }
+  | { type: "file_upload_error"; id: string; message: string }
   // Reply to a client ping — connection liveness only, never
   // buffered or sequenced (4.4).
   | { type: "pong" }
@@ -617,6 +628,15 @@ export type ClientMsg =
   // user's daemon can be version-skewed, so the whole-tree pair is the
   // compatibility floor, never removed here.
   | { type: "fs_listdir"; id: string; path: string }
+  // File drag-and-drop input (Phase FD): a dropped file's bytes, chunked.
+  // `begin` declares a sanitized display name and the exact total size (the
+  // cap check runs before any byte arrives); `chunk.data` is base64, each
+  // decoded chunk bounded well under MAX_WS_PAYLOAD; `abort` discards a
+  // partial upload (a navigating page, a cancelled drop). Same id grammar
+  // as fs correlation ids; per-connection state only.
+  | { type: "file_upload_begin"; id: string; name: string; size: number }
+  | { type: "file_upload_chunk"; id: string; data: string }
+  | { type: "file_upload_abort"; id: string }
   // The browser half's uncaught errors (window "error"/"unhandledrejection"),
   // forwarded so the daemon's flight-recorder log hears about a front-end
   // crash — otherwise a "it went blank" bug report arrives with an empty log

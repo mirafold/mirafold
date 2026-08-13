@@ -6,6 +6,7 @@ import { runActionTool } from "./actions";
 import { createBangHandlers } from "./bang-handlers";
 import { createFsHandlers } from "./fs-handlers";
 import { createFolderPickerHandler } from "./folder-picker-handler";
+import { createUploadHandlers } from "./upload-handlers";
 import {
   ADAPTER_AGENTS,
   availableAgents,
@@ -111,6 +112,13 @@ export function openConnection(
     viewport,
     remote,
     isClosed: () => closed,
+  });
+  // File drag-and-drop staging (Phase FD) — per-connection chunked uploads,
+  // the fs-handlers pattern (upload-handlers.ts).
+  const uploads = createUploadHandlers({
+    viewport,
+    getEntry: () => entry,
+    remote,
   });
 
   // Identity first, then the replayed history, then the live stream. 4.4:
@@ -480,6 +488,17 @@ export function openConnection(
       case "fs_changes":
         fs.changes(msg);
         break;
+      case "file_upload_begin":
+        // File drag-and-drop staging (Phase FD) — chunked, capped, gated;
+        // handled in upload-handlers.ts (one delegation per case, like fs_*).
+        uploads.begin(msg);
+        break;
+      case "file_upload_chunk":
+        uploads.chunk(msg);
+        break;
+      case "file_upload_abort":
+        uploads.abort(msg);
+        break;
       case "client_error":
         // The browser half's uncaught errors, landing in the flight-recorder
         // log so a front-end crash leaves a trace a bug report can attach.
@@ -499,6 +518,7 @@ export function openConnection(
   const close = () => {
     closed = true;
     folderPicker.close();
+    uploads.dispose();
     if (entry) {
       registry.detach(entry, viewport);
       log.info(`viewport detached ← session ${entry.id}`);

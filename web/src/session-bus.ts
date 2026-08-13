@@ -46,6 +46,11 @@ export interface SessionBus {
   requestFsChanges(): string;
   requestFsRead(path: string): string;
   requestFsDiff(path: string): string;
+  /** Phase FD: stream a dropped file's bytes to the daemon's staging dir.
+   *  Mints and returns the correlation id; the done/error reply echoes it. */
+  uploadBegin(name: string, size: number): string;
+  uploadChunk(id: string, data: string): void;
+  uploadAbort(id: string): void;
 }
 
 export function createSessionBus(): SessionBus {
@@ -174,6 +179,18 @@ export function createSessionBus(): SessionBus {
       const id = `fsd-${Math.random().toString(36).slice(2, 10)}`;
       socket.send({ type: "fs_diff", id, path });
       return id;
+    },
+    // Phase FD — the sendBang mint shape; per-viewport correlation only.
+    uploadBegin(name: string, size: number): string {
+      const id = `up-${Math.random().toString(36).slice(2, 10)}`;
+      socket.send({ type: "file_upload_begin", id, name, size });
+      return id;
+    },
+    uploadChunk(id: string, data: string) {
+      socket.send({ type: "file_upload_chunk", id, data });
+    },
+    uploadAbort(id: string) {
+      socket.send({ type: "file_upload_abort", id });
     },
   };
 }
