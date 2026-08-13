@@ -66,18 +66,26 @@ fidelity** — show the work state that the selected terminal agent exposes,
 neither raw adapter churn the terminal hides nor less useful information.
 In-flight work and failures stay visible; when a turn finishes, contiguous
 runs of successful tool activity fold to expandable lines whose full normalized
-details are still available. A fold never crosses a failure or other visible
-transcript row, so chronology stays exact. Rich generative UI is added around
-that transcript, never in exchange for it.
+details are still available. An engine that narrates between commands (Codex
+thinks before nearly every one) has that interior narration folded along in
+true order rather than shattering the run into singletons; the fold's count
+speaks of actions only. A fold never crosses a failure, prose, or any other
+visible transcript row, so chronology stays exact. Rich generative UI is added
+around that transcript, never in exchange for it.
 
 The trusted shell also owns a live **Workspace changes** review surface. It
 groups every visible working-tree change by Git repository and opens the real
 HEAD-versus-working-tree diff without attributing shared-disk edits to the
-agent. On desktop it is a wide split beside the still-visible conversation; on
-phone it is a full-screen, one-file-at-a-time review with persistent previous
-and next controls. Stable HEAD/current line numbers and hunk navigation keep
-the code context exact: desktop supports pointer and keyboard range selection,
-while phone supports line and whole-hunk taps. **Explain** and **Request
+agent. On desktop it is a wide split beside the still-visible conversation —
+drag-resizable from its default width up to everything except a phone-sized
+conversation column, the choice persisted per browser; on phone it is a
+full-screen, one-file-at-a-time review with persistent previous and next
+controls. A diff opens positioned on its first hunk, so the hunk counter
+always describes what the viewport shows, and a live disk refresh updates the
+open diff in place without moving the reader. Stable HEAD/current line numbers
+and hunk navigation keep the code context exact: desktop supports pointer and
+keyboard range selection plus a **Select hunk** toggle (click again to
+unselect), while phone supports line and whole-hunk taps. **Explain** and **Request
 change** append the selected path, range, and diff to the visible editable
 prompt without sending, so feedback still travels through the ordinary trusted
 prompt path. Review progress stays local to one browser viewport and binds each
@@ -703,9 +711,12 @@ web/               the browser app (React 19 + Vite)
                        ChangesPanel.tsx composes the surface,
                        use-changes-controller.ts owns requests/live state,
                        ChangesChrome.tsx owns its responsive panel chrome,
-                       ReviewDiff.tsx owns line/hunk selection and drafts, and
-                       ReviewRows.tsx owns bounded shared syntax rendering
-                       (CR.2–CR.4)
+                       ReviewDiff.tsx owns line/hunk selection and drafts,
+                       ReviewRows.tsx owns bounded shared syntax rendering,
+                       use-hunk-navigation.ts owns hunk position/scrolling
+                       (first-hunk landing, deferred post-commit jumps), and
+                       panel-resize.tsx owns the desktop drag-to-resize
+                       separator (CR.2–CR.11)
   src/registry/      Card, List, Table, LinkGroup, Chart, TodoList, KeyValue,
                      Progress, Timeline, FileTree, Question, Diff, Stat, Code,
                      StatusList, Console, Image, Diagram, Md, CopyButton +
@@ -728,6 +739,11 @@ web/               the browser app (React 19 + Vite)
   src/review-progress.ts
                      pure viewport-local reviewed-revision, watcher
                      invalidation, pruning, count, and next-unreviewed model
+  src/tool-visibility.ts
+                     pure settled-activity fold model: which contiguous
+                     successful calls — with the narration between them
+                     absorbed in order — compact into one `worked · N
+                     actions` record (UX.10)
   src/prompt-draft.ts
                      preserves composed prompt text while appending a visible,
                      unsent Changes feedback draft
@@ -1117,9 +1133,14 @@ subscription handles each `ZoneMsg`:
   when the result lands. In-flight rows remain visible, and errors remain
   expanded top-level. At `turn_end`, two or more contiguous successful calls
   from that turn fold into a terminal-sized, expandable `worked · N actions`
-  record. Failures, in-flight calls, batch changes, and non-tool transcript
-  rows break a run, so compaction cannot reorder evidence; opening a fold
-  preserves every normalized input and result. `ToolBlock.tsx`
+  record. Failures, in-flight calls, batch changes, and other visible
+  transcript rows break a run — with one deliberate exception (UX.10):
+  thinking rows BETWEEN two calls are absorbed into the fold in true
+  transcript order, so a narrating engine still compacts; leading and
+  trailing narration keeps its own visible row, the label counts actions
+  only, and expansion replays calls and narration exactly as they happened
+  (`web/src/tool-visibility.ts`). Compaction cannot reorder evidence;
+  opening a fold preserves every normalized input and result. `ToolBlock.tsx`
   renders those details — Edit/Write as a colored diff / code (T2.2), with
   any `truncatedBytes` as an explicit elision marker (T2.3). Calls tagged
   with `parentId` stay inside the turn's activity rather than becoming extra
