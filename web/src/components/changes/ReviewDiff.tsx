@@ -64,6 +64,8 @@ export function ReviewDiff({
     before: state.before,
     after: state.after,
     hunks,
+    lineCount: lines.length,
+    focusIndex,
     rowRefs,
     setFocusIndex,
   });

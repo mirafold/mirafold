@@ -11,6 +11,8 @@ export function useHunkNavigation({
   before,
   after,
   hunks,
+  lineCount,
+  focusIndex,
   rowRefs,
   setFocusIndex,
 }: {
@@ -18,6 +20,8 @@ export function useHunkNavigation({
   before: string;
   after: string;
   hunks: readonly ReviewHunk[];
+  lineCount: number;
+  focusIndex: number;
   rowRefs: MutableRefObject<Array<HTMLDivElement | null>>;
   setFocusIndex: (index: number) => void;
 }) {
@@ -42,10 +46,13 @@ export function useHunkNavigation({
       if (hunks[0]) rowRefs.current[hunks[0].start]?.scrollIntoView({ block: "center" });
       return;
     }
-    // Same file, fresh content: keep the reader's place; only clamp when the
-    // refresh shrank the hunk count below where they stood.
+    // Same file, fresh content: keep the reader's place; only clamp what the
+    // refresh shrank out from under them — the hunk counter, and the roving
+    // focus (a focusIndex past the new line count leaves the listbox with no
+    // tabIndex=0 row, stranding keyboard/AT users until a click — bughunt).
     setCurrentHunk((current) => Math.min(current, Math.max(0, hunks.length - 1)));
-  }, [path, before, after, hunks, rowRefs, setFocusIndex]);
+    if (focusIndex >= lineCount) setFocusIndex(Math.max(0, lineCount - 1));
+  }, [path, before, after, hunks, lineCount, focusIndex, rowRefs, setFocusIndex]);
 
   // Hunk-navigation scrolling is deferred past this click's commit: arriving
   // at a terminal hunk disables the very button being clicked, Chromium blurs

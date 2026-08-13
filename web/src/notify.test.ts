@@ -6,6 +6,7 @@ import {
   folderTitle,
   type NotificationHandle,
   type NotifyAction,
+  type NotifyEntry,
   type NotifyFlags,
   type NotifyState,
   type SessionSnapshot,
@@ -22,7 +23,8 @@ const snap = (over: Partial<SessionSnapshot> = {}): SessionSnapshot => ({
   ...over,
 });
 
-const prev = (entries: [string, NotifyState][]) => new Map(entries);
+const prev = (entries: [string, NotifyState | NotifyEntry][]) =>
+  new Map(entries.map(([id, v]) => [id, typeof v === "string" ? { state: v } : v] as const));
 
 test("a permission appearing in a hidden tab toasts once, shell-composed", () => {
   const { actions, states } = decideNotifications(
@@ -36,7 +38,7 @@ test("a permission appearing in a hidden tab toasts once, shell-composed", () =>
   assert.equal(a.kind === "show" && a.event, "permission");
   assert.equal(a.kind === "show" && a.title, "⚠ permission — mirafold");
   assert.equal(a.kind === "show" && a.body, "claude wants Bash: git push origin main");
-  assert.equal(states.get("s1"), "permission");
+  assert.equal(states.get("s1")?.state, "permission");
 });
 
 test("a session first seen already blocked on permission toasts — a background tab discovering a stalled session is the point", () => {
@@ -100,7 +102,7 @@ test("disabled or ungranted emit nothing but keep tracking state", () => {
       flags,
     );
     assert.equal(actions.length, 0);
-    assert.equal(states.get("s1"), "permission");
+    assert.equal(states.get("s1")?.state, "permission");
   }
 });
 
@@ -130,11 +132,37 @@ test("sessions transition independently", () => {
 
 test("an unchanged state emits nothing", () => {
   const { actions } = decideNotifications(
-    prev([["s1", "permission"]]),
+    prev([["s1", { state: "permission", askKey: "\0" }]]),
     [snap({ state: "permission" })],
     HIDDEN,
   );
   assert.equal(actions.length, 0);
+});
+
+test("permission→permission with a DIFFERENT ask refreshes the toast", () => {
+  // Ask A answered elsewhere; the agent immediately raises ask B while the
+  // tab stays hidden. The toast must show B, not keep A's text (bughunt
+  // 2026-08-13). Same ask twice stays silent.
+  const first = decideNotifications(
+    prev([["s1", "busy"]]),
+    [snap({ state: "permission", tool: "Bash", detail: "rm -rf build" })],
+    HIDDEN,
+  );
+  assert.equal(first.actions.length, 1);
+  const second = decideNotifications(
+    first.states,
+    [snap({ state: "permission", tool: "Write", detail: "notes.md" })],
+    HIDDEN,
+  );
+  assert.equal(second.actions.length, 1);
+  const b = second.actions[0];
+  assert.equal(b.kind === "show" && b.body, "claude wants Write: notes.md");
+  const third = decideNotifications(
+    second.states,
+    [snap({ state: "permission", tool: "Write", detail: "notes.md" })],
+    HIDDEN,
+  );
+  assert.equal(third.actions.length, 0, "the SAME ask never re-toasts");
 });
 
 test("a runaway permission detail is capped for the OS surface", () => {

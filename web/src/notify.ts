@@ -86,12 +86,31 @@ export function turnEndToast(s: SessionSnapshot): ShowAction {
  * discovering a stalled session is the feature working), while first sight
  * of "busy" or "idle" stays silent — there's no evidence a turn just ended.
  */
+/** What the reducer remembers per session: the state, and for a pending
+ *  permission WHICH ask it was — a permission→permission transition to a
+ *  different ask must refresh the toast, or a hidden tab keeps showing the
+ *  previous ask's tool/detail (bughunt 2026-08-13). */
+export type NotifyEntry = { state: NotifyState; askKey?: string };
+
+const askKeyOf = (s: SessionSnapshot): string => `${s.tool ?? ""}\0${s.detail ?? ""}`;
+
 export function decideNotifications(
-  prev: ReadonlyMap<string, NotifyState>,
+  prev: ReadonlyMap<string, NotifyEntry>,
   next: SessionSnapshot[],
   flags: NotifyFlags,
-): { actions: NotifyAction[]; states: Map<string, NotifyState> } {
-  const states = new Map(next.map((s) => [s.id, s.state] as const));
+): { actions: NotifyAction[]; states: Map<string, NotifyEntry> } {
+  const states = new Map(
+    next.map(
+      (s) =>
+        [
+          s.id,
+          {
+            state: s.state,
+            ...(s.state === "permission" ? { askKey: askKeyOf(s) } : {}),
+          },
+        ] as const,
+    ),
+  );
   const actions: NotifyAction[] = [];
   if (!flags.enabled || !flags.granted) return { actions, states };
 
@@ -100,7 +119,8 @@ export function decideNotifications(
 
   for (const s of next) {
     const was = prev.get(s.id);
-    if (was === s.state) continue;
+    if (was?.state === s.state && (s.state !== "permission" || was.askKey === askKeyOf(s)))
+      continue;
     if (s.state === "permission") {
       if (!flags.visible) actions.push(permissionToast(s));
     } else if (was === undefined) {
@@ -150,7 +170,7 @@ export type Notifier = {
 };
 
 export function createNotifier(deps: NotifierDeps): Notifier {
-  let states = new Map<string, NotifyState>();
+  let states = new Map<string, NotifyEntry>();
   let last: SessionSnapshot[] = [];
   const open = new Map<string, NotificationHandle>();
 
@@ -184,7 +204,15 @@ export function createNotifier(deps: NotifierDeps): Notifier {
     },
     reset(next = []) {
       last = next;
-      states = new Map(next.map((s) => [s.id, s.state] as const));
+      states = new Map(
+        next.map(
+          (s) =>
+            [
+              s.id,
+              { state: s.state, ...(s.state === "permission" ? { askKey: askKeyOf(s) } : {}) },
+            ] as const,
+        ),
+      );
       for (const id of [...open.keys()]) close(id);
     },
     visibilityChanged() {
