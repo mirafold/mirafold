@@ -298,6 +298,52 @@ test("gitChanges: a staged rename whose destination was deleted nets to the sour
   assert.deepEqual(result.entries, [{ path: "orig.txt", status: "D" }]);
 });
 
+test("gitChanges: a skip-worktree'd secret is excluded, not a permanent 'incomplete'", async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "gitchanges-envskip-"));
+  after(() => rmSync(root, { recursive: true, force: true }));
+  initRepo(root);
+  writeFileSync(path.join(root, ".env"), "SECRET=1\n");
+  writeFileSync(path.join(root, "code.ts"), "clean\n");
+  commitAll(root);
+  execFileSync("git", ["update-index", "--skip-worktree", ".env"], { cwd: root });
+
+  // Doubly excluded — our secret rule AND the user's own git flag. This
+  // setup used to mark every fs_changes reply truncated for the session's
+  // whole life on an otherwise clean repo (bughunt 2026-08-13).
+  const result = await gitChanges(root);
+  assert.ok("entries" in result);
+  if (!("entries" in result)) return;
+  assert.deepEqual(result.entries, []);
+  assert.equal(result.truncated, false);
+});
+
+test("gitChanges: a mid-merge conflict is never net-dropped, even when bytes equal HEAD", async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "gitchanges-conflict-"));
+  after(() => rmSync(root, { recursive: true, force: true }));
+  initRepo(root);
+  writeFileSync(path.join(root, "shared.txt"), "base\n");
+  commitAll(root);
+  execFileSync("git", ["checkout", "-q", "-b", "side"], { cwd: root });
+  writeFileSync(path.join(root, "shared.txt"), "side\n");
+  commitAll(root);
+  execFileSync("git", ["checkout", "-q", "-"], { cwd: root });
+  writeFileSync(path.join(root, "shared.txt"), "main\n");
+  commitAll(root);
+  try {
+    execFileSync("git", ["merge", "side"], { cwd: root, stdio: "ignore" });
+  } catch {
+    // the conflict is the fixture
+  }
+  // Restore the working file to EXACTLY HEAD's bytes — the shape the net
+  // comparison used to drop, hiding an unresolved conflict.
+  writeFileSync(path.join(root, "shared.txt"), "main\n");
+
+  const result = await gitChanges(root);
+  assert.ok("entries" in result);
+  if (!("entries" in result)) return;
+  assert.deepEqual(result.entries, [{ path: "shared.txt", status: "M" }]);
+});
+
 test("gitChanges: reports the net HEAD-versus-working-tree state across index-only edge states", async () => {
   const root = mkdtempSync(path.join(os.tmpdir(), "gitchanges-net-"));
   after(() => rmSync(root, { recursive: true, force: true }));

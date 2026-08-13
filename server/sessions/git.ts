@@ -342,6 +342,8 @@ export async function gitChanges(
   const parsed = parseStatusZ(String(status.stdout));
   const statusByRel = new Map<string, string>();
   const exceptional = new Set<string>();
+  // Paths git itself reports as mid-merge — their porcelain status is final.
+  const unmerged = new Set<string>();
   for (const [repoPath, statusChar] of parsed.files) {
     const rel = prefix === "" ? repoPath : repoPath.startsWith(prefix) ? repoPath.slice(prefix.length) : "";
     if (!rel) continue;
@@ -358,6 +360,12 @@ export async function gitChanges(
     ) {
       exceptional.add(rel);
     }
+    // Unmerged paths (UU/AA/DD/…): porcelain's conflict answer STANDS. A
+    // conflicted file whose bytes happen to equal HEAD is still mid-merge —
+    // net-dropping it hid an unresolved conflict (bughunt 2026-08-13).
+    if (records.some((xy) => xy.includes("U") || xy === "AA" || xy === "DD")) {
+      unmerged.add(rel);
+    }
   }
   // Skip-worktree / assume-unchanged tags, for the absence rule below.
   const configuredAbsence = new Set<string>();
@@ -373,14 +381,27 @@ export async function gitChanges(
   let netStateIncomplete = false;
   let comparisons = 0;
   for (const rel of [...exceptional].sort()) {
-    // Sparse checkouts skip-worktree every excluded file and legitimately
-    // leave it off disk — that absence is the configured state, not a
-    // deletion (bughunt: a clean sparse monorepo reported every excluded
-    // file "D", one git-show subprocess each). The cheap existence read
-    // answers it without ever spawning git.
-    if (configuredAbsence.has(rel) && readWorkingTreeEntry(root, rel).kind === "absent") {
-      statusByRel.delete(rel);
-      continue;
+    if (unmerged.has(rel)) continue; // the conflict status stands as-is
+    if (configuredAbsence.has(rel)) {
+      // A SECRET path the user ALSO configured git to ignore (the classic
+      // `--skip-worktree .env`): doubly excluded, by our secret rule and by
+      // their own git flag. Reporting "incomplete" forever for that setup
+      // buried the signal (bughunt 2026-08-13); the configured exclusion
+      // narrows the promise instead — this path is simply not part of the
+      // reviewable set.
+      if (isSecretFile(rel) || isDotenvPath(rel)) {
+        statusByRel.delete(rel);
+        continue;
+      }
+      // Sparse checkouts skip-worktree every excluded file and legitimately
+      // leave it off disk — that absence is the configured state, not a
+      // deletion (bughunt: a clean sparse monorepo reported every excluded
+      // file "D", one git-show subprocess each). The cheap existence read
+      // answers it without ever spawning git.
+      if (readWorkingTreeEntry(root, rel).kind === "absent") {
+        statusByRel.delete(rel);
+        continue;
+      }
     }
     if (++comparisons > MAX_NET_COMPARISONS) {
       netStateIncomplete = true;
