@@ -2852,10 +2852,13 @@ gates come first.
   the bridge, usage, kind publish (config→local), and **resume across a
   full engine restart**. All tiers green same-sitting: Tier-1 761/761,
   Tier-2 152/152, Tier-3 97/97 (the sweep owed since OC.4b — paid),
-  Tier-4 1/1 live + verified clean skip. **Residual, needs Kyle:** the
-  real-install confirmation — `npm i -g opencode-ai`, then one browser
-  click-through on Zen (his machine, his eyes); the walkthrough is
-  queued. README/ADAPTERS.md refresh rides the wrapup.
+  Tier-4 1/1 live + verified clean skip. **Residual CONFIRMED by Kyle
+  2026-08-13**: real global install (`npm i -g opencode-ai` — his npm's
+  install-scripts blocking required the manual postinstall, the exact
+  failure the transport's stderr surfacing named; the session's
+  start-latch retry then worked as designed, no restarts) and a live
+  browser session on Zen: "heyyyy it works". Phase OC complete.
+  README/ADAPTERS.md refresh rides the wrapup.
 
 ## Phase PN — Panes (file views beside the transcript)
 
