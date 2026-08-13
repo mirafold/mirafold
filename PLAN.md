@@ -2676,7 +2676,19 @@ the permission reply round-trip, and the provider-keyed credential-policy
 design all live there — the steps below execute that doc, and its two live
 gates come first.
 
-- [ ] **Step OC.0 — Live gates + shape capture** — **Goal:** de-risk the
+- [x] **Step OC.0 — Live gates + shape capture** — completed 2026-08-13,
+  same day, $0 and credential-free: scratchpad-local `opencode-ai@1.18.18`
+  with HOME jailed; Gate 1 PASSED (`OPENCODE_CONFIG_CONTENT` alone
+  connected the render MCP; tools advertise as `mirafold_render_*`), Gate 2
+  PASSED via a fake OpenAI-compatible provider (ask event is
+  **`permission.asked`** — published SDK types drift — reply `once` ran the
+  tool through to `session.idle`). Streaming is a true delta channel
+  (`message.part.delta`), usage + `modelID` ride each assistant message.
+  Bonuses: 1.18.18 offers no Anthropic/Google OAuth at all, and a fresh
+  install ships the free "OpenCode Zen" provider (needs its own OC.3
+  policy row). One residual folded into OC.3: confirm a stored
+  credential's oauth-vs-api kind is server-readable (needs a real
+  connected credential). Full appendix in the spike doc. — **Goal:** de-risk the
   two spike gates and lock real shapes before adapter code exists.
   **Build:** run `opencode serve` (scratchpad-local install is fine; no
   global mutation) and confirm: (1) `OPENCODE_CONFIG_CONTENT` loads the

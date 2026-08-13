@@ -233,3 +233,69 @@ which spawns its own.
 Next actions, gated on Kyle: install the binary + connect a $0 provider,
 run the two live gates, lock the event/tool shapes, then phase the adapter
 into PLAN.md. The rest of the adapter can be written offline from the above.
+
+## Live probe results (2026-08-13) — both gates GREEN, $0, no credentials
+
+Ran `opencode-ai@1.18.18` scratchpad-local (npm install + manual
+postinstall; no global mutation), `HOME`/XDG jailed to the scratchpad so no
+user-owned file was read or written. Gate 2 needed no real provider: a
+**fake OpenAI-compatible endpoint** registered via config
+(`provider.fake = {npm: "@ai-sdk/openai-compatible", options.baseURL →
+localhost}`) scripted a bash tool call, which also logs the request body —
+revealing the full tool list the engine advertises. Raw captures in
+`scratchpad/oc-probe/` (events.ndjson, requests.ndjson, messages.json).
+
+**Gate 1 — MCP injection: PASSED.** `OPENCODE_CONFIG_CONTENT` alone loaded
+the render server: `GET /mcp` → `{"mirafold":{"status":"connected"}}`, and
+the model was offered all 18 tools named
+**`mirafold_render_card` … `mirafold_emit_artifact`** — underscore-joined
+`<server>_<tool>`, so recognition = `startsWith(MIRAFOLD_MCP + "_")`.
+The #20072 worry doesn't apply to additive entries.
+
+**Gate 2 — headless permissions: PASSED.** With `permission: {bash: "ask"}`
+the engine paused the tool (`status: running`) and emitted
+**`permission.asked`** — NOT `permission.updated` as the published SDK
+types said (real drift; trust live capture and pin the SDK version).
+Payload: `{id, sessionID, permission: "bash", patterns: ["echo
+mirafold-probe"], metadata: {command}, always: ["echo *"], tool:
+{messageID, callID}}`. Reply `POST /session/:id/permissions/:permID
+{response: "once"}` → `true` → bash executed and the turn completed
+(`permission.replied` observed). The `always` field is the engine
+suggesting a persistent rule — reinforces the never-send-`always` call.
+
+**Shapes locked for OC.1:**
+
+- **Streaming**: text arrives via **`message.part.delta`**
+  `{sessionID, messageID, partID, field: "text", delta}` — a true delta
+  channel (no accrual-diff needed); `message.part.updated` carries part
+  snapshots (tool state transitions land here). Turn end: `session.idle`.
+- **Usage**: per assistant message (`message.updated` / `GET
+  /session/:id/message`): `tokens: {total, input, output, reasoning,
+  cache: {read, write}}`, `cost`, and **`modelID` on every assistant
+  message** (fleet-row label solved).
+- **Event names beyond the fetched types** (1.18.18 live):
+  `permission.asked`, `permission.replied`, `message.part.delta`,
+  `session.diff`, `plugin.added`, `catalog.updated`, `server.heartbeat`.
+- **Catalogs**: `GET /agent` (primaries incl. internal ones — filter
+  `build`/`plan`-style user-facing from `compaction`/`summary`/`title`),
+  `GET /command` (`init`, `review`, `customize-opencode` built-in; feeds
+  `emitPromptOptions`), `GET /config/providers`, `GET /provider/auth`.
+
+**Two findings that reshape OC.3 slightly:**
+
+1. **1.18.18 offers NO Anthropic or Google OAuth** (`GET /provider/auth`
+   lists oauth for openai, github-copilot, gitlab, poe, digitalocean,
+   snowflake-cortex, xai only — presumably dropped after Anthropic's
+   April 2026 harness block). Our blocked rows stay (fail-closed, and
+   older/newer versions may differ) but the common path is unblocked.
+2. **A fresh install ships a working free provider**: "OpenCode Zen"
+   (`id: opencode`, `options.apiKey: "public"`, free models e.g.
+   `laguna-s-2.1-free`). So `agentHasCredentials("opencode")` can be true
+   out of the box — and the Zen provider needs its own policy row (their
+   own gateway, their terms; classify before OC.3 ships, fail-closed
+   until read).
+
+**Still open for OC.0's checkbox** (needs a real connected credential,
+i.e. Kyle): whether a *stored* credential's kind (oauth vs api) is
+readable from the running server for the OC.3 detection path — the jailed
+home had none to observe. Everything else in OC.0 is resolved.
