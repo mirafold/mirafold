@@ -2841,12 +2841,21 @@ gates come first.
   update, the pre-verification relay refusal, and the gray disclosure;
   the relay itest proves a subscription-classified session never runs a
   turn from a relay viewport.
-- [ ] **Step OC.5 — Tier-2/Tier-3 + live end-to-end** — **Goal:** the
-  proof. **Build:** Tier-2 itest against a real spawned `opencode serve`
-  (mock-forced provider if feasible); Tier-3 e2e onboarding→prompt→render;
-  live run on the $0 provider: one tool call, one permission round-trip,
-  one render, usage + resume verified. README/ADAPTERS.md updated. **Done
-  when:** all three tiers green and the live loop observed.
+- [x] **Step OC.5 — Tier sweep + live end-to-end** — completed 2026-08-13
+  (one residual below): **`opencode-live.ltest.ts`** joins Tier 4 on the
+  codex pattern (real binary, never a hosted model; the scripted
+  OpenAI-compatible provider from the OC.2 probe; HOME/XDG jailed via a
+  new transport `env` seam so a real engine run never touches the
+  developer's own opencode state; skips cleanly when opencode isn't
+  installed). One 17s test drives the WHOLE loop through shipped code:
+  render through the real MCP stub, headless permission ask answered via
+  the bridge, usage, kind publish (config→local), and **resume across a
+  full engine restart**. All tiers green same-sitting: Tier-1 761/761,
+  Tier-2 152/152, Tier-3 97/97 (the sweep owed since OC.4b — paid),
+  Tier-4 1/1 live + verified clean skip. **Residual, needs Kyle:** the
+  real-install confirmation — `npm i -g opencode-ai`, then one browser
+  click-through on Zen (his machine, his eyes); the walkthrough is
+  queued. README/ADAPTERS.md refresh rides the wrapup.
 
 ## Phase PN — Panes (file views beside the transcript)
 

@@ -112,6 +112,10 @@ export class OpenCodeServerProcess implements OpenCodeTransport {
        *  written, or created). A user's own OPENCODE_CONFIG_CONTENT env is
        *  superseded for sessions we spawn; their config FILES still load. */
       configContent: Record<string, unknown>;
+      /** Test seam: the spawned engine's base environment (default
+       *  process.env). The live itest jails HOME/XDG here so a REAL engine
+       *  run never reads or writes the developer's own opencode state. */
+      env?: Record<string, string | undefined>;
     },
   ) {}
 
@@ -128,7 +132,7 @@ export class OpenCodeServerProcess implements OpenCodeTransport {
       {
         cwd: this.options.cwd,
         env: {
-          ...process.env,
+          ...(this.options.env ?? process.env),
           OPENCODE_CONFIG_CONTENT: JSON.stringify(this.options.configContent),
           OPENCODE_SERVER_PASSWORD: password,
         },
