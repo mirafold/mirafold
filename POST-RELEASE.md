@@ -144,9 +144,11 @@ has a home in this plan, the entry points there instead of duplicating it.
   rides Phase 4's multi-user seam (Locked decisions: "architected so
   multi-user is additive later").
 
-- [ ] **Input augment** — drag & drop and paste (files, images) into the
-  prompt box; eventually voice input. All shell-owned — the trusted-shell
-  boundary is untouched.
+- [ ] **Input augment** — the drag & drop half SHIPPED 2026-08-12 as the
+  plan's "File drag-and-drop input" phase (chunked upload to a per-session
+  staging dir, staged path into the prompt). Remaining here: clipboard
+  PASTE of files/images into the prompt box, and eventually voice input.
+  All shell-owned — the trusted-shell boundary is untouched.
 
 - [ ] **Skills as buttons** — surface the agent's skills / slash commands as
   clickable shell affordances instead of typed invocations.
