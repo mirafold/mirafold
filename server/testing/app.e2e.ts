@@ -140,11 +140,15 @@ async function withFreshMockSession(
   token: string,
   run: (isolatedPage: Page) => Promise<void>,
   agent = "Claude Code",
+  // Runs before the first navigation — the slot for addInitScript stubs that
+  // must exist before the app boots (the NF Notification recorder).
+  prepare?: (isolatedPage: Page) => Promise<void>,
 ): Promise<void> {
   const daemon = await startDaemon({ MIRAFOLD_TOKEN: token });
   let isolatedPage: Page | undefined;
   try {
     isolatedPage = await browser.newPage();
+    if (prepare) await prepare(isolatedPage);
     await isolatedPage.goto(`http://127.0.0.1:${daemon.port}/?token=${token}`);
     await isolatedPage.locator(".onb-agent", { hasText: agent }).click();
     await isolatedPage.waitForURL(/\/s\/[\w-]+/);
@@ -1226,6 +1230,113 @@ test("settings card: gear opens it, picking applies live and writes the slot (S.
   await page.locator(".settings-backdrop").click({ position: { x: 8, y: 8 } });
   assert.equal(await page.locator(".settings-card").count(), 0);
   assert.equal(await dataTheme(), "dark"); // ends where the suite expects
+});
+
+test("NF: hidden viewport toasts a permission then the turn end; visibility closes both", async () => {
+  const token = "e2e-notify-7b31";
+  type ToastRec = { title: string; body?: string; tag?: string; closed: boolean };
+  const toasts = (p: Page) =>
+    p.evaluate(() => (window as unknown as { __TOASTS__: ToastRec[] }).__TOASTS__);
+  // A JS string, not a function — the accessor property would otherwise
+  // compile with the module-scope __name wrapper (same keepNames trap as the
+  // stub below) and die serialized.
+  const setVisibility = (p: Page, state: "hidden" | "visible") =>
+    p.evaluate(
+      `Object.defineProperty(document, "visibilityState", {
+         configurable: true, get: function () { return "${state}"; },
+       });
+       document.dispatchEvent(new Event("visibilitychange"));`,
+    );
+  await withFreshMockSession(
+    token,
+    async (page2) => {
+      // The toggle lives in the settings card and defaults off; flipping it
+      // writes the preference (the stub's grant is already "granted", so no
+      // permission dance here — that branch is Tier-1 logic).
+      await page2.locator(".sb-settings").click();
+      await page2.waitForSelector(".settings-card");
+      const row = page2.locator(".notify-row");
+      assert.equal(await row.getAttribute("aria-checked"), "false");
+      await row.click();
+      assert.equal(await row.getAttribute("aria-checked"), "true");
+      assert.equal(
+        await page2.evaluate(() => localStorage.getItem("mirafold-notify")),
+        "1",
+      );
+      await assertAxeClean(page2, "settings notifications section");
+      await page2.keyboard.press("Escape");
+      await page2.waitForSelector(".settings-card", { state: "detached" });
+
+      // Background the tab — the notifier reads visibilityState live, and
+      // only a hidden tab may toast.
+      await setVisibility(page2, "hidden");
+
+      // A permission lands while hidden → exactly one toast, session-tagged,
+      // shell-composed title with the engine's ask as inert text.
+      await page2.locator("textarea").click();
+      await page2.keyboard.type("run something dangerous");
+      await page2.keyboard.press("Enter");
+      await page2.waitForSelector(".perm-bar");
+      await page2.waitForFunction(
+        () => (window as unknown as { __TOASTS__?: unknown[] }).__TOASTS__?.length === 1,
+        undefined,
+        { timeout: 15_000 },
+      );
+      const [first] = await toasts(page2);
+      assert.match(first.title, /^⚠ permission — /);
+      assert.match(first.body ?? "", /Claude Code wants Bash: rm -rf/);
+      assert.ok(first.tag?.startsWith("mirafold-"), `tag was ${first.tag}`);
+
+      // Answering retires the permission toast (the state moved on); the
+      // finishing turn then toasts once more under the same tag.
+      await page2.locator(".perm-allow").click();
+      await page2.waitForFunction(
+        () => {
+          const t = (window as unknown as { __TOASTS__: { closed: boolean }[] }).__TOASTS__;
+          return t.length === 2 && t[0].closed;
+        },
+        undefined,
+        { timeout: 15_000 },
+      );
+      const [, second] = await toasts(page2);
+      assert.match(second.title, /^✓ turn finished — /);
+      assert.equal(second.tag, first.tag);
+
+      // Coming back closes everything this tab created — the page itself is
+      // now the notification.
+      await setVisibility(page2, "visible");
+      await page2.waitForFunction(() =>
+        (window as unknown as { __TOASTS__: { closed: boolean }[] }).__TOASTS__.every(
+          (t) => t.closed,
+        ),
+      );
+    },
+    "Claude Code",
+    async (p) => {
+      // Notification stubbed before boot: headless Chrome auto-denies the
+      // real API and an OS toast is invisible to the DOM anyway — the
+      // recorder IS the observable surface. A plain-JS STRING, not a
+      // function: tsx compiles this file with esbuild keepNames, which
+      // injects a module-scope `__name` helper into compiled classes —
+      // Playwright then serializes the function without the helper and the
+      // init script dies on a ReferenceError before installing the stub
+      // (diagnosed 2026-08-12 via pageerror probe).
+      await p.addInitScript(`
+        const spawned = [];
+        window.__TOASTS__ = spawned;
+        window.Notification = class {
+          constructor(title, opts) {
+            this.rec = { title, body: opts && opts.body, tag: opts && opts.tag, closed: false };
+            this.onclick = null;
+            spawned.push(this.rec);
+          }
+          close() { this.rec.closed = true; }
+          static get permission() { return "granted"; }
+          static requestPermission() { return Promise.resolve("granted"); }
+        };
+      `);
+    },
+  );
 });
 
 test("Esc on an open card is exclusive — it dismisses without interrupting the turn", async () => {
