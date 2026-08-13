@@ -8,6 +8,8 @@ import { SocketClient } from "../ws";
 import { tildify } from "../tildify";
 import { useArmedConfirm } from "../use-armed-confirm";
 import { paintTabStatus } from "../tab-status";
+import { agentLabel } from "../agents-meta";
+import { createDomNotifier, folderTitle } from "../notify";
 import { createFolderPickerRequests } from "../folder-picker-requests";
 
 // 4.6 Mission control, grown into the Phase M cockpit: every live session in
@@ -199,6 +201,36 @@ export function FleetView() {
         ? `⚠ ${needsYou} need${needsYou === 1 ? "s" : ""} you — Mirafold`
         : "Mirafold — sessions";
   }, [needsYou, fleetBusy]);
+
+  // Needs-you notifications (NF.1): a hidden cockpit toasts per session. No
+  // toggle UI here — the preference set in any session's settings card is
+  // read live from storage by the notifier. reset() on disconnect: stale
+  // snapshots must not diff against a world the socket no longer sees.
+  const [notifier] = useState(createDomNotifier);
+  useEffect(() => {
+    if (!notifier) return;
+    if (!connected || sessions === null) {
+      notifier.reset();
+      return;
+    }
+    notifier.update(
+      sessions.map((s) => {
+        const ask = s.permissions?.[0];
+        return {
+          id: s.sessionId,
+          state: wantsAnswer(s)
+            ? ("permission" as const)
+            : s.status === "working"
+              ? ("busy" as const)
+              : ("idle" as const),
+          title: s.name || folderTitle(s.cwd) || agentLabel(s.agent),
+          agent: agentLabel(s.agent),
+          tool: ask?.tool,
+          detail: ask?.detail,
+        };
+      }),
+    );
+  }, [notifier, connected, sessions]);
 
   // Stable identity: Onboarding keys its poll interval on this prop, so a
   // fresh arrow each render would restart the 3s timer instead of letting

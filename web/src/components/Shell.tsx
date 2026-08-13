@@ -24,6 +24,7 @@ import { ThemePicker } from "./ThemePicker";
 import { tildify } from "../tildify";
 import { agentLabel, connectHint } from "../agents-meta";
 import { paintTabStatus } from "../tab-status";
+import { createDomNotifier, folderTitle, notifyPrefEnabled, setNotifyPref } from "../notify";
 import { useEscapeKey } from "../use-escape";
 import { Announcer, turnResponse, useAnnouncer } from "./Announcer";
 import { PermBar, type PermAsk } from "./PermBar";
@@ -190,6 +191,40 @@ export function Shell() {
     setMode(entry.appearance);
   };
 
+  // ── Needs-you notifications (Phase NF) ──────────────────────────────────
+  // Preference + the browser's own grant, both shell-owned. Off by default;
+  // flipping it on is the ONLY thing that asks the browser for notification
+  // permission (never page load). "unsupported" (iOS Safari outside an
+  // installed PWA) hides the settings section entirely.
+  const [notifyOn, setNotifyOn] = useState(
+    () => typeof Notification !== "undefined" && notifyPrefEnabled(),
+  );
+  const [notifyPerm, setNotifyPerm] = useState<NotificationPermission | "unsupported">(() =>
+    typeof Notification === "undefined" ? "unsupported" : Notification.permission,
+  );
+  const toggleNotify = () => {
+    if (notifyOn) {
+      setNotifyPref(false);
+      setNotifyOn(false);
+      return;
+    }
+    if (notifyPerm === "default") {
+      // Enable only once granted — an "on" toggle that can never fire is a lie.
+      void Notification.requestPermission().then((p) => {
+        setNotifyPerm(p);
+        if (p === "granted") {
+          setNotifyPref(true);
+          setNotifyOn(true);
+        }
+      });
+      return;
+    }
+    // "denied" still flips the preference on — the card's hint line says why
+    // it stays silent, and un-blocking in the browser then just works.
+    setNotifyPref(true);
+    setNotifyOn(true);
+  };
+
   // The socket + pub/sub live in session-bus.ts (H.9); one bus per mount.
   // useState's lazy initializer, NOT useMemo: Fast Refresh re-runs useMemo on
   // every hot edit (dependency lists are deliberately ignored), and each
@@ -197,6 +232,9 @@ export function Shell() {
   // inflating the fleet's viewport count during dev (2026-07-25, Kyle).
   // State survives a hot update, so the one bus lives as long as the page.
   const [bus] = useState(createSessionBus);
+  // Same lazy-useState idiom: one notifier (and one visibilitychange
+  // listener) for the page's life. Null where the API doesn't exist.
+  const [notifier] = useState(createDomNotifier);
 
   // Screen-reader announcements (A.1) — see Announcer.tsx for why the
   // transcript itself stays silent and these speak at turn boundaries.
@@ -395,6 +433,29 @@ export function Shell() {
     paintTabStatus(asks.length > 0 ? "permission" : busy ? "busy" : "idle");
   }, [busy, asks.length]);
 
+  // Needs-you notifications (NF.1): the same tri-state the tab light paints,
+  // pushed through the notifier so a hidden viewport can toast. reset() on
+  // any disconnect: the drop forces busy→false above, and that forced edge
+  // must never read as a finished turn.
+  useEffect(() => {
+    if (!notifier) return;
+    if (!connected || !meta.sessionId) {
+      notifier.reset();
+      return;
+    }
+    const ask = asks[0];
+    notifier.update([
+      {
+        id: meta.sessionId,
+        state: asks.length > 0 ? "permission" : busy ? "busy" : "idle",
+        title: folderTitle(meta.cwd) ?? (meta.agent ? agentLabel(meta.agent) : "session"),
+        agent: meta.agent ? agentLabel(meta.agent) : undefined,
+        tool: ask?.tool,
+        detail: ask?.detail,
+      },
+    ]);
+  }, [notifier, connected, busy, asks, meta]);
+
   const answer = (id: string, allow: boolean) => {
     bus.answerPermission(id, allow);
     setAsks((a) => a.filter((x) => x.id !== id));
@@ -566,6 +627,15 @@ export function Shell() {
             slots={slots}
             onPick={pickTheme}
             onClose={() => setSettingsOpen(false)}
+            notify={
+              notifyPerm === "unsupported"
+                ? undefined
+                : {
+                    enabled: notifyOn,
+                    blocked: notifyPerm === "denied",
+                    onToggle: toggleNotify,
+                  }
+            }
             // The card's Session section (R.4l) — on phone this is THE place
             // these facts live (the bar carries only the agent name; the
             // prompt crumb is desktop-only), so it gets everything.

@@ -634,3 +634,60 @@
   flex-shrink: 0;
 }
 
+/* ---- Needs-you notifications (Phase NF) — the card's third section. ------
+   Same row idiom as .theme-row; the switch state reads in the trailing
+   on/off word (aria-checked carries it for screen readers). */
+
+.theme-group + .settings-section-title {
+  margin-top: 18px;
+}
+
+.notify-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 0.9em;
+  color: var(--fg-body);
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.notify-row:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-faint);
+}
+
+.notify-row[aria-checked="true"] {
+  border-color: var(--border-mid);
+  background: var(--surface-2);
+}
+
+.notify-row-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.notify-row-state {
+  flex-shrink: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  color: var(--fg-dimmer);
+}
+
+.notify-row[aria-checked="true"] .notify-row-state {
+  color: var(--accent);
+}
+
+.notify-blocked {
+  margin-top: 8px;
+  font-size: 0.8em;
+  line-height: 1.45;
+  color: var(--warn-fg);
+}
+

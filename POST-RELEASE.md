@@ -123,6 +123,23 @@ has a home in this plan, the entry points there instead of duplicating it.
     (which context owns the key) must be settled once and reused by both. Decide
     it with whichever of the two ships first.
 
+- [ ] **Needs-you notifications, the closed-browser tier** (parked from Phase
+  NF, 2026-08-12) — true Web Push so a phone with the browser closed still
+  hears "a session needs you": a service worker + Push API subscription, the
+  daemon (or relay) sending through the browser vendors' push services, and
+  on iOS only inside an installed PWA (which makes the PWA idea above its
+  prerequisite). E2E wrinkle to solve honestly: the relay is deliberately
+  blind, so either the daemon encrypts push payloads end-to-end or the push
+  is content-free ("a session needs you") with detail loading on tap. Ship
+  only after the local tiers (Phase NF) prove the habit loop.
+
+- [ ] **Needs-you notifications, cross-tab suppression** (parked from Phase
+  NF, 2026-08-12) — v1 accepts one sharp edge: a hidden fleet tab can toast
+  about a session that's visible in another tab (same `tag` keeps it to a
+  single toast). If it turns out to annoy in practice, a BroadcastChannel
+  "session X visible here" heartbeat lets hidden tabs suppress toasts for
+  sessions the user is already looking at.
+
 - [ ] **Multiuser chat** — multiple people in one session's conversation;
   rides Phase 4's multi-user seam (Locked decisions: "architected so
   multi-user is additive later").
