@@ -3196,6 +3196,23 @@ signoff of the reported plan)*:
   no-painting, ask attribution, depth-1 render rule).
   Tiers 817/152/57(app) green.
 
+**Post-phase test-audit (2026-08-14, same day; scope: the phase's tests).**
+Ten pins mutation-verified (six fresh mutations — summary recency, budget
+marker, unparented forwarding, lane disable [tripped four tests at once],
+both coalescer merge keys — plus the four bughunt pre-fix proofs); no
+theater and no wrong-target tests found; the e2e label sampling and the
+store-durability poll reviewed as timing-robust. TWO gaps found and
+filled, each mutation-proven: the store's every-frame round-trip test
+predated the lane (a reverted schema widening would have silently stripped
+deck replays — parented text/thinking/ask frames added), and the Tier-2
+fan-out itest never asserted the narration lane over the REAL daemon
+broadcast (parented prose presence + spawn integrity + no cross-parent
+merge added; only e2e covered that path before). One gap named and
+deliberately not filled: the deck component's replayed→no-elapsed wiring
+is pinned at the pure-function level only — the component line is
+one-line wiring whose e2e cost outweighs it; noted here so it's a
+decision, not an oversight.
+
 **Post-phase security audit (2026-08-14, same day; scope: the SA delta +
 its trust boundaries).** ZERO exploitable findings. ONE hardening landed
 (flood-cap parity, pinned): the shared `SubagentProseBudget` had no cap on

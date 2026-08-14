@@ -165,6 +165,15 @@ test("subagent hook: a parallel fan-out — children nest under their own spawn,
   // the out-of-order truth the cards render.
   assert.notDeepEqual(settles.map((r) => r.id), tasks.map((t) => t.id));
   assert.equal(settles[0].id, tasks[1].id);
+  // The narration lane over the REAL daemon broadcast (test-audit
+  // 2026-08-14: this path was only e2e-covered): each spawn's prose rides
+  // parented, and the registry's coalescer never merged one agent's words
+  // into another's — every parented delta names a real spawn, and each
+  // agent's own narration arrives intact.
+  const prose = turn.filter((m) => m.type === "text_delta" && m.parentId !== undefined);
+  assert.equal(prose.length, 3, "one narration per subagent rode the wire");
+  for (const p of prose) assert.ok(taskIds.has(p.parentId), "prose names a real spawn");
+  assert.equal(new Set(prose.map((p) => p.parentId)).size, 3, "no cross-parent merge");
 });
 
 test("huge-output hook: the cap reports truncatedBytes, never a silent cut", async () => {
