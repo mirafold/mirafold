@@ -171,6 +171,48 @@ export function capOutput(text: string): { text: string; truncatedBytes?: number
   return { text: kept, truncatedBytes: total - OUTPUT_CAP_BYTES };
 }
 
+// SA.2: per-subagent narration budget — bounds what any ONE subagent's prose
+// (text + thinking) can add to the wire, the replay ring, and relay bytes.
+// Byte-based like the tool cap, honest like it too: exhaustion emits one
+// explicit marker, never a silent cut. Agent-neutral, shared by every
+// adapter that forwards a subagent lane.
+const SUBAGENT_TEXT_CAP_BYTES = envInt("SUBAGENT_TEXT_CAP_BYTES", 64_000);
+
+export const SUBAGENT_PROSE_ELIDED = (cap: number) =>
+  `\n(… subagent narration cap reached (${cap} bytes) — further prose elided …)`;
+
+export class SubagentProseBudget {
+  private used = new Map<string, number>();
+  private capped = new Set<string>();
+  constructor(private readonly cap = SUBAGENT_TEXT_CAP_BYTES) {}
+
+  /** The text to emit for this chunk: the chunk itself while the subagent's
+   *  budget holds, a byte-bounded head plus the one elision marker at
+   *  exhaustion, and "" (emit nothing) thereafter. */
+  take(parentId: string, text: string): string {
+    if (this.capped.has(parentId)) return "";
+    const used = this.used.get(parentId) ?? 0;
+    const bytes = Buffer.byteLength(text, "utf8");
+    if (used + bytes <= this.cap) {
+      this.used.set(parentId, used + bytes);
+      return text;
+    }
+    this.capped.add(parentId);
+    // Decode a byte-bounded slice; a trailing partial char becomes U+FFFD
+    // (same approach as capOutput above).
+    const kept = new TextDecoder().decode(
+      Buffer.from(text, "utf8").subarray(0, Math.max(0, this.cap - used)),
+    );
+    return kept + SUBAGENT_PROSE_ELIDED(this.cap);
+  }
+
+  /** Turn boundary: spawns don't outlive their turn, so the ledger resets. */
+  clear() {
+    this.used.clear();
+    this.capped.clear();
+  }
+}
+
 /** One entry of the live checklist component (T2.5); adapter-neutral shape. */
 export type TodoItem = { content: string; status: "pending" | "in_progress" | "completed" };
 

@@ -192,10 +192,62 @@ test("subagent traffic: tool calls nest under the Task id; text and task tools s
   assert.equal(msgs.find((m) => m.type === "tool_result" && m.id === "in1")!.parentId, "task1");
   assert.ok(msgs.some((m) => m.type === "tool_result" && m.id === "task1"));
 
-  assert.ok(!msgs.some((m) => m.type === "text_delta")); // subagent prose filtered
+  // A parent-tagged stream_event is dropped (the SDK never sends them —
+  // SA.0 probe — the guard is fail-safe); subagent prose forwards only from
+  // complete assistant messages, of which this turn scripts none.
+  assert.ok(!msgs.some((m) => m.type === "text_delta"));
   assert.ok(!msgs.some((m) => m.type === "render")); // subagent TodoWrite swallowed
   assert.ok(!msgs.some((m) => m.type === "tool_use" && m.id === "st1"));
   s.close();
+});
+
+test("SA.2: subagent narration forwards — parent-tagged text and thinking blocks become parented deltas", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    assistant([{ type: "tool_use", id: "task1", name: "Agent", input: { prompt: "delegate" } }]),
+    // The subagent narrates, reasons, acts — all COMPLETE messages, live.
+    assistant([{ type: "text", text: "Following the cookie…" }], "task1"),
+    assistant([{ type: "thinking", thinking: "the relay never sees it" }], "task1"),
+    assistant([{ type: "tool_use", id: "in1", name: "Read", input: { file_path: "a.ts" } }], "task1"),
+    user([{ type: "tool_result", tool_use_id: "in1", content: "inner out" }], "task1"),
+    user([{ type: "tool_result", tool_use_id: "task1", content: "done" }]),
+    // Parent prose after the fan-out: buffered-text rule untouched — no
+    // deltas streamed this turn, so the buffered copy paints, un-parented.
+    assistant([{ type: "text", text: "PARENT SUMMARY" }]),
+    RESULT,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+
+  const subText = msgs.find((m) => m.type === "text_delta" && m.parentId === "task1")!;
+  assert.equal(subText.text, "Following the cookie…");
+  const subThink = msgs.find((m) => m.type === "thinking_delta" && m.parentId === "task1")!;
+  assert.equal(subThink.text, "the relay never sees it");
+  const parentText = msgs.find((m) => m.type === "text_delta" && m.parentId === undefined)!;
+  assert.equal(parentText.text, "PARENT SUMMARY");
+  // Wire order: the subagent's narration lands between its spawn and its
+  // first tool call, exactly as streamed.
+  const order = msgs
+    .filter((m) => (m.type === "tool_use" && (m.id === "task1" || m.id === "in1")) || m.parentId === "task1")
+    .map((m) => m.type + ":" + (m.id ?? ""));
+  assert.deepEqual(order, ["tool_use:task1", "text_delta:", "thinking_delta:", "tool_use:in1", "tool_result:in1"]);
+  s.close();
+});
+
+test("SA.2: the per-subagent narration budget caps with one explicit marker, per subagent", async () => {
+  const { SubagentProseBudget, SUBAGENT_PROSE_ELIDED } = await import("./types");
+  const budget = new SubagentProseBudget(10);
+  assert.equal(budget.take("a", "12345"), "12345"); // within budget
+  const second = budget.take("a", "678901234"); // crosses the 10-byte cap
+  assert.equal(second, "67890" + SUBAGENT_PROSE_ELIDED(10));
+  assert.equal(budget.take("a", "more"), ""); // capped: silent thereafter (marker already shown)
+  // Budgets are PER subagent — a sibling still has its own headroom.
+  assert.equal(budget.take("b", "hello"), "hello");
+  // Multi-byte safety: a chunk sliced mid-codepoint decodes to U+FFFD, never throws.
+  const tight = new SubagentProseBudget(1);
+  const sliced = tight.take("c", "é"); // 2 bytes UTF-8
+  assert.ok(sliced.startsWith("�"));
+  budget.clear();
+  assert.equal(budget.take("a", "fresh"), "fresh"); // turn boundary resets
 });
 
 test("checklist: task tools fold into one render id per turn, list persists, id re-anchors next turn", async () => {

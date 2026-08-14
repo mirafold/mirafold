@@ -56,7 +56,13 @@ export type PromptOption = {
 export type WireMsg = WireMsgBody & { seq?: number; replay?: true };
 
 type WireMsgBody =
-  | { type: "text_delta"; text: string }
+  // `parentId` (SA.2, additive like tool_use's): when set, this prose is a
+  // SUBAGENT's, grouped under the spawn record whose wire id it names. The
+  // handle is OPAQUE and adapter-chosen — shared code only ever groups by
+  // it, never parses or dereferences it (for Claude Code it happens to be
+  // the spawn tool_use id; the protocol does not promise that). Old clients
+  // ignore the field and render the prose inline, exactly as before.
+  | { type: "text_delta"; text: string; parentId?: string }
   // Phase UX.1: the selected provider's live prompt-completion catalog.
   // This is shell data, not agent-authored UI: the browser opens it as soon
   // as the trigger is typed, before anything is sent to the provider. A new
@@ -229,8 +235,9 @@ type WireMsgBody =
     }
   // Phase T2.1: the model's reasoning stream, full fidelity. Renders as a
   // dim block that folds to one line once the turn's real output starts —
-  // collapse-on-finalize, never dropped.
-  | { type: "thinking_delta"; text: string }
+  // collapse-on-finalize, never dropped. `parentId` rides here too, exactly
+  // as on text_delta (SA.2): a subagent's reasoning, grouped under its card.
+  | { type: "thinking_delta"; text: string; parentId?: string }
   // Phase F.2: a service-status line — an event the terminal shows and the
   // adapter would otherwise drop, so the UI never lies in degraded service:
   // an API retry (terminal shows "retrying…"; we'd sit on "thinking…" looking

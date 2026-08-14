@@ -55,6 +55,17 @@ type Entry =
       startedAt: number;
     }
   | {
+      // SA.2: a subagent's narration or reasoning — prose the wire tags with
+      // a parentId. Lives inside its card's expansion, never at top level,
+      // and renders as INERT PLAIN TEXT (trusted-shell rule: subagent words
+      // never get markdown inside shell chrome).
+      kind: "subtext";
+      id: number;
+      parentId: string; // the spawn wire id whose card holds this
+      variant: "text" | "thinking";
+      text: string;
+    }
+  | {
       kind: "artifact";
       id: number;
       artifactId: string; // wire id — re-sends with this id replace the html
@@ -97,6 +108,7 @@ type Entry =
       hint?: string;
     };
 type ToolCall = Extract<Entry, { kind: "tool" }>;
+type SubtextEntry = Extract<Entry, { kind: "subtext" }>;
 
 /** The transcript fields ToolBlock renders, picked off any tool-shaped
  *  record — the one spread all three ToolBlock sites share. */
@@ -174,6 +186,30 @@ function ToolCallList({ calls, className }: { calls: ToolCall[]; className: stri
   );
 }
 
+/** The card's full activity, in true stream order (SA.2): tool rows plus the
+ *  subagent's own narration and reasoning. Prose is INERT PLAIN TEXT —
+ *  subagent words never render as markdown inside shell chrome. */
+function SubagentActivity({ items }: { items: Array<ToolCall | SubtextEntry> }) {
+  return (
+    <div className="subagent-calls">
+      {items.map((item) =>
+        item.kind === "tool" ? (
+          <ToolBlock key={item.id} {...toolBlockProps(item)} />
+        ) : (
+          <div
+            key={item.id}
+            className={
+              "subagent-prose" + (item.variant === "thinking" ? " subagent-prose-thinking" : "")
+            }
+          >
+            ✳ {item.text}
+          </div>
+        ),
+      )}
+    </div>
+  );
+}
+
 /** SA.1: a spawn whose wire id other records reference as parentId becomes a
  * live subagent card — calm summary (agent type, the spawn's own description,
  * state, tool count, elapsed while running, current action), expandable to
@@ -183,9 +219,11 @@ function ToolCallList({ calls, className }: { calls: ToolCall[]; className: stri
 const SubagentCard = memo(function SubagentCard({
   task,
   calls,
+  items,
 }: {
   task: ToolCall;
   calls: ToolCall[];
+  items: Array<ToolCall | SubtextEntry>;
 }) {
   const [open, setOpen] = useState(false);
   const s = subagentSummary(task, calls);
@@ -231,7 +269,7 @@ const SubagentCard = memo(function SubagentCard({
           <span className="subagent-result"> · {s.resultLine}</span>
         ) : null}
       </div>
-      {open && <ToolCallList calls={calls} className="subagent-calls" />}
+      {open && <SubagentActivity items={items} />}
     </div>
   );
 });
@@ -317,6 +355,10 @@ export function RenderZone({
   // The text block currently receiving deltas. Kept in a ref so a user prompt
   // sent mid-stream can't detach the tail of the reply.
   const streamingId = useRef<number | null>(null);
+  // SA.2: the open subtext entry per (parentId|variant) — a subagent's
+  // consecutive prose extends in place; its own next tool call closes it so
+  // the card's expansion keeps true stream order.
+  const subtextIds = useRef(new Map<string, number>());
   // The thinking block currently receiving deltas (T2.1).
   const thinkingId = useRef<number | null>(null);
   // User prompts may queue while a turn is running. Tool events still belong
@@ -328,6 +370,30 @@ export function RenderZone({
   useEffect(
     () => {
       const apply = (msg: ZoneMsg) => {
+        // SA.2: a subagent's prose routes to its card BEFORE the fold/close
+        // logic below — a child streaming must not fold the parent's open
+        // thinking or close the parent's streaming text block. Consecutive
+        // same-parent same-variant deltas extend one subtext entry, so the
+        // card reads as prose, not confetti.
+        if ((msg.type === "text_delta" || msg.type === "thinking_delta") && msg.parentId) {
+          const parentId = msg.parentId;
+          const text = msg.text;
+          const variant = msg.type === "text_delta" ? ("text" as const) : ("thinking" as const);
+          const key = `${parentId}|${variant}`;
+          const openId = subtextIds.current.get(key);
+          if (openId !== undefined) {
+            setEntries((es) =>
+              es.map((e) =>
+                e.kind === "subtext" && e.id === openId ? { ...e, text: e.text + text } : e,
+              ),
+            );
+          } else {
+            const newId = nextId++;
+            subtextIds.current.set(key, newId);
+            setEntries((es) => [...es, { kind: "subtext", id: newId, parentId, variant, text }]);
+          }
+          return;
+        }
         // Collapse-on-finalize (T2.1): the open thinking block folds the
         // moment the turn's real output starts.
         const foldThinking = () => {
@@ -455,6 +521,12 @@ export function RenderZone({
             // Close the streaming text block (same reason as `render`):
             // later deltas must open a new block after this record.
             streamingId.current = null;
+            // A subagent's own tool call closes ITS open prose runs, so
+            // narration after the call opens a new entry below it (SA.2).
+            if (msg.parentId) {
+              subtextIds.current.delete(`${msg.parentId}|text`);
+              subtextIds.current.delete(`${msg.parentId}|thinking`);
+            }
             const id = nextId++;
             const batchId = openToolBatches.current[0] ?? orphanToolBatch.current;
             setEntries((es) => [
@@ -489,6 +561,7 @@ export function RenderZone({
           case "turn_end": {
             const id = streamingId.current;
             streamingId.current = null;
+            subtextIds.current.clear();
             const batchId = openToolBatches.current.shift() ?? orphanToolBatch.current--;
             setEntries((es) =>
               es.map((e) => {
@@ -697,6 +770,23 @@ export function RenderZone({
     return byParent;
   }, [entries]);
 
+  // SA.2: everything a card's expansion shows — child calls AND the
+  // subagent's prose — in true stream order. Also the card's anchor test:
+  // narration can arrive before the first child tool call, and a spawn with
+  // only prose is still a card.
+  const cardItemsByParent = useMemo(() => {
+    const byParent = new Map<string, Array<ToolCall | SubtextEntry>>();
+    for (const e of entries) {
+      const parentId =
+        e.kind === "tool" && !e.isError ? e.parentId : e.kind === "subtext" ? e.parentId : undefined;
+      if (!parentId) continue;
+      const arr = byParent.get(parentId) ?? [];
+      arr.push(e as ToolCall | SubtextEntry);
+      byParent.set(parentId, arr);
+    }
+    return byParent;
+  }, [entries]);
+
   const compactedTools = useMemo(
     () =>
       groupSettledTools(
@@ -707,17 +797,20 @@ export function RenderZone({
                 // fold, and OMITTED (not a boundary) so a parent-level run is
                 // not split by child traffic it never displaces (SA.1).
                 []
-              : childrenByParent.has(entry.toolId)
+              : cardItemsByParent.has(entry.toolId)
                 ? // A subagent card is a visible block: folding across it
                   // would move later work ahead of it. Hard boundary.
                   [null]
                 : [{ kind: "tool" as const, tool: entry }]
             : entry.kind === "thinking"
               ? [{ kind: "thinking" as const, thinking: entry }]
-              : [null],
+              : entry.kind === "subtext"
+                ? // Inside its card — invisible to folding, like child calls.
+                  []
+                : [null],
         ),
       ),
-    [entries, childrenByParent],
+    [entries, cardItemsByParent],
   );
 
   const handleTranscriptPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -804,6 +897,7 @@ export function RenderZone({
             entry={entry}
             toggleThinking={toggleThinking}
             childrenByParent={childrenByParent}
+            cardItemsByParent={cardItemsByParent}
             compactedTools={compactedTools}
             activePickerId={activePickerId}
             handleAction={handleAction}
@@ -841,6 +935,7 @@ function ZoneEntry({
   entry,
   toggleThinking,
   childrenByParent,
+  cardItemsByParent,
   compactedTools,
   activePickerId,
   handleAction,
@@ -850,12 +945,15 @@ function ZoneEntry({
   entry: Entry;
   toggleThinking: (id: number) => void;
   childrenByParent: Map<string, ToolCall[]>;
+  cardItemsByParent: Map<string, Array<ToolCall | SubtextEntry>>;
   compactedTools: ReturnType<typeof groupSettledTools<ToolCall, ThinkingEntry>>;
   activePickerId: number | null;
   handleAction: (action: Action, sourceId: string) => void;
   pinned: string[];
   togglePin: (renderId: string) => void;
 }) {
+  // A subagent's prose lives inside its card's expansion, never top-level.
+  if (entry.kind === "subtext") return null;
   if (entry.kind === "thinking") {
     // Narration absorbed into a "worked" fold renders inside that fold.
     if (compactedTools.hidden.has(entry.id)) return null;
@@ -915,10 +1013,17 @@ function ZoneEntry({
     // Subagent calls are rendered nested inside their card (below),
     // not at the top level.
     if (entry.parentId && !entry.isError) return null;
-    const children = childrenByParent.get(entry.toolId);
+    const items = cardItemsByParent.get(entry.toolId);
     // A spawn with visible children IS the card — the anchor is the
     // referenced-as-parentId relationship, never the tool's name (SA.1).
-    if (children && children.length > 0) return <SubagentCard task={entry} calls={children} />;
+    if (items && items.length > 0)
+      return (
+        <SubagentCard
+          task={entry}
+          calls={childrenByParent.get(entry.toolId) ?? []}
+          items={items}
+        />
+      );
     return (
       <div className="tool-group">
         <ToolBlock {...toolBlockProps(entry)} />

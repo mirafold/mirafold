@@ -3128,19 +3128,29 @@ signoff of the reported plan)*:
   three cards live at once, independent tick, out-of-order settle, expand/
   collapse, axe-clean, phone-width stack with no side scroll. Tiers
   810/152/57(app) green.
-- [ ] **SA.2 — The narration lane (wire + Claude Code + expand).**
-  Protocol: optional `parentId` on `text_delta`/`thinking_delta`,
-  documented as an opaque adapter-chosen handle (never parsed, only
-  grouped). Registry: coalescer merge key gains `parentId`. Adapter:
-  forward subagent text + thinking from parent-tagged complete messages
-  (message-grain deltas), per-subagent narration cap
-  (`SUBAGENT_TEXT_CAP_BYTES`, default 64 KB, explicit elision marker,
-  never silent). Client: expand/collapse on the card — full activity,
-  narration as inert plain text (fleet activity-line precedent), collapse
-  back to calm. Replay: rides the ring as-is (globally capped). Done
-  when: mock + Tier-1/2 prove per-parent bucketing (no cross-parent
-  merge), the cap's marker, and old-client shape compatibility; e2e:
-  expand shows narration live, collapse returns calm.
+- [x] **SA.2 — The narration lane (wire + Claude Code + expand).** —
+  completed 2026-08-14. Protocol: optional `parentId` on
+  `text_delta`/`thinking_delta`, documented opaque (grouped, never
+  parsed); checkpoint-store strict schemas widened to match (they would
+  have REJECTED the field — caught in-pass). Merge keys gained
+  `parentId` in BOTH coalescers (registry window + client delta-queue) so
+  parallel prose never concatenates across agents. Claude Code adapter:
+  parent-tagged complete-message text/thinking forward as message-grain
+  parented deltas through `SubagentProseBudget` (shared in
+  `adapters/types.ts` for SA.3; `SUBAGENT_TEXT_CAP_BYTES` 64 KB default,
+  one explicit elision marker, byte-safe slice, per-subagent ledger
+  cleared per turn); the F.1 buffered-text dedup rule untouched for the
+  parent; stale stream_event comment corrected. Client: `subtext`
+  entries route to their card BEFORE fold/close logic (child prose can't
+  fold parent thinking), extend-in-place per (parent|variant), closed by
+  that subagent's next tool row — the expansion (`SubagentActivity`)
+  interleaves calls + narration + dim italic reasoning in true stream
+  order, inert plain text (e2e asserts no markdown elements render);
+  Shell keeps subagent prose out of the turn-end announcement and the
+  activity label. Tests: adapter forwarding + wire order, budget
+  semantics (cap marker, per-agent ledgers, U+FFFD safety, reset),
+  registry + delta-queue no-cross-parent merges, e2e narration in the
+  expansion. Tiers 814/152/57(app) green.
 - [ ] **SA.3 — The OpenCode mapping (neutrality proven).** `isOurs`
   becomes a lane router: child-session events map to `parentId` = parent
   task part id (Map from `state.metadata.sessionId` +

@@ -76,7 +76,15 @@ const pickerRowSchema = z
 // Every object is strict and sequenced: a locally tampered/corrupt record can
 // never smuggle an arbitrary frame back into the trusted browser shell.
 const storedWireMessageSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("text_delta"), text: z.string(), seq: sequenceSchema }).strict(),
+  // `parentId` (SA.2): a subagent's prose, grouped under its spawn record.
+  z
+    .object({
+      type: z.literal("text_delta"),
+      text: z.string(),
+      parentId: idSchema.optional(),
+      seq: sequenceSchema,
+    })
+    .strict(),
   z
     .object({
       type: z.literal("status"),
@@ -165,7 +173,15 @@ const storedWireMessageSchema = z.discriminatedUnion("type", [
       seq: sequenceSchema,
     })
     .strict(),
-  z.object({ type: z.literal("thinking_delta"), text: z.string(), seq: sequenceSchema }).strict(),
+  // `parentId` (SA.2): a subagent's reasoning, grouped under its spawn record.
+  z
+    .object({
+      type: z.literal("thinking_delta"),
+      text: z.string(),
+      parentId: idSchema.optional(),
+      seq: sequenceSchema,
+    })
+    .strict(),
   z
     .object({
       type: z.literal("notice"),

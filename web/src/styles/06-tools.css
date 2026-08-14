@@ -248,6 +248,20 @@
   border-left: 1px solid var(--border-mid);
 }
 
+/* SA.2: the subagent's own words inside the expansion — inert plain text,
+   pre-wrapped so streamed prose keeps its line breaks, dim like thinking. */
+.subagent-prose {
+  padding: 3px 0;
+  color: var(--fg-dim);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.subagent-prose-thinking {
+  color: var(--fg-dimmer);
+  font-style: italic;
+}
+
 .subagent-caret {
   flex: none;
   color: var(--fg-faint);

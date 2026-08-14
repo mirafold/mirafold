@@ -633,9 +633,26 @@ test("SA.1: a parallel fan-out renders three live subagent cards, out of order, 
     assert.match(doneMeta, /4 tools/);
     assert.match(doneMeta, /never leaves the daemon/);
 
-    // Expand → the nested calls are all there; collapse returns to calm.
+    // Expand → the nested calls are all there, AND the subagent's own words
+    // (SA.2: narration + reasoning, interleaved, inert plain text — the
+    // narration precedes the first tool row, true stream order).
     await tokenCard.locator(".subagent-card-head").click();
     assert.equal(await tokenCard.locator(".subagent-calls .tool-block").count(), 4);
+    const prose = tokenCard.locator(".subagent-prose");
+    assert.match(await prose.first().innerText(), /Following the cookie from auth\.ts/);
+    assert.match(
+      await tokenCard.locator(".subagent-prose-thinking").innerText(),
+      /confirming the browser side/,
+    );
+    const expandedTexts = await tokenCard
+      .locator(".subagent-calls > *")
+      .evaluateAll((nodes) => nodes.map((n) => n.className));
+    assert.ok(
+      expandedTexts[0].includes("subagent-prose"),
+      "narration precedes the first tool row in stream order",
+    );
+    // The prose is NOT rendered as markdown — no <p>/<em> children, raw text.
+    assert.equal(await prose.first().locator("p, em, strong, a, code").count(), 0);
     await tokenCard.locator(".subagent-card-head").click();
     assert.equal(await tokenCard.locator(".subagent-calls").count(), 0);
 

@@ -954,6 +954,10 @@ export class MockSession implements AgentSession {
       type: string;
       desc: string;
       spawnAt: number;
+      // SA.2: the subagent's own narration, streamed into its card's
+      // expansion right after the spawn (message-grain, like the real
+      // Claude Code lane).
+      says: string;
       inner: { name: string; detail: string; output: string }[];
       pace: number; // ms between this agent's events — distinct per agent
       result: string;
@@ -965,6 +969,7 @@ export class MockSession implements AgentSession {
         desc: "find auth entry points",
         spawnAt: 350,
         pace: 520,
+        says: "Sweeping the server for authentication entry points…",
         inner: [
           { name: "Grep", detail: '-rn "authenticate" server/', output: "server/auth.ts:14: export function authenticate(" },
           { name: "Read", detail: "server/auth.ts", output: Array.from({ length: 4 }, (_, i) => `${i + 1}→${pick(SENTENCES)}`).join("\n") },
@@ -979,6 +984,7 @@ export class MockSession implements AgentSession {
         desc: "map session handling",
         spawnAt: 430,
         pace: 300,
+        says: "Looking for the session registry and its lifecycle…",
         inner: [
           { name: "Grep", detail: '-rn "SessionRegistry" server/', output: "server/sessions/registry.ts:88: export class SessionRegistry" },
           { name: "Read", detail: "server/sessions/registry.ts", output: "registry: entries keyed by session id; idle unload after 4h" },
@@ -991,6 +997,7 @@ export class MockSession implements AgentSession {
         desc: "trace the token path",
         spawnAt: 510,
         pace: 640,
+        says: "Following the cookie from auth.ts into the relay…",
         inner: [
           { name: "Grep", detail: '-rn "mirafold_token" .', output: "4 hits across server/ and web/" },
           { name: "Read", detail: "server/relay/relay.ts", output: "120 lines — the relay never sees the token" },
@@ -1013,12 +1020,22 @@ export class MockSession implements AgentSession {
         });
       }, fan.spawnAt);
       let d = fan.spawnAt;
+      d += Math.floor(fan.pace / 2);
+      this.schedule(() => this.emit({ type: "text_delta", text: fan.says, parentId: fan.id }), d);
       for (const t of fan.inner) {
         const cid = randomUUID();
         d += fan.pace;
         this.schedule(() => this.emit({ type: "tool_use", name: t.name, detail: t.detail, id: cid, parentId: fan.id }), d);
         d += fan.pace;
         this.schedule(() => this.emit({ type: "tool_result", output: t.output, id: cid, parentId: fan.id }), d);
+      }
+      // One reasoning line mid-run for the slow agent — the expansion shows
+      // thinking dimmer than narration (SA.2).
+      if (fan.type === "general-purpose") {
+        this.schedule(
+          () => this.emit({ type: "thinking_delta", text: "The relay never sees it — confirming the browser side.", parentId: fan.id }),
+          d - fan.pace,
+        );
       }
       d += 250;
       this.schedule(() => this.emit({ type: "tool_result", output: fan.result, id: fan.id }), d);

@@ -310,15 +310,21 @@ export function Shell() {
           // The turn COUNTER re-derives with it (nextOpenTurns' floor rule,
           // 2026-07-29 bughunt — see turn-busy.ts).
           setBusy(true);
+          // SA.2: a SUBAGENT's prose (parentId set) still proves the turn is
+          // busy, but it is not the parent's voice — it must not steer the
+          // activity label and never lands in the turn-end announcement.
+          const subagentProse =
+            (m.type === "text_delta" || m.type === "thinking_delta") && m.parentId;
           if (m.type === "status") setActivity({ state: m.state, label: m.label });
-          else if (m.type === "thinking_delta") setActivity({ state: "thinking" });
-          else if (m.type === "tool_use") setActivity({ state: "tool", label: m.name });
+          else if (m.type === "thinking_delta") {
+            if (!subagentProse) setActivity({ state: "thinking" });
+          } else if (m.type === "tool_use") setActivity({ state: "tool", label: m.name });
           // Streamed prose means the last specific label is over; the
           // indicator falls back to the generic "working…".
-          else setActivity(null);
+          else if (!subagentProse) setActivity(null);
           // A.1: the response is announced once at turn_end, so the prose is
           // banked here rather than spoken per token.
-          if (m.type === "text_delta") turnText.current += m.text;
+          if (m.type === "text_delta" && !subagentProse) turnText.current += m.text;
           // Tool activity is the other thing a sighted user reads off the
           // transcript mid-turn; announce the name, not the arguments.
           if (m.type === "tool_use" && live) announce(`Running ${m.name}.`);

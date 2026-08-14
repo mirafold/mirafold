@@ -31,3 +31,18 @@ test("the queued entry is a copy — merging never mutates the wire message", ()
   assert.equal(original.text, "a");
   assert.equal(q[0].text, "ab");
 });
+
+test("SA.2: a different parentId never merges — parallel subagents keep their prose apart", () => {
+  const q: QueuedDelta[] = [];
+  queueDelta(q, { type: "text_delta", text: "parent" });
+  queueDelta(q, { type: "text_delta", text: "A1", parentId: "a" });
+  queueDelta(q, { type: "text_delta", text: "A2", parentId: "a" });
+  queueDelta(q, { type: "text_delta", text: "B1", parentId: "b" });
+  queueDelta(q, { type: "thinking_delta", text: "B-think", parentId: "b" });
+  assert.deepEqual(q, [
+    { type: "text_delta", text: "parent" },
+    { type: "text_delta", text: "A1A2", parentId: "a" },
+    { type: "text_delta", text: "B1", parentId: "b" },
+    { type: "thinking_delta", text: "B-think", parentId: "b" },
+  ]);
+});
