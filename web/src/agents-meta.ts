@@ -26,7 +26,7 @@ export const CONNECT_HINT: Record<AgentName, string> = {
   codex:
     "run `codex login` (ChatGPT subscription — not clearly permitted by OpenAI's terms, tolerated in practice; your account, your call) or set OPENAI_API_KEY (platform.openai.com/api-keys) — or point Codex at a local model (Ollama/LM Studio/vLLM) or any OpenAI-compatible provider (e.g. OpenRouter) via ~/.codex/config.toml (recipe: docs/local-models.md)",
   "gemini-cli":
-    "set GEMINI_API_KEY (aistudio.google.com/apikey) — note Google retired Gemini CLI upstream on 2026-06-18; existing API keys still work here, but this adapter is deprecated",
+    "set GEMINI_API_KEY (get one at aistudio.google.com/apikey) — Gemini has no local path",
   opencode:
     "install opencode (opencode.ai) — its built-in free Zen models then work out of the box (set OPENCODE_MODEL=<provider>/<model>, e.g. opencode/big-pickle; free-period prompts may train the models). Or connect a provider API key via `opencode auth login`, or declare a local/BYO provider (Ollama, OpenRouter, …) in your opencode config. A ChatGPT login works too — not clearly permitted by OpenAI's terms, tolerated in practice; your account, your call. Other subscription logins (Copilot, …) aren't usable",
 };

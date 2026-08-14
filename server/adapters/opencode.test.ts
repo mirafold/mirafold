@@ -23,7 +23,9 @@ const SES = "ses_test";
 class FakeTransport implements OpenCodeTransport {
   onEvent: (ev: OpenCodeEvent) => void = () => {};
   prompts: Record<string, unknown>[] = [];
+  promptSessionIDs: string[] = [];
   aborts = 0;
+  forks: string[] = [];
   replies: { permissionID: string; response: string }[] = [];
   closed = false;
   existing = new Set<string>();
@@ -36,6 +38,7 @@ class FakeTransport implements OpenCodeTransport {
   ];
   cfgModel: string | undefined = "fake/fake-model";
   sessionsCreated = 0;
+  uniqueSessionIDs = false;
   agents: Awaited<ReturnType<OpenCodeTransport["agentCatalog"]>> = [
     { name: "build", mode: "primary", description: "The default agent" },
     { name: "plan", mode: "primary", description: "Plan mode" },
@@ -72,13 +75,23 @@ class FakeTransport implements OpenCodeTransport {
   }
   async createSession() {
     this.sessionsCreated++;
-    return { id: SES };
+    return {
+      id:
+        this.uniqueSessionIDs && this.sessionsCreated > 1
+          ? `${SES}_${this.sessionsCreated}`
+          : SES,
+    };
+  }
+  async forkSession(id: string) {
+    this.forks.push(id);
+    return { id: `${id}_fork_${this.forks.length}` };
   }
   async sessionExists(id: string) {
     return this.existing.has(id);
   }
-  async prompt(_sessionID: string, body: Record<string, unknown>) {
+  async prompt(sessionID: string, body: Record<string, unknown>) {
     if (this.failPrompt) throw this.failPrompt;
+    this.promptSessionIDs.push(sessionID);
     this.prompts.push(body);
   }
   async abort(_sessionID: string) {
@@ -103,7 +116,7 @@ const snap = (part: Record<string, unknown>) =>
   });
 const delta = (partID: string, text: string) =>
   ev("message.part.delta", { sessionID: SES, messageID: "m1", partID, field: "text", delta: text });
-const idle = () => ev("session.idle", { sessionID: SES });
+const idle = (sessionID = SES) => ev("session.idle", { sessionID });
 const asked = (id = "per1") =>
   ev("permission.asked", {
     id,
@@ -1090,6 +1103,80 @@ test("BUGFIX: a FAILED abort leaves the turn open for the engine's own idle", as
   );
   feed(idle()); // the engine eventually finishes on its own
   await awaitTurnEnd();
+  session.close();
+});
+
+test("BUGFIX3: an abort request that never settles still reaches the interrupt deadline", async () => {
+  const { session, fake, msgs, prompt, feed, awaitTurnEnd } = makeSession({
+    interruptGraceMs: 20,
+  });
+  fake.abort = async () => {
+    fake.aborts++;
+    await new Promise<void>(() => {});
+  };
+  await prompt("turn A");
+  session.interrupt();
+  await awaitTurnEnd();
+  assert.equal(fake.aborts, 1);
+  assert.deepEqual(fake.forks, [SES], "the missed idle retires A's ambiguous session id");
+
+  session.pushPrompt("turn B");
+  await waitFor(() => fake.prompts.length === 2, "B sent on recovered session");
+  const recoveredID = fake.promptSessionIDs[1];
+  assert.notEqual(recoveredID, SES);
+  feed(idle(SES)); // A's eventual idle is now unambiguously stale.
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal(msgs.filter((m) => m.type === "turn_end").length, 1);
+  feed(idle(recoveredID));
+  await awaitTurnEnd(2);
+  session.close();
+});
+
+test("BUGFIX3: abort success without an idle forks context before the next turn", async () => {
+  const { session, fake, msgs, prompt, feed, awaitTurnEnd } = makeSession({
+    interruptGraceMs: 20,
+  });
+  await prompt("turn A");
+  session.interrupt(); // fake abort resolves, but the engine emits no idle
+  await awaitTurnEnd();
+  assert.deepEqual(fake.forks, [SES]);
+
+  session.pushPrompt("turn B");
+  await waitFor(() => fake.prompts.length === 2, "B sent on fork");
+  const recoveredID = fake.promptSessionIDs[1];
+  feed(idle(recoveredID));
+  await awaitTurnEnd(2);
+  assert.equal(msgs.filter((m) => m.type === "turn_end").length, 2);
+  session.close();
+});
+
+test("BUGFIX3: an unavailable fork falls back to a disclosed fresh session", async () => {
+  const { session, fake, msgs, prompt, feed, awaitTurnEnd } = makeSession({
+    interruptGraceMs: 20,
+  });
+  fake.forkSession = async (id) => {
+    fake.forks.push(id);
+    throw new Error("HTTP 404");
+  };
+  fake.uniqueSessionIDs = true;
+  await prompt("turn A");
+  session.interrupt();
+  await awaitTurnEnd();
+
+  session.pushPrompt("turn B");
+  await waitFor(() => fake.prompts.length === 2, "B sent on fresh session");
+  assert.equal(fake.promptSessionIDs[1], `${SES}_2`);
+  assert.ok(
+    msgs.some(
+      (m) =>
+        m.type === "notice" &&
+        /fresh engine context/.test(m.text),
+    ),
+  );
+  const text = (fake.prompts[1]?.["parts"] as { text: string }[])[0]?.text ?? "";
+  assert.ok(text.startsWith(RENDER_GUIDANCE), "a fresh engine session receives fresh guidance");
+  feed(idle(`${SES}_2`));
+  await awaitTurnEnd(2);
   session.close();
 });
 

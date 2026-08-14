@@ -46,7 +46,7 @@ export function parseRenderId(output: unknown): string {
  *
  * Faithful-skin posture (inherit-don't-invent): passes only Mirafold's own
  * concerns — the session cwd and model when set. Auth is API-key (the free
- * Google-login path was deprecated by Google in 2026); the key stays in the
+ * Google-login path stopped serving individual accounts in 2026); the key stays in the
  * server env, injected into the child, never on the wire. Approval for the
  * user's own tools is inherited; only our `genui` MCP server is auto-trusted
  * (the analog of Codex's per-server `approve`), since headless can't prompt.
@@ -379,23 +379,7 @@ export class GeminiCliSession implements AgentSession {
     return this.spawnTurn(text);
   }
 
-  // Gemini sunset (2026-08-13): one dated, Mirafold-composed line per
-  // session. Google retired Gemini CLI upstream on 2026-06-18 (the R.6 note
-  // in provider-policy.ts); the API-key path still functions, so the adapter
-  // keeps working — deprecated honestly rather than removed or hidden.
-  private sunsetNoticed = false;
-
   private spawnTurn(text: string): Promise<void> {
-    if (!this.sunsetNoticed) {
-      this.sunsetNoticed = true;
-      this.emit({
-        type: "notice",
-        text:
-          "Google retired Gemini CLI upstream on 2026-06-18 (Antigravity replaced it). " +
-          "Your Gemini API key keeps working here for now, but this adapter is " +
-          "deprecated and will be removed in a future release.",
-      });
-    }
     return new Promise((resolve) => {
       // V.2: the headless stream-json surface has no system-prompt/instructions
       // hook (unlike Claude's `systemPrompt.append`), so RENDER_GUIDANCE rides

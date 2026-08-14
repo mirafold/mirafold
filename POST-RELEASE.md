@@ -253,16 +253,6 @@ has a home in this plan, the entry points there instead of duplicating it.
 ---
 
 
-- [ ] **Gemini adapter removal** — the second half of the 2026-08-13 gentle
-  sunset (PLAN "Gemini sunset"). Google retired Gemini CLI upstream
-  2026-06-18; the adapter is deprecated in-product (picker suffix, dated
-  session notice) but keeps working while the API-key path does. Remove the
-  adapter — `gemini-cli.ts` + satellites, the `AgentName` member stays wire-
-  reserved — only on EVIDENCE: the archived CLI stops accepting API keys, a
-  Gemini API shutoff, or usage signal that nobody runs it. Never silently;
-  the removal release notes name the date and the alternative (OpenCode
-  drives Gemini-family models via BYO providers).
-
 - [x] **Remote CREATE of an OpenCode session** — PROMOTED to PLAN.md Phase RC
   (2026-08-13, Kyle-directed) — today a relay viewport can
   only ATTACH to an OpenCode session after its first local turn classifies

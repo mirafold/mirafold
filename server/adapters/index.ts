@@ -126,10 +126,10 @@ function credentialKind(agent: AgentName): CredentialKind {
       if (loginFileExists(process.env.CODEX_HOME, ".codex", "auth.json")) return "subscription";
       return "none";
     case "gemini-cli":
-      // A Google AI Studio API key only. The free "Login with Google" OAuth path
-      // was deprecated for the CLI in 2026 (IneligibleTierError) AND Gemini's ToS
-      // prohibits subscription use in third-party tools — so there is no
-      // subscription kind to detect. GOOGLE_API_KEY is the CLI's other name.
+      // A Google AI Studio API key only. "Login with Google" stopped serving
+      // individual Gemini CLI accounts in 2026 (IneligibleTierError), and
+      // Gemini's ToS prohibits subscription use in third-party tools — so there
+      // is no subscription kind to detect. GOOGLE_API_KEY is the CLI's other name.
       return process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY ? "api-key" : "none";
     case "opencode": {
       // Hello-time detection is deliberately SHALLOW (OC.3): the truthful,
@@ -443,10 +443,6 @@ export function availableAgents(): AgentInfo[] {
     return {
       agent,
       live,
-      // Gemini sunset (Kyle, 2026-08-13): Google retired Gemini CLI upstream
-      // on 2026-06-18 (provider-policy.ts R.6 note). The adapter keeps
-      // working while API keys do — deprecated, visible, never hidden.
-      ...(agent === "gemini-cli" ? { deprecated: "retired upstream" } : {}),
       ...(kind === "subscription" && !live ? { blocked: true } : {}),
       // The KIND rides as a fact; the client owns its wording (agents-meta's
       // backendLabel), so the one-click row and the second step say the same

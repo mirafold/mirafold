@@ -9949,7 +9949,7 @@ was met live 2026-07-22. Entries verbatim:
 
 Verbatim originals of the sections completed 2026-08-12 → 2026-08-14 and
 compressed in PLAN.md on 2026-08-14: the NF and FD step bodies, the
-paintings polish batch, Phase OC, the Gemini sunset, Phase RC, and the
+paintings polish batch, Phase OC, the superseded Gemini sunset record, Phase RC, and the
 whole Phase SA record (charter, signed-off decisions, research ledger,
 steps, and the post-phase refactor/bughunt/audit/test-audit records).
 
@@ -10351,19 +10351,23 @@ an allowed provider and drive it immediately; a subscription/Zen pin is
 refused at create with the honest reason and leaks nothing; all tiers green.
 
 
-### Gemini sunset — product call + deprecation-surface body
+### Gemini sunset — superseded product call + deprecation-surface body
 
 ## Gemini sunset (opened + ✅ COMPLETE 2026-08-13; Kyle-directed)
 
-**Product call.** From the 2026-08-13 market check: Google retired Gemini
-CLI upstream on 2026-06-18 (closed-source Antigravity replaced it; the
-dated citation lives in provider-policy.ts's R.6 note). Kyle's calls, in
-order: sunset rather than migrate (same day, morning), hold while other
-work was in flight, then "do the gemini sunset" (same day, after Phase OC
-merged). Shape: **gentle** — the API-key path still functions under the
-Gemini API ToS, so nothing is removed or hidden; the adapter is deprecated
-honestly. Removal is parked in POST-RELEASE.md, gated on evidence of
-actual breakage, never on a calendar.
+**Correction 2026-08-14.** This decision was reversed after the pre-release
+review checked Google's exact announcement. Google ended Gemini CLI requests
+for free/AI Pro/AI Ultra individual accounts, while explicitly retaining
+API-key and enterprise access and continued maintenance of the Apache-2.0 CLI.
+Mirafold's API-key adapter therefore remains supported. Phase RF removes every
+deprecation surface and the future-removal item. This archived section remains
+only as the labeled record of the mistaken 2026-08-13 decision.
+
+**Superseded product call.** The 2026-08-13 market check was read as a full
+upstream retirement and Kyle consequently chose a gentle sunset: nothing was
+removed or hidden because the API-key path still functioned, but the adapter
+was marked deprecated and future removal was parked behind evidence rather
+than a calendar. That reading and decision no longer govern the product.
 
 - [x] **Deprecation surface** — completed 2026-08-13: additive
   `AgentInfo.deprecated` (daemon-composed reason; the picker renders it as
@@ -10371,10 +10375,9 @@ actual breakage, never on a calendar.
   ramp's height budget holds), connect-hint copy updated with the dated
   retirement, a once-per-session dated notice in the Gemini adapter
   (Mirafold-composed, lands before the first turn completes), the
-  provider-policy row annotated (policy itself unchanged), and the
-  POST-RELEASE removal entry with its evidence gate. Tier-1 tests: the
-  notice rides once and unbadged; `deprecated` rides the hello for gemini
-  only.
+  provider-policy row annotated (policy itself unchanged), and a
+  POST-RELEASE removal entry with an evidence gate. Tier-1 tests pinned the
+  notice and hello suffix. All of these surfaces were reversed by Phase RF.
 
 
 ### Phase OC — OC.0–OC.5 full bodies
@@ -10384,9 +10387,9 @@ actual breakage, never on a calendar.
 **Product call.** Kyle, from a 2026-08-13 market check: OpenCode (~195k
 GitHub stars) is now the dominant open-source terminal agent — the largest
 user population Mirafold doesn't cover — and becomes the fourth adapter.
-(Same check surfaced that Gemini CLI was retired upstream 2026-06-18,
-replaced by the closed-source Antigravity CLI; Gemini-adapter sunset is
-agreed but explicitly deferred — NOT part of this phase.) The feasibility
+(The same check was initially misread as a full Gemini CLI retirement; the
+resulting adapter-sunset decision was reversed on 2026-08-14 after Google's
+retained API-key/enterprise support and repository maintenance were verified.) The feasibility
 spike is **`server/adapters/opencode.spike.md`** (verdict GREEN): the
 event→`WireMsg` table, the `OPENCODE_CONFIG_CONTENT` MCP-injection path,
 the permission reply round-trip, and the provider-keyed credential-policy
@@ -10758,3 +10761,41 @@ first, measurement second, new paintings demand-gated.
   `yarn test` + `yarn test:e2e` + `yarn typecheck` pass; README's shell-UI
   section gains the tab-status-adjacent paragraph.
 
+
+## Moved 2026-08-14 (Phase RF — completed body)
+
+Full Phase RF body completed and compressed in PLAN.md on 2026-08-14.
+
+## Phase RF — Pre-release findings closure (opened + ✅ COMPLETE 2026-08-14; Kyle-directed)
+
+**Verified starting state.** The `next` → `main` release review found that
+Gemini CLI still has a working Mirafold adapter and API-key path; only a new
+deprecation layer claimed it was retired upstream. The same review reproduced
+two OpenCode interrupt wedges: the grace timer starts only after the abort
+request settles, and a grace-ended turn whose engine idle never arrives leaves
+debt that prevents the next turn from ending. Versioning and the packaged pass
+remain later release-sequence gates, not defects at this checkpoint.
+
+- [x] **Step RF.1 — Restore Gemini CLI as a supported adapter.** Remove the
+  `AgentInfo.deprecated` wire field and its only producer/consumer, the dated
+  per-session sunset notice, the future-removal entry, and every current-facing
+  retirement claim. Preserve the adapter, API-key detection, provider-policy
+  restriction on individual-account authentication, trust gate, MCP injection,
+  model selection, and resume behavior. Correct the archived decision record
+  rather than erasing it. Done when Gemini is presented as supported everywhere
+  and focused tests prove no sunset notice or picker suffix remains.
+- [x] **Step RF.2 — Make OpenCode interruption bounded and turn-safe.** Arm the
+  grace timer independently of the abort HTTP response. If the engine's idle
+  arrives in time, retain the same OpenCode session and context. If it does not,
+  retire that ambiguous session identity and fork it through OpenCode's official
+  `POST /session/:id/fork` endpoint before the queued next prompt; old-session
+  events must then be ignored and idle debt reset. Bound the fork request and
+  fall back honestly to a fresh session only if context-preserving recovery
+  fails. Pin both reproduced wedge paths with Tier-1 tests.
+- [x] **Step RF.3 — Verify the corrective boundary.** Focused Gemini tests were
+  green; the focused OpenCode suite was **56/56** after correcting its fake's
+  session-id seam. Tier 1 was **840/840**, Tier 2 **152/152**, typecheck green,
+  and Tier 3 **100/100** from a fresh production build. The final diff stayed
+  within RF.1/RF.2. The working tree is ready for the existing **CS.4**
+  real-subscription cancel → Paddle scheduled state → undo walkthrough,
+  performed with Kyle one action at a time.

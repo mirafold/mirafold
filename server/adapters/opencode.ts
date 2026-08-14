@@ -79,6 +79,7 @@ export class OpenCodeSession implements AgentSession {
   // notice states standing terms, so it rides once per provider, not per turn.
   private disclosedProviders = new Set<string>();
   private permissionTimeoutMs: number;
+  private interruptGraceMs: number;
   private pendingPermissions = new Map<string, ReturnType<typeof setTimeout>>();
   // Per-turn end latch: exactly one turn_end per prompt (idle, error,
   // interrupt fallback, or close — whichever comes first).
@@ -95,6 +96,13 @@ export class OpenCodeSession implements AgentSession {
   // The interrupt grace timer — cleared on close so a dead session never
   // holds the event loop (ADAPTERS.md close() contract).
   private graceTimer?: ReturnType<typeof setTimeout>;
+  // Invalidates an in-flight context-preserving fork when the engine dies or
+  // the Mirafold session closes before recovery finishes.
+  private recoveryGeneration = 0;
+  // Set only when the fork endpoint failed and recovery had to create an
+  // empty engine session. The next turn surfaces the context loss inside its
+  // own envelope, never as an orphan notice between turns.
+  private contextResetNoticePending = false;
 
   get modelName(): string | undefined {
     return this.modelLabel;
@@ -125,13 +133,14 @@ export class OpenCodeSession implements AgentSession {
     for (const cb of this.kindListeners) cb(this.lastKind);
   }
 
-  // `makeTransport` and `permissionTimeoutMs` are test seams.
+  // `makeTransport`, `permissionTimeoutMs`, and `interruptGraceMs` are test seams.
   constructor(opts: {
     workspaceDir: string;
     model?: string;
     resumeId?: string;
     makeTransport?: (config: Record<string, unknown>) => OpenCodeTransport;
     permissionTimeoutMs?: number;
+    interruptGraceMs?: number;
   }) {
     const workspaceDir = path.resolve(opts.workspaceDir);
     mkdirSync(workspaceDir, { recursive: true });
@@ -147,6 +156,7 @@ export class OpenCodeSession implements AgentSession {
     this.wantedResumeId = opts.resumeId;
     this.resumeIdState = new ResumeIdState(opts.resumeId);
     this.permissionTimeoutMs = opts.permissionTimeoutMs ?? PERMISSION_TIMEOUT_MS;
+    this.interruptGraceMs = opts.interruptGraceMs ?? INTERRUPT_GRACE_MS;
     const render = renderMcpCommand();
     const configContent = {
       mcp: {
@@ -191,23 +201,31 @@ export class OpenCodeSession implements AgentSession {
   interrupt() {
     if (!this.turnActive) return;
     const token = this.turnToken;
+    const sessionID = this.sessionID;
     this.denyPendingPermissions();
     const fallback = () => {
-      if (this.turnActive && this.turnToken === token) this.endTurn();
+      this.graceTimer = undefined;
+      if (!this.turnActive || this.turnToken !== token) return;
+      // Once the engine misses its idle deadline, this session id is
+      // ambiguous forever: a later idle cannot be distinguished from the
+      // next turn's. Fork before the queue advances so context survives but
+      // every old-session event becomes unambiguously stale.
+      if (sessionID && this.sessionID === sessionID) this.recoverInterruptedSession(sessionID);
+      this.endTurn();
     };
-    if (this.sessionID) {
+    if (sessionID) {
+      if (this.graceTimer) return; // repeated Stop clicks share one abort/deadline
       // A FAILED abort must not end the turn instantly — that is the one
       // case where the engine is still generating, and freeing the worker
       // interleaves the next prompt with the live stream (bughunt
-      // 2026-08-13). Both outcomes share the bounded grace: the engine's
-      // own idle usually ends the turn first.
-      void this.transport
-        .abort(this.sessionID)
-        .catch(() => {})
-        .then(() => {
-          this.graceTimer = setTimeout(fallback, INTERRUPT_GRACE_MS);
-          this.graceTimer.unref?.();
-        });
+      // 2026-08-13). The grace starts BEFORE the HTTP call: an abort request
+      // that never settles must still release the turn (release review,
+      // 2026-08-14). The engine's own idle usually wins this race.
+      this.graceTimer = setTimeout(fallback, this.interruptGraceMs);
+      this.graceTimer.unref?.();
+      void Promise.resolve()
+        .then(() => this.transport.abort(sessionID))
+        .catch(() => {});
     } else {
       fallback();
     }
@@ -222,7 +240,9 @@ export class OpenCodeSession implements AgentSession {
   close() {
     if (this.closed) return;
     this.closed = true;
+    this.recoveryGeneration += 1;
     clearTimeout(this.graceTimer);
+    this.graceTimer = undefined;
     this.denyPendingPermissions();
     this.endTurn(); // release a worker awaiting an in-flight turn
     this.transport.close();
@@ -367,6 +387,15 @@ export class OpenCodeSession implements AgentSession {
       // (bughunt 2026-08-13). The guidance flag is untouched too, so the
       // first REAL turn still carries it.
       if (!this.turnActive || this.turnToken !== token) return;
+      if (this.contextResetNoticePending) {
+        this.contextResetNoticePending = false;
+        this.emit({
+          type: "notice",
+          text:
+            "OpenCode could not preserve the interrupted engine conversation, so this turn " +
+            "starts with fresh engine context. Mirafold's transcript is unchanged.",
+        });
+      }
       await send();
       // The engine accepted the request: exactly one idle is now owed, and
       // only from here can an idle legitimately end this turn.
@@ -503,6 +532,7 @@ export class OpenCodeSession implements AgentSession {
    *  busy-wedged forever (bughunt round 2). */
   private onEngineDied(detail: string) {
     if (this.closed) return;
+    this.recoveryGeneration += 1;
     this.engineUp = undefined;
     this.started = undefined;
     this.sessionID = undefined;
@@ -510,6 +540,49 @@ export class OpenCodeSession implements AgentSession {
     this.denyPendingPermissions(false);
     this.emit({ type: "error", message: detail });
     this.endTurn();
+  }
+
+  /** The interrupt grace expired without the old session's idle. OpenCode's
+   *  idle event has no turn id, so reusing that session would make every
+   *  future idle ambiguous. The official fork endpoint preserves context
+   *  under a new id; if it is unavailable/fails, a fresh session is the only
+   *  state that cannot be ended by a late event from the abandoned one. */
+  private recoverInterruptedSession(abandonedID: string) {
+    if (this.sessionID !== abandonedID) return;
+    const generation = ++this.recoveryGeneration;
+    this.sessionID = undefined;
+    this.wantedResumeId = undefined;
+    this.pendingEngineIdles = 0;
+
+    const recovery = (async () => {
+      let next: { id: string };
+      try {
+        next = await this.transport.forkSession(abandonedID);
+        if (!next.id || next.id === abandonedID)
+          throw new Error("opencode fork did not return a new session id");
+      } catch {
+        // An older engine may not expose /fork, or the abandoned server may
+        // refuse it. Fresh context is an honest degraded recovery, and the
+        // next turn says so before sending anything to the model.
+        if (this.closed || generation !== this.recoveryGeneration) return;
+        this.firstTurn = true;
+        this.contextResetNoticePending = true;
+        next = await this.transport.createSession();
+      }
+      if (this.closed || generation !== this.recoveryGeneration) return;
+      if (!next.id || next.id === abandonedID)
+        throw new Error("opencode recovery did not return a new session id");
+      this.sessionID = next.id;
+      this.resumeIdState.publish(next.id);
+    })();
+
+    // The queued next turn awaits this through ensureStarted(). Attach a
+    // catch now as well so a recovery failure with no next prompt is never an
+    // unhandled rejection; a later prompt retries normal session creation.
+    this.started = recovery;
+    void recovery.catch(() => {
+      if (this.started === recovery) this.started = undefined;
+    });
   }
 
   /** One engine idle arrived. It ends the ACTIVE turn only when that turn's
@@ -523,6 +596,8 @@ export class OpenCodeSession implements AgentSession {
   private endTurn() {
     if (!this.turnActive) return;
     this.turnActive = false;
+    clearTimeout(this.graceTimer);
+    this.graceTimer = undefined;
     // A turn's end moots its gated asks: without this, a stale
     // permission_resolved fired up to PERMISSION_TIMEOUT_MS later, mid-next-
     // turn (bughunt). No engine reply — the engine has already moved on.
@@ -614,4 +689,3 @@ export function parseModelPin(model?: string): { providerID: string; modelID: st
   if (slash <= 0 || slash === model.length - 1) return undefined;
   return { providerID: model.slice(0, slash), modelID: model.slice(slash + 1) };
 }
-
