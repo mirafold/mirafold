@@ -586,12 +586,19 @@ export class SessionRegistry {
       (msg.type === "text_delta" || msg.type === "thinking_delta")
     ) {
       const pending = entry.pendingDelta;
-      if (pending && pending.type === msg.type) {
+      // The merge key is (type, parentId) — SA.2: with parallel subagents
+      // streaming, merging on type alone would concatenate one agent's prose
+      // into another's (or into the parent's) inside a single message.
+      if (pending && pending.type === msg.type && pending.parentId === msg.parentId) {
         pending.text += msg.text;
         return;
       }
       this.flushDeltas(entry);
-      entry.pendingDelta = { type: msg.type, text: msg.text };
+      entry.pendingDelta = {
+        type: msg.type,
+        text: msg.text,
+        ...(msg.parentId !== undefined ? { parentId: msg.parentId } : {}),
+      };
       entry.deltaTimer = setTimeout(() => this.flushDeltas(entry), this.deltaCoalesceMs);
       entry.deltaTimer.unref();
       return;

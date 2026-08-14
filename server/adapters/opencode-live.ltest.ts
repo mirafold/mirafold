@@ -79,12 +79,34 @@ function startFakeModel(): Promise<{ port: number; close: () => void }> {
           usage: { prompt_tokens: 10, completion_tokens: 4, total_tokens: 14 },
         });
       };
+      // Routing is by the LAST user message — the turn's actual prompt —
+      // because with the SA.3 subagent turn in the transcript, whole-history
+      // matching would misroute the resume turn.
+      const lastUser = JSON.stringify(
+        [...messages].reverse().find((m) => m.role === "user")?.content ?? "",
+      );
       const renderDone = flat.includes("Rendered card");
       const probeTurn = flat.includes("probe command");
       const bashDone = messages.some(
         (m) => m.role === "tool" && /oc5-live/.test(JSON.stringify(m.content ?? "")),
       );
-      if (!renderDone) toolCall("mirafold_render_card", { title: "Live Probe", body: "OC.5 end to end" });
+      if (/CHILD_TASK/.test(lastUser)) {
+        // The CHILD conversation (SA.3): a permission-gated bash, then its
+        // report — narration the lane must carry.
+        const childBashDone = messages.some(
+          (m) => m.role === "tool" && /oc5-child/.test(JSON.stringify(m.content ?? "")),
+        );
+        if (!childBashDone) toolCall("bash", { command: "echo oc5-child", description: "child probe" });
+        else text("CHILD DONE — reporting back from inside the subagent.");
+      } else if (/spawn the subagent/.test(lastUser)) {
+        if (!flat.includes("CHILD DONE"))
+          toolCall("task", {
+            description: "live probe child",
+            prompt: "CHILD_TASK: run the child probe exactly once, then stop.",
+            subagent_type: "general",
+          });
+        else text("FANOUT DONE");
+      } else if (!renderDone) toolCall("mirafold_render_card", { title: "Live Probe", body: "OC.5 end to end" });
       else if (!probeTurn) text("CARD DONE");
       else if (!bashDone) toolCall("bash", { command: "echo oc5-live", description: "probe" });
       else text("BASH DONE");
@@ -187,6 +209,37 @@ test("OC.5: real engine — render, permission, usage, resume, all through the s
     );
     // The fake provider is the user's own config — no gray disclosure rides.
     assert.equal(first.msgs.filter((m) => m.type === "notice").length, 0);
+
+    // Turn 3 (SA.3): a REAL subagent — the engine's task tool spawns a child
+    // session on the same server; its permission ask, calls, and prose all
+    // ride the lane, attributed to the spawn card.
+    first.session.pushPrompt("now spawn the subagent");
+    await waitFor(
+      () => first.msgs.some((m) => m.type === "permission_request" && m.parentId),
+      "the child's attributed ask",
+      60_000,
+      () => seenTypes(first),
+    );
+    const childAsk = first.msgs.find((m) => m.type === "permission_request" && m.parentId)!;
+    first.session.resolvePermission(childAsk.id, true);
+    await waitFor(() => first.turnEnds() >= 3, "turn 3 (fan-out)", 120_000, () => seenTypes(first));
+    const spawnRow = first.msgs.find((m) => m.type === "tool_use" && m.name === "task")!;
+    assert.equal(spawnRow.parentId, undefined, "the spawn is the card anchor, un-nested");
+    assert.equal(childAsk.parentId, spawnRow.id, "the ask is attributed to the spawn card");
+    assert.ok(
+      first.msgs.some((m) => m.type === "tool_use" && m.parentId === spawnRow.id && m.name === "bash"),
+      "the child's bash rode the lane",
+    );
+    assert.ok(
+      first.msgs.some(
+        (m) => m.type === "text_delta" && m.parentId === spawnRow.id && /CHILD DONE/.test(m.text),
+      ),
+      "the child's narration rode the lane",
+    );
+    assert.ok(
+      first.msgs.some((m) => m.type === "text_delta" && !m.parentId && /FANOUT DONE/.test(m.text)),
+      "the parent's own reply stayed top-level",
+    );
 
     // Resume: engine-side persistence across a full server restart.
     const resumeId = first.session.resumeId;

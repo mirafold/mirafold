@@ -237,6 +237,12 @@ test("UX.8: strict checkpoint decoding accepts every persistable transcript fram
     { type: "artifact", html: "<p>safe</p>", id: "a1", title: "Artifact" },
     { type: "usage", model: "model", inputTokens: 2, outputTokens: 3, costUsd: 0.01 },
     { type: "thinking_delta", text: "hmm" },
+    // The subagent lane's parented variants (SA.2/SA.3): a reverted schema
+    // widening would silently strip a deck's replay — pinned here
+    // (test-audit 2026-08-14).
+    { type: "text_delta", text: "child narration", parentId: "t1" },
+    { type: "thinking_delta", text: "child reasoning", parentId: "t1" },
+    { type: "permission_request", tool: "bash", detail: "touch x", id: "p2", parentId: "t1" },
     { type: "notice", text: "retrying", kind: "retry", source: "codex" },
     { type: "bang_start", command: "echo ok", id: "b1" },
     { type: "bang_output", data: "ok\n", id: "b1" },

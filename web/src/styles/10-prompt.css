@@ -313,6 +313,16 @@
   flex-shrink: 0;
 }
 
+/* SA.3: the ask came from a subagent — a dim factual chip, shell-composed. */
+.perm-subagent {
+  color: var(--fg-faint);
+  border: 1px solid var(--border-mid);
+  border-radius: 4px;
+  padding: 0 4px;
+  font-size: 0.75em;
+  flex-shrink: 0;
+}
+
 .perm-tool {
   color: var(--fg-strong);
   font-weight: 600;

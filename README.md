@@ -211,11 +211,15 @@ The contract between server and browser. Currently on the wire:
 ```ts
 // Server → browser
 type WireMsg =
-  | { type: "text_delta"; text: string }                           // streamed markdown
+  | { type: "text_delta"; text: string;                            // streamed markdown;
+      parentId?: string }                                          //   parentId = a SUBAGENT's
+                                                                   //   prose (SA.2, opaque
+                                                                   //   handle → its deck)
   | { type: "prompt_options"; options: PromptOption[] }             // provider-owned
                                                                     // pre-submit / + $
                                                                     // completion catalog
-  | { type: "thinking_delta"; text: string }                       // T2.1: reasoning stream
+  | { type: "thinking_delta"; text: string; parentId?: string }    // T2.1: reasoning stream
+                                                                   //   (parentId as above)
   | { type: "status"; state: "thinking" | "tool"; label?: string } // activity line
   | { type: "turn_end" }                                           // finalize the turn
   | { type: "error"; message: string }
@@ -242,7 +246,9 @@ type WireMsg =
       input?: Record<string, unknown>; parentId?: string }
   | { type: "tool_result"; output: string; isError?: boolean; id: string;
       truncatedBytes?: number; parentId?: string }
-  | { type: "permission_request"; tool: string; detail: string; id: string } // T.3
+  | { type: "permission_request"; tool: string; detail: string; id: string; // T.3;
+      parentId?: string }                                          //   set = a subagent's ask
+                                                                   //   (SA.3, "subagent" chip)
   | { type: "permission_resolved"; id: string; allow: boolean } // 2026-07-28: the ask
                                                    //   resolved (any viewport's answer,
                                                    //   timeout, interrupt) — every
@@ -683,8 +689,8 @@ web/               the browser app (React 19 + Vite)
                        command in a ModalCard — the phone's truncated preview
                        was unreadable; Shell keeps owning asks + the wire answer
     RenderZone.tsx     OUTPUT ZONE: WireMsg interpreter → entries, incl.
-                       thinking blocks, artifacts, subagent grouping, and the
-                       completed-turn activity fold
+                       thinking blocks, artifacts, subagent decks (SA), and
+                       the completed-turn activity fold
     ActivityLine.tsx   the always-visible work indicator (4.14): cycling
                        asterisk + label + elapsed seconds, prompt-area chrome
                        above the box — never a transcript entry, so no scroll
@@ -700,9 +706,10 @@ web/               the browser app (React 19 + Vite)
                        bottom; folds to one row of controls at phone width
                        (R.4l), where it also hosts the Files and Changes
                        workspace toggles (the activity rail is desktop-only)
-    GearGlyph.tsx      the settings/tool gear as a flat outline drawing, three
-                       homes: the settings button, the subagent head, the
-                       fleet activity line (2026-07-25 — the ⚙ character
+    GearGlyph.tsx      the settings/tool gear as a flat outline drawing; its
+                       homes: the settings button, the subagent deck meta
+                       line, the completed-turn activity fold, the fleet
+                       activity line (2026-07-25 — the ⚙ character
                        rendered from the color-emoji font and clashed with
                        every glyph beside it)
     FilesGlyph.tsx     the Explorer/files glyph drawing — the activity-bar
@@ -970,10 +977,32 @@ mediation path (§5.4).
     with the same id completes the record, capped by `capOutput` with an
     honest `truncatedBytes` (T2.3). Results are only forwarded for ids the
     session announced.
-  - **Subagent traffic** (events with a `parent_tool_use_id`): its text and
-    thinking stay dropped — a subagent's monologue must not paint into the
-    transcript — but its tool *calls* are now forwarded tagged with
-    `parentId` (T2.4), which the client nests under the owning Task row.
+  - **Subagent traffic** (events with a `parent_tool_use_id`): its tool
+    *calls* forward tagged with `parentId` (T2.4), and since Phase SA its
+    PROSE forwards too — the SDK never streams subagent token deltas
+    (main-session-only, verified against the real CLI in the SA.0 probe),
+    but its complete assistant messages arrive live mid-run, so their text
+    and thinking blocks become message-grain parented deltas, capped
+    per-subagent by `SubagentProseBudget` (`SUBAGENT_TEXT_CAP_BYTES`,
+    explicit elision marker; the ledger also caps DISTINCT subagents per
+    turn — audit 2026-08-14 — so fabricated parent ids can't grow it
+    unboundedly). The client renders each spawn as a live
+    **subagent deck** (GLOSSARY): calm summary — agent type, the spawn's own
+    description, state, tool count, elapsed while running, current action —
+    expandable to the nested calls interleaved with the subagent's own words
+    as inert plain text, never markdown. The deck anchors on "the tool_use
+    other records reference as `parentId`", never on a tool NAME (the SDK's
+    spawn tool is `Agent` as of 0.3.201, was `Task`; OpenCode's is `task`).
+    `parentId` itself is an OPAQUE adapter-chosen handle — shared code only
+    groups by it. A subagent's permission-gated tool call already rides the
+    parent `canUseTool` (verified live, SA.0), so the permission bar covers
+    subagents with no extra plumbing; the callback carries no subagent
+    identity, so Claude Code asks stay unattributed (OpenCode's are
+    attributed — `permission_request.parentId` — and show a dim "subagent"
+    chip). A subagent cannot paint: the SDK withholds MCP tools from
+    subagent contexts entirely (proved through the real adapter + shipped
+    in-process render server, audit 2026-08-14), so the render tools are
+    parent-only on this engine by construction.
   - **Task list** (T2.5): the SDK's `TaskCreate`/`TaskUpdate` family (its
     successor to `TodoWrite`) is folded into one live `todo-list` render that
     updates in place; the raw Task* rows and their results are swallowed.
@@ -1029,7 +1058,11 @@ emissions: streamed `thinking_delta`, fake `tool_use`/`tool_result` records
 (incl. an Edit with a real before/after and a Write), a `usage` record, the
 reply streamed in 16-char chunks at ~12ms, then `turn_end`. Keyword hooks in
 the prompt drive every other capability API-free — `artifact`/`broken`/
-`navigates` (Phase 3 + its fallbacks), `subagent`/`delegate` (nested Task),
+`navigates` (Phase 3 + its fallbacks), `subagent`/`delegate` (a three-spawn
+parallel fan-out with narration — three live subagent decks, out-of-order
+finishes; Phase SA), `delegate slowly` (ONE spawn whose narration streams
+seconds before its first tool call — the deterministic window for
+mid-turn-reset tests),
 `todo`/`plan` (live checklist), `huge` (the elision marker), `dangerous`
 (permission prompt). `close()` clears all pending timers.
 
@@ -1159,9 +1192,11 @@ same relative URL works unchanged.
 
 State: a flat list of `Entry`s — text blocks (`{kind:"text", …}`), rendered
 components (`{kind:"render", …}`), tool records (`{kind:"tool", …}`, which
-may carry `parentId` for subagent calls), thinking blocks (`{kind:"thinking",
-…}`), and artifacts (`{kind:"artifact", …}`) — in the exact order they
-arrived on the wire, plus an ephemeral `Status`. The reducer-like
+may carry `parentId` for subagent calls), subagent prose
+(`{kind:"subtext", …}` — parented narration/thinking, rendered only inside
+its subagent deck's expansion, never top-level), thinking blocks
+(`{kind:"thinking", …}`), and artifacts (`{kind:"artifact", …}`) — in the
+exact order they arrived on the wire, plus an ephemeral `Status`. The reducer-like
 subscription handles each `ZoneMsg`:
 
 - `user_prompt` → append a done user text entry, show `thinking`.
@@ -1176,7 +1211,12 @@ subscription handles each `ZoneMsg`:
   deliberate correctness detail: if the user sends a new prompt mid-stream,
   the user entry is appended after the streaming block, and deltas still
   route to the right block by id instead of gluing the reply's tail onto
-  the wrong one.
+  the wrong one. A delta carrying `parentId` is a SUBAGENT's prose (SA.2)
+  and routes to a `subtext` entry inside its deck instead — before the
+  fold/close logic, so a child streaming never folds the parent's open
+  thinking or closes the parent's streaming block; per-parent open runs
+  live in their own ref (`subtextIds`), closed by that subagent's next tool
+  row and cleared at `turn_end` and `zone_reset`.
 - `render` → if the wire `id` has been seen, **update that entry's props in
   place** (this is what keeps pinned widgets live); otherwise append a
   render entry and close the streaming text block, so later deltas open a
@@ -1200,8 +1240,23 @@ subscription handles each `ZoneMsg`:
   opening a fold preserves every normalized input and result. `ToolBlock.tsx`
   renders those details — Edit/Write as a colored diff / code (T2.2), with
   any `truncatedBytes` as an explicit elision marker (T2.3). Calls tagged
-  with `parentId` stay inside the turn's activity rather than becoming extra
-  top-level churn (T2.4).
+  with `parentId` render inside their **subagent deck**, never top-level
+  (T2.4/SA.1) — next bullet.
+- **The subagent deck** (Phase SA): a spawn whose wire id other records
+  reference as `parentId` becomes a live deck — the anchor is that
+  relationship, never a tool name. Calm summary (agent type + the spawn's
+  own description verbatim, pulsing state dot, tool count, current action =
+  the newest unanswered child call; derivation is pure in
+  `web/src/subagent-deck.ts`), expandable to the full activity: child calls
+  interleaved with the subagent's narration and dim reasoning in true
+  stream order, all inert plain text. Elapsed seconds tick only while the
+  spawn is running AND its record arrived live — a replayed record's stamp
+  is the attach moment, so a replayed deck shows no elapsed rather than a
+  false one. Decks are hard fold-boundaries for the settled-activity
+  compaction and their children are invisible to it; child tool traffic
+  never steers the root activity line in either direction (each deck shows
+  its own action). A subagent's permission ask paints the same shell bar
+  with a dim "subagent" chip (`permission_request.parentId`).
 - `artifact` → route to `Artifact.tsx` (the sandboxed iframe, Phase 3);
   re-sending an id replaces it in place, same as `render`.
 - `picker` → append a `PickerBlock.tsx` entry: the SHELL-owned selector
@@ -1480,7 +1535,9 @@ these tuning knobs:
 checkpoint remains),
 `PERMISSION_TIMEOUT_MS` (how long a permission prompt waits before denying),
 `TOOL_OUTPUT_CAP_BYTES` (per-result output cap before the elision marker,
-default 64 KB), `BANG_CONTEXT_CAP` (tail of a `!` transcript injected into
+default 64 KB), `SUBAGENT_TEXT_CAP_BYTES` (per-subagent narration cap before
+its elision marker, default 64 KB — Phase SA),
+`BANG_CONTEXT_CAP` (tail of a `!` transcript injected into
 the agent's context, default 16 KB), `MAX_THINKING_TOKENS` (opt-in extended
 thinking), `MAX_WS_PAYLOAD` (largest inbound WS frame, default 1 MB),
 `MAX_SESSIONS` (concurrent-session ceiling, default 100), `MIRAFOLD_TOKEN`

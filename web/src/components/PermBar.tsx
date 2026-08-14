@@ -3,7 +3,13 @@ import { ModalCard } from "./ModalCard";
 
 const TITLE_ID = "perm-modal-title";
 
-export type PermAsk = { tool: string; detail: string; id: string };
+export type PermAsk = {
+  tool: string;
+  detail: string;
+  id: string;
+  /** SA.3: set when the asker is a subagent — the bar shows a dim chip. */
+  parentId?: string;
+};
 
 /**
  * The permission strip and its full-command card. SHELL-OWNED UI: the agent
@@ -36,6 +42,7 @@ export function PermBar({
           title="Show the full command"
         >
           <span className="perm-badge">permission</span>
+          {asks[0].parentId && <span className="perm-subagent">subagent</span>}
           <span className="perm-tool">{asks[0].tool}</span>
           <code className="perm-detail">{asks[0].detail}</code>
           {asks.length > 1 && <span className="perm-more">+{asks.length - 1}</span>}

@@ -196,6 +196,50 @@ paths through one `finish`, as `claude-code.ts` does).
 **`close()`** — idempotent teardown: end generators, abort turns, kill child
 processes, clear timers. After `close()`, no further messages may be emitted.
 
+**The subagent lane (Phase SA)** — when the engine spawns its own subagents,
+the adapter maps them onto the neutral lane instead of dropping or flattening
+them. The rules, for the next adapter author:
+
+- **`parentId` is an opaque adapter-chosen handle.** Claude Code uses the
+  spawn `tool_use` id; OpenCode uses the parent `task` PART id. Shared code
+  (registry, client, replay) only ever GROUPS by it — nothing parses,
+  dereferences, or compares it across adapters. Pick whatever your engine's
+  natural join key is.
+- **The deck anchors on the relationship, never a tool name.** The client
+  turns "a tool_use other records reference as `parentId`" into a live
+  subagent deck (GLOSSARY). Engines whose spawn is not a tool call (Codex's
+  collab threads, if mapped post-F.5) would need a spawn record for the deck
+  to anchor on — the requirement is named here so the deck component never
+  grows a name check.
+- **Prose is budget-capped per subagent.** Every forwarded subagent
+  text/thinking chunk passes `SubagentProseBudget` (`adapters/types.ts`;
+  `SUBAGENT_TEXT_CAP_BYTES`, default 64 KB) — one explicit elision marker at
+  exhaustion, never a silent cut, ledger cleared each turn. The ledger also
+  caps DISTINCT subagents per turn (audit 2026-08-14 flood parity): past it
+  a new parent id's prose drops silently, like every other per-turn cap.
+  This bounds what one subagent — or a fabricating engine — can add to the
+  wire, the replay ring, and relay bytes.
+- **Prose renders inert.** Subagent words paint as plain text inside the
+  deck's expansion — never markdown, never top-level transcript (they must
+  not fold the parent's thinking, steer the activity label, or land in the
+  turn-end announcement).
+- **A subagent's render call never paints.** Paintings are session-level;
+  inside a deck it gets the honest `tool_use`/`tool_result` record. On
+  OpenCode this is our lane code; on Claude Code the ENGINE enforces it —
+  the SDK withholds MCP tools from subagent contexts (proved through the
+  real adapter + shipped in-process render server, audit 2026-08-14).
+- **A subagent's permission ask surfaces on the shell bar** with `parentId`
+  when the engine can attribute it (OpenCode can; Claude Code's
+  `canUseTool` callback carries no subagent identity, so its asks ride
+  unattributed), and the same deny-by-default timer as any ask. A child's
+  lifecycle events (idle, status, error) must never touch the parent turn's
+  state — its failure surfaces through the spawn record's result.
+- **Render depth 1 — what the stream surfaces.** Engines nest deeper
+  (Claude Code to depth 3, engine-hidden; OpenCode only if the user
+  configures it). Resolve parentage transitively to the nearest
+  stream-visible ancestor's deck; engine-hidden grandchildren are the
+  ENGINE's choice, faithfully absent.
+
 ## 4. Capability matrix (shipped providers, as implemented)
 
 | Capability | `claude-code` | `codex` | `opencode` | `gemini-cli` | `mock` |
@@ -207,7 +251,7 @@ processes, clear timers. After `close()`, no further messages may be emitted.
 | Text streaming granularity | token-level (`includePartialMessages`) | **buffered** — one `text_delta` per completed item (SDK emits no token deltas today) | token-level: a true delta channel (`message.part.delta`) plus snapshot accrual | chunked `message` events | 16-char chunks |
 | Thinking stream (`thinking_delta`) | ✅ full fidelity | ✅ when reasoning items appear | ✅ (`reasoning` parts) | ❌ observed absent → never fires (I3 proof) | ✅ scripted |
 | Tool records (`tool_use`/`tool_result`) | ✅ full input, diffs | ✅ (`command_execution`, `file_change`, `mcp_tool_call`, `web_search`; only `status: "failed"` maps to `isError` — a completed command with a nonzero exit stays non-error, its exit code annotated in the output, matching the Codex TUI) | ✅ (tool parts; error output capped by `capOutput` like success) | ✅ | ✅ |
-| Subagent nesting (`parentId`) | ✅ (`parent_tool_use_id`) | ❌ n/a | ❌ child sessions skipped whole; their work surfaces through the parent's `task` part | ❌ n/a | ✅ scripted |
+| Subagent lane (`parentId` on calls, prose, asks — the subagent deck; Phase SA) | ✅ calls (`parent_tool_use_id`) + prose from parent-tagged COMPLETE messages (the SDK never streams subagent token deltas — SA.0 probe), budget-capped; asks ride the parent `canUseTool` unattributed | ❌ deferred to F.5: collab exists engine-side (default-on since ~2026-02), children are sibling THREADS whose inner activity needs app-server per-thread subscriptions; the TS SDK types none of it | ✅ full lane: child sessions on the same global stream map to the spawn part id (`state.metadata.sessionId` join, transitive for configured nesting), prose budget-capped, `permission.asked` surfaced ATTRIBUTED (`permission_request.parentId`) and replied via the session-agnostic `POST /permission/{requestID}/reply`; a child's render call gets an honest tool record, never a painting | ❌ n/a (sunset) | ✅ scripted three-spawn fan-out with narration |
 | Live todo checklist (`render` todo-list) | ✅ (TaskCreate/Update fold) | ✅ (`todo_list` item) | ✅ (`todo.updated`) | ❌ | ✅ |
 | Interactive permissions (`permission_request`) | ✅ full round-trip via `canUseTool` + inherited `settings.json` | ❌ SDK exposes no approval callback → inherits user's Codex approval config (I3) | ✅ full round-trip: `permission.asked` → reply `once`/`reject` (never `always` — that would persist into the user's own OpenCode state) | ❌ headless can't prompt → user's own tool approvals inherited; only our render server is scoped-allowed | ✅ (`dangerous` keyword) |
 | Usage (`usage` msg) | ✅ tokens + cumulative `total_cost_usd` | ✅ tokens (`cached_input_tokens` is a subset of input — never re-added) | ✅ tokens + cost per assistant message, summed into one per-turn `usage` | ✅ per-model token breakdown | ✅ |

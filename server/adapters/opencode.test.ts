@@ -8,6 +8,7 @@ import { RENDER_GUIDANCE } from "../render-tools";
 import { OpenCodeSession } from "./opencode";
 import type { OpenCodeEvent, OpenCodeTransport } from "./opencode-client";
 import { waitFor } from "../testing/wait-for";
+import { OPENCODE_SUBAGENT_EVENTS } from "../testing/opencode-subagent-fixture";
 
 // OC.1: the OpenCode event→WireMsg mapping and the turn grammar, on synthetic
 // events whose shapes are the OC.0 live capture (opencode.spike.md) — no
@@ -83,7 +84,7 @@ class FakeTransport implements OpenCodeTransport {
   async abort(_sessionID: string) {
     this.aborts++;
   }
-  async replyPermission(_sessionID: string, permissionID: string, response: "once" | "reject") {
+  async replyPermission(permissionID: string, response: "once" | "reject") {
     this.replies.push({ permissionID, response });
   }
   close() {
@@ -397,7 +398,7 @@ test("the user message's own echoed parts never replay as output", async () => {
   session.close();
 });
 
-test("subagent child-session events are skipped whole", async () => {
+test("an UNROUTABLE session's events are skipped whole (no spawn edge, no lane — SA.3 fallback)", async () => {
   const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
   await prompt("hi");
   feed(
@@ -411,6 +412,209 @@ test("subagent child-session events are skipped whole", async () => {
   await awaitTurnEnd();
   assert.equal(msgs.some((m) => m.type === "text_delta"), false);
   assert.equal(msgs.filter((m) => m.type === "turn_end").length, 1);
+  session.close();
+});
+
+// ---- SA.3: the subagent lane, proven against the SA.0 live capture. The
+// fixture is a REAL `opencode serve` 1.18.18 subagent run recorded raw; ids
+// (part, message, permission) are verbatim, sessions normalized.
+
+function feedFixture(feed: (...evs: OpenCodeEvent[]) => void, rootAs: string) {
+  for (const e of OPENCODE_SUBAGENT_EVENTS) {
+    const rewritten = JSON.parse(
+      JSON.stringify(e).replaceAll("ses_sa0probe00000000000root", rootAs),
+    ) as OpenCodeEvent;
+    feed(rewritten);
+  }
+}
+
+const FIXTURE_CHILD = "ses_sa0probe0000000000child";
+
+test("SA.3: the captured subagent run maps whole — spawn card anchor, parented calls and prose, ask surfaced, no early turn end", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("spawn the probe subagent");
+  // The fixture's join key: the root task part that announced the child.
+  const spawnEvent = OPENCODE_SUBAGENT_EVENTS.find((e) => {
+    const part = (e.properties as Record<string, any>)["part"];
+    return part?.tool === "task" && part?.state?.metadata?.sessionId === FIXTURE_CHILD;
+  })!;
+  const spawnPartId = (spawnEvent.properties as Record<string, any>)["part"]["id"] as string;
+  feedFixture(feed, SES);
+  await awaitTurnEnd();
+
+  // The spawn announces un-parented — it IS the card anchor.
+  const spawn = msgs.find((m) => m.type === "tool_use" && m.id === spawnPartId)!;
+  assert.equal(spawn.name, "task");
+  assert.equal(spawn.parentId, undefined);
+  // The child's bash rides the lane, tagged with the spawn part id.
+  const childBash = msgs.find((m) => m.type === "tool_use" && m.name === "bash")!;
+  assert.equal(childBash.parentId, spawnPartId);
+  assert.equal(
+    msgs.find((m) => m.type === "tool_result" && m.id === childBash.id)?.parentId,
+    spawnPartId,
+  );
+  // The child's prose rides too, parented (never as top-level transcript).
+  const childProse = msgs.filter((m) => m.type === "text_delta" && m.parentId === spawnPartId);
+  assert.ok(childProse.length >= 1, "child narration forwarded on the lane");
+  assert.ok(
+    childProse.some((m) => /CHILD DONE/.test(m.text)),
+    "the child's own words arrived verbatim",
+  );
+  // The child's permission ask SURFACED, attributed to the card — before
+  // SA.3 it was dropped whole and the subagent hung (SA.0 finding).
+  const ask = msgs.find((m) => m.type === "permission_request")!;
+  assert.equal(ask.tool, "bash");
+  assert.equal(ask.parentId, spawnPartId);
+  // The fixture's own reply event resolves it (another-client path).
+  assert.ok(msgs.some((m) => m.type === "permission_resolved" && m.id === ask.id));
+  // The child's session.idle must NOT have ended the turn — exactly one
+  // turn_end, and it comes after the parent's own idle.
+  assert.equal(msgs.filter((m) => m.type === "turn_end").length, 1);
+  session.close();
+});
+
+test("a background child stays routable ACROSS turns — its ask surfaces instead of hanging (bughunt 2026-08-14)", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("spawn a background task");
+  // Turn 1: the spawn edge is learned, the parent turn completes.
+  feed(
+    ev("message.part.updated", {
+      sessionID: SES,
+      part: {
+        sessionID: SES,
+        messageID: "m1",
+        id: "prt_bg",
+        type: "tool",
+        tool: "task",
+        callID: "c1",
+        state: {
+          status: "completed",
+          input: { description: "bg child" },
+          output: "started in background",
+          metadata: { sessionId: "ses_bg", parentSessionId: SES, background: true },
+        },
+      },
+    }),
+    ev("session.created", { sessionID: "ses_bg", info: { id: "ses_bg", parentID: SES } }),
+    idle(),
+  );
+  await awaitTurnEnd();
+  // Turn 2 begins (startTurn resets the per-turn maps); only NOW does the
+  // still-running background child ask and speak. Before the fix the lane
+  // maps cleared with the turn and both events were dropped — the ask hang.
+  await prompt("meanwhile…");
+  feed(
+    ev("permission.asked", {
+      sessionID: "ses_bg",
+      id: "per_bg1",
+      permission: "bash",
+      patterns: ["touch x"],
+    }),
+    ev("message.part.updated", {
+      sessionID: "ses_bg",
+      part: { sessionID: "ses_bg", messageID: "m9", id: "p9", type: "text", text: "still working" },
+    }),
+    idle(),
+  );
+  await awaitTurnEnd(2);
+  const ask = msgs.find((m) => m.type === "permission_request" && m.id === "per_bg1")!;
+  assert.equal(ask.parentId, "prt_bg", "the cross-turn ask surfaced, attributed to its deck");
+  assert.ok(
+    msgs.some((m) => m.type === "text_delta" && m.parentId === "prt_bg" && /still working/.test(m.text)),
+    "the cross-turn prose still routes to the deck",
+  );
+  session.close();
+});
+
+test("SA.3: a grandchild resolves transitively to the nearest stream-visible card", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("go");
+  feed(
+    // Root spawns a child (task part metadata = the join key)…
+    ev("message.part.updated", {
+      sessionID: SES,
+      part: {
+        sessionID: SES,
+        messageID: "m1",
+        id: "prt_spawn",
+        type: "tool",
+        tool: "task",
+        callID: "c1",
+        state: {
+          status: "running",
+          input: { description: "child" },
+          metadata: { sessionId: "ses_kid", parentSessionId: SES },
+        },
+      },
+    }),
+    ev("session.created", { sessionID: "ses_kid", info: { id: "ses_kid", parentID: SES } }),
+    // …and the child (user-configured nesting) spawns a grandchild.
+    ev("session.created", { sessionID: "ses_grand", info: { id: "ses_grand", parentID: "ses_kid" } }),
+    ev("message.part.updated", {
+      sessionID: "ses_grand",
+      part: {
+        sessionID: "ses_grand",
+        messageID: "m2",
+        id: "prt_g1",
+        type: "tool",
+        tool: "grep",
+        callID: "c2",
+        state: { status: "completed", input: { pattern: "x" }, output: "hit" },
+      },
+    }),
+    idle(),
+  );
+  await awaitTurnEnd();
+  // The grandchild's call lands on the CHILD's card — the nearest
+  // stream-visible ancestor — documented degradation, never breakage.
+  const grand = msgs.find((m) => m.type === "tool_use" && m.id === "prt_g1")!;
+  assert.equal(grand.parentId, "prt_spawn");
+  session.close();
+});
+
+test("SA.3: a subagent's render call gets the honest tool record, never a painting", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("go");
+  feed(
+    ev("message.part.updated", {
+      sessionID: SES,
+      part: {
+        sessionID: SES,
+        messageID: "m1",
+        id: "prt_spawn",
+        type: "tool",
+        tool: "task",
+        callID: "c1",
+        state: {
+          status: "running",
+          input: { description: "child" },
+          metadata: { sessionId: "ses_kid", parentSessionId: SES },
+        },
+      },
+    }),
+    ev("message.part.updated", {
+      sessionID: "ses_kid",
+      part: {
+        sessionID: "ses_kid",
+        messageID: "m2",
+        id: "prt_r1",
+        type: "tool",
+        tool: "mirafold_render_card",
+        callID: "c2",
+        state: {
+          status: "completed",
+          input: { title: "T", body: "B" },
+          output: "rendered mirafold-id=abc123",
+        },
+      },
+    }),
+    idle(),
+  );
+  await awaitTurnEnd();
+  assert.equal(msgs.some((m) => m.type === "render"), false, "no painting from inside a card");
+  const row = msgs.find((m) => m.type === "tool_use" && m.id === "prt_r1")!;
+  assert.equal(row.parentId, "prt_spawn");
+  assert.ok(msgs.some((m) => m.type === "tool_result" && m.id === "prt_r1" && m.parentId === "prt_spawn"));
   session.close();
 });
 

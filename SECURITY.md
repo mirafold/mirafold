@@ -28,6 +28,15 @@ adapter-owned badge, and entries containing invisible direction/line controls
 are dropped. A provider cannot choose the badge text or present its metadata as
 an unattributed Mirafold instruction.
 
+Subagent decks (Phase SA, 2026-08-14) put a subagent's own narration and
+reasoning inside shell chrome: it renders as inert plain text only, never
+markdown or HTML, and a subagent cannot paint generative-UI components — on
+OpenCode the adapter's lane refuses it, and on Claude Code the SDK withholds
+the MCP render tools from subagent contexts (verified against the real
+adapter). Per-subagent narration is byte-capped with an explicit elision
+marker, and the cap's ledger bounds distinct subagents per turn, so a
+hostile or looping engine cannot grow it — or the wire — without bound.
+
 ## Running it safely
 
 Mirafold drives an agent that has your filesystem and your shell. That is the

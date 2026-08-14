@@ -146,8 +146,11 @@ faithful per-agent skins) · **4** except 4.7 (→ Phase R) · **G, H, H2**
 backend picker) · **V** (visual + fidelity gaps) · **A** (accessibility) ·
 **C** (CI/CD) · **E** (Explorer) · **M** (Mission control) · **E2** (Explorer at scale) ·
 **E3** (Explorer visual polish) · **W** (live tree), **UX** (native prompt discovery, transcript fidelity,
-durable provider recovery, and branch test-audit closure), plus the finished
-steps of the still-open Phases **K, R, F, Q, L**.
+durable provider recovery, and branch test-audit closure) · **CR** (Changes
+review workspace) · **NF** (needs-you notifications) · **FD** (file
+drag-and-drop) · the paintings polish batch · **OC** (OpenCode adapter) ·
+the Gemini sunset · **RC** (remote OpenCode create) · **SA** (subagent
+view), plus the finished steps of the still-open Phases **K, R, F, Q, L**.
 
 Archive passes, each a section header in PLAN-ARCHIVE.md you can navigate to:
 2026-07-08 · 2026-07-10 · 2026-07-15 · "Moved 2026-07-17" · "Moved 2026-07-19"
@@ -157,7 +160,9 @@ E2/W step bodies, the Phase E/M narrative passes, the R.4l item-5
 investigation, the CI-flake breakdown, and finished stretch-goal specs) ·
 "Moved 2026-08-09" (Phase UX) · "Moved 2026-08-12 (prune — completed
 bodies)" (a sweep of finished bodies across Phases 4/R/A/Q, the 2026-07-27
-audit section, and the stretch goals).
+audit section, and the stretch goals) · "Moved 2026-08-14 (post-SA prune —
+completed bodies)" (the NF/FD step bodies, paintings polish, Phase OC, the
+Gemini sunset, Phase RC, and the whole Phase SA record).
 
 ---
 
@@ -2458,64 +2463,13 @@ only thing that triggers the browser's permission prompt (never page load).
 No secret ever enters a notification body — tool + detail are already
 user-visible PermBar strings.
 
-### Phase NF.1 — The notify engine + both surfaces wired
-
-- [x] **Step NF.1 — Pure decision core, DOM binder, Shell + fleet wiring** —
-  completed 2026-08-12: `web/src/notify.ts` (reducer + binder + DOM wiring)
-  landed with 23 Tier-1 tests covering the full matrix below; both routes
-  wired exactly as specified, `yarn test` 695 green, typecheck clean. —
-  **Goal:** notifications actually fire from both routes, correctly
-  suppressed, coalesced, and self-closing, behind a preference that defaults
-  off. **Build:** `web/src/notify.ts`: (a) a pure transition reducer — given
-  the previous per-session state map, fresh session snapshots
-  (`{id, state: idle|busy|permission, title, agent?, detail?}`), and flags
-  `{enabled, granted, visible}`, return show/close actions plus the next map —
-  every rule above lives here; (b) `createNotifier(deps)` binding the reducer
-  to injected `{isVisible, permission, spawn, onVisibilityChange}` with a
-  `reset()` that reseeds state without emitting (used across socket
-  drop/reconnect so a forced `busy→idle` never fakes a turn-end). Wire Shell
-  (its `asks`/`busy` tri-state, title from the cwd basename, detail from
-  `asks[0]`) and FleetView (per-session from the `sessions` snapshot,
-  `wantsAnswer` for the permission side, close toasts for sessions that leave
-  the list). Clicking focuses the firing tab. **Files:** `web/src/notify.ts`,
-  `web/src/notify.test.ts`, `web/src/components/Shell.tsx`,
-  `web/src/components/FleetView.tsx`. **Done when:** Tier-1 tests prove the
-  reducer's full matrix (permission shown once; answered-elsewhere closes;
-  turn-end shown on `busy→idle` and `permission→idle`; visible suppresses
-  shows but still advances state; disabled/ungranted emit nothing; per-session
-  independence; vanished session closes; reset never emits) and the binder's
-  lifecycle against fakes; `yarn typecheck` passes.
-
-### Phase NF.2 — The settings affordance + end-to-end proof
-
-- [x] **Step NF.2 — Toggle in the settings card, e2e, docs** — completed
-  2026-08-12: Notifications section shipped in the settings card (switch row
-  + blocked hint), Shell owns preference/permission logic, e2e proves the
-  full hidden-tab loop (toggle → permission toast → answered → turn-end
-  toast → visibility closes all). One diagnosed trap recorded for future e2e
-  work: tsx's esbuild keepNames injects a module-scope `__name` helper into
-  compiled classes/accessor properties, which Playwright then serializes
-  WITHOUT the helper — init scripts and evaluates containing them die on a
-  ReferenceError, so the Notification stub and the visibility override are
-  plain-JS strings. — **Goal:** a
-  user can find and flip the feature, and headless Chrome proves the visible
-  behavior. **Build:** a Notifications section in the settings card
-  (`ThemePicker.tsx`, prop-driven — the card stays Vite-only and dumb): one
-  toggle row ("Notify me when a session needs me"), `aria-pressed`, a plain
-  hint line when the browser has the permission hard-denied ("blocked in
-  browser settings") or the API is absent. Shell owns the logic: preference in
-  `localStorage["mirafold-notify"]`, enabling requests browser permission when
-  still undecided. Fleet honors the same stored preference with no UI of its
-  own. Settings-card CSS additions in `web/src/styles/12-dialogs.css`.
-  **Files:** `web/src/components/ThemePicker.tsx`,
-  `web/src/components/Shell.tsx`, `web/src/notify.ts` (preference helpers),
-  `web/src/styles/12-dialogs.css`, `server/testing/app.e2e.ts`, README.
-  **Done when:** the e2e opens settings, sees the section, flips the toggle
-  (Notification API stubbed via init script), asserts the stored preference
-  and `aria-pressed`, and a stubbed-notification assertion proves a hidden-tab
-  permission event spawns exactly one tagged toast; axe stays clean;
-  `yarn test` + `yarn test:e2e` + `yarn typecheck` pass; README's shell-UI
-  section gains the tab-status-adjacent paragraph.
+- [x] **NF.1 (engine + wiring) and NF.2 (settings + e2e) — BOTH COMPLETE
+  2026-08-12**; full bodies → **PLAN-ARCHIVE.md, "Moved 2026-08-14 (post-SA
+  prune — completed bodies)."** Standing gotcha kept from NF.2: tsx's esbuild
+  keepNames injects a module-scope `__name` helper that Playwright serializes
+  WITHOUT — init scripts / evaluated functions containing compiled classes or
+  const-assigned arrows die on a ReferenceError, so in-page stubs are plain-JS
+  strings (bit again in SA.1's e2e, 2026-08-14).
 
 ## File drag-and-drop input (opened 2026-08-12; Kyle-directed)
 
@@ -2549,109 +2503,21 @@ and path insertion are shell-owned end to end; a staged path enters the
 prompt via the existing draft-merge path, which never discards composed
 text.
 
-### Phase FD.1 — Wire + daemon staging
-
-- [x] **Step FD.1 — Chunked upload messages + the staging writer** —
-  completed 2026-08-12: five additive message types + Q.2 fixtures,
-  `upload-handlers.ts` with 12 Tier-1 tests covering the full refusal
-  matrix, and 2 Tier-2 itests proving byte-exact staging + typed refusals
-  over a real socket. — **Goal:** a client can stream a bounded file to the daemon and get back
-  a staged absolute path, with every abuse path refused loudly. **Build:**
-  additive protocol types (`file_upload_begin {id,name,size}` /
-  `file_upload_chunk {id,data}` / `file_upload_abort {id}` client-side;
-  `file_upload_done {id,path,name}` / `file_upload_error {id,message}`
-  replies) + Q.2 fixtures; `server/sessions/upload-handlers.ts` on the
-  fs-handlers template (per-connection state, never throws, every
-  well-formed request gets exactly one reply); connection.ts delegation +
-  dispose on close. **Files:** `server/protocol.ts`,
-  `server/protocol.test.ts`, `server/sessions/upload-handlers.ts` (+
-  `.test.ts`), `server/sessions/connection.ts`,
-  `server/sessions/file-upload.itest.ts`. **Done when:** Tier-1 covers
-  sanitization (path-stripped names, control chars, dot-names, length
-  cap, collision suffixing), size/concurrency/stall caps, chunk-overflow
-  and chunk-before-begin refusals, and the remote relay gate; a Tier-2
-  itest streams real bytes over a real socket and reads back the exact
-  file from staging; `yarn typecheck` green.
-
-### Phase FD.2 — The drop experience in the shell
-
-- [x] **Step FD.2 — Dropzone, progress, path insertion, e2e, docs** —
-  completed 2026-08-12: window-level drop targets + overlay + upload strip
-  shipped, staged paths quoted into the prompt via the draft merge with a
-  polite announcement, 10 Tier-1 tests on the client core, and the e2e
-  proves the whole loop (synthesized `DataTransfer` drop → overlay →
-  staged-path in textarea → byte-exact file on disk → announcement). One
-  diagnosed trap recorded: the drag listeners attach only after the
-  session attaches, so a dispatch racing the mount fires into the void —
-  the e2e waits for the session UI first. — **Goal:** dragging files onto a session viewport uploads them and puts
-  their staged paths in the prompt, visibly and accessibly. **Build:**
-  `web/src/file-drop.ts` — pure chunking/state core + a
-  folder-picker-style reply router, Tier-1-tested; session-bus gains the
-  three send methods; Shell wires window-level drag listeners (gated off
-  onboarding), a shell-owned drop overlay + a compact upload strip above
-  the prompt (name + progress + dismissible error), quoted-path insertion
-  through the PromptDraft merge, and a polite announcement per attached
-  file; CSS in the prompt-area stylesheet. **Files:**
-  `web/src/file-drop.ts` (+ `.test.ts`), `web/src/session-bus.ts`,
-  `web/src/components/Shell.tsx`, styles, `server/testing/app.e2e.ts`,
-  README, POST-RELEASE.md (annotate the Input augment entry). **Done
-  when:** the e2e drops a real `File` via `DataTransfer` on the live page,
-  watches the strip, reads the staged path out of the textarea, verifies
-  the staged file's exact bytes on disk, and axe stays clean; all three
-  tiers green.
+- [x] **FD.1 (wire + staging) and FD.2 (drop experience) — BOTH COMPLETE
+  2026-08-12**; full bodies → **PLAN-ARCHIVE.md, "Moved 2026-08-14 (post-SA
+  prune — completed bodies)."** Standing gotcha kept from FD.2: the drag
+  listeners attach only after the session attaches — an e2e dispatch racing
+  the mount fires into the void, so drop e2es wait for the session UI first.
 
 ## Paintings polish batch (opened + ✅ COMPLETE 2026-08-13; Kyle-directed)
 
-**Origin.** A paintings audit (this session) asked three questions: are the
-existing paintings at the delightful bar, does the agent actually reach for
-them, and are there coverage gaps. Verdict: the registry is strong (fallback
-architecture, CVD-safe charts, never-color-alone) with a short list of
-concrete defects; adoption is UNMEASURABLE (no instrumentation anywhere);
-coverage needs nothing new now (the 2026-07-10 survey already filled the real
-gaps, POST-RELEASE.md's 2026-08-02 growth analysis still governs). So: polish
-first, measurement second, new paintings demand-gated.
-
-- [x] **Fix batch** — completed 2026-08-13, all three tiers green
-  (724/152/97):
-  - `.rc` gains `overflow-wrap: anywhere` — an unbroken token (URL, SHA,
-    long path) in any painting's prose no longer pushes the transcript
-    sideways; inert on the monospace bodies (`white-space: pre` has no wrap
-    points), so code/console/diff keep their horizontal scroll.
-  - Chart: line charts fit the y domain to the DATA (`chartDomain`) — a
-    200–210 ms latency trend is no longer a flat stripe under a forced zero
-    baseline (bars still anchor to zero: a bar's length IS its value);
-    ≤2-point line charts draw always-on dots (a 1-point polyline painted
-    nothing); the forced last x label suppresses a stride label it would
-    collide with (`showXLabel`); grouped bars can no longer bleed past
-    their band at high category×series counts (`groupedBarLayout`). All
-    four pure + Tier-1-pinned.
-  - Table: every row renders exactly `columns.length` cells (surplus
-    truncated, missing padded — misaligned rows used to escape the header
-    silently); number cells right-align with `tabular-nums`
-    (`.rc-table-num`); empty `rows` shows a muted "no rows" instead of a
-    bare header. Tier-1-pinned (`Table.test.ts`, new).
-  - Code + Console bodies: vertical clamp (`max-height: 360px`, scroll) —
-    the diff body's existing treatment; a dumped whole file / 200k-char log
-    scrolls in its panel instead of consuming the transcript.
-  - **Diagram follows the app theme now (decision).** Pinned-dark is the
-    CODE-surface convention (`--code-bg` + ANSI/hljs palettes, manifest
-    PINNED_TOKENS); a diagram is a picture, not a code surface, and on the
-    light themes it rendered as a jarring dark slab. The frame body is
-    transparent (the panel surface is the canvas), mermaid re-initializes
-    per message with the shell-computed dark flag + `--surface` color, and
-    a `data-theme` MutationObserver re-posts on theme switch so baked-in
-    SVG colors follow. Sandbox posture unchanged (strict, no-network CSP,
-    postMessage-only source) — Tier-1 pins the transparent body +
-    per-message init.
-- [x] **Paintings-adoption instrumentation** — completed 2026-08-13: one
-  LOCAL log line per paint (`paint <component> agent=<agent>`) at
-  `registry.deliver()`, the choke point every adapter's stream crosses.
-  Local daemon log only, nothing leaves the machine; cheap enough to keep,
-  one `if` to delete if treated as temporary. Purpose: make "does this
-  engine actually reach for the render tools" answerable from logs — the
-  audit found the Codex/Gemini guidance asymmetry (one-shot first-turn
-  prepend vs. Claude's every-request system-prompt append) impossible to
-  evaluate without it.
+- [x] **Fix batch + adoption instrumentation — completed 2026-08-13** (all
+  tiers green). Full bodies → **PLAN-ARCHIVE.md, "Moved 2026-08-14 (post-SA
+  prune — completed bodies)."** Standing decisions: **diagrams follow the app
+  theme** (a diagram is a picture, not a code surface — the pinned-dark
+  convention stays for code/console/diff only); one LOCAL
+  `paint <component> agent=<agent>` log line at `registry.deliver()` makes
+  paintings adoption measurable (nothing leaves the machine).
 - Audit findings deliberately NOT fixed here (recorded, not lost): the two
   hand-kept `TOOL_DESCRIPTIONS` maps (render-tools.ts / render-mcp.ts) have
   drifted in wording with no guard test; no test pins Claude's
@@ -2662,290 +2528,80 @@ first, measurement second, new paintings demand-gated.
   (housekeeping); HBar tooltip parks at `left: 40%`. Each is a candidate
   for a follow-up surfacing-parity step.
 
-## Phase OC — OpenCode adapter (opened 2026-08-13; Kyle-directed)
+## Phase OC — OpenCode adapter (opened + ✅ COMPLETE 2026-08-13; Kyle-directed)
 
 **Product call.** Kyle, from a 2026-08-13 market check: OpenCode (~195k
-GitHub stars) is now the dominant open-source terminal agent — the largest
-user population Mirafold doesn't cover — and becomes the fourth adapter.
-(Same check surfaced that Gemini CLI was retired upstream 2026-06-18,
-replaced by the closed-source Antigravity CLI; Gemini-adapter sunset is
-agreed but explicitly deferred — NOT part of this phase.) The feasibility
-spike is **`server/adapters/opencode.spike.md`** (verdict GREEN): the
-event→`WireMsg` table, the `OPENCODE_CONFIG_CONTENT` MCP-injection path,
-the permission reply round-trip, and the provider-keyed credential-policy
-design all live there — the steps below execute that doc, and its two live
-gates come first.
+GitHub stars) is now the dominant open-source terminal agent and becomes the
+fourth adapter. The feasibility spike is **`server/adapters/opencode.spike.md`**
+(verdict GREEN) — its live-probe appendices remain the shape record.
 
-- [x] **Step OC.0 — Live gates + shape capture** — completed 2026-08-13,
-  same day, $0 and credential-free: scratchpad-local `opencode-ai@1.18.18`
-  with HOME jailed; Gate 1 PASSED (`OPENCODE_CONFIG_CONTENT` alone
-  connected the render MCP; tools advertise as `mirafold_render_*`), Gate 2
-  PASSED via a fake OpenAI-compatible provider (ask event is
-  **`permission.asked`** — published SDK types drift — reply `once` ran the
-  tool through to `session.idle`). Streaming is a true delta channel
-  (`message.part.delta`), usage + `modelID` ride each assistant message.
-  Bonuses: 1.18.18 offers no Anthropic/Google OAuth at all, and a fresh
-  install ships the free "OpenCode Zen" provider (needs its own OC.3
-  policy row). One residual folded into OC.3: confirm a stored
-  credential's oauth-vs-api kind is server-readable (needs a real
-  connected credential). Full appendix in the spike doc. — **Goal:** de-risk the
-  two spike gates and lock real shapes before adapter code exists.
-  **Build:** run `opencode serve` (scratchpad-local install is fine; no
-  global mutation) and confirm: (1) `OPENCODE_CONFIG_CONTENT` loads the
-  mirafold render MCP and its tools appear (exact tool-name prefix
-  captured); (2) a permission ask surfaces as `permission.updated` headless
-  and the reply endpoint resolves it; plus capture the provider catalog's
-  auth exposure (oauth-vs-api visible without reading `auth.json`?), the
-  streaming part-update granularity, and usage field names. A $0 provider
-  (Ollama or an existing API key) is needed for gate 2 only. **Done when:**
-  the spike doc's "confirm live" flags are each resolved GREEN/RED with
-  captured payloads appended to the doc.
-- [x] **Step OC.1 — Core adapter + Tier-1** — completed 2026-08-13:
-  `opencode.ts` (session: lazy spawn-with-retry latch, serial queue,
-  first-turn guidance flipped only after prompt acceptance, permission
-  bridge with deny-by-default timeout + external-reply handling +
-  interrupt grace fallback) + `opencode-events.ts` (mapper: delta/snapshot
-  text accrual, tool lifecycle, mirafold `render_*` recognition with
-  honest fallback, todo checklist, per-turn usage summing) +
-  `opencode-client.ts` (raw HTTP+SSE transport — the spike's SDK
-  recommendation REVERSED with the reason recorded there: live shapes
-  beat drifting generated types). 22 Tier-1 tests on captured shapes;
-  full Tier-1 suite 746/746; typecheck green. `AgentName` grew additively
-  (policy row fails closed, agent not in ADAPTER_AGENTS, so nothing is
-  offered before OC.3/OC.4). — **Goal:** an OpenCode session
-  behind the `AgentSession` seam, mock-verified. **Build:**
-  `server/adapters/opencode.ts` — spawn `opencode serve` on a free port
-  with a per-session `OPENCODE_SERVER_PASSWORD`, create the session, prompt
-  via `prompt_async` with the pinned `model`, normalize the SSE stream per
-  the spike table (text/reasoning accrual → deltas, tool parts →
-  `tool_use`/`tool_result` with `capOutput`, `todo.updated` → checklist,
-  `session.idle` → `turn_end`, `session.error` → sourced notice),
-  `interrupt()` → abort, `resumeId` = session id. SDK-vs-raw call finalized
-  at install per the spike. **Files:** `server/adapters/opencode.ts`
-  (+ `.test.ts` with a fake SSE feed), `server/protocol.ts` (`AgentName` +
-  fixtures — additive only). **Done when:** Tier-1 drives the full table
-  through a fake event feed; `yarn typecheck` green.
-- [x] **Step OC.2 — Render MCP + permission bridge** — completed
-  2026-08-13. The Tier-1 half had landed inside OC.1; this step ran the
-  live leg, $0 and credential-free (real `OpenCodeSession` → real spawned
-  engine → fake provider): **a card painted end-to-end** through the real
-  render-mcp stub, and **a permission ask round-tripped live** (ask → bar
-  shape → `once` → bash ran). It caught and fixed two adapter bugs
-  (health-poll wedge on pre-ready connections — per-attempt abort is
-  load-bearing; user-message parts echoing as text_delta — roles now
-  tracked, +1 test) and characterized one upstream engine behavior,
-  documented not gated: a cold server's first model call carries zero
-  tools; the engine self-recovers same-turn (spike appendix has the full
-  probe evidence). Suite 747/747, typecheck green. — **Goal:** generative
-  UI and the permission bar, faithfully. **Build:** inject
-  `renderMcpCommand()` under `MIRAFOLD_MCP` via `OPENCODE_CONFIG_CONTENT`
-  (additive merge; user config untouched); recognize mirafold tool parts by
-  the OC.0-confirmed prefix → `generativeUIMsg` (skip the raw tool block);
-  `permission.updated` → `permission_request`, `resolvePermission` → reply
-  `once`/`reject` (**never `always`** — that writes the user's own approval
-  state), `PERMISSION_TIMEOUT_MS` deny-by-default. **Done when:** Tier-1
-  proves render-call recognition + both permission outcomes + timeout; a
-  live render paints end-to-end.
-- [x] **Step OC.3 — Credential policy + registry wiring** — completed
-  2026-08-13, including the "needs a real credential" residual — resolved
-  with auth.json FIXTURES in the jailed probe home (no real credential
-  needed): the engine's own catalog distinguishes every kind (`source`
-  api/env/config/custom + the `opencode-oauth-dummy-key` OAuth marker), it
-  leaks raw stored secrets (stripped at the transport seam, never past
-  it), and 1.18.18 ignores a stored anthropic OAuth wholesale. Landed:
-  `classifyOpenCodeProvider` matrix in provider-policy.ts (fail-closed:
-  unknown OAuth, Zen-pending-terms, unrecognized shapes all refuse with
-  human copy), session-start enforcement in opencode.ts (pin resolved
-  from OPENCODE_MODEL or the user's config `model`; refusals precede any
-  engine session), shallow hello detection in index.ts (binary +
-  auth.json existence — contents unread), `Backend.provider` from the
-  pin. ChatGPT gray: policy-allowed, session-refused until OC.4 flows
-  classified kind into Backend (relay-gate truth). 8 policy tests + 3
-  session tests; suite 752/752; typecheck green. — **Goal:** the
-  policy matrix applied provider-aware, fail-closed. **Build:**
-  `provider-policy.ts` gains the OpenCode provider classification
-  (anthropic/google oauth → blocked; openai oauth → disclosed gray area;
-  api-key/env → `api-key`; local → `local`; **unclassified oauth →
-  blocked**), detection per the OC.0-confirmed path (server catalog
-  preferred; `auth.json` only with explicit consent); model pinned
-  per-prompt so the session provider is the one Mirafold set; registry:
-  `createSession` case, `agentHasCredentials("opencode")`, `Backend.provider`
-  carries the pick. Relay gate unchanged (already refuses `subscription`).
-  **Done when:** Tier-1 covers every matrix row incl. the fail-closed
-  default; blocked/gray states render their correct copy.
-- [x] **Step OC.4 — In-session fidelity surface** — completed 2026-08-13
-  (the original OC.4 split in two; the onboarding half is OC.4b below):
-  `opencode-commands.ts` on the codex picker pattern — `/model` paints the
-  cross-provider catalog (policy-filtered: only providers a pick can
-  actually run; a typed blocked pick refuses with its reason and keeps the
-  pin), `/agent` paints user-facing primaries only (`hidden` internals and
-  subagents excluded; pick rides every subsequent prompt), the engine's
-  own command catalog routes `/name` inputs to `POST /session/:id/command`
-  (the engine's real dispatcher, with pin + agent) and feeds
-  `emitPromptOptions` behind our two re-skins (engine rows badged
-  `source: "opencode"`). 6 new Tier-1 tests; suite 757/757; typecheck
-  green. — **Goal:** what an OpenCode user expects in-session.
-- [x] **Step OC.4b — Offerable + Zen terms citation** — completed
-  2026-08-13 (the kind-into-Backend half split to OC.4c; live onboarding
-  proof folds into OC.5): `opencode` joined ADAPTER_AGENTS +
-  `defaultAgent`; one shallow `backendOptions` api-key row (existence
-  probe; the provider-resolved truth stays enforced at session start);
-  real agents-meta copy (connect hint names install + `opencode auth
-  login` + OPENCODE_MODEL and says plainly that subscriptions and Zen
-  aren't usable yet), `backendLabel` "API key (via opencode)", PromptBox
-  source badge. **Zen terms read and cited** in provider-policy.ts
-  (2026-08-13: no third-party-harness prohibition — the server API is
-  opencode's own documented programmatic surface; "own internal use"
-  clause; free-period training-data caveat): the disclosed-uncertainty
-  rule's exact shape, but opening a NEW provider under it is Kyle's call
-  (codex precedent), so the row stays CLOSED pending his decision — if
-  opened, local-only + caveat shown. Also fixed en route: the fourth
-  agent row overflowed the onboarding squeeze ramp by 14px — the
-  squeeze intercept moved 66→70 and the per-row floor metrics shaved
-  (full-chrome values untouched); the squeeze e2e passes with four READY
-  rows. Verification status, honestly: Tier-1 757/757 + Tier-2 152/152
-  green; e2e ran 96/97 before the CSS fix (the squeeze test its only
-  failure, after the hint-count assertion gained the fourth card) and
-  the fixed squeeze test passes in isolation — but two attempts at the
-  full post-fix e2e run were stopped externally mid-run (6/6 ok at each
-  stop), so ONE clean full-suite pass is still owed; folded into OC.5's
-  tier sweep.
-- [x] **Step OC.4c — Classified kind into Backend + ZEN OPENED** —
-  completed 2026-08-13, same day Kyle said "open Zen" (the decision the
-  OC.4b citation was waiting on). Built exactly per the design below:
-  `onBackendKind` seam + registry adoption at `activate()` (truthful kind
-  checkpointed), `kindPending` refusing remote actions pre-verification,
-  and the three relay-gate sites (attach, cockpit acts, uploads) unified
-  on one `relayGateRefusal` verdict in provider-policy.ts. The ChatGPT
-  gray now RUNS locally with its uncertainty disclosure (once per
-  provider, Mirafold-composed, no badge). **Zen**: new `gateway`
-  CredentialKind (additive on every wire union) — allowed locally for
-  opencode with the uncertainty + training-data disclosure, NEVER
-  relay-eligible (the allow-list refuses it by design); fresh
-  binary-only installs now detect live out of the box, and the /model
-  picker offers Zen rows. 761/761 + 152/152 green; the full-e2e sweep
-  remains owed to OC.5 (two prior runs externally stopped). — original
-  goal + design: **Goal:** the gray path runs under its TRUE kind. **Build:**
-  an optional `AgentSession.onBackendKind` seam (like `onResumeId`): the
-  OpenCode session publishes the OC.3-classified kind + provider at start;
-  the registry updates its `Backend` so the relay gate judges truth.
-  **The race that shapes the design:** hello-kind is optimistic
-  ("api-key"), so a relay viewport's FIRST prompt could slip the gate
-  before classification lands — closed by a `kindVerified` flag on
-  opencode Backends (server-side only): relay prompts refuse with an
-  honest "still verifying" message until the session publishes, local
-  viewports unaffected. Then the OC.3 session-level gray refusal lifts,
-  replaced by a Mirafold-composed disclosure notice at session start
-  (uncertainty stated, never permission — the codex CONNECT_HINT contract,
-  session-time edition). **Done when:** Tier-1 covers publish→registry
-  update, the pre-verification relay refusal, and the gray disclosure;
-  the relay itest proves a subscription-classified session never runs a
-  turn from a relay viewport.
-- [x] **Step OC.5 — Tier sweep + live end-to-end** — completed 2026-08-13
-  (one residual below): **`opencode-live.ltest.ts`** joins Tier 4 on the
-  codex pattern (real binary, never a hosted model; the scripted
-  OpenAI-compatible provider from the OC.2 probe; HOME/XDG jailed via a
-  new transport `env` seam so a real engine run never touches the
-  developer's own opencode state; skips cleanly when opencode isn't
-  installed). One 17s test drives the WHOLE loop through shipped code:
-  render through the real MCP stub, headless permission ask answered via
-  the bridge, usage, kind publish (config→local), and **resume across a
-  full engine restart**. All tiers green same-sitting: Tier-1 761/761,
-  Tier-2 152/152, Tier-3 97/97 (the sweep owed since OC.4b — paid),
-  Tier-4 1/1 live + verified clean skip. **Residual CONFIRMED by Kyle
-  2026-08-13**: real global install (`npm i -g opencode-ai` — his npm's
-  install-scripts blocking required the manual postinstall, the exact
-  failure the transport's stderr surfacing named; the session's
-  start-latch retry then worked as designed, no restarts) and a live
-  browser session on Zen: "heyyyy it works". Phase OC complete.
-  README/ADAPTERS.md refresh rides the wrapup.
+- [x] **OC.0–OC.5 — ALL COMPLETE 2026-08-13**, live-verified same day
+  (Kyle: "heyyyy it works"). Full step bodies → **PLAN-ARCHIVE.md, "Moved
+  2026-08-14 (post-SA prune — completed bodies)."** Standing outcomes that
+  bind future work:
+  - **Raw HTTP+SSE transport, no SDK** (decision recorded in the spike doc:
+    live shapes beat drifting generated types).
+  - **Permission replies never send `always`** — that would persist approval
+    state into the user's own OpenCode config (docs/ADAPTERS.md matrix).
+  - **Zen OPENED by Kyle 2026-08-13** under the disclosed-uncertainty rule:
+    `gateway` CredentialKind, local-only, NEVER relay-eligible, uncertainty +
+    training-data disclosure shown (canonical row in provider-policy.ts).
+  - The ChatGPT gray runs locally under its TRUE classified kind
+    (`onBackendKind` → registry; `kindPending` refuses remote actions until
+    verified).
 
 ## Gemini sunset (opened + ✅ COMPLETE 2026-08-13; Kyle-directed)
 
-**Product call.** From the 2026-08-13 market check: Google retired Gemini
-CLI upstream on 2026-06-18 (closed-source Antigravity replaced it; the
-dated citation lives in provider-policy.ts's R.6 note). Kyle's calls, in
-order: sunset rather than migrate (same day, morning), hold while other
-work was in flight, then "do the gemini sunset" (same day, after Phase OC
-merged). Shape: **gentle** — the API-key path still functions under the
-Gemini API ToS, so nothing is removed or hidden; the adapter is deprecated
-honestly. Removal is parked in POST-RELEASE.md, gated on evidence of
-actual breakage, never on a calendar.
-
-- [x] **Deprecation surface** — completed 2026-08-13: additive
-  `AgentInfo.deprecated` (daemon-composed reason; the picker renders it as
-  a suffix on the existing status line — no new element, the squeeze
-  ramp's height budget holds), connect-hint copy updated with the dated
-  retirement, a once-per-session dated notice in the Gemini adapter
-  (Mirafold-composed, lands before the first turn completes), the
-  provider-policy row annotated (policy itself unchanged), and the
-  POST-RELEASE removal entry with its evidence gate. Tier-1 tests: the
-  notice rides once and unbadged; `deprecated` rides the hello for gemini
-  only.
+- [x] **Gentle deprecation shipped 2026-08-13** (Google retired Gemini CLI
+  upstream 2026-06-18 — dated citation in provider-policy.ts; Kyle's call:
+  sunset, not migrate; nothing removed — the API-key path still works).
+  Additive `AgentInfo.deprecated`, dated picker/notice copy, REMOVAL parked
+  in POST-RELEASE.md gated on evidence of breakage, never a calendar. Full
+  body → **PLAN-ARCHIVE.md, "Moved 2026-08-14 (post-SA prune — completed
+  bodies)."**
 
 ## Phase RC — Remote CREATE of OpenCode sessions (opened + ✅ COMPLETE 2026-08-13; Kyle-directed)
 
-**Why.** OC.4c's fail-closed design verifies an OpenCode session's credential
-kind at its first turn: until the engine classifies the pinned provider, the
-registry entry is `kindPending` and the relay gate refuses every remote
-action. Consequence (recorded in POST-RELEASE.md 2026-08-13, promoted here
-the same day at Kyle's direction): a remote viewport can ATTACH to an
-OpenCode session only after a first local turn — it can never CREATE one.
-Supporting remote creation means classifying BEFORE admitting the creator:
-spawn the engine, read the provider catalog, judge the pin, and only then
-attach the remote viewport. The gate itself does not change; only WHEN the
-truth arrives does.
+- [x] **RC.1–RC.4 — ALL COMPLETE 2026-08-13** (classify-before-create:
+  `verifyBackendKind` seam + `attachOrReapClassified`, bounded 30s, races
+  closed, 9 tests; a relay viewport can now CREATE an OpenCode session, not
+  just attach). Full bodies → **PLAN-ARCHIVE.md, "Moved 2026-08-14 (post-SA
+  prune — completed bodies)."** The seam is documented in docs/ADAPTERS.md.
 
-- [x] **RC.1 — the adapter seam.** — completed 2026-08-13. `AgentSession` gains optional
-  `verifyBackendKind?(): Promise<void>`: resolve once the truthful kind has
-  been published via `onBackendKind`, reject with the honest reason when it
-  cannot be (no binary, no pin, provider not connected, policy refusal).
-  OpenCode implements it as `ensureStarted()` — the full lazy-start path
-  (engine + policy + engine session), whose failure already resets the outer
-  latch so a later local prompt retries. No other adapter implements it:
-  their hello-time kind is already truthful.
-- [x] **RC.2 — the create path awaits truth.** — completed 2026-08-13
-  (`attachOrReapClassified`; timeout env `VERIFY_KIND_TIMEOUT_MS`, 30s
-  default). In `connection.ts`, a REMOTE
-  create (and the attach-path fallback create) of an entry that is
-  `kindPending` with a `verifyBackendKind` seam awaits classification —
-  bounded (30s) — BEFORE `attachTo` judges the relay gate. Local creates are
-  untouched: still synchronous, still lazy. On success the existing gate
-  judges the now-truthful kind (an ineligible provider still refuses with
-  the existing honest copy). On failure/timeout: the error goes to the
-  viewport and the minted session is REAPED (`registry.end`) — the
-  no-viewport leak rule from the 2026-07-29 bughunt applies unchanged. The
-  async detour catches its own errors (index.ts has no try/catch around
-  `handleMessage`).
-- [x] **RC.3 — the races.** — completed 2026-08-13 (d landed as a comment
-  correction only: the user-facing copy was already honest for the attach
-  path, and remote creates no longer surface it). (a) Viewport disconnects mid-classify → on
-  settle, a closed connection with a viewport-less entry reaps it. (b) A
-  second create/attach on the same connection while one classification is in
-  flight → refused honestly ("still verifying the previous create"); one
-  pending create per connection. (c) Entry torn down mid-classify → the
-  settle path checks `entries.get(id) === entry` before acting, like every
-  onBackendKind consumer. (d) `relayGateRefusal`'s `kindPending` copy stays
-  honest for BOTH paths now that remote creates verify inline: the
-  "run its first turn from its own machine" sentence describes only the
-  attach-to-existing case.
-- [x] **RC.4 — tests** — completed 2026-08-13: 7 connection-grain tests in
-  `server/sessions/remote-create.test.ts` (own process so the verify
-  timeout pins via env before module load; a registry session-factory test
-  seam injects the fake classifying session) + 2 adapter-grain in
-  `opencode.test.ts` (`verifyBackendKind` resolves after publish / rejects
-  honestly and stays retryable). Tiers 803/152/97 green. Original scope
-  (Tier 2 grain, `makeTransport` seam; no real engine):
-  Remote create allowed (kind publishes api-key → viewport attaches); remote
-  create policy-refused (subscription pin → refusal + entry reaped, no
-  MAX_SESSIONS leak); classify failure (engine start throws → honest error +
-  reap); timeout (kind never publishes → bounded refusal + reap); disconnect
-  mid-classify (no leak); local create unaffected (no await, still lazy).
-  The existing remote-attach regressions stay green.
+## Phase SA — Subagent view (opened + ✅ COMPLETE 2026-08-14; Kyle-directed; plan signed off by Kyle, executed same day)
 
-**Done when.** A relay viewport can create a fresh OpenCode session pinned to
-an allowed provider and drive it immediately; a subscription/Zen pin is
-refused at create with the honest reason and leaks nothing; all tiers green.
+- [x] **SA.0–SA.4 + post-phase refactor, two bughunt rounds, security audit,
+  and test-audit — ALL COMPLETE 2026-08-14**, full bodies → **PLAN-ARCHIVE.md,
+  "Moved 2026-08-14 (post-SA prune — completed bodies)."** Shipped: live
+  **subagent decks** (calm summary → expandable calls + narration), the
+  parented-delta narration lane (opaque `parentId` on deltas + permission
+  asks), and the OpenCode child-session mapping proving the lane
+  agent-neutral — plus an OpenCode defect fix (child permission asks used to
+  drop and hang). PR #47. The lane's standing rules for future adapters live
+  in **docs/ADAPTERS.md §3**; the rendering/trust posture in README §6.3 and
+  SECURITY.md; the decided vocabulary in GLOSSARY (*subagent deck*).
+
+**The hard line (standing):** Mirafold DISPLAYS the agent's own coordination —
+it never spawns or directs subagents itself (the homegrown-orchestrator trap).
+*Mirafold shows coordination; it never performs it.*
+
+**Deferred findings (recorded here so they're not lost):**
+- **LATENT (bughunt 2026-08-14):** a `background: true` OpenCode child
+  streaming ONE text part ACROSS a turn boundary would re-emit that part's
+  full text (the per-turn part tracker resets, so the snapshot's suffix
+  restarts at 0) — duplicated prose in its deck. Deferred because
+  reachability is unconfirmed (requires the engine to spawn background
+  children in stock config, itself unverified) AND a proper fix reopens the
+  2026-08-13 flood-cap design (the part trackers are per-turn precisely to
+  stay bounded); revisit if background children are ever observed live.
+- **Test-audit deliberate skip (2026-08-14):** the deck component's
+  replayed→no-elapsed wiring is pinned at the pure-function level only
+  (`deckElapsedSeconds`); the one-line component wiring has no e2e of its
+  own — a decision, not an oversight.
+- **Codex subagents:** the engine HAS first-class multi-agent (collab,
+  default-on since ~2026-02) but child inner activity needs app-server
+  per-thread subscriptions — mapping deferred to **Phase F Step F.5**; the
+  researched posture is recorded in docs/ADAPTERS.md's capability matrix.
 
 ## Phase PN — Panes (file views beside the transcript)
 

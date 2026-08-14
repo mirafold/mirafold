@@ -400,6 +400,23 @@ test("coalescing: any non-delta message flushes the window first — order prese
   reg.end(entry.id);
 });
 
+test("coalescing: a different parentId flushes — one subagent's prose never merges into another's (SA.2)", () => {
+  const { reg, entry, seen } = coalescingSession(60_000);
+  reg.broadcast(entry, { type: "text_delta", text: "parent " });
+  reg.broadcast(entry, { type: "text_delta", text: "prose" });
+  reg.broadcast(entry, { type: "text_delta", text: "child A", parentId: "taskA" });
+  reg.broadcast(entry, { type: "text_delta", text: " more A", parentId: "taskA" });
+  reg.broadcast(entry, { type: "text_delta", text: "child B", parentId: "taskB" });
+  reg.broadcast(entry, { type: "turn_end" });
+  assert.deepEqual(seen, [
+    { type: "text_delta", text: "parent prose", seq: 1 },
+    { type: "text_delta", text: "child A more A", parentId: "taskA", seq: 2 },
+    { type: "text_delta", text: "child B", parentId: "taskB", seq: 3 },
+    { type: "turn_end", seq: 4 },
+  ]);
+  reg.end(entry.id);
+});
+
 test("coalescing: a delta of the OTHER type flushes too — thinking and text never merge together", () => {
   const { reg, entry, seen } = coalescingSession(60_000);
   reg.broadcast(entry, { type: "thinking_delta", text: "hm" });
