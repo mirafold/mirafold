@@ -72,10 +72,6 @@ export interface OpenCodeTransport {
 }
 
 const START_DEADLINE_MS = envInt("MIRAFOLD_OPENCODE_START_TIMEOUT_MS", 20_000);
-// Session-control endpoints are finite bookkeeping calls. A wedged engine
-// must not leave an abort/fork/create fetch alive forever; prompt_async and
-// command intentionally do NOT inherit this bound because they have their own
-// turn envelope and engine-event completion semantics.
 const CONTROL_REQUEST_TIMEOUT_MS = envInt("MIRAFOLD_OPENCODE_CONTROL_TIMEOUT_MS", 10_000);
 
 /** One agent from `GET /agent` — `hidden: true` marks the engine's internal
@@ -307,16 +303,9 @@ export class OpenCodeServerProcess implements OpenCodeTransport {
     }
   }
 
-  private async request(
-    pathname: string,
-    init?: RequestInit,
-    timeoutMs?: number,
-  ): Promise<Response> {
+  private async request(pathname: string, init?: RequestInit): Promise<Response> {
     const res = await fetch(`${this.base}${pathname}`, {
       ...init,
-      ...(init?.signal || timeoutMs === undefined
-        ? {}
-        : { signal: AbortSignal.timeout(timeoutMs) }),
       headers: {
         authorization: this.auth,
         "content-type": "application/json",
@@ -330,31 +319,34 @@ export class OpenCodeServerProcess implements OpenCodeTransport {
     return res;
   }
 
+  /** Session-control endpoints are finite bookkeeping calls: bound them so a
+   *  wedged engine can't hold an abort/fork/create/exists fetch open forever.
+   *  prompt_async and command deliberately stay on the plain request path —
+   *  their completion semantics are the turn envelope + engine events, not
+   *  the HTTP response. */
+  private controlRequest(pathname: string, init?: RequestInit): Promise<Response> {
+    return this.request(pathname, {
+      ...init,
+      signal: AbortSignal.timeout(CONTROL_REQUEST_TIMEOUT_MS),
+    });
+  }
+
   async createSession(): Promise<{ id: string }> {
-    const res = await this.request(
-      "/session",
-      { method: "POST", body: "{}" },
-      CONTROL_REQUEST_TIMEOUT_MS,
-    );
+    const res = await this.controlRequest("/session", { method: "POST", body: "{}" });
     return (await res.json()) as { id: string };
   }
 
   async forkSession(id: string): Promise<{ id: string }> {
-    const res = await this.request(
-      `/session/${encodeURIComponent(id)}/fork`,
-      { method: "POST", body: "{}" },
-      CONTROL_REQUEST_TIMEOUT_MS,
-    );
+    const res = await this.controlRequest(`/session/${encodeURIComponent(id)}/fork`, {
+      method: "POST",
+      body: "{}",
+    });
     return (await res.json()) as { id: string };
   }
 
   async sessionExists(id: string): Promise<boolean> {
     try {
-      await this.request(
-        `/session/${encodeURIComponent(id)}`,
-        undefined,
-        CONTROL_REQUEST_TIMEOUT_MS,
-      );
+      await this.controlRequest(`/session/${encodeURIComponent(id)}`);
       return true;
     } catch {
       return false;
@@ -455,14 +447,10 @@ export class OpenCodeServerProcess implements OpenCodeTransport {
   }
 
   async abort(sessionID: string): Promise<void> {
-    await this.request(
-      `/session/${encodeURIComponent(sessionID)}/abort`,
-      {
-        method: "POST",
-        body: "{}",
-      },
-      CONTROL_REQUEST_TIMEOUT_MS,
-    );
+    await this.controlRequest(`/session/${encodeURIComponent(sessionID)}/abort`, {
+      method: "POST",
+      body: "{}",
+    });
   }
 
   async replyPermission(permissionID: string, response: "once" | "reject"): Promise<void> {
