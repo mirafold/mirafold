@@ -149,8 +149,9 @@ backend picker) · **V** (visual + fidelity gaps) · **A** (accessibility) ·
 durable provider recovery, and branch test-audit closure) · **CR** (Changes
 review workspace) · **NF** (needs-you notifications) · **FD** (file
 drag-and-drop) · the paintings polish batch · **OC** (OpenCode adapter) ·
-the Gemini sunset · **RC** (remote OpenCode create) · **SA** (subagent
-view), plus the finished steps of the still-open Phases **K, R, F, Q, L**.
+the superseded Gemini deprecation record · **RC** (remote OpenCode create) · **SA** (subagent
+view) · **RF** (pre-release findings closure), plus the finished steps of the
+still-open Phases **K, R, F, Q, L**.
 
 Archive passes, each a section header in PLAN-ARCHIVE.md you can navigate to:
 2026-07-08 · 2026-07-10 · 2026-07-15 · "Moved 2026-07-17" · "Moved 2026-07-19"
@@ -162,7 +163,9 @@ investigation, the CI-flake breakdown, and finished stretch-goal specs) ·
 bodies)" (a sweep of finished bodies across Phases 4/R/A/Q, the 2026-07-27
 audit section, and the stretch goals) · "Moved 2026-08-14 (post-SA prune —
 completed bodies)" (the NF/FD step bodies, paintings polish, Phase OC, the
-Gemini sunset, Phase RC, and the whole Phase SA record).
+superseded Gemini deprecation record, Phase RC, and the whole Phase SA record) ·
+"Moved 2026-08-14 (Phase RF — completed body)" (Gemini support restoration,
+OpenCode interrupt recovery, and corrective validation).
 
 ---
 
@@ -2559,15 +2562,16 @@ fourth adapter. The feasibility spike is **`server/adapters/opencode.spike.md`**
     (`onBackendKind` → registry; `kindPending` refuses remote actions until
     verified).
 
-## Gemini sunset (opened + ✅ COMPLETE 2026-08-13; Kyle-directed)
+## Gemini CLI support (sunset decision reversed 2026-08-14; Kyle-directed)
 
-- [x] **Gentle deprecation shipped 2026-08-13** (Google retired Gemini CLI
-  upstream 2026-06-18 — dated citation in provider-policy.ts; Kyle's call:
-  sunset, not migrate; nothing removed — the API-key path still works).
-  Additive `AgentInfo.deprecated`, dated picker/notice copy, REMOVAL parked
-  in POST-RELEASE.md gated on evidence of breakage, never a calendar. Full
-  body → **PLAN-ARCHIVE.md, "Moved 2026-08-14 (post-SA prune — completed
-  bodies)."**
+**Correction.** The 2026-08-13 deprecation rested on an inaccurate starting
+claim: Google ended free/AI Pro/AI Ultra individual-account requests, not the
+Gemini CLI itself. Google explicitly kept API-key and enterprise access
+supported and the Apache-2.0 CLI maintained. Mirafold's adapter was never
+removed and its API-key route is one of those retained paths, so Gemini CLI
+remains supported. Phase **RF.1** removes the deprecation field, picker suffix,
+session notice, future-removal item, and current-facing retirement copy. The
+superseded decision body remains labeled as such in **PLAN-ARCHIVE.md**.
 
 ## Phase RC — Remote CREATE of OpenCode sessions (opened + ✅ COMPLETE 2026-08-13; Kyle-directed)
 
@@ -2612,7 +2616,21 @@ it never spawns or directs subagents itself (the homegrown-orchestrator trap).
   per-thread subscriptions — mapping deferred to **Phase F Step F.5**; the
   researched posture is recorded in docs/ADAPTERS.md's capability matrix.
 
-## Phase CS — Self-serve subscription cancel (opened 2026-08-14; Kyle-directed; plan signed off by Kyle)
+## Phase RF — Pre-release findings closure (opened + ✅ COMPLETE 2026-08-14; Kyle-directed)
+
+- [x] **RF.1–RF.3 complete 2026-08-14**, full body → **PLAN-ARCHIVE.md,
+  "Moved 2026-08-14 (Phase RF — completed body)."** Gemini CLI remains a
+  supported API-key adapter: the false deprecation field, picker suffix,
+  session notice, future-removal item, and current-facing retirement claims
+  are gone without changing its adapter behavior. OpenCode interruption now
+  starts its grace deadline independently of the abort request; a missed idle
+  forks context to a new session identity before the queue advances, with a
+  bounded, disclosed fresh-session fallback. Focused tests and all release
+  gates are green: Tier 1 **840/840**, Tier 2 **152/152**, typecheck, and Tier 3
+  **100/100**. The existing **CS.4** live cancel → scheduled state → undo
+  walkthrough remains next and intentionally Kyle-gated.
+
+## Phase CS — Self-serve subscription cancel (opened + ✅ COMPLETE 2026-08-14; Kyle-directed; plan signed off by Kyle)
 
 **Why.** A Mirafold Pro customer who wants to stop paying currently has two
 paths: the billing link in their Paddle receipt email, or emailing support —
@@ -2655,10 +2673,11 @@ until the period ends; Paddle's `subscription.canceled` webhook then flips KV,
 `/api/entitlement` starts refusing, and the ≤48 h token window does the rest —
 exactly the promised behavior.
 
-- [x] **Step CS.1 — Billing-backend endpoints** — ✅ built + tested
-  2026-08-14 on the site repo's `feature/cancel-endpoints` branch (six new
-  offline tests drive the full arc; suite 27/27). Not yet deployed — the
-  deploy is CS.4's first move. *(original contract below)*
+- [x] **Step CS.1 — Billing-backend endpoints** — ✅ built, tested, merged,
+  and deployed 2026-08-14 (six new offline tests drive the full arc; suite
+  27/27). The three live endpoints were probed after the Pages deploy and
+  returned the expected malformed/no-oracle refusal shapes. *(original
+  contract below)*
   - Build: three Pages Functions under `functions/api/subscription/`
     (`/api/subscription` status, `/api/subscription/cancel`,
     `/api/subscription/uncancel`), all POST `{licenseKey}`. Each resolves
@@ -2720,14 +2739,24 @@ exactly the promised behavior.
     the real flow in headless Chrome against a stubbed billing endpoint
     (open card → manage → renews-line → cancel → confirm → scheduled +
     undo → clean state), all tiers green.
-- [ ] **Step CS.4 — Ship sequencing + live verification (Kyle-gated)**
-  - **Progress 2026-08-14: the site half is LIVE.** Kyle merged the site
-    branch into site main (Pages deployed); all three endpoints probed live
-    same turn — contract shapes confirmed (400 malformed / identical
-    no-oracle refusal), /refunds + /terms carry the in-product-cancel copy.
-    The deploy-before-npm rule is satisfied. Remaining: PR #48 merge, then
-    the live arc on Kyle's real subscription (status → cancel → Paddle
-    shows the scheduled change → undo).
+- [x] **Step CS.4 — Ship sequencing + live verification (Kyle-gated)** — ✅
+  complete 2026-08-14. The site half deployed first; all three endpoints were
+  probed live, /refunds + /terms carry the in-product-cancel copy, and product
+  PR #48 is merged into `next` at `fe8a3cc`. Kyle then drove the real arc on
+  his active subscription: Mirafold read the August 29 renewal → scheduled an
+  end-of-period cancellation → the live status API returned `status: active`
+  with `cancelAt === periodEnd` → Paddle showed "set for cancellation" →
+  Mirafold undid it → the API returned active with no `cancelAt` and Kyle
+  confirmed Paddle was clean again.
+  - **Live setup finding + correction:** the first cancel returned the honest
+    backend-unreachable fallback and changed nothing. The executed site setup
+    record showed why: its production Paddle key had Transactions Read +
+    Subscriptions Read only, while Paddle's cancel and update endpoints require
+    `subscription.write`. Kyle enabled only Subscriptions Write on the existing,
+    recently-used production key; the next cancel and undo both succeeded with
+    no key replacement or Pages redeploy. The site repo's historical setup and
+    rotation notes still describe that key as read-only/claim-only and need a
+    truth-sync there before release documentation is considered closed.
   - The site half deploys first (Pages deploys on push to the site repo's
     main): until it's live, the product-side card degrades to the
     support-email line by design — but never release the product half to

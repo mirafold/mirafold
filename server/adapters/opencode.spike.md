@@ -45,6 +45,9 @@ Endpoints (from the docs + generated SDK client):
   sync `POST /session/:id/message` waits for the whole turn; we stream, so
   async + events is our shape).
 - `POST /session/:id/abort` — halt the in-flight turn → `interrupt()`.
+- `POST /session/:id/fork` — clone the conversation under a new session id;
+  Phase RF uses this only after an interrupted turn misses its idle deadline,
+  making every later event from the abandoned id unambiguously stale.
 - `POST /session/:id/permissions/:permissionID` — answer a permission ask.
 - `GET /event` — SSE stream of typed events (below).
 - `GET /doc` — OpenAPI 3.1 spec; `GET /global/health` — liveness + version.

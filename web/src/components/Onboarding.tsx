@@ -348,18 +348,17 @@ export function Onboarding({
             <div className="onb-connecting">connecting…</div>
           ) : (
             agents.map((row) => {
-              const { agent, live, blocked, kind, detail, deprecated } = row;
+              const { agent, live, blocked, kind, detail } = row;
               // Three states. live → ready. blocked → a prohibited
               // subscription is present; say so and name the API-key fix (still
               // clickable — it runs the demo, like any non-live agent). none →
               // no credentials · demo (R.4i).
               const hint = blocked ? blockedHint(agent) : !live ? connectHint(agent) : undefined;
-              // A deprecated agent stays fully usable — the suffix rides the
-              // existing status line (no new element: the squeeze ramp's
-              // height budget is calibrated to these rows).
-              const statusText =
-                (live ? "ready" : blocked ? "subscription not supported" : "no credentials · demo") +
-                (deprecated ? ` · ${deprecated}` : "");
+              const statusText = live
+                ? "ready"
+                : blocked
+                  ? "subscription not supported"
+                  : "no credentials · demo";
               const statusClass = live ? "onb-live" : blocked ? "onb-blocked" : "onb-demo";
               const backing = backingLine(agent, kind, detail);
               return (

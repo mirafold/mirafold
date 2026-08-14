@@ -37,10 +37,9 @@ import type { AgentName } from "./protocol";
 //     google-gemini/gemini-cli discussion #28017, posted by a maintainer;
 //     Antigravity CLI announced as the successor — adapter impact tracked as
 //     an R.6 check). API-key use continues under the Gemini API ToS. Already
-//     API-key-only in our detection. 2026-08-13: the adapter is DEPRECATED
-//     in-product (Kyle's gentle-sunset call — picker suffix + dated session
-//     notice; removal parked in POST-RELEASE.md, gated on evidence of actual
-//     breakage). This policy row is unchanged by the sunset.
+//     API-key-only in our detection. Google explicitly kept API-key and
+//     enterprise access supported and the open-source CLI maintained; Mirafold
+//     therefore continues to support this adapter (correction 2026-08-14).
 //   OpenAI (codex), closed: allowed for free LOCAL use **as a disclosed
 //     gray area** (Kyle's call, 2026-07-15, amending the same-day fail-closed
 //     flip — see the disclosed-uncertainty rule below). K.3's re-verification

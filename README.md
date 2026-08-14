@@ -61,14 +61,6 @@ the known trade-offs we've chosen to disclose rather than paper over.
 > examples; Codex, OpenCode, and Gemini CLI are the same pattern
 > (`server/adapters/codex.ts`, `server/adapters/opencode.ts`,
 > `server/adapters/gemini-cli.ts`).
->
-> **Gemini CLI is deprecated.** Google retired the open-source Gemini CLI
-> upstream on 2026-06-18 (replaced by the closed-source Antigravity CLI). The
-> adapter still works while a Gemini API key does, and it's marked deprecated
-> in onboarding and with a dated in-session notice; removal is gated on
-> evidence of actual breakage, not a date (POST-RELEASE.md). Note that OpenCode
-> can drive Gemini-family models through its own provider config, so that path
-> outlives the standalone Gemini adapter.
 
 Think of it as a terminal successor, not a chat app: monospace command strips
 in, rich rendered output back. Its transcript contract is **provider-native
@@ -392,13 +384,12 @@ else. `createSession()` resolves which one from config + per-session onboarding:
   read, written, or created.
 - **`GeminiCliSession`** — Google's Gemini CLI via its headless `stream-json`
   interface (one process per turn, warm across turns via `--session-id`/`--resume`).
-  **Deprecated** (Gemini CLI retired upstream 2026-06-18): still works while a
-  Gemini API key does, flagged in onboarding and a dated session notice, removal
-  gated on evidence (POST-RELEASE.md). Note: to inject the render MCP server,
-  this adapter writes a `.gemini/settings.json` into the session's working
-  directory (merged non-destructively over anything already there, and only
-  after workspace trust is granted) — so pointing a Gemini session at a project
-  drops that file in it.
+  Mirafold supports its API-key path; Google's individual-account login stopped
+  serving Gemini CLI requests in 2026. To inject the render MCP server, this
+  adapter writes a `.gemini/settings.json` into the session's working directory
+  (merged non-destructively over anything already there, and only after workspace
+  trust is granted) — so pointing a Gemini session at a project drops that file
+  in it.
 - **`MockSession`** — a scripted stand-in used automatically when the chosen
   agent has no credentials. Emits every wire message type with
   realistic pacing, drawing replies from a shuffled deck of five demo

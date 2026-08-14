@@ -113,21 +113,17 @@ test("recovery and discovery: Gemini resumes the saved id and advertises only it
   delete process.env.FAKE_ARGS_LOG;
 });
 
-test("the sunset notice rides the first turn once — dated, ours, then never again", async () => {
+test("Gemini remains supported without a Mirafold retirement notice", async () => {
   const { s, msgs, awaitTurnEnd } = makeSession();
   s.pushPrompt("hello");
   await awaitTurnEnd();
-  s.pushPrompt("again");
-  await awaitTurnEnd(2);
-  const notices = msgs.filter(
-    (m) => m.type === "notice" && /retired Gemini CLI upstream on 2026-06-18/.test(m.text),
-  );
-  assert.equal(notices.length, 1, "once per session, not per turn");
-  assert.equal(notices[0].source, undefined, "Mirafold-composed — no engine badge");
-  assert.match(notices[0].text, /deprecated/);
-  assert.ok(
-    msgs.findIndex((m) => m.type === "notice") < msgs.findIndex((m) => m.type === "turn_end"),
-    "the notice lands before the first turn completes",
+  assert.equal(
+    msgs.some(
+      (m) =>
+        m.type === "notice" &&
+        /retired|deprecated|sunset|will be removed/i.test(m.text),
+    ),
+    false,
   );
   s.close();
 });
