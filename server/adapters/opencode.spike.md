@@ -186,9 +186,20 @@ The relay gate is untouched: `allowedOverRelay` already refuses
   (their whitelist/blacklist config already applied server-side).
   `modelName` = the per-prompt `modelID`, known at selection — better than
   the mid-stream refinement the other adapters need.
-- **Subagents** (`@general`, `@explore`, `@scout`): their invocations arrive
-  as `subtask`/`agent` parts — v1 renders them as ordinary transcript
-  activity; child-session navigation is TUI chrome we don't reproduce.
+- **Subagents** (`@general`, `@explore`, `@scout`): *(corrected 2026-08-14 by
+  the SA.0 live probe — the original claim here, "invocations arrive as
+  `subtask`/`agent` parts", was incomplete: `SubtaskPart` is the COMMAND
+  input path and `AgentPart` an @-mention marker.)* The model-initiated
+  spawn is a **`task` TOOL part on the parent session** plus a child
+  `session.created` whose `Session.parentID` points at the parent; the join
+  key from Task row to child is the tool part's `state.metadata.sessionId`
+  (lowercase d — engine casing inconsistency, verbatim). The child's own
+  text/tool/step parts, token-grain `message.part.delta`s, `permission.asked`
+  (child `sessionID`) and `session.idle` all ride the SAME global `/event`
+  stream. Captured sequence: `server/testing/opencode-subagent-fixture.ts`
+  (probe recipe: the OC.5 scripted-provider jail + a parent turn scripted to
+  call `task` with `subagent_type: "general"`). The command path converges on
+  the same task tool part, so one lane rule covers both.
 
 ## SDK vs raw HTTP — recommendation: take `@opencode-ai/sdk`
 

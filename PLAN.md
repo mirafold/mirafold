@@ -2947,6 +2947,217 @@ truth arrives does.
 an allowed provider and drive it immediately; a subscription/Zen pin is
 refused at create with the honest reason and leaks nothing; all tiers green.
 
+## Phase SA — Subagent view (opened 2026-08-14; Kyle-directed; steps pending the research pass + Kyle's signoff)
+
+**Why.** When a session's agent spawns its own subagents, render them as a
+live, legible structure — calm by default, fully expandable — instead of
+dropping their narration and scattering their tool rows. Today the Claude
+Code adapter forwards a subagent's tool calls (nested, T2.4) but drops its
+prose: the SDK never forwards subagent token-level deltas (main-session-only
+stream, confirmed vs docs 2026-08-14), but subagent COMPLETE assistant
+messages — text and thinking blocks tagged `parent_tool_use_id` — do arrive,
+and the adapter skips them (`claude-code.ts` `!parentId` gate). The data is
+in the stream at message grain; Mirafold chooses not to render it — in
+tension with never-hide, sharpest when a stuck subagent explains itself and
+the user never sees it. Framing sharpened by research: the TERMINAL shows
+even less (a panel row — name, elapsed, tokens; no prose, no per-agent tool
+activity — a gap third-party tools visibly fill), so this is not fixing a
+hiding-vs-terminal bug; it is Mirafold being MORE faithful than the terminal
+to what the agent is actually doing.
+A live per-subagent card is also the product thesis made vivid: parallel
+agents shown side by side, which one interleaved terminal column physically
+cannot do. Automatic — the user prompts normally; when the agent fans out,
+this rendering just happens.
+
+**The hard line.** Mirafold DISPLAYS the agent's own coordination — it
+renders what the engine already decided to do. It never spawns or directs
+subagents itself (the homegrown-orchestrator trap, a non-negotiable).
+*Mirafold shows coordination; it never performs it.*
+
+**Decided 2026-08-14 (Kyle signed off on all of these):**
+
+1. **One card per subagent; no invented group container.** Each spawn gets
+   its own live card anchored where its Task row is today. No batch notion,
+   no synthesized group title (shell-voice rule: Mirafold never composes a
+   sentence about the agent's intent). A neutral counted summary line
+   ("3 agents · 2 running") is later polish, not structure.
+2. **Subagent traffic rides the replay ring, per-subagent byte-capped.**
+   A late-attaching viewport sees what a present one saw — dropping it from
+   replay would rebuild the hiding problem for exactly the away user. Cap
+   in the flood-cap spirit; elision marked explicitly (`truncatedBytes`
+   precedent), never silent.
+3. **Wire shape: reuse `text_delta`/`thinking_delta` with optional
+   `parentId`** — the exact additive precedent `tool_use`/`tool_result`
+   set; old clients degrade to today's behavior. No new delta type.
+   **`parentId` is an opaque adapter-chosen handle**: for Claude Code it
+   happens to be the Task tool_use id, but the protocol never promises
+   that; shared code only groups by it, never parses or dereferences it.
+4. **A card must be able to exist without a tool row to anchor to.**
+   Tool-call-spawning engines anchor on (become) the Task row; an engine
+   without one gets a way to announce the spawn (synthetic tool_use-shaped
+   record vs. small additive spawn message — build-time call, requirement
+   named now so the card component is not hard-wired to Task rows).
+5. **Render depth 1 — what the stream surfaces — stated assumption.**
+   (Corrected by research 2026-08-14: engines DO nest — Claude Code to
+   depth 3 by default, but grandchild traffic never reaches the parent
+   stream, only the top-level child's summary returns; OpenCode denies
+   `task` to children by default, though user config can allow nesting,
+   unbounded.) The rule: cards render what the engine surfaces to the
+   session; engine-hidden grandchildren are the ENGINE's choice, not ours.
+   OpenCode parentage resolves transitively (`Session.parentID` is a plain
+   edge), so a configured nesting maps to the nearest stream-visible
+   ancestor's card — documented degradation, not breakage.
+6. **Agent-neutral, proven: OpenCode mapping is IN scope as the final
+   step.** Neutrality is only real once a second adapter maps the lane.
+   Codex is OUT of build scope, with the posture corrected by research
+   2026-08-14: Codex NOW HAS first-class multi-agent (collab tools,
+   default-on since ~2026-02, official docs) — children are full sibling
+   THREADS (own thread id + event stream, `parentThreadId` edges); the
+   parent stream carries spawn/status items (`collabAgentToolCall`,
+   `subAgentActivity`) but never child inner activity, which needs
+   per-thread subscriptions via the app-server protocol — i.e. gated on
+   F.5, and the TS SDK we drive types none of the collab items yet.
+   A Codex SUMMARY-card mapping may be reachable pre-F.5 from untyped
+   collab items; deliberately deferred, revisit at F.5. (Vocabulary trap
+   confirmed: Codex `task_started`/`task_complete` = the whole TURN.)
+   Gemini is sunset.
+7. **Trusted shell:** the card is Mirafold chrome derived from the stream —
+   all subagent prose renders as inert plain text (fleet activity-line
+   precedent), never markdown, never agent-painted HTML.
+8. **Phase shape: mock-first, three beats.** (a) Mock parallel-subagent
+   scenario + summary cards built ENTIRELY from data already on the wire —
+   spawn/finish/tool rows/elapsed/current action all derive from existing
+   `tool_use`/`tool_result` + parentId; zero protocol change; visible win
+   alone. (b) Narration forwarding + the expanded view. (c) The OpenCode
+   mapping. Expanded-view interaction design (the calm/expand balance) is
+   deliberately decided at build time with the mock running.
+
+**Research pass — DONE 2026-08-14 (three agents + local reads). Load-bearing
+findings, beyond the corrections folded into the decisions above:**
+
+- **Claude Code (SDK pin 0.3.201):** subagent narration arrives at MESSAGE
+  grain only (complete assistant messages with `parent_tool_use_id`; deltas
+  are main-session-only per docs). To verify empirically in SA.0: that
+  parent-tagged messages arrive LIVE during the child's run (T2.4's ticking
+  nested rows suggest yes; one doc reading suggested end-of-run) — and that
+  subagent permission asks already route through the parent `canUseTool`.
+  Terminal shows a subagent panel row only (name/elapsed/tokens). Default
+  concurrent-subagent cap 20 — cards must stack legibly at that count.
+- **OpenCode (live OpenAPI capture + engine binary, 1.18.18; NEVER yet
+  exercised live — SA.0 owes the probe):** child sessions ride the SAME
+  global `/event` stream we already consume, tagged with their own
+  `sessionID`; our `isOurs` filter (`opencode.ts:170`, applied across
+  `opencode-events.ts`) drops them whole, per design comment and a pinned
+  test. Spawn = the `task` TOOL part on the parent + `session.created` with
+  `Session.parentID`; the JOIN key parent-task-part → child is
+  `state.metadata.sessionId` (lowercase-d casing, engine inconsistency; the
+  session event alone recovers the parent SESSION, not the Task row). The
+  `subtask` command path converges on the same task tool part — one lane
+  rule covers both. Child gets `todowrite` denied by default — no checklist
+  clobber hazard. **DEFECT FOUND: child-session `permission.asked` events
+  are dropped today — a subagent hitting a permission gate hangs, no UI, no
+  deny timer (`opencode.ts:544` timer only starts for accepted asks).**
+  Reply endpoint for the fix: `POST /permission/{requestID}/reply` (takes
+  only the request id — session-agnostic; our current per-session reply
+  endpoint is marked deprecated in the live spec). Also: child
+  `session.idle` must not end the parent's turn once the lane opens; spike
+  doc's "subtask/agent parts" subagent claim is incomplete — correct it.
+- **Local (registry.ts):** replay ring already double-capped (4000 msgs /
+  32 MB, oldest-first) — riding it is memory-safe; the per-subagent
+  narration cap therefore lives at the ADAPTER (also bounds relay bytes);
+  sizing precedent `TOOL_OUTPUT_CAP_BYTES` 64 KB. **The 33 ms delta
+  coalescer merges on `pending.type === msg.type` only (`registry.ts:589`)
+  — once deltas carry `parentId` the merge key MUST include it**, or parent
+  and child prose concatenate into one message.
+
+**Steps** *(each single-pass; implementation gated on Kyle's explicit
+signoff of the reported plan)*:
+
+- [x] **SA.0 — Live probes + record the truth.** — completed 2026-08-14,
+  both probes credential-free/zero-spend. **OpenCode** (real engine 1.18.18,
+  OC.5-style scripted provider, raw global-stream capture): parent `task`
+  tool part (`pending`) arrives ONE event before child `session.created`;
+  `running` metadata carries the join key
+  (`state.metadata.sessionId`/`parentSessionId`, lowercase d, + `model`;
+  `completed` adds `truncated`); the child `Session` itself carries `agent`,
+  a title from the description, and a ruleset showing `task` denied
+  (depth-1 default confirmed live). Child text/tool/step parts AND
+  token-grain `message.part.delta`s ride the global stream tagged with the
+  child id. Child `permission.asked` arrived (child `sessionID`,
+  `patterns`, `tool.callID`); **the deprecated per-session reply endpoint
+  accepted a reply addressed with the ROOT session id — 200, child
+  unblocked — so it does NOT validate ownership (1.18.18)**; SA.3 still
+  moves to `/permission/{requestID}/reply` (modern, session-agnostic).
+  Child `session.idle` fired BEFORE the parent task part completed and well
+  before parent idle — the parent-turn guard is real. Curated capture:
+  `server/testing/opencode-subagent-fixture.ts`. **Claude Code** (real
+  bundled CLI via SDK 0.3.201, scripted Anthropic endpoint via
+  `ANTHROPIC_BASE_URL`, STREAMING input mirroring the adapter):
+  (a) parent-tagged assistant messages arrive LIVE mid-child-run (child's
+  Bash tool_use yielded before the fake server even served the child's next
+  request), zero parent-tagged `stream_event`s — narration is message-grain,
+  confirmed empirically; (b) **a subagent's gated tool call DOES fire the
+  parent query's `canUseTool`** (proved with a parent-Bash control in the
+  same run) — the existing permission bar already covers subagent tools —
+  but the callback carries NO subagent identifier (extras =
+  suggestions/blockedPath/displayName only), so CC asks stay UNATTRIBUTED
+  on cards this phase, faithful to the terminal. Two design-relevant
+  extras: the spawn tool in 0.3.201 is named **`Agent`** (not `Task`) — the
+  card anchor must key on "the tool_use other messages reference as
+  `parentId`", name-agnostic; and bare `echo` never prompted (the CLI's own
+  safe-command auto-approval — faithful, not a bug). Spike doc's subagent
+  paragraph corrected. Probe scripts: session scratchpad `sa0/`
+  (`probe.mjs`, `cc-probe2.mjs`); recipes summarized above are sufficient
+  to re-derive them.
+- [ ] **SA.1 — Mock scenario + summary cards (zero protocol change).**
+  MockSession gains a parallel-subagent scenario (3 spawns, interleaved
+  nested tool traffic, out-of-order finishes). Client: the subagent card —
+  the Task row becomes a live card (agent type + prompt from the spawn
+  input; running/done state, tool count, elapsed, current action — ALL
+  derived from existing `tool_use`/`tool_result` + `parentId` data).
+  Calm summary only; card is shell chrome; phone renders the same card
+  stacked (no new drill-in). Axe-clean, focus discipline. Done when: in
+  headless Chrome against the mock, three cards run live at once, tick
+  independently, finish out of order; Tier-1 covers the card reducer.
+- [ ] **SA.2 — The narration lane (wire + Claude Code + expand).**
+  Protocol: optional `parentId` on `text_delta`/`thinking_delta`,
+  documented as an opaque adapter-chosen handle (never parsed, only
+  grouped). Registry: coalescer merge key gains `parentId`. Adapter:
+  forward subagent text + thinking from parent-tagged complete messages
+  (message-grain deltas), per-subagent narration cap
+  (`SUBAGENT_TEXT_CAP_BYTES`, default 64 KB, explicit elision marker,
+  never silent). Client: expand/collapse on the card — full activity,
+  narration as inert plain text (fleet activity-line precedent), collapse
+  back to calm. Replay: rides the ring as-is (globally capped). Done
+  when: mock + Tier-1/2 prove per-parent bucketing (no cross-parent
+  merge), the cap's marker, and old-client shape compatibility; e2e:
+  expand shows narration live, collapse returns calm.
+- [ ] **SA.3 — The OpenCode mapping (neutrality proven).** `isOurs`
+  becomes a lane router: child-session events map to `parentId` = parent
+  task part id (Map from `state.metadata.sessionId` +
+  `session.created`/`Session.parentID`, resolved transitively); child
+  text/reasoning → parentId'd deltas (capped, SA.2 lane), child tool
+  parts → parentId'd `tool_use`/`tool_result`; child `session.idle` and
+  status must not touch parent turn state. **Fix the defect: child
+  permission asks surface in the shell's permission UI attributed to the
+  subagent, answered via `/permission/{requestID}/reply`, deny-by-default
+  timer armed.** Update the "skipped whole" test to the new contract;
+  extend the Tier-4 live test with a scripted-provider subagent run.
+  Done when: a real OpenCode subagent's cards/narration/permission ask
+  all work end-to-end on the scripted harness; all tiers green.
+- [ ] **SA.4 — Docs + glossary.** README (the card in the surfaces
+  section), ADAPTERS.md (the subagent lane: opaque `parentId`, the
+  per-adapter mapping table incl. the recorded Codex posture), GLOSSARY
+  term for the card (master + 4 copies, same sitting per umbrella rule).
+  Done when: docs read standalone; glossary copies diff-clean.
+
+**Done when (phase).** Prompting the mock or a real engine into a parallel
+fan-out yields live per-subagent cards — calm summary, expandable to full
+narration — on desktop and phone, replayed faithfully to a late-attaching
+viewport within caps; Claude Code and OpenCode both map the lane; an
+OpenCode subagent's permission ask no longer hangs; nothing anywhere spawns
+or directs a subagent from Mirafold's side; all tiers green.
+
 ## Phase PN — Panes (file views beside the transcript)
 
 **Why.** Kyle (2026-07-26): open a file and see it in its own pane. Also the
