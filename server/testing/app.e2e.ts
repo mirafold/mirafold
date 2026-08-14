@@ -579,7 +579,7 @@ test("onboarding → a full mock turn renders in the DOM", async () => {
   await page.waitForSelector("text=Plan complete — all four steps done.", { timeout: 30_000 });
 });
 
-test("SA.1: a parallel fan-out renders three live subagent cards, out of order, expandable", async () => {
+test("SA.1: a parallel fan-out renders three live subagent decks, out of order, expandable", async () => {
   await withFreshMockSession("sa1-cards-7fd1", async (p) => {
     await p.locator("textarea").click();
     await p.keyboard.type("delegate the research");
@@ -587,7 +587,7 @@ test("SA.1: a parallel fan-out renders three live subagent cards, out of order, 
 
     // Three cards appear as their spawns land (350/430/510ms in the mock).
     await p.waitForFunction(
-      () => document.querySelectorAll(".subagent-card").length === 3,
+      () => document.querySelectorAll(".subagent-deck").length === 3,
       undefined,
       { timeout: 15_000 },
     );
@@ -595,11 +595,11 @@ test("SA.1: a parallel fan-out renders three live subagent cards, out of order, 
     // While running: a live card ticks — elapsed seconds in the meta line and
     // a current action in the live slot. Grab the slow "trace the token path"
     // card, which runs the longest.
-    const tokenCard = p.locator(".subagent-card", { hasText: "trace the token path" });
+    const tokenCard = p.locator(".subagent-deck", { hasText: "trace the token path" });
     await p.waitForFunction(
       () => {
-        const cards = [...document.querySelectorAll(".subagent-card-running")];
-        return cards.some((c) => /·\s*\d+s/.test(c.querySelector(".subagent-card-meta")?.textContent ?? ""));
+        const cards = [...document.querySelectorAll(".subagent-deck-running")];
+        return cards.some((c) => /·\s*\d+s/.test(c.querySelector(".subagent-deck-meta")?.textContent ?? ""));
       },
       undefined,
       { timeout: 10_000 },
@@ -611,12 +611,12 @@ test("SA.1: a parallel fan-out renders three live subagent cards, out of order, 
       () => {
         // No const-assigned arrows in here: esbuild's keepNames would inject
         // a __name helper the browser page doesn't have.
-        const cards = [...document.querySelectorAll(".subagent-card")];
+        const cards = [...document.querySelectorAll(".subagent-deck")];
         const settled = cards.find((c) => c.textContent?.includes("map session handling"));
         const slow = cards.find((c) => c.textContent?.includes("trace the token path"));
         return (
-          settled?.classList.contains("subagent-card-done") === true &&
-          slow?.classList.contains("subagent-card-running") === true
+          settled?.classList.contains("subagent-deck-done") === true &&
+          slow?.classList.contains("subagent-deck-running") === true
         );
       },
       undefined,
@@ -626,9 +626,9 @@ test("SA.1: a parallel fan-out renders three live subagent cards, out of order, 
     // The turn concludes; all three cards settle, elapsed stops being shown
     // (client-side timing is only honest while live), result lines ride.
     await p.waitForSelector("text=All three subagents reported back", { timeout: 30_000 });
-    assert.equal(await p.locator(".subagent-card-done").count(), 3);
-    assert.equal(await p.locator(".subagent-card-running").count(), 0);
-    const doneMeta = await tokenCard.locator(".subagent-card-meta").innerText();
+    assert.equal(await p.locator(".subagent-deck-done").count(), 3);
+    assert.equal(await p.locator(".subagent-deck-running").count(), 0);
+    const doneMeta = await tokenCard.locator(".subagent-deck-meta").innerText();
     assert.doesNotMatch(doneMeta, /·\s*\d+s/);
     assert.match(doneMeta, /4 tools/);
     assert.match(doneMeta, /never leaves the daemon/);
@@ -636,7 +636,7 @@ test("SA.1: a parallel fan-out renders three live subagent cards, out of order, 
     // Expand → the nested calls are all there, AND the subagent's own words
     // (SA.2: narration + reasoning, interleaved, inert plain text — the
     // narration precedes the first tool row, true stream order).
-    await tokenCard.locator(".subagent-card-head").click();
+    await tokenCard.locator(".subagent-deck-head").click();
     assert.equal(await tokenCard.locator(".subagent-calls .tool-block").count(), 4);
     const prose = tokenCard.locator(".subagent-prose");
     assert.match(await prose.first().innerText(), /Following the cookie from auth\.ts/);
@@ -653,16 +653,16 @@ test("SA.1: a parallel fan-out renders three live subagent cards, out of order, 
     );
     // The prose is NOT rendered as markdown — no <p>/<em> children, raw text.
     assert.equal(await prose.first().locator("p, em, strong, a, code").count(), 0);
-    await tokenCard.locator(".subagent-card-head").click();
+    await tokenCard.locator(".subagent-deck-head").click();
     assert.equal(await tokenCard.locator(".subagent-calls").count(), 0);
 
-    await assertAxeClean(p, "subagent cards");
+    await assertAxeClean(p, "subagent decks");
     await noSideScroll(p);
 
     // Phone width: the same cards stack — no pane, no side scroll, drill-in
     // untouched (the transcript is the same DOM at every width).
     await p.setViewportSize({ width: 390, height: 844 });
-    assert.equal(await p.locator(".subagent-card").count(), 3);
+    assert.equal(await p.locator(".subagent-deck").count(), 3);
     await noSideScroll(p);
   });
 });

@@ -52,7 +52,7 @@ export class OpenCodeEventMapper {
   // parentSessionId} — the SA.0 probe's join key, lowercase d) and from
   // child `session.created` (Session.parentID), resolved transitively so a
   // user-configured NESTED grandchild lands on its nearest stream-visible
-  // ancestor's card. Cleared per turn like the part maps — a `background:
+  // ancestor's deck. Cleared per turn like the part maps — a `background:
   // true` child outliving its turn goes unroutable and is skipped, exactly
   // as all child traffic was before the lane existed.
   private sessionParents = new Map<string, string>();
@@ -104,7 +104,7 @@ export class OpenCodeEventMapper {
   /** Which lane a session's traffic belongs to: "root" for the session this
    *  mapper narrates; the spawn part id (the opaque wire handle) for a
    *  child, resolved transitively — a configured nested grandchild lands on
-   *  its nearest stream-visible ancestor's card; undefined = unroutable,
+   *  its nearest stream-visible ancestor's deck; undefined = unroutable,
    *  skipped whole (pre-SA.3 behavior). */
   private laneOf(sessionID: unknown): "root" | string | undefined {
     if (this.options.isOurs(sessionID)) return "root";
@@ -144,7 +144,7 @@ export class OpenCodeEventMapper {
         break;
       case "session.created": {
         // A child spawn's session edge (SA.3). The task part's metadata is
-        // what yields the CARD handle; this edge is what makes transitive
+        // what yields the DECK handle; this edge is what makes transitive
         // (grandchild) resolution possible.
         const info = p["info"] as Record<string, unknown> | undefined;
         const id = info?.["id"];
@@ -341,7 +341,7 @@ export class OpenCodeEventMapper {
   }
 
   private emitStreamText(track: PartTrack, text: string, parentId?: string) {
-    // A subagent's prose rides its card's lane, budget-capped (SA.3 — the
+    // A subagent's prose rides its deck's lane, budget-capped (SA.3 — the
     // same per-subagent cap the Claude Code lane applies). `emitted` above
     // tracks SOURCE position either way, so a capped card still consumes
     // the stream correctly and later suffixes stay aligned.
@@ -370,7 +370,7 @@ export class OpenCodeEventMapper {
     const status = String(state["status"] ?? "");
     const input = (state["input"] ?? {}) as Record<string, unknown>;
     // SA.3: a ROOT tool part whose metadata names a spawned session is the
-    // card anchor — record the join (the SA.0 probe's key: metadata
+    // deck anchor — record the join (the SA.0 probe's key: metadata
     // {sessionId, parentSessionId}, lowercase d, engine casing verbatim).
     // Read shape-wise, not by tool name, so the lane stays name-agnostic.
     if (!parentId) {
@@ -389,7 +389,7 @@ export class OpenCodeEventMapper {
     if (tool.startsWith(MCP_PREFIX)) {
       // A SUBAGENT's render call does not paint — paintings are session-level
       // chrome, and a card's content is calls + prose (SA charter). It gets
-      // the honest tool record instead, nested in its card.
+      // the honest tool record instead, nested in its deck.
       if (!parentId) {
         this.onMirafoldTool(partID, track, tool, state, input);
         return;

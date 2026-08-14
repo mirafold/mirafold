@@ -240,7 +240,7 @@ type WireMsgBody =
   // Phase T2.1: the model's reasoning stream, full fidelity. Renders as a
   // dim block that folds to one line once the turn's real output starts —
   // collapse-on-finalize, never dropped. `parentId` rides here too, exactly
-  // as on text_delta (SA.2): a subagent's reasoning, grouped under its card.
+  // as on text_delta (SA.2): a subagent's reasoning, grouped under its deck.
   | { type: "thinking_delta"; text: string; parentId?: string }
   // Phase F.2: a service-status line — an event the terminal shows and the
   // adapter would otherwise drop, so the UI never lies in degraded service:

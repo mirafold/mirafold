@@ -970,10 +970,27 @@ mediation path (§5.4).
     with the same id completes the record, capped by `capOutput` with an
     honest `truncatedBytes` (T2.3). Results are only forwarded for ids the
     session announced.
-  - **Subagent traffic** (events with a `parent_tool_use_id`): its text and
-    thinking stay dropped — a subagent's monologue must not paint into the
-    transcript — but its tool *calls* are now forwarded tagged with
-    `parentId` (T2.4), which the client nests under the owning Task row.
+  - **Subagent traffic** (events with a `parent_tool_use_id`): its tool
+    *calls* forward tagged with `parentId` (T2.4), and since Phase SA its
+    PROSE forwards too — the SDK never streams subagent token deltas
+    (main-session-only, verified against the real CLI in the SA.0 probe),
+    but its complete assistant messages arrive live mid-run, so their text
+    and thinking blocks become message-grain parented deltas, capped
+    per-subagent by `SubagentProseBudget` (`SUBAGENT_TEXT_CAP_BYTES`,
+    explicit elision marker). The client renders each spawn as a live
+    **subagent deck** (GLOSSARY): calm summary — agent type, the spawn's own
+    description, state, tool count, elapsed while running, current action —
+    expandable to the nested calls interleaved with the subagent's own words
+    as inert plain text, never markdown. The deck anchors on "the tool_use
+    other records reference as `parentId`", never on a tool NAME (the SDK's
+    spawn tool is `Agent` as of 0.3.201, was `Task`; OpenCode's is `task`).
+    `parentId` itself is an OPAQUE adapter-chosen handle — shared code only
+    groups by it. A subagent's permission-gated tool call already rides the
+    parent `canUseTool` (verified live, SA.0), so the permission bar covers
+    subagents with no extra plumbing; the callback carries no subagent
+    identity, so Claude Code asks stay unattributed (OpenCode's are
+    attributed — `permission_request.parentId` — and show a dim "subagent"
+    chip).
   - **Task list** (T2.5): the SDK's `TaskCreate`/`TaskUpdate` family (its
     successor to `TodoWrite`) is folded into one live `todo-list` render that
     updates in place; the raw Task* rows and their results are swallowed.
@@ -1029,7 +1046,9 @@ emissions: streamed `thinking_delta`, fake `tool_use`/`tool_result` records
 (incl. an Edit with a real before/after and a Write), a `usage` record, the
 reply streamed in 16-char chunks at ~12ms, then `turn_end`. Keyword hooks in
 the prompt drive every other capability API-free — `artifact`/`broken`/
-`navigates` (Phase 3 + its fallbacks), `subagent`/`delegate` (nested Task),
+`navigates` (Phase 3 + its fallbacks), `subagent`/`delegate` (a three-spawn
+parallel fan-out with narration — three live subagent decks, out-of-order
+finishes; Phase SA),
 `todo`/`plan` (live checklist), `huge` (the elision marker), `dangerous`
 (permission prompt). `close()` clears all pending timers.
 
@@ -1159,9 +1178,11 @@ same relative URL works unchanged.
 
 State: a flat list of `Entry`s — text blocks (`{kind:"text", …}`), rendered
 components (`{kind:"render", …}`), tool records (`{kind:"tool", …}`, which
-may carry `parentId` for subagent calls), thinking blocks (`{kind:"thinking",
-…}`), and artifacts (`{kind:"artifact", …}`) — in the exact order they
-arrived on the wire, plus an ephemeral `Status`. The reducer-like
+may carry `parentId` for subagent calls), subagent prose
+(`{kind:"subtext", …}` — parented narration/thinking, rendered only inside
+its subagent deck's expansion, never top-level), thinking blocks
+(`{kind:"thinking", …}`), and artifacts (`{kind:"artifact", …}`) — in the
+exact order they arrived on the wire, plus an ephemeral `Status`. The reducer-like
 subscription handles each `ZoneMsg`:
 
 - `user_prompt` → append a done user text entry, show `thinking`.

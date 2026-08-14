@@ -22,7 +22,7 @@ import { GearGlyph } from "./GearGlyph";
 import { useFollowTail } from "../use-follow-tail";
 import { queueDelta, type QueuedDelta } from "../delta-queue";
 import { groupSettledTools, type ActivityItem, type FoldedActivity } from "../tool-visibility";
-import { subagentSummary } from "../subagent-card";
+import { subagentSummary } from "../subagent-deck";
 import { shouldFocusPromptFromTranscriptPointer } from "../transcript-focus";
 
 // The scrollback is a flat list of entries: text blocks and rendered
@@ -49,19 +49,19 @@ type Entry =
       isError?: boolean;
       batchId: number; // user-turn batch; successful calls fold together at its end
       settled: boolean;
-      // SA.1: when this client appended the record — the subagent card's
+      // SA.1: when this client appended the record — the subagent deck's
       // elapsed ticker. Client-side and honest only while live (a replay
-      // burst collapses it), so the card shows elapsed ONLY while running.
+      // burst collapses it), so the deck shows elapsed ONLY while running.
       startedAt: number;
     }
   | {
       // SA.2: a subagent's narration or reasoning — prose the wire tags with
-      // a parentId. Lives inside its card's expansion, never at top level,
+      // a parentId. Lives inside its deck's expansion, never at top level,
       // and renders as INERT PLAIN TEXT (trusted-shell rule: subagent words
       // never get markdown inside shell chrome).
       kind: "subtext";
       id: number;
-      parentId: string; // the spawn wire id whose card holds this
+      parentId: string; // the spawn wire id whose deck holds this
       variant: "text" | "thinking";
       text: string;
     }
@@ -186,7 +186,7 @@ function ToolCallList({ calls, className }: { calls: ToolCall[]; className: stri
   );
 }
 
-/** The card's full activity, in true stream order (SA.2): tool rows plus the
+/** The deck's full activity, in true stream order (SA.2): tool rows plus the
  *  subagent's own narration and reasoning. Prose is INERT PLAIN TEXT —
  *  subagent words never render as markdown inside shell chrome. */
 function SubagentActivity({ items }: { items: Array<ToolCall | SubtextEntry> }) {
@@ -211,12 +211,12 @@ function SubagentActivity({ items }: { items: Array<ToolCall | SubtextEntry> }) 
 }
 
 /** SA.1: a spawn whose wire id other records reference as parentId becomes a
- * live subagent card — calm summary (agent type, the spawn's own description,
+ * live subagent deck — calm summary (agent type, the spawn's own description,
  * state, tool count, elapsed while running, current action), expandable to
  * the nested calls. Everything shown is the engine's own data rendered as
- * inert plain text; the card itself is shell chrome. Elapsed ticks only
+ * inert plain text; the deck itself is shell chrome. Elapsed ticks only
  * while running — a settled or replayed card never shows a stale duration. */
-const SubagentCard = memo(function SubagentCard({
+const SubagentDeck = memo(function SubagentDeck({
   task,
   calls,
   items,
@@ -238,18 +238,18 @@ const SubagentCard = memo(function SubagentCard({
   return (
     <div
       className={
-        "subagent-card" +
+        "subagent-deck" +
         (running
-          ? " subagent-card-running"
+          ? " subagent-deck-running"
           : s.state === "failed"
-            ? " subagent-card-failed"
-            : " subagent-card-done")
+            ? " subagent-deck-failed"
+            : " subagent-deck-done")
       }
       role="group"
       aria-label={`subagent: ${s.description} (${s.state})`}
     >
       <button
-        className="subagent-card-head"
+        className="subagent-deck-head"
         onClick={() => setOpen(!open)}
         aria-expanded={open}
         title={open ? "Collapse subagent activity" : "Expand subagent activity"}
@@ -262,7 +262,7 @@ const SubagentCard = memo(function SubagentCard({
         </span>
         <span className="subagent-caret">{open ? "▾" : "▸"}</span>
       </button>
-      <div className="subagent-card-meta">
+      <div className="subagent-deck-meta">
         <GearGlyph size="1em" /> {s.toolCount} tool{s.toolCount === 1 ? "" : "s"}
         {running ? ` · ${elapsed}s` : ""}
         {!running && s.resultLine ? (
@@ -357,7 +357,7 @@ export function RenderZone({
   const streamingId = useRef<number | null>(null);
   // SA.2: the open subtext entry per (parentId|variant) — a subagent's
   // consecutive prose extends in place; its own next tool call closes it so
-  // the card's expansion keeps true stream order.
+  // the deck's expansion keeps true stream order.
   const subtextIds = useRef(new Map<string, number>());
   // The thinking block currently receiving deltas (T2.1).
   const thinkingId = useRef<number | null>(null);
@@ -370,7 +370,7 @@ export function RenderZone({
   useEffect(
     () => {
       const apply = (msg: ZoneMsg) => {
-        // SA.2: a subagent's prose routes to its card BEFORE the fold/close
+        // SA.2: a subagent's prose routes to its deck BEFORE the fold/close
         // logic below — a child streaming must not fold the parent's open
         // thinking or close the parent's streaming text block. Consecutive
         // same-parent same-variant deltas extend one subtext entry, so the
@@ -770,8 +770,8 @@ export function RenderZone({
     return byParent;
   }, [entries]);
 
-  // SA.2: everything a card's expansion shows — child calls AND the
-  // subagent's prose — in true stream order. Also the card's anchor test:
+  // SA.2: everything a deck's expansion shows — child calls AND the
+  // subagent's prose — in true stream order. Also the deck's anchor test:
   // narration can arrive before the first child tool call, and a spawn with
   // only prose is still a card.
   const cardItemsByParent = useMemo(() => {
@@ -793,19 +793,19 @@ export function RenderZone({
         entries.flatMap((entry): Array<ActivityItem<ToolCall, ThinkingEntry>> =>
           entry.kind === "tool"
             ? entry.parentId && !entry.isError
-              ? // A subagent's call lives inside its card — invisible to the
+              ? // A subagent's call lives inside its deck — invisible to the
                 // fold, and OMITTED (not a boundary) so a parent-level run is
                 // not split by child traffic it never displaces (SA.1).
                 []
               : cardItemsByParent.has(entry.toolId)
-                ? // A subagent card is a visible block: folding across it
+                ? // A subagent deck is a visible block: folding across it
                   // would move later work ahead of it. Hard boundary.
                   [null]
                 : [{ kind: "tool" as const, tool: entry }]
             : entry.kind === "thinking"
               ? [{ kind: "thinking" as const, thinking: entry }]
               : entry.kind === "subtext"
-                ? // Inside its card — invisible to folding, like child calls.
+                ? // Inside its deck — invisible to folding, like child calls.
                   []
                 : [null],
         ),
@@ -952,7 +952,7 @@ function ZoneEntry({
   pinned: string[];
   togglePin: (renderId: string) => void;
 }) {
-  // A subagent's prose lives inside its card's expansion, never top-level.
+  // A subagent's prose lives inside its deck's expansion, never top-level.
   if (entry.kind === "subtext") return null;
   if (entry.kind === "thinking") {
     // Narration absorbed into a "worked" fold renders inside that fold.
@@ -1010,15 +1010,15 @@ function ZoneEntry({
     const compacted = compactedTools.anchors.get(entry.id);
     if (compacted) return <ToolActivityGroup items={compacted} onToggleThinking={toggleThinking} />;
     if (compactedTools.hidden.has(entry.id)) return null;
-    // Subagent calls are rendered nested inside their card (below),
+    // Subagent calls are rendered nested inside their deck (below),
     // not at the top level.
     if (entry.parentId && !entry.isError) return null;
     const items = cardItemsByParent.get(entry.toolId);
-    // A spawn with visible children IS the card — the anchor is the
+    // A spawn with visible children IS the deck — the anchor is the
     // referenced-as-parentId relationship, never the tool's name (SA.1).
     if (items && items.length > 0)
       return (
-        <SubagentCard
+        <SubagentDeck
           task={entry}
           calls={childrenByParent.get(entry.toolId) ?? []}
           items={items}

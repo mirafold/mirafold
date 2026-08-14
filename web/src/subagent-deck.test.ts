@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { subagentSummary } from "./subagent-card";
+import { subagentSummary } from "./subagent-deck";
 
 // SA.1 — the card's calm-summary derivation. Pure data in, summary out; the
 // component renders exactly what this returns, so pinning it here pins the

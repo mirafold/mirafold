@@ -145,7 +145,7 @@
 /* Subagent card (SA.1, supersedes the T2.4 group): a spawn with visible
    children renders as a live card — calm one-glance summary, expandable to
    the nested calls. Shell chrome; all content inert plain text. */
-.subagent-card {
+.subagent-deck {
   margin: 4px 0;
   padding: 6px 10px;
   border: 1px solid var(--border-mid);
@@ -155,7 +155,7 @@
   font-size: 0.8em;
 }
 
-.subagent-card-head {
+.subagent-deck-head {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -178,12 +178,12 @@
   background: var(--fg-faint);
 }
 
-.subagent-card-running .subagent-dot {
+.subagent-deck-running .subagent-dot {
   background: var(--accent);
   animation: subagent-pulse 1.6s ease-in-out infinite;
 }
 
-.subagent-card-failed .subagent-dot {
+.subagent-deck-failed .subagent-dot {
   background: var(--error-fg);
 }
 
@@ -194,7 +194,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .subagent-card-running .subagent-dot {
+  .subagent-deck-running .subagent-dot {
     animation: none;
   }
 }
@@ -223,11 +223,11 @@
   font-style: italic;
 }
 
-.subagent-card-head:hover .subagent-desc {
+.subagent-deck-head:hover .subagent-desc {
   color: var(--fg-mid);
 }
 
-.subagent-card-meta {
+.subagent-deck-meta {
   display: flex;
   align-items: center;
   gap: 5px;

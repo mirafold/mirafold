@@ -39,6 +39,7 @@ blur the two — that blur is exactly what the security model exists to prevent.
 | *output zone* | the main scroll where the agent's replies and paintings appear | — |
 | *painting* | an agent-authored generative-UI component | "widget" |
 | *deck* | a shell-owned live pane (run deck, preview deck, subagent deck) | "card" |
+| *subagent deck* | the live deck a spawned subagent runs in — calm summary in the output zone, expandable to the subagent's calls and words | "subagent group" |
 | *prompt box* | the input box you type into | "input box" |
 | *pin dock* | where you pin live paintings to keep them in view | — |
 | *status bar* | the strip showing agent → model, session status, usage | — |

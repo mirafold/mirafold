@@ -2947,7 +2947,7 @@ truth arrives does.
 an allowed provider and drive it immediately; a subscription/Zen pin is
 refused at create with the honest reason and leaks nothing; all tiers green.
 
-## Phase SA — Subagent view (opened 2026-08-14; Kyle-directed; steps pending the research pass + Kyle's signoff)
+## Phase SA — Subagent view (opened + ✅ COMPLETE 2026-08-14; Kyle-directed; plan signed off by Kyle, executed same day)
 
 **Why.** When a session's agent spawns its own subagents, render them as a
 live, legible structure — calm by default, fully expandable — instead of
@@ -3177,11 +3177,24 @@ signoff of the reported plan)*:
   fan-out (attributed ask answered through the production bridge, child
   bash + narration on the lane, parent reply top-level) — green.
   Tiers 817/152/57(app)/1(live) green.
-- [ ] **SA.4 — Docs + glossary.** README (the card in the surfaces
-  section), ADAPTERS.md (the subagent lane: opaque `parentId`, the
-  per-adapter mapping table incl. the recorded Codex posture), GLOSSARY
-  term for the card (master + 4 copies, same sitting per umbrella rule).
-  Done when: docs read standalone; glossary copies diff-clean.
+- [x] **SA.4 — Docs + glossary.** — completed 2026-08-14. The glossary
+  already NAMED this surface — a *deck* is shell chrome and "card" is its
+  "(was)" column — so SA.4 opened with a vocabulary-compliance rename of
+  SA.1–SA.3's code: `SubagentCard`→`SubagentDeck`,
+  `subagent-card.ts`→`subagent-deck.ts`, CSS `.subagent-card*`→
+  `.subagent-deck*`, comments and e2e selectors converted; all tiers
+  re-verified green after. GLOSSARY gains a dedicated *subagent deck* row
+  (master + all 4 copies, diff-clean; relay/site/desktop copies committed
+  in their repos — docs-only, UNPUSHED, awaiting Kyle). README: the
+  Claude Code subagent-traffic paragraph rewritten to the SA truth
+  (message-grain prose, budget cap, the deck, name-agnostic anchor,
+  canUseTool coverage), `subtext` in the RenderZone entry list, mock
+  hook description updated. ADAPTERS.md: the capability-matrix subagent
+  row rewritten per adapter (incl. the recorded Codex F.5-deferred
+  posture) + a §3 "subagent lane" contract block for the next adapter
+  author (opaque handle, relationship anchor, budget, inert prose,
+  no-painting, ask attribution, depth-1 render rule).
+  Tiers 817/152/57(app) green.
 
 **Done when (phase).** Prompting the mock or a real engine into a parallel
 fan-out yields live per-subagent cards — calm summary, expandable to full

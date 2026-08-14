@@ -1,4 +1,4 @@
-// The calm-summary derivation for a subagent card (PLAN Phase SA.1) — pure,
+// The calm-summary derivation for a subagent deck (PLAN Phase SA.1) — pure,
 // so Tier-1 can pin it without a DOM. A "card" is any tool_use that other
 // wire records reference as their parentId; the anchor is name-agnostic
 // (Claude Code's spawn tool is `Agent` in SDK 0.3.201, was `Task`; OpenCode's
