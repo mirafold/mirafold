@@ -3196,6 +3196,23 @@ signoff of the reported plan)*:
   no-painting, ask attribution, depth-1 render rule).
   Tiers 817/152/57(app) green.
 
+**Post-phase bughunt round 1 (2026-08-14, same day).** Two found + fixed with
+pinned regressions (each proven failing pre-fix): a REPLAYED running deck
+ticked a false elapsed (stamp = attach moment, not spawn — now shows no
+elapsed unless the record arrived live), and the OpenCode lane's
+session-edge maps cleared per turn, making a `background: true` child
+unroutable after its spawning turn — its permission ask dropped (the SA.0
+hang, resurrected in a narrower window); the edge maps are now
+session-lifetime (insert-time caps still bound growth). **One deferred,
+LATENT:** a background child streaming ONE text part ACROSS a turn
+boundary would re-emit that part's full text (the per-turn part tracker
+resets, so the next snapshot's suffix restarts at 0) — duplicated prose in
+its deck. Deferred because reachability is unconfirmed (requires the
+engine to spawn background children in stock config, itself unverified)
+AND a proper fix reopens the 2026-08-13 flood-cap design (the part
+trackers are per-turn precisely to stay bounded); revisit if background
+children are ever observed live.
+
 **Done when (phase).** Prompting the mock or a real engine into a parallel
 fan-out yields live per-subagent cards — calm summary, expandable to full
 narration — on desktop and phone, replayed faithfully to a late-attaching

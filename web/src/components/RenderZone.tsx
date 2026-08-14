@@ -22,7 +22,7 @@ import { GearGlyph } from "./GearGlyph";
 import { useFollowTail } from "../use-follow-tail";
 import { queueDelta, type QueuedDelta } from "../delta-queue";
 import { groupSettledTools, type ActivityItem, type FoldedActivity } from "../tool-visibility";
-import { subagentSummary } from "../subagent-deck";
+import { deckElapsedSeconds, subagentSummary } from "../subagent-deck";
 import { shouldFocusPromptFromTranscriptPointer } from "../transcript-focus";
 
 // The scrollback is a flat list of entries: text blocks and rendered
@@ -50,9 +50,12 @@ type Entry =
       batchId: number; // user-turn batch; successful calls fold together at its end
       settled: boolean;
       // SA.1: when this client appended the record — the subagent deck's
-      // elapsed ticker. Client-side and honest only while live (a replay
-      // burst collapses it), so the deck shows elapsed ONLY while running.
+      // elapsed ticker. Only honest for a record seen arriving LIVE, so the
+      // deck shows elapsed only while running AND not replayed (a replayed
+      // record's stamp is the attach moment, not the spawn — bughunt
+      // 2026-08-14).
       startedAt: number;
+      replayed?: boolean;
     }
   | {
       // SA.2: a subagent's narration or reasoning — prose the wire tags with
@@ -221,7 +224,7 @@ const SubagentDeck = memo(function SubagentDeck({
     const timer = setInterval(tick, 1_000);
     return () => clearInterval(timer);
   }, [running]);
-  const elapsed = Math.max(0, Math.floor((Date.now() - task.startedAt) / 1_000));
+  const elapsed = deckElapsedSeconds(task, running, Date.now());
   return (
     <div
       className={
@@ -251,7 +254,7 @@ const SubagentDeck = memo(function SubagentDeck({
       </button>
       <div className="subagent-deck-meta">
         <GearGlyph size="1em" /> {s.toolCount} tool{s.toolCount === 1 ? "" : "s"}
-        {running ? ` · ${elapsed}s` : ""}
+        {elapsed !== undefined ? ` · ${elapsed}s` : ""}
         {!running && s.resultLine ? (
           <span className="subagent-result"> · {s.resultLine}</span>
         ) : null}
@@ -529,6 +532,7 @@ export function RenderZone({
                 batchId,
                 settled: false,
                 startedAt: Date.now(),
+                ...(msg.replay ? { replayed: true } : {}),
               },
             ]);
             break;

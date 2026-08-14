@@ -473,6 +473,59 @@ test("SA.3: the captured subagent run maps whole — spawn card anchor, parented
   session.close();
 });
 
+test("a background child stays routable ACROSS turns — its ask surfaces instead of hanging (bughunt 2026-08-14)", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("spawn a background task");
+  // Turn 1: the spawn edge is learned, the parent turn completes.
+  feed(
+    ev("message.part.updated", {
+      sessionID: SES,
+      part: {
+        sessionID: SES,
+        messageID: "m1",
+        id: "prt_bg",
+        type: "tool",
+        tool: "task",
+        callID: "c1",
+        state: {
+          status: "completed",
+          input: { description: "bg child" },
+          output: "started in background",
+          metadata: { sessionId: "ses_bg", parentSessionId: SES, background: true },
+        },
+      },
+    }),
+    ev("session.created", { sessionID: "ses_bg", info: { id: "ses_bg", parentID: SES } }),
+    idle(),
+  );
+  await awaitTurnEnd();
+  // Turn 2 begins (startTurn resets the per-turn maps); only NOW does the
+  // still-running background child ask and speak. Before the fix the lane
+  // maps cleared with the turn and both events were dropped — the ask hang.
+  await prompt("meanwhile…");
+  feed(
+    ev("permission.asked", {
+      sessionID: "ses_bg",
+      id: "per_bg1",
+      permission: "bash",
+      patterns: ["touch x"],
+    }),
+    ev("message.part.updated", {
+      sessionID: "ses_bg",
+      part: { sessionID: "ses_bg", messageID: "m9", id: "p9", type: "text", text: "still working" },
+    }),
+    idle(),
+  );
+  await awaitTurnEnd(2);
+  const ask = msgs.find((m) => m.type === "permission_request" && m.id === "per_bg1")!;
+  assert.equal(ask.parentId, "prt_bg", "the cross-turn ask surfaced, attributed to its deck");
+  assert.ok(
+    msgs.some((m) => m.type === "text_delta" && m.parentId === "prt_bg" && /still working/.test(m.text)),
+    "the cross-turn prose still routes to the deck",
+  );
+  session.close();
+});
+
 test("SA.3: a grandchild resolves transitively to the nearest stream-visible card", async () => {
   const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
   await prompt("go");

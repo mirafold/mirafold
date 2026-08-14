@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { subagentSummary } from "./subagent-deck";
+import { deckElapsedSeconds, subagentSummary } from "./subagent-deck";
 
 // SA.1 — the card's calm-summary derivation. Pure data in, summary out; the
 // component renders exactly what this returns, so pinning it here pins the
@@ -85,4 +85,13 @@ test("long action details are truncated with an explicit ellipsis", () => {
   assert.ok(s.currentAction!.startsWith("Bash "));
   assert.ok(s.currentAction!.endsWith("…"));
   assert.ok(s.currentAction!.length < 60);
+});
+
+test("elapsed shows only for a LIVE running spawn — replayed stamps are the attach moment, not the spawn (bughunt 2026-08-14)", () => {
+  const t0 = 1_000_000;
+  assert.equal(deckElapsedSeconds({ startedAt: t0 }, true, t0 + 42_500), 42);
+  assert.equal(deckElapsedSeconds({ startedAt: t0, replayed: true }, true, t0 + 42_500), undefined);
+  assert.equal(deckElapsedSeconds({ startedAt: t0 }, false, t0 + 42_500), undefined);
+  // A clock that reads slightly behind the stamp still never shows -1s.
+  assert.equal(deckElapsedSeconds({ startedAt: t0 }, true, t0 - 10), 0);
 });

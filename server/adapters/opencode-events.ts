@@ -52,9 +52,12 @@ export class OpenCodeEventMapper {
   // parentSessionId} — the SA.0 probe's join key, lowercase d) and from
   // child `session.created` (Session.parentID), resolved transitively so a
   // user-configured NESTED grandchild lands on its nearest stream-visible
-  // ancestor's deck. Cleared per turn like the part maps — a `background:
-  // true` child outliving its turn goes unroutable and is skipped, exactly
-  // as all child traffic was before the lane existed.
+  // ancestor's deck. SESSION-lifetime, not per-turn (bughunt 2026-08-14):
+  // a `background: true` child outlives its spawning turn, and clearing
+  // these at the next startTurn made it unroutable — dropping, among other
+  // things, its permission ask (the SA.0 hang, resurrected). The transcript
+  // keeps old spawn records, so a late child event routing to a past turn's
+  // deck is CORRECT. Growth stays bounded by the insert-time size caps.
   private sessionParents = new Map<string, string>();
   private spawnParts = new Map<string, string>();
   private subagentProse = new SubagentProseBudget();
@@ -95,9 +98,9 @@ export class OpenCodeEventMapper {
     // still find its track — a fresh default would re-emit its whole text.
     this.parts.clear();
     this.roles.clear();
-    // The subagent lane resets on the same schedule and for the same reason.
-    this.sessionParents.clear();
-    this.spawnParts.clear();
+    // The narration budget is turn-scoped; the lane's session-edge maps are
+    // deliberately NOT cleared here — see their declaration (a background
+    // child outlives its turn and must stay routable).
     this.subagentProse.clear();
   }
 

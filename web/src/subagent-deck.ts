@@ -34,6 +34,20 @@ export type SubagentSummary = {
 const ACTION_DETAIL_MAX = 48;
 const RESULT_LINE_MAX = 120;
 
+/** The deck's elapsed readout, or undefined when no honest number exists:
+ *  only a RUNNING spawn whose record this client saw arrive LIVE has a
+ *  truthful start stamp. A REPLAYED record's stamp is the attach/reload
+ *  moment, not the spawn — showing it would tick a false duration
+ *  (bughunt 2026-08-14) — and a settled deck's duration was never measured. */
+export function deckElapsedSeconds(
+  task: { startedAt: number; replayed?: boolean },
+  running: boolean,
+  now: number,
+): number | undefined {
+  if (!running || task.replayed) return undefined;
+  return Math.max(0, Math.floor((now - task.startedAt) / 1_000));
+}
+
 export function subagentSummary(
   task: SubagentTaskLike,
   calls: SubagentChildLike[],
