@@ -16,6 +16,10 @@ import {
   type Backend,
 } from "../adapters";
 import { relayGateRefusal } from "../provider-policy";
+import {
+  createSubscriptionThrottle,
+  type SubscriptionActions,
+} from "../relay/subscription";
 import { probeLocalServers } from "../local-models";
 import { createLogger } from "../log";
 import { VERSION } from "../version";
@@ -86,6 +90,11 @@ export function openConnection(
   // it). The relay gate refuses to attach such a viewport to a subscription-
   // backed session; local viewports are never gated (R.4i).
   remote = false,
+  // Phase CS: present when this daemon runs on a license key — the manage-
+  // subscription card's backend. The local WS path passes it; billing
+  // actions never ride the relay (the key stays with the machine that
+  // holds it), so remote viewports get error replies and no hello flag.
+  subscription?: SubscriptionActions,
 ): Connection {
   const log = createLogger(label);
   // A connection is a viewport onto one registry session (Step 4.2) — or,
@@ -256,6 +265,7 @@ export function openConnection(
       folderPicker: !remote && folderPickerAvailable(),
       version: VERSION,
       ...(relay ? { relay } : {}),
+      ...(subscription && !remote ? { billing: "license-key" as const } : {}),
     });
   sendAgents();
 
@@ -277,6 +287,39 @@ export function openConnection(
     if (typeof v === "string" && v && v !== VERSION) {
       log.warn(`version skew: client v${v}, daemon v${VERSION}`);
     }
+  };
+
+  // Phase CS: the manage-subscription card's three requests. One in-flight
+  // action with a floor between starts (a stuck/hostile client must not
+  // hammer the billing backend), and EVERY request gets its reply — silence
+  // would strand the card in "working". Remote viewports are refused here
+  // too, not just denied the hello flag: the flag gates the UI, this gates
+  // the action (a crafted frame is cheap; the key's actions stay local).
+  const subThrottle = createSubscriptionThrottle(envInt("SUBSCRIPTION_MIN_GAP_MS", 2_000));
+  const handleSubscription = (id: unknown, act: keyof SubscriptionActions) => {
+    if (typeof id !== "string" || !id) return;
+    const refused = !subscription
+      ? "no subscription is configured on this daemon"
+      : remote
+        ? "manage the subscription from the desktop that holds the license key"
+        : undefined;
+    if (refused) {
+      viewport({ type: "subscription", id, error: refused });
+      return;
+    }
+    if (!subThrottle.tryStart()) {
+      viewport({ type: "subscription", id, error: "one moment — a billing request is already in flight" });
+      return;
+    }
+    void subscription![act]().then((r) => {
+      subThrottle.done();
+      if (closed) return;
+      viewport(
+        "view" in r
+          ? { type: "subscription", id, ...r.view }
+          : { type: "subscription", id, error: r.error },
+      );
+    });
   };
 
   // Resolve a cockpit act's target session (M.2): unknown id → error reply;
@@ -551,6 +594,15 @@ export function openConnection(
         void probeLocalServers().then(() => {
           if (!closed) sendAgents();
         });
+        break;
+      case "subscription_status":
+        handleSubscription(msg.id, "status");
+        break;
+      case "subscription_cancel":
+        handleSubscription(msg.id, "cancel");
+        break;
+      case "subscription_uncancel":
+        handleSubscription(msg.id, "uncancel");
         break;
       case "pick_folder":
         folderPicker.pick(msg);

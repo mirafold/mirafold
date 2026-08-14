@@ -1,6 +1,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { type Browser, type Page } from "playwright-core";
@@ -3075,6 +3076,102 @@ test("C.2: axe-core finds no serious/critical WCAG violations across the app", a
     await p.close();
     await dax.stop();
     await relay.stop();
+  }
+});
+
+test("CS: manage subscription — status, cancel behind its confirm, scheduled state, undo", async () => {
+  // A licensed daemon against a stateful billing-backend stub: /api/subscription
+  // reads, /cancel schedules at period end, /uncancel clears. The daemon only
+  // ever POSTs the license key; end-of-period timing is the SITE's business
+  // (pinned in the site repo's own suite). Midday-UTC instants keep the
+  // rendered dates timezone-stable.
+  const relay = await startRelayStub({});
+  const KEY = "mf_e2ecancelabcdefghijklmnop";
+  let cancelAt: string | null = null;
+  const seenKeys: string[] = [];
+  const billing = createServer((req, res) => {
+    let raw = "";
+    req.on("data", (c) => (raw += String(c)));
+    req.on("end", () => {
+      let body: { licenseKey?: unknown } = {};
+      try {
+        body = JSON.parse(raw) as { licenseKey?: unknown };
+      } catch {
+        /* the entitlement warm-up may probe with anything — fall through */
+      }
+      if (typeof body.licenseKey === "string") seenKeys.push(body.licenseKey);
+      const url = req.url ?? "";
+      if (!url.startsWith("/api/subscription")) {
+        res.writeHead(404).end(); // the boot-time entitlement exchange — not under test
+        return;
+      }
+      if (body.licenseKey !== KEY) {
+        res.writeHead(403, { "content-type": "application/json" });
+        res.end(JSON.stringify({ reason: "unknown license key" }));
+        return;
+      }
+      if (url === "/api/subscription/cancel") cancelAt = "2026-09-01T12:00:00Z";
+      if (url === "/api/subscription/uncancel") cancelAt = null;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ status: "active", periodEnd: "2026-09-01T12:00:00Z", cancelAt }));
+    });
+  });
+  await new Promise<void>((resolve) => billing.listen(0, "127.0.0.1", resolve));
+  const billingPort = (billing.address() as { port: number }).port;
+
+  const token = "e2e-cs-9c2f";
+  const d2 = await startDaemon({
+    MIRAFOLD_TOKEN: token,
+    MIRAFOLD_RELAY_URL: relay.url,
+    MIRAFOLD_RELAY_CODE: "e2e-cs-pairing-code-1a2b",
+    MIRAFOLD_LICENSE_KEY: KEY,
+    MIRAFOLD_ENTITLEMENT_URL: `http://127.0.0.1:${billingPort}/api/entitlement`,
+    SUBSCRIPTION_MIN_GAP_MS: "0", // test clicks outrun the human-pace floor
+  });
+  const p = await browser.newPage();
+  try {
+    await p.goto(`http://127.0.0.1:${d2.port}/?token=${token}`);
+    // An empty registry opens the onboarding overlay, which sits over the
+    // fleet's pair button — enter a session and use the status bar's instead
+    // (both hosts render the same card).
+    await p.locator(".onb-agent", { hasText: "Claude Code" }).click();
+    await p.waitForURL(/\/s\/[\w-]+/);
+
+    // The resting UI shows only the pair button; nothing cancel-shaped.
+    await p.locator(".sb-pair").click();
+    await p.waitForSelector(".pair-card");
+    const manage = p.locator(".pair-manage", { hasText: "manage subscription" });
+    assert.equal(await manage.count(), 1, "licensed daemon must offer the neutral manage link");
+
+    // Manage → the live status line, no cancel action fired yet.
+    await manage.click();
+    await p.waitForSelector(".sub-line:has-text('active — renews Sep 1, 2026')");
+    await assertAxeClean(p, "manage subscription");
+
+    // The confirm step quotes the real consequence — and backing out works.
+    await p.locator(".sub-btn", { hasText: "cancel subscription…" }).click();
+    await p.waitForSelector(".sub-line:has-text(\"You won't be charged again\")");
+    assert.match(await p.locator(".sub-line").innerText(), /Sep 1, 2026/);
+    await p.locator(".sub-btn", { hasText: "keep subscription" }).click();
+    await p.waitForSelector(".sub-line:has-text('active — renews Sep 1, 2026')");
+
+    // Cancel for real: the scheduled state, with undo as the one action.
+    await p.locator(".sub-btn", { hasText: "cancel subscription…" }).click();
+    await p.locator(".sub-btn-danger", { hasText: "cancel subscription" }).click();
+    await p.waitForSelector(".sub-line:has-text('cancellation scheduled — access ends Sep 1, 2026')");
+    await p.locator(".sub-btn", { hasText: "undo cancellation" }).click();
+    await p.waitForSelector(".sub-line:has-text('active — renews Sep 1, 2026')");
+
+    // The daemon presented the key on every request…
+    assert.ok(seenKeys.length >= 3);
+    assert.ok(seenKeys.every((k) => k === KEY));
+    // …and the key itself never reached the page (secrets stay server-side).
+    assert.ok(!(await p.content()).includes(KEY), "license key leaked into the DOM");
+  } finally {
+    await p.close();
+    await d2.stop();
+    await relay.stop();
+    await new Promise((resolve) => billing.close(resolve));
   }
 });
 

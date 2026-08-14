@@ -2404,6 +2404,15 @@ both acceptance requirements, not a later responsive cleanup.
   full-ordered Tier-3 failure — observed 1-in-6 runs on 2026-08-12, failing
   test unnamed (the first run's log was summary-filtered); every later run
   keeps the complete TAP log, so the next occurrence names itself.
+  **2026-08-14 — it named itself, in CI:** PR #48's first Tier-2+3 run
+  failed exactly one test, **E2.4 "the Projects-root proof"**, a 30 s
+  `page.waitForSelector('.files-panel[role=dialog]')` TimeoutError at the
+  phone drill-in step (app.e2e.ts:2839). Same day the full suite passed
+  3× locally (the CS runs) with E2.4 green each time, so the 1-in-6-ish
+  intermittent read stands — now with a name and a stuck selector to
+  instrument. Not diagnosed or fixed this sitting (Phase CS's scope);
+  next occurrence: read whether the Files panel button was clicked but
+  the dialog never mounted, or the click itself was swallowed.
 
 - [x] **Step CR.13 — Security audit of the post-CR.6 delta** — done
   2026-08-12; every new input path traced with concrete values, ZERO
@@ -2602,6 +2611,134 @@ it never spawns or directs subagents itself (the homegrown-orchestrator trap).
   default-on since ~2026-02) but child inner activity needs app-server
   per-thread subscriptions — mapping deferred to **Phase F Step F.5**; the
   researched posture is recorded in docs/ADAPTERS.md's capability matrix.
+
+## Phase CS — Self-serve subscription cancel (opened 2026-08-14; Kyle-directed; plan signed off by Kyle)
+
+**Why.** A Mirafold Pro customer who wants to stop paying currently has two
+paths: the billing link in their Paddle receipt email, or emailing support —
+i.e. Kyle, manually. This phase adds the third, first-class path: cancel (or
+undo a cancel) from inside the product. Last feature before the next release
+off `next` (Kyle, 2026-08-14).
+
+**Decisions (all Kyle-signed 2026-08-14):**
+- **Direct in-product cancel**, not a Paddle customer-portal link: the daemon
+  calls new billing-backend endpoints with the license key as the bearer
+  credential — the exact trust model `/api/entitlement` already uses. A
+  portal deep-link was rejected: it would turn a leaked key into an
+  authenticated door to a Paddle billing page (email, card, invoices),
+  where the direct path exposes nothing but schedule-cancel/undo/status.
+- **The license key stays the identity** (no accounts). Anyone holding a key
+  can cancel its subscription — accepted: damage is capped at "doesn't
+  renew" (end-of-period only, never lost paid time), it's undoable, and a
+  leaked key already gives the strictly bigger prize (relay access billed
+  to the victim).
+- **End-of-period only, always** (`effective_from: next_billing_period`).
+  One code path serves trial and paid alike: a `trialing` sub's next
+  billing date IS the trial end, so cancel-in-trial = never charged, and
+  cancel-while-paid = access through the paid period. Matches /terms and
+  /refunds verbatim. No "cancel immediately" ever offered (no pro-rating
+  exists, so it would only destroy paid access).
+- **Undo ships too**: a scheduled cancellation is a pending
+  `scheduled_change` on the Paddle subscription until the period boundary;
+  `PATCH /subscriptions/{id} {scheduled_change: null}` removes it. The UI
+  shows "cancellation scheduled for <date> — undo" for the whole window.
+- **Placement: nothing cancel-shaped is ever passively visible.** A neutral
+  "manage subscription" link inside the Connect-a-device card (the one
+  place Pro already manifests) opens a subscription view — status line
+  ("trial — first charge <date>" / "renews <date>"), and cancel as an
+  action there, behind its own confirm step. Local viewports only (the
+  card already is); shown only when the daemon runs on a license key —
+  self-host, token-override, and unentitled daemons see nothing.
+
+**Revocation needs no new work:** on cancel, status stays `trialing`/`active`
+until the period ends; Paddle's `subscription.canceled` webhook then flips KV,
+`/api/entitlement` starts refusing, and the ≤48 h token window does the rest —
+exactly the promised behavior.
+
+- [x] **Step CS.1 — Billing-backend endpoints** — ✅ built + tested
+  2026-08-14 on the site repo's `feature/cancel-endpoints` branch (six new
+  offline tests drive the full arc; suite 27/27). Not yet deployed — the
+  deploy is CS.4's first move. *(original contract below)*
+  - Build: three Pages Functions under `functions/api/subscription/`
+    (`/api/subscription` status, `/api/subscription/cancel`,
+    `/api/subscription/uncancel`), all POST `{licenseKey}`. Each resolves
+    key → sub via KV with entitlement.js's exact no-oracle rule (unknown
+    and superseded keys refuse identically), then reads/acts on Paddle:
+    status = live `GET /subscriptions/{id}`; cancel = `POST …/cancel`
+    `{effective_from: "next_billing_period"}` (idempotent: already
+    scheduled or already `canceled` returns current state, no error);
+    uncancel = `PATCH …/{id}` `{scheduled_change: null}` (idempotent when
+    nothing is scheduled). All three answer one view shape:
+    `{status, periodEnd, cancelAt}` (`cancelAt` = scheduled cancel's
+    `effective_at`, else null). Cross-site guard + no-store as on the
+    existing functions; zero deps, zero build.
+  - Done when: the site's `node --test` suite covers the full arc offline
+    (status → cancel → scheduled view → uncancel → clean view, plus
+    unknown/superseded key refusals and idempotent re-cancel) and passes.
+- [x] **Step CS.2 — Daemon: subscription actions + wire messages** — ✅ done
+  2026-08-14 (`feature/cancel-subscription`): `server/relay/subscription.ts`,
+  the three additive client messages + the `subscription` reply + the
+  `billing` hello flag, connection handlers (remote refused, throttle env
+  knob `SUBSCRIPTION_MIN_GAP_MS`), 12 new Tier-1 pins. All tiers green.
+  *(original contract below)*
+  - Build: `server/relay/subscription.ts` — active only in `license-key`
+    mode; endpoint base derived from `MIRAFOLD_ENTITLEMENT_URL` (strip the
+    trailing `/entitlement`; underivable → feature off), no new env vars;
+    never throws, 10 s timeout, failures become the support-email fallback
+    line. Protocol (ADD only): client `subscription_status` /
+    `subscription_cancel` / `subscription_uncancel` (id-correlated), reply
+    `subscription` `{id, status?, periodEnd?, cancelAt?, error?}` —
+    per-viewport request/reply, never buffered or sequenced. `agents`
+    hello gains optional `billing: "license-key"`, local viewports only.
+    connection.ts handlers: remote viewports refused ("manage from the
+    desktop"), per-connection min-gap throttle, license key itself never
+    on the wire in either direction.
+  - Done when: Tier-1 covers the client (stubbed fetch: view, refusal,
+    outage → fallback line, base derivation) and connection handling
+    (billing flag local-only, remote refusal, throttle), and existing
+    suites stay green.
+- [x] **Step CS.3 — Web: the manage-subscription view** — ✅ done 2026-08-14:
+  `web/src/subscription-card.ts` (pure brain, 5 Tier-1 pins), the manage view
+  inside ConnectDevice with both hosts wired, and the Tier-3 e2e driving the
+  full arc against a stub billing backend — including the proof the license
+  key never reaches the page. Tier 1 **837** / Tier 2 **152** / Tier 3
+  **100**, all green. *(One e2e-authoring bug found + fixed en route: the
+  fleet's pair button sits under the onboarding overlay on an empty registry,
+  so the test enters a session first. The 2026-08-12 unattributed Tier-3
+  watch item did NOT reproduce in three full runs.)* *(original contract
+  below)*
+  - Build: the Connect-a-device card gains the neutral "manage
+    subscription" link (only when the hello carries `billing`); it opens
+    the subscription view: status line from the view shape, `cancel
+    subscription` → an explicit confirm quoting the real consequence
+    ("access runs to <date>; you won't be charged again"), then the
+    scheduled state with `undo cancellation`. Errors show the
+    support-email fallback. Card state is a pure reducer
+    (`web/src/subscription-card.ts`), Tier-1-pinned; both hosts (status
+    bar + fleet) wire send/reply.
+  - Done when: Tier-1 pins the reducer + labels, and a Tier-3 e2e drives
+    the real flow in headless Chrome against a stubbed billing endpoint
+    (open card → manage → renews-line → cancel → confirm → scheduled +
+    undo → clean state), all tiers green.
+- [ ] **Step CS.4 — Ship sequencing + live verification (Kyle-gated)**
+  - **Progress 2026-08-14: the site half is LIVE.** Kyle merged the site
+    branch into site main (Pages deployed); all three endpoints probed live
+    same turn — contract shapes confirmed (400 malformed / identical
+    no-oracle refusal), /refunds + /terms carry the in-product-cancel copy.
+    The deploy-before-npm rule is satisfied. Remaining: PR #48 merge, then
+    the live arc on Kyle's real subscription (status → cancel → Paddle
+    shows the scheduled change → undo).
+  - The site half deploys first (Pages deploys on push to the site repo's
+    main): until it's live, the product-side card degrades to the
+    support-email line by design — but never release the product half to
+    npm ahead of the site half. Then verify live with Kyle's real
+    subscription: status view correct → cancel → Paddle dashboard shows
+    the scheduled cancellation → undo → clean again. Site /refunds +
+    /terms gain "or from inside the product" as an additional cancel path
+    (never replacing the existing promises).
+  - Done when: the live arc above is observed on Kyle's subscription and
+    the policy-page copy is updated. Merges: Kyle's explicit yes, per the
+    standing PR rule.
 
 ## Phase PN — Panes (file views beside the transcript)
 

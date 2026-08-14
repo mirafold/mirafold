@@ -13,6 +13,7 @@ import { probeLocalServers } from "./local-models";
 import { sweepLiveness } from "./sessions/ws-liveness";
 import { startRelayClient } from "./relay/relay-client";
 import { createEntitlementTokenSource } from "./relay/entitlement";
+import { createSubscriptionActions } from "./relay/subscription";
 import { MIN_PAIRING_CODE_LENGTH, resolvePairingCode } from "./relay/relay-protocol";
 import { carriesCredentialInClear, resolveRelayPlan } from "./relay/relay-url";
 import {
@@ -279,6 +280,12 @@ function resolveRelayConfig(): {
 }
 const { code: RELAY_CODE, info: relayInfo } = resolveRelayConfig();
 
+// Phase CS: the manage-subscription backend — present only when this daemon
+// runs on a license key (subscription.ts decides; token-override and
+// self-host get nothing). Handed to LOCAL viewports only: billing actions
+// stay on the machine that holds the key, so the relay path never sees it.
+const subscriptionActions = createSubscriptionActions(process.env);
+
 // Per-socket liveness, read by the heartbeat below to reap half-open
 // leftovers whose `close` never arrived (see ws-liveness.ts) (#10).
 const liveViewports = new WeakMap<WebSocket, boolean>();
@@ -298,7 +305,7 @@ wss.on("connection", (ws) => {
   const viewport = (msg: WireMsg) => {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
   };
-  const conn = openConnection(registry, viewport, "ws", relayInfo);
+  const conn = openConnection(registry, viewport, "ws", relayInfo, false, subscriptionActions);
   ws.on("message", (data) => conn.handleMessage(String(data)));
   ws.on("close", conn.close);
 });

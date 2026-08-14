@@ -1,4 +1,4 @@
-import type { Action, AgentName, BackendChoice, WireMsg } from "@protocol";
+import type { Action, AgentName, BackendChoice, ClientMsg, WireMsg } from "@protocol";
 import { SocketClient } from "./ws";
 import { createFolderPickerRequests } from "./folder-picker-requests";
 
@@ -6,6 +6,25 @@ import { createFolderPickerRequests } from "./folder-picker-requests";
  *  side so each surface can match the one reply/stream it asked for. */
 const mintId = (prefix: string): string =>
   `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
+
+/** Phase CS: mint + send one manage-subscription request over any sender —
+ *  shared by the session bus and the fleet's own socket. The single
+ *  `subscription` reply echoes the returned id. */
+export type SubscriptionAct = "status" | "cancel" | "uncancel";
+export function sendSubscriptionRequest(
+  send: (m: ClientMsg) => void,
+  act: SubscriptionAct,
+): string {
+  const id = mintId("sub");
+  send(
+    act === "status"
+      ? { type: "subscription_status", id }
+      : act === "cancel"
+        ? { type: "subscription_cancel", id }
+        : { type: "subscription_uncancel", id },
+  );
+  return id;
+}
 
 /**
  * What the output zone consumes: the wire protocol plus one local control
@@ -51,6 +70,9 @@ export interface SessionBus {
   requestFsChanges(): string;
   requestFsRead(path: string): string;
   requestFsDiff(path: string): string;
+  /** Phase CS: one manage-subscription request (status/cancel/uncancel);
+   *  the single `subscription` reply echoes the returned minted id. */
+  requestSubscription(act: SubscriptionAct): string;
   /** Phase FD: stream a dropped file's bytes to the daemon's staging dir.
    *  Mints and returns the correlation id; the done/error reply echoes it. */
   uploadBegin(name: string, size: number): string;
@@ -184,6 +206,9 @@ export function createSessionBus(): SessionBus {
       const id = mintId("fsd");
       socket.send({ type: "fs_diff", id, path });
       return id;
+    },
+    requestSubscription(act: SubscriptionAct): string {
+      return sendSubscriptionRequest((m) => socket.send(m), act);
     },
     // Phase FD — the sendBang mint shape; per-viewport correlation only.
     uploadBegin(name: string, size: number): string {

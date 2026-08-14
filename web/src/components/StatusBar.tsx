@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { ArmedButton } from "./ArmedButton";
 import { ChangesGlyph } from "./ChangesGlyph";
-import { ConnectDevice, type RelayInfo } from "./ConnectDevice";
+import { ConnectDevice, type RelayInfo, type SubscriptionRequest } from "./ConnectDevice";
+import type { SubscriptionReply } from "../subscription-card";
 import { FilesGlyph } from "./FilesGlyph";
 import { GearGlyph } from "./GearGlyph";
 import { useArmedConfirm } from "../use-armed-confirm";
@@ -47,6 +48,9 @@ export function StatusBar({
   onEndSession,
   relay,
   version,
+  billing,
+  subRequest,
+  subReply,
   filesOpen,
   filesDisabled,
   onToggleFiles,
@@ -93,6 +97,11 @@ export function StatusBar({
   changesOpen?: boolean;
   changesDisabled?: boolean;
   onToggleChanges?: () => void;
+  // Phase CS: the manage-subscription plumbing, passed through to the pair
+  // card (present only when the daemon runs on a license key).
+  billing?: boolean;
+  subRequest?: SubscriptionRequest;
+  subReply?: SubscriptionReply | null;
 }) {
   const [open, setOpen] = useState(true);
   const phone = useIsPhone();
@@ -245,7 +254,13 @@ export function StatusBar({
           v{version}
         </span>
       )}
-      <ConnectDevice relay={relay} sessionId={sessionId} />
+      <ConnectDevice
+        relay={relay}
+        sessionId={sessionId}
+        billing={billing}
+        subRequest={subRequest}
+        subReply={subReply}
+      />
       {/* Settings gear (S.4) — beside the pill, which is now the far-right
           control (home moved to the far left). The pill below is LOCKED
           unchanged (Phase S). */}
