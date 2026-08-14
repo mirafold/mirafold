@@ -579,6 +579,77 @@ test("onboarding → a full mock turn renders in the DOM", async () => {
   await page.waitForSelector("text=Plan complete — all four steps done.", { timeout: 30_000 });
 });
 
+test("SA.1: a parallel fan-out renders three live subagent cards, out of order, expandable", async () => {
+  await withFreshMockSession("sa1-cards-7fd1", async (p) => {
+    await p.locator("textarea").click();
+    await p.keyboard.type("delegate the research");
+    await p.keyboard.press("Enter");
+
+    // Three cards appear as their spawns land (350/430/510ms in the mock).
+    await p.waitForFunction(
+      () => document.querySelectorAll(".subagent-card").length === 3,
+      undefined,
+      { timeout: 15_000 },
+    );
+
+    // While running: a live card ticks — elapsed seconds in the meta line and
+    // a current action in the live slot. Grab the slow "trace the token path"
+    // card, which runs the longest.
+    const tokenCard = p.locator(".subagent-card", { hasText: "trace the token path" });
+    await p.waitForFunction(
+      () => {
+        const cards = [...document.querySelectorAll(".subagent-card-running")];
+        return cards.some((c) => /·\s*\d+s/.test(c.querySelector(".subagent-card-meta")?.textContent ?? ""));
+      },
+      undefined,
+      { timeout: 10_000 },
+    );
+
+    // OUT OF ORDER: "map session handling" (spawned second, fastest pace)
+    // finishes while "trace the token path" is still running.
+    await p.waitForFunction(
+      () => {
+        // No const-assigned arrows in here: esbuild's keepNames would inject
+        // a __name helper the browser page doesn't have.
+        const cards = [...document.querySelectorAll(".subagent-card")];
+        const settled = cards.find((c) => c.textContent?.includes("map session handling"));
+        const slow = cards.find((c) => c.textContent?.includes("trace the token path"));
+        return (
+          settled?.classList.contains("subagent-card-done") === true &&
+          slow?.classList.contains("subagent-card-running") === true
+        );
+      },
+      undefined,
+      { timeout: 15_000 },
+    );
+
+    // The turn concludes; all three cards settle, elapsed stops being shown
+    // (client-side timing is only honest while live), result lines ride.
+    await p.waitForSelector("text=All three subagents reported back", { timeout: 30_000 });
+    assert.equal(await p.locator(".subagent-card-done").count(), 3);
+    assert.equal(await p.locator(".subagent-card-running").count(), 0);
+    const doneMeta = await tokenCard.locator(".subagent-card-meta").innerText();
+    assert.doesNotMatch(doneMeta, /·\s*\d+s/);
+    assert.match(doneMeta, /4 tools/);
+    assert.match(doneMeta, /never leaves the daemon/);
+
+    // Expand → the nested calls are all there; collapse returns to calm.
+    await tokenCard.locator(".subagent-card-head").click();
+    assert.equal(await tokenCard.locator(".subagent-calls .tool-block").count(), 4);
+    await tokenCard.locator(".subagent-card-head").click();
+    assert.equal(await tokenCard.locator(".subagent-calls").count(), 0);
+
+    await assertAxeClean(p, "subagent cards");
+    await noSideScroll(p);
+
+    // Phone width: the same cards stack — no pane, no side scroll, drill-in
+    // untouched (the transcript is the same DOM at every width).
+    await p.setViewportSize({ width: 390, height: 844 });
+    assert.equal(await p.locator(".subagent-card").count(), 3);
+    await noSideScroll(p);
+  });
+});
+
 test("A.1: announcer regions exist, spoke the turn, and the transcript is silent", async () => {
   // The two shell-owned announcer regions (Announcer.tsx): polite for turn
   // progress, assertive reserved for errors/permissions. `.sr-only` hides

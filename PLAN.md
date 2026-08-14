@@ -3109,16 +3109,25 @@ signoff of the reported plan)*:
   paragraph corrected. Probe scripts: session scratchpad `sa0/`
   (`probe.mjs`, `cc-probe2.mjs`); recipes summarized above are sufficient
   to re-derive them.
-- [ ] **SA.1 — Mock scenario + summary cards (zero protocol change).**
-  MockSession gains a parallel-subagent scenario (3 spawns, interleaved
-  nested tool traffic, out-of-order finishes). Client: the subagent card —
-  the Task row becomes a live card (agent type + prompt from the spawn
-  input; running/done state, tool count, elapsed, current action — ALL
-  derived from existing `tool_use`/`tool_result` + `parentId` data).
-  Calm summary only; card is shell chrome; phone renders the same card
-  stacked (no new drill-in). Axe-clean, focus discipline. Done when: in
-  headless Chrome against the mock, three cards run live at once, tick
-  independently, finish out of order; Tier-1 covers the card reducer.
+- [x] **SA.1 — Mock scenario + summary cards (zero protocol change).** —
+  completed 2026-08-14. `playSubagent` is now a three-spawn parallel
+  fan-out (distinct paces; the second-spawned finishes first). Client:
+  `SubagentCard` in RenderZone (supersedes the T2.4 SubagentGroup) — any
+  tool_use other records reference as `parentId` becomes the card,
+  name-agnostic; calm summary = agent type + spawn description (verbatim,
+  never composed), state dot (pulse honors reduced-motion), tool count,
+  elapsed ticking ONLY while running (client-side stamp — honest under
+  replay, where a settled card shows no stale duration), current action =
+  newest unanswered child, result first-line once done; expandable to the
+  existing nested ToolCallList. Derivation is pure
+  (`web/src/subagent-card.ts`, 7 Tier-1 tests). Cards are fold
+  BOUNDARIES for the settled-activity compaction and their children are
+  invisible to it (omitted, not boundaries — parent-level runs don't
+  split on child traffic). Tier-2 itest updated to the fan-out contract
+  (children tag their own spawn; settle order ≠ spawn order). E2e (app):
+  three cards live at once, independent tick, out-of-order settle, expand/
+  collapse, axe-clean, phone-width stack with no side scroll. Tiers
+  810/152/57(app) green.
 - [ ] **SA.2 — The narration lane (wire + Claude Code + expand).**
   Protocol: optional `parentId` on `text_delta`/`thinking_delta`,
   documented as an opaque adapter-chosen handle (never parsed, only

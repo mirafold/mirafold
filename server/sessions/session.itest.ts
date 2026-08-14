@@ -149,16 +149,22 @@ test("checklist hook: one render id, statuses progressing in place", async () =>
   assert.deepEqual(statuses(frames[4]), ["completed", "completed", "completed", "completed"]);
 });
 
-test("subagent hook: inner calls nest under the Task id", async () => {
+test("subagent hook: a parallel fan-out — children nest under their own spawn, finishes out of order (SA.1)", async () => {
   const turn = await runTurn(c, "delegate this to a subagent");
-  const task = turn.find((m) => m.type === "tool_use" && m.name === "Task")!;
-  assert.equal(task.parentId, undefined);
-  const inner = turn.filter((m) => m.type === "tool_use" && m.id !== task.id);
-  assert.ok(inner.length >= 3);
-  for (const t of inner) assert.equal(t.parentId, task.id);
-  // The Task itself resolves last, un-nested.
-  const results = turn.filter((m) => m.type === "tool_result");
-  assert.equal(results[results.length - 1].id, task.id);
+  const tasks = turn.filter((m) => m.type === "tool_use" && m.name === "Task");
+  assert.equal(tasks.length, 3);
+  for (const t of tasks) assert.equal(t.parentId, undefined);
+  const taskIds = new Set(tasks.map((t) => t.id));
+  const inner = turn.filter((m) => m.type === "tool_use" && !taskIds.has(m.id));
+  assert.ok(inner.length >= 9);
+  for (const t of inner) assert.ok(taskIds.has(t.parentId), "child tags its own spawn");
+  // Each spawn resolves with its own report…
+  const settles = turn.filter((m) => m.type === "tool_result" && taskIds.has(m.id));
+  assert.equal(settles.length, 3);
+  // …and NOT in spawn order: the second-spawned (fastest) settles first —
+  // the out-of-order truth the cards render.
+  assert.notDeepEqual(settles.map((r) => r.id), tasks.map((t) => t.id));
+  assert.equal(settles[0].id, tasks[1].id);
 });
 
 test("huge-output hook: the cap reports truncatedBytes, never a silent cut", async () => {

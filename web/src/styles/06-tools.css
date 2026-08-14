@@ -138,38 +138,118 @@
   font-style: italic;
 }
 
-/* Subagent group (T2.4): a Task's inner calls, nested and collapsible so a
-   subagent's churn is present but never crowds the transcript. */
 .tool-group {
   display: contents;
 }
 
-.subagent-group {
-  margin: -8px 0 0 22px;
-  padding-left: 12px;
-  border-left: 1px solid var(--border-mid);
+/* Subagent card (SA.1, supersedes the T2.4 group): a spawn with visible
+   children renders as a live card — calm one-glance summary, expandable to
+   the nested calls. Shell chrome; all content inert plain text. */
+.subagent-card {
+  margin: 4px 0;
+  padding: 6px 10px;
+  border: 1px solid var(--border-mid);
+  border-left: 2px solid var(--border-strong);
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8em;
 }
 
-.subagent-head {
+.subagent-card-head {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   width: 100%;
-  padding: 4px 0;
+  padding: 0;
   background: none;
   border: 0;
   cursor: pointer;
   text-align: left;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.8em;
+  font: inherit;
   color: var(--fg-dim);
+  min-width: 0;
 }
 
-.subagent-head:hover .subagent-label {
+.subagent-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--fg-faint);
+}
+
+.subagent-card-running .subagent-dot {
+  background: var(--accent);
+  animation: subagent-pulse 1.6s ease-in-out infinite;
+}
+
+.subagent-card-failed .subagent-dot {
+  background: var(--error-fg);
+}
+
+@keyframes subagent-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .subagent-card-running .subagent-dot {
+    animation: none;
+  }
+}
+
+.subagent-type {
+  flex: none;
+  color: var(--fg-mid);
+  font-weight: 600;
+}
+
+.subagent-desc {
+  color: var(--fg-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subagent-live {
+  margin-left: auto;
+  flex: none;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-faint);
+  font-style: italic;
+}
+
+.subagent-card-head:hover .subagent-desc {
   color: var(--fg-mid);
 }
 
+.subagent-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 0 0 15px;
+  color: var(--fg-faint);
+  min-width: 0;
+}
+
+.subagent-result {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subagent-calls {
+  margin: 6px 0 0 6px;
+  padding-left: 10px;
+  border-left: 1px solid var(--border-mid);
+}
+
 .subagent-caret {
+  flex: none;
   color: var(--fg-faint);
 }
 

@@ -943,41 +943,91 @@ export class MockSession implements AgentSession {
     this.endTurn(d);
   }
 
-  /** Deterministic T2.4 hook: a Task whose inner tool calls nest under it
-   *  (subagent text stays hidden). */
+  /** Deterministic SA.1 hook (supersedes the T2.4 single-Task version): a
+   *  parallel fan-out — three spawns whose inner calls interleave and whose
+   *  finishes land OUT OF ORDER (the first-spawned is not the first done),
+   *  so three live cards tick independently in one transcript. */
   private playSubagent() {
-    const taskId = randomUUID();
     this.beginTurn();
-    this.schedule(() => {
-      this.emit({ type: "status", state: "tool", label: "Task" });
-      this.emit({
-        type: "tool_use",
-        name: "Task",
-        detail: "research: audit the config loader",
-        id: taskId,
-        input: { description: "audit config loader", subagent_type: "Explore" },
-      });
-    }, 350);
-    // Subagent's inner calls — each tagged with the Task's id as parentId.
-    const inner: { name: string; detail: string; output: string }[] = [
-      { name: "Grep", detail: '-rn "loadConfig" src/', output: "src/config.ts:12: export function loadConfig(" },
-      { name: "Read", detail: "src/config.ts", output: Array.from({ length: 4 }, (_, i) => `${i + 1}→${pick(SENTENCES)}`).join("\n") },
-      { name: "Bash", detail: "node -e 'require(\"./config\")'", output: "config OK — 3 sources merged" },
+    type Fan = {
+      id: string;
+      type: string;
+      desc: string;
+      spawnAt: number;
+      inner: { name: string; detail: string; output: string }[];
+      pace: number; // ms between this agent's events — distinct per agent
+      result: string;
+    };
+    const fans: Fan[] = [
+      {
+        id: randomUUID(),
+        type: "Explore",
+        desc: "find auth entry points",
+        spawnAt: 350,
+        pace: 520,
+        inner: [
+          { name: "Grep", detail: '-rn "authenticate" server/', output: "server/auth.ts:14: export function authenticate(" },
+          { name: "Read", detail: "server/auth.ts", output: Array.from({ length: 4 }, (_, i) => `${i + 1}→${pick(SENTENCES)}`).join("\n") },
+          { name: "Grep", detail: '-rn "cookie" server/', output: "server/auth.ts:41: setCookie(res, token)" },
+        ],
+        result: "Two entry points: the socket handshake and the token cookie mint.",
+      },
+      {
+        // Spawned SECOND, finishes FIRST — the out-of-order proof.
+        id: randomUUID(),
+        type: "Explore",
+        desc: "map session handling",
+        spawnAt: 430,
+        pace: 300,
+        inner: [
+          { name: "Grep", detail: '-rn "SessionRegistry" server/', output: "server/sessions/registry.ts:88: export class SessionRegistry" },
+          { name: "Read", detail: "server/sessions/registry.ts", output: "registry: entries keyed by session id; idle unload after 4h" },
+        ],
+        result: "Sessions live in one registry; viewports attach and detach freely.",
+      },
+      {
+        id: randomUUID(),
+        type: "general-purpose",
+        desc: "trace the token path",
+        spawnAt: 510,
+        pace: 640,
+        inner: [
+          { name: "Grep", detail: '-rn "mirafold_token" .', output: "4 hits across server/ and web/" },
+          { name: "Read", detail: "server/relay/relay.ts", output: "120 lines — the relay never sees the token" },
+          { name: "Bash", detail: "node scripts/token-audit.js", output: "token-audit: PASS — daemon-only" },
+          { name: "Read", detail: "web/src/session-bus.ts", output: "the browser holds it in a cookie, never in JS state" },
+        ],
+        result: "The token never leaves the daemon — confirmed end to end.",
+      },
     ];
-    let d = 700;
-    for (const t of inner) {
-      const cid = randomUUID();
-      d += randInt(250, 450);
-      this.schedule(() => this.emit({ type: "tool_use", name: t.name, detail: t.detail, id: cid, parentId: taskId }), d);
-      d += randInt(250, 450);
-      this.schedule(() => this.emit({ type: "tool_result", output: t.output, id: cid, parentId: taskId }), d);
+    let lastDone = 0;
+    for (const fan of fans) {
+      this.schedule(() => {
+        this.emit({ type: "status", state: "tool", label: "Task" });
+        this.emit({
+          type: "tool_use",
+          name: "Task",
+          detail: fan.desc,
+          id: fan.id,
+          input: { description: fan.desc, subagent_type: fan.type },
+        });
+      }, fan.spawnAt);
+      let d = fan.spawnAt;
+      for (const t of fan.inner) {
+        const cid = randomUUID();
+        d += fan.pace;
+        this.schedule(() => this.emit({ type: "tool_use", name: t.name, detail: t.detail, id: cid, parentId: fan.id }), d);
+        d += fan.pace;
+        this.schedule(() => this.emit({ type: "tool_result", output: t.output, id: cid, parentId: fan.id }), d);
+      }
+      d += 250;
+      this.schedule(() => this.emit({ type: "tool_result", output: fan.result, id: fan.id }), d);
+      lastDone = Math.max(lastDone, d);
     }
-    d += 300;
-    this.schedule(
-      () => this.emit({ type: "tool_result", output: "Audit complete: loader merges 3 sources; no precedence bug found.", id: taskId }),
-      d,
+    const d = this.streamText(
+      "All three subagents reported back — auth has two entry points, sessions are registry-kept, and the token stays daemon-side.",
+      lastDone + 300,
     );
-    d = this.streamText("The subagent audited the config loader — it merges three sources correctly, no precedence bug.", d + 200);
     this.endTurn(d);
   }
 

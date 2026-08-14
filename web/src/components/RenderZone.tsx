@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
 } from "react";
@@ -20,7 +21,8 @@ import { PickerBlock, type PickerRow } from "./PickerBlock";
 import { GearGlyph } from "./GearGlyph";
 import { useFollowTail } from "../use-follow-tail";
 import { queueDelta, type QueuedDelta } from "../delta-queue";
-import { groupSettledTools, type FoldedActivity } from "../tool-visibility";
+import { groupSettledTools, type ActivityItem, type FoldedActivity } from "../tool-visibility";
+import { subagentSummary } from "../subagent-card";
 import { shouldFocusPromptFromTranscriptPointer } from "../transcript-focus";
 
 // The scrollback is a flat list of entries: text blocks and rendered
@@ -47,6 +49,10 @@ type Entry =
       isError?: boolean;
       batchId: number; // user-turn batch; successful calls fold together at its end
       settled: boolean;
+      // SA.1: when this client appended the record — the subagent card's
+      // elapsed ticker. Client-side and honest only while live (a replay
+      // burst collapses it), so the card shows elapsed ONLY while running.
+      startedAt: number;
     }
   | {
       kind: "artifact";
@@ -168,22 +174,67 @@ function ToolCallList({ calls, className }: { calls: ToolCall[]; className: stri
   );
 }
 
-function SubagentGroup({ calls }: { calls: ToolCall[] }) {
+/** SA.1: a spawn whose wire id other records reference as parentId becomes a
+ * live subagent card — calm summary (agent type, the spawn's own description,
+ * state, tool count, elapsed while running, current action), expandable to
+ * the nested calls. Everything shown is the engine's own data rendered as
+ * inert plain text; the card itself is shell chrome. Elapsed ticks only
+ * while running — a settled or replayed card never shows a stale duration. */
+const SubagentCard = memo(function SubagentCard({
+  task,
+  calls,
+}: {
+  task: ToolCall;
+  calls: ToolCall[];
+}) {
   const [open, setOpen] = useState(false);
-  const pending = calls.some((c) => c.output === undefined);
+  const s = subagentSummary(task, calls);
+  const running = s.state === "running";
+  const [, tick] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => {
+    if (!running) return;
+    const timer = setInterval(tick, 1_000);
+    return () => clearInterval(timer);
+  }, [running]);
+  const elapsed = Math.max(0, Math.floor((Date.now() - task.startedAt) / 1_000));
   return (
-    <div className="subagent-group">
-      <button className="subagent-head" onClick={() => setOpen(!open)}>
-        <span className="subagent-caret">{open ? "▾" : "▸"}</span>
-        <span className="subagent-label">
-          <GearGlyph size="1em" /> subagent · {calls.length} call{calls.length === 1 ? "" : "s"}
-          {pending ? " …" : ""}
+    <div
+      className={
+        "subagent-card" +
+        (running
+          ? " subagent-card-running"
+          : s.state === "failed"
+            ? " subagent-card-failed"
+            : " subagent-card-done")
+      }
+      role="group"
+      aria-label={`subagent: ${s.description} (${s.state})`}
+    >
+      <button
+        className="subagent-card-head"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        title={open ? "Collapse subagent activity" : "Expand subagent activity"}
+      >
+        <span className="subagent-dot" aria-hidden="true" />
+        {s.agentType && <span className="subagent-type">{s.agentType}</span>}
+        <span className="subagent-desc">{s.description}</span>
+        <span className="subagent-live">
+          {running ? s.currentAction : s.state === "failed" ? "failed" : "done"}
         </span>
+        <span className="subagent-caret">{open ? "▾" : "▸"}</span>
       </button>
+      <div className="subagent-card-meta">
+        <GearGlyph size="1em" /> {s.toolCount} tool{s.toolCount === 1 ? "" : "s"}
+        {running ? ` · ${elapsed}s` : ""}
+        {!running && s.resultLine ? (
+          <span className="subagent-result"> · {s.resultLine}</span>
+        ) : null}
+      </div>
       {open && <ToolCallList calls={calls} className="subagent-calls" />}
     </div>
   );
-}
+});
 
 /** A completed turn's successful engine activity: one terminal-sized line by
  * default, with every normalized call still available on demand. The fold can
@@ -418,6 +469,7 @@ export function RenderZone({
                 parentId: msg.parentId,
                 batchId,
                 settled: false,
+                startedAt: Date.now(),
               },
             ]);
             break;
@@ -648,15 +700,24 @@ export function RenderZone({
   const compactedTools = useMemo(
     () =>
       groupSettledTools(
-        entries.map((entry) =>
+        entries.flatMap((entry): Array<ActivityItem<ToolCall, ThinkingEntry>> =>
           entry.kind === "tool"
-            ? { kind: "tool" as const, tool: entry }
+            ? entry.parentId && !entry.isError
+              ? // A subagent's call lives inside its card — invisible to the
+                // fold, and OMITTED (not a boundary) so a parent-level run is
+                // not split by child traffic it never displaces (SA.1).
+                []
+              : childrenByParent.has(entry.toolId)
+                ? // A subagent card is a visible block: folding across it
+                  // would move later work ahead of it. Hard boundary.
+                  [null]
+                : [{ kind: "tool" as const, tool: entry }]
             : entry.kind === "thinking"
-              ? { kind: "thinking" as const, thinking: entry }
-              : null,
+              ? [{ kind: "thinking" as const, thinking: entry }]
+              : [null],
         ),
       ),
-    [entries],
+    [entries, childrenByParent],
   );
 
   const handleTranscriptPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -851,14 +912,16 @@ function ZoneEntry({
     const compacted = compactedTools.anchors.get(entry.id);
     if (compacted) return <ToolActivityGroup items={compacted} onToggleThinking={toggleThinking} />;
     if (compactedTools.hidden.has(entry.id)) return null;
-    // Subagent calls are rendered nested under their Task (below),
+    // Subagent calls are rendered nested inside their card (below),
     // not at the top level.
     if (entry.parentId && !entry.isError) return null;
     const children = childrenByParent.get(entry.toolId);
+    // A spawn with visible children IS the card — the anchor is the
+    // referenced-as-parentId relationship, never the tool's name (SA.1).
+    if (children && children.length > 0) return <SubagentCard task={entry} calls={children} />;
     return (
       <div className="tool-group">
         <ToolBlock {...toolBlockProps(entry)} />
-        {children && children.length > 0 && <SubagentGroup calls={children} />}
       </div>
     );
   }
