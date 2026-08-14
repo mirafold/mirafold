@@ -330,10 +330,18 @@ test("gitChanges: a mid-merge conflict is never net-dropped, even when bytes equ
   writeFileSync(path.join(root, "shared.txt"), "main\n");
   commitAll(root);
   try {
-    execFileSync("git", ["merge", "side"], { cwd: root, stdio: "ignore" });
+    // Identity inline like commitAll: without it, merge dies BEFORE creating
+    // merge state on identity-less machines (CI), and the catch meant for the
+    // conflict swallowed that too — leaving a clean tree and a vacuous test.
+    execFileSync(
+      "git",
+      ["-c", "user.name=Mirafold Test", "-c", "user.email=test@invalid", "merge", "side"],
+      { cwd: root, stdio: "ignore" },
+    );
   } catch {
     // the conflict is the fixture
   }
+  assert.ok(existsSync(path.join(root, ".git", "MERGE_HEAD")), "fixture must be mid-merge");
   // Restore the working file to EXACTLY HEAD's bytes — the shape the net
   // comparison used to drop, hiding an unresolved conflict.
   writeFileSync(path.join(root, "shared.txt"), "main\n");
