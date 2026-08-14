@@ -250,6 +250,17 @@ test("SA.2: the per-subagent narration budget caps with one explicit marker, per
   assert.equal(budget.take("a", "fresh"), "fresh"); // turn boundary resets
 });
 
+test("audit: the ledger caps DISTINCT subagents per turn — fabricated parent ids can't grow it unboundedly", async () => {
+  const { SubagentProseBudget } = await import("./types");
+  const budget = new SubagentProseBudget(1_000, 2);
+  assert.equal(budget.take("p1", "one"), "one");
+  assert.equal(budget.take("p2", "two"), "two");
+  assert.equal(budget.take("p3", "three"), "", "a third distinct parent is dropped silently");
+  assert.equal(budget.take("p1", "still fine"), "still fine", "tracked parents keep their budget");
+  budget.clear();
+  assert.equal(budget.take("p3", "next turn"), "next turn", "the cap is per turn");
+});
+
 test("checklist: task tools fold into one render id per turn, list persists, id re-anchors next turn", async () => {
   const { s, msgs, awaitTurnEnd } = makeSession(
     [

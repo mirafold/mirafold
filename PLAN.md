@@ -3196,6 +3196,27 @@ signoff of the reported plan)*:
   no-painting, ask attribution, depth-1 render rule).
   Tiers 817/152/57(app) green.
 
+**Post-phase security audit (2026-08-14, same day; scope: the SA delta +
+its trust boundaries).** ZERO exploitable findings. ONE hardening landed
+(flood-cap parity, pinned): the shared `SubagentProseBudget` had no cap on
+DISTINCT parent ids, so a hostile/looping engine fabricating unlimited
+`parent_tool_use_id` values could grow the ledger without bound within a
+turn — now capped (`MAX_SUBAGENTS_PER_TURN` 2000; past it a NEW subagent's
+prose drops silently, the same degradation as every other per-turn cap;
+OpenCode's parent ids were already bounded by the spawn-part cap, so this
+mainly guards the Claude lane). Verified-clean facts worth keeping: a
+Claude Code SUBAGENT cannot reach the render MCP tools — proved through
+the REAL adapter + shipped in-process MCP server against a scripted
+endpoint (the SDK withholds MCP tools from subagents: 31 child tools, no
+`mcp__mirafold*`), so the no-painting rule holds on BOTH engines (OpenCode
+by our lane code, Claude by the engine itself); subagent prose renders
+inert everywhere (no markdown, no HTML sinks); the deck and the permission
+chip are shell chrome with engine text confined to inert slots; the store's
+`idSchema` bounds a tampered checkpoint's `parentId` at 1 KB; the
+committed fixture carries no secret-shaped strings; alternating parent ids
+cannot defeat the coalescers into unbounded ring growth (count + byte caps
+hold); `laneOf` is cycle-safe (hop cap).
+
 **Post-phase bughunt round 2 (2026-08-14, same day).** Two more found +
 fixed, pins proven failing pre-fix: (1) `zone_reset` cleared every
 streaming ref EXCEPT the new subtext map — a same-page full-replay

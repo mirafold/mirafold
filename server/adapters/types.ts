@@ -177,6 +177,12 @@ export function capOutput(text: string): { text: string; truncatedBytes?: number
 // explicit marker, never a silent cut. Agent-neutral, shared by every
 // adapter that forwards a subagent lane.
 const SUBAGENT_TEXT_CAP_BYTES = envInt("SUBAGENT_TEXT_CAP_BYTES", 64_000);
+// Ceiling on DISTINCT subagents tracked per turn — flood insurance in the
+// part-cap spirit (audit 2026-08-14): a hostile/looping engine fabricating
+// unlimited parent ids must not grow the ledger without bound. A real turn
+// spawns a handful; past the cap a NEW subagent's prose is dropped silently,
+// exactly how the other per-turn caps degrade.
+const MAX_SUBAGENTS_PER_TURN = 2_000;
 
 export const SUBAGENT_PROSE_ELIDED = (cap: number) =>
   `\n(… subagent narration cap reached (${cap} bytes) — further prose elided …)`;
@@ -184,14 +190,21 @@ export const SUBAGENT_PROSE_ELIDED = (cap: number) =>
 export class SubagentProseBudget {
   private used = new Map<string, number>();
   private capped = new Set<string>();
-  constructor(private readonly cap = SUBAGENT_TEXT_CAP_BYTES) {}
+  constructor(
+    private readonly cap = SUBAGENT_TEXT_CAP_BYTES,
+    private readonly maxParents = MAX_SUBAGENTS_PER_TURN,
+  ) {}
 
   /** The text to emit for this chunk: the chunk itself while the subagent's
    *  budget holds, a byte-bounded head plus the one elision marker at
    *  exhaustion, and "" (emit nothing) thereafter. */
   take(parentId: string, text: string): string {
     if (this.capped.has(parentId)) return "";
-    const used = this.used.get(parentId) ?? 0;
+    let used = this.used.get(parentId);
+    if (used === undefined) {
+      if (this.used.size >= this.maxParents) return "";
+      used = 0;
+    }
     const bytes = Buffer.byteLength(text, "utf8");
     if (used + bytes <= this.cap) {
       this.used.set(parentId, used + bytes);
