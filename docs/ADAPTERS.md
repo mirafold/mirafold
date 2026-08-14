@@ -214,14 +214,20 @@ them. The rules, for the next adapter author:
 - **Prose is budget-capped per subagent.** Every forwarded subagent
   text/thinking chunk passes `SubagentProseBudget` (`adapters/types.ts`;
   `SUBAGENT_TEXT_CAP_BYTES`, default 64 KB) — one explicit elision marker at
-  exhaustion, never a silent cut, ledger cleared each turn. This bounds what
-  one subagent can add to the wire, the replay ring, and relay bytes.
+  exhaustion, never a silent cut, ledger cleared each turn. The ledger also
+  caps DISTINCT subagents per turn (audit 2026-08-14 flood parity): past it
+  a new parent id's prose drops silently, like every other per-turn cap.
+  This bounds what one subagent — or a fabricating engine — can add to the
+  wire, the replay ring, and relay bytes.
 - **Prose renders inert.** Subagent words paint as plain text inside the
   deck's expansion — never markdown, never top-level transcript (they must
   not fold the parent's thinking, steer the activity label, or land in the
   turn-end announcement).
 - **A subagent's render call never paints.** Paintings are session-level;
-  inside a deck it gets the honest `tool_use`/`tool_result` record.
+  inside a deck it gets the honest `tool_use`/`tool_result` record. On
+  OpenCode this is our lane code; on Claude Code the ENGINE enforces it —
+  the SDK withholds MCP tools from subagent contexts (proved through the
+  real adapter + shipped in-process render server, audit 2026-08-14).
 - **A subagent's permission ask surfaces on the shell bar** with `parentId`
   when the engine can attribute it (OpenCode can; Claude Code's
   `canUseTool` callback carries no subagent identity, so its asks ride
