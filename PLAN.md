@@ -3151,19 +3151,32 @@ signoff of the reported plan)*:
   semantics (cap marker, per-agent ledgers, U+FFFD safety, reset),
   registry + delta-queue no-cross-parent merges, e2e narration in the
   expansion. Tiers 814/152/57(app) green.
-- [ ] **SA.3 — The OpenCode mapping (neutrality proven).** `isOurs`
-  becomes a lane router: child-session events map to `parentId` = parent
-  task part id (Map from `state.metadata.sessionId` +
-  `session.created`/`Session.parentID`, resolved transitively); child
-  text/reasoning → parentId'd deltas (capped, SA.2 lane), child tool
-  parts → parentId'd `tool_use`/`tool_result`; child `session.idle` and
-  status must not touch parent turn state. **Fix the defect: child
-  permission asks surface in the shell's permission UI attributed to the
-  subagent, answered via `/permission/{requestID}/reply`, deny-by-default
-  timer armed.** Update the "skipped whole" test to the new contract;
-  extend the Tier-4 live test with a scripted-provider subagent run.
-  Done when: a real OpenCode subagent's cards/narration/permission ask
-  all work end-to-end on the scripted harness; all tiers green.
+- [x] **SA.3 — The OpenCode mapping (neutrality proven).** — completed
+  2026-08-14. The mapper gained `laneOf`: "root" | spawn-part-id |
+  undefined (unroutable → skipped whole, the pre-lane behavior). Edges
+  from the root task part's `state.metadata` ({sessionId,
+  parentSessionId} — captured shape-wise, not by tool name, so the lane
+  stays name-agnostic) + child `session.created`, resolved transitively —
+  a configured nested grandchild lands on the nearest stream-visible
+  card (tested). Child text/reasoning → parented deltas through the
+  shared `SubagentProseBudget`; child tool parts → parented
+  `tool_use`/`tool_result` (roles tracked for child messages so the task
+  prompt's echo never replays as narration); a child's RENDER call gets
+  the honest tool record, never a painting (cards are calls + prose);
+  child step/status/idle/error never touch root turn state or the
+  activity line. **Defect fixed:** child `permission.asked` surfaces on
+  the shell bar with additive `parentId` on `permission_request`
+  (protocol + store schema + PermBar dim "subagent" chip + announcer
+  suffix), deny timer armed, replies via the modern session-agnostic
+  `POST /permission/{requestID}/reply` (the deprecated per-session
+  endpoint — which the SA.0 probe showed never validated ownership —
+  dropped everywhere). Tests: the SA.0 captured run replayed whole
+  through the shipped session (spawn anchor, parented calls/prose,
+  attributed ask, single turn_end), grandchild transitivity, no-painting
+  rule, unroutable fallback; Tier-4 live extends with a REAL engine
+  fan-out (attributed ask answered through the production bridge, child
+  bash + narration on the lane, parent reply top-level) — green.
+  Tiers 817/152/57(app)/1(live) green.
 - [ ] **SA.4 — Docs + glossary.** README (the card in the surfaces
   section), ADAPTERS.md (the subagent lane: opaque `parentId`, the
   per-adapter mapping table incl. the recorded Codex posture), GLOSSARY

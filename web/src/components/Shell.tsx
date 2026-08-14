@@ -339,11 +339,18 @@ export function Shell() {
           if (live) announce(turnResponse(turnText.current));
           turnText.current = "";
         } else if (m.type === "permission_request") {
-          setAsks((a) => [...a, { tool: m.tool, detail: m.detail, id: m.id }]);
+          setAsks((a) => [
+            ...a,
+            { tool: m.tool, detail: m.detail, id: m.id, ...(m.parentId ? { parentId: m.parentId } : {}) },
+          ]);
           // Assertive: this one blocks the turn until answered. A replayed
           // ask still paints the bar (it may be genuinely pending), just
           // without re-interrupting the reader.
-          if (live) announce(`Permission needed: ${m.tool}. ${m.detail}`, true);
+          if (live)
+            announce(
+              `Permission needed${m.parentId ? " (subagent)" : ""}: ${m.tool}. ${m.detail}`,
+              true,
+            );
         } else if (m.type === "permission_resolved") {
           // The ask was answered on ANOTHER viewport, or auto-denied by the
           // daemon's timeout — drop it HERE too. Before this, the bar sat

@@ -142,6 +142,8 @@ const storedWireMessageSchema = z.discriminatedUnion("type", [
       tool: z.string(),
       detail: z.string(),
       id: idSchema,
+      // SA.3: set when the asker is a subagent (opaque spawn handle).
+      parentId: idSchema.optional(),
       seq: sequenceSchema,
     })
     .strict(),

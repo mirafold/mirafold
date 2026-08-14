@@ -54,8 +54,12 @@ export interface OpenCodeTransport {
     args: string,
     opts: { model?: string; agent?: string },
   ): Promise<void>;
+  // Session-agnostic since SA.3 (POST /permission/{requestID}/reply — the
+  // modern endpoint): a SUBAGENT session's ask is answered by the same call,
+  // no session id required. The per-session endpoint it replaces is marked
+  // deprecated in the live 1.18.18 spec (and, measured in the SA.0 probe,
+  // never validated session↔permission ownership anyway).
   replyPermission(
-    sessionID: string,
     permissionID: string,
     // Never "always": that would persist an approval into the user's own
     // OpenCode state, which is theirs to grant in their own tool.
@@ -425,15 +429,11 @@ export class OpenCodeServerProcess implements OpenCodeTransport {
     });
   }
 
-  async replyPermission(
-    sessionID: string,
-    permissionID: string,
-    response: "once" | "reject",
-  ): Promise<void> {
-    await this.request(
-      `/session/${encodeURIComponent(sessionID)}/permissions/${encodeURIComponent(permissionID)}`,
-      { method: "POST", body: JSON.stringify({ response }) },
-    );
+  async replyPermission(permissionID: string, response: "once" | "reject"): Promise<void> {
+    await this.request(`/permission/${encodeURIComponent(permissionID)}/reply`, {
+      method: "POST",
+      body: JSON.stringify({ reply: response }),
+    });
   }
 
   close(): void {

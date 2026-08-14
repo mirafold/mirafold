@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { WireMsg } from "../protocol";
-import { capOutput, toolDetail, type TodoItem } from "./types";
+import { capOutput, toolDetail, SubagentProseBudget, type TodoItem } from "./types";
 import { generativeUIMsg, MIRAFOLD_MCP, RENDER_ID_RE } from "./render-mcp-cmd";
 import type { OpenCodeEvent } from "./opencode-client";
 
@@ -46,20 +46,35 @@ export class OpenCodeEventMapper {
   private lastModel?: string;
   private lastStatus?: "thinking" | "tool";
   private todoRenderId?: string;
+  // SA.3, the subagent lane: a child session's traffic maps to its spawn's
+  // task PART id — the same opaque handle every wire lane groups by. Edges
+  // come from the parent task part's state.metadata ({sessionId,
+  // parentSessionId} — the SA.0 probe's join key, lowercase d) and from
+  // child `session.created` (Session.parentID), resolved transitively so a
+  // user-configured NESTED grandchild lands on its nearest stream-visible
+  // ancestor's card. Cleared per turn like the part maps — a `background:
+  // true` child outliving its turn goes unroutable and is skipped, exactly
+  // as all child traffic was before the lane existed.
+  private sessionParents = new Map<string, string>();
+  private spawnParts = new Map<string, string>();
+  private subagentProse = new SubagentProseBudget();
 
   constructor(
     private readonly options: {
       emit: (msg: WireMsg) => void;
       workspaceDir: string;
-      /** The one session this mapper narrates. Subagent child sessions share
-       *  the event stream under their own ids and are skipped whole — their
-       *  work surfaces through the parent's `task` tool part. */
+      /** The ROOT session this mapper narrates. Subagent child sessions
+       *  share the event stream under their own ids and ride the subagent
+       *  lane (SA.3): their calls and prose group under the parent task
+       *  part's id via `laneOf`, never the top-level transcript. */
       isOurs: (sessionID: unknown) => boolean;
       learnModel: (modelID: string) => void;
       onPermissionAsked: (ask: {
         id: string;
         permission: string;
         detail: string;
+        /** Set when the asker is a subagent — the lane's opaque handle. */
+        parentId?: string;
       }) => void;
       /** A reply observed on the stream (answered by another client, e.g. a
        *  TUI attached to the same engine session) — not our own echo. */
@@ -80,6 +95,27 @@ export class OpenCodeEventMapper {
     // still find its track — a fresh default would re-emit its whole text.
     this.parts.clear();
     this.roles.clear();
+    // The subagent lane resets on the same schedule and for the same reason.
+    this.sessionParents.clear();
+    this.spawnParts.clear();
+    this.subagentProse.clear();
+  }
+
+  /** Which lane a session's traffic belongs to: "root" for the session this
+   *  mapper narrates; the spawn part id (the opaque wire handle) for a
+   *  child, resolved transitively — a configured nested grandchild lands on
+   *  its nearest stream-visible ancestor's card; undefined = unroutable,
+   *  skipped whole (pre-SA.3 behavior). */
+  private laneOf(sessionID: unknown): "root" | string | undefined {
+    if (this.options.isOurs(sessionID)) return "root";
+    let cursor = typeof sessionID === "string" ? sessionID : undefined;
+    for (let hops = 0; cursor !== undefined && hops < 16; hops++) {
+      const parent = this.sessionParents.get(cursor);
+      if (parent === undefined) return undefined;
+      if (this.options.isOurs(parent)) return this.spawnParts.get(cursor);
+      cursor = parent;
+    }
+    return undefined;
   }
 
   endTurn() {
@@ -106,23 +142,45 @@ export class OpenCodeEventMapper {
       case "todo.updated":
         if (this.options.isOurs(p["sessionID"])) this.onTodos(p["todos"]);
         break;
+      case "session.created": {
+        // A child spawn's session edge (SA.3). The task part's metadata is
+        // what yields the CARD handle; this edge is what makes transitive
+        // (grandchild) resolution possible.
+        const info = p["info"] as Record<string, unknown> | undefined;
+        const id = info?.["id"];
+        const parentID = info?.["parentID"];
+        if (
+          typeof id === "string" &&
+          typeof parentID === "string" &&
+          this.sessionParents.size < MAX_PARTS_PER_TURN
+        )
+          this.sessionParents.set(id, parentID);
+        break;
+      }
       case "permission.asked": {
-        if (!this.options.isOurs(p["sessionID"])) break;
+        // A SUBAGENT's ask surfaces too (SA.3) — before the lane, child asks
+        // were dropped whole and a gated subagent hung with no UI and no
+        // deny timer (SA.0 finding). Unroutable sessions stay skipped.
+        const lane = this.laneOf(p["sessionID"]);
+        if (lane === undefined) break;
         const patterns = Array.isArray(p["patterns"]) ? p["patterns"].map(String) : [];
         this.options.onPermissionAsked({
           id: String(p["id"]),
           permission: String(p["permission"] ?? "tool"),
           detail: patterns.join(", ") || String(p["permission"] ?? ""),
+          ...(lane !== "root" ? { parentId: lane } : {}),
         });
         break;
       }
       case "permission.replied":
-        if (this.options.isOurs(p["sessionID"]))
+        if (this.laneOf(p["sessionID"]) !== undefined)
           this.options.onPermissionReplied(String(p["requestID"]), String(p["reply"]));
         break;
       case "session.error": {
         // `sessionID` can be absent on transport-level errors; treat those as
-        // ours rather than swallow them.
+        // ours rather than swallow them. A KNOWN child's error is NOT the
+        // root turn's death — it surfaces honestly as the spawn part's error
+        // result on the parent stream (SA.3).
         if (p["sessionID"] !== undefined && !this.options.isOurs(p["sessionID"])) break;
         this.options.emit({ type: "error", message: `OpenCode error: ${sessionErrorText(p)}` });
         this.options.endTurn();
@@ -155,9 +213,17 @@ export class OpenCodeEventMapper {
 
   private onMessage(p: Record<string, unknown>) {
     const info = p["info"] as Record<string, unknown> | undefined;
-    if (!info || !this.options.isOurs(info["sessionID"] ?? p["sessionID"])) return;
+    if (!info) return;
+    const lane = this.laneOf(info["sessionID"] ?? p["sessionID"]);
+    if (lane === undefined) return;
+    // Roles are tracked for CHILD messages too (SA.3): a child's user-role
+    // message is the task prompt, and its parts must never replay as the
+    // subagent's own narration — the same echo rule the root obeys.
     if (typeof info["role"] === "string" && this.roles.size < MAX_PARTS_PER_TURN)
       this.roles.set(String(info["id"]), info["role"]);
+    // Usage and model stay the ROOT conversation's: the status bar counts
+    // the session's own context weight, as before the lane.
+    if (lane !== "root") return;
     if (info["role"] !== "assistant") return;
     const modelID = typeof info["modelID"] === "string" ? info["modelID"] : undefined;
     if (modelID) {
@@ -216,40 +282,46 @@ export class OpenCodeEventMapper {
 
   private onPartSnapshot(p: Record<string, unknown>) {
     const part = p["part"] as Record<string, unknown> | undefined;
-    if (!part || !this.options.isOurs(part["sessionID"] ?? p["sessionID"])) return;
+    if (!part) return;
+    const lane = this.laneOf(part["sessionID"] ?? p["sessionID"]);
+    if (lane === undefined) return;
+    const parentId = lane === "root" ? undefined : lane;
     const partID = String(part["id"]);
     const type = String(part["type"]);
     const fromUser = this.roles.get(String(part["messageID"])) === "user";
     switch (type) {
       case "step-start":
-        this.status("thinking");
+        // A child's step boundaries never steer the root activity line.
+        if (!parentId) this.status("thinking");
         break;
       case "text": {
         if (fromUser) break; // the prompt's own echo — never replayed as output
         const track = this.track(partID, "text");
-        if (track) this.emitTextSuffix(track, String(part["text"] ?? ""));
+        if (track) this.emitTextSuffix(track, String(part["text"] ?? ""), parentId);
         break;
       }
       case "reasoning": {
         if (fromUser) break;
-        this.status("thinking");
+        if (!parentId) this.status("thinking");
         const track = this.track(partID, "reasoning");
         if (!track) break;
         // A delta that beat this snapshot registered the part as "text";
         // the snapshot is authoritative — correct the lane for the rest of
         // the stream (bughunt round 2, latent).
         track.kind = "reasoning";
-        this.emitTextSuffix(track, String(part["text"] ?? ""));
+        this.emitTextSuffix(track, String(part["text"] ?? ""), parentId);
         break;
       }
       case "tool":
-        this.onToolPart(partID, part);
+        this.onToolPart(partID, part, parentId);
         break;
     }
   }
 
   private onPartDelta(p: Record<string, unknown>) {
-    if (!this.options.isOurs(p["sessionID"])) return;
+    const lane = this.laneOf(p["sessionID"]);
+    if (lane === undefined) return;
+    const parentId = lane === "root" ? undefined : lane;
     if (p["field"] !== "text") return;
     if (this.roles.get(String(p["messageID"])) === "user") return;
     // Deltas can beat the part's first snapshot; an unknown part defaults to
@@ -258,24 +330,38 @@ export class OpenCodeEventMapper {
     const delta = String(p["delta"] ?? "");
     if (!track || !delta || track.kind === "tool" || track.kind === "other") return;
     track.emitted += delta.length;
-    this.emitStreamText(track, delta);
+    this.emitStreamText(track, delta, parentId);
   }
 
-  private emitTextSuffix(track: PartTrack, text: string) {
+  private emitTextSuffix(track: PartTrack, text: string, parentId?: string) {
     if (text.length <= track.emitted) return;
     const suffix = text.slice(track.emitted);
     track.emitted = text.length;
-    this.emitStreamText(track, suffix);
+    this.emitStreamText(track, suffix, parentId);
   }
 
-  private emitStreamText(track: PartTrack, text: string) {
+  private emitStreamText(track: PartTrack, text: string, parentId?: string) {
+    // A subagent's prose rides its card's lane, budget-capped (SA.3 — the
+    // same per-subagent cap the Claude Code lane applies). `emitted` above
+    // tracks SOURCE position either way, so a capped card still consumes
+    // the stream correctly and later suffixes stay aligned.
+    if (parentId) {
+      const capped = this.subagentProse.take(parentId, text);
+      if (!capped) return;
+      this.options.emit({
+        type: track.kind === "reasoning" ? "thinking_delta" : "text_delta",
+        text: capped,
+        parentId,
+      });
+      return;
+    }
     this.options.emit({
       type: track.kind === "reasoning" ? "thinking_delta" : "text_delta",
       text,
     });
   }
 
-  private onToolPart(partID: string, part: Record<string, unknown>) {
+  private onToolPart(partID: string, part: Record<string, unknown>, parentId?: string) {
     const track = this.track(partID, "tool");
     if (!track) return;
     track.kind = "tool";
@@ -283,12 +369,34 @@ export class OpenCodeEventMapper {
     const state = (part["state"] ?? {}) as Record<string, unknown>;
     const status = String(state["status"] ?? "");
     const input = (state["input"] ?? {}) as Record<string, unknown>;
+    // SA.3: a ROOT tool part whose metadata names a spawned session is the
+    // card anchor — record the join (the SA.0 probe's key: metadata
+    // {sessionId, parentSessionId}, lowercase d, engine casing verbatim).
+    // Read shape-wise, not by tool name, so the lane stays name-agnostic.
+    if (!parentId) {
+      const meta = state["metadata"] as Record<string, unknown> | undefined;
+      const childSession = meta?.["sessionId"];
+      const parentSession = meta?.["parentSessionId"];
+      if (
+        typeof childSession === "string" &&
+        typeof parentSession === "string" &&
+        this.spawnParts.size < MAX_PARTS_PER_TURN
+      ) {
+        this.spawnParts.set(childSession, partID);
+        this.sessionParents.set(childSession, parentSession);
+      }
+    }
     if (tool.startsWith(MCP_PREFIX)) {
-      this.onMirafoldTool(partID, track, tool, state, input);
-      return;
+      // A SUBAGENT's render call does not paint — paintings are session-level
+      // chrome, and a card's content is calls + prose (SA charter). It gets
+      // the honest tool record instead, nested in its card.
+      if (!parentId) {
+        this.onMirafoldTool(partID, track, tool, state, input);
+        return;
+      }
     }
     if (status === "running" || status === "completed" || status === "error")
-      this.announceTool(track, partID, tool, input);
+      this.announceTool(track, partID, tool, input, parentId);
     if (track.finished) return;
     if (status === "completed") {
       track.finished = true;
@@ -298,6 +406,7 @@ export class OpenCodeEventMapper {
         output: text,
         id: partID,
         ...(truncatedBytes ? { truncatedBytes } : {}),
+        ...(parentId ? { parentId } : {}),
       });
     } else if (status === "error") {
       track.finished = true;
@@ -311,6 +420,7 @@ export class OpenCodeEventMapper {
         isError: true,
         id: partID,
         ...(truncatedBytes ? { truncatedBytes } : {}),
+        ...(parentId ? { parentId } : {}),
       });
     }
   }
@@ -320,16 +430,19 @@ export class OpenCodeEventMapper {
     partID: string,
     tool: string,
     input: Record<string, unknown>,
+    parentId?: string,
   ) {
     if (track.announced) return;
     track.announced = true;
-    this.status("tool", tool);
+    // A child's tool churn never steers the root activity line (SA.3).
+    if (!parentId) this.status("tool", tool);
     this.options.emit({
       type: "tool_use",
       name: tool,
       detail: toolDetail(input),
       id: partID,
       input,
+      ...(parentId ? { parentId } : {}),
     });
   }
 

@@ -122,7 +122,11 @@ type WireMsgBody =
     }
   // Phase T.3: the turn is paused on a gated tool call until the browser
   // answers (or the server times out to deny). Drawn by the trusted shell.
-  | { type: "permission_request"; tool: string; detail: string; id: string }
+  // `parentId` (SA.3, additive): set when the ASKER is a subagent — the
+  // same opaque spawn handle the tool/prose lanes group by. The shell shows
+  // a dim "subagent" chip; the ask itself is answered exactly like any
+  // other. Old clients ignore the field.
+  | { type: "permission_request"; tool: string; detail: string; id: string; parentId?: string }
   // 2026-07-28: the ask above RESOLVED — answered from ANY viewport, or
   // auto-denied by the adapter's timeout/interrupt. Broadcast on the session
   // stream so every attached viewport (and the replay buffer) drops the bar

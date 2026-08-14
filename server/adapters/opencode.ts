@@ -536,23 +536,37 @@ export class OpenCodeSession implements AgentSession {
     this.turnDone = undefined;
   }
 
-  private onPermissionAsked(ask: { id: string; permission: string; detail: string }) {
+  private onPermissionAsked(ask: {
+    id: string;
+    permission: string;
+    detail: string;
+    parentId?: string;
+  }) {
     if (this.closed || this.pendingPermissions.has(ask.id)) return;
     // Cap concurrent unanswered asks: a hostile/looping engine spamming
     // distinct permission ids can't grow this map + its timers without bound
     // (audit 2026-08-13 hardening). Beyond the cap the ask is auto-denied at
     // the engine — the same deny-by-default the timeout applies, just now.
     if (this.pendingPermissions.size >= MAX_PENDING_PERMISSIONS) {
-      if (this.sessionID) void this.transport.replyPermission(this.sessionID, ask.id, "reject").catch(() => {});
+      void this.transport.replyPermission(ask.id, "reject").catch(() => {});
       return;
     }
     // Deny-by-default: an unanswered ask must not pin the turn open forever.
+    // A SUBAGENT's ask (parentId set — SA.3) rides the same bar, same timer,
+    // same deny-by-default; before the lane opened these were dropped whole
+    // and a gated subagent simply hung (SA.0 finding).
     const timer = setTimeout(() => {
       const pending = this.pendingPermissions.get(ask.id);
       if (pending !== undefined) this.resolvePermissionInternal(ask.id, false, pending, true);
     }, this.permissionTimeoutMs);
     this.pendingPermissions.set(ask.id, timer);
-    this.emit({ type: "permission_request", tool: ask.permission, detail: ask.detail, id: ask.id });
+    this.emit({
+      type: "permission_request",
+      tool: ask.permission,
+      detail: ask.detail,
+      id: ask.id,
+      ...(ask.parentId ? { parentId: ask.parentId } : {}),
+    });
   }
 
   /** protocol.ts contract: permission_request MUST resolve visibly on EVERY
@@ -565,9 +579,9 @@ export class OpenCodeSession implements AgentSession {
   ) {
     clearTimeout(timer);
     this.pendingPermissions.delete(id);
-    if (replyToEngine && this.sessionID) {
+    if (replyToEngine) {
       void this.transport
-        .replyPermission(this.sessionID, id, allow ? "once" : "reject")
+        .replyPermission(id, allow ? "once" : "reject")
         .catch((err) => {
           if (!this.closed)
             this.emit({ type: "error", message: `permission reply failed: ${errText(err)}` });
