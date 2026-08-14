@@ -49,54 +49,59 @@ export function diffLines(oldText: string, newText: string): DiffLine[] {
   }
   while (i < n) out.push({ sign: "-", text: a[i++] });
   while (j < m) out.push({ sign: "+", text: b[j++] });
+  return markNoNewline(out, oldSource.endsWithNewline, newSource.endsWithNewline);
+}
 
+/** The `\ No newline at end of file` reconciliation, applied to the walked
+ *  diff in place: tag each side's final source line when unterminated, and
+ *  split the one shape the walk can't express — equal final text whose
+ *  TERMINATION differs, which is a real one-line replacement, never a fake
+ *  blank source line at N+1. */
+function markNoNewline(
+  out: DiffLine[],
+  oldEndsWithNewline: boolean,
+  newEndsWithNewline: boolean,
+): DiffLine[] {
   const findLastSourceLine = (excluded: DiffLine["sign"]): number => {
     for (let index = out.length - 1; index >= 0; index -= 1) {
       if (out[index].sign !== excluded) return index;
     }
     return -1;
   };
+  // A context line is only honest when BOTH sides' bytes agree, termination
+  // included. Its per-side termination differs from the file flag only when
+  // it is that side's final source line — and at most one of the two finals
+  // can be context when they differ (everything past the smaller index is
+  // single-signed). When the sides disagree, git splits it (`-x` + marker /
+  // `+x`), and so must we: leaving it as context hides a real byte change
+  // behind a "reviewed" mark (bughunt 2026-08-13 — the old code split only
+  // the oldLast === newLast case).
   const oldLast = findLastSourceLine("+");
   const newLast = findLastSourceLine("-");
-  if (
-    oldSource.endsWithNewline !== newSource.endsWithNewline &&
-    oldLast >= 0 &&
-    oldLast === newLast &&
-    out[oldLast].sign === " "
-  ) {
-    // Equal final text with different termination is still a real one-line
-    // replacement. A trailing split sentinel must never become a fake blank
-    // source line with line number N+1.
-    const text = out[oldLast].text;
-    out.splice(
-      oldLast,
-      1,
-      {
-        sign: "-",
-        text,
-        ...(!oldSource.endsWithNewline ? { noNewline: true as const } : {}),
-      },
-      {
-        sign: "+",
-        text,
-        ...(!newSource.endsWithNewline ? { noNewline: true as const } : {}),
-      },
-    );
-  } else {
-    if (
-      oldLast >= 0 &&
-      !oldSource.endsWithNewline &&
-      out[oldLast].sign !== " "
-    ) {
-      out[oldLast] = { ...out[oldLast], noNewline: true };
+  const contextAt =
+    out[oldLast]?.sign === " " ? oldLast : out[newLast]?.sign === " " ? newLast : -1;
+  if (contextAt >= 0) {
+    const oldTerminated = contextAt === oldLast ? oldEndsWithNewline : true;
+    const newTerminated = contextAt === newLast ? newEndsWithNewline : true;
+    if (oldTerminated !== newTerminated) {
+      const text = out[contextAt].text;
+      out.splice(
+        contextAt,
+        1,
+        { sign: "-", text, ...(!oldTerminated ? { noNewline: true as const } : {}) },
+        { sign: "+", text, ...(!newTerminated ? { noNewline: true as const } : {}) },
+      );
     }
-    if (
-      newLast >= 0 &&
-      !newSource.endsWithNewline &&
-      out[newLast].sign !== " "
-    ) {
-      out[newLast] = { ...out[newLast], noNewline: true };
-    }
+  }
+  // Each side's final SIGNED source line carries its own marker — indices
+  // recomputed, since the split above may have moved them.
+  const oldFinal = findLastSourceLine("+");
+  const newFinal = findLastSourceLine("-");
+  if (oldFinal >= 0 && !oldEndsWithNewline && out[oldFinal].sign === "-") {
+    out[oldFinal] = { ...out[oldFinal], noNewline: true };
+  }
+  if (newFinal >= 0 && !newEndsWithNewline && out[newFinal].sign === "+") {
+    out[newFinal] = { ...out[newFinal], noNewline: true };
   }
   return out;
 }

@@ -1,5 +1,6 @@
 import type { FsChangeRepo } from "@protocol";
 import { changeStatus, repoLabel, type ChangeItem } from "../../changes";
+import { RefreshIcon } from "../RefreshIcon";
 import type { ReviewProgress } from "../../review-progress";
 
 export function ChangesHeader({
@@ -209,11 +210,3 @@ export function ReviewProgressControls({
   );
 }
 
-function RefreshIcon() {
-  return (
-    <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-      <path d="M13.4 7A5.5 5.5 0 1 0 13 10.2" />
-      <path d="M10.1 3.8h3.3V.5" />
-    </svg>
-  );
-}

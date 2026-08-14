@@ -14,7 +14,7 @@ import {
   type Backend,
 } from "../adapters";
 import { PERMISSION_TIMEOUT_MS } from "../adapters/types";
-import type { CredentialKind } from "../provider-policy";
+import { allowedOverRelay, relayGateRefusal, type CredentialKind } from "../provider-policy";
 import type { BangProc } from "../pty/pty";
 import { createLogger, scrub, verbose } from "../log";
 import { startWatch, type FsWatchHandle } from "./fs-watch";
@@ -180,6 +180,12 @@ export type SessionEntry = {
    *  cap costs one serialization per broadcast, not a walk of the whole ring. */
   bufferBytes: number;
   viewports: Set<Viewport>;
+  // The subset of `viewports` that are REMOTE (relay) — the ones the R.4i
+  // relay gate governs. Tracked so a mid-session credential-kind flip to a
+  // relay-ineligible kind (an OpenCode `/model` switch) can detach them, the
+  // same posture the attach gate takes for a fresh remote attach (audit
+  // 2026-08-13). Always a subset of `viewports`.
+  remoteViewports: Set<Viewport>;
   // Next session-scoped sequence number; broadcast stamps it onto every
   // message so a reconnecting viewport can name where its stream broke off (4.4).
   nextSeq: number;
@@ -320,6 +326,7 @@ export class SessionRegistry {
       buffer: [],
       bufferBytes: 0,
       viewports: new Set(),
+      remoteViewports: new Set(),
       nextSeq: 1,
       tailResumeSafe: true,
       name: path.basename(dir) || dir,
@@ -369,6 +376,7 @@ export class SessionRegistry {
       buffer,
       bufferBytes: buffer.reduce((sum, msg) => sum + msgBytes(msg), 0),
       viewports: new Set(),
+      remoteViewports: new Set(),
       nextSeq,
       tailResumeSafe: false,
       name: stored.name,
@@ -404,6 +412,13 @@ export class SessionRegistry {
         entry.kindPending = false;
         entry.backend.kind = update.kind;
         if (update.provider) entry.backend.provider = update.provider;
+        // A mid-session flip to a relay-ineligible kind (an OpenCode `/model`
+        // switch to a subscription or the Zen gateway) must evict any remote
+        // (relay) viewport already attached — the same posture the attach
+        // gate takes for a fresh remote attach (audit 2026-08-13). The
+        // drive-time gate in connection.ts refuses their prompts regardless;
+        // this stops them receiving the now-subscription stream at all.
+        if (!allowedOverRelay(update.kind)) this.evictRemoteViewports(entry);
         this.checkpoint(entry);
       });
     }
@@ -592,12 +607,13 @@ export class SessionRegistry {
   }
 
   private deliver(entry: SessionEntry, msg: WireMsg) {
+    const log = createLogger(`session ${entry.id}`);
     // The likeliest live failures (bad key, engine died, CLI missing)
     // arrive here as adapter-emitted `error` WireMsgs and used to reach only
     // the browser — mirror them to the terminal, timestamped, because the
     // terminal log is what a stranger pastes into a bug report (R.4g).
     if (msg.type === "error") {
-      createLogger(`session ${entry.id}`).error(msg.message);
+      log.error(msg.message);
     }
     // Paintings-adoption instrumentation (2026-08-13 audit): one LOCAL log
     // line per generative-UI paint, from the choke point every adapter's
@@ -605,18 +621,14 @@ export class SessionRegistry {
     // tools" is answerable from the daemon log instead of guessed. Local
     // only; nothing leaves the machine.
     if (msg.type === "render" || msg.type === "artifact") {
-      createLogger(`session ${entry.id}`).info(
-        `paint ${msg.type === "render" ? msg.component : "artifact"} agent=${entry.agent}`,
-      );
+      log.info(`paint ${msg.type === "render" ? msg.component : "artifact"} agent=${entry.agent}`);
     }
     // MIRAFOLD_DEBUG=1 traces every normalized event on the session
     // stream (bang_input never crosses broadcast, so no secret can land
     // here). One line per WireMsg, payload truncated (R.4g).
     if (verbose) {
       const body = JSON.stringify(msg);
-      createLogger(`session ${entry.id}`).debug(
-        `${msg.type} ${body.length > 300 ? body.slice(0, 300) + "…" : body}`,
-      );
+      log.debug(`${msg.type} ${body.length > 300 ? body.slice(0, 300) + "…" : body}`);
     }
     // Resume cursor, one stamp for all viewports. Stamped on a shallow
     // copy — the adapter's object is never mutated or held by the buffer, so
@@ -795,6 +807,27 @@ export class SessionRegistry {
    * With `afterSeq` (pre-validated via canResume) only the unseen tail is
    * replayed — the reconnecting viewport keeps its state, no repaint.
    */
+  /** Mark an attached viewport as REMOTE (relay) — connection.ts calls this
+   *  right after attach for a relay connection, so a later kind flip can
+   *  evict it (audit 2026-08-13). Idempotent; a subset of `viewports`. */
+  markRemote(entry: SessionEntry, viewport: Viewport) {
+    if (entry.viewports.has(viewport)) entry.remoteViewports.add(viewport);
+  }
+
+  /** Refuse-and-detach every remote viewport on this entry — the mid-session
+   *  equivalent of the attach-time relay gate. */
+  private evictRemoteViewports(entry: SessionEntry) {
+    for (const viewport of [...entry.remoteViewports]) {
+      viewport({
+        type: "refused",
+        reason: "subscription-relay",
+        message: relayGateRefusal({ kind: entry.kind, kindPending: entry.kindPending }) ??
+          "This session can no longer be driven over the relay.",
+      });
+      this.detach(entry, viewport);
+    }
+  }
+
   attach(entry: SessionEntry, viewport: Viewport, afterSeq?: number) {
     clearTimeout(entry.idleTimer);
     // The ring must be complete before it replays — an open delta window
@@ -868,6 +901,7 @@ export class SessionRegistry {
   detach(entry: SessionEntry, viewport: Viewport) {
     this.flushDeltas(entry); // the leaving viewport sees the stream's true tail
     entry.viewports.delete(viewport);
+    entry.remoteViewports.delete(viewport);
     if (entry.viewports.size === 0) {
       entry.fsWatch?.stop(); // nobody listening → no watches held (W.1)
       entry.fsWatch = undefined;

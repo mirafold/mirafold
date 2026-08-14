@@ -19,7 +19,7 @@ type ReviewRowsValue = {
   phone: boolean;
   rowRefs: MutableRefObject<Array<HTMLDivElement | null>>;
   dragAnchor: MutableRefObject<number | null>;
-  select: (anchor: number, focus: number) => void;
+  selectLines: (anchor: number, focus: number) => void;
   setFocusIndex: (index: number) => void;
   onLineKey: (event: KeyboardEvent<HTMLDivElement>, index: number) => void;
 };
@@ -64,15 +64,15 @@ function SyntaxReviewRows({ children, className }: { children?: ReactNode; class
           event.preventDefault();
           const anchor = event.shiftKey ? review.selection?.anchor ?? index : index;
           review.dragAnchor.current = anchor;
-          review.select(anchor, index);
+          review.selectLines(anchor, index);
         }}
         onMouseEnter={() => {
           if (review.phone || review.dragAnchor.current === null) return;
-          review.select(review.dragAnchor.current, index);
+          review.selectLines(review.dragAnchor.current, index);
         }}
         onClick={() => {
           if (!review.phone) return;
-          review.select(index, index);
+          review.selectLines(index, index);
         }}
       >
         <span className="changes-line-no changes-line-old" aria-hidden="true">{line.oldLine ?? ""}</span>
@@ -111,7 +111,7 @@ export function ReviewRows({
   phone,
   rowRefs,
   dragAnchor,
-  select,
+  selectLines,
   setFocusIndex,
   onLineKey,
 }: ReviewRowsValue & { language?: string }) {
@@ -137,7 +137,7 @@ export function ReviewRows({
     phone,
     rowRefs,
     dragAnchor,
-    select,
+    selectLines,
     setFocusIndex,
     onLineKey,
   };

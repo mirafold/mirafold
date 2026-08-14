@@ -78,7 +78,10 @@ test("the openai gray verdict carries its uncertainty disclosure", () => {
 });
 
 test("relayGateRefusal: pending refuses outright; kinds refuse per the allow-list", () => {
-  assert.match(relayGateRefusal({ kind: "api-key", kindPending: true }) ?? "", /still verifying/);
+  assert.match(
+    relayGateRefusal({ kind: "api-key", kindPending: true }) ?? "",
+    /hasn't verified .* first turn from its own machine/s,
+  );
   assert.equal(relayGateRefusal({ kind: "api-key" }), undefined);
   assert.equal(relayGateRefusal({ kind: "local" }), undefined);
   assert.match(relayGateRefusal({ kind: "subscription" }) ?? "", /subscription login/);

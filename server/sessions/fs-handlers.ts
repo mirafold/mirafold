@@ -69,6 +69,11 @@ const FS_LISTDIR_STATUS_WAIT_MS = envInt("FS_LISTDIR_STATUS_WAIT_MS", 300);
 // short and word-safe or the message is dropped whole.
 export const CLIENT_ID_RE = /^[\w-]{1,64}$/;
 
+/** A malformed correlation id drops the message whole (nothing to answer) —
+ *  the one grammar every client-correlated handler applies. */
+export const badClientId = (id: unknown): boolean =>
+  typeof id !== "string" || !CLIENT_ID_RE.test(id);
+
 // E2.4: HEAD's version comes from the repo that CONTAINS the file —
 // nearest .git above its directory — so a file in a NESTED repo diffs
 // through that repo, closing E2.3's recorded gap. The wire path is
@@ -169,7 +174,7 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
     });
   };
 
-  const badId = (id: unknown): boolean => typeof id !== "string" || !CLIENT_ID_RE.test(id);
+  const badId = badClientId;
   const tooSoon = (last: number): boolean => Date.now() - last < FS_MIN_INTERVAL_MS;
   const takeListdirToken = (): boolean => {
     const now = Date.now();

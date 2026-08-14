@@ -17,7 +17,7 @@ import type { ClientMsg, WireMsg } from "../protocol";
 import type { SessionEntry } from "./registry";
 import { relayGateRefusal } from "../provider-policy";
 import { envInt } from "../env";
-import { CLIENT_ID_RE } from "./fs-handlers";
+import { badClientId } from "./fs-handlers";
 import { createLogger } from "../log";
 
 const log = createLogger("uploads");
@@ -102,7 +102,12 @@ export function createUploadHandlers({ viewport, getEntry, remote }: UploadDeps)
 
   const armStall = (id: string, up: ActiveUpload) => {
     clearTimeout(up.stall);
+    // unref: a pending stall reaper must never hold the process open — the
+    // daemon's server handle keeps its loop alive, and a test child that
+    // leaves an upload mid-flight would otherwise idle ~30s before exiting
+    // (measured: one leaked pair cost every Tier-1 run 30s — bughunt).
     up.stall = setTimeout(() => fail(id, "upload stalled — dropped"), FILE_UPLOAD_STALL_MS);
+    up.stall.unref?.();
   };
 
   // Completion path, shared by an ordinary final chunk and the zero-byte
@@ -133,9 +138,7 @@ export function createUploadHandlers({ viewport, getEntry, remote }: UploadDeps)
 
   return {
     begin(msg) {
-      // A bad correlation id drops the message whole (nothing to answer) —
-      // the fs-handlers rule, same grammar.
-      if (typeof msg.id !== "string" || !CLIENT_ID_RE.test(msg.id)) return;
+      if (badClientId(msg.id)) return;
       const entry = getEntry();
       if (!entry) {
         fail(msg.id, "no session attached");
@@ -147,7 +150,10 @@ export function createUploadHandlers({ viewport, getEntry, remote }: UploadDeps)
         return;
       }
       if (active.has(msg.id)) {
-        fail(msg.id, "duplicate upload id");
+        // Refuse the NEW begin only — `fail` would tear down the healthy
+        // in-flight upload that legitimately owns this id (bughunt: a client
+        // id-collision destroyed the original transfer mid-flight).
+        viewport({ type: "file_upload_error", id: msg.id, message: "duplicate upload id" });
         return;
       }
       if (active.size >= FILE_UPLOAD_MAX_CONCURRENT) {
@@ -179,7 +185,7 @@ export function createUploadHandlers({ viewport, getEntry, remote }: UploadDeps)
     },
 
     chunk(msg) {
-      if (typeof msg.id !== "string" || !CLIENT_ID_RE.test(msg.id)) return;
+      if (badClientId(msg.id)) return;
       const up = active.get(msg.id);
       if (!up) {
         // Answer, don't hang the client's correlation: a chunk with no
@@ -187,17 +193,21 @@ export function createUploadHandlers({ viewport, getEntry, remote }: UploadDeps)
         viewport({ type: "file_upload_error", id: msg.id, message: "unknown upload" });
         return;
       }
-      if (typeof msg.data !== "string") {
+      // Buffer.from(str, "base64") never throws — it silently DROPS invalid
+      // characters, which under-counts `received` and turns a corrupt chunk
+      // into a 30s stall-death instead of this typed error (refactor finding,
+      // BUG-2). Validate the grammar explicitly: the client's encoder emits
+      // exactly canonical unpadded-or-padded base64, so anything else is
+      // corruption.
+      if (
+        typeof msg.data !== "string" ||
+        msg.data.length % 4 !== 0 ||
+        !/^[A-Za-z0-9+/]*={0,2}$/.test(msg.data)
+      ) {
         fail(msg.id, "malformed chunk");
         return;
       }
-      let bytes: Buffer;
-      try {
-        bytes = Buffer.from(msg.data, "base64");
-      } catch {
-        fail(msg.id, "malformed chunk");
-        return;
-      }
+      const bytes = Buffer.from(msg.data, "base64");
       if (bytes.length > FILE_UPLOAD_MAX_CHUNK_BYTES) {
         fail(msg.id, "chunk too large");
         return;
@@ -216,7 +226,7 @@ export function createUploadHandlers({ viewport, getEntry, remote }: UploadDeps)
     },
 
     abort(msg) {
-      if (typeof msg.id !== "string" || !CLIENT_ID_RE.test(msg.id)) return;
+      if (badClientId(msg.id)) return;
       const up = active.get(msg.id);
       if (!up) return; // an abort needs no reply — the client already moved on
       clearTimeout(up.stall);

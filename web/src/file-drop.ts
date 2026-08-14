@@ -7,6 +7,12 @@
 import type { WireMsg } from "@protocol";
 
 export const FILE_DROP_MAX_FILES = 8;
+// Mirror of the daemon's FILE_UPLOAD_MAX_CONCURRENT default: this many
+// upload in parallel, the rest queue client-side. A slot frees on the
+// daemon's done/error REPLY (not when our chunks are sent) — the server's
+// own slot frees at that reply, so freeing earlier would race a begin into
+// its "too many uploads" refusal.
+export const FILE_DROP_MAX_CONCURRENT = 2;
 // Decoded bytes per chunk: base64 inflates ×4/3, so the frame rides ~256 KB —
 // under the daemon's per-chunk bound (300 KB decoded) AND well under the
 // socket's MAX_WS_PAYLOAD (1 MB), which would kill the whole connection.
@@ -66,6 +72,11 @@ export function quoteForPrompt(p: string): string {
 
 export function createFileDrop(deps: FileDropDeps): FileDrop {
   const uploads: UploadEntry[] = [];
+  // The client half of the concurrency contract: eligible files wait here,
+  // ids currently holding a server slot are tracked so each slot frees
+  // exactly once (reply, or the local abort path — whichever comes first).
+  const pendingFiles: DroppedFile[] = [];
+  const slotHolders = new Set<string>();
   let localId = 0;
   const emit = () => deps.onChange([...uploads]);
   const remove = (id: string) => {
@@ -76,8 +87,19 @@ export function createFileDrop(deps: FileDropDeps): FileDrop {
     uploads.push({ id: `local-${++localId}`, name, status: "error", message });
   };
 
+  const launchQueued = () => {
+    while (slotHolders.size < FILE_DROP_MAX_CONCURRENT && pendingFiles.length) {
+      void uploadOne(pendingFiles.shift()!);
+    }
+  };
+
+  const freeSlot = (id: string) => {
+    if (slotHolders.delete(id)) launchQueued();
+  };
+
   const uploadOne = async (f: DroppedFile) => {
     const id = deps.uploadBegin(f.name, f.size);
+    slotHolders.add(id);
     uploads.push({ id, name: f.name, status: "uploading" });
     emit();
     try {
@@ -95,6 +117,9 @@ export function createFileDrop(deps: FileDropDeps): FileDrop {
       remove(id);
       failLocal(f.name, "could not read the dropped file");
       emit();
+      // An aborted upload gets no reply — its slot frees here. A late
+      // crossing error for the same id is a no-op (the set already forgot it).
+      freeSlot(id);
     }
   };
 
@@ -105,8 +130,9 @@ export function createFileDrop(deps: FileDropDeps): FileDrop {
           failLocal(f.name, `too large (limit ${Math.floor(FILE_DROP_MAX_BYTES / 1_000_000)} MB)`);
           continue;
         }
-        void uploadOne(f);
+        pendingFiles.push(f);
       }
+      launchQueued();
       if (files.length > FILE_DROP_MAX_FILES) {
         failLocal(
           `${files.length - FILE_DROP_MAX_FILES} more file(s)`,
@@ -121,9 +147,11 @@ export function createFileDrop(deps: FileDropDeps): FileDrop {
         remove(msg.id);
         emit();
         deps.onAttached(msg.path, msg.name);
+        freeSlot(msg.id);
         return true;
       }
       if (msg.type === "file_upload_error") {
+        freeSlot(msg.id);
         const u = uploads.find((x) => x.id === msg.id);
         if (u) {
           u.status = "error";

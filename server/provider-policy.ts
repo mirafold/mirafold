@@ -157,6 +157,14 @@ const OPENCODE_SUBSCRIPTION_LOCAL_OK: Record<string, boolean | undefined> = {
   google: false, // written prohibition; same
 };
 
+/** May THIS provider's subscription OAuth drive OpenCode locally? The
+ *  restore path needs the provider-keyed answer directly: a session whose
+ *  classified kind was checkpointed as `subscription` must resolve live for
+ *  openai (the disclosed gray) and dead for everything else. */
+export function opencodeSubscriptionAllowed(provider: string | undefined): boolean {
+  return provider !== undefined && (OPENCODE_SUBSCRIPTION_LOCAL_OK[provider] ?? false);
+}
+
 export type OpenCodeProviderVerdict = {
   kind: CredentialKind;
   allowed: boolean;
@@ -290,8 +298,13 @@ export function relayGateRefusal(entry: {
 }): string | undefined {
   if (entry.kindPending)
     return (
-      "This session is still verifying which credential backs it — try again in a " +
-      "moment, or drive it from the machine it runs on."
+      // Honest about WHEN it clears: verification runs with the session's
+      // first local turn, so a remote viewport racing a fresh session would
+      // wait forever on "a moment" (bughunt 2026-08-13 — remote CREATE of an
+      // OpenCode session can never win this race; supporting it needs
+      // classify-before-create and is parked in POST-RELEASE.md).
+      "This session hasn't verified which credential backs it yet — run its " +
+      "first turn from its own machine; remote viewports can attach after that."
     );
   if (!allowedOverRelay(entry.kind))
     return (

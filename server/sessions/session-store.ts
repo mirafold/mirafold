@@ -210,7 +210,7 @@ const promptOptionSchema = z
     argumentHint: z.string().max(201).optional(),
     kind: z.enum(["command", "skill"]),
     aliases: z.array(z.string().max(200)).max(20).optional(),
-    source: z.enum(["claude-code", "codex", "gemini-cli", "mirafold"]).optional(),
+    source: z.enum(["claude-code", "codex", "gemini-cli", "opencode", "mirafold"]).optional(),
   })
   .strict()
   .refine(
@@ -227,8 +227,12 @@ function decodeBackend(raw: unknown): Backend {
   const agent = raw.agent;
   const kind = raw.kind;
   if (
-    (agent !== "claude-code" && agent !== "codex" && agent !== "gemini-cli") ||
-    (kind !== "none" && kind !== "api-key" && kind !== "subscription" && kind !== "local") ||
+    (agent !== "claude-code" && agent !== "codex" && agent !== "gemini-cli" && agent !== "opencode") ||
+    (kind !== "none" &&
+      kind !== "api-key" &&
+      kind !== "subscription" &&
+      kind !== "local" &&
+      kind !== "gateway") ||
     typeof raw.live !== "boolean"
   ) {
     throw new Error("malformed checkpoint backend");
@@ -246,8 +250,14 @@ function decodeBackend(raw: unknown): Backend {
     (rawSource !== undefined && rawSource !== "configured" && rawSource !== "discovered") ||
     (rawAuth !== undefined && rawAuth !== "api-key" && rawAuth !== "auth-token" && rawAuth !== "none") ||
     (endpoint !== undefined && provider !== undefined) ||
-    ((endpoint !== undefined || provider !== undefined || rawSource !== undefined || rawAuth !== undefined) &&
+    // OC.4c: an OpenCode backend's `provider` is the published CLASSIFICATION
+    // annotation and rides with ANY kind; for other agents it stays a
+    // local-provider identity. Every checkpointed OpenCode session was
+    // rejected here after a daemon restart (bughunt round 2, reproduced).
+    ((endpoint !== undefined || rawSource !== undefined || rawAuth !== undefined) &&
       kind !== "local") ||
+    (provider !== undefined && kind !== "local" && agent !== "opencode") ||
+    (kind === "gateway" && agent !== "opencode") ||
     (rawSource !== undefined && endpoint === undefined) ||
     (rawSource === "configured" && agent !== "claude-code") ||
     (rawAuth !== undefined && agent !== "claude-code") ||

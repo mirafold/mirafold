@@ -49,6 +49,17 @@ test("scrub redacts known provider key shapes anywhere in the line", () => {
   assert.equal(scrub("sk-abcdefghijklmnopqrstuvwx").includes("abcdefghij"), false);
 });
 
+test("AUDIT: scrub redacts AWS and Google Vertex credential families", () => {
+  // The Claude engine supports Bedrock/Vertex and the adapter passes
+  // process.env through; a session echoing these into stderr must not land
+  // in the flight-recorder file users attach to bug reports (audit 2026-08-13).
+  assert.match(scrub("AKIAIOSFODNN7EXAMPLE denied"), /\[redacted-key\]/);
+  assert.match(scrub("ASIAIOSFODNN7EXAMPLE (session) denied"), /\[redacted-key\]/);
+  assert.match(scrub("token ya29.a0AfB_longlonglonglongvalue rejected"), /\[redacted-key\]/);
+  assert.equal(scrub("AKIAIOSFODNN7EXAMPLE").includes("IOSFODNN7"), false);
+  assert.equal(scrub("ya29.a0AfB_longlonglonglongvalue").includes("longlong"), false);
+});
+
 test("scrub redacts an Authorization header echoed into an error", () => {
   const out = scrub("401 from upstream (Authorization: Bearer ya29.A0ARrdaM-secret-value)");
   assert.ok(!out.includes("ya29.A0ARrdaM-secret-value"), out);

@@ -183,12 +183,7 @@ type NetChange = { status?: string; verified: boolean };
 
 const isDotenvPath = (rel: string): boolean => {
   const base = path.posix.basename(rel);
-  return (
-    base === ".env" ||
-    base.endsWith(".env") ||
-    base.startsWith(".env.") ||
-    base.includes(".env.")
-  );
+  return base.endsWith(".env") || base.includes(".env.");
 };
 
 const netChangeAgainstHead = async (
@@ -202,40 +197,44 @@ const netChangeAgainstHead = async (
   if (isSecretFile(rel) || isDotenvPath(rel)) {
     return { status: fallback, verified: false };
   }
-  const [head, working] = await Promise.all([
-    gitShowHead(root, rel),
-    Promise.resolve(readWorkingTreeEntry(root, rel)),
-  ]);
+  // Start the subprocess first, then read the tree while it runs — the same
+  // interleaving the old Promise.all had, without dressing a synchronous
+  // read up as a concurrent task.
+  const headPromise = gitShowHead(root, rel);
+  const working = readWorkingTreeEntry(root, rel);
+  const head = await headPromise;
   if ("error" in head || "notGit" in head || working.kind === "unverified") {
     return { status: fallback, verified: false };
   }
-  const headPresent = "content" in head;
-  const workingPresent = working.kind === "content";
-  if (!headPresent && !workingPresent) return { verified: true };
-  if (!headPresent && workingPresent) {
-    return { status: fallback === "U" ? "U" : "A", verified: true };
+  if (!("content" in head)) {
+    return working.kind === "content"
+      ? { status: fallback === "U" ? "U" : "A", verified: true }
+      : { verified: true };
   }
-  if (headPresent && !workingPresent) return { status: "D", verified: true };
-  if ("content" in head && working.kind === "content") {
-    return {
-      ...(contentRevision(head.content) === working.revision ? {} : { status: "M" }),
-      verified: true,
-    };
-  }
-  return { status: fallback, verified: false };
+  if (working.kind !== "content") return { status: "D", verified: true };
+  return {
+    ...(contentRevision(head.content) === working.revision ? {} : { status: "M" }),
+    verified: true,
+  };
 };
 
-const exceptionalTrackedPaths = (out: string): string[] => {
-  const paths: string[] = [];
-  for (const record of out.split("\0")) {
-    if (record.length < 3 || record[1] !== " ") continue;
-    // H is an ordinary cached path. Lowercase tags are assume-unchanged;
-    // S is skip-worktree. Other non-H tags are exceptional enough that an
-    // exact comparison is safer than trusting an index-oriented label.
-    if (record[0] !== "H") paths.push(record.slice(2));
-  }
-  return paths;
-};
+// H is an ordinary cached path. Lowercase tags are assume-unchanged;
+// S is skip-worktree. Other non-H tags are exceptional enough that an
+// exact comparison is safer than trusting an index-oriented label. The tag
+// rides along: for S/h-style entries an ABSENT working file is the state
+// the user configured (sparse checkout, assume-unchanged), not a deletion.
+const exceptionalTrackedPaths = (out: string): { rel: string; tag: string }[] =>
+  out
+    .split("\0")
+    .filter((record) => record.length >= 3 && record[1] === " " && record[0] !== "H")
+    .map((record) => ({ rel: record.slice(2), tag: record[0] }));
+
+// One direct HEAD-vs-working comparison costs a `git show` subprocess plus a
+// bounded file read. A pathological pile of exceptional paths (a huge
+// mid-merge, an index full of odd flags) must not turn one fs_changes reply
+// into minutes of sequential subprocesses — beyond this many, the answer is
+// honestly incomplete instead (bughunt 2026-08-13).
+const MAX_NET_COMPARISONS = 200;
 
 export type GitTree =
   | { entries: FsEntry[]; truncated: boolean }
@@ -309,7 +308,7 @@ export async function gitTree(
   return { entries, truncated };
 }
 
-export type GitChanges =
+type GitChanges =
   | { entries: FsEntry[]; truncated: boolean }
   | { notGit: true }
   | { error: string };
@@ -339,31 +338,75 @@ export async function gitChanges(
   if (!status.ok) return status.notGit ? { notGit: true } : { error: gitErr("status", status) };
   if (!prefixRes.ok) return { error: gitErr("rev-parse", prefixRes) };
   if (!trackedFlags.ok) return { error: gitErr("ls-files", trackedFlags) };
-  const prefix = prefixRes.ok ? String(prefixRes.stdout).trim() : "";
+  const prefix = String(prefixRes.stdout).trim();
   const parsed = parseStatusZ(String(status.stdout));
   const statusByRel = new Map<string, string>();
   const exceptional = new Set<string>();
+  // Paths git itself reports as mid-merge — their porcelain status is final.
+  const unmerged = new Set<string>();
   for (const [repoPath, statusChar] of parsed.files) {
     const rel = prefix === "" ? repoPath : repoPath.startsWith(prefix) ? repoPath.slice(prefix.length) : "";
     if (!rel) continue;
     statusByRel.set(rel, statusChar);
     const records = parsed.records.get(repoPath) ?? [];
+    // Add-like then deleted (AD, and the rename/copy destinations RD/CD —
+    // parseStatusZ collapses R/C to A only in `files`, so the raw tag is
+    // matched here; bughunt: RD produced a phantom "A" for a path absent
+    // from both HEAD and the working tree) nets to nothing-or-something
+    // only a direct comparison can answer.
     if (
       records.length > 1 ||
-      records.some((xy) => xy.includes("A") && xy.includes("D"))
+      records.some((xy) => /[ARC]/.test(xy) && xy.includes("D"))
     ) {
       exceptional.add(rel);
     }
+    // Unmerged paths (UU/AA/DD/…): porcelain's conflict answer STANDS. A
+    // conflicted file whose bytes happen to equal HEAD is still mid-merge —
+    // net-dropping it hid an unresolved conflict (bughunt 2026-08-13).
+    if (records.some((xy) => xy.includes("U") || xy === "AA" || xy === "DD")) {
+      unmerged.add(rel);
+    }
   }
-  for (const rel of exceptionalTrackedPaths(String(trackedFlags.stdout))) {
-    if (rel) exceptional.add(rel);
+  // Skip-worktree / assume-unchanged tags, for the absence rule below.
+  const configuredAbsence = new Set<string>();
+  for (const { rel, tag } of exceptionalTrackedPaths(String(trackedFlags.stdout))) {
+    if (!rel) continue;
+    exceptional.add(rel);
+    if (tag === "S" || tag === tag.toLowerCase()) configuredAbsence.add(rel);
   }
 
   // Porcelain describes index + worktree state. For the exceptional cases
   // where that differs from the product's actual promise, compare the path's
   // current bytes directly with HEAD and replace/omit the label accordingly.
   let netStateIncomplete = false;
+  let comparisons = 0;
   for (const rel of [...exceptional].sort()) {
+    if (unmerged.has(rel)) continue; // the conflict status stands as-is
+    if (configuredAbsence.has(rel)) {
+      // A SECRET path the user ALSO configured git to ignore (the classic
+      // `--skip-worktree .env`): doubly excluded, by our secret rule and by
+      // their own git flag. Reporting "incomplete" forever for that setup
+      // buried the signal (bughunt 2026-08-13); the configured exclusion
+      // narrows the promise instead — this path is simply not part of the
+      // reviewable set.
+      if (isSecretFile(rel) || isDotenvPath(rel)) {
+        statusByRel.delete(rel);
+        continue;
+      }
+      // Sparse checkouts skip-worktree every excluded file and legitimately
+      // leave it off disk — that absence is the configured state, not a
+      // deletion (bughunt: a clean sparse monorepo reported every excluded
+      // file "D", one git-show subprocess each). The cheap existence read
+      // answers it without ever spawning git.
+      if (readWorkingTreeEntry(root, rel).kind === "absent") {
+        statusByRel.delete(rel);
+        continue;
+      }
+    }
+    if (++comparisons > MAX_NET_COMPARISONS) {
+      netStateIncomplete = true;
+      break;
+    }
     const net = await netChangeAgainstHead(root, rel, statusByRel.get(rel));
     if (!net.verified) netStateIncomplete = true;
     if (net.status) statusByRel.set(rel, net.status);
@@ -375,22 +418,24 @@ export async function gitChanges(
   // -uall should make this empty. If a git implementation still collapses a
   // special nested repository, omit the non-file prefix and say the answer is
   // incomplete rather than presenting a directory as reviewable code.
-  let truncated = parsed.untrackedDirs.size > 0 || netStateIncomplete;
+  // "Incomplete" is wider than the wire's `truncated` name: capped output,
+  // unverified net state, or a collapsed untracked dir all raise it.
+  let incomplete = parsed.untrackedDirs.size > 0 || netStateIncomplete;
   for (const [rel, statusChar] of [...statusByRel.entries()].sort(([a], [b]) =>
     a < b ? -1 : a > b ? 1 : 0,
   )) {
     const bytes = Buffer.byteLength(rel, "utf8");
     if (entries.length >= maxEntries || pathBytes + bytes > maxPathBytes) {
-      truncated = true;
+      incomplete = true;
       break;
     }
     entries.push({ path: rel, status: statusChar });
     pathBytes += bytes;
   }
-  return { entries, truncated };
+  return { entries, truncated: incomplete };
 }
 
-export type RepoDiscovery =
+type RepoDiscovery =
   | { roots: string[]; truncated: boolean }
   | { error: string };
 
@@ -644,6 +689,13 @@ export const findRepoRoot = (
   entryExists: (candidate: string) => boolean = existsSync,
 ): string | null => {
   let dir = realDir;
+  // Keyed on function IDENTITY, deliberately: marker validation reads the
+  // REAL filesystem (hasValidGitMarker → lstat/readFile) and cannot be
+  // virtualized through `entryExists`, so it runs only when the caller left
+  // the default oracle in place. Every production call site does; the pure-
+  // walk unit tests inject a jailed oracle over fixtures that are invalid as
+  // real repos, and validation would flip them. Beware: passing a WRAPPER
+  // around existsSync (caching, jailing) silently disables validation too.
   const validateMarker = entryExists === existsSync;
   for (;;) {
     if (

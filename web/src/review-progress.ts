@@ -67,7 +67,7 @@ export function invalidateReviewProgress(
 export const reviewedFileCount = (
   progress: ReviewProgress,
   items: readonly Pick<ChangeItem, "path">[],
-): number => items.reduce((count, item) => count + (progress.has(item.path) ? 1 : 0), 0);
+): number => items.filter((item) => progress.has(item.path)).length;
 
 /** The next unreviewed file after the current selection, wrapping once. The
  * current file is not a navigation target; if it is the only unreviewed file,

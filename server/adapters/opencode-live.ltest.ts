@@ -8,6 +8,7 @@ import path from "node:path";
 import type { WireMsg } from "../protocol";
 import { OpenCodeSession } from "./opencode";
 import { OpenCodeServerProcess } from "./opencode-client";
+import { waitFor } from "../testing/wait-for";
 
 // Tier 4 — the REAL opencode binary, driven end to end (PLAN OC.5).
 //
@@ -35,20 +36,6 @@ function opencodeBin(): string | undefined {
 const BIN = opencodeBin();
 
 type Any = WireMsg & Record<string, any>;
-
-const waitFor = (cond: () => boolean, what: string, timeoutMs = 60_000) =>
-  new Promise<void>((resolve, reject) => {
-    const t0 = Date.now();
-    const poll = setInterval(() => {
-      if (cond()) {
-        clearInterval(poll);
-        resolve();
-      } else if (Date.now() - t0 > timeoutMs) {
-        clearInterval(poll);
-        reject(new Error(`timed out waiting for ${what}`));
-      }
-    }, 25);
-  });
 
 /** The scripted model: keeps requesting the render until its ack is in
  *  history (rides out the engine's cold first call carrying zero tools —
@@ -161,13 +148,18 @@ test("OC.5: real engine — render, permission, usage, resume, all through the s
   };
 
   const first = makeSession();
+  // On a live-tier timeout, dump the WireMsg types actually seen so a rare
+  // timing wobble is diagnosable at a glance rather than a bare timeout
+  // (test-audit 2026-08-13).
+  const seenTypes = (s: { msgs: { type: string }[] }) =>
+    "saw: " + (s.msgs.map((m) => m.type).join(",") || "nothing");
   try {
     const published: { kind: string; provider?: string }[] = [];
     first.session.onBackendKind?.((u) => published.push(u));
 
     // Turn 1: the render paints through the real MCP stub.
     first.session.pushPrompt("paint a card please");
-    await waitFor(() => first.turnEnds() >= 1, "turn 1 (render)", 120_000);
+    await waitFor(() => first.turnEnds() >= 1, "turn 1 (render)", 120_000, () => seenTypes(first));
     const render = first.msgs.find((m) => m.type === "render" && m.component === "card");
     assert.ok(render, "card rendered through the real engine");
     assert.equal(render?.props?.["title"], "Live Probe");
@@ -178,11 +170,16 @@ test("OC.5: real engine — render, permission, usage, resume, all through the s
 
     // Turn 2: the permission round-trip, answered through the bridge.
     first.session.pushPrompt("now run the probe command");
-    await waitFor(() => first.msgs.some((m) => m.type === "permission_request"), "the ask");
+    await waitFor(
+      () => first.msgs.some((m) => m.type === "permission_request"),
+      "the ask",
+      60_000,
+      () => seenTypes(first),
+    );
     const ask = first.msgs.find((m) => m.type === "permission_request");
     assert.equal(ask?.tool, "bash");
     first.session.resolvePermission(ask!.id, true);
-    await waitFor(() => first.turnEnds() >= 2, "turn 2 (bash)", 120_000);
+    await waitFor(() => first.turnEnds() >= 2, "turn 2 (bash)", 120_000, () => seenTypes(first));
     assert.ok(first.msgs.some((m) => m.type === "permission_resolved" && m.allow === true));
     assert.ok(
       first.msgs.some((m) => m.type === "tool_result" && /oc5-live/.test(m.output)),
@@ -199,7 +196,7 @@ test("OC.5: real engine — render, permission, usage, resume, all through the s
     const second = makeSession(resumeId);
     try {
       second.session.pushPrompt("still with me?");
-      await waitFor(() => second.turnEnds() >= 1, "resumed turn", 120_000);
+      await waitFor(() => second.turnEnds() >= 1, "resumed turn", 120_000, () => seenTypes(second));
       assert.equal(second.session.resumeId, resumeId, "reattached, not recreated");
       assert.ok(second.msgs.some((m) => m.type === "text_delta" && /BASH DONE/.test(m.text)));
     } finally {

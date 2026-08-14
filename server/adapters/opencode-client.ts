@@ -13,11 +13,23 @@ import { errText } from "./types";
  *  the seam we verified rather than trust a generated union. */
 export type OpenCodeEvent = { type: string; properties: Record<string, unknown> };
 
+/** Remove the minted per-session server password from a stderr tail before it
+ *  can ride into an error WireMsg (broadcast + checkpointed). Pure and
+ *  exported so the redaction is testable without poking a live transport
+ *  (audit 2026-08-13). `scrub()` in the log layer catches Basic/sk- shapes;
+ *  this removes the exact bare-hex secret we generated, which scrub can't. */
+export const redactSecret = (tail: string, secret: string): string =>
+  secret ? tail.split(secret).join("[redacted]") : tail;
+
 /** The transport seam between OpenCodeSession and a live `opencode serve` —
  *  swapped for a fake in Tier-1 tests. */
 export interface OpenCodeTransport {
-  /** Spawn + health-check the server and subscribe the event stream. */
-  start(onEvent: (ev: OpenCodeEvent) => void): Promise<void>;
+  /** Spawn + health-check the server and subscribe the event stream.
+   *  `onDied` fires if the engine PROCESS exits after a successful start —
+   *  without it a mid-turn crash left the session busy-wedged forever
+   *  (bughunt round 2); the transport clears its own start latch so the
+   *  next start() respawns fresh. */
+  start(onEvent: (ev: OpenCodeEvent) => void, onDied?: (detail: string) => void): Promise<void>;
   createSession(): Promise<{ id: string }>;
   sessionExists(id: string): Promise<boolean>;
   /** POST /session/:id/prompt_async — resolves once the engine ACCEPTED the
@@ -102,6 +114,17 @@ export class OpenCodeServerProcess implements OpenCodeTransport {
   private auth = "";
   private closed = false;
   private stderrTail = "";
+  // The per-session basic-auth secret we mint — redacted from any stderr
+  // that rides into an error WireMsg (audit 2026-08-13: opencode's own
+  // stderr is engine-controlled; scrub() catches Basic/Bearer/sk- shapes
+  // but not this bare hex, so redact the exact value we know).
+  private authSecret = "";
+  // One spawn per instance, even under concurrent/retried start() calls: a
+  // re-entered start orphaned the previous `opencode serve` (only the latest
+  // child was killed on close) and doubled the event pump (bughunt
+  // 2026-08-13). A FAILED start kills its child and clears the latch so a
+  // later call may retry with a fresh spawn.
+  private starting?: Promise<void>;
 
   constructor(
     private readonly options: {
@@ -119,11 +142,36 @@ export class OpenCodeServerProcess implements OpenCodeTransport {
     },
   ) {}
 
-  async start(onEvent: (ev: OpenCodeEvent) => void): Promise<void> {
+  /** The stderr tail with our own minted secret removed, before it ever
+   *  reaches an error WireMsg (which is broadcast AND checkpointed). */
+  private safeStderr(): string {
+    return redactSecret(this.stderrTail.trim().slice(-300), this.authSecret);
+  }
+
+  start(onEvent: (ev: OpenCodeEvent) => void, onDied?: (detail: string) => void): Promise<void> {
+    this.starting ??= this.spawnAndConnect(onEvent, onDied).catch((err) => {
+      this.child?.kill();
+      this.child = undefined;
+      this.starting = undefined;
+      throw err;
+    });
+    return this.starting;
+  }
+
+  // Bumped per spawn AND per observed death: a stale event pump must stop
+  // rather than reconnect forever against a dead (or replacement) server.
+  private generation = 0;
+
+  private async spawnAndConnect(
+    onEvent: (ev: OpenCodeEvent) => void,
+    onDied?: (detail: string) => void,
+  ): Promise<void> {
+    const generation = ++this.generation;
     const port = await freePort();
     // The port is loopback-bound but otherwise open to any local process;
     // basic auth with a per-session secret closes that (spike §surface).
     const password = randomBytes(24).toString("hex");
+    this.authSecret = password;
     this.base = `http://127.0.0.1:${port}`;
     this.auth = "Basic " + Buffer.from(`opencode:${password}`).toString("base64");
     const child = spawn(
@@ -152,7 +200,7 @@ export class OpenCodeServerProcess implements OpenCodeTransport {
       if (child.exitCode !== null)
         throw new Error(
           `opencode serve exited (code ${child.exitCode}) before becoming healthy` +
-            (this.stderrTail ? `: ${this.stderrTail.trim().slice(-300)}` : ""),
+            (this.stderrTail ? `: ${this.safeStderr()}` : ""),
         );
       try {
         // Per-attempt abort is load-bearing, not hygiene: a connection made
@@ -172,7 +220,19 @@ export class OpenCodeServerProcess implements OpenCodeTransport {
       await delay(250);
     }
     await this.waitForInjectedMcp(deadline);
-    void this.pumpEvents(onEvent);
+    // Startup succeeded — from here, a child exit is a CRASH the session
+    // must hear about (before this, the health loop owns exit reporting).
+    child.once("exit", (code, signal) => {
+      if (this.closed || this.generation !== generation) return;
+      this.generation += 1; // stop this spawn's pump
+      this.starting = undefined; // the next start() respawns fresh
+      this.child = undefined;
+      onDied?.(
+        `opencode serve exited unexpectedly (${signal ?? `code ${code}`})` +
+          (this.stderrTail ? `: ${this.safeStderr()}` : ""),
+      );
+    });
+    void this.pumpEvents(onEvent, generation);
   }
 
   /** The engine's tool registry (and MCP connections) initialize lazily; a
@@ -202,9 +262,9 @@ export class OpenCodeServerProcess implements OpenCodeTransport {
     }
   }
 
-  /** Read the SSE stream for the server's whole life, reconnecting on drops. */
-  private async pumpEvents(onEvent: (ev: OpenCodeEvent) => void): Promise<void> {
-    while (!this.closed) {
+  /** Read the SSE stream for this SPAWN's life, reconnecting on drops. */
+  private async pumpEvents(onEvent: (ev: OpenCodeEvent) => void, generation: number): Promise<void> {
+    while (!this.closed && this.generation === generation) {
       try {
         const res = await fetch(`${this.base}/event`, { headers: { authorization: this.auth } });
         if (!res.ok || !res.body) throw new Error(`event stream HTTP ${res.status}`);
@@ -231,7 +291,7 @@ export class OpenCodeServerProcess implements OpenCodeTransport {
       } catch {
         // fall through to reconnect
       }
-      if (!this.closed) await delay(500);
+      if (!this.closed && this.generation === generation) await delay(500);
     }
   }
 
@@ -265,12 +325,18 @@ export class OpenCodeServerProcess implements OpenCodeTransport {
     }
   }
 
-  async providerCatalog(): Promise<OpenCodeProviderEntry[]> {
+  /** The parsed `/config/providers` list — the raw endpoint also returns the
+   *  user's stored secrets (`key`), so every consumer maps through here and
+   *  only the fields it names ever leave this class. */
+  private async fetchProviders(): Promise<Record<string, unknown>[]> {
     const res = await this.request("/config/providers");
     const data = (await res.json()) as { providers?: unknown };
     const list = Array.isArray(data.providers) ? data.providers : [];
-    return list.map((raw) => {
-      const p = (raw ?? {}) as Record<string, unknown>;
+    return list.map((raw) => (raw ?? {}) as Record<string, unknown>);
+  }
+
+  async providerCatalog(): Promise<OpenCodeProviderEntry[]> {
+    return (await this.fetchProviders()).map((p) => {
       const options = (p["options"] ?? {}) as Record<string, unknown>;
       // Deliberate strip: `p.key` is the user's raw stored secret. Only the
       // classification facts leave this method (provider-policy.ts shape).
@@ -313,23 +379,19 @@ export class OpenCodeServerProcess implements OpenCodeTransport {
   }
 
   async modelCatalog(): Promise<OpenCodeModelEntry[]> {
-    const res = await this.request("/config/providers");
-    const data = (await res.json()) as { providers?: unknown };
-    const list = Array.isArray(data.providers) ? data.providers : [];
-    const models: OpenCodeModelEntry[] = [];
-    for (const raw of list) {
-      const p = (raw ?? {}) as Record<string, unknown>;
+    return (await this.fetchProviders()).flatMap((p) => {
       const providerID = String(p["id"]);
-      for (const [modelID, model] of Object.entries((p["models"] ?? {}) as Record<string, unknown>)) {
-        const name = ((model ?? {}) as Record<string, unknown>)["name"];
-        models.push({
-          providerID,
-          modelID,
-          ...(typeof name === "string" && name ? { name } : {}),
-        });
-      }
-    }
-    return models;
+      return Object.entries((p["models"] ?? {}) as Record<string, unknown>).map(
+        ([modelID, model]) => {
+          const name = ((model ?? {}) as Record<string, unknown>)["name"];
+          return {
+            providerID,
+            modelID,
+            ...(typeof name === "string" && name ? { name } : {}),
+          };
+        },
+      );
+    });
   }
 
   async command(

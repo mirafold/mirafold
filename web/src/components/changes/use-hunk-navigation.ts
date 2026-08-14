@@ -11,6 +11,8 @@ export function useHunkNavigation({
   before,
   after,
   hunks,
+  lineCount,
+  focusIndex,
   rowRefs,
   setFocusIndex,
 }: {
@@ -18,6 +20,8 @@ export function useHunkNavigation({
   before: string;
   after: string;
   hunks: readonly ReviewHunk[];
+  lineCount: number;
+  focusIndex: number;
   rowRefs: MutableRefObject<Array<HTMLDivElement | null>>;
   setFocusIndex: (index: number) => void;
 }) {
@@ -30,16 +34,25 @@ export function useHunkNavigation({
   // fresh refs that a wipe would destroy (they attach during commit,
   // before effects run).
   useEffect(() => {
-    setCurrentHunk(0);
-    setFocusIndex(hunks[0]?.start ?? 0);
     // Review starts on the first hunk, so "Hunk 1 of N" is what the viewport
     // shows. Only on a real file switch — a live content refresh under the
-    // reader must never yank the view back to the first hunk.
+    // reader must never yank the view back to the first hunk. (The counter
+    // reset used to run unconditionally, so a refresh relabeled the reader's
+    // position "Hunk 1 of N" while the viewport stayed put — BUG-3.)
     if (positionedPath.current !== path) {
       positionedPath.current = path;
+      setCurrentHunk(0);
+      setFocusIndex(hunks[0]?.start ?? 0);
       if (hunks[0]) rowRefs.current[hunks[0].start]?.scrollIntoView({ block: "center" });
+      return;
     }
-  }, [path, before, after, hunks, rowRefs, setFocusIndex]);
+    // Same file, fresh content: keep the reader's place; only clamp what the
+    // refresh shrank out from under them — the hunk counter, and the roving
+    // focus (a focusIndex past the new line count leaves the listbox with no
+    // tabIndex=0 row, stranding keyboard/AT users until a click — bughunt).
+    setCurrentHunk((current) => Math.min(current, Math.max(0, hunks.length - 1)));
+    if (focusIndex >= lineCount) setFocusIndex(Math.max(0, lineCount - 1));
+  }, [path, before, after, hunks, lineCount, focusIndex, rowRefs, setFocusIndex]);
 
   // Hunk-navigation scrolling is deferred past this click's commit: arriving
   // at a terminal hunk disables the very button being clicked, Chromium blurs

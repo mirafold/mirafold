@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ZoneMsg } from "../../session-bus";
 import { diffToState, fileToState, type FileViewState } from "./FileView";
 
-export type FileViewMode = "content" | "diff";
-export type FileSelection = { path: string; status?: string };
+type FileViewMode = "content" | "diff";
+type FileSelection = { path: string; status?: string };
 
 /** Accept a reply only when it answers the request currently awaited. A
  * superseded click, closed view, or changed session clears/replaces the id,

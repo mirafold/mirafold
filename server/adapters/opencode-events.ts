@@ -8,6 +8,11 @@ import type { OpenCodeEvent } from "./opencode-client";
 // `mirafold_render_card`), so this prefix is the recognition test.
 const MCP_PREFIX = `${MIRAFOLD_MCP}_`;
 
+// Per-turn ceiling on distinct engine parts/messages we track — bloat
+// insurance against a hostile or looping engine (audit 2026-08-13). A real
+// turn has a handful; both maps clear at the next startTurn.
+const MAX_PARTS_PER_TURN = 2_000;
+
 type PartKind = "text" | "reasoning" | "tool" | "other";
 
 type PartTrack = {
@@ -59,6 +64,9 @@ export class OpenCodeEventMapper {
       /** A reply observed on the stream (answered by another client, e.g. a
        *  TUI attached to the same engine session) — not our own echo. */
       onPermissionReplied: (requestID: string, reply: string) => void;
+      /** One engine `session.idle` for our session — the SESSION scopes it to
+       *  the right turn and flushes usage inside the end path. */
+      onEngineIdle: () => void;
       endTurn: () => void;
     },
   ) {}
@@ -66,6 +74,12 @@ export class OpenCodeEventMapper {
   startTurn() {
     this.turnUsage.clear();
     this.lastStatus = undefined;
+    // Part/role tracking resets at the NEXT turn's start, not at turn end:
+    // the maps otherwise grow unboundedly over a long session (bughunt
+    // 2026-08-13), but a straggler snapshot arriving just after idle must
+    // still find its track — a fresh default would re-emit its whole text.
+    this.parts.clear();
+    this.roles.clear();
   }
 
   endTurn() {
@@ -116,8 +130,12 @@ export class OpenCodeEventMapper {
       }
       case "session.idle":
         if (!this.options.isOurs(p["sessionID"])) break;
-        this.flushUsage();
-        this.options.endTurn();
+        // The session decides whether THIS idle ends the active turn — a
+        // stale idle from an interrupt-abandoned turn must not end the next
+        // one, and usage flushes inside the end path so it can never land
+        // between turns (bughunt round 2: error→idle emitted usage AFTER
+        // turn_end and wedged the fleet status "working").
+        this.options.onEngineIdle();
         break;
     }
   }
@@ -138,7 +156,8 @@ export class OpenCodeEventMapper {
   private onMessage(p: Record<string, unknown>) {
     const info = p["info"] as Record<string, unknown> | undefined;
     if (!info || !this.options.isOurs(info["sessionID"] ?? p["sessionID"])) return;
-    if (typeof info["role"] === "string") this.roles.set(String(info["id"]), info["role"]);
+    if (typeof info["role"] === "string" && this.roles.size < MAX_PARTS_PER_TURN)
+      this.roles.set(String(info["id"]), info["role"]);
     if (info["role"] !== "assistant") return;
     const modelID = typeof info["modelID"] === "string" ? info["modelID"] : undefined;
     if (modelID) {
@@ -157,8 +176,9 @@ export class OpenCodeEventMapper {
     }
   }
 
-  /** The turn's one usage message, just before turn_end (protocol contract). */
-  private flushUsage() {
+  /** The turn's one usage message, just before turn_end (protocol contract) —
+   *  called by the session's end path, never between turns. */
+  flushUsage() {
     if (!this.turnUsage.size) return;
     let input = 0;
     let output = 0;
@@ -178,9 +198,16 @@ export class OpenCodeEventMapper {
     this.turnUsage.clear();
   }
 
-  private track(partID: string, kind: PartKind): PartTrack {
+  // Per-turn cap on distinct tracked parts: a hostile/looping engine
+  // streaming unbounded distinct part ids can't grow this map (or `roles`)
+  // without limit within one turn (audit 2026-08-13 hardening). Beyond the
+  // cap a new part is dropped — its text isn't relayed; a real turn never
+  // approaches this, so only a flood degrades, and to silence, never to a
+  // corrupt shared counter.
+  private track(partID: string, kind: PartKind): PartTrack | undefined {
     let track = this.parts.get(partID);
     if (!track) {
+      if (this.parts.size >= MAX_PARTS_PER_TURN) return undefined;
       track = { kind, emitted: 0 };
       this.parts.set(partID, track);
     }
@@ -197,15 +224,24 @@ export class OpenCodeEventMapper {
       case "step-start":
         this.status("thinking");
         break;
-      case "text":
+      case "text": {
         if (fromUser) break; // the prompt's own echo — never replayed as output
-        this.emitTextSuffix(this.track(partID, "text"), String(part["text"] ?? ""));
+        const track = this.track(partID, "text");
+        if (track) this.emitTextSuffix(track, String(part["text"] ?? ""));
         break;
-      case "reasoning":
+      }
+      case "reasoning": {
         if (fromUser) break;
         this.status("thinking");
-        this.emitTextSuffix(this.track(partID, "reasoning"), String(part["text"] ?? ""));
+        const track = this.track(partID, "reasoning");
+        if (!track) break;
+        // A delta that beat this snapshot registered the part as "text";
+        // the snapshot is authoritative — correct the lane for the rest of
+        // the stream (bughunt round 2, latent).
+        track.kind = "reasoning";
+        this.emitTextSuffix(track, String(part["text"] ?? ""));
         break;
+      }
       case "tool":
         this.onToolPart(partID, part);
         break;
@@ -220,26 +256,28 @@ export class OpenCodeEventMapper {
     // text (reasoning parts snapshot before streaming in the OC.0 capture).
     const track = this.track(String(p["partID"]), "text");
     const delta = String(p["delta"] ?? "");
-    if (!delta || track.kind === "tool" || track.kind === "other") return;
+    if (!track || !delta || track.kind === "tool" || track.kind === "other") return;
     track.emitted += delta.length;
-    this.options.emit({
-      type: track.kind === "reasoning" ? "thinking_delta" : "text_delta",
-      text: delta,
-    });
+    this.emitStreamText(track, delta);
   }
 
   private emitTextSuffix(track: PartTrack, text: string) {
     if (text.length <= track.emitted) return;
     const suffix = text.slice(track.emitted);
     track.emitted = text.length;
+    this.emitStreamText(track, suffix);
+  }
+
+  private emitStreamText(track: PartTrack, text: string) {
     this.options.emit({
       type: track.kind === "reasoning" ? "thinking_delta" : "text_delta",
-      text: suffix,
+      text,
     });
   }
 
   private onToolPart(partID: string, part: Record<string, unknown>) {
     const track = this.track(partID, "tool");
+    if (!track) return;
     track.kind = "tool";
     const tool = String(part["tool"] ?? "");
     const state = (part["state"] ?? {}) as Record<string, unknown>;
@@ -263,11 +301,16 @@ export class OpenCodeEventMapper {
       });
     } else if (status === "error") {
       track.finished = true;
+      // Error text is engine/tool output too — same honest cap as success
+      // (ADAPTERS.md: EVERY tool output passes capOutput; bughunt round 2
+      // shipped a 200KB error string uncapped into the replay ring).
+      const { text, truncatedBytes } = capOutput(String(state["error"] ?? "tool failed"));
       this.options.emit({
         type: "tool_result",
-        output: String(state["error"] ?? "tool failed"),
+        output: text,
         isError: true,
         id: partID,
+        ...(truncatedBytes ? { truncatedBytes } : {}),
       });
     }
   }
@@ -317,11 +360,13 @@ export class OpenCodeEventMapper {
     // Unrecognized render ack or a failed call: fall back to the honest tool
     // record rather than silently dropping what the agent did.
     this.announceTool(track, partID, tool, input);
+    const { text, truncatedBytes } = capOutput(String(state["error"] ?? state["output"] ?? ""));
     this.options.emit({
       type: "tool_result",
-      output: String(state["error"] ?? state["output"] ?? ""),
+      output: text,
       ...(status === "error" ? { isError: true as const } : {}),
       id: partID,
+      ...(truncatedBytes ? { truncatedBytes } : {}),
     });
   }
 

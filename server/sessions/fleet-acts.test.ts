@@ -77,6 +77,68 @@ test("M.2 local connections are never gated — a subscription session takes a g
   reg.end(e.id);
 });
 
+// AUDIT 2026-08-13 (exploitable): OpenCode is the first adapter whose
+// credential KIND can change mid-session (a `/model` switch to a ChatGPT or
+// Zen provider). The attach-time relay gate is not enough — the drive-time
+// paths must re-check, and an attached remote viewport must be evicted.
+
+test("AUDIT: a mid-session flip to subscription refuses the remote viewport's own prompt/action", () => {
+  // The session attaches relay-eligible (api-key), then flips.
+  const reg = new SessionRegistry({ agent: "opencode", kind: "api-key", live: false });
+  const e = reg.create({ cwd: dir() });
+  const { c, seen } = conn(reg, true);
+  send(c, { type: "attach", sessionId: e.id });
+  // The flip's registry-side effect (what onBackendKind sets).
+  e.kind = "subscription";
+
+  send(c, { type: "prompt", text: "drive the subscription" });
+  send(c, { type: "action", action: { kind: "prompt", text: "drive it again" }, sourceId: "x" });
+
+  assert.equal(errors(seen).filter((m) => m.includes("subscription")).length, 2);
+  assert.ok(
+    !e.buffer.some((m) => m.type === "user_prompt"),
+    "neither drive path reached the subscription session over the relay",
+  );
+  reg.end(e.id);
+});
+
+test("AUDIT: a local tab's prompt on the same flipped session is NOT gated", () => {
+  const reg = new SessionRegistry({ agent: "opencode", kind: "api-key", live: false });
+  const e = reg.create({ cwd: dir() });
+  const { c, seen } = conn(reg, false); // local
+  send(c, { type: "attach", sessionId: e.id });
+  e.kind = "subscription";
+  send(c, { type: "prompt", text: "local subscription use is the disclosed gray area" });
+  assert.equal(errors(seen).length, 0);
+  assert.ok(e.buffer.some((m) => m.type === "user_prompt"));
+  reg.end(e.id);
+});
+
+test("AUDIT: evictRemoteViewports drops relay viewers, spares local ones, on an ineligible flip", () => {
+  const reg = new SessionRegistry({ agent: "opencode", kind: "api-key", live: false });
+  const e = reg.create({ cwd: dir() });
+  const remoteSeen: WireMsg[] = [];
+  const localSeen: WireMsg[] = [];
+  const remoteVp = (m: WireMsg) => remoteSeen.push(m);
+  const localVp = (m: WireMsg) => localSeen.push(m);
+  reg.attach(e, remoteVp);
+  reg.markRemote(e, remoteVp);
+  reg.attach(e, localVp);
+  assert.equal(e.remoteViewports.size, 1);
+
+  e.kind = "subscription";
+  (reg as unknown as { evictRemoteViewports(entry: typeof e): void }).evictRemoteViewports(e);
+
+  assert.ok(
+    remoteSeen.some((m) => m.type === "refused" && m.reason === "subscription-relay"),
+    "the relay viewer is told why",
+  );
+  assert.ok(!e.viewports.has(remoteVp), "the relay viewer is detached");
+  assert.ok(e.viewports.has(localVp), "the local viewer stays");
+  assert.equal(e.remoteViewports.size, 0);
+  reg.end(e.id);
+});
+
 test("M.2 unknown session ids answer with an error; malformed acts are silently ignored", () => {
   const reg = new SessionRegistry(NONE);
   const { c, seen } = conn(reg, false);

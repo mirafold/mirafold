@@ -13,14 +13,27 @@ import {
 } from "./change-review";
 
 test("reviewLines: stable HEAD/current line numbers survive additions and deletions", () => {
+  // Old ends at an unterminated "three"; new terminates it and appends.
+  // "three"'s bytes differ between the sides (no-\n vs \n), so it is a real
+  // replacement, exactly as git presents it — the earlier expectation pinned
+  // the bug that showed it as untouched context (bughunt 2026-08-13).
   assert.deepEqual(reviewLines("one\ntwo\nthree", "one\nTWO\nthree\nfour"), [
     { id: " :1:1", index: 0, oldLine: 1, newLine: 1, sign: " ", text: "one" },
     { id: "-:2:", index: 1, oldLine: 2, newLine: undefined, sign: "-", text: "two" },
     { id: "+::2", index: 2, oldLine: undefined, newLine: 2, sign: "+", text: "TWO" },
-    { id: " :3:3", index: 3, oldLine: 3, newLine: 3, sign: " ", text: "three" },
+    {
+      id: "-:3:",
+      index: 3,
+      oldLine: 3,
+      newLine: undefined,
+      sign: "-",
+      text: "three",
+      noNewline: true,
+    },
+    { id: "+::3", index: 4, oldLine: undefined, newLine: 3, sign: "+", text: "three" },
     {
       id: "+::4",
-      index: 4,
+      index: 5,
       oldLine: undefined,
       newLine: 4,
       sign: "+",

@@ -7,6 +7,7 @@ import type { WireMsg } from "../protocol";
 import { RENDER_GUIDANCE } from "../render-tools";
 import { OpenCodeSession } from "./opencode";
 import type { OpenCodeEvent, OpenCodeTransport } from "./opencode-client";
+import { waitFor } from "../testing/wait-for";
 
 // OC.1: the OpenCode event→WireMsg mapping and the turn grammar, on synthetic
 // events whose shapes are the OC.0 live capture (opencode.spike.md) — no
@@ -17,20 +18,6 @@ type Any = WireMsg & Record<string, any>;
 
 const tmp = mkdtempSync(path.join(os.tmpdir(), "mcp-opencode-test-"));
 const SES = "ses_test";
-
-const waitFor = (cond: () => boolean, what: string, timeoutMs = 5_000) =>
-  new Promise<void>((resolve, reject) => {
-    const t0 = Date.now();
-    const poll = setInterval(() => {
-      if (cond()) {
-        clearInterval(poll);
-        resolve();
-      } else if (Date.now() - t0 > timeoutMs) {
-        clearInterval(poll);
-        reject(new Error(`timed out waiting for ${what}`));
-      }
-    }, 5);
-  });
 
 class FakeTransport implements OpenCodeTransport {
   onEvent: (ev: OpenCodeEvent) => void = () => {};
@@ -442,7 +429,9 @@ test("usage sums the turn's assistant messages and rides just before turn_end", 
     { model: "laguna-s-2.1", input: 31, output: 5 },
   );
   assert.ok(Math.abs((usage?.costUsd ?? 0) - 0.03) < 1e-9);
-  assert.equal(session.modelName, "laguna-s-2.1", "modelName refined from the engine");
+  // Qualified form: bare ids are ambiguous across providers, and the
+  // checkpointed modelName must round-trip parseModelPin on restore.
+  assert.equal(session.modelName, "fake/laguna-s-2.1", "modelName refined, provider-qualified");
   assert.ok(
     msgs.findIndex((m) => m.type === "usage") < msgs.findIndex((m) => m.type === "turn_end"),
   );
@@ -501,7 +490,7 @@ test("a model pin is provider/model per prompt; a bare id falls back to the conf
     providerID: "prov1",
     modelID: "laguna-s-2.1-free",
   });
-  assert.equal(pinned.session.modelName, "laguna-s-2.1-free");
+  assert.equal(pinned.session.modelName, "prov1/laguna-s-2.1-free");
   pinned.session.close();
 
   // A bare id can't name a provider — the user's own opencode config default
@@ -548,7 +537,7 @@ test("policy refusals at start: each names its reason and frees the turn", async
 });
 
 test("/model with no arg paints the picker from allowed providers only", async () => {
-  const { session, fake, msgs, awaitTurnEnd } = makeSession();
+  const { session, fake, msgs, feed, awaitTurnEnd } = makeSession();
   fake.catalog = [
     { id: "fake", source: "config" },
     { id: "deepseek", source: "api" },
@@ -568,7 +557,22 @@ test("/model with no arg paints the picker from allowed providers only", async (
     picker?.rows.map((r: { label: string }) => r.label),
     ["fake/fake-model", "deepseek/deepseek-v4", "opencode/laguna-s-2.1-free"],
   );
-  assert.equal(picker?.rows.find((r: { current?: boolean }) => r.current)?.label, "fake/fake-model");
+  // /model runs on the ENGINE latch alone (so it can rescue a pinless
+  // session) — before any turn adopts a pin, no row is current yet.
+  assert.equal(picker?.rows.some((r: { current?: boolean }) => r.current), false);
+
+  // After a turn adopts the config default, the picker marks it.
+  session.pushPrompt("hi");
+  await waitFor(() => fake.prompts.length === 1, "prompt");
+  feed(idle());
+  await awaitTurnEnd(2);
+  session.pushPrompt("/model");
+  await awaitTurnEnd(3);
+  const second = msgs.filter((m) => m.type === "picker").at(-1);
+  assert.equal(
+    second?.rows.find((r: { current?: boolean }) => r.current)?.label,
+    "fake/fake-model",
+  );
   session.close();
 });
 
@@ -582,12 +586,12 @@ test("/model switches to an allowed provider; a blocked pick refuses and keeps t
   session.pushPrompt("/model deepseek/deepseek-v4");
   await awaitTurnEnd();
   assert.ok(msgs.some((m) => m.type === "text_delta" && /Model set to deepseek/.test(m.text)));
-  assert.equal(session.modelName, "deepseek-v4");
+  assert.equal(session.modelName, "deepseek/deepseek-v4");
 
   session.pushPrompt("/model github-copilot/gpt-5");
   await awaitTurnEnd(2);
   assert.match(msgs.find((m) => m.type === "error")?.message ?? "", /API key/);
-  assert.equal(session.modelName, "deepseek-v4", "blocked pick must not move the pin");
+  assert.equal(session.modelName, "deepseek/deepseek-v4", "blocked pick must not move the pin");
 
   session.pushPrompt("hi");
   await waitFor(() => fake.prompts.length === 1, "prompt");
@@ -794,5 +798,271 @@ test("the render MCP injects additively through config content", () => {
   const mcp = (fake.configContent?.["mcp"] ?? {}) as Record<string, Record<string, unknown>>;
   assert.equal(mcp["mirafold"]?.["type"], "local");
   assert.ok(Array.isArray(mcp["mirafold"]?.["command"]));
+  session.close();
+});
+
+test("BUGFIX: /model rescues a PINLESS session instead of dying on the pin gate", async () => {
+  const { session, fake, msgs, feed, awaitTurnEnd } = makeSession();
+  fake.cfgModel = undefined; // no OPENCODE_MODEL, no config default
+  fake.catalog = [{ id: "deepseek", source: "api" }];
+  fake.models = [{ providerID: "deepseek", modelID: "deepseek-v4" }];
+  session.pushPrompt("/model deepseek/deepseek-v4");
+  await awaitTurnEnd();
+  assert.equal(
+    msgs.some((m) => m.type === "error" && /no model is pinned/.test(m.message)),
+    false,
+    "the rescue command must not hit the no-pin gate it exists to fix",
+  );
+  assert.ok(msgs.some((m) => m.type === "text_delta" && /Model set to deepseek/.test(m.text)));
+  session.pushPrompt("hi");
+  await waitFor(() => fake.prompts.length === 1, "prompt after rescue");
+  assert.deepEqual(fake.prompts[0]?.["model"], { providerID: "deepseek", modelID: "deepseek-v4" });
+  feed(idle());
+  await awaitTurnEnd(2);
+  session.close();
+});
+
+test("BUGFIX: one transport start per engine, even across policy-failure retries", async () => {
+  const { session, fake, msgs, feed, awaitTurnEnd } = makeSession();
+  let starts = 0;
+  const origStart = fake.start.bind(fake);
+  fake.start = async (cb) => {
+    starts += 1;
+    return origStart(cb);
+  };
+  fake.cfgModel = undefined; // first prompt fails the pin gate AFTER start
+  session.pushPrompt("first");
+  await waitFor(() => msgs.some((m) => m.type === "error"), "pin refusal");
+  await awaitTurnEnd();
+  fake.cfgModel = "fake/fake-model"; // user fixed their config
+  session.pushPrompt("second");
+  await waitFor(() => fake.prompts.length === 1, "prompt after fix");
+  feed(idle());
+  await awaitTurnEnd(2);
+  assert.equal(starts, 1, "a policy retry must never respawn the engine");
+  session.close();
+});
+
+test("BUGFIX: an interrupt during startup cancels the send — no ghost turn", async () => {
+  const { session, fake, msgs, feed, awaitTurnEnd } = makeSession();
+  let releaseStart: () => void = () => {};
+  const origStart = fake.start.bind(fake);
+  fake.start = async (cb) => {
+    await new Promise<void>((resolve) => {
+      releaseStart = resolve;
+    });
+    return origStart(cb);
+  };
+  session.pushPrompt("doomed");
+  // Interrupt while the engine is still cold-starting: the turn ends now…
+  await waitFor(() => (session as unknown as { turnActive: boolean }).turnActive, "turn active");
+  session.interrupt();
+  await awaitTurnEnd();
+  releaseStart();
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(fake.prompts.length, 0, "the cancelled prompt must never reach the engine");
+  // …and the NEXT prompt still carries the first-turn guidance (not burned).
+  session.pushPrompt("real first");
+  await waitFor(() => fake.prompts.length === 1, "the real first prompt");
+  const text = (fake.prompts[0]?.["parts"] as { text: string }[])[0]?.text ?? "";
+  assert.ok(text.startsWith(RENDER_GUIDANCE), "guidance survives the cancelled ghost");
+  feed(idle());
+  await awaitTurnEnd(2);
+  session.close();
+});
+
+test("BUGFIX: a FAILED abort leaves the turn open for the engine's own idle", async () => {
+  const { session, fake, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  fake.abort = async () => {
+    throw new Error("HTTP 500");
+  };
+  await prompt("hi");
+  session.interrupt();
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.equal(
+    msgs.filter((m) => m.type === "turn_end").length,
+    0,
+    "a failed abort means the engine is STILL RUNNING — ending now interleaves streams",
+  );
+  feed(idle()); // the engine eventually finishes on its own
+  await awaitTurnEnd();
+  session.close();
+});
+
+test("BUGFIX: a turn's end denies its pending ask — no stale resolution later", async () => {
+  const { session, fake, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("hi");
+  feed(asked(), ev("session.error", { sessionID: SES, error: { name: "boom" } }));
+  await awaitTurnEnd();
+  const resolved = msgs.find((m) => m.type === "permission_resolved");
+  assert.deepEqual({ id: resolved?.id, allow: resolved?.allow }, { id: "per1", allow: false });
+  assert.equal(fake.replies.length, 0, "the engine moved on — no pointless reject reply");
+  session.close();
+});
+
+test("BUGFIX2: a stale idle from an errored turn never ends the NEXT turn", async () => {
+  const { session, fake, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("turn A");
+  // A ends via session.error — but the engine still owes A's idle.
+  feed(ev("session.error", { sessionID: SES, error: { name: "boom" } }));
+  await awaitTurnEnd();
+  session.pushPrompt("turn B");
+  await waitFor(() => fake.prompts.length === 2, "B sent");
+  feed(idle()); // A's LATE idle — must pay the debt, not end B
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(msgs.filter((m) => m.type === "turn_end").length, 1, "B must still be open");
+  feed(snap({ type: "text", text: "B's reply", id: "pb" }), idle()); // B's own idle
+  await awaitTurnEnd(2);
+  assert.ok(
+    msgs.findIndex((m) => m.type === "text_delta" && m.text === "B's reply") <
+      msgs.map((m) => m.type).lastIndexOf("turn_end"),
+    "B's output lands inside B's envelope",
+  );
+  session.close();
+});
+
+test("BUGFIX2: error→idle keeps usage INSIDE the turn envelope", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("hi");
+  feed(
+    assistant("a1", { input: 9, output: 4 }),
+    ev("session.error", { sessionID: SES, error: { name: "ProviderError", data: { message: "no key" } } }),
+  );
+  await awaitTurnEnd();
+  feed(idle()); // the engine's late idle after the error
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const kinds = msgs.map((m) => m.type);
+  const usageAt = kinds.indexOf("usage");
+  assert.ok(usageAt >= 0, "partial tokens are still honest usage");
+  assert.ok(usageAt < kinds.indexOf("turn_end"), "usage rides before turn_end, never after");
+  assert.equal(kinds.filter((k) => k === "usage").length, 1, "and never re-fires between turns");
+  session.close();
+});
+
+test("BUGFIX2: tool ERROR output is capped with honest truncation", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("hi");
+  feed(
+    snap({
+      type: "tool",
+      id: "t1",
+      tool: "bash",
+      state: { status: "error", input: {}, error: "E".repeat(200_000) },
+    }),
+    idle(),
+  );
+  await awaitTurnEnd();
+  const result = msgs.find((m) => m.type === "tool_result");
+  assert.equal(result?.isError, true);
+  assert.ok(result!.output.length < 200_000, "error text passes the byte cap");
+  assert.ok((result?.truncatedBytes ?? 0) > 0, "the elision is reported, never silent");
+  session.close();
+});
+
+test("BUGFIX2: engine death mid-turn surfaces, ends the turn, and the next prompt respawns", async () => {
+  const { session, fake, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  let starts = 0;
+  let died: ((detail: string) => void) | undefined;
+  const origStart = fake.start.bind(fake);
+  fake.start = async (cb: (ev: OpenCodeEvent) => void, onDied?: (detail: string) => void) => {
+    starts += 1;
+    died = onDied;
+    return origStart(cb);
+  };
+  await prompt("hi");
+  died?.("opencode serve exited unexpectedly (SIGKILL)");
+  await awaitTurnEnd();
+  assert.match(msgs.find((m) => m.type === "error")?.message ?? "", /exited unexpectedly/);
+  session.pushPrompt("after the crash");
+  await waitFor(() => fake.prompts.length === 2, "post-crash prompt");
+  assert.equal(starts, 2, "the crash resets the latch — a fresh engine spawns");
+  feed(idle());
+  await awaitTurnEnd(2);
+  session.close();
+});
+
+test("BUGFIX2: a slash input waits for the catalog — a restored /init never goes as prose", async () => {
+  const { session, fake, feed, awaitTurnEnd } = makeSession();
+  // First-ever input IS the advertised engine command (the restored-session
+  // shape: checkpointed prompt options replayed before the engine started).
+  session.pushPrompt("/init focus");
+  await waitFor(() => fake.commands.length === 1, "engine dispatch");
+  assert.deepEqual(fake.commands[0].name, "init");
+  assert.equal(fake.prompts.length, 0, "never sent to the model as prose");
+  feed(idle());
+  await awaitTurnEnd();
+  session.close();
+});
+
+test("BUGFIX2: a reasoning part whose delta beat its snapshot recovers the lane", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("hi");
+  feed(
+    delta("r9", "early "), // no snapshot yet — defaults to the text lane
+    ev("message.part.updated", {
+      sessionID: SES,
+      part: { sessionID: SES, messageID: "m1", id: "r9", type: "reasoning", text: "early thoughts" },
+    }),
+    idle(),
+  );
+  await awaitTurnEnd();
+  assert.ok(
+    msgs.some((m) => m.type === "thinking_delta" && m.text === "thoughts"),
+    "the authoritative snapshot corrects the stream's lane",
+  );
+  session.close();
+});
+
+test("AUDIT: the minted server password is redacted from a stderr tail (pure)", async () => {
+  // The redactor is a pure exported helper — test it on real inputs, no
+  // reaching into a live transport's private state.
+  const { redactSecret } = await import("./opencode-client");
+  const secret = "deadbeefdeadbeefdeadbeefdeadbeef";
+  const out = redactSecret(`panic: OPENCODE_SERVER_PASSWORD=${secret} in a log line`, secret);
+  assert.ok(!out.includes(secret), "the minted password never rides an error string");
+  assert.ok(out.includes("[redacted]"));
+  // Two occurrences both go; an empty secret is a no-op (pre-mint path).
+  assert.equal(redactSecret(`${secret} and ${secret}`, secret), "[redacted] and [redacted]");
+  assert.equal(redactSecret("nothing to redact", ""), "nothing to redact");
+});
+
+test("AUDIT: a permission-ask flood auto-denies past the cap — observable at the wire", async () => {
+  const { session, fake, msgs, prompt } = makeSession({ permissionTimeoutMs: 60_000 });
+  await prompt("hi");
+  for (let i = 0; i < 200; i++) fake.onEvent(asked(`per-flood-${i}`));
+  await waitFor(() => fake.replies.length > 0, "the cap starts auto-denying");
+  // Observable signal of the cap: at most 64 asks ever surface to the browser
+  // as a permission_request; the rest are rejected at the engine, never shown.
+  const shown = msgs.filter((m) => m.type === "permission_request").length;
+  assert.ok(shown <= 64, `permission_requests bounded at the cap, saw ${shown}`);
+  assert.equal(shown + fake.replies.length, 200, "every ask is either shown or engine-rejected");
+  assert.ok(fake.replies.every((r) => r.response === "reject"), "overflow asks reject at the engine");
+  session.close();
+});
+
+test("AUDIT: a part-id flood is bounded within one turn — observable at the wire", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("hi");
+  for (let i = 0; i < 5_000; i++) {
+    feed(snap({ type: "text", text: "x", id: `flood-${i}` }));
+  }
+  // Observable signal: a dropped part relays no text, so the count of
+  // text_delta messages is bounded by the per-turn part cap.
+  const emitted = msgs.filter((m) => m.type === "text_delta").length;
+  assert.ok(emitted <= 2_000, `relayed parts bounded at the cap, saw ${emitted}`);
+  assert.ok(emitted > 0, "parts under the cap still stream");
+  feed(idle());
+  await awaitTurnEnd();
+  session.close();
+});
+
+test("AUDIT: an oversized engine command catalog is capped to what a checkpoint can hold", async () => {
+  const { session, fake, prompt, feed, awaitTurnEnd } = makeSession();
+  fake.engineCommands = Array.from({ length: 900 }, (_, i) => ({ name: `cmd${i}` }));
+  await prompt("hi"); // ensureStarted loads (and now caps) the catalog
+  feed(idle());
+  await awaitTurnEnd();
+  const cmds = (session as unknown as { engineCommands: unknown[] }).engineCommands;
+  assert.ok(cmds.length <= 500, `advertised commands capped, saw ${cmds.length}`);
   session.close();
 });
