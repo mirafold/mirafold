@@ -2883,7 +2883,7 @@ actual breakage, never on a calendar.
   notice rides once and unbadged; `deprecated` rides the hello for gemini
   only.
 
-## Phase RC — Remote CREATE of OpenCode sessions (opened 2026-08-13; Kyle-directed)
+## Phase RC — Remote CREATE of OpenCode sessions (opened + ✅ COMPLETE 2026-08-13; Kyle-directed)
 
 **Why.** OC.4c's fail-closed design verifies an OpenCode session's credential
 kind at its first turn: until the engine classifies the pinned provider, the
