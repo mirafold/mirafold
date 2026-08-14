@@ -1567,7 +1567,13 @@ short-lived signed tokens and sends them on the dial-out),
 `MIRAFOLD_ENTITLEMENT_URL` (the exchange endpoint, default
 `https://mirafold.com/api/entitlement`), and `MIRAFOLD_ENTITLEMENT_TOKEN`
 (a hand-issued token used verbatim — ops/testing; wins over the license
-key). For dev, `node --import tsx server/relay/relay-stub.ts`
+key). A daemon running on a license key also offers **manage
+subscription** inside the connect-a-device card (local viewports only):
+subscription status, an end-of-period cancel behind its own confirm, and
+undo while the cancellation is still scheduled — the daemon presents the
+key to the billing backend's `/api/subscription` endpoints itself, so the
+key never reaches the browser (Phase CS). For dev,
+`node --import tsx server/relay/relay-stub.ts`
 runs the in-repo stub relay on `:9100`.
 
 **Fully local, no API key:** a session is local when the *agent* behind it

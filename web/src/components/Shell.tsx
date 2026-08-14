@@ -11,6 +11,7 @@ import { FilesPanel } from "./files/FilesPanel";
 import { ChangesPanel } from "./changes/ChangesPanel";
 import { StatusBar, type Usage } from "./StatusBar";
 import { createSessionBus } from "../session-bus";
+import type { SubscriptionReply } from "../subscription-card";
 import { nextOpenTurns } from "../turn-busy";
 import { traceTurn } from "../turn-trace";
 import {
@@ -104,7 +105,11 @@ export function Shell() {
     folderPicker?: boolean;
     relay?: { url: string; code: string; ws?: string };
     version?: string;
+    billing?: "license-key";
   }>({ agents: null });
+  // Phase CS: the latest `subscription` reply — the pair card's manage view
+  // correlates it by id, so holding just the newest one is enough.
+  const [subReply, setSubReply] = useState<SubscriptionReply | null>(null);
 
   // ── The dismissable notices (all SHELL-OWNED — the agent paints none) ───
   const [notices, setNotices] = useState<{
@@ -381,7 +386,10 @@ export function Shell() {
             folderPicker: m.folderPicker,
             relay: m.relay,
             version: m.version,
+            billing: m.billing,
           });
+        } else if (m.type === "subscription") {
+          setSubReply(m);
         } else if (m.type === "prompt_options") {
           setPromptOptions(m.options);
         } else if (m.type === "session_created") {
@@ -732,6 +740,9 @@ export function Shell() {
               onEndSession={meta.sessionId ? bus.endSession : undefined}
               relay={daemonInfo.relay}
               version={daemonInfo.version}
+              billing={daemonInfo.billing === "license-key"}
+              subRequest={bus.requestSubscription}
+              subReply={subReply}
               filesOpen={filesOpen}
               filesDisabled={!meta.sessionId}
               onToggleFiles={() => toggleAuxiliary("files")}

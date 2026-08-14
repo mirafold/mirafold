@@ -211,10 +211,30 @@ type WireMsgBody =
       folderPicker?: boolean;
       relay?: { url: string; code: string; ws?: string };
       version?: string;
+      // Phase CS (optional/additive): this daemon runs on a license key and
+      // can manage the subscription behind it — the "manage subscription"
+      // affordance's gate. LOCAL viewports only (the R.4i posture: billing
+      // actions stay on the machine that holds the key); token-override,
+      // self-host, and unentitled daemons send nothing. Old clients strip it.
+      billing?: "license-key";
     }
   // N2: one local, per-viewport reply to `pick_folder`; never broadcast or
   // replayed. Cancel is explicit so an empty reply cannot strand the button.
   | { type: "folder_picked"; id: string; path?: string; canceled?: true; error?: string }
+  // Phase CS: the one reply to all three subscription_* requests — the
+  // manage-subscription card's data, per-viewport request/reply (echoed
+  // client-minted id), never broadcast or replay-buffered. Success carries
+  // the view (`cancelAt` set = a cancellation is scheduled for that
+  // instant); failure carries `error` and nothing else. The license key
+  // itself never rides this wire in either direction — the daemon holds it.
+  | {
+      type: "subscription";
+      id: string;
+      status?: string;
+      periodEnd?: string;
+      cancelAt?: string;
+      error?: string;
+    }
   // The daemon refused to attach this REMOTE (relay) viewport to the
   // session because the session's credential can't be used over the paid relay
   // — a subscription-backed agent (closed-model reselling posture). Sent instead
@@ -622,6 +642,15 @@ export type ClientMsg =
   // folder dialog. `cwd` is only the suggested starting directory; the daemon
   // validates it and returns the actual selected path in `folder_picked`.
   | { type: "pick_folder"; id: string; cwd?: string }
+  // Phase CS: the manage-subscription card's three requests, each answered
+  // by exactly one `subscription` reply with the echoed id. `status` reads;
+  // `cancel` schedules an end-of-period cancellation (the confirm step is
+  // the shell's, client-side); `uncancel` removes a scheduled one. Local
+  // viewports only — a remote (relay) viewport gets an error reply, and
+  // never the `billing` hello flag that draws the affordance.
+  | { type: "subscription_status"; id: string }
+  | { type: "subscription_cancel"; id: string }
+  | { type: "subscription_uncancel"; id: string }
   // Phase E (Explorer): the read-only file browser's per-viewport queries.
   // `id` is client-minted (the bang-id grammar) so the issuing component can
   // correlate the one reply each request gets. The path is a REQUEST — the

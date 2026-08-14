@@ -3,6 +3,8 @@ import type { AgentInfo, SessionMeta } from "@protocol";
 import { Onboarding } from "./Onboarding";
 import { ArmedButton } from "./ArmedButton";
 import { ConnectDevice, type RelayInfo } from "./ConnectDevice";
+import { sendSubscriptionRequest, type SubscriptionAct } from "../session-bus";
+import type { SubscriptionReply } from "../subscription-card";
 import { GearGlyph } from "./GearGlyph";
 import { SocketClient } from "../ws";
 import { tildify } from "../tildify";
@@ -95,7 +97,11 @@ export function FleetView() {
     // The agents hello's relay info (protocol.ts) — RelayInfo mirrors its
     // shape, `ws` included (static-origin serving).
     relay?: RelayInfo;
+    billing?: "license-key";
   }>({});
+  // Phase CS: the latest `subscription` reply for the pair card's manage view
+  // (id-correlated there, so only the newest matters).
+  const [subReply, setSubReply] = useState<SubscriptionReply | null>(null);
   const [connected, setConnected] = useState(false);
   // ?new=1 lands straight on the picker — that's the URL the in-session "new"
   // button opens in a fresh tab (2026-07-20, Kyle).
@@ -153,7 +159,15 @@ export function FleetView() {
         });
       } else if (m.type === "agents") {
         setAgents(m.agents);
-        setDaemon({ cwd: m.cwd, home: m.home, folderPicker: m.folderPicker, relay: m.relay });
+        setDaemon({
+          cwd: m.cwd,
+          home: m.home,
+          folderPicker: m.folderPicker,
+          relay: m.relay,
+          billing: m.billing,
+        });
+      } else if (m.type === "subscription") {
+        setSubReply(m);
       } else if (m.type === "session_created") {
         // The create issued from the onboarding card below: enter the session.
         location.assign(`/s/${m.sessionId}`);
@@ -235,6 +249,11 @@ export function FleetView() {
   // fresh arrow each render would restart the 3s timer instead of letting
   // it fire.
   const refreshAgents = useCallback(() => socket.send({ type: "refresh_agents" }), [socket]);
+  // Phase CS: the pair card's manage view mints + sends over this socket.
+  const subRequest = useCallback(
+    (act: SubscriptionAct) => sendSubscriptionRequest((m) => socket.send(m), act),
+    [socket],
+  );
   const browseFolder = useCallback(
     (cwd?: string) => folderPicker.request(cwd),
     [folderPicker],
@@ -298,7 +317,12 @@ export function FleetView() {
             {sessions === null ? "connecting…" : `${sessions.length} session${sessions.length === 1 ? "" : "s"}`}
           </span>
           <span className="fleet-spacer" />
-          <ConnectDevice relay={daemon.relay} />
+          <ConnectDevice
+            relay={daemon.relay}
+            billing={daemon.billing === "license-key"}
+            subRequest={subRequest}
+            subReply={subReply}
+          />
           <button className="fleet-new" onClick={() => setShowNew(true)}>
             + new session
           </button>

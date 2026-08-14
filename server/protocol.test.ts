@@ -145,6 +145,13 @@ const WIRE: WireByType = {
     version: "0.0.1",
   },
   folder_picked: { type: "folder_picked", id: "fp1", path: "/home/u/other-project" },
+  subscription: {
+    type: "subscription",
+    id: "sub1",
+    status: "active",
+    periodEnd: "2026-09-01T00:00:00Z",
+    cancelAt: "2026-09-01T00:00:00Z",
+  },
   // Phase FD: staged-upload replies (correlated, per-viewport).
   file_upload_done: {
     type: "file_upload_done",
@@ -267,6 +274,9 @@ const CLIENT: ClientByType = {
   prompt_session: { type: "prompt_session", sessionId: "s1", text: "run the tests" },
   refresh_agents: { type: "refresh_agents" },
   pick_folder: { type: "pick_folder", id: "fp1", cwd: "/home/u/proj" },
+  subscription_status: { type: "subscription_status", id: "sub1" },
+  subscription_cancel: { type: "subscription_cancel", id: "sub1" },
+  subscription_uncancel: { type: "subscription_uncancel", id: "sub1" },
   fs_list: { type: "fs_list", id: "f1" },
   fs_changes: { type: "fs_changes", id: "f5" },
   fs_listdir: { type: "fs_listdir", id: "f4", path: "src" },

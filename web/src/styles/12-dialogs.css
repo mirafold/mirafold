@@ -535,6 +535,76 @@
   overflow-wrap: anywhere;
 }
 
+/* ---- Manage subscription (Phase CS) — inside the pairing card --------------
+   The resting card shows only the deliberately neutral link below the URL;
+   cancel lives in the manage view, behind its own confirm. Same modal, same
+   type ramp as the pair content around it. */
+.pair-manage {
+  display: block;
+  width: 100%;
+  margin-top: 14px;
+  padding: 6px 0;
+  background: transparent;
+  border: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 1.05em;
+  color: var(--fg-dimmer);
+  cursor: pointer;
+  text-align: center;
+}
+
+.pair-manage:hover {
+  color: var(--fg);
+  text-decoration: underline;
+}
+
+.sub-line {
+  margin: 6px 2px 14px;
+  font-size: 1.23em;
+  line-height: 1.5;
+  color: var(--fg-dim);
+}
+
+.sub-dim {
+  color: var(--fg-dimmer);
+}
+
+.sub-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sub-btn {
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 1.05em;
+  color: var(--fg-mid);
+  background: transparent;
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.sub-btn:hover {
+  color: var(--fg);
+  background: var(--bg-inset);
+}
+
+/* The point of no return gets the warning tint — everything before it is
+   an ordinary quiet control. */
+.sub-btn-danger {
+  color: var(--error);
+  border-color: var(--err-border);
+}
+
+.sub-btn-danger:hover {
+  background: var(--err-bg);
+  color: var(--error);
+}
+
 /* ---- Settings card (S.4) ----------------------------------------------------
    Shell-owned, same modal idiom as the pairing card. One section today
    (Theme); built to grow more sections. The gear (.sb-settings) sits beside
