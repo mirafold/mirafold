@@ -310,28 +310,39 @@ export function Shell() {
           // The turn COUNTER re-derives with it (nextOpenTurns' floor rule,
           // 2026-07-29 bughunt — see turn-busy.ts).
           setBusy(true);
-          // SA.2: a SUBAGENT's prose (parentId set) still proves the turn is
-          // busy, but it is not the parent's voice — it must not steer the
-          // activity label and never lands in the turn-end announcement.
-          const subagentProse =
-            (m.type === "text_delta" || m.type === "thinking_delta") && m.parentId;
+          // SA.2/SA.3: a SUBAGENT's traffic (parentId set) still proves the
+          // turn is busy, but it is not the parent's voice — child prose and
+          // child tool churn must not steer the activity label (the deck
+          // shows each subagent's own current action; bughunt 2026-08-14 r2
+          // aligned tool_use with the design after the server-side comment
+          // claimed it and the client contradicted it), and child prose
+          // never lands in the turn-end announcement. The announcer still
+          // speaks child tools — the audible peer of the deck's ticker.
+          const subagentTraffic =
+            (m.type === "text_delta" || m.type === "thinking_delta" || m.type === "tool_use") &&
+            m.parentId;
           if (m.type === "status") setActivity({ state: m.state, label: m.label });
           else if (m.type === "thinking_delta") {
-            if (!subagentProse) setActivity({ state: "thinking" });
-          } else if (m.type === "tool_use") setActivity({ state: "tool", label: m.name });
+            if (!subagentTraffic) setActivity({ state: "thinking" });
+          } else if (m.type === "tool_use") {
+            if (!subagentTraffic) setActivity({ state: "tool", label: m.name });
+          }
           // Streamed prose means the last specific label is over; the
           // indicator falls back to the generic "working…".
-          else if (!subagentProse) setActivity(null);
+          else if (!subagentTraffic) setActivity(null);
           // A.1: the response is announced once at turn_end, so the prose is
           // banked here rather than spoken per token.
-          if (m.type === "text_delta" && !subagentProse) turnText.current += m.text;
+          if (m.type === "text_delta" && !subagentTraffic) turnText.current += m.text;
           // Tool activity is the other thing a sighted user reads off the
           // transcript mid-turn; announce the name, not the arguments.
           if (m.type === "tool_use" && live) announce(`Running ${m.name}.`);
         } else if (m.type === "tool_result") {
           // A finished tool must not keep naming itself — a frozen "Bash"
           // through the next model round trip reads as "done?" (2026-07-29).
-          setActivity((a) => (a?.state === "tool" ? null : a));
+          // A CHILD's result is not the labeled tool finishing: subagent
+          // traffic never steers the root label, in either direction
+          // (bughunt 2026-08-14 r2).
+          if (!m.parentId) setActivity((a) => (a?.state === "tool" ? null : a));
         } else if (m.type === "turn_end") {
           setBusy(openTurns.current > 0);
           setActivity(null);

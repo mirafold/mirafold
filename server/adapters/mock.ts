@@ -508,6 +508,7 @@ export class MockSession implements AgentSession {
     if (/revise the selected workspace change/i.test(text)) return this.playMarkdownReview();
     if (/interactive|button/i.test(text)) return this.playActionCard();
     if (/todo|checklist|step by step|plan it/i.test(text)) return this.playChecklist();
+    if (/delegate slowly/i.test(text)) return this.playSlowSubagent();
     if (/subagent|delegate/i.test(text)) return this.playSubagent();
     if (/huge|big output|large output|truncat/i.test(text)) return this.playHugeOutput();
     if (/artifact/i.test(text)) {
@@ -1045,6 +1046,36 @@ export class MockSession implements AgentSession {
       "All three subagents reported back — auth has two entry points, sessions are registry-kept, and the token stays daemon-side.",
       lastDone + 300,
     );
+    this.endTurn(d);
+  }
+
+  /** Deterministic reconnect-window hook (bughunt 2026-08-14 r2): ONE spawn
+   *  whose narration streams early and whose first tool call comes SECONDS
+   *  later — a wide, deterministic window in which the subagent's prose run
+   *  is open, for tests that reset the transcript mid-turn (daemon restart,
+   *  reattach). The fast fan-out's windows are too narrow to hit reliably. */
+  private playSlowSubagent() {
+    const taskId = randomUUID();
+    this.beginTurn();
+    this.schedule(() => {
+      this.emit({ type: "status", state: "tool", label: "Task" });
+      this.emit({
+        type: "tool_use",
+        name: "Task",
+        detail: "survey the workspace",
+        id: taskId,
+        input: { description: "survey the workspace", subagent_type: "Explore" },
+      });
+    }, 300);
+    this.schedule(
+      () => this.emit({ type: "text_delta", text: "Surveying the workspace layout…", parentId: taskId }),
+      700,
+    );
+    const cid = randomUUID();
+    this.schedule(() => this.emit({ type: "tool_use", name: "Read", detail: "README.md", id: cid, parentId: taskId }), 9_000);
+    this.schedule(() => this.emit({ type: "tool_result", output: "read 40 lines", id: cid, parentId: taskId }), 9_300);
+    this.schedule(() => this.emit({ type: "tool_result", output: "Survey complete.", id: taskId }), 9_600);
+    const d = this.streamText("The slow subagent finished its survey.", 9_800);
     this.endTurn(d);
   }
 

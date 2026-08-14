@@ -637,6 +637,9 @@ export function RenderZone({
             // A (re)attach replays the session's history from scratch.
             streamingId.current = null;
             thinkingId.current = null;
+            // Stale open-subtext keys would swallow replayed subagent prose
+            // into entry ids that no longer exist (bughunt 2026-08-14 r2).
+            subtextIds.current.clear();
             openToolBatches.current = [];
             orphanToolBatch.current = -1;
             tail.resetTail(); // a replayed transcript lands at its end

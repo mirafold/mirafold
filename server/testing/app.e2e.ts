@@ -623,6 +623,18 @@ test("SA.1: a parallel fan-out renders three live subagent decks, out of order, 
       { timeout: 15_000 },
     );
 
+    // Child tool churn must not steer the ROOT activity line — each deck
+    // shows its own current action (bughunt 2026-08-14 r2). The label may
+    // legitimately read the spawn state or the generic fallback (a FINISHED
+    // spawn clears its own name), but never a child's tool. Sampled across
+    // the still-running slow agent's ~640ms tool cadence so a pre-fix
+    // child-name label cannot slip between reads.
+    for (let sample = 0; sample < 8; sample++) {
+      const activityText = await p.locator(".activity-label").innerText();
+      assert.match(activityText, /^(Task|working)…$/);
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+
     // The turn concludes; all three cards settle, elapsed stops being shown
     // (client-side timing is only honest while live), result lines ride.
     await p.waitForSelector("text=All three subagents reported back", { timeout: 30_000 });

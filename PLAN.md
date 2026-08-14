@@ -3196,6 +3196,23 @@ signoff of the reported plan)*:
   no-painting, ask attribution, depth-1 render rule).
   Tiers 817/152/57(app) green.
 
+**Post-phase bughunt round 2 (2026-08-14, same day).** Two more found +
+fixed, pins proven failing pre-fix: (1) `zone_reset` cleared every
+streaming ref EXCEPT the new subtext map — a same-page full-replay
+(reconnect) with an open subagent prose run swallowed the replayed
+narration into entry ids that no longer existed (deck came back
+empty-handed); pinned by a resilience e2e that kills+restarts the daemon
+inside the slow-subagent hook's window (new mock hook `delegate slowly`),
+with a store-durability poll so the 250ms checkpoint debounce can't race
+the kill. (2) Child tool traffic steered the ROOT activity line (both
+`tool_use` setting the label and `tool_result` clearing it), contradicting
+the SA.3 design statement the server side already honored — the label now
+ignores parented tool traffic in both directions; pinned by multi-sampled
+label assertions in the SA.1 e2e. Diagnosis bonus, recorded: interior
+frames reach the checkpoint store on a 250ms debounce, so a daemon killed
+inside it loses the un-flushed tail — pre-existing, honest (the turn
+replays as interrupted), not a defect.
+
 **Post-phase bughunt round 1 (2026-08-14, same day).** Two found + fixed with
 pinned regressions (each proven failing pre-fix): a REPLAYED running deck
 ticked a false elapsed (stamp = attach moment, not spawn — now shows no
