@@ -31,6 +31,10 @@ import { folderPickerAvailable } from "../folder-picker";
 // cached answer instead of re-probing localhost.
 const REFRESH_MIN_INTERVAL_MS = envInt("REFRESH_MIN_INTERVAL_MS", 1_000);
 
+// Phase RC: how long a remote create may spend classifying its provider
+// (engine spawn + catalog read) before the creator gets an honest refusal.
+const VERIFY_KIND_TIMEOUT_MS = envInt("VERIFY_KIND_TIMEOUT_MS", 30_000);
+
 // The relay refusal copy now lives with the rule (provider-policy.ts
 // relayGateRefusal, OC.4c) so the attach gate, cockpit acts, and uploads say
 // the same words about the same verdict — pending-kind included.
@@ -181,6 +185,61 @@ export function openConnection(
     if (!attachTo(e, afterSeq, fallback)) registry.end(e.id);
   };
 
+  // Phase RC: classify-before-create. A REMOTE create of an entry whose
+  // credential kind is still optimistic (kindPending + a verifyBackendKind
+  // seam — OpenCode) awaits the truthful classification BEFORE the relay
+  // gate judges the attach, instead of refusing a race the creator can
+  // never win. Local creates keep the lazy path untouched. The async detour
+  // owns its errors (index.ts has no try/catch around handleMessage): a
+  // classify failure or timeout errors the viewport honestly and reaps the
+  // minted no-viewport entry (the 2026-07-29 leak rule); settle re-checks
+  // entry liveness and connection state before acting.
+  let verifyingCreate = false;
+  const attachOrReapClassified = (e: SessionEntry, afterSeq?: number, fallback = false) => {
+    const verify = e.session.verifyBackendKind?.bind(e.session);
+    if (!remote || !e.kindPending || !verify) {
+      attachOrReap(e, afterSeq, fallback);
+      return;
+    }
+    verifyingCreate = true;
+    void (async () => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          verify(),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(
+              () =>
+                reject(
+                  new Error(
+                    "verifying which credential backs this session took too long — " +
+                      "try again, or run its first turn from its own machine",
+                  ),
+                ),
+              VERIFY_KIND_TIMEOUT_MS,
+            );
+            timer.unref();
+          }),
+        ]);
+      } catch (err) {
+        verifyingCreate = false;
+        if (!closed) sendError(errText(err));
+        if (registry.get(e.id) === e && e.viewports.size === 0) registry.end(e.id);
+        return;
+      } finally {
+        clearTimeout(timer);
+      }
+      verifyingCreate = false;
+      if (registry.get(e.id) !== e) return; // torn down mid-classify
+      if (closed) {
+        // The creator left mid-classify; nobody owns the mint.
+        if (e.viewports.size === 0) registry.end(e.id);
+        return;
+      }
+      attachOrReap(e, afterSeq, fallback);
+    })();
+  };
+
   // Advertise which agents this daemon offers + which are live, so the
   // onboarding picker can render before any session exists. No agent assumed (P.4).
   // Also where the daemon was launched — the default cwd for new
@@ -271,6 +330,13 @@ export function openConnection(
         // working somewhere else — the viewport stays unattached and the
         // onboarding card shows the error (Step 4.8).
         noteClientVersion(msg.clientVersion);
+        // Phase RC: one classification in flight per connection — a second
+        // create arriving mid-verify would interleave two mints racing one
+        // `entry` slot.
+        if (verifyingCreate) {
+          sendError("still verifying the previous create — one moment");
+          break;
+        }
         // N.5: the picker's backend choice is validated HERE, against current
         // detection + provider policy — never trusted. A refused choice is a
         // create error (the picker shows it); honoring it only with a valid
@@ -287,7 +353,7 @@ export function openConnection(
           log.info(`create → ${agent} on chosen backend ${describeBackendForLog(backend)}`);
         }
         try {
-          attachOrReap(
+          attachOrReapClassified(
             registry.create({
               cwd: typeof msg.cwd === "string" ? msg.cwd : undefined,
               agent,
@@ -304,6 +370,10 @@ export function openConnection(
         // unknown id (old bookmark / explicit end) gets the historical fresh
         // fallback; a corrupt or unavailable saved session errors in place.
         noteClientVersion(msg.clientVersion);
+        if (verifyingCreate) {
+          sendError("still verifying the previous create — one moment");
+          break;
+        }
         try {
           const existing =
             typeof msg.sessionId === "string" ? registry.open(msg.sessionId) : undefined;
@@ -318,7 +388,7 @@ export function openConnection(
               registry.detach(existing, viewport);
             }
           } else {
-            attachOrReap(registry.create(), afterSeq, typeof msg.sessionId === "string");
+            attachOrReapClassified(registry.create(), afterSeq, typeof msg.sessionId === "string");
           }
         } catch (err) {
           sendError(errText(err));

@@ -1066,3 +1066,23 @@ test("AUDIT: an oversized engine command catalog is capped to what a checkpoint 
   assert.ok(cmds.length <= 500, `advertised commands capped, saw ${cmds.length}`);
   session.close();
 });
+
+test("RC: verifyBackendKind resolves only after the truthful kind published", async () => {
+  const { session } = makeSession({ model: "fake/fake-model" });
+  const published: { kind: string }[] = [];
+  session.onBackendKind?.((u) => published.push(u));
+  await session.verifyBackendKind?.();
+  assert.deepEqual(published, [{ kind: "local", provider: "fake" }]);
+  session.close();
+});
+
+test("RC: verifyBackendKind rejects with the honest reason and stays retryable", async () => {
+  const { session, fake } = makeSession({ model: "missing/nope" });
+  await assert.rejects(session.verifyBackendKind!(), /isn't connected in opencode/);
+  // The same honest failure repeats (latch reset), and a fixed catalog recovers.
+  await assert.rejects(session.verifyBackendKind!(), /isn't connected in opencode/);
+  fake.catalog = [{ id: "missing", source: "config" }];
+  await session.verifyBackendKind!();
+  assert.equal(fake.sessionsCreated, 1, "recovered into a real engine session");
+  session.close();
+});

@@ -263,7 +263,8 @@ has a home in this plan, the entry points there instead of duplicating it.
   the removal release notes name the date and the alternative (OpenCode
   drives Gemini-family models via BYO providers).
 
-- [ ] **Remote CREATE of an OpenCode session** — today a relay viewport can
+- [x] **Remote CREATE of an OpenCode session** — PROMOTED to PLAN.md Phase RC
+  (2026-08-13, Kyle-directed) — today a relay viewport can
   only ATTACH to an OpenCode session after its first local turn classifies
   the credential (`kindPending` refuses remote actions until the publish —
   the fail-closed OC.4c design; the refusal copy says so honestly since the

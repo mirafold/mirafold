@@ -300,9 +300,9 @@ export function relayGateRefusal(entry: {
     return (
       // Honest about WHEN it clears: verification runs with the session's
       // first local turn, so a remote viewport racing a fresh session would
-      // wait forever on "a moment" (bughunt 2026-08-13 — remote CREATE of an
-      // OpenCode session can never win this race; supporting it needs
-      // classify-before-create and is parked in POST-RELEASE.md).
+      // wait forever on "a moment" (bughunt 2026-08-13). Reachable only by
+      // ATTACH-to-existing since Phase RC: a remote CREATE classifies inline
+      // (connection.ts attachOrReapClassified) and never surfaces this copy.
       "This session hasn't verified which credential backs it yet — run its " +
       "first turn from its own machine; remote viewports can attach after that."
     );
