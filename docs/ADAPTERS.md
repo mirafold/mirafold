@@ -310,7 +310,13 @@ proven sequence (used for Codex, Gemini, and OpenCode; keep it):
    `AgentSession`. The adapter publishes the classified kind at session start
    (and on a provider switch); the registry adopts it and holds the entry
    `kindPending` until the first publish, so the relay gate refuses remote
-   viewports meanwhile. The relay gate (`provider-policy.ts` `relayGateRefusal`)
+   viewports meanwhile. Pair it with the optional `verifyBackendKind()` seam
+   (Phase RC): classify NOW instead of at the first turn, resolving once the
+   truthful kind has published and rejecting with the honest user-facing
+   reason when it can't. The create path uses it so a REMOTE create of a
+   pending-kind session awaits the truth (bounded, `VERIFY_KIND_TIMEOUT_MS`)
+   instead of losing the classification race; without the seam, remote
+   viewports can only attach after a first local turn. The relay gate (`provider-policy.ts` `relayGateRefusal`)
    is then checked at **drive time on every model-driving path**, not only at
    attach — a mid-session flip to a `subscription`/`gateway` kind must never let
    an already-attached relay viewport keep driving (2026-08-13 audit). If the
