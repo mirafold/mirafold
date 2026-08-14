@@ -113,6 +113,13 @@ export class OpenCodeSession implements AgentSession {
     if (this.lastKind) cb(this.lastKind);
   }
 
+  /** Phase RC: the full lazy-start path — engine + policy + engine session —
+   *  which publishes the truthful kind on the way (adoptPin). A failure has
+   *  already reset the started latch, so a later local prompt retries. */
+  verifyBackendKind(): Promise<void> {
+    return this.ensureStarted();
+  }
+
   private publishKind(kind: CredentialKind, provider: string) {
     this.lastKind = { kind, provider };
     for (const cb of this.kindListeners) cb(this.lastKind);

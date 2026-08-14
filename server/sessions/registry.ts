@@ -280,6 +280,10 @@ export class SessionRegistry {
     private deltaCoalesceMs: number = DELTA_COALESCE_MS,
     private store?: SessionCheckpointStore,
     private idleTimeoutMs: number = IDLE_TIMEOUT_MS,
+    // Test seam (Phase RC): the classify-before-create flow needs an entry
+    // whose session exposes onBackendKind/verifyBackendKind without spawning
+    // a real engine.
+    private makeSession: typeof createSession = createSession,
   ) {
     if (store) {
       const loaded = store.loadAll();
@@ -312,7 +316,7 @@ export class SessionRegistry {
     const dir = resolveCwd(opts?.cwd);
     // The configured agent becomes a concrete engine at this one seam
     // (Phase P.1). Falls back to the mock when the agent has no credentials.
-    const session: AgentSession = createSession(backend, { cwd: dir });
+    const session: AgentSession = this.makeSession(backend, { cwd: dir });
     const entry: SessionEntry = {
       id,
       cwd: dir,

@@ -2883,6 +2883,70 @@ actual breakage, never on a calendar.
   notice rides once and unbadged; `deprecated` rides the hello for gemini
   only.
 
+## Phase RC — Remote CREATE of OpenCode sessions (opened 2026-08-13; Kyle-directed)
+
+**Why.** OC.4c's fail-closed design verifies an OpenCode session's credential
+kind at its first turn: until the engine classifies the pinned provider, the
+registry entry is `kindPending` and the relay gate refuses every remote
+action. Consequence (recorded in POST-RELEASE.md 2026-08-13, promoted here
+the same day at Kyle's direction): a remote viewport can ATTACH to an
+OpenCode session only after a first local turn — it can never CREATE one.
+Supporting remote creation means classifying BEFORE admitting the creator:
+spawn the engine, read the provider catalog, judge the pin, and only then
+attach the remote viewport. The gate itself does not change; only WHEN the
+truth arrives does.
+
+- [x] **RC.1 — the adapter seam.** — completed 2026-08-13. `AgentSession` gains optional
+  `verifyBackendKind?(): Promise<void>`: resolve once the truthful kind has
+  been published via `onBackendKind`, reject with the honest reason when it
+  cannot be (no binary, no pin, provider not connected, policy refusal).
+  OpenCode implements it as `ensureStarted()` — the full lazy-start path
+  (engine + policy + engine session), whose failure already resets the outer
+  latch so a later local prompt retries. No other adapter implements it:
+  their hello-time kind is already truthful.
+- [x] **RC.2 — the create path awaits truth.** — completed 2026-08-13
+  (`attachOrReapClassified`; timeout env `VERIFY_KIND_TIMEOUT_MS`, 30s
+  default). In `connection.ts`, a REMOTE
+  create (and the attach-path fallback create) of an entry that is
+  `kindPending` with a `verifyBackendKind` seam awaits classification —
+  bounded (30s) — BEFORE `attachTo` judges the relay gate. Local creates are
+  untouched: still synchronous, still lazy. On success the existing gate
+  judges the now-truthful kind (an ineligible provider still refuses with
+  the existing honest copy). On failure/timeout: the error goes to the
+  viewport and the minted session is REAPED (`registry.end`) — the
+  no-viewport leak rule from the 2026-07-29 bughunt applies unchanged. The
+  async detour catches its own errors (index.ts has no try/catch around
+  `handleMessage`).
+- [x] **RC.3 — the races.** — completed 2026-08-13 (d landed as a comment
+  correction only: the user-facing copy was already honest for the attach
+  path, and remote creates no longer surface it). (a) Viewport disconnects mid-classify → on
+  settle, a closed connection with a viewport-less entry reaps it. (b) A
+  second create/attach on the same connection while one classification is in
+  flight → refused honestly ("still verifying the previous create"); one
+  pending create per connection. (c) Entry torn down mid-classify → the
+  settle path checks `entries.get(id) === entry` before acting, like every
+  onBackendKind consumer. (d) `relayGateRefusal`'s `kindPending` copy stays
+  honest for BOTH paths now that remote creates verify inline: the
+  "run its first turn from its own machine" sentence describes only the
+  attach-to-existing case.
+- [x] **RC.4 — tests** — completed 2026-08-13: 7 connection-grain tests in
+  `server/sessions/remote-create.test.ts` (own process so the verify
+  timeout pins via env before module load; a registry session-factory test
+  seam injects the fake classifying session) + 2 adapter-grain in
+  `opencode.test.ts` (`verifyBackendKind` resolves after publish / rejects
+  honestly and stays retryable). Tiers 803/152/97 green. Original scope
+  (Tier 2 grain, `makeTransport` seam; no real engine):
+  Remote create allowed (kind publishes api-key → viewport attaches); remote
+  create policy-refused (subscription pin → refusal + entry reaped, no
+  MAX_SESSIONS leak); classify failure (engine start throws → honest error +
+  reap); timeout (kind never publishes → bounded refusal + reap); disconnect
+  mid-classify (no leak); local create unaffected (no await, still lazy).
+  The existing remote-attach regressions stay green.
+
+**Done when.** A relay viewport can create a fresh OpenCode session pinned to
+an allowed provider and drive it immediately; a subscription/Zen pin is
+refused at create with the honest reason and leaks nothing; all tiers green.
+
 ## Phase PN — Panes (file views beside the transcript)
 
 **Why.** Kyle (2026-07-26): open a file and see it in its own pane. Also the

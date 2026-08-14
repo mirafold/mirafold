@@ -78,6 +78,14 @@ export interface AgentSession {
    * updates its entry so the relay gate judges truth; until the first
    * publish such entries are `kindPending` and refuse remote actions. */
   onBackendKind?(cb: (update: { kind: CredentialKind; provider?: string }) => void): void;
+  /** Phase RC: classify the backend kind NOW instead of at the first turn —
+   * resolves once the truthful kind has been published via `onBackendKind`,
+   * rejects with the honest user-facing reason when it cannot be (no engine
+   * binary, no pin, provider not connected, policy refusal). Only adapters
+   * whose hello-time kind is optimistic (OpenCode) implement this; the
+   * create path uses it so a remote viewport can create a session without
+   * losing the classification race (classify-before-create). */
+  verifyBackendKind?(): Promise<void>;
   /** Re-read and emit the provider's pre-submit command/skill catalog. */
   refreshPromptOptions?(): void;
   close(): void;
