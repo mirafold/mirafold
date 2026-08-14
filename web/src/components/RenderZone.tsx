@@ -174,18 +174,6 @@ const ThinkingBlock = memo(function ThinkingBlock({
   );
 });
 
-/** A Task's subagent tool calls (T2.4): collapsed by default — a subagent's
- *  churn shouldn't crowd the transcript — expandable to the nested rows. */
-function ToolCallList({ calls, className }: { calls: ToolCall[]; className: string }) {
-  return (
-    <div className={className}>
-      {calls.map((call) => (
-        <ToolBlock key={call.id} {...toolBlockProps(call)} />
-      ))}
-    </div>
-  );
-}
-
 /** The deck's full activity, in true stream order (SA.2): tool rows plus the
  *  subagent's own narration and reasoning. Prose is INERT PLAIN TEXT —
  *  subagent words never render as markdown inside shell chrome. */
@@ -218,14 +206,13 @@ function SubagentActivity({ items }: { items: Array<ToolCall | SubtextEntry> }) 
  * while running — a settled or replayed card never shows a stale duration. */
 const SubagentDeck = memo(function SubagentDeck({
   task,
-  calls,
   items,
 }: {
   task: ToolCall;
-  calls: ToolCall[];
   items: Array<ToolCall | SubtextEntry>;
 }) {
   const [open, setOpen] = useState(false);
+  const calls = items.filter((item) => item.kind === "tool");
   const s = subagentSummary(task, calls);
   const running = s.state === "running";
   const [, tick] = useReducer((n: number) => n + 1, 0);
@@ -754,35 +741,21 @@ export function RenderZone({
     return active;
   }, [entries]);
 
-  // Subagent calls (parentId set) grouped under their Task's wire id (T2.4).
-  const childrenByParent = useMemo(() => {
-    const byParent = new Map<string, ToolCall[]>();
-    for (const e of entries) {
-      // A failed child moves to its own expanded top-level row. Keeping it in
-      // the parent group too would show the same failure twice between result
-      // and turn_end.
-      if (e.kind === "tool" && e.parentId && !e.isError) {
-        const arr = byParent.get(e.parentId) ?? [];
-        arr.push(e);
-        byParent.set(e.parentId, arr);
-      }
-    }
-    return byParent;
-  }, [entries]);
-
-  // SA.2: everything a deck's expansion shows — child calls AND the
-  // subagent's prose — in true stream order. Also the deck's anchor test:
-  // narration can arrive before the first child tool call, and a spawn with
-  // only prose is still a card.
+  // Everything a subagent deck shows, grouped under its spawn's wire id and
+  // in true stream order: child calls (T2.4/SA.1) interleaved with the
+  // subagent's prose (SA.2). Also the deck's anchor test — narration can
+  // arrive before the first child tool call, and a spawn with only prose is
+  // still a deck. A FAILED child is excluded: it moves to its own expanded
+  // top-level row, and keeping it here too would show the same failure twice
+  // between result and turn_end.
   const cardItemsByParent = useMemo(() => {
     const byParent = new Map<string, Array<ToolCall | SubtextEntry>>();
     for (const e of entries) {
-      const parentId =
-        e.kind === "tool" && !e.isError ? e.parentId : e.kind === "subtext" ? e.parentId : undefined;
-      if (!parentId) continue;
-      const arr = byParent.get(parentId) ?? [];
-      arr.push(e as ToolCall | SubtextEntry);
-      byParent.set(parentId, arr);
+      if ((e.kind !== "tool" && e.kind !== "subtext") || !e.parentId) continue;
+      if (e.kind === "tool" && e.isError) continue;
+      const arr = byParent.get(e.parentId) ?? [];
+      arr.push(e);
+      byParent.set(e.parentId, arr);
     }
     return byParent;
   }, [entries]);
@@ -896,7 +869,6 @@ export function RenderZone({
             key={entry.id}
             entry={entry}
             toggleThinking={toggleThinking}
-            childrenByParent={childrenByParent}
             cardItemsByParent={cardItemsByParent}
             compactedTools={compactedTools}
             activePickerId={activePickerId}
@@ -934,7 +906,6 @@ export function RenderZone({
 function ZoneEntry({
   entry,
   toggleThinking,
-  childrenByParent,
   cardItemsByParent,
   compactedTools,
   activePickerId,
@@ -944,7 +915,6 @@ function ZoneEntry({
 }: {
   entry: Entry;
   toggleThinking: (id: number) => void;
-  childrenByParent: Map<string, ToolCall[]>;
   cardItemsByParent: Map<string, Array<ToolCall | SubtextEntry>>;
   compactedTools: ReturnType<typeof groupSettledTools<ToolCall, ThinkingEntry>>;
   activePickerId: number | null;
@@ -1016,14 +986,7 @@ function ZoneEntry({
     const items = cardItemsByParent.get(entry.toolId);
     // A spawn with visible children IS the deck — the anchor is the
     // referenced-as-parentId relationship, never the tool's name (SA.1).
-    if (items && items.length > 0)
-      return (
-        <SubagentDeck
-          task={entry}
-          calls={childrenByParent.get(entry.toolId) ?? []}
-          items={items}
-        />
-      );
+    if (items && items.length > 0) return <SubagentDeck task={entry} items={items} />;
     return (
       <div className="tool-group">
         <ToolBlock {...toolBlockProps(entry)} />

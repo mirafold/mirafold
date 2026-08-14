@@ -343,21 +343,14 @@ export class OpenCodeEventMapper {
   private emitStreamText(track: PartTrack, text: string, parentId?: string) {
     // A subagent's prose rides its deck's lane, budget-capped (SA.3 — the
     // same per-subagent cap the Claude Code lane applies). `emitted` above
-    // tracks SOURCE position either way, so a capped card still consumes
+    // tracks SOURCE position either way, so a capped deck still consumes
     // the stream correctly and later suffixes stay aligned.
-    if (parentId) {
-      const capped = this.subagentProse.take(parentId, text);
-      if (!capped) return;
-      this.options.emit({
-        type: track.kind === "reasoning" ? "thinking_delta" : "text_delta",
-        text: capped,
-        parentId,
-      });
-      return;
-    }
+    const forwarded = parentId ? this.subagentProse.take(parentId, text) : text;
+    if (!forwarded) return;
     this.options.emit({
       type: track.kind === "reasoning" ? "thinking_delta" : "text_delta",
-      text,
+      text: forwarded,
+      ...(parentId ? { parentId } : {}),
     });
   }
 

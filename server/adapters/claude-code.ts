@@ -409,6 +409,13 @@ export class ClaudeCodeSession implements AgentSession {
     for (const cb of this.listeners) cb(msg);
   }
 
+  /** A subagent's narration/reasoning chunk: budget-capped, then onto its
+   *  deck's lane — or nothing at all once the budget is spent (SA.2). */
+  private emitSubagentProse(parentId: string, type: "text_delta" | "thinking_delta", text: string) {
+    const capped = this.subagentProse.take(parentId, text);
+    if (capped) this.emit({ type, text: capped, parentId });
+  }
+
   private async *promptStream(): AsyncGenerator<SDKUserMessage> {
     while (true) {
       const item = await this.queue.next();
@@ -467,21 +474,15 @@ export class ClaudeCodeSession implements AgentSession {
               // delta stream to duplicate: forward, capped.
               if (block.type === "text") {
                 if (typeof block.text !== "string" || !block.text) continue;
-                if (parentId) {
-                  const capped = this.subagentProse.take(parentId, block.text);
-                  if (capped) this.emit({ type: "text_delta", text: capped, parentId });
-                } else if (!this.streamedText) {
-                  this.emit({ type: "text_delta", text: block.text });
-                }
+                if (parentId) this.emitSubagentProse(parentId, "text_delta", block.text);
+                else if (!this.streamedText) this.emit({ type: "text_delta", text: block.text });
                 continue;
               }
               // A subagent's reasoning (parent thinking streams via
               // stream_event above; emitting it here too would duplicate).
               if (block.type === "thinking") {
-                if (parentId && typeof block.thinking === "string" && block.thinking) {
-                  const capped = this.subagentProse.take(parentId, block.thinking);
-                  if (capped) this.emit({ type: "thinking_delta", text: capped, parentId });
-                }
+                if (parentId && typeof block.thinking === "string" && block.thinking)
+                  this.emitSubagentProse(parentId, "thinking_delta", block.thinking);
                 continue;
               }
               if (block.type !== "tool_use") continue;
