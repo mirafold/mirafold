@@ -1830,9 +1830,10 @@ anywhere; each is independent.
   baseline joined the three (4 PNGs); the visual half skips off Linux instead
   of failing; the cwd normalization keeps the LRM sentinels the real render
   uses; CI caches the managed browsers per `playwright-core` version and runs
-  `test:ui:built` against the `dist` Tier 3 already built. Local Chromium +
-  Firefox + visual **6/6**, Chrome contracts **3/3**; WebKit needs its apt
-  host libraries on the workstation (`sudo` step, not run from a session).
+  `test:ui:built` against the `dist` Tier 3 already built. After installing
+  WebKit's apt host libraries on the workstation, the shipped `yarn test:ui`
+  passed **7/7** (Chromium + Firefox + WebKit + 4 visual); Chrome contracts
+  **3/3**.
 
 ---
 
