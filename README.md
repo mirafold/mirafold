@@ -1601,7 +1601,8 @@ yarn test:server  # Tier 2 — spawns the real daemon (mock-forced), drives real
                   # daemon handshakes into flaky timeouts)
 yarn test:e2e     # Tier 3 — yarn build + headless system Chrome (playwright-core), opt-in, ~5min
                   #   (files run sequentially — parallel Chrome suites flake on modest hardware)
-yarn test:ui      # managed Chromium + Firefox + WebKit smoke, then 3 Ubuntu/Chromium visual baselines
+yarn test:ui      # managed Chromium + Firefox + WebKit smoke, then 4 Ubuntu/Chromium visual baselines
+                  #   (test:ui:built skips the rebuild — CI runs it right after test:e2e)
 yarn test:ui:update-snapshots
                   # regenerate those PNGs intentionally; run only on Ubuntu 24.04
 yarn test:live    # Tier 4 — the REAL agent binary + a real LOCAL model, opt-in, ~2.5min
@@ -1611,8 +1612,9 @@ yarn test:live    # Tier 4 — the REAL agent binary + a real LOCAL model, opt-i
 The one-time prerequisite for the managed UI gate is
 `yarn playwright-core install --with-deps chromium firefox webkit`. A cold
 install downloads several hundred megabytes of revision-matched browser
-binaries and installs their Linux host libraries; pull-request CI does this
-explicitly. The cross-engine suite keeps one representative shell journey per
+binaries and installs their Linux host libraries (the apt half needs sudo, so
+run it in your own terminal); pull-request CI does this explicitly, caching
+the binaries per `playwright-core` version. The cross-engine suite keeps one representative shell journey per
 engine instead of tripling Tier 3. Pixel comparisons stay on managed Chromium
 and Ubuntu 24.04 because text and graphics rendering are operating-system
 specific; a failed comparison writes actual and diff PNGs under the system
@@ -1652,7 +1654,9 @@ needs `google-chrome`, path overridable via `CHROME_BIN`).
 
 `*.uitest.ts` is the compact compatibility/appearance gate: the same
 credential-scrubbed real daemon and production browser bundle are driven once
-in each managed browser, followed by the three committed visual surfaces. It
+in each managed browser, followed by the four committed visual surfaces
+(onboarding, a settled desktop turn in the dark and light themes, phone
+settings). Off Linux the visual half skips rather than fails. It
 is separate from `*.e2e.ts` so Firefox and WebKit add broad compatibility
 signal without multiplying the complete Chrome suite.
 

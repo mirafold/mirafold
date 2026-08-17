@@ -1825,6 +1825,14 @@ anywhere; each is independent.
   Full starting state, dependency/CI cost, implementation boundary, temporary
   local WebKit setup, and verification record → **PLAN-ARCHIVE.md, “Moved
   2026-08-16 (Phase UIX — cross-engine and visual browser gates).”**
+  Review follow-up 2026-08-17: page-error capture now attaches before the
+  first navigation (`withFreshMockPage.onPage`); a light-theme desktop
+  baseline joined the three (4 PNGs); the visual half skips off Linux instead
+  of failing; the cwd normalization keeps the LRM sentinels the real render
+  uses; CI caches the managed browsers per `playwright-core` version and runs
+  `test:ui:built` against the `dist` Tier 3 already built. Local Chromium +
+  Firefox + visual **6/6**, Chrome contracts **3/3**; WebKit needs its apt
+  host libraries on the workstation (`sudo` step, not run from a session).
 
 ---
 

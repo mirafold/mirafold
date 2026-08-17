@@ -1,5 +1,4 @@
 import { after, before, test } from "node:test";
-import assert from "node:assert/strict";
 import type { Browser, BrowserContextOptions, Page, ViewportSize } from "playwright-core";
 import {
   enterMockSession,
@@ -10,12 +9,13 @@ import { assertVisualSnapshot } from "./visual-snapshot";
 
 let browser: Browser;
 
+// The committed PNGs are Ubuntu-24.04/managed-Chromium renders. Elsewhere the
+// suite skips (a red run on a Mac would prove nothing); the browser matrix
+// next to it stays portable.
+const LINUX_ONLY = process.platform === "linux" ? false : "visual baselines are Ubuntu-only";
+
 before(async () => {
-  assert.equal(
-    process.platform,
-    "linux",
-    "visual baselines are intentionally Ubuntu-only; the browser matrix is portable",
-  );
+  if (LINUX_ONLY) return;
   browser = await launchManagedBrowser("chromium");
 });
 
@@ -34,10 +34,12 @@ const visualContext = (viewport: ViewportSize): BrowserContextOptions => ({
 
 async function normalizeSessionFacts(page: Page): Promise<void> {
   await page.evaluate(() => {
+    // The cwd button is direction:rtl (left-side ellipsis) and relies on LRM
+    // sentinels to keep the path in reading order — replace it the same way.
     const replacements = [
       [".sb-session", "visual-session"],
       [".sb-version", "v0.0.0"],
-      [".prompt-cwd", "~/workspace/mirafold"],
+      [".prompt-cwd", "\u200E~/workspace/mirafold\u200E"],
     ] as const;
     for (const [selector, text] of replacements) {
       const element = document.querySelector(selector);
@@ -55,7 +57,18 @@ async function normalizeSessionFacts(page: Page): Promise<void> {
   });
 }
 
-test("visual: onboarding card", async () => {
+async function settleKpiTurn(page: Page, text: string): Promise<void> {
+  const prompt = page.locator(".prompt-box textarea");
+  await prompt.fill(text);
+  await prompt.press("Enter");
+  await page.locator(".rc-stat-value", { hasText: "96.8%" }).waitFor();
+  await page
+    .locator(".turn-assistant", { hasText: "Coverage is climbing as the new tests land." })
+    .waitFor();
+  await page.locator(".stop-btn").waitFor({ state: "detached" });
+}
+
+test("visual: onboarding card", { skip: LINUX_ONLY }, async () => {
   await withFreshMockPage(
     browser,
     {
@@ -72,7 +85,7 @@ test("visual: onboarding card", async () => {
   );
 });
 
-test("visual: settled desktop session", async () => {
+test("visual: settled desktop session", { skip: LINUX_ONLY }, async () => {
   await withFreshMockPage(
     browser,
     {
@@ -81,21 +94,32 @@ test("visual: settled desktop session", async () => {
     },
     async (page) => {
       await enterMockSession(page);
-      const prompt = page.locator(".prompt-box textarea");
-      await prompt.fill("kpi visual baseline");
-      await prompt.press("Enter");
-      await page.locator(".rc-stat-value", { hasText: "96.8%" }).waitFor();
-      await page
-        .locator(".turn-assistant", { hasText: "Coverage is climbing as the new tests land." })
-        .waitFor();
-      await page.locator(".stop-btn").waitFor({ state: "detached" });
+      await settleKpiTurn(page, "kpi visual baseline");
       await normalizeSessionFacts(page);
       await assertVisualSnapshot(browser, page, "desktop-session");
     },
   );
 });
 
-test("visual: phone settings over a session", async () => {
+test("visual: settled desktop session, light theme", { skip: LINUX_ONLY }, async () => {
+  await withFreshMockPage(
+    browser,
+    {
+      token: "ui-visual-desktop-light",
+      context: visualContext({ width: 1280, height: 900 }),
+    },
+    async (page) => {
+      await enterMockSession(page);
+      await page.locator('.sb-theme-opt[title="Light theme"]').click();
+      await page.locator('.sb-theme-opt[title="Light theme"][aria-pressed="true"]').waitFor();
+      await settleKpiTurn(page, "kpi visual baseline");
+      await normalizeSessionFacts(page);
+      await assertVisualSnapshot(browser, page, "desktop-session-light");
+    },
+  );
+});
+
+test("visual: phone settings over a session", { skip: LINUX_ONLY }, async () => {
   await withFreshMockPage(
     browser,
     {

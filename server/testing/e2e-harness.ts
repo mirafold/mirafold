@@ -31,10 +31,16 @@ export const launchManagedBrowser = (name: ManagedBrowserName): Promise<Browser>
   MANAGED_BROWSERS[name].launch();
 
 /** One credential-scrubbed daemon and isolated browser context, always closed
- * in context-before-daemon order even when setup or an assertion fails. */
+ * in context-before-daemon order even when setup or an assertion fails.
+ * `onPage` runs before the first navigation, so listeners it attaches (page
+ * errors, console) see the bundle load and the first render too. */
 export async function withFreshMockPage(
   browser: Browser,
-  options: { token: string; context?: BrowserContextOptions },
+  options: {
+    token: string;
+    context?: BrowserContextOptions;
+    onPage?: (page: Page) => void;
+  },
   run: (page: Page, base: string) => Promise<void>,
 ): Promise<void> {
   const daemon = await startDaemon({ MIRAFOLD_TOKEN: options.token });
@@ -42,6 +48,7 @@ export async function withFreshMockPage(
     const context = await browser.newContext(options.context);
     try {
       const page = await context.newPage();
+      options.onPage?.(page);
       const base = `http://127.0.0.1:${daemon.port}`;
       await page.goto(`${base}/?token=${options.token}`);
       await run(page, base);

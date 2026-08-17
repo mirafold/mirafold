@@ -109,8 +109,14 @@ jobs:
         working-directory: mirafold-relay
       - run: yarn install --frozen-lockfile
       # The compact UI gate uses Playwright's revision-matched Chromium,
-      # Firefox, and WebKit. --with-deps supplies WebKit's host libraries on a
-      # clean runner; these downloads are the gate's material CI cost.
+      # Firefox, and WebKit. The binaries (~400 MB) are cached per
+      # playwright-core version; --with-deps still runs every time because it
+      # is what installs WebKit's apt host libraries on a clean runner.
+      - name: Cache managed UI browsers
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ms-playwright-${{ runner.os }}-${{ hashFiles('mirafold/node_modules/playwright-core/package.json') }}
       - name: Install managed UI browsers
         run: yarn playwright-core install --with-deps chromium firefox webkit
       # Tier 3 drives real headless Chrome via playwright-core; the harness
@@ -137,8 +143,9 @@ jobs:
       - name: Tier 2 (integration, real daemon + sockets)
         run: yarn test:server
       - run: yarn test:e2e
+      # `dist` was just built by test:e2e; run the gate against it.
       - name: Cross-engine + visual UI gate
-        run: yarn test:ui
+        run: yarn test:ui:built
         env:
           MIRAFOLD_UI_ARTIFACT_DIR: ${{ runner.temp }}/mirafold-ui-visual
       # A numerical pixel count is enough to fail the gate; these files make
