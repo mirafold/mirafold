@@ -1599,15 +1599,29 @@ yarn test         # Tier 1 — pure/unit, node:test + tsx, ~3s, run on every com
 yarn test:server  # Tier 2 — spawns the real daemon (mock-forced), drives real ws sockets, ~2-3min
                   # (serialized like Tier 3: parallel itest files starve each other's
                   # daemon handshakes into flaky timeouts)
-yarn test:e2e     # Tier 3 — yarn build + headless Chrome (playwright-core), opt-in, ~75s
+yarn test:e2e     # Tier 3 — yarn build + headless system Chrome (playwright-core), opt-in, ~5min
                   #   (files run sequentially — parallel Chrome suites flake on modest hardware)
+yarn test:ui      # managed Chromium + Firefox + WebKit smoke, then 3 Ubuntu/Chromium visual baselines
+yarn test:ui:update-snapshots
+                  # regenerate those PNGs intentionally; run only on Ubuntu 24.04
 yarn test:live    # Tier 4 — the REAL agent binary + a real LOCAL model, opt-in, ~2.5min
                   #   (skips per test when codex/Ollama isn't installed)
 ```
 
-The suite is **`node:test` + `tsx`, zero test-framework dependencies** — the
-`test*` scripts are just aliases for `node --import tsx --test <glob>`. Tests
-live next to their source; the suffix picks the tier: `*.test.ts` (Tier 1,
+The one-time prerequisite for the managed UI gate is
+`yarn playwright-core install --with-deps chromium firefox webkit`. A cold
+install downloads several hundred megabytes of revision-matched browser
+binaries and installs their Linux host libraries; pull-request CI does this
+explicitly. The cross-engine suite keeps one representative shell journey per
+engine instead of tripling Tier 3. Pixel comparisons stay on managed Chromium
+and Ubuntu 24.04 because text and graphics rendering are operating-system
+specific; a failed comparison writes actual and diff PNGs under the system
+temporary directory (and CI uploads them as `ui-visual-diffs`).
+
+The suite is **`node:test` + `tsx`, zero test-framework dependencies** — each
+test script ultimately runs `node --import tsx --test <glob>` (the browser
+scripts prepend a production build). Tests live next to their source; the
+suffix picks the tier: `*.test.ts` (Tier 1,
 pure logic — security predicates, caps, every adapter's event mapping on
 synthetic events (Claude Code through an injected engine seam, Codex through
 a stubbed thread, OpenCode through a fake HTTP+SSE transport, Gemini through
@@ -1635,6 +1649,12 @@ guarantee (a stub `xdg-open` proves, from inside the spawned opener, stdio →
 user's terminal), and the phone suite:
 390×844 touch pairing, thumb permissions, offline→online mid-turn resume;
 needs `google-chrome`, path overridable via `CHROME_BIN`).
+
+`*.uitest.ts` is the compact compatibility/appearance gate: the same
+credential-scrubbed real daemon and production browser bundle are driven once
+in each managed browser, followed by the three committed visual surfaces. It
+is separate from `*.e2e.ts` so Firefox and WebKit add broad compatibility
+signal without multiplying the complete Chrome suite.
 
 `*.ltest.ts` is **Tier 4** (2026-07-20) — the one tier that asks the REAL
 agent binary real questions. Tiers 1-3 answer entirely with fixtures (a

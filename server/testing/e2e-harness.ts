@@ -1,15 +1,63 @@
-// Shared Tier-3 (headless-Chrome) helpers. Deliberately NOT named *.e2e.ts:
+// Shared real-browser helpers. Deliberately NOT named with a test suffix:
 // importing one suite file from another would re-register its tests, so the
 // shared pieces live in this plain module instead.
 
 import assert from "node:assert/strict";
-import { chromium, type Browser, type Page } from "playwright-core";
+import {
+  chromium,
+  firefox,
+  webkit,
+  type Browser,
+  type BrowserContextOptions,
+  type Page,
+} from "playwright-core";
 import axe from "axe-core";
+import { startDaemon } from "./itest-harness";
 
 export const CHROME = process.env.CHROME_BIN ?? "/usr/bin/google-chrome";
 
 export const launchChrome = (): Promise<Browser> =>
   chromium.launch({ executablePath: CHROME });
+
+/** The compatibility/visual suites use Playwright's revision-matched browser
+ * binaries. The full Tier-3 suite deliberately keeps using the system Chrome
+ * path above: this matrix adds engines without multiplying all 103 cases. */
+export const MANAGED_BROWSER_NAMES = ["chromium", "firefox", "webkit"] as const;
+export type ManagedBrowserName = (typeof MANAGED_BROWSER_NAMES)[number];
+
+const MANAGED_BROWSERS = { chromium, firefox, webkit };
+
+export const launchManagedBrowser = (name: ManagedBrowserName): Promise<Browser> =>
+  MANAGED_BROWSERS[name].launch();
+
+/** One credential-scrubbed daemon and isolated browser context, always closed
+ * in context-before-daemon order even when setup or an assertion fails. */
+export async function withFreshMockPage(
+  browser: Browser,
+  options: { token: string; context?: BrowserContextOptions },
+  run: (page: Page, base: string) => Promise<void>,
+): Promise<void> {
+  const daemon = await startDaemon({ MIRAFOLD_TOKEN: options.token });
+  try {
+    const context = await browser.newContext(options.context);
+    try {
+      const page = await context.newPage();
+      const base = `http://127.0.0.1:${daemon.port}`;
+      await page.goto(`${base}/?token=${options.token}`);
+      await run(page, base);
+    } finally {
+      await context.close();
+    }
+  } finally {
+    await daemon.stop();
+  }
+}
+
+export async function enterMockSession(page: Page): Promise<void> {
+  await page.locator(".onb-agent", { hasText: "Claude Code" }).click();
+  await page.waitForURL(/\/s\/[\w-]+/);
+  await page.locator(".prompt-box textarea").waitFor();
+}
 
 /** Phone-width oracle: the page must never pan sideways. */
 export const noSideScroll = async (p: Page) => {

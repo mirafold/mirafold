@@ -10799,3 +10799,203 @@ remain later release-sequence gates, not defects at this checkpoint.
   within RF.1/RF.2. The working tree is ready for the existing **CS.4**
   real-subscription cancel → Paddle scheduled state → undo walkthrough,
   performed with Kyle one action at a time.
+
+
+## Moved 2026-08-16 (Phase UI — core browser contracts)
+
+Full Phase UI body completed and compressed in PLAN.md on 2026-08-16.
+
+## Phase UI — Core browser UI contracts (opened + ✅ COMPLETE 2026-08-16)
+
+Goal: add a small, high-signal browser suite for shell-owned interactions
+whose behavior is load-bearing but not directly asserted by the current test
+suite. This phase was test-only and did not change production UI behavior.
+
+Verified starting state (2026-08-16):
+
+- `package.json` already carried `playwright-core` and the Tier-3 command
+  already ran every `server/**/*.e2e.ts` file through `node:test` after a
+  fresh build. `server/testing/e2e-harness.ts` launched the system Chrome;
+  `server/testing/itest-harness.ts` forced provider credentials empty and
+  routed browser tests through `MockSession`. The dependency call was
+  therefore to reuse the existing stack: zero added packages, zero added
+  transitive dependencies, zero lockfile growth, and no new alerts surface.
+- The existing Tier-3 suite was broad: it already covered onboarding, real
+  DOM rendering, responsive phone behavior, themes, settings actions,
+  artifacts, accessibility scans, Explorer, Changes, fleet, relay, and
+  resilience. Recursive searches across the current `*.e2e.ts` and web
+  `*.test.ts` files found no direct assertions for the desktop
+  `Shift+Enter`/`Enter` composer contract, `ModalCard`'s Tab loop plus
+  opener-focus restoration, or the status bar's two-click end-session guard
+  through its browser redirect.
+- The exact existing implementations placed under test were `PromptBox` in
+  `web/src/components/PromptBox.tsx`, `ModalCard` + `useFocusTrap` in
+  `web/src/components/ModalCard.tsx` and `web/src/use-focus-trap.ts`, and
+  `StatusBar`/`session-bus` in `web/src/components/StatusBar.tsx` and
+  `web/src/session-bus.ts`. Their executable behavior stayed unchanged.
+
+Change boundary:
+
+- **Created new:** `server/testing/ui-contracts.e2e.ts`, an isolated
+  real-Chrome suite with one fresh credential-scrubbed mock daemon per test.
+- **Modified existing documentation:** `PLAN.md` and `PLAN-ARCHIVE.md`.
+- **Left behaviorally unchanged:** every production server and web module,
+  the wire protocol, package scripts, dependencies, and lockfile.
+
+- [x] **Step UI.1 — Map the existing browser suite and select only genuine
+  gaps.** Completed 2026-08-16: verified the runner, harness, current Tier-3
+  inventory, and the three missing contracts above; rejected a second UI
+  framework because the repository already had the appropriate real-browser
+  machinery.
+- [x] **Step UI.2 — Add the three browser contracts.** Completed 2026-08-16:
+  real keyboard and pointer input in headless Chrome now assert that (1)
+  desktop `Shift+Enter` inserts a newline without sending, then plain `Enter`
+  submits the multiline prompt; (2) opening settings moves focus inside, Tab
+  and Shift+Tab wrap within the dialog, and Escape returns focus to the
+  settings opener; (3) the first end-session click only arms the control,
+  while the second ends the session, returns to mission control, and removes
+  the ended session.
+- [x] **Step UI.3 — Prove integration and close.** Completed 2026-08-16: the
+  new file alone passed **3/3**; `yarn typecheck` passed; Tier 1 passed
+  **840/840**; and `yarn test:e2e` rebuilt the production bundle and passed
+  **103/103** in 321.69 seconds. The existing glob discovered the new
+  contracts as tests 101–103. No test skipped and the final change stayed
+  inside the test-only boundary.
+
+Done: all three tests pass against the real browser and mock daemon, the full
+required verification is green, the new file is selected automatically by the
+existing `test:e2e` glob, and no production or dependency file changed.
+
+**Refactor verification (2026-08-16):** a direct markup check found that the
+end-session test's `.fleet-row[data-session-id=…]` selector named an attribute
+`FleetView.tsx` does not render, so that assertion could only ever pass. The
+following `.fleet-row` count was the real, non-vacuous proof because this suite
+creates exactly one session on a fresh daemon. Removed the impossible selector,
+its redundant session-id parse/callback parameter, and an explicit type already
+inferred from `startDaemon`; renamed the private helper
+`withFreshMockSession` to state its isolation mechanism. Test intent and all
+product behavior stayed unchanged. Before and after, the targeted file passed
+**3/3**. Post-refactor `yarn typecheck` passed and the freshly rebuilt full
+Tier 3 passed **103/103**, zero skipped, in 320.23 seconds; the refactored tests
+again ran last as 101–103.
+
+
+## Moved 2026-08-16 (Phase UIX — cross-engine and visual browser gates)
+
+Full Phase UIX body completed and compressed in PLAN.md on 2026-08-16.
+
+## Phase UIX — Cross-engine and visual browser gates (opened + ✅ COMPLETE 2026-08-16)
+
+Goal: add the two highest-value browser checks that the Chrome-only behavioral
+suite could not provide: a compact Chromium/Firefox/WebKit compatibility gate
+and deterministic pixel baselines for representative shell surfaces. This was
+test infrastructure only; shipped server and React behavior stayed unchanged.
+
+Verified starting state and approved boundary:
+
+- `package.json` already had direct `playwright-core@^1.61.1`; its installed
+  CLI and cache exposed matching managed Chromium, Firefox, and WebKit
+  revisions. `package.json`'s `test:e2e` and
+  `server/testing/e2e-harness.ts` exercised only system Chrome. Recursive
+  inspection found no committed screenshot baselines or PNG comparator.
+- **Modify existing:** `package.json`, `server/testing/e2e-harness.ts`,
+  `.github/workflows/ci.yml`, `README.md`, `PLAN.md`, and `PLAN-ARCHIVE.md`.
+- **Create new:** one three-engine smoke suite, one visual-regression suite,
+  its Ubuntu-24.04/managed-Chromium PNG baselines, and a small zero-package
+  image comparator.
+- **Leave behaviorally unchanged:** every shipped server and React module,
+  the existing 103 system-Chrome Tier-3 cases, runtime dependencies, lockfile,
+  and release behavior.
+
+Dependency and cost decision:
+
+- No `@playwright/test`: it would add a second test runner, its transitive
+  dependency tree, lockfile growth, and another package-alert surface solely
+  for three screenshot comparisons. Existing `playwright-core` already
+  captures PNGs and decodes them in a blank browser page, so the in-repo
+  comparator owns only a narrow per-channel/total-pixel policy. Net npm cost:
+  zero packages, zero transitives, zero lockfile bytes, zero package alerts.
+- Pull-request CI now downloads the three revision-matched managed engines and
+  their host libraries on a cold runner: several hundred megabytes plus about
+  35 seconds of UI execution after build on this workstation. CI also adds one
+  pinned, failure-only dependency,
+  `actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02`
+  (v4), so actual/diff PNGs survive a failed runner. Its cost is one external
+  action execution and artifact storage only on failure; its real use site is
+  visual diagnosis, and the commit pin bounds supply-chain drift.
+
+- [x] **Step UIX.1 — Make browser selection explicit and add the compatibility
+  smoke.** `e2e-harness.ts` now distinguishes the unchanged system-Chrome
+  launcher from Playwright's managed Chromium, Firefox, and WebKit launchers.
+  `ui-browser-matrix.uitest.ts` runs one fresh credential-scrubbed daemon per
+  engine and proves onboarding, a WebSocket-backed prompt with an update-in-
+  place KPI response, settings open/Escape close, no horizontal overflow, and
+  no uncaught page error. It does not multiply the full 103-case suite.
+- [x] **Step UIX.2 — Add deterministic visual contracts without a package.**
+  `ui-visual.uitest.ts` fixes viewport, scale, color scheme, reduced motion,
+  locale, timezone, fonts, animation state, caret, and dynamic cwd/session/
+  version text. Three committed PNGs cover the onboarding card, a settled
+  desktop session, and phone settings. `visual-snapshot.ts` decodes expected
+  and actual PNGs through Canvas, applies a 12-level per-channel noise floor
+  plus a 0.05% changed-pixel ceiling, and writes actual/diff PNGs on failure.
+  `yarn test:ui:update-snapshots` is the explicit Ubuntu-24.04 update path.
+- [x] **Step UIX.3 — Wire the PR gate, document its scope/cost, and verify.**
+  The PR-only integration job is pinned to the baseline's `ubuntu-24.04`, runs
+  `playwright-core install --with-deps chromium firefox webkit`, then runs
+  `yarn test:ui`; failure artifacts are uploaded. README documents the command,
+  browser-install cost, OS bound, baseline update, and `*.uitest.ts` scope.
+
+Actual diff versus the approved boundary:
+
+- **Executable test/CI changes:** modified `package.json`,
+  `server/testing/e2e-harness.ts`, and `.github/workflows/ci.yml`; created
+  `server/testing/ui-browser-matrix.uitest.ts`,
+  `server/testing/ui-visual.uitest.ts`, `server/testing/visual-snapshot.ts`,
+  and three PNG baselines under `server/testing/ui-snapshots/`.
+- **Documentation/comment changes:** modified `README.md`, `PLAN.md`, and
+  `PLAN-ARCHIVE.md`, plus explanatory comments in the harness and workflow.
+  Wrap-up also synchronized `CONTRIBUTING.md` so its contributor test commands
+  include the new UI gate.
+- **Shipped executable behavior:** unchanged. No production server/web source,
+  wire protocol, runtime package, lockfile, or release workflow changed.
+
+Verification (2026-08-16):
+
+- Managed-browser launch probe: Chromium and Firefox launched directly. The
+  workstation lacked WebKit's `libavif16` and `libwoff1` host libraries; four
+  Ubuntu packages totaling 672 kB were downloaded and extracted under `/tmp`
+  only (never installed), then preloaded into the one WebKit process. The exact
+  WebKit test passed **1/1**; Chromium + Firefox passed **2/2**.
+- Snapshot generation passed **3/3**. A separate compare-mode run passed
+  **3/3**. A controlled same-size changed page was rejected and produced the
+  promised diagnostic images, proving the comparator's negative path.
+- The public `yarn test:ui` command rebuilt production assets and passed
+  **6/6**, zero skipped, in 34.82 seconds (37.46 seconds including build).
+  `playwright-core install --dry-run chromium firefox webkit` resolved
+  Chromium 149 revision 1228, Firefox 151 revision 1532, and WebKit 26.5
+  revision 2311 for Ubuntu 24.04. `package.json` and CI YAML parsed; `git diff
+  --check` passed.
+- `yarn typecheck` passed. Tier 1 passed **840/840**, zero skipped, in 19.66
+  seconds. The complete `yarn test:e2e` rebuilt the production bundle and
+  passed **103/103**, zero skipped, in 328.71 seconds (331.21 seconds including
+  build). No remote CI run is claimed; the workflow is ready to exercise on
+  the eventual pull request.
+
+**Refactor verification (2026-08-16):** the three new suites repeated the same
+fresh mock-daemon/browser-context/page cleanup and two repeated the same
+onboarding-to-session entry. Those mechanics now live once in
+`e2e-harness.ts`; the suite files retain their own scenarios and assertions.
+The immutable screenshot policy is also declared once, and passing pixel
+comparisons no longer pay to base64-encode a diff PNG that will be discarded.
+No assertion, snapshot name, browser/viewport, threshold, script, dependency,
+or product behavior changed; all three baseline PNGs retained their exact byte
+sizes. The broader pre-existing `app.e2e.ts` lifecycle was left alone because
+it was outside the tests being refactored and has different setup needs.
+
+The pre-refactor UI gate passed **6/6**. Afterward, `yarn typecheck` passed;
+`yarn test:ui` rebuilt production and passed **6/6**, zero skipped, in 33.46
+seconds (36.11 seconds including build); the shared-helper Chrome contracts
+passed **3/3**; Tier 1 passed **840/840**, zero skipped, in 19.22 seconds; and a
+controlled wrong page was still rejected while producing both actual and diff
+PNGs. The complete rebuilt Tier 3 passed **103/103**, zero skipped, in 325.58
+seconds (328.13 seconds including build). `git diff --check` passed.

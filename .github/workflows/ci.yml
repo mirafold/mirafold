@@ -2,9 +2,10 @@ name: CI
 
 # Runs the test suite automatically. Tiers (README §8): Tier 1 (unit) is
 # seconds and runs on every push to main and every PR; Tier 2 (real daemon +
-# sockets) and Tier 3 (headless Chrome, rebuilds dist) are minutes and run on
-# PRs only (Kyle's call, 2026-07-22 — the full suite gates a merge, not every
-# push). Tier 4 (`test:live`) NEVER runs here — it drives real binaries
+# sockets), Tier 3 (headless Chrome, rebuilds dist), and the compact managed-
+# browser/visual UI gate are minutes and run on PRs only (Kyle's call,
+# 2026-07-22 — the full suite gates a merge, not every push). Tier 4
+# (`test:live`) NEVER runs here — it drives real binaries
 # and one test spends a real OPENROUTER_API_KEY; no provider credential is ever
 # added to repo secrets (PLAN C.1, 2026-07-20 audit).
 #
@@ -81,11 +82,13 @@ jobs:
       - run: yarn test
 
   integration:
-    name: integration + e2e (Tier 2 + Tier 3)
+    name: integration + browser (Tier 2 + Tier 3 + UI)
     # PRs only — pushes to main get Tier 1; the slow tiers ran on the PR that
     # merged them (Kyle's call, 2026-07-22).
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    # Visual baselines are OS-renderer-specific. Pin the image named by the
+    # committed PNGs instead of letting ubuntu-latest silently change pixels.
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: mirafold
@@ -105,8 +108,13 @@ jobs:
       - run: npm ci
         working-directory: mirafold-relay
       - run: yarn install --frozen-lockfile
+      # The compact UI gate uses Playwright's revision-matched Chromium,
+      # Firefox, and WebKit. --with-deps supplies WebKit's host libraries on a
+      # clean runner; these downloads are the gate's material CI cost.
+      - name: Install managed UI browsers
+        run: yarn playwright-core install --with-deps chromium firefox webkit
       # Tier 3 drives real headless Chrome via playwright-core; the harness
-      # reads CHROME_BIN (default /usr/bin/google-chrome). ubuntu-latest ships
+      # reads CHROME_BIN (default /usr/bin/google-chrome). ubuntu-24.04 ships
       # google-chrome-stable — resolve its path and hand it to the suite rather
       # than assume the default holds across runner image changes.
       - name: Locate Chrome
@@ -129,3 +137,16 @@ jobs:
       - name: Tier 2 (integration, real daemon + sockets)
         run: yarn test:server
       - run: yarn test:e2e
+      - name: Cross-engine + visual UI gate
+        run: yarn test:ui
+        env:
+          MIRAFOLD_UI_ARTIFACT_DIR: ${{ runner.temp }}/mirafold-ui-visual
+      # A numerical pixel count is enough to fail the gate; these files make
+      # the failure diagnosable without reproducing it on the runner.
+      - name: Preserve visual diffs
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ui-visual-diffs
+          path: ${{ runner.temp }}/mirafold-ui-visual
+          if-no-files-found: ignore

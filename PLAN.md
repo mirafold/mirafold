@@ -1790,6 +1790,44 @@ anywhere; each is independent.
 
 ---
 
+## Phase UI — Core browser UI contracts (opened + ✅ COMPLETE 2026-08-16)
+
+- [x] **Phase UI complete.** Added three isolated real-Chrome contracts for
+  desktop multiline submission, settings-modal focus containment/restoration,
+  and the two-click end-session safeguard through its mission-control redirect.
+  No production or dependency file changed. Targeted Tier 3 was **3/3**;
+  typecheck passed; Tier 1 was **840/840**; the full freshly built Tier 3 was
+  **103/103** with the new tests discovered as 101–103. A same-day refactor
+  removed one vacuous selector and its dead session-id plumbing; post-refactor
+  targeted Tier 3 remained **3/3**, typecheck passed, and full Tier 3 remained
+  **103/103**. Full verified baseline, dependency decision, implementation
+  boundary, and completion record →
+  **PLAN-ARCHIVE.md, “Moved 2026-08-16 (Phase UI — core browser contracts).”**
+
+---
+
+## Phase UIX — Cross-engine and visual browser gates (opened + ✅ COMPLETE 2026-08-16)
+
+- [x] **Phase UIX complete.** Added a bounded Chromium/Firefox/WebKit journey
+  plus committed Ubuntu-24.04/managed-Chromium baselines for onboarding, a
+  settled desktop turn, and phone settings. The new `yarn test:ui` gate passed
+  **6/6** with zero skips in 34.82 seconds after its production build; a
+  deliberate changed-image probe was rejected and emitted actual/diff PNGs.
+  Typecheck passed, Tier 1 passed **840/840**, and the freshly built full
+  system-Chrome Tier 3 remained **103/103**, zero skipped. No shipped server or
+  React module, runtime dependency, lockfile, or release workflow changed.
+  A same-day test-only refactor centralized the repeated daemon/context/page
+  lifecycle and mock-session entry, hoisted the visual capture policy, and
+  stopped encoding a diff PNG for passing comparisons. Assertions, thresholds,
+  browser coverage, and baseline PNG bytes stayed unchanged; post-refactor UI
+  remained **6/6**, targeted Chrome contracts **3/3**, Tier 1 **840/840**, and
+  full Tier 3 **103/103**.
+  Full starting state, dependency/CI cost, implementation boundary, temporary
+  local WebKit setup, and verification record → **PLAN-ARCHIVE.md, “Moved
+  2026-08-16 (Phase UIX — cross-engine and visual browser gates).”**
+
+---
+
 ## Phase S — Theme system: six themes at launch (✅ COMPLETE 2026-07-16)
 
 Six themes ship in the launch build — Light, Dark, Solarized Light,
