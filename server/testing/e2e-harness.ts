@@ -32,26 +32,39 @@ export const launchManagedBrowser = (name: ManagedBrowserName): Promise<Browser>
 
 /** One credential-scrubbed daemon and isolated browser context, always closed
  * in context-before-daemon order even when setup or an assertion fails.
- * `onPage` runs before the first navigation, so listeners it attaches (page
- * errors, console) see the bundle load and the first render too. */
+ * Uncaught page errors are collected from before the first navigation, so an
+ * engine that throws while loading the bundle is on record; `run` receives
+ * the list to assert on, and if `run` throws for any reason the captured
+ * errors are appended to the failure — a boot-time throw reads as itself,
+ * not as an anonymous timeout on the first locator. `env` is layered onto
+ * the scrubbed daemon environment. */
 export async function withFreshMockPage(
   browser: Browser,
   options: {
     token: string;
     context?: BrowserContextOptions;
-    onPage?: (page: Page) => void;
+    env?: Record<string, string>;
   },
-  run: (page: Page, base: string) => Promise<void>,
+  run: (page: Page, base: string, pageErrors: Error[]) => Promise<void>,
 ): Promise<void> {
-  const daemon = await startDaemon({ MIRAFOLD_TOKEN: options.token });
+  const daemon = await startDaemon({ ...options.env, MIRAFOLD_TOKEN: options.token });
   try {
     const context = await browser.newContext(options.context);
     try {
       const page = await context.newPage();
-      options.onPage?.(page);
+      const pageErrors: Error[] = [];
+      page.on("pageerror", (error) => pageErrors.push(error));
       const base = `http://127.0.0.1:${daemon.port}`;
-      await page.goto(`${base}/?token=${options.token}`);
-      await run(page, base);
+      try {
+        await page.goto(`${base}/?token=${options.token}`);
+        await run(page, base, pageErrors);
+      } catch (error) {
+        if (pageErrors.length === 0 || !(error instanceof Error)) throw error;
+        error.message +=
+          `\nuncaught page errors before this failure:\n` +
+          pageErrors.map((e) => `  - ${e.message}`).join("\n");
+        throw error;
+      }
     } finally {
       await context.close();
     }

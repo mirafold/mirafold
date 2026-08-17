@@ -18,7 +18,6 @@ for (const browserName of MANAGED_BROWSER_NAMES) {
     async () => {
       const token = `ui-matrix-${browserName}`;
       const browser = await launchManagedBrowser(browserName);
-      const pageErrors: Error[] = [];
       try {
         await withFreshMockPage(
           browser,
@@ -29,12 +28,8 @@ for (const browserName of MANAGED_BROWSER_NAMES) {
               colorScheme: "light",
               reducedMotion: "reduce",
             },
-            // Attached before navigation: an engine that throws while loading
-            // the bundle or painting onboarding is reported by message, not
-            // as an anonymous timeout on the first locator.
-            onPage: (page) => page.on("pageerror", (error) => pageErrors.push(error)),
           },
-          async (page) => {
+          async (page, _base, pageErrors) => {
             assert.equal(
               (await page.locator(".onb-title").innerText()).trim(),
               "Choose your agent",

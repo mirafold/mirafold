@@ -651,9 +651,18 @@ server/            the local daemon (Node, run with tsx)
                      without the sibling, the rest of Tier 2 is unaffected
   testing/           cross-cutting test infrastructure (H.8): itest-harness.ts
                      (spawns the real daemon for Tier 2/3) + e2e-harness.ts
-                     (shared browser-e2e helpers: Chrome launch, the axe
-                     accessibility gate, noSideScroll) + the whole-product
-                     e2e suites (app, launcher, phone, resilience)
+                     (shared browser helpers: system-Chrome launch, the
+                     managed Chromium/Firefox/WebKit launchers,
+                     withFreshMockPage — one scrubbed daemon + one browser
+                     context per test, page errors captured from before the
+                     first navigation and appended to any failure —
+                     enterMockSession, the axe accessibility gate,
+                     noSideScroll) + the whole-product e2e suites (app,
+                     launcher, phone, resilience, ui-contracts) + the compact
+                     UI gate: ui-browser-matrix.uitest.ts (one journey per
+                     engine), ui-visual.uitest.ts + visual-snapshot.ts (the
+                     in-repo PNG comparator) and ui-snapshots/ (its four
+                     committed Ubuntu-24.04/managed-Chromium baselines)
 web/               the browser app (React 19 + Vite)
   index.html         entry html
   src/main.tsx       mounts <Shell/>, imports highlight theme + every theme
@@ -1659,6 +1668,23 @@ in each managed browser, followed by the four committed visual surfaces
 settings). Off Linux the visual half skips rather than fails. It
 is separate from `*.e2e.ts` so Firefox and WebKit add broad compatibility
 signal without multiplying the complete Chrome suite.
+
+What keeps a baseline identical on a desktop and on a headless runner: the
+browser context pins viewport, `deviceScaleFactor: 1`, light color scheme,
+reduced motion, `en-US`, and UTC; the screenshot forces Liberation fonts and
+zeroes every animation/transition; the daemon under test is started with
+`DISPLAY`/`WAYLAND_DISPLAY` empty so it never advertises the native folder
+picker (otherwise onboarding renders a "browse…" button only on machines
+with a display); and session facts that vary per machine (session id,
+daemon version, working directory) are rewritten to fixed strings before
+capture. The comparator ignores per-channel noise up to 12/255 and allows
+0.05 % of pixels to differ — a 2 px spacing change on the desktop surface
+is ~8× over that line. A failure names the pixel count and the largest
+channel delta, writes `<name>.actual.png` and `<name>.diff.png` (differences
+in magenta over a dimmed copy), and — as everywhere `withFreshMockPage` is
+used — lists any uncaught page errors that preceded it, so an engine that
+threw while loading the bundle reads as that error rather than as a
+timeout on the first locator.
 
 `*.ltest.ts` is **Tier 4** (2026-07-20) — the one tier that asks the REAL
 agent binary real questions. Tiers 1-3 answer entirely with fixtures (a

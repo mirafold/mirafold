@@ -23,6 +23,12 @@ after(async () => {
   await browser?.close();
 });
 
+// The daemon advertises its native folder picker only when the host has a
+// display and a picker binary, and onboarding renders "browse…" from that
+// flag. Headless CI has neither, so pin the daemon to "no display" everywhere
+// and the card renders identically on a desktop and on a runner.
+const HEADLESS_DAEMON_ENV = { DISPLAY: "", WAYLAND_DISPLAY: "" };
+
 const visualContext = (viewport: ViewportSize): BrowserContextOptions => ({
   viewport,
   colorScheme: "light",
@@ -73,6 +79,7 @@ test("visual: onboarding card", { skip: LINUX_ONLY }, async () => {
     browser,
     {
       token: "ui-visual-onboarding",
+      env: HEADLESS_DAEMON_ENV,
       context: visualContext({ width: 1280, height: 900 }),
     },
     async (page) => {
@@ -90,6 +97,7 @@ test("visual: settled desktop session", { skip: LINUX_ONLY }, async () => {
     browser,
     {
       token: "ui-visual-desktop",
+      env: HEADLESS_DAEMON_ENV,
       context: visualContext({ width: 1280, height: 900 }),
     },
     async (page) => {
@@ -106,6 +114,7 @@ test("visual: settled desktop session, light theme", { skip: LINUX_ONLY }, async
     browser,
     {
       token: "ui-visual-desktop-light",
+      env: HEADLESS_DAEMON_ENV,
       context: visualContext({ width: 1280, height: 900 }),
     },
     async (page) => {
@@ -124,6 +133,7 @@ test("visual: phone settings over a session", { skip: LINUX_ONLY }, async () => 
     browser,
     {
       token: "ui-visual-phone-settings",
+      env: HEADLESS_DAEMON_ENV,
       context: visualContext({ width: 390, height: 844 }),
     },
     async (page) => {

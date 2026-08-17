@@ -112,6 +112,9 @@ jobs:
       # Firefox, and WebKit. The binaries (~400 MB) are cached per
       # playwright-core version; --with-deps still runs every time because it
       # is what installs WebKit's apt host libraries on a clean runner.
+      # Cache scope: a pull request can only READ caches written by its base
+      # branch and WRITE its own branch-scoped entry, so a fork cannot plant
+      # browser binaries that a later trusted run would restore.
       - name: Cache managed UI browsers
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
