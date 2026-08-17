@@ -10999,3 +10999,459 @@ passed **3/3**; Tier 1 passed **840/840**, zero skipped, in 19.22 seconds; and a
 controlled wrong page was still rejected while producing both actual and diff
 PNGs. The complete rebuilt Tier 3 passed **103/103**, zero skipped, in 325.58
 seconds (328.13 seconds including build). `git diff --check` passed.
+
+
+## Moved 2026-08-17 (prune — completed step bodies)
+
+Step bodies of completed phases, moved verbatim from PLAN.md on 2026-08-17; each
+phase's preamble, standing rules, and live notes stayed in PLAN.md.
+
+### Phase UX — Steps UX.6–UX.10
+
+- [x] **Step UX.6 — Settle prompt return behavior, then refactor Phase UX** —
+  done 2026-08-10; accepted desktop transcript-click behavior replaced the
+  provisional binding, and the full Phase UX diff received a verified
+  behavior-preserving refactor. → **PLAN-ARCHIVE.md**.
+- [x] **Step UX.7 — Close the eight Phase UX correctness findings** — done
+  2026-08-10; backend identity, faithful catalogs, dormant idle unload,
+  completion visibility, chronology-safe compaction, defensive decoding, and
+  delete-failure recovery are fixed and regression-pinned. →
+  **PLAN-ARCHIVE.md**.
+
+- [x] **Step UX.8 — Close the Phase UX security audit findings** — done
+  2026-08-10; credential/destination binding, fully opaque configured endpoint
+  identity and diagnostics, exact loopback classification, prompt-catalog
+  provenance/control safety, and strict checkpoint decoding are regression-pinned.
+  → **PLAN-ARCHIVE.md**.
+
+- [x] **Step UX.9 — Audit and repair the Phase UX branch tests** — done
+  2026-08-10; repeated all safe test tiers, mutation-proved and closed six
+  regression gaps, and made the live Codex/Ollama timeout clean up immediately.
+  The real-turn instability it exposed was kept visible and is now diagnosed
+  and closed in Step L.4. → **PLAN-ARCHIVE.md**.
+
+- [x] **Step UX.10 — Make collapse-on-finalize survive narrating engines** —
+  done 2026-08-12; the "worked · N actions" fold now absorbs interior
+  thinking in true transcript order, and Codex completed-with-nonzero-exit
+  is annotated, not branded an error. Pinned in Tier-1 + e2e. →
+  **PLAN-ARCHIVE.md, "Moved 2026-08-12 (Changes polish + branch closure)."**
+
+### Phase N2 — Steps N2.1–N2.6
+
+- [x] **N2.1 — Host-native picker service + local-only wire** — done
+  2026-08-08; shell-free macOS, Windows, and Linux recipes; correlated
+  non-replayed wire pair; validation, cancellation, concurrency, abort, and
+  relay refusal pinned. → PLAN-ARCHIVE.md.
+- [x] **N2.2 — Onboarding browse control** — done 2026-08-08; compact
+  `browse…` beside the editable path in both startup routes, capability-gated
+  with manual entry retained as the universal fallback. → PLAN-ARCHIVE.md.
+- [x] **N2.3 — Regression proof + documentation** — done 2026-08-08; focused
+  tests, real-daemon browser proof, accessibility/phone checks, typecheck,
+  build/package, production audit, README, and protected CI complete.
+  → PLAN-ARCHIVE.md.
+- [x] **N2.4 — Post-refactor executable-trust remediation** — done 2026-08-08;
+  browser and native-dialog identity now comes only from fixed system paths,
+  agent discovery rejects project/npm-controlled candidates, helper processes
+  use a neutral cwd/scrubbed environment and confirm exit after cancellation or
+  output overflow, and the `npx` trust boundary is explicit. Local proof:
+  Tier 1 561/561, Tier 2 143/143, Tier 3 82/82, typecheck, build, 19-file
+  package dry-run, secret scan, and production audit (0 vulnerabilities).
+  → PLAN-ARCHIVE.md.
+- [x] **N2.5 — Keep the chosen folder leaf visible in long paths** — done
+  2026-08-08; programmatic picks and blurred edits reveal the rightmost folder,
+  focused editing retains ordinary caret control, and the complete path still
+  creates the session. Local proof: Tier 1 561/561, focused Tier 3 1/1,
+  typecheck, and production build. → PLAN-ARCHIVE.md.
+- [x] **N2.6 — Close the post-audit environment and Windows-opener execution
+  paths** — done 2026-08-08; checkout `.env` loading is data-only and
+  provenance-aware, startup tokens are percent-encoded, Windows opens URLs
+  directly through fixed-system `explorer.exe`, and the trust guidance names
+  the remaining `.env` boundary honestly. Local proof: Tier 1 563/563, Tier 2
+  143/143, Tier 3 82/82, typecheck, production build, 19-file package dry-run,
+  secret/diff scans, and production audit (0 vulnerabilities). →
+  PLAN-ARCHIVE.md.
+
+### Phase N3 — Steps N3.1–N3.4
+
+- [x] **N3.1 — Controlled busy-state proof** — own session + permission latch;
+  no transient-locator race. → PLAN-ARCHIVE.md.
+- [x] **N3.2 — Isolated Mermaid renderer proof** — own session, production
+  lazy chunk/sandbox/CSP/postMessage paths retained. → PLAN-ARCHIVE.md.
+- [x] **N3.3 — Deterministic follow-tail re-arm** — wheel/touch intent arms
+  synchronously against pre-input geometry; pure boundaries + real-wheel e2e.
+  → PLAN-ARCHIVE.md.
+- [x] **N3.4 — Repetition + protected proof** — focused activity 6/6,
+  Mermaid 5/5, follow-tail 6/6; Tier 1 554/554; two unchanged full Tier-3
+  runs 78/78; PR #22's DCO, Cloudflare, Tier 1, and combined Tier 2/3 checks
+  passed on implementation head `a091ba1`. → PLAN-ARCHIVE.md.
+
+### Phase E2 — Steps E2.1–E2.4
+
+- [x] **Step E2.1 — per-directory listing: wire + server** — done
+  2026-07-26; additive `fs_listdir`/`fs_dir` pair, jailed + per-dir-capped,
+  token-bucket throttled (`FS_LISTDIR_MAX_PER_SEC` 32 — prefetch bursts are
+  legitimate), hostile paths refused, legacy `fs_list` untouched.
+  → PLAN-ARCHIVE.md.
+- [x] **Step E2.2 — the lazy client: incremental tree store** — done
+  2026-07-26; per-directory node store (fetch on first expand, cached
+  re-expands, per-dir correlation ids + stale-reply drop, loading rows),
+  open = root + first-level prefetch, refresh/turn-end refetch expanded dirs
+  and PRUNE cached-but-collapsed ones; whole-tree `fs_list` retired from the
+  client (daemon still answers it). → PLAN-ARCHIVE.md.
+- [x] **Step E2.3 — multi-repo git fidelity** — done 2026-07-26; per-repo
+  statuses + ignore rules on the lazy listings (`findRepoRoot()` walks to
+  the FILESYSTEM root — git's own discovery rule; `repoStatus()` behind a
+  TTL cache + ONE global serialized git queue; `decorateGitDir()` pure;
+  deleted files stay visible); git trouble degrades to the plain listing,
+  never an error; zero wire or client changes. → PLAN-ARCHIVE.md.
+- [x] **Step E2.4 — the Projects-root proof + compatibility pin** — done
+  2026-07-26, **phase E2 complete**; `fs_diff` discovers the repo CONTAINING
+  the file (nested-repo diffs work; jail first, session-root fallback), the
+  legacy `fs_list` old-client floor pinned as-is (never to be "fixed"), the
+  Tier-3 multi-repo proof shows zero whole-tree requests, phone drill-in
+  passes. All tiers 388/110/56. → PLAN-ARCHIVE.md.
+
+### Phase E — Step E.6
+
+### Step E.6 — the enlarge lightbox (desktop reads big on demand)
+
+- [x] **Step E.6 — ⤢ enlarge** — done 2026-07-28 (Kyle-directed; splits,
+  docks, and a full takeover were weighed and the dimmed lightbox chosen —
+  the transcript never reflows, and the user trades it away only by
+  deliberate click). The docked file view stays compact (wrapped,
+  tool-output look); ⤢ lifts the SAME node — class re-frame, no remount, so
+  scroll survives — into a fixed frame over a 55% dim (Esc / backdrop / ⤡
+  restore in place; focus-trapped dialog; title centered on the bar's true
+  center; content 1em, box sat 1.5vh above center). Found en route and
+  fixed: the file view had been inheriting `.tool-code`'s transcript-only
+  360px height cap in every frame. Desktop-only — the phone E.4 frame is
+  already full-screen, pinned by a phone-suite assertion. Commits c01d846 +
+  b9589b2 (the day's new busy-turn sanity guard recalibrated `>10` → `>0`
+  samples). Tiers 458/139/54 green. Same-day audit: nothing exploitable;
+  the lightbox-over-permission-bar layering recorded as an accepted
+  decision in SECURITY.md.
+
+### Phase E3 — Steps E3.1–E3.2
+
+- [x] **Step E3.1 — Refine the tree surface and add node-type glyphs** — done
+  2026-08-11; the existing read-only tree now uses Mirafold's inset surface,
+  compact row/guide treatment, SVG chevrons, and decorative open/closed-folder,
+  symlink, and broad file-family glyphs immediately after names. No dependency,
+  server/wire, lazy-fetch, sort, Git-status, drill-in, refresh, or phone-flow
+  behavior changed. Desktop, phone, dark/light, overflow, and axe proofs pass.
+  → PLAN-ARCHIVE.md.
+- [x] **Step E3.2 — Integrate the Explorer visually with the workbench** —
+  visually approved by Kyle 2026-08-11. The dock now has a stable responsive
+  width, compact Files title/action bar, separate sticky workspace-root strip,
+  inset tree-row rhythm, quieter unboxed Git markers, and conventional
+  `chevron → type glyph → name → status` ordering. Refresh and the phone close
+  action moved into the title bar without changing their behavior; the stacked
+  phone file drill-in remains intact. The accepted revision and the D.1 Codex
+  refactor merged through PR #34 at `21b5f33` after DCO, Cloudflare Pages,
+  Tier 1, and combined Tier 2/Tier 3 passed.
+
+### Phase BC — Step BC.1
+
+- [x] **Step BC.1 — Repair the eight confirmed whole-codebase findings** —
+  done 2026-08-11. Gemini turn preparation and Codex default-model resolution
+  now recover from transient failures; the relay and cookie boundaries reject
+  malformed-but-valid inputs safely; model-turn state no longer collapses at a
+  neighboring bang lifecycle boundary; active rename failure rolls back instead
+  of claiming durability; filesystem/Git caps count UTF-8 bytes; and Explorer
+  path presentation accepts Windows shapes without changing POSIX filename
+  semantics. Each finding has a concrete regression. No dependency, provider
+  protocol, stored-session schema, or filesystem write feature was added.
+  Published as open PR #35 into `next`; deliberately unmerged pending Kyle's
+  review. → PLAN-ARCHIVE.md.
+
+### Phase W — Steps W.1, W.B, W.A, W.2
+
+- [x] **Step W.1 — the watcher module, server-side** — done 2026-07-26;
+  `@parcel/watcher@2.6.0` + `server/sessions/fs-watch.ts`: one bell per
+  fixed window from the FIRST event (a continuously-writing agent can't
+  starve it), honest capped paths hint, exclusion globs, error→stop→notice
+  exactly once; lifecycle follows viewport attach/detach. Two inotify
+  backend truths handled: fast-created subtrees go permanently silent →
+  healed by unsubscribe-THEN-resubscribe + one synthetic bell; every
+  subscribe needs a fresh closure. → PLAN-ARCHIVE.md.
+- [x] **Step W.B — the bell's paths hint capped by BYTES too** — done
+  2026-07-26 (audit finding; not attacker-reachable — bandwidth hygiene
+  under the cheap-theoretical-finding rule); `FS_WATCH_MAX_PATH_BYTES`
+  (16,000) beside the count cap, `truncated` honest, pinned +
+  mutation-tested. → PLAN-ARCHIVE.md.
+- [x] **Step W.A — a browsed repo cannot run programs** — done 2026-07-26
+  (audit finding); `server/sessions/git-trust.ts` + the `trusted-repos.json`
+  allow list neutralize the three probe-proven execute vectors
+  (`core.fsmonitor`, `filter.*.clean`, `filter.*.process`) unless the repo
+  is user-trusted; reads git's EFFECTIVE config (an `include.path`-hidden
+  setting still executes otherwise); one notice per repo per connection;
+  pinned by `git-trust.itest.ts` with real planted programs +
+  mutation-tested. Detail + probe method in `SECURITY.md`. **Standing
+  caution: the vector list is tied to which git commands the daemon runs —
+  adding a new one means re-running the probe.** → PLAN-ARCHIVE.md.
+- [x] **Step W.2 — `fs_changed` on the wire + the live client** — done
+  2026-07-26, **phase W complete**; per-viewport bell (never broadcast,
+  never replayed), the per-repo status cache invalidated BEFORE fanning,
+  client coalesces via `bellRefreshDelay` (min gap 1s) so bells can't drain
+  the token bucket, and the watcher-failure notice ships. Field find fixed
+  at the source: every daemon git read runs `--no-optional-locks`, so the
+  daemon's own status calls can't write `.git` churn the watcher hears (a
+  feedback loop) — itest-pinned + mutation-tested. Proven end-to-end: a
+  file written behind the UI's back appears with zero clicks. All tiers
+  389/123/57. → PLAN-ARCHIVE.md.
+
+### Changes review workspace — Steps CR.1–CR.14
+
+### Phase CR.1 — Reusable file view + complete change-set query
+
+- [x] **Step CR.1 — Cut the shared foundation without changing the shipped UI**
+  — completed 2026-08-11. The reusable correlated file-view controller and
+  bounded `fs_changes` → `fs_change_set` multi-repository query are implemented;
+  focused unit/integration, malformed-client, desktop Explorer, 390px phone,
+  production client build, and typecheck proofs pass. No user-facing control or
+  surface was added. Full specification and implementation record →
+  **PLAN-ARCHIVE.md, “Moved 2026-08-11 (Changes review foundation — CR.1).”**
+
+### Phase CR.2 — The useful Changes view, desktop and mobile
+
+- [x] **Step CR.2 — Ship the complete changed-set review surface** — completed
+  2026-08-11. The trusted shell now opens one live, repository-grouped Changes
+  workspace: a wide transcript-preserving split on desktop and a safe-area,
+  one-file full-screen review on phone. Deterministic selection, honest counts
+  and incomplete/error/empty states, live disk/turn refresh, and Files/Changes
+  mutual exclusion are implemented. Real-daemon Chromium proves the complete
+  behavior at 641px desktop and 390px phone, including dark/light screenshots
+  and axe. Full specification and implementation record → **PLAN-ARCHIVE.md,
+  “Moved 2026-08-11 (Useful Changes view — CR.2).”**
+
+### Phase CR.3 — Code-context navigation + transparent agent feedback
+
+- [x] **Step CR.3 — Make a diff directly conversational** — completed
+  2026-08-12. Stable HEAD/working-tree line coordinates, hunk navigation,
+  syntax-aware desktop/phone selection, visible editable `Explain` / `Request
+  change` drafts, honest selection invalidation, and normal prompt submission
+  are shipped. The intermittent phone axe result was diagnosed as a shuffled
+  mock response exposing two unfocusable Highlight.js scrollers; highlighted
+  fenced code is now keyboard-reachable and the regression fixture is
+  deterministic. Full specification, diagnosis, implementation boundary, and
+  proof → **PLAN-ARCHIVE.md, “Moved 2026-08-12 (Conversational Changes review —
+  CR.3).”**
+
+### Phase CR.4 — Review progress, live invalidation, and closure
+
+- [x] **Step CR.4 — Make large reviews resumable and trustworthy** — completed
+  2026-08-12. Review decisions are viewport-local and keyed to an opaque,
+  server-minted identity of the exact bounded HEAD + working-tree bytes;
+  unverifiable revisions cannot be marked. The desktop rail and phone review
+  show progress, mark/unmark, and next-unreviewed navigation, with `R` / `N`
+  disabled throughout the prompt and other editable controls. Watcher hints
+  invalidate only affected reviewed files (including while the surface is
+  closed), HEAD/incomplete hints invalidate all, and a subsequently loaded
+  revision is reconciled before it can remain reviewed. Reduced-motion hunk
+  navigation, 641px/390px overflow, and the large-diff render path are closed;
+  one shared syntax pipeline replaces per-row highlighting and an honest
+  1,000-line interactive cap bounds the surface. Focused correctness,
+  security, and mutation-backed test-quality audits have no unresolved
+  finding. Full starting state, implementation boundary, audit record, and
+  proof → **PLAN-ARCHIVE.md, “Moved 2026-08-12 (Trustworthy review progress —
+  CR.4).”**
+
+### Phase CR.5 — Correctness remediation
+
+- [x] **Step CR.5 — Close the whole-feature bughunt findings** — completed
+  2026-08-12. All ten reproduced failures are repaired and regression-pinned:
+  Git/index edge states, malformed and nested repository resolution, deleted/
+  symlink/unreadable diffs, reconnect and manual-refresh trust, status-only
+  refreshes, zero-visible incomplete results, and terminal-newline modeling.
+  The complete Changes browser suite and dotenv-safe aggregate tiers pass.
+  Full verified baseline, executable/test/documentation boundary, and proof →
+  **PLAN-ARCHIVE.md, “Moved 2026-08-12 (Changes correctness remediation —
+  CR.5).”**
+
+- [x] **Step CR.6 — Whole-branch security + test audits** — done 2026-08-12;
+  no exploitable vulnerability, one untested guard found and pinned. →
+  **PLAN-ARCHIVE.md, "Moved 2026-08-12 (Changes polish + branch closure)."**
+
+- [x] **Step CR.7 — Terminal hunk navigation + first-hunk positioning** —
+  done 2026-08-12; blur-on-disable was killing the terminal smooth scroll
+  (probed); scrolling now runs post-commit, diffs open on their first hunk,
+  and same-path refreshes keep the view mounted. Geometry-asserting e2e. →
+  **PLAN-ARCHIVE.md, "Moved 2026-08-12 (Changes polish + branch closure)."**
+
+- [x] **Step CR.8 — Resizable desktop review panel** — done 2026-08-12; drag
+  handle with floor = default width, ceiling = 100% − 380px conversation
+  reserve, persisted per browser; keyboard separator with live aria
+  geometry. e2e-pinned. → PLAN-ARCHIVE.md (same section).
+
+- [x] **Step CR.9 — Diff-gutter Changes glyph, size-matched to Files** —
+  done 2026-08-12; unified-diff fragment on FilesGlyph's 14×20 artwork box,
+  rail gap 4→28px. → PLAN-ARCHIVE.md (same section).
+
+- [x] **Step CR.10 — Dock the hunk toolbar; align the progress buttons** —
+  done 2026-08-12; the diff's one scroller is the bordered code card
+  itself, the toolbar docks outside it, and the wrapper + progress bar
+  share symmetric 9px insets (7px phone). → PLAN-ARCHIVE.md (same section).
+
+- [x] **Step CR.11 — "Select hunk" toggles** — done 2026-08-12; clicking
+  the exact (clamped) selected range unselects, with aria-pressed and a
+  label swap. e2e-pinned. → PLAN-ARCHIVE.md (same section).
+
+- [x] **Step CR.12 — Branch bughunt (post-audit delta)** — done 2026-08-12;
+  two confirmed resize-handle bugs fixed with born-failing pins (stale
+  separator aria after drags; a bare click freezing the responsive width),
+  one candidate disproven by forced reproduction. → PLAN-ARCHIVE.md (same
+  section). **WATCH ITEM (live):** one unattributed intermittent
+  full-ordered Tier-3 failure — observed 1-in-6 runs on 2026-08-12, failing
+  test unnamed (the first run's log was summary-filtered); every later run
+  keeps the complete TAP log, so the next occurrence names itself.
+  **2026-08-14 — it named itself, in CI:** PR #48's first Tier-2+3 run
+  failed exactly one test, **E2.4 "the Projects-root proof"**, a 30 s
+  `page.waitForSelector('.files-panel[role=dialog]')` TimeoutError at the
+  phone drill-in step (app.e2e.ts:2839). Same day the full suite passed
+  3× locally (the CS runs) with E2.4 green each time, so the 1-in-6-ish
+  intermittent read stands — now with a name and a stuck selector to
+  instrument. Not diagnosed or fixed this sitting (Phase CS's scope);
+  next occurrence: read whether the Files panel button was clicked but
+  the dialog never mounted, or the click itself was swallowed.
+
+- [x] **Step CR.13 — Security audit of the post-CR.6 delta** — done
+  2026-08-12; every new input path traced with concrete values, ZERO
+  findings in every class, nothing deferred. → PLAN-ARCHIVE.md (same
+  section).
+
+- [x] **Step CR.14 — Test audit of the post-CR.6 delta** — done 2026-08-12;
+  five falsifications each fail exactly the right tests; one proven gap
+  closed (the fold label is now pinned to count actions only). Standing
+  note: hunk navigation's deferred scroll is redundant protection since
+  CR.10's layout removed the blur-cancellation trigger — kept deliberately.
+  → PLAN-ARCHIVE.md (same section).
+
+### Phase CS — Steps CS.1–CS.4
+
+- [x] **Step CS.1 — Billing-backend endpoints** — ✅ built, tested, merged,
+  and deployed 2026-08-14 (six new offline tests drive the full arc; suite
+  27/27). The three live endpoints were probed after the Pages deploy and
+  returned the expected malformed/no-oracle refusal shapes. *(original
+  contract below)*
+  - Build: three Pages Functions under `functions/api/subscription/`
+    (`/api/subscription` status, `/api/subscription/cancel`,
+    `/api/subscription/uncancel`), all POST `{licenseKey}`. Each resolves
+    key → sub via KV with entitlement.js's exact no-oracle rule (unknown
+    and superseded keys refuse identically), then reads/acts on Paddle:
+    status = live `GET /subscriptions/{id}`; cancel = `POST …/cancel`
+    `{effective_from: "next_billing_period"}` (idempotent: already
+    scheduled or already `canceled` returns current state, no error);
+    uncancel = `PATCH …/{id}` `{scheduled_change: null}` (idempotent when
+    nothing is scheduled). All three answer one view shape:
+    `{status, periodEnd, cancelAt}` (`cancelAt` = scheduled cancel's
+    `effective_at`, else null). Cross-site guard + no-store as on the
+    existing functions; zero deps, zero build.
+  - Done when: the site's `node --test` suite covers the full arc offline
+    (status → cancel → scheduled view → uncancel → clean view, plus
+    unknown/superseded key refusals and idempotent re-cancel) and passes.
+- [x] **Step CS.2 — Daemon: subscription actions + wire messages** — ✅ done
+  2026-08-14 (`feature/cancel-subscription`): `server/relay/subscription.ts`,
+  the three additive client messages + the `subscription` reply + the
+  `billing` hello flag, connection handlers (remote refused, throttle env
+  knob `SUBSCRIPTION_MIN_GAP_MS`), 12 new Tier-1 pins. All tiers green.
+  *(original contract below)*
+  - Build: `server/relay/subscription.ts` — active only in `license-key`
+    mode; endpoint base derived from `MIRAFOLD_ENTITLEMENT_URL` (strip the
+    trailing `/entitlement`; underivable → feature off), no new env vars;
+    never throws, 10 s timeout, failures become the support-email fallback
+    line. Protocol (ADD only): client `subscription_status` /
+    `subscription_cancel` / `subscription_uncancel` (id-correlated), reply
+    `subscription` `{id, status?, periodEnd?, cancelAt?, error?}` —
+    per-viewport request/reply, never buffered or sequenced. `agents`
+    hello gains optional `billing: "license-key"`, local viewports only.
+    connection.ts handlers: remote viewports refused ("manage from the
+    desktop"), per-connection min-gap throttle, license key itself never
+    on the wire in either direction.
+  - Done when: Tier-1 covers the client (stubbed fetch: view, refusal,
+    outage → fallback line, base derivation) and connection handling
+    (billing flag local-only, remote refusal, throttle), and existing
+    suites stay green.
+- [x] **Step CS.3 — Web: the manage-subscription view** — ✅ done 2026-08-14:
+  `web/src/subscription-card.ts` (pure brain, 5 Tier-1 pins), the manage view
+  inside ConnectDevice with both hosts wired, and the Tier-3 e2e driving the
+  full arc against a stub billing backend — including the proof the license
+  key never reaches the page. Tier 1 **837** / Tier 2 **152** / Tier 3
+  **100**, all green. *(One e2e-authoring bug found + fixed en route: the
+  fleet's pair button sits under the onboarding overlay on an empty registry,
+  so the test enters a session first. The 2026-08-12 unattributed Tier-3
+  watch item did NOT reproduce in three full runs.)* *(original contract
+  below)*
+  - Build: the Connect-a-device card gains the neutral "manage
+    subscription" link (only when the hello carries `billing`); it opens
+    the subscription view: status line from the view shape, `cancel
+    subscription` → an explicit confirm quoting the real consequence
+    ("access runs to <date>; you won't be charged again"), then the
+    scheduled state with `undo cancellation`. Errors show the
+    support-email fallback. Card state is a pure reducer
+    (`web/src/subscription-card.ts`), Tier-1-pinned; both hosts (status
+    bar + fleet) wire send/reply.
+  - Done when: Tier-1 pins the reducer + labels, and a Tier-3 e2e drives
+    the real flow in headless Chrome against a stubbed billing endpoint
+    (open card → manage → renews-line → cancel → confirm → scheduled +
+    undo → clean state), all tiers green.
+- [x] **Step CS.4 — Ship sequencing + live verification (Kyle-gated)** — ✅
+  complete 2026-08-14. The site half deployed first; all three endpoints were
+  probed live, /refunds + /terms carry the in-product-cancel copy, and product
+  PR #48 is merged into `next` at `fe8a3cc`. Kyle then drove the real arc on
+  his active subscription: Mirafold read the August 29 renewal → scheduled an
+  end-of-period cancellation → the live status API returned `status: active`
+  with `cancelAt === periodEnd` → Paddle showed "set for cancellation" →
+  Mirafold undid it → the API returned active with no `cancelAt` and Kyle
+  confirmed Paddle was clean again.
+  - **Live setup finding + correction:** the first cancel returned the honest
+    backend-unreachable fallback and changed nothing. The executed site setup
+    record showed why: its production Paddle key had Transactions Read +
+    Subscriptions Read only, while Paddle's cancel and update endpoints require
+    `subscription.write`. Kyle enabled only Subscriptions Write on the existing,
+    recently-used production key; the next cancel and undo both succeeded with
+    no key replacement or Pages redeploy. The site repo's historical setup and
+    rotation notes still describe that key as read-only/claim-only and need a
+    truth-sync there before release documentation is considered closed.
+  - The site half deploys first (Pages deploys on push to the site repo's
+    main): until it's live, the product-side card degrades to the
+    support-email line by design — but never release the product half to
+    npm ahead of the site half. Then verify live with Kyle's real
+    subscription: status view correct → cancel → Paddle dashboard shows
+    the scheduled cancellation → undo → clean again. Site /refunds +
+    /terms gain "or from inside the product" as an additional cancel path
+    (never replacing the existing promises).
+  - Done when: the live arc above is observed on Kyle's subscription and
+    the policy-page copy is updated. Merges: Kyle's explicit yes, per the
+    standing PR rule.
+
+### Phase PF — Steps PF.1–PF.3
+
+- [x] **PF.1 — Server-side delta coalescing.** `broadcast()`
+  (`server/sessions/registry.ts`) merges consecutive same-type
+  `text_delta`/`thinking_delta` into one WireMsg (text = concatenation) on a
+  33 ms window (`DELTA_COALESCE_MS`, env-overridable; constructor-injectable;
+  `0` = passthrough). Any other message — or a delta of the other type —
+  flushes first; attach (before ring replay), detach and session end all
+  flush. The replay ring, seq, byte accounting, local sockets and relay
+  sealing all see only merged frames (~3× fewer for text). Wire protocol
+  untouched — a merged delta is an ordinary delta. Demo mode measured: 18
+  flushes ~36 ms apart, ~3 mock chunks each — still visibly streaming.
+- [x] **PF.2 — Client render batching + memoization.** RenderZone applies
+  queued deltas one animation frame at a time (50 ms hidden-tab fallback;
+  pure merge helper in `web/src/delta-queue.ts`, Tier-1-tested); non-delta
+  messages flush first so order is exact. Transcript entry renderers,
+  ToolBlock and RenderBlock are memoized; RenderBlock's zod `safeParse` runs
+  per props change, not per render; the three per-render full-transcript
+  scans (`pinnedItems`, `activePickerId`, `childrenByParent`) are
+  `useMemo`'d. Follow-tail untouched (its docstring's instant-scroll
+  rationale stands; it now fires per flush). `Artifact` deliberately NOT
+  memoized (per-render closure props; restructuring touches the sandbox
+  bridge). `bang_output` deliberately NOT coalesced (own id + wire-budget
+  logic in `connection.ts`; PTY output is already chunky).
+- [x] **PF.3 — Onboarding poll cost.** The 3 s `refresh_agents` poll no
+  longer re-reads `~/.codex/config.toml` (2 s TTL, missing file never
+  cached), re-probes credential files (2 s TTL) or re-fires the 8 localhost
+  model probes (default sweep TTL 5 s, `MIRAFOLD_LOCAL_PROBE_TTL_MS`,
+  in-flight callers coalesce; itest harness pins it to 0). Tradeoff, eyes
+  open: a just-started local model server takes up to ~8 s to appear
+  (was ~3 s).
