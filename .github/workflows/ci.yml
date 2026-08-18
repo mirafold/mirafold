@@ -82,7 +82,7 @@ jobs:
       - run: yarn test
 
   integration:
-    name: integration + browser (Tier 2 + Tier 3 + UI)
+    name: integration + e2e (Tier 2 + Tier 3)
     # PRs only — pushes to main get Tier 1; the slow tiers ran on the PR that
     # merged them (Kyle's call, 2026-07-22).
     if: github.event_name == 'pull_request'
