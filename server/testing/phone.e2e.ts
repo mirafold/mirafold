@@ -199,7 +199,9 @@ test("phone (E.4): the files panel is a full-screen drill-in — tree → file �
   // tap: focus-return-on-close is an A.3 KEYBOARD contract, and a touch tap
   // doesn't move DOM focus to the button, so only the keyboard path has a
   // meaningful opener to return to.
-  await phone.locator(".sb-files").focus();
+  // ONE workspace toggle on phone (2026-08-18): a fresh page opens Files.
+  assert.equal(await phone.locator(".sb-files, .sb-changes").count(), 0, "the two-icon pair must be gone on phone");
+  await phone.locator(".sb-workspace").focus();
   await phone.keyboard.press("Enter");
   await phone.waitForSelector(".files-panel[role=dialog]");
   await noSideScroll(phone);
@@ -208,6 +210,23 @@ test("phone (E.4): the files panel is a full-screen drill-in — tree → file �
     return el ? Math.round(el.getBoundingClientRect().width) : 0;
   });
   assert.ok(width >= 380, `panel is ${width}px wide — not full-screen`);
+
+  // Both drawer views exit the same way — a leading ‹ at the top-left (the
+  // Files × at the top-right was the odd one out) — and the drawer's own
+  // head switches between them; switching keeps the exit where it was.
+  assert.equal(await phone.locator(".files-panel-head .files-panel-back").getAttribute("aria-label"), "Back to conversation");
+  const filesBack = (await phone.locator(".files-panel-back").boundingBox())!;
+  assert.ok(filesBack.x < 60 && filesBack.y < 120, `files back is at ${filesBack.x},${filesBack.y} — not top-left`);
+  assert.ok(filesBack.width >= 40 && filesBack.height >= 40, "files back is under the 40px thumb rule");
+  await phone.locator('.files-panel-head .workspace-tab:has-text("Changes")').tap();
+  await phone.waitForSelector(".changes-panel[role=dialog]");
+  assert.equal(await phone.locator(".files-panel").count(), 0, "one drawer view at a time");
+  const changesBack = (await phone.locator(".changes-head .changes-close").boundingBox())!;
+  assert.equal(await phone.locator(".changes-head .changes-close").getAttribute("aria-label"), "Back to conversation");
+  assert.ok(Math.abs(changesBack.x - filesBack.x) <= 8, `exits drift: files ${filesBack.x} vs changes ${changesBack.x}`);
+  await phone.locator('.changes-head .workspace-tab:has-text("Files")').tap();
+  await phone.waitForSelector(".files-panel[role=dialog]");
+  await noSideScroll(phone);
 
   // The tree is live git data (the daemon runs in the repo) — drill into a file.
   const pkg = phone.locator(".files-file-row", { hasText: "package.json" }).first();
@@ -240,9 +259,9 @@ test("phone (E.4): the files panel is a full-screen drill-in — tree → file �
   assert.equal(await phone.locator(".files-panel").count(), 0, "Esc from the tree closes the panel");
   await noSideScroll(phone);
   const focusedFiles = await phone.evaluate(
-    () => document.activeElement?.classList.contains("sb-files") ?? false,
+    () => document.activeElement?.classList.contains("sb-workspace") ?? false,
   );
-  assert.ok(focusedFiles, "focus returned to the files toggle on close");
+  assert.ok(focusedFiles, "focus returned to the workspace toggle on close");
 });
 
 test("phone: a permission request is answerable by thumb", async () => {
@@ -359,7 +378,7 @@ test("phone: a discarded tab comes back paired — the session survives, transcr
   // Explorer toggle is disabled without one.
   await phone.waitForSelector(".sb-end", { timeout: 20_000 });
   assert.equal(
-    await phone.locator(".sb-files").isDisabled(),
+    await phone.locator(".sb-workspace").isDisabled(),
     false,
     "Explorer still disabled — the viewport never attached",
   );

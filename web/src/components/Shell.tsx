@@ -165,6 +165,17 @@ export function Shell() {
     setAuxiliary(null);
     setReviewPromptVisible(false);
   };
+  // Phone (2026-08-18, Kyle): the status bar carries ONE workspace toggle,
+  // not two side-by-side icons; it reopens whichever surface was used last
+  // (Files until Changes has been chosen once), and the drawer's own head
+  // switches between them. Desktop keeps the two-icon rail unchanged.
+  const lastSurface = useRef<"files" | "changes">("files");
+  if (auxiliary) lastSurface.current = auxiliary;
+  const toggleWorkspace = () => toggleAuxiliary(lastSurface.current);
+  const switchAuxiliary = (surface: "files" | "changes") => {
+    if (surface !== "changes") setReviewPromptVisible(false);
+    setAuxiliary(surface);
+  };
 
   // ── The theme (4.3; two-slot model S.3) ─────────────────────────────────
   // Theme is shell-owned UI state. Dark is the default and the identity;
@@ -659,6 +670,7 @@ export function Shell() {
                 requestRead={bus.requestFsRead}
                 requestDiff={bus.requestFsDiff}
                 onClose={closeAuxiliary}
+                onSwitch={switchAuxiliary}
                 rootLabel={tildify(meta.cwd, daemonInfo.home)}
                 sessionKey={meta.sessionId}
               />
@@ -669,6 +681,7 @@ export function Shell() {
                 requestRead={bus.requestFsRead}
                 requestDiff={bus.requestFsDiff}
                 onClose={closeAuxiliary}
+                onSwitch={switchAuxiliary}
                 onCreateDraft={createReviewDraft}
                 promptContainerRef={promptContainerRef}
                 promptVisible={reviewPromptVisible}
@@ -743,12 +756,9 @@ export function Shell() {
               billing={daemonInfo.billing === "license-key"}
               subRequest={bus.requestSubscription}
               subReply={subReply}
-              filesOpen={filesOpen}
-              filesDisabled={!meta.sessionId}
-              onToggleFiles={() => toggleAuxiliary("files")}
-              changesOpen={changesOpen}
-              changesDisabled={!meta.sessionId}
-              onToggleChanges={() => toggleAuxiliary("changes")}
+              workspaceOpen={auxiliary !== null}
+              workspaceDisabled={!meta.sessionId}
+              onToggleWorkspace={toggleWorkspace}
             />
           </div>
         </div>

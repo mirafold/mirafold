@@ -18,6 +18,7 @@ import { FileView } from "./FileView";
 import { ExplorerChevron, ExplorerNodeGlyph } from "./ExplorerNodeGlyph";
 import { DirChildren } from "./FilesTreeRows";
 import { RefreshIcon } from "../RefreshIcon";
+import { WorkspaceTabs, type WorkspaceSurface } from "../WorkspaceTabs";
 import { useFileView } from "./use-file-view";
 
 // The Explorer's shell-owned panel (E.3 desktop, E.4 phone; lazy since
@@ -59,6 +60,7 @@ export function FilesPanel({
   requestRead,
   requestDiff,
   onClose,
+  onSwitch,
   rootLabel,
   sessionKey,
 }: {
@@ -68,6 +70,9 @@ export function FilesPanel({
   requestRead: (path: string) => string;
   requestDiff: (path: string) => string;
   onClose: () => void;
+  /** Phone drawer view switch (Files ⇄ Changes); rendered in the head on
+   *  ≤640px only — desktop's rail owns the choice there. */
+  onSwitch?: (surface: WorkspaceSurface) => void;
   /** ~-abbreviated session root — its basename names the tree's root row,
    *  the full path lives in that row's tooltip. */
   rootLabel?: string;
@@ -300,8 +305,26 @@ export function FilesPanel({
           over it, so back reveals the tree at its prior scroll (E.4). */}
       <div className="files-main">
         <div className="files-tree">
+          {/* Phone head: back chevron LEADING (top-left, thumb-reachable —
+              the same exit Changes has; a top-right × was the odd one out,
+              2026-08-18 Kyle), then the drawer's Files/Changes switch in the
+              title's place. Desktop keeps the plain title, no close. */}
           <header className="files-panel-head">
-            <h2 className="files-panel-title">Files</h2>
+            {phone && (
+              <button
+                className="files-panel-action files-panel-back"
+                onClick={onClose}
+                title="Back to conversation"
+                aria-label="Back to conversation"
+              >
+                ‹
+              </button>
+            )}
+            {phone && onSwitch ? (
+              <WorkspaceTabs active="files" onSwitch={onSwitch} />
+            ) : (
+              <h2 className="files-panel-title">Files</h2>
+            )}
             <div className="files-panel-actions">
               <button
                 className="files-panel-action files-refresh"
@@ -311,16 +334,6 @@ export function FilesPanel({
               >
                 <RefreshIcon className="files-action-icon" />
               </button>
-              {phone && (
-                <button
-                  className="files-panel-action"
-                  onClick={onClose}
-                  title="Close files"
-                  aria-label="Close files"
-                >
-                  <ExplorerCloseIcon />
-                </button>
-              )}
             </div>
           </header>
           {/* The session's checked-out root leads the tree as its top node
@@ -452,13 +465,5 @@ export function FilesPanel({
   );
 }
 
-
-function ExplorerCloseIcon() {
-  return (
-    <svg className="files-action-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-      <path d="m4 4 8 8M12 4l-8 8" />
-    </svg>
-  );
-}
 
 

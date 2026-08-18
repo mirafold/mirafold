@@ -165,9 +165,10 @@
 /* #9: mission-control home — an <a> styled as an icon button, the status
    bar's outermost far-LEFT control (moved from the far right 2026-07-16);
    the connection dot sits between it and the agent text. */
-/* .sb-files — the Explorer toggle's phone home (2026-07-25, Kyle) — only
-   RENDERS on ≤640px (StatusBar gates on useIsPhone, keeping home the bar's
-   first control on desktop); its styles live in the phone block. */
+/* .sb-workspace — the workspace drawer's phone toggle (2026-07-25, Kyle;
+   one button for Files + Changes since 2026-08-18) — only RENDERS on ≤640px
+   (StatusBar gates on useIsPhone, keeping home the bar's first control on
+   desktop); its styles live in the phone block. */
 
 .sb-home {
   display: inline-flex;

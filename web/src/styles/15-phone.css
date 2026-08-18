@@ -109,7 +109,7 @@
   .status-bar {
     flex-wrap: nowrap;
     column-gap: 5px;
-    /* No activity bar on phone (it folds into .sb-files) — the negative
+    /* No activity bar on phone (it folds into .sb-workspace) — the negative
        margin just runs the top border edge-to-edge; the controls stay at
        the column's content edge. */
     margin: 4px 0 0 calc(-1 * var(--content-air));
@@ -296,8 +296,10 @@
     grid-area: close;
   }
 
-  .changes-title-block {
+  .changes-title-block,
+  .changes-head .workspace-tabs {
     grid-area: title;
+    justify-self: start;
   }
 
   .changes-head .changes-refresh {
@@ -467,8 +469,13 @@
     min-height: 42px;
   }
 
+  /* Files head on phone: back chevron leading (top-left, same exit as
+     Changes, 2026-08-18 Kyle), the .workspace-tabs switch beside it, refresh
+     trailing — a centered flex row, not the desktop's baseline title bar. */
   .files-panel-head {
-    padding: 8px 8px 7px 14px;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 8px 7px 8px;
   }
 
   .files-panel-action {
@@ -481,16 +488,18 @@
   }
 
   /* The rail is a desktop affordance — a permanent 46px strip is too much
-     of a 390px screen (2026-07-25, Kyle). Its files toggle folds down into
-     the status bar (.sb-files below); the shell and prompt box above run
+     of a 390px screen (2026-07-25, Kyle). Its toggles fold down into the
+     status bar (.sb-workspace below); the shell and prompt box above run
      full-width. */
   .activity-bar {
     display: none;
   }
 
-  /* Files + Changes fold the desktop activity rail into one compact phone
-     navigation group. The separator after the pair keeps workspace views
-     distinct from home/new/session controls. */
+  /* Files + Changes fold the desktop activity rail into ONE phone toggle
+     (two side-by-side icons crowded the bar, 2026-08-18 Kyle) that opens the
+     full-screen workspace drawer; the drawer's head carries the
+     .workspace-tabs switch between the two views. The separator after it
+     keeps the workspace distinct from home/new/session controls. */
   .sb-side-nav {
     display: flex;
     align-items: center;
@@ -503,8 +512,7 @@
     border-right: 1px solid var(--border);
   }
 
-  .sb-files,
-  .sb-changes {
+  .sb-workspace {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -520,16 +528,57 @@
     cursor: pointer;
   }
 
-  .sb-files.is-active,
-  .sb-changes.is-active {
+  .sb-workspace.is-active {
     color: var(--fg-body);
     background: var(--surface-hover);
   }
 
-  .sb-files:disabled,
-  .sb-changes:disabled {
+  .sb-workspace:disabled {
     opacity: 0.35;
     cursor: default;
+  }
+
+  /* The drawer's view switch — a segmented pair at the head of both panels,
+     in the title's place. It is the phone's ONLY way between Files and
+     Changes (the status bar has one toggle), so it reads as a control, not a
+     label: bordered pill, the pressed side filled. ≥40px tall (thumb rule);
+     both panels' heads position it identically so switching never moves it. */
+  .workspace-tabs {
+    display: inline-flex;
+    align-items: stretch;
+    min-width: 0;
+    height: 34px;
+    padding: 2px;
+    background: var(--surface-2);
+    border: 1px solid var(--border-2);
+    border-radius: 8px;
+  }
+
+  .workspace-tab {
+    display: inline-flex;
+    align-items: center;
+    padding: 0 12px;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--fg-dim);
+    font-size: 0.78em;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+  }
+
+  .workspace-tab.is-active {
+    color: var(--fg-strong);
+    background: var(--surface-hover);
+  }
+
+  /* Same glyph, size and weight as .changes-close so the two exits are one
+     control in two places. */
+  .files-panel-back {
+    font: inherit;
+    font-size: 20px;
+    line-height: 1;
   }
 
   /* Cockpit sub-lines: they lose the desktop indent (a 390px canvas has no

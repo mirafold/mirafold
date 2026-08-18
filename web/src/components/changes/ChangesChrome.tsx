@@ -2,6 +2,7 @@ import type { FsChangeRepo } from "@protocol";
 import { changeStatus, repoLabel, type ChangeItem } from "../../changes";
 import { RefreshIcon } from "../RefreshIcon";
 import type { ReviewProgress } from "../../review-progress";
+import { WorkspaceTabs, type WorkspaceSurface } from "../WorkspaceTabs";
 
 export function ChangesHeader({
   phone,
@@ -12,6 +13,7 @@ export function ChangesHeader({
   pending,
   onRefresh,
   onClose,
+  onSwitch,
 }: {
   phone: boolean;
   loaded: boolean;
@@ -21,6 +23,8 @@ export function ChangesHeader({
   pending: boolean;
   onRefresh: () => void;
   onClose: () => void;
+  /** Phone drawer view switch (Files ⇄ Changes), shown in the title's place. */
+  onSwitch?: (surface: WorkspaceSurface) => void;
 }) {
   return (
     <header className="changes-head">
@@ -29,10 +33,14 @@ export function ChangesHeader({
           ‹
         </button>
       )}
-      <div className="changes-title-block">
-        <h2>Workspace changes</h2>
-        <span className="changes-subtitle">Working tree versus Git HEAD</span>
-      </div>
+      {phone && onSwitch ? (
+        <WorkspaceTabs active="changes" onSwitch={onSwitch} />
+      ) : (
+        <div className="changes-title-block">
+          <h2>Workspace changes</h2>
+          <span className="changes-subtitle">Working tree versus Git HEAD</span>
+        </div>
+      )}
       {loaded && itemCount > 0 && (
         <span
           className="changes-progress"

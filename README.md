@@ -672,8 +672,9 @@ web/               the browser app (React 19 + Vite)
                      registry/, so the trust split reads in the tree
     Shell.tsx          TRUSTED SHELL: prompt box + notices + status bar + the
                        activity bar (desktop's left strip for the mutually
-                       exclusive Files and Changes workspaces; on phone both
-                       toggles fold into the status bar); consumes the session
+                       exclusive Files and Changes workspaces; on phone they
+                       fold into ONE status-bar toggle + an in-drawer
+                       switch); consumes the session
                        bus (H.9)
     Onboarding.tsx     first-run card: pick the agent + working directory, then
                        how it's backed when there's a choice — detected
@@ -712,10 +713,17 @@ web/               the browser app (React 19 + Vite)
                        activity line (2026-07-25 — the ⚙ character
                        rendered from the color-emoji font and clashed with
                        every glyph beside it)
-    FilesGlyph.tsx     the Explorer/files glyph drawing — the activity-bar
-                       toggle and the status bar's phone-width .sb-files
-    ChangesGlyph.tsx   the workspace-changes glyph drawing — the activity-bar
-                       toggle and the status bar's phone-width .sb-changes
+    FilesGlyph.tsx     the Explorer/files glyph drawing — the desktop
+                       activity-bar toggle
+    ChangesGlyph.tsx   the workspace-changes glyph drawing — the desktop
+                       activity-bar toggle
+    WorkspaceGlyph.tsx the phone status bar's ONE workspace toggle
+                       (.sb-workspace) — Files and Changes share a
+                       full-screen drawer on ≤640px, reopened on the
+                       last-used view
+    WorkspaceTabs.tsx  the phone drawer's Files | Changes switch, at the
+                       head of both panels in the title's place; both exits
+                       are the same leading ‹ back chevron
     ArmedButton.tsx    the two-click destructive button (#11's arm → 3s
                        auto-disarm), shared by StatusBar + FleetView's end/stop
     PinDock.tsx        right-side dock for pinned components (live via entries)

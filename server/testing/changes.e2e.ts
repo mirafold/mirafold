@@ -77,6 +77,16 @@ const createSession = async (cwd: string): Promise<string> => {
 const sessionUrl = (sessionId: string): string =>
   `http://127.0.0.1:${daemon.port}/s/${sessionId}?token=${TOKEN}`;
 
+// Phone (2026-08-18): the status bar has ONE workspace toggle that reopens
+// the last-used view (Files on a fresh page); the drawer's own head switches.
+// Tapping the already-active tab is a no-op, so this is safe either way.
+const openPhoneWorkspace = async (page: Page, view: "files" | "changes"): Promise<void> => {
+  await page.locator(".sb-workspace").tap();
+  await page.waitForSelector(".files-panel[role=dialog], .changes-panel[role=dialog]");
+  await page.locator(`.workspace-tab:has-text("${view === "files" ? "Files" : "Changes"}")`).tap();
+  await page.waitForSelector(view === "files" ? ".files-panel[role=dialog]" : ".changes-panel[role=dialog]");
+};
+
 const selectDesktopFile = async (name: string): Promise<void> => {
   await desktop.locator(".changes-file", { hasText: name }).click();
   await desktop.waitForFunction(
@@ -659,8 +669,7 @@ test("CR.2 phone: full-screen one-file review has persistent navigation and pres
   const transcriptScroll = await phone.locator(".render-zone").evaluate((element) => element.scrollTop);
   assert.ok(transcriptScroll > 0, "phone transcript fixture did not become scrollable");
 
-  await phone.locator(".sb-changes").tap();
-  await phone.waitForSelector(".changes-panel[role=dialog]");
+  await openPhoneWorkspace(phone, "changes");
   await phone.waitForSelector(".changes-current-path");
   assert.equal(await phone.locator(".changes-count").innerText(), "5 visible");
   assert.equal(await phone.locator(".changes-rail").count(), 0, "the desktop changed-file rail rendered on phone");
@@ -710,16 +719,14 @@ test("CR.2 phone: full-screen one-file review has persistent navigation and pres
   const lightGroup = phone.locator('.theme-group[aria-label="Light themes"]');
   await lightGroup.locator(".theme-row", { hasText: "Standard" }).tap();
   await phone.locator(".settings-close").tap();
-  await phone.locator(".sb-changes").tap();
-  await phone.waitForSelector(".changes-panel[role=dialog]");
+  await openPhoneWorkspace(phone, "changes");
   assert.ok((await phone.locator(".changes-current-path").innerText()).endsWith("z-binary.bin"));
   await phone.screenshot({ path: path.join(os.tmpdir(), "mirafold-changes-phone-light.png") });
   await assertAxeClean(phone, "phone workspace changes (light)");
   await noSideScroll(phone);
 
   await phone.locator(".changes-close").tap();
-  await phone.locator(".sb-files").tap();
-  await phone.waitForSelector(".files-panel[role=dialog]");
+  await openPhoneWorkspace(phone, "files");
   await phone.locator(".files-file-row", { hasText: "a-added.ts" }).tap();
   await phone.waitForSelector(".files-view .fv-content");
   await noSideScroll(phone);
@@ -737,8 +744,7 @@ test("CR.3 phone: tap and whole-hunk selection keep context beside the editable 
   const page = await context.newPage();
   try {
     await page.goto(sessionUrl(changedSession));
-    await page.waitForSelector(".sb-changes");
-    await page.locator(".sb-changes").tap();
+    await openPhoneWorkspace(page, "changes");
     await page.waitForSelector(".changes-current-path");
     for (const name of ["d-deleted.ts", "m-modified.ts"]) {
       await page.locator('[aria-label="Next changed file"]').tap();
@@ -966,8 +972,7 @@ test("CR.4: review progress resumes and only the changed revision reopens on des
     // on phone, change one behind it, then wrap directly to that sole reopened
     // revision and resume after closing/reopening the full-screen layer.
     await mobile.goto(sessionUrl(changedSession));
-    await mobile.waitForSelector(".sb-changes");
-    await mobile.locator(".sb-changes").tap();
+    await openPhoneWorkspace(mobile, "changes");
     await mobile.waitForSelector(".changes-current-path");
     assert.equal(await progressText(mobile), "0 / 5 reviewed", "review progress leaked between viewports");
     for (let index = 0; index < 5; index += 1) {
@@ -1007,7 +1012,9 @@ test("CR.4: review progress resumes and only the changed revision reopens on des
     await assertAxeClean(mobile, "phone resumable change review");
     await mobile.locator(".changes-close").tap();
     await mobile.waitForSelector(".changes-panel", { state: "detached" });
-    await mobile.locator(".sb-changes").tap();
+    // The single toggle reopens the LAST view — Changes — with no tab tap.
+    await mobile.locator(".sb-workspace").tap();
+    await mobile.waitForSelector(".changes-panel[role=dialog]");
     await mobile.waitForSelector(".changes-current-path");
     assert.equal(await progressText(mobile), "5 / 5 reviewed");
     assert.ok((await mobile.locator(".changes-current-path").innerText()).endsWith("a-added.ts"));
