@@ -2510,6 +2510,34 @@ exactly the promised behavior.
   and rotation notes still describe it as read-only/claim-only and need a
   truth-sync before release documentation is considered closed.
 
+## Phone workspace drawer (opened + ✅ COMPLETE 2026-08-18; Kyle-directed)
+
+- [x] **One workspace toggle + unified drawer exit — completed 2026-08-18**
+  (PR #52 → `next`; shipped in **v0.4.0**, 2026-08-19). Kyle's two asks: the
+  status bar's side-by-side Files/Changes icons crowded a phone bar, and the
+  two views exited differently (Files: top-right ×; Changes: top-left ‹).
+  Landed: ONE `.sb-workspace` toggle (new `WorkspaceGlyph`) opens the
+  full-screen drawer on the last-used view (Files until Changes is chosen);
+  a **Files | Changes** switch (`WorkspaceTabs`, 40px targets) sits at the
+  head of both panels in the title's place — the pattern VS Code web / GitHub
+  mobile use (one place with sections); both views exit via the same leading
+  ‹ at one x/y. Desktop untouched. Standing decisions: **no swipe-to-dismiss**
+  (browser on a phone — never take over native gestures, Kyle 2026-08-18);
+  the toggle is unreachable while the drawer is open (fixed, focus-trapped)
+  so "toggle closes" is not a phone path — Esc/‹ are.
+- Same PR, from the refactor/bughunt/audit/test-audit passes: the Changes head
+  moved its count pill to row two (row one assumed a shrinkable title; the
+  fixed-width switch collided with the pill at 320px) with icon buttons on
+  row one; e2e geometry is read after the slide-in settles (`settled()`; a
+  mid-transform boundingBox read 39.9999px and flaked ~50%); new 320px
+  non-overlap + on-screen oracle `assertApartOnScreen` (e2e-harness), run in
+  phone.e2e and on changes.e2e's 5-file fixture. Security audit: no findings
+  (all new chrome renders literals only). Cold-reviewed ×3.
+- Housekeeping the same night: `provider-policy.ts` Anthropic citations
+  corrected (#53, comment-only); site rotation runbook truth-synced (Paddle key
+  needs Subscriptions: Write); every stale branch deleted — only `main`/`next`
+  remain; **v0.4.0 released** (12 PRs since 0.3.7; flow-b, verified).
+
 ## Phase PN — Panes (file views beside the transcript)
 
 **Why.** Kyle (2026-07-26): open a file and see it in its own pane. Also the
