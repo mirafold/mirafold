@@ -150,7 +150,7 @@ durable provider recovery, and branch test-audit closure) · **CR** (Changes
 review workspace) · **NF** (needs-you notifications) · **FD** (file
 drag-and-drop) · the paintings polish batch · **OC** (OpenCode adapter) ·
 the superseded Gemini deprecation record · **RC** (remote OpenCode create) · **SA** (subagent
-view) · **RF** (pre-release findings closure), plus the finished steps of the
+view) · **RF** (pre-release findings closure) · **LD** (live document view), plus the finished steps of the
 still-open Phases **K, R, F, Q, L**.
 
 Archive passes, each a section header in PLAN-ARCHIVE.md you can navigate to:
@@ -165,7 +165,9 @@ audit section, and the stretch goals) · "Moved 2026-08-14 (post-SA prune —
 completed bodies)" (the NF/FD step bodies, paintings polish, Phase OC, the
 superseded Gemini deprecation record, Phase RC, and the whole Phase SA record) ·
 "Moved 2026-08-14 (Phase RF — completed body)" (Gemini support restoration,
-OpenCode interrupt recovery, and corrective validation).
+OpenCode interrupt recovery, and corrective validation) · "Moved 2026-08-19
+(Phase LD — completed Step LD.1–LD.4 bodies)" (live document composition,
+visual treatment, responsive closure, and final regression proof).
 
 ---
 
@@ -2537,6 +2539,98 @@ exactly the promised behavior.
   corrected (#53, comment-only); site rotation runbook truth-synced (Paddle key
   needs Subscriptions: Write); every stale branch deleted — only `main`/`next`
   remain; **v0.4.0 released** (12 PRs since 0.3.7; flow-b, verified).
+
+## Phase LD — Live Document View (opened + ✅ COMPLETE 2026-08-19; Kyle-directed)
+
+**Product call.** Mirafold's agent response becomes a live technical document:
+Markdown, registry renders, and artifacts compose in one responsive visual
+rhythm while they are still streaming. The daring direction is the default;
+there is **no classic-transcript toggle, fallback view, or second rendering
+path**. The complete approved specification is
+**`docs/LIVE-DOCUMENT-VIEW.md`** and is normative for this phase.
+
+**Current seam (verified 2026-08-19).** `createTranscriptProjection()` owns
+wire-to-view chronology and exposes stable `TranscriptSnapshot.rows`;
+`RenderZone` owns DOM presentation, pin state, and mediated actions. LD derives
+ephemeral display groups from those projected visible rows. It does not rescan
+wire messages, persist nested responses, or move transcript meaning back into
+the renderer. Assistant text/render/artifact rows are document-eligible; user
+and bang rows are hard response boundaries; thinking, tools/folds, notices,
+pickers, and subagent decks are soft interruptions that remain top-level shell
+or provider-faithful UI. Visual unity does not require absorbing them into
+agent prose.
+
+**Behavior boundary.** No intended change to protocol, content semantics,
+actions, replay, pin identity, registry schemas, production adapters, or shell
+capabilities. Presentation and layout change intentionally. Stable React keys
+alone are insufficient: later streaming may not change an already-mounted
+painting's ancestry. The visual treatment comes from measure, typography,
+rhythm, and alignment; prose is transparent by default, not one bordered card
+per streaming chunk. Rich content gets a wider lane than prose. There is no new
+dependency.
+
+This is an oversized feature: the Phase spans four passes, and each Step below
+is one complete single-pass `$next` chunk.
+
+- [x] **Step LD.1 — Structural composition, visually neutral** — complete
+  2026-08-19 on `feature/live-document-view`. Pure projected-row grouping,
+  stable document ancestry, the transparent wrapper, deterministic streaming
+  fixture, and direct DOM-identity proof are in place. No protocol or registry
+  source changed; all four existing visual baselines are unchanged. Verified:
+  Tier 1 **865/865**, typecheck, build, Tier 2 **152/152**, Tier 3 **105/105**,
+  browser matrix **3/3**, visual suite **4/4**, and `git diff --check`. Full
+  original Step body → **PLAN-ARCHIVE.md, “Moved 2026-08-19 (Phase LD —
+  completed Step LD.1 body).”**
+
+- [x] **Step LD.2 — Opinionated document treatment** — complete 2026-08-19
+  on `feature/live-document-view`. Kyle approved the complete-screen result:
+  a left-anchored 1160px rich lane, 76ch transparent prose lane, restrained
+  technical-document typography, and a chevron-only user command strip whose
+  neutral top/bottom outline fades toward the right. There is no `YOU` label,
+  chat bubble, outer response card, theme fork, or second rendering path.
+  Verified: Tier 1 **866/866**, typecheck, build, Tier 2 **152/152**, Tier 3
+  **106/106**, browser matrix **3/3**, visual suite **6/6**, and
+  `git diff --check`. Full original Step body → **PLAN-ARCHIVE.md, “Moved
+  2026-08-19 (Phase LD — completed Step LD.2 body).”**
+
+- [x] **Step LD.3 — Workspace and phone responsiveness** — complete
+  2026-08-19 on `feature/live-document-view`. Existing `min-width: 0` and
+  fluid-center contracts already handled center-only, Explorer, file view,
+  pin dock, both sides, 980px three-pane, and 390px phone geometry without a
+  container query. Complete-screen review found one real usability gap:
+  contained charts scaled their 640-unit SVG until labels became unreadable.
+  Charts now keep a 600px readable canvas and own keyboard-reachable local
+  horizontal overflow across Chromium, Firefox, and WebKit.
+  Deterministic browser coverage proves table/code/diff/chart/artifact
+  containment, panel width restoration, manual scroll preservation,
+  streaming tail-follow, phone full-width layout, shell/touch continuity, and
+  response DOM identity through the full-screen phone Explorer. No protocol,
+  registry schema, production adapter, dependency, alternate renderer, or
+  phone breakpoint changed. Verified: Tier 1 **866/866**, typecheck, build,
+  Tier 2 **152/152**, Tier 3 **108/108**, browser matrix **3/3**, visual suite
+  **6/6**, and `git diff --check`. One earlier final-state Tier 3 attempt was
+  **107/108** when the existing CR.2 phone test timed out waiting for a file
+  view; it then passed **3/3** focused with no changes and the unchanged full
+  rerun passed **108/108**. Full
+  original Step body → **PLAN-ARCHIVE.md, “Moved 2026-08-19 (Phase LD —
+  completed Step LD.3 body).”**
+
+- [x] **Step LD.4 — Restraint and regression closure** — complete 2026-08-19
+  on `feature/live-document-view`. Complete-screen dark/light review and a new
+  deterministic giant, heading-free, text-only turn found no decoration or
+  excess spacing worth removing from Kyle's approved treatment. Direct browser
+  proof now covers render/artifact immediacy, long URL/filename/code
+  containment, reduced motion, selection and prompt focus, capped
+  announcements, unchanged DOM/geometry through all seven themes, and axe.
+  Existing full-suite cases cover render/tool-heavy turns, pin/unpin,
+  update-in-place, replay, errors, notices, pickers, subagents, keyboard/tail
+  scrolling, and phone. No protocol, registry schema, production adapter,
+  dependency, classic toggle, or second renderer changed. Verified: Tier 1
+  **867/867**, typecheck, build, Tier 2 **152/152**, Tier 3 **109/109**, browser
+  matrix **3/3**, visual suite **6/6**, and `git diff --check`; the two UI
+  constituents remain the literal local gate instead of the known combined
+  wrapper. Full original Step body → **PLAN-ARCHIVE.md, “Moved 2026-08-19
+  (Phase LD — completed Step LD.4 body).”**
 
 ## Phase PN — Panes (file views beside the transcript)
 

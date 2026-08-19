@@ -256,7 +256,7 @@ function PieChart({ title, x, series }: ComponentProps<"chart">) {
   return (
     <div className="rc rc-chart">
       {title && <div className="rc-title">{title}</div>}
-      <div className="rc-chart-plot" onMouseLeave={() => setHover(null)}>
+      <div className="rc-chart-plot" tabIndex={0} onMouseLeave={() => setHover(null)}>
         <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={title ?? "pie chart"}>
           {segs.map((s, i) => (
             <path
@@ -338,7 +338,7 @@ function HBarChart({ title, x, series, yLabel, stacked }: ComponentProps<"chart"
     <div className="rc rc-chart">
       {title && <div className="rc-title">{title}</div>}
       {series.length >= 2 && <Legend series={series} />}
-      <div className="rc-chart-plot" onMouseLeave={() => setHover(null)}>
+      <div className="rc-chart-plot" tabIndex={0} onMouseLeave={() => setHover(null)}>
         <svg viewBox={`0 0 ${W} ${hgt}`} role="img" aria-label={title ?? "bar chart"}>
           {/* recessive vertical grid + value labels along the bottom */}
           {tks.map((t, i) => (
@@ -499,7 +499,7 @@ function VChart({ title, kind, x, series, yLabel, stacked }: ComponentProps<"cha
     <div className="rc rc-chart">
       {title && <div className="rc-title">{title}</div>}
       {series.length >= 2 && <Legend series={series} />}
-      <div className="rc-chart-plot" onMouseLeave={() => setHover(null)}>
+      <div className="rc-chart-plot" tabIndex={0} onMouseLeave={() => setHover(null)}>
         <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={title ?? `${kind} chart`}>
           {/* recessive grid + y labels */}
           {tks.map((t, i) => (

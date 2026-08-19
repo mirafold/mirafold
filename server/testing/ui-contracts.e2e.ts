@@ -40,13 +40,9 @@ test("desktop composer: Shift+Enter keeps a multiline draft; Enter sends it", as
     await prompt.press("Enter");
     const sent = page.locator(".turn-user").last();
     await sent.waitFor();
-    const echoedPrompt = await sent.evaluate((element) =>
-      Array.from(element.childNodes)
-        .filter((node) => node.nodeType === Node.TEXT_NODE)
-        .map((node) => node.textContent ?? "")
-        .join("")
-        .trim(),
-    );
+    assert.equal(await sent.locator(".turn-user-label").count(), 0);
+    assert.equal(await sent.locator(".glyph").innerText(), "❯");
+    const echoedPrompt = await sent.locator(".turn-user-text").innerText();
     assert.equal(echoedPrompt, "kpi coverage\ninclude details");
     assert.equal(await prompt.inputValue(), "", "sent text remained in the composer");
     await page.locator(".stop-btn").waitFor({ state: "detached", timeout: 30_000 });
@@ -113,5 +109,30 @@ test("ending a session requires two clicks, then returns to an empty fleet", asy
       0,
       "the ended session remained in the otherwise empty fleet",
     );
+  });
+});
+
+test("ending one of multiple sessions returns to the fleet without opening onboarding", async () => {
+  await withFreshMockSession("ui-end-session-with-survivor-e2e", async (page, base) => {
+    const remaining = await page.context().newPage();
+    await remaining.goto(`${base}/?new=1`);
+    await remaining.locator(".onb-agent", { hasText: "Claude Code" }).click();
+    await remaining.waitForURL(/\/s\/[\w-]+/);
+    const remainingId = new URL(remaining.url()).pathname.split("/").pop()!;
+
+    const end = page.locator(".sb-end");
+    await end.click();
+    await end.click();
+    await page.waitForURL(`${base}/`);
+    await page.waitForFunction(
+      (id) =>
+        document.querySelectorAll(".fleet-row").length === 1 &&
+        document.querySelector(".fleet-id")?.textContent === id,
+      remainingId,
+    );
+
+    assert.equal(await page.locator(".onb-card").count(), 0, "onboarding covered the surviving fleet");
+    assert.equal(await page.locator(".fleet-id").innerText(), remainingId);
+    await remaining.close();
   });
 });

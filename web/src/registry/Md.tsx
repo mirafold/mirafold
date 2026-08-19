@@ -51,6 +51,14 @@ export const mdOverrides = {
       {children}
     </code>
   ),
+  table: ({ node: _node, children, ...props }: ComponentProps<"table"> & { node?: unknown }) => (
+    // A genuine wide Markdown table owns its horizontal scroll instead of
+    // widening the transcript. As with fenced code, the scroll container is
+    // keyboard-reachable; the semantic <table> remains intact inside it.
+    <div className="markdown-table-scroll" tabIndex={0}>
+      <table {...props}>{children}</table>
+    </div>
+  ),
   li: ({ node: _node, children, ...props }: ComponentProps<"li"> & { node?: unknown }) => {
     const kids = Children.toArray(children);
     const checkbox = kids[0];

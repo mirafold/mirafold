@@ -50,6 +50,10 @@
     gap: 12px;
   }
 
+  .response-document {
+    gap: 12px;
+  }
+
   /* The welcome lockup, scaled to the narrow canvas (same geometry). */
   .zone-empty-mark {
     width: 44px;
