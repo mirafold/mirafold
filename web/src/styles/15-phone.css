@@ -281,29 +281,40 @@
     display: none;
   }
 
+  /* Row one holds only the fixed-width Files | Changes switch between the
+     two 42px buttons — nothing else competes with it, so it fits at any
+     phone width (at 320px the count pill used to land on it, 2026-08-18).
+     The count rides row two, right-aligned beside the review progress. */
   .changes-head {
     min-height: 68px;
     display: grid;
     grid-template-columns: 42px minmax(0, 1fr) auto 42px;
     grid-template-areas:
-      "close title count refresh"
-      "close progress progress refresh";
+      "close title title refresh"
+      "close progress count refresh";
     gap: 2px 6px;
     padding: 7px 8px;
   }
 
+  /* Both icon buttons sit on row one (not centred across the two rows) so
+     the ‹ is at the same y as the Files head's — one exit, two places. */
   .changes-head .changes-close {
     grid-area: close;
+    align-self: start;
   }
 
   .changes-title-block,
   .changes-head .workspace-tabs {
     grid-area: title;
     justify-self: start;
+    /* Row two is empty until the first snapshot; without this the grid
+       stretches the pill to fill min-height for that instant. */
+    align-self: start;
   }
 
   .changes-head .changes-refresh {
     grid-area: refresh;
+    align-self: start;
   }
 
   .changes-subtitle {
@@ -316,6 +327,8 @@
 
   .changes-count {
     grid-area: count;
+    justify-self: end;
+    align-self: center;
     padding: 3px 6px;
     font-size: 0.66em;
   }
@@ -547,16 +560,17 @@
     display: inline-flex;
     align-items: stretch;
     min-width: 0;
-    height: 34px;
-    padding: 2px;
+    padding: 0;
     background: var(--surface-2);
     border: 1px solid var(--border-2);
     border-radius: 8px;
   }
 
+  /* 40px tall = the tap target itself, not the pill around it. */
   .workspace-tab {
     display: inline-flex;
     align-items: center;
+    height: 40px;
     padding: 0 12px;
     background: transparent;
     border: none;
@@ -571,11 +585,14 @@
   .workspace-tab.is-active {
     color: var(--fg-strong);
     background: var(--surface-hover);
+    border-radius: 7px;
   }
 
-  /* Same glyph, size and weight as .changes-close so the two exits are one
-     control in two places. */
+  /* Same glyph, size, weight AND width as .changes-close (42px) so the two
+     exits are one control in two places — and the switch beside them lands
+     at the same x/y in both heads (8 + 42 + 6, row centred at y = 7). */
   .files-panel-back {
+    width: 42px;
     font: inherit;
     font-size: 20px;
     line-height: 1;

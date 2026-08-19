@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { type Browser, type BrowserContext, type Page } from "playwright-core";
 import type { ClientMsg } from "../protocol";
-import { assertAxeClean, launchChrome, noSideScroll } from "./e2e-harness";
+import { assertApartOnScreen, assertAxeClean, launchChrome, noSideScroll } from "./e2e-harness";
 import { fixtureGit as git, startDaemon, TestClient, type Daemon } from "./itest-harness";
 
 // CR.2–CR.4 in a real browser against a real daemon and real Git: responsive
@@ -672,6 +672,20 @@ test("CR.2 phone: full-screen one-file review has persistent navigation and pres
   await openPhoneWorkspace(phone, "changes");
   await phone.waitForSelector(".changes-current-path");
   assert.equal(await phone.locator(".changes-count").innerText(), "5 visible");
+  // 320px (iPhone-SE floor) with a real review in progress: the head's row
+  // two — progress beside the count pill — and row one stay apart and
+  // on-screen (2026-08-18 bughunt: the pill sat on the switch at this width).
+  await phone.setViewportSize({ width: 320, height: 568 });
+  await phone.locator(".changes-panel").evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
+  await assertApartOnScreen(phone, 320, [
+    ".changes-head .changes-close",
+    ".changes-head .workspace-tabs",
+    ".changes-progress",
+    ".changes-count",
+    ".changes-refresh",
+  ]);
+  await noSideScroll(phone);
+  await phone.setViewportSize({ width: 390, height: 844 });
   assert.equal(await phone.locator(".changes-rail").count(), 0, "the desktop changed-file rail rendered on phone");
   assert.ok((await phone.locator(".changes-current-path").innerText()).endsWith("a-added.ts"));
 
@@ -1014,7 +1028,12 @@ test("CR.4: review progress resumes and only the changed revision reopens on des
     await mobile.waitForSelector(".changes-panel", { state: "detached" });
     // The single toggle reopens the LAST view — Changes — with no tab tap.
     await mobile.locator(".sb-workspace").tap();
-    await mobile.waitForSelector(".changes-panel[role=dialog]");
+    await mobile.waitForSelector(".files-panel[role=dialog], .changes-panel[role=dialog]");
+    assert.equal(
+      await mobile.locator(".changes-panel[role=dialog]").count(),
+      1,
+      "the workspace toggle must reopen the last-used view (Changes), not Files",
+    );
     await mobile.waitForSelector(".changes-current-path");
     assert.equal(await progressText(mobile), "5 / 5 reviewed");
     assert.ok((await mobile.locator(".changes-current-path").innerText()).endsWith("a-added.ts"));

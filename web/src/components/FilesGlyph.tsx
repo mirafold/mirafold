@@ -1,5 +1,5 @@
-/* The Explorer files glyph — one drawing, two homes: the desktop activity
-   bar (Shell) and the status bar's phone-only toggle. A single document sheet,
+/* The Explorer files glyph — the desktop activity bar's Files toggle (the
+   phone status bar carries WorkspaceGlyph instead). A single document sheet,
    drawn symmetric about the viewBox center — a two-page glyph reads as
    hanging right (its front page's mass sits right of center) even when its
    bounds are centered. Tight viewBox: the drawing fills the box. */

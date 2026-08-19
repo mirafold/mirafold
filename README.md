@@ -1395,8 +1395,9 @@ knowing because it constrains future UI work:
   bar — sits strictly to its right (only banners run full-width). The status
   bar's top border meets that line in a clean T, with its controls vertically
   centered in the bottom band. On phone (≤640px) the rail is hidden — a
-  permanent strip is too much of a 390px screen — and its files toggle sits
-  boxed at the status bar's far left, its separator echoing the rail's border
+  permanent strip is too much of a 390px screen — and its one workspace
+  toggle (Files + Changes behind a single drawer, 2026-08-18) sits boxed at
+  the status bar's far left, its separator echoing the rail's border
   (2026-07-25). Mission control renders a notch larger than the in-session
   workbench (`zoom: 1.15`, reset on phone; the agent picker hosted inside it
   compensates via the fluid `--onb-squeeze` chrome).

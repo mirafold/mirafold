@@ -2,7 +2,7 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { type Browser, type BrowserContext, type Page } from "playwright-core";
 import { startDaemon, type Daemon } from "./itest-harness";
-import { launchChrome, noSideScroll } from "./e2e-harness";
+import { assertApartOnScreen, launchChrome, noSideScroll } from "./e2e-harness";
 import { startRelayStub, type RelayStub } from "../relay/relay-stub";
 
 // R.4, the locally-verifiable slice: a phone-sized browser pairs through the
@@ -29,6 +29,22 @@ const sendPrompt = async (p: Page, text: string) => {
   await p.keyboard.type(text);
   await p.locator(".prompt-send").tap();
 };
+
+// Geometry is asserted at REST: the drawers slide in (02-explorer.css
+// files-in, 03-changes.css changes-in) and a mid-transform boundingBox reads
+// a sub-pixel short (39.9999 for a 40px button) — the 2026-08-18 flake.
+const settled = (page: Page, selector: string) =>
+  page.locator(selector).evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
+
+// Esc walks the drawer out one layer at a time (file → tree → closed).
+const closeDrawer = async (page: Page) => {
+  for (let i = 0; i < 3 && (await page.locator(".files-panel, .changes-panel").count()) > 0; i += 1) {
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(50);
+  }
+  await page.waitForSelector(".files-panel, .changes-panel", { state: "detached" });
+};
+
 
 before(async () => {
   stub = await startRelayStub();
@@ -204,6 +220,10 @@ test("phone (E.4): the files panel is a full-screen drill-in — tree → file �
   await phone.locator(".sb-workspace").focus();
   await phone.keyboard.press("Enter");
   await phone.waitForSelector(".files-panel[role=dialog]");
+  // The toggle reports the drawer's state (it stays in the DOM under the
+  // full-screen drawer; while open it is covered and focus-trapped away, so
+  // "toggle closes" is not a reachable phone path — Esc/‹ are).
+  assert.equal(await phone.locator(".sb-workspace").getAttribute("aria-expanded"), "true");
   await noSideScroll(phone);
   const width = await phone.evaluate(() => {
     const el = document.querySelector(".files-panel");
@@ -215,15 +235,40 @@ test("phone (E.4): the files panel is a full-screen drill-in — tree → file �
   // Files × at the top-right was the odd one out) — and the drawer's own
   // head switches between them; switching keeps the exit where it was.
   assert.equal(await phone.locator(".files-panel-head .files-panel-back").getAttribute("aria-label"), "Back to conversation");
+  await settled(phone, ".files-panel");
   const filesBack = (await phone.locator(".files-panel-back").boundingBox())!;
   assert.ok(filesBack.x < 60 && filesBack.y < 120, `files back is at ${filesBack.x},${filesBack.y} — not top-left`);
-  assert.ok(filesBack.width >= 40 && filesBack.height >= 40, "files back is under the 40px thumb rule");
+  assert.ok(
+    filesBack.width >= 40 && filesBack.height >= 40,
+    `files back is under the 40px thumb rule (${JSON.stringify(filesBack)})`,
+  );
+  // The switch is the phone's ONLY way between the views, so it obeys the
+  // ≥40px thumb rule itself (the pill's buttons, not the pill).
+  const filesTabs = (await phone.locator(".files-panel-head .workspace-tabs").boundingBox())!;
+  for (const tab of await phone.locator(".files-panel-head .workspace-tab").all()) {
+    const box = (await tab.boundingBox())!;
+    assert.ok(box.height >= 40 && box.width >= 40, `workspace tab is ${box.width}×${box.height} — under the 40px thumb rule`);
+  }
   await phone.locator('.files-panel-head .workspace-tab:has-text("Changes")').tap();
   await phone.waitForSelector(".changes-panel[role=dialog]");
   assert.equal(await phone.locator(".files-panel").count(), 0, "one drawer view at a time");
+  await settled(phone, ".changes-panel");
   const changesBack = (await phone.locator(".changes-head .changes-close").boundingBox())!;
   assert.equal(await phone.locator(".changes-head .changes-close").getAttribute("aria-label"), "Back to conversation");
-  assert.ok(Math.abs(changesBack.x - filesBack.x) <= 8, `exits drift: files ${filesBack.x} vs changes ${changesBack.x}`);
+  // "One control in two places": the exit and the switch sit at the SAME
+  // spot in both heads (both axes; 1px = sub-pixel rounding, nothing more),
+  // so switching views never moves either under the thumb.
+  const samePlace = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+    Math.abs(a.x - b.x) <= 1 && Math.abs(a.y - b.y) <= 1;
+  assert.ok(
+    samePlace(changesBack, filesBack),
+    `exits drift between heads: files ${filesBack.x},${filesBack.y} vs changes ${changesBack.x},${changesBack.y}`,
+  );
+  const changesTabs = (await phone.locator(".changes-head .workspace-tabs").boundingBox())!;
+  assert.ok(
+    samePlace(changesTabs, filesTabs),
+    `switch jumps between heads: files ${filesTabs.x},${filesTabs.y} vs changes ${changesTabs.x},${changesTabs.y}`,
+  );
   await phone.locator('.changes-head .workspace-tab:has-text("Files")').tap();
   await phone.waitForSelector(".files-panel[role=dialog]");
   await noSideScroll(phone);
@@ -257,11 +302,56 @@ test("phone (E.4): the files panel is a full-screen drill-in — tree → file �
   // Esc from the tree closes the panel, and focus returns to the opener.
   await phone.keyboard.press("Escape");
   assert.equal(await phone.locator(".files-panel").count(), 0, "Esc from the tree closes the panel");
+  assert.equal(await phone.locator(".sb-workspace").getAttribute("aria-expanded"), "false");
   await noSideScroll(phone);
   const focusedFiles = await phone.evaluate(
     () => document.activeElement?.classList.contains("sb-workspace") ?? false,
   );
   assert.ok(focusedFiles, "focus returned to the workspace toggle on close");
+});
+
+// The drawer heads hold fixed-width controls (‹, the Files | Changes switch,
+// refresh, the count pill) — none may shrink, so on the narrowest phones
+// they must not land on each other. 320px is the iPhone-SE-class floor; the
+// 2026-08-18 bughunt caught the count pill sitting on the switch there.
+test("phone (320px): both drawer heads keep their controls apart", async () => {
+  // Self-contained: an earlier failure may have left the drawer open (a file
+  // view needs two Escapes: back to the tree, then out), and a covered toggle
+  // would turn that one failure into a second, unrelated one.
+  await closeDrawer(phone);
+  await phone.setViewportSize({ width: 320, height: 568 });
+  try {
+    await phone.locator(".sb-workspace").tap();
+    // Whichever view was used last: land on Files explicitly.
+    await phone.waitForSelector(".files-panel[role=dialog], .changes-panel[role=dialog]");
+    await phone.locator('.workspace-tab:has-text("Files")').tap();
+    await phone.waitForSelector(".files-panel[role=dialog]");
+    await settled(phone, ".files-panel");
+    await assertApartOnScreen(phone, 320, [".files-panel-back", ".files-panel-head .workspace-tabs", ".files-refresh"]);
+    await noSideScroll(phone);
+    await phone.locator('.files-panel-head .workspace-tab:has-text("Changes")').tap();
+    await phone.waitForSelector(".changes-panel[role=dialog]");
+    await phone.waitForSelector(".changes-count");
+    await settled(phone, ".changes-panel");
+    // Row two: the review progress renders only with ≥1 change (this daemon
+    // runs in the checkout, clean in CI); changes.e2e pins the pair on its
+    // 5-file fixture unconditionally.
+    const progress = (await phone.locator(".changes-progress").count()) > 0 ? [".changes-progress"] : [];
+    await assertApartOnScreen(phone, 320, [
+      ".changes-head .changes-close",
+      ".changes-head .workspace-tabs",
+      ".changes-count",
+      ...progress,
+      ".changes-refresh",
+    ]);
+    await noSideScroll(phone);
+    await phone.locator(".changes-head .changes-close").tap();
+    await phone.waitForSelector(".changes-panel", { state: "detached" });
+  } finally {
+    // A failed assertion must not leave the drawer over the later tests.
+    await closeDrawer(phone);
+    await phone.setViewportSize({ width: 390, height: 844 });
+  }
 });
 
 test("phone: a permission request is answerable by thumb", async () => {
