@@ -1,5 +1,10 @@
 export type WorkspaceSurface = "files" | "changes";
 
+const SURFACES: readonly (readonly [WorkspaceSurface, string])[] = [
+  ["files", "Files"],
+  ["changes", "Changes"],
+];
+
 /** The phone drawer's view switch (2026-08-18, Kyle): on ≤640px Files and
  * Changes share one full-screen drawer, opened by the status bar's single
  * workspace toggle, and this segmented control at the drawer's head is how
@@ -16,22 +21,17 @@ export function WorkspaceTabs({
 }) {
   return (
     <div className="workspace-tabs" role="group" aria-label="Workspace view">
-      <button
-        type="button"
-        className={"workspace-tab" + (active === "files" ? " is-active" : "")}
-        aria-pressed={active === "files"}
-        onClick={() => active !== "files" && onSwitch("files")}
-      >
-        Files
-      </button>
-      <button
-        type="button"
-        className={"workspace-tab" + (active === "changes" ? " is-active" : "")}
-        aria-pressed={active === "changes"}
-        onClick={() => active !== "changes" && onSwitch("changes")}
-      >
-        Changes
-      </button>
+      {SURFACES.map(([surface, label]) => (
+        <button
+          key={surface}
+          type="button"
+          className={"workspace-tab" + (active === surface ? " is-active" : "")}
+          aria-pressed={active === surface}
+          onClick={() => active !== surface && onSwitch(surface)}
+        >
+          {label}
+        </button>
+      ))}
     </div>
   );
 }

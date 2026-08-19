@@ -9,6 +9,7 @@ import { PromptBox, type PromptDraft } from "./PromptBox";
 import { RenderZone } from "./RenderZone";
 import { FilesPanel } from "./files/FilesPanel";
 import { ChangesPanel } from "./changes/ChangesPanel";
+import type { WorkspaceSurface } from "./WorkspaceTabs";
 import { StatusBar, type Usage } from "./StatusBar";
 import { createSessionBus } from "../session-bus";
 import type { SubscriptionReply } from "../subscription-card";
@@ -146,7 +147,7 @@ export function Shell() {
   // exists; Changes answers what differs from Git HEAD. This single slot is
   // the invariant that keeps the transcript visible on desktop and prevents
   // stacked full-screen layers on phone.
-  const [auxiliary, setAuxiliary] = useState<"files" | "changes" | null>(null);
+  const [auxiliary, setAuxiliary] = useState<WorkspaceSurface | null>(null);
   const filesOpen = auxiliary === "files";
   const changesOpen = auxiliary === "changes";
   const [reviewPromptVisible, setReviewPromptVisible] = useState(false);
@@ -157,7 +158,7 @@ export function Shell() {
     setPromptDraft({ id: promptDraftId.current, text });
     setReviewPromptVisible(true);
   }, []);
-  const toggleAuxiliary = (surface: "files" | "changes") => {
+  const toggleAuxiliary = (surface: WorkspaceSurface) => {
     if (surface !== "changes" || auxiliary !== "changes") setReviewPromptVisible(false);
     setAuxiliary((current) => (current === surface ? null : surface));
   };
@@ -169,12 +170,11 @@ export function Shell() {
   // not two side-by-side icons; it reopens whichever surface was used last
   // (Files until Changes has been chosen once), and the drawer's own head
   // switches between them. Desktop keeps the two-icon rail unchanged.
-  const lastSurface = useRef<"files" | "changes">("files");
+  const lastSurface = useRef<WorkspaceSurface>("files");
   if (auxiliary) lastSurface.current = auxiliary;
   const toggleWorkspace = () => toggleAuxiliary(lastSurface.current);
-  const switchAuxiliary = (surface: "files" | "changes") => {
-    if (surface !== "changes") setReviewPromptVisible(false);
-    setAuxiliary(surface);
+  const switchAuxiliary = (surface: WorkspaceSurface) => {
+    if (auxiliary !== surface) toggleAuxiliary(surface);
   };
 
   // ── The theme (4.3; two-slot model S.3) ─────────────────────────────────
