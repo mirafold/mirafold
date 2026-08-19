@@ -42,6 +42,12 @@ export const SCRUBBED_CREDENTIAL_ENV = {
   GEMINI_API_KEY: "",
   GOOGLE_API_KEY: "",
   CODEX_HOME: path.join(ROOT, "itest-no-codex-home"), // no auth.json here
+  // OpenCode detects LIVE from the binary alone (the Zen gateway, OC.4c), so
+  // a dev machine with opencode installed would flip the card ready and a
+  // careless click could spawn a real engine. An absolute-but-missing
+  // override reads as NOT installed (types.ts installedAgentBin) — the mock
+  // stays forced everywhere, like the credential scrubs above.
+  OPENCODE_BIN: path.join(ROOT, "itest-no-opencode", "opencode"),
   MIRAFOLD_LOG_FILE: "", // never write the real flight-recorder file from tests
   MIRAFOLD_SESSION_DIR: path.join(os.tmpdir(), `mirafold-itest-${process.pid}`),
   // R.4b made a `claude` subscription login count as live credentials —

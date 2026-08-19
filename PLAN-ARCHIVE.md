@@ -7586,3 +7586,3872 @@ combined Tier 2/Tier 3 checks passed before merge into `next` at `21b5f33`.
 The eight correctness repairs are signed and DCO-signed-off in `3ed7236` and
 published as open PR #35 into `next`. Per Kyle's instruction, PR #35 remains
 unmerged for review.
+
+## Moved 2026-08-11 (Changes review foundation — CR.1)
+
+### Phase CR.1 — Reusable file view + complete change-set query (completed 2026-08-11)
+
+- [x] **Step CR.1 — Cut the shared foundation without changing the shipped UI**
+  - **Goal:** make Files and the later Changes surface consume one request/view
+    lifecycle, and give any viewport one bounded, honest query for all changed
+    files in the session's repository or nested repositories.
+  - **Build:** extract the correlated `fs_read`/`fs_diff` state from
+    `FilesPanel` into a reusable hook/controller while keeping its current
+    desktop and phone rendering byte-for-behavior equivalent. Add an additive
+    `fs_changes` → `fs_change_set` request/reply: changed paths only
+    (M/A/D/U), grouped by their session-relative repository root, capped by
+    count and UTF-8 path bytes, with truncation/errors explicit. A session
+    inside one repo scopes the answer to its session root; a non-repo parent
+    discovers bounded nested repos without following symlinks or descending
+    into repo contents. Reuse the existing Git trust controls, subprocess
+    timeout, secret-file refusal, per-viewport correlation, and Git-in-flight
+    throttle. No dependency.
+  - **Modify existing:** `server/protocol.ts`, `server/sessions/git.ts`,
+    `server/sessions/fs-handlers.ts`, `server/sessions/connection.ts`,
+    `web/src/session-bus.ts`, `FilesPanel.tsx`, and their tests.
+  - **Create new:** the reusable file-view request controller and its focused
+    tests. No user-facing control or surface is created in this phase.
+  - **Leave behaviorally unchanged:** `FileView` presentation, Explorer
+    interactions and styling on desktop/phone, every adapter, prompt behavior,
+    filesystem writes, and the relay transport.
+  - **Done when:** focused unit and server-integration tests prove root-repo,
+    subdirectory, nested-repo, rename/delete/untracked, caps, malformed-id,
+    throttle, and stale-reply behavior; existing Explorer browser assertions
+    pass unchanged at desktop and phone widths; typecheck is clean.
+
+**Executable changes:** `server/protocol.ts` adds only the correlated
+`fs_changes` request and `fs_change_set` reply, with explicit repository groups
+and truncation/error fields. `server/sessions/git.ts` now obtains changed files
+through the existing timeout-bounded, config-neutralized Git runner; scopes a
+repo-subdirectory session correctly; discovers nested repositories beneath a
+non-repo parent with repo/node/count/UTF-8-byte caps and no symlink traversal;
+and treats incomplete discovery as incomplete rather than silently complete.
+`fs-handlers.ts` and `connection.ts` expose the per-viewport throttled request
+without broadcasting or replaying it, and `session-bus.ts` mints its client
+correlation id. `web/src/components/files/use-file-view.ts` now owns the shared
+read/diff selection, mode, request correlation, stale-reply gate, and reset
+lifecycle; `FilesPanel.tsx` consumes it with its existing rendered structure and
+styling. No dependency, write path, adapter behavior, prompt behavior, relay
+shape, or visible Changes control was added.
+
+**Test changes:** protocol fixtures pin both additive frames. Git tests cover a
+real root repo, repo-subdirectory scoping, modified/deleted/untracked files,
+rename parsing, UTF-8/count caps, nested siblings, repo-boundary stopping,
+ignored dependency trees, symlink exclusion, and global repository-label path
+budgets. A new real-daemon/WebSocket integration covers grouped parent-workspace
+results, rename source/target, throttle replies, and subdirectory paths. The
+hostile-client integration now proves malformed `fs_changes` ids produce no
+reply and no crash. The existing stale-reply unit pin now imports the extracted
+controller directly.
+
+**Documentation changes:** `PLAN.md` records the four responsive Changes
+phases and keeps desktop and ≤640px mobile behavior as acceptance requirements
+throughout. `BUSINESS.md` narrows the IDE non-goal to keep editing out while
+bringing honest read-only visual diff review into scope. `README.md` records
+the new filesystem query and reusable controller in the architecture map.
+
+**Proof:** TypeScript passed. The focused protocol/Git/file-view run passed
+26/26; the new real-daemon Changes integration passed 2/2; the hostile-client
+integration passed 4/4. A Vite production build passed with dotenv loading
+explicitly disabled (`envDir: false`). The existing desktop Explorer drill-in
+browser flow passed with its required setup (3/3), and the existing 390px phone
+full-screen drill-in/no-side-scroll flow passed with its required pairing setup
+(3/3). `git diff --check` passed. No dotenv file was opened or read.
+
+## Moved 2026-08-11 (Useful Changes view — CR.2)
+
+### Phase CR.2 — The useful Changes view, desktop and mobile (completed 2026-08-11)
+
+- [x] **Step CR.2 — Ship the complete changed-set review surface**
+  - **Goal:** open Changes at will, move through every changed file, and read
+    its current HEAD-versus-working-tree diff without leaving the session.
+  - **Build:** add a shell-owned Changes control and honest changed-file count;
+    group files by repo, select the first change deterministically, and reuse
+    the CR.1 file-view controller. `fs_changed` and turn-end refresh the set and
+    the open diff without losing a still-valid selection. Empty, loading,
+    binary, truncated, error, and no-repository states all speak plainly.
+  - **Desktop styling:** a wider split workspace beside the transcript, compact
+    changed-file rail + readable diff, Files/Changes mutual exclusion, visible
+    active state, and a deliberate close path. It remains usable at the
+    narrowest desktop width and never silently hides the conversation.
+  - **Mobile styling:** a full-screen safe-area-aware layer, one file at a time,
+    vertical unified diff, fixed back + file counter + previous/next controls,
+    ≥40px targets, preserved scroll when returning to chat, and zero page-level
+    side-scroll at 390px.
+  - **Done when:** headless Chrome drives the real control and reviews added,
+    modified, deleted, and untracked files at desktop and 390px; a disk rewrite
+    updates the open view without a click; Files still follows its existing
+    drill-in behavior; dark/light screenshots and axe pass on both surfaces.
+
+**Verified starting state:** CR.1 had added the correlated, bounded
+`fs_changes` → `fs_change_set` multi-repository query in
+`server/protocol.ts`, `server/sessions/fs-handlers.ts`, and
+`server/sessions/git.ts`. It had also extracted the reusable correlated
+read/diff lifecycle into `web/src/components/files/use-file-view.ts`, with
+`FilesPanel.tsx` as its only host. `web/src/components/Shell.tsx` still owned a
+single `filesOpen` boolean; `ActivityBar` and `StatusBar.tsx` exposed only the
+Files control; and no Changes component, control, stylesheet, selection model,
+or browser scenario existed. `FileView.tsx` already presented text, unified
+diffs, binary refusal, loading, and errors. These were observed components,
+not inferred planned behavior.
+
+**Approved boundary:** modify `Shell.tsx`, `StatusBar.tsx`, and structural CSS
+to give Files and Changes one mutually exclusive shell-owned workspace slot;
+create the pure changed-file view model, Changes glyph, responsive Changes
+panel, focused unit tests, and real-daemon browser proof. Reuse the CR.1 wire,
+Git, session bus, and file-view controller without changing their behavior.
+Leave every adapter, prompt-send path, permission policy, filesystem write
+path, relay frame, and Files interaction behaviorally unchanged. Add no
+dependency.
+
+**Executable changes:** `web/src/components/Shell.tsx` now owns one
+`files | changes | null` auxiliary-workspace state and exposes mutually
+exclusive desktop activity-bar and phone status-bar controls.
+`web/src/components/changes/ChangesPanel.tsx` requests the complete set only
+while open, accepts only its correlated reply, groups the server's explicit
+repository results, opens the deterministic first change, and preserves a
+still-valid selected file across refresh. A one-second coalesced refresh reacts
+to live `fs_changed` bells and non-replayed turn ends, re-querying both the set
+and selected diff. Loading, clean tree, no repository, incomplete/truncated,
+partial refresh failure, refused Git configuration, binary file, and ordinary
+request errors are distinct visible states. `web/src/changes.ts` owns pure
+sorting, selection, status/count honesty, and repository-label helpers;
+`ChangesGlyph.tsx` supplies the dependency-free shell glyph.
+
+Desktop CSS supplies a `clamp(370px, 55vw, 760px)` split workspace with a
+compact repository/file rail and a readable independently scrolling review
+column while the transcript stays present. The 641px browser contract keeps at
+least 155px for review and 200px for conversation. At ≤640px the same surface
+becomes a fixed safe-area-aware dialog: the rail disappears, exactly one file
+is shown, previous/next and position remain fixed, all persistent controls are
+at least 40px, and only the file view scrolls. Closing it preserves the mounted
+conversation's scroll position. No server, adapter, write, permission, prompt,
+relay, or package behavior changed.
+
+**Test changes:** `web/src/changes.test.ts` pins deterministic repository/file
+ordering, selection preservation/fallback, exact versus incomplete counts,
+the four trusted status labels, hostile-status fallback, and POSIX/Windows
+repository labels. `server/testing/changes.e2e.ts` builds real Git fixtures for
+added, deleted, modified, untracked, binary, and deliberately truncated
+results; drives the real daemon and Chromium controls; proves Files/Changes
+mutual exclusion, every review state, selection preservation after a live disk
+rewrite, and unchanged Files drill-in. Its 1280px and 641px desktop checks keep
+the transcript visible; its 390×844 phone check proves full-screen geometry,
+no side-scroll, ≥40px controls, one-file navigation, binary state, close/reopen
+selection, and transcript-scroll preservation. Separate real workspaces prove
+no-repository, clean-tree, and safely refused Git-configuration states. Both
+desktop and phone switch through the real theme control, capture dark and light
+screenshots, and run axe in both appearances.
+
+**Documentation changes:** `README.md` now names Workspace changes in the
+product orientation and architecture map, records the responsive behavior, and
+distinguishes it from Files. `PLAN.md` marks CR.2 complete, advances CR.3, and
+turns PN.1 into the completed CR.1 pointer its scheduling note required. This
+archive preserves CR.2's full specification, starting state, actual boundary,
+and evidence. `BUSINESS.md` needed no CR.2 change because CR.1 had already
+recorded the read-only visual-review scope and honesty boundary.
+
+**Proof:** TypeScript passed. The focused changed-file and shared file-view
+unit run passed 8/8. A Vite production build passed with dotenv loading
+explicitly disabled (`envDir: false`). The final combined CR.2 real-daemon
+Chromium run passed 3/3, covering desktop, phone, and honest states; its four
+dark/light axe gates passed. The existing desktop token/onboarding/Explorer
+regression slice passed 3/3, and the existing paired-phone/Explorer slice
+passed 3/3. `git diff --check` passed. No dotenv file was opened or read.
+
+## Moved 2026-08-12 (Conversational Changes review — CR.3)
+
+### Phase CR.3 — Code-context navigation + transparent agent feedback (completed 2026-08-12)
+
+- [x] **Step CR.3 — Make a diff directly conversational**
+  - **In progress — session handoff 2026-08-11.** The selectable review diff,
+    stable HEAD/working-tree line coordinates, two-hunk navigation, shipped-stack
+    syntax highlighting, desktop pointer/keyboard ranges, phone line/hunk taps,
+    and visible unsent `Explain` / `Request change` prompt drafts are implemented
+    on `feature/changes-workspace`. Existing prompt text is preserved, invalid
+    selections clear with an explicit notice, and the focused unit, typecheck,
+    production-build, desktop-browser, and phone-browser checks pass. CR.3 stays
+    unchecked because its ordered browser suite is not yet reliably green.
+  - **Next `$next` action — diagnose before changing code.** Re-run the smallest
+    ordered Changes-browser subset enough times, without product edits, to
+    characterize an intermittent axe `scrollable-region-focusable` result. After
+    CR.3's desktop flow sends a mock turn, the later phone checks sometimes report
+    two serious findings at highlighted transcript code nodes (`.language-diff`
+    and `.language-ts`). Each phone test passes alone, and the same ordered subset
+    has both passed and failed with no code change. Two CSS hypotheses were tested
+    separately and reverted after they failed: making `.markdown pre code.hljs`
+    non-scrolling, then making `.rc-code-body code.hljs` non-scrolling. Before a
+    third hypothesis, capture the flagged nodes' dimensions, computed overflow,
+    and scroll ancestry inside the same axe evaluation that reports the result.
+    Do not mark CR.3 complete until the ordered suite passes repeatedly.
+  - **Goal:** turn "I object to these lines" into a precise, ordinary follow-up
+    to the same terminal agent without copying paths and snippets by hand.
+  - **Build:** add stable line numbers, changed-hunk navigation, enough context
+    to read the surrounding function, and syntax-aware code presentation using
+    the already-shipped highlighting stack (no dependency). Desktop supports
+    pointer/keyboard range selection; mobile supports tap-selected lines or a
+    whole hunk without drag precision. `Explain` and `Request change` create a
+    **visible editable draft** in the trusted prompt box containing the exact
+    path/range/snippet; neither action sends automatically or hides context.
+  - **Done when:** desktop keyboard and pointer plus phone taps can select a
+    range, create the exact visible draft, edit it, and send through the normal
+    prompt path; changing files clears an invalid selection honestly; all
+    existing agent/permission behavior is unchanged and all three tiers pass.
+
+**Verified starting state:** commit `5ac458d` already contained the CR.3
+interaction itself on `feature/changes-workspace`: `web/src/change-review.ts`
+derived stable versioned lines, hunks, selections, and prompt text;
+`ReviewDiff.tsx` rendered syntax-aware selectable rows; `ChangesPanel.tsx`,
+`Shell.tsx`, and `PromptBox.tsx` kept the selected context visible while a
+trusted-shell draft was edited and sent normally. Focused unit, typecheck,
+production-build, and isolated desktop/phone browser checks passed. The exact
+ordered Changes subset was unverified because its later phone axe scans had
+both passed and failed without a code change. No dependency, server protocol,
+real-agent adapter, permission path, or filesystem write behavior had been
+added.
+
+**Causal diagnosis:** before any product edit, the smallest ordered subset ran
+three valid times and failed twice. Failure-only axe instrumentation captured
+both nodes inside the same evaluation: `.language-diff` held 345px of content
+in 330px and `.language-ts` held 493px in 330px; Highlight.js computed
+`overflow: auto` on each, while both had `tabIndex: -1` and no focusable
+descendant. Their parent `<pre>` elements did not overflow; the outer
+`.render-zone` was already focusable. The intermittent source was
+`MockSession.playTemplateTurn()`: CR.3's submitted draft fell through to a
+shuffled five-template deck, and only `codeReviewTemplate` emitted those exact
+`diff` and `ts` fences. The same session was replayed into both later phone
+tests, so they failed together when that template was drawn and passed when it
+was not. The earlier CSS experiments had been reverted and were not stacked.
+
+**Executable changes:** the CR.3 feature remains the implementation recorded
+in `5ac458d`: stable HEAD/working-tree coordinates and two-hunk navigation;
+desktop pointer and keyboard ranges; phone line and whole-hunk taps; exact
+path/range/snippet drafts appended visibly to any existing prompt; focus moved
+to the editable prompt without sending; and explicit invalidation when the
+selected file, content revision, or textual view changes. The closure adds one
+targeted accessibility behavior in `web/src/registry/Md.tsx`: a fenced code
+node carrying Highlight.js's `hljs` class—the actual horizontal scroller—is in
+the keyboard tab order, while inline code remains inert. `MockSession` now
+answers CR.3's ordinary “Please revise the selected workspace change” draft
+with the existing two-fence code-review template deterministically, removing
+the shuffled-fixture dependency. Real Claude Code, Codex, and Gemini adapters,
+permissions, wire messages, filesystem behavior, and dependencies remain
+unchanged.
+
+**Test changes:** `Md.test.ts` pins the highlighted-versus-inline focusability
+split; `mock.test.ts` pins both deterministic fences. `changes.e2e.ts` proves
+the submitted CR.3 response really contains both highlighted scrollers and
+that each has `tabindex="0"` before its ordered phone axe scans. The shared axe
+helper now preserves failure target, HTML summary, exact client/scroll
+dimensions, computed overflow, focusability, and scrollable-ancestor detail
+instead of collapsing a violation to a count. The global accessibility test
+now chooses the named safe `README.md` Explorer fixture rather than the
+alphabetically first file: under the required dotenv-denial guard, that first
+file was `.env.example`, whose read was correctly blocked before contents were
+accessed. Failure-only selected-path/view diagnostics remain on that wait.
+
+**Documentation changes:** `PLAN.md` marks CR.3 complete and advances to CR.4;
+`README.md` now carries the conversational selection/draft behavior in both
+the product summary and architecture map. `HANDOFF.md` records CR.4 as the next
+single-pass phase and replaces the now-stale axe investigation handoff.
+
+**Proof:** focused mock/markdown unit files passed (8 tests), TypeScript passed,
+both production bundles built with Vite dotenv loading explicitly disabled,
+and `git diff --check` passed. The once-intermittent ordered desktop→phone
+subset passed 5/5 repetitions (15/15 cases), and the complete Changes browser
+file passed twice (5/5 each). The recorded aggregate runs passed 645/645 Tier 1,
+146/146 Tier 2, and 88/88 rebuilt Tier 3, including the global axe sweep and
+both CR.3 phone scans. The read-denial preload blocked attempted dotenv reads
+before contents were accessed.
+
+**2026-08-12 correction to the aggregate-safety claim:** the 645/645 and
+146/146 results above are real green results, but calling them fully safe under
+the account-wide dotenv rule was wrong. The preload used for those runs denied
+reads but not writes. `server/sessions/fs-explorer.test.ts` and
+`server/sessions/fs-explorer.itest.ts`, like the already excluded
+`server/render-image.test.ts`, open and write temporary dotenv-named fixtures.
+CR.4's aggregate proof below uses a stricter read/write/open denial preload and
+excludes all three files. No dotenv content was read during CR.3, but the two
+additional fixture files should not have been run under the literal “never
+open” boundary.
+
+## Moved 2026-08-12 (Trustworthy review progress — CR.4)
+
+### Phase CR.4 — Review progress, live invalidation, and closure (completed 2026-08-12)
+
+- [x] **Step CR.4 — Make large reviews resumable and trustworthy**
+  - **Goal:** show what the user has actually reviewed without letting later
+    agent edits hide behind a stale checkmark.
+  - **Build:** viewport-local reviewed state keyed to a file-content revision;
+    mark/unmark file and next-unreviewed navigation; any new revision visibly
+    returns that file to unreviewed while preserving unrelated progress. Add
+    keyboard shortcuts only when focus is outside the prompt, finish reduced-
+    motion/overflow/performance work, and run a focused correctness/security/
+    test-quality closure over the new read-only surface.
+  - **Done when:** a multi-file browser flow reviews files, mutates one behind
+    the UI, observes only that file become unreviewed, resumes on desktop and
+    phone, and passes all safe unit/integration/e2e tiers, typecheck, production
+    build, axe, and the repository's dotenv-opacity guard.
+
+**Verified starting state:** `server/protocol.ts` already defined
+`fs_file_diff` replies with bounded `before` / `after` text and binary or error
+states, but no revision identity. `web/src/components/files/FileView.tsx`
+carried those replies into the shared view model.
+`web/src/components/changes/ChangesPanel.tsx` was already viewport-mounted
+while visually closed, subscribed to `fs_changed`, and scoped its file-view
+lifecycle by `sessionKey`; it had no reviewed-progress state, reviewed
+controls, next-unreviewed behavior, or keyboard shortcuts.
+`ReviewDiff.tsx` built the line diff before any line-count ceiling and ran a
+complete Markdown/highlight pipeline for every rendered row; its hunk jump
+always requested smooth scrolling. No reviewed state existed in storage, on
+the wire, or in another component.
+
+**Approved boundary:** modify the additive `fs_file_diff` reply,
+`fs-explorer.ts`, `fs-handlers.ts`, `FileView.tsx`, `ChangesPanel.tsx`,
+`ReviewDiff.tsx`, the pure change-review policy, styles, and their tests. Create
+one pure review-progress model and focused tests for the revision and render
+contracts. Leave real Claude Code/Codex/Gemini adapters, ordinary prompt send,
+native permissions, Git trust, filesystem writes, and dependencies
+behaviorally unchanged. No persisted or cross-viewport review state was
+authorized or added.
+
+**Executable changes:** an `fs_diff` reply can now carry a per-daemon,
+HMAC-SHA-256 revision that length-frames the exact HEAD bytes and exact current
+file bytes. Revision work is opt-in and capped at 1 MB per side; the descriptor
+is checked before and after the bounded read, binary revisions remain opaque,
+and an unstable or oversized snapshot receives no revision and therefore
+cannot be marked reviewed. Secret-file refusal still happens before Git or
+filesystem content access. Ordinary Explorer reads retain their previous path
+and do no revision hashing.
+
+`review-progress.ts` owns one viewport's path→revision decisions, exact-match
+checks, pruning, selective watcher invalidation, conservative all-marker
+invalidation for HEAD/incomplete hints, counts, and wrapping
+next-unreviewed navigation. `ChangesPanel.tsx` keeps that state while its
+surface is closed, resets it on session change, listens to disk bells even
+while hidden, reconciles a newly loaded exact revision, exposes visible rail
+markers and `reviewed / visible` progress, and adds mark/unmark plus
+next-unreviewed controls. `R` and `N` work only outside the entire trusted
+prompt and every other editable control; `Alt`, `Control`, and `Meta`
+combinations and held-key repeats are ignored.
+
+`ReviewDiff.tsx` now rejects an over-budget diff before constructing its line
+matrix, mounts at most 1,000 interactive rows, and runs the shipped
+Markdown/Highlight.js stack once for the whole file rather than once per row.
+Selection and focus update row chrome without rerunning syntax highlighting.
+Hunk navigation requests instant scrolling when the viewport prefers reduced
+motion. Desktop at 641px and phone at 390px keep the progress header and both
+controls within the viewport; phone controls retain the 40px touch floor.
+
+**Focused correctness closure:** three concrete implementation defects were
+observed and closed before the final audit. First, the visually closed panel
+discarded watcher bells, so a file changed while hidden could reopen with a
+stale marker; its mounted subscription now always performs invalidation.
+Second, the initial shortcut guard protected editable elements but not an
+ordinary focusable control elsewhere inside the prompt; the whole
+`.prompt-box` is now excluded. Third, direct timing proved the per-row syntax
+pipeline took about 5.9 seconds for 1,000 rows; the shared pipeline brought the
+same fixture to about 0.4 seconds and the 1,000-line ceiling bounds the
+remaining work. The final focused correctness review found no unresolved bug.
+
+**Focused security closure:** the new capability is read-only and adds no
+dependency, persistence, adapter path, permission bypass, Git trust change, or
+filesystem write. Existing textual containment, realpath jail, Git-program
+neutralization, secret-name refusal, one-query-in-flight rule, and request
+throttles remain in front of it. The exact-byte work is capped at 1 MB and the
+token is keyed with a random per-daemon secret so a remote viewport does not
+receive a reusable public fingerprint of binary content. The final focused
+exploitability review found no unresolved security issue.
+
+**Test changes and mutation proof:** `fs-revision.test.ts` pins exact text and
+binary identity, opt-in work, changed bytes, oversized working-file
+withholding, and an oversized HEAD side. Real-Git integration pins revisions
+for modified,
+added, and deleted files. `review-progress.test.ts` pins exact revision
+matching, path-selective/directory/HEAD/incomplete invalidation, pruning, and
+wrapping navigation. `change-review.test.ts` pins the 1,000-line ceiling and
+reduced-motion policy. `ReviewDiff.test.ts` proves a highlighted 1,000-row
+render stays below a deliberately broad four-second regression budget and a
+1,001-row input falls back before selectable rows mount. The suffix was
+corrected from `*.test.tsx` to `*.test.ts` when the audit established that the
+ordinary Tier 1 command would otherwise omit it.
+
+Four temporary mutations were each applied alone and restored immediately:
+forcing all progress invalidation made the focused progress tests fail;
+returning a constant content identity made the revision tests fail; disabling
+the interactive ceiling made both policy and render tests fail; and suppressing
+the Changes-panel invalidation made the real browser flow fail while waiting
+for the changed file to become unreviewed. This proves the new tests detect
+their claimed failures rather than merely execute the code.
+
+`changes.e2e.ts` drives a real daemon, real Git, and Chromium on desktop and
+phone. It marks multiple exact revisions, mutates one nonselected file, proves
+only that file reopens, wraps and resumes, invalidates while visually closed,
+keeps a second viewport independent, handles binary review, protects prompt
+typing and prompt controls from shortcuts, ignores repeated keys, checks
+reduced-motion scrolling, enforces 641px/390px overflow and 40px phone controls,
+and runs axe in both layouts. CR.3's deterministic highlighted-code assertions
+remain in the same complete suite.
+
+**Documentation changes:** `PLAN.md` closes the four-phase Changes workspace
+and advances `$next` to PN.2. `README.md` records revision-keyed progress and
+the server/client ownership seams. `HANDOFF.md` records PN.2 as the next
+single-pass phase. This archive also corrects CR.3's overly broad aggregate
+safety description.
+
+**Proof:** the focused revision/progress/change-review/render/protocol run
+passed; the real-Git integration passed 12/12 across three unchanged runs; the
+isolated CR.4 browser case passed 3/3 across three unchanged runs; and the
+complete Changes browser file passed 6/6. TypeScript and both production
+bundles passed, with Vite dotenv loading redirected to an empty directory.
+Safe Tier 1 passed 634/634 across 75 files, excluding
+`server/render-image.test.ts` and `server/sessions/fs-explorer.test.ts`; safe
+Tier 2 passed 133/133 across 22 files, excluding
+`server/sessions/fs-explorer.itest.ts`; the complete rebuilt Tier 3 passed
+89/89 across all eight files. A stricter preload denied synchronous, callback,
+promise, stream, copy, and open operations targeting dotenv filenames
+throughout. No dotenv file was opened or read.
+
+**Post-completion non-functional refactor (2026-08-12):** the public component,
+wire protocol, DOM contract, CSS selectors, tests, and user behavior remain
+unchanged. `ChangesPanel.tsx` is now the responsive composition layer;
+`use-changes-controller.ts` owns its existing request, watcher, selection,
+review-progress, and shortcut lifecycle; `ChangesChrome.tsx` owns header/rail/
+navigation/progress chrome; and `ReviewRows.tsx` owns the existing memoized
+Markdown/highlight row rendering beneath `ReviewDiff.tsx`. Repeated review
+ref/state commits and the editable shortcut selector were deduplicated. No
+server/Git boundary, dependency, validation, log, or feature changed. Focused
+model/render tests passed, TypeScript and the production client build passed,
+the complete Changes browser file passed 6/6, safe Tier 1 passed 634/634, and
+the complete rebuilt Tier 3 passed 89/89.
+
+## Moved 2026-08-12 (Changes correctness remediation — CR.5)
+
+### Phase CR.5 — Correctness remediation (completed 2026-08-12)
+
+- [x] **Step CR.5 — Close the whole-feature bughunt findings**
+  - **Goal:** repair every reproduced correctness failure in the completed
+    Changes workspace before beginning a new feature.
+  - **Build:** keep the surface read-only while correcting Git/index edge
+    states, repository ownership, deleted/symlink/unreadable diffs, reconnect
+    and refresh trust, status-only refresh semantics, incomplete empty-state
+    language, and terminal-newline modeling. Pin each original failure at its
+    causal layer and repeat the complete Changes browser path.
+  - **Done when:** all ten original scenarios return the correct result; safe
+    focused and aggregate unit/integration suites, the real-daemon Chromium
+    suite, TypeScript, production builds, and the final diff boundary pass.
+
+**Verified starting state:** the whole-feature bughunt reproduced seven
+ordinary and three latent failures against the exact CR.1–CR.4 implementation.
+`gitChanges()` collapsed porcelain records directly, so a staged deletion plus
+an identical untracked working file appeared changed, an added-then-deleted
+path appeared deleted, and an assume-unchanged modification disappeared.
+`discoverNestedRepoRoots()` and `findRepoRoot()` treated mere `.git` existence
+as ownership. `resolveDiffRepo()` required the deleted file's complete parent
+to exist, and the diff after-side used `inside()` plus `stat`/read, following a
+leaf symlink and collapsing every lstat error to absence.
+
+`use-changes-controller.ts` reset request state only when `sessionKey` changed,
+although an ordinary socket reconnect preserves that key. A lost
+`fs_changes` reply therefore left Refresh permanently pending, while a
+successful reconnect could keep stale bytes and review progress. Manual
+refresh reloaded only the selected diff, so review markers for unselected
+files survived a HEAD change outside a subdirectory session's watcher root.
+The late directory-status path emitted a pathless, truncated `fs_changed`,
+which the review model correctly interpreted as unknown disk churn and used to
+invalidate every marker even though the disk had not changed. A truncated
+zero-entry set reached the clean-tree branch. Finally, splitting source text
+on every newline modeled the trailing delimiter as a real blank line, creating
+false line N+1 rows and missing terminal-newline-only changes.
+
+Each fact above was established before modification with a concrete temporary
+Git/daemon/browser probe. The roadmap did not already cover any finding: PN.2
+begins a separate pane feature.
+
+**Approved boundary:** modify the Changes Git/change-set derivation,
+repository discovery and diff read path, additive filesystem signal metadata,
+shared line-diff/review model, Changes request/review lifecycle and honest
+empty state, plus focused tests and Changes documentation. Leave terminal-agent
+adapters, prompt submission, native permissions, filesystem writes,
+dependencies, and PN.2 behaviorally unchanged. Git trust enforcement remains
+in force; the additional `ls-files` form is a command the daemon already ran.
+
+**Executable changes — Git and repository ownership:** `parseStatusZ()` now
+retains the raw records needed to recognize index combinations whose collapsed
+label is not the net result. `gitChanges()` also reads tracked-file flags and
+performs a bounded, jailed, exact revision comparison only for exceptional
+paths (duplicate staged-delete/untracked records, simultaneous add/delete, and
+nonordinary `ls-files -v` flags). Equal HEAD/current bytes are omitted;
+missing/new/changed paths become D/A-or-U/M. Unverifiable exceptional paths
+make the set explicitly incomplete instead of manufacturing certainty, and
+dotenv-pattern paths are never opened for this comparison.
+
+Repository discovery now accepts only a minimum valid Git administration
+shape: an ordinary `.git` directory with HEAD and objects, or a bounded gitdir
+file pointing at an ordinary/linked-worktree admin directory. A malformed
+marker is skipped while discovery continues below or ownership continues
+above. Deleted-path diff resolution walks to the nearest surviving jailed
+ancestor, retains the missing suffix, and resolves the correct nested repo.
+
+**Executable changes — diff semantics:** `readWorkspaceDiffEntry()` preserves
+three distinct states: absent, readable, and error. It validates the parent
+inside the session jail, uses lstat on the leaf, returns a symlink's link text
+as Git does, reports permission failures, and opens regular files with
+no-follow and nonblocking flags before descriptor/type/stability checks. The
+handler therefore treats only ENOENT/ENOTDIR as an empty deleted after-side.
+
+**Executable changes — viewport trust and honest presentation:** a
+`session_created` reattach now cancels socket-orphaned set/file request ids and
+timers, releases pending state, clears review claims whose disk history cannot
+be known, and schedules a fresh set plus selected diff. Explicit Refresh also
+clears all review claims before the query; this is the conservative floor for
+missed watcher events and HEAD changes outside a subdirectory root. Late Git
+decoration remains the backwards-compatible `fs_changed` message but carries
+the additive `reason: "status"`; Files refreshes as before, while Changes does
+not interpret it as disk mutation. A zero-visible incomplete response now says
+exactly that and renders the warning instead of claiming a clean tree.
+
+The shared line differ now separates source lines from the terminal-newline
+bit. Added/deleted files no longer gain a trailing sentinel row; a
+newline-only change replaces the actual final line, and the side lacking the
+delimiter carries a visible and draft-preserved `\\ No newline at end of
+file` marker. Review coordinates, line caps, hunks, syntax rows, and generic
+diff rendering consume the same model.
+
+**Test changes:** Git unit fixtures reproduce the two index-only contradictions
+and assume-unchanged omission, plus malformed markers above and below valid
+repositories. Real-daemon Git integration pins deleted nested directories,
+symlink text, unreadable-path errors, and malformed child ownership. The
+status integration requires `reason: "status"` without truncated/path disk
+hints. Line-model tests pin newline-only coordinates, added-file row counts,
+generic diff output, and feedback markers. Four real-browser cases close both
+reconnect failures, the unselected-marker/manual-HEAD failure, synthetic
+status invalidation, and the zero-visible incomplete wording.
+
+**Documentation changes:** `PLAN.md` closes CR.5 while keeping PN.2 next;
+`README.md` states reconnect/manual-reset, status-only, and terminal-newline
+behavior; `HANDOFF.md` records the repaired boundaries and current proof. No
+adapter, prompt, permission, write, dependency, or PN.2 documentation changed.
+
+**Proof:** the focused Git/protocol/revision/line-model run passed 44/44; the
+dedicated real-Git diff file passed 8/8; the status-signal file passed 5/5;
+TypeScript passed; and both production bundles built. The dotenv-safe Tier 1
+aggregate passed 638/638 across 75 files, explicitly excluding the two unit
+files that create dotenv-named fixtures. The dotenv-safe Tier 2 aggregate
+passed 137/137 across 22 files, explicitly excluding the integration file that
+creates such fixtures. The complete Changes browser file passed 10/10 after a
+fresh production build, with all four CR.5 browser regressions included.
+After a fresh client build whose Vite env directory was a new empty temporary
+directory, complete Tier 3 passed 93/93 across all eight browser files. Final
+`git diff --check` passed; the handoff records the earlier ordinary-build
+invocations whose dotenv-probe behavior is unverified.
+
+## Moved 2026-08-12 (Changes polish + branch closure — UX.10, CR.6–CR.14, stylesheet split)
+
+- [x] **Step UX.10 — Make collapse-on-finalize survive narrating engines** —
+  completed 2026-08-12, from Kyle's live Codex report (every shell/apply_patch
+  call visible individually). Diagnosis: the "worked · N actions" fold only
+  grouped ≥2 *contiguous* tool rows, and (a) Codex narrates a reasoning item
+  before nearly every command — each thinking row broke contiguity, leaving
+  unfoldable singletons; (b) the Codex adapter branded every nonzero exit an
+  error (`codex-events.ts`), and error rows deliberately stay expanded and
+  break runs, so routine probes (grep no-match, failing test runs) shattered
+  the rest. Fixes: `groupSettledTools` now absorbs INTERIOR thinking into the
+  fold in true transcript order (expansion replays narration between calls;
+  leading/trailing thinking keeps its own row; text/notice/failure boundaries
+  unchanged — nothing reorders), and Codex `status:"completed"` with nonzero
+  exit is no longer an error — the exit code is annotated in the output
+  (`(exit 1)`), matching the Codex TUI's own presentation; `status:"failed"`
+  still is. Claude sessions with interleaved thinking benefit identically;
+  Gemini emits no thinking rows and already folded best. Pinned in Tier-1
+  (5 new grouping cases, 1 codex exit case) and e2e (mock now narrates
+  between commands; the fold must absorb it and replay it on expansion).
+  Tier-1 672, Tier-2 150, app 54, changes+phone 20 — all pass.
+
+
+*(from the Changes review workspace intro:)*
+
+**Original verified starting state (before CR.1).**
+`web/src/components/files/FilesPanel.tsx` provided a shell-owned, read-only,
+lazy tree and one-file drill-in; changed files led with a
+HEAD-versus-working-tree diff. `FileView.tsx` was the pure presenter, while
+`FilesPanel` owned the one outstanding read/diff request. The server could
+decorate one requested directory with Git status and return one file's
+`{before, after}` diff, but no request returned the complete changed set. No
+Changes control, Changes surface, review progress, hunk navigation, or
+selected-code feedback path existed at that point.
+
+- [x] **Step CR.6 — Whole-branch security + test audits** — completed
+  2026-08-12. Security audit of the branch delta found no exploitable
+  vulnerability and no new ship-time gap: the read-only Changes surface reuses
+  the existing jail (`inside()`), secret-file denial, `repoTrust` program
+  neutralization, per-daemon revision key, and byte/count caps; verified by
+  trace and by re-probing the subdirectory jail. Test audit (mutation-based)
+  confirmed seven load-bearing invariants each fail their test when broken, and
+  found ONE untested guard: `fileIsReviewed`'s `revision &&` floor — a file with
+  no server-minted revision could read as reviewed with the guard removed and
+  all five existing tests still passed. Pinned by two assertions in
+  `web/src/review-progress.test.ts` (fails under the mutation, passes clean).
+  No product bug, no fragile/worthless/redundant test found. Tier-1 666 pass,
+  Tier-2 150 pass.
+
+- [x] **Step CR.7 — Terminal hunk navigation + first-hunk positioning** —
+  completed 2026-08-12, from Kyle's live report ("says 4, shows 3, next does
+  nothing at the last hunk"). Root cause, proven by headless-Chrome probes
+  against the real daemon: `goToHunk`'s smooth `scrollIntoView` starts before
+  the click's React commit, and arriving at a terminal hunk disables the very
+  button being clicked — Chromium blurs a focused element that becomes
+  disabled, and that focus change cancels the in-flight smooth scroll at zero
+  pixels. Symmetric at both ends (Next→last, Previous→first); invisible under
+  reduced motion (instant scroll finishes pre-commit), which is why the
+  existing label-only e2e assertions passed. Fixes: hunk scrolling now runs
+  post-commit from a pending-scroll effect in `ReviewDiff`; the stale
+  `rowRefs` wipe (which destroyed freshly attached refs) is removed; a diff
+  opens positioned on its first hunk so "Hunk 1 of N" is what the viewport
+  shows; and `useFileView.openFile` keeps a same-path resolved view mounted
+  through a re-request, so live/manual refresh neither flickers through
+  "loading" nor repositions the reader. Pinned by a new geometry-asserting
+  e2e ("CR.3 hunk navigation reaches terminal hunks…", `hunk-repo` fixture):
+  every jump asserts the hunk's rows are inside the scroller's visible box,
+  never just the label. changes 11/11, app 54/54, phone 8/8, Tier-1 clean.
+
+- [x] **Step CR.8 — Resizable desktop review panel** — completed 2026-08-12
+  (Kyle-directed). The desktop Changes panel gains a drag handle on its
+  transcript edge: floor = the untouched default width (`clamp(370px, 55vw,
+  760px)`), ceiling = `calc(100% - 380px)` — an absolute phone-sized
+  conversation reserve rather than a screen fraction, because a percentage
+  leaves a useless sliver on laptops and cramped space on ultrawides; CSS
+  `clamp()` lets the floor win on windows too narrow for both. Drag mutates
+  the panel style directly (no per-frame React commit through a thousand
+  diff rows); the chosen width persists in `localStorage`
+  (`mirafold-changes-panel-width`); double-click/Home resets; the handle is
+  a keyboard `role="separator"` (arrows step 32px, End = max) with live
+  aria-value geometry. Phone remains the full-screen takeover — no handle
+  rendered and a CSS pin. e2e covers drag clamping both directions, keyboard
+  steps, persistence across reload, reset, axe, and no side-scroll. changes
+  12/12, phone 8/8, app 54/54, Tier-1 clean.
+
+- [x] **Step CR.9 — Diff-gutter Changes glyph, size-matched to Files** —
+  completed 2026-08-12 (Kyle-directed, replacing the box-with-± mark that
+  read as a sparkle box). The new `ChangesGlyph` is a unified-diff fragment
+  (deleted line, added line, trailing context, gutter marks) drawn on
+  `FilesGlyph`'s exact 14×20 artwork box with the same 1.5 stroke, so equal
+  `size` props render the same footprint — equal width, height, and stroke
+  weight (a first 20-wide draft rendered wider than Files; corrected same
+  day). Activity bar uses the same 28 default for both and its gap widened
+  4→28px in two Kyle-directed rounds (the two toggles must read clearly
+  separate); the status-bar (phone) pair was already 20/20. Verified by
+  headless screenshots of the rendered rail.
+
+- [x] **Step CR.10 — Dock the hunk toolbar; align the progress buttons** —
+  completed 2026-08-12 (Kyle-directed, two rounds: first halve the band,
+  then remove it). The sticky hunk toolbar was a floating rounded card
+  inside the padded diff scroller; the scroller's top padding read as a
+  see-through band with sliced diff rows visible through it. Now the
+  scroller has zero top padding and the toolbar is a docked full-bleed
+  strip (negative side margins cancel the scroller padding; border-bottom,
+  no radius/shadow) glued under the review-progress bar, desktop and phone.
+  "Next unreviewed" also overhung the diff rows' right edge, and a first
+  fix (measuring the wrapper's scrollbar into a CSS var) left the panel-
+  height scrollbar running up beside the docked toolbar. Final
+  architecture (Kyle-approved on sight): the diff's ONE vertical scroller
+  is the bordered code card itself (`.changes-diff-lines`, flex column via
+  `:has()` on the wrapper) — its scrollbar starts under the hunk toolbar
+  and rides inside the card border, so no measurement is needed; the
+  wrapper and progress bar share symmetric 9px side insets (7px phone), so
+  "Next unreviewed" ends exactly on the card's border line and mirrors
+  "Mark reviewed". Phone draft-mode scroll room moved into the card.
+  Measured: button edge == card border; card top 6px under the toolbar.
+  changes+phone e2e 20/20.
+
+- [x] **Step CR.11 — "Select hunk" toggles** — completed 2026-08-12
+  (Kyle-directed). Clicking the button while its exact range is selected
+  unselects and clears the notice; the label swaps to "Unselect hunk" with
+  `aria-pressed`. The match compares against the CLAMPED selection range,
+  so an over-80-line hunk still reads as selected and can be unselected.
+  Pinned in the hunk-navigation e2e; changes+phone 20/20, Tier-1 672.
+
+- [x] **Step CR.12 — Branch bughunt (post-audit delta)** — completed
+  2026-08-12. Scope: everything landed after the CR.5/CR.6 audits (hunk
+  navigation, keep-view, resize, fold absorption, exit annotation, layout
+  restructure, toggle, the refactor). Two confirmed bugs, both in the
+  resize handle, both proven by a failing pin before the fix: (1) the
+  separator's aria-valuenow/-valuemax stayed at pre-drag geometry after
+  every pointer drag (observer callbacks are skipped mid-drag and nothing
+  refires afterward) — drag end now measures explicitly; (2) a click on
+  the handle with no movement silently persisted the current width,
+  freezing the responsive default — a no-move release no longer persists.
+  A third candidate (mid-drag phone-breakpoint flip stranding drag state)
+  was DISPROVEN by two forced reproductions — Chromium ends the captured
+  pointer sequence on element removal — and its cross-breakpoint pin was
+  kept as regression coverage. Watch item: one unattributed intermittent
+  Tier-3 failure (94/95) in a full ordered run on committed source —
+  hunted with five further full ordered runs the same day, all 95/95, so
+  the observed rate is 1-in-6 and the failing test's name is unknown (the
+  first run's output went through a summary filter; every later run keeps
+  the complete TAP log, so the next natural occurrence names itself). Per
+  the debugging rules, no code was changed against the uncharacterized
+  intermittent. changes+phone 20/20, Tier-1 672, resize test stable ×3.
+
+- [x] **Step CR.13 — Security audit of the post-CR.6 delta** — completed
+  2026-08-12. Scope: commits after the CR.6 whole-branch audit (hunk-nav
+  fix, resizable panel, review chrome + toggle, fold absorption, codex
+  exit annotation, stylesheet split) plus the uncommitted refactor and
+  bughunt fixes. Every new input path traced end-to-end with concrete
+  values: the localStorage panel width (NaN-guarded, numeric-only
+  interpolation, CSS-clamped, same-origin-only writer), the codex
+  exit-code annotation (rendered as escaped text; a malformed engine
+  string degrades to cosmetic noise), and fold-absorbed thinking text
+  (same JSX-escaped path as before). No new server input surface, no new
+  logging, no raw-HTML/eval sinks, no CI/workflow/dependency changes, no
+  secrets in the delta history (fixture tokens are dummies), and the npm
+  publish allowlist (bin/dist/dist-server) excludes all new source. ZERO
+  findings in every class — real, ship-time, and hardening — so nothing
+  to fix and nothing deferred. Prior accepted decisions in SECURITY.md
+  were not re-litigated.
+
+- [x] **Step CR.14 — Test audit of the post-CR.6 delta** — completed
+  2026-08-12, mutation-based like CR.6. Five falsifications: the fold
+  floor, leading-thinking absorption, the live-refresh no-yank guard, and
+  the codex exit-code mapping each fail exactly the tests that claim them;
+  the resize pins were already proven live the same day (both failed
+  before their fixes). One mutation SURVIVED with an investigated
+  environment explanation: restoring the original synchronous hunk scroll
+  no longer breaks behavior because CR.10 moved the toolbar outside the
+  scrolling card, removing the blur-cancellation trigger — the pin still
+  guards the user-visible behavior (it was born failing under the old
+  layout), and the deferred-scroll mechanism is now redundant protection,
+  kept deliberately. One PROVEN gap closed: nothing asserted the fold
+  label counts actions only, so a mutation counting absorbed narration
+  passed the suite — the app e2e now pins "worked · 2 actions" (born
+  failing under the mutation, passes clean). No worthless, wrong-target,
+  or redundant tests found in the delta; suite health: Tier-1 ~15s,
+  Tier-3 full ~12min, flake record = the CR.12 watch item. app+changes+
+  phone 74/74, Tier-1 672.
+
+*(from the Stylesheet decomposition section:)*
+
+- [x] **Split the 5,639-line styles.css into an import spine + 15 surface
+  files** (`web/src/styles/01-frame.css` … `15-phone.css`), one per surface
+  in the 2026-07-25 ordering, with the phone media block staying one file,
+  last. `styles.css` is now the numbered @import spine and carries the
+  surface map and the two order-sensitive cascade notes. Pure relocation —
+  proven twice: the concatenation of the split files is byte-identical to
+  the original source, and the built dist CSS bundle is byte-identical to
+  the pre-split build (comment edits vanish in minification). Deliberately
+  NO dedup/consolidation (small savings, real visual-regression risk) and
+  NO phone-override colocation yet — colocating would dismantle the
+  one-phone-block convention and is a separately-verified decision for
+  later. e2e 74/74 (changes/app/phone), Tier-1 672/672.
+
+## Moved 2026-08-12 (prune — completed bodies)
+
+A prune sweep: finished bodies moved verbatim out of PLAN.md's Phases
+4/R/A/Q, the 2026-07-27 security-audit section, and the stretch goals,
+each leaving a stub + pointer in place. Entries are in plan order.
+
+**From Phase 4, Step 4.13 (moved verbatim 2026-08-12):**
+
+- [x] **Step 4.13 — Phone-testing bug batch (unplanned, Kyle-driven)** — done
+  2026-07-28, all tiers green (458/139/70), every fix e2e-pinned +
+  mutation-tested. Three bugs from Kyle's manual phone/relay testing:
+  (1) **busy turns looked idle** — the transcript's activity line now stays
+  up the whole turn (`✳ working…` fallback between status frames), driven
+  by Shell's wire-derived busy flag; (2) **the permission strip's one-line
+  preview was unreadable on phone** — its body is now one tap target
+  opening the full command in a ModalCard (extracted to `PermBar.tsx` in
+  the same-day refactor); (3) **`exp://` links rendered as dead
+  empty-href anchors** (the about:blank tab) — Expo Go schemes now pass
+  the markdown URL allowlist as real links, and stripped schemes render
+  as text (`web/src/registry/Md.test.ts`). Same-day audit: exp:// hand-off
+  disclosed in SECURITY.md, interstitial planned as 4.12; the audit's
+  second finding — the permission `detail` string is uncapped end-to-end —
+  judged theoretical and **accepted, no action** (Kyle's call 2026-07-28:
+  real agents emit real commands, the card + scrollbar already show more
+  than the old strip ever did; don't re-litigate absent an engine that
+  emits huge payloads); user-facing
+  "know what you're running" paragraph added to the README top. Related
+  decision, same day: **relay port-tunneling** (phone reaches a dev server
+  on the laptop through the relay, no LAN/firewall dependence) was
+  explored and **parked by Kyle** — no roadmap item; the self-serve LAN
+  workaround stands, revisit only if phone-first app-building becomes a
+  real usage path. (The `192.168…` failure that started it was Kyle's ufw
+  dropping LAN SYNs — his machine, not repo state.)
+
+---
+
+**From Phase 4, Step 4.14 (moved verbatim 2026-08-12):**
+
+- [x] **Step 4.14 — The activity indicator, done right (Kyle-driven rework of
+  4.13's fix #1)** — done 2026-07-29, all tiers green (458/139/72), both new
+  guarantees mutation-tested. Kyle's requirement, verbatim in spirit: **at
+  all times while Mirafold is working with nothing painting, something
+  visibly alive says so** — the terminal agents' cycling asterisk is the
+  bar. 4.13's fix guaranteed only DOM presence and failed it four ways:
+  the `.status-line` pulse was dead CSS (the rise-animation list overrode
+  the `animation` shorthand at equal specificity — frozen text since at
+  least 2026-07-25), the label went stale (`Bash ⚙` through the post-tool
+  model round trip), the line lived inside the scrolling transcript (any
+  scroll-up = zero indication), and a queued mid-turn prompt blanked it at
+  the first turn's `turn_end` while the engine rolled into the queued turn.
+  The rework: `ActivityLine.tsx` — cycling thin→fat asterisk frames (JS,
+  reduced-motion honored) + label + ticking elapsed seconds — as
+  prompt-area chrome above the box; Shell owns the label (status frames /
+  announced tools, cleared on `tool_result` so it can't go stale) and an
+  open-turn counter (`user_prompt` up, `turn_end` down, replay-safe) so a
+  queued follow-up keeps busy across the boundary; the in-transcript
+  status line is gone, and the e2e now asserts aliveness (glyph frame
+  changes), on-screen-ness while scrolled up, and gaplessness across the
+  queued-turn boundary — not mere DOM presence.
+  - **⚠ Test-strength caveat, recorded 2026-07-29 (honest limits of the
+    queued-turn pin).** Of the three e2e guarantees, two are solidly
+    mutation-proven (the glyph must visibly cycle; a long label must not
+    widen the page). The THIRD — "no blank frame across the queued-turn
+    boundary" — is a reliable smoke test but NOT a dependable regression
+    pin: `MockSession` overlays a mid-turn prompt's scripted timers on the
+    running turn instead of queuing behind it, so turn 2's events usually
+    land within one 16 ms sample of turn 1's `turn_end`. Reverting the
+    `openTurns` counter therefore produces a gap too short to sample, and
+    the test passes on the broken code (verified — it caught the mutation
+    on some runs and not others). Chasing stability also cost several
+    false failures: a 2.2 s "blank" that was the product correctly idling
+    after a REFUSED follow-up (the registry allows exactly one queued
+    prompt; when it's spent the scenario never occurs), now handled by
+    retrying the whole scenario and asserting acceptance-while-busy first.
+    Options for a real pin, for whoever picks this up: give the mock an
+    explicit "queue, don't overlay" mode so the boundary has a measurable
+    gap, or pin `openTurns` directly in a Shell-level unit test (Tier 1
+    has no DOM harness today, so that's the larger lift). Until then,
+    treat the boundary behavior as verified by construction + manual
+    observation, not by an automated guard.
+    *2026-07-29 addendum (Step 4.16):* the counter now lives in a pure
+    reducer (`web/src/turn-busy.ts`) and `turn-busy.test.ts` pins the
+    queued-turn arithmetic directly — the caveat's asked-for unit pin,
+    without the DOM-harness lift. The e2e's sampling weakness stands as
+    recorded; the reducer pin is the dependable guard.
+
+---
+
+**From Phase 4, Step 4.15 (moved verbatim 2026-08-12):**
+
+- [x] **Step 4.15 — Beta-channel trust follow-ups (beta tester 002's
+  evaluation, 2026-07-28; triaged with Kyle 2026-07-29)** — **done
+  2026-07-29**: `SECURITY.md` ships in the package (`files` whitelist),
+  tarball repacked + cold-install re-verified + restaged as
+  `../beta/mirafold.tgz` (sha256 `c8a66f4c98e6…`, full value printed in
+  WELCOME.md + `/beta`), and WELCOME.md gained the fingerprint + a
+  "cautious first run" recipe (throwaway dir, credential-less scripted
+  demo first, honest note that the file browser is confined while the
+  agent keeps its terminal powers behind the permission prompts). ⚠ The
+  repack changed the artifact: if a `mirafold.tgz` was uploaded to Drive
+  before this, it must be re-uploaded. The now-actionable slice of the
+  evaluation (the provenance practice went to R.5b; the provenance +
+  install-command concerns otherwise dissolve at R.7's publish):
+  - Ship `SECURITY.md` in the npm package (add to the `files` whitelist;
+    the README cites it and the tarball is where a beta tester looks) —
+    then repack + restage `../beta/mirafold.tgz`.
+  - Publish the staged tarball's SHA-256 where testers can check it:
+    `beta/WELCOME.md` + the site's `/beta` page.
+  - A short "cautious first run" section in `beta/WELCOME.md` (disposable
+    repo with canary files, mock adapter first, relay off) — the
+    evaluation's pilot checklist, offered rather than left for each
+    tester to invent.
+  - Done when: a tester following the public trail finds the security doc
+    inside the artifact, a fingerprint to verify it, and a sane first-run
+    recipe.
+
+---
+
+**From Phase 4, Step 4.16 (moved verbatim 2026-08-12):**
+
+- [x] **Step 4.16 — Whole-repo bughunt batch (2026-07-29, Kyle: "do em
+  all")** — a six-subsystem correctness sweep (adapters / sessions / server
+  core+pty / relay / web core / web components), every finding verified with
+  a concrete failing scenario before reporting, all 27 approved and fixed
+  the same day, each with a pinned regression test (several
+  mutation-proven). The headliners, for the record: (1) an **oversized ws
+  frame crashed the whole daemon** — no per-socket `error` listener, so a
+  >1 MB paste tripped ws's maxPayload into uncaughtException (fix: listener
+  + Tier-2 pin; the socket now closes 1009 alone); (2) a **relay-gate-refused
+  CREATE leaked the session forever** (nothing arms the idle timer before a
+  first attach; 100 phone retries exhausted MAX_SESSIONS for local creates
+  too) — refused creates now reap what they minted; (3) a **viewport frame
+  >~1.5 MB killed the whole pairing** (daemon dial-out cap sat below the
+  relay's 8 MB viewport cap; ws closes the whole socket → dropAll) — cap
+  aligned + pinned against genui-relay's limits in the sibling itest;
+  (4) the **artifact update-in-place liveness race** (a stale navigation
+  deadline killed healthy updates; generation guard + a same-id mock
+  scenario the e2e now drives); (5) both **codex and gemini burned
+  RENDER_GUIDANCE on a failed first turn** (consumed before delivery → zero
+  render calls for the session's life); (6) **bang lifecycle masqueraded as
+  turn grammar** in the registry (a `!` during a pending ask wiped the
+  fleet's allow/deny — the 2026-07-24 bug class through a different door —
+  and a throttle-refused bang broadcast a fabricated `bang_end`);
+  (7) **ws.ts backoff reset on open**, so refused viewports redialed at
+  2 Hz forever (reset moved to the handshaken finishOpen; full relay-path
+  crypto now driven in ws.test); (8) **split/colon-form ANSI leaked through
+  the PTY cleaner** (stateful cross-chunk carry + ECMA-48 param class);
+  (9) replay re-fired **screen-reader announcements for historical turns**
+  on every reload (additive `replay: true` stamp on attach-replayed frames,
+  protocol.ts; Shell suppresses live-only side effects); (10) an
+  **env-misparse family** where garbage WIDENED policy (`MAX_WS_PAYLOAD`
+  NaN = unlimited, `WS_HEARTBEAT_MS` NaN = 1 ms reap-everything loop) —
+  `server/env.ts` envInt/envFlag now parse strictly, 34 sites swept. Plus:
+  checklist clear-to-empty (both adapters), mermaid quoted-comma labels,
+  chart end-label clipping, mock permission_resolved on interrupt,
+  workspace_ls dangling-symlink resilience, pairing-code charset refusal,
+  the sendTampered last-char no-op (the itest's tamper proof now actually
+  proves tamper rejection), stale pong deadline killing successor sockets,
+  the legacy pairing-store carry (newSessionHref), handshake-wedge deadline,
+  useArmedConfirm same-key re-arm, FilesPanel replay-burst coalescing, and
+  the ws.ts close-code mirror now REALLY pinned against genui-relay's
+  contract. One deliberate non-fix, recorded: no client-side prompt-size
+  cap was added (a feature call, not a bug) — a >cap paste now costs one
+  clean socket close instead of the daemon; add the cap only if that UX
+  bites. Full verified ledger: session scratchpad; findings' file:line
+  detail rides each fix's test comments.
+
+---
+
+**From Phase 4, Step 4.18 (moved verbatim 2026-08-12):**
+
+- [x] **Step 4.18 — Test-audit pass (2026-08-11)** — judged the tests, not the
+  product: read the tiering rules (README §8), ran Tier 1 (631/631, ~16s, x2
+  deterministic), Tier 2 (144/144, x3, ~3:48 each, zero flakiness), Tier 3
+  (e2e, 83/83, x2, ~3:20 each incl. build, zero flakiness), and **falsified 10
+  stated invariants by mutating the product** — the
+  E2E counter (replay/reorder), the tool-output cap, the replay-ring byte cap,
+  the fs-explorer realpath jail, checkpoint seq-monotonicity, the WS
+  origin guard, the ws backoff ladder, `cleanRelPath` traversal, and the
+  IP-exact loopback classifier all fail cleanly when their target breaks.
+  **Two real repairs, each mutation-proven after:** (1) `registry-spec.test.ts`'s
+  chart "old-client" test asserted on a hand-built `z.enum(["line","bar"])` — it
+  tested zod, not the product; rewritten to drive the real
+  `clientSchemas.chart`/`registrySchemas.chart` twins (now fails when the chart
+  kind enum changes). (2) `fs-explorer.test.ts`'s "small tree not truncated"
+  test wrote into the already-capped dir (a dead write), listed a fresh EMPTY
+  dir, and never asserted `truncated === false` — the guarantee was untested;
+  rewritten to list a real small tree and pin `truncated === false` + the entry
+  list (now fails on spurious truncation). **Three assertions tightened**
+  (loose bounds → exact, each proven to catch a regression the old form missed):
+  `niceTicks` ticks (Chart.test.ts) and the Gemini honest-model label.
+  **Left as-is, backstopped, reported not repaired** (deleting/weakening waits
+  for Kyle; each is redundant with a stronger test, not a gap):
+  `provider-policy.test.ts` "every cell is a boolean" (the exact agent×kind
+  truth matrix above it is stronger), `version.test.ts` semver-shape regex
+  (the `CLIENT_VERSION===VERSION` + launcher `--version` neighbors have the
+  teeth), the claude-code/gemini truncation *bounds* (exact byte math pinned in
+  `types.test.ts`), and `files-tree.test.ts`'s "too fast" substring. No product
+  bug surfaced; no test was deleted.
+
+---
+
+**From Phase R, Step R.2 (status body) (moved verbatim 2026-08-12):**
+
+- [x] **Step R.2 — The relay service, deployed** — completed 2026-08-09.
+  - Goal: the dumb forwarder, running in the world.
+  - Status: **DEPLOYED and verified in production.** The standalone
+    `mirafold-relay` repo (single source of truth since G.1) is a
+    dependency-light (`ws` only) portable Node process — a PURE forwarder:
+    parses no frames, stores nothing, serves NO app bundle (the phone app
+    loads from the separate static origin, then opens the encrypted
+    socket — the documented trust decision). Hardening: global + per-pair
+    + per-IP connection caps, frame rate limit, heartbeat reaper, max
+    payload, `/health` + 404-everything. Live at `genui-relay.fly.dev`,
+    under our name at **`wss://relay.mirafold.sh`** (cert issued; smoke
+    passes; a real daemon streamed a full turn while `fly logs` showed
+    only connection metadata — the "learned nothing" Done-when, observed
+    in production). Full build/deploy/rename history (incl. the GENUI® →
+    Mirafold naming story) → PLAN-ARCHIVE.md ("Step R.2 — status history"
+    + the 2026-07-17 move).
+  - Closure record: (1) the **cellular-phone pass** — ✅ **FIRST HALF
+    DONE 2026-07-30**: Kyle paired his phone and ran a session over
+    **cellular with wifi off**, on the fixed 0.3.0 build. Notable because
+    his house is rural with near-unusable data — he found one spot with
+    signal and it worked there, so the pass happened on a *marginal* link
+    rather than a strong one, which is the harder case. ✅ **SECOND HALF
+    DONE the same day**: the **wifi→LTE mid-turn flip, run twice** — wifi
+    dropped while a turn was streaming and the session recovered on its own
+    both times. **The cellular-phone pass is CLOSED.** (2) ✅ **Bake the
+    default `MIRAFOLD_RELAY_URL` — DONE 2026-07-30** (`43441ac`,
+    `server/relay/relay-url.ts`): unset now means the hosted relay
+    (`wss://relay.mirafold.sh`) — but ONLY when an entitlement is
+    configured; an unentitled daemon never dials (a gated relay would
+    refuse it 4007 on a widening retry forever) and gets one actionable
+    boot line instead. `MIRAFOLD_RELAY_URL=off` opts out; explicit URLs
+    keep pre-bake behavior verbatim (self-host + dev stub); the app origin
+    defaults to `https://app.mirafold.com` only when riding the baked
+    default. The bake-lands-WITH-the-gate constraint was satisfied — the
+    gate has been ON in production since 2026-07-22. Verified: 9 unit
+    tests (unentitled guard mutation-tested), Tiers 1+2 green, live boots
+    in all four modes. *Follow-up ✅ FIXED same day, Kyle-directed
+    (`92acd37`): production (Fly's proxy) delivers refusal closes ~5s
+    after open — locally 14ms — which defeated relay-client's 400ms
+    pair-confirm, so an invalid/lapsed license logged a false "paired",
+    reset backoff, and churned at ~6s forever. The confirm timer now
+    earns only the "paired" log; the backoff decision moved to close (a
+    refusal never resets, a confirmed ordinary drop still does).
+    Mutation-tested pin + live-verified against production: gaps double
+    1s→16s+ toward the 30s ceiling.* (3) ✅ **Rename completed 2026-08-09:**
+    the product package and GitHub repositories already carried the Mirafold
+    name; the local repositories are now `mirafold/` and `mirafold-relay/`,
+    with the sibling integration test, CI checkout layout, and current
+    workspace paths updated to match. The deployed Fly app names remain
+    `genui-relay` / `genui-relay-staging`, and the `genui-relay v1`
+    key-derivation salt remains frozen as a protocol contract. Verified after
+    the rename: Mirafold typecheck; Tier 1 563/563, Tier 2 143/143, Tier 3
+    82/82; relay typecheck and 38/38 relay tests. **Release-gate follow-up
+    (2026-08-09):** release PR #27 exposed a pre-existing test-only race: the
+    relay-handshake helper waited a fixed number of event-loop turns before
+    closing its healthy socket, so delayed WebCrypto work could miss the
+    backoff reset. The helper now waits for `SocketClient.onOpen()` — the
+    product state transition the assertion actually depends on. The exact
+    test went from 4/20 failures under concurrent load before the fix to 0/20
+    after it; the containing file passed 32/32, Tier 1 passed 563/563, and
+    typecheck passed.
+  - Done when: a phone on cellular (not the home wifi) drives a home
+    session through the deployed relay, and the relay's logs show it
+    learned nothing but connection metadata.
+
+---
+
+**From Step R.4l, item 1 (moved verbatim 2026-08-12):**
+
+    1. **Phone viewport styling + small UX issues** — ✅ **RESOLVED
+       2026-07-22** over three same-day rounds against Kyle's real phone
+       (full round-by-round detail → PLAN-ARCHIVE.md). Round 1: the app frame
+       is pinned (100dvh + `overflow-x: clip` + no overscroll — only the
+       render zone scrolls) and all focusable inputs are ≥16px, which was the
+       actual cause of the sideways drift (sub-16px made iOS zoom on focus
+       and LEAVE the page zoomed); viewport meta gained `viewport-fit=cover`
+       + `interactive-widget=resizes-content`. Round 2: the phone status bar
+       became ONE row with the agent name beside the dot, and **on phone
+       Enter NEVER submits** — newline only, with an in-box ↑ send button
+       (bottom-right, swaps with ■ esc while busy) as the one way to send;
+       desktop Enter-to-send unchanged. Round 3 (Kyle: the on-row fleet
+       folder read as clutter on BOTH platforms — the round-2 column was a
+       miss): **details-on-demand instead of persistent chrome** — the
+       settings card gained a **Session section** (agent, model, folder,
+       usage, session id, daemon version), reachable two zero-chrome ways
+       (the gear, and the **agent chip beside the dot is now a button**);
+       the fleet folder column was removed (desktop hover tooltip restored)
+       and the prompt cwd crumb is DESKTOP-ONLY. Pinned throughout in
+       `phone.e2e.ts`. **Kyle's real-phone look at round 3 came back
+       emphatically positive ("flabbergasted… looks incredible")** — the
+       styling core of this item is validated on the device that opened it.
+       *The theme pill is hidden on phone with the settings picker carrying
+       theme; the Phase S pill lock is desktop-scoped — Kyle confirmed.*
+
+---
+
+**From Step R.4l, item 4 (moved verbatim 2026-08-12):**
+
+    4. **Startup/onboarding flow — redesign discussion. BIG (Kyle's
+       word).** Kyle's sketch (2026-07-13, explicitly not settled — "im
+       not sure"): a staged flow — pick the agent first, then how it's
+       backed (subscription vs. API keys), then the model. Hard
+       requirements he voiced: (a) "simple af"; (b) surface what the
+       user ALREADY HAS — detected credentials make it obvious what they
+       can pick right now; (c) unavailable options stay VISIBLE but
+       clearly unavailable (gray out, not hide — it must read as "an
+       option if you want it"); (d) each unavailable option carries
+       how-to-get-it instructions inline. Raw material that already
+       exists: R.4b/R.4i/R.4k built live-credential detection, the
+       tri-state picker (`live`/`blocked`/`none`), per-row `detail`
+       labels, and where-to-get-it links — this redesign re-stages that
+       material, it doesn't start from zero. One constraint the
+       discussion must start from: the "subscription or keys" step
+       collides with the provider policy (`server/provider-policy.ts`) —
+       Claude/Gemini subscriptions are prohibited in writing (never a
+       choice), while Codex subscription is live locally only as a
+       disclosed gray area (the K.3 disclosed-uncertainty rule — its
+       caveat must ride the option), and no subscription ever rides the
+       relay; the flow has to present that honestly per agent rather
+       than offering a symmetric subscription-vs-keys fork. Also
+       new vs. today: a model-selection step (today model comes from
+       DEFAULT_MODEL/agent config, not the onboarding UI). Next action:
+       a dedicated design discussion with Kyle BEFORE any build.
+       **Status (2026-07-17): the design discussion HAPPENED and the build
+       is scheduled — this item's outcome is Phase N** (the two-step
+       agent → backing picker with probed local-server discovery; the four
+       hard requirements carried into Phase N's charter verbatim). This
+       item closes when Phase N ships; items 1–3 remain open intake.
+
+---
+
+**From Step R.4l, item 5 (moved verbatim 2026-08-12):**
+
+    5. **Pairing lands IN the session you paired from — ✅ DONE 2026-07-27,
+       exactly to the investigated shape (investigation text → PLAN-ARCHIVE.md).** The QR/copy link from a
+       session's status bar now carries `&s=<sessionId>` in the fragment;
+       `main.tsx` rewrites the path to `/s/<id>` before the router reads it,
+       **carrying `location.hash` through the rewrite** (the investigated trap —
+       mutation-tested: dropping the hash was watched to fail the phone e2e,
+       then restored). New pure parser `sessionHintFromFragment` in `ws.ts`
+       validates the id as a full `[\w-]+` token (hostile values dropped
+       whole, never truncated). Mission control's pair button passes no id
+       and keeps landing on the fleet — no special case. The hint is never
+       persisted (one-shot intent). The refused-subscription edge case was
+       decided as KEEP existing behavior: the device lands inside the
+       refused session, where the R.4i notice explains — not bounced to
+       mission control. Verified: unit tests beside the fragment tests, the
+       phone e2e now asserts the paired link lands on `/s/<id>` with no
+       fleet list, full Tier-1 (394) + Tier-3 (57) green.
+
+---
+
+**From Step R.4l, item 6 (moved verbatim 2026-08-12):**
+
+    6. **Phone session died after backgrounding — ✅ FIXED 2026-07-25
+       (`0c993e0`).** Kyle, on Chrome: session open on the phone, switch to
+       another app for a few minutes, come back, and the session was
+       effectively dead — welcome screen, no transcript, Explorer grayed,
+       no end button, prompts going nowhere — while the same session ran
+       fine on his desktop. Cause: the pairing code lived only in per-tab
+       storage, which does not survive a browser discarding a backgrounded
+       tab, and the rebuilt tab can't recover it from the URL either (the
+       fragment is scrubbed on first load, by design). The shell attached
+       to nothing and said nothing about it. Reproduced against a real
+       daemon over the relay on a phone-sized Chrome — freezing the page
+       (CDP `Page.setWebLifecycleState`) recovers, reloading with the store
+       intact recovers, reloading with it dropped gives Kyle's screen
+       symptom for symptom. Fix: the stash is the device's now, bounded by
+       a 7-day expiry (aged-out entries are deleted) on top of the existing
+       per-launch codes; per-tab storage is still read so an already-paired
+       tab keeps working. Pinned by 4 unit tests + a phone e2e that wipes
+       the store, reloads, and asserts the session comes back with its
+       transcript. **Note for whoever picks up item 5** (pair-into-the-
+       session): that work touches the same boot path, so re-run this e2e.
+
+---
+
+**From Step R.4l, item 7 (moved verbatim 2026-08-12):**
+
+    7. **Swipe-to-open the Explorer on phone — DECIDED AGAINST 2026-07-25
+       (Kyle).** Swipe right from the left edge to open the tree, left to
+       close. Mechanically easy (~30–45 min: the panel is already one
+       boolean, plus a touch hook beside `use-escape`/`use-is-phone`, no
+       dependency). Killed on one caveat: iOS reserves a left-edge swipe
+       for browser back-navigation and a page cannot reliably override it,
+       so the gesture would fire history-back instead of opening the panel
+       on iPhones. Kyle: "i dont want to do it if it wont work consistently
+       for iphones." Don't re-propose without a way around that.
+
+---
+
+**From Step R.4l, item 8 (moved verbatim 2026-08-12):**
+
+    8. **Leftovers from the 2026-07-28 whole-repo review — recorded, not
+       fixed (the rest of that review's bug list WAS fixed the same day,
+       eleven `fix:` commits).** Two items survive unfixed, each needing a
+       decision rather than a patch:
+       (a) **A daemon-initiated viewport drop reads as "desktop not
+       reachable" on the phone.** The daemon sends the relay `{t:"close"}`
+       for three distinct reasons — tampered frame, 90s idle reap,
+       viewport-cap refusal — and the relay (stub and sibling service
+       alike) closes the viewport with `CLOSE_BAD_CODE` ("no daemon paired
+       under that id"), which `ws.ts` maps to "Desktop not reachable — is
+       Mirafold running there?" So a live, healthy desktop that rejected a
+       frame tells the phone the desktop is down. Current behavior is
+       PINNED by relay.itest tests, so it may be intended; distinguishing
+       the reasons means a new close code in the relay envelope — a
+       cross-repo contract change (genui-relay's mirrored contract.ts) —
+       so it should ride the next deliberate envelope revision, not a
+       drive-by fix. **Triage (2026-07-28, Kyle): nice-to-have, not a big
+       deal — fix only if really easy, and it isn't (the close frame must
+       grow an optional code field, mirrored + both suites + a relay
+       redeploy). So: ride the next envelope revision, alongside the
+       pairing-id URL move's standing policy. Cheap head start when that
+       happens: the vocabulary already has the right code —
+       CLOSE_OVERLOADED 4004, which ws.ts already maps to a capacity
+       message — the daemon's cap-refusal close just can't name it yet.**
+       (b) **`ClaudeCodeSession.announcedTools` retains ids across
+       interrupted turns — ✅ RESOLVED 2026-07-28, Kyle's call.** Of the
+       three options (leave it; clear on interrupt(), which drops a
+       post-interrupt late result that today completes its row; clear at
+       the TURN BOUNDARY, which only drops a cross-turn straggler — a
+       result for a turn that already ended), Kyle picked the turn-
+       boundary variant. The clear lives with the other per-turn resets
+       in handleResultMsg; Tier-1 pins that a turn-2 result for turn 1's
+       announced id is dropped, never completing the old row.
+
+---
+
+**From Phase R, Step R.5b (the ratified + executed release record) (moved verbatim 2026-08-12):**
+
+- [x] **Step R.5b — Release strategy, locked (all three repos)** — ✅ **DONE
+  2026-07-31: ratified, and EXECUTED the same evening** (Friday 2026-07-31
+  public + publish · Sat–Mon quiet window · Tuesday 2026-08-04 announcement).
+  Full sequence, owners, and rollback levers in the RATIFIED block below.
+  *(a decision to make + write down, not a build; do before R.6's final
+  week)*
+  - Goal: one agreed, written release sequence so R.6/R.7 execute a plan
+    instead of improvising how each piece ships.
+  - Decide and record: (a) **shape of the release** — *first half DECIDED
+    (Kyle, 2026-07-22, in commissioning the R.5 build; sharpened the same
+    day): a **private beta precedes the public splash**, and it runs the
+    **full real billing flow** — NO sandbox, NO comped tokens. The beta
+    starts when the relay's entitlement gate flips ON (the `fly secrets set
+    RELAY_ENTITLEMENT_PUBLIC_KEY` moment) with live Paddle wired; Kyle's own
+    real-card purchase is the first end-to-end, then testers buy real
+    subscriptions riding the 7-day card-required trial ($0 if they cancel
+    in-window; Kyle personally reimburses anyone charged past day 7). The
+    mint script is ops/emergency tooling, not a beta access path.
+    **2026-07-22 (night): the gate is ON and the whole path is proven** —
+    Kyle's real purchase → license key → daemon token exchange → paired
+    through the closed gate; unentitled dials probed refusing 4007. **But
+    tester invites are explicitly gated on a phone-view UI pass first**
+    (Kyle: obvious flaws remain — see R.4l's phone-styling items; the
+    billing machinery being done does not make the product show-ready).
+    Still to decide here: beta size/who, its duration/exit criteria, and
+    how R.5c's user-testing round folds in — **ANSWERED by the 2026-07-31
+    ratification below: duration is Sunday 08-02 + Monday 08-03, the exit
+    criterion is "the public install path works and nothing breaks," and
+    the window IS R.5c's user-testing round; only the tester list itself
+    stays open;* remainder of (a) — staged
+    rollout vs. one splash for the PUBLIC release — **DECIDED 2026-07-25
+    (Kyle): ONE splash, as big as possible.** A soft/staged launch
+    (publish quietly, announce later) was considered and rejected: the
+    pre-public work gates going public at all, not announcing loudly, so
+    a quiet period pays nearly the full launch cost for almost none of
+    the audience; the channel list was instead expanded (R.6's
+    launch-channel prep + Product Hunt in R.7's sequence);
+    (b) **per-repo mechanics + order** — `genui-shell` (repo public + `npm
+    publish` + versioning/cadence), `genui-relay` (deploy pipeline, **when
+    the repo flips public — owed to K.1, which relicensed it MIT**, when the
+    entitlement gate flips ON, when the default `MIRAFOLD_RELAY_URL` bake
+    lands — see R.2), `mirafold-site` (checkout button flip, demo swap); (c)
+    **rollback / kill-switch** for each (the relay gate and per-daemon relay
+    URL are the levers) — *for the npm package the rollback move is
+    re-pointing the `latest` dist-tag at the previous good version
+    (+ `npm deprecate` on the bad one), never an unpublish (npm barely
+    permits it and installed users aren't affected either way); for the
+    relay it's `fly deploy --image <prev>` (already in
+    `mirafold-relay/DEPLOY.md`); for the site it's the Pages one-click
+    deployment rollback (KV does NOT roll back with it — see R.6's KV note)*; (d) how the codebase/npm/GitHub rename (R.2) is
+    sequenced into all of the above; (e) *already decided 2026-07-15
+    (K.9): contributor policy is **DCO**, not CLA* — `Signed-off-by` per
+    commit, CONTRIBUTING.md landed in both repos that day; what remains
+    for this step is only the mechanics: enable the GitHub DCO status
+    check on both repos as part of the public flip.
+  - **CI hardening at the flip (from the 2026-07-21 audit of the C.1 work):**
+    once a repo is public, any fork PR's test suite runs on the CI runner, so
+    the CI's trust posture matters. Already in place from C.1: the token is
+    `permissions: contents: read` (read-only — a malicious dependency install
+    script can't push to the repo) and no secrets are used (Tier 4 excluded,
+    credentials forced empty). Do AT the flip: (i) re-enable the cross-repo
+    relay itest now that `genui-relay` is public and checkout-able — drop the
+    `tsconfig.ci.json` exclusion + the Tier-2 `find` filter and add a sibling
+    checkout (see Phase C's carried-forward list + `tsconfig.ci.json`);
+    (ii) optionally SHA-pin the
+    `actions/checkout` / `actions/setup-node` steps (they're pinned to `@v4`
+    tags today — fine for GitHub's own official actions, stricter as a full
+    commit SHA). No secret was ever added, and none should be — the "no
+    provider credential in repo secrets" bound (C.1) is absolute.
+  - **Dependency-alert sweep at the flip (2026-07-22 audit):** before EACH
+    repo goes public, clear its open Dependabot alerts — open alerts on the
+    default branch become publicly visible the moment the repo does, and
+    they're a stranger's first impression of the project's hygiene. The
+    site repo already carries this in its pre-public hardening trio; this
+    line extends the same sweep to **this repo and `genui-relay`**. (Shell
+    repo swept 2026-07-22: `shell-quote` ≥1.9 + `@hono/node-server` ≥2.0.5
+    forced via yarn resolutions — the MCP SDK still pins hono 1.x upstream,
+    so the resolution stays until the SDK moves; all tiers green on 2.0.11.)
+    **2026-07-25: shell repo now at ZERO open alerts** — transitive
+    `postcss` 8.5.16 → 8.5.23 (GHSA-r28c-9q8g-f849, high, dev-scope; via
+    vite, so a lockfile re-resolve only, no resolution needed) landed as
+    `c660130`, typecheck + all tiers green (369/103/52), alert #4 verified
+    "fixed" via the GitHub API. The `genui-relay` half was verified the
+    same day: alerts confirmed ENABLED on that repo (API 204) with zero
+    open, and a local `npm audit` at `9f35e2d` found 0 vulnerabilities —
+    clean today; still RE-verify at its public flip, since new advisories
+    can land anytime.
+  - **EAR notification email at the flip (added 2026-07-27, from the K.11
+    amendment):** when the repos go public, send the one-time
+    §742.15(b) email to crypt@bis.doc.gov + enc@nsa.gov with the repo
+    URLs. $0, five minutes, settles the notification question regardless
+    of which reading of the 2021 rule is right (detail in K.11's note).
+  - **Gate on the relay flip (2026-07-15 audit): ✅ SATISFIED 2026-07-30.**
+    Before `genui-relay` goes public in (b), run a dedicated security-audit
+    pass over that repo — public security-marketed code gets adversarial
+    readers on day one. *Done: a dedicated isolated-adversarial read of all
+    ~850 lines (the checklist-driven 07-27 tri-repo audit and the 07-29
+    bughunt were a different lens each; this one asked only "hostile reader,
+    how do I hurt the service"). **No new exploitable findings** — the three
+    prior waves closed the real vectors (the malformed-URL process crash
+    07-27, the byte-rate + backpressure gaps 07-27, the per-frame
+    log/re-forward amplification 07-29); the entitlement verifier is
+    correctly ordered (no attacker JSON reaches the parser pre-signature),
+    every send is readyState-guarded or error-caught, and the prod
+    dependency surface is exactly `ws` with `npm audit` clean. Accepted
+    residuals, all safe: refused-log `origin` is verbatim-but-JSON-escaped
+    attacker text (ops-useful, size-capped); the churn-gate sweep needs the
+    heartbeat (ARCHITECTURE §10, off-by-default gate); the WS upgrade
+    completes before the capacity cap refuses (inherent to clean
+    close-codes, socket-cap bounded). Suite 38/38. The relay may flip on
+    schedule.*
+  - **Release provenance (adopted 2026-07-29, from beta tester 002's
+    evaluation):** a public repo alone doesn't let anyone verify the
+    published npm package was built FROM it — the two are separate uploads
+    with no link, and the package ships compiled bundles. Adopt as standing
+    release practice, first release included: (i) publish via a GitHub
+    Actions **release workflow** using npm **trusted publishing** (npmjs.com
+    configured to accept `mirafold` publishes only from that workflow —
+    identity-federated, NO stored npm token, so the no-secrets-in-CI bound
+    holds and a stolen npm password can't publish) with
+    `npm publish --provenance` (machine-signed attestation binding the
+    package to the exact public commit + workflow; users verify with
+    `npm audit signatures`, README gets the one-liner); (ii) a **signed git
+    tag** per release (SSH signing key — Kyle's, minutes to set up) with the
+    tarball's **SHA-256 in the tag message** and in the GitHub Release
+    notes. This changes R.7's publish move: Kyle pushes the signed tag and
+    the workflow publishes — no hand-run `npm publish`. Kyle's-hands parts:
+    the npmjs.com trusted-publisher form (~5 min, walked one step at a
+    time) and generating/registering the signing key. Caveat: provenance
+    requires a public repo, so the end-to-end proof fires at the first real
+    publish (launch morning) — same class as R.7's existing `npx` check;
+    everything short of that rehearses beforehand.
+    *Status 2026-07-30: the release workflow LANDED* —
+    `.github/workflows/release.yml` (`52ca799`): tag push (v*) → tag↔
+    version check → typecheck + Tier 1 → pack with the tarball SHA-256 in
+    the job summary (for the Release notes) → `npm publish --provenance`;
+    `contents: read` + `id-token: write` only, no stored token, fails
+    closed until the trusted-publisher form is done. `workflow_dispatch`
+    is the dry-run rehearsal; `npm pack` + `npm publish --dry-run` also
+    rehearsed locally on 0.2.0. *Both Kyle-hands parts ✅ DONE
+    2026-07-30:* the npmjs.com trusted-publisher form (GitHub Actions ·
+    `mirafold/mirafold` · `release.yml` · env blank · publish only,
+    stage off) and the dedicated ed25519 signing key (repo-local git
+    config signs all tags, sign smoke-tested; public half registered on
+    GitHub as a signing key). The publish path is fully set up; its
+    end-to-end proof fires at the first real publish, per the caveat
+    above.
+  - **DRAFT release sequence (2026-07-29, assistant — Kyle to ratify;
+    "launch asap" is the directive it serves):**
+    - *Preconditions, any order, all before T-0:* 4.15 ✓ (done);
+      provenance release workflow landed + build/pack rehearsed (publish
+      itself fires at T-0); npm trusted-publisher configured (Kyle,
+      npmjs.com form) + SSH signing key registered (Kyle); Dependabot
+      re-verified zero on BOTH code repos; the relay repo's dedicated
+      security-audit pass (gates its flip); tracked-docs disclosure review
+      (Kyle reads what goes public: BUSINESS.md, PLAN + archive, git
+      history); theme value guards landed ✅; Paddle payout details ✅ (set
+      up — confirmed 2026-07-30); launch copy + Product Hunt draft ready ✅;
+      R.6's real-hardware checks done.
+    - *T-0 morning, in order:* (1) `mirafold/mirafold` public → enable the
+      DCO check + re-enable the cross-repo relay itest in CI; (2)
+      `mirafold-relay` public (only if its audit passed); (3) Kyle pushes
+      the signed release tag → the workflow publishes to npm with
+      provenance over the 0.0.1 placeholder; (4) verify cold:
+      `npx mirafold` + `npm audit signatures`; (5) site stays as-is (its
+      install line `npm i -g mirafold` becomes true at step 3; checkout
+      already live); (6) the splash: X + Show HN + Product Hunt +
+      r/ClaudeAI + r/LocalLLaMA. Same week: newsletter submissions,
+      awesome-list PRs, the BIS §742.15(b) email, the provider-terms
+      re-check (R.7's standing item).
+    - *Rollback levers:* npm = re-point the `latest` dist-tag + deprecate
+      (never unpublish); relay = `fly deploy --image <prev>`; site = Pages
+      one-click rollback (KV does not roll back with it).
+    - *Rename (d): resolved* — the GitHub org/repo and the npm name are
+      already `mirafold`; the internal folder/Fly names are non-gating
+      (umbrella note 2026-07-11).
+    - **AMENDMENT (Kyle, 2026-07-29): the flip and the splash separate.**
+      Everything goes truly public QUIETLY first — repos public, signed
+      tag pushed, workflow publishes to npm, verifications run — then a
+      **live-fire window of AT MOST 2 days** with a few more personally-
+      invited testers installing via the real public path
+      (`npm i -g mirafold`), then the one big splash, unchanged in shape.
+      This amends (not reverses) the 2026-07-25 "ONE splash" decision:
+      what was rejected then was a quiet launch *strategy*; this is a
+      bounded smoke-test window with the single announcement event kept.
+      It also converts R.7's two publish-only checks (`npx mirafold`,
+      `npm audit signatures`) into pre-splash facts, and in practice it IS
+      R.5c's user-testing round — real users, real hardware, the exact
+      artifact the public gets. `/beta` is NOT removed at the flip: it
+      becomes a short "we're live — `npm i -g mirafold`" note, so the link
+      already printed in every tester's WELCOME.md keeps working and
+      upgrades them to the public path. Every pre-PUBLIC gate still
+      precedes the quiet flip (tracked-docs/history review, relay audit
+      before ITS flip, Dependabot re-verify, provenance setup) — quiet
+      defers only the announcement, never a gate.
+    - *Still Kyle's calls, marked open:* (i) ✅ **DECIDED 2026-07-30: the
+      public cut is 0.3.0** — bumped on main (`b63941c`); `v0.3.0` is the
+      launch tag; (ii) ✅ **DECIDED 2026-07-31: the dates — see the
+      ratification below.**
+  - ## ✅ RATIFIED 2026-07-31 (Kyle) — this is the plan, no longer a draft
+    Every precondition above is MET, each measured rather than read off a
+    doc: the release workflow rehearsed successfully (run `30630399899`,
+    `workflow_dispatch` on `main`, **success in 2m34s**, never
+    authenticated); npm trusted publisher + ed25519 signing key configured
+    2026-07-30; the relay repo's dedicated security-audit pass clean
+    2026-07-30; the tracked-docs disclosure read done 2026-07-31, with Kyle
+    deciding to **publish everything as tracked — no trims, no
+    move-private**; Dependabot zero open on both code repos (re-verified at
+    the flip, per the sweep note above); LTE phone pass, theme guards,
+    Paddle payout, launch copy + Product Hunt draft all done.
+
+    **The dates (moved EARLIER by one day — Kyle, 2026-07-31 evening, after
+    ratifying Saturday the same day; see the note below):**
+    - **Friday 2026-07-31, evening** — everything goes public and gets
+      published. No announcement.
+    - **Saturday 08-01 + Sunday 08-02 + Monday 08-03** — the quiet window. A
+      handful of personally-invited testers install via the real public path
+      (`npm i -g mirafold`) and use it. This IS R.5c's user-testing round.
+    - **Tuesday 2026-08-04, US morning** — the single announcement: X, Show
+      HN, Product Hunt, r/ClaudeAI, r/LocalLLaMA.
+
+    *On the window: it was first set at Saturday night → Tuesday (~2.5
+    days), then moved a day earlier to Friday night → Tuesday (~3.5 days)
+    when Kyle asked whether the longer gap hurt. It does not: the window
+    exists so invited testers exercise the real public install path before
+    strangers do, and more days serve that purpose rather than eroding it.
+    Nothing decays while it sits — the package is on npm, the repos are
+    public, and nobody is looking. Both figures stretch the amendment's "AT
+    MOST 2 days" bound, which was self-imposed; these dates supersede it.
+    Checked and dismissed as non-factors: staleness (neither Hacker News
+    nor Product Hunt weighs how long something has been available — Show HN
+    only requires that YOU are showing something people can try, and the
+    443-commit history was already public-facing either way) and
+    pre-emption (a stranger posting the link first is negligible; the one
+    plausible path is an invited tester, addressed by telling them it is
+    not announced until Tuesday). The residual risk, accepted: Hacker News
+    gives a URL roughly one shot, so if someone else posts it and it lands
+    well, that run is spent and Kyle would not be in the thread — the
+    fallback is that `mirafold.com` is a separate URL from the repo.*
+
+    ### ✅ EXECUTED — Friday 2026-07-31 evening. Mirafold is PUBLIC and LIVE.
+    Measured at each step, not assumed:
+    - Both repos **public** (API-confirmed): `mirafold/mirafold`,
+      `mirafold/mirafold-relay`. Dependabot **0 open on both** at the flip.
+    - DCO sign-off app installed on both (shows on PRs; it does not BLOCK a
+      merge until branch protection lands — deliberately deferred to after
+      Tuesday so launch weekend keeps a friction-free hotfix path).
+    - Signed tag **`v0.3.0`** pushed at commit
+      **`910cb246f04606a0e7f0274358122eabbbe43fea`**. Release run
+      **`30663563802`** — success in **1m32s**, every step green through
+      "Publish (tag push — provenance over trusted publishing)".
+    - **`mirafold@0.3.0` is on npm.** Published tarball SHA-256
+      **`804bd065ba51b156c59d8f2a7bf1e5a50bffa547a031c7830cf1164ee7f60518`**
+      (registry download re-hashed locally — matches CI byte for byte).
+      17 files, 5,063,377 bytes unpacked.
+    - **Provenance verified end-to-end**, which is the whole point of R.5b:
+      the SLSA attestation binds `pkg:npm/mirafold@0.3.0` to source
+      `git+https://github.com/mirafold/mirafold@refs/tags/v0.3.0`, commit
+      `910cb246…`, built by `.github/workflows/release.yml`. A skeptic can
+      now prove the package came from the public source. `npm audit
+      signatures` on a cold install: 116/116 verified registry signatures,
+      16 verified attestations, 0 invalid, 0 missing.
+    - **Cold-install proof** (fresh dir, package pulled from the public
+      registry, no repo checkout): `--version` → `0.3.0`; daemon boots,
+      serves `HTTP 200` with `<title>Mirafold</title>`; the per-launch auth
+      token → cookie redirect works; a busy port rolls to the next one; with
+      no license key it correctly says remote access is off. The
+      `@parcel/watcher` install-script warning appeared exactly as the
+      README documents.
+    - `mirafold.com/beta` rewritten to the public path and **verified live**
+      (site commit `7e46469`): `npm i -g mirafold`, `npm audit signatures`,
+      the new SHA-256, and a link to the now-public repo. Every tester's
+      existing WELCOME.md link keeps working and upgrades them.
+
+    **Still owed after this (see the resume list in ROADMAP.md):** the
+    GitHub Release for `v0.3.0` with the SHA-256 in the notes (Kyle's
+    hand-made step, per the workflow's own comment); re-enabling the
+    cross-repo relay itest in CI now that the relay is public; tester
+    invites for the quiet window; Tuesday's announcement; then branch
+    protection + the `next`/`release/x.y.z` model, and the BIS §742.15(b)
+    email.
+
+    **Launch-evening steps, in order, with owner.** Assistant runs 1, 5, 7, 8;
+    Kyle runs 2, 3, 4, 6 — all four are GitHub-settings or signing-key
+    actions, his hands by the privileged-mutation rule.
+    1. Confirm Dependabot still zero on BOTH code repos — *assistant*.
+    2. `mirafold/mirafold` → public — *Kyle* (GitHub settings).
+    3. `mirafold/mirafold-relay` → public — *Kyle* (GitHub settings).
+    4. Enable the DCO sign-off check on both repos — *Kyle*.
+    5. ~~Re-enable the cross-repo relay itest in CI~~ — ✅ **DONE 2026-08-02**
+       (*assistant*); see the resolution note under "Owed at the public flip"
+       below. ~~⬜ Not yet opened as a PR, so not yet exercised on a runner.~~
+       *(Stale — it WAS exercised: `f30a6dc` was pushed to `main` 2026-08-02
+       and its CI run passed on the real runner, sibling relay checkout and
+       all. Verified from the run list 2026-08-07.)*
+    6. Push the signed `v0.3.0` tag — *Kyle*. **This is the publish**: the
+       tag push triggers `release.yml`, which builds and runs
+       `npm publish --provenance`. No hand-run `npm publish`, ever. Expect
+       ~2m34s, per the rehearsal.
+    7. **Verify the same night, before bed — non-negotiable.** Cold install
+       the way a stranger would (`npx mirafold`) + `npm audit signatures` —
+       *assistant*. Publishing and sleeping unverified would leave a broken
+       package installable for hours undetected; the publish is the
+       irreversible move and this is what tells us whether it went wrong.
+    8. `mirafold-site` `/beta` becomes a short "we're live —
+       `npm i -g mirafold`" note, so the link already printed in every
+       tester's `WELCOME.md` keeps working and upgrades them to the public
+       path — *assistant*.
+
+    **Tuesday:** post everywhere. Before posting, search `hn.algolia.com`
+    for "mirafold" — thirty seconds, removes a variable. (The odds of a
+    stranger posting it first during the quiet window are negligible and
+    were overstated in an earlier draft of this note: `mirafold@0.0.1`
+    already exists on npm, so 0.3.0 is a version update rather than a
+    new-package feed event, and a zero-star repo going public is invisible
+    to the star-velocity scrapers. The one plausible leak is an invited
+    tester sharing it — so the invite says "not announced yet, please don't
+    post it anywhere until Tuesday.")
+
+    **Same week, after the announcement:** newsletter submissions,
+    awesome-list PRs, the BIS §742.15(b) email to crypt@bis.doc.gov +
+    enc@nsa.gov with the repo URLs, and R.7's standing provider-terms
+    re-check.
+
+    **Rollback levers, unchanged:** npm = re-point the `latest` dist-tag +
+    `npm deprecate` (NEVER unpublish); relay = `fly deploy --image <prev>`;
+    site = Pages one-click rollback (KV does not roll back with it).
+
+    **Still open, non-gating:** WHO the invited testers are for the Sunday/
+    Monday window — may simply be the existing beta testers, told to
+    reinstall via `npm i -g mirafold`. Kyle's call, answerable any time
+    before Saturday night.
+
+    **Understood and accepted:** step 6 is the first irreversible move in
+    this project. An npm publish cannot be withdrawn, and a public repo
+    exposes all 443 commits plus every tracked doc permanently.
+  - Done when: a written release-sequence exists that R.6 and R.7 just
+    follow, with no open "how do we actually ship this" questions —
+    ✅ **MET 2026-07-31** by the ratification above; only the non-gating
+    tester-list question remains.
+
+---
+
+**From Step R.5c, tester-002 closure (moved verbatim 2026-08-12):**
+
+  - **Tester-002 thread CLOSED 2026-07-30** (the point-by-point discussion
+    Kyle held open since 07-28; ROADMAP launch item 5). Remaining points
+    resolved, standard practice applied rather than bespoke decisions:
+    **"What is real"** — accurate, and re-verified in passing today (the
+    loopback bind and the `!` cwd confinement + caps both came up
+    independently); noted, NOT used as external validation, since the
+    tester never ran the product and citing a pre-install vetting doc as a
+    security review would overstate it. **Concern 2** (SECURITY.md/tests/
+    docs absent from the tarball) — SECURITY.md ships since 4.15; tests,
+    plans and build instructions deliberately do NOT ship in an npm
+    package, and the README's citations resolve when the repo goes public
+    at R.7. **Concern 3** (the trust boundary is large) — the actionable
+    half is now a **"Running it safely" section in `SECURITY.md`**, which
+    ships inside the package: leave the auth token on, never put the
+    daemon behind a proxy or a LAN bind (the relay is the one supported
+    remote path), treat `!` as your shell, open it somewhere you'd give an
+    agent a terminal, keys stay server-side. Their pilot-only cautions
+    (skip the relay, no keys in `.env`) were deliberately NOT parroted —
+    `.env` in the launch directory IS the supported place for keys.
+    **Recommended pilot preconditions** — all four are satisfied by the
+    launch mechanics already planned: public source at the exact commit
+    (R.7), a signed tag + published fingerprint (R.5b's signed `v0.3.0` +
+    `npm publish --provenance` over trusted publishing), SECURITY.md +
+    lockfile + build instructions in the public repo, and native-install
+    clarity — now written into the README's native-module note, which had
+    claimed no install scripts at all while every npm-12 user sees a
+    `@parcel/watcher` warning (measured: its script is a conditional
+    no-op, prebuilts ship for every mainstream platform). **Bottom line** —
+    their sole blocker was supply-chain provenance, which dissolves at the
+    flip; no separate work. *One item deliberately left alone: the site
+    claims open source in the present tense while the repos are private.
+    That is true-by-R.7 and Kyle has made no decision to change the copy;
+    it resolves itself at the flip.*
+
+---
+
+**From Step R.5c, finding #5 (Gemini 0.53.0) (moved verbatim 2026-08-12):**
+
+  - Finding #5 (assistant, 2026-07-30, R.6's live-Gemini check — **LAUNCH
+    BLOCKER, FIXED same day**): the `gemini-cli` adapter could not complete a
+    turn on Gemini CLI **0.53.0** (written against 0.51.0). It presented as
+    two failures — a refusal to run headless in an "untrusted" folder, and
+    `IneligibleTierError: This client is no longer supported for Gemini Code
+    Assist for individuals` — but they are **one cause**: 0.53.0 does not load
+    a project's `.gemini/settings.json` for an untrusted folder. That file is
+    where the adapter writes `security.auth.selectedType: "gemini-api-key"`,
+    so the selection was ignored and the CLI fell back to the USER-scope
+    choice; any user who ever logged in interactively (`oauth-personal`) then
+    died on the free-tier client path Google retired, while holding a valid
+    `GEMINI_API_KEY`.
+    **Fix (P.6b):** the workspace-trust question is asked ONCE per folder
+    through the shell's own permission strip — `permission_request` /
+    `permission_resolved`, both existing message types, so the wire protocol
+    is untouched and the ask is shell-owned (the agent can't paint or fake
+    it). A yes is remembered in a new daemon record,
+    `<state>/trusted-workspaces.json` (`server/sessions/workspace-trust.ts`),
+    and carried into the child as `GEMINI_CLI_TRUST_WORKSPACE=true`. A no runs
+    nothing and says why; the session stays usable. Asked once per workspace,
+    ever — matching what their own terminal `gemini` does.
+    **Measured negatives, both of which cost a round of wrong belief:**
+    `--skip-trust` is NOT equivalent — it lets the run proceed but still
+    doesn't load project settings, so auth falls back and the turn dies
+    (proven in a known-good workspace). And `GEMINI_DEFAULT_AUTH_TYPE=
+    gemini-api-key` does nothing at all on 0.53.0 — proven by the case with
+    no project settings + trust + that variable, which still failed. *An
+    earlier draft of this finding named that variable as the fix; it was
+    wrong, and only isolating one variable at a time exposed it.*
+    **Why (b) — reusing `trusted-repos.json` — was proposed and rejected:**
+    that list is the git-programs escape hatch, nothing in the product ever
+    writes it, and it is empty for essentially every project, so it would
+    have left Gemini broken while looking fixed.
+    **Verified:** a real Gemini turn end-to-end through the adapter (trust ask
+    → allow → `PROBE OK`, with usage), on Kyle's real home and its
+    `oauth-personal` login. Tests: `workspace-trust.test.ts` (containment,
+    persistence, malformed/disabled record) and two adapter tests pinning the
+    gate — nothing spawns before the answer, the yes reaches the child as the
+    trust env var and is remembered, a no runs nothing — mutation-checked
+    (defeating the gate fails both).
+    *Standing caveat: Gemini is the most volatile of the three engines —
+    0.51→0.53 both retired an auth path and added this gate in weeks. R.6's
+    live-Gemini check should re-run after Google releases; the other two
+    engines have needed nothing like it.*
+
+---
+
+**From Step R.5c, finding #4 (version-manager 404) (moved verbatim 2026-08-12):**
+
+  - Finding #4 (Kyle, 2026-07-30, his own machine — **LAUNCH BLOCKER, fixed
+    same day**): the first time Kyle installed the tarball the way testers
+    do (`npm i -g mirafold.tgz`) instead of running `yarn dev`, onboarding
+    died the moment it navigated to a session URL — a `NotFoundError` from
+    `send`, and no browser session could ever start. **Cause:**
+    `res.sendFile(path.join(DIST, "index.html"))` passes an ABSOLUTE path,
+    and send's default `dotfiles: "ignore"` policy inspects *every segment*
+    of it. `npm i -g` unpacks into the active Node's prefix, which for nvm
+    (`~/.nvm/…`), asdf, volta and fnm carries a dot-segment — so the SPA
+    fallback 404'd for every user on a version manager, i.e. most of the
+    target audience. `GET /` kept working (express.static passes a root, so
+    only the request path is checked), which is why it read as "some people
+    can't get past onboarding" rather than "the server is broken".
+    **Fixed:** `res.sendFile("index.html", { root: DIST })` in
+    `server/index.ts` and `server/relay/relay-stub.ts` — the policy then
+    applies to the relative part only. **Regression:** a Tier-3 test
+    (`server/testing/launcher.e2e.ts`) copies the built `dist/` +
+    `dist-server/` into a manufactured `.nvm-like/` directory, boots the
+    daemon from there and asserts `/s/:id` → 200 with the real app shell;
+    mutation-checked (restoring the old line reproduces the 404).
+    **Why three verification layers missed it:** the repo checkout has no
+    dot-segment so Tier 3 structurally cannot see it; `yarn dev` serves the
+    SPA from Vite, so the daemon's fallback route is never exercised in
+    dev; and the cold-install check booted the daemon and read `--version`
+    without fetching a session URL. The lesson is narrow and worth keeping:
+    **only exercising the packaged artifact from a realistic install path
+    proves the packaged artifact.** Re-packed and re-installed; Kyle
+    confirmed a real session with his Claude API key on the fixed build.
+    `beta/mirafold.tgz` re-cut (sha256 `8f829513…`, was `a9fe4152…`) and
+    `beta/WELCOME.md` updated to match; ⬜ the Drive copy still serves the
+    broken build until Kyle re-uploads.
+
+---
+
+**From Step R.5c, finding #3 (phone new-session hang) (moved verbatim 2026-08-12):**
+
+  - Finding #3 (Kyle, 2026-07-24, real phone — SERIOUS): starting a NEW
+    session on mobile hung on "connecting…" forever, picker never showed;
+    desktop fine. Root cause: the in-session "new" button opens a fresh tab
+    (`target="_blank" rel="noopener"`), and a noopener new tab inherits
+    neither the URL fragment nor sessionStorage — so on the relay path the
+    new tab had no pairing code, fell back to a daemon-less local ws://, and
+    hung. Desktop's local fallback IS the daemon (worked); mobile resume
+    worked (fleet links stay in-tab). Diagnosed from the daemon
+    flight-recorder + relay structured logs. Fixed: `newSessionHref()`
+    re-encodes the relay target into the new tab's fragment (PR #6, merged
+    to main; unit 322 + round-trip invariant test). DEPLOYED: the
+    git-integrated Cloudflare Pages project auto-rebuilt on merge —
+    app.mirafold.com now serves the fixed bundle (index-D2UVf2h9.js,
+    confirmed live). Awaiting Kyle's real-phone confirmation.
+
+---
+
+**From Step R.5c, finding #2 + the same-day overlay sweep (moved verbatim 2026-08-12):**
+
+  - Finding #2 (Kyle, 2026-07-23, his MacBook): the onboarding picker sat
+    flush against the browser window's top/bottom on a short viewport (a
+    ~600px un-maximized Mac Chrome window) instead of floating as a nested
+    modal. Root cause: `.onb-card` had `max-width` but no `max-height`, so
+    it overflowed the centered overlay. Fixed same day: `max-height: 100%`
+    + internal scroll as the hard floor (the overlay's 24px gutter is now
+    always visible), plus an `@media (max-height: 700px)` compact layout
+    (44px glyph, tighter paddings) so typical content FITS at ~600px.
+    Verified by computed-style probe at 607px and 769px viewports + all
+    tiers green; worst-case content (3 credential-less agents, longest
+    hints) scrolls internally with the gutter intact at any height.
+    *(Superseded 2026-07-25: the fleet page's `zoom: 1.15` — a cockpit
+    polish landing — inflated the card 15% while this breakpoint kept
+    measuring the real viewport, so the scrollbar showed at every height
+    under ~890px. The binary compact tier is replaced by a fluid
+    `--onb-squeeze` driver: every vertical metric interpolates full→compact
+    with window height (zoom factor divided out of the vh math), the
+    credentialed picker fits scroll-free down to ~645px real, and scroll
+    remains the last resort for hint-heavy or tiny-window states. E2e pins
+    the ramp — an all-rows-ready daemon swept through it, asserting no
+    internal scroll AND that the glyph actually compressed. `d8abc62`.)*
+  - Finding #3 (proactive sweep after #2, same day): the settings and pair
+    dialogs share the exact defect #2 found in the onboarding card — the
+    S.4 card idiom had `max-width` but no `max-height`. Measured live at a
+    560px viewport: settings (583px natural — the theme list) overflowed
+    the window by 11px top AND bottom; pair (430px) fit but was one short
+    window from the same. Fixed with the same two-line cap on the shared
+    idiom (`max-height: 100%` + internal scroll — inert until a card would
+    overflow). Sweep completeness: these were the ONLY three
+    fixed-position overlay surfaces in the shell (onboarding, settings,
+    pair); the in-session model picker, question component, permission
+    bar, and demo banner are all in-flow and immune. Probed at 560/769,
+    e2e + unit green. NOT done (deliberately): a compact-styles pass for
+    the settings card at short heights — it would touch the theme picker's
+    layout, which is Kyle-locked territory; internal scroll is the
+    accepted behavior there.
+
+---
+
+**From Step R.5c, beta-tarball era mechanics + status (2026-07-23 → 07-25) (moved verbatim 2026-08-12):**
+
+  - **Opened 2026-07-23.** Mechanics locked with Kyle: distribution is a
+    hand-sent `npm pack` tarball (v0.1.0, shell @ 50950a7 / relay @ 3f92992
+    deployed) — NOT npm; testers subscribe FOR REAL via the direct `/pay`
+    link (never comped — Kyle's standing rule; 7-day refund is the out);
+    feedback arrives ad hoc in any form — Kyle collects and forwards it in
+    clusters, so intake here means triaging those clusters as they land,
+    not policing a channel. Welcome note drafted (install incl. the
+    node-pty/npm-scripts fix, credentials, phone-over-cellular ask, the
+    never-paste-boot-output rule, log-file-is-safe-to-attach). That gate CLEARED
+    same day: Kyle lifted the blackout entirely — the full site is public
+    again, all pages verified 200, and the welcome note now lives on-brand
+    at mirafold.com/beta (noindex, unlinked; testers get the direct link).
+    The tarball was also rebuilt on the @lydell/node-pty swap, so install
+    is two commands with no workaround. NOTHING blocks the first invite.
+  - **First finding, fixed same day (2026-07-23):** Kyle, running Codex via
+    OpenRouter, saw the literal stand-in "codex" in the status bar's model
+    slot (Claude showed "default", Gemini "gemini" — same pattern). Kyle's
+    call: a temporary model name that isn't true is dishonest — show
+    NOTHING until the real one is known. Landed as shell @ 003388c:
+    `modelName` is undefined until configured/engine-reported, the wire's
+    usage + fleet-row `model` fields went optional, and the status bar +
+    fleet row render the slot only when known. Gemini's "auto" stays (a
+    genuine configured router-mode value, still refined per turn). All
+    three tiers verified; tarball rebuilt at that commit.
+  - **2026-07-25 status:** version bumped to **0.2.0** with the `engines`
+    Node floor raised to **>=22** (`52ffdaf` — the floor now matches what
+    we actually develop and test on; README, mirafold.com's install note,
+    /beta, and the beta-folder WELCOME.md all state Node 22+ and name
+    `mirafold-0.2.0.tgz`). Tarball rebuilt at `d8abc62` (includes the
+    phone rail fix + onboarding squeeze), staged at
+    `../beta/mirafold-0.2.0.tgz`, cold-install + boot smoke-tested.
+    **Distribution channel (external fact):** testers get it via Kyle's
+    Google Drive link — replace-in-place version upload keeps the link
+    stable; Drive keeps the old display name on content swaps, so the
+    rename to `mirafold-0.2.0.tgz` is a manual step (advised, link
+    survives it). **Uptake (Kyle, 2026-07-25): almost no testers have
+    actually tried it yet** — the stable-link swap was chosen so the
+    already-sent link serves the new build. Also flagged on push: GitHub
+    reports 1 HIGH Dependabot alert on the default branch (dependabot/4);
+    a dependency bump was already in flight in a parallel session the
+    same afternoon. *(Resolved same day: that bump landed as `c660130` —
+    alert #4 "fixed", zero open alerts on the repo; detail in R.5b's
+    sweep note.)*
+  - *(An interim 2026-07-25 evening rebuild — postcss-only delta, verified
+    cold-install — was superseded by the session-end rebuild below; note →
+    PLAN-ARCHIVE.md.)*
+  - **npm-audit noise on install — investigated and settled
+    (2026-07-25):** installing the tarball into a *local project
+    directory* reports 4 moderate advisories, all one chain
+    (`@hono/node-server` <2.0.5 — Windows-only path traversal in
+    `serve-static` — reached transitively via `@modelcontextprotocol/sdk`,
+    which `@anthropic-ai/claude-agent-sdk` also requires as a peer).
+    **Testers never see it: npm skips audit on global installs**, so the
+    documented `npm i -g ./mirafold-0.2.0.tgz` prints no advisory at all
+    (verified against a clean prefix). And it cannot be fixed from our
+    side anyway: the MCP SDK still declares `^1.19.9` at its latest
+    (1.29.0), hono 1.x has no patched release (1.19.15 is the last), a
+    published package's own `overrides` field is ignored by npm (verified
+    by packing one and installing it), and **npm v12 no longer reads an
+    `npm-shrinkwrap.json` shipped inside a tarball** — the one mechanism
+    that used to pin a consumer's transitive tree. `bundleDependencies`,
+    npm's suggested replacement, is a non-starter here: `@lydell/node-pty`
+    and the agent SDK ship per-platform optional binaries. What DID land:
+    `package.json` gains an `overrides` block mirroring the existing yarn
+    `resolutions`, so an `npm install` from source resolves the same tree
+    yarn does (`npm install --package-lock-only` → 0 vulnerabilities);
+    it has no effect on the tarball. Our own testing keeps running the
+    forced 2.0.11, as R.5b's sweep note records.
+  - **Tarball rebuilt once more at session end (2026-07-25), shell
+    `b97f85d`** — still **0.2.0**, Kyle's call ("don't bother updating the
+    version number"). Staged at `../beta/mirafold-0.2.0.tgz` (335,280 bytes,
+    sha256 `69c84f6d…`). Carries everything from that evening: the
+    flat-outline gear, the readable pairing card with copy as its one action,
+    the phone Explorer fixes, the browser bundle no longer shipping
+    package.json, and the discarded-tab pairing fix. Verified by cold
+    `npm i -g` into a throwaway prefix — `--version` 0.2.0, boots, serves
+    HTTP 200 — and by grepping the packed bundle to confirm it actually
+    carries that work rather than trusting the pack. ⬜ **Kyle still owes the
+    replace-in-place upload to Drive.**
+  - **Where the version lives, for whenever it IS bumped (swept
+    2026-07-25):** `mirafold/package.json` is the single source of truth —
+    `bin/mirafold.js` reads it at runtime for `--version` and the boot banner,
+    `web/src/version.ts` imports it at build time for the version the browser
+    announces, and `npm pack` names the tarball from it. Since 2026-07-29
+    NO hand-written copy of the version remains anywhere: the Drive
+    artifact is the version-free `../beta/mirafold.tgz` (adopted in
+    practice 2026-07-28, confirmed by Kyle 2026-07-29 — Drive
+    replace-in-place keeps the link AND the documented filename stable),
+    and `beta/WELCOME.md` + `mirafold-site/public/beta.html` both
+    instruct `npm i -g ./mirafold.tgz` (updated 2026-07-29). The
+    marketing site's own install line is `npm i -g mirafold` and the
+    README uses a `mirafold-*.tgz` wildcard, both already version-free.
+    So a version bump touches package.json and nothing else — `npm pack`
+    emits `mirafold-<v>.tgz`, rename it to `mirafold.tgz` when staging.
+
+---
+
+**From Phase R, Step R.5d (moved verbatim 2026-08-12):**
+
+- [x] **Step R.5d — Relay staging (nonprod) environment** — **DONE
+  2026-07-23** (the day the private release went live, per the sequencing).
+  `genui-relay-staging` on Fly from the same Dockerfile via
+  `fly.staging.toml` (auto-stop, idles at zero, ungated); the Deploy
+  workflow gained the environment dropdown (default staging) with
+  per-environment app-scoped FLY_API_TOKENs (staging's token cannot touch
+  production); first staging deploy dispatched through the new path and
+  the full smoke PASSED against `wss://genui-relay-staging.fly.dev`
+  (pairing + byte-identical round-trip + refusals). Runbook: DEPLOY.md §6.
+  Why it exists: the relay is the only component that needs a nonprod — the
+  shell's "production" is the user's own machine and the site already has
+  Pages previews. Staging exercises what local runs can't: real TLS, the
+  `fly-client-ip` header the rate limiter trusts, real network behavior, Fly
+  machine lifecycle. The flow it buys: deploy a ref to staging → point a local
+  shell at it (`MIRAFOLD_RELAY_URL=wss://genui-relay-staging.fly.dev`) → smoke
+  + phone pairing check → dispatch the same ref to production. Original step
+  spec → PLAN-ARCHIVE.md.
+
+---
+
+**From Phase A, the A.4 not-live correction note (moved verbatim 2026-08-12):**
+
+> **Correction 2026-07-30 — A.4's page was NOT live, for nine days.** The
+> public accessibility statement was written and committed 2026-07-21 into the
+> site repo's `staged/` (site `b42c286`), and never made it into `public/`
+> when the blackout lifted on 07-23. `mirafold.com/accessibility` 404'd, no
+> footer linked it, the sitemap didn't list it — while this plan recorded the
+> step as done and live. Restored, linked from every page's footer, and added
+> to the sitemap 2026-07-30 (site `c4426df`); **measured live: 200.** The
+> lesson is the umbrella's own: a page's existence is a fact about the world,
+> not about a plan, and the plan is exactly as current as the last time
+> someone typed. *Also refreshed on restore*: a new known limitation states
+> plainly that the last hands-on keyboard/screen-reader audit was 2026-07-21,
+> that the automated axe gate covers newer surfaces where they appear in it
+> (onboarding, transcript, Explorer, settings, connect-device, fleet, cockpit
+> desktop + phone — `assertAxeClean` call sites), and that the `!` input bar,
+> the pin dock and the ⤢ enlarged file view have not yet had the same pass.
+
+---
+
+**From Phase Q, the follow-tail re-arm watch item (moved verbatim 2026-08-12):**
+
+- [x] **WATCH ITEM (2026-07-24): the follow-tail re-arm race — closed
+  2026-08-08 by N3.3.** Seen once on the
+  CI runner (app.e2e.ts "re-follows once back at the bottom", sat 188px above
+  the tail), green on rerun and on every local run; root-caused same day.
+  Mechanism: re-arming depended on `use-follow-tail.ts`'s `onScroll`
+  measuring within `BOTTOM_SLACK_PX` (24) of the bottom, but scroll events
+  fire a frame after the scroll — under load the stream can paint >24px in
+  that gap, so a reader (or the test's single programmatic jump) landing at
+  the bottom mid-stream measures as "not at bottom" and follow never re-arms.
+  A real product race, not only test fragility. Downward wheel/touch intent
+  that reaches the current bottom now re-arms synchronously against pre-input
+  geometry; the existing instant-follow and input-detach decisions remain.
+  Pure boundary tests and a controlled real-wheel browser scenario pin it.
+
+---
+
+**From Guidance tuning (the prose exit ramp) (moved verbatim 2026-08-12):**
+
+## Guidance tuning — the prose exit ramp (✅ 2026-07-27)
+
+One bullet in `RENDER_GUIDANCE` (`server/render-tools.ts`, commit `9330ded`),
+from a live report: a recipe ask rendered as plain markdown. Probed against
+the real engine with the adapter's exact setup first — pipeline healthy (a
+table-shaped prompt tool-searches and paints; render tools ARE deferred
+behind the SDK's tool search, noted, deliberately left alone), so the cause
+was the old "plain markdown remains right for long-form prose" bullet
+filing whole prose-shaped answers under markdown. New bullet: markdown is
+connective tissue; find and render the answer's structured core (recipe and
+prose-buried comparison as worked examples). Measured on the recipe prompt:
+0/2 renders → 2/3, ingredients + steps as components; diagnostic-prose
+control stays 0/2 (no over-rendering). Confirmed in the real UI end-to-end.
+Ported to mirafold-chat the same day (its `090d29f`) with its own probe.
+
+---
+
+**From 2026-07-27 audit section: header, shipped list, deploy state (moved verbatim 2026-08-12):**
+
+## Open from the 2026-07-27 security audit (three repos, checked against a
+## "pre-launch checklist" post Kyle brought in)
+
+**Shipped that day** (each landed with a test whose guard was broken and
+watched to fail before restoring): relay `new URL` crash guard · daemon
+exact-origin WebSocket check · credential scrubber on both log sinks ·
+site cross-site guard on the waitlist form POST · site `no-store` on
+credential responses · site `HEAD /api/health` · daemon `connect-src`
+narrowed off the `ws:`/`wss:` wildcards · daemon refuses a malformed
+`MIRAFOLD_RELAY_URL` instead of crashing at boot.
+
+**Deploy state (2026-07-28).** The relay crash guard is **LIVE in
+production** — Fly `v9`, ref `f01a765`, staging `v2` first per the
+documented flow. Verified on both by firing the real payload at the live
+host and reading the logs: `{"event":"bad_request_target"}` with no restart
+between it and the preceding `listening` event, health `ok` on four probes
+after. That deploy also shipped the relay's `HEAD /health` (confirmed `200`
+live), which had been sitting undeployed since 07-23. The site fixes went
+live with the push (Cloudflare Pages builds on push to main). **The daemon
+fixes ship with the next release** — they only reach users when the package
+does. Note the relay does NOT auto-deploy: `deploy.yml` is
+`workflow_dispatch` only, so relay code sitting on `main` is NOT live until
+someone dispatches it.
+
+---
+
+**From 2026-07-27 audit section: the relay.e2e test-3 flake (moved verbatim 2026-08-12):**
+
+### ✅ RESOLVED 2026-07-28 — the `relay.e2e.ts` test 3 flake
+
+`assert.ok(tapped.length > 50)` (`server/relay/relay.e2e.ts:91`) was a
+hardcoded frame-count threshold and it was **load-sensitive**. Sampled
+2026-07-27 in isolation: **1 pass / 3 fail**, failing at exactly `saw 50`.
+The comment directly above it already documented the same failure a week
+earlier — *"the 'saw 40' flake, reproduced 2/20 under saturation
+2026-07-19"* — so the earlier fix (keying the wait on turn completion)
+did not remove the underlying brittleness, only moved the number.
+
+Mechanism: `DELTA_COALESCE_MS` (33ms) merges streamed deltas, so the number
+of frames the tap sees depends on machine load — under saturation more
+deltas merge, fewer frames cross, and the count drops under the threshold.
+
+**The owed isolation run was run 2026-07-28 and CLEARED the 07-27
+`server/index.ts` change**: 6 samples on HEAD (0 pass / 6 fail, `saw`
+43–50) vs. 6 samples with `server/index.ts` reverted to `5e0abe4^`
+(0 pass / 6 fail, `saw` 44–49) — identical distributions, so the flake is
+fully explained by the threshold, no second problem. (Note the fail rate
+on this machine had drifted to 6/6 — the tally sat permanently just under
+50, i.e. the threshold was not merely flaky but effectively broken.)
+
+**Fix (same day):** the count was only ever a guard against the ciphertext
+loop below it passing vacuously over zero frames. Replaced the total-frame
+tally with growth-during-the-turn: capture `tapped.length` before the
+remote prompt, assert it grew by ≥2 after both viewports saw `turn_end` —
+the prompt itself must cross the tap upstream (c2d) and the `turn_end`
+that detaches the stop buttons must cross downstream (d2c), and delta
+coalescing can never merge either away. Deterministic under any load.
+Mutation-tested (both tap `frame` calls dropped from `relay-stub.ts` →
+fails `saw 0 new frames over 0` → restored); verified 6/6 passing
+unpinned and 3/3 passing under single-core CPU pinning (`taskset -c 0`),
+the condition that originally reproduced the flake.
+
+---
+
+**From 2026-07-27 audit section: the per-session prompt gate redo (moved verbatim 2026-08-12):**
+
+### ✅ REDONE 2026-07-28 — per-session prompt gate, keyed on the turn grammar
+
+History: a 400ms per-session gate on `prompt` / `prompt_session` /
+component `action{kind:prompt}` was written 2026-07-27 and **reverted the
+same day** — it measured time since the last *accepted* prompt, which
+punishes legitimate back-to-back turns and broke four e2e tests (`shell
+picker`, `notice badging`, `navigating artifact`, `chart stretch`). The
+threat is real: nothing bounded a client that bursts prompts, each of which
+costs a model turn, and the artifact bridge reaches `action{kind:prompt}`
+with no user gesture (its 400ms gate is client-side — a hostile client
+simply wouldn't run it).
+
+The redo implements the corrected design with one parity-driven refinement.
+All three model-driving paths now enter through ONE seam,
+`registry.dispatchPrompt` (echo + push behind the gate); the gate is
+cleared in `broadcast()` by the same terminal events that flip status back
+to idle (`turn_end` / `error` / `bang_end`) — no timer anywhere. The
+refinement: a prompt while idle starts the turn, and **one more** may
+arrive while it runs, because the terminal agents queue typed-mid-turn
+input (the Claude Code adapter literally `queue.push`es it) and the desktop
+prompt box still sends on Enter while busy — a strict refuse-while-busy
+gate would have refused a legitimate human flow. Anything past that one
+queued follow-up is refused with the shared `PROMPT_GATE_REFUSAL` line
+(sent only to the offending viewport — never broadcast, so it can't touch
+session status or other viewports' busy state). Burn is capped near one
+turn per completed turn; no human pace, and none of the four e2e tests,
+can trip it.
+
+Pinned in `hostile-client.itest.ts` (burst of 5 → exactly 2 echoes + 3
+refusals → gate clears at turn_end and a fresh prompt completes);
+mutation-tested (gate forced open → the pin fails on 5 echoes / 0
+refusals → restored). Tier-1 443/443, Tier-2 137/137 with the gate in.
+
+---
+
+**From 2026-07-27 audit section: the three ranked items (1 + 2) (moved verbatim 2026-08-12):**
+
+### ✅ The three ranked items — ALL RESOLVED 2026-07-28 (relay changes await a deploy)
+
+1. **Relay caps vs. machine memory + missing backpressure — FIXED.**
+   Defaults lowered to launch scale (`maxConnections` 2000→256, `maxSockets`
+   2400→320, `maxPairs` 1000→128 — env-raisable per-deploy). **Send-side
+   backpressure added** on both forwarding paths: a receiver whose socket
+   buffers past `RELAY_MAX_BUFFERED_BYTES` (64 MB — sized so a maxed-ring
+   attach-replay, ~43 MB sealed, survives) is closed `CLOSE_OVERLOADED`;
+   closing rather than dropping keeps the stream gapless (a re-attach
+   replays). **Byte-rate cap added** to the per-connection window
+   (`RELAY_RATE_MAX_BYTES`, 64 MB/s — the frame cap alone left ~3.8 GB/s
+   legal). No contract change: existing close codes only, so the mirror and
+   the contract-guard itest are untouched. Both pinned in the relay's
+   standalone suite (a stalled-socket test and a big-frame test), both
+   mutation-tested (each guard neutered → its pin fails/hangs → restored).
+2. **Pairing id in the URL query — wording fixed, exposure MEASURED.**
+   `SECURITY.md`, `README.md`, and `log.ts` no longer call it "a bearer
+   secret" — it is `b64url(SHA-256(code)[0..16))`, a rendezvous id that
+   decrypts nothing (verified against `relay-crypto.ts`); its exposure
+   enables slot squatting/DoS, not disclosure. The Fly question was
+   **verified live 2026-07-28** instead of assumed: a marker-id probe
+   dialed at the production relay produced NO proxy log line at all —
+   Fly's edge logs `request.url` **only on proxy-error lines**, so the
+   pairing id does not reach platform logs on the happy path. Conclusion:
+   moving the id to a header/`Sec-WebSocket-Protocol` (a both-repo
+   contract change) stays unjustified; SECURITY.md now states the
+   deployment-layer caveat honestly.
+
+---
+
+**From 2026-07-27 audit section: ranked item 3 + the v10 deploy note (moved verbatim 2026-08-12):**
+
+3. **Stale `mirafold-relay/dist/` — deleted**, and `npm start` now runs a
+   `prestart` build, so a local run can never again execute months-old
+   code (verified: `npm start` rebuilt dist with the new limits in it).
+
+**Deploy note — RESOLVED same day:** Kyle dispatched production directly
+from `main` (~13:12 UTC, no staging run this time; v9 did staging first) —
+Fly **`v10`**, ref `6b83ded`, the exact audit commit. Verified live:
+workflow run green, health `200`, and his entitled daemon re-paired
+through the new build 6s after `listening`. The new guards themselves
+aren't safely probe-able against production (they'd need a real flood or
+stall); their proof is the pinned + mutation-tested suite behind the ref.
+
+---
+
+**From 2026-07-27 audit section: visible refusal reason on the phone (moved verbatim 2026-08-12):**
+
+### ✅ 2026-07-28 — the refusal reason is VISIBLE on the phone (Kyle's call)
+
+A relay refusal's why (no daemon 4003 / at capacity 4004 / bad origin
+4006, mapped in `web/src/ws.ts` `viewportRefusalReason`) reached the
+StatusBar only as the dot's `title` — a hover tooltip no touch device can
+reveal, on the remote path built for phones. Kyle chose the middle option
+of the recorded three (tooltip-only / visible line / banner): a **visible
+line beside the dot**, shown only when the connection is down WITH a known
+reason — an ordinary blip keeps the quiet dot and plain "reconnecting…"
+tooltip. `.sb-conn-note`: warn-colored to match the off-dot it explains,
+ellipsis-bounded so it can't push the phone row's controls off. No live
+region on it — Shell's Announcer already speaks the transition (A.1); this
+is the visible copy of the same words. Wording kept from the provisional
+strings (they already said the right things: the no-daemon line points at
+the desktop as the fix; "at capacity" stays true for the new mid-session
+backpressure shed, which uses the same close code). Pinned end-to-end in
+`relay.e2e.ts` test 4 — the daemon is killed mid-pairing and headless
+Chrome must show the exact 4003 string beside the dot — and
+mutation-tested (render neutered → the pin fails → restored). **LIVE on
+the remote path same day**: the git-integrated Pages project rebuilt on
+the push; verified by fetching the served assets (`.sb-conn-note` in both
+the live JS and CSS at app.mirafold.com). Local users get it with the
+next package release, like every daemon-side change.
+
+Also noted, not acted on: `mirafold-site/PLAN.md`'s "Remote viewport app
+origin" item still reads as though the bundle hasn't shipped (it is live at
+`app.mirafold.com`); the site repo's `CLAUDE.md` had the same staleness and
+was corrected 2026-07-27.
+
+---
+
+**From 2026-07-27 audit section: cross-viewport permission sync (moved verbatim 2026-08-12):**
+
+### ✅ 2026-07-28 — permission answers sync across viewports (Kyle's phone bug)
+
+Kyle's report: allow/deny tapped on the phone looked like it worked (its own
+bar cleared) but "nothing actually happens" — the desktop's copy of the same
+ask stayed up and the phone hung; and an answer given ON the desktop didn't
+reliably clear the phone's bar either. Root cause (reproduced with a local +
+relay-stub two-viewport harness before touching anything): **nothing on the
+wire ever announced a permission's resolution.** Each viewport dropped an ask
+only when it was itself clicked, or at `turn_end`; the fleet mirror was kept
+honest (`answerPermission` + clock-aging) but attached session viewports were
+not. So the second device kept showing an ask that had already been answered
+elsewhere — or auto-denied by the adapter's 60s `PERMISSION_TIMEOUT_MS` — and
+a tap on that stale bar is, by design, a silent no-op at the adapter. Exactly
+"the phone just hangs there." The relay was innocent: a fresh
+`permission_response` from the remote path resolves fine (proven in the
+repro); it was the stale-bar window that made phone answers look dead.
+
+The fix (additive wire message, no relay/contract change — the relay never
+parses frames): **`permission_resolved { id, allow }`** is broadcast on the
+session stream for EVERY resolution path. Emitted from the one place all
+paths funnel through — the adapter's ask `finish` (answer from any viewport,
+timeout auto-deny, interrupt/close deny-all) in `claude-code.ts`, mirrored in
+`mock.ts`; adapters that emit `permission_request` MUST emit this
+(protocol.ts). Registry: `captureCockpit` drops exactly that id from the
+fleet mirror (the timeout path only this catches — `answerPermission` never
+ran) and releases the `permission` status hold only when nothing is still
+pending; `deliver`'s blanket working-flip skips the new type so a second
+pending ask keeps the hold. Client (`Shell.tsx`): drops the ask by id the
+moment the broadcast lands — with a polite announcement when the ask was
+still showing here (it resolved elsewhere), silent when this viewport's own
+click already removed it. Replay benefits for free: the buffer now carries
+request→resolved, so a reloaded viewport can't repaint a stale bar mid-turn.
+
+Pinned in all three tiers and each pin mutation-tested (guard broken → exact
+pin fails → restored): Tier-1 — adapter emits on answer AND on the
+interrupt deny-all (`claude-code.test.ts`), registry drop + hold-until-none-
+pend (`registry.test.ts`), protocol fixture. Tier-2 — the second viewport's
+very NEXT frame after the answer is the resolution, before the allowed
+tool's frames (`session.itest.ts`); the timeout announces `allow:false`
+before `turn_end` (ibid.); and Kyle's exact scenario, answered FROM the
+phone through the encrypted relay path with the local viewport hearing it
+(`relay.itest.ts`). Tier-3 — desktop answers, the PHONE's bar must drop
+while the turn is still streaming, not at `turn_end` (`phone.e2e.ts`, the
+count-pinned "restarted cleanly" discriminator). Tier-1 454/454, Tier-2
+139/139, Tier-3 67/67. No relay deploy involved (the relay never parses
+frames). **Client half LIVE on the remote path same day** — the Pages
+project rebuilt on the push; verified by fetching the served bundle
+(`permission_resolved` in app.mirafold.com's JS). Local daemons get the
+daemon half with the next package release, like every daemon-side change.
+
+---
+
+**From Stretch goals, Step S.1 (pie) (moved verbatim 2026-08-12):**
+
+- [x] **Step S.1 — `chart` kind: pie (donut)** ✅ 2026-07-27 (Kyle-directed,
+  branch `claude/next-registry-components-lyrbrq`, with S.2 same sitting).
+  Built to spec: `pie` on the kind enum; slices = `x` names ×
+  `series[0].values`; size-ordered, past 6 the tail folds into ONE "other"
+  (top 5 + other — the fixed-slot palette always suffices, never cycled);
+  donut with the total in the hole, a per-slice direct-label list
+  (chip + name + value + share, no around-the-donut collisions by
+  construction) and hover tooltip. The one-series rule is enforced in the
+  RENDERER by throw → RenderBlock's error boundary → the raw-props fallback
+  (the schema's raw shapes can't carry cross-field refinements through the
+  generic strict/tolerant derivation; the describe strings state the rule for
+  the agent). Done-when observed in headless Chrome: 8-category mock pie →
+  6 slices incl. "other"; 2-series pie → legible fallback with the good
+  charts unharmed; verified at desktop and phone widths, both fine (0px
+  side-scroll).
+  - *(Original spec bullets → PLAN-ARCHIVE.md.)*
+
+---
+
+**From Stretch goals, Step S.2 (stacked/horizontal) (moved verbatim 2026-08-12):**
+
+- [x] **Step S.2 — chart ergonomics: `stacked`, `horizontal`, histogram
+  hint** ✅ 2026-07-27 (with S.1, same sitting). Optional `stacked` +
+  `horizontal` booleans, bar-only, quiet no-ops on line/pie (and on a
+  single-series stack), composable with each other; the kind `.describe()`
+  now tells the agent to pre-bin distributions into labeled bar buckets.
+  Stacked: cumulative columns in palette-slot order, surface-stroke gaps
+  between segments, only the data end rounded, y-scale spans column TOTALS,
+  negatives dropped (no stacking geometry). Horizontal: bars rightward,
+  category labels whole down the left (the vertical axis clips at 12 chars —
+  the point), height grows with category count; the value-unit label moved
+  top-right after the screenshot pass caught it overlapping the last tick.
+  Old-client degradation pinned by test: a rebuilt "yesterday" tolerant
+  schema strips both flags to a plain grouped/vertical bar, and yesterday's
+  kind enum rejects `pie` whole into the fallback. Verified at desktop and
+  phone widths in headless Chrome.
+  - *(Original spec bullets → PLAN-ARCHIVE.md.)*
+
+---
+
+**From Stretch goals, the 2026-07-27 component-work security audit (moved verbatim 2026-08-12):**
+
+- [x] **Security audit of the 2026-07-27 component work** ✅ same day, all
+  three approved fixes landed with pinned, mutation-tested regressions:
+  1. **Session replay buffer capped by BYTES** (`SESSION_BUFFER_MAX_BYTES`,
+     32 MB) beside the existing 4000-message count cap. The count cap
+     assumed text-only messages; `image` made one message worth megabytes
+     from a short path, with no permission prompt. Measured open: 40 renders
+     retained 96 MB, ~10 GB at the count ceiling. Re-probed closed: 200
+     renders now plateau at 32.9 MB. Full note in SECURITY.md.
+  2. **Workspace dir is a REQUIRED argument** on `makeRenderServer` and
+     `generativeUIMsg` — it jails the image read, and optional meant a
+     future adapter could skip containment by forgetting it.
+  3. **`mermaid` moved to devDependencies** — the runtime is inlined into
+     `dist/` at build time and nothing shipped loads it from `node_modules`
+     (verified), so it was costing every user 84 MB and 62 transitive
+     packages of install + supply-chain surface for zero runtime use.
+     Kyle's zero-passengers rule, applied.
+  Clean on everything else probed: image containment (symlink/traversal/
+  `.env`/wrong-bytes/oversize all refused, mutation-tested), every new
+  parser against pathological input (worst case 56 ms, no hangs, clamps
+  hold), the diagram sandbox, supply chain (0 advisories/248 pkgs, no
+  install scripts), and repo hygiene (no secrets in the session's commits).
+
+---
+
+**From Stretch goals, the console/image/diagram batch (moved verbatim 2026-08-12):**
+
+- [x] **Workflow-gap batch (Kyle-directed 2026-07-27, same branch): `console`,
+  `image`, `diagram`** ✅ — the three glaring terminal-agent workflow gaps
+  from the 2026-07-27 survey, each through the full seam, one commit apiece:
+  - **`console`** — quoted terminal output (build logs, failing tests, stack
+    traces): command header, exit badge, copy; a self-written SGR-subset
+    parser turns ANSI colors into class spans (16 fg colors on a pinned
+    palette, other escapes stripped; text rides React as text nodes).
+  - **`image`** — the visual-verification gap. Agent authors a WORKSPACE
+    PATH; the daemon inlines the bytes at the WireMsg synthesis point (all
+    three adapters; the stdio stub stays file-access-free). Explorer-grade
+    posture: `inside()` realpath containment (mutation-tested), secret
+    denial, 2 MB raw cap (sealed relay frame ≈1.8×, relay ceiling 8 MB;
+    replay ring is count-capped so per-image bytes are the bound), raster
+    magic-byte allowlist, NO svg. Client accepts `src` only as a
+    strict-shaped data:image/raster URI — anything else → raw-props
+    fallback. Refusals render their reason.
+  - **`diagram`** — mermaid (flowchart/sequence/state/class/ER), rendered in
+    the ARTIFACT-grade sandbox, never the shell origin: shell-supplied
+    runtime (securityLevel strict) inlined in an opaque-origin no-network
+    iframe; agent source arrives by postMessage only (no interpolation slot
+    — pinned by test); nonce-stamped ready/height/error channel. New dep
+    `mermaid` (^11, deep-spec verdict): ~3.6 MB lazy chunk, first diagram
+    only. Broken source shows the error beside the source.
+  **Deliberately NOT built: structured input beyond `question`** (multi-value
+  forms, editable commit messages). Free-text input inside agent-authored UI
+  collides with the trusted-shell rule that input surfaces are shell-owned —
+  it needs a design conversation with Kyle first, not a batch add.
+
+---
+
+**From Stretch goals, Step S.3 (stat) + code + status-list (moved verbatim 2026-08-12):**
+
+- [x] **Step S.3 — `stat` registry component (KPI tile)** ✅ 2026-07-27
+  (Kyle-directed, on branch `claude/next-registry-components-lyrbrq`; built to
+  this spec exactly — `label`/`value`/optional `delta {value, direction,
+  good}`/optional `footer`, delta tone follows `good` never the raw direction,
+  the arrow glyph carries direction so state never rides on color alone,
+  proportional figures per the dataviz stat-tile contract). Done-when observed
+  in headless Chrome: the mock `kpi` turn renders the tile, an update-in-place
+  re-send on the same wire id moves the number (one tile, never a stack), and
+  it pins to the dock and back. **Same sitting, same seam, Kyle-directed —
+  two MORE registry components** (all three across both transports via
+  `RENDER_TOOL_COMPONENT`, display-only, no ACTION_TOOLS changes):
+  - **`code`** — display code that is NOT a change (the tool description
+    steers code-vs-diff explicitly): filename/lang header, copy button,
+    client-side tokenizing of plain text through the same
+    react-markdown + rehype-highlight pipeline as turn fences (hast → React,
+    never raw HTML; the fence always outruns any backtick run inside), and
+    optional 1-based highlight ranges clamped to the code's own length. Line
+    emphasis is PINNED-surface styling (neutral lift + code-fg bar) because
+    per-theme tints go pale under the pinned-dark code surface's light text —
+    caught by the both-themes screenshot pass.
+  - **`status-list`** — labeled rows with a pass/fail/warn/pending/skip
+    verdict pill (glyph + word, existing semantic tokens; a Tier-1 test pins
+    glyph↔enum so vocabulary drift fails loudly).
+  - *(Original spec bullets → PLAN-ARCHIVE.md.)*
+
+## Moved 2026-08-12 (prune addendum — verified-stale items)
+
+Removed at Kyle's direction after verification, not archived as merely
+finished: the two Tier-3 flake-watch entries were superseded the same day
+they were written by the 2026-07-30 artifact-chain root-cause fix (same
+test, probe-proven mechanism matching their traces, 0/8 post-fix failures,
+every recorded Tier-3 run since green), and K.4's pending-review status
+was stale — both Paddle reviews passed 2026-07-19 and the step's Done-when
+was met live 2026-07-22. Entries verbatim:
+
+**From Phase R (between R.6 and R.7), flake watch A (removed verbatim 2026-08-12):**
+
+- [ ] **Flake watch — one unterminated turn in the artifact chain (Tier-3
+  test `update-in-place artifacts survive the liveness tripwire`).** STILL
+  OPEN, and NOT the bug above: the captured trace shows **21 `user_prompt`
+  against 20 `turn_end`, with ZERO `error` and ZERO `bang_end` frames** —
+  a turn with no terminal frame of any kind. FIFO attribution points at
+  `burst-alpha`, the prompt the artifact iframe's bridge issues, though
+  interleaving makes that name the weakest part of the finding.
+  - **Ruled out by probe, not by reading:** the replay floor on an idle
+    reload (three rounds, clean); the burst gate inflating the count (it
+    refuses BEFORE broadcasting `user_prompt`); mid-turn queueing in general
+    (a socket probe sending a prompt 300ms into a running turn returns
+    `{ups: 2, ends: 2}`); and every mock artifact scenario — `playArtifact`,
+    `playBridgeArtifact`, `playUpdatingArtifact` all call `endTurn`.
+  - **The tool for next time already exists:** `web/src/turn-trace.ts` is
+    armed by the e2e harness and `waitTurnIdle` dumps it on any wedge —
+    frame types, replay flags, counts, and the prompt prefix. Reproduce with
+    `node --import tsx --test server/testing/app.e2e.ts` after a `yarn
+    build` (~64% per run in isolation, far higher than in a full Tier-3).
+  - **Cost note (Kyle, 2026-07-30):** this consumed a large share of a
+    session. If it recurs, read the dumped trace — do not re-derive it.
+
+---
+
+**From Phase R (between R.6 and R.7), flake watch B (removed verbatim 2026-08-12):**
+
+- [ ] **Flake watch — Tier-3 test 36 wedges on a stuck activity indicator
+  (2026-07-30; IDENTIFIED, cause not yet proven — do not chase blind).**
+  - **The test:** `2026-07-29 update-in-place artifacts survive the liveness
+    tripwire` (`server/testing/app.e2e.ts`). It fails in its PRECONDITION,
+    not its subject: the wait for the previous turn's activity indicator to
+    clear. Rate ~1 in 4–7 full runs.
+  - **What the instrumentation caught** (`waitTurnIdle`, added same day —
+    diagnostic only, changes no assertion): `activity: "✢working…(30s)"`,
+    i.e. the indicator polled visible for the entire 30s, WHILE the polite
+    live region already held the finished response — and that region only
+    speaks at `turn_end`. So the turn ended and the indicator did not clear.
+    That rules out "a turn never ended" and puts it on the shell's
+    open-turn counter. Prompt box was enabled; last five transcript entries
+    were the artifact tests' turns (`show me a navigating artifact`, then
+    the iframe-issued `burst-alpha`).
+  - **Falsified:** the obvious reading of `web/src/turn-busy.ts`'s replay
+    floor (`replayed && ACTIVITY_TYPES → max(current, 1)`) — that a plain
+    attach-with-replay of an IDLE session forces the count to 1 with no
+    `turn_end` to follow. Probed directly against the built daemon: turn,
+    idle, reload, ×3 — indicator clear every time. Not it, at least not on
+    the straight-line path.
+  - **Still open, and where to look next:** the failing sequence involves
+    artifact turns plus an iframe-issued prompt (`burst-alpha`) whose
+    sibling (`burst-beta`) is deliberately dropped by the 400ms bridge rate
+    limit. `turn-busy.ts`'s own comment names this exact hazard — "a LIVE
+    straggler after a final turn_end … must not re-open a closed turn, or
+    busy wedges on with no turn_end ever coming". The next diagnostic is
+    the frame sequence itself: record every `(type, replayed)` the client
+    applies plus the running count, and read it back at the wedge. Do NOT
+    "fix" the floor rule without that — it was written to close a real gap
+    (a queued follow-up losing the indicator across an engine roll-in), and
+    an unproven change would trade one wedge for that one.
+  - **Not caused by 2026-07-30's work:** the extended axe sweep runs later
+    in the file with its own daemon and page, and the `FilesPanel`
+    tabIndex/role change touches the Explorer's scroll container. The
+    failure predates both.
+
+---
+
+**From Phase K, Step K.4 (the 2026-07-17 pending-review status) (removed verbatim 2026-08-12):**
+
+- [ ] **Step K.4 — Merchant-of-record billing** — 🟡 vendor locked: **PADDLE**
+  (investigation 2026-07-15; every hard requirement from BUSINESS §7 + R.5
+  verified native against Paddle's docs: card-required 7-day trial,
+  cancel-at-period-end, $12/mo · $99/yr, signed `trialing`/`active`
+  lifecycle webhooks that map verbatim onto the Ed25519 minting rule,
+  hosted checkout from a static page, MoR tax; fees 5% + 50¢, accepted.
+  Field comparison — Lemon Squeezy / Stripe Managed Payments / Polar /
+  Creem — and the FTC-rule→ROSCA citation correction: → PLAN-ARCHIVE.md).
+  Account created 2026-07-16 as **individual/sole trader** (no entity
+  required — the finding that deferred K.2). **2026-07-17: both Paddle
+  reviews submitted and pending** — domain approval (`mirafold.com`,
+  Pending at `/request-domain-approval`) and account verification (the
+  KYC form, completed + in review; sole prop, trading name Mirafold,
+  business start 2026-07-11, pricing URL `mirafold.com/#pricing`).
+  Payout/bank details: an anytime-before-revenue dashboard item. Full
+  status history → PLAN-ARCHIVE.md.
+  - Done when: both reviews pass and R.5's checkout → webhook →
+    entitlement-minting build runs against the account.
+
+## Moved 2026-08-14 (post-SA prune — completed bodies)
+
+Verbatim originals of the sections completed 2026-08-12 → 2026-08-14 and
+compressed in PLAN.md on 2026-08-14: the NF and FD step bodies, the
+paintings polish batch, Phase OC, the superseded Gemini sunset record, Phase RC, and the
+whole Phase SA record (charter, signed-off decisions, research ledger,
+steps, and the post-phase refactor/bughunt/audit/test-audit records).
+
+### Phase SA — full charter, decisions, research ledger, SA.0–SA.4, and the post-phase refactor/bughunt/audit/test-audit records
+
+## Phase SA — Subagent view (opened + ✅ COMPLETE 2026-08-14; Kyle-directed; plan signed off by Kyle, executed same day)
+
+**Why.** When a session's agent spawns its own subagents, render them as a
+live, legible structure — calm by default, fully expandable — instead of
+dropping their narration and scattering their tool rows. Today the Claude
+Code adapter forwards a subagent's tool calls (nested, T2.4) but drops its
+prose: the SDK never forwards subagent token-level deltas (main-session-only
+stream, confirmed vs docs 2026-08-14), but subagent COMPLETE assistant
+messages — text and thinking blocks tagged `parent_tool_use_id` — do arrive,
+and the adapter skips them (`claude-code.ts` `!parentId` gate). The data is
+in the stream at message grain; Mirafold chooses not to render it — in
+tension with never-hide, sharpest when a stuck subagent explains itself and
+the user never sees it. Framing sharpened by research: the TERMINAL shows
+even less (a panel row — name, elapsed, tokens; no prose, no per-agent tool
+activity — a gap third-party tools visibly fill), so this is not fixing a
+hiding-vs-terminal bug; it is Mirafold being MORE faithful than the terminal
+to what the agent is actually doing.
+A live per-subagent card is also the product thesis made vivid: parallel
+agents shown side by side, which one interleaved terminal column physically
+cannot do. Automatic — the user prompts normally; when the agent fans out,
+this rendering just happens.
+
+**The hard line.** Mirafold DISPLAYS the agent's own coordination — it
+renders what the engine already decided to do. It never spawns or directs
+subagents itself (the homegrown-orchestrator trap, a non-negotiable).
+*Mirafold shows coordination; it never performs it.*
+
+**Decided 2026-08-14 (Kyle signed off on all of these):**
+
+1. **One card per subagent; no invented group container.** Each spawn gets
+   its own live card anchored where its Task row is today. No batch notion,
+   no synthesized group title (shell-voice rule: Mirafold never composes a
+   sentence about the agent's intent). A neutral counted summary line
+   ("3 agents · 2 running") is later polish, not structure.
+2. **Subagent traffic rides the replay ring, per-subagent byte-capped.**
+   A late-attaching viewport sees what a present one saw — dropping it from
+   replay would rebuild the hiding problem for exactly the away user. Cap
+   in the flood-cap spirit; elision marked explicitly (`truncatedBytes`
+   precedent), never silent.
+3. **Wire shape: reuse `text_delta`/`thinking_delta` with optional
+   `parentId`** — the exact additive precedent `tool_use`/`tool_result`
+   set; old clients degrade to today's behavior. No new delta type.
+   **`parentId` is an opaque adapter-chosen handle**: for Claude Code it
+   happens to be the Task tool_use id, but the protocol never promises
+   that; shared code only groups by it, never parses or dereferences it.
+4. **A card must be able to exist without a tool row to anchor to.**
+   Tool-call-spawning engines anchor on (become) the Task row; an engine
+   without one gets a way to announce the spawn (synthetic tool_use-shaped
+   record vs. small additive spawn message — build-time call, requirement
+   named now so the card component is not hard-wired to Task rows).
+5. **Render depth 1 — what the stream surfaces — stated assumption.**
+   (Corrected by research 2026-08-14: engines DO nest — Claude Code to
+   depth 3 by default, but grandchild traffic never reaches the parent
+   stream, only the top-level child's summary returns; OpenCode denies
+   `task` to children by default, though user config can allow nesting,
+   unbounded.) The rule: cards render what the engine surfaces to the
+   session; engine-hidden grandchildren are the ENGINE's choice, not ours.
+   OpenCode parentage resolves transitively (`Session.parentID` is a plain
+   edge), so a configured nesting maps to the nearest stream-visible
+   ancestor's card — documented degradation, not breakage.
+6. **Agent-neutral, proven: OpenCode mapping is IN scope as the final
+   step.** Neutrality is only real once a second adapter maps the lane.
+   Codex is OUT of build scope, with the posture corrected by research
+   2026-08-14: Codex NOW HAS first-class multi-agent (collab tools,
+   default-on since ~2026-02, official docs) — children are full sibling
+   THREADS (own thread id + event stream, `parentThreadId` edges); the
+   parent stream carries spawn/status items (`collabAgentToolCall`,
+   `subAgentActivity`) but never child inner activity, which needs
+   per-thread subscriptions via the app-server protocol — i.e. gated on
+   F.5, and the TS SDK we drive types none of the collab items yet.
+   A Codex SUMMARY-card mapping may be reachable pre-F.5 from untyped
+   collab items; deliberately deferred, revisit at F.5. (Vocabulary trap
+   confirmed: Codex `task_started`/`task_complete` = the whole TURN.)
+   Gemini is sunset.
+7. **Trusted shell:** the card is Mirafold chrome derived from the stream —
+   all subagent prose renders as inert plain text (fleet activity-line
+   precedent), never markdown, never agent-painted HTML.
+8. **Phase shape: mock-first, three beats.** (a) Mock parallel-subagent
+   scenario + summary cards built ENTIRELY from data already on the wire —
+   spawn/finish/tool rows/elapsed/current action all derive from existing
+   `tool_use`/`tool_result` + parentId; zero protocol change; visible win
+   alone. (b) Narration forwarding + the expanded view. (c) The OpenCode
+   mapping. Expanded-view interaction design (the calm/expand balance) is
+   deliberately decided at build time with the mock running.
+
+**Research pass — DONE 2026-08-14 (three agents + local reads). Load-bearing
+findings, beyond the corrections folded into the decisions above:**
+
+- **Claude Code (SDK pin 0.3.201):** subagent narration arrives at MESSAGE
+  grain only (complete assistant messages with `parent_tool_use_id`; deltas
+  are main-session-only per docs). To verify empirically in SA.0: that
+  parent-tagged messages arrive LIVE during the child's run (T2.4's ticking
+  nested rows suggest yes; one doc reading suggested end-of-run) — and that
+  subagent permission asks already route through the parent `canUseTool`.
+  Terminal shows a subagent panel row only (name/elapsed/tokens). Default
+  concurrent-subagent cap 20 — cards must stack legibly at that count.
+- **OpenCode (live OpenAPI capture + engine binary, 1.18.18; NEVER yet
+  exercised live — SA.0 owes the probe):** child sessions ride the SAME
+  global `/event` stream we already consume, tagged with their own
+  `sessionID`; our `isOurs` filter (`opencode.ts:170`, applied across
+  `opencode-events.ts`) drops them whole, per design comment and a pinned
+  test. Spawn = the `task` TOOL part on the parent + `session.created` with
+  `Session.parentID`; the JOIN key parent-task-part → child is
+  `state.metadata.sessionId` (lowercase-d casing, engine inconsistency; the
+  session event alone recovers the parent SESSION, not the Task row). The
+  `subtask` command path converges on the same task tool part — one lane
+  rule covers both. Child gets `todowrite` denied by default — no checklist
+  clobber hazard. **DEFECT FOUND: child-session `permission.asked` events
+  are dropped today — a subagent hitting a permission gate hangs, no UI, no
+  deny timer (`opencode.ts:544` timer only starts for accepted asks).**
+  Reply endpoint for the fix: `POST /permission/{requestID}/reply` (takes
+  only the request id — session-agnostic; our current per-session reply
+  endpoint is marked deprecated in the live spec). Also: child
+  `session.idle` must not end the parent's turn once the lane opens; spike
+  doc's "subtask/agent parts" subagent claim is incomplete — correct it.
+- **Local (registry.ts):** replay ring already double-capped (4000 msgs /
+  32 MB, oldest-first) — riding it is memory-safe; the per-subagent
+  narration cap therefore lives at the ADAPTER (also bounds relay bytes);
+  sizing precedent `TOOL_OUTPUT_CAP_BYTES` 64 KB. **The 33 ms delta
+  coalescer merges on `pending.type === msg.type` only (`registry.ts:589`)
+  — once deltas carry `parentId` the merge key MUST include it**, or parent
+  and child prose concatenate into one message.
+
+**Steps** *(each single-pass; implementation gated on Kyle's explicit
+signoff of the reported plan)*:
+
+- [x] **SA.0 — Live probes + record the truth.** — completed 2026-08-14,
+  both probes credential-free/zero-spend. **OpenCode** (real engine 1.18.18,
+  OC.5-style scripted provider, raw global-stream capture): parent `task`
+  tool part (`pending`) arrives ONE event before child `session.created`;
+  `running` metadata carries the join key
+  (`state.metadata.sessionId`/`parentSessionId`, lowercase d, + `model`;
+  `completed` adds `truncated`); the child `Session` itself carries `agent`,
+  a title from the description, and a ruleset showing `task` denied
+  (depth-1 default confirmed live). Child text/tool/step parts AND
+  token-grain `message.part.delta`s ride the global stream tagged with the
+  child id. Child `permission.asked` arrived (child `sessionID`,
+  `patterns`, `tool.callID`); **the deprecated per-session reply endpoint
+  accepted a reply addressed with the ROOT session id — 200, child
+  unblocked — so it does NOT validate ownership (1.18.18)**; SA.3 still
+  moves to `/permission/{requestID}/reply` (modern, session-agnostic).
+  Child `session.idle` fired BEFORE the parent task part completed and well
+  before parent idle — the parent-turn guard is real. Curated capture:
+  `server/testing/opencode-subagent-fixture.ts`. **Claude Code** (real
+  bundled CLI via SDK 0.3.201, scripted Anthropic endpoint via
+  `ANTHROPIC_BASE_URL`, STREAMING input mirroring the adapter):
+  (a) parent-tagged assistant messages arrive LIVE mid-child-run (child's
+  Bash tool_use yielded before the fake server even served the child's next
+  request), zero parent-tagged `stream_event`s — narration is message-grain,
+  confirmed empirically; (b) **a subagent's gated tool call DOES fire the
+  parent query's `canUseTool`** (proved with a parent-Bash control in the
+  same run) — the existing permission bar already covers subagent tools —
+  but the callback carries NO subagent identifier (extras =
+  suggestions/blockedPath/displayName only), so CC asks stay UNATTRIBUTED
+  on cards this phase, faithful to the terminal. Two design-relevant
+  extras: the spawn tool in 0.3.201 is named **`Agent`** (not `Task`) — the
+  card anchor must key on "the tool_use other messages reference as
+  `parentId`", name-agnostic; and bare `echo` never prompted (the CLI's own
+  safe-command auto-approval — faithful, not a bug). Spike doc's subagent
+  paragraph corrected. Probe scripts: session scratchpad `sa0/`
+  (`probe.mjs`, `cc-probe2.mjs`); recipes summarized above are sufficient
+  to re-derive them.
+- [x] **SA.1 — Mock scenario + summary cards (zero protocol change).** —
+  completed 2026-08-14. `playSubagent` is now a three-spawn parallel
+  fan-out (distinct paces; the second-spawned finishes first). Client:
+  `SubagentCard` in RenderZone (supersedes the T2.4 SubagentGroup) — any
+  tool_use other records reference as `parentId` becomes the card,
+  name-agnostic; calm summary = agent type + spawn description (verbatim,
+  never composed), state dot (pulse honors reduced-motion), tool count,
+  elapsed ticking ONLY while running (client-side stamp — honest under
+  replay, where a settled card shows no stale duration), current action =
+  newest unanswered child, result first-line once done; expandable to the
+  existing nested ToolCallList. Derivation is pure
+  (`web/src/subagent-card.ts`, 7 Tier-1 tests). Cards are fold
+  BOUNDARIES for the settled-activity compaction and their children are
+  invisible to it (omitted, not boundaries — parent-level runs don't
+  split on child traffic). Tier-2 itest updated to the fan-out contract
+  (children tag their own spawn; settle order ≠ spawn order). E2e (app):
+  three cards live at once, independent tick, out-of-order settle, expand/
+  collapse, axe-clean, phone-width stack with no side scroll. Tiers
+  810/152/57(app) green.
+- [x] **SA.2 — The narration lane (wire + Claude Code + expand).** —
+  completed 2026-08-14. Protocol: optional `parentId` on
+  `text_delta`/`thinking_delta`, documented opaque (grouped, never
+  parsed); checkpoint-store strict schemas widened to match (they would
+  have REJECTED the field — caught in-pass). Merge keys gained
+  `parentId` in BOTH coalescers (registry window + client delta-queue) so
+  parallel prose never concatenates across agents. Claude Code adapter:
+  parent-tagged complete-message text/thinking forward as message-grain
+  parented deltas through `SubagentProseBudget` (shared in
+  `adapters/types.ts` for SA.3; `SUBAGENT_TEXT_CAP_BYTES` 64 KB default,
+  one explicit elision marker, byte-safe slice, per-subagent ledger
+  cleared per turn); the F.1 buffered-text dedup rule untouched for the
+  parent; stale stream_event comment corrected. Client: `subtext`
+  entries route to their card BEFORE fold/close logic (child prose can't
+  fold parent thinking), extend-in-place per (parent|variant), closed by
+  that subagent's next tool row — the expansion (`SubagentActivity`)
+  interleaves calls + narration + dim italic reasoning in true stream
+  order, inert plain text (e2e asserts no markdown elements render);
+  Shell keeps subagent prose out of the turn-end announcement and the
+  activity label. Tests: adapter forwarding + wire order, budget
+  semantics (cap marker, per-agent ledgers, U+FFFD safety, reset),
+  registry + delta-queue no-cross-parent merges, e2e narration in the
+  expansion. Tiers 814/152/57(app) green.
+- [x] **SA.3 — The OpenCode mapping (neutrality proven).** — completed
+  2026-08-14. The mapper gained `laneOf`: "root" | spawn-part-id |
+  undefined (unroutable → skipped whole, the pre-lane behavior). Edges
+  from the root task part's `state.metadata` ({sessionId,
+  parentSessionId} — captured shape-wise, not by tool name, so the lane
+  stays name-agnostic) + child `session.created`, resolved transitively —
+  a configured nested grandchild lands on the nearest stream-visible
+  card (tested). Child text/reasoning → parented deltas through the
+  shared `SubagentProseBudget`; child tool parts → parented
+  `tool_use`/`tool_result` (roles tracked for child messages so the task
+  prompt's echo never replays as narration); a child's RENDER call gets
+  the honest tool record, never a painting (cards are calls + prose);
+  child step/status/idle/error never touch root turn state or the
+  activity line. **Defect fixed:** child `permission.asked` surfaces on
+  the shell bar with additive `parentId` on `permission_request`
+  (protocol + store schema + PermBar dim "subagent" chip + announcer
+  suffix), deny timer armed, replies via the modern session-agnostic
+  `POST /permission/{requestID}/reply` (the deprecated per-session
+  endpoint — which the SA.0 probe showed never validated ownership —
+  dropped everywhere). Tests: the SA.0 captured run replayed whole
+  through the shipped session (spawn anchor, parented calls/prose,
+  attributed ask, single turn_end), grandchild transitivity, no-painting
+  rule, unroutable fallback; Tier-4 live extends with a REAL engine
+  fan-out (attributed ask answered through the production bridge, child
+  bash + narration on the lane, parent reply top-level) — green.
+  Tiers 817/152/57(app)/1(live) green.
+- [x] **SA.4 — Docs + glossary.** — completed 2026-08-14. The glossary
+  already NAMED this surface — a *deck* is shell chrome and "card" is its
+  "(was)" column — so SA.4 opened with a vocabulary-compliance rename of
+  SA.1–SA.3's code: `SubagentCard`→`SubagentDeck`,
+  `subagent-card.ts`→`subagent-deck.ts`, CSS `.subagent-card*`→
+  `.subagent-deck*`, comments and e2e selectors converted; all tiers
+  re-verified green after. GLOSSARY gains a dedicated *subagent deck* row
+  (master + all 4 copies, diff-clean; relay/site/desktop copies committed
+  in their repos — docs-only, UNPUSHED, awaiting Kyle). README: the
+  Claude Code subagent-traffic paragraph rewritten to the SA truth
+  (message-grain prose, budget cap, the deck, name-agnostic anchor,
+  canUseTool coverage), `subtext` in the RenderZone entry list, mock
+  hook description updated. ADAPTERS.md: the capability-matrix subagent
+  row rewritten per adapter (incl. the recorded Codex F.5-deferred
+  posture) + a §3 "subagent lane" contract block for the next adapter
+  author (opaque handle, relationship anchor, budget, inert prose,
+  no-painting, ask attribution, depth-1 render rule).
+  Tiers 817/152/57(app) green.
+
+**Post-phase test-audit (2026-08-14, same day; scope: the phase's tests).**
+Ten pins mutation-verified (six fresh mutations — summary recency, budget
+marker, unparented forwarding, lane disable [tripped four tests at once],
+both coalescer merge keys — plus the four bughunt pre-fix proofs); no
+theater and no wrong-target tests found; the e2e label sampling and the
+store-durability poll reviewed as timing-robust. TWO gaps found and
+filled, each mutation-proven: the store's every-frame round-trip test
+predated the lane (a reverted schema widening would have silently stripped
+deck replays — parented text/thinking/ask frames added), and the Tier-2
+fan-out itest never asserted the narration lane over the REAL daemon
+broadcast (parented prose presence + spawn integrity + no cross-parent
+merge added; only e2e covered that path before). One gap named and
+deliberately not filled: the deck component's replayed→no-elapsed wiring
+is pinned at the pure-function level only — the component line is
+one-line wiring whose e2e cost outweighs it; noted here so it's a
+decision, not an oversight.
+
+**Post-phase security audit (2026-08-14, same day; scope: the SA delta +
+its trust boundaries).** ZERO exploitable findings. ONE hardening landed
+(flood-cap parity, pinned): the shared `SubagentProseBudget` had no cap on
+DISTINCT parent ids, so a hostile/looping engine fabricating unlimited
+`parent_tool_use_id` values could grow the ledger without bound within a
+turn — now capped (`MAX_SUBAGENTS_PER_TURN` 2000; past it a NEW subagent's
+prose drops silently, the same degradation as every other per-turn cap;
+OpenCode's parent ids were already bounded by the spawn-part cap, so this
+mainly guards the Claude lane). Verified-clean facts worth keeping: a
+Claude Code SUBAGENT cannot reach the render MCP tools — proved through
+the REAL adapter + shipped in-process MCP server against a scripted
+endpoint (the SDK withholds MCP tools from subagents: 31 child tools, no
+`mcp__mirafold*`), so the no-painting rule holds on BOTH engines (OpenCode
+by our lane code, Claude by the engine itself); subagent prose renders
+inert everywhere (no markdown, no HTML sinks); the deck and the permission
+chip are shell chrome with engine text confined to inert slots; the store's
+`idSchema` bounds a tampered checkpoint's `parentId` at 1 KB; the
+committed fixture carries no secret-shaped strings; alternating parent ids
+cannot defeat the coalescers into unbounded ring growth (count + byte caps
+hold); `laneOf` is cycle-safe (hop cap).
+
+**Post-phase bughunt round 2 (2026-08-14, same day).** Two more found +
+fixed, pins proven failing pre-fix: (1) `zone_reset` cleared every
+streaming ref EXCEPT the new subtext map — a same-page full-replay
+(reconnect) with an open subagent prose run swallowed the replayed
+narration into entry ids that no longer existed (deck came back
+empty-handed); pinned by a resilience e2e that kills+restarts the daemon
+inside the slow-subagent hook's window (new mock hook `delegate slowly`),
+with a store-durability poll so the 250ms checkpoint debounce can't race
+the kill. (2) Child tool traffic steered the ROOT activity line (both
+`tool_use` setting the label and `tool_result` clearing it), contradicting
+the SA.3 design statement the server side already honored — the label now
+ignores parented tool traffic in both directions; pinned by multi-sampled
+label assertions in the SA.1 e2e. Diagnosis bonus, recorded: interior
+frames reach the checkpoint store on a 250ms debounce, so a daemon killed
+inside it loses the un-flushed tail — pre-existing, honest (the turn
+replays as interrupted), not a defect.
+
+**Post-phase bughunt round 1 (2026-08-14, same day).** Two found + fixed with
+pinned regressions (each proven failing pre-fix): a REPLAYED running deck
+ticked a false elapsed (stamp = attach moment, not spawn — now shows no
+elapsed unless the record arrived live), and the OpenCode lane's
+session-edge maps cleared per turn, making a `background: true` child
+unroutable after its spawning turn — its permission ask dropped (the SA.0
+hang, resurrected in a narrower window); the edge maps are now
+session-lifetime (insert-time caps still bound growth). **One deferred,
+LATENT:** a background child streaming ONE text part ACROSS a turn
+boundary would re-emit that part's full text (the per-turn part tracker
+resets, so the next snapshot's suffix restarts at 0) — duplicated prose in
+its deck. Deferred because reachability is unconfirmed (requires the
+engine to spawn background children in stock config, itself unverified)
+AND a proper fix reopens the 2026-08-13 flood-cap design (the part
+trackers are per-turn precisely to stay bounded); revisit if background
+children are ever observed live.
+
+**Done when (phase).** Prompting the mock or a real engine into a parallel
+fan-out yields live per-subagent cards — calm summary, expandable to full
+narration — on desktop and phone, replayed faithfully to a late-attaching
+viewport within caps; Claude Code and OpenCode both map the lane; an
+OpenCode subagent's permission ask no longer hangs; nothing anywhere spawns
+or directs a subagent from Mirafold's side; all tiers green.
+
+
+### Phase RC — why + RC.1–RC.4 bodies + done-when
+
+## Phase RC — Remote CREATE of OpenCode sessions (opened + ✅ COMPLETE 2026-08-13; Kyle-directed)
+
+**Why.** OC.4c's fail-closed design verifies an OpenCode session's credential
+kind at its first turn: until the engine classifies the pinned provider, the
+registry entry is `kindPending` and the relay gate refuses every remote
+action. Consequence (recorded in POST-RELEASE.md 2026-08-13, promoted here
+the same day at Kyle's direction): a remote viewport can ATTACH to an
+OpenCode session only after a first local turn — it can never CREATE one.
+Supporting remote creation means classifying BEFORE admitting the creator:
+spawn the engine, read the provider catalog, judge the pin, and only then
+attach the remote viewport. The gate itself does not change; only WHEN the
+truth arrives does.
+
+- [x] **RC.1 — the adapter seam.** — completed 2026-08-13. `AgentSession` gains optional
+  `verifyBackendKind?(): Promise<void>`: resolve once the truthful kind has
+  been published via `onBackendKind`, reject with the honest reason when it
+  cannot be (no binary, no pin, provider not connected, policy refusal).
+  OpenCode implements it as `ensureStarted()` — the full lazy-start path
+  (engine + policy + engine session), whose failure already resets the outer
+  latch so a later local prompt retries. No other adapter implements it:
+  their hello-time kind is already truthful.
+- [x] **RC.2 — the create path awaits truth.** — completed 2026-08-13
+  (`attachOrReapClassified`; timeout env `VERIFY_KIND_TIMEOUT_MS`, 30s
+  default). In `connection.ts`, a REMOTE
+  create (and the attach-path fallback create) of an entry that is
+  `kindPending` with a `verifyBackendKind` seam awaits classification —
+  bounded (30s) — BEFORE `attachTo` judges the relay gate. Local creates are
+  untouched: still synchronous, still lazy. On success the existing gate
+  judges the now-truthful kind (an ineligible provider still refuses with
+  the existing honest copy). On failure/timeout: the error goes to the
+  viewport and the minted session is REAPED (`registry.end`) — the
+  no-viewport leak rule from the 2026-07-29 bughunt applies unchanged. The
+  async detour catches its own errors (index.ts has no try/catch around
+  `handleMessage`).
+- [x] **RC.3 — the races.** — completed 2026-08-13 (d landed as a comment
+  correction only: the user-facing copy was already honest for the attach
+  path, and remote creates no longer surface it). (a) Viewport disconnects mid-classify → on
+  settle, a closed connection with a viewport-less entry reaps it. (b) A
+  second create/attach on the same connection while one classification is in
+  flight → refused honestly ("still verifying the previous create"); one
+  pending create per connection. (c) Entry torn down mid-classify → the
+  settle path checks `entries.get(id) === entry` before acting, like every
+  onBackendKind consumer. (d) `relayGateRefusal`'s `kindPending` copy stays
+  honest for BOTH paths now that remote creates verify inline: the
+  "run its first turn from its own machine" sentence describes only the
+  attach-to-existing case.
+- [x] **RC.4 — tests** — completed 2026-08-13: 7 connection-grain tests in
+  `server/sessions/remote-create.test.ts` (own process so the verify
+  timeout pins via env before module load; a registry session-factory test
+  seam injects the fake classifying session) + 2 adapter-grain in
+  `opencode.test.ts` (`verifyBackendKind` resolves after publish / rejects
+  honestly and stays retryable). Tiers 803/152/97 green. Original scope
+  (Tier 2 grain, `makeTransport` seam; no real engine):
+  Remote create allowed (kind publishes api-key → viewport attaches); remote
+  create policy-refused (subscription pin → refusal + entry reaped, no
+  MAX_SESSIONS leak); classify failure (engine start throws → honest error +
+  reap); timeout (kind never publishes → bounded refusal + reap); disconnect
+  mid-classify (no leak); local create unaffected (no await, still lazy).
+  The existing remote-attach regressions stay green.
+
+**Done when.** A relay viewport can create a fresh OpenCode session pinned to
+an allowed provider and drive it immediately; a subscription/Zen pin is
+refused at create with the honest reason and leaks nothing; all tiers green.
+
+
+### Gemini sunset — superseded product call + deprecation-surface body
+
+## Gemini sunset (opened + ✅ COMPLETE 2026-08-13; Kyle-directed)
+
+**Correction 2026-08-14.** This decision was reversed after the pre-release
+review checked Google's exact announcement. Google ended Gemini CLI requests
+for free/AI Pro/AI Ultra individual accounts, while explicitly retaining
+API-key and enterprise access and continued maintenance of the Apache-2.0 CLI.
+Mirafold's API-key adapter therefore remains supported. Phase RF removes every
+deprecation surface and the future-removal item. This archived section remains
+only as the labeled record of the mistaken 2026-08-13 decision.
+
+**Superseded product call.** The 2026-08-13 market check was read as a full
+upstream retirement and Kyle consequently chose a gentle sunset: nothing was
+removed or hidden because the API-key path still functioned, but the adapter
+was marked deprecated and future removal was parked behind evidence rather
+than a calendar. That reading and decision no longer govern the product.
+
+- [x] **Deprecation surface** — completed 2026-08-13: additive
+  `AgentInfo.deprecated` (daemon-composed reason; the picker renders it as
+  a suffix on the existing status line — no new element, the squeeze
+  ramp's height budget holds), connect-hint copy updated with the dated
+  retirement, a once-per-session dated notice in the Gemini adapter
+  (Mirafold-composed, lands before the first turn completes), the
+  provider-policy row annotated (policy itself unchanged), and a
+  POST-RELEASE removal entry with an evidence gate. Tier-1 tests pinned the
+  notice and hello suffix. All of these surfaces were reversed by Phase RF.
+
+
+### Phase OC — OC.0–OC.5 full bodies
+
+## Phase OC — OpenCode adapter (opened 2026-08-13; Kyle-directed)
+
+**Product call.** Kyle, from a 2026-08-13 market check: OpenCode (~195k
+GitHub stars) is now the dominant open-source terminal agent — the largest
+user population Mirafold doesn't cover — and becomes the fourth adapter.
+(The same check was initially misread as a full Gemini CLI retirement; the
+resulting adapter-sunset decision was reversed on 2026-08-14 after Google's
+retained API-key/enterprise support and repository maintenance were verified.) The feasibility
+spike is **`server/adapters/opencode.spike.md`** (verdict GREEN): the
+event→`WireMsg` table, the `OPENCODE_CONFIG_CONTENT` MCP-injection path,
+the permission reply round-trip, and the provider-keyed credential-policy
+design all live there — the steps below execute that doc, and its two live
+gates come first.
+
+- [x] **Step OC.0 — Live gates + shape capture** — completed 2026-08-13,
+  same day, $0 and credential-free: scratchpad-local `opencode-ai@1.18.18`
+  with HOME jailed; Gate 1 PASSED (`OPENCODE_CONFIG_CONTENT` alone
+  connected the render MCP; tools advertise as `mirafold_render_*`), Gate 2
+  PASSED via a fake OpenAI-compatible provider (ask event is
+  **`permission.asked`** — published SDK types drift — reply `once` ran the
+  tool through to `session.idle`). Streaming is a true delta channel
+  (`message.part.delta`), usage + `modelID` ride each assistant message.
+  Bonuses: 1.18.18 offers no Anthropic/Google OAuth at all, and a fresh
+  install ships the free "OpenCode Zen" provider (needs its own OC.3
+  policy row). One residual folded into OC.3: confirm a stored
+  credential's oauth-vs-api kind is server-readable (needs a real
+  connected credential). Full appendix in the spike doc. — **Goal:** de-risk the
+  two spike gates and lock real shapes before adapter code exists.
+  **Build:** run `opencode serve` (scratchpad-local install is fine; no
+  global mutation) and confirm: (1) `OPENCODE_CONFIG_CONTENT` loads the
+  mirafold render MCP and its tools appear (exact tool-name prefix
+  captured); (2) a permission ask surfaces as `permission.updated` headless
+  and the reply endpoint resolves it; plus capture the provider catalog's
+  auth exposure (oauth-vs-api visible without reading `auth.json`?), the
+  streaming part-update granularity, and usage field names. A $0 provider
+  (Ollama or an existing API key) is needed for gate 2 only. **Done when:**
+  the spike doc's "confirm live" flags are each resolved GREEN/RED with
+  captured payloads appended to the doc.
+- [x] **Step OC.1 — Core adapter + Tier-1** — completed 2026-08-13:
+  `opencode.ts` (session: lazy spawn-with-retry latch, serial queue,
+  first-turn guidance flipped only after prompt acceptance, permission
+  bridge with deny-by-default timeout + external-reply handling +
+  interrupt grace fallback) + `opencode-events.ts` (mapper: delta/snapshot
+  text accrual, tool lifecycle, mirafold `render_*` recognition with
+  honest fallback, todo checklist, per-turn usage summing) +
+  `opencode-client.ts` (raw HTTP+SSE transport — the spike's SDK
+  recommendation REVERSED with the reason recorded there: live shapes
+  beat drifting generated types). 22 Tier-1 tests on captured shapes;
+  full Tier-1 suite 746/746; typecheck green. `AgentName` grew additively
+  (policy row fails closed, agent not in ADAPTER_AGENTS, so nothing is
+  offered before OC.3/OC.4). — **Goal:** an OpenCode session
+  behind the `AgentSession` seam, mock-verified. **Build:**
+  `server/adapters/opencode.ts` — spawn `opencode serve` on a free port
+  with a per-session `OPENCODE_SERVER_PASSWORD`, create the session, prompt
+  via `prompt_async` with the pinned `model`, normalize the SSE stream per
+  the spike table (text/reasoning accrual → deltas, tool parts →
+  `tool_use`/`tool_result` with `capOutput`, `todo.updated` → checklist,
+  `session.idle` → `turn_end`, `session.error` → sourced notice),
+  `interrupt()` → abort, `resumeId` = session id. SDK-vs-raw call finalized
+  at install per the spike. **Files:** `server/adapters/opencode.ts`
+  (+ `.test.ts` with a fake SSE feed), `server/protocol.ts` (`AgentName` +
+  fixtures — additive only). **Done when:** Tier-1 drives the full table
+  through a fake event feed; `yarn typecheck` green.
+- [x] **Step OC.2 — Render MCP + permission bridge** — completed
+  2026-08-13. The Tier-1 half had landed inside OC.1; this step ran the
+  live leg, $0 and credential-free (real `OpenCodeSession` → real spawned
+  engine → fake provider): **a card painted end-to-end** through the real
+  render-mcp stub, and **a permission ask round-tripped live** (ask → bar
+  shape → `once` → bash ran). It caught and fixed two adapter bugs
+  (health-poll wedge on pre-ready connections — per-attempt abort is
+  load-bearing; user-message parts echoing as text_delta — roles now
+  tracked, +1 test) and characterized one upstream engine behavior,
+  documented not gated: a cold server's first model call carries zero
+  tools; the engine self-recovers same-turn (spike appendix has the full
+  probe evidence). Suite 747/747, typecheck green. — **Goal:** generative
+  UI and the permission bar, faithfully. **Build:** inject
+  `renderMcpCommand()` under `MIRAFOLD_MCP` via `OPENCODE_CONFIG_CONTENT`
+  (additive merge; user config untouched); recognize mirafold tool parts by
+  the OC.0-confirmed prefix → `generativeUIMsg` (skip the raw tool block);
+  `permission.updated` → `permission_request`, `resolvePermission` → reply
+  `once`/`reject` (**never `always`** — that writes the user's own approval
+  state), `PERMISSION_TIMEOUT_MS` deny-by-default. **Done when:** Tier-1
+  proves render-call recognition + both permission outcomes + timeout; a
+  live render paints end-to-end.
+- [x] **Step OC.3 — Credential policy + registry wiring** — completed
+  2026-08-13, including the "needs a real credential" residual — resolved
+  with auth.json FIXTURES in the jailed probe home (no real credential
+  needed): the engine's own catalog distinguishes every kind (`source`
+  api/env/config/custom + the `opencode-oauth-dummy-key` OAuth marker), it
+  leaks raw stored secrets (stripped at the transport seam, never past
+  it), and 1.18.18 ignores a stored anthropic OAuth wholesale. Landed:
+  `classifyOpenCodeProvider` matrix in provider-policy.ts (fail-closed:
+  unknown OAuth, Zen-pending-terms, unrecognized shapes all refuse with
+  human copy), session-start enforcement in opencode.ts (pin resolved
+  from OPENCODE_MODEL or the user's config `model`; refusals precede any
+  engine session), shallow hello detection in index.ts (binary +
+  auth.json existence — contents unread), `Backend.provider` from the
+  pin. ChatGPT gray: policy-allowed, session-refused until OC.4 flows
+  classified kind into Backend (relay-gate truth). 8 policy tests + 3
+  session tests; suite 752/752; typecheck green. — **Goal:** the
+  policy matrix applied provider-aware, fail-closed. **Build:**
+  `provider-policy.ts` gains the OpenCode provider classification
+  (anthropic/google oauth → blocked; openai oauth → disclosed gray area;
+  api-key/env → `api-key`; local → `local`; **unclassified oauth →
+  blocked**), detection per the OC.0-confirmed path (server catalog
+  preferred; `auth.json` only with explicit consent); model pinned
+  per-prompt so the session provider is the one Mirafold set; registry:
+  `createSession` case, `agentHasCredentials("opencode")`, `Backend.provider`
+  carries the pick. Relay gate unchanged (already refuses `subscription`).
+  **Done when:** Tier-1 covers every matrix row incl. the fail-closed
+  default; blocked/gray states render their correct copy.
+- [x] **Step OC.4 — In-session fidelity surface** — completed 2026-08-13
+  (the original OC.4 split in two; the onboarding half is OC.4b below):
+  `opencode-commands.ts` on the codex picker pattern — `/model` paints the
+  cross-provider catalog (policy-filtered: only providers a pick can
+  actually run; a typed blocked pick refuses with its reason and keeps the
+  pin), `/agent` paints user-facing primaries only (`hidden` internals and
+  subagents excluded; pick rides every subsequent prompt), the engine's
+  own command catalog routes `/name` inputs to `POST /session/:id/command`
+  (the engine's real dispatcher, with pin + agent) and feeds
+  `emitPromptOptions` behind our two re-skins (engine rows badged
+  `source: "opencode"`). 6 new Tier-1 tests; suite 757/757; typecheck
+  green. — **Goal:** what an OpenCode user expects in-session.
+- [x] **Step OC.4b — Offerable + Zen terms citation** — completed
+  2026-08-13 (the kind-into-Backend half split to OC.4c; live onboarding
+  proof folds into OC.5): `opencode` joined ADAPTER_AGENTS +
+  `defaultAgent`; one shallow `backendOptions` api-key row (existence
+  probe; the provider-resolved truth stays enforced at session start);
+  real agents-meta copy (connect hint names install + `opencode auth
+  login` + OPENCODE_MODEL and says plainly that subscriptions and Zen
+  aren't usable yet), `backendLabel` "API key (via opencode)", PromptBox
+  source badge. **Zen terms read and cited** in provider-policy.ts
+  (2026-08-13: no third-party-harness prohibition — the server API is
+  opencode's own documented programmatic surface; "own internal use"
+  clause; free-period training-data caveat): the disclosed-uncertainty
+  rule's exact shape, but opening a NEW provider under it is Kyle's call
+  (codex precedent), so the row stays CLOSED pending his decision — if
+  opened, local-only + caveat shown. Also fixed en route: the fourth
+  agent row overflowed the onboarding squeeze ramp by 14px — the
+  squeeze intercept moved 66→70 and the per-row floor metrics shaved
+  (full-chrome values untouched); the squeeze e2e passes with four READY
+  rows. Verification status, honestly: Tier-1 757/757 + Tier-2 152/152
+  green; e2e ran 96/97 before the CSS fix (the squeeze test its only
+  failure, after the hint-count assertion gained the fourth card) and
+  the fixed squeeze test passes in isolation — but two attempts at the
+  full post-fix e2e run were stopped externally mid-run (6/6 ok at each
+  stop), so ONE clean full-suite pass is still owed; folded into OC.5's
+  tier sweep.
+- [x] **Step OC.4c — Classified kind into Backend + ZEN OPENED** —
+  completed 2026-08-13, same day Kyle said "open Zen" (the decision the
+  OC.4b citation was waiting on). Built exactly per the design below:
+  `onBackendKind` seam + registry adoption at `activate()` (truthful kind
+  checkpointed), `kindPending` refusing remote actions pre-verification,
+  and the three relay-gate sites (attach, cockpit acts, uploads) unified
+  on one `relayGateRefusal` verdict in provider-policy.ts. The ChatGPT
+  gray now RUNS locally with its uncertainty disclosure (once per
+  provider, Mirafold-composed, no badge). **Zen**: new `gateway`
+  CredentialKind (additive on every wire union) — allowed locally for
+  opencode with the uncertainty + training-data disclosure, NEVER
+  relay-eligible (the allow-list refuses it by design); fresh
+  binary-only installs now detect live out of the box, and the /model
+  picker offers Zen rows. 761/761 + 152/152 green; the full-e2e sweep
+  remains owed to OC.5 (two prior runs externally stopped). — original
+  goal + design: **Goal:** the gray path runs under its TRUE kind. **Build:**
+  an optional `AgentSession.onBackendKind` seam (like `onResumeId`): the
+  OpenCode session publishes the OC.3-classified kind + provider at start;
+  the registry updates its `Backend` so the relay gate judges truth.
+  **The race that shapes the design:** hello-kind is optimistic
+  ("api-key"), so a relay viewport's FIRST prompt could slip the gate
+  before classification lands — closed by a `kindVerified` flag on
+  opencode Backends (server-side only): relay prompts refuse with an
+  honest "still verifying" message until the session publishes, local
+  viewports unaffected. Then the OC.3 session-level gray refusal lifts,
+  replaced by a Mirafold-composed disclosure notice at session start
+  (uncertainty stated, never permission — the codex CONNECT_HINT contract,
+  session-time edition). **Done when:** Tier-1 covers publish→registry
+  update, the pre-verification relay refusal, and the gray disclosure;
+  the relay itest proves a subscription-classified session never runs a
+  turn from a relay viewport.
+- [x] **Step OC.5 — Tier sweep + live end-to-end** — completed 2026-08-13
+  (one residual below): **`opencode-live.ltest.ts`** joins Tier 4 on the
+  codex pattern (real binary, never a hosted model; the scripted
+  OpenAI-compatible provider from the OC.2 probe; HOME/XDG jailed via a
+  new transport `env` seam so a real engine run never touches the
+  developer's own opencode state; skips cleanly when opencode isn't
+  installed). One 17s test drives the WHOLE loop through shipped code:
+  render through the real MCP stub, headless permission ask answered via
+  the bridge, usage, kind publish (config→local), and **resume across a
+  full engine restart**. All tiers green same-sitting: Tier-1 761/761,
+  Tier-2 152/152, Tier-3 97/97 (the sweep owed since OC.4b — paid),
+  Tier-4 1/1 live + verified clean skip. **Residual CONFIRMED by Kyle
+  2026-08-13**: real global install (`npm i -g opencode-ai` — his npm's
+  install-scripts blocking required the manual postinstall, the exact
+  failure the transport's stderr surfacing named; the session's
+  start-latch retry then worked as designed, no restarts) and a live
+  browser session on Zen: "heyyyy it works". Phase OC complete.
+  README/ADAPTERS.md refresh rides the wrapup.
+
+
+### Paintings polish — origin + fix-batch + instrumentation bodies
+
+## Paintings polish batch (opened + ✅ COMPLETE 2026-08-13; Kyle-directed)
+
+**Origin.** A paintings audit (this session) asked three questions: are the
+existing paintings at the delightful bar, does the agent actually reach for
+them, and are there coverage gaps. Verdict: the registry is strong (fallback
+architecture, CVD-safe charts, never-color-alone) with a short list of
+concrete defects; adoption is UNMEASURABLE (no instrumentation anywhere);
+coverage needs nothing new now (the 2026-07-10 survey already filled the real
+gaps, POST-RELEASE.md's 2026-08-02 growth analysis still governs). So: polish
+first, measurement second, new paintings demand-gated.
+
+- [x] **Fix batch** — completed 2026-08-13, all three tiers green
+  (724/152/97):
+  - `.rc` gains `overflow-wrap: anywhere` — an unbroken token (URL, SHA,
+    long path) in any painting's prose no longer pushes the transcript
+    sideways; inert on the monospace bodies (`white-space: pre` has no wrap
+    points), so code/console/diff keep their horizontal scroll.
+  - Chart: line charts fit the y domain to the DATA (`chartDomain`) — a
+    200–210 ms latency trend is no longer a flat stripe under a forced zero
+    baseline (bars still anchor to zero: a bar's length IS its value);
+    ≤2-point line charts draw always-on dots (a 1-point polyline painted
+    nothing); the forced last x label suppresses a stride label it would
+    collide with (`showXLabel`); grouped bars can no longer bleed past
+    their band at high category×series counts (`groupedBarLayout`). All
+    four pure + Tier-1-pinned.
+  - Table: every row renders exactly `columns.length` cells (surplus
+    truncated, missing padded — misaligned rows used to escape the header
+    silently); number cells right-align with `tabular-nums`
+    (`.rc-table-num`); empty `rows` shows a muted "no rows" instead of a
+    bare header. Tier-1-pinned (`Table.test.ts`, new).
+  - Code + Console bodies: vertical clamp (`max-height: 360px`, scroll) —
+    the diff body's existing treatment; a dumped whole file / 200k-char log
+    scrolls in its panel instead of consuming the transcript.
+  - **Diagram follows the app theme now (decision).** Pinned-dark is the
+    CODE-surface convention (`--code-bg` + ANSI/hljs palettes, manifest
+    PINNED_TOKENS); a diagram is a picture, not a code surface, and on the
+    light themes it rendered as a jarring dark slab. The frame body is
+    transparent (the panel surface is the canvas), mermaid re-initializes
+    per message with the shell-computed dark flag + `--surface` color, and
+    a `data-theme` MutationObserver re-posts on theme switch so baked-in
+    SVG colors follow. Sandbox posture unchanged (strict, no-network CSP,
+    postMessage-only source) — Tier-1 pins the transparent body +
+    per-message init.
+- [x] **Paintings-adoption instrumentation** — completed 2026-08-13: one
+  LOCAL log line per paint (`paint <component> agent=<agent>`) at
+  `registry.deliver()`, the choke point every adapter's stream crosses.
+  Local daemon log only, nothing leaves the machine; cheap enough to keep,
+  one `if` to delete if treated as temporary. Purpose: make "does this
+  engine actually reach for the render tools" answerable from logs — the
+  audit found the Codex/Gemini guidance asymmetry (one-shot first-turn
+  prepend vs. Claude's every-request system-prompt append) impossible to
+  evaluate without it.
+- Audit findings deliberately NOT fixed here (recorded, not lost): the two
+  hand-kept `TOOL_DESCRIPTIONS` maps (render-tools.ts / render-mcp.ts) have
+  drifted in wording with no guard test; no test pins Claude's
+  `mcpServers`/`systemPrompt.append` registration; the stdio
+  `emit_artifact` description omits the `mirafold.prompt/tool` sandbox API
+  that the in-process description documents (Codex/Gemini can't author
+  interactive artifacts); registry CSS half-lives in `08-picker.css`
+  (housekeeping); HBar tooltip parks at `left: 40%`. Each is a candidate
+  for a follow-up surfacing-parity step.
+
+
+### FD.1 + FD.2 step bodies
+
+### Phase FD.1 — Wire + daemon staging
+
+- [x] **Step FD.1 — Chunked upload messages + the staging writer** —
+  completed 2026-08-12: five additive message types + Q.2 fixtures,
+  `upload-handlers.ts` with 12 Tier-1 tests covering the full refusal
+  matrix, and 2 Tier-2 itests proving byte-exact staging + typed refusals
+  over a real socket. — **Goal:** a client can stream a bounded file to the daemon and get back
+  a staged absolute path, with every abuse path refused loudly. **Build:**
+  additive protocol types (`file_upload_begin {id,name,size}` /
+  `file_upload_chunk {id,data}` / `file_upload_abort {id}` client-side;
+  `file_upload_done {id,path,name}` / `file_upload_error {id,message}`
+  replies) + Q.2 fixtures; `server/sessions/upload-handlers.ts` on the
+  fs-handlers template (per-connection state, never throws, every
+  well-formed request gets exactly one reply); connection.ts delegation +
+  dispose on close. **Files:** `server/protocol.ts`,
+  `server/protocol.test.ts`, `server/sessions/upload-handlers.ts` (+
+  `.test.ts`), `server/sessions/connection.ts`,
+  `server/sessions/file-upload.itest.ts`. **Done when:** Tier-1 covers
+  sanitization (path-stripped names, control chars, dot-names, length
+  cap, collision suffixing), size/concurrency/stall caps, chunk-overflow
+  and chunk-before-begin refusals, and the remote relay gate; a Tier-2
+  itest streams real bytes over a real socket and reads back the exact
+  file from staging; `yarn typecheck` green.
+
+### Phase FD.2 — The drop experience in the shell
+
+- [x] **Step FD.2 — Dropzone, progress, path insertion, e2e, docs** —
+  completed 2026-08-12: window-level drop targets + overlay + upload strip
+  shipped, staged paths quoted into the prompt via the draft merge with a
+  polite announcement, 10 Tier-1 tests on the client core, and the e2e
+  proves the whole loop (synthesized `DataTransfer` drop → overlay →
+  staged-path in textarea → byte-exact file on disk → announcement). One
+  diagnosed trap recorded: the drag listeners attach only after the
+  session attaches, so a dispatch racing the mount fires into the void —
+  the e2e waits for the session UI first. — **Goal:** dragging files onto a session viewport uploads them and puts
+  their staged paths in the prompt, visibly and accessibly. **Build:**
+  `web/src/file-drop.ts` — pure chunking/state core + a
+  folder-picker-style reply router, Tier-1-tested; session-bus gains the
+  three send methods; Shell wires window-level drag listeners (gated off
+  onboarding), a shell-owned drop overlay + a compact upload strip above
+  the prompt (name + progress + dismissible error), quoted-path insertion
+  through the PromptDraft merge, and a polite announcement per attached
+  file; CSS in the prompt-area stylesheet. **Files:**
+  `web/src/file-drop.ts` (+ `.test.ts`), `web/src/session-bus.ts`,
+  `web/src/components/Shell.tsx`, styles, `server/testing/app.e2e.ts`,
+  README, POST-RELEASE.md (annotate the Input augment entry). **Done
+  when:** the e2e drops a real `File` via `DataTransfer` on the live page,
+  watches the strip, reads the staged path out of the textarea, verifies
+  the staged file's exact bytes on disk, and axe stays clean; all three
+  tiers green.
+
+
+### NF.1 + NF.2 step bodies
+
+### Phase NF.1 — The notify engine + both surfaces wired
+
+- [x] **Step NF.1 — Pure decision core, DOM binder, Shell + fleet wiring** —
+  completed 2026-08-12: `web/src/notify.ts` (reducer + binder + DOM wiring)
+  landed with 23 Tier-1 tests covering the full matrix below; both routes
+  wired exactly as specified, `yarn test` 695 green, typecheck clean. —
+  **Goal:** notifications actually fire from both routes, correctly
+  suppressed, coalesced, and self-closing, behind a preference that defaults
+  off. **Build:** `web/src/notify.ts`: (a) a pure transition reducer — given
+  the previous per-session state map, fresh session snapshots
+  (`{id, state: idle|busy|permission, title, agent?, detail?}`), and flags
+  `{enabled, granted, visible}`, return show/close actions plus the next map —
+  every rule above lives here; (b) `createNotifier(deps)` binding the reducer
+  to injected `{isVisible, permission, spawn, onVisibilityChange}` with a
+  `reset()` that reseeds state without emitting (used across socket
+  drop/reconnect so a forced `busy→idle` never fakes a turn-end). Wire Shell
+  (its `asks`/`busy` tri-state, title from the cwd basename, detail from
+  `asks[0]`) and FleetView (per-session from the `sessions` snapshot,
+  `wantsAnswer` for the permission side, close toasts for sessions that leave
+  the list). Clicking focuses the firing tab. **Files:** `web/src/notify.ts`,
+  `web/src/notify.test.ts`, `web/src/components/Shell.tsx`,
+  `web/src/components/FleetView.tsx`. **Done when:** Tier-1 tests prove the
+  reducer's full matrix (permission shown once; answered-elsewhere closes;
+  turn-end shown on `busy→idle` and `permission→idle`; visible suppresses
+  shows but still advances state; disabled/ungranted emit nothing; per-session
+  independence; vanished session closes; reset never emits) and the binder's
+  lifecycle against fakes; `yarn typecheck` passes.
+
+### Phase NF.2 — The settings affordance + end-to-end proof
+
+- [x] **Step NF.2 — Toggle in the settings card, e2e, docs** — completed
+  2026-08-12: Notifications section shipped in the settings card (switch row
+  + blocked hint), Shell owns preference/permission logic, e2e proves the
+  full hidden-tab loop (toggle → permission toast → answered → turn-end
+  toast → visibility closes all). One diagnosed trap recorded for future e2e
+  work: tsx's esbuild keepNames injects a module-scope `__name` helper into
+  compiled classes/accessor properties, which Playwright then serializes
+  WITHOUT the helper — init scripts and evaluates containing them die on a
+  ReferenceError, so the Notification stub and the visibility override are
+  plain-JS strings. — **Goal:** a
+  user can find and flip the feature, and headless Chrome proves the visible
+  behavior. **Build:** a Notifications section in the settings card
+  (`ThemePicker.tsx`, prop-driven — the card stays Vite-only and dumb): one
+  toggle row ("Notify me when a session needs me"), `aria-pressed`, a plain
+  hint line when the browser has the permission hard-denied ("blocked in
+  browser settings") or the API is absent. Shell owns the logic: preference in
+  `localStorage["mirafold-notify"]`, enabling requests browser permission when
+  still undecided. Fleet honors the same stored preference with no UI of its
+  own. Settings-card CSS additions in `web/src/styles/12-dialogs.css`.
+  **Files:** `web/src/components/ThemePicker.tsx`,
+  `web/src/components/Shell.tsx`, `web/src/notify.ts` (preference helpers),
+  `web/src/styles/12-dialogs.css`, `server/testing/app.e2e.ts`, README.
+  **Done when:** the e2e opens settings, sees the section, flips the toggle
+  (Notification API stubbed via init script), asserts the stored preference
+  and `aria-pressed`, and a stubbed-notification assertion proves a hidden-tab
+  permission event spawns exactly one tagged toast; axe stays clean;
+  `yarn test` + `yarn test:e2e` + `yarn typecheck` pass; README's shell-UI
+  section gains the tab-status-adjacent paragraph.
+
+
+## Moved 2026-08-14 (Phase RF — completed body)
+
+Full Phase RF body completed and compressed in PLAN.md on 2026-08-14.
+
+## Phase RF — Pre-release findings closure (opened + ✅ COMPLETE 2026-08-14; Kyle-directed)
+
+**Verified starting state.** The `next` → `main` release review found that
+Gemini CLI still has a working Mirafold adapter and API-key path; only a new
+deprecation layer claimed it was retired upstream. The same review reproduced
+two OpenCode interrupt wedges: the grace timer starts only after the abort
+request settles, and a grace-ended turn whose engine idle never arrives leaves
+debt that prevents the next turn from ending. Versioning and the packaged pass
+remain later release-sequence gates, not defects at this checkpoint.
+
+- [x] **Step RF.1 — Restore Gemini CLI as a supported adapter.** Remove the
+  `AgentInfo.deprecated` wire field and its only producer/consumer, the dated
+  per-session sunset notice, the future-removal entry, and every current-facing
+  retirement claim. Preserve the adapter, API-key detection, provider-policy
+  restriction on individual-account authentication, trust gate, MCP injection,
+  model selection, and resume behavior. Correct the archived decision record
+  rather than erasing it. Done when Gemini is presented as supported everywhere
+  and focused tests prove no sunset notice or picker suffix remains.
+- [x] **Step RF.2 — Make OpenCode interruption bounded and turn-safe.** Arm the
+  grace timer independently of the abort HTTP response. If the engine's idle
+  arrives in time, retain the same OpenCode session and context. If it does not,
+  retire that ambiguous session identity and fork it through OpenCode's official
+  `POST /session/:id/fork` endpoint before the queued next prompt; old-session
+  events must then be ignored and idle debt reset. Bound the fork request and
+  fall back honestly to a fresh session only if context-preserving recovery
+  fails. Pin both reproduced wedge paths with Tier-1 tests.
+- [x] **Step RF.3 — Verify the corrective boundary.** Focused Gemini tests were
+  green; the focused OpenCode suite was **56/56** after correcting its fake's
+  session-id seam. Tier 1 was **840/840**, Tier 2 **152/152**, typecheck green,
+  and Tier 3 **100/100** from a fresh production build. The final diff stayed
+  within RF.1/RF.2. The working tree is ready for the existing **CS.4**
+  real-subscription cancel → Paddle scheduled state → undo walkthrough,
+  performed with Kyle one action at a time.
+
+
+## Moved 2026-08-16 (Phase UI — core browser contracts)
+
+Full Phase UI body completed and compressed in PLAN.md on 2026-08-16.
+
+## Phase UI — Core browser UI contracts (opened + ✅ COMPLETE 2026-08-16)
+
+Goal: add a small, high-signal browser suite for shell-owned interactions
+whose behavior is load-bearing but not directly asserted by the current test
+suite. This phase was test-only and did not change production UI behavior.
+
+Verified starting state (2026-08-16):
+
+- `package.json` already carried `playwright-core` and the Tier-3 command
+  already ran every `server/**/*.e2e.ts` file through `node:test` after a
+  fresh build. `server/testing/e2e-harness.ts` launched the system Chrome;
+  `server/testing/itest-harness.ts` forced provider credentials empty and
+  routed browser tests through `MockSession`. The dependency call was
+  therefore to reuse the existing stack: zero added packages, zero added
+  transitive dependencies, zero lockfile growth, and no new alerts surface.
+- The existing Tier-3 suite was broad: it already covered onboarding, real
+  DOM rendering, responsive phone behavior, themes, settings actions,
+  artifacts, accessibility scans, Explorer, Changes, fleet, relay, and
+  resilience. Recursive searches across the current `*.e2e.ts` and web
+  `*.test.ts` files found no direct assertions for the desktop
+  `Shift+Enter`/`Enter` composer contract, `ModalCard`'s Tab loop plus
+  opener-focus restoration, or the status bar's two-click end-session guard
+  through its browser redirect.
+- The exact existing implementations placed under test were `PromptBox` in
+  `web/src/components/PromptBox.tsx`, `ModalCard` + `useFocusTrap` in
+  `web/src/components/ModalCard.tsx` and `web/src/use-focus-trap.ts`, and
+  `StatusBar`/`session-bus` in `web/src/components/StatusBar.tsx` and
+  `web/src/session-bus.ts`. Their executable behavior stayed unchanged.
+
+Change boundary:
+
+- **Created new:** `server/testing/ui-contracts.e2e.ts`, an isolated
+  real-Chrome suite with one fresh credential-scrubbed mock daemon per test.
+- **Modified existing documentation:** `PLAN.md` and `PLAN-ARCHIVE.md`.
+- **Left behaviorally unchanged:** every production server and web module,
+  the wire protocol, package scripts, dependencies, and lockfile.
+
+- [x] **Step UI.1 — Map the existing browser suite and select only genuine
+  gaps.** Completed 2026-08-16: verified the runner, harness, current Tier-3
+  inventory, and the three missing contracts above; rejected a second UI
+  framework because the repository already had the appropriate real-browser
+  machinery.
+- [x] **Step UI.2 — Add the three browser contracts.** Completed 2026-08-16:
+  real keyboard and pointer input in headless Chrome now assert that (1)
+  desktop `Shift+Enter` inserts a newline without sending, then plain `Enter`
+  submits the multiline prompt; (2) opening settings moves focus inside, Tab
+  and Shift+Tab wrap within the dialog, and Escape returns focus to the
+  settings opener; (3) the first end-session click only arms the control,
+  while the second ends the session, returns to mission control, and removes
+  the ended session.
+- [x] **Step UI.3 — Prove integration and close.** Completed 2026-08-16: the
+  new file alone passed **3/3**; `yarn typecheck` passed; Tier 1 passed
+  **840/840**; and `yarn test:e2e` rebuilt the production bundle and passed
+  **103/103** in 321.69 seconds. The existing glob discovered the new
+  contracts as tests 101–103. No test skipped and the final change stayed
+  inside the test-only boundary.
+
+Done: all three tests pass against the real browser and mock daemon, the full
+required verification is green, the new file is selected automatically by the
+existing `test:e2e` glob, and no production or dependency file changed.
+
+**Refactor verification (2026-08-16):** a direct markup check found that the
+end-session test's `.fleet-row[data-session-id=…]` selector named an attribute
+`FleetView.tsx` does not render, so that assertion could only ever pass. The
+following `.fleet-row` count was the real, non-vacuous proof because this suite
+creates exactly one session on a fresh daemon. Removed the impossible selector,
+its redundant session-id parse/callback parameter, and an explicit type already
+inferred from `startDaemon`; renamed the private helper
+`withFreshMockSession` to state its isolation mechanism. Test intent and all
+product behavior stayed unchanged. Before and after, the targeted file passed
+**3/3**. Post-refactor `yarn typecheck` passed and the freshly rebuilt full
+Tier 3 passed **103/103**, zero skipped, in 320.23 seconds; the refactored tests
+again ran last as 101–103.
+
+
+## Moved 2026-08-16 (Phase UIX — cross-engine and visual browser gates)
+
+Full Phase UIX body completed and compressed in PLAN.md on 2026-08-16.
+
+## Phase UIX — Cross-engine and visual browser gates (opened + ✅ COMPLETE 2026-08-16)
+
+Goal: add the two highest-value browser checks that the Chrome-only behavioral
+suite could not provide: a compact Chromium/Firefox/WebKit compatibility gate
+and deterministic pixel baselines for representative shell surfaces. This was
+test infrastructure only; shipped server and React behavior stayed unchanged.
+
+Verified starting state and approved boundary:
+
+- `package.json` already had direct `playwright-core@^1.61.1`; its installed
+  CLI and cache exposed matching managed Chromium, Firefox, and WebKit
+  revisions. `package.json`'s `test:e2e` and
+  `server/testing/e2e-harness.ts` exercised only system Chrome. Recursive
+  inspection found no committed screenshot baselines or PNG comparator.
+- **Modify existing:** `package.json`, `server/testing/e2e-harness.ts`,
+  `.github/workflows/ci.yml`, `README.md`, `PLAN.md`, and `PLAN-ARCHIVE.md`.
+- **Create new:** one three-engine smoke suite, one visual-regression suite,
+  its Ubuntu-24.04/managed-Chromium PNG baselines, and a small zero-package
+  image comparator.
+- **Leave behaviorally unchanged:** every shipped server and React module,
+  the existing 103 system-Chrome Tier-3 cases, runtime dependencies, lockfile,
+  and release behavior.
+
+Dependency and cost decision:
+
+- No `@playwright/test`: it would add a second test runner, its transitive
+  dependency tree, lockfile growth, and another package-alert surface solely
+  for three screenshot comparisons. Existing `playwright-core` already
+  captures PNGs and decodes them in a blank browser page, so the in-repo
+  comparator owns only a narrow per-channel/total-pixel policy. Net npm cost:
+  zero packages, zero transitives, zero lockfile bytes, zero package alerts.
+- Pull-request CI now downloads the three revision-matched managed engines and
+  their host libraries on a cold runner: several hundred megabytes plus about
+  35 seconds of UI execution after build on this workstation. CI also adds one
+  pinned, failure-only dependency,
+  `actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02`
+  (v4), so actual/diff PNGs survive a failed runner. Its cost is one external
+  action execution and artifact storage only on failure; its real use site is
+  visual diagnosis, and the commit pin bounds supply-chain drift.
+
+- [x] **Step UIX.1 — Make browser selection explicit and add the compatibility
+  smoke.** `e2e-harness.ts` now distinguishes the unchanged system-Chrome
+  launcher from Playwright's managed Chromium, Firefox, and WebKit launchers.
+  `ui-browser-matrix.uitest.ts` runs one fresh credential-scrubbed daemon per
+  engine and proves onboarding, a WebSocket-backed prompt with an update-in-
+  place KPI response, settings open/Escape close, no horizontal overflow, and
+  no uncaught page error. It does not multiply the full 103-case suite.
+- [x] **Step UIX.2 — Add deterministic visual contracts without a package.**
+  `ui-visual.uitest.ts` fixes viewport, scale, color scheme, reduced motion,
+  locale, timezone, fonts, animation state, caret, and dynamic cwd/session/
+  version text. Three committed PNGs cover the onboarding card, a settled
+  desktop session, and phone settings. `visual-snapshot.ts` decodes expected
+  and actual PNGs through Canvas, applies a 12-level per-channel noise floor
+  plus a 0.05% changed-pixel ceiling, and writes actual/diff PNGs on failure.
+  `yarn test:ui:update-snapshots` is the explicit Ubuntu-24.04 update path.
+- [x] **Step UIX.3 — Wire the PR gate, document its scope/cost, and verify.**
+  The PR-only integration job is pinned to the baseline's `ubuntu-24.04`, runs
+  `playwright-core install --with-deps chromium firefox webkit`, then runs
+  `yarn test:ui`; failure artifacts are uploaded. README documents the command,
+  browser-install cost, OS bound, baseline update, and `*.uitest.ts` scope.
+
+Actual diff versus the approved boundary:
+
+- **Executable test/CI changes:** modified `package.json`,
+  `server/testing/e2e-harness.ts`, and `.github/workflows/ci.yml`; created
+  `server/testing/ui-browser-matrix.uitest.ts`,
+  `server/testing/ui-visual.uitest.ts`, `server/testing/visual-snapshot.ts`,
+  and three PNG baselines under `server/testing/ui-snapshots/`.
+- **Documentation/comment changes:** modified `README.md`, `PLAN.md`, and
+  `PLAN-ARCHIVE.md`, plus explanatory comments in the harness and workflow.
+  Wrap-up also synchronized `CONTRIBUTING.md` so its contributor test commands
+  include the new UI gate.
+- **Shipped executable behavior:** unchanged. No production server/web source,
+  wire protocol, runtime package, lockfile, or release workflow changed.
+
+Verification (2026-08-16):
+
+- Managed-browser launch probe: Chromium and Firefox launched directly. The
+  workstation lacked WebKit's `libavif16` and `libwoff1` host libraries; four
+  Ubuntu packages totaling 672 kB were downloaded and extracted under `/tmp`
+  only (never installed), then preloaded into the one WebKit process. The exact
+  WebKit test passed **1/1**; Chromium + Firefox passed **2/2**.
+- Snapshot generation passed **3/3**. A separate compare-mode run passed
+  **3/3**. A controlled same-size changed page was rejected and produced the
+  promised diagnostic images, proving the comparator's negative path.
+- The public `yarn test:ui` command rebuilt production assets and passed
+  **6/6**, zero skipped, in 34.82 seconds (37.46 seconds including build).
+  `playwright-core install --dry-run chromium firefox webkit` resolved
+  Chromium 149 revision 1228, Firefox 151 revision 1532, and WebKit 26.5
+  revision 2311 for Ubuntu 24.04. `package.json` and CI YAML parsed; `git diff
+  --check` passed.
+- `yarn typecheck` passed. Tier 1 passed **840/840**, zero skipped, in 19.66
+  seconds. The complete `yarn test:e2e` rebuilt the production bundle and
+  passed **103/103**, zero skipped, in 328.71 seconds (331.21 seconds including
+  build). No remote CI run is claimed; the workflow is ready to exercise on
+  the eventual pull request.
+
+**Refactor verification (2026-08-16):** the three new suites repeated the same
+fresh mock-daemon/browser-context/page cleanup and two repeated the same
+onboarding-to-session entry. Those mechanics now live once in
+`e2e-harness.ts`; the suite files retain their own scenarios and assertions.
+The immutable screenshot policy is also declared once, and passing pixel
+comparisons no longer pay to base64-encode a diff PNG that will be discarded.
+No assertion, snapshot name, browser/viewport, threshold, script, dependency,
+or product behavior changed; all three baseline PNGs retained their exact byte
+sizes. The broader pre-existing `app.e2e.ts` lifecycle was left alone because
+it was outside the tests being refactored and has different setup needs.
+
+The pre-refactor UI gate passed **6/6**. Afterward, `yarn typecheck` passed;
+`yarn test:ui` rebuilt production and passed **6/6**, zero skipped, in 33.46
+seconds (36.11 seconds including build); the shared-helper Chrome contracts
+passed **3/3**; Tier 1 passed **840/840**, zero skipped, in 19.22 seconds; and a
+controlled wrong page was still rejected while producing both actual and diff
+PNGs. The complete rebuilt Tier 3 passed **103/103**, zero skipped, in 325.58
+seconds (328.13 seconds including build). `git diff --check` passed.
+
+
+## Moved 2026-08-17 (prune — completed step bodies)
+
+Step bodies of completed phases, moved verbatim from PLAN.md on 2026-08-17; each
+phase's preamble, standing rules, and live notes stayed in PLAN.md.
+
+### Phase UX — Steps UX.6–UX.10
+
+- [x] **Step UX.6 — Settle prompt return behavior, then refactor Phase UX** —
+  done 2026-08-10; accepted desktop transcript-click behavior replaced the
+  provisional binding, and the full Phase UX diff received a verified
+  behavior-preserving refactor. → **PLAN-ARCHIVE.md**.
+- [x] **Step UX.7 — Close the eight Phase UX correctness findings** — done
+  2026-08-10; backend identity, faithful catalogs, dormant idle unload,
+  completion visibility, chronology-safe compaction, defensive decoding, and
+  delete-failure recovery are fixed and regression-pinned. →
+  **PLAN-ARCHIVE.md**.
+
+- [x] **Step UX.8 — Close the Phase UX security audit findings** — done
+  2026-08-10; credential/destination binding, fully opaque configured endpoint
+  identity and diagnostics, exact loopback classification, prompt-catalog
+  provenance/control safety, and strict checkpoint decoding are regression-pinned.
+  → **PLAN-ARCHIVE.md**.
+
+- [x] **Step UX.9 — Audit and repair the Phase UX branch tests** — done
+  2026-08-10; repeated all safe test tiers, mutation-proved and closed six
+  regression gaps, and made the live Codex/Ollama timeout clean up immediately.
+  The real-turn instability it exposed was kept visible and is now diagnosed
+  and closed in Step L.4. → **PLAN-ARCHIVE.md**.
+
+- [x] **Step UX.10 — Make collapse-on-finalize survive narrating engines** —
+  done 2026-08-12; the "worked · N actions" fold now absorbs interior
+  thinking in true transcript order, and Codex completed-with-nonzero-exit
+  is annotated, not branded an error. Pinned in Tier-1 + e2e. →
+  **PLAN-ARCHIVE.md, "Moved 2026-08-12 (Changes polish + branch closure)."**
+
+### Phase N2 — Steps N2.1–N2.6
+
+- [x] **N2.1 — Host-native picker service + local-only wire** — done
+  2026-08-08; shell-free macOS, Windows, and Linux recipes; correlated
+  non-replayed wire pair; validation, cancellation, concurrency, abort, and
+  relay refusal pinned. → PLAN-ARCHIVE.md.
+- [x] **N2.2 — Onboarding browse control** — done 2026-08-08; compact
+  `browse…` beside the editable path in both startup routes, capability-gated
+  with manual entry retained as the universal fallback. → PLAN-ARCHIVE.md.
+- [x] **N2.3 — Regression proof + documentation** — done 2026-08-08; focused
+  tests, real-daemon browser proof, accessibility/phone checks, typecheck,
+  build/package, production audit, README, and protected CI complete.
+  → PLAN-ARCHIVE.md.
+- [x] **N2.4 — Post-refactor executable-trust remediation** — done 2026-08-08;
+  browser and native-dialog identity now comes only from fixed system paths,
+  agent discovery rejects project/npm-controlled candidates, helper processes
+  use a neutral cwd/scrubbed environment and confirm exit after cancellation or
+  output overflow, and the `npx` trust boundary is explicit. Local proof:
+  Tier 1 561/561, Tier 2 143/143, Tier 3 82/82, typecheck, build, 19-file
+  package dry-run, secret scan, and production audit (0 vulnerabilities).
+  → PLAN-ARCHIVE.md.
+- [x] **N2.5 — Keep the chosen folder leaf visible in long paths** — done
+  2026-08-08; programmatic picks and blurred edits reveal the rightmost folder,
+  focused editing retains ordinary caret control, and the complete path still
+  creates the session. Local proof: Tier 1 561/561, focused Tier 3 1/1,
+  typecheck, and production build. → PLAN-ARCHIVE.md.
+- [x] **N2.6 — Close the post-audit environment and Windows-opener execution
+  paths** — done 2026-08-08; checkout `.env` loading is data-only and
+  provenance-aware, startup tokens are percent-encoded, Windows opens URLs
+  directly through fixed-system `explorer.exe`, and the trust guidance names
+  the remaining `.env` boundary honestly. Local proof: Tier 1 563/563, Tier 2
+  143/143, Tier 3 82/82, typecheck, production build, 19-file package dry-run,
+  secret/diff scans, and production audit (0 vulnerabilities). →
+  PLAN-ARCHIVE.md.
+
+### Phase N3 — Steps N3.1–N3.4
+
+- [x] **N3.1 — Controlled busy-state proof** — own session + permission latch;
+  no transient-locator race. → PLAN-ARCHIVE.md.
+- [x] **N3.2 — Isolated Mermaid renderer proof** — own session, production
+  lazy chunk/sandbox/CSP/postMessage paths retained. → PLAN-ARCHIVE.md.
+- [x] **N3.3 — Deterministic follow-tail re-arm** — wheel/touch intent arms
+  synchronously against pre-input geometry; pure boundaries + real-wheel e2e.
+  → PLAN-ARCHIVE.md.
+- [x] **N3.4 — Repetition + protected proof** — focused activity 6/6,
+  Mermaid 5/5, follow-tail 6/6; Tier 1 554/554; two unchanged full Tier-3
+  runs 78/78; PR #22's DCO, Cloudflare, Tier 1, and combined Tier 2/3 checks
+  passed on implementation head `a091ba1`. → PLAN-ARCHIVE.md.
+
+### Phase E2 — Steps E2.1–E2.4
+
+- [x] **Step E2.1 — per-directory listing: wire + server** — done
+  2026-07-26; additive `fs_listdir`/`fs_dir` pair, jailed + per-dir-capped,
+  token-bucket throttled (`FS_LISTDIR_MAX_PER_SEC` 32 — prefetch bursts are
+  legitimate), hostile paths refused, legacy `fs_list` untouched.
+  → PLAN-ARCHIVE.md.
+- [x] **Step E2.2 — the lazy client: incremental tree store** — done
+  2026-07-26; per-directory node store (fetch on first expand, cached
+  re-expands, per-dir correlation ids + stale-reply drop, loading rows),
+  open = root + first-level prefetch, refresh/turn-end refetch expanded dirs
+  and PRUNE cached-but-collapsed ones; whole-tree `fs_list` retired from the
+  client (daemon still answers it). → PLAN-ARCHIVE.md.
+- [x] **Step E2.3 — multi-repo git fidelity** — done 2026-07-26; per-repo
+  statuses + ignore rules on the lazy listings (`findRepoRoot()` walks to
+  the FILESYSTEM root — git's own discovery rule; `repoStatus()` behind a
+  TTL cache + ONE global serialized git queue; `decorateGitDir()` pure;
+  deleted files stay visible); git trouble degrades to the plain listing,
+  never an error; zero wire or client changes. → PLAN-ARCHIVE.md.
+- [x] **Step E2.4 — the Projects-root proof + compatibility pin** — done
+  2026-07-26, **phase E2 complete**; `fs_diff` discovers the repo CONTAINING
+  the file (nested-repo diffs work; jail first, session-root fallback), the
+  legacy `fs_list` old-client floor pinned as-is (never to be "fixed"), the
+  Tier-3 multi-repo proof shows zero whole-tree requests, phone drill-in
+  passes. All tiers 388/110/56. → PLAN-ARCHIVE.md.
+
+### Phase E — Step E.6
+
+### Step E.6 — the enlarge lightbox (desktop reads big on demand)
+
+- [x] **Step E.6 — ⤢ enlarge** — done 2026-07-28 (Kyle-directed; splits,
+  docks, and a full takeover were weighed and the dimmed lightbox chosen —
+  the transcript never reflows, and the user trades it away only by
+  deliberate click). The docked file view stays compact (wrapped,
+  tool-output look); ⤢ lifts the SAME node — class re-frame, no remount, so
+  scroll survives — into a fixed frame over a 55% dim (Esc / backdrop / ⤡
+  restore in place; focus-trapped dialog; title centered on the bar's true
+  center; content 1em, box sat 1.5vh above center). Found en route and
+  fixed: the file view had been inheriting `.tool-code`'s transcript-only
+  360px height cap in every frame. Desktop-only — the phone E.4 frame is
+  already full-screen, pinned by a phone-suite assertion. Commits c01d846 +
+  b9589b2 (the day's new busy-turn sanity guard recalibrated `>10` → `>0`
+  samples). Tiers 458/139/54 green. Same-day audit: nothing exploitable;
+  the lightbox-over-permission-bar layering recorded as an accepted
+  decision in SECURITY.md.
+
+### Phase E3 — Steps E3.1–E3.2
+
+- [x] **Step E3.1 — Refine the tree surface and add node-type glyphs** — done
+  2026-08-11; the existing read-only tree now uses Mirafold's inset surface,
+  compact row/guide treatment, SVG chevrons, and decorative open/closed-folder,
+  symlink, and broad file-family glyphs immediately after names. No dependency,
+  server/wire, lazy-fetch, sort, Git-status, drill-in, refresh, or phone-flow
+  behavior changed. Desktop, phone, dark/light, overflow, and axe proofs pass.
+  → PLAN-ARCHIVE.md.
+- [x] **Step E3.2 — Integrate the Explorer visually with the workbench** —
+  visually approved by Kyle 2026-08-11. The dock now has a stable responsive
+  width, compact Files title/action bar, separate sticky workspace-root strip,
+  inset tree-row rhythm, quieter unboxed Git markers, and conventional
+  `chevron → type glyph → name → status` ordering. Refresh and the phone close
+  action moved into the title bar without changing their behavior; the stacked
+  phone file drill-in remains intact. The accepted revision and the D.1 Codex
+  refactor merged through PR #34 at `21b5f33` after DCO, Cloudflare Pages,
+  Tier 1, and combined Tier 2/Tier 3 passed.
+
+### Phase BC — Step BC.1
+
+- [x] **Step BC.1 — Repair the eight confirmed whole-codebase findings** —
+  done 2026-08-11. Gemini turn preparation and Codex default-model resolution
+  now recover from transient failures; the relay and cookie boundaries reject
+  malformed-but-valid inputs safely; model-turn state no longer collapses at a
+  neighboring bang lifecycle boundary; active rename failure rolls back instead
+  of claiming durability; filesystem/Git caps count UTF-8 bytes; and Explorer
+  path presentation accepts Windows shapes without changing POSIX filename
+  semantics. Each finding has a concrete regression. No dependency, provider
+  protocol, stored-session schema, or filesystem write feature was added.
+  Published as open PR #35 into `next`; deliberately unmerged pending Kyle's
+  review. → PLAN-ARCHIVE.md.
+
+### Phase W — Steps W.1, W.B, W.A, W.2
+
+- [x] **Step W.1 — the watcher module, server-side** — done 2026-07-26;
+  `@parcel/watcher@2.6.0` + `server/sessions/fs-watch.ts`: one bell per
+  fixed window from the FIRST event (a continuously-writing agent can't
+  starve it), honest capped paths hint, exclusion globs, error→stop→notice
+  exactly once; lifecycle follows viewport attach/detach. Two inotify
+  backend truths handled: fast-created subtrees go permanently silent →
+  healed by unsubscribe-THEN-resubscribe + one synthetic bell; every
+  subscribe needs a fresh closure. → PLAN-ARCHIVE.md.
+- [x] **Step W.B — the bell's paths hint capped by BYTES too** — done
+  2026-07-26 (audit finding; not attacker-reachable — bandwidth hygiene
+  under the cheap-theoretical-finding rule); `FS_WATCH_MAX_PATH_BYTES`
+  (16,000) beside the count cap, `truncated` honest, pinned +
+  mutation-tested. → PLAN-ARCHIVE.md.
+- [x] **Step W.A — a browsed repo cannot run programs** — done 2026-07-26
+  (audit finding); `server/sessions/git-trust.ts` + the `trusted-repos.json`
+  allow list neutralize the three probe-proven execute vectors
+  (`core.fsmonitor`, `filter.*.clean`, `filter.*.process`) unless the repo
+  is user-trusted; reads git's EFFECTIVE config (an `include.path`-hidden
+  setting still executes otherwise); one notice per repo per connection;
+  pinned by `git-trust.itest.ts` with real planted programs +
+  mutation-tested. Detail + probe method in `SECURITY.md`. **Standing
+  caution: the vector list is tied to which git commands the daemon runs —
+  adding a new one means re-running the probe.** → PLAN-ARCHIVE.md.
+- [x] **Step W.2 — `fs_changed` on the wire + the live client** — done
+  2026-07-26, **phase W complete**; per-viewport bell (never broadcast,
+  never replayed), the per-repo status cache invalidated BEFORE fanning,
+  client coalesces via `bellRefreshDelay` (min gap 1s) so bells can't drain
+  the token bucket, and the watcher-failure notice ships. Field find fixed
+  at the source: every daemon git read runs `--no-optional-locks`, so the
+  daemon's own status calls can't write `.git` churn the watcher hears (a
+  feedback loop) — itest-pinned + mutation-tested. Proven end-to-end: a
+  file written behind the UI's back appears with zero clicks. All tiers
+  389/123/57. → PLAN-ARCHIVE.md.
+
+### Changes review workspace — Steps CR.1–CR.14
+
+### Phase CR.1 — Reusable file view + complete change-set query
+
+- [x] **Step CR.1 — Cut the shared foundation without changing the shipped UI**
+  — completed 2026-08-11. The reusable correlated file-view controller and
+  bounded `fs_changes` → `fs_change_set` multi-repository query are implemented;
+  focused unit/integration, malformed-client, desktop Explorer, 390px phone,
+  production client build, and typecheck proofs pass. No user-facing control or
+  surface was added. Full specification and implementation record →
+  **PLAN-ARCHIVE.md, “Moved 2026-08-11 (Changes review foundation — CR.1).”**
+
+### Phase CR.2 — The useful Changes view, desktop and mobile
+
+- [x] **Step CR.2 — Ship the complete changed-set review surface** — completed
+  2026-08-11. The trusted shell now opens one live, repository-grouped Changes
+  workspace: a wide transcript-preserving split on desktop and a safe-area,
+  one-file full-screen review on phone. Deterministic selection, honest counts
+  and incomplete/error/empty states, live disk/turn refresh, and Files/Changes
+  mutual exclusion are implemented. Real-daemon Chromium proves the complete
+  behavior at 641px desktop and 390px phone, including dark/light screenshots
+  and axe. Full specification and implementation record → **PLAN-ARCHIVE.md,
+  “Moved 2026-08-11 (Useful Changes view — CR.2).”**
+
+### Phase CR.3 — Code-context navigation + transparent agent feedback
+
+- [x] **Step CR.3 — Make a diff directly conversational** — completed
+  2026-08-12. Stable HEAD/working-tree line coordinates, hunk navigation,
+  syntax-aware desktop/phone selection, visible editable `Explain` / `Request
+  change` drafts, honest selection invalidation, and normal prompt submission
+  are shipped. The intermittent phone axe result was diagnosed as a shuffled
+  mock response exposing two unfocusable Highlight.js scrollers; highlighted
+  fenced code is now keyboard-reachable and the regression fixture is
+  deterministic. Full specification, diagnosis, implementation boundary, and
+  proof → **PLAN-ARCHIVE.md, “Moved 2026-08-12 (Conversational Changes review —
+  CR.3).”**
+
+### Phase CR.4 — Review progress, live invalidation, and closure
+
+- [x] **Step CR.4 — Make large reviews resumable and trustworthy** — completed
+  2026-08-12. Review decisions are viewport-local and keyed to an opaque,
+  server-minted identity of the exact bounded HEAD + working-tree bytes;
+  unverifiable revisions cannot be marked. The desktop rail and phone review
+  show progress, mark/unmark, and next-unreviewed navigation, with `R` / `N`
+  disabled throughout the prompt and other editable controls. Watcher hints
+  invalidate only affected reviewed files (including while the surface is
+  closed), HEAD/incomplete hints invalidate all, and a subsequently loaded
+  revision is reconciled before it can remain reviewed. Reduced-motion hunk
+  navigation, 641px/390px overflow, and the large-diff render path are closed;
+  one shared syntax pipeline replaces per-row highlighting and an honest
+  1,000-line interactive cap bounds the surface. Focused correctness,
+  security, and mutation-backed test-quality audits have no unresolved
+  finding. Full starting state, implementation boundary, audit record, and
+  proof → **PLAN-ARCHIVE.md, “Moved 2026-08-12 (Trustworthy review progress —
+  CR.4).”**
+
+### Phase CR.5 — Correctness remediation
+
+- [x] **Step CR.5 — Close the whole-feature bughunt findings** — completed
+  2026-08-12. All ten reproduced failures are repaired and regression-pinned:
+  Git/index edge states, malformed and nested repository resolution, deleted/
+  symlink/unreadable diffs, reconnect and manual-refresh trust, status-only
+  refreshes, zero-visible incomplete results, and terminal-newline modeling.
+  The complete Changes browser suite and dotenv-safe aggregate tiers pass.
+  Full verified baseline, executable/test/documentation boundary, and proof →
+  **PLAN-ARCHIVE.md, “Moved 2026-08-12 (Changes correctness remediation —
+  CR.5).”**
+
+- [x] **Step CR.6 — Whole-branch security + test audits** — done 2026-08-12;
+  no exploitable vulnerability, one untested guard found and pinned. →
+  **PLAN-ARCHIVE.md, "Moved 2026-08-12 (Changes polish + branch closure)."**
+
+- [x] **Step CR.7 — Terminal hunk navigation + first-hunk positioning** —
+  done 2026-08-12; blur-on-disable was killing the terminal smooth scroll
+  (probed); scrolling now runs post-commit, diffs open on their first hunk,
+  and same-path refreshes keep the view mounted. Geometry-asserting e2e. →
+  **PLAN-ARCHIVE.md, "Moved 2026-08-12 (Changes polish + branch closure)."**
+
+- [x] **Step CR.8 — Resizable desktop review panel** — done 2026-08-12; drag
+  handle with floor = default width, ceiling = 100% − 380px conversation
+  reserve, persisted per browser; keyboard separator with live aria
+  geometry. e2e-pinned. → PLAN-ARCHIVE.md (same section).
+
+- [x] **Step CR.9 — Diff-gutter Changes glyph, size-matched to Files** —
+  done 2026-08-12; unified-diff fragment on FilesGlyph's 14×20 artwork box,
+  rail gap 4→28px. → PLAN-ARCHIVE.md (same section).
+
+- [x] **Step CR.10 — Dock the hunk toolbar; align the progress buttons** —
+  done 2026-08-12; the diff's one scroller is the bordered code card
+  itself, the toolbar docks outside it, and the wrapper + progress bar
+  share symmetric 9px insets (7px phone). → PLAN-ARCHIVE.md (same section).
+
+- [x] **Step CR.11 — "Select hunk" toggles** — done 2026-08-12; clicking
+  the exact (clamped) selected range unselects, with aria-pressed and a
+  label swap. e2e-pinned. → PLAN-ARCHIVE.md (same section).
+
+- [x] **Step CR.12 — Branch bughunt (post-audit delta)** — done 2026-08-12;
+  two confirmed resize-handle bugs fixed with born-failing pins (stale
+  separator aria after drags; a bare click freezing the responsive width),
+  one candidate disproven by forced reproduction. → PLAN-ARCHIVE.md (same
+  section). **WATCH ITEM (live):** one unattributed intermittent
+  full-ordered Tier-3 failure — observed 1-in-6 runs on 2026-08-12, failing
+  test unnamed (the first run's log was summary-filtered); every later run
+  keeps the complete TAP log, so the next occurrence names itself.
+  **2026-08-14 — it named itself, in CI:** PR #48's first Tier-2+3 run
+  failed exactly one test, **E2.4 "the Projects-root proof"**, a 30 s
+  `page.waitForSelector('.files-panel[role=dialog]')` TimeoutError at the
+  phone drill-in step (app.e2e.ts:2839). Same day the full suite passed
+  3× locally (the CS runs) with E2.4 green each time, so the 1-in-6-ish
+  intermittent read stands — now with a name and a stuck selector to
+  instrument. Not diagnosed or fixed this sitting (Phase CS's scope);
+  next occurrence: read whether the Files panel button was clicked but
+  the dialog never mounted, or the click itself was swallowed.
+
+- [x] **Step CR.13 — Security audit of the post-CR.6 delta** — done
+  2026-08-12; every new input path traced with concrete values, ZERO
+  findings in every class, nothing deferred. → PLAN-ARCHIVE.md (same
+  section).
+
+- [x] **Step CR.14 — Test audit of the post-CR.6 delta** — done 2026-08-12;
+  five falsifications each fail exactly the right tests; one proven gap
+  closed (the fold label is now pinned to count actions only). Standing
+  note: hunk navigation's deferred scroll is redundant protection since
+  CR.10's layout removed the blur-cancellation trigger — kept deliberately.
+  → PLAN-ARCHIVE.md (same section).
+
+### Phase CS — Steps CS.1–CS.4
+
+- [x] **Step CS.1 — Billing-backend endpoints** — ✅ built, tested, merged,
+  and deployed 2026-08-14 (six new offline tests drive the full arc; suite
+  27/27). The three live endpoints were probed after the Pages deploy and
+  returned the expected malformed/no-oracle refusal shapes. *(original
+  contract below)*
+  - Build: three Pages Functions under `functions/api/subscription/`
+    (`/api/subscription` status, `/api/subscription/cancel`,
+    `/api/subscription/uncancel`), all POST `{licenseKey}`. Each resolves
+    key → sub via KV with entitlement.js's exact no-oracle rule (unknown
+    and superseded keys refuse identically), then reads/acts on Paddle:
+    status = live `GET /subscriptions/{id}`; cancel = `POST …/cancel`
+    `{effective_from: "next_billing_period"}` (idempotent: already
+    scheduled or already `canceled` returns current state, no error);
+    uncancel = `PATCH …/{id}` `{scheduled_change: null}` (idempotent when
+    nothing is scheduled). All three answer one view shape:
+    `{status, periodEnd, cancelAt}` (`cancelAt` = scheduled cancel's
+    `effective_at`, else null). Cross-site guard + no-store as on the
+    existing functions; zero deps, zero build.
+  - Done when: the site's `node --test` suite covers the full arc offline
+    (status → cancel → scheduled view → uncancel → clean view, plus
+    unknown/superseded key refusals and idempotent re-cancel) and passes.
+- [x] **Step CS.2 — Daemon: subscription actions + wire messages** — ✅ done
+  2026-08-14 (`feature/cancel-subscription`): `server/relay/subscription.ts`,
+  the three additive client messages + the `subscription` reply + the
+  `billing` hello flag, connection handlers (remote refused, throttle env
+  knob `SUBSCRIPTION_MIN_GAP_MS`), 12 new Tier-1 pins. All tiers green.
+  *(original contract below)*
+  - Build: `server/relay/subscription.ts` — active only in `license-key`
+    mode; endpoint base derived from `MIRAFOLD_ENTITLEMENT_URL` (strip the
+    trailing `/entitlement`; underivable → feature off), no new env vars;
+    never throws, 10 s timeout, failures become the support-email fallback
+    line. Protocol (ADD only): client `subscription_status` /
+    `subscription_cancel` / `subscription_uncancel` (id-correlated), reply
+    `subscription` `{id, status?, periodEnd?, cancelAt?, error?}` —
+    per-viewport request/reply, never buffered or sequenced. `agents`
+    hello gains optional `billing: "license-key"`, local viewports only.
+    connection.ts handlers: remote viewports refused ("manage from the
+    desktop"), per-connection min-gap throttle, license key itself never
+    on the wire in either direction.
+  - Done when: Tier-1 covers the client (stubbed fetch: view, refusal,
+    outage → fallback line, base derivation) and connection handling
+    (billing flag local-only, remote refusal, throttle), and existing
+    suites stay green.
+- [x] **Step CS.3 — Web: the manage-subscription view** — ✅ done 2026-08-14:
+  `web/src/subscription-card.ts` (pure brain, 5 Tier-1 pins), the manage view
+  inside ConnectDevice with both hosts wired, and the Tier-3 e2e driving the
+  full arc against a stub billing backend — including the proof the license
+  key never reaches the page. Tier 1 **837** / Tier 2 **152** / Tier 3
+  **100**, all green. *(One e2e-authoring bug found + fixed en route: the
+  fleet's pair button sits under the onboarding overlay on an empty registry,
+  so the test enters a session first. The 2026-08-12 unattributed Tier-3
+  watch item did NOT reproduce in three full runs.)* *(original contract
+  below)*
+  - Build: the Connect-a-device card gains the neutral "manage
+    subscription" link (only when the hello carries `billing`); it opens
+    the subscription view: status line from the view shape, `cancel
+    subscription` → an explicit confirm quoting the real consequence
+    ("access runs to <date>; you won't be charged again"), then the
+    scheduled state with `undo cancellation`. Errors show the
+    support-email fallback. Card state is a pure reducer
+    (`web/src/subscription-card.ts`), Tier-1-pinned; both hosts (status
+    bar + fleet) wire send/reply.
+  - Done when: Tier-1 pins the reducer + labels, and a Tier-3 e2e drives
+    the real flow in headless Chrome against a stubbed billing endpoint
+    (open card → manage → renews-line → cancel → confirm → scheduled +
+    undo → clean state), all tiers green.
+- [x] **Step CS.4 — Ship sequencing + live verification (Kyle-gated)** — ✅
+  complete 2026-08-14. The site half deployed first; all three endpoints were
+  probed live, /refunds + /terms carry the in-product-cancel copy, and product
+  PR #48 is merged into `next` at `fe8a3cc`. Kyle then drove the real arc on
+  his active subscription: Mirafold read the August 29 renewal → scheduled an
+  end-of-period cancellation → the live status API returned `status: active`
+  with `cancelAt === periodEnd` → Paddle showed "set for cancellation" →
+  Mirafold undid it → the API returned active with no `cancelAt` and Kyle
+  confirmed Paddle was clean again.
+  - **Live setup finding + correction:** the first cancel returned the honest
+    backend-unreachable fallback and changed nothing. The executed site setup
+    record showed why: its production Paddle key had Transactions Read +
+    Subscriptions Read only, while Paddle's cancel and update endpoints require
+    `subscription.write`. Kyle enabled only Subscriptions Write on the existing,
+    recently-used production key; the next cancel and undo both succeeded with
+    no key replacement or Pages redeploy. The site repo's historical setup and
+    rotation notes still describe that key as read-only/claim-only and need a
+    truth-sync there before release documentation is considered closed.
+  - The site half deploys first (Pages deploys on push to the site repo's
+    main): until it's live, the product-side card degrades to the
+    support-email line by design — but never release the product half to
+    npm ahead of the site half. Then verify live with Kyle's real
+    subscription: status view correct → cancel → Paddle dashboard shows
+    the scheduled cancellation → undo → clean again. Site /refunds +
+    /terms gain "or from inside the product" as an additional cancel path
+    (never replacing the existing promises).
+  - Done when: the live arc above is observed on Kyle's subscription and
+    the policy-page copy is updated. Merges: Kyle's explicit yes, per the
+    standing PR rule.
+
+### Phase PF — Steps PF.1–PF.3
+
+- [x] **PF.1 — Server-side delta coalescing.** `broadcast()`
+  (`server/sessions/registry.ts`) merges consecutive same-type
+  `text_delta`/`thinking_delta` into one WireMsg (text = concatenation) on a
+  33 ms window (`DELTA_COALESCE_MS`, env-overridable; constructor-injectable;
+  `0` = passthrough). Any other message — or a delta of the other type —
+  flushes first; attach (before ring replay), detach and session end all
+  flush. The replay ring, seq, byte accounting, local sockets and relay
+  sealing all see only merged frames (~3× fewer for text). Wire protocol
+  untouched — a merged delta is an ordinary delta. Demo mode measured: 18
+  flushes ~36 ms apart, ~3 mock chunks each — still visibly streaming.
+- [x] **PF.2 — Client render batching + memoization.** RenderZone applies
+  queued deltas one animation frame at a time (50 ms hidden-tab fallback;
+  pure merge helper in `web/src/delta-queue.ts`, Tier-1-tested); non-delta
+  messages flush first so order is exact. Transcript entry renderers,
+  ToolBlock and RenderBlock are memoized; RenderBlock's zod `safeParse` runs
+  per props change, not per render; the three per-render full-transcript
+  scans (`pinnedItems`, `activePickerId`, `childrenByParent`) are
+  `useMemo`'d. Follow-tail untouched (its docstring's instant-scroll
+  rationale stands; it now fires per flush). `Artifact` deliberately NOT
+  memoized (per-render closure props; restructuring touches the sandbox
+  bridge). `bang_output` deliberately NOT coalesced (own id + wire-budget
+  logic in `connection.ts`; PTY output is already chunky).
+- [x] **PF.3 — Onboarding poll cost.** The 3 s `refresh_agents` poll no
+  longer re-reads `~/.codex/config.toml` (2 s TTL, missing file never
+  cached), re-probes credential files (2 s TTL) or re-fires the 8 localhost
+  model probes (default sweep TTL 5 s, `MIRAFOLD_LOCAL_PROBE_TTL_MS`,
+  in-flight callers coalesce; itest harness pins it to 0). Tradeoff, eyes
+  open: a just-started local model server takes up to ~8 s to appear
+  (was ~3 s).

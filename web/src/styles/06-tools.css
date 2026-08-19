@@ -1,0 +1,316 @@
+/* ---- Tool calls (Phase T.1) ---------------------------------------------
+   Terminal-style records of what the agent actually did: one dim monospace
+   row per call, collapsed by default; errors arrive expanded. Negative
+   margins tighten consecutive rows against the zone's 14px gap so a run of
+   tool calls reads as one burst of activity. */
+
+.tool-block {
+  margin: -5px 4px;
+  min-width: 0;
+}
+
+.tool-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 2px 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  color: var(--fg-dim);
+}
+
+.tool-caret {
+  width: 1em;
+  flex-shrink: 0;
+  color: var(--fg-faint);
+}
+
+.tool-block.is-running .tool-caret {
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.tool-name {
+  font-weight: 600;
+  color: var(--fg-mid);
+  flex-shrink: 0;
+}
+
+.tool-head:hover .tool-name {
+  color: var(--fg-body);
+}
+
+.tool-detail {
+  color: var(--fg-dimmer);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.tool-output {
+  margin: 4px 0 6px 22px;
+  padding: 10px 12px;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8em;
+  line-height: 1.5;
+  color: var(--code-fg);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 320px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hover) transparent;
+}
+
+.tool-block.is-error .tool-name {
+  color: var(--error);
+}
+
+.tool-block.is-error .tool-output {
+  border-color: var(--err-border);
+}
+
+/* Tool input (T2.2): full args in the expansion — diff / code / JSON. */
+.tool-input {
+  margin: 4px 0 2px 22px;
+}
+
+.tool-code,
+.tool-diff,
+.rc-diff-body {
+  margin: 0 0 4px 0;
+  padding: 10px 12px;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8em;
+  line-height: 1.5;
+  color: var(--code-fg);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 360px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hover) transparent;
+}
+
+.tool-code.tool-added {
+  border-color: var(--diff-add-border);
+}
+
+.tool-diff > div,
+.rc-diff-body > div {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.diff-add {
+  background: var(--diff-add-bg);
+  color: var(--diff-add-fg);
+}
+
+.diff-del {
+  background: var(--diff-del-bg);
+  color: var(--diff-del-fg);
+}
+
+.diff-eof {
+  color: var(--fg-faint);
+  font-style: italic;
+}
+
+.diff-ctx {
+  color: var(--fg-dimmer);
+}
+
+/* Truncation marker (T2.3): explicit, dim, never mistaken for real output. */
+.tool-elided {
+  color: var(--warn-fg);
+  font-style: italic;
+}
+
+.tool-group {
+  display: contents;
+}
+
+/* Subagent card (SA.1, supersedes the T2.4 group): a spawn with visible
+   children renders as a live card — calm one-glance summary, expandable to
+   the nested calls. Shell chrome; all content inert plain text. */
+.subagent-deck {
+  margin: 4px 0;
+  padding: 6px 10px;
+  border: 1px solid var(--border-mid);
+  border-left: 2px solid var(--border-strong);
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8em;
+}
+
+.subagent-deck-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: var(--fg-dim);
+  min-width: 0;
+}
+
+.subagent-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--fg-faint);
+}
+
+.subagent-deck-running .subagent-dot {
+  background: var(--accent);
+  animation: subagent-pulse 1.6s ease-in-out infinite;
+}
+
+.subagent-deck-failed .subagent-dot {
+  background: var(--error-fg);
+}
+
+@keyframes subagent-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .subagent-deck-running .subagent-dot {
+    animation: none;
+  }
+}
+
+.subagent-type {
+  flex: none;
+  color: var(--fg-mid);
+  font-weight: 600;
+}
+
+.subagent-desc {
+  color: var(--fg-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subagent-live {
+  margin-left: auto;
+  flex: none;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-faint);
+  font-style: italic;
+}
+
+.subagent-deck-head:hover .subagent-desc {
+  color: var(--fg-mid);
+}
+
+.subagent-deck-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 0 0 15px;
+  color: var(--fg-faint);
+  min-width: 0;
+}
+
+.subagent-result {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subagent-calls {
+  margin: 6px 0 0 6px;
+  padding-left: 10px;
+  border-left: 1px solid var(--border-mid);
+}
+
+/* SA.2: the subagent's own words inside the expansion — inert plain text,
+   pre-wrapped so streamed prose keeps its line breaks, dim like thinking. */
+.subagent-prose {
+  padding: 3px 0;
+  color: var(--fg-dim);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.subagent-prose-thinking {
+  color: var(--fg-dimmer);
+  font-style: italic;
+}
+
+.subagent-caret {
+  flex: none;
+  color: var(--fg-faint);
+}
+
+.subagent-calls {
+  margin-top: 2px;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* The `!` passthrough (Step 4.9). The strip echoes the command-strip look
+   with an amber `!` in place of the green `❯`; output is a plain mono block
+   streaming live below it. */
+.turn-bang .bang-glyph {
+  color: var(--warn-fg);
+}
+
+.bang-state {
+  margin-left: 12px;
+  font-size: 0.85em;
+  color: var(--fg-faint);
+}
+
+.bang-fail {
+  color: var(--error);
+}
+
+.bang-no-output {
+  margin: 0 0 4px;
+  padding: 2px 14px 6px 30px;
+  font-size: 0.85em;
+  font-style: italic;
+  color: var(--fg-faint);
+}
+
+.bang-output {
+  margin: 0 0 4px;
+  padding: 8px 14px 10px 30px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.88em;
+  line-height: 1.45;
+  color: var(--fg-mid);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+}
+

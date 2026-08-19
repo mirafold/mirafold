@@ -6,6 +6,7 @@ import { runActionTool } from "./actions";
 import { createBangHandlers } from "./bang-handlers";
 import { createFsHandlers } from "./fs-handlers";
 import { createFolderPickerHandler } from "./folder-picker-handler";
+import { createUploadHandlers } from "./upload-handlers";
 import {
   ADAPTER_AGENTS,
   availableAgents,
@@ -14,7 +15,11 @@ import {
   resolveChosenBackend,
   type Backend,
 } from "../adapters";
-import { allowedOverRelay } from "../provider-policy";
+import { relayGateRefusal } from "../provider-policy";
+import {
+  createSubscriptionThrottle,
+  type SubscriptionActions,
+} from "../relay/subscription";
 import { probeLocalServers } from "../local-models";
 import { createLogger } from "../log";
 import { VERSION } from "../version";
@@ -30,12 +35,13 @@ import { folderPickerAvailable } from "../folder-picker";
 // cached answer instead of re-probing localhost.
 const REFRESH_MIN_INTERVAL_MS = envInt("REFRESH_MIN_INTERVAL_MS", 1_000);
 
-// What a remote (relay) connection is told when a cockpit act would drive a
-// subscription-backed session (M.2) — the same reasoning as the attach gate's
-// refusal (R.4i), phrased for an action instead of an attach.
-const RELAY_GATE_REFUSAL =
-  "This session runs on a subscription login, which can't be driven over the relay. " +
-  "Use an API key to drive an agent remotely.";
+// Phase RC: how long a remote create may spend classifying its provider
+// (engine spawn + catalog read) before the creator gets an honest refusal.
+const VERIFY_KIND_TIMEOUT_MS = envInt("VERIFY_KIND_TIMEOUT_MS", 30_000);
+
+// The relay refusal copy now lives with the rule (provider-policy.ts
+// relayGateRefusal, OC.4c) so the attach gate, cockpit acts, and uploads say
+// the same words about the same verdict — pending-kind included.
 
 // Agents the browser is allowed to name at onboarding (P.4). A create message
 // naming anything else falls back to the daemon default rather than erroring.
@@ -84,6 +90,11 @@ export function openConnection(
   // it). The relay gate refuses to attach such a viewport to a subscription-
   // backed session; local viewports are never gated (R.4i).
   remote = false,
+  // Phase CS: present when this daemon runs on a license key — the manage-
+  // subscription card's backend. The local WS path passes it; billing
+  // actions never ride the relay (the key stays with the machine that
+  // holds it), so remote viewports get error replies and no hello flag.
+  subscription?: SubscriptionActions,
 ): Connection {
   const log = createLogger(label);
   // A connection is a viewport onto one registry session (Step 4.2) — or,
@@ -98,10 +109,10 @@ export function openConnection(
   // hostile client could spam — bound the probe rate per connection. A
   // throttled refresh still answers, from the cache.
   let lastProbeAt = 0;
-  // The Explorer's fs_list/fs_listdir/fs_read/fs_diff handling (Phase E), with its own
-  // per-connection throttle + git-in-flight state (fs-handlers.ts). `entry`
-  // and `closed` are read through getters because both change over the
-  // connection's life.
+  // The Explorer/Changes fs_list/fs_listdir/fs_read/fs_diff/fs_changes
+  // handling, with its own per-connection throttle + git-in-flight state
+  // (fs-handlers.ts). `entry` and `closed` are read through getters because
+  // both change over the connection's life.
   const fs = createFsHandlers({
     viewport,
     getEntry: () => entry,
@@ -111,6 +122,13 @@ export function openConnection(
     viewport,
     remote,
     isClosed: () => closed,
+  });
+  // File drag-and-drop staging (Phase FD) — per-connection chunked uploads,
+  // the fs-handlers pattern (upload-handlers.ts).
+  const uploads = createUploadHandlers({
+    viewport,
+    getEntry: () => entry,
+    remote,
   });
 
   // Identity first, then the replayed history, then the live stream. 4.4:
@@ -131,14 +149,16 @@ export function openConnection(
     // creates too — 2026-07-29 bughunt. The important case this gate closes
     // is a phone attaching to a subscription session a local tab started.)
     // (R.4i)
-    if (remote && !allowedOverRelay(e.kind)) {
+    const relayRefusal = remote ? relayGateRefusal(e) : undefined;
+    if (relayRefusal) {
       viewport({
         type: "refused",
         reason: "subscription-relay",
-        message:
-          "This session runs on a subscription login, which can't be used over the relay. Use an API key to drive an agent remotely.",
+        message: relayRefusal,
       });
-      log.info(`refused remote viewport → session ${e.id} (${e.kind})`);
+      log.info(
+        `refused remote viewport → session ${e.id} (${e.kind}${e.kindPending ? ", pending" : ""})`,
+      );
       return false;
     }
     if (entry) registry.detach(entry, viewport);
@@ -157,6 +177,10 @@ export function openConnection(
       ...(fallback ? { fallback: true } : {}),
     });
     registry.attach(e, viewport, resumed ? afterSeq : undefined);
+    // A relay viewport is governed by the R.4i gate even after a mid-session
+    // credential-kind flip: mark it so the registry can evict it if the kind
+    // becomes relay-ineligible (audit 2026-08-13).
+    if (remote) registry.markRemote(e, viewport);
     log.info(
       `viewport ${resumed ? `resumed @${afterSeq}` : "attached"} → session ${e.id} (${e.viewports.size} viewport(s))`,
     );
@@ -168,6 +192,61 @@ export function openConnection(
   // other way to die — end it on the spot (2026-07-29 bughunt).
   const attachOrReap = (e: SessionEntry, afterSeq?: number, fallback = false) => {
     if (!attachTo(e, afterSeq, fallback)) registry.end(e.id);
+  };
+
+  // Phase RC: classify-before-create. A REMOTE create of an entry whose
+  // credential kind is still optimistic (kindPending + a verifyBackendKind
+  // seam — OpenCode) awaits the truthful classification BEFORE the relay
+  // gate judges the attach, instead of refusing a race the creator can
+  // never win. Local creates keep the lazy path untouched. The async detour
+  // owns its errors (index.ts has no try/catch around handleMessage): a
+  // classify failure or timeout errors the viewport honestly and reaps the
+  // minted no-viewport entry (the 2026-07-29 leak rule); settle re-checks
+  // entry liveness and connection state before acting.
+  let verifyingCreate = false;
+  const attachOrReapClassified = (e: SessionEntry, afterSeq?: number, fallback = false) => {
+    const verify = e.session.verifyBackendKind?.bind(e.session);
+    if (!remote || !e.kindPending || !verify) {
+      attachOrReap(e, afterSeq, fallback);
+      return;
+    }
+    verifyingCreate = true;
+    void (async () => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          verify(),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(
+              () =>
+                reject(
+                  new Error(
+                    "verifying which credential backs this session took too long — " +
+                      "try again, or run its first turn from its own machine",
+                  ),
+                ),
+              VERIFY_KIND_TIMEOUT_MS,
+            );
+            timer.unref();
+          }),
+        ]);
+      } catch (err) {
+        verifyingCreate = false;
+        if (!closed) sendError(errText(err));
+        if (registry.get(e.id) === e && e.viewports.size === 0) registry.end(e.id);
+        return;
+      } finally {
+        clearTimeout(timer);
+      }
+      verifyingCreate = false;
+      if (registry.get(e.id) !== e) return; // torn down mid-classify
+      if (closed) {
+        // The creator left mid-classify; nobody owns the mint.
+        if (e.viewports.size === 0) registry.end(e.id);
+        return;
+      }
+      attachOrReap(e, afterSeq, fallback);
+    })();
   };
 
   // Advertise which agents this daemon offers + which are live, so the
@@ -186,6 +265,7 @@ export function openConnection(
       folderPicker: !remote && folderPickerAvailable(),
       version: VERSION,
       ...(relay ? { relay } : {}),
+      ...(subscription && !remote ? { billing: "license-key" as const } : {}),
     });
   sendAgents();
 
@@ -209,6 +289,39 @@ export function openConnection(
     }
   };
 
+  // Phase CS: the manage-subscription card's three requests. One in-flight
+  // action with a floor between starts (a stuck/hostile client must not
+  // hammer the billing backend), and EVERY request gets its reply — silence
+  // would strand the card in "working". Remote viewports are refused here
+  // too, not just denied the hello flag: the flag gates the UI, this gates
+  // the action (a crafted frame is cheap; the key's actions stay local).
+  const subThrottle = createSubscriptionThrottle(envInt("SUBSCRIPTION_MIN_GAP_MS", 2_000));
+  const handleSubscription = (id: unknown, act: keyof SubscriptionActions) => {
+    if (typeof id !== "string" || !id) return;
+    const refused = !subscription
+      ? "no subscription is configured on this daemon"
+      : remote
+        ? "manage the subscription from the desktop that holds the license key"
+        : undefined;
+    if (refused) {
+      viewport({ type: "subscription", id, error: refused });
+      return;
+    }
+    if (!subThrottle.tryStart()) {
+      viewport({ type: "subscription", id, error: "one moment — a billing request is already in flight" });
+      return;
+    }
+    void subscription![act]().then((r) => {
+      subThrottle.done();
+      if (closed) return;
+      viewport(
+        "view" in r
+          ? { type: "subscription", id, ...r.view }
+          : { type: "subscription", id, error: r.error },
+      );
+    });
+  };
+
   // Resolve a cockpit act's target session (M.2): unknown id → error reply;
   // and when the act would DRIVE the model, a remote connection gets the
   // R.4i gate, exactly like attach. Returns undefined when refused.
@@ -224,8 +337,9 @@ export function openConnection(
       sendError(`no such session: ${sessionId}`);
       return undefined;
     }
-    if (drivesModel && remote && !allowedOverRelay(target.kind)) {
-      sendError(RELAY_GATE_REFUSAL);
+    const actRefusal = drivesModel && remote ? relayGateRefusal(target) : undefined;
+    if (actRefusal) {
+      sendError(actRefusal);
       // `open()` may just have lazily revived a dormant engine. A refused
       // remote act owns no viewport, so return that engine to the ordinary
       // idle-unload path instead of leaving it warm indefinitely.
@@ -259,6 +373,13 @@ export function openConnection(
         // working somewhere else — the viewport stays unattached and the
         // onboarding card shows the error (Step 4.8).
         noteClientVersion(msg.clientVersion);
+        // Phase RC: one classification in flight per connection — a second
+        // create arriving mid-verify would interleave two mints racing one
+        // `entry` slot.
+        if (verifyingCreate) {
+          sendError("still verifying the previous create — one moment");
+          break;
+        }
         // N.5: the picker's backend choice is validated HERE, against current
         // detection + provider policy — never trusted. A refused choice is a
         // create error (the picker shows it); honoring it only with a valid
@@ -275,7 +396,7 @@ export function openConnection(
           log.info(`create → ${agent} on chosen backend ${describeBackendForLog(backend)}`);
         }
         try {
-          attachOrReap(
+          attachOrReapClassified(
             registry.create({
               cwd: typeof msg.cwd === "string" ? msg.cwd : undefined,
               agent,
@@ -292,6 +413,10 @@ export function openConnection(
         // unknown id (old bookmark / explicit end) gets the historical fresh
         // fallback; a corrupt or unavailable saved session errors in place.
         noteClientVersion(msg.clientVersion);
+        if (verifyingCreate) {
+          sendError("still verifying the previous create — one moment");
+          break;
+        }
         try {
           const existing =
             typeof msg.sessionId === "string" ? registry.open(msg.sessionId) : undefined;
@@ -306,7 +431,7 @@ export function openConnection(
               registry.detach(existing, viewport);
             }
           } else {
-            attachOrReap(registry.create(), afterSeq, typeof msg.sessionId === "string");
+            attachOrReapClassified(registry.create(), afterSeq, typeof msg.sessionId === "string");
           }
         } catch (err) {
           sendError(errText(err));
@@ -316,7 +441,14 @@ export function openConnection(
       case "prompt":
         // Echo + push live in dispatchPrompt, behind the burst gate.
         if (entry && typeof msg.text === "string" && msg.text.trim()) {
-          if (!registry.dispatchPrompt(entry, msg.text)) sendError(PROMPT_GATE_REFUSAL);
+          // R.4i, re-checked at DRIVE time: a session's credential kind can
+          // change mid-session (an OpenCode `/model` switch to a ChatGPT or
+          // Zen provider), so the attach-time gate is not enough — a remote
+          // viewport must never drive a now-subscription/gateway session over
+          // the paid relay (audit 2026-08-13, exploitable).
+          const refusal = remote ? relayGateRefusal(entry) : undefined;
+          if (refusal) sendError(refusal);
+          else if (!registry.dispatchPrompt(entry, msg.text)) sendError(PROMPT_GATE_REFUSAL);
         }
         break;
       case "bang":
@@ -424,9 +556,12 @@ export function openConnection(
         const src = typeof msg.sourceId === "string" ? msg.sourceId : "?";
         if (msg.action.kind === "prompt" && typeof msg.action.text === "string") {
           // The path the burst gate exists for: the bridge reaches here with
-          // no user gesture (its 400ms client-side gate is advisory).
+          // no user gesture (its 400ms client-side gate is advisory). Same
+          // drive-time relay re-check as the plain prompt path above.
           createLogger("action").info(`prompt from render ${src}`);
-          if (!registry.dispatchPrompt(entry, msg.action.text)) sendError(PROMPT_GATE_REFUSAL);
+          const refusal = remote ? relayGateRefusal(entry) : undefined;
+          if (refusal) sendError(refusal);
+          else if (!registry.dispatchPrompt(entry, msg.action.text)) sendError(PROMPT_GATE_REFUSAL);
         } else if (msg.action.kind === "tool" && typeof msg.action.name === "string") {
           const id = `action-${randomUUID().slice(0, 8)}`;
           registry.broadcast(entry, {
@@ -460,6 +595,15 @@ export function openConnection(
           if (!closed) sendAgents();
         });
         break;
+      case "subscription_status":
+        handleSubscription(msg.id, "status");
+        break;
+      case "subscription_cancel":
+        handleSubscription(msg.id, "cancel");
+        break;
+      case "subscription_uncancel":
+        handleSubscription(msg.id, "uncancel");
+        break;
       case "pick_folder":
         folderPicker.pick(msg);
         break;
@@ -476,6 +620,20 @@ export function openConnection(
         break;
       case "fs_diff":
         fs.diff(msg);
+        break;
+      case "fs_changes":
+        fs.changes(msg);
+        break;
+      case "file_upload_begin":
+        // File drag-and-drop staging (Phase FD) — chunked, capped, gated;
+        // handled in upload-handlers.ts (one delegation per case, like fs_*).
+        uploads.begin(msg);
+        break;
+      case "file_upload_chunk":
+        uploads.chunk(msg);
+        break;
+      case "file_upload_abort":
+        uploads.abort(msg);
         break;
       case "client_error":
         // The browser half's uncaught errors, landing in the flight-recorder
@@ -496,6 +654,7 @@ export function openConnection(
   const close = () => {
     closed = true;
     folderPicker.close();
+    uploads.dispose();
     if (entry) {
       registry.detach(entry, viewport);
       log.info(`viewport detached ← session ${entry.id}`);

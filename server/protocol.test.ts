@@ -145,6 +145,21 @@ const WIRE: WireByType = {
     version: "0.0.1",
   },
   folder_picked: { type: "folder_picked", id: "fp1", path: "/home/u/other-project" },
+  subscription: {
+    type: "subscription",
+    id: "sub1",
+    status: "active",
+    periodEnd: "2026-09-01T00:00:00Z",
+    cancelAt: "2026-09-01T00:00:00Z",
+  },
+  // Phase FD: staged-upload replies (correlated, per-viewport).
+  file_upload_done: {
+    type: "file_upload_done",
+    id: "u1",
+    path: "/tmp/mirafold-uploads/s1/notes.txt",
+    name: "notes.txt",
+  },
+  file_upload_error: { type: "file_upload_error", id: "u1", message: "file too large" },
   refused: {
     type: "refused",
     reason: "subscription_over_relay",
@@ -198,12 +213,35 @@ const WIRE: WireByType = {
     beforeTruncatedBytes: 0,
     afterTruncatedBytes: 0,
     binary: false,
+    revision: "revision:v1:0123456789abcdef",
     error: "no diff available for this entry",
+  },
+  fs_change_set: {
+    type: "fs_change_set",
+    id: "f5",
+    repos: [
+      {
+        root: "",
+        entries: [
+          { path: "src/app.ts", status: "M" },
+          { path: "README.md", status: "A" },
+        ],
+      },
+      {
+        root: "packages/tool",
+        entries: [{ path: "packages/tool/index.ts", status: "U" }],
+        truncated: true,
+        error: "git status failed",
+      },
+    ],
+    truncated: true,
+    error: "the session workspace is not readable",
   },
   fs_changed: {
     type: "fs_changed",
     paths: ["src/app.ts", ".git/index"],
     truncated: true,
+    reason: "status",
   },
   sessions: { type: "sessions", sessions: [SESSION_META] },
   session_ended: { type: "session_ended", sessionId: "s1" },
@@ -236,10 +274,18 @@ const CLIENT: ClientByType = {
   prompt_session: { type: "prompt_session", sessionId: "s1", text: "run the tests" },
   refresh_agents: { type: "refresh_agents" },
   pick_folder: { type: "pick_folder", id: "fp1", cwd: "/home/u/proj" },
+  subscription_status: { type: "subscription_status", id: "sub1" },
+  subscription_cancel: { type: "subscription_cancel", id: "sub1" },
+  subscription_uncancel: { type: "subscription_uncancel", id: "sub1" },
   fs_list: { type: "fs_list", id: "f1" },
+  fs_changes: { type: "fs_changes", id: "f5" },
   fs_listdir: { type: "fs_listdir", id: "f4", path: "src" },
   fs_read: { type: "fs_read", id: "f2", path: "src/app.ts" },
   fs_diff: { type: "fs_diff", id: "f3", path: "src/app.ts" },
+  // Phase FD: a dropped file's bytes, chunked (base64), declared size first.
+  file_upload_begin: { type: "file_upload_begin", id: "u1", name: "notes.txt", size: 11 },
+  file_upload_chunk: { type: "file_upload_chunk", id: "u1", data: "aGVsbG8gd29ybGQ=" },
+  file_upload_abort: { type: "file_upload_abort", id: "u1" },
   client_error: { type: "client_error", message: "TypeError: x is undefined", clientVersion: "0.0.1" },
 };
 

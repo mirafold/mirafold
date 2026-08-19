@@ -2,13 +2,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentInfo, AgentName, PromptOption } from "@protocol";
 import { ActivityLine, activityLabel, type Activity } from "./ActivityLine";
 import { BangBar } from "./BangBar";
+import { ChangesGlyph } from "./ChangesGlyph";
 import { FilesGlyph } from "./FilesGlyph";
 import { Onboarding } from "./Onboarding";
-import { PromptBox } from "./PromptBox";
+import { PromptBox, type PromptDraft } from "./PromptBox";
 import { RenderZone } from "./RenderZone";
 import { FilesPanel } from "./files/FilesPanel";
+import { ChangesPanel } from "./changes/ChangesPanel";
+import type { WorkspaceSurface } from "./WorkspaceTabs";
 import { StatusBar, type Usage } from "./StatusBar";
 import { createSessionBus } from "../session-bus";
+import type { SubscriptionReply } from "../subscription-card";
 import { nextOpenTurns } from "../turn-busy";
 import { traceTurn } from "../turn-trace";
 import {
@@ -22,6 +26,9 @@ import { ThemePicker } from "./ThemePicker";
 import { tildify } from "../tildify";
 import { agentLabel, connectHint } from "../agents-meta";
 import { paintTabStatus } from "../tab-status";
+import { createDomNotifier, folderTitle, notifyPrefEnabled, setNotifyPref } from "../notify";
+import { createFileDrop, quoteForPrompt, type UploadEntry } from "../file-drop";
+import type { WireMsg } from "@protocol";
 import { useEscapeKey } from "../use-escape";
 import { Announcer, turnResponse, useAnnouncer } from "./Announcer";
 import { PermBar, type PermAsk } from "./PermBar";
@@ -38,6 +45,7 @@ const ZERO_USAGE: Usage = { turnIn: 0, turnOut: 0, sumIn: 0, sumOut: 0, cost: 0 
  */
 export function Shell() {
   const promptRef = useRef<HTMLTextAreaElement>(null);
+  const promptContainerRef = useRef<HTMLDivElement>(null);
   const focusPrompt = useCallback(() => {
     promptRef.current?.focus({ preventScroll: true });
   }, []);
@@ -98,7 +106,11 @@ export function Shell() {
     folderPicker?: boolean;
     relay?: { url: string; code: string; ws?: string };
     version?: string;
+    billing?: "license-key";
   }>({ agents: null });
+  // Phase CS: the latest `subscription` reply — the pair card's manage view
+  // correlates it by id, so holding just the newest one is enough.
+  const [subReply, setSubReply] = useState<SubscriptionReply | null>(null);
 
   // ── The dismissable notices (all SHELL-OWNED — the agent paints none) ───
   const [notices, setNotices] = useState<{
@@ -130,10 +142,40 @@ export function Shell() {
 
   const hasUrlSession = useMemo(() => /^\/s\/[\w-]+/.test(location.pathname), []);
 
-  // ── The Explorer (Phase E) ──────────────────────────────────────────────
-  // The read-only files panel, collapsed by default (nothing changes for a
-  // user who never opens it). Shell-owned; the agent paints nothing in it.
-  const [filesOpen, setFilesOpen] = useState(false);
+  // ── The auxiliary workspace ─────────────────────────────────────────────
+  // Exactly one shell-owned side surface can be open: Files answers what
+  // exists; Changes answers what differs from Git HEAD. This single slot is
+  // the invariant that keeps the transcript visible on desktop and prevents
+  // stacked full-screen layers on phone.
+  const [auxiliary, setAuxiliary] = useState<WorkspaceSurface | null>(null);
+  const filesOpen = auxiliary === "files";
+  const changesOpen = auxiliary === "changes";
+  const [reviewPromptVisible, setReviewPromptVisible] = useState(false);
+  const [promptDraft, setPromptDraft] = useState<PromptDraft>();
+  const promptDraftId = useRef(0);
+  const createReviewDraft = useCallback((text: string) => {
+    promptDraftId.current += 1;
+    setPromptDraft({ id: promptDraftId.current, text });
+    setReviewPromptVisible(true);
+  }, []);
+  const toggleAuxiliary = (surface: WorkspaceSurface) => {
+    if (surface !== "changes" || auxiliary !== "changes") setReviewPromptVisible(false);
+    setAuxiliary((current) => (current === surface ? null : surface));
+  };
+  const closeAuxiliary = () => {
+    setAuxiliary(null);
+    setReviewPromptVisible(false);
+  };
+  // Phone (2026-08-18, Kyle): the status bar carries ONE workspace toggle,
+  // not two side-by-side icons; it reopens whichever surface was used last
+  // (Files until Changes has been chosen once), and the drawer's own head
+  // switches between them. Desktop keeps the two-icon rail unchanged.
+  const lastSurface = useRef<WorkspaceSurface>("files");
+  if (auxiliary) lastSurface.current = auxiliary;
+  const toggleWorkspace = () => toggleAuxiliary(lastSurface.current);
+  const switchAuxiliary = (surface: WorkspaceSurface) => {
+    if (auxiliary !== surface) toggleAuxiliary(surface);
+  };
 
   // ── The theme (4.3; two-slot model S.3) ─────────────────────────────────
   // Theme is shell-owned UI state. Dark is the default and the identity;
@@ -167,6 +209,40 @@ export function Shell() {
     setMode(entry.appearance);
   };
 
+  // ── Needs-you notifications (Phase NF) ──────────────────────────────────
+  // Preference + the browser's own grant, both shell-owned. Off by default;
+  // flipping it on is the ONLY thing that asks the browser for notification
+  // permission (never page load). "unsupported" (iOS Safari outside an
+  // installed PWA) hides the settings section entirely.
+  const [notifyOn, setNotifyOn] = useState(
+    () => typeof Notification !== "undefined" && notifyPrefEnabled(),
+  );
+  const [notifyPerm, setNotifyPerm] = useState<NotificationPermission | "unsupported">(() =>
+    typeof Notification === "undefined" ? "unsupported" : Notification.permission,
+  );
+  const toggleNotify = () => {
+    if (notifyOn) {
+      setNotifyPref(false);
+      setNotifyOn(false);
+      return;
+    }
+    if (notifyPerm === "default") {
+      // Enable only once granted — an "on" toggle that can never fire is a lie.
+      void Notification.requestPermission().then((p) => {
+        setNotifyPerm(p);
+        if (p === "granted") {
+          setNotifyPref(true);
+          setNotifyOn(true);
+        }
+      });
+      return;
+    }
+    // "denied" still flips the preference on — the card's hint line says why
+    // it stays silent, and un-blocking in the browser then just works.
+    setNotifyPref(true);
+    setNotifyOn(true);
+  };
+
   // The socket + pub/sub live in session-bus.ts (H.9); one bus per mount.
   // useState's lazy initializer, NOT useMemo: Fast Refresh re-runs useMemo on
   // every hot edit (dependency lists are deliberately ignored), and each
@@ -174,10 +250,39 @@ export function Shell() {
   // inflating the fleet's viewport count during dev (2026-07-25, Kyle).
   // State survives a hot update, so the one bus lives as long as the page.
   const [bus] = useState(createSessionBus);
+  // Same lazy-useState idiom: one notifier (and one visibilitychange
+  // listener) for the page's life. Null where the API doesn't exist.
+  const [notifier] = useState(createDomNotifier);
+
+  // ── File drag-and-drop (Phase FD) ───────────────────────────────────────
+  // Shell chrome end to end: the drop overlay, the upload strip, and the
+  // staged-path insertion are shell-owned; agent output can't reach any of
+  // them. The pure core lives in file-drop.ts; the ref indirection lets the
+  // once-created instance call the latest announce/draft closures.
+  const [uploads, setUploads] = useState<UploadEntry[]>([]);
+  const [dragActive, setDragActive] = useState(false);
+  const attachDroppedPath = useRef<(path: string, name: string) => void>(() => {});
+  const [fileDrop] = useState(() =>
+    createFileDrop({
+      uploadBegin: (name, size) => bus.uploadBegin(name, size),
+      uploadChunk: (id, data) => bus.uploadChunk(id, data),
+      uploadAbort: (id) => bus.uploadAbort(id),
+      onChange: setUploads,
+      onAttached: (path, name) => attachDroppedPath.current(path, name),
+    }),
+  );
 
   // Screen-reader announcements (A.1) — see Announcer.tsx for why the
   // transcript itself stays silent and these speak at turn boundaries.
   const { message: announcement, announce } = useAnnouncer();
+  // Phase FD: a staged path lands in the prompt through the draft merge —
+  // which never discards composed text — quoted the way a terminal drop
+  // quotes, with a polite announcement naming what happened.
+  attachDroppedPath.current = (path, name) => {
+    promptDraftId.current += 1;
+    setPromptDraft({ id: promptDraftId.current, text: quoteForPrompt(path) });
+    announce(`Attached ${name} — its path was added to the prompt.`);
+  };
   // The turn's prose, accumulated from text_delta so turn_end can announce
   // the response once, whole. A ref (not state): nothing renders from it, and
   // it must not re-run the subscription on every token.
@@ -189,6 +294,9 @@ export function Shell() {
   useEffect(
     () =>
       bus.subscribe((m) => {
+        // Upload replies are per-viewport correlation traffic, not session
+        // history — route them before the turn accounting ever sees them.
+        if (fileDrop.handle(m as WireMsg)) return;
         // Replayed history must repaint state but never re-fire live-only
         // side effects: on every reload/reconnect the full-buffer replay
         // re-spoke each historical turn to screen readers, ending with an
@@ -218,22 +326,39 @@ export function Shell() {
           // The turn COUNTER re-derives with it (nextOpenTurns' floor rule,
           // 2026-07-29 bughunt — see turn-busy.ts).
           setBusy(true);
+          // SA.2/SA.3: a SUBAGENT's traffic (parentId set) still proves the
+          // turn is busy, but it is not the parent's voice — child prose and
+          // child tool churn must not steer the activity label (the deck
+          // shows each subagent's own current action; bughunt 2026-08-14 r2
+          // aligned tool_use with the design after the server-side comment
+          // claimed it and the client contradicted it), and child prose
+          // never lands in the turn-end announcement. The announcer still
+          // speaks child tools — the audible peer of the deck's ticker.
+          const subagentTraffic =
+            (m.type === "text_delta" || m.type === "thinking_delta" || m.type === "tool_use") &&
+            m.parentId;
           if (m.type === "status") setActivity({ state: m.state, label: m.label });
-          else if (m.type === "thinking_delta") setActivity({ state: "thinking" });
-          else if (m.type === "tool_use") setActivity({ state: "tool", label: m.name });
+          else if (m.type === "thinking_delta") {
+            if (!subagentTraffic) setActivity({ state: "thinking" });
+          } else if (m.type === "tool_use") {
+            if (!subagentTraffic) setActivity({ state: "tool", label: m.name });
+          }
           // Streamed prose means the last specific label is over; the
           // indicator falls back to the generic "working…".
-          else setActivity(null);
+          else if (!subagentTraffic) setActivity(null);
           // A.1: the response is announced once at turn_end, so the prose is
           // banked here rather than spoken per token.
-          if (m.type === "text_delta") turnText.current += m.text;
+          if (m.type === "text_delta" && !subagentTraffic) turnText.current += m.text;
           // Tool activity is the other thing a sighted user reads off the
           // transcript mid-turn; announce the name, not the arguments.
           if (m.type === "tool_use" && live) announce(`Running ${m.name}.`);
         } else if (m.type === "tool_result") {
           // A finished tool must not keep naming itself — a frozen "Bash"
           // through the next model round trip reads as "done?" (2026-07-29).
-          setActivity((a) => (a?.state === "tool" ? null : a));
+          // A CHILD's result is not the labeled tool finishing: subagent
+          // traffic never steers the root label, in either direction
+          // (bughunt 2026-08-14 r2).
+          if (!m.parentId) setActivity((a) => (a?.state === "tool" ? null : a));
         } else if (m.type === "turn_end") {
           setBusy(openTurns.current > 0);
           setActivity(null);
@@ -241,11 +366,18 @@ export function Shell() {
           if (live) announce(turnResponse(turnText.current));
           turnText.current = "";
         } else if (m.type === "permission_request") {
-          setAsks((a) => [...a, { tool: m.tool, detail: m.detail, id: m.id }]);
+          setAsks((a) => [
+            ...a,
+            { tool: m.tool, detail: m.detail, id: m.id, ...(m.parentId ? { parentId: m.parentId } : {}) },
+          ]);
           // Assertive: this one blocks the turn until answered. A replayed
           // ask still paints the bar (it may be genuinely pending), just
           // without re-interrupting the reader.
-          if (live) announce(`Permission needed: ${m.tool}. ${m.detail}`, true);
+          if (live)
+            announce(
+              `Permission needed${m.parentId ? " (subagent)" : ""}: ${m.tool}. ${m.detail}`,
+              true,
+            );
         } else if (m.type === "permission_resolved") {
           // The ask was answered on ANOTHER viewport, or auto-denied by the
           // daemon's timeout — drop it HERE too. Before this, the bar sat
@@ -265,7 +397,10 @@ export function Shell() {
             folderPicker: m.folderPicker,
             relay: m.relay,
             version: m.version,
+            billing: m.billing,
           });
+        } else if (m.type === "subscription") {
+          setSubReply(m);
         } else if (m.type === "prompt_options") {
           setPromptOptions(m.options);
         } else if (m.type === "session_created") {
@@ -372,6 +507,72 @@ export function Shell() {
     paintTabStatus(asks.length > 0 ? "permission" : busy ? "busy" : "idle");
   }, [busy, asks.length]);
 
+  // Needs-you notifications (NF.1): the same tri-state the tab light paints,
+  // pushed through the notifier so a hidden viewport can toast. reset() on
+  // any disconnect: the drop forces busy→false above, and that forced edge
+  // must never read as a finished turn.
+  useEffect(() => {
+    if (!notifier) return;
+    if (!connected || !meta.sessionId) {
+      notifier.reset();
+      return;
+    }
+    const ask = asks[0];
+    notifier.update([
+      {
+        id: meta.sessionId,
+        state: asks.length > 0 ? "permission" : busy ? "busy" : "idle",
+        title: folderTitle(meta.cwd) ?? (meta.agent ? agentLabel(meta.agent) : "session"),
+        agent: meta.agent ? agentLabel(meta.agent) : undefined,
+        tool: ask?.tool,
+        detail: ask?.detail,
+      },
+    ]);
+  }, [notifier, connected, busy, asks, meta]);
+
+  // Phase FD: window-level drag targets — anywhere on the page is the drop
+  // zone (small targets punish drags), gated off onboarding (no session to
+  // stage into). Depth-counted because dragenter/dragleave fire per element
+  // crossed; only file drags participate (text selections drag too).
+  useEffect(() => {
+    if (!meta.sessionId) return;
+    let depth = 0;
+    const hasFiles = (e: DragEvent) =>
+      Array.from(e.dataTransfer?.types ?? []).includes("Files");
+    const enter = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      depth += 1;
+      setDragActive(true);
+    };
+    const over = (e: DragEvent) => {
+      if (hasFiles(e)) e.preventDefault();
+    };
+    const leave = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      depth = Math.max(0, depth - 1);
+      if (depth === 0) setDragActive(false);
+    };
+    const drop = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      depth = 0;
+      setDragActive(false);
+      const files = Array.from(e.dataTransfer?.files ?? []);
+      if (files.length) fileDrop.start(files);
+    };
+    window.addEventListener("dragenter", enter);
+    window.addEventListener("dragover", over);
+    window.addEventListener("dragleave", leave);
+    window.addEventListener("drop", drop);
+    return () => {
+      window.removeEventListener("dragenter", enter);
+      window.removeEventListener("dragover", over);
+      window.removeEventListener("dragleave", leave);
+      window.removeEventListener("drop", drop);
+    };
+  }, [meta.sessionId, fileDrop]);
+
   const answer = (id: string, allow: boolean) => {
     bus.answerPermission(id, allow);
     setAsks((a) => a.filter((x) => x.id !== id));
@@ -381,6 +582,7 @@ export function Shell() {
   // shell command (4.9); the finished transcript then reaches the agent as
   // its own turn, exactly as the terminal harness does.
   const send = (text: string) => {
+    setReviewPromptVisible(false);
     const m = text.match(/^!\s*(.+)$/s);
     if (m) {
       const command = m[1].trim();
@@ -395,7 +597,7 @@ export function Shell() {
   const showOnboarding = !hasUrlSession && !meta.sessionId;
 
   return (
-    <div className="shell">
+    <div className={"shell" + (changesOpen && reviewPromptVisible ? " changes-draft-visible" : "")}>
       <Announcer message={announcement} />
       {showOnboarding && (
         <Onboarding
@@ -448,14 +650,16 @@ export function Shell() {
         {/* The activity bar (VS Code convention) is the workbench's permanent
             left edge — it spans transcript, prompt box AND status bar,
             everything to its strict right; only banners run full-width. Its
-            files icon opens/collapses the Explorer panel (E.3), which sits
-            left of the transcript in a flex row so the transcript keeps
-            rendering beside it; panel closed = transcript full-width. */}
+            Files and Changes icons share one auxiliary workspace slot, which
+            sits left of the transcript in a flex row so the transcript keeps
+            rendering beside it; both closed = transcript full-width. */}
         <div className="main-row">
           <ActivityBar
             filesOpen={filesOpen}
+            changesOpen={changesOpen}
             disabled={!meta.sessionId}
-            onToggleFiles={() => setFilesOpen((f) => !f)}
+            onToggleFiles={() => toggleAuxiliary("files")}
+            onToggleChanges={() => toggleAuxiliary("changes")}
           />
           <div className="main-col">
             <div className="zone-outer">
@@ -465,7 +669,22 @@ export function Shell() {
                 requestListdir={bus.requestFsListdir}
                 requestRead={bus.requestFsRead}
                 requestDiff={bus.requestFsDiff}
-                onClose={() => setFilesOpen(false)}
+                onClose={closeAuxiliary}
+                onSwitch={switchAuxiliary}
+                rootLabel={tildify(meta.cwd, daemonInfo.home)}
+                sessionKey={meta.sessionId}
+              />
+              <ChangesPanel
+                open={changesOpen && Boolean(meta.sessionId)}
+                subscribe={bus.subscribe}
+                requestChanges={bus.requestFsChanges}
+                requestRead={bus.requestFsRead}
+                requestDiff={bus.requestFsDiff}
+                onClose={closeAuxiliary}
+                onSwitch={switchAuxiliary}
+                onCreateDraft={createReviewDraft}
+                promptContainerRef={promptContainerRef}
+                promptVisible={reviewPromptVisible}
                 rootLabel={tildify(meta.cwd, daemonInfo.home)}
                 sessionKey={meta.sessionId}
               />
@@ -486,6 +705,27 @@ export function Shell() {
                 onKill={() => bus.killBang(bang.my!.id)}
               />
             )}
+            {uploads.length > 0 && (
+              <div className="drop-strip">
+                {uploads.map((u) => (
+                  <span
+                    key={u.id}
+                    className={"drop-chip" + (u.status === "error" ? " is-error" : "")}
+                  >
+                    {u.status === "uploading" ? `⇪ ${u.name}…` : `${u.name}: ${u.message}`}
+                    {u.status === "error" && (
+                      <button
+                        className="drop-chip-dismiss"
+                        onClick={() => fileDrop.dismiss(u.id)}
+                        aria-label={`Dismiss the ${u.name} upload error`}
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </span>
+                ))}
+              </div>
+            )}
             <PromptBox
               onSend={send}
               busy={busy}
@@ -493,6 +733,8 @@ export function Shell() {
               cwd={tildify(meta.cwd, daemonInfo.home)}
               options={promptOptions}
               textareaRef={promptRef}
+              containerRef={promptContainerRef}
+              draft={promptDraft}
               globalTriggersDisabled={showOnboarding || settingsOpen}
             />
             <StatusBar
@@ -511,17 +753,34 @@ export function Shell() {
               onEndSession={meta.sessionId ? bus.endSession : undefined}
               relay={daemonInfo.relay}
               version={daemonInfo.version}
-              filesOpen={filesOpen}
-              filesDisabled={!meta.sessionId}
-              onToggleFiles={() => setFilesOpen((f) => !f)}
+              billing={daemonInfo.billing === "license-key"}
+              subRequest={bus.requestSubscription}
+              subReply={subReply}
+              workspaceOpen={auxiliary !== null}
+              workspaceDisabled={!meta.sessionId}
+              onToggleWorkspace={toggleWorkspace}
             />
           </div>
         </div>
+        {dragActive && (
+          <div className="drop-overlay" aria-hidden="true">
+            <div className="drop-overlay-card">Drop files — their paths go to the prompt</div>
+          </div>
+        )}
         {settingsOpen && (
           <ThemePicker
             slots={slots}
             onPick={pickTheme}
             onClose={() => setSettingsOpen(false)}
+            notify={
+              notifyPerm === "unsupported"
+                ? undefined
+                : {
+                    enabled: notifyOn,
+                    blocked: notifyPerm === "denied",
+                    onToggle: toggleNotify,
+                  }
+            }
             // The card's Session section (R.4l) — on phone this is THE place
             // these facts live (the bar carries only the agent name; the
             // prompt crumb is desktop-only), so it gets everything.
@@ -559,19 +818,23 @@ function NoticeLine({ text, onDismiss }: { text: string; onDismiss: () => void }
 }
 
 /** The workbench's permanent left strip (VS Code's activity-bar convention):
- *  always present so the affordance never moves; its files icon opens or
- *  collapses the Explorer panel (E.3). Disabled until there's a session.
+ *  always present so the affordance never moves; its Files and Changes icons
+ *  share one auxiliary workspace slot. Disabled until there's a session.
  *  DESKTOP ONLY (2026-07-25, Kyle): on ≤640px the strip is hidden — a
- *  permanent 46px rail is too much of a 390px screen — and the same toggle
- *  lives in the status bar instead (StatusBar's sb-files). */
+ *  permanent 46px rail is too much of a 390px screen — and both toggles live
+ *  in the status bar instead. */
 function ActivityBar({
   filesOpen,
+  changesOpen,
   disabled,
   onToggleFiles,
+  onToggleChanges,
 }: {
   filesOpen: boolean;
+  changesOpen: boolean;
   disabled: boolean;
   onToggleFiles: () => void;
+  onToggleChanges: () => void;
 }) {
   return (
     <div className="activity-bar">
@@ -584,6 +847,16 @@ function ActivityBar({
         aria-expanded={filesOpen}
       >
         <FilesGlyph />
+      </button>
+      <button
+        className={"ab-btn ab-changes" + (changesOpen ? " is-active" : "")}
+        onClick={onToggleChanges}
+        disabled={disabled}
+        title={changesOpen ? "Hide workspace changes" : "Show workspace changes"}
+        aria-label="Workspace changes"
+        aria-expanded={changesOpen}
+      >
+        <ChangesGlyph />
       </button>
     </div>
   );

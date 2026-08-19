@@ -1,0 +1,236 @@
+/* ---- Artifacts (Phase 3) -------------------------------------------------
+   Shell-drawn frame around the sandboxed iframe. The chrome bar (label +
+   "sandboxed" badge) lives OUTSIDE the iframe so agent content can't fake
+   or restyle it. User-resizable vertically; the iframe fills the rest. */
+
+.artifact {
+  display: flex;
+  flex-direction: column;
+  max-width: 720px;
+  height: 340px;
+  min-height: 120px;
+  resize: vertical;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border-2);
+  border-radius: 10px;
+  animation: rc-mount 0.22s ease-out;
+}
+
+.artifact-chrome {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border-2);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78em;
+  color: var(--fg-dim);
+  user-select: none;
+}
+
+.artifact-badge {
+  color: var(--accent);
+  border: 1px solid var(--ok-border);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 0.9em;
+}
+
+/* Right side of the chrome bar: the badge plus the shell-drawn pin control. */
+.artifact-chrome-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.artifact-pin {
+  padding: 0 2px;
+  background: transparent;
+  border: 0;
+  color: var(--fg-dim);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.artifact-pin:hover {
+  color: var(--fg);
+}
+
+.artifact-frame {
+  flex: 1;
+  width: 100%;
+  border: 0;
+  display: block;
+  background: var(--surface);
+}
+
+/* Failure fallback (Step 3.4): the frame is gone; source takes its place. */
+.artifact-failed {
+  height: auto;
+  max-height: 340px;
+  resize: none;
+}
+
+.artifact-badge-failed {
+  color: var(--error);
+  border-color: var(--err-border);
+}
+
+.artifact-badge-warn {
+  color: var(--warn-fg);
+  border-color: var(--warn-border-2);
+  cursor: help;
+}
+
+.artifact-fallback {
+  overflow: auto;
+  padding: 10px 12px;
+}
+
+.artifact-fallback-note {
+  color: var(--fg-dim);
+  font-size: 0.85em;
+  margin-bottom: 8px;
+}
+
+.artifact-source {
+  margin: 0;
+  padding: 10px;
+  background: var(--code-bg);
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8em;
+  color: var(--code-fg);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ---- Pinning ------------------------------------------------------------
+   The pin affordance is drawn by trusted shell code as a frame *around*
+   rendered blocks — never inside a component, so agent-supplied props can't
+   fake or reach it. */
+
+.pin-btn {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  z-index: 1;
+  padding: 2px 7px;
+  font-size: 0.85em;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.turn-render:hover .pin-btn,
+.pin-dock-item:hover .pin-btn {
+  opacity: 1;
+}
+
+.pin-btn:hover {
+  border-color: var(--border-hover);
+}
+
+.pin-btn.is-pinned {
+  color: var(--fg-dim);
+}
+
+/* Placeholder holding a pinned block's spot in the transcript. */
+.pin-stub {
+  align-self: flex-start;
+  margin: 0 4px;
+  padding: 6px 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82em;
+  color: var(--fg-dim);
+  background: transparent;
+  border: 1px dashed var(--border-mid);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.pin-stub:hover {
+  color: var(--fg-body);
+  border-color: var(--border-hover);
+}
+
+.pin-dock {
+  width: 340px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  border-left: 1px solid var(--border);
+  padding: 18px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: dock-in 0.18s ease-out;
+}
+
+@keyframes dock-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+}
+
+.pin-dock-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.pin-dock-title {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82em;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg-dim);
+}
+
+.dock-btn {
+  padding: 2px 8px;
+  background: transparent;
+  color: var(--fg-dim);
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.dock-btn:hover {
+  color: var(--fg-body);
+  border-color: var(--border-hover);
+}
+
+.pin-dock-item {
+  position: relative;
+}
+
+.pin-dock-item .rc {
+  max-width: none;
+}
+
+/* Collapsed dock: a thin edge tab that keeps the pins one click away. */
+.pin-tab {
+  flex-shrink: 0;
+  width: 30px;
+  writing-mode: vertical-rl;
+  padding: 14px 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82em;
+  color: var(--fg-dim);
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.pin-tab:hover {
+  color: var(--fg-body);
+  background: var(--surface);
+}
+

@@ -16,7 +16,7 @@
  * since Phase P.4 — the browser picks which agent a session runs at onboarding,
  * so the name is part of the shared contract (adapters/types.ts re-exports it).
  */
-export type AgentName = "claude-code" | "codex" | "gemini-cli";
+export type AgentName = "claude-code" | "codex" | "gemini-cli" | "opencode";
 
 /** One provider-owned completion shown by the trusted prompt shell before a
  * prompt is submitted. `value` includes its trigger (`/model`, `$audit`), so
@@ -56,7 +56,13 @@ export type PromptOption = {
 export type WireMsg = WireMsgBody & { seq?: number; replay?: true };
 
 type WireMsgBody =
-  | { type: "text_delta"; text: string }
+  // `parentId` (SA.2, additive like tool_use's): when set, this prose is a
+  // SUBAGENT's, grouped under the spawn record whose wire id it names. The
+  // handle is OPAQUE and adapter-chosen — shared code only ever groups by
+  // it, never parses or dereferences it (for Claude Code it happens to be
+  // the spawn tool_use id; the protocol does not promise that). Old clients
+  // ignore the field and render the prose inline, exactly as before.
+  | { type: "text_delta"; text: string; parentId?: string }
   // Phase UX.1: the selected provider's live prompt-completion catalog.
   // This is shell data, not agent-authored UI: the browser opens it as soon
   // as the trigger is typed, before anything is sent to the provider. A new
@@ -116,7 +122,11 @@ type WireMsgBody =
     }
   // Phase T.3: the turn is paused on a gated tool call until the browser
   // answers (or the server times out to deny). Drawn by the trusted shell.
-  | { type: "permission_request"; tool: string; detail: string; id: string }
+  // `parentId` (SA.3, additive): set when the ASKER is a subagent — the
+  // same opaque spawn handle the tool/prose lanes group by. The shell shows
+  // a dim "subagent" chip; the ask itself is answered exactly like any
+  // other. Old clients ignore the field.
+  | { type: "permission_request"; tool: string; detail: string; id: string; parentId?: string }
   // 2026-07-28: the ask above RESOLVED — answered from ANY viewport, or
   // auto-denied by the adapter's timeout/interrupt. Broadcast on the session
   // stream so every attached viewport (and the replay buffer) drops the bar
@@ -201,10 +211,30 @@ type WireMsgBody =
       folderPicker?: boolean;
       relay?: { url: string; code: string; ws?: string };
       version?: string;
+      // Phase CS (optional/additive): this daemon runs on a license key and
+      // can manage the subscription behind it — the "manage subscription"
+      // affordance's gate. LOCAL viewports only (the R.4i posture: billing
+      // actions stay on the machine that holds the key); token-override,
+      // self-host, and unentitled daemons send nothing. Old clients strip it.
+      billing?: "license-key";
     }
   // N2: one local, per-viewport reply to `pick_folder`; never broadcast or
   // replayed. Cancel is explicit so an empty reply cannot strand the button.
   | { type: "folder_picked"; id: string; path?: string; canceled?: true; error?: string }
+  // Phase CS: the one reply to all three subscription_* requests — the
+  // manage-subscription card's data, per-viewport request/reply (echoed
+  // client-minted id), never broadcast or replay-buffered. Success carries
+  // the view (`cancelAt` set = a cancellation is scheduled for that
+  // instant); failure carries `error` and nothing else. The license key
+  // itself never rides this wire in either direction — the daemon holds it.
+  | {
+      type: "subscription";
+      id: string;
+      status?: string;
+      periodEnd?: string;
+      cancelAt?: string;
+      error?: string;
+    }
   // The daemon refused to attach this REMOTE (relay) viewport to the
   // session because the session's credential can't be used over the paid relay
   // — a subscription-backed agent (closed-model reselling posture). Sent instead
@@ -229,8 +259,9 @@ type WireMsgBody =
     }
   // Phase T2.1: the model's reasoning stream, full fidelity. Renders as a
   // dim block that folds to one line once the turn's real output starts —
-  // collapse-on-finalize, never dropped.
-  | { type: "thinking_delta"; text: string }
+  // collapse-on-finalize, never dropped. `parentId` rides here too, exactly
+  // as on text_delta (SA.2): a subagent's reasoning, grouped under its deck.
+  | { type: "thinking_delta"; text: string; parentId?: string }
   // Phase F.2: a service-status line — an event the terminal shows and the
   // adapter would otherwise drop, so the UI never lies in degraded service:
   // an API retry (terminal shows "retrying…"; we'd sit on "thinking…" looking
@@ -331,6 +362,23 @@ type WireMsgBody =
       beforeTruncatedBytes?: number;
       afterTruncatedBytes?: number;
       binary?: boolean;
+      // CR.4: opaque keyed identity of the exact HEAD + working-tree bytes.
+      // Absent when the bounded reader cannot establish an exact revision.
+      revision?: string;
+      error?: string;
+    }
+  // Phase CR.1: the complete Git change set for the session workspace.
+  // `root` is each repository's session-root-relative directory ("" when
+  // the session itself is in one repo); entry paths are session-root-relative
+  // so they can ride the existing fs_read/fs_diff jail unchanged. A parent
+  // directory holding several repos gets one explicit group per repo. Like
+  // every fs_* query this is per-viewport, correlated, never replayed, and
+  // cap/error honest.
+  | {
+      type: "fs_change_set";
+      id: string;
+      repos: FsChangeRepo[];
+      truncated?: boolean;
       error?: string;
     }
   // The live-tree doorbell (Phase W): something under the session root
@@ -343,7 +391,27 @@ type WireMsgBody =
   // refetch what you show. Consumers must never require the hint; this is
   // a doorbell, not a per-file event feed (the no-extensions decision is
   // what makes that sufficient permanently).
-  | { type: "fs_changed"; paths?: string[]; truncated?: boolean }
+  | {
+      type: "fs_changed";
+      paths?: string[];
+      truncated?: boolean;
+      // A bounded fs_listdir reply shipped before Git status was ready. The
+      // settled cache should refresh visible badges, but no disk mutation is
+      // being reported and review progress must not be invalidated. Optional
+      // so older clients still perform their existing safe refresh.
+      reason?: "status";
+    }
+  // File drag-and-drop input (Phase FD): the staged-upload replies. A drop
+  // ships the file's BYTES (browsers never expose a dropped file's real
+  // path) in bounded chunks; `done` answers with the absolute path the
+  // daemon staged them at — OUTSIDE the working tree — which the shell
+  // inserts into the prompt for the agent to read with its own tools,
+  // exactly like a terminal drop's inserted path. Correlated per-viewport
+  // request/reply (echoed client-minted id) — never broadcast, never
+  // replay-buffered. `name` rides `done` so the strip can label the result
+  // without holding client state hostage to it.
+  | { type: "file_upload_done"; id: string; path: string; name: string }
+  | { type: "file_upload_error"; id: string; message: string }
   // Reply to a client ping — connection liveness only, never
   // buffered or sequenced (4.4).
   | { type: "pong" }
@@ -366,7 +434,9 @@ export type AgentInfo = {
   agent: AgentName;
   live: boolean;
   blocked?: boolean;
-  kind?: "api-key" | "subscription" | "local";
+  // "gateway" added 2026-08-13 (OpenCode Zen) — additive: an older bundle
+  // shows its generic fallback label for an unknown kind, nothing breaks.
+  kind?: "api-key" | "subscription" | "local" | "gateway";
   detail?: string;
   backends?: AgentBackend[];
 };
@@ -385,7 +455,7 @@ export type AgentInfo = {
  * the browser never infers this privacy claim from a hostname prefix.
  */
 export type AgentBackend = {
-  kind: "api-key" | "subscription" | "local";
+  kind: "api-key" | "subscription" | "local" | "gateway";
   usable: boolean;
   blocked?: boolean;
   detail?: string;
@@ -415,7 +485,7 @@ export type AgentBackend = {
  *  is the picked catalog entry. Labels and opaque identifiers only — never a
  *  configured URL or credential. */
 export type BackendChoice = {
-  kind: "api-key" | "subscription" | "local";
+  kind: "api-key" | "subscription" | "local" | "gateway";
   endpoint?: string;
   backendId?: string;
   provider?: string;
@@ -428,6 +498,15 @@ export type BackendChoice = {
  *  known cost is that empty directories are invisible). `status` arrives with
  *  E.2's git layer: a single collapsed change char (M/A/D/U). */
 export type FsEntry = { path: string; status?: string };
+
+/** One repository in the CR.1 workspace change set. Both `root` and every
+ *  entry path are relative to the immutable session root and /-separated. */
+export type FsChangeRepo = {
+  root: string;
+  entries: FsEntry[];
+  truncated?: boolean;
+  error?: string;
+};
 
 /** One child in an fs_dir reply (E2.1): a NAME within the listed directory —
  *  never a path; the client owns nesting (the lazy-tree inversion of
@@ -558,6 +637,15 @@ export type ClientMsg =
   // folder dialog. `cwd` is only the suggested starting directory; the daemon
   // validates it and returns the actual selected path in `folder_picked`.
   | { type: "pick_folder"; id: string; cwd?: string }
+  // Phase CS: the manage-subscription card's three requests, each answered
+  // by exactly one `subscription` reply with the echoed id. `status` reads;
+  // `cancel` schedules an end-of-period cancellation (the confirm step is
+  // the shell's, client-side); `uncancel` removes a scheduled one. Local
+  // viewports only — a remote (relay) viewport gets an error reply, and
+  // never the `billing` hello flag that draws the affordance.
+  | { type: "subscription_status"; id: string }
+  | { type: "subscription_cancel"; id: string }
+  | { type: "subscription_uncancel"; id: string }
   // Phase E (Explorer): the read-only file browser's per-viewport queries.
   // `id` is client-minted (the bang-id grammar) so the issuing component can
   // correlate the one reply each request gets. The path is a REQUEST — the
@@ -565,6 +653,9 @@ export type ClientMsg =
   // files; the client is never trusted with a path. Both types are throttled
   // per connection (throttled requests still get an error reply).
   | { type: "fs_list"; id: string }
+  // CR.1: all changed files, grouped by repository; answered as
+  // fs_change_set. No path argument: the immutable session root is the scope.
+  | { type: "fs_changes"; id: string }
   | { type: "fs_read"; id: string; path: string }
   // E.2: "what changed in this file" — answered as fs_file_diff. Same id
   // grammar, same jail, same throttle family as fs_read.
@@ -579,6 +670,15 @@ export type ClientMsg =
   // user's daemon can be version-skewed, so the whole-tree pair is the
   // compatibility floor, never removed here.
   | { type: "fs_listdir"; id: string; path: string }
+  // File drag-and-drop input (Phase FD): a dropped file's bytes, chunked.
+  // `begin` declares a sanitized display name and the exact total size (the
+  // cap check runs before any byte arrives); `chunk.data` is base64, each
+  // decoded chunk bounded well under MAX_WS_PAYLOAD; `abort` discards a
+  // partial upload (a navigating page, a cancelled drop). Same id grammar
+  // as fs correlation ids; per-connection state only.
+  | { type: "file_upload_begin"; id: string; name: string; size: number }
+  | { type: "file_upload_chunk"; id: string; data: string }
+  | { type: "file_upload_abort"; id: string }
   // The browser half's uncaught errors (window "error"/"unhandledrejection"),
   // forwarded so the daemon's flight-recorder log hears about a front-end
   // crash — otherwise a "it went blank" bug report arrives with an empty log

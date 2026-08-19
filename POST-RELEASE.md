@@ -123,13 +123,32 @@ has a home in this plan, the entry points there instead of duplicating it.
     (which context owns the key) must be settled once and reused by both. Decide
     it with whichever of the two ships first.
 
+- [ ] **Needs-you notifications, the closed-browser tier** (parked from Phase
+  NF, 2026-08-12) — true Web Push so a phone with the browser closed still
+  hears "a session needs you": a service worker + Push API subscription, the
+  daemon (or relay) sending through the browser vendors' push services, and
+  on iOS only inside an installed PWA (which makes the PWA idea above its
+  prerequisite). E2E wrinkle to solve honestly: the relay is deliberately
+  blind, so either the daemon encrypts push payloads end-to-end or the push
+  is content-free ("a session needs you") with detail loading on tap. Ship
+  only after the local tiers (Phase NF) prove the habit loop.
+
+- [ ] **Needs-you notifications, cross-tab suppression** (parked from Phase
+  NF, 2026-08-12) — v1 accepts one sharp edge: a hidden fleet tab can toast
+  about a session that's visible in another tab (same `tag` keeps it to a
+  single toast). If it turns out to annoy in practice, a BroadcastChannel
+  "session X visible here" heartbeat lets hidden tabs suppress toasts for
+  sessions the user is already looking at.
+
 - [ ] **Multiuser chat** — multiple people in one session's conversation;
   rides Phase 4's multi-user seam (Locked decisions: "architected so
   multi-user is additive later").
 
-- [ ] **Input augment** — drag & drop and paste (files, images) into the
-  prompt box; eventually voice input. All shell-owned — the trusted-shell
-  boundary is untouched.
+- [ ] **Input augment** — the drag & drop half SHIPPED 2026-08-12 as the
+  plan's "File drag-and-drop input" phase (chunked upload to a per-session
+  staging dir, staged path into the prompt). Remaining here: clipboard
+  PASTE of files/images into the prompt box, and eventually voice input.
+  All shell-owned — the trusted-shell boundary is untouched.
 
 - [ ] **Skills as buttons** — surface the agent's skills / slash commands as
   clickable shell affordances instead of typed invocations.
@@ -233,3 +252,13 @@ has a home in this plan, the entry points there instead of duplicating it.
 
 ---
 
+
+- [x] **Remote CREATE of an OpenCode session** — PROMOTED to PLAN.md Phase RC
+  (2026-08-13, Kyle-directed) — today a relay viewport can
+  only ATTACH to an OpenCode session after its first local turn classifies
+  the credential (`kindPending` refuses remote actions until the publish —
+  the fail-closed OC.4c design; the refusal copy says so honestly since the
+  2026-08-13 bughunt). Supporting remote creation needs classify-BEFORE-
+  create: spawn the engine, read the provider catalog, judge the pin, and
+  only then admit the remote viewport — a create-path redesign, not a
+  gate tweak.

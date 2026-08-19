@@ -1,8 +1,8 @@
 # Mirafold
 
 **Mirafold is a browser interface for the terminal coding agent you already
-use — Claude Code, Codex, or Gemini CLI — rendered faithfully, with
-generative UI on top.** The agent runs on your own machine, with your own
+use — Claude Code, Codex, OpenCode, or Gemini CLI — rendered faithfully,
+with generative UI on top.** The agent runs on your own machine, with your own
 credentials, settings, memory, and permission rules, exactly as in the
 terminal — a Codex user gets **Codex** in the browser, never "Claude
 things". As it works, the agent paints live charts, tables, checklists, and
@@ -17,7 +17,7 @@ didn't mean switching to another window (a `!`-prefixed command runs in a
 real PTY, in the same page, with the password prompt in a masked input the
 agent never sees), or that you could check on a long run from your phone
 (Pro) — that's this. And if you've been searching for a web UI, GUI, or
-frontend for Claude Code, Codex, or Gemini CLI: this is that.
+frontend for Claude Code, Codex, OpenCode, or Gemini CLI: this is that.
 
 > **Mirafold is in public beta** — new, moving fast, and issues are wanted:
 > the [issue tracker](https://github.com/mirafold/mirafold/issues) is the
@@ -32,9 +32,9 @@ agent emits sandboxed arbitrary UI into a locked-down iframe. A fixed,
 trusted shell owns the prompt box, the socket, and all credentials, and the
 agent can never touch any of them.
 
-*Claude Code, Codex, and Gemini CLI are trademarks of their respective
-owners; Mirafold is not affiliated with or endorsed by Anthropic, OpenAI, or
-Google.*
+*Claude Code, Codex, OpenCode, and Gemini CLI are trademarks of their
+respective owners; Mirafold is not affiliated with or endorsed by Anthropic,
+OpenAI, the OpenCode project, or Google.*
 
 **Know what you're running.** Mirafold drives a real coding agent on your
 machine: with your permission it reads and writes files, runs shell
@@ -48,16 +48,18 @@ links in agent output like links from a stranger, and read
 the known trade-offs we've chosen to disclose rather than paper over.
 
 > **The faithful-skin-per-agent model is the identity, and it's shipped (PLAN
-> Phase P, complete).** Three terminal agents run behind one front end today —
-> **Claude Code** (Anthropic Agent SDK), **Codex** (OpenAI), and **Gemini CLI**
-> (Google) — each driving its **own** engine, normalizing its event stream to
-> `WireMsg` behind the `AgentSession` seam (§2.2), and carrying Mirafold's
+> Phase P, complete; OpenCode added in Phase OC).** Four terminal agents run
+> behind one front end today — **Claude Code** (Anthropic Agent SDK), **Codex**
+> (OpenAI), **OpenCode** (the open-source multi-provider harness), and **Gemini
+> CLI** (Google) — each driving its **own** engine, normalizing its event stream
+> to `WireMsg` behind the `AgentSession` seam (§2.2), and carrying Mirafold's
 > generative UI via **MCP**. A new agent is one adapter in `server/adapters/`,
 > not a rewrite: the wire protocol, output zone, security model, and generative
 > UI consume `WireMsg` only. No generic homegrown agent, no proxy, no privileged
 > agent — onboarding lets you pick the agent per session. Claude Code is the
 > reference adapter, so this document's deeper sections use it for concrete
-> examples; Codex and Gemini CLI are the same pattern (`server/adapters/codex.ts`,
+> examples; Codex, OpenCode, and Gemini CLI are the same pattern
+> (`server/adapters/codex.ts`, `server/adapters/opencode.ts`,
 > `server/adapters/gemini-cli.ts`).
 
 Think of it as a terminal successor, not a chat app: monospace command strips
@@ -66,9 +68,40 @@ fidelity** — show the work state that the selected terminal agent exposes,
 neither raw adapter churn the terminal hides nor less useful information.
 In-flight work and failures stay visible; when a turn finishes, contiguous
 runs of successful tool activity fold to expandable lines whose full normalized
-details are still available. A fold never crosses a failure or other visible
-transcript row, so chronology stays exact. Rich generative UI is added around
-that transcript, never in exchange for it.
+details are still available. An engine that narrates between commands (Codex
+thinks before nearly every one) has that interior narration folded along in
+true order rather than shattering the run into singletons; the fold's count
+speaks of actions only. A fold never crosses a failure, prose, or any other
+visible transcript row, so chronology stays exact. Rich generative UI is added
+around that transcript, never in exchange for it.
+
+The trusted shell also owns a live **Workspace changes** review surface. It
+groups every visible working-tree change by Git repository and opens the real
+HEAD-versus-working-tree diff without attributing shared-disk edits to the
+agent. On desktop it is a wide split beside the still-visible conversation —
+drag-resizable from its default width up to everything except a phone-sized
+conversation column, the choice persisted per browser; on phone it is a
+full-screen, one-file-at-a-time review with persistent previous and next
+controls. A diff opens positioned on its first hunk, so the hunk counter
+always describes what the viewport shows, and a live disk refresh updates the
+open diff in place without moving the reader. Stable HEAD/current line numbers
+and hunk navigation keep the code context exact: desktop supports pointer and
+keyboard range selection plus a **Select hunk** toggle (click again to
+unselect), while phone supports line and whole-hunk taps. **Explain** and **Request
+change** append the selected path, range, and diff to the visible editable
+prompt without sending, so feedback still travels through the ordinary trusted
+prompt path. Review progress stays local to one browser viewport and binds each
+checkmark to the exact bounded HEAD + working-tree bytes the daemon observed;
+`R` marks or unmarks that revision and `N` advances to the next unreviewed file
+only while focus is outside the prompt. A later disk or HEAD change visibly
+removes stale checkmarks: a complete path hint preserves unrelated progress,
+while a HEAD change or incomplete hint conservatively clears every marker. The
+same conservative reset happens after a reconnect or an explicit Refresh,
+when events may have been missed; a late Git-status decoration refresh does
+not impersonate a disk mutation. Terminal-newline changes render against the
+real final source line with an explicit no-newline marker, never a phantom
+blank line. The existing Files view remains the separate answer to "what
+exists here?" while Changes answers "what differs from HEAD?"
 
 ![Mirafold demo — a repo overview as a card and a table; a test-and-fix run with a permission strip, console output, a diff and a green re-run; a sudo password answered in the shell's own masked bar; a bundle pie chart pinned and updated in place](demo/demo.gif)
 
@@ -87,7 +120,8 @@ codebase. Companion documents:
 
 - **[PLAN.md](PLAN.md)** — the phased build plan. Every step has
   Goal / Build / Files / Done-when. Shipped so far: **Phases 0, 1, T, 2, 3, T2,
-  and P** (three faithful agent skins — Claude Code, Codex, Gemini CLI), all
+  and P** (the faithful agent skins — Claude Code, Codex, Gemini CLI; OpenCode
+  added later in Phase **OC**), all
   of Phase 4, **G/H/H2** (the 2026-07-15 maintainability restructure this
   document's layout reflects), **S** (the theme system; seven themes at launch),
   **N** (the onboarding backend picker + local-server discovery), **V** (the
@@ -95,6 +129,9 @@ codebase. Companion documents:
   **C** (CI on every push), **E** + **E2** + **W** (the Explorer — the
   read-only files panel, lazy per-directory since E2 with per-repo git
   fidelity, and self-refreshing since W's filesystem watcher),
+  **CR.1–CR.4** (the bounded multi-repository change query, responsive live
+  Changes review workspace, visible unsent code-context feedback, and
+  revision-keyed review progress),
   **M** (mission control grown into a cockpit: act on sessions from the grid),
   L.1, most of the Phase F fidelity fixes, and the working core of
   **Phase R** (the hosted relay: R.1 dial-out + envelope, R.3 per-pair E2E
@@ -115,8 +152,8 @@ codebase. Companion documents:
   ship the Phase 1 demo before Phase T, and keep every seam local-first.
 - **[docs/ADAPTERS.md](docs/ADAPTERS.md)** — the normative adapter
   specification: what an adapter must/should/may/must-never do, the shipped
-  capability matrix per provider, and the exact checklist for adding
-  provider #4. Read it before touching anything in `server/adapters/`.
+  capability matrix per provider, and the exact checklist for adding the next
+  provider. Read it before touching anything in `server/adapters/`.
 
 ---
 
@@ -128,7 +165,8 @@ codebase. Companion documents:
   browser is a `WireMsg`/`ClientMsg` defined there, and nothing else crosses.
 - `server/index.ts` and `web/src/main.tsx` are the two entry points.
 - `server/adapters/` normalizes each terminal agent (Claude Code, Codex,
-  Gemini CLI, mock) into that one protocol — one adapter each, none privileged.
+  OpenCode, Gemini CLI, mock) into that one protocol — one adapter each, none
+  privileged.
 - `web/src/components/Shell.tsx` is the TRUSTED shell: prompt, permissions, status —
   agent output can never paint or intercept it.
 - `web/src/components/RenderZone.tsx` paints: a pure interpreter of the wire messages.
@@ -139,8 +177,9 @@ The server holds **warm agent sessions** in a registry — each adapter keeps
 its agent warm its own way: Claude Code is one long-lived `query()` from
 `@anthropic-ai/claude-agent-sdk` fed prompts through an async generator (so
 the conversation and prompt cache never reset between turns), Codex a
-persistent SDK `Thread`, Gemini CLI one process per turn resumed via
-`--session-id`/`--resume`;
+persistent SDK `Thread`, OpenCode one `opencode serve` HTTP server per session
+driven over its own HTTP + server-sent-events surface, Gemini CLI one process
+per turn resumed via `--session-id`/`--resume`;
 a WebSocket connection is a *viewport* that attaches to one. The session's
 SDK event stream is **normalized into a tiny wire protocol** (`WireMsg`),
 buffered for replay, and fanned out to every attached viewport. The browser is split into two zones
@@ -164,11 +203,15 @@ The contract between server and browser. Currently on the wire:
 ```ts
 // Server → browser
 type WireMsg =
-  | { type: "text_delta"; text: string }                           // streamed markdown
+  | { type: "text_delta"; text: string;                            // streamed markdown;
+      parentId?: string }                                          //   parentId = a SUBAGENT's
+                                                                   //   prose (SA.2, opaque
+                                                                   //   handle → its deck)
   | { type: "prompt_options"; options: PromptOption[] }             // provider-owned
                                                                     // pre-submit / + $
                                                                     // completion catalog
-  | { type: "thinking_delta"; text: string }                       // T2.1: reasoning stream
+  | { type: "thinking_delta"; text: string; parentId?: string }    // T2.1: reasoning stream
+                                                                   //   (parentId as above)
   | { type: "status"; state: "thinking" | "tool"; label?: string } // activity line
   | { type: "turn_end" }                                           // finalize the turn
   | { type: "error"; message: string }
@@ -195,7 +238,9 @@ type WireMsg =
       input?: Record<string, unknown>; parentId?: string }
   | { type: "tool_result"; output: string; isError?: boolean; id: string;
       truncatedBytes?: number; parentId?: string }
-  | { type: "permission_request"; tool: string; detail: string; id: string } // T.3
+  | { type: "permission_request"; tool: string; detail: string; id: string; // T.3;
+      parentId?: string }                                          //   set = a subagent's ask
+                                                                   //   (SA.3, "subagent" chip)
   | { type: "permission_resolved"; id: string; allow: boolean } // 2026-07-28: the ask
                                                    //   resolved (any viewport's answer,
                                                    //   timeout, interrupt) — every
@@ -325,12 +370,26 @@ else. `createSession()` resolves which one from config + per-session onboarding:
   reference adapter; Claude-specific fidelity is scoped here).
 - **`CodexSession`** — OpenAI's Codex via `@openai/codex-sdk` (spawns the
   `codex` CLI, streams its JSONL events → `WireMsg`).
+- **`OpenCodeSession`** — the open-source OpenCode harness, driven RAW over its
+  own `opencode serve` HTTP + server-sent-events surface (no SDK: the live
+  probe caught the published types drifting from the real server, so the
+  adapter types at the seam it verified — `server/adapters/opencode-client.ts`).
+  Structurally the odd one out: it spawns a per-session HTTP server rather than
+  an SDK/stdio child. OpenCode is a *multi-provider* harness (75+ providers), so
+  it's the only adapter whose credential kind is a fact about the underlying
+  provider, not the agent — classified at session start from the running
+  engine's own catalog and re-checked when a `/model` switch changes it (§ the
+  credential policy). The render MCP is injected additively through the
+  `OPENCODE_CONFIG_CONTENT` environment variable — no file the user owns is
+  read, written, or created.
 - **`GeminiCliSession`** — Google's Gemini CLI via its headless `stream-json`
   interface (one process per turn, warm across turns via `--session-id`/`--resume`).
-  Note: to inject the render MCP server, this adapter writes a
-  `.gemini/settings.json` into the session's working directory (merged
-  non-destructively over anything already there) — so pointing a Gemini session
-  at a project drops that file in it.
+  Mirafold supports its API-key path; Google's individual-account login stopped
+  serving Gemini CLI requests in 2026. To inject the render MCP server, this
+  adapter writes a `.gemini/settings.json` into the session's working directory
+  (merged non-destructively over anything already there, and only after workspace
+  trust is granted) — so pointing a Gemini session at a project drops that file
+  in it.
 - **`MockSession`** — a scripted stand-in used automatically when the chosen
   agent has no credentials. Emits every wire message type with
   realistic pacing, drawing replies from a shuffled deck of five demo
@@ -535,17 +594,23 @@ server/            the local daemon (Node, run with tsx)
                        bang_input/bang_kill handlers connection.ts delegates to,
                        plus the output budgets, cwd handoff, and agent-turn
                        transcript (the PTY runner itself stays in pty/)
-    fs-handlers.ts     Explorer request layer (Phase E): the fs_list/fs_listdir/
-                       fs_read/fs_diff handlers connection.ts delegates to —
-                       per-viewport replies, jailed + throttled, one reply each
+    fs-handlers.ts     Explorer + Changes request layer: the fs_list/fs_listdir/
+                       fs_read/fs_diff/fs_changes handlers connection.ts
+                       delegates to — per-viewport replies, jailed + throttled,
+                       one reply each; fs_diff also returns the bounded exact
+                       revision token used by viewport-local review progress
     fs-explorer.ts     Explorer data layer: the capped tree walk (E.1) + the
                        per-directory lister behind the lazy tree (E2.1) +
-                       jailed, secret-safe, binary-sniffing file reads
-    git.ts             Explorer git layer: bounded one-shot git calls for the
+                       jailed, secret-safe, binary-sniffing file reads; Changes
+                       can opt into a 1 MB-bounded opaque content revision
+    git.ts             Explorer/Changes git layer: bounded one-shot git calls for the
                        tracked tree + statuses + HEAD-vs-working diffs (E.2),
                        plus the per-repo view the lazy tree uses — nearest-.git
                        discovery, cached+serialized status, ignore-aware
-                       decoration (E2.3). NOTE: that discovery walks ABOVE the
+                       decoration (E2.3) — and the complete changed-file query,
+                       with bounded nested-repo discovery below a non-repo
+                       workspace root (CR.1). NOTE: nearest-repo discovery
+                       walks ABOVE the
                        session root when the session is scoped inside a repo;
                        SECURITY.md states the bound (nothing outside the scope
                        reaches the wire), pinned by a Tier-2 test
@@ -586,9 +651,18 @@ server/            the local daemon (Node, run with tsx)
                      without the sibling, the rest of Tier 2 is unaffected
   testing/           cross-cutting test infrastructure (H.8): itest-harness.ts
                      (spawns the real daemon for Tier 2/3) + e2e-harness.ts
-                     (shared browser-e2e helpers: Chrome launch, the axe
-                     accessibility gate, noSideScroll) + the whole-product
-                     e2e suites (app, launcher, phone, resilience)
+                     (shared browser helpers: system-Chrome launch, the
+                     managed Chromium/Firefox/WebKit launchers,
+                     withFreshMockPage — one scrubbed daemon + one browser
+                     context per test, page errors captured from before the
+                     first navigation and appended to any failure —
+                     enterMockSession, the axe accessibility gate,
+                     noSideScroll) + the whole-product e2e suites (app,
+                     launcher, phone, resilience, ui-contracts) + the compact
+                     UI gate: ui-browser-matrix.uitest.ts (one journey per
+                     engine), ui-visual.uitest.ts + visual-snapshot.ts (the
+                     in-repo PNG comparator) and ui-snapshots/ (its four
+                     committed Ubuntu-24.04/managed-Chromium baselines)
 web/               the browser app (React 19 + Vite)
   index.html         entry html
   src/main.tsx       mounts <Shell/>, imports highlight theme + every theme
@@ -596,11 +670,12 @@ web/               the browser app (React 19 + Vite)
   src/components/    the shell-owned components — trusted UI, every file here
                      (H2.1); the agent-paintable vocabulary is its SIBLING,
                      registry/, so the trust split reads in the tree
-    Shell.tsx          TRUSTED SHELL: prompt box + notices +
-                       status bar + the activity bar (the left strip that
-                       toggles the Explorer — desktop only; on phone the
-                       toggle folds into the status bar, 2026-07-25);
-                       consumes the session bus (H.9)
+    Shell.tsx          TRUSTED SHELL: prompt box + notices + status bar + the
+                       activity bar (desktop's left strip for the mutually
+                       exclusive Files and Changes workspaces; on phone they
+                       fold into ONE status-bar toggle + an in-drawer
+                       switch); consumes the session
+                       bus (H.9)
     Onboarding.tsx     first-run card: pick the agent + working directory, then
                        how it's backed when there's a choice — detected
                        credentials + discovered local model servers (P.4/4.8/N.4)
@@ -615,8 +690,8 @@ web/               the browser app (React 19 + Vite)
                        command in a ModalCard — the phone's truncated preview
                        was unreadable; Shell keeps owning asks + the wire answer
     RenderZone.tsx     OUTPUT ZONE: WireMsg interpreter → entries, incl.
-                       thinking blocks, artifacts, subagent grouping, and the
-                       completed-turn activity fold
+                       thinking blocks, artifacts, subagent decks (SA), and
+                       the completed-turn activity fold
     ActivityLine.tsx   the always-visible work indicator (4.14): cycling
                        asterisk + label + elapsed seconds, prompt-area chrome
                        above the box — never a transcript entry, so no scroll
@@ -630,16 +705,25 @@ web/               the browser app (React 19 + Vite)
                        right; sits INSIDE the workbench column (2026-07-25) so the
                        activity bar's border line runs unbroken to the window
                        bottom; folds to one row of controls at phone width
-                       (R.4l), where it also hosts the Explorer toggle
-                       (.sb-files, boxed at the far left — the rail is
-                       desktop-only, 2026-07-25)
-    GearGlyph.tsx      the settings/tool gear as a flat outline drawing, three
-                       homes: the settings button, the subagent head, the
-                       fleet activity line (2026-07-25 — the ⚙ character
+                       (R.4l), where it also hosts the Files and Changes
+                       workspace toggles (the activity rail is desktop-only)
+    GearGlyph.tsx      the settings/tool gear as a flat outline drawing; its
+                       homes: the settings button, the subagent deck meta
+                       line, the completed-turn activity fold, the fleet
+                       activity line (2026-07-25 — the ⚙ character
                        rendered from the color-emoji font and clashed with
                        every glyph beside it)
-    FilesGlyph.tsx     the Explorer/files glyph drawing — the activity-bar
-                       toggle and the status bar's phone-width .sb-files
+    FilesGlyph.tsx     the Explorer/files glyph drawing — the desktop
+                       activity-bar toggle
+    ChangesGlyph.tsx   the workspace-changes glyph drawing — the desktop
+                       activity-bar toggle
+    WorkspaceGlyph.tsx the phone status bar's ONE workspace toggle
+                       (.sb-workspace) — Files and Changes share a
+                       full-screen drawer on ≤640px, reopened on the
+                       last-used view
+    WorkspaceTabs.tsx  the phone drawer's Files | Changes switch, at the
+                       head of both panels in the title's place; both exits
+                       are the same leading ‹ back chevron
     ArmedButton.tsx    the two-click destructive button (#11's arm → 3s
                        auto-disarm), shared by StatusBar + FleetView's end/stop
     PinDock.tsx        right-side dock for pinned components (live via entries)
@@ -663,7 +747,19 @@ web/               the browser app (React 19 + Vite)
                        dialog on phone; desktop ⤢ enlarges the file box into
                        a dimmed lightbox, E.6) + FileView.tsx (content /
                        diff / binary) + ExplorerNodeGlyph.tsx (small
-                       dependency-free folder/symlink/file-family glyphs)
+                       dependency-free folder/symlink/file-family glyphs) +
+                       use-file-view.ts (the reusable correlated read/diff
+                       lifecycle shared with the Changes surface, CR.1)
+    changes/           the live shell-owned repository/file review workspace:
+                       ChangesPanel.tsx composes the surface,
+                       use-changes-controller.ts owns requests/live state,
+                       ChangesChrome.tsx owns its responsive panel chrome,
+                       ReviewDiff.tsx owns line/hunk selection and drafts,
+                       ReviewRows.tsx owns bounded shared syntax rendering,
+                       use-hunk-navigation.ts owns hunk position/scrolling
+                       (first-hunk landing, deferred post-commit jumps), and
+                       panel-resize.tsx owns the desktop drag-to-resize
+                       separator (CR.2–CR.11)
   src/registry/      Card, List, Table, LinkGroup, Chart, TodoList, KeyValue,
                      Progress, Timeline, FileTree, Question, Diff, Stat, Code,
                      StatusList, Console, Image, Diagram, Md, CopyButton +
@@ -675,12 +771,36 @@ web/               the browser app (React 19 + Vite)
                      does the jailed read; the agent authors a path, never
                      bytes)
   src/session-bus.ts the shell's message bus (H.9): one SocketClient + the
-                     pub/sub fan-out and senders Shell.tsx consumes
+                     pub/sub fan-out and senders Shell.tsx consumes, including
+                     correlated Explorer/Changes filesystem queries
+  src/changes.ts     pure changed-file grouping, deterministic selection,
+                     count honesty, status labels, and repository labels
+  src/change-review.ts
+                     pure versioned-line, hunk, selection, and exact feedback-
+                     draft model plus interactive-size and reduced-motion
+                     policy for conversational change review
+  src/review-progress.ts
+                     pure viewport-local reviewed-revision, watcher
+                     invalidation, pruning, count, and next-unreviewed model
+  src/tool-visibility.ts
+                     pure settled-activity fold model: which contiguous
+                     successful calls — with the narration between them
+                     absorbed in order — compact into one `worked · N
+                     actions` record (UX.10)
+  src/prompt-draft.ts
+                     preserves composed prompt text while appending a visible,
+                     unsent Changes feedback draft
   src/folder-picker-requests.ts
                      correlated local picker requests shared by the session
                      shell and the fleet's new-session card
   src/tab-status.ts  the tab status light: brand-M favicon + corner badge
                      (busy / permission) and title, painted from wire state
+  src/notify.ts      needs-you notifications (Phase NF): OS toasts when a
+                     hidden tab's session hits a permission or finishes a
+                     turn — pure transition reducer + injectable binder
+  src/file-drop.ts   file drag-and-drop (Phase FD): chunked upload of a
+                     dropped file's bytes + the staged-path prompt insert
+                     — pure chunk/state core, Shell owns the listeners
   src/use-escape.ts  useEscapeKey — the one Esc idiom behind every overlay
                      and the busy interrupt
   src/use-focus-trap.ts  useFocusTrap — focus in on open, Tab cycles inside,
@@ -718,10 +838,14 @@ web/               the browser app (React 19 + Vite)
                      reached only via agentLabel()/connectHint() so an
                      unknown agent name degrades to its raw string (R.4h)
   src/version.ts     the web bundle's own build version (R.4g)
-  src/styles.css     structural CSS only — every color via var(...) (see §7);
-                     organized by surface, top of the screen down, with ONE
-                     phone media block at the end (its header comment maps the
-                     sections and the order-sensitive spots, 2026-07-25)
+  src/styles.css     the import spine: numbered @imports of src/styles/, one
+                     file per surface, top of the screen down (split 2026-08-12
+                     from the former single file; same cascade, byte-identical
+                     bundle). Its header maps the surfaces and the
+                     order-sensitive spots. Structural CSS only — every color
+                     via var(...) (see §7) — and the ONE phone media block
+                     stays last as styles/15-phone.css
+  src/styles/        the 15 surface files the spine imports, in cascade order
   src/themes/        the palettes (Phase S): base.css (pinned code/diff
                      tokens) + one self-contained file per theme; manifest.ts
                      is the single source (THEMES, the token contract, the
@@ -861,10 +985,32 @@ mediation path (§5.4).
     with the same id completes the record, capped by `capOutput` with an
     honest `truncatedBytes` (T2.3). Results are only forwarded for ids the
     session announced.
-  - **Subagent traffic** (events with a `parent_tool_use_id`): its text and
-    thinking stay dropped — a subagent's monologue must not paint into the
-    transcript — but its tool *calls* are now forwarded tagged with
-    `parentId` (T2.4), which the client nests under the owning Task row.
+  - **Subagent traffic** (events with a `parent_tool_use_id`): its tool
+    *calls* forward tagged with `parentId` (T2.4), and since Phase SA its
+    PROSE forwards too — the SDK never streams subagent token deltas
+    (main-session-only, verified against the real CLI in the SA.0 probe),
+    but its complete assistant messages arrive live mid-run, so their text
+    and thinking blocks become message-grain parented deltas, capped
+    per-subagent by `SubagentProseBudget` (`SUBAGENT_TEXT_CAP_BYTES`,
+    explicit elision marker; the ledger also caps DISTINCT subagents per
+    turn — audit 2026-08-14 — so fabricated parent ids can't grow it
+    unboundedly). The client renders each spawn as a live
+    **subagent deck** (GLOSSARY): calm summary — agent type, the spawn's own
+    description, state, tool count, elapsed while running, current action —
+    expandable to the nested calls interleaved with the subagent's own words
+    as inert plain text, never markdown. The deck anchors on "the tool_use
+    other records reference as `parentId`", never on a tool NAME (the SDK's
+    spawn tool is `Agent` as of 0.3.201, was `Task`; OpenCode's is `task`).
+    `parentId` itself is an OPAQUE adapter-chosen handle — shared code only
+    groups by it. A subagent's permission-gated tool call already rides the
+    parent `canUseTool` (verified live, SA.0), so the permission bar covers
+    subagents with no extra plumbing; the callback carries no subagent
+    identity, so Claude Code asks stay unattributed (OpenCode's are
+    attributed — `permission_request.parentId` — and show a dim "subagent"
+    chip). A subagent cannot paint: the SDK withholds MCP tools from
+    subagent contexts entirely (proved through the real adapter + shipped
+    in-process render server, audit 2026-08-14), so the render tools are
+    parent-only on this engine by construction.
   - **Task list** (T2.5): the SDK's `TaskCreate`/`TaskUpdate` family (its
     successor to `TodoWrite`) is folded into one live `todo-list` render that
     updates in place; the raw Task* rows and their results are swallowed.
@@ -920,7 +1066,11 @@ emissions: streamed `thinking_delta`, fake `tool_use`/`tool_result` records
 (incl. an Edit with a real before/after and a Write), a `usage` record, the
 reply streamed in 16-char chunks at ~12ms, then `turn_end`. Keyword hooks in
 the prompt drive every other capability API-free — `artifact`/`broken`/
-`navigates` (Phase 3 + its fallbacks), `subagent`/`delegate` (nested Task),
+`navigates` (Phase 3 + its fallbacks), `subagent`/`delegate` (a three-spawn
+parallel fan-out with narration — three live subagent decks, out-of-order
+finishes; Phase SA), `delegate slowly` (ONE spawn whose narration streams
+seconds before its first tool call — the deterministic window for
+mid-turn-reset tests),
 `todo`/`plan` (live checklist), `huge` (the elision marker), `dangerous`
 (permission prompt). `close()` clears all pending timers.
 
@@ -1001,6 +1151,29 @@ fleet view). Busy state is derived entirely from the wire — `user_prompt`
 sets it, `turn_end` clears it — so a replayed in-flight turn restores it
 correctly.
 
+The same idle/busy/permission tri-state feeds **needs-you notifications**
+(`notify.ts`, Phase NF): with the settings-card toggle on (off by default —
+enabling is the only thing that asks the browser for permission), a *hidden*
+tab raises an OS notification when a session hits a permission prompt or
+finishes a turn, one per session (`tag` = session id), self-closing when the
+cause resolves elsewhere or the tab becomes visible again. Both routes wire
+it — the session viewport from its own `asks`/`busy`, the fleet from every
+`sessions` snapshot — and titles/bodies are shell-composed with engine
+strings carried as inert plain text (the trusted-shell rule, §3).
+
+The shell also owns **file drag-and-drop** (`file-drop.ts`, Phase FD). In a
+terminal, dropping a file inserts its path and the agent reads the path
+itself; a browser never exposes a dropped file's real path, so the shell
+streams the bytes over the socket (`file_upload_begin/chunk/abort`, base64
+chunks bounded under the socket payload cap), the daemon stages them in a
+per-session directory under the OS temp dir — never the working tree — and
+the reply's absolute path lands in the prompt, quoted the way a terminal
+quotes it. Zero adapter involvement: the agent reads the staged path with
+its own tools, so every agent gets the feature at once, and the same
+path works from a phone through the relay. Uploads follow the prompt's
+relay gate; caps (10 MB/file, 2 concurrent, stall reaping) and name
+sanitization live in `server/sessions/upload-handlers.ts`.
+
 ### 6.2 `ws.ts` — `SocketClient`
 
 A thin typed WebSocket wrapper: `send(ClientMsg)` / `onMessage(WireMsg)`.
@@ -1027,9 +1200,11 @@ same relative URL works unchanged.
 
 State: a flat list of `Entry`s — text blocks (`{kind:"text", …}`), rendered
 components (`{kind:"render", …}`), tool records (`{kind:"tool", …}`, which
-may carry `parentId` for subagent calls), thinking blocks (`{kind:"thinking",
-…}`), and artifacts (`{kind:"artifact", …}`) — in the exact order they
-arrived on the wire, plus an ephemeral `Status`. The reducer-like
+may carry `parentId` for subagent calls), subagent prose
+(`{kind:"subtext", …}` — parented narration/thinking, rendered only inside
+its subagent deck's expansion, never top-level), thinking blocks
+(`{kind:"thinking", …}`), and artifacts (`{kind:"artifact", …}`) — in the
+exact order they arrived on the wire, plus an ephemeral `Status`. The reducer-like
 subscription handles each `ZoneMsg`:
 
 - `user_prompt` → append a done user text entry, show `thinking`.
@@ -1044,7 +1219,12 @@ subscription handles each `ZoneMsg`:
   deliberate correctness detail: if the user sends a new prompt mid-stream,
   the user entry is appended after the streaming block, and deltas still
   route to the right block by id instead of gluing the reply's tail onto
-  the wrong one.
+  the wrong one. A delta carrying `parentId` is a SUBAGENT's prose (SA.2)
+  and routes to a `subtext` entry inside its deck instead — before the
+  fold/close logic, so a child streaming never folds the parent's open
+  thinking or closes the parent's streaming block; per-parent open runs
+  live in their own ref (`subtextIds`), closed by that subagent's next tool
+  row and cleared at `turn_end` and `zone_reset`.
 - `render` → if the wire `id` has been seen, **update that entry's props in
   place** (this is what keeps pinned widgets live); otherwise append a
   render entry and close the streaming text block, so later deltas open a
@@ -1058,13 +1238,33 @@ subscription handles each `ZoneMsg`:
   when the result lands. In-flight rows remain visible, and errors remain
   expanded top-level. At `turn_end`, two or more contiguous successful calls
   from that turn fold into a terminal-sized, expandable `worked · N actions`
-  record. Failures, in-flight calls, batch changes, and non-tool transcript
-  rows break a run, so compaction cannot reorder evidence; opening a fold
-  preserves every normalized input and result. `ToolBlock.tsx`
+  record. Failures, in-flight calls, batch changes, and other visible
+  transcript rows break a run — with one deliberate exception (UX.10):
+  thinking rows BETWEEN two calls are absorbed into the fold in true
+  transcript order, so a narrating engine still compacts; leading and
+  trailing narration keeps its own visible row, the label counts actions
+  only, and expansion replays calls and narration exactly as they happened
+  (`web/src/tool-visibility.ts`). Compaction cannot reorder evidence;
+  opening a fold preserves every normalized input and result. `ToolBlock.tsx`
   renders those details — Edit/Write as a colored diff / code (T2.2), with
   any `truncatedBytes` as an explicit elision marker (T2.3). Calls tagged
-  with `parentId` stay inside the turn's activity rather than becoming extra
-  top-level churn (T2.4).
+  with `parentId` render inside their **subagent deck**, never top-level
+  (T2.4/SA.1) — next bullet.
+- **The subagent deck** (Phase SA): a spawn whose wire id other records
+  reference as `parentId` becomes a live deck — the anchor is that
+  relationship, never a tool name. Calm summary (agent type + the spawn's
+  own description verbatim, pulsing state dot, tool count, current action =
+  the newest unanswered child call; derivation is pure in
+  `web/src/subagent-deck.ts`), expandable to the full activity: child calls
+  interleaved with the subagent's narration and dim reasoning in true
+  stream order, all inert plain text. Elapsed seconds tick only while the
+  spawn is running AND its record arrived live — a replayed record's stamp
+  is the attach moment, so a replayed deck shows no elapsed rather than a
+  false one. Decks are hard fold-boundaries for the settled-activity
+  compaction and their children are invisible to it; child tool traffic
+  never steers the root activity line in either direction (each deck shows
+  its own action). A subagent's permission ask paints the same shell bar
+  with a dim "subagent" chip (`permission_request.parentId`).
 - `artifact` → route to `Artifact.tsx` (the sandboxed iframe, Phase 3);
   re-sending an id replaces it in place, same as `render`.
 - `picker` → append a `PickerBlock.tsx` entry: the SHELL-owned selector
@@ -1195,8 +1395,9 @@ knowing because it constrains future UI work:
   bar — sits strictly to its right (only banners run full-width). The status
   bar's top border meets that line in a clean T, with its controls vertically
   centered in the bottom band. On phone (≤640px) the rail is hidden — a
-  permanent strip is too much of a 390px screen — and its files toggle sits
-  boxed at the status bar's far left, its separator echoing the rail's border
+  permanent strip is too much of a 390px screen — and its one workspace
+  toggle (Files + Changes behind a single drawer, 2026-08-18) sits boxed at
+  the status bar's far left, its separator echoing the rail's border
   (2026-07-25). Mission control renders a notch larger than the in-session
   workbench (`zoom: 1.15`, reset on phone; the agent picker hosted inside it
   compensates via the fluid `--onb-squeeze` chrome).
@@ -1343,7 +1544,9 @@ these tuning knobs:
 checkpoint remains),
 `PERMISSION_TIMEOUT_MS` (how long a permission prompt waits before denying),
 `TOOL_OUTPUT_CAP_BYTES` (per-result output cap before the elision marker,
-default 64 KB), `BANG_CONTEXT_CAP` (tail of a `!` transcript injected into
+default 64 KB), `SUBAGENT_TEXT_CAP_BYTES` (per-subagent narration cap before
+its elision marker, default 64 KB — Phase SA),
+`BANG_CONTEXT_CAP` (tail of a `!` transcript injected into
 the agent's context, default 16 KB), `MAX_THINKING_TOKENS` (opt-in extended
 thinking), `MAX_WS_PAYLOAD` (largest inbound WS frame, default 1 MB),
 `MAX_SESSIONS` (concurrent-session ceiling, default 100), `MIRAFOLD_TOKEN`
@@ -1373,7 +1576,13 @@ short-lived signed tokens and sends them on the dial-out),
 `MIRAFOLD_ENTITLEMENT_URL` (the exchange endpoint, default
 `https://mirafold.com/api/entitlement`), and `MIRAFOLD_ENTITLEMENT_TOKEN`
 (a hand-issued token used verbatim — ops/testing; wins over the license
-key). For dev, `node --import tsx server/relay/relay-stub.ts`
+key). A daemon running on a license key also offers **manage
+subscription** inside the connect-a-device card (local viewports only):
+subscription status, an end-of-period cancel behind its own confirm, and
+undo while the cancellation is still scheduled — the daemon presents the
+key to the billing backend's `/api/subscription` endpoints itself, so the
+key never reaches the browser (Phase CS). For dev,
+`node --import tsx server/relay/relay-stub.ts`
 runs the in-repo stub relay on `:9100`.
 
 **Fully local, no API key:** a session is local when the *agent* behind it
@@ -1408,18 +1617,35 @@ yarn test         # Tier 1 — pure/unit, node:test + tsx, ~3s, run on every com
 yarn test:server  # Tier 2 — spawns the real daemon (mock-forced), drives real ws sockets, ~2-3min
                   # (serialized like Tier 3: parallel itest files starve each other's
                   # daemon handshakes into flaky timeouts)
-yarn test:e2e     # Tier 3 — yarn build + headless Chrome (playwright-core), opt-in, ~75s
+yarn test:e2e     # Tier 3 — yarn build + headless system Chrome (playwright-core), opt-in, ~5min
                   #   (files run sequentially — parallel Chrome suites flake on modest hardware)
+yarn test:ui      # managed Chromium + Firefox + WebKit smoke, then 4 Ubuntu/Chromium visual baselines
+                  #   (test:ui:built skips the rebuild — CI runs it right after test:e2e)
+yarn test:ui:update-snapshots
+                  # regenerate those PNGs intentionally; run only on Ubuntu 24.04
 yarn test:live    # Tier 4 — the REAL agent binary + a real LOCAL model, opt-in, ~2.5min
                   #   (skips per test when codex/Ollama isn't installed)
 ```
 
-The suite is **`node:test` + `tsx`, zero test-framework dependencies** — the
-`test*` scripts are just aliases for `node --import tsx --test <glob>`. Tests
-live next to their source; the suffix picks the tier: `*.test.ts` (Tier 1,
-pure logic — security predicates, caps, all three adapters' event mapping on
+The one-time prerequisite for the managed UI gate is
+`yarn playwright-core install --with-deps chromium firefox webkit`. A cold
+install downloads several hundred megabytes of revision-matched browser
+binaries and installs their Linux host libraries (the apt half needs sudo, so
+run it in your own terminal); pull-request CI does this explicitly, caching
+the binaries per `playwright-core` version. The cross-engine suite keeps one representative shell journey per
+engine instead of tripling Tier 3. Pixel comparisons stay on managed Chromium
+and Ubuntu 24.04 because text and graphics rendering are operating-system
+specific; a failed comparison writes actual and diff PNGs under the system
+temporary directory (and CI uploads them as `ui-visual-diffs`).
+
+The suite is **`node:test` + `tsx`, zero test-framework dependencies** — each
+test script ultimately runs `node --import tsx --test <glob>` (the browser
+scripts prepend a production build). Tests live next to their source; the
+suffix picks the tier: `*.test.ts` (Tier 1,
+pure logic — security predicates, caps, every adapter's event mapping on
 synthetic events (Claude Code through an injected engine seam, Codex through
-a stubbed thread, Gemini through a scripted binary), the `SocketClient`
+a stubbed thread, OpenCode through a fake HTTP+SSE transport, Gemini through
+a scripted binary), the `SocketClient`
 reconnect state machine on a stubbed WebSocket, and the R.3 E2E crypto —
 tamper/replay/reorder/wrong-key all rejected), `*.itest.ts` (Tier 2,
 integration — the auth gate, DoS caps, the mock-turn wire grammar, the
@@ -1444,6 +1670,31 @@ user's terminal), and the phone suite:
 390×844 touch pairing, thumb permissions, offline→online mid-turn resume;
 needs `google-chrome`, path overridable via `CHROME_BIN`).
 
+`*.uitest.ts` is the compact compatibility/appearance gate: the same
+credential-scrubbed real daemon and production browser bundle are driven once
+in each managed browser, followed by the four committed visual surfaces
+(onboarding, a settled desktop turn in the dark and light themes, phone
+settings). Off Linux the visual half skips rather than fails. It
+is separate from `*.e2e.ts` so Firefox and WebKit add broad compatibility
+signal without multiplying the complete Chrome suite.
+
+What keeps a baseline identical on a desktop and on a headless runner: the
+browser context pins viewport, `deviceScaleFactor: 1`, light color scheme,
+reduced motion, `en-US`, and UTC; the screenshot forces Liberation fonts and
+zeroes every animation/transition; the daemon under test is started with
+`DISPLAY`/`WAYLAND_DISPLAY` empty so it never advertises the native folder
+picker (otherwise onboarding renders a "browse…" button only on machines
+with a display); and session facts that vary per machine (session id,
+daemon version, working directory) are rewritten to fixed strings before
+capture. The comparator ignores per-channel noise up to 12/255 and allows
+0.05 % of pixels to differ — a 2 px spacing change on the desktop surface
+is ~8× over that line. A failure names the pixel count and the largest
+channel delta, writes `<name>.actual.png` and `<name>.diff.png` (differences
+in magenta over a dimmed copy), and — as everywhere `withFreshMockPage` is
+used — lists any uncaught page errors that preceded it, so an engine that
+threw while loading the bundle reads as that error rather than as a
+timeout on the first locator.
+
 `*.ltest.ts` is **Tier 4** (2026-07-20) — the one tier that asks the REAL
 agent binary real questions. Tiers 1-3 answer entirely with fixtures (a
 synthetic event stream, or a credential-starved daemon on the `MockSession`),
@@ -1460,17 +1711,28 @@ driven through a real local model after exercising the shipped, explicit
 accepts only a model whose Ollama metadata proves an explicit 32K context and
 sorts the eligible names, so recency ordering or silent 4K prompt truncation
 cannot produce a false green. Each test skips with a reason when its tool isn't
-installed, so a bare machine stays green.
+installed, so a bare machine stays green. Tier 4 also carries OpenCode's live
+test (`opencode-live.ltest.ts`): the REAL `opencode serve` binary spawned by
+the production transport, but the model is a scripted OpenAI-compatible
+endpoint on loopback — deterministic turns, zero network, zero spend — with
+`HOME`/`XDG` jailed to throwaway dirs so a real engine run never reads or
+writes the developer's own opencode state. It proves the whole loop end to
+end: render through the real MCP stub, a headless permission round-trip, usage,
+and resume across an engine restart. Skips cleanly when `opencode` isn't
+installed (`OPENCODE_BIN` or PATH).
 
 Three rules the suite is built on: **no test may reach a metered model** —
 Tier 2/3 spawn the daemon with every provider credential forced empty (a set
-env var beats `.env`), so everything runs on the `MockSession`, and Tier 4
-strips credentials and points `CODEX_HOME` at a throwaway with no `auth.json`,
-so its one real model is Ollama's — local, free, and unmetered; **Tier 4 never
-touches your own `~/.codex`**, because the binary writes state there
-(`models_cache.json`, one cache shared across providers, is what made the
-model-binding bug intermittent); and **Tier 3 rebuilds first** because the
-daemon serves `./dist` and a stale build fails silently.
+env var beats `.env`, and the harness scrubs `OPENCODE_BIN` too so a
+dev-installed opencode can't flip a session live), so everything runs on the
+`MockSession`; Tier 4 strips credentials and points `CODEX_HOME` at a throwaway
+with no `auth.json` (its one real Codex model is Ollama's — local, free,
+unmetered) and jails OpenCode's HOME/XDG with a scripted loopback provider;
+**Tier 4 never touches your own `~/.codex` or `~/.config/opencode`**, because
+the binary writes state there (`models_cache.json`, one cache shared across
+providers, is what made the model-binding bug intermittent); and **Tier 3
+rebuilds first** because the daemon serves `./dist` and a stale build fails
+silently.
 
 The project's broader verification convention (from PLAN.md) still applies:
 every front-end step is verified end-to-end in headless Chrome via
@@ -1604,7 +1866,14 @@ Read PLAN.md for the real thing; the shape in one breath:
   R.4b's subscription-as-live), an OpenAI subscription runs locally but not over
   the relay, and no subscription is driven over the paid relay at all — while
   API keys and local/BYO endpoints run everywhere. Verified across all three
-  tiers; docs + BUSINESS.md reconciled to match.
+  tiers; docs + BUSINESS.md reconciled to match. **The credential kinds are
+  `api-key`, `subscription`, `local`, `gateway`, and `none`** — `gateway` (added
+  with OpenCode) is the free OpenCode Zen path: usable locally as a disclosed
+  gray area, never over the relay. Because OpenCode is multi-provider, its kind
+  is judged per underlying provider from the running engine's own catalog
+  (`classifyOpenCodeProvider`), and the relay gate re-checks it at DRIVE time —
+  not just attach — because a `/model` switch can change a session's kind
+  mid-flight (2026-08-13 audit).
 - **Also shipped (2026-07-12):** **R.2's deploy** — the relay runs hosted
   on Fly.io (`relay.mirafold.sh`), and a real daemon has driven a full turn
   through it. The cellular and wifi→LTE passes plus the default relay URL

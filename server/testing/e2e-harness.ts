@@ -1,15 +1,108 @@
-// Shared Tier-3 (headless-Chrome) helpers. Deliberately NOT named *.e2e.ts:
+// Shared real-browser helpers. Deliberately NOT named with a test suffix:
 // importing one suite file from another would re-register its tests, so the
 // shared pieces live in this plain module instead.
 
 import assert from "node:assert/strict";
-import { chromium, type Browser, type Page } from "playwright-core";
+import {
+  chromium,
+  firefox,
+  webkit,
+  type Browser,
+  type BrowserContextOptions,
+  type Page,
+} from "playwright-core";
 import axe from "axe-core";
+import { startDaemon } from "./itest-harness";
 
 export const CHROME = process.env.CHROME_BIN ?? "/usr/bin/google-chrome";
 
 export const launchChrome = (): Promise<Browser> =>
   chromium.launch({ executablePath: CHROME });
+
+/** The compatibility/visual suites use Playwright's revision-matched browser
+ * binaries. The full Tier-3 suite deliberately keeps using the system Chrome
+ * path above: this matrix adds engines without multiplying all 103 cases. */
+export const MANAGED_BROWSER_NAMES = ["chromium", "firefox", "webkit"] as const;
+export type ManagedBrowserName = (typeof MANAGED_BROWSER_NAMES)[number];
+
+const MANAGED_BROWSERS = { chromium, firefox, webkit };
+
+export const launchManagedBrowser = (name: ManagedBrowserName): Promise<Browser> =>
+  MANAGED_BROWSERS[name].launch();
+
+/** One credential-scrubbed daemon and isolated browser context, always closed
+ * in context-before-daemon order even when setup or an assertion fails.
+ * Uncaught page errors are collected from before the first navigation, so an
+ * engine that throws while loading the bundle is on record; `run` receives
+ * the list to assert on, and if `run` throws for any reason the captured
+ * errors are appended to the failure — a boot-time throw reads as itself,
+ * not as an anonymous timeout on the first locator. `env` is layered onto
+ * the scrubbed daemon environment. */
+export async function withFreshMockPage(
+  browser: Browser,
+  options: {
+    token: string;
+    context?: BrowserContextOptions;
+    env?: Record<string, string>;
+  },
+  run: (page: Page, base: string, pageErrors: Error[]) => Promise<void>,
+): Promise<void> {
+  const daemon = await startDaemon({ ...options.env, MIRAFOLD_TOKEN: options.token });
+  try {
+    const context = await browser.newContext(options.context);
+    try {
+      const page = await context.newPage();
+      const pageErrors: Error[] = [];
+      page.on("pageerror", (error) => pageErrors.push(error));
+      const base = `http://127.0.0.1:${daemon.port}`;
+      try {
+        await page.goto(`${base}/?token=${options.token}`);
+        await run(page, base, pageErrors);
+      } catch (error) {
+        if (pageErrors.length === 0 || !(error instanceof Error)) throw error;
+        error.message +=
+          `\nuncaught page errors before this failure:\n` +
+          pageErrors.map((e) => `  - ${e.message}`).join("\n");
+        throw error;
+      }
+    } finally {
+      await context.close();
+    }
+  } finally {
+    await daemon.stop();
+  }
+}
+
+export async function enterMockSession(page: Page): Promise<void> {
+  await page.locator(".onb-agent", { hasText: "Claude Code" }).click();
+  await page.waitForURL(/\/s\/[\w-]+/);
+  await page.locator(".prompt-box textarea").waitFor();
+}
+
+/** Phone-head oracle (2026-08-18): every selector renders, none overlaps
+ *  another (rectangle intersection — a control on the row below is fine, one
+ *  on top of its neighbour is not), and each sits fully inside the viewport:
+ *  the drawers are overflow:hidden, so a control pushed off the edge is
+ *  clipped, not side-scrolled, and `noSideScroll` alone would miss it. */
+export const assertApartOnScreen = async (page: Page, viewportWidth: number, selectors: string[]) => {
+  const boxes: { sel: string; x: number; y: number; width: number; height: number }[] = [];
+  for (const sel of selectors) {
+    const box = await page.locator(sel).boundingBox();
+    assert.ok(box, `${sel} did not render at ${viewportWidth}px`);
+    assert.ok(
+      box.x >= 0 && box.x + box.width <= viewportWidth,
+      `${sel} is off-screen at ${viewportWidth}px (${JSON.stringify(box)})`,
+    );
+    boxes.push({ sel, ...box });
+  }
+  for (const a of boxes) {
+    for (const b of boxes) {
+      if (a === b) continue;
+      const apart = a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y;
+      assert.ok(apart, `${a.sel} overlaps ${b.sel} at ${viewportWidth}px (${JSON.stringify([a, b])})`);
+    }
+  }
+};
 
 /** Phone-width oracle: the page must never pan sideways. */
 export const noSideScroll = async (p: Page) => {
@@ -36,7 +129,12 @@ export const AXE_EXCEPTIONS: { rule: string; why: string }[] = [];
 // axe-core's window global and the slice of its run() result we read. Named
 // here so the page-side call below stays legible; types are erased before the
 // evaluate callback is serialized to the browser, so this is compile-time only.
-export type AxeViolation = { id: string; impact: string; nodes: unknown[]; help: string };
+export type AxeViolation = {
+  id: string;
+  impact: string;
+  nodes: { target: unknown[]; html: string; failureSummary?: string }[];
+  help: string;
+};
 export type AxePage = { axe: { run: (ctx: Document, opts: unknown) => Promise<{ violations: AxeViolation[] }> } };
 
 export async function assertAxeClean(p: Page, label: string): Promise<void> {
@@ -65,7 +163,85 @@ export async function assertAxeClean(p: Page, label: string): Promise<void> {
       });
       return res.violations
         .filter((v) => v.impact === "serious" || v.impact === "critical")
-        .map((v) => ({ id: v.id, impact: v.impact, help: v.help, count: v.nodes.length }));
+        .map((v) => ({
+          id: v.id,
+          impact: v.impact,
+          help: v.help,
+          count: v.nodes.length,
+          nodes: v.nodes.map((node) => {
+            const selector = node.target.find((part): part is string => typeof part === "string");
+            const element = selector ? document.querySelector(selector) : null;
+            const focusableSelector =
+              'a[href], button, input, select, textarea, summary, [contenteditable="true"], [tabindex]';
+            const elementStyle = element ? getComputedStyle(element) : null;
+            const elementRect = element?.getBoundingClientRect();
+            const elementMetrics =
+              element && elementStyle && elementRect
+                ? {
+                    tag: element.tagName.toLowerCase(),
+                    id: element.id || undefined,
+                    classes: typeof element.className === "string" ? element.className || undefined : undefined,
+                    clientWidth: element.clientWidth,
+                    clientHeight: element.clientHeight,
+                    scrollWidth: element.scrollWidth,
+                    scrollHeight: element.scrollHeight,
+                    rect: {
+                      x: elementRect.x,
+                      y: elementRect.y,
+                      width: elementRect.width,
+                      height: elementRect.height,
+                    },
+                    overflow: elementStyle.overflow,
+                    overflowX: elementStyle.overflowX,
+                    overflowY: elementStyle.overflowY,
+                    display: elementStyle.display,
+                    position: elementStyle.position,
+                    tabIndex: (element as HTMLElement).tabIndex,
+                    tabindexAttribute: element.getAttribute("tabindex"),
+                    matchesFocusableSelector: element.matches(focusableSelector),
+                    focusableDescendants: element.querySelectorAll(focusableSelector).length,
+                  }
+                : null;
+            const scrollAncestors: unknown[] = [];
+            for (let ancestor = element?.parentElement; ancestor; ancestor = ancestor.parentElement) {
+              const style = getComputedStyle(ancestor);
+              const rect = ancestor.getBoundingClientRect();
+              const detail = {
+                tag: ancestor.tagName.toLowerCase(),
+                id: ancestor.id || undefined,
+                classes: typeof ancestor.className === "string" ? ancestor.className || undefined : undefined,
+                clientWidth: ancestor.clientWidth,
+                clientHeight: ancestor.clientHeight,
+                scrollWidth: ancestor.scrollWidth,
+                scrollHeight: ancestor.scrollHeight,
+                rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+                overflow: style.overflow,
+                overflowX: style.overflowX,
+                overflowY: style.overflowY,
+                display: style.display,
+                position: style.position,
+                tabIndex: ancestor.tabIndex,
+                tabindexAttribute: ancestor.getAttribute("tabindex"),
+                matchesFocusableSelector: ancestor.matches(focusableSelector),
+                focusableDescendants: ancestor.querySelectorAll(focusableSelector).length,
+              };
+              if (
+                detail.scrollHeight > detail.clientHeight + 1 ||
+                detail.scrollWidth > detail.clientWidth + 1 ||
+                /(auto|scroll)/.test(`${detail.overflow} ${detail.overflowX} ${detail.overflowY}`)
+              ) {
+                scrollAncestors.push(detail);
+              }
+            }
+            return {
+              target: node.target,
+              html: node.html,
+              failureSummary: node.failureSummary,
+              element: elementMetrics,
+              scrollAncestors,
+            };
+          }),
+        }));
     },
     [AXE_TAGS, AXE_EXCEPTIONS.map((e) => e.rule)] as const,
   );

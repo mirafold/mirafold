@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { Md } from "./Md";
+import { Md, mdOverrides } from "./Md";
 
 const render = (text: string) => renderToStaticMarkup(createElement(Md, { text }));
 
@@ -37,4 +37,13 @@ test("a stripped scheme renders its text, never a dead anchor", () => {
   assert.ok(!html.includes("<a"), `stripped scheme still rendered an anchor: ${html}`);
   assert.ok(!html.includes("javascript:"), "the dangerous URL itself leaked into the DOM");
   assert.match(html, /run this/);
+});
+
+test("highlighted fenced code is keyboard-focusable while inline code stays inert", () => {
+  const highlighted = renderToStaticMarkup(
+    createElement(mdOverrides.code, { className: "hljs language-ts" }, "const value = 1;"),
+  );
+  const inline = renderToStaticMarkup(createElement(mdOverrides.code, {}, "value"));
+  assert.match(highlighted, /tabindex="0"/);
+  assert.ok(!inline.includes("tabindex"), `inline code became a tab stop: ${inline}`);
 });

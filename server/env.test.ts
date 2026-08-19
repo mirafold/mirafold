@@ -63,6 +63,7 @@ test("project .env imports supported data but never process identity", () => {
       "NODE_PATH=./repo-modules",
       "PATH=./node_modules/.bin",
       "SHELL=./repo-shell",
+      "MIRAFOLD_LOG_FILE=/tmp/mirafold-audit-victim",
       "UNRELATED_PROJECT_SETTING=untouched",
     ].join("\n"),
   );
@@ -84,6 +85,9 @@ test("project .env imports supported data but never process identity", () => {
     assert.equal(target.NODE_PATH, undefined);
     assert.equal(target.PATH, undefined);
     assert.equal(target.SHELL, undefined);
+    // A checkout .env cannot redirect the daemon's log to an arbitrary path
+    // — that was a file-append primitive (audit 2026-08-13). Operator-only.
+    assert.equal(target.MIRAFOLD_LOG_FILE, undefined);
     assert.equal(target.UNRELATED_PROJECT_SETTING, undefined);
   } finally {
     rmSync(tmp, { recursive: true, force: true });

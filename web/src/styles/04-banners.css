@@ -1,0 +1,55 @@
+/* ---- Shell banners -------------------------------------------------------
+   Full-width strips above the workbench, drawn by the trusted shell — agent
+   output can never paint or clear them. */
+
+/* One strip, two occupants: the "session ended" notice (R.4c, dismissable —
+   a one-time event) and the demo banner (R.4b, permanent while the session
+   is mock-backed). Dim warn tones: informative, not alarming. */
+.session-notice,
+.demo-banner {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 8px 0 4px;
+  padding: 7px 14px;
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-border);
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8em;
+  flex-shrink: 0;
+}
+
+.session-notice-text {
+  color: var(--fg-mid);
+  min-width: 0;
+  flex: 1;
+}
+
+.session-notice-dismiss {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: var(--fg-dim);
+  cursor: pointer;
+  font: inherit;
+  padding: 0 2px;
+}
+
+.session-notice-dismiss:hover {
+  color: var(--fg-strong);
+}
+
+.demo-banner-badge {
+  color: var(--warn-fg);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.85em;
+  flex-shrink: 0;
+}
+
+.demo-banner-text {
+  color: var(--fg-mid);
+  min-width: 0;
+}
+

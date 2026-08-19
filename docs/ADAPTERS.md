@@ -4,14 +4,16 @@ This is the authoritative contract for **adding or modifying an agent adapter**
 in Mirafold. README.md orients a new owner; PLAN.md sequences the work; this
 document states what an adapter **must, should, may, and must never** do, what
 each shipped provider actually supports (the capability matrix), and the exact
-checklist for landing provider #4. It exists so that a future session — human
-or agent, on any model — can extend the provider surface without re-deriving
-the architecture or violating an invariant that only lived in someone's head.
+checklist for landing the next provider. It exists so that a future session —
+human or agent, on any model — can extend the provider surface without
+re-deriving the architecture or violating an invariant that only lived in
+someone's head.
 
-Grounded in the shipped code through 2026-08-11 (Phase P's providers plus
-Phase UX's native prompt catalogs, durable resume contract, and UX.8 security closure: `claude-code`,
-`codex`, `gemini-cli`, plus `mock`). File references are the source of truth
-if this document and the code ever disagree — then fix this document.
+Grounded in the shipped code through 2026-08-13 (Phase P's providers, Phase
+UX's native prompt catalogs, durable resume contract, UX.8 security closure,
+and Phase OC's OpenCode adapter: `claude-code`, `codex`, `gemini-cli`,
+`opencode`, plus `mock`). File references are the source of truth if this
+document and the code ever disagree — then fix this document.
 
 ---
 
@@ -194,25 +196,69 @@ paths through one `finish`, as `claude-code.ts` does).
 **`close()`** — idempotent teardown: end generators, abort turns, kill child
 processes, clear timers. After `close()`, no further messages may be emitted.
 
+**The subagent lane (Phase SA)** — when the engine spawns its own subagents,
+the adapter maps them onto the neutral lane instead of dropping or flattening
+them. The rules, for the next adapter author:
+
+- **`parentId` is an opaque adapter-chosen handle.** Claude Code uses the
+  spawn `tool_use` id; OpenCode uses the parent `task` PART id. Shared code
+  (registry, client, replay) only ever GROUPS by it — nothing parses,
+  dereferences, or compares it across adapters. Pick whatever your engine's
+  natural join key is.
+- **The deck anchors on the relationship, never a tool name.** The client
+  turns "a tool_use other records reference as `parentId`" into a live
+  subagent deck (GLOSSARY). Engines whose spawn is not a tool call (Codex's
+  collab threads, if mapped post-F.5) would need a spawn record for the deck
+  to anchor on — the requirement is named here so the deck component never
+  grows a name check.
+- **Prose is budget-capped per subagent.** Every forwarded subagent
+  text/thinking chunk passes `SubagentProseBudget` (`adapters/types.ts`;
+  `SUBAGENT_TEXT_CAP_BYTES`, default 64 KB) — one explicit elision marker at
+  exhaustion, never a silent cut, ledger cleared each turn. The ledger also
+  caps DISTINCT subagents per turn (audit 2026-08-14 flood parity): past it
+  a new parent id's prose drops silently, like every other per-turn cap.
+  This bounds what one subagent — or a fabricating engine — can add to the
+  wire, the replay ring, and relay bytes.
+- **Prose renders inert.** Subagent words paint as plain text inside the
+  deck's expansion — never markdown, never top-level transcript (they must
+  not fold the parent's thinking, steer the activity label, or land in the
+  turn-end announcement).
+- **A subagent's render call never paints.** Paintings are session-level;
+  inside a deck it gets the honest `tool_use`/`tool_result` record. On
+  OpenCode this is our lane code; on Claude Code the ENGINE enforces it —
+  the SDK withholds MCP tools from subagent contexts (proved through the
+  real adapter + shipped in-process render server, audit 2026-08-14).
+- **A subagent's permission ask surfaces on the shell bar** with `parentId`
+  when the engine can attribute it (OpenCode can; Claude Code's
+  `canUseTool` callback carries no subagent identity, so its asks ride
+  unattributed), and the same deny-by-default timer as any ask. A child's
+  lifecycle events (idle, status, error) must never touch the parent turn's
+  state — its failure surfaces through the spawn record's result.
+- **Render depth 1 — what the stream surfaces.** Engines nest deeper
+  (Claude Code to depth 3, engine-hidden; OpenCode only if the user
+  configures it). Resolve parentage transitively to the nearest
+  stream-visible ancestor's deck; engine-hidden grandchildren are the
+  ENGINE's choice, faithfully absent.
+
 ## 4. Capability matrix (shipped providers, as implemented)
 
-| Capability | `claude-code` | `codex` | `gemini-cli` | `mock` |
-|---|---|---|---|---|
-| Drive surface | `@anthropic-ai/claude-agent-sdk`, one warm `query()` for the session's life | `@openai/codex-sdk`, pointed at the user's installed `codex` CLI when present (SDK-bundled fallback), one warm `Thread`, `runStreamed` per turn | `gemini` CLI headless: `-p … -o stream-json`, one process **per turn** | scripted timers |
-| Warm-conversation mechanism | never-ending query + async prompt queue (prompt cache preserved) | persistent `Thread` (`thread.id` resumable) | `--session-id` first turn, `--resume` after | n/a |
-| Daemon-restart resume id | SDK `session_id` after init; restored with `resume` | `thread.started.thread_id`; restored with `resumeThread` | accepted UUID; restored with `--resume` (fatal id-mode self-heals) | transcript only |
-| Pre-submit catalog | live SDK slash commands + `commands_changed` | implemented `/model` + `/effort` + live app-server `$` skills | implemented `/model` | scripted supported catalog |
-| Text streaming granularity | token-level (`includePartialMessages`) | **buffered** — one `text_delta` per completed item (SDK emits no token deltas today) | chunked `message` events | 16-char chunks |
-| Thinking stream (`thinking_delta`) | ✅ full fidelity | ✅ when reasoning items appear | ❌ observed absent → never fires (I3 proof) | ✅ scripted |
-| Tool records (`tool_use`/`tool_result`) | ✅ full input, diffs | ✅ (`command_execution`, `file_change`, `mcp_tool_call`, `web_search`) | ✅ | ✅ |
-| Subagent nesting (`parentId`) | ✅ (`parent_tool_use_id`) | ❌ n/a | ❌ n/a | ✅ scripted |
-| Live todo checklist (`render` todo-list) | ✅ (TaskCreate/Update fold) | ✅ (`todo_list` item) | ❌ | ✅ |
-| Interactive permissions (`permission_request`) | ✅ full round-trip via `canUseTool` + inherited `settings.json` | ❌ SDK exposes no approval callback → inherits user's Codex approval config (I3) | ❌ headless can't prompt → user's own tool approvals inherited; only our render server is scoped-allowed | ✅ (`dangerous` keyword) |
-| Usage (`usage` msg) | ✅ tokens + cumulative `total_cost_usd` | ✅ tokens (`cached_input_tokens` is a subset of input — never re-added) | ✅ per-model token breakdown | ✅ |
-| Interrupt | SDK `interrupt()` | `AbortController`; discovered-local turns also use it at the configurable eight-minute outer deadline | kill child process | clear timers |
-| Render-MCP injection | **in-process** SDK MCP server (`render-tools.ts`) | subprocess stdio MCP via SDK `config.mcp_servers` (`render-mcp.ts`) | subprocess stdio MCP via **per-session `<cwd>/.gemini/settings.json`** (merged non-destructively; note: drops a file in the user's project dir) | emits `render` directly |
-| Model override env | `DEFAULT_MODEL` | `CODEX_MODEL` | `GEMINI_MODEL` | — |
-| Credential signal (`agentHasCredentials`) | `ANTHROPIC_API_KEY` \|\| `ANTHROPIC_AUTH_TOKEN` \|\| `ANTHROPIC_BASE_URL` | `OPENAI_API_KEY` \|\| `$CODEX_HOME/auth.json` (ChatGPT login) | `GEMINI_API_KEY` \|\| `GOOGLE_API_KEY` (Google OAuth path deprecated by Google, 2026) | none → mock is the fallback for every agent |
+| Capability | `claude-code` | `codex` | `opencode` | `gemini-cli` | `mock` |
+|---|---|---|---|---|---|
+| Drive surface | `@anthropic-ai/claude-agent-sdk`, one warm `query()` for the session's life | `@openai/codex-sdk`, pointed at the user's installed `codex` CLI when present (SDK-bundled fallback), one warm `Thread`, `runStreamed` per turn | one `opencode serve` **HTTP + server-sent-events** server per session, spoken RAW (no SDK — the published types drift from the live server); `opencode-client.ts` is the transport | `gemini` CLI headless: `-p … -o stream-json`, one process **per turn** | scripted timers |
+| Warm-conversation mechanism | never-ending query + async prompt queue (prompt cache preserved) | persistent `Thread` (`thread.id` resumable) | server-side session (`ses_…`) persists across turns; the HTTP server stays up for the session | `--session-id` first turn, `--resume` after | n/a |
+| Daemon-restart resume id | SDK `session_id` after init; restored with `resume` | `thread.started.thread_id`; restored with `resumeThread` | the engine session id; a fresh `opencode serve` reattaches it when `sessionExists`, else recreates | accepted UUID; restored with `--resume` (fatal id-mode self-heals) | transcript only |
+| Pre-submit catalog | live SDK slash commands + `commands_changed` | implemented `/model` + `/effort` + live app-server `$` skills | implemented `/model` + `/agent` (build/plan/custom) + the engine's own `/command` catalog (badged `source:"opencode"`) | implemented `/model` | scripted supported catalog |
+| Text streaming granularity | token-level (`includePartialMessages`) | **buffered** — one `text_delta` per completed item (SDK emits no token deltas today) | token-level: a true delta channel (`message.part.delta`) plus snapshot accrual | chunked `message` events | 16-char chunks |
+| Thinking stream (`thinking_delta`) | ✅ full fidelity | ✅ when reasoning items appear | ✅ (`reasoning` parts) | ❌ observed absent → never fires (I3 proof) | ✅ scripted |
+| Tool records (`tool_use`/`tool_result`) | ✅ full input, diffs | ✅ (`command_execution`, `file_change`, `mcp_tool_call`, `web_search`; only `status: "failed"` maps to `isError` — a completed command with a nonzero exit stays non-error, its exit code annotated in the output, matching the Codex TUI) | ✅ (tool parts; error output capped by `capOutput` like success) | ✅ | ✅ |
+| Subagent lane (`parentId` on calls, prose, asks — the subagent deck; Phase SA) | ✅ calls (`parent_tool_use_id`) + prose from parent-tagged COMPLETE messages (the SDK never streams subagent token deltas — SA.0 probe), budget-capped; asks ride the parent `canUseTool` unattributed | ❌ deferred to F.5: collab exists engine-side (default-on since ~2026-02), children are sibling THREADS whose inner activity needs app-server per-thread subscriptions; the TS SDK types none of it | ✅ full lane: child sessions on the same global stream map to the spawn part id (`state.metadata.sessionId` join, transitive for configured nesting), prose budget-capped, `permission.asked` surfaced ATTRIBUTED (`permission_request.parentId`) and replied via the session-agnostic `POST /permission/{requestID}/reply`; a child's render call gets an honest tool record, never a painting | ❌ the headless stream exposes no subagent lane | ✅ scripted three-spawn fan-out with narration |
+| Live todo checklist (`render` todo-list) | ✅ (TaskCreate/Update fold) | ✅ (`todo_list` item) | ✅ (`todo.updated`) | ❌ | ✅ |
+| Interactive permissions (`permission_request`) | ✅ full round-trip via `canUseTool` + inherited `settings.json` | ❌ SDK exposes no approval callback → inherits user's Codex approval config (I3) | ✅ full round-trip: `permission.asked` → reply `once`/`reject` (never `always` — that would persist into the user's own OpenCode state) | ❌ headless can't prompt → user's own tool approvals inherited; only our render server is scoped-allowed | ✅ (`dangerous` keyword) |
+| Usage (`usage` msg) | ✅ tokens + cumulative `total_cost_usd` | ✅ tokens (`cached_input_tokens` is a subset of input — never re-added) | ✅ tokens + cost per assistant message, summed into one per-turn `usage` | ✅ per-model token breakdown | ✅ |
+| Interrupt | SDK `interrupt()` | `AbortController`; discovered-local turns also use it at the configurable eight-minute outer deadline | `POST /session/:id/abort`; the grace deadline starts independently of that finite HTTP call. If idle misses the deadline, fork the conversation to a new engine-session id before the next prompt so a late old idle cannot end it; bounded fork failure degrades to a disclosed fresh session | kill child process | clear timers |
+| Render-MCP injection | **in-process** SDK MCP server (`render-tools.ts`) | subprocess stdio MCP via SDK `config.mcp_servers` (`render-mcp.ts`) | subprocess stdio MCP via the **`OPENCODE_CONFIG_CONTENT` env var** (additive merge; no file the user owns is read, written, or created) | subprocess stdio MCP via **per-session `<cwd>/.gemini/settings.json`** (merged non-destructively; note: drops a file in the user's project dir) | emits `render` directly |
+| Model override env | `DEFAULT_MODEL` | `CODEX_MODEL` | `OPENCODE_MODEL` (`provider/model`; a bare id can't name a provider so it pins nothing) | `GEMINI_MODEL` | — |
+| Credential signal (`agentHasCredentials`) | `ANTHROPIC_API_KEY` \|\| `ANTHROPIC_AUTH_TOKEN` \|\| `ANTHROPIC_BASE_URL` | `OPENAI_API_KEY` \|\| `$CODEX_HOME/auth.json` (ChatGPT login) | binary present: a stored `auth.json` → `api-key`, else the free Zen gateway → `gateway`; the TRUE per-provider kind is classified at session start from the running engine's catalog | `GEMINI_API_KEY` \|\| `GOOGLE_API_KEY` (individual-account Google login stopped serving Gemini CLI requests in 2026) | none → mock is the fallback for every agent |
 
 Known asymmetries, accepted deliberately (each is I3 at work, not debt):
 Codex has no browser permission bar; Gemini has no thinking stream and pays a
@@ -246,20 +292,26 @@ is `MIRAFOLD_CODEX_LOCAL_TURN_TIMEOUT_MS` (`0` disables it).
 
 ## 5. Generative UI: the MCP contract
 
-The render tools (`render_card/list/table/chart/links/keyvalue/progress/timeline/filetree/question/diff`, `emit_artifact`) are
-defined once — schemas in `server/registry-spec.ts` — and delivered two ways:
+The render tools (`render_card/list/table/chart/links/keyvalue/progress/timeline/filetree/question/diff/stat/code/statuslist/console/image/diagram`, `emit_artifact`) are
+defined once — the one list is `RENDER_TOOL_COMPONENT` in `render-mcp-cmd.ts`,
+schemas in `server/registry-spec.ts` — and delivered two ways:
 
 - **In-process** (Claude only): `server/render-tools.ts` handed to `query()`.
-- **Standalone stdio process** (everything else): `server/render-mcp.ts`,
-  spawned via `renderMcpCommand()` (`render-mcp-cmd.ts`) — compiled twin when
-  present, `tsx` + source in dev.
+- **Standalone stdio process** (everything else — Codex, OpenCode, Gemini):
+  `server/render-mcp.ts`, spawned via `renderMcpCommand()` (`render-mcp-cmd.ts`)
+  — compiled twin when present, `tsx` + source in dev.
 
 Adapter obligations for either path:
 
 1. Auto-allow **only our** render server (Claude: `mcp__ui__*` in
-   `permissions.ts`; Codex: per-server `default_tools_approval_mode`; Gemini:
+   `permissions.ts`; Codex: per-server `default_tools_approval_mode`; OpenCode:
+   the render server is the only MCP added via `OPENCODE_CONFIG_CONTENT` and the
+   user's own permission rules otherwise apply; Gemini:
    `--allowed-mcp-server-names genui`). Never blanket-approve the user's other
    tools to make ours run — that's forcing a posture the terminal doesn't have.
+   OpenCode advertises MCP tools as `mirafold_<tool>`, so the adapter recognizes
+   its own render calls by the `mirafold_` prefix and paints them, suppressing
+   the raw tool rows.
 2. Suppress the raw `tool_use`/`tool_result` rows for our render server's
    calls and emit the corresponding `render`/`artifact` WireMsg instead (the
    shared `emitGenerativeUI` path); other MCP servers' calls surface as
@@ -267,9 +319,14 @@ Adapter obligations for either path:
 3. Re-sending a render `id` is an in-place update — adapters must preserve the
    id the MCP stub returns (Codex/Gemini extract it from the tool result text).
 
-## 6. Adding provider #4 — the checklist
+## 6. Adding the next provider — the checklist
 
-The proven sequence (used for both Codex and Gemini; keep it):
+**OpenCode was provider #4** (Phase OC, `server/adapters/opencode.ts` +
+`opencode-client.ts` + `opencode-events.ts` + `opencode-commands.ts`) and is the
+most recent worked example — its spike doc `opencode.spike.md` shows the
+capture-live discipline, and it exercised the seam differently enough to reveal
+two touchpoints the earlier providers never needed (see step 4b below). The
+proven sequence (used for Codex, Gemini, and OpenCode; keep it):
 
 1. **Spike first** (`server/adapters/<agent>.spike.md`): identify the drive
    surface (official SDK > headless JSONL > ACP-style protocol > raw stdio, in
@@ -279,7 +336,7 @@ The proven sequence (used for both Codex and Gemini; keep it):
    a red verdict, not a workaround invitation.
 2. **Capture real events live** before writing the adapter. Both spikes found
    the docs wrong in the details (Codex: dot-notation event names, buffered
-   deltas; Gemini: deprecated OAuth). One throwaway probe saves a rewrite.
+   deltas; Gemini: individual-account authentication removed). One throwaway probe saves a rewrite.
 3. **Write the adapter** (`server/adapters/<agent>.ts`), template: `codex.ts`
    (subprocess SDK) or `gemini-cli.ts` (headless CLI). Identify the native
    durable conversation id/resume call and any pre-submit command discovery
@@ -290,6 +347,26 @@ The proven sequence (used for both Codex and Gemini; keep it):
      `backendOptions()` case (the picker's menu of ways it can run),
      `modelFor()` case (its own env var, never a shared one), `ADAPTER_AGENTS`
      entry (onboarding offers it), `createSession()` case.
+4b. **Only if the provider's credential kind can change mid-session or isn't
+   knowable at hello time** (OpenCode is the first such — its kind is a fact
+   about the underlying provider, resolved from the running engine and mutable
+   by a `/model` switch): use the optional `onBackendKind(cb)` seam on
+   `AgentSession`. The adapter publishes the classified kind at session start
+   (and on a provider switch); the registry adopts it and holds the entry
+   `kindPending` until the first publish, so the relay gate refuses remote
+   viewports meanwhile. Pair it with the optional `verifyBackendKind()` seam
+   (Phase RC): classify NOW instead of at the first turn, resolving once the
+   truthful kind has published and rejecting with the honest user-facing
+   reason when it can't. The create path uses it so a REMOTE create of a
+   pending-kind session awaits the truth (bounded, `VERIFY_KIND_TIMEOUT_MS`)
+   instead of losing the classification race; without the seam, remote
+   viewports can only attach after a first local turn. The relay gate (`provider-policy.ts` `relayGateRefusal`)
+   is then checked at **drive time on every model-driving path**, not only at
+   attach — a mid-session flip to a `subscription`/`gateway` kind must never let
+   an already-attached relay viewport keep driving (2026-08-13 audit). If the
+   provider introduces a new credential kind, it goes in the `CredentialKind`
+   union in `provider-policy.ts` and, if it must never cross the paid relay,
+   stays off `allowedOverRelay`'s allow-list (which fails closed by default).
 5. **Verify**: `yarn typecheck`; normalization unit tests beside the mapping
    (`normalizers.test.ts` pattern); then live — one turn with text, one tool
    call rendered as `tool_use`/`tool_result`, one render component painted via

@@ -11,7 +11,9 @@ Where things live: **README.md** — architecture, the two load-bearing
 contracts, conventions. **PLAN.md** — work steps in order, one per prompt;
 don't start a step until the previous "Done when" is satisfied; check steps
 off with a dated status note. **BUSINESS.md** — why and in what sequence
-(milestone gates).
+(milestone gates). **GLOSSARY.md** — the decided product vocabulary (paintings
+vs. decks, the surfaces, prompt box, …); use its terms in docs, copy, and
+conversation — the "(was)" column exists to recognize old terms, not reuse them.
 
 ## Environment
 
@@ -27,6 +29,9 @@ off with a dated status note. **BUSINESS.md** — why and in what sequence
 
 - Normal work branches (`feature/*`, `fix/*`, `refactor/*`) start from
   `next` and open pull requests back into `next`.
+- **Every commit carries `Signed-off-by`** (the DCO check blocks merges
+  without it). A local `prepare-commit-msg` hook appends it automatically —
+  if a commit somehow lacks it, `git rebase --signoff` repairs the branch.
 - A feature pull request stays open even after its checks pass. Complete the
   requested review and refactor work there, then ask Kyle explicitly whether
   to merge when it appears ready. Opening the pull request or getting green

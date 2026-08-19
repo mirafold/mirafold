@@ -95,7 +95,11 @@ export function createCodexRuntimeBinding(options: {
 
   // Drive the user's installed Codex when present so the terminal and SDK
   // share one engine version; machines without it retain the SDK fallback.
-  const installedCodex = installedAgentBin("MIRAFOLD_CODEX_BIN", "codex");
+  // An explicit override is SPAWN intent and rides verbatim — even missing,
+  // so the first turn ENOENTs honestly (the detection/spawn split of
+  // types.ts, 2026-08-13); only the unset case consults installation lookup.
+  const installedCodex =
+    process.env.MIRAFOLD_CODEX_BIN || installedAgentBin("MIRAFOLD_CODEX_BIN", "codex");
   const codex = (options.makeCodex ?? ((codexOptions: CodexOptions) => new Codex(codexOptions)))({
     ...(installedCodex ? { codexPathOverride: installedCodex } : {}),
     ...(kind === "api-key" && process.env.OPENAI_API_KEY

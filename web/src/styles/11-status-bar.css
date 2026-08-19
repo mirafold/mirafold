@@ -1,0 +1,298 @@
+/* ---- Status bar (T2.6) ---------------------------------------------------
+   The workbench strip: model · session · cwd · connection · usage. Slim,
+   monospace, shell-owned; folds to a single connection dot. */
+
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  /* Lives in .main-col (right of the activity bar, like the prompt box). The
+     negative left margin gives back the column's content air so the top
+     border starts AT the bar's border line — a clean T-junction, not two
+     lines crossing — while the left padding puts the controls back on the
+     prompt box's left edge. Vertically the same trade (2026-07-25, Kyle):
+     top margin −2 + top padding 12 keeps the controls exactly where they
+     were (offset sum 10px, as the old 6+4) but lifts the border line so the
+     12px above the buttons matches the 12px below (4px padding + 8px
+     margin) — the buttons sit centered between line and window bottom. */
+  margin: -2px 0 8px calc(-1 * var(--content-air));
+  padding: 12px 10px 4px var(--content-air);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.74em;
+  color: var(--fg-dimmer);
+  border-top: 1px solid var(--border-ghost);
+}
+
+.status-bar-collapsed {
+  background: none;
+  border: 0;
+  border-top: 1px solid var(--border-ghost);
+  cursor: pointer;
+  /* No width: 100% — .main-col's stretch sizes it, which keeps the right
+     edge in place despite the negative left margin above. */
+  justify-content: flex-start;
+}
+
+.sb-toggle {
+  display: flex;
+  align-items: center;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.sb-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.sb-dot-on {
+  background: var(--accent);
+}
+
+.sb-dot-off {
+  background: var(--warn-fg);
+  animation: sb-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes sb-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.sb-item {
+  white-space: nowrap;
+}
+
+/* The visible refusal reason beside the dot (touch has no tooltip). Warn
+   color to match the off-dot it explains; shrinks with ellipsis before it
+   can push the bar's controls off a phone row. */
+.sb-conn-note {
+  color: var(--warn-fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex-shrink: 1;
+}
+
+.sb-model {
+  color: var(--fg-dim);
+}
+
+.sb-sep {
+  padding-left: 10px;
+  border-left: 1px solid var(--border-2);
+}
+
+.sb-cwd {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sb-spacer {
+  flex: 1;
+}
+
+.sb-usage {
+  color: var(--fg-dim);
+}
+
+/* ---- Status bar: agent identity chip (P.4) ------------------------------ */
+.sb-agent {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* The chip as a button (R.4l): opens the settings card's Session section —
+   "what is this session?" — with the chip's exact text look preserved. */
+.sb-agent-btn {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sb-agent-btn:hover {
+  filter: brightness(1.25);
+}
+
+/* The status bar's two word-pills — "new" (#new session, an <a> to the startup
+   screen) and "end" (#11, two-click end → end?). One shape, opposite hover
+   intents: neutral for new, danger for end. */
+.sb-new,
+.sb-end {
+  display: inline-flex;
+  align-items: center;
+  height: 34px; /* matches the computed height of .sb-home / .sb-theme */
+  background: transparent;
+  border: 1px solid var(--border-2);
+  border-radius: 7px;
+  padding: 0 12px;
+  color: var(--fg-mid);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  text-decoration: none;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+
+.sb-new:hover {
+  color: var(--fg);
+  border-color: var(--border-hover);
+  background: var(--surface-hover);
+}
+
+.sb-end:hover {
+  color: var(--error);
+  border-color: var(--err-border-strong);
+}
+
+.sb-end-armed,
+.sb-end-armed:hover {
+  color: var(--error);
+  border-color: var(--err-border-strong);
+  background: var(--err-bg);
+}
+
+/* #9: mission-control home — an <a> styled as an icon button, the status
+   bar's outermost far-LEFT control (moved from the far right 2026-07-16);
+   the connection dot sits between it and the agent text. */
+/* .sb-workspace — the workspace drawer's phone toggle (2026-07-25, Kyle;
+   one button for Files + Changes since 2026-08-18) — only RENDERS on ≤640px
+   (StatusBar gates on useIsPhone, keeping home the bar's first control on
+   desktop); its styles live in the phone block. */
+
+.sb-home {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-mid);
+  border-radius: 7px;
+  padding: 6px 11px;
+  color: var(--fg);
+  font: inherit;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.sb-home:hover {
+  border-color: var(--border-hover);
+  background: var(--surface-hover);
+}
+
+/* Theme as a segmented sun|moon switch: both modes visible, the active side
+   lit, so the control never needs decoding as state-vs-action. */
+.sb-theme {
+  display: inline-flex;
+  align-items: stretch;
+  background: var(--surface-2);
+  border: 1px solid var(--border-mid);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.sb-theme-opt {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  padding: 6px 9px;
+  background: transparent;
+  border: 0;
+  color: var(--fg-dimmer);
+  font: inherit;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sb-theme-opt + .sb-theme-opt {
+  border-left: 1px solid var(--border-mid);
+}
+
+.sb-theme-opt:hover {
+  color: var(--fg-mid);
+}
+
+.sb-theme-opt.is-active {
+  color: var(--fg);
+  background: var(--surface-hover);
+  cursor: default;
+}
+
+/* The "connect a device" pairing button (R.4) — the QR card it opens lives
+   with the dialogs below. */
+.sb-pair {
+  display: inline-flex;
+  align-items: center;
+  height: 34px; /* the status bar's shared control height (.sb-new / .sb-end) */
+  padding: 0 12px;
+  color: var(--fg-mid);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  background: transparent;
+  border: 1px solid var(--border-2);
+  border-radius: 7px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+
+.sb-pair:hover {
+  color: var(--fg);
+  border-color: var(--border-hover);
+  background: var(--surface-hover);
+}
+
+/* In the fleet header the pair button sits beside .fleet-new, not the status
+   bar's 34px row — keep it sized to that neighbour. */
+.fleet-head .sb-pair {
+  height: auto;
+  padding: 5px 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  color: var(--fg-dimmer);
+}
+
+/* The gear drawing (GearGlyph) rides the text where it prefixes a line — the
+   status line, the subagent head, the fleet details activity. Inside the
+   settings button it's a flex item and the alignment is moot. */
+.gear-glyph {
+  vertical-align: -0.14em;
+}
+
+/* The settings gear (S.4) — sits beside the theme pill; the card it opens
+   lives with the dialogs below. */
+.sb-settings {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  padding: 6px 10px;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--fg-dimmer);
+  background: transparent;
+  border: 1px solid var(--border-2);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.sb-settings:hover {
+  color: var(--fg);
+  border-color: var(--border-hover);
+}
+

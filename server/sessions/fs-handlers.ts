@@ -1,9 +1,9 @@
 // The Explorer's per-viewport request layer (Phase E) — the fs_list /
-// fs_listdir / fs_read / fs_diff message handlers, lifted out of
+// fs_listdir / fs_read / fs_diff / fs_changes message handlers, lifted out of
 // connection.ts's switch so the Explorer's
 // request handling lives beside its data layer (fs-explorer.ts,
 // git.ts) instead of swelling the dispatcher. connection.ts builds one of
-// these per connection and delegates the four cases to it.
+// these per connection and delegates the five cases to it.
 //
 // Every reply is per-viewport: answered on THIS connection only (like
 // pong/sessions), never broadcast, never replay-buffered — disk state is a
@@ -13,11 +13,20 @@
 // runs on the local WS path, which has no try/catch above it, so an escaped
 // throw would exit the daemon.
 
-import { lstatSync } from "node:fs";
 import path from "node:path";
 import type { ClientMsg, FsDirEntry, FsEntry, WireMsg } from "../protocol";
 import type { SessionEntry } from "./registry";
-import { capBuffer, listTree, readDirRaw, readWorkspaceFile, sniffBinary, sortAndCapDir } from "./fs-explorer";
+import {
+  capBuffer,
+  contentRevision,
+  listTree,
+  readDirRaw,
+  readWorkspaceDiffEntry,
+  readWorkspaceFile,
+  reviewDiffRevision,
+  sniffBinary,
+  sortAndCapDir,
+} from "./fs-explorer";
 import {
   cleanRelPath,
   decorateGitDir,
@@ -26,6 +35,7 @@ import {
   gitTree,
   repoRelPath,
   repoStatus,
+  workspaceChanges,
 } from "./git";
 import { repoTrust, trustFile } from "./git-trust";
 import { inside } from "./actions";
@@ -59,34 +69,39 @@ const FS_LISTDIR_STATUS_WAIT_MS = envInt("FS_LISTDIR_STATUS_WAIT_MS", 300);
 // short and word-safe or the message is dropped whole.
 export const CLIENT_ID_RE = /^[\w-]{1,64}$/;
 
-const fileExists = (abs: string): boolean => {
-  try {
-    lstatSync(abs);
-    return true;
-  } catch {
-    return false;
-  }
-};
+/** A malformed correlation id drops the message whole (nothing to answer) —
+ *  the one grammar every client-correlated handler applies. */
+export const badClientId = (id: unknown): boolean =>
+  typeof id !== "string" || !CLIENT_ID_RE.test(id);
 
 // E2.4: HEAD's version comes from the repo that CONTAINS the file —
 // nearest .git above its directory — so a file in a NESTED repo diffs
 // through that repo, closing E2.3's recorded gap. The wire path is
 // already textually contained (cleanRelPath), and the directory
-// resolves through the realpath jail before any discovery; if it can't
-// (say the whole directory was deleted), fall back to the session root,
-// which is exactly the pre-E2.4 behavior. repoRel stays clean by
-// construction: realDir is jailed under the root and repoRoot is an
-// ancestor of realDir, so the relative path has no `..` to offer git.
+// resolves through the realpath jail before any discovery. For a deleted
+// subtree, walk upward to the nearest surviving ancestor and carry the
+// missing suffix forward; that preserves ownership by a nested repo instead
+// of incorrectly falling back to a non-repo Projects root.
 const resolveDiffRepo = (
   root: string,
   rel: string,
 ): { repoRoot: string | null; repoRel: string } => {
   const cut = rel.lastIndexOf("/");
-  const realDir = inside(root, cut === -1 ? "." : rel.slice(0, cut));
+  const leaf = rel.slice(cut + 1);
+  let parentRel = cut === -1 ? "" : rel.slice(0, cut);
+  const missing: string[] = [];
+  let realDir: string | null = null;
+  for (;;) {
+    realDir = inside(root, parentRel || ".");
+    if (realDir || !parentRel) break;
+    const parent = path.posix.dirname(parentRel);
+    missing.unshift(path.posix.basename(parentRel));
+    parentRel = parent === "." ? "" : parent;
+  }
   const repoRoot = realDir ? findRepoRoot(realDir) : null;
   const repoRel =
     repoRoot && realDir
-      ? [repoRelPath(repoRoot, realDir), rel.slice(cut + 1)].filter(Boolean).join("/")
+      ? [repoRelPath(repoRoot, realDir), ...missing, leaf].filter(Boolean).join("/")
       : rel;
   return { repoRoot, repoRel };
 };
@@ -95,6 +110,7 @@ type FsList = Extract<ClientMsg, { type: "fs_list" }>;
 type FsListdir = Extract<ClientMsg, { type: "fs_listdir" }>;
 type FsRead = Extract<ClientMsg, { type: "fs_read" }>;
 type FsDiff = Extract<ClientMsg, { type: "fs_diff" }>;
+type FsChanges = Extract<ClientMsg, { type: "fs_changes" }>;
 
 type FsDeps = {
   /** Send one frame to this viewport (never the broadcast path). */
@@ -110,15 +126,17 @@ export type FsHandlers = {
   listdir: (msg: FsListdir) => void;
   read: (msg: FsRead) => void;
   diff: (msg: FsDiff) => void;
+  changes: (msg: FsChanges) => void;
 };
 
 export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHandlers {
   // Per-connection state: one throttle clock per request type, and at most one
-  // git child in flight (shared by list + diff, like the bang already-running
-  // refusal).
+  // git child in flight (shared by list + diff + changes, like the bang
+  // already-running refusal).
   let lastListAt = 0;
   let lastReadAt = 0;
   let lastDiffAt = 0;
+  let lastChangesAt = 0;
   let gitInFlight = false;
   // fs_listdir's token bucket (see FS_LISTDIR_MAX_PER_SEC above): fractional
   // tokens accrue continuously, capped at one full burst.
@@ -156,7 +174,7 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
     });
   };
 
-  const badId = (id: unknown): boolean => typeof id !== "string" || !CLIENT_ID_RE.test(id);
+  const badId = badClientId;
   const tooSoon = (last: number): boolean => Date.now() - last < FS_MIN_INTERVAL_MS;
   const takeListdirToken = (): boolean => {
     const now = Date.now();
@@ -269,7 +287,7 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
           }
           const owed = lateStatusBells.delete(repoRoot);
           if (owed && !("notGit" in st) && !("error" in st)) {
-            viewport({ type: "fs_changed", truncated: true });
+            viewport({ type: "fs_changed", reason: "status" });
           }
         })
         .catch(() => {
@@ -343,23 +361,33 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
         if ("error" in show) return sendErr(rel, show.error);
 
         const beforeBuf = "content" in show ? show.content : Buffer.alloc(0);
-        if (sniffBinary(beforeBuf)) {
-          return viewport({ type: "fs_file_diff", id: msg.id, path: rel, binary: true });
-        }
         // The after side. A missing working file is a REAL case (deleted →
         // after ""), not an error — but only plain absence; an existing-but-
         // unreadable path stays an error.
         let after = "";
         let afterTruncatedBytes: number | undefined;
-        const exists = fileExists(path.join(root, rel));
-        if (exists) {
-          const r = readWorkspaceFile(root, rel);
-          if ("error" in r) return sendErr(rel, r.error);
-          if ("binary" in r) {
-            return viewport({ type: "fs_file_diff", id: msg.id, path: rel, binary: true });
+        let afterBinary = false;
+        let afterRevision = contentRevision(Buffer.alloc(0));
+        const working = readWorkspaceDiffEntry(root, rel, { revision: true });
+        if ("error" in working) return sendErr(rel, working.error);
+        if (!("absent" in working)) {
+          if ("binary" in working) {
+            afterBinary = true;
+          } else {
+            after = working.content;
+            afterTruncatedBytes = working.truncatedBytes;
           }
-          after = r.content;
-          afterTruncatedBytes = r.truncatedBytes;
+          afterRevision = working.revision ?? "";
+        }
+        const revision = reviewDiffRevision(beforeBuf, afterRevision);
+        if (sniffBinary(beforeBuf) || afterBinary) {
+          return viewport({
+            type: "fs_file_diff",
+            id: msg.id,
+            path: rel,
+            binary: true,
+            ...(revision ? { revision } : {}),
+          });
         }
         const before = capBuffer(beforeBuf);
         viewport({
@@ -368,6 +396,7 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
           path: rel,
           before: before.text,
           after,
+          ...(revision ? { revision } : {}),
           ...(before.truncatedBytes ? { beforeTruncatedBytes: before.truncatedBytes } : {}),
           ...(afterTruncatedBytes ? { afterTruncatedBytes } : {}),
         });
@@ -380,5 +409,49 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
       });
   };
 
-  return { list, listdir, read, diff };
+  const changes = (msg: FsChanges): void => {
+    if (badId(msg.id)) return;
+    const sendErr = (error: string) =>
+      viewport({ type: "fs_change_set", id: msg.id, repos: [], error });
+    const entry = getEntry();
+    if (!entry) return sendErr("no session attached");
+    if (tooSoon(lastChangesAt)) {
+      return sendErr("requests are arriving too fast — retry shortly");
+    }
+    lastChangesAt = Date.now();
+    if (gitInFlight) return sendErr("a git query is already running — retry shortly");
+
+    // Capture the immutable workspace root before awaiting. The query uses the
+    // same trusted, hook-disabled git runner as the Explorer's existing tree
+    // and diff paths, but returns all changed files grouped by repository.
+    const root = entry.cwd;
+    gitInFlight = true;
+    void workspaceChanges(root)
+      .then((result) => {
+        if (isClosed()) return;
+        if ("error" in result) return sendErr(result.error);
+        // The query itself already neutralized repo-configured programs. Match
+        // the Files tree's user-facing half of that trust control for every
+        // repository the Changes query reached.
+        for (const repo of result.repos) {
+          const discoveredRoot = path.join(root, repo.root || ".");
+          const repoRoot = findRepoRoot(discoveredRoot);
+          if (repoRoot) void noticeRefusedPrograms(repoRoot);
+        }
+        viewport({
+          type: "fs_change_set",
+          id: msg.id,
+          repos: result.repos,
+          ...(result.truncated ? { truncated: true } : {}),
+        });
+      })
+      .catch((err) => {
+        if (!isClosed()) sendErr(errText(err));
+      })
+      .finally(() => {
+        gitInFlight = false;
+      });
+  };
+
+  return { list, listdir, read, diff, changes };
 }

@@ -22,6 +22,7 @@ import {
   joinTextBlocks,
   toolDetail,
   PERMISSION_TIMEOUT_MS,
+  SubagentProseBudget,
 } from "./types";
 import { AsyncQueue, CLOSE } from "./async-queue";
 import { createLogger, scrubSelectedEndpoint, verbose } from "../log";
@@ -144,6 +145,8 @@ export class ClaudeCodeSession implements AgentSession {
   // arrive as buffered assistant text with zero deltas), the buffered text is
   // the ONLY copy and must be emitted, or the command runs but nothing paints (F.1).
   private streamedText = false;
+  // SA.2: per-subagent narration budget for the turn (cleared with it).
+  private subagentProse = new SubagentProseBudget();
   // In-flight permission prompts, keyed by wire id → resolver.
   private pendingAsks = new Map<string, (allow: boolean) => void>();
 
@@ -406,6 +409,13 @@ export class ClaudeCodeSession implements AgentSession {
     for (const cb of this.listeners) cb(msg);
   }
 
+  /** A subagent's narration/reasoning chunk: budget-capped, then onto its
+   *  deck's lane — or nothing at all once the budget is spent (SA.2). */
+  private emitSubagentProse(parentId: string, type: "text_delta" | "thinking_delta", text: string) {
+    const capped = this.subagentProse.take(parentId, text);
+    if (capped) this.emit({ type, text: capped, parentId });
+  }
+
   private async *promptStream(): AsyncGenerator<SDKUserMessage> {
     while (true) {
       const item = await this.queue.next();
@@ -424,7 +434,10 @@ export class ClaudeCodeSession implements AgentSession {
       for await (const msg of this.engine) {
         switch (msg.type) {
           case "stream_event": {
-            if (msg.parent_tool_use_id) break; // subagent traffic — not ours to render
+            // Subagent deltas never arrive here (SDK streams are main-session
+            // only — SA.0 probe); a subagent's prose forwards from its
+            // complete assistant messages below. Guard kept fail-safe.
+            if (msg.parent_tool_use_id) break;
             const ev = msg.event;
             if (ev.type === "content_block_delta" && ev.delta.type === "text_delta") {
               this.streamedText = true; // F.1: mark this turn as streamed
@@ -444,20 +457,32 @@ export class ClaudeCodeSession implements AgentSession {
             break;
           }
           case "assistant": {
-            // Subagent tool CALLS are shown, nested (T2.4); subagent text and
-            // thinking stay filtered — those come via stream_event, still
-            // dropped above. parentId = the Task tool_use this call belongs to.
+            // Subagent tool CALLS are shown, nested (T2.4), and since SA.2 a
+            // subagent's PROSE rides too: the SDK never forwards subagent
+            // token deltas (stream_event stays main-session-only — the break
+            // above is belt and suspenders), but its COMPLETE assistant
+            // messages arrive live mid-run tagged parent_tool_use_id (SA.0
+            // probe), so text and thinking blocks forward at message grain,
+            // budget-capped per subagent. parentId = the spawn tool_use id.
             const parentId = msg.parent_tool_use_id ?? undefined;
             for (const block of msg.message.content) {
               // Buffered assistant text with no preceding deltas — the
-              // shape slash-command output arrives in. Emit only when this
-              // turn streamed nothing (else it's a duplicate of the stream),
-              // and never for a subagent (its prose stays filtered like its
-              // deltas). Renders the command output that would otherwise vanish (F.1).
+              // shape slash-command output arrives in. For the PARENT, emit
+              // only when this turn streamed nothing (else it's a duplicate
+              // of the stream) — renders the command output that would
+              // otherwise vanish (F.1). For a SUBAGENT there is never a
+              // delta stream to duplicate: forward, capped.
               if (block.type === "text") {
-                if (!parentId && !this.streamedText && typeof block.text === "string" && block.text) {
-                  this.emit({ type: "text_delta", text: block.text });
-                }
+                if (typeof block.text !== "string" || !block.text) continue;
+                if (parentId) this.emitSubagentProse(parentId, "text_delta", block.text);
+                else if (!this.streamedText) this.emit({ type: "text_delta", text: block.text });
+                continue;
+              }
+              // A subagent's reasoning (parent thinking streams via
+              // stream_event above; emitting it here too would duplicate).
+              if (block.type === "thinking") {
+                if (parentId && typeof block.thinking === "string" && block.thinking)
+                  this.emitSubagentProse(parentId, "thinking_delta", block.thinking);
                 continue;
               }
               if (block.type !== "tool_use") continue;
@@ -552,6 +577,8 @@ export class ClaudeCodeSession implements AgentSession {
   /** The turn's closing frame: surface an error result, report per-turn
    *  usage, reset per-turn state, and end the turn. */
   private handleResultMsg(msg: SDKResultMessage) {
+    // Spawns don't outlive their turn; the narration ledger resets with it.
+    this.subagentProse.clear();
     if (msg.is_error) {
       const detail = "result" in msg ? msg.result : msg.subtype;
       this.emit({ type: "error", message: this.safeEngineText(detail) });

@@ -146,8 +146,12 @@ faithful per-agent skins) · **4** except 4.7 (→ Phase R) · **G, H, H2**
 backend picker) · **V** (visual + fidelity gaps) · **A** (accessibility) ·
 **C** (CI/CD) · **E** (Explorer) · **M** (Mission control) · **E2** (Explorer at scale) ·
 **E3** (Explorer visual polish) · **W** (live tree), **UX** (native prompt discovery, transcript fidelity,
-durable provider recovery, and branch test-audit closure), plus the finished
-steps of the still-open Phases **K, R, F, Q, L**.
+durable provider recovery, and branch test-audit closure) · **CR** (Changes
+review workspace) · **NF** (needs-you notifications) · **FD** (file
+drag-and-drop) · the paintings polish batch · **OC** (OpenCode adapter) ·
+the superseded Gemini deprecation record · **RC** (remote OpenCode create) · **SA** (subagent
+view) · **RF** (pre-release findings closure), plus the finished steps of the
+still-open Phases **K, R, F, Q, L**.
 
 Archive passes, each a section header in PLAN-ARCHIVE.md you can navigate to:
 2026-07-08 · 2026-07-10 · 2026-07-15 · "Moved 2026-07-17" · "Moved 2026-07-19"
@@ -155,7 +159,13 @@ Archive passes, each a section header in PLAN-ARCHIVE.md you can navigate to:
 lifted out of the still-open Phase R steps) · "Moved 2026-07-27" (Phases
 E2/W step bodies, the Phase E/M narrative passes, the R.4l item-5
 investigation, the CI-flake breakdown, and finished stretch-goal specs) ·
-"Moved 2026-08-09" (Phase UX).
+"Moved 2026-08-09" (Phase UX) · "Moved 2026-08-12 (prune — completed
+bodies)" (a sweep of finished bodies across Phases 4/R/A/Q, the 2026-07-27
+audit section, and the stretch goals) · "Moved 2026-08-14 (post-SA prune —
+completed bodies)" (the NF/FD step bodies, paintings polish, Phase OC, the
+superseded Gemini deprecation record, Phase RC, and the whole Phase SA record) ·
+"Moved 2026-08-14 (Phase RF — completed body)" (Gemini support restoration,
+OpenCode interrupt recovery, and corrective validation).
 
 ---
 
@@ -171,27 +181,11 @@ investigation, the CI-flake breakdown, and finished stretch-goal specs) ·
   **PLAN-ARCHIVE.md** under “Moved 2026-08-09.” The complete phase and its
   UX.6–UX.9 follow-ups landed in `next` through PR #31 (`9e833849`) after DCO,
   Cloudflare Pages, Tier 1, and combined Tier 2/Tier 3 all passed.
-- [x] **Step UX.6 — Settle prompt return behavior, then refactor Phase UX** —
-  done 2026-08-10; accepted desktop transcript-click behavior replaced the
-  provisional binding, and the full Phase UX diff received a verified
-  behavior-preserving refactor. → **PLAN-ARCHIVE.md**.
-- [x] **Step UX.7 — Close the eight Phase UX correctness findings** — done
-  2026-08-10; backend identity, faithful catalogs, dormant idle unload,
-  completion visibility, chronology-safe compaction, defensive decoding, and
-  delete-failure recovery are fixed and regression-pinned. →
-  **PLAN-ARCHIVE.md**.
-
-- [x] **Step UX.8 — Close the Phase UX security audit findings** — done
-  2026-08-10; credential/destination binding, fully opaque configured endpoint
-  identity and diagnostics, exact loopback classification, prompt-catalog
-  provenance/control safety, and strict checkpoint decoding are regression-pinned.
-  → **PLAN-ARCHIVE.md**.
-
-- [x] **Step UX.9 — Audit and repair the Phase UX branch tests** — done
-  2026-08-10; repeated all safe test tiers, mutation-proved and closed six
-  regression gaps, and made the live Codex/Ollama timeout clean up immediately.
-  The real-turn instability it exposed was kept visible and is now diagnosed
-  and closed in Step L.4. → **PLAN-ARCHIVE.md**.
+- [x] **Steps UX.6–UX.10** — all done 2026-08-10/12 (prompt-return settle +
+  behavior-preserving refactor; the eight correctness findings; the security-
+  audit findings; the branch test audit — whose real-turn instability was
+  closed in Step L.4; collapse-on-finalize surviving narrating engines).
+  Bodies → PLAN-ARCHIVE.md, "Moved 2026-08-17 (prune — completed step bodies)."
 
 ---
 
@@ -236,152 +230,36 @@ records of later unplanned polish batches.
   including an e2e pin (tap → card shows raw target → confirm opens,
   dismiss doesn't).
 
-- [x] **Step 4.13 — Phone-testing bug batch (unplanned, Kyle-driven)** — done
-  2026-07-28, all tiers green (458/139/70), every fix e2e-pinned +
-  mutation-tested. Three bugs from Kyle's manual phone/relay testing:
-  (1) **busy turns looked idle** — the transcript's activity line now stays
-  up the whole turn (`✳ working…` fallback between status frames), driven
-  by Shell's wire-derived busy flag; (2) **the permission strip's one-line
-  preview was unreadable on phone** — its body is now one tap target
-  opening the full command in a ModalCard (extracted to `PermBar.tsx` in
-  the same-day refactor); (3) **`exp://` links rendered as dead
-  empty-href anchors** (the about:blank tab) — Expo Go schemes now pass
-  the markdown URL allowlist as real links, and stripped schemes render
-  as text (`web/src/registry/Md.test.ts`). Same-day audit: exp:// hand-off
-  disclosed in SECURITY.md, interstitial planned as 4.12; the audit's
-  second finding — the permission `detail` string is uncapped end-to-end —
-  judged theoretical and **accepted, no action** (Kyle's call 2026-07-28:
-  real agents emit real commands, the card + scrollbar already show more
-  than the old strip ever did; don't re-litigate absent an engine that
-  emits huge payloads); user-facing
-  "know what you're running" paragraph added to the README top. Related
-  decision, same day: **relay port-tunneling** (phone reaches a dev server
-  on the laptop through the relay, no LAN/firewall dependence) was
-  explored and **parked by Kyle** — no roadmap item; the self-serve LAN
-  workaround stands, revisit only if phone-first app-building becomes a
-  real usage path. (The `192.168…` failure that started it was Kyle's ufw
-  dropping LAN SYNs — his machine, not repo state.)
+- [x] **Step 4.13 — Phone-testing bug batch (unplanned, Kyle-driven)** —
+  done 2026-07-28; three phone/relay bugs fixed, e2e-pinned +
+  mutation-tested (busy-turn activity line, tappable permission strip,
+  `exp://` links). Standing: the uncapped permission `detail` is accepted,
+  no action (Kyle 2026-07-28 — don't re-litigate absent an engine emitting
+  huge payloads); relay port-tunneling explored and parked (revisit only if
+  phone-first app-building becomes real usage). Full record → PLAN-ARCHIVE.md, "Moved 2026-08-12 (prune — completed bodies)."
 
-- [x] **Step 4.14 — The activity indicator, done right (Kyle-driven rework of
-  4.13's fix #1)** — done 2026-07-29, all tiers green (458/139/72), both new
-  guarantees mutation-tested. Kyle's requirement, verbatim in spirit: **at
-  all times while Mirafold is working with nothing painting, something
-  visibly alive says so** — the terminal agents' cycling asterisk is the
-  bar. 4.13's fix guaranteed only DOM presence and failed it four ways:
-  the `.status-line` pulse was dead CSS (the rise-animation list overrode
-  the `animation` shorthand at equal specificity — frozen text since at
-  least 2026-07-25), the label went stale (`Bash ⚙` through the post-tool
-  model round trip), the line lived inside the scrolling transcript (any
-  scroll-up = zero indication), and a queued mid-turn prompt blanked it at
-  the first turn's `turn_end` while the engine rolled into the queued turn.
-  The rework: `ActivityLine.tsx` — cycling thin→fat asterisk frames (JS,
-  reduced-motion honored) + label + ticking elapsed seconds — as
-  prompt-area chrome above the box; Shell owns the label (status frames /
-  announced tools, cleared on `tool_result` so it can't go stale) and an
-  open-turn counter (`user_prompt` up, `turn_end` down, replay-safe) so a
-  queued follow-up keeps busy across the boundary; the in-transcript
-  status line is gone, and the e2e now asserts aliveness (glyph frame
-  changes), on-screen-ness while scrolled up, and gaplessness across the
-  queued-turn boundary — not mere DOM presence.
-  - **⚠ Test-strength caveat, recorded 2026-07-29 (honest limits of the
-    queued-turn pin).** Of the three e2e guarantees, two are solidly
-    mutation-proven (the glyph must visibly cycle; a long label must not
-    widen the page). The THIRD — "no blank frame across the queued-turn
-    boundary" — is a reliable smoke test but NOT a dependable regression
-    pin: `MockSession` overlays a mid-turn prompt's scripted timers on the
-    running turn instead of queuing behind it, so turn 2's events usually
-    land within one 16 ms sample of turn 1's `turn_end`. Reverting the
-    `openTurns` counter therefore produces a gap too short to sample, and
-    the test passes on the broken code (verified — it caught the mutation
-    on some runs and not others). Chasing stability also cost several
-    false failures: a 2.2 s "blank" that was the product correctly idling
-    after a REFUSED follow-up (the registry allows exactly one queued
-    prompt; when it's spent the scenario never occurs), now handled by
-    retrying the whole scenario and asserting acceptance-while-busy first.
-    Options for a real pin, for whoever picks this up: give the mock an
-    explicit "queue, don't overlay" mode so the boundary has a measurable
-    gap, or pin `openTurns` directly in a Shell-level unit test (Tier 1
-    has no DOM harness today, so that's the larger lift). Until then,
-    treat the boundary behavior as verified by construction + manual
-    observation, not by an automated guard.
-    *2026-07-29 addendum (Step 4.16):* the counter now lives in a pure
-    reducer (`web/src/turn-busy.ts`) and `turn-busy.test.ts` pins the
-    queued-turn arithmetic directly — the caveat's asked-for unit pin,
-    without the DOM-harness lift. The e2e's sampling weakness stands as
-    recorded; the reducer pin is the dependable guard.
+- [x] **Step 4.14 — The activity indicator, done right (Kyle-driven rework
+  of 4.13's fix #1)** — done 2026-07-29; Kyle's bar: at all times while
+  Mirafold works with nothing painting, something visibly alive says so.
+  `ActivityLine.tsx` chrome above the prompt box + Shell-owned label +
+  replay-safe open-turn counter — now the pure reducer
+  `web/src/turn-busy.ts`, whose Tier-1 pin is the dependable guard (the
+  e2e's queued-turn boundary assertion remains a smoke test; its
+  honest-limits caveat is preserved verbatim in the archive). Full record →
+  PLAN-ARCHIVE.md, "Moved 2026-08-12 (prune — completed bodies)."
 
 - [x] **Step 4.15 — Beta-channel trust follow-ups (beta tester 002's
-  evaluation, 2026-07-28; triaged with Kyle 2026-07-29)** — **done
-  2026-07-29**: `SECURITY.md` ships in the package (`files` whitelist),
-  tarball repacked + cold-install re-verified + restaged as
-  `../beta/mirafold.tgz` (sha256 `c8a66f4c98e6…`, full value printed in
-  WELCOME.md + `/beta`), and WELCOME.md gained the fingerprint + a
-  "cautious first run" recipe (throwaway dir, credential-less scripted
-  demo first, honest note that the file browser is confined while the
-  agent keeps its terminal powers behind the permission prompts). ⚠ The
-  repack changed the artifact: if a `mirafold.tgz` was uploaded to Drive
-  before this, it must be re-uploaded. The now-actionable slice of the
-  evaluation (the provenance practice went to R.5b; the provenance +
-  install-command concerns otherwise dissolve at R.7's publish):
-  - Ship `SECURITY.md` in the npm package (add to the `files` whitelist;
-    the README cites it and the tarball is where a beta tester looks) —
-    then repack + restage `../beta/mirafold.tgz`.
-  - Publish the staged tarball's SHA-256 where testers can check it:
-    `beta/WELCOME.md` + the site's `/beta` page.
-  - A short "cautious first run" section in `beta/WELCOME.md` (disposable
-    repo with canary files, mock adapter first, relay off) — the
-    evaluation's pilot checklist, offered rather than left for each
-    tester to invent.
-  - Done when: a tester following the public trail finds the security doc
-    inside the artifact, a fingerprint to verify it, and a sane first-run
-    recipe.
+  evaluation)** — done 2026-07-29; SECURITY.md ships in the package, the
+  tarball fingerprint is published where testers look, and WELCOME.md
+  carries a "cautious first run" recipe. Full record → PLAN-ARCHIVE.md, "Moved 2026-08-12 (prune — completed bodies)."
 
 - [x] **Step 4.16 — Whole-repo bughunt batch (2026-07-29, Kyle: "do em
-  all")** — a six-subsystem correctness sweep (adapters / sessions / server
-  core+pty / relay / web core / web components), every finding verified with
-  a concrete failing scenario before reporting, all 27 approved and fixed
-  the same day, each with a pinned regression test (several
-  mutation-proven). The headliners, for the record: (1) an **oversized ws
-  frame crashed the whole daemon** — no per-socket `error` listener, so a
-  >1 MB paste tripped ws's maxPayload into uncaughtException (fix: listener
-  + Tier-2 pin; the socket now closes 1009 alone); (2) a **relay-gate-refused
-  CREATE leaked the session forever** (nothing arms the idle timer before a
-  first attach; 100 phone retries exhausted MAX_SESSIONS for local creates
-  too) — refused creates now reap what they minted; (3) a **viewport frame
-  >~1.5 MB killed the whole pairing** (daemon dial-out cap sat below the
-  relay's 8 MB viewport cap; ws closes the whole socket → dropAll) — cap
-  aligned + pinned against genui-relay's limits in the sibling itest;
-  (4) the **artifact update-in-place liveness race** (a stale navigation
-  deadline killed healthy updates; generation guard + a same-id mock
-  scenario the e2e now drives); (5) both **codex and gemini burned
-  RENDER_GUIDANCE on a failed first turn** (consumed before delivery → zero
-  render calls for the session's life); (6) **bang lifecycle masqueraded as
-  turn grammar** in the registry (a `!` during a pending ask wiped the
-  fleet's allow/deny — the 2026-07-24 bug class through a different door —
-  and a throttle-refused bang broadcast a fabricated `bang_end`);
-  (7) **ws.ts backoff reset on open**, so refused viewports redialed at
-  2 Hz forever (reset moved to the handshaken finishOpen; full relay-path
-  crypto now driven in ws.test); (8) **split/colon-form ANSI leaked through
-  the PTY cleaner** (stateful cross-chunk carry + ECMA-48 param class);
-  (9) replay re-fired **screen-reader announcements for historical turns**
-  on every reload (additive `replay: true` stamp on attach-replayed frames,
-  protocol.ts; Shell suppresses live-only side effects); (10) an
-  **env-misparse family** where garbage WIDENED policy (`MAX_WS_PAYLOAD`
-  NaN = unlimited, `WS_HEARTBEAT_MS` NaN = 1 ms reap-everything loop) —
-  `server/env.ts` envInt/envFlag now parse strictly, 34 sites swept. Plus:
-  checklist clear-to-empty (both adapters), mermaid quoted-comma labels,
-  chart end-label clipping, mock permission_resolved on interrupt,
-  workspace_ls dangling-symlink resilience, pairing-code charset refusal,
-  the sendTampered last-char no-op (the itest's tamper proof now actually
-  proves tamper rejection), stale pong deadline killing successor sockets,
-  the legacy pairing-store carry (newSessionHref), handshake-wedge deadline,
-  useArmedConfirm same-key re-arm, FilesPanel replay-burst coalescing, and
-  the ws.ts close-code mirror now REALLY pinned against genui-relay's
-  contract. One deliberate non-fix, recorded: no client-side prompt-size
-  cap was added (a feature call, not a bug) — a >cap paste now costs one
-  clean socket close instead of the daemon; add the cap only if that UX
-  bites. Full verified ledger: session scratchpad; findings' file:line
-  detail rides each fix's test comments.
+  all")** — 27 verified findings across six subsystems (adapters, sessions,
+  server core+pty, relay, web core, web components), all fixed same day,
+  each with a pinned regression (several mutation-proven). One deliberate
+  non-fix stands: no client-side prompt-size cap (a feature call — a >cap
+  paste costs one clean socket close; add only if that UX bites). Full
+  finding ledger → PLAN-ARCHIVE.md, "Moved 2026-08-12 (prune — completed bodies)."
 
 - [ ] **Step 4.17 — Relay hello freshness (deferred hardening, 2026-08-11
   audit)** — the daemon's relay hello (`relay-crypto.ts` / `relay-client.ts`)
@@ -401,34 +279,12 @@ records of later unplanned polish batches.
   today (it's ours). Sized ~half a day incl. a sibling-itest pin (recorded
   hello + fresh challenge → refused).
 
-- [x] **Step 4.18 — Test-audit pass (2026-08-11)** — judged the tests, not the
-  product: read the tiering rules (README §8), ran Tier 1 (631/631, ~16s, x2
-  deterministic), Tier 2 (144/144, x3, ~3:48 each, zero flakiness), Tier 3
-  (e2e, 83/83, x2, ~3:20 each incl. build, zero flakiness), and **falsified 10
-  stated invariants by mutating the product** — the
-  E2E counter (replay/reorder), the tool-output cap, the replay-ring byte cap,
-  the fs-explorer realpath jail, checkpoint seq-monotonicity, the WS
-  origin guard, the ws backoff ladder, `cleanRelPath` traversal, and the
-  IP-exact loopback classifier all fail cleanly when their target breaks.
-  **Two real repairs, each mutation-proven after:** (1) `registry-spec.test.ts`'s
-  chart "old-client" test asserted on a hand-built `z.enum(["line","bar"])` — it
-  tested zod, not the product; rewritten to drive the real
-  `clientSchemas.chart`/`registrySchemas.chart` twins (now fails when the chart
-  kind enum changes). (2) `fs-explorer.test.ts`'s "small tree not truncated"
-  test wrote into the already-capped dir (a dead write), listed a fresh EMPTY
-  dir, and never asserted `truncated === false` — the guarantee was untested;
-  rewritten to list a real small tree and pin `truncated === false` + the entry
-  list (now fails on spurious truncation). **Three assertions tightened**
-  (loose bounds → exact, each proven to catch a regression the old form missed):
-  `niceTicks` ticks (Chart.test.ts) and the Gemini honest-model label.
-  **Left as-is, backstopped, reported not repaired** (deleting/weakening waits
-  for Kyle; each is redundant with a stronger test, not a gap):
-  `provider-policy.test.ts` "every cell is a boolean" (the exact agent×kind
-  truth matrix above it is stronger), `version.test.ts` semver-shape regex
-  (the `CLIENT_VERSION===VERSION` + launcher `--version` neighbors have the
-  teeth), the claude-code/gemini truncation *bounds* (exact byte math pinned in
-  `types.test.ts`), and `files-tree.test.ts`'s "too fast" substring. No product
-  bug surfaced; no test was deleted.
+- [x] **Step 4.18 — Test-audit pass (2026-08-11)** — all three tiers
+  repeated clean; 10 stated invariants falsified by product mutation; two
+  tests genuinely repaired (chart old-client, fs-explorer small-tree),
+  three assertions tightened. The redundant-but-backstopped tests it chose
+  to report rather than delete still await Kyle's call — the list is
+  preserved in the archive. Full record → PLAN-ARCHIVE.md, "Moved 2026-08-12 (prune — completed bodies)."
 
 ---
 
@@ -522,7 +378,7 @@ and K.6's site pass. Detail in the K.2 / K.4 / K.5 / K.7 notes below.
 
 - [x] **Step K.3 — Provider-terms re-verification** — done 2026-07-15; every row pinned to a dated primary source: the Anthropic ban verbatim, Gemini individual-account service ended 2026-06-18 (API keys continue; Antigravity succession check → R.6), and the codex row settled as allowed-locally under the standing **disclosed-uncertainty rule** (no written permission exists, posture visibly permissive; canonical statement in `server/provider-policy.ts`). All four tiers green, twice. → PLAN-ARCHIVE.md.
 
-- [ ] **Step K.4 — Merchant-of-record billing** — 🟡 vendor locked: **PADDLE**
+- [x] **Step K.4 — Merchant-of-record billing** — vendor: **PADDLE**
   (investigation 2026-07-15; every hard requirement from BUSINESS §7 + R.5
   verified native against Paddle's docs: card-required 7-day trial,
   cancel-at-period-end, $12/mo · $99/yr, signed `trialing`/`active`
@@ -530,16 +386,16 @@ and K.6's site pass. Detail in the K.2 / K.4 / K.5 / K.7 notes below.
   hosted checkout from a static page, MoR tax; fees 5% + 50¢, accepted.
   Field comparison — Lemon Squeezy / Stripe Managed Payments / Polar /
   Creem — and the FTC-rule→ROSCA citation correction: → PLAN-ARCHIVE.md).
-  Account created 2026-07-16 as **individual/sole trader** (no entity
-  required — the finding that deferred K.2). **2026-07-17: both Paddle
-  reviews submitted and pending** — domain approval (`mirafold.com`,
-  Pending at `/request-domain-approval`) and account verification (the
-  KYC form, completed + in review; sole prop, trading name Mirafold,
-  business start 2026-07-11, pricing URL `mirafold.com/#pricing`).
-  Payout/bank details: an anytime-before-revenue dashboard item. Full
-  status history → PLAN-ARCHIVE.md.
-  - Done when: both reviews pass and R.5's checkout → webhook →
-    entitlement-minting build runs against the account.
+  Account created 2026-07-16 as individual/sole trader (the finding that
+  deferred K.2). **Closed 2026-08-12 as long since satisfied:** both
+  Paddle reviews PASSED 2026-07-19 (KYC verified + `mirafold.com` domain
+  approved + SaaS taxable category — Kyle's dashboard read), and the
+  Done-when was met live 2026-07-22 when R.5's checkout → webhook →
+  entitlement-minting build ran against the account end-to-end on Kyle's
+  real purchase, through the closed relay gate. Payout/bank details set
+  up (confirmed 2026-07-30). Full status history → PLAN-ARCHIVE.md; the
+  superseded pending-review text → PLAN-ARCHIVE.md, "Moved 2026-08-12
+  (prune addendum — verified-stale items)."
 
 - [x] **Step K.5 — ToS + Privacy Policy (from a written data inventory)** —
   done: four pages LIVE on mirafold.com 2026-07-16 (`/terms` `/privacy`
@@ -686,69 +542,18 @@ notifications are **not** part of the launch and are not sold until built.
 - [x] **Step R.1 — Relay envelope + daemon dial-out** — done 2026-07-07; the relay envelope + outbound WSS dial-out, remote viewports multiplexed as ordinary Connections, verified across all tiers against the in-repo stub. Full status → PLAN-ARCHIVE.md.
 
 - [x] **Step R.2 — The relay service, deployed** — completed 2026-08-09.
-  - Goal: the dumb forwarder, running in the world.
-  - Status: **DEPLOYED and verified in production.** The standalone
-    `mirafold-relay` repo (single source of truth since G.1) is a
-    dependency-light (`ws` only) portable Node process — a PURE forwarder:
-    parses no frames, stores nothing, serves NO app bundle (the phone app
-    loads from the separate static origin, then opens the encrypted
-    socket — the documented trust decision). Hardening: global + per-pair
-    + per-IP connection caps, frame rate limit, heartbeat reaper, max
-    payload, `/health` + 404-everything. Live at `genui-relay.fly.dev`,
-    under our name at **`wss://relay.mirafold.sh`** (cert issued; smoke
-    passes; a real daemon streamed a full turn while `fly logs` showed
-    only connection metadata — the "learned nothing" Done-when, observed
-    in production). Full build/deploy/rename history (incl. the GENUI® →
-    Mirafold naming story) → PLAN-ARCHIVE.md ("Step R.2 — status history"
-    + the 2026-07-17 move).
-  - Closure record: (1) the **cellular-phone pass** — ✅ **FIRST HALF
-    DONE 2026-07-30**: Kyle paired his phone and ran a session over
-    **cellular with wifi off**, on the fixed 0.3.0 build. Notable because
-    his house is rural with near-unusable data — he found one spot with
-    signal and it worked there, so the pass happened on a *marginal* link
-    rather than a strong one, which is the harder case. ✅ **SECOND HALF
-    DONE the same day**: the **wifi→LTE mid-turn flip, run twice** — wifi
-    dropped while a turn was streaming and the session recovered on its own
-    both times. **The cellular-phone pass is CLOSED.** (2) ✅ **Bake the
-    default `MIRAFOLD_RELAY_URL` — DONE 2026-07-30** (`43441ac`,
-    `server/relay/relay-url.ts`): unset now means the hosted relay
-    (`wss://relay.mirafold.sh`) — but ONLY when an entitlement is
-    configured; an unentitled daemon never dials (a gated relay would
-    refuse it 4007 on a widening retry forever) and gets one actionable
-    boot line instead. `MIRAFOLD_RELAY_URL=off` opts out; explicit URLs
-    keep pre-bake behavior verbatim (self-host + dev stub); the app origin
-    defaults to `https://app.mirafold.com` only when riding the baked
-    default. The bake-lands-WITH-the-gate constraint was satisfied — the
-    gate has been ON in production since 2026-07-22. Verified: 9 unit
-    tests (unentitled guard mutation-tested), Tiers 1+2 green, live boots
-    in all four modes. *Follow-up ✅ FIXED same day, Kyle-directed
-    (`92acd37`): production (Fly's proxy) delivers refusal closes ~5s
-    after open — locally 14ms — which defeated relay-client's 400ms
-    pair-confirm, so an invalid/lapsed license logged a false "paired",
-    reset backoff, and churned at ~6s forever. The confirm timer now
-    earns only the "paired" log; the backoff decision moved to close (a
-    refusal never resets, a confirmed ordinary drop still does).
-    Mutation-tested pin + live-verified against production: gaps double
-    1s→16s+ toward the 30s ceiling.* (3) ✅ **Rename completed 2026-08-09:**
-    the product package and GitHub repositories already carried the Mirafold
-    name; the local repositories are now `mirafold/` and `mirafold-relay/`,
-    with the sibling integration test, CI checkout layout, and current
-    workspace paths updated to match. The deployed Fly app names remain
-    `genui-relay` / `genui-relay-staging`, and the `genui-relay v1`
-    key-derivation salt remains frozen as a protocol contract. Verified after
-    the rename: Mirafold typecheck; Tier 1 563/563, Tier 2 143/143, Tier 3
-    82/82; relay typecheck and 38/38 relay tests. **Release-gate follow-up
-    (2026-08-09):** release PR #27 exposed a pre-existing test-only race: the
-    relay-handshake helper waited a fixed number of event-loop turns before
-    closing its healthy socket, so delayed WebCrypto work could miss the
-    backoff reset. The helper now waits for `SocketClient.onOpen()` — the
-    product state transition the assertion actually depends on. The exact
-    test went from 4/20 failures under concurrent load before the fix to 0/20
-    after it; the containing file passed 32/32, Tier 1 passed 563/563, and
-    typecheck passed.
-  - Done when: a phone on cellular (not the home wifi) drives a home
-    session through the deployed relay, and the relay's logs show it
-    learned nothing but connection metadata.
+  DEPLOYED and verified in production: the standalone `mirafold-relay` repo
+  (single source of truth since G.1), a `ws`-only pure forwarder, live at
+  **`wss://relay.mirafold.sh`** — a real daemon streamed a full turn while
+  the logs showed only connection metadata (the Done-when, observed). The
+  cellular-phone pass closed 2026-07-30 (marginal rural LTE + the wifi→LTE
+  mid-turn flip, twice); the default `MIRAFOLD_RELAY_URL` bake landed
+  2026-07-30 (entitled daemons only — an unentitled daemon never dials;
+  `off` opts out) with the same-day false-"paired" backoff fix; the rename
+  completed 2026-08-09 — the deployed Fly app names (`genui-relay*`) and
+  the `genui-relay v1` key-derivation salt stay frozen as protocol
+  contracts. Full build/deploy/closure history → PLAN-ARCHIVE.md ("Step
+  R.2 — status history" + "Moved 2026-08-12 (prune — completed bodies)").
 
 - [x] **Step R.3 — Per-pair E2E encryption** — done 2026-07-07; WebCrypto AES-GCM, per-connection directional keys off the pairing code, fail-closed on tamper/replay/reorder; the relay sees only ciphertext. → PLAN-ARCHIVE.md.
 
@@ -827,30 +632,12 @@ with it. Both sequence BEFORE R.5.**
     on Kyle's own findings.
   - Known items so far (all reported 2026-07-13; each needs Kyle's
     concrete enumeration before it's actionable):
-    1. **Phone viewport styling + small UX issues** — ✅ **RESOLVED
-       2026-07-22** over three same-day rounds against Kyle's real phone
-       (full round-by-round detail → PLAN-ARCHIVE.md). Round 1: the app frame
-       is pinned (100dvh + `overflow-x: clip` + no overscroll — only the
-       render zone scrolls) and all focusable inputs are ≥16px, which was the
-       actual cause of the sideways drift (sub-16px made iOS zoom on focus
-       and LEAVE the page zoomed); viewport meta gained `viewport-fit=cover`
-       + `interactive-widget=resizes-content`. Round 2: the phone status bar
-       became ONE row with the agent name beside the dot, and **on phone
-       Enter NEVER submits** — newline only, with an in-box ↑ send button
-       (bottom-right, swaps with ■ esc while busy) as the one way to send;
-       desktop Enter-to-send unchanged. Round 3 (Kyle: the on-row fleet
-       folder read as clutter on BOTH platforms — the round-2 column was a
-       miss): **details-on-demand instead of persistent chrome** — the
-       settings card gained a **Session section** (agent, model, folder,
-       usage, session id, daemon version), reachable two zero-chrome ways
-       (the gear, and the **agent chip beside the dot is now a button**);
-       the fleet folder column was removed (desktop hover tooltip restored)
-       and the prompt cwd crumb is DESKTOP-ONLY. Pinned throughout in
-       `phone.e2e.ts`. **Kyle's real-phone look at round 3 came back
-       emphatically positive ("flabbergasted… looks incredible")** — the
-       styling core of this item is validated on the device that opened it.
-       *The theme pill is hidden on phone with the settings picker carrying
-       theme; the Phase S pill lock is desktop-scoped — Kyle confirmed.*
+    1. **Phone viewport styling + small UX issues** — ✅ RESOLVED
+       2026-07-22 over three same-day rounds on Kyle's real phone
+       ("flabbergasted… looks incredible"); pinned in `phone.e2e.ts`. The
+       theme pill is hidden on phone (the settings picker carries theme) —
+       the Phase S pill lock is desktop-scoped, Kyle confirmed. Round
+       detail → PLAN-ARCHIVE.md, "Moved 2026-08-12 (prune — completed bodies)."
     2. **Desktop styling issues too** — "from the session to the
        fleetview": the session view AND FleetView both have styling
        problems in Kyle's eyes. Details owed; enumerate screen by screen
@@ -888,114 +675,31 @@ with it. Both sequence BEFORE R.5.**
        is stored), then close each gap or document the divergence as a
        deliberate, disclosed exception. Specifics owed from Kyle: which
        agent(s) and which prompt flows he saw diverge.
-    4. **Startup/onboarding flow — redesign discussion. BIG (Kyle's
-       word).** Kyle's sketch (2026-07-13, explicitly not settled — "im
-       not sure"): a staged flow — pick the agent first, then how it's
-       backed (subscription vs. API keys), then the model. Hard
-       requirements he voiced: (a) "simple af"; (b) surface what the
-       user ALREADY HAS — detected credentials make it obvious what they
-       can pick right now; (c) unavailable options stay VISIBLE but
-       clearly unavailable (gray out, not hide — it must read as "an
-       option if you want it"); (d) each unavailable option carries
-       how-to-get-it instructions inline. Raw material that already
-       exists: R.4b/R.4i/R.4k built live-credential detection, the
-       tri-state picker (`live`/`blocked`/`none`), per-row `detail`
-       labels, and where-to-get-it links — this redesign re-stages that
-       material, it doesn't start from zero. One constraint the
-       discussion must start from: the "subscription or keys" step
-       collides with the provider policy (`server/provider-policy.ts`) —
-       Claude/Gemini subscriptions are prohibited in writing (never a
-       choice), while Codex subscription is live locally only as a
-       disclosed gray area (the K.3 disclosed-uncertainty rule — its
-       caveat must ride the option), and no subscription ever rides the
-       relay; the flow has to present that honestly per agent rather
-       than offering a symmetric subscription-vs-keys fork. Also
-       new vs. today: a model-selection step (today model comes from
-       DEFAULT_MODEL/agent config, not the onboarding UI). Next action:
-       a dedicated design discussion with Kyle BEFORE any build.
-       **Status (2026-07-17): the design discussion HAPPENED and the build
-       is scheduled — this item's outcome is Phase N** (the two-step
-       agent → backing picker with probed local-server discovery; the four
-       hard requirements carried into Phase N's charter verbatim). This
-       item closes when Phase N ships; items 1–3 remain open intake.
-    5. **Pairing lands IN the session you paired from — ✅ DONE 2026-07-27,
-       exactly to the investigated shape (investigation text → PLAN-ARCHIVE.md).** The QR/copy link from a
-       session's status bar now carries `&s=<sessionId>` in the fragment;
-       `main.tsx` rewrites the path to `/s/<id>` before the router reads it,
-       **carrying `location.hash` through the rewrite** (the investigated trap —
-       mutation-tested: dropping the hash was watched to fail the phone e2e,
-       then restored). New pure parser `sessionHintFromFragment` in `ws.ts`
-       validates the id as a full `[\w-]+` token (hostile values dropped
-       whole, never truncated). Mission control's pair button passes no id
-       and keeps landing on the fleet — no special case. The hint is never
-       persisted (one-shot intent). The refused-subscription edge case was
-       decided as KEEP existing behavior: the device lands inside the
-       refused session, where the R.4i notice explains — not bounced to
-       mission control. Verified: unit tests beside the fragment tests, the
-       phone e2e now asserts the paired link lands on `/s/<id>` with no
-       fleet list, full Tier-1 (394) + Tier-3 (57) green.
-    6. **Phone session died after backgrounding — ✅ FIXED 2026-07-25
-       (`0c993e0`).** Kyle, on Chrome: session open on the phone, switch to
-       another app for a few minutes, come back, and the session was
-       effectively dead — welcome screen, no transcript, Explorer grayed,
-       no end button, prompts going nowhere — while the same session ran
-       fine on his desktop. Cause: the pairing code lived only in per-tab
-       storage, which does not survive a browser discarding a backgrounded
-       tab, and the rebuilt tab can't recover it from the URL either (the
-       fragment is scrubbed on first load, by design). The shell attached
-       to nothing and said nothing about it. Reproduced against a real
-       daemon over the relay on a phone-sized Chrome — freezing the page
-       (CDP `Page.setWebLifecycleState`) recovers, reloading with the store
-       intact recovers, reloading with it dropped gives Kyle's screen
-       symptom for symptom. Fix: the stash is the device's now, bounded by
-       a 7-day expiry (aged-out entries are deleted) on top of the existing
-       per-launch codes; per-tab storage is still read so an already-paired
-       tab keeps working. Pinned by 4 unit tests + a phone e2e that wipes
-       the store, reloads, and asserts the session comes back with its
-       transcript. **Note for whoever picks up item 5** (pair-into-the-
-       session): that work touches the same boot path, so re-run this e2e.
+    4. **Startup/onboarding flow redesign** — ✅ CLOSED: the design
+       discussion happened and its outcome shipped as Phase N (2026-07-17),
+       the four hard requirements carried into that charter verbatim.
+       Original sketch + constraints → PLAN-ARCHIVE.md, "Moved 2026-08-12 (prune — completed bodies)."
+    5. **Pairing lands IN the session you paired from** — ✅ DONE
+       2026-07-27 to the investigated shape (`&s=<id>` fragment hint,
+       hash carried through the rewrite — mutation-tested). Decided: a
+       refused-subscription device still lands IN the session, where the
+       R.4i notice explains — never bounced to mission control. →
+       PLAN-ARCHIVE.md, "Moved 2026-08-12 (prune — completed bodies)."
+    6. **Phone session died after backgrounding** — ✅ FIXED 2026-07-25
+       (`0c993e0`): the pairing stash is the device's, bounded by a 7-day
+       expiry, so a browser-discarded backgrounded tab recovers its
+       session with transcript. → PLAN-ARCHIVE.md, "Moved 2026-08-12 (prune — completed bodies)."
     7. **Swipe-to-open the Explorer on phone — DECIDED AGAINST 2026-07-25
-       (Kyle).** Swipe right from the left edge to open the tree, left to
-       close. Mechanically easy (~30–45 min: the panel is already one
-       boolean, plus a touch hook beside `use-escape`/`use-is-phone`, no
-       dependency). Killed on one caveat: iOS reserves a left-edge swipe
-       for browser back-navigation and a page cannot reliably override it,
-       so the gesture would fire history-back instead of opening the panel
-       on iPhones. Kyle: "i dont want to do it if it wont work consistently
-       for iphones." Don't re-propose without a way around that.
-    8. **Leftovers from the 2026-07-28 whole-repo review — recorded, not
-       fixed (the rest of that review's bug list WAS fixed the same day,
-       eleven `fix:` commits).** Two items survive unfixed, each needing a
-       decision rather than a patch:
-       (a) **A daemon-initiated viewport drop reads as "desktop not
-       reachable" on the phone.** The daemon sends the relay `{t:"close"}`
-       for three distinct reasons — tampered frame, 90s idle reap,
-       viewport-cap refusal — and the relay (stub and sibling service
-       alike) closes the viewport with `CLOSE_BAD_CODE` ("no daemon paired
-       under that id"), which `ws.ts` maps to "Desktop not reachable — is
-       Mirafold running there?" So a live, healthy desktop that rejected a
-       frame tells the phone the desktop is down. Current behavior is
-       PINNED by relay.itest tests, so it may be intended; distinguishing
-       the reasons means a new close code in the relay envelope — a
-       cross-repo contract change (genui-relay's mirrored contract.ts) —
-       so it should ride the next deliberate envelope revision, not a
-       drive-by fix. **Triage (2026-07-28, Kyle): nice-to-have, not a big
-       deal — fix only if really easy, and it isn't (the close frame must
-       grow an optional code field, mirrored + both suites + a relay
-       redeploy). So: ride the next envelope revision, alongside the
-       pairing-id URL move's standing policy. Cheap head start when that
-       happens: the vocabulary already has the right code —
-       CLOSE_OVERLOADED 4004, which ws.ts already maps to a capacity
-       message — the daemon's cap-refusal close just can't name it yet.**
-       (b) **`ClaudeCodeSession.announcedTools` retains ids across
-       interrupted turns — ✅ RESOLVED 2026-07-28, Kyle's call.** Of the
-       three options (leave it; clear on interrupt(), which drops a
-       post-interrupt late result that today completes its row; clear at
-       the TURN BOUNDARY, which only drops a cross-turn straggler — a
-       result for a turn that already ended), Kyle picked the turn-
-       boundary variant. The clear lives with the other per-turn resets
-       in handleResultMsg; Tier-1 pins that a turn-2 result for turn 1's
-       announced id is dropped, never completing the old row.
+       (Kyle):** iOS reserves a left-edge swipe for browser back-navigation
+       and a page cannot reliably override it. Don't re-propose without a
+       way around that. → PLAN-ARCHIVE.md, "Moved 2026-08-12 (prune — completed bodies)."
+    8. **2026-07-28 whole-repo review leftovers** — (a) a daemon-initiated
+       viewport drop reads as "desktop not reachable" on the phone; triaged
+       nice-to-have (Kyle): ride the NEXT deliberate envelope revision,
+       never a drive-by (head start: CLOSE_OVERLOADED 4004 already maps to
+       a capacity message client-side). (b) `announcedTools` cross-turn
+       retention — ✅ RESOLVED 2026-07-28, Kyle's call: turn-boundary
+       clear, Tier-1-pinned. Full detail → PLAN-ARCHIVE.md, "Moved 2026-08-12 (prune — completed bodies)."
   - Done when: each item above is enumerated concretely with Kyle,
     triaged (fix now / R.6 pre-release blocker / post-launch), and either
     fixed or explicitly scheduled — and the permissions fidelity item has
@@ -1099,346 +803,25 @@ with it. Both sequence BEFORE R.5.**
     "sandbox-mode purchase" — superseded by the 2026-07-22 no-sandbox
     decision above.)*
 
-- [x] **Step R.5b — Release strategy, locked (all three repos)** — ✅ **DONE
-  2026-07-31: ratified, and EXECUTED the same evening** (Friday 2026-07-31
-  public + publish · Sat–Mon quiet window · Tuesday 2026-08-04 announcement).
-  Full sequence, owners, and rollback levers in the RATIFIED block below.
-  *(a decision to make + write down, not a build; do before R.6's final
-  week)*
-  - Goal: one agreed, written release sequence so R.6/R.7 execute a plan
-    instead of improvising how each piece ships.
-  - Decide and record: (a) **shape of the release** — *first half DECIDED
-    (Kyle, 2026-07-22, in commissioning the R.5 build; sharpened the same
-    day): a **private beta precedes the public splash**, and it runs the
-    **full real billing flow** — NO sandbox, NO comped tokens. The beta
-    starts when the relay's entitlement gate flips ON (the `fly secrets set
-    RELAY_ENTITLEMENT_PUBLIC_KEY` moment) with live Paddle wired; Kyle's own
-    real-card purchase is the first end-to-end, then testers buy real
-    subscriptions riding the 7-day card-required trial ($0 if they cancel
-    in-window; Kyle personally reimburses anyone charged past day 7). The
-    mint script is ops/emergency tooling, not a beta access path.
-    **2026-07-22 (night): the gate is ON and the whole path is proven** —
-    Kyle's real purchase → license key → daemon token exchange → paired
-    through the closed gate; unentitled dials probed refusing 4007. **But
-    tester invites are explicitly gated on a phone-view UI pass first**
-    (Kyle: obvious flaws remain — see R.4l's phone-styling items; the
-    billing machinery being done does not make the product show-ready).
-    Still to decide here: beta size/who, its duration/exit criteria, and
-    how R.5c's user-testing round folds in — **ANSWERED by the 2026-07-31
-    ratification below: duration is Sunday 08-02 + Monday 08-03, the exit
-    criterion is "the public install path works and nothing breaks," and
-    the window IS R.5c's user-testing round; only the tester list itself
-    stays open;* remainder of (a) — staged
-    rollout vs. one splash for the PUBLIC release — **DECIDED 2026-07-25
-    (Kyle): ONE splash, as big as possible.** A soft/staged launch
-    (publish quietly, announce later) was considered and rejected: the
-    pre-public work gates going public at all, not announcing loudly, so
-    a quiet period pays nearly the full launch cost for almost none of
-    the audience; the channel list was instead expanded (R.6's
-    launch-channel prep + Product Hunt in R.7's sequence);
-    (b) **per-repo mechanics + order** — `genui-shell` (repo public + `npm
-    publish` + versioning/cadence), `genui-relay` (deploy pipeline, **when
-    the repo flips public — owed to K.1, which relicensed it MIT**, when the
-    entitlement gate flips ON, when the default `MIRAFOLD_RELAY_URL` bake
-    lands — see R.2), `mirafold-site` (checkout button flip, demo swap); (c)
-    **rollback / kill-switch** for each (the relay gate and per-daemon relay
-    URL are the levers) — *for the npm package the rollback move is
-    re-pointing the `latest` dist-tag at the previous good version
-    (+ `npm deprecate` on the bad one), never an unpublish (npm barely
-    permits it and installed users aren't affected either way); for the
-    relay it's `fly deploy --image <prev>` (already in
-    `mirafold-relay/DEPLOY.md`); for the site it's the Pages one-click
-    deployment rollback (KV does NOT roll back with it — see R.6's KV note)*; (d) how the codebase/npm/GitHub rename (R.2) is
-    sequenced into all of the above; (e) *already decided 2026-07-15
-    (K.9): contributor policy is **DCO**, not CLA* — `Signed-off-by` per
-    commit, CONTRIBUTING.md landed in both repos that day; what remains
-    for this step is only the mechanics: enable the GitHub DCO status
-    check on both repos as part of the public flip.
-  - **CI hardening at the flip (from the 2026-07-21 audit of the C.1 work):**
-    once a repo is public, any fork PR's test suite runs on the CI runner, so
-    the CI's trust posture matters. Already in place from C.1: the token is
-    `permissions: contents: read` (read-only — a malicious dependency install
-    script can't push to the repo) and no secrets are used (Tier 4 excluded,
-    credentials forced empty). Do AT the flip: (i) re-enable the cross-repo
-    relay itest now that `genui-relay` is public and checkout-able — drop the
-    `tsconfig.ci.json` exclusion + the Tier-2 `find` filter and add a sibling
-    checkout (see Phase C's carried-forward list + `tsconfig.ci.json`);
-    (ii) optionally SHA-pin the
-    `actions/checkout` / `actions/setup-node` steps (they're pinned to `@v4`
-    tags today — fine for GitHub's own official actions, stricter as a full
-    commit SHA). No secret was ever added, and none should be — the "no
-    provider credential in repo secrets" bound (C.1) is absolute.
-  - **Dependency-alert sweep at the flip (2026-07-22 audit):** before EACH
-    repo goes public, clear its open Dependabot alerts — open alerts on the
-    default branch become publicly visible the moment the repo does, and
-    they're a stranger's first impression of the project's hygiene. The
-    site repo already carries this in its pre-public hardening trio; this
-    line extends the same sweep to **this repo and `genui-relay`**. (Shell
-    repo swept 2026-07-22: `shell-quote` ≥1.9 + `@hono/node-server` ≥2.0.5
-    forced via yarn resolutions — the MCP SDK still pins hono 1.x upstream,
-    so the resolution stays until the SDK moves; all tiers green on 2.0.11.)
-    **2026-07-25: shell repo now at ZERO open alerts** — transitive
-    `postcss` 8.5.16 → 8.5.23 (GHSA-r28c-9q8g-f849, high, dev-scope; via
-    vite, so a lockfile re-resolve only, no resolution needed) landed as
-    `c660130`, typecheck + all tiers green (369/103/52), alert #4 verified
-    "fixed" via the GitHub API. The `genui-relay` half was verified the
-    same day: alerts confirmed ENABLED on that repo (API 204) with zero
-    open, and a local `npm audit` at `9f35e2d` found 0 vulnerabilities —
-    clean today; still RE-verify at its public flip, since new advisories
-    can land anytime.
-  - **EAR notification email at the flip (added 2026-07-27, from the K.11
-    amendment):** when the repos go public, send the one-time
-    §742.15(b) email to crypt@bis.doc.gov + enc@nsa.gov with the repo
-    URLs. $0, five minutes, settles the notification question regardless
-    of which reading of the 2021 rule is right (detail in K.11's note).
-  - **Gate on the relay flip (2026-07-15 audit): ✅ SATISFIED 2026-07-30.**
-    Before `genui-relay` goes public in (b), run a dedicated security-audit
-    pass over that repo — public security-marketed code gets adversarial
-    readers on day one. *Done: a dedicated isolated-adversarial read of all
-    ~850 lines (the checklist-driven 07-27 tri-repo audit and the 07-29
-    bughunt were a different lens each; this one asked only "hostile reader,
-    how do I hurt the service"). **No new exploitable findings** — the three
-    prior waves closed the real vectors (the malformed-URL process crash
-    07-27, the byte-rate + backpressure gaps 07-27, the per-frame
-    log/re-forward amplification 07-29); the entitlement verifier is
-    correctly ordered (no attacker JSON reaches the parser pre-signature),
-    every send is readyState-guarded or error-caught, and the prod
-    dependency surface is exactly `ws` with `npm audit` clean. Accepted
-    residuals, all safe: refused-log `origin` is verbatim-but-JSON-escaped
-    attacker text (ops-useful, size-capped); the churn-gate sweep needs the
-    heartbeat (ARCHITECTURE §10, off-by-default gate); the WS upgrade
-    completes before the capacity cap refuses (inherent to clean
-    close-codes, socket-cap bounded). Suite 38/38. The relay may flip on
-    schedule.*
-  - **Release provenance (adopted 2026-07-29, from beta tester 002's
-    evaluation):** a public repo alone doesn't let anyone verify the
-    published npm package was built FROM it — the two are separate uploads
-    with no link, and the package ships compiled bundles. Adopt as standing
-    release practice, first release included: (i) publish via a GitHub
-    Actions **release workflow** using npm **trusted publishing** (npmjs.com
-    configured to accept `mirafold` publishes only from that workflow —
-    identity-federated, NO stored npm token, so the no-secrets-in-CI bound
-    holds and a stolen npm password can't publish) with
-    `npm publish --provenance` (machine-signed attestation binding the
-    package to the exact public commit + workflow; users verify with
-    `npm audit signatures`, README gets the one-liner); (ii) a **signed git
-    tag** per release (SSH signing key — Kyle's, minutes to set up) with the
-    tarball's **SHA-256 in the tag message** and in the GitHub Release
-    notes. This changes R.7's publish move: Kyle pushes the signed tag and
-    the workflow publishes — no hand-run `npm publish`. Kyle's-hands parts:
-    the npmjs.com trusted-publisher form (~5 min, walked one step at a
-    time) and generating/registering the signing key. Caveat: provenance
-    requires a public repo, so the end-to-end proof fires at the first real
-    publish (launch morning) — same class as R.7's existing `npx` check;
-    everything short of that rehearses beforehand.
-    *Status 2026-07-30: the release workflow LANDED* —
-    `.github/workflows/release.yml` (`52ca799`): tag push (v*) → tag↔
-    version check → typecheck + Tier 1 → pack with the tarball SHA-256 in
-    the job summary (for the Release notes) → `npm publish --provenance`;
-    `contents: read` + `id-token: write` only, no stored token, fails
-    closed until the trusted-publisher form is done. `workflow_dispatch`
-    is the dry-run rehearsal; `npm pack` + `npm publish --dry-run` also
-    rehearsed locally on 0.2.0. *Both Kyle-hands parts ✅ DONE
-    2026-07-30:* the npmjs.com trusted-publisher form (GitHub Actions ·
-    `mirafold/mirafold` · `release.yml` · env blank · publish only,
-    stage off) and the dedicated ed25519 signing key (repo-local git
-    config signs all tags, sign smoke-tested; public half registered on
-    GitHub as a signing key). The publish path is fully set up; its
-    end-to-end proof fires at the first real publish, per the caveat
-    above.
-  - **DRAFT release sequence (2026-07-29, assistant — Kyle to ratify;
-    "launch asap" is the directive it serves):**
-    - *Preconditions, any order, all before T-0:* 4.15 ✓ (done);
-      provenance release workflow landed + build/pack rehearsed (publish
-      itself fires at T-0); npm trusted-publisher configured (Kyle,
-      npmjs.com form) + SSH signing key registered (Kyle); Dependabot
-      re-verified zero on BOTH code repos; the relay repo's dedicated
-      security-audit pass (gates its flip); tracked-docs disclosure review
-      (Kyle reads what goes public: BUSINESS.md, PLAN + archive, git
-      history); theme value guards landed ✅; Paddle payout details ✅ (set
-      up — confirmed 2026-07-30); launch copy + Product Hunt draft ready ✅;
-      R.6's real-hardware checks done.
-    - *T-0 morning, in order:* (1) `mirafold/mirafold` public → enable the
-      DCO check + re-enable the cross-repo relay itest in CI; (2)
-      `mirafold-relay` public (only if its audit passed); (3) Kyle pushes
-      the signed release tag → the workflow publishes to npm with
-      provenance over the 0.0.1 placeholder; (4) verify cold:
-      `npx mirafold` + `npm audit signatures`; (5) site stays as-is (its
-      install line `npm i -g mirafold` becomes true at step 3; checkout
-      already live); (6) the splash: X + Show HN + Product Hunt +
-      r/ClaudeAI + r/LocalLLaMA. Same week: newsletter submissions,
-      awesome-list PRs, the BIS §742.15(b) email, the provider-terms
-      re-check (R.7's standing item).
-    - *Rollback levers:* npm = re-point the `latest` dist-tag + deprecate
-      (never unpublish); relay = `fly deploy --image <prev>`; site = Pages
-      one-click rollback (KV does not roll back with it).
-    - *Rename (d): resolved* — the GitHub org/repo and the npm name are
-      already `mirafold`; the internal folder/Fly names are non-gating
-      (umbrella note 2026-07-11).
-    - **AMENDMENT (Kyle, 2026-07-29): the flip and the splash separate.**
-      Everything goes truly public QUIETLY first — repos public, signed
-      tag pushed, workflow publishes to npm, verifications run — then a
-      **live-fire window of AT MOST 2 days** with a few more personally-
-      invited testers installing via the real public path
-      (`npm i -g mirafold`), then the one big splash, unchanged in shape.
-      This amends (not reverses) the 2026-07-25 "ONE splash" decision:
-      what was rejected then was a quiet launch *strategy*; this is a
-      bounded smoke-test window with the single announcement event kept.
-      It also converts R.7's two publish-only checks (`npx mirafold`,
-      `npm audit signatures`) into pre-splash facts, and in practice it IS
-      R.5c's user-testing round — real users, real hardware, the exact
-      artifact the public gets. `/beta` is NOT removed at the flip: it
-      becomes a short "we're live — `npm i -g mirafold`" note, so the link
-      already printed in every tester's WELCOME.md keeps working and
-      upgrades them to the public path. Every pre-PUBLIC gate still
-      precedes the quiet flip (tracked-docs/history review, relay audit
-      before ITS flip, Dependabot re-verify, provenance setup) — quiet
-      defers only the announcement, never a gate.
-    - *Still Kyle's calls, marked open:* (i) ✅ **DECIDED 2026-07-30: the
-      public cut is 0.3.0** — bumped on main (`b63941c`); `v0.3.0` is the
-      launch tag; (ii) ✅ **DECIDED 2026-07-31: the dates — see the
-      ratification below.**
-  - ## ✅ RATIFIED 2026-07-31 (Kyle) — this is the plan, no longer a draft
-    Every precondition above is MET, each measured rather than read off a
-    doc: the release workflow rehearsed successfully (run `30630399899`,
-    `workflow_dispatch` on `main`, **success in 2m34s**, never
-    authenticated); npm trusted publisher + ed25519 signing key configured
-    2026-07-30; the relay repo's dedicated security-audit pass clean
-    2026-07-30; the tracked-docs disclosure read done 2026-07-31, with Kyle
-    deciding to **publish everything as tracked — no trims, no
-    move-private**; Dependabot zero open on both code repos (re-verified at
-    the flip, per the sweep note above); LTE phone pass, theme guards,
-    Paddle payout, launch copy + Product Hunt draft all done.
-
-    **The dates (moved EARLIER by one day — Kyle, 2026-07-31 evening, after
-    ratifying Saturday the same day; see the note below):**
-    - **Friday 2026-07-31, evening** — everything goes public and gets
-      published. No announcement.
-    - **Saturday 08-01 + Sunday 08-02 + Monday 08-03** — the quiet window. A
-      handful of personally-invited testers install via the real public path
-      (`npm i -g mirafold`) and use it. This IS R.5c's user-testing round.
-    - **Tuesday 2026-08-04, US morning** — the single announcement: X, Show
-      HN, Product Hunt, r/ClaudeAI, r/LocalLLaMA.
-
-    *On the window: it was first set at Saturday night → Tuesday (~2.5
-    days), then moved a day earlier to Friday night → Tuesday (~3.5 days)
-    when Kyle asked whether the longer gap hurt. It does not: the window
-    exists so invited testers exercise the real public install path before
-    strangers do, and more days serve that purpose rather than eroding it.
-    Nothing decays while it sits — the package is on npm, the repos are
-    public, and nobody is looking. Both figures stretch the amendment's "AT
-    MOST 2 days" bound, which was self-imposed; these dates supersede it.
-    Checked and dismissed as non-factors: staleness (neither Hacker News
-    nor Product Hunt weighs how long something has been available — Show HN
-    only requires that YOU are showing something people can try, and the
-    443-commit history was already public-facing either way) and
-    pre-emption (a stranger posting the link first is negligible; the one
-    plausible path is an invited tester, addressed by telling them it is
-    not announced until Tuesday). The residual risk, accepted: Hacker News
-    gives a URL roughly one shot, so if someone else posts it and it lands
-    well, that run is spent and Kyle would not be in the thread — the
-    fallback is that `mirafold.com` is a separate URL from the repo.*
-
-    ### ✅ EXECUTED — Friday 2026-07-31 evening. Mirafold is PUBLIC and LIVE.
-    Measured at each step, not assumed:
-    - Both repos **public** (API-confirmed): `mirafold/mirafold`,
-      `mirafold/mirafold-relay`. Dependabot **0 open on both** at the flip.
-    - DCO sign-off app installed on both (shows on PRs; it does not BLOCK a
-      merge until branch protection lands — deliberately deferred to after
-      Tuesday so launch weekend keeps a friction-free hotfix path).
-    - Signed tag **`v0.3.0`** pushed at commit
-      **`910cb246f04606a0e7f0274358122eabbbe43fea`**. Release run
-      **`30663563802`** — success in **1m32s**, every step green through
-      "Publish (tag push — provenance over trusted publishing)".
-    - **`mirafold@0.3.0` is on npm.** Published tarball SHA-256
-      **`804bd065ba51b156c59d8f2a7bf1e5a50bffa547a031c7830cf1164ee7f60518`**
-      (registry download re-hashed locally — matches CI byte for byte).
-      17 files, 5,063,377 bytes unpacked.
-    - **Provenance verified end-to-end**, which is the whole point of R.5b:
-      the SLSA attestation binds `pkg:npm/mirafold@0.3.0` to source
-      `git+https://github.com/mirafold/mirafold@refs/tags/v0.3.0`, commit
-      `910cb246…`, built by `.github/workflows/release.yml`. A skeptic can
-      now prove the package came from the public source. `npm audit
-      signatures` on a cold install: 116/116 verified registry signatures,
-      16 verified attestations, 0 invalid, 0 missing.
-    - **Cold-install proof** (fresh dir, package pulled from the public
-      registry, no repo checkout): `--version` → `0.3.0`; daemon boots,
-      serves `HTTP 200` with `<title>Mirafold</title>`; the per-launch auth
-      token → cookie redirect works; a busy port rolls to the next one; with
-      no license key it correctly says remote access is off. The
-      `@parcel/watcher` install-script warning appeared exactly as the
-      README documents.
-    - `mirafold.com/beta` rewritten to the public path and **verified live**
-      (site commit `7e46469`): `npm i -g mirafold`, `npm audit signatures`,
-      the new SHA-256, and a link to the now-public repo. Every tester's
-      existing WELCOME.md link keeps working and upgrades them.
-
-    **Still owed after this (see the resume list in ROADMAP.md):** the
-    GitHub Release for `v0.3.0` with the SHA-256 in the notes (Kyle's
-    hand-made step, per the workflow's own comment); re-enabling the
-    cross-repo relay itest in CI now that the relay is public; tester
-    invites for the quiet window; Tuesday's announcement; then branch
-    protection + the `next`/`release/x.y.z` model, and the BIS §742.15(b)
-    email.
-
-    **Launch-evening steps, in order, with owner.** Assistant runs 1, 5, 7, 8;
-    Kyle runs 2, 3, 4, 6 — all four are GitHub-settings or signing-key
-    actions, his hands by the privileged-mutation rule.
-    1. Confirm Dependabot still zero on BOTH code repos — *assistant*.
-    2. `mirafold/mirafold` → public — *Kyle* (GitHub settings).
-    3. `mirafold/mirafold-relay` → public — *Kyle* (GitHub settings).
-    4. Enable the DCO sign-off check on both repos — *Kyle*.
-    5. ~~Re-enable the cross-repo relay itest in CI~~ — ✅ **DONE 2026-08-02**
-       (*assistant*); see the resolution note under "Owed at the public flip"
-       below. ~~⬜ Not yet opened as a PR, so not yet exercised on a runner.~~
-       *(Stale — it WAS exercised: `f30a6dc` was pushed to `main` 2026-08-02
-       and its CI run passed on the real runner, sibling relay checkout and
-       all. Verified from the run list 2026-08-07.)*
-    6. Push the signed `v0.3.0` tag — *Kyle*. **This is the publish**: the
-       tag push triggers `release.yml`, which builds and runs
-       `npm publish --provenance`. No hand-run `npm publish`, ever. Expect
-       ~2m34s, per the rehearsal.
-    7. **Verify the same night, before bed — non-negotiable.** Cold install
-       the way a stranger would (`npx mirafold`) + `npm audit signatures` —
-       *assistant*. Publishing and sleeping unverified would leave a broken
-       package installable for hours undetected; the publish is the
-       irreversible move and this is what tells us whether it went wrong.
-    8. `mirafold-site` `/beta` becomes a short "we're live —
-       `npm i -g mirafold`" note, so the link already printed in every
-       tester's `WELCOME.md` keeps working and upgrades them to the public
-       path — *assistant*.
-
-    **Tuesday:** post everywhere. Before posting, search `hn.algolia.com`
-    for "mirafold" — thirty seconds, removes a variable. (The odds of a
-    stranger posting it first during the quiet window are negligible and
-    were overstated in an earlier draft of this note: `mirafold@0.0.1`
-    already exists on npm, so 0.3.0 is a version update rather than a
-    new-package feed event, and a zero-star repo going public is invisible
-    to the star-velocity scrapers. The one plausible leak is an invited
-    tester sharing it — so the invite says "not announced yet, please don't
-    post it anywhere until Tuesday.")
-
-    **Same week, after the announcement:** newsletter submissions,
-    awesome-list PRs, the BIS §742.15(b) email to crypt@bis.doc.gov +
-    enc@nsa.gov with the repo URLs, and R.7's standing provider-terms
-    re-check.
-
-    **Rollback levers, unchanged:** npm = re-point the `latest` dist-tag +
+- [x] **Step R.5b — Release strategy, locked + EXECUTED (all three
+  repos)** — ratified 2026-07-31 (every precondition measured, not read off
+  a doc) and executed the same evening: both repos public, signed `v0.3.0`
+  tag pushed → the provenance release workflow published
+  **`mirafold@0.3.0`** (tarball sha256 `804bd065…`, SLSA attestation
+  verified end-to-end, cold-install proven), quiet tester window Sat–Mon,
+  the single announcement Tuesday 2026-08-04. The full ratified sequence,
+  per-step execution record, and decision history (real-billing beta shape,
+  ONE-splash, the quiet-flip amendment, CI/DCO/dependency-sweep/EAR flip
+  mechanics, release provenance via npm trusted publishing) →
+  PLAN-ARCHIVE.md, "Moved 2026-08-12 (prune — completed bodies)."
+  - **Rollback levers, standing:** npm = re-point the `latest` dist-tag +
     `npm deprecate` (NEVER unpublish); relay = `fly deploy --image <prev>`;
     site = Pages one-click rollback (KV does not roll back with it).
-
-    **Still open, non-gating:** WHO the invited testers are for the Sunday/
-    Monday window — may simply be the existing beta testers, told to
-    reinstall via `npm i -g mirafold`. Kyle's call, answerable any time
-    before Saturday night.
-
-    **Understood and accepted:** step 6 is the first irreversible move in
-    this project. An npm publish cannot be withdrawn, and a public repo
-    exposes all 443 commits plus every tracked doc permanently.
-  - Done when: a written release-sequence exists that R.6 and R.7 just
-    follow, with no open "how do we actually ship this" questions —
-    ✅ **MET 2026-07-31** by the ratification above; only the non-gating
-    tester-list question remains.
+  - **Tails recorded as owed at execution** (verify current state before
+    acting on either): the hand-made GitHub Release for `v0.3.0` carrying
+    the tarball SHA-256, and the BIS §742.15(b) email. The other execution
+    tails (cross-repo relay itest, branch protection) are recorded done in
+    Phase C.
 
 - [ ] **Step R.5c — User-testing round before release (Kyle-led)** *(needs
   R.2 deployed + the phone experience end-to-end; gates R.7)*
@@ -1453,258 +836,48 @@ with it. Both sequence BEFORE R.5.**
   - Done when: the testing round is complete, every finding is written down,
     and each must-fix item is either fixed or explicitly scheduled as a
     Phase R blocker ahead of R.7.
-  - **Tester-002 thread CLOSED 2026-07-30** (the point-by-point discussion
-    Kyle held open since 07-28; ROADMAP launch item 5). Remaining points
-    resolved, standard practice applied rather than bespoke decisions:
-    **"What is real"** — accurate, and re-verified in passing today (the
-    loopback bind and the `!` cwd confinement + caps both came up
-    independently); noted, NOT used as external validation, since the
-    tester never ran the product and citing a pre-install vetting doc as a
-    security review would overstate it. **Concern 2** (SECURITY.md/tests/
-    docs absent from the tarball) — SECURITY.md ships since 4.15; tests,
-    plans and build instructions deliberately do NOT ship in an npm
-    package, and the README's citations resolve when the repo goes public
-    at R.7. **Concern 3** (the trust boundary is large) — the actionable
-    half is now a **"Running it safely" section in `SECURITY.md`**, which
-    ships inside the package: leave the auth token on, never put the
-    daemon behind a proxy or a LAN bind (the relay is the one supported
-    remote path), treat `!` as your shell, open it somewhere you'd give an
-    agent a terminal, keys stay server-side. Their pilot-only cautions
-    (skip the relay, no keys in `.env`) were deliberately NOT parroted —
-    `.env` in the launch directory IS the supported place for keys.
-    **Recommended pilot preconditions** — all four are satisfied by the
-    launch mechanics already planned: public source at the exact commit
-    (R.7), a signed tag + published fingerprint (R.5b's signed `v0.3.0` +
-    `npm publish --provenance` over trusted publishing), SECURITY.md +
-    lockfile + build instructions in the public repo, and native-install
-    clarity — now written into the README's native-module note, which had
-    claimed no install scripts at all while every npm-12 user sees a
-    `@parcel/watcher` warning (measured: its script is a conditional
-    no-op, prebuilts ship for every mainstream platform). **Bottom line** —
-    their sole blocker was supply-chain provenance, which dissolves at the
-    flip; no separate work. *One item deliberately left alone: the site
-    claims open source in the present tense while the repos are private.
-    That is true-by-R.7 and Kyle has made no decision to change the copy;
-    it resolves itself at the flip.*
-  - Finding #5 (assistant, 2026-07-30, R.6's live-Gemini check — **LAUNCH
-    BLOCKER, FIXED same day**): the `gemini-cli` adapter could not complete a
-    turn on Gemini CLI **0.53.0** (written against 0.51.0). It presented as
-    two failures — a refusal to run headless in an "untrusted" folder, and
-    `IneligibleTierError: This client is no longer supported for Gemini Code
-    Assist for individuals` — but they are **one cause**: 0.53.0 does not load
-    a project's `.gemini/settings.json` for an untrusted folder. That file is
-    where the adapter writes `security.auth.selectedType: "gemini-api-key"`,
-    so the selection was ignored and the CLI fell back to the USER-scope
-    choice; any user who ever logged in interactively (`oauth-personal`) then
-    died on the free-tier client path Google retired, while holding a valid
-    `GEMINI_API_KEY`.
-    **Fix (P.6b):** the workspace-trust question is asked ONCE per folder
-    through the shell's own permission strip — `permission_request` /
-    `permission_resolved`, both existing message types, so the wire protocol
-    is untouched and the ask is shell-owned (the agent can't paint or fake
-    it). A yes is remembered in a new daemon record,
-    `<state>/trusted-workspaces.json` (`server/sessions/workspace-trust.ts`),
-    and carried into the child as `GEMINI_CLI_TRUST_WORKSPACE=true`. A no runs
-    nothing and says why; the session stays usable. Asked once per workspace,
-    ever — matching what their own terminal `gemini` does.
-    **Measured negatives, both of which cost a round of wrong belief:**
-    `--skip-trust` is NOT equivalent — it lets the run proceed but still
-    doesn't load project settings, so auth falls back and the turn dies
-    (proven in a known-good workspace). And `GEMINI_DEFAULT_AUTH_TYPE=
-    gemini-api-key` does nothing at all on 0.53.0 — proven by the case with
-    no project settings + trust + that variable, which still failed. *An
-    earlier draft of this finding named that variable as the fix; it was
-    wrong, and only isolating one variable at a time exposed it.*
-    **Why (b) — reusing `trusted-repos.json` — was proposed and rejected:**
-    that list is the git-programs escape hatch, nothing in the product ever
-    writes it, and it is empty for essentially every project, so it would
-    have left Gemini broken while looking fixed.
-    **Verified:** a real Gemini turn end-to-end through the adapter (trust ask
-    → allow → `PROBE OK`, with usage), on Kyle's real home and its
-    `oauth-personal` login. Tests: `workspace-trust.test.ts` (containment,
-    persistence, malformed/disabled record) and two adapter tests pinning the
-    gate — nothing spawns before the answer, the yes reaches the child as the
-    trust env var and is remembered, a no runs nothing — mutation-checked
-    (defeating the gate fails both).
-    *Standing caveat: Gemini is the most volatile of the three engines —
-    0.51→0.53 both retired an auth path and added this gate in weeks. R.6's
-    live-Gemini check should re-run after Google releases; the other two
-    engines have needed nothing like it.*
-  - Finding #4 (Kyle, 2026-07-30, his own machine — **LAUNCH BLOCKER, fixed
-    same day**): the first time Kyle installed the tarball the way testers
-    do (`npm i -g mirafold.tgz`) instead of running `yarn dev`, onboarding
-    died the moment it navigated to a session URL — a `NotFoundError` from
-    `send`, and no browser session could ever start. **Cause:**
-    `res.sendFile(path.join(DIST, "index.html"))` passes an ABSOLUTE path,
-    and send's default `dotfiles: "ignore"` policy inspects *every segment*
-    of it. `npm i -g` unpacks into the active Node's prefix, which for nvm
-    (`~/.nvm/…`), asdf, volta and fnm carries a dot-segment — so the SPA
-    fallback 404'd for every user on a version manager, i.e. most of the
-    target audience. `GET /` kept working (express.static passes a root, so
-    only the request path is checked), which is why it read as "some people
-    can't get past onboarding" rather than "the server is broken".
-    **Fixed:** `res.sendFile("index.html", { root: DIST })` in
-    `server/index.ts` and `server/relay/relay-stub.ts` — the policy then
-    applies to the relative part only. **Regression:** a Tier-3 test
-    (`server/testing/launcher.e2e.ts`) copies the built `dist/` +
-    `dist-server/` into a manufactured `.nvm-like/` directory, boots the
-    daemon from there and asserts `/s/:id` → 200 with the real app shell;
-    mutation-checked (restoring the old line reproduces the 404).
-    **Why three verification layers missed it:** the repo checkout has no
-    dot-segment so Tier 3 structurally cannot see it; `yarn dev` serves the
-    SPA from Vite, so the daemon's fallback route is never exercised in
-    dev; and the cold-install check booted the daemon and read `--version`
-    without fetching a session URL. The lesson is narrow and worth keeping:
-    **only exercising the packaged artifact from a realistic install path
-    proves the packaged artifact.** Re-packed and re-installed; Kyle
-    confirmed a real session with his Claude API key on the fixed build.
-    `beta/mirafold.tgz` re-cut (sha256 `8f829513…`, was `a9fe4152…`) and
-    `beta/WELCOME.md` updated to match; ⬜ the Drive copy still serves the
-    broken build until Kyle re-uploads.
-  - Finding #3 (Kyle, 2026-07-24, real phone — SERIOUS): starting a NEW
-    session on mobile hung on "connecting…" forever, picker never showed;
-    desktop fine. Root cause: the in-session "new" button opens a fresh tab
-    (`target="_blank" rel="noopener"`), and a noopener new tab inherits
-    neither the URL fragment nor sessionStorage — so on the relay path the
-    new tab had no pairing code, fell back to a daemon-less local ws://, and
-    hung. Desktop's local fallback IS the daemon (worked); mobile resume
-    worked (fleet links stay in-tab). Diagnosed from the daemon
-    flight-recorder + relay structured logs. Fixed: `newSessionHref()`
-    re-encodes the relay target into the new tab's fragment (PR #6, merged
-    to main; unit 322 + round-trip invariant test). DEPLOYED: the
-    git-integrated Cloudflare Pages project auto-rebuilt on merge —
-    app.mirafold.com now serves the fixed bundle (index-D2UVf2h9.js,
-    confirmed live). Awaiting Kyle's real-phone confirmation.
-  - Finding #2 (Kyle, 2026-07-23, his MacBook): the onboarding picker sat
-    flush against the browser window's top/bottom on a short viewport (a
-    ~600px un-maximized Mac Chrome window) instead of floating as a nested
-    modal. Root cause: `.onb-card` had `max-width` but no `max-height`, so
-    it overflowed the centered overlay. Fixed same day: `max-height: 100%`
-    + internal scroll as the hard floor (the overlay's 24px gutter is now
-    always visible), plus an `@media (max-height: 700px)` compact layout
-    (44px glyph, tighter paddings) so typical content FITS at ~600px.
-    Verified by computed-style probe at 607px and 769px viewports + all
-    tiers green; worst-case content (3 credential-less agents, longest
-    hints) scrolls internally with the gutter intact at any height.
-    *(Superseded 2026-07-25: the fleet page's `zoom: 1.15` — a cockpit
-    polish landing — inflated the card 15% while this breakpoint kept
-    measuring the real viewport, so the scrollbar showed at every height
-    under ~890px. The binary compact tier is replaced by a fluid
-    `--onb-squeeze` driver: every vertical metric interpolates full→compact
-    with window height (zoom factor divided out of the vh math), the
-    credentialed picker fits scroll-free down to ~645px real, and scroll
-    remains the last resort for hint-heavy or tiny-window states. E2e pins
-    the ramp — an all-rows-ready daemon swept through it, asserting no
-    internal scroll AND that the glyph actually compressed. `d8abc62`.)*
-  - Finding #3 (proactive sweep after #2, same day): the settings and pair
-    dialogs share the exact defect #2 found in the onboarding card — the
-    S.4 card idiom had `max-width` but no `max-height`. Measured live at a
-    560px viewport: settings (583px natural — the theme list) overflowed
-    the window by 11px top AND bottom; pair (430px) fit but was one short
-    window from the same. Fixed with the same two-line cap on the shared
-    idiom (`max-height: 100%` + internal scroll — inert until a card would
-    overflow). Sweep completeness: these were the ONLY three
-    fixed-position overlay surfaces in the shell (onboarding, settings,
-    pair); the in-session model picker, question component, permission
-    bar, and demo banner are all in-flow and immune. Probed at 560/769,
-    e2e + unit green. NOT done (deliberately): a compact-styles pass for
-    the settings card at short heights — it would touch the theme picker's
-    layout, which is Kyle-locked territory; internal scroll is the
-    accepted behavior there.
-  - **Opened 2026-07-23.** Mechanics locked with Kyle: distribution is a
-    hand-sent `npm pack` tarball (v0.1.0, shell @ 50950a7 / relay @ 3f92992
-    deployed) — NOT npm; testers subscribe FOR REAL via the direct `/pay`
-    link (never comped — Kyle's standing rule; 7-day refund is the out);
-    feedback arrives ad hoc in any form — Kyle collects and forwards it in
-    clusters, so intake here means triaging those clusters as they land,
-    not policing a channel. Welcome note drafted (install incl. the
-    node-pty/npm-scripts fix, credentials, phone-over-cellular ask, the
-    never-paste-boot-output rule, log-file-is-safe-to-attach). That gate CLEARED
-    same day: Kyle lifted the blackout entirely — the full site is public
-    again, all pages verified 200, and the welcome note now lives on-brand
-    at mirafold.com/beta (noindex, unlinked; testers get the direct link).
-    The tarball was also rebuilt on the @lydell/node-pty swap, so install
-    is two commands with no workaround. NOTHING blocks the first invite.
-  - **First finding, fixed same day (2026-07-23):** Kyle, running Codex via
-    OpenRouter, saw the literal stand-in "codex" in the status bar's model
-    slot (Claude showed "default", Gemini "gemini" — same pattern). Kyle's
-    call: a temporary model name that isn't true is dishonest — show
-    NOTHING until the real one is known. Landed as shell @ 003388c:
-    `modelName` is undefined until configured/engine-reported, the wire's
-    usage + fleet-row `model` fields went optional, and the status bar +
-    fleet row render the slot only when known. Gemini's "auto" stays (a
-    genuine configured router-mode value, still refined per turn). All
-    three tiers verified; tarball rebuilt at that commit.
-  - **2026-07-25 status:** version bumped to **0.2.0** with the `engines`
-    Node floor raised to **>=22** (`52ffdaf` — the floor now matches what
-    we actually develop and test on; README, mirafold.com's install note,
-    /beta, and the beta-folder WELCOME.md all state Node 22+ and name
-    `mirafold-0.2.0.tgz`). Tarball rebuilt at `d8abc62` (includes the
-    phone rail fix + onboarding squeeze), staged at
-    `../beta/mirafold-0.2.0.tgz`, cold-install + boot smoke-tested.
-    **Distribution channel (external fact):** testers get it via Kyle's
-    Google Drive link — replace-in-place version upload keeps the link
-    stable; Drive keeps the old display name on content swaps, so the
-    rename to `mirafold-0.2.0.tgz` is a manual step (advised, link
-    survives it). **Uptake (Kyle, 2026-07-25): almost no testers have
-    actually tried it yet** — the stable-link swap was chosen so the
-    already-sent link serves the new build. Also flagged on push: GitHub
-    reports 1 HIGH Dependabot alert on the default branch (dependabot/4);
-    a dependency bump was already in flight in a parallel session the
-    same afternoon. *(Resolved same day: that bump landed as `c660130` —
-    alert #4 "fixed", zero open alerts on the repo; detail in R.5b's
-    sweep note.)*
-  - *(An interim 2026-07-25 evening rebuild — postcss-only delta, verified
-    cold-install — was superseded by the session-end rebuild below; note →
-    PLAN-ARCHIVE.md.)*
-  - **npm-audit noise on install — investigated and settled
-    (2026-07-25):** installing the tarball into a *local project
-    directory* reports 4 moderate advisories, all one chain
-    (`@hono/node-server` <2.0.5 — Windows-only path traversal in
-    `serve-static` — reached transitively via `@modelcontextprotocol/sdk`,
-    which `@anthropic-ai/claude-agent-sdk` also requires as a peer).
-    **Testers never see it: npm skips audit on global installs**, so the
-    documented `npm i -g ./mirafold-0.2.0.tgz` prints no advisory at all
-    (verified against a clean prefix). And it cannot be fixed from our
-    side anyway: the MCP SDK still declares `^1.19.9` at its latest
-    (1.29.0), hono 1.x has no patched release (1.19.15 is the last), a
-    published package's own `overrides` field is ignored by npm (verified
-    by packing one and installing it), and **npm v12 no longer reads an
-    `npm-shrinkwrap.json` shipped inside a tarball** — the one mechanism
-    that used to pin a consumer's transitive tree. `bundleDependencies`,
-    npm's suggested replacement, is a non-starter here: `@lydell/node-pty`
-    and the agent SDK ship per-platform optional binaries. What DID land:
-    `package.json` gains an `overrides` block mirroring the existing yarn
-    `resolutions`, so an `npm install` from source resolves the same tree
-    yarn does (`npm install --package-lock-only` → 0 vulnerabilities);
-    it has no effect on the tarball. Our own testing keeps running the
-    forced 2.0.11, as R.5b's sweep note records.
-  - **Tarball rebuilt once more at session end (2026-07-25), shell
-    `b97f85d`** — still **0.2.0**, Kyle's call ("don't bother updating the
-    version number"). Staged at `../beta/mirafold-0.2.0.tgz` (335,280 bytes,
-    sha256 `69c84f6d…`). Carries everything from that evening: the
-    flat-outline gear, the readable pairing card with copy as its one action,
-    the phone Explorer fixes, the browser bundle no longer shipping
-    package.json, and the discarded-tab pairing fix. Verified by cold
-    `npm i -g` into a throwaway prefix — `--version` 0.2.0, boots, serves
-    HTTP 200 — and by grepping the packed bundle to confirm it actually
-    carries that work rather than trusting the pack. ⬜ **Kyle still owes the
-    replace-in-place upload to Drive.**
-  - **Where the version lives, for whenever it IS bumped (swept
-    2026-07-25):** `mirafold/package.json` is the single source of truth —
-    `bin/mirafold.js` reads it at runtime for `--version` and the boot banner,
-    `web/src/version.ts` imports it at build time for the version the browser
-    announces, and `npm pack` names the tarball from it. Since 2026-07-29
-    NO hand-written copy of the version remains anywhere: the Drive
-    artifact is the version-free `../beta/mirafold.tgz` (adopted in
-    practice 2026-07-28, confirmed by Kyle 2026-07-29 — Drive
-    replace-in-place keeps the link AND the documented filename stable),
-    and `beta/WELCOME.md` + `mirafold-site/public/beta.html` both
-    instruct `npm i -g ./mirafold.tgz` (updated 2026-07-29). The
-    marketing site's own install line is `npm i -g mirafold` and the
-    README uses a `mirafold-*.tgz` wildcard, both already version-free.
-    So a version bump touches package.json and nothing else — `npm pack`
-    emits `mirafold-<v>.tgz`, rename it to `mirafold.tgz` when staging.
+  - **Tester-002 thread CLOSED 2026-07-30** — every concern resolved by
+    standard practice, not bespoke exceptions: SECURITY.md ships in the
+    package with a "Running it safely" section; the sole real blocker
+    (supply-chain provenance) dissolved at the public flip. →
+    PLAN-ARCHIVE.md, "Moved 2026-08-12 (prune — completed bodies)."
+  - Finding #5 (2026-07-30, the live-Gemini check — LAUNCH BLOCKER, FIXED
+    same day): Gemini CLI 0.53.0 stopped loading project settings in
+    untrusted folders, so the adapter's auth selection was ignored. Fixed
+    by the shell-owned once-per-workspace trust ask (P.6b,
+    `server/sessions/workspace-trust.ts`), mutation-checked. **Standing
+    caveat: Gemini is the most volatile of the three engines — re-run
+    R.6's live-Gemini check after Google releases.** Full diagnosis, incl.
+    the two measured negatives that each cost a round of wrong belief →
+    PLAN-ARCHIVE.md, "Moved 2026-08-12 (prune — completed bodies)."
+  - Finding #4 (2026-07-30, LAUNCH BLOCKER, fixed same day): `sendFile`
+    with an absolute path 404'd the SPA fallback for every
+    version-manager install (dot-segment policy); fixed with
+    `{ root: DIST }` + a Tier-3 install-shaped pin. **The lesson that
+    spawned R.6b: only exercising the packaged artifact from a realistic
+    install path proves the packaged artifact.** → PLAN-ARCHIVE.md, "Moved 2026-08-12 (prune — completed bodies)."
+  - Finding #3 (2026-07-24, real phone — SERIOUS, fixed): a noopener new
+    tab inherits neither fragment nor sessionStorage, so "new" on the
+    relay path had no pairing code; `newSessionHref()` re-encodes the
+    relay target (PR #6, deployed). → PLAN-ARCHIVE.md, "Moved 2026-08-12 (prune — completed bodies)."
+  - Finding #2 + sweep (2026-07-23): overlay cards had `max-width` but no
+    `max-height` and overflowed short windows; fixed on the shared card
+    idiom (onboarding's fix later refined into the fluid `--onb-squeeze`
+    ramp, e2e-pinned). Settings/pair got the same two-line cap; internal
+    scroll is the accepted behavior for the settings card at short heights
+    (the theme picker's layout is Kyle-locked). → PLAN-ARCHIVE.md, "Moved 2026-08-12 (prune — completed bodies)."
+  - **Beta-tarball era mechanics + status (2026-07-23 → 07-25)** —
+    invites SENT 2026-07-23 to 5–6 people (tarball + mirafold.com/beta;
+    the private beta genuinely ran with real invitees — external fact,
+    recovered 2026-08-19 from a stranded branch note), hand-sent tarball
+    distribution, the testers-subscribe-FOR-REAL rule,
+    the first finding (an untrue stand-in model label; Kyle's standing
+    call: show NOTHING until the real model is known), 0.2.0 rebuilds, the
+    npm-audit-noise investigation (testers never see it — npm skips audit
+    on global installs; unfixable from our side and measured so), and the
+    where-the-version-lives sweep (`package.json` is the single source —
+    a bump touches nothing else). The channel itself is superseded by the
+    public npm path (R.5b). Full history → PLAN-ARCHIVE.md, "Moved 2026-08-12 (prune — completed bodies)."
 
   - **Do not run `npm install` in this repo** (learned 2026-07-25):
     `npm install --package-lock-only` silently rewrote `yarn.lock` —
@@ -1714,23 +887,14 @@ with it. Both sequence BEFORE R.5.**
     yarn for every package operation, as CLAUDE.md already says; npm is
     for `npm pack` only.
 
-- [x] **Step R.5d — Relay staging (nonprod) environment** — **DONE
-  2026-07-23** (the day the private release went live, per the sequencing).
-  `genui-relay-staging` on Fly from the same Dockerfile via
-  `fly.staging.toml` (auto-stop, idles at zero, ungated); the Deploy
-  workflow gained the environment dropdown (default staging) with
-  per-environment app-scoped FLY_API_TOKENs (staging's token cannot touch
-  production); first staging deploy dispatched through the new path and
-  the full smoke PASSED against `wss://genui-relay-staging.fly.dev`
-  (pairing + byte-identical round-trip + refusals). Runbook: DEPLOY.md §6.
-  Why it exists: the relay is the only component that needs a nonprod — the
-  shell's "production" is the user's own machine and the site already has
-  Pages previews. Staging exercises what local runs can't: real TLS, the
-  `fly-client-ip` header the rate limiter trusts, real network behavior, Fly
-  machine lifecycle. The flow it buys: deploy a ref to staging → point a local
-  shell at it (`MIRAFOLD_RELAY_URL=wss://genui-relay-staging.fly.dev`) → smoke
-  + phone pairing check → dispatch the same ref to production. Original step
-  spec → PLAN-ARCHIVE.md.
+- [x] **Step R.5d — Relay staging (nonprod) environment** — DONE
+  2026-07-23; `genui-relay-staging` on Fly (auto-stop, idles at zero,
+  ungated), deploy-workflow environment dropdown with per-environment
+  app-scoped tokens, first staging deploy + full smoke passed. The relay
+  is the only component needing a nonprod (real TLS, `fly-client-ip`,
+  machine lifecycle); the flow: deploy a ref to staging → point a local
+  shell at it → smoke + phone check → dispatch the same ref to
+  production. Runbook: DEPLOY.md §6. → PLAN-ARCHIVE.md, "Moved 2026-08-12 (prune — completed bodies)."
 - [ ] **Step R.6 — Launch prep (the week before; everything verifiable
   without publishing)** *(split out of the old launch-day mega-step
   2026-07-08 — same items, grouped so nothing hides mid-paragraph; nothing
@@ -2047,118 +1211,6 @@ with it. Both sequence BEFORE R.5.**
   postMessage, and parse-error paths. Focused repetition and two complete
   78-test browser runs passed unchanged; protected proof remains N3.4.
 
-- [x] **Step R.6b — The packaged-artifact pass (opened + done 2026-07-30,
-  after the day's two blockers)** — `scripts/packaged-pass.mjs`: `npm pack`,
-  `npm i -g`, then drive the INSTALLED global through onboarding, session
-  creation, a hard reload of the session URL, generative-UI paint, the pin
-  dock, the `!` PTY, the Explorer, and a standalone start of
-  `dist-server/render-mcp.js` — nine checks, mock-forced, discovery off, no
-  model reached. **9/9 on 0.3.0.**
-  - Why it exists: both 2026-07-30 blockers (Finding #4's dot-path 404,
-    Finding #5's Gemini folder gate) were invisible to all three tiers by
-    construction — the checkout has no dot-segment, `yarn dev` serves the
-    front end from Vite so the daemon's own routes never execute, and the
-    cold-install check only read `--version`. Only an install shows them.
-  - NOT wired into `yarn test:e2e` on purpose: it drives a global install CI
-    doesn't have. It is a pre-release ritual — run it against the artifact
-    about to ship, i.e. immediately before the R.7 publish.
-
-- [x] **A turn that ends by `error` wedged the activity indicator forever —
-  found and FIXED 2026-07-30** (chasing the Tier-3 flake below; the two are
-  related in symptom, NOT in cause).
-  - **The defect:** `server/sessions/registry.ts` treats `turn_end` OR
-    `error` as terminal — that is what flips the session to idle and clears
-    the burst gate. The shell's counter (`web/src/turn-busy.ts`) decremented
-    only on `turn_end`. So any turn dying by error — an adapter crash, an
-    engine killed mid-stream, a dropped frame — left the count permanently
-    high: the indicator read "working…" for the LIFE of the session, on
-    every viewport, while the daemon knew it was idle. **A reload did not
-    heal it**, because replay rebuilds the same imbalance out of history.
-  - **The fix:** the client mirrors the daemon's terminal set, and
-    `Shell.tsx`'s error branch drops the indicator the way `turn_end` does.
-    Tradeoff, stated in the code: with two turns genuinely in flight an
-    error may read idle a beat early — which self-heals on the next activity
-    frame, where the wedge it replaces never healed at all.
-  - **Pinned:** four Tier-1 cases in `turn-busy.test.ts` (mutation-checked —
-    reverting the terminal set fails three), plus a Tier-3 test driving a
-    new deterministic mock scenario (`playTurnError`: `status` then `error`,
-    no `turn_end`) through the live path AND a reload, in its own session.
-    That converts a 1-in-4 heisenbug class into a test that always runs.
-
-- [ ] **Flake watch — one unterminated turn in the artifact chain (Tier-3
-  test `update-in-place artifacts survive the liveness tripwire`).** STILL
-  OPEN, and NOT the bug above: the captured trace shows **21 `user_prompt`
-  against 20 `turn_end`, with ZERO `error` and ZERO `bang_end` frames** —
-  a turn with no terminal frame of any kind. FIFO attribution points at
-  `burst-alpha`, the prompt the artifact iframe's bridge issues, though
-  interleaving makes that name the weakest part of the finding.
-  - **Ruled out by probe, not by reading:** the replay floor on an idle
-    reload (three rounds, clean); the burst gate inflating the count (it
-    refuses BEFORE broadcasting `user_prompt`); mid-turn queueing in general
-    (a socket probe sending a prompt 300ms into a running turn returns
-    `{ups: 2, ends: 2}`); and every mock artifact scenario — `playArtifact`,
-    `playBridgeArtifact`, `playUpdatingArtifact` all call `endTurn`.
-  - **The tool for next time already exists:** `web/src/turn-trace.ts` is
-    armed by the e2e harness and `waitTurnIdle` dumps it on any wedge —
-    frame types, replay flags, counts, and the prompt prefix. Reproduce with
-    `node --import tsx --test server/testing/app.e2e.ts` after a `yarn
-    build` (~64% per run in isolation, far higher than in a full Tier-3).
-  - **Cost note (Kyle, 2026-07-30):** this consumed a large share of a
-    session. If it recurs, read the dumped trace — do not re-derive it.
-
-- [x] **Step R.6b — The packaged-artifact pass (opened + done 2026-07-30,
-  after the day's two blockers)** — `scripts/packaged-pass.mjs`: `npm pack`,
-  `npm i -g`, then drive the INSTALLED global through onboarding, session
-  creation, a hard reload of the session URL, generative-UI paint, the pin
-  dock, the `!` PTY, the Explorer, and a standalone start of
-  `dist-server/render-mcp.js` — nine checks, mock-forced, discovery off, no
-  model reached. **9/9 on 0.3.0.**
-  - Why it exists: both 2026-07-30 blockers (Finding #4's dot-path 404,
-    Finding #5's Gemini folder gate) were invisible to all three tiers by
-    construction — the checkout has no dot-segment, `yarn dev` serves the
-    front end from Vite so the daemon's own routes never execute, and the
-    cold-install check only read `--version`. Only an install shows them.
-  - NOT wired into `yarn test:e2e` on purpose: it drives a global install CI
-    doesn't have. It is a pre-release ritual — run it against the artifact
-    about to ship, i.e. immediately before the R.7 publish.
-
-- [ ] **Flake watch — Tier-3 test 36 wedges on a stuck activity indicator
-  (2026-07-30; IDENTIFIED, cause not yet proven — do not chase blind).**
-  - **The test:** `2026-07-29 update-in-place artifacts survive the liveness
-    tripwire` (`server/testing/app.e2e.ts`). It fails in its PRECONDITION,
-    not its subject: the wait for the previous turn's activity indicator to
-    clear. Rate ~1 in 4–7 full runs.
-  - **What the instrumentation caught** (`waitTurnIdle`, added same day —
-    diagnostic only, changes no assertion): `activity: "✢working…(30s)"`,
-    i.e. the indicator polled visible for the entire 30s, WHILE the polite
-    live region already held the finished response — and that region only
-    speaks at `turn_end`. So the turn ended and the indicator did not clear.
-    That rules out "a turn never ended" and puts it on the shell's
-    open-turn counter. Prompt box was enabled; last five transcript entries
-    were the artifact tests' turns (`show me a navigating artifact`, then
-    the iframe-issued `burst-alpha`).
-  - **Falsified:** the obvious reading of `web/src/turn-busy.ts`'s replay
-    floor (`replayed && ACTIVITY_TYPES → max(current, 1)`) — that a plain
-    attach-with-replay of an IDLE session forces the count to 1 with no
-    `turn_end` to follow. Probed directly against the built daemon: turn,
-    idle, reload, ×3 — indicator clear every time. Not it, at least not on
-    the straight-line path.
-  - **Still open, and where to look next:** the failing sequence involves
-    artifact turns plus an iframe-issued prompt (`burst-alpha`) whose
-    sibling (`burst-beta`) is deliberately dropped by the 400ms bridge rate
-    limit. `turn-busy.ts`'s own comment names this exact hazard — "a LIVE
-    straggler after a final turn_end … must not re-open a closed turn, or
-    busy wedges on with no turn_end ever coming". The next diagnostic is
-    the frame sequence itself: record every `(type, replayed)` the client
-    applies plus the running count, and read it back at the wedge. Do NOT
-    "fix" the floor rule without that — it was written to close a real gap
-    (a queued follow-up losing the indicator across an engine roll-in), and
-    an unproven change would trade one wedge for that one.
-  - **Not caused by 2026-07-30's work:** the extended axe sweep runs later
-    in the file with its own daemon and page, and the `FilesPanel`
-    tabIndex/role change touches the Explorer's scroll container. The
-    failure predates both.
-
 - [ ] **Step R.7 — Launch day (the M1+M2+M3 splash, one event)**
   - Goal: everything fires together and the signals start reading.
   - **Launch-week provider-terms re-check (K.3's standing item):** within
@@ -2247,52 +1299,16 @@ an operating-system folder dialog for local viewports. The request is bounded,
 credential-scrubbed, never replayed, and refused over the relay; no dependency
 was added. Protected Tier 1/2/3 checks, Cloudflare, and DCO passed on PR #22.
 
-- [x] **N2.1 — Host-native picker service + local-only wire** — done
-  2026-08-08; shell-free macOS, Windows, and Linux recipes; correlated
-  non-replayed wire pair; validation, cancellation, concurrency, abort, and
-  relay refusal pinned. → PLAN-ARCHIVE.md.
-- [x] **N2.2 — Onboarding browse control** — done 2026-08-08; compact
-  `browse…` beside the editable path in both startup routes, capability-gated
-  with manual entry retained as the universal fallback. → PLAN-ARCHIVE.md.
-- [x] **N2.3 — Regression proof + documentation** — done 2026-08-08; focused
-  tests, real-daemon browser proof, accessibility/phone checks, typecheck,
-  build/package, production audit, README, and protected CI complete.
-  → PLAN-ARCHIVE.md.
-- [x] **N2.4 — Post-refactor executable-trust remediation** — done 2026-08-08;
-  browser and native-dialog identity now comes only from fixed system paths,
-  agent discovery rejects project/npm-controlled candidates, helper processes
-  use a neutral cwd/scrubbed environment and confirm exit after cancellation or
-  output overflow, and the `npx` trust boundary is explicit. Local proof:
-  Tier 1 561/561, Tier 2 143/143, Tier 3 82/82, typecheck, build, 19-file
-  package dry-run, secret scan, and production audit (0 vulnerabilities).
-  → PLAN-ARCHIVE.md.
-- [x] **N2.5 — Keep the chosen folder leaf visible in long paths** — done
-  2026-08-08; programmatic picks and blurred edits reveal the rightmost folder,
-  focused editing retains ordinary caret control, and the complete path still
-  creates the session. Local proof: Tier 1 561/561, focused Tier 3 1/1,
-  typecheck, and production build. → PLAN-ARCHIVE.md.
-- [x] **N2.6 — Close the post-audit environment and Windows-opener execution
-  paths** — done 2026-08-08; checkout `.env` loading is data-only and
-  provenance-aware, startup tokens are percent-encoded, Windows opens URLs
-  directly through fixed-system `explorer.exe`, and the trust guidance names
-  the remaining `.env` boundary honestly. Local proof: Tier 1 563/563, Tier 2
-  143/143, Tier 3 82/82, typecheck, production build, 19-file package dry-run,
-  secret/diff scans, and production audit (0 vulnerabilities). →
-  PLAN-ARCHIVE.md.
+- [x] **N2.1–N2.6** — all done 2026-08-08 (picker service + local-only wire;
+  onboarding browse control; regression proof; post-refactor executable-trust
+  remediation; leaf-visible long paths; `.env`/Windows-opener closure).
+  Bodies → PLAN-ARCHIVE.md, "Moved 2026-08-17 (prune — completed step bodies)."
 
 ## Phase N3 — Stable Tier-3 browser gates (✅ COMPLETE 2026-08-08)
 
-- [x] **N3.1 — Controlled busy-state proof** — own session + permission latch;
-  no transient-locator race. → PLAN-ARCHIVE.md.
-- [x] **N3.2 — Isolated Mermaid renderer proof** — own session, production
-  lazy chunk/sandbox/CSP/postMessage paths retained. → PLAN-ARCHIVE.md.
-- [x] **N3.3 — Deterministic follow-tail re-arm** — wheel/touch intent arms
-  synchronously against pre-input geometry; pure boundaries + real-wheel e2e.
-  → PLAN-ARCHIVE.md.
-- [x] **N3.4 — Repetition + protected proof** — focused activity 6/6,
-  Mermaid 5/5, follow-tail 6/6; Tier 1 554/554; two unchanged full Tier-3
-  runs 78/78; PR #22's DCO, Cloudflare, Tier 1, and combined Tier 2/3 checks
-  passed on implementation head `a091ba1`. → PLAN-ARCHIVE.md.
+- [x] **N3.1–N3.4** — all done 2026-08-08 (busy-state, Mermaid renderer and
+  follow-tail re-arm proofs made deterministic; two unchanged full Tier-3
+  runs 78/78 on PR #22). Bodies → PLAN-ARCHIVE.md, "Moved 2026-08-17 (prune — completed step bodies)."
 
 ## Phase V — Visual + fidelity gaps flagged by Kyle (opened 2026-07-17; ✅ COMPLETE)
 
@@ -2312,21 +1328,13 @@ Full bodies + dated status in PLAN-ARCHIVE.md ("Moved 2026-07-19").
 
 ## Phase A — Accessibility (opened 2026-07-20; ✅ COMPLETE 2026-07-21)
 
-> **Correction 2026-07-30 — A.4's page was NOT live, for nine days.** The
-> public accessibility statement was written and committed 2026-07-21 into the
-> site repo's `staged/` (site `b42c286`), and never made it into `public/`
-> when the blackout lifted on 07-23. `mirafold.com/accessibility` 404'd, no
-> footer linked it, the sitemap didn't list it — while this plan recorded the
-> step as done and live. Restored, linked from every page's footer, and added
-> to the sitemap 2026-07-30 (site `c4426df`); **measured live: 200.** The
-> lesson is the umbrella's own: a page's existence is a fact about the world,
-> not about a plan, and the plan is exactly as current as the last time
-> someone typed. *Also refreshed on restore*: a new known limitation states
-> plainly that the last hands-on keyboard/screen-reader audit was 2026-07-21,
-> that the automated axe gate covers newer surfaces where they appear in it
-> (onboarding, transcript, Explorer, settings, connect-device, fleet, cockpit
-> desktop + phone — `assertAxeClean` call sites), and that the `!` input bar,
-> the pin dock and the ⤢ enlarged file view have not yet had the same pass.
+> **Correction 2026-07-30 — A.4's page was NOT live for nine days**: the
+> statement was committed to the site repo's `staged/` and never copied to
+> `public/` at the blackout lift, while this plan recorded it done.
+> Restored, footer-linked on every page, sitemapped 2026-07-30 — measured
+> live: 200. The lesson is the umbrella's own: a page's existence is a fact
+> about the world, not about a plan. Full note (incl. the refreshed
+> known-limitations wording) → PLAN-ARCHIVE.md, "Moved 2026-08-12 (prune — completed bodies)."
 
 Kyle's directive, verbatim: *"i want mirafold to be friendly to all people
 capable of using it and to be ada compliant."* The ADA names no technical
@@ -2720,18 +1728,65 @@ anywhere; each is independent.
 - [x] **Step Q.5 — Pin the `.env` guard's edges** — done 2026-07-12; traversal + cross-cwd denials pinned across all four guarded readers, non-vacuous by weakening the guard. (Symlink bypass stays the documented accepted residual.) → PLAN-ARCHIVE.md.
 
 - [x] **WATCH ITEM (2026-07-24): the follow-tail re-arm race — closed
-  2026-08-08 by N3.3.** Seen once on the
-  CI runner (app.e2e.ts "re-follows once back at the bottom", sat 188px above
-  the tail), green on rerun and on every local run; root-caused same day.
-  Mechanism: re-arming depended on `use-follow-tail.ts`'s `onScroll`
-  measuring within `BOTTOM_SLACK_PX` (24) of the bottom, but scroll events
-  fire a frame after the scroll — under load the stream can paint >24px in
-  that gap, so a reader (or the test's single programmatic jump) landing at
-  the bottom mid-stream measures as "not at bottom" and follow never re-arms.
-  A real product race, not only test fragility. Downward wheel/touch intent
-  that reaches the current bottom now re-arms synchronously against pre-input
-  geometry; the existing instant-follow and input-detach decisions remain.
-  Pure boundary tests and a controlled real-wheel browser scenario pin it.
+  2026-08-08 by N3.3.** A real product race (scroll events lag the scroll a
+  frame, so landing at the bottom mid-stream could measure "not at
+  bottom"); downward intent that reaches the bottom now re-arms
+  synchronously against pre-input geometry. → PLAN-ARCHIVE.md, "Moved 2026-08-12 (prune — completed bodies)."
+
+---
+
+## Phase UI — Core browser UI contracts (opened + ✅ COMPLETE 2026-08-16)
+
+- [x] **Phase UI complete.** Added three isolated real-Chrome contracts for
+  desktop multiline submission, settings-modal focus containment/restoration,
+  and the two-click end-session safeguard through its mission-control redirect.
+  No production or dependency file changed. Targeted Tier 3 was **3/3**;
+  typecheck passed; Tier 1 was **840/840**; the full freshly built Tier 3 was
+  **103/103** with the new tests discovered as 101–103. A same-day refactor
+  removed one vacuous selector and its dead session-id plumbing; post-refactor
+  targeted Tier 3 remained **3/3**, typecheck passed, and full Tier 3 remained
+  **103/103**. Full verified baseline, dependency decision, implementation
+  boundary, and completion record →
+  **PLAN-ARCHIVE.md, “Moved 2026-08-16 (Phase UI — core browser contracts).”**
+
+---
+
+## Phase UIX — Cross-engine and visual browser gates (opened + ✅ COMPLETE 2026-08-16)
+
+- [x] **Phase UIX complete.** Added a bounded Chromium/Firefox/WebKit journey
+  plus committed Ubuntu-24.04/managed-Chromium baselines for onboarding, a
+  settled desktop turn, and phone settings. The new `yarn test:ui` gate passed
+  **6/6** with zero skips in 34.82 seconds after its production build; a
+  deliberate changed-image probe was rejected and emitted actual/diff PNGs.
+  Typecheck passed, Tier 1 passed **840/840**, and the freshly built full
+  system-Chrome Tier 3 remained **103/103**, zero skipped. No shipped server or
+  React module, runtime dependency, lockfile, or release workflow changed.
+  A same-day test-only refactor centralized the repeated daemon/context/page
+  lifecycle and mock-session entry, hoisted the visual capture policy, and
+  stopped encoding a diff PNG for passing comparisons. Assertions, thresholds,
+  browser coverage, and baseline PNG bytes stayed unchanged; post-refactor UI
+  remained **6/6**, targeted Chrome contracts **3/3**, Tier 1 **840/840**, and
+  full Tier 3 **103/103**.
+  Full starting state, dependency/CI cost, implementation boundary, temporary
+  local WebKit setup, and verification record → **PLAN-ARCHIVE.md, “Moved
+  2026-08-16 (Phase UIX — cross-engine and visual browser gates).”**
+  Review follow-up 2026-08-17: page-error capture now attaches before the
+  first navigation (owned by `withFreshMockPage`, which hands the list to
+  the test and appends it to any failure); a light-theme desktop
+  baseline joined the three (4 PNGs); the visual half skips off Linux instead
+  of failing; the cwd normalization keeps the LRM sentinels the real render
+  uses; CI caches the managed browsers per `playwright-core` version and runs
+  `test:ui:built` against the `dist` Tier 3 already built. After installing
+  WebKit's apt host libraries on the workstation, the shipped `yarn test:ui`
+  passed **7/7** (Chromium + Firefox + WebKit + 4 visual); Chrome contracts
+  **3/3**. Same-day audit + test-audit: the onboarding baseline depended on
+  the host having a display (the daemon advertised its folder picker →
+  "browse…" rendered; proven red with `DISPLAY=` unset), fixed by pinning
+  the visual daemon to `DISPLAY=""`/`WAYLAND_DISPLAY=""` and regenerating;
+  six mutations of product code (Shift+Enter submit, focus-trap wrap,
+  one-click end, duplicate KPI card, boot-time throw, 2 px CSS shift) each
+  failed exactly the test that names them, and the boot-time throw now
+  fails by its own message. Final: 10/10 across the branch's suites.
 
 ---
 
@@ -2991,6 +2046,12 @@ deliberately **separate phases, implemented in stages, never as one push**
 
 > **E2 (Explorer at scale) → W (live tree) → PN (panes) → TP (terminal pane)**
 
+**2026-08-11 amendment (Kyle-directed):** the new Changes-review work below
+now runs before the two remaining phases, PN → TP. This does not reorder or
+combine those phases: CR.1 deliberately completes PN.1's reusable-file-view
+seam, CR.2 uses one purpose-built review surface rather than PN's later tabbed
+file panes, and PN.2/PN.3 remain the next general-pane work afterward.
+
 E2/PN/TP is Kyle's stated feature order (lazy explorer first, then a pane to
 view files, then vim in a pane); W slots second because its client half depends
 on E2's lazy shape (the refetch unit becomes "expanded directories", not "the
@@ -3047,29 +2108,12 @@ trip. Mitigations in-scope: cache fetched directories for the session,
 prefetch root + first level on open. Phone drill-in maps naturally (each
 layer = one directory = one fetch).
 
-- [x] **Step E2.1 — per-directory listing: wire + server** — done
-  2026-07-26; additive `fs_listdir`/`fs_dir` pair, jailed + per-dir-capped,
-  token-bucket throttled (`FS_LISTDIR_MAX_PER_SEC` 32 — prefetch bursts are
-  legitimate), hostile paths refused, legacy `fs_list` untouched.
-  → PLAN-ARCHIVE.md.
-- [x] **Step E2.2 — the lazy client: incremental tree store** — done
-  2026-07-26; per-directory node store (fetch on first expand, cached
-  re-expands, per-dir correlation ids + stale-reply drop, loading rows),
-  open = root + first-level prefetch, refresh/turn-end refetch expanded dirs
-  and PRUNE cached-but-collapsed ones; whole-tree `fs_list` retired from the
-  client (daemon still answers it). → PLAN-ARCHIVE.md.
-- [x] **Step E2.3 — multi-repo git fidelity** — done 2026-07-26; per-repo
-  statuses + ignore rules on the lazy listings (`findRepoRoot()` walks to
-  the FILESYSTEM root — git's own discovery rule; `repoStatus()` behind a
-  TTL cache + ONE global serialized git queue; `decorateGitDir()` pure;
-  deleted files stay visible); git trouble degrades to the plain listing,
-  never an error; zero wire or client changes. → PLAN-ARCHIVE.md.
-- [x] **Step E2.4 — the Projects-root proof + compatibility pin** — done
-  2026-07-26, **phase E2 complete**; `fs_diff` discovers the repo CONTAINING
-  the file (nested-repo diffs work; jail first, session-root fallback), the
-  legacy `fs_list` old-client floor pinned as-is (never to be "fixed"), the
-  Tier-3 multi-repo proof shows zero whole-tree requests, phone drill-in
-  passes. All tiers 388/110/56. → PLAN-ARCHIVE.md.
+- [x] **E2.1–E2.4** — all done 2026-07-26, phase complete (additive
+  `fs_listdir`/`fs_dir` jailed + per-dir-capped + token-bucket throttled
+  (`FS_LISTDIR_MAX_PER_SEC` 32); lazy per-directory client store; per-repo
+  git fidelity behind a TTL cache + one serialized git queue; `fs_diff`
+  discovers the repo containing the file; the legacy `fs_list` old-client
+  floor pinned as-is, never to be "fixed"). Bodies → PLAN-ARCHIVE.md, "Moved 2026-08-17 (prune — completed step bodies)."
 
 ### Deferred from the 2026-07-26 security audit — ✅ both landed with phase W
 
@@ -3084,56 +2128,23 @@ owed bell per repo per connection; a degraded status rings nothing).
 (in-flight entries read as always-fresh, so every late caller coalesces).
 Full bodies + original findings → PLAN-ARCHIVE.md ("Moved 2026-07-27").
 
-### Step E.6 — the enlarge lightbox (desktop reads big on demand)
+### Step E.6 — the enlarge lightbox
 
-- [x] **Step E.6 — ⤢ enlarge** — done 2026-07-28 (Kyle-directed; splits,
-  docks, and a full takeover were weighed and the dimmed lightbox chosen —
-  the transcript never reflows, and the user trades it away only by
-  deliberate click). The docked file view stays compact (wrapped,
-  tool-output look); ⤢ lifts the SAME node — class re-frame, no remount, so
-  scroll survives — into a fixed frame over a 55% dim (Esc / backdrop / ⤡
-  restore in place; focus-trapped dialog; title centered on the bar's true
-  center; content 1em, box sat 1.5vh above center). Found en route and
-  fixed: the file view had been inheriting `.tool-code`'s transcript-only
-  360px height cap in every frame. Desktop-only — the phone E.4 frame is
-  already full-screen, pinned by a phone-suite assertion. Commits c01d846 +
-  b9589b2 (the day's new busy-turn sanity guard recalibrated `>10` → `>0`
-  samples). Tiers 458/139/54 green. Same-day audit: nothing exploitable;
-  the lightbox-over-permission-bar layering recorded as an accepted
-  decision in SECURITY.md.
+- [x] **E.6 — ⤢ enlarge** — done 2026-07-28 (Kyle-directed; dimmed lightbox
+  re-framing the SAME node so scroll survives; desktop-only; the lightbox-
+  over-permission-bar layering is an accepted decision in SECURITY.md).
+  Body → PLAN-ARCHIVE.md, "Moved 2026-08-17 (prune — completed step bodies)."
 
 ## Phase E3 — Explorer visual polish
 
-- [x] **Step E3.1 — Refine the tree surface and add node-type glyphs** — done
-  2026-08-11; the existing read-only tree now uses Mirafold's inset surface,
-  compact row/guide treatment, SVG chevrons, and decorative open/closed-folder,
-  symlink, and broad file-family glyphs immediately after names. No dependency,
-  server/wire, lazy-fetch, sort, Git-status, drill-in, refresh, or phone-flow
-  behavior changed. Desktop, phone, dark/light, overflow, and axe proofs pass.
-  → PLAN-ARCHIVE.md.
-- [x] **Step E3.2 — Integrate the Explorer visually with the workbench** —
-  visually approved by Kyle 2026-08-11. The dock now has a stable responsive
-  width, compact Files title/action bar, separate sticky workspace-root strip,
-  inset tree-row rhythm, quieter unboxed Git markers, and conventional
-  `chevron → type glyph → name → status` ordering. Refresh and the phone close
-  action moved into the title bar without changing their behavior; the stacked
-  phone file drill-in remains intact. The accepted revision and the D.1 Codex
-  refactor merged through PR #34 at `21b5f33` after DCO, Cloudflare Pages,
-  Tier 1, and combined Tier 2/Tier 3 passed.
+- [x] **E3.1–E3.2** — done 2026-08-11, visually approved by Kyle; merged
+  through PR #34 at `21b5f33`. Bodies → PLAN-ARCHIVE.md, "Moved 2026-08-17 (prune — completed step bodies)."
 
 ## Phase BC — Whole-codebase correctness closure
 
-- [x] **Step BC.1 — Repair the eight confirmed whole-codebase findings** —
-  done 2026-08-11. Gemini turn preparation and Codex default-model resolution
-  now recover from transient failures; the relay and cookie boundaries reject
-  malformed-but-valid inputs safely; model-turn state no longer collapses at a
-  neighboring bang lifecycle boundary; active rename failure rolls back instead
-  of claiming durability; filesystem/Git caps count UTF-8 bytes; and Explorer
-  path presentation accepts Windows shapes without changing POSIX filename
-  semantics. Each finding has a concrete regression. No dependency, provider
-  protocol, stored-session schema, or filesystem write feature was added.
-  Published as open PR #35 into `next`; deliberately unmerged pending Kyle's
-  review. → PLAN-ARCHIVE.md.
+- [x] **BC.1 — the eight confirmed whole-codebase findings repaired** — done
+  2026-08-11, each with a concrete regression; PR #35 merged to `next`
+  2026-08-11 (`80911b4`). Body → PLAN-ARCHIVE.md, "Moved 2026-08-17 (prune — completed step bodies)."
 
 ## Phase W — Live tree (the filesystem watcher; the refresh button goes vestigial)
 
@@ -3178,39 +2189,326 @@ today's behavior** — watch-limit exhaustion (ENOSPC) or any watcher error
 surfaces one notice and leaves turn-end refresh + the button as the floor.
 The E.5 turn-end refresh stays as belt-and-suspenders.
 
-- [x] **Step W.1 — the watcher module, server-side** — done 2026-07-26;
-  `@parcel/watcher@2.6.0` + `server/sessions/fs-watch.ts`: one bell per
-  fixed window from the FIRST event (a continuously-writing agent can't
-  starve it), honest capped paths hint, exclusion globs, error→stop→notice
-  exactly once; lifecycle follows viewport attach/detach. Two inotify
-  backend truths handled: fast-created subtrees go permanently silent →
-  healed by unsubscribe-THEN-resubscribe + one synthetic bell; every
-  subscribe needs a fresh closure. → PLAN-ARCHIVE.md.
-- [x] **Step W.B — the bell's paths hint capped by BYTES too** — done
-  2026-07-26 (audit finding; not attacker-reachable — bandwidth hygiene
-  under the cheap-theoretical-finding rule); `FS_WATCH_MAX_PATH_BYTES`
-  (16,000) beside the count cap, `truncated` honest, pinned +
-  mutation-tested. → PLAN-ARCHIVE.md.
-- [x] **Step W.A — a browsed repo cannot run programs** — done 2026-07-26
-  (audit finding); `server/sessions/git-trust.ts` + the `trusted-repos.json`
-  allow list neutralize the three probe-proven execute vectors
-  (`core.fsmonitor`, `filter.*.clean`, `filter.*.process`) unless the repo
-  is user-trusted; reads git's EFFECTIVE config (an `include.path`-hidden
-  setting still executes otherwise); one notice per repo per connection;
-  pinned by `git-trust.itest.ts` with real planted programs +
-  mutation-tested. Detail + probe method in `SECURITY.md`. **Standing
-  caution: the vector list is tied to which git commands the daemon runs —
-  adding a new one means re-running the probe.** → PLAN-ARCHIVE.md.
-- [x] **Step W.2 — `fs_changed` on the wire + the live client** — done
-  2026-07-26, **phase W complete**; per-viewport bell (never broadcast,
-  never replayed), the per-repo status cache invalidated BEFORE fanning,
-  client coalesces via `bellRefreshDelay` (min gap 1s) so bells can't drain
-  the token bucket, and the watcher-failure notice ships. Field find fixed
-  at the source: every daemon git read runs `--no-optional-locks`, so the
-  daemon's own status calls can't write `.git` churn the watcher hears (a
-  feedback loop) — itest-pinned + mutation-tested. Proven end-to-end: a
-  file written behind the UI's back appears with zero clicks. All tiers
-  389/123/57. → PLAN-ARCHIVE.md.
+- [x] **W.1, W.B, W.A, W.2** — all done 2026-07-26, phase complete
+  (`@parcel/watcher@2.6.0` + `server/sessions/fs-watch.ts`; paths hint capped
+  by count AND bytes (`FS_WATCH_MAX_PATH_BYTES` 16,000); `git-trust.ts` +
+  `trusted-repos.json` neutralize the three probe-proven git execute vectors
+  unless the repo is user-trusted; per-viewport `fs_changed`, client
+  coalesced via `bellRefreshDelay`; every daemon git read runs
+  `--no-optional-locks`). Bodies → PLAN-ARCHIVE.md, "Moved 2026-08-17 (prune — completed step bodies)."
+  **Standing caution (W.A): the execute-vector list is tied to which git
+  commands the daemon runs — adding a new one means re-running the probe.**
+
+## Changes review workspace (opened 2026-08-11; Kyle-directed)
+
+**Product call.** The target user prefers the real terminal coding agent but
+wants a more visual and functional interface than its native terminal UI. The
+next feature is therefore a first-class, read-only review surface for the code
+changing in the session: the existing Files view remains the answer to "what
+exists in this workspace?"; Changes becomes the answer to "what differs from
+Git HEAD, and what do I need to inspect?" This reopens only the diff-review
+half of BUSINESS.md's former editing/diff-review non-goal. Mirafold still does
+not become a code editor, and it never writes, accepts, rejects, reverts, or
+attributes a working-tree change on the user's behalf.
+
+**Original verified starting state (before CR.1)** → archived verbatim in
+**PLAN-ARCHIVE.md, "Moved 2026-08-12 (Changes polish + branch closure)."**
+
+**Honesty boundary.** The surface is named **Workspace changes** in its own
+chrome and means exactly "this Git working tree versus HEAD." It must never say
+"changes made by Claude/Codex/Gemini" because pre-existing edits, another
+session, a terminal, or an external editor can share that tree. A Projects-style
+session root groups nested repositories explicitly. Agent adapters, native
+permission behavior, and how each agent edits files remain behaviorally
+unchanged.
+
+**Responsive contract (applies to every CR phase).** Desktop (>640px) opens a
+wider Changes workspace beside the still-visible conversation; Files and
+Changes share one auxiliary-workspace slot and are mutually exclusive, so the
+UI never becomes Explorer + Changes + transcript. Mobile (≤640px) opens the
+same data as a full-screen layer, one file at a time, with a vertical unified
+diff, persistent back/file/change navigation, safe-area padding, ≥40px touch
+targets, and no page-level horizontal overflow. Desktop and phone behavior are
+both acceptance requirements, not a later responsive cleanup.
+
+- [x] **CR.1–CR.14** — all done 2026-08-11/12 (shared file-view foundation +
+  bounded `fs_changes`→`fs_change_set` query; the Changes workspace, desktop
+  split + phone full-screen; conversational diffs; resumable review progress
+  keyed to server-minted revision identity; ten bughunt repairs; branch
+  security + test audits; terminal hunk navigation; resizable panel; gutter
+  glyph; docked toolbar; select-hunk toggles; post-audit delta bughunt and
+  audits). Bodies → PLAN-ARCHIVE.md, "Moved 2026-08-17 (prune — completed step bodies)."
+  **Standing note (CR.14):** hunk navigation's deferred scroll is redundant
+  protection since CR.10's layout removed the blur-cancellation trigger —
+  kept deliberately.
+
+**WATCH ITEM (live):** one unattributed intermittent
+full-ordered Tier-3 failure — observed 1-in-6 runs on 2026-08-12, failing
+test unnamed (the first run's log was summary-filtered); every later run
+keeps the complete TAP log, so the next occurrence names itself.
+**2026-08-14 — it named itself, in CI:** PR #48's first Tier-2+3 run
+failed exactly one test, **E2.4 "the Projects-root proof"**, a 30 s
+`page.waitForSelector('.files-panel[role=dialog]')` TimeoutError at the
+phone drill-in step (app.e2e.ts:2839). Same day the full suite passed
+3× locally (the CS runs) with E2.4 green each time, so the 1-in-6-ish
+intermittent read stands — now with a name and a stuck selector to
+instrument. Not diagnosed or fixed this sitting (Phase CS's scope);
+next occurrence: read whether the Files panel button was clicked but
+the dialog never mounted, or the click itself was swallowed.
+
+## Stylesheet decomposition (2026-08-12, Kyle-directed)
+
+- [x] **Split the 5,639-line styles.css into an import spine + 15 surface
+  files** — done 2026-08-12; pure relocation, proven byte-identical at the
+  source and in the built bundle. Standing decisions: NO dedup/consolidation
+  (small savings, real visual-regression risk), and NO phone-override
+  colocation yet — it would dismantle the one-phone-block convention and is
+  a separately-verified decision for later. → **PLAN-ARCHIVE.md, "Moved
+  2026-08-12 (Changes polish + branch closure)."**
+
+## Needs-you notifications (opened 2026-08-12; Kyle-directed)
+
+**Product call.** The remote/away story is the product's spine — fleet view,
+relay viewport, desktop app all assume the user steps away — yet every surface
+so far answers "what's happening when I look?" and nothing answers "tell me
+when I need to look." The next feature is OS-level notifications when a
+session needs the user: a permission prompt appears, or a turn finishes. Scope
+is the local tiers only (any open Mirafold page: local tab, desktop app, relay
+viewport open on a phone — all the same Notification API code path). True
+closed-browser Web Push (service worker + push service + E2E payload story) is
+deliberately parked in Post-release ideas until the habit loop proves out.
+
+**Triggers — exactly two, by design.** (1) A session enters `permission`;
+(2) a session's turn ends (`busy`/`working` → `idle`). NOT per-tool chatter,
+and NOT socket disconnects: a phone backgrounding its tab drops the socket
+routinely, so a "disconnected" toast would train users to disable the feature.
+Session-death notification waits until the wire carries a distinct exit signal.
+
+**The suppression rule (most of the design).** A notification fires only for
+state the user cannot already see: nothing fires while the firing tab is
+visible (`document.visibilityState`), and gaining visibility closes every
+toast that tab created. One notification per session (`tag` = session id), a
+newer event replacing the older; a toast whose cause resolves elsewhere
+(answered on another device, agent prompted from the terminal) closes itself
+the moment the state moves on. Accepted v1 sharp edge: a hidden fleet tab can
+toast about a session visible in another tab — same tag keeps it to one toast,
+and cross-tab suppression is noted in Post-release ideas, not built.
+
+**Trust boundary.** Notifications are shell-owned chrome: titles/bodies are
+composed by the shell, and every engine-derived string (tool name, permission
+detail) is carried as inert plain text into an OS surface that never
+interprets markup. The preference is off by default; flipping it on is the
+only thing that triggers the browser's permission prompt (never page load).
+No secret ever enters a notification body — tool + detail are already
+user-visible PermBar strings.
+
+- [x] **NF.1 (engine + wiring) and NF.2 (settings + e2e) — BOTH COMPLETE
+  2026-08-12**; full bodies → **PLAN-ARCHIVE.md, "Moved 2026-08-14 (post-SA
+  prune — completed bodies)."** Standing gotcha kept from NF.2: tsx's esbuild
+  keepNames injects a module-scope `__name` helper that Playwright serializes
+  WITHOUT — init scripts / evaluated functions containing compiled classes or
+  const-assigned arrows die on a ReferenceError, so in-page stubs are plain-JS
+  strings (bit again in SA.1's e2e, 2026-08-14).
+
+## File drag-and-drop input (opened 2026-08-12; Kyle-directed)
+
+**Product call.** Kyle: take files in by drag and drop, like the terminal.
+In a terminal that feature is mostly the TERMINAL EMULATOR's: dropping a
+file inserts its shell-quoted path at the cursor, and the agent reads the
+path with its own tools. A browser cannot do that — a drop hands over the
+file's NAME and BYTES, never its real filesystem path — so Mirafold's
+faithful equivalent is: catch the drop on shell-owned chrome, ship the
+bytes to the daemon over the existing WebSocket in bounded chunks, stage
+them in a per-session directory OUTSIDE the working tree (no tree
+pollution — the terminal never copies into the repo either), and insert
+the staged file's absolute path into the prompt. The agent then reads it
+exactly as a terminal drop's path — zero adapter changes, agent-neutral by
+construction, and the same mechanism makes drops work from a phone through
+the relay, which a terminal cannot do at all. (Promoted from
+POST-RELEASE.md's "Input augment" entry; clipboard PASTE of files/images
+stays parked there.)
+
+**Bounds.** Staging is `os.tmpdir()/mirafold-uploads/<sessionId>/` (0700);
+v1 cleanup relies on the OS's tmp reaping (recorded decision — per-session
+delete-on-end can ride later). Caps: `FILE_UPLOAD_MAX_BYTES` (10 MB
+default, env), 2 concurrent uploads per connection, chunks bounded well
+under `MAX_WS_PAYLOAD`, a 30s no-chunk stall reaper, sanitized basenames
+(never a path), collision-suffixed. Uploads follow the prompt's relay
+gate: refused on a remote viewport when the session's backend kind is not
+`allowedOverRelay` — an upload is model input staging. Replies are
+correlated per-viewport (echoed client-minted id, `CLIENT_ID_RE` grammar),
+never broadcast, never replay-buffered. The drop overlay, progress strip,
+and path insertion are shell-owned end to end; a staged path enters the
+prompt via the existing draft-merge path, which never discards composed
+text.
+
+- [x] **FD.1 (wire + staging) and FD.2 (drop experience) — BOTH COMPLETE
+  2026-08-12**; full bodies → **PLAN-ARCHIVE.md, "Moved 2026-08-14 (post-SA
+  prune — completed bodies)."** Standing gotcha kept from FD.2: the drag
+  listeners attach only after the session attaches — an e2e dispatch racing
+  the mount fires into the void, so drop e2es wait for the session UI first.
+
+## Paintings polish batch (opened + ✅ COMPLETE 2026-08-13; Kyle-directed)
+
+- [x] **Fix batch + adoption instrumentation — completed 2026-08-13** (all
+  tiers green). Full bodies → **PLAN-ARCHIVE.md, "Moved 2026-08-14 (post-SA
+  prune — completed bodies)."** Standing decisions: **diagrams follow the app
+  theme** (a diagram is a picture, not a code surface — the pinned-dark
+  convention stays for code/console/diff only); one LOCAL
+  `paint <component> agent=<agent>` log line at `registry.deliver()` makes
+  paintings adoption measurable (nothing leaves the machine).
+- Audit findings deliberately NOT fixed here (recorded, not lost): the two
+  hand-kept `TOOL_DESCRIPTIONS` maps (render-tools.ts / render-mcp.ts) have
+  drifted in wording with no guard test; no test pins Claude's
+  `mcpServers`/`systemPrompt.append` registration; the stdio
+  `emit_artifact` description omits the `mirafold.prompt/tool` sandbox API
+  that the in-process description documents (Codex/Gemini can't author
+  interactive artifacts); registry CSS half-lives in `08-picker.css`
+  (housekeeping); HBar tooltip parks at `left: 40%`. Each is a candidate
+  for a follow-up surfacing-parity step.
+
+## Phase OC — OpenCode adapter (opened + ✅ COMPLETE 2026-08-13; Kyle-directed)
+
+**Product call.** Kyle, from a 2026-08-13 market check: OpenCode (~195k
+GitHub stars) is now the dominant open-source terminal agent and becomes the
+fourth adapter. The feasibility spike is **`server/adapters/opencode.spike.md`**
+(verdict GREEN) — its live-probe appendices remain the shape record.
+
+- [x] **OC.0–OC.5 — ALL COMPLETE 2026-08-13**, live-verified same day
+  (Kyle: "heyyyy it works"). Full step bodies → **PLAN-ARCHIVE.md, "Moved
+  2026-08-14 (post-SA prune — completed bodies)."** Standing outcomes that
+  bind future work:
+  - **Raw HTTP+SSE transport, no SDK** (decision recorded in the spike doc:
+    live shapes beat drifting generated types).
+  - **Permission replies never send `always`** — that would persist approval
+    state into the user's own OpenCode config (docs/ADAPTERS.md matrix).
+  - **Zen OPENED by Kyle 2026-08-13** under the disclosed-uncertainty rule:
+    `gateway` CredentialKind, local-only, NEVER relay-eligible, uncertainty +
+    training-data disclosure shown (canonical row in provider-policy.ts).
+  - The ChatGPT gray runs locally under its TRUE classified kind
+    (`onBackendKind` → registry; `kindPending` refuses remote actions until
+    verified).
+
+## Gemini CLI support (sunset decision reversed 2026-08-14; Kyle-directed)
+
+**Correction.** The 2026-08-13 deprecation rested on an inaccurate starting
+claim: Google ended free/AI Pro/AI Ultra individual-account requests, not the
+Gemini CLI itself. Google explicitly kept API-key and enterprise access
+supported and the Apache-2.0 CLI maintained. Mirafold's adapter was never
+removed and its API-key route is one of those retained paths, so Gemini CLI
+remains supported. Phase **RF.1** removes the deprecation field, picker suffix,
+session notice, future-removal item, and current-facing retirement copy. The
+superseded decision body remains labeled as such in **PLAN-ARCHIVE.md**.
+
+## Phase RC — Remote CREATE of OpenCode sessions (opened + ✅ COMPLETE 2026-08-13; Kyle-directed)
+
+- [x] **RC.1–RC.4 — ALL COMPLETE 2026-08-13** (classify-before-create:
+  `verifyBackendKind` seam + `attachOrReapClassified`, bounded 30s, races
+  closed, 9 tests; a relay viewport can now CREATE an OpenCode session, not
+  just attach). Full bodies → **PLAN-ARCHIVE.md, "Moved 2026-08-14 (post-SA
+  prune — completed bodies)."** The seam is documented in docs/ADAPTERS.md.
+
+## Phase SA — Subagent view (opened + ✅ COMPLETE 2026-08-14; Kyle-directed; plan signed off by Kyle, executed same day)
+
+- [x] **SA.0–SA.4 + post-phase refactor, two bughunt rounds, security audit,
+  and test-audit — ALL COMPLETE 2026-08-14**, full bodies → **PLAN-ARCHIVE.md,
+  "Moved 2026-08-14 (post-SA prune — completed bodies)."** Shipped: live
+  **subagent decks** (calm summary → expandable calls + narration), the
+  parented-delta narration lane (opaque `parentId` on deltas + permission
+  asks), and the OpenCode child-session mapping proving the lane
+  agent-neutral — plus an OpenCode defect fix (child permission asks used to
+  drop and hang). PR #47. The lane's standing rules for future adapters live
+  in **docs/ADAPTERS.md §3**; the rendering/trust posture in README §6.3 and
+  SECURITY.md; the decided vocabulary in GLOSSARY (*subagent deck*).
+
+**The hard line (standing):** Mirafold DISPLAYS the agent's own coordination —
+it never spawns or directs subagents itself (the homegrown-orchestrator trap).
+*Mirafold shows coordination; it never performs it.*
+
+**Deferred findings (recorded here so they're not lost):**
+- **LATENT (bughunt 2026-08-14):** a `background: true` OpenCode child
+  streaming ONE text part ACROSS a turn boundary would re-emit that part's
+  full text (the per-turn part tracker resets, so the snapshot's suffix
+  restarts at 0) — duplicated prose in its deck. Deferred because
+  reachability is unconfirmed (requires the engine to spawn background
+  children in stock config, itself unverified) AND a proper fix reopens the
+  2026-08-13 flood-cap design (the part trackers are per-turn precisely to
+  stay bounded); revisit if background children are ever observed live.
+- **Test-audit deliberate skip (2026-08-14):** the deck component's
+  replayed→no-elapsed wiring is pinned at the pure-function level only
+  (`deckElapsedSeconds`); the one-line component wiring has no e2e of its
+  own — a decision, not an oversight.
+- **Codex subagents:** the engine HAS first-class multi-agent (collab,
+  default-on since ~2026-02) but child inner activity needs app-server
+  per-thread subscriptions — mapping deferred to **Phase F Step F.5**; the
+  researched posture is recorded in docs/ADAPTERS.md's capability matrix.
+
+## Phase RF — Pre-release findings closure (opened + ✅ COMPLETE 2026-08-14; Kyle-directed)
+
+- [x] **RF.1–RF.3 complete 2026-08-14**, full body → **PLAN-ARCHIVE.md,
+  "Moved 2026-08-14 (Phase RF — completed body)."** Gemini CLI remains a
+  supported API-key adapter: the false deprecation field, picker suffix,
+  session notice, future-removal item, and current-facing retirement claims
+  are gone without changing its adapter behavior. OpenCode interruption now
+  starts its grace deadline independently of the abort request; a missed idle
+  forks context to a new session identity before the queue advances, with a
+  bounded, disclosed fresh-session fallback. Focused tests and all release
+  gates are green: Tier 1 **840/840**, Tier 2 **152/152**, typecheck, and Tier 3
+  **100/100**.
+
+## Phase CS — Self-serve subscription cancel (opened + ✅ COMPLETE 2026-08-14; Kyle-directed; plan signed off by Kyle)
+
+**Why.** A Mirafold Pro customer who wants to stop paying currently has two
+paths: the billing link in their Paddle receipt email, or emailing support —
+i.e. Kyle, manually. This phase adds the third, first-class path: cancel (or
+undo a cancel) from inside the product. Last feature before the next release
+off `next` (Kyle, 2026-08-14).
+
+**Decisions (all Kyle-signed 2026-08-14):**
+- **Direct in-product cancel**, not a Paddle customer-portal link: the daemon
+  calls new billing-backend endpoints with the license key as the bearer
+  credential — the exact trust model `/api/entitlement` already uses. A
+  portal deep-link was rejected: it would turn a leaked key into an
+  authenticated door to a Paddle billing page (email, card, invoices),
+  where the direct path exposes nothing but schedule-cancel/undo/status.
+- **The license key stays the identity** (no accounts). Anyone holding a key
+  can cancel its subscription — accepted: damage is capped at "doesn't
+  renew" (end-of-period only, never lost paid time), it's undoable, and a
+  leaked key already gives the strictly bigger prize (relay access billed
+  to the victim).
+- **End-of-period only, always** (`effective_from: next_billing_period`).
+  One code path serves trial and paid alike: a `trialing` sub's next
+  billing date IS the trial end, so cancel-in-trial = never charged, and
+  cancel-while-paid = access through the paid period. Matches /terms and
+  /refunds verbatim. No "cancel immediately" ever offered (no pro-rating
+  exists, so it would only destroy paid access).
+- **Undo ships too**: a scheduled cancellation is a pending
+  `scheduled_change` on the Paddle subscription until the period boundary;
+  `PATCH /subscriptions/{id} {scheduled_change: null}` removes it. The UI
+  shows "cancellation scheduled for <date> — undo" for the whole window.
+- **Placement: nothing cancel-shaped is ever passively visible.** A neutral
+  "manage subscription" link inside the Connect-a-device card (the one
+  place Pro already manifests) opens a subscription view — status line
+  ("trial — first charge <date>" / "renews <date>"), and cancel as an
+  action there, behind its own confirm step. Local viewports only (the
+  card already is); shown only when the daemon runs on a license key —
+  self-host, token-override, and unentitled daemons see nothing.
+
+**Revocation needs no new work:** on cancel, status stays `trialing`/`active`
+until the period ends; Paddle's `subscription.canceled` webhook then flips KV,
+`/api/entitlement` starts refusing, and the ≤48 h token window does the rest —
+exactly the promised behavior.
+
+- [x] **CS.1–CS.4** — all done 2026-08-14 (three Pages Functions under
+  `functions/api/subscription/`; `server/relay/subscription.ts` + the three
+  additive client messages, `subscription` reply and `billing` hello flag;
+  the manage-subscription view in ConnectDevice; PR #48 merged at `fe8a3cc`;
+  Kyle drove the live cancel → scheduled → undo arc on his own subscription).
+  Bodies → PLAN-ARCHIVE.md, "Moved 2026-08-17 (prune — completed step bodies)."
+  **Still owed elsewhere (from CS.4's live finding):** the production Paddle
+  key gained Subscriptions Write that day; the site repo's historical setup
+  and rotation notes still describe it as read-only/claim-only and need a
+  truth-sync before release documentation is considered closed.
 
 ## Phase PN — Panes (file views beside the transcript)
 
@@ -3222,19 +2520,16 @@ desktop, tabs within it** — NOT a VS Code-style divisible split grid (can
 grow later without rework if PN.1's seam is respected). Phone keeps the
 existing drill-in unchanged — no panes at phone widths.
 
-**The seam this phase exists to cut:** today `FileView` is welded inside the
-explorer panel with ONE outstanding-file correlation ref. Panes mean N
-independent viewers, each with its own request lifecycle.
+**Current seam:** CR.1 extracted the independent read/diff request lifecycle
+and CR.2 proved it in both Files and Changes. PN.2 can therefore start at the
+pane frame itself; multiple simultaneous panes still mean one controller
+instance per viewer.
 
-- [ ] **Step PN.1 — FileView extraction (behavior-preserving)**
-  - Goal: `FileView` becomes a self-contained unit — own subscribe, own
-    correlation ids, own loading/stale state — usable by any host; the
-    explorer panel becomes merely its first host. Zero visual change.
-  - Build: lift the request bookkeeping (fileId ref, openFile, mode,
-    fs_read/fs_diff correlation) out of `FilesPanel` into the extracted
-    component/hook; panel consumes it exactly as before.
-  - Done when: all three tiers green with no e2e assertion changed — the
-    proof of behavior preservation.
+- [x] **Step PN.1 — FileView extraction (behavior-preserving)** — completed by
+  CR.1 on 2026-08-11. `use-file-view.ts` owns independent selection,
+  read/diff correlation, loading/stale state, and reset lifecycle; Files and
+  Changes are its first two hosts. Full record → **PLAN-ARCHIVE.md, “Moved
+  2026-08-11 (Changes review foundation — CR.1).”**
 
 - [ ] **Step PN.2 — the pane frame**
   - Goal: "open in pane" from the explorer puts the file in a tabbed pane
@@ -3385,35 +2680,14 @@ the whole daemon→browser pipeline. All Tier-1 + Tier-2 green (435 + 132),
 typecheck clean; key guards mutation-tested (coalescer flush and
 concatenation each broken → exact pinning tests failed → restored).
 
-- [x] **PF.1 — Server-side delta coalescing.** `broadcast()`
-  (`server/sessions/registry.ts`) merges consecutive same-type
-  `text_delta`/`thinking_delta` into one WireMsg (text = concatenation) on a
-  33 ms window (`DELTA_COALESCE_MS`, env-overridable; constructor-injectable;
-  `0` = passthrough). Any other message — or a delta of the other type —
-  flushes first; attach (before ring replay), detach and session end all
-  flush. The replay ring, seq, byte accounting, local sockets and relay
-  sealing all see only merged frames (~3× fewer for text). Wire protocol
-  untouched — a merged delta is an ordinary delta. Demo mode measured: 18
-  flushes ~36 ms apart, ~3 mock chunks each — still visibly streaming.
-- [x] **PF.2 — Client render batching + memoization.** RenderZone applies
-  queued deltas one animation frame at a time (50 ms hidden-tab fallback;
-  pure merge helper in `web/src/delta-queue.ts`, Tier-1-tested); non-delta
-  messages flush first so order is exact. Transcript entry renderers,
-  ToolBlock and RenderBlock are memoized; RenderBlock's zod `safeParse` runs
-  per props change, not per render; the three per-render full-transcript
-  scans (`pinnedItems`, `activePickerId`, `childrenByParent`) are
-  `useMemo`'d. Follow-tail untouched (its docstring's instant-scroll
-  rationale stands; it now fires per flush). `Artifact` deliberately NOT
-  memoized (per-render closure props; restructuring touches the sandbox
-  bridge). `bang_output` deliberately NOT coalesced (own id + wire-budget
-  logic in `connection.ts`; PTY output is already chunky).
-- [x] **PF.3 — Onboarding poll cost.** The 3 s `refresh_agents` poll no
-  longer re-reads `~/.codex/config.toml` (2 s TTL, missing file never
-  cached), re-probes credential files (2 s TTL) or re-fires the 8 localhost
-  model probes (default sweep TTL 5 s, `MIRAFOLD_LOCAL_PROBE_TTL_MS`,
-  in-flight callers coalesce; itest harness pins it to 0). Tradeoff, eyes
-  open: a just-started local model server takes up to ~8 s to appear
-  (was ~3 s).
+- [x] **PF.1–PF.3** — server-side delta coalescing (`DELTA_COALESCE_MS`
+  33 ms, `0` = passthrough; wire untouched); client render batching +
+  memoization; onboarding poll TTLs (`MIRAFOLD_LOCAL_PROBE_TTL_MS`).
+  Bodies → PLAN-ARCHIVE.md, "Moved 2026-08-17 (prune — completed step bodies)." Standing choices: `Artifact` deliberately NOT
+  memoized (per-render closure props touch the sandbox bridge);
+  `bang_output` deliberately NOT coalesced (own id + wire-budget logic);
+  eyes-open tradeoff — a just-started local model server takes up to ~8 s
+  to appear in onboarding (was ~3 s).
 - Deferred, not forgotten (contract-sensitive, own sitting, both suites):
   `permessage-deflate` on the sockets, slow-viewport backpressure
   (`bufferedAmount` is checked nowhere), and batching the attach-replay's
@@ -3421,137 +2695,53 @@ concatenation each broken → exact pinning tests failed → restored).
 
 ## Guidance tuning — the prose exit ramp (✅ 2026-07-27)
 
-One bullet in `RENDER_GUIDANCE` (`server/render-tools.ts`, commit `9330ded`),
-from a live report: a recipe ask rendered as plain markdown. Probed against
-the real engine with the adapter's exact setup first — pipeline healthy (a
-table-shaped prompt tool-searches and paints; render tools ARE deferred
-behind the SDK's tool search, noted, deliberately left alone), so the cause
-was the old "plain markdown remains right for long-form prose" bullet
-filing whole prose-shaped answers under markdown. New bullet: markdown is
-connective tissue; find and render the answer's structured core (recipe and
-prose-buried comparison as worked examples). Measured on the recipe prompt:
-0/2 renders → 2/3, ingredients + steps as components; diagnostic-prose
-control stays 0/2 (no over-rendering). Confirmed in the real UI end-to-end.
-Ported to mirafold-chat the same day (its `090d29f`) with its own probe.
+One `RENDER_GUIDANCE` bullet (`server/render-tools.ts`, `9330ded`):
+markdown is connective tissue — find and render the answer's structured
+core. Measured 0/2 → 2/3 renders on the recipe probe with no
+over-rendering; ported to mirafold-chat the same day. → PLAN-ARCHIVE.md, "Moved 2026-08-12 (prune — completed bodies)."
 
-## Open from the 2026-07-27 security audit (three repos, checked against a
-## "pre-launch checklist" post Kyle brought in)
+## Closed from the 2026-07-27 security audit (three repos, checked against
+## a "pre-launch checklist" post Kyle brought in)
 
-**Shipped that day** (each landed with a test whose guard was broken and
-watched to fail before restoring): relay `new URL` crash guard · daemon
-exact-origin WebSocket check · credential scrubber on both log sinks ·
-site cross-site guard on the waitlist form POST · site `no-store` on
-credential responses · site `HEAD /api/health` · daemon `connect-src`
-narrowed off the `ws:`/`wss:` wildcards · daemon refuses a malformed
-`MIRAFOLD_RELAY_URL` instead of crashing at boot.
-
-**Deploy state (2026-07-28).** The relay crash guard is **LIVE in
-production** — Fly `v9`, ref `f01a765`, staging `v2` first per the
-documented flow. Verified on both by firing the real payload at the live
-host and reading the logs: `{"event":"bad_request_target"}` with no restart
-between it and the preceding `listening` event, health `ok` on four probes
-after. That deploy also shipped the relay's `HEAD /health` (confirmed `200`
-live), which had been sitting undeployed since 07-23. The site fixes went
-live with the push (Cloudflare Pages builds on push to main). **The daemon
-fixes ship with the next release** — they only reach users when the package
-does. Note the relay does NOT auto-deploy: `deploy.yml` is
-`workflow_dispatch` only, so relay code sitting on `main` is NOT live until
-someone dispatches it.
+**Shipped that day** (each landed with a break-the-guard-watch-it-fail
+test): relay `new URL` crash guard · daemon exact-origin WebSocket check ·
+credential scrubber on both log sinks · site cross-site guard, `no-store`
+and `HEAD /api/health` · daemon `connect-src` narrowed · malformed
+`MIRAFOLD_RELAY_URL` refused at boot. Deploy state 2026-07-28: the relay
+guards went LIVE (Fly v9, verified against the live host); site fixes ship
+on push; daemon fixes ride the next package release. **Standing gotcha:
+the relay does NOT auto-deploy — `deploy.yml` is `workflow_dispatch`
+only, so relay code sitting on `main` is not live until someone
+dispatches it.** Full record → PLAN-ARCHIVE.md, "Moved 2026-08-12 (prune — completed bodies)."
 
 ### ✅ RESOLVED 2026-07-28 — the `relay.e2e.ts` test 3 flake
 
-`assert.ok(tapped.length > 50)` (`server/relay/relay.e2e.ts:91`) was a
-hardcoded frame-count threshold and it was **load-sensitive**. Sampled
-2026-07-27 in isolation: **1 pass / 3 fail**, failing at exactly `saw 50`.
-The comment directly above it already documented the same failure a week
-earlier — *"the 'saw 40' flake, reproduced 2/20 under saturation
-2026-07-19"* — so the earlier fix (keying the wait on turn completion)
-did not remove the underlying brittleness, only moved the number.
-
-Mechanism: `DELTA_COALESCE_MS` (33ms) merges streamed deltas, so the number
-of frames the tap sees depends on machine load — under saturation more
-deltas merge, fewer frames cross, and the count drops under the threshold.
-
-**The owed isolation run was run 2026-07-28 and CLEARED the 07-27
-`server/index.ts` change**: 6 samples on HEAD (0 pass / 6 fail, `saw`
-43–50) vs. 6 samples with `server/index.ts` reverted to `5e0abe4^`
-(0 pass / 6 fail, `saw` 44–49) — identical distributions, so the flake is
-fully explained by the threshold, no second problem. (Note the fail rate
-on this machine had drifted to 6/6 — the tally sat permanently just under
-50, i.e. the threshold was not merely flaky but effectively broken.)
-
-**Fix (same day):** the count was only ever a guard against the ciphertext
-loop below it passing vacuously over zero frames. Replaced the total-frame
-tally with growth-during-the-turn: capture `tapped.length` before the
-remote prompt, assert it grew by ≥2 after both viewports saw `turn_end` —
-the prompt itself must cross the tap upstream (c2d) and the `turn_end`
-that detaches the stop buttons must cross downstream (d2c), and delta
-coalescing can never merge either away. Deterministic under any load.
-Mutation-tested (both tap `frame` calls dropped from `relay-stub.ts` →
-fails `saw 0 new frames over 0` → restored); verified 6/6 passing
-unpinned and 3/3 passing under single-core CPU pinning (`taskset -c 0`),
-the condition that originally reproduced the flake.
+A hardcoded frame-count threshold was load-sensitive under delta
+coalescing (more merging under load → fewer frames → spurious fail);
+replaced with growth-during-the-turn — ≥2 frames across the tap, which
+coalescing can never merge away. Deterministic under single-core CPU
+pinning; mutation-tested. → PLAN-ARCHIVE.md, "Moved 2026-08-12 (prune — completed bodies)."
 
 ### ✅ REDONE 2026-07-28 — per-session prompt gate, keyed on the turn grammar
 
-History: a 400ms per-session gate on `prompt` / `prompt_session` /
-component `action{kind:prompt}` was written 2026-07-27 and **reverted the
-same day** — it measured time since the last *accepted* prompt, which
-punishes legitimate back-to-back turns and broke four e2e tests (`shell
-picker`, `notice badging`, `navigating artifact`, `chart stretch`). The
-threat is real: nothing bounded a client that bursts prompts, each of which
-costs a model turn, and the artifact bridge reaches `action{kind:prompt}`
-with no user gesture (its 400ms gate is client-side — a hostile client
-simply wouldn't run it).
+All three model-driving paths enter one seam, `registry.dispatchPrompt`;
+the gate clears on the same terminal events that flip status idle — no
+timer. One mid-turn queued follow-up is allowed (terminal parity; the
+agents queue typed-mid-turn input); anything past it is refused to the
+offending viewport only, never broadcast. Pinned + mutation-tested in
+`hostile-client.itest.ts`. History incl. the reverted first attempt →
+PLAN-ARCHIVE.md, "Moved 2026-08-12 (prune — completed bodies)."
 
-The redo implements the corrected design with one parity-driven refinement.
-All three model-driving paths now enter through ONE seam,
-`registry.dispatchPrompt` (echo + push behind the gate); the gate is
-cleared in `broadcast()` by the same terminal events that flip status back
-to idle (`turn_end` / `error` / `bang_end`) — no timer anywhere. The
-refinement: a prompt while idle starts the turn, and **one more** may
-arrive while it runs, because the terminal agents queue typed-mid-turn
-input (the Claude Code adapter literally `queue.push`es it) and the desktop
-prompt box still sends on Enter while busy — a strict refuse-while-busy
-gate would have refused a legitimate human flow. Anything past that one
-queued follow-up is refused with the shared `PROMPT_GATE_REFUSAL` line
-(sent only to the offending viewport — never broadcast, so it can't touch
-session status or other viewports' busy state). Burn is capped near one
-turn per completed turn; no human pace, and none of the four e2e tests,
-can trip it.
+### ✅ The three ranked items — ALL RESOLVED 2026-07-28
 
-Pinned in `hostile-client.itest.ts` (burst of 5 → exactly 2 echoes + 3
-refusals → gate clears at turn_end and a fresh prompt completes);
-mutation-tested (gate forced open → the pin fails on 5 echoes / 0
-refusals → restored). Tier-1 443/443, Tier-2 137/137 with the gate in.
-
-### ✅ The three ranked items — ALL RESOLVED 2026-07-28 (relay changes await a deploy)
-
-1. **Relay caps vs. machine memory + missing backpressure — FIXED.**
-   Defaults lowered to launch scale (`maxConnections` 2000→256, `maxSockets`
-   2400→320, `maxPairs` 1000→128 — env-raisable per-deploy). **Send-side
-   backpressure added** on both forwarding paths: a receiver whose socket
-   buffers past `RELAY_MAX_BUFFERED_BYTES` (64 MB — sized so a maxed-ring
-   attach-replay, ~43 MB sealed, survives) is closed `CLOSE_OVERLOADED`;
-   closing rather than dropping keeps the stream gapless (a re-attach
-   replays). **Byte-rate cap added** to the per-connection window
-   (`RELAY_RATE_MAX_BYTES`, 64 MB/s — the frame cap alone left ~3.8 GB/s
-   legal). No contract change: existing close codes only, so the mirror and
-   the contract-guard itest are untouched. Both pinned in the relay's
-   standalone suite (a stalled-socket test and a big-frame test), both
-   mutation-tested (each guard neutered → its pin fails/hangs → restored).
-2. **Pairing id in the URL query — wording fixed, exposure MEASURED.**
-   `SECURITY.md`, `README.md`, and `log.ts` no longer call it "a bearer
-   secret" — it is `b64url(SHA-256(code)[0..16))`, a rendezvous id that
-   decrypts nothing (verified against `relay-crypto.ts`); its exposure
-   enables slot squatting/DoS, not disclosure. The Fly question was
-   **verified live 2026-07-28** instead of assumed: a marker-id probe
-   dialed at the production relay produced NO proxy log line at all —
-   Fly's edge logs `request.url` **only on proxy-error lines**, so the
-   pairing id does not reach platform logs on the happy path. Conclusion:
-   moving the id to a header/`Sec-WebSocket-Protocol` (a both-repo
-   contract change) stays unjustified; SECURITY.md now states the
-   deployment-layer caveat honestly.
+Relay caps lowered to launch scale + send-side backpressure
+(`RELAY_MAX_BUFFERED_BYTES`) + a byte-rate cap, pinned + mutation-tested
+and deployed as Fly v10 the same day; the pairing id's exposure measured
+honestly (a rendezvous id, not a bearer secret — decrypts nothing, and no
+proxy logging on the happy path, verified live against Fly); stale
+`mirafold-relay/dist/` deleted with a `prestart` build so a local run
+can't execute months-old code. Full record → PLAN-ARCHIVE.md, "Moved 2026-08-12 (prune — completed bodies)."
+The pairing-id standing policy survives here verbatim:
 
    **Standing policy (Kyle, 2026-07-28): opportunistic, never dedicated.**
    A from-scratch design would carry the id in `Sec-WebSocket-Protocol`
@@ -3574,96 +2764,24 @@ refusals → restored). Tier-1 443/443, Tier-2 137/137 with the gate in.
    exposure is harmless by construction (E2E keys derive from the code
    the relay never sees; ids die on daemon restart) — hiding the id
    better is defense-in-depth on a denial-only vector.
-3. **Stale `mirafold-relay/dist/` — deleted**, and `npm start` now runs a
-   `prestart` build, so a local run can never again execute months-old
-   code (verified: `npm start` rebuilt dist with the new limits in it).
-
-**Deploy note — RESOLVED same day:** Kyle dispatched production directly
-from `main` (~13:12 UTC, no staging run this time; v9 did staging first) —
-Fly **`v10`**, ref `6b83ded`, the exact audit commit. Verified live:
-workflow run green, health `200`, and his entitled daemon re-paired
-through the new build 6s after `listening`. The new guards themselves
-aren't safely probe-able against production (they'd need a real flood or
-stall); their proof is the pinned + mutation-tested suite behind the ref.
 
 ### ✅ 2026-07-28 — the refusal reason is VISIBLE on the phone (Kyle's call)
 
-A relay refusal's why (no daemon 4003 / at capacity 4004 / bad origin
-4006, mapped in `web/src/ws.ts` `viewportRefusalReason`) reached the
-StatusBar only as the dot's `title` — a hover tooltip no touch device can
-reveal, on the remote path built for phones. Kyle chose the middle option
-of the recorded three (tooltip-only / visible line / banner): a **visible
-line beside the dot**, shown only when the connection is down WITH a known
-reason — an ordinary blip keeps the quiet dot and plain "reconnecting…"
-tooltip. `.sb-conn-note`: warn-colored to match the off-dot it explains,
-ellipsis-bounded so it can't push the phone row's controls off. No live
-region on it — Shell's Announcer already speaks the transition (A.1); this
-is the visible copy of the same words. Wording kept from the provisional
-strings (they already said the right things: the no-daemon line points at
-the desktop as the fix; "at capacity" stays true for the new mid-session
-backpressure shed, which uses the same close code). Pinned end-to-end in
-`relay.e2e.ts` test 4 — the daemon is killed mid-pairing and headless
-Chrome must show the exact 4003 string beside the dot — and
-mutation-tested (render neutered → the pin fails → restored). **LIVE on
-the remote path same day**: the git-integrated Pages project rebuilt on
-the push; verified by fetching the served assets (`.sb-conn-note` in both
-the live JS and CSS at app.mirafold.com). Local users get it with the
-next package release, like every daemon-side change.
-
-Also noted, not acted on: `mirafold-site/PLAN.md`'s "Remote viewport app
-origin" item still reads as though the bundle hasn't shipped (it is live at
-`app.mirafold.com`); the site repo's `CLAUDE.md` had the same staleness and
-was corrected 2026-07-27.
+A relay refusal's why reached the phone only as a hover tooltip;
+`.sb-conn-note` is now a visible warn-colored line beside the dot, shown
+only when down WITH a known reason. E2e-pinned, mutation-tested, live on
+the remote path same day. → PLAN-ARCHIVE.md, "Moved 2026-08-12 (prune — completed bodies)."
 
 ### ✅ 2026-07-28 — permission answers sync across viewports (Kyle's phone bug)
 
-Kyle's report: allow/deny tapped on the phone looked like it worked (its own
-bar cleared) but "nothing actually happens" — the desktop's copy of the same
-ask stayed up and the phone hung; and an answer given ON the desktop didn't
-reliably clear the phone's bar either. Root cause (reproduced with a local +
-relay-stub two-viewport harness before touching anything): **nothing on the
-wire ever announced a permission's resolution.** Each viewport dropped an ask
-only when it was itself clicked, or at `turn_end`; the fleet mirror was kept
-honest (`answerPermission` + clock-aging) but attached session viewports were
-not. So the second device kept showing an ask that had already been answered
-elsewhere — or auto-denied by the adapter's 60s `PERMISSION_TIMEOUT_MS` — and
-a tap on that stale bar is, by design, a silent no-op at the adapter. Exactly
-"the phone just hangs there." The relay was innocent: a fresh
-`permission_response` from the remote path resolves fine (proven in the
-repro); it was the stale-bar window that made phone answers look dead.
-
-The fix (additive wire message, no relay/contract change — the relay never
-parses frames): **`permission_resolved { id, allow }`** is broadcast on the
-session stream for EVERY resolution path. Emitted from the one place all
-paths funnel through — the adapter's ask `finish` (answer from any viewport,
-timeout auto-deny, interrupt/close deny-all) in `claude-code.ts`, mirrored in
-`mock.ts`; adapters that emit `permission_request` MUST emit this
-(protocol.ts). Registry: `captureCockpit` drops exactly that id from the
-fleet mirror (the timeout path only this catches — `answerPermission` never
-ran) and releases the `permission` status hold only when nothing is still
-pending; `deliver`'s blanket working-flip skips the new type so a second
-pending ask keeps the hold. Client (`Shell.tsx`): drops the ask by id the
-moment the broadcast lands — with a polite announcement when the ask was
-still showing here (it resolved elsewhere), silent when this viewport's own
-click already removed it. Replay benefits for free: the buffer now carries
-request→resolved, so a reloaded viewport can't repaint a stale bar mid-turn.
-
-Pinned in all three tiers and each pin mutation-tested (guard broken → exact
-pin fails → restored): Tier-1 — adapter emits on answer AND on the
-interrupt deny-all (`claude-code.test.ts`), registry drop + hold-until-none-
-pend (`registry.test.ts`), protocol fixture. Tier-2 — the second viewport's
-very NEXT frame after the answer is the resolution, before the allowed
-tool's frames (`session.itest.ts`); the timeout announces `allow:false`
-before `turn_end` (ibid.); and Kyle's exact scenario, answered FROM the
-phone through the encrypted relay path with the local viewport hearing it
-(`relay.itest.ts`). Tier-3 — desktop answers, the PHONE's bar must drop
-while the turn is still streaming, not at `turn_end` (`phone.e2e.ts`, the
-count-pinned "restarted cleanly" discriminator). Tier-1 454/454, Tier-2
-139/139, Tier-3 67/67. No relay deploy involved (the relay never parses
-frames). **Client half LIVE on the remote path same day** — the Pages
-project rebuilt on the push; verified by fetching the served bundle
-(`permission_resolved` in app.mirafold.com's JS). Local daemons get the
-daemon half with the next package release, like every daemon-side change.
+Nothing on the wire announced a permission's resolution, so a second
+device kept showing a stale bar (and taps on it were silent no-ops). Fix:
+additive **`permission_resolved { id, allow }`** broadcast from every
+resolution path — adapters that emit `permission_request` MUST emit it
+(protocol.ts) — with the registry holding `permission` status until
+nothing is pending. Pinned in all three tiers, mutation-tested; replay
+carries request→resolved so a reload can't repaint a stale bar. Full
+diagnosis → PLAN-ARCHIVE.md, "Moved 2026-08-12 (prune — completed bodies)."
 
 ## Stretch goals (unscheduled — polish, no milestone gates on these)
 
@@ -3691,114 +2809,38 @@ Wire-contract check (all additive, nothing reshapes): new *optional props*
 schemas' ideal degradation; a new *`kind` enum value* fails an old client's
 parse into the Step 1.4 raw-props fallback — legible, and the designed path.
 
-- [x] **Step S.1 — `chart` kind: pie (donut)** ✅ 2026-07-27 (Kyle-directed,
-  branch `claude/next-registry-components-lyrbrq`, with S.2 same sitting).
-  Built to spec: `pie` on the kind enum; slices = `x` names ×
-  `series[0].values`; size-ordered, past 6 the tail folds into ONE "other"
-  (top 5 + other — the fixed-slot palette always suffices, never cycled);
-  donut with the total in the hole, a per-slice direct-label list
-  (chip + name + value + share, no around-the-donut collisions by
-  construction) and hover tooltip. The one-series rule is enforced in the
-  RENDERER by throw → RenderBlock's error boundary → the raw-props fallback
-  (the schema's raw shapes can't carry cross-field refinements through the
-  generic strict/tolerant derivation; the describe strings state the rule for
-  the agent). Done-when observed in headless Chrome: 8-category mock pie →
-  6 slices incl. "other"; 2-series pie → legible fallback with the good
-  charts unharmed; verified at desktop and phone widths, both fine (0px
-  side-scroll).
-  - *(Original spec bullets → PLAN-ARCHIVE.md.)*
+- [x] **Step S.1 — `chart` kind: pie (donut)** ✅ 2026-07-27 —
+  size-ordered slices, past 6 the tail folds into ONE "other", donut total
+  + per-slice direct labels; the one-series rule enforced in the renderer
+  → raw-props fallback. → PLAN-ARCHIVE.md, "Moved 2026-08-12 (prune — completed bodies)."
 
 - [x] **Step S.2 — chart ergonomics: `stacked`, `horizontal`, histogram
-  hint** ✅ 2026-07-27 (with S.1, same sitting). Optional `stacked` +
-  `horizontal` booleans, bar-only, quiet no-ops on line/pie (and on a
-  single-series stack), composable with each other; the kind `.describe()`
-  now tells the agent to pre-bin distributions into labeled bar buckets.
-  Stacked: cumulative columns in palette-slot order, surface-stroke gaps
-  between segments, only the data end rounded, y-scale spans column TOTALS,
-  negatives dropped (no stacking geometry). Horizontal: bars rightward,
-  category labels whole down the left (the vertical axis clips at 12 chars —
-  the point), height grows with category count; the value-unit label moved
-  top-right after the screenshot pass caught it overlapping the last tick.
-  Old-client degradation pinned by test: a rebuilt "yesterday" tolerant
-  schema strips both flags to a plain grouped/vertical bar, and yesterday's
-  kind enum rejects `pie` whole into the fallback. Verified at desktop and
-  phone widths in headless Chrome.
-  - *(Original spec bullets → PLAN-ARCHIVE.md.)*
+  hint** ✅ 2026-07-27 — bar-only, quiet no-ops elsewhere, composable;
+  old-client degradation pinned by a rebuilt "yesterday" tolerant schema.
+  → PLAN-ARCHIVE.md, "Moved 2026-08-12 (prune — completed bodies)."
 
-- [x] **Security audit of the 2026-07-27 component work** ✅ same day, all
-  three approved fixes landed with pinned, mutation-tested regressions:
-  1. **Session replay buffer capped by BYTES** (`SESSION_BUFFER_MAX_BYTES`,
-     32 MB) beside the existing 4000-message count cap. The count cap
-     assumed text-only messages; `image` made one message worth megabytes
-     from a short path, with no permission prompt. Measured open: 40 renders
-     retained 96 MB, ~10 GB at the count ceiling. Re-probed closed: 200
-     renders now plateau at 32.9 MB. Full note in SECURITY.md.
-  2. **Workspace dir is a REQUIRED argument** on `makeRenderServer` and
-     `generativeUIMsg` — it jails the image read, and optional meant a
-     future adapter could skip containment by forgetting it.
-  3. **`mermaid` moved to devDependencies** — the runtime is inlined into
-     `dist/` at build time and nothing shipped loads it from `node_modules`
-     (verified), so it was costing every user 84 MB and 62 transitive
-     packages of install + supply-chain surface for zero runtime use.
-     Kyle's zero-passengers rule, applied.
-  Clean on everything else probed: image containment (symlink/traversal/
-  `.env`/wrong-bytes/oversize all refused, mutation-tested), every new
-  parser against pathological input (worst case 56 ms, no hangs, clamps
-  hold), the diagram sandbox, supply chain (0 advisories/248 pkgs, no
-  install scripts), and repo hygiene (no secrets in the session's commits).
+- [x] **Security audit of the 2026-07-27 component work** ✅ same day —
+  session replay buffer capped by BYTES (`SESSION_BUFFER_MAX_BYTES`,
+  32 MB) beside the count cap; workspace dir a REQUIRED argument on the
+  render seam (it jails the image read); `mermaid` moved to
+  devDependencies (inlined at build — the zero-passengers rule applied).
+  All pinned + mutation-tested; everything else probed clean. →
+  PLAN-ARCHIVE.md, "Moved 2026-08-12 (prune — completed bodies)."
 
-- [x] **Workflow-gap batch (Kyle-directed 2026-07-27, same branch): `console`,
-  `image`, `diagram`** ✅ — the three glaring terminal-agent workflow gaps
-  from the 2026-07-27 survey, each through the full seam, one commit apiece:
-  - **`console`** — quoted terminal output (build logs, failing tests, stack
-    traces): command header, exit badge, copy; a self-written SGR-subset
-    parser turns ANSI colors into class spans (16 fg colors on a pinned
-    palette, other escapes stripped; text rides React as text nodes).
-  - **`image`** — the visual-verification gap. Agent authors a WORKSPACE
-    PATH; the daemon inlines the bytes at the WireMsg synthesis point (all
-    three adapters; the stdio stub stays file-access-free). Explorer-grade
-    posture: `inside()` realpath containment (mutation-tested), secret
-    denial, 2 MB raw cap (sealed relay frame ≈1.8×, relay ceiling 8 MB;
-    replay ring is count-capped so per-image bytes are the bound), raster
-    magic-byte allowlist, NO svg. Client accepts `src` only as a
-    strict-shaped data:image/raster URI — anything else → raw-props
-    fallback. Refusals render their reason.
-  - **`diagram`** — mermaid (flowchart/sequence/state/class/ER), rendered in
-    the ARTIFACT-grade sandbox, never the shell origin: shell-supplied
-    runtime (securityLevel strict) inlined in an opaque-origin no-network
-    iframe; agent source arrives by postMessage only (no interpolation slot
-    — pinned by test); nonce-stamped ready/height/error channel. New dep
-    `mermaid` (^11, deep-spec verdict): ~3.6 MB lazy chunk, first diagram
-    only. Broken source shows the error beside the source.
-  **Deliberately NOT built: structured input beyond `question`** (multi-value
-  forms, editable commit messages). Free-text input inside agent-authored UI
-  collides with the trusted-shell rule that input surfaces are shell-owned —
-  it needs a design conversation with Kyle first, not a batch add.
+- [x] **Workflow-gap batch (Kyle-directed 2026-07-27): `console`,
+  `image`, `diagram`** ✅ — each through the full seam: ANSI-parsed
+  console output; daemon-inlined images (jailed, raster-only, 2 MB cap, NO
+  svg); mermaid in the ARTIFACT-grade sandbox, postMessage-only.
+  **Deliberately NOT built: structured input beyond `question`** —
+  free-text input inside agent-authored UI collides with the trusted-shell
+  rule that input surfaces are shell-owned; it needs a design conversation
+  with Kyle first, never a batch add. → PLAN-ARCHIVE.md, "Moved 2026-08-12 (prune — completed bodies)."
 
-- [x] **Step S.3 — `stat` registry component (KPI tile)** ✅ 2026-07-27
-  (Kyle-directed, on branch `claude/next-registry-components-lyrbrq`; built to
-  this spec exactly — `label`/`value`/optional `delta {value, direction,
-  good}`/optional `footer`, delta tone follows `good` never the raw direction,
-  the arrow glyph carries direction so state never rides on color alone,
-  proportional figures per the dataviz stat-tile contract). Done-when observed
-  in headless Chrome: the mock `kpi` turn renders the tile, an update-in-place
-  re-send on the same wire id moves the number (one tile, never a stack), and
-  it pins to the dock and back. **Same sitting, same seam, Kyle-directed —
-  two MORE registry components** (all three across both transports via
-  `RENDER_TOOL_COMPONENT`, display-only, no ACTION_TOOLS changes):
-  - **`code`** — display code that is NOT a change (the tool description
-    steers code-vs-diff explicitly): filename/lang header, copy button,
-    client-side tokenizing of plain text through the same
-    react-markdown + rehype-highlight pipeline as turn fences (hast → React,
-    never raw HTML; the fence always outruns any backtick run inside), and
-    optional 1-based highlight ranges clamped to the code's own length. Line
-    emphasis is PINNED-surface styling (neutral lift + code-fg bar) because
-    per-theme tints go pale under the pinned-dark code surface's light text —
-    caught by the both-themes screenshot pass.
-  - **`status-list`** — labeled rows with a pass/fail/warn/pending/skip
-    verdict pill (glyph + word, existing semantic tokens; a Tier-1 test pins
-    glyph↔enum so vocabulary drift fails loudly).
-  - *(Original spec bullets → PLAN-ARCHIVE.md.)*
+- [x] **Step S.3 — `stat` registry component (KPI tile)** ✅ 2026-07-27 —
+  plus `code` (display-only, copy button, clamped highlight ranges on the
+  pinned-dark code surface) and `status-list` (verdict pills, glyph↔enum
+  Tier-1-pinned) the same sitting, same seam, display-only. →
+  PLAN-ARCHIVE.md, "Moved 2026-08-12 (prune — completed bodies)."
 
 ---
 

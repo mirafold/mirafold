@@ -127,6 +127,13 @@ export function scrub(msg: string): string {
       .replace(/\bAIza[0-9A-Za-z_-]{35}\b/g, "[redacted-key]")
       // GitHub tokens (ghp_/gho_/ghu_/ghs_/ghr_)
       .replace(/\bgh[pousr]_[A-Za-z0-9]{20,}\b/g, "[redacted-key]")
+      // AWS access key ids (Bedrock — an engine Claude Code supports; the
+      // adapter passes process.env through, so a session echoing SigV4 or a
+      // key id into engine stderr must not land in the flight recorder —
+      // audit 2026-08-13).
+      .replace(/\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, "[redacted-key]")
+      // Google Vertex OAuth access tokens (ya29.…)
+      .replace(/\bya29\.[0-9A-Za-z_-]{20,}/g, "[redacted-key]")
   );
 }
 

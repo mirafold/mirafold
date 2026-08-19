@@ -4,10 +4,11 @@ import { cost, tokens } from "./StatusBar";
 
 // The settings card (S.4) — SHELL-OWNED UI, the one new chrome affordance of
 // Phase S (the pill is locked unchanged). Centered modal over the scrim,
-// same idiom as the pairing card. Two sections: Session (R.4l — the facts
+// same idiom as the pairing card. Three sections: Session (R.4l — the facts
 // the phone status bar no longer carries inline: folder, model, usage…;
 // details-on-demand is the phone's one path to them, so this section is
-// load-bearing there and merely redundant on desktop) and Theme.
+// load-bearing there and merely redundant on desktop), Theme, and
+// Notifications (Phase NF — prop-driven, Shell owns the logic).
 //
 // Vite-only module: the swatch chips read each theme's real colors by
 // importing the theme CSS as raw text (import.meta.glob), so a new theme's
@@ -71,11 +72,23 @@ function sessionRows(session?: SessionFacts): [label: string, value: string][] {
   return rows.filter((r): r is [string, string] => Boolean(r[1]));
 }
 
+/** Needs-you notifications (NF.2), prop-driven — Shell owns the preference,
+ *  the browser-permission dance, and the notifier; the card only shows the
+ *  switch. Absent = the Notification API doesn't exist here (iOS Safari
+ *  outside an installed PWA) and the section stays out entirely. */
+export type NotifyFacts = {
+  enabled: boolean;
+  /** The browser has notifications hard-denied for this site. */
+  blocked: boolean;
+  onToggle: () => void;
+};
+
 export function ThemePicker({
   slots,
   onPick,
   onClose,
   session,
+  notify,
 }: {
   /** The current slot choices — the checked row per group. */
   slots: Record<ThemeAppearance, string>;
@@ -83,6 +96,7 @@ export function ThemePicker({
   onPick: (id: string) => void;
   onClose: () => void;
   session?: SessionFacts;
+  notify?: NotifyFacts;
 }) {
   const rows = sessionRows(session);
 
@@ -149,6 +163,27 @@ export function ThemePicker({
           })}
         </div>
       ))}
+      {notify && (
+        <>
+          <div className="settings-section-title">Notifications</div>
+          <button
+            className="notify-row"
+            role="switch"
+            aria-checked={notify.enabled}
+            onClick={notify.onToggle}
+          >
+            <span className="notify-row-name">Notify me when a session needs me</span>
+            <span className="notify-row-state" aria-hidden="true">
+              {notify.enabled ? "on" : "off"}
+            </span>
+          </button>
+          {notify.blocked && (
+            <div className="notify-blocked">
+              Blocked in the browser — allow notifications for this site to use this.
+            </div>
+          )}
+        </>
+      )}
     </ModalCard>
   );
 }

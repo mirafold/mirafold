@@ -237,6 +237,12 @@ test("UX.8: strict checkpoint decoding accepts every persistable transcript fram
     { type: "artifact", html: "<p>safe</p>", id: "a1", title: "Artifact" },
     { type: "usage", model: "model", inputTokens: 2, outputTokens: 3, costUsd: 0.01 },
     { type: "thinking_delta", text: "hmm" },
+    // The subagent lane's parented variants (SA.2/SA.3): a reverted schema
+    // widening would silently strip a deck's replay — pinned here
+    // (test-audit 2026-08-14).
+    { type: "text_delta", text: "child narration", parentId: "t1" },
+    { type: "thinking_delta", text: "child reasoning", parentId: "t1" },
+    { type: "permission_request", tool: "bash", detail: "touch x", id: "p2", parentId: "t1" },
     { type: "notice", text: "retrying", kind: "retry", source: "codex" },
     { type: "bang_start", command: "echo ok", id: "b1" },
     { type: "bang_output", data: "ok\n", id: "b1" },
@@ -486,4 +492,39 @@ test("a failed durable delete leaves the live session and filesystem watcher int
   store.failDelete = false;
   assert.equal(registry.end(entry.id), true);
   assert.equal(stopped, true);
+});
+
+test("BUGFIX: OC.4c backend shapes survive a restart — decode accepts them all", () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "mirafold-session-store-oc-"));
+  const store = new SessionCheckpointStore(dir);
+  // The exact shapes snapshot() writes after the adapter publishes its
+  // classified kind — every one was "malformed checkpoint backend" before,
+  // so NO OpenCode session survived a daemon restart (bughunt round 2).
+  const backends = [
+    { agent: "opencode", kind: "api-key", live: true, provider: "deepseek", model: "deepseek/deepseek-v4" },
+    { agent: "opencode", kind: "gateway", live: true, provider: "opencode", model: "opencode/big-pickle" },
+    { agent: "opencode", kind: "subscription", live: true, provider: "openai" },
+    { agent: "opencode", kind: "local", live: true, provider: "ollama" },
+  ] as const;
+  backends.forEach((backend, at) => {
+    const stored = {
+      ...fixture(),
+      id: `oc-restart-${at}`,
+      backend: backend as unknown as ReturnType<typeof fixture>["backend"],
+      promptOptions: [
+        // Engine command rows carry source:"opencode" — the enum rejected it.
+        { trigger: "/", value: "/init", label: "init", kind: "command", source: "opencode" },
+      ] as ReturnType<typeof fixture>["promptOptions"],
+    };
+    store.write(stored);
+  });
+  const loaded = store.loadAll();
+  assert.equal(loaded.errors.size, 0, [...loaded.errors.values()].join("; "));
+  assert.equal(loaded.sessions.size, backends.length);
+  assert.equal(loaded.sessions.get("oc-restart-1")?.backend.kind, "gateway");
+  assert.equal(loaded.sessions.get("oc-restart-0")?.backend.provider, "deepseek");
+  // Non-opencode agents keep the old strictness: provider still needs local.
+  const bad = { ...fixture(), id: "codex-bad", backend: { agent: "codex", kind: "api-key", live: true, provider: "x" } as unknown as ReturnType<typeof fixture>["backend"] };
+  store.write(bad);
+  assert.ok(store.loadAll().errors.has("codex-bad"));
 });

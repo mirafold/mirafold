@@ -107,6 +107,59 @@ export function arcPath(
   );
 }
 
+/** Y domain over the DRAWN values. Bars anchor to zero — a bar's length IS
+ *  its value, so a cropped baseline would lie. Lines fit the data instead: a
+ *  latency series of 200–210 ms anchored to zero renders as a flat stripe at
+ *  the top of the plot, hiding the trend the chart exists to show. Pure, for
+ *  Tier-1. */
+/** The drawn-value scale every cartesian mark shares: values clipped to the
+ *  x axis (marks render one value per label, so extras must not stretch the
+ *  axis with invisible data — 2026-07-28), domained, snapped to nice ticks;
+ *  an all-equal domain widens by 1 so the axis never collapses. */
+function chartScale(
+  series: { values: number[] }[],
+  cols: { hi: number }[][] | null,
+  xLen: number,
+  zeroAnchor: boolean,
+): { ticks: number[]; min: number; max: number } {
+  const values = cols
+    ? cols.flatMap((col) => (col.length ? [col[col.length - 1].hi] : []))
+    : series.flatMap((s) => s.values.slice(0, xLen)).filter(Number.isFinite);
+  const [lo, hi] = chartDomain(values, zeroAnchor);
+  const ticks = niceTicks(lo, hi);
+  const min = ticks[0];
+  const max = ticks[ticks.length - 1] === min ? min + 1 : ticks[ticks.length - 1];
+  return { ticks, min, max };
+}
+
+export function chartDomain(values: number[], zeroAnchor: boolean): [number, number] {
+  if (values.length === 0) return [0, 0];
+  return zeroAnchor
+    ? [Math.min(0, ...values), Math.max(0, ...values)]
+    : [Math.min(...values), Math.max(...values)];
+}
+
+/** Which thinned x labels draw: every `stride`-th plus the forced last — but
+ *  a stride label lands only when it sits a full stride short of the last, so
+ *  the two never collide in adjacent bands. Pure, for Tier-1. */
+export function showXLabel(i: number, len: number, stride: number): boolean {
+  if (i === len - 1) return true;
+  return i % stride === 0 && len - 1 - i >= stride;
+}
+
+/** Grouped-bar geometry: bars plus gaps always fit the group's 72% band, so
+ *  a crowded chart thins its bars instead of bleeding into the neighboring
+ *  category (the old 2px bar floor with a fixed 2px gap overflowed the band
+ *  at high category×series counts). Pure, for Tier-1. */
+export function groupedBarLayout(
+  band: number,
+  seriesCount: number,
+): { groupW: number; barW: number; gap: number } {
+  const groupW = band * 0.72;
+  const gap = seriesCount > 1 ? Math.min(2, groupW / (4 * seriesCount)) : 0;
+  return { groupW, barW: Math.max(0.5, (groupW - gap * (seriesCount - 1)) / seriesCount), gap };
+}
+
 export type StackSeg = { si: number; v: number; lo: number; hi: number };
 
 /** Per-x cumulative spans for stacked bars, in series (palette-slot) order.
@@ -264,15 +317,7 @@ function HBarChart({ title, x, series, yLabel, stacked }: ComponentProps<"chart"
   const [hover, setHover] = useState<number | null>(null);
   const isStacked = stacked === true && series.length > 1;
   const cols = isStacked ? stackSegments(series, x.length) : null;
-  // Scale on what is DRAWN: every mark renderer clips values to x.length
-  // (one value per x label), so extra values must not stretch the axis with
-  // invisible data (2026-07-28 fix — stacked was already bounded via xLen).
-  const values = cols
-    ? cols.flatMap((col) => (col.length ? [col[col.length - 1].hi] : []))
-    : series.flatMap((s) => s.values.slice(0, x.length)).filter(Number.isFinite);
-  const tks = niceTicks(Math.min(0, ...values), Math.max(0, ...values));
-  const vMin = tks[0];
-  const vMax = tks[tks.length - 1] === vMin ? vMin + 1 : tks[tks.length - 1];
+  const { ticks: tks, min: vMin, max: vMax } = chartScale(series, cols, x.length, true);
 
   // The left band is the point of horizontal: category labels render whole.
   const labelW = Math.min(
@@ -415,18 +460,7 @@ function VChart({ title, kind, x, series, yLabel, stacked }: ComponentProps<"cha
   // series. A single series has nothing to stack; the flag is a quiet no-op.
   const isStacked = kind === "bar" && stacked === true && series.length > 1;
   const cols = isStacked ? stackSegments(series, x.length) : null;
-  // Same domain rule as HBarChart, including the empty-column [] (an empty
-  // stack contributes nothing; the Math.min/max 0-anchors cover it — the [0]
-  // this once carried was copy-paste drift). Scale on what is DRAWN: marks
-  // clip values to x.length, so extras must not stretch the axis (2026-07-28).
-  const values = cols
-    ? cols.flatMap((col) => (col.length ? [col[col.length - 1].hi] : []))
-    : series.flatMap((s) => s.values.slice(0, x.length)).filter(Number.isFinite);
-  const dataMin = Math.min(0, ...values);
-  const dataMax = Math.max(0, ...values);
-  const tks = niceTicks(dataMin, dataMax);
-  const yMin = tks[0];
-  const yMax = tks[tks.length - 1] === yMin ? yMin + 1 : tks[tks.length - 1];
+  const { ticks: tks, min: yMin, max: yMax } = chartScale(series, cols, x.length, kind !== "line");
 
   const padRight = kind === "line" && series.length >= 2 ? PAD.right : 16;
   const iw = W - PAD.left - padRight;
@@ -459,8 +493,7 @@ function VChart({ title, kind, x, series, yLabel, stacked }: ComponentProps<"cha
       : [];
 
   const band = iw / x.length;
-  const groupW = band * 0.72;
-  const barW = Math.max(2, (groupW - 2 * (series.length - 1)) / series.length);
+  const { groupW, barW, gap: barGap } = groupedBarLayout(band, series.length);
 
   return (
     <div className="rc rc-chart">
@@ -484,7 +517,7 @@ function VChart({ title, kind, x, series, yLabel, stacked }: ComponentProps<"cha
           )}
           {/* x labels, thinned */}
           {x.map((label, i) =>
-            i % labelStride === 0 || i === x.length - 1 ? (
+            showXLabel(i, x.length, labelStride) ? (
               <text key={i} x={xPos(i)} y={H - 8} textAnchor="middle" fontSize="10.5" style={INK_MUTED}>
                 {elide(label, 12)}
               </text>
@@ -499,7 +532,7 @@ function VChart({ title, kind, x, series, yLabel, stacked }: ComponentProps<"cha
                   <path
                     key={`${si}-${i}`}
                     d={barPath(
-                      PAD.left + i * band + (band - groupW) / 2 + si * (barW + 2),
+                      PAD.left + i * band + (band - groupW) / 2 + si * (barW + barGap),
                       yPos(v),
                       barW,
                       yPos(Math.max(yMin, Math.min(0, yMax))),
@@ -566,6 +599,24 @@ function VChart({ title, kind, x, series, yLabel, stacked }: ComponentProps<"cha
                   strokeLinecap="round"
                 />
               ))}
+              {/* ≤2 points: a polyline is invisible (one point) or a bare
+                  segment — always-on dots make the data visible pre-hover */}
+              {x.length <= 2 &&
+                series.map((s, si) =>
+                  s.values.slice(0, x.length).map((v, i) =>
+                    Number.isFinite(v) ? (
+                      <circle
+                        key={`${si}-${i}`}
+                        cx={xPos(i)}
+                        cy={yPos(v)}
+                        r="3.5"
+                        fill={seriesColor(si)}
+                        style={SURFACE}
+                        strokeWidth="2"
+                      />
+                    ) : null,
+                  ),
+                )}
               {/* hover markers: ≥8px, ringed with the surface color */}
               {hover !== null &&
                 series.map((s, si) =>

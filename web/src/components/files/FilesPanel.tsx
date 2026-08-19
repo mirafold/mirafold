@@ -8,13 +8,18 @@ import {
   childDirPaths,
   emptyDirStore,
   pruneDirStore,
+  rootNameOf,
   type DirStore,
 } from "../../files-tree";
 import { useEscapeKey } from "../../use-escape";
 import { useFocusTrap } from "../../use-focus-trap";
 import { useIsPhone } from "../../use-is-phone";
-import { FileView, fileToState, diffToState, type FileViewState } from "./FileView";
+import { FileView } from "./FileView";
 import { ExplorerChevron, ExplorerNodeGlyph } from "./ExplorerNodeGlyph";
+import { DirChildren } from "./FilesTreeRows";
+import { RefreshIcon } from "../RefreshIcon";
+import { WorkspaceTabs, type WorkspaceSurface } from "../WorkspaceTabs";
+import { useFileView } from "./use-file-view";
 
 // The Explorer's shell-owned panel (E.3 desktop, E.4 phone; lazy since
 // E2.2): a read-only browser of the session's working tree, built
@@ -36,25 +41,6 @@ import { ExplorerChevron, ExplorerNodeGlyph } from "./ExplorerNodeGlyph";
 
 type FsDir = Extract<WireMsg, { type: "fs_dir" }>;
 
-/** Accept a reply only when it answers the request we're currently awaiting —
- *  a superseded click or a since-switched session mints a new id, so its late
- *  reply is dropped, never rendered (E.3). Pure, for Tier-1. */
-export const isCurrentReply = (awaited: string | null, replyId: string): boolean =>
-  awaited !== null && awaited === replyId;
-
-/** The root row shows just the checked-out folder's NAME; the full ~-path
- *  stays in its tooltip. Pure, for Tier-1. */
-export const rootNameOf = (rootLabel?: string): string => {
-  if (!rootLabel) return "files";
-  const windowsStyle =
-    /^[A-Za-z]:[\\/]/.test(rootLabel) || rootLabel.startsWith("\\\\") || rootLabel.startsWith("~\\");
-  const trimmed = windowsStyle
-    ? rootLabel.replace(/[\\/]+$/, "")
-    : rootLabel.replace(/\/+$/, "");
-  if (!trimmed || /^[A-Za-z]:$/.test(trimmed)) return rootLabel;
-  return trimmed.split(windowsStyle ? /[\\/]/ : /\//).pop() || rootLabel;
-};
-
 // The open-panel prefetch fetches the root's child dirs so their first
 // expand is instant — capped under the server's token bucket (default 32/s)
 // so a many-repo Projects root can't drain it and starve the expand the
@@ -74,6 +60,7 @@ export function FilesPanel({
   requestRead,
   requestDiff,
   onClose,
+  onSwitch,
   rootLabel,
   sessionKey,
 }: {
@@ -83,6 +70,9 @@ export function FilesPanel({
   requestRead: (path: string) => string;
   requestDiff: (path: string) => string;
   onClose: () => void;
+  /** Phone drawer view switch (Files ⇄ Changes); rendered in the head on
+   *  ≤640px only — desktop's rail owns the choice there. */
+  onSwitch?: (surface: WorkspaceSurface) => void;
   /** ~-abbreviated session root — its basename names the tree's root row,
    *  the full path lives in that row's tooltip. */
   rootLabel?: string;
@@ -92,9 +82,8 @@ export function FilesPanel({
   const [store, setStore] = useState<DirStore>(emptyDirStore());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [rootOpen, setRootOpen] = useState(true);
-  const [selected, setSelected] = useState<{ path: string; status?: string } | null>(null);
-  const [mode, setMode] = useState<"content" | "diff">("content");
-  const [view, setView] = useState<FileViewState>({ kind: "empty" });
+  const file = useFileView({ subscribe, requestRead, requestDiff, scopeKey: sessionKey });
+  const { selected, mode, view, openFile } = file;
   // E.6: the deliberate desktop enlarge — the file box lifted out of the
   // narrow column into a near-full-screen lightbox over the dimmed
   // workspace. User-initiated only (the ⤢ button); every path that closes
@@ -105,16 +94,21 @@ export function FilesPanel({
   // behind every close path (back button, phone Esc drill-back, session
   // switch, panel open). Setters only, so any render's copy is current.
   const closeFile = () => {
-    setSelected(null);
+    file.close();
+    setMaximized(false);
+  };
+
+  const resetFile = () => {
+    file.reset();
     setMaximized(false);
   };
 
   // Correlation ids: one outstanding fs_listdir PER DIRECTORY (the E.3-era
   // single listId ref is gone — the lazy tree legitimately has several
-  // fetches in flight), one for the file view. A reply whose id doesn't
-  // match its directory's current id is stale and is ignored.
+  // fetches in flight). The extracted file controller owns its one correlated
+  // request independently. A directory reply whose id doesn't match its
+  // directory's current id is stale and is ignored.
   const dirReqIds = useRef<Map<string, string>>(new Map());
-  const fileId = useRef<string | null>(null);
   // When true, the next root reply fans out the first-level prefetch —
   // armed by opening (and session switch), not by turn-end refreshes.
   const prefetchArmed = useRef(false);
@@ -216,12 +210,6 @@ export function FilesPanel({
               }
             }
           }
-        } else if (m.type === "fs_file") {
-          if (!isCurrentReply(fileId.current, m.id)) return;
-          setView(fileToState(m));
-        } else if (m.type === "fs_file_diff") {
-          if (!isCurrentReply(fileId.current, m.id)) return;
-          setView(diffToState(m));
         } else if (m.type === "turn_end" && openRef.current) {
           // E.5: the agent likely just touched files — refetch the root and
           // the EXPANDED dirs only (the lazy refresh unit), pruning stale
@@ -234,8 +222,9 @@ export function FilesPanel({
         } else if (m.type === "fs_changed") {
           // W.2: disk changed behind the UI — same refresh unit as turn-end
           // (root + expanded; a new file in a collapsed, unfetched dir
-          // rightly causes no fetch), coalesced through the gap above. The
-          // hint isn't consulted: doorbell contract, refetch what you show.
+          // rightly causes no fetch), coalesced through the gap above. A
+          // status-ready signal uses the same refresh without claiming a disk
+          // mutation. The watcher hint isn't consulted: refetch what you show.
           onBell();
         }
       }),
@@ -255,8 +244,7 @@ export function FilesPanel({
   // dirs included. (Kept separate from the open effect below so expanded state
   // SURVIVES a close/reopen within one session — E.5.)
   useEffect(() => {
-    closeFile();
-    setView({ kind: "empty" });
+    setMaximized(false);
     // The ref mirror is cleared alongside the state: the open effect below
     // runs in the same commit and reads expandedRef — it must not refetch
     // the OLD session's expanded dirs against the new root.
@@ -274,8 +262,7 @@ export function FilesPanel({
   // expanded dirs intact across a close/reopen.
   useEffect(() => {
     if (!open || !sessionKey) return;
-    closeFile();
-    setView({ kind: "empty" });
+    resetFile();
     refreshRef.current(true);
   }, [open, sessionKey, requestListdir]);
 
@@ -284,13 +271,6 @@ export function FilesPanel({
   const refresh = () => {
     refreshTree(true);
     if (selected) openFile(selected.path, selected.status, mode);
-  };
-
-  const openFile = (path: string, status: string | undefined, m: "content" | "diff") => {
-    setSelected({ path, status });
-    setMode(m);
-    setView({ kind: "loading", path });
-    fileId.current = m === "diff" ? requestDiff(path) : requestRead(path);
   };
 
   const toggleDir = (path: string) => {
@@ -325,8 +305,26 @@ export function FilesPanel({
           over it, so back reveals the tree at its prior scroll (E.4). */}
       <div className="files-main">
         <div className="files-tree">
+          {/* Phone head: back chevron LEADING (top-left, thumb-reachable —
+              the same exit Changes has; a top-right × was the odd one out,
+              2026-08-18 Kyle), then the drawer's Files/Changes switch in the
+              title's place. Desktop keeps the plain title, no close. */}
           <header className="files-panel-head">
-            <h2 className="files-panel-title">Files</h2>
+            {phone && (
+              <button
+                className="files-panel-action files-panel-back"
+                onClick={onClose}
+                title="Back to conversation"
+                aria-label="Back to conversation"
+              >
+                ‹
+              </button>
+            )}
+            {phone && onSwitch ? (
+              <WorkspaceTabs active="files" onSwitch={onSwitch} />
+            ) : (
+              <h2 className="files-panel-title">Files</h2>
+            )}
             <div className="files-panel-actions">
               <button
                 className="files-panel-action files-refresh"
@@ -334,18 +332,8 @@ export function FilesPanel({
                 title="Refresh"
                 aria-label="Refresh files"
               >
-                <ExplorerRefreshIcon />
+                <RefreshIcon className="files-action-icon" />
               </button>
-              {phone && (
-                <button
-                  className="files-panel-action"
-                  onClick={onClose}
-                  title="Close files"
-                  aria-label="Close files"
-                >
-                  <ExplorerCloseIcon />
-                </button>
-              )}
             </div>
           </header>
           {/* The session's checked-out root leads the tree as its top node
@@ -441,7 +429,7 @@ export function FilesPanel({
                 )}
               </div>
               {/* tabIndex + a named region because this div SCROLLS
-                  (styles.css `.files-view { overflow: auto }`): without a tab
+                  (02-explorer.css `.files-view { overflow: auto }`): without a tab
                   stop, a keyboard-only user could open a file or a diff and
                   never scroll it — axe `scrollable-region-focusable`, serious,
                   found 2026-07-30 when the sweep was extended to the enlarged
@@ -477,134 +465,5 @@ export function FilesPanel({
   );
 }
 
-function ExplorerRefreshIcon() {
-  return (
-    <svg className="files-action-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-      <path d="M13.4 7A5.5 5.5 0 1 0 13 10.2" />
-      <path d="M10.1 3.8h3.3V.5" />
-    </svg>
-  );
-}
 
-function ExplorerCloseIcon() {
-  return (
-    <svg className="files-action-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-      <path d="m4 4 8 8M12 4l-8 8" />
-    </svg>
-  );
-}
 
-/** Quiet vertical hierarchy guides, like the optional guides in established
- * IDE project trees. The width keeps the established 12px-per-depth rhythm;
- * the lazy tree's data and interaction model do not know about them. */
-function ExplorerIndent({ depth }: { depth: number }) {
-  return (
-    <span
-      className="files-indent-guides"
-      style={{ width: `${depth * 12}px` }}
-      aria-hidden="true"
-    />
-  );
-}
-
-// One directory's children, rendered from the store — recursion IS the tree
-// (E2.2): an expanded child dir renders its own DirChildren, which shows a
-// loading row until its fs_dir lands, then its listing. The wire stays
-// non-recursive; nesting exists only here.
-function DirChildren({
-  path,
-  depth,
-  store,
-  expanded,
-  onToggleDir,
-  onOpenFile,
-}: {
-  path: string;
-  depth: number;
-  store: DirStore;
-  expanded: Set<string>;
-  onToggleDir: (path: string) => void;
-  onOpenFile: (path: string, status?: string) => void;
-}) {
-  const st = store.get(path);
-  const pad = { paddingLeft: `${depth * 12 + 6}px` };
-  if (!st?.entries) {
-    // Nothing usable yet: an inline loading row while the fetch flies, an
-    // error row if it refused. Non-interactive rows are aria-disabled
-    // treeitems — still part of the tree for the reading order.
-    if (!st) return null;
-    return (
-      <ul className="files-ul" role="group">
-        <li role="treeitem" aria-disabled="true" className="files-note-row" style={pad}>
-          {st.loading ? "…" : (st.error ?? "…")}
-        </li>
-      </ul>
-    );
-  }
-  return (
-    <ul className="files-ul" role="group">
-      {st.entries.length === 0 && (
-        <li role="treeitem" aria-disabled="true" className="files-note-row" style={pad}>
-          (empty)
-        </li>
-      )}
-      {st.entries.map((e) => {
-        const p = path ? `${path}/${e.name}` : e.name;
-        if (e.kind === "dir") {
-          const isOpen = expanded.has(p);
-          return (
-            <li key={e.name} role="treeitem" aria-expanded={isOpen}>
-              <button className="files-row files-dir" onClick={() => onToggleDir(p)}>
-                <ExplorerIndent depth={depth} />
-                <span className="files-caret">
-                  <ExplorerChevron open={isOpen} />
-                </span>
-                <ExplorerNodeGlyph name={e.name} entryKind="dir" open={isOpen} />
-                <span className="files-name">{e.name}</span>
-              </button>
-              {isOpen && (
-                <DirChildren
-                  path={p}
-                  depth={depth + 1}
-                  store={store}
-                  expanded={expanded}
-                  onToggleDir={onToggleDir}
-                  onOpenFile={onOpenFile}
-                />
-              )}
-            </li>
-          );
-        }
-        // Files and symlinks are both leaves (E2.1's kind rule); a symlink
-        // click goes through fs_read like any file — the daemon's jail
-        // decides whether its target is readable.
-        return (
-          <li key={e.name} role="treeitem">
-            <button
-              className="files-row files-file-row"
-              onClick={() => onOpenFile(p, e.status)}
-            >
-              <ExplorerIndent depth={depth} />
-              <span className="files-caret" />
-              <ExplorerNodeGlyph name={e.name} entryKind={e.kind} />
-              <span className="files-name">{e.name}</span>
-              {e.status && (
-                <span className={`files-status files-status-${e.status}`} title={statusLabel(e.status)}>
-                  {e.status}
-                </span>
-              )}
-            </button>
-          </li>
-        );
-      })}
-      {st.truncated && (
-        <li role="treeitem" aria-disabled="true" className="files-note-row" style={pad}>
-          …more entries than can be listed
-        </li>
-      )}
-    </ul>
-  );
-}
-
-const statusLabel = (s: string) =>
-  ({ M: "modified", A: "added", D: "deleted", U: "untracked" })[s] ?? s;

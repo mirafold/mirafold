@@ -1,4 +1,5 @@
 import path from "node:path";
+import { existsSync } from "node:fs";
 import type { AgentName, PromptOption, WireMsg } from "../protocol";
 import type { CredentialKind } from "../provider-policy";
 import { locateTrustedExecutable } from "../security/executable-trust";
@@ -6,25 +7,35 @@ import { locateTrustedExecutable } from "../security/executable-trust";
 export type { AgentName } from "../protocol";
 import { envInt } from "../env";
 
-/** Resolve an agent executable that is actually installed outside an SDK.
- *  The env override is explicit operator intent, so return it even when it is
- *  a bare name or currently missing (the eventual spawn then fails honestly).
- *  Otherwise mirror normal command lookup: beside node first (global npm/nvm
- *  installs), then filtered PATH. Project files, relative entries, and npm's
- *  injected node_modules bins are never agent identity. `undefined` lets an
- *  SDK retain its bundled fallback. */
+/** Resolve an agent executable that is actually INSTALLED outside an SDK —
+ *  the detection question ("show this agent as ready?"). An env override is
+ *  explicit operator intent, but an override pointing at a missing file is
+ *  not an installation: advertising "ready" for it would sell a first turn
+ *  that can only ENOENT (revised 2026-08-13, Gemini-sunset sitting — it is
+ *  also how the test harnesses force OpenCode absent on machines that have
+ *  it installed for real). A bare-name override can't be stat'ed and stays
+ *  trusted as-is. Without an override: normal command lookup — beside node
+ *  first (global npm/nvm installs), then filtered PATH. Project files,
+ *  relative entries, and npm's injected node_modules bins are never agent
+ *  identity. `undefined` lets an SDK retain its bundled fallback. */
 export function installedAgentBin(envVar: string, name: string): string | undefined {
   const override = process.env[envVar];
-  if (override) return override;
+  if (override) {
+    if (!path.isAbsolute(override)) return override;
+    return existsSync(override) ? override : undefined;
+  }
   return locateTrustedExecutable(name, {
     directories: [path.dirname(process.execPath)],
   });
 }
 
-/** Resolve which `name`d agent binary to spawn. Non-SDK adapters need a
- *  command even when lookup misses so their first turn can surface ENOENT. */
+/** Resolve which `name`d agent binary to SPAWN. Distinct from detection: the
+ *  operator's explicit override is honored verbatim even when missing, and
+ *  non-SDK adapters need a command even when lookup misses — either way the
+ *  first turn surfaces ENOENT honestly instead of silently running something
+ *  the operator didn't name. */
 export function agentBin(envVar: string, name: string): string {
-  return installedAgentBin(envVar, name) ?? name;
+  return process.env[envVar] || installedAgentBin(envVar, name) || name;
 }
 
 /** The human-readable message of an unknown catch value. */
@@ -61,6 +72,20 @@ export interface AgentSession {
    * identity at the readiness boundary instead of guessing from a later
    * unrelated wire event. */
   onResumeId?(cb: (id: string) => void): void;
+  /** OC.4c: an adapter whose hello-time credential kind is OPTIMISTIC
+   * (OpenCode — the provider-resolved truth needs the running engine)
+   * publishes the classified kind here at session start. The registry
+   * updates its entry so the relay gate judges truth; until the first
+   * publish such entries are `kindPending` and refuse remote actions. */
+  onBackendKind?(cb: (update: { kind: CredentialKind; provider?: string }) => void): void;
+  /** Phase RC: classify the backend kind NOW instead of at the first turn —
+   * resolves once the truthful kind has been published via `onBackendKind`,
+   * rejects with the honest user-facing reason when it cannot be (no engine
+   * binary, no pin, provider not connected, policy refusal). Only adapters
+   * whose hello-time kind is optimistic (OpenCode) implement this; the
+   * create path uses it so a remote viewport can create a session without
+   * losing the classification race (classify-before-create). */
+  verifyBackendKind?(): Promise<void>;
   /** Re-read and emit the provider's pre-submit command/skill catalog. */
   refreshPromptOptions?(): void;
   close(): void;
@@ -144,6 +169,61 @@ export function capOutput(text: string): { text: string; truncatedBytes?: number
   // Decode a byte-bounded slice; a trailing partial char becomes U+FFFD.
   const kept = new TextDecoder().decode(Buffer.from(text, "utf8").subarray(0, OUTPUT_CAP_BYTES));
   return { text: kept, truncatedBytes: total - OUTPUT_CAP_BYTES };
+}
+
+// SA.2: per-subagent narration budget — bounds what any ONE subagent's prose
+// (text + thinking) can add to the wire, the replay ring, and relay bytes.
+// Byte-based like the tool cap, honest like it too: exhaustion emits one
+// explicit marker, never a silent cut. Agent-neutral, shared by every
+// adapter that forwards a subagent lane.
+const SUBAGENT_TEXT_CAP_BYTES = envInt("SUBAGENT_TEXT_CAP_BYTES", 64_000);
+// Ceiling on DISTINCT subagents tracked per turn — flood insurance in the
+// part-cap spirit (audit 2026-08-14): a hostile/looping engine fabricating
+// unlimited parent ids must not grow the ledger without bound. A real turn
+// spawns a handful; past the cap a NEW subagent's prose is dropped silently,
+// exactly how the other per-turn caps degrade.
+const MAX_SUBAGENTS_PER_TURN = 2_000;
+
+export const SUBAGENT_PROSE_ELIDED = (cap: number) =>
+  `\n(… subagent narration cap reached (${cap} bytes) — further prose elided …)`;
+
+export class SubagentProseBudget {
+  private used = new Map<string, number>();
+  private capped = new Set<string>();
+  constructor(
+    private readonly cap = SUBAGENT_TEXT_CAP_BYTES,
+    private readonly maxParents = MAX_SUBAGENTS_PER_TURN,
+  ) {}
+
+  /** The text to emit for this chunk: the chunk itself while the subagent's
+   *  budget holds, a byte-bounded head plus the one elision marker at
+   *  exhaustion, and "" (emit nothing) thereafter. */
+  take(parentId: string, text: string): string {
+    if (this.capped.has(parentId)) return "";
+    let used = this.used.get(parentId);
+    if (used === undefined) {
+      if (this.used.size >= this.maxParents) return "";
+      used = 0;
+    }
+    const bytes = Buffer.byteLength(text, "utf8");
+    if (used + bytes <= this.cap) {
+      this.used.set(parentId, used + bytes);
+      return text;
+    }
+    this.capped.add(parentId);
+    // Decode a byte-bounded slice; a trailing partial char becomes U+FFFD
+    // (same approach as capOutput above).
+    const kept = new TextDecoder().decode(
+      Buffer.from(text, "utf8").subarray(0, Math.max(0, this.cap - used)),
+    );
+    return kept + SUBAGENT_PROSE_ELIDED(this.cap);
+  }
+
+  /** Turn boundary: spawns don't outlive their turn, so the ledger resets. */
+  clear() {
+    this.used.clear();
+    this.capped.clear();
+  }
 }
 
 /** One entry of the live checklist component (T2.5); adapter-neutral shape. */

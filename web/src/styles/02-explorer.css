@@ -1,0 +1,559 @@
+/* ── Explorer files panel (E.3) ────────────────────────────────────────── */
+
+/* The activity bar — the workbench's permanent left edge (VS Code
+   convention): a thin strip whose files icon opens/collapses the panel.
+   Always present, so the affordance never moves. */
+.activity-bar {
+  flex-shrink: 0;
+  width: 39px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28px;
+  padding-top: 20px; /* aligns the toggle with the Explorer title bar */
+  border-right: 1px solid var(--border);
+}
+
+/* Nearly the strip's width — a hairline of air on each side; the icon
+   inside is ~3/4 of the strip. */
+.ab-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0; /* the UA's default button padding squeezes the svg otherwise */
+  background: transparent;
+  border: none;
+  border-radius: 7px;
+  color: var(--fg-dim);
+  cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+
+.ab-btn:hover:not(:disabled) {
+  color: var(--fg-body);
+  background: var(--surface);
+}
+
+.ab-btn.is-active {
+  color: var(--fg-body);
+  background: var(--surface);
+}
+
+.ab-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.files-panel {
+  flex-shrink: 0;
+  /* Cancel the transcript's air completely: rail + Explorer are one stable
+     workbench unit, while the transcript and prompt retain their gutter. */
+  margin-left: calc(-1 * var(--content-air));
+  /* A professional project tree does not resize as folders are expanded.
+     Keep a useful, responsive dock width and ellipsize exceptional names. */
+  width: clamp(244px, 20vw, 292px);
+  max-width: 42vw;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border-right: 1px solid var(--border);
+  box-shadow: inset -1px 0 0 var(--border-ghost);
+  overflow: hidden;
+  animation: files-in 0.18s ease-out;
+}
+
+@keyframes files-in {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+}
+
+/* A proper tool-window header separates the Explorer itself from the checked-
+   out workspace root. It echoes the pin dock's compact uppercase title and
+   moves refresh out of the tree's bottom corner into predictable chrome. */
+.files-panel-head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  height: 56px;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 16px 8px 8px 12px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.files-panel-title {
+  margin: 0;
+  min-width: 0;
+  padding-bottom: 5px;
+  color: var(--fg-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.72em;
+  font-weight: 650;
+  letter-spacing: 0.11em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.files-panel-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.files-panel-action {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: var(--fg-dim);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color 0.12s ease, background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.files-panel-action:hover {
+  color: var(--fg-body);
+  background: var(--surface-hover);
+  border-color: var(--border-2);
+}
+
+.files-action-icon {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* The tree's root row — the session's checked-out directory. Sticky, so the
+   workspace identity survives a deep scroll beneath the title bar. */
+.files-root {
+  position: sticky;
+  top: 56px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  padding: 5px 6px;
+  background: var(--bg-inset);
+  border-bottom: 1px solid var(--border-faint);
+}
+
+.files-root-row {
+  flex: 1;
+  min-width: 0;
+}
+
+.files-root-row .files-name {
+  font-weight: 600;
+  color: var(--fg-strong);
+  letter-spacing: 0.01em;
+}
+
+.files-back,
+.files-btn {
+  background: transparent;
+  color: var(--fg-dim);
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  padding: 2px 8px;
+  cursor: pointer;
+  font-size: 0.82em;
+}
+
+.files-back:hover,
+.files-btn:hover {
+  color: var(--fg-body);
+  border-color: var(--border-hover);
+}
+
+/* Tree + file view share this box; the file view overlays the tree (below)
+   so back reveals the tree at its prior scroll. */
+.files-main {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.files-tree {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 0 16px;
+  background: var(--bg-inset);
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hover) transparent;
+}
+
+.files-ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.files-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 29px;
+  padding: 5px 7px 5px 6px;
+  background: transparent;
+  border: none;
+  color: var(--fg-body);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82em;
+  line-height: 1.2;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 5px;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.files-ul .files-row {
+  width: calc(100% - 12px);
+  margin: 1px 6px;
+}
+
+.files-row:hover {
+  background: var(--surface-hover);
+}
+
+.files-row:active {
+  background: var(--surface-2);
+}
+
+.files-caret {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 12px;
+  height: 14px;
+  color: var(--fg-dim);
+}
+
+.files-chevron {
+  display: block;
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.35;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transform-origin: center;
+  transition: transform 0.12s ease;
+}
+
+.files-chevron.is-open {
+  transform: rotate(90deg);
+}
+
+.files-indent-guides {
+  align-self: stretch;
+  flex-shrink: 0;
+  background: repeating-linear-gradient(
+    to right,
+    transparent 0,
+    transparent 11px,
+    var(--border-ghost) 11px,
+    var(--border-ghost) 12px
+  );
+}
+
+.files-name {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.files-dir .files-name {
+  color: var(--fg-body);
+  font-weight: 550;
+}
+
+.files-file-row .files-name {
+  color: var(--fg-mid);
+}
+
+.files-node-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  opacity: 0.82;
+  transition: opacity 0.12s ease, color 0.12s ease;
+}
+
+.files-root-row .files-node-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.files-row:hover .files-node-icon {
+  opacity: 1;
+}
+
+.files-node-icon-folder,
+.files-node-icon-folder-open {
+  color: var(--info);
+}
+
+.files-node-icon-code,
+.files-node-icon-image {
+  color: var(--accent);
+}
+
+.files-node-icon-config {
+  color: var(--warn-fg);
+}
+
+.files-node-icon-style {
+  color: var(--info);
+}
+
+.files-node-icon-document {
+  color: var(--fg-mid);
+}
+
+.files-node-icon-file,
+.files-node-icon-symlink {
+  color: var(--fg-dimmer);
+}
+
+.files-status {
+  margin-left: auto;
+  flex-shrink: 0;
+  min-width: 16px;
+  padding: 0 2px;
+  font-size: 0.78em;
+  font-weight: 650;
+  line-height: 1;
+  text-align: center;
+}
+
+.files-status-M {
+  color: var(--accent);
+}
+.files-status-A {
+  color: var(--ok, var(--accent));
+}
+.files-status-D {
+  color: var(--danger, var(--fg-dim));
+}
+.files-status-U {
+  color: var(--fg-dim);
+}
+
+.files-empty {
+  padding: 12px 10px;
+  color: var(--fg-dim);
+  font-size: 0.85em;
+}
+
+.files-error {
+  color: var(--danger, var(--fg-dim));
+}
+
+.files-truncated {
+  font-style: italic;
+}
+
+/* Non-interactive in-tree rows (E2.2): a dir's loading "…", "(empty)", an
+   error, or the per-dir truncation note — dim, italic, indented like a row. */
+.files-note-row {
+  padding: 3px 10px;
+  color: var(--fg-dim);
+  font-size: 0.85em;
+  font-style: italic;
+  list-style: none;
+}
+
+/* Laid over the still-mounted tree (opaque), so it fully covers it on desktop
+   and phone alike; back just unmounts this layer. */
+.files-file {
+  position: absolute;
+  inset: 0;
+  /* Above both sticky tree strips (workspace z2, title bar z3), or their
+     chrome covers the file path and steals the back button's clicks. */
+  z-index: 4;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+}
+
+/* E.6: the deliberate desktop enlarge. The ⤢ button lifts the SAME box into
+   a fixed near-full-screen frame over the dimmed workspace — a lightbox, so
+   the transcript never reflows and is visibly still there behind the dim.
+   Same z band as the phone drill-in layer: above the transcript and status
+   bar, below the 60 modals (a permission card must never be buried). */
+.files-dim {
+  position: fixed;
+  inset: 0;
+  z-index: 54;
+  background: rgba(0, 0, 0, 0.55);
+  animation: files-dim-in 0.12s ease-out;
+}
+
+@keyframes files-dim-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.files-file.is-maximized {
+  position: fixed;
+  /* The rim: enough dimmed workspace to read as a layer. Each axis steps in
+     by 5% of the viewport per edge on top of the base rim (~10% smaller
+     than edge-flush overall); the vertical split is deliberately uneven —
+     same box height, sat 1.5vh above center (Kyle, 2026-07-28). */
+  inset: calc(24px + 3.5vh) calc(36px + 5vw) calc(24px + 6.5vh);
+  z-index: 55;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-pop);
+  overflow: hidden; /* the rounded corners clip the scrolling view */
+  animation: files-pop-in 0.12s ease-out;
+}
+
+@keyframes files-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+}
+
+/* The wide frame earns a bigger read: the 0.8em content and 0.82em header
+   chrome are density choices for the narrow column; the enlarged frame
+   relaxes them all. */
+.files-file.is-maximized .fv-content {
+  font-size: 1em;
+}
+
+.files-file.is-maximized .files-back {
+  font-size: 0.95em;
+}
+
+/* Enlarged, the bar reads as a TITLE bar: the name anchors to the bar's
+   true center — absolutely positioned, so the uneven flanks (narrow ‹,
+   wide tabs, tabs absent on clean files) can never tug it off-center or
+   make it shift between files. Ellipsis still trims long paths; the 60%
+   cap keeps them clear of both flanks. */
+.files-file.is-maximized .files-file-path {
+  position: relative;
+}
+
+.files-file.is-maximized .files-file-name {
+  font-size: 0.95em;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  max-width: 60%;
+}
+
+/* Floats in the file box's bottom-right corner (the refresh idiom, opposite
+   corner); the surface background keeps it legible over scrolling content. */
+.files-enlarge {
+  position: absolute;
+  right: 8px;
+  bottom: 10px;
+  z-index: 1;
+  padding: 4px 9px;
+  background: var(--surface);
+}
+
+.files-file-path {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.files-file-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82em;
+  color: var(--fg-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.files-file-tabs {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.files-tab {
+  background: transparent;
+  color: var(--fg-dim);
+  border: 1px solid var(--border-2);
+  border-radius: 5px;
+  padding: 1px 8px;
+  cursor: pointer;
+  font-size: 0.8em;
+}
+
+.files-tab.is-active {
+  color: var(--fg-body);
+  border-color: var(--border-hover);
+  background: var(--surface);
+}
+
+.files-view {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 8px 14px;
+}
+
+/* The tool-code look minus the transcript's 360px height cap: in every
+   frame (docked, phone, enlarged) the file fills the panel and .files-view
+   is the ONE scroller — while .tool-code's wrapping stays, so lines fold at
+   the frame's width and there is never a side-scroll (Kyle, 2026-07-28).
+   The descendant selector beats .tool-code's later-declared rule on
+   specificity. */
+.files-view .fv-content {
+  max-height: none;
+  overflow-y: visible;
+}
+
+.fv-blank {
+  padding: 16px 10px;
+  color: var(--fg-dim);
+  font-size: 0.85em;
+}
+
+.fv-error {
+  color: var(--danger, var(--fg-dim));
+}
+
+.fv-note {
+  padding: 6px 8px;
+  margin-bottom: 8px;
+  color: var(--fg-dim);
+  font-size: 0.8em;
+  border-left: 2px solid var(--border-hover);
+}
+
+.fv-elided {
+  color: var(--fg-dim);
+  font-style: italic;
+}
+

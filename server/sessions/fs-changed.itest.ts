@@ -167,7 +167,7 @@ test("W.2: the daemon's own git reads never ring the bell — no status-write fe
   c.close();
 });
 
-test("W.H1: a slow repo ships the plain listing at the bound; badges follow via one bell", async () => {
+test("W.H1: a slow repo ships plain at the bound; badges follow via a non-mutation signal", async () => {
   const { c } = await openSession(slow);
   await settle(DEBOUNCE_MS * 3);
 
@@ -179,10 +179,15 @@ test("W.H1: a slow repo ships the plain listing at the bound; badges follow via 
   assert.ok(elapsed < 900, `the listing waited on git (${elapsed}ms) instead of shipping at the bound`);
   assert.equal(statusOf(first, "tracked.txt"), undefined, "the bounded reply is the plain listing");
 
-  // When the status finally settles, ONE synthetic bell (no paths hint —
-  // nothing on disk changed) tells this viewport to refetch.
-  const bell = (await c.waitFor((m) => m.type === "fs_changed", "the late-status bell", 10_000)) as Any;
-  assert.equal(bell.paths, undefined, "the late-status bell is synthetic — no watcher paths");
+  // When the status finally settles, ONE dedicated status-ready signal tells
+  // this viewport to refetch without impersonating a disk mutation bell.
+  const ready = (await c.waitFor(
+    (m) => m.type === "fs_changed" && (m as Any).reason === "status",
+    "the late-status signal",
+    10_000,
+  )) as Any;
+  assert.ok(!("paths" in ready));
+  assert.equal(ready.truncated, undefined, "status completion falsely claimed unknown disk churn");
 
   // The refetch decorates instantly from the settled cache (TTL from
   // arrival, W.H2) — no second timeout round.

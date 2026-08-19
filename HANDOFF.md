@@ -1,105 +1,139 @@
-# Session handoff — correctness PR #35 open for review
+# Session handoff — Changes CR.5 complete; PN.2 is next
 
-This handoff is current as of 2026-08-11 after PR #34 was repaired, verified,
-and merged into `next`, and after all eight confirmed whole-codebase bughunt
-findings were fixed on the new `fix/bughunt-correctness` branch. It becomes
-stale when PR #35 changes or merges, `next` advances, or Kyle changes the hold.
+This handoff is current as of 2026-08-12. It becomes stale when
+`feature/changes-workspace` advances, PN.2 starts, or Kyle changes the requested
+work.
 
 ## Current state
 
-- Repository: Mirafold, a browser re-skin of Claude Code, Codex, and Gemini
-  CLI with generative UI layered on top.
-- Branch: `fix/bughunt-correctness`, based on updated `next` merge commit
-  `21b5f33`.
-- Open review: PR #35 targets `next`. Kyle explicitly asked for a new PR and
-  asked that work stop there so he can review it. Do not merge PR #35 or move
-  the roadmap forward without a new instruction.
-- Implementation commit: signed and DCO-signed-off `3ed7236` (`fix: close
-  whole-codebase correctness findings`). The plan/archive/handoff sync is the
-  only separate documentation commit.
-- No dependency, provider protocol, stored-session schema, or user-facing file
-  write capability was added.
+- Repository: Mirafold, a faithful browser re-skin of Claude Code, Codex, and
+  Gemini CLI with generative UI layered on top.
+- Branch: `feature/changes-workspace`. Its latest commit is `5ac458d`
+  (`feat: add conversational workspace diff review`). The working tree contains
+  the uncommitted CR.3 closure, CR.4 implementation/refactor, and completed
+  CR.5 correctness remediation, tests, and documentation. Nothing from this
+  session was committed or pushed.
+- CR.1 through CR.5 are complete. `PLAN.md` marks **PN.2 — the pane frame** as
+  the next unfinished single-pass step in roadmap order.
+- No real-provider adapter, ordinary prompt-send path, native permission policy,
+  filesystem-write behavior, dependency, or PN.2 implementation changed in
+  CR.5. Git trust enforcement remains behaviorally unchanged.
 
-## PR #34 and the reported CI failure
+## Completed Changes workspace
 
-- PR #34 contained the visually approved Explorer E3.2 pass and the
-  behavior-preserving Codex D.1 decomposition.
-- Its failed combined Tier 2/Tier 3 job was diagnosed from the exact output:
-  E.3 expected rendered title text `Files`, but the intentional uppercase CSS
-  rendered `FILES`; E.6 then timed out only because E.3 aborted before closing
-  shared panel state.
-- The assertion alone was corrected. Signed and DCO-signed-off commit
-  `5de3f2e` replaced the initial unsigned-off metadata. Local E2E passed 83/83,
-  then GitHub passed DCO, Cloudflare Pages, Tier 1, and combined Tier 2/Tier 3.
-- PR #34 merged into `next` as `21b5f33`. D.1 remains unchecked only because
-  its roadmap definition still requires Tier 4 plus manual subscription and
-  OpenRouter turns; do not run those as part of PR #35.
+- CR.1 supplied the reusable correlated file-view controller and bounded
+  multi-repository changed-set query. CR.2 supplied the responsive live review
+  workspace. CR.3 supplied stable HEAD/current coordinates, hunk navigation,
+  desktop and phone selection, and visible unsent feedback drafts.
+- CR.3's closure remains in this working tree: deterministic mock feedback,
+  keyboard-reachable highlighted fenced-code scrollers, richer axe failure
+  evidence, and a named safe README browser fixture.
+- CR.4 adds an optional `fs_file_diff.revision`: a per-daemon keyed identity of
+  the exact HEAD + working-tree bytes. Current-file revision work is opt-in and
+  capped at 1 MB; oversized or unstable snapshots remain viewable but cannot be
+  marked reviewed. Secret refusal remains before content access.
+- Review progress is local to one browser viewport and resets with the session.
+  Mark/unmark and next-unreviewed work through buttons or `R` / `N` outside the
+  prompt and editable controls. Complete path hints invalidate only related
+  markers; HEAD or incomplete hints invalidate all. The mounted panel processes
+  watcher bells even while its surface is closed, and an exact reply reconciles
+  any stale revision when a file is opened.
+- Review rendering now runs one Markdown/Highlight.js pipeline for the whole
+  diff and mounts at most 1,000 interactive rows. A 1,001-line input honestly
+  falls back to current contents. Hunk scrolling honors reduced motion; 641px
+  desktop and 390px phone layouts remain overflow-free, with 40px phone review
+  controls.
+- CR.4's narrower correctness/security closure reported no unresolved finding,
+  and its mutation checks proved the progress invalidation, exact revision,
+  interactive ceiling, and then-current browser stale-marker tests. The later
+  whole-feature bughunt reproduced ten additional paths; CR.5 below closes all
+  ten. `PLAN-ARCHIVE.md` preserves both scopes and their evidence.
+- A post-completion refactor is also in the working tree. `ChangesPanel.tsx`
+  now composes the responsive surface; `use-changes-controller.ts` owns the
+  request/watcher/review lifecycle; `ChangesChrome.tsx` owns panel
+  chrome; and `ReviewRows.tsx` owns syntax-row rendering beneath
+  `ReviewDiff.tsx`. That refactor itself was behavior-preserving; CR.5 then
+  deliberately repaired the lifecycle and rendering defects below.
 
-## PR #35 executable changes
+## CR.5 whole-feature correctness closure
 
-- `server/adapters/gemini-cli.ts`: one rejected queued preparation no longer
-  kills the fire-and-forget worker; the failed settings merge remains eligible
-  for retry on the next prompt.
-- `server/adapters/codex.ts`: a transient first-party model-catalog failure no
-  longer clears the guard; both subscription and API-key sessions retry before
-  a later prompt reaches the engine.
-- `server/relay/relay-protocol.ts` and `relay-client.ts`: parsed relay traffic
-  is runtime-validated before the multiplexer reads envelope fields. JSON
-  scalars, null, arrays, and wrong-shaped objects are ignored.
-- `server/security/auth.ts`: malformed percent escapes in the target cookie
-  behave as no cookie, allowing a later duplicate or valid query token to
-  recover.
-- `server/sessions/registry.ts` and `bang-handlers.ts`: pending model turns are
-  counted independently from bang and permission status. `bang_end` cannot
-  create false idle or reopen the prompt gate; queued turns remain working;
-  adapter `error` plus `turn_end` consumes one pending turn, not two.
-- `server/sessions/fs-explorer.ts` and `git.ts`: path admission uses UTF-8 byte
-  length consistently with the accumulated cap.
-- `web/src/tildify.ts`, `web/src/components/files/FilesPanel.tsx`, and
-  `server/sessions/registry.ts`: drive, UNC, mixed-separator, and tildified
-  Windows paths work while POSIX case sensitivity and literal backslashes
-  remain intact.
-- `server/sessions/registry.ts` and `connection.ts`: an active rename restores
-  its previous name when checkpointing fails and tells the viewport that the
-  name was not saved.
+- Changes now reconciles the exceptional Git states where porcelain describes
+  the index rather than the net HEAD-versus-working-tree result: a staged
+  deletion restored identically disappears, an added-then-deleted path
+  disappears, and assume-unchanged/skip-worktree paths are compared exactly.
+- Nested repository markers are structurally validated. A malformed `.git`
+  marker no longer hides a real repository below it or steals ownership from a
+  real repository above it; a deleted subtree resolves through its nearest
+  surviving ancestor to the correct nested repository.
+- Diff reads distinguish missing from unreadable paths and read a tracked
+  symlink's link text rather than its target bytes. Descriptor reads are
+  no-follow, nonblocking, bounded, and revision-stable.
+- A successful session reattach abandons request ids lost with the old socket,
+  clears unverifiable review markers, and requests a fresh set/diff. Manual
+  Refresh also clears all review claims before revalidation. Late Git status
+  completion carries additive `fs_changed.reason: "status"`, refreshing Files
+  without announcing a disk mutation to Changes.
+- A truncated result with zero visible files says the change list is
+  incomplete, never clean. Line splitting no longer turns a terminal newline
+  into a numbered blank source line; diffs and feedback drafts carry the
+  conventional no-newline marker.
 
-## Regression and verification state
+## Next `$next`
 
-- Every finding has a focused regression. The final affected-unit batch passed
-  151/151; the new plain-walk UTF-8 case passed alone under the denial guard.
-- The ordinary safe unit matrix passed 577/577. The aggregate-sensitive Codex
-  catalog, Gemini catalog, and version files passed independently, 17/17.
-- The guarded Tier 2 server-integration matrix passed 131/131 across 21 safe
-  files.
-- The guarded Tier 3 browser matrix passed 70/70: 66/66 app/bundle/fleet/phone/
-  recovery plus 4/4 relay.
-- TypeScript, fresh guarded Vite and esbuild production builds, and
-  `git diff --check` passed.
-- Excluded for the account-wide opacity rule: unit/integration fixtures that
-  deliberately manufacture dotenv files, the launcher browser file, and the
-  Explorer/global-axe browser cases whose fixtures enter that filename class.
-- One initial Tier 3 command used a negative run-pattern that matched the
-  file-level parent, so six Explorer cases ran before the mistake was visible.
-  The run was stopped immediately. The preloaded guard prevented content
-  reads, but those cases may have listed a forbidden filename. The mistake was
-  reported; a harmless unit probe proved the filter behavior, and the green
-  replacement used Node's positive `--test-skip-pattern`. No product edit was
-  made in response.
+Execute **PN.2 — the pane frame** from `PLAN.md`:
 
-## Important invariants
+- Add a desktop pane region beside the transcript and let Explorer open files
+  into tabs there.
+- Support two-file tab creation, switch, close, keyboard traversal, focus into
+  the pane on open, and sensible focus restoration on close.
+- Keep the phone Explorer drill-in behavior unchanged and expose no pane
+  affordance at phone width.
+- The plan explicitly reserves the Explorer row's default-click behavior as
+  Kyle's product call at build time. Do not infer that choice if the existing
+  repository does not establish it.
 
-- Never inspect, search, print, diff, parse, source, or otherwise read dotenv
-  contents. Every recursive search/listing must explicitly exclude `.env`,
-  `*.env`, `.env.*`, and `*.env.*`. The temporary denial guard lives only at
-  `/tmp/mirafold-deny-dotenv.cjs` and is not repository state.
-- `modelTurnsPending` is live-only and initializes to zero for fresh and
-  recovered sessions. `midTurnPromptUsed` is derived from whether more than one
-  model turn is pending. Only model-terminal grammar decrements the count;
-  `bang_end` derives display status without consuming it.
-- Keep adapter `error` plus `turn_end` paired as one model terminal event in the
-  registry. A queued next turn must remain `working` and earn exactly one new
-  follow-up slot when the prior turn ends.
-- Windows recognition must require a drive/UNC shape (or a `~\\` root label),
-  not merely any backslash. Backslash is legal filename data on POSIX.
-- PR #35 is intentionally open and unmerged. The next action is Kyle's review,
-  not another roadmap phase, Tier 4 spend, manual provider turn, or merge.
+The verified seam already exists: `web/src/components/files/use-file-view.ts`
+owns an independent correlated read/diff lifecycle, and Files plus Changes are
+its first two hosts. PN.2 begins at the pane frame; multiple simultaneous panes
+mean one controller instance per file viewer.
+
+## Verification at handoff
+
+- CR.5's focused model/protocol/Git/revision run passed 44/44. The dedicated
+  real-Git diff integration passed 8/8 and the status-signal integration passed
+  5/5. TypeScript and both production bundles pass; Vite's standard
+  large-chunk warning is unchanged.
+- The complete Changes browser file passes 10/10 against real Git, a real
+  daemon, and Chromium. Its four new browser cases pin reconnect freshness and
+  orphaned requests, manual refresh after an unwatched HEAD change, status-only
+  decoration without review invalidation, and zero-visible incomplete state.
+- Safe Tier 1 passes 638/638 across 75 files. Safe Tier 2 passes 137/137 across
+  22 files. After a fresh client build with Vite's env directory set to a new
+  empty temporary directory, complete Tier 3 passes 93/93 across all eight
+  browser files.
+- Before the refactor, the isolated CR.4 browser case passed 3/3 across three
+  unchanged runs; its complete 6/6 file then passed again after the refactor.
+- The CR.4 desktop and phone axe gates, 641px/390px overflow checks, 40px phone
+  control checks, and reduced-motion behavior passed. The final phone and
+  desktop screenshots were visually inspected.
+- Final `git diff --check` and documentation/boundary review should be rerun if
+  this working tree changes before PN.2.
+
+## Dotenv safety note
+
+Aggregate file discovery explicitly excluded `.env`, `*.env`, `.env.*`, and
+`*.env.*`. The final client production build used Vite's configuration API
+with `envDir` set to a freshly created empty temporary directory; the server
+build does not load Vite environment files.
+
+Two earlier CR.5 verification builds invoked the ordinary `yarn build` command
+before the handoff's Vite safeguard was reread. No dotenv contents appeared in
+their output, but whether Vite probed for a matching file during those two
+invocations is unverified. Do not describe the entire CR.5 session as having a
+proven no-open guard; use the final redirected build as the verified artifact.
+
+The safe Tier 1 aggregate deliberately excluded
+`server/render-image.test.ts` and `server/sessions/fs-explorer.test.ts`; safe
+Tier 2 excluded `server/sessions/fs-explorer.itest.ts`. Those three test files
+open and write temporary dotenv-named fixtures, so running them would violate
+the literal account-wide rule even though their fixture bytes are synthetic.

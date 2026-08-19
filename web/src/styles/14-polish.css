@@ -1,0 +1,85 @@
+/* ---- Cross-cutting polish (Step 4.3) ---------------------------------------
+   Rules that span surfaces: arrival motion, the theme-switch fade,
+   selection, a11y helpers, scrollbars, reduced motion. ORDER MATTERS here —
+   the rise list and the transition list override equal-specificity
+   declarations in the sections above (see the header note).
+
+   Motion: everything that enters the transcript rises in — one short, soft
+   arrival, no bounce. Replay repaints use the same animation; at 160ms a
+   full-history repaint reads as a quick settle, not a shimmer storm. */
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+}
+
+.turn-user,
+.turn-assistant,
+.tool-block,
+.thinking-block,
+.notice-line,
+.bang-block {
+  animation: rise 0.16s ease-out both;
+}
+
+/* Theme switch fades instead of snapping; hover borders ride the same rule. */
+body,
+.rc,
+.artifact,
+.turn-user,
+.prompt-box,
+.status-bar,
+.pin-dock,
+.rc-link,
+.onb-agent {
+  transition:
+    background-color 0.22s ease,
+    color 0.22s ease,
+    border-color 0.22s ease;
+}
+
+::selection {
+  background: var(--selection);
+}
+
+/* Available to screen readers, invisible on screen (A.1). Not `display:none`
+   or `visibility:hidden` — both remove the element from the accessibility
+   tree, which would silence the live regions this exists for. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Keyboard focus gets a visible ring; pointer clicks stay quiet. */
+:focus-visible {
+  outline: 2px solid var(--border-hover);
+  outline-offset: 1px;
+}
+
+html {
+  scrollbar-color: var(--border-hover) transparent;
+}
+
+.render-zone,
+.pin-dock {
+  scrollbar-width: thin;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+

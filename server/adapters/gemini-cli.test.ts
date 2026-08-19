@@ -113,6 +113,21 @@ test("recovery and discovery: Gemini resumes the saved id and advertises only it
   delete process.env.FAKE_ARGS_LOG;
 });
 
+test("Gemini remains supported without a Mirafold retirement notice", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession();
+  s.pushPrompt("hello");
+  await awaitTurnEnd();
+  assert.equal(
+    msgs.some(
+      (m) =>
+        m.type === "notice" &&
+        /retired|deprecated|sunset|will be removed/i.test(m.text),
+    ),
+    false,
+  );
+  s.close();
+});
+
 test("a pre-existing settings.json — broken or valid — is untouched at construction; a turn is what earns consent to merge it", async () => {
   // Unparseable: construction touches NOTHING. Only once a turn actually runs
   // (this workspace is pre-trusted, under `tmp`) does the rewrite+backup happen.

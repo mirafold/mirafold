@@ -505,8 +505,10 @@ export class MockSession implements AgentSession {
   // Each deterministic hook exercises one UI capability API-free; anything
   // else is a canned reply drawn from the template deck.
   pushPrompt(text: string) {
+    if (/revise the selected workspace change/i.test(text)) return this.playMarkdownReview();
     if (/interactive|button/i.test(text)) return this.playActionCard();
     if (/todo|checklist|step by step|plan it/i.test(text)) return this.playChecklist();
+    if (/delegate slowly/i.test(text)) return this.playSlowSubagent();
     if (/subagent|delegate/i.test(text)) return this.playSubagent();
     if (/huge|big output|large output|truncat/i.test(text)) return this.playHugeOutput();
     if (/artifact/i.test(text)) {
@@ -915,6 +917,15 @@ export class MockSession implements AgentSession {
     this.endTurn(d, 300);
   }
 
+  /** Deterministic CR.3 hook: the ordinary Request change draft receives
+   * highlighted markdown code, so phone accessibility never depends on which
+   * shuffled demo template happened to answer. */
+  private playMarkdownReview() {
+    this.beginTurn();
+    const d = this.streamText(codeReviewTemplate(), 200);
+    this.endTurn(d);
+  }
+
   /** Deterministic hook: check rows with verdict pills — one row per status
    *  the vocabulary knows, so the e2e pins the whole enum's rendering. */
   private playStatusList() {
@@ -933,9 +944,117 @@ export class MockSession implements AgentSession {
     this.endTurn(d);
   }
 
-  /** Deterministic T2.4 hook: a Task whose inner tool calls nest under it
-   *  (subagent text stays hidden). */
+  /** Deterministic SA.1 hook (supersedes the T2.4 single-Task version): a
+   *  parallel fan-out — three spawns whose inner calls interleave and whose
+   *  finishes land OUT OF ORDER (the first-spawned is not the first done),
+   *  so three live cards tick independently in one transcript. */
   private playSubagent() {
+    this.beginTurn();
+    type Fan = {
+      id: string;
+      type: string;
+      desc: string;
+      spawnAt: number;
+      // SA.2: the subagent's own narration, streamed into its card's
+      // expansion right after the spawn (message-grain, like the real
+      // Claude Code lane).
+      says: string;
+      inner: { name: string; detail: string; output: string }[];
+      pace: number; // ms between this agent's events — distinct per agent
+      result: string;
+    };
+    const fans: Fan[] = [
+      {
+        id: randomUUID(),
+        type: "Explore",
+        desc: "find auth entry points",
+        spawnAt: 350,
+        pace: 520,
+        says: "Sweeping the server for authentication entry points…",
+        inner: [
+          { name: "Grep", detail: '-rn "authenticate" server/', output: "server/auth.ts:14: export function authenticate(" },
+          { name: "Read", detail: "server/auth.ts", output: Array.from({ length: 4 }, (_, i) => `${i + 1}→${pick(SENTENCES)}`).join("\n") },
+          { name: "Grep", detail: '-rn "cookie" server/', output: "server/auth.ts:41: setCookie(res, token)" },
+        ],
+        result: "Two entry points: the socket handshake and the token cookie mint.",
+      },
+      {
+        // Spawned SECOND, finishes FIRST — the out-of-order proof.
+        id: randomUUID(),
+        type: "Explore",
+        desc: "map session handling",
+        spawnAt: 430,
+        pace: 300,
+        says: "Looking for the session registry and its lifecycle…",
+        inner: [
+          { name: "Grep", detail: '-rn "SessionRegistry" server/', output: "server/sessions/registry.ts:88: export class SessionRegistry" },
+          { name: "Read", detail: "server/sessions/registry.ts", output: "registry: entries keyed by session id; idle unload after 4h" },
+        ],
+        result: "Sessions live in one registry; viewports attach and detach freely.",
+      },
+      {
+        id: randomUUID(),
+        type: "general-purpose",
+        desc: "trace the token path",
+        spawnAt: 510,
+        pace: 640,
+        says: "Following the cookie from auth.ts into the relay…",
+        inner: [
+          { name: "Grep", detail: '-rn "mirafold_token" .', output: "4 hits across server/ and web/" },
+          { name: "Read", detail: "server/relay/relay.ts", output: "120 lines — the relay never sees the token" },
+          { name: "Bash", detail: "node scripts/token-audit.js", output: "token-audit: PASS — daemon-only" },
+          { name: "Read", detail: "web/src/session-bus.ts", output: "the browser holds it in a cookie, never in JS state" },
+        ],
+        result: "The token never leaves the daemon — confirmed end to end.",
+      },
+    ];
+    let lastDone = 0;
+    for (const fan of fans) {
+      this.schedule(() => {
+        this.emit({ type: "status", state: "tool", label: "Task" });
+        this.emit({
+          type: "tool_use",
+          name: "Task",
+          detail: fan.desc,
+          id: fan.id,
+          input: { description: fan.desc, subagent_type: fan.type },
+        });
+      }, fan.spawnAt);
+      let d = fan.spawnAt;
+      d += Math.floor(fan.pace / 2);
+      this.schedule(() => this.emit({ type: "text_delta", text: fan.says, parentId: fan.id }), d);
+      for (const t of fan.inner) {
+        const cid = randomUUID();
+        d += fan.pace;
+        this.schedule(() => this.emit({ type: "tool_use", name: t.name, detail: t.detail, id: cid, parentId: fan.id }), d);
+        d += fan.pace;
+        this.schedule(() => this.emit({ type: "tool_result", output: t.output, id: cid, parentId: fan.id }), d);
+      }
+      // One reasoning line mid-run for the slow agent — the expansion shows
+      // thinking dimmer than narration (SA.2).
+      if (fan.type === "general-purpose") {
+        this.schedule(
+          () => this.emit({ type: "thinking_delta", text: "The relay never sees it — confirming the browser side.", parentId: fan.id }),
+          d - fan.pace,
+        );
+      }
+      d += 250;
+      this.schedule(() => this.emit({ type: "tool_result", output: fan.result, id: fan.id }), d);
+      lastDone = Math.max(lastDone, d);
+    }
+    const d = this.streamText(
+      "All three subagents reported back — auth has two entry points, sessions are registry-kept, and the token stays daemon-side.",
+      lastDone + 300,
+    );
+    this.endTurn(d);
+  }
+
+  /** Deterministic reconnect-window hook (bughunt 2026-08-14 r2): ONE spawn
+   *  whose narration streams early and whose first tool call comes SECONDS
+   *  later — a wide, deterministic window in which the subagent's prose run
+   *  is open, for tests that reset the transcript mid-turn (daemon restart,
+   *  reattach). The fast fan-out's windows are too narrow to hit reliably. */
+  private playSlowSubagent() {
     const taskId = randomUUID();
     this.beginTurn();
     this.schedule(() => {
@@ -943,31 +1062,20 @@ export class MockSession implements AgentSession {
       this.emit({
         type: "tool_use",
         name: "Task",
-        detail: "research: audit the config loader",
+        detail: "survey the workspace",
         id: taskId,
-        input: { description: "audit config loader", subagent_type: "Explore" },
+        input: { description: "survey the workspace", subagent_type: "Explore" },
       });
-    }, 350);
-    // Subagent's inner calls — each tagged with the Task's id as parentId.
-    const inner: { name: string; detail: string; output: string }[] = [
-      { name: "Grep", detail: '-rn "loadConfig" src/', output: "src/config.ts:12: export function loadConfig(" },
-      { name: "Read", detail: "src/config.ts", output: Array.from({ length: 4 }, (_, i) => `${i + 1}→${pick(SENTENCES)}`).join("\n") },
-      { name: "Bash", detail: "node -e 'require(\"./config\")'", output: "config OK — 3 sources merged" },
-    ];
-    let d = 700;
-    for (const t of inner) {
-      const cid = randomUUID();
-      d += randInt(250, 450);
-      this.schedule(() => this.emit({ type: "tool_use", name: t.name, detail: t.detail, id: cid, parentId: taskId }), d);
-      d += randInt(250, 450);
-      this.schedule(() => this.emit({ type: "tool_result", output: t.output, id: cid, parentId: taskId }), d);
-    }
-    d += 300;
+    }, 300);
     this.schedule(
-      () => this.emit({ type: "tool_result", output: "Audit complete: loader merges 3 sources; no precedence bug found.", id: taskId }),
-      d,
+      () => this.emit({ type: "text_delta", text: "Surveying the workspace layout…", parentId: taskId }),
+      700,
     );
-    d = this.streamText("The subagent audited the config loader — it merges three sources correctly, no precedence bug.", d + 200);
+    const cid = randomUUID();
+    this.schedule(() => this.emit({ type: "tool_use", name: "Read", detail: "README.md", id: cid, parentId: taskId }), 9_000);
+    this.schedule(() => this.emit({ type: "tool_result", output: "read 40 lines", id: cid, parentId: taskId }), 9_300);
+    this.schedule(() => this.emit({ type: "tool_result", output: "Survey complete.", id: taskId }), 9_600);
+    const d = this.streamText("The slow subagent finished its survey.", 9_800);
     this.endTurn(d);
   }
 
@@ -1138,7 +1246,14 @@ export class MockSession implements AgentSession {
   /** Deterministic UX.2 hook: two successful actions fold together after the
    * turn, while the failed action remains an honest top-level row. */
   private playToolActivity() {
-    const calls = [
+    const calls: Array<{
+      name: string;
+      detail: string;
+      output: string;
+      isError?: boolean;
+      // Codex-style narration between commands: the fold must absorb it.
+      thinkBefore?: string;
+    }> = [
       {
         name: "Read",
         detail: "server/protocol.ts",
@@ -1148,6 +1263,7 @@ export class MockSession implements AgentSession {
         name: "Bash",
         detail: "yarn typecheck",
         output: "Done in 1.2s",
+        thinkBefore: "Weighing which check to run next.",
       },
       {
         name: "Bash",
@@ -1160,6 +1276,11 @@ export class MockSession implements AgentSession {
     let delay = 80;
     for (const call of calls) {
       const id = randomUUID();
+      if (call.thinkBefore) {
+        const text = call.thinkBefore;
+        this.schedule(() => this.emit({ type: "thinking_delta", text }), delay);
+        delay += 30;
+      }
       this.schedule(() => {
         this.emit({ type: "status", state: "tool", label: call.name });
         this.emit({

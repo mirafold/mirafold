@@ -1,6 +1,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { type Browser, type Page } from "playwright-core";
@@ -140,11 +141,15 @@ async function withFreshMockSession(
   token: string,
   run: (isolatedPage: Page) => Promise<void>,
   agent = "Claude Code",
+  // Runs before the first navigation — the slot for addInitScript stubs that
+  // must exist before the app boots (the NF Notification recorder).
+  prepare?: (isolatedPage: Page) => Promise<void>,
 ): Promise<void> {
   const daemon = await startDaemon({ MIRAFOLD_TOKEN: token });
   let isolatedPage: Page | undefined;
   try {
     isolatedPage = await browser.newPage();
+    if (prepare) await prepare(isolatedPage);
     await isolatedPage.goto(`http://127.0.0.1:${daemon.port}/?token=${token}`);
     await isolatedPage.locator(".onb-agent", { hasText: agent }).click();
     await isolatedPage.waitForURL(/\/s\/[\w-]+/);
@@ -256,14 +261,28 @@ test("provider completions open before submit, transcript click focuses, and set
       );
 
       // Successful provider activity becomes one terminal-sized record only
-      // when the turn settles. A failure remains visible at top level.
+      // when the turn settles. A failure remains visible at top level, and
+      // narration between commands (Codex's cadence) rides inside the fold
+      // instead of shattering it into singletons.
       await prompt.fill("show transcript compact tool activity");
       await prompt.press("Enter");
       await page2.locator(".stop-btn").waitFor();
       await page2.locator(".stop-btn").waitFor({ state: "detached" });
       assert.equal(await page2.locator(".tool-activity-group").count(), 1);
+      // The fold's count speaks of ACTIONS only — absorbed narration
+      // (thinking rows riding inside the fold) must never inflate it.
+      assert.match(
+        await page2.locator(".tool-activity-label").innerText(),
+        /worked · 2 actions/,
+        "the fold label must count tool calls only, not absorbed narration",
+      );
       assert.equal(await page2.locator(".tool-group").count(), 1);
       assert.match(await page2.locator(".tool-group").textContent() ?? "", /No matching test file/);
+      assert.equal(
+        await page2.locator(".thinking-block", { hasText: "Weighing which check" }).count(),
+        0,
+        "interleaved narration leaked outside the settled fold",
+      );
       await page2.locator(".tool-activity-head").click();
       assert.equal(
         await page2.evaluate(() => document.activeElement?.classList.contains("tool-activity-head")),
@@ -271,6 +290,11 @@ test("provider completions open before submit, transcript click focuses, and set
         "a transcript control click was redirected to the prompt",
       );
       assert.equal(await page2.locator(".tool-activity-calls .tool-block").count(), 2);
+      assert.equal(
+        await page2.locator(".tool-activity-calls .thinking-block", { hasText: "Weighing which check" }).count(),
+        1,
+        "the fold's expansion must replay the interleaved narration in place",
+      );
 
       // Event delegation must treat ordinary transcript links as controls too.
       // The real click path (pointerdown → pointerup → click) must leave focus
@@ -358,13 +382,20 @@ test("the agent picker flexes to the window — no internal scrollbar through th
   // are mostly ready (same recipe as the R.4k test below), swept through the
   // squeeze ramp's lower band, where pre-fix EVERY height here scrolled.
   const token = "e2e-squeeze-9c2f";
-  // All three rows ready (one-line details, no paragraph hints) — display
-  // only, nothing is clicked, so no engine ever spawns.
+  // All four rows ready (one-line details, no paragraph hints) — display
+  // only, nothing is clicked, so no engine ever spawns. OpenCode's readiness
+  // is an existence probe (binary + auth.json), so a stand-in binary and an
+  // empty stored-credential file are enough to get the short row.
+  const opencodeData = mkdtempSync(path.join(os.tmpdir(), "mirafold-squeeze-ocd-"));
+  mkdirSync(path.join(opencodeData, "opencode"));
+  writeFileSync(path.join(opencodeData, "opencode", "auth.json"), "{}");
   const d2 = await startDaemon({
     MIRAFOLD_TOKEN: token,
     ANTHROPIC_BASE_URL: "http://localhost:11434",
     OPENAI_API_KEY: "e2e-not-a-real-key",
     GEMINI_API_KEY: "e2e-not-a-real-key",
+    OPENCODE_BIN: "/bin/true", // display-only: never spawned
+    XDG_DATA_HOME: opencodeData,
   });
   const page2 = await browser.newPage();
   try {
@@ -498,7 +529,14 @@ test("onboarding → a full mock turn renders in the DOM", async () => {
   // Every credential-less row carries its one-line fix on the picker
   // itself (the harness forces all three agents credential-less) (R.4b).
   await page.waitForSelector(".onb-agent-hint");
-  assert.equal(await page.locator(".onb-agent-hint").count(), 3);
+  // One hint per offerable agent (the harness forces every agent
+  // credential-less) — four since the OpenCode adapter (PLAN OC.4b).
+  assert.equal(await page.locator(".onb-agent-hint").count(), 4);
+  const opencodeRowText = await page
+    .locator(".onb-agent", { hasText: "OpenCode" })
+    .innerText();
+  assert.match(opencodeRowText, /opencode auth login/);
+  assert.match(opencodeRowText, /OPENCODE_MODEL/);
   const claudeRow = page.locator(".onb-agent", { hasText: "Claude Code" });
   assert.match(await claudeRow.innerText(), /ANTHROPIC_API_KEY|`claude`/);
   // Disclosed-uncertainty rule (K.3 amendment, 2026-07-15): the Codex row
@@ -540,6 +578,106 @@ test("onboarding → a full mock turn renders in the DOM", async () => {
   await page.waitForSelector("text=Read the current implementation", { timeout: 15_000 });
   // …and the turn runs to its streamed conclusion.
   await page.waitForSelector("text=Plan complete — all four steps done.", { timeout: 30_000 });
+});
+
+test("SA.1: a parallel fan-out renders three live subagent decks, out of order, expandable", async () => {
+  await withFreshMockSession("sa1-cards-7fd1", async (p) => {
+    await p.locator("textarea").click();
+    await p.keyboard.type("delegate the research");
+    await p.keyboard.press("Enter");
+
+    // Three cards appear as their spawns land (350/430/510ms in the mock).
+    await p.waitForFunction(
+      () => document.querySelectorAll(".subagent-deck").length === 3,
+      undefined,
+      { timeout: 15_000 },
+    );
+
+    // While running: a live card ticks — elapsed seconds in the meta line and
+    // a current action in the live slot. Grab the slow "trace the token path"
+    // card, which runs the longest.
+    const tokenCard = p.locator(".subagent-deck", { hasText: "trace the token path" });
+    await p.waitForFunction(
+      () => {
+        const cards = [...document.querySelectorAll(".subagent-deck-running")];
+        return cards.some((c) => /·\s*\d+s/.test(c.querySelector(".subagent-deck-meta")?.textContent ?? ""));
+      },
+      undefined,
+      { timeout: 10_000 },
+    );
+
+    // OUT OF ORDER: "map session handling" (spawned second, fastest pace)
+    // finishes while "trace the token path" is still running.
+    await p.waitForFunction(
+      () => {
+        // No const-assigned arrows in here: esbuild's keepNames would inject
+        // a __name helper the browser page doesn't have.
+        const cards = [...document.querySelectorAll(".subagent-deck")];
+        const settled = cards.find((c) => c.textContent?.includes("map session handling"));
+        const slow = cards.find((c) => c.textContent?.includes("trace the token path"));
+        return (
+          settled?.classList.contains("subagent-deck-done") === true &&
+          slow?.classList.contains("subagent-deck-running") === true
+        );
+      },
+      undefined,
+      { timeout: 15_000 },
+    );
+
+    // Child tool churn must not steer the ROOT activity line — each deck
+    // shows its own current action (bughunt 2026-08-14 r2). The label may
+    // legitimately read the spawn state or the generic fallback (a FINISHED
+    // spawn clears its own name), but never a child's tool. Sampled across
+    // the still-running slow agent's ~640ms tool cadence so a pre-fix
+    // child-name label cannot slip between reads.
+    for (let sample = 0; sample < 8; sample++) {
+      const activityText = await p.locator(".activity-label").innerText();
+      assert.match(activityText, /^(Task|working)…$/);
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+
+    // The turn concludes; all three cards settle, elapsed stops being shown
+    // (client-side timing is only honest while live), result lines ride.
+    await p.waitForSelector("text=All three subagents reported back", { timeout: 30_000 });
+    assert.equal(await p.locator(".subagent-deck-done").count(), 3);
+    assert.equal(await p.locator(".subagent-deck-running").count(), 0);
+    const doneMeta = await tokenCard.locator(".subagent-deck-meta").innerText();
+    assert.doesNotMatch(doneMeta, /·\s*\d+s/);
+    assert.match(doneMeta, /4 tools/);
+    assert.match(doneMeta, /never leaves the daemon/);
+
+    // Expand → the nested calls are all there, AND the subagent's own words
+    // (SA.2: narration + reasoning, interleaved, inert plain text — the
+    // narration precedes the first tool row, true stream order).
+    await tokenCard.locator(".subagent-deck-head").click();
+    assert.equal(await tokenCard.locator(".subagent-calls .tool-block").count(), 4);
+    const prose = tokenCard.locator(".subagent-prose");
+    assert.match(await prose.first().innerText(), /Following the cookie from auth\.ts/);
+    assert.match(
+      await tokenCard.locator(".subagent-prose-thinking").innerText(),
+      /confirming the browser side/,
+    );
+    const expandedTexts = await tokenCard
+      .locator(".subagent-calls > *")
+      .evaluateAll((nodes) => nodes.map((n) => n.className));
+    assert.ok(
+      expandedTexts[0].includes("subagent-prose"),
+      "narration precedes the first tool row in stream order",
+    );
+    // The prose is NOT rendered as markdown — no <p>/<em> children, raw text.
+    assert.equal(await prose.first().locator("p, em, strong, a, code").count(), 0);
+    await tokenCard.locator(".subagent-deck-head").click();
+    assert.equal(await tokenCard.locator(".subagent-calls").count(), 0);
+
+    await assertAxeClean(p, "subagent decks");
+    await noSideScroll(p);
+
+    // Phone width: the same cards stack — no pane, no side scroll, drill-in
+    // untouched (the transcript is the same DOM at every width).
+    await p.setViewportSize({ width: 390, height: 844 });
+    assert.equal(await p.locator(".subagent-deck").count(), 3);
+    await noSideScroll(p);
+  });
 });
 
 test("A.1: announcer regions exist, spoke the turn, and the transcript is silent", async () => {
@@ -1207,6 +1345,160 @@ test("settings card: gear opens it, picking applies live and writes the slot (S.
   await page.locator(".settings-backdrop").click({ position: { x: 8, y: 8 } });
   assert.equal(await page.locator(".settings-card").count(), 0);
   assert.equal(await dataTheme(), "dark"); // ends where the suite expects
+});
+
+test("NF: hidden viewport toasts a permission then the turn end; visibility closes both", async () => {
+  const token = "e2e-notify-7b31";
+  type ToastRec = { title: string; body?: string; tag?: string; closed: boolean };
+  const toasts = (p: Page) =>
+    p.evaluate(() => (window as unknown as { __TOASTS__: ToastRec[] }).__TOASTS__);
+  // A JS string, not a function — the accessor property would otherwise
+  // compile with the module-scope __name wrapper (same keepNames trap as the
+  // stub below) and die serialized.
+  const setVisibility = (p: Page, state: "hidden" | "visible") =>
+    p.evaluate(
+      `Object.defineProperty(document, "visibilityState", {
+         configurable: true, get: function () { return "${state}"; },
+       });
+       document.dispatchEvent(new Event("visibilitychange"));`,
+    );
+  await withFreshMockSession(
+    token,
+    async (page2) => {
+      // The toggle lives in the settings card and defaults off; flipping it
+      // writes the preference (the stub's grant is already "granted", so no
+      // permission dance here — that branch is Tier-1 logic).
+      await page2.locator(".sb-settings").click();
+      await page2.waitForSelector(".settings-card");
+      const row = page2.locator(".notify-row");
+      assert.equal(await row.getAttribute("aria-checked"), "false");
+      await row.click();
+      assert.equal(await row.getAttribute("aria-checked"), "true");
+      assert.equal(
+        await page2.evaluate(() => localStorage.getItem("mirafold-notify")),
+        "1",
+      );
+      await assertAxeClean(page2, "settings notifications section");
+      await page2.keyboard.press("Escape");
+      await page2.waitForSelector(".settings-card", { state: "detached" });
+
+      // Background the tab — the notifier reads visibilityState live, and
+      // only a hidden tab may toast.
+      await setVisibility(page2, "hidden");
+
+      // A permission lands while hidden → exactly one toast, session-tagged,
+      // shell-composed title with the engine's ask as inert text.
+      await page2.locator("textarea").click();
+      await page2.keyboard.type("run something dangerous");
+      await page2.keyboard.press("Enter");
+      await page2.waitForSelector(".perm-bar");
+      await page2.waitForFunction(
+        () => (window as unknown as { __TOASTS__?: unknown[] }).__TOASTS__?.length === 1,
+        undefined,
+        { timeout: 15_000 },
+      );
+      const [first] = await toasts(page2);
+      assert.match(first.title, /^⚠ permission — /);
+      assert.match(first.body ?? "", /Claude Code wants Bash: rm -rf/);
+      assert.ok(first.tag?.startsWith("mirafold-"), `tag was ${first.tag}`);
+
+      // Answering retires the permission toast (the state moved on); the
+      // finishing turn then toasts once more under the same tag.
+      await page2.locator(".perm-allow").click();
+      await page2.waitForFunction(
+        () => {
+          const t = (window as unknown as { __TOASTS__: { closed: boolean }[] }).__TOASTS__;
+          return t.length === 2 && t[0].closed;
+        },
+        undefined,
+        { timeout: 15_000 },
+      );
+      const [, second] = await toasts(page2);
+      assert.match(second.title, /^✓ turn finished — /);
+      assert.equal(second.tag, first.tag);
+
+      // Coming back closes everything this tab created — the page itself is
+      // now the notification.
+      await setVisibility(page2, "visible");
+      await page2.waitForFunction(() =>
+        (window as unknown as { __TOASTS__: { closed: boolean }[] }).__TOASTS__.every(
+          (t) => t.closed,
+        ),
+      );
+    },
+    "Claude Code",
+    async (p) => {
+      // Notification stubbed before boot: headless Chrome auto-denies the
+      // real API and an OS toast is invisible to the DOM anyway — the
+      // recorder IS the observable surface. A plain-JS STRING, not a
+      // function: tsx compiles this file with esbuild keepNames, which
+      // injects a module-scope `__name` helper into compiled classes —
+      // Playwright then serializes the function without the helper and the
+      // init script dies on a ReferenceError before installing the stub
+      // (diagnosed 2026-08-12 via pageerror probe).
+      await p.addInitScript(`
+        const spawned = [];
+        window.__TOASTS__ = spawned;
+        window.Notification = class {
+          constructor(title, opts) {
+            this.rec = { title, body: opts && opts.body, tag: opts && opts.tag, closed: false };
+            this.onclick = null;
+            spawned.push(this.rec);
+          }
+          close() { this.rec.closed = true; }
+          static get permission() { return "granted"; }
+          static requestPermission() { return Promise.resolve("granted"); }
+        };
+      `);
+    },
+  );
+});
+
+test("FD: a dropped file uploads, stages on disk, and its quoted path lands in the prompt", async () => {
+  const token = "e2e-filedrop-4a19";
+  await withFreshMockSession(token, async (page2) => {
+    // The drag listeners attach only once the session is attached
+    // (meta.sessionId) — a dispatch racing the mount fires into the void,
+    // so wait for the session UI first (diagnosed 2026-08-12 by probe).
+    await page2.waitForSelector(".prompt-box textarea");
+    // Synthesize a real file drag: DataTransfer + File are native in
+    // Chromium. A JS string, not a function — the keepNames __name trap
+    // (see the NF test above) breaks serialized closures.
+    await page2.evaluate(`
+      window.__DT__ = (() => {
+        const dt = new DataTransfer();
+        dt.items.add(new File(["drag and drop payload snowman"], "dropped notes.txt", { type: "text/plain" }));
+        return dt;
+      })();
+      document.body.dispatchEvent(new DragEvent("dragenter", { bubbles: true, cancelable: true, dataTransfer: window.__DT__ }));
+    `);
+    // Mid-drag, the shell-owned overlay invites the drop.
+    await page2.waitForSelector(".drop-overlay");
+    await page2.evaluate(`
+      document.body.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: window.__DT__ }));
+    `);
+    // The staged path lands in the prompt, quoted (the name carries a space).
+    await page2.waitForFunction(
+      () => {
+        const el = document.querySelector(".prompt-box textarea") as HTMLTextAreaElement | null;
+        return el?.value.includes("mirafold-uploads") ?? false;
+      },
+      undefined,
+      { timeout: 15_000 },
+    );
+    assert.equal(await page2.locator(".drop-overlay").count(), 0, "overlay clears on drop");
+    const value = await page2.locator(".prompt-box textarea").inputValue();
+    const m = value.match(/'([^']*mirafold-uploads[^']*)'/);
+    assert.ok(m, `expected a quoted staged path in the prompt, got: ${value}`);
+    const staged = m![1];
+    assert.match(staged, /dropped notes\.txt$/);
+    // The path is honest: the exact dropped bytes sit at it on disk.
+    assert.equal(readFileSync(staged, "utf8"), "drag and drop payload snowman");
+    // The attach announced politely (the screen-reader path).
+    const status = await page2.locator('[role="status"]').innerText();
+    assert.match(status, /Attached dropped notes\.txt/);
+    rmSync(path.dirname(staged), { recursive: true, force: true });
+  });
 });
 
 test("Esc on an open card is exclusive — it dismisses without interrupting the turn", async () => {
@@ -2542,7 +2834,7 @@ test("E2.4: the Projects-root proof — lazy expands into two repos with per-rep
       const phone = await phoneCtx.newPage();
       await phone.goto(`${base}/?token=${TOKEN}`);
       await phone.goto(`${base}/s/${created.sessionId}`);
-      await phone.locator(".sb-files").focus();
+      await phone.locator(".sb-workspace").focus();
       await phone.keyboard.press("Enter");
       await phone.waitForSelector(".files-panel[role=dialog]");
       await phone.locator('.files-dir:has(.files-name:text-is("repoA"))').tap();
@@ -2727,8 +3019,15 @@ test("C.2: axe-core finds no serious/critical WCAG violations across the app", a
     // first time 2026-07-30 (the accessibility statement named it as unswept).
     await p.locator(".ab-files").click();
     await p.waitForSelector(".files-panel .files-row");
-    await p.locator(".files-file-row").first().click();
-    await p.waitForSelector(".files-view .fv-content");
+    // Pick a named safe fixture. Alphabetical-first is `.env.example` in this
+    // checkout, and dotenv files are intentionally opaque to this test run.
+    await p.locator(".files-file-row", { hasText: "README.md" }).click();
+    await p.waitForSelector(".files-view .fv-content").catch(async () =>
+      assert.fail(
+        `enlarged-view fixture did not open; selected=${JSON.stringify(await p.locator(".files-file-name").allInnerTexts())} ` +
+          `view=${JSON.stringify(await p.locator(".files-view").allInnerTexts())}`,
+      ),
+    );
     await p.locator(".files-enlarge").click();
     await p.waitForSelector(".files-file.is-maximized");
     await assertAxeClean(p, "enlarged file view");
@@ -2777,6 +3076,102 @@ test("C.2: axe-core finds no serious/critical WCAG violations across the app", a
     await p.close();
     await dax.stop();
     await relay.stop();
+  }
+});
+
+test("CS: manage subscription — status, cancel behind its confirm, scheduled state, undo", async () => {
+  // A licensed daemon against a stateful billing-backend stub: /api/subscription
+  // reads, /cancel schedules at period end, /uncancel clears. The daemon only
+  // ever POSTs the license key; end-of-period timing is the SITE's business
+  // (pinned in the site repo's own suite). Midday-UTC instants keep the
+  // rendered dates timezone-stable.
+  const relay = await startRelayStub({});
+  const KEY = "mf_e2ecancelabcdefghijklmnop";
+  let cancelAt: string | null = null;
+  const seenKeys: string[] = [];
+  const billing = createServer((req, res) => {
+    let raw = "";
+    req.on("data", (c) => (raw += String(c)));
+    req.on("end", () => {
+      let body: { licenseKey?: unknown } = {};
+      try {
+        body = JSON.parse(raw) as { licenseKey?: unknown };
+      } catch {
+        /* the entitlement warm-up may probe with anything — fall through */
+      }
+      if (typeof body.licenseKey === "string") seenKeys.push(body.licenseKey);
+      const url = req.url ?? "";
+      if (!url.startsWith("/api/subscription")) {
+        res.writeHead(404).end(); // the boot-time entitlement exchange — not under test
+        return;
+      }
+      if (body.licenseKey !== KEY) {
+        res.writeHead(403, { "content-type": "application/json" });
+        res.end(JSON.stringify({ reason: "unknown license key" }));
+        return;
+      }
+      if (url === "/api/subscription/cancel") cancelAt = "2026-09-01T12:00:00Z";
+      if (url === "/api/subscription/uncancel") cancelAt = null;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ status: "active", periodEnd: "2026-09-01T12:00:00Z", cancelAt }));
+    });
+  });
+  await new Promise<void>((resolve) => billing.listen(0, "127.0.0.1", resolve));
+  const billingPort = (billing.address() as { port: number }).port;
+
+  const token = "e2e-cs-9c2f";
+  const d2 = await startDaemon({
+    MIRAFOLD_TOKEN: token,
+    MIRAFOLD_RELAY_URL: relay.url,
+    MIRAFOLD_RELAY_CODE: "e2e-cs-pairing-code-1a2b",
+    MIRAFOLD_LICENSE_KEY: KEY,
+    MIRAFOLD_ENTITLEMENT_URL: `http://127.0.0.1:${billingPort}/api/entitlement`,
+    SUBSCRIPTION_MIN_GAP_MS: "0", // test clicks outrun the human-pace floor
+  });
+  const p = await browser.newPage();
+  try {
+    await p.goto(`http://127.0.0.1:${d2.port}/?token=${token}`);
+    // An empty registry opens the onboarding overlay, which sits over the
+    // fleet's pair button — enter a session and use the status bar's instead
+    // (both hosts render the same card).
+    await p.locator(".onb-agent", { hasText: "Claude Code" }).click();
+    await p.waitForURL(/\/s\/[\w-]+/);
+
+    // The resting UI shows only the pair button; nothing cancel-shaped.
+    await p.locator(".sb-pair").click();
+    await p.waitForSelector(".pair-card");
+    const manage = p.locator(".pair-manage", { hasText: "manage subscription" });
+    assert.equal(await manage.count(), 1, "licensed daemon must offer the neutral manage link");
+
+    // Manage → the live status line, no cancel action fired yet.
+    await manage.click();
+    await p.waitForSelector(".sub-line:has-text('active — renews Sep 1, 2026')");
+    await assertAxeClean(p, "manage subscription");
+
+    // The confirm step quotes the real consequence — and backing out works.
+    await p.locator(".sub-btn", { hasText: "cancel subscription…" }).click();
+    await p.waitForSelector(".sub-line:has-text(\"You won't be charged again\")");
+    assert.match(await p.locator(".sub-line").innerText(), /Sep 1, 2026/);
+    await p.locator(".sub-btn", { hasText: "keep subscription" }).click();
+    await p.waitForSelector(".sub-line:has-text('active — renews Sep 1, 2026')");
+
+    // Cancel for real: the scheduled state, with undo as the one action.
+    await p.locator(".sub-btn", { hasText: "cancel subscription…" }).click();
+    await p.locator(".sub-btn-danger", { hasText: "cancel subscription" }).click();
+    await p.waitForSelector(".sub-line:has-text('cancellation scheduled — access ends Sep 1, 2026')");
+    await p.locator(".sub-btn", { hasText: "undo cancellation" }).click();
+    await p.waitForSelector(".sub-line:has-text('active — renews Sep 1, 2026')");
+
+    // The daemon presented the key on every request…
+    assert.ok(seenKeys.length >= 3);
+    assert.ok(seenKeys.every((k) => k === KEY));
+    // …and the key itself never reached the page (secrets stay server-side).
+    assert.ok(!(await p.content()).includes(KEY), "license key leaked into the DOM");
+  } finally {
+    await p.close();
+    await d2.stop();
+    await relay.stop();
+    await new Promise((resolve) => billing.close(resolve));
   }
 });
 

@@ -21,7 +21,9 @@ message. PRs with unsigned commits can't be merged.
 - Tests run in three tiers (README §8): `yarn test` (unit, fast),
   `yarn test:server` (real daemon + real sockets, mock-forced),
   `yarn test:e2e` (headless Chrome, rebuilds dist first). New code lands
-  with tests in the matching tier, and no test may ever reach a real model.
+  with tests in the matching tier. UI-facing changes also run through
+  `yarn test:ui` (managed Chromium, Firefox, and WebKit plus the Ubuntu visual
+  baselines). No automated test may ever reach a real model.
 - Comments only for non-obvious constraints — the code says what it does.
 - The non-negotiables in [CLAUDE.md](CLAUDE.md) bind every change: the wire
   protocol only ever *adds* message types; agent output never touches

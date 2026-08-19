@@ -1,6 +1,30 @@
-import type { Action, AgentName, BackendChoice, WireMsg } from "@protocol";
+import type { Action, AgentName, BackendChoice, ClientMsg, WireMsg } from "@protocol";
 import { SocketClient } from "./ws";
 import { createFolderPickerRequests } from "./folder-picker-requests";
+
+/** A per-viewport correlation id (the sendBang shape, 4.9): minted client-
+ *  side so each surface can match the one reply/stream it asked for. */
+const mintId = (prefix: string): string =>
+  `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
+
+/** Phase CS: mint + send one manage-subscription request over any sender —
+ *  shared by the session bus and the fleet's own socket. The single
+ *  `subscription` reply echoes the returned id. */
+export type SubscriptionAct = "status" | "cancel" | "uncancel";
+export function sendSubscriptionRequest(
+  send: (m: ClientMsg) => void,
+  act: SubscriptionAct,
+): string {
+  const id = mintId("sub");
+  send(
+    act === "status"
+      ? { type: "subscription_status", id }
+      : act === "cancel"
+        ? { type: "subscription_cancel", id }
+        : { type: "subscription_uncancel", id },
+  );
+  return id;
+}
 
 /**
  * What the output zone consumes: the wire protocol plus one local control
@@ -36,15 +60,24 @@ export interface SessionBus {
   answerPermission(id: string, allow: boolean): void;
   endSession(): void;
   sendAction(action: Action, sourceId: string): void;
-  /** Explorer (Phase E; lazy since E2.2): request ONE directory's listing /
-   *  a file's content / a file's diff. Each mints and returns a correlation
-   *  id — the reply (fs_dir / fs_file / fs_file_diff) echoes it, so a
+  /** Explorer/Changes: request ONE directory's listing, the complete changed
+   *  set, a file's content, or a file's diff. Each mints and returns a
+   *  correlation id — the reply echoes it, so a
    *  component can drop a reply that isn't the one it's currently waiting
    *  on. The whole-tree fs_list is retired from the client; the daemon still
    *  answers it for older bundles (the version-skew floor). */
   requestFsListdir(path: string): string;
+  requestFsChanges(): string;
   requestFsRead(path: string): string;
   requestFsDiff(path: string): string;
+  /** Phase CS: one manage-subscription request (status/cancel/uncancel);
+   *  the single `subscription` reply echoes the returned minted id. */
+  requestSubscription(act: SubscriptionAct): string;
+  /** Phase FD: stream a dropped file's bytes to the daemon's staging dir.
+   *  Mints and returns the correlation id; the done/error reply echoes it. */
+  uploadBegin(name: string, size: number): string;
+  uploadChunk(id: string, data: string): void;
+  uploadAbort(id: string): void;
 }
 
 export function createSessionBus(): SessionBus {
@@ -126,7 +159,7 @@ export function createSessionBus(): SessionBus {
     // Run a shell command in the session's cwd (the `!` path). The id
     // is minted here so this viewport can correlate the broadcast stream (4.9).
     sendBang(command: string): string {
-      const id = `bang-${Math.random().toString(36).slice(2, 10)}`;
+      const id = mintId("bang");
       socket.send({ type: "bang", command, id });
       return id;
     },
@@ -152,22 +185,42 @@ export function createSessionBus(): SessionBus {
     sendAction(action: Action, sourceId: string) {
       socket.send({ type: "action", action, sourceId });
     },
-    // Explorer requests (Phase E). Ids are minted here (the sendBang shape)
-    // and returned so the panel correlates the one reply each gets.
+    // Explorer/Changes requests. Ids are minted here (the sendBang shape) and
+    // returned so each shell surface correlates the one reply it gets.
     requestFsListdir(path: string): string {
-      const id = `fsl-${Math.random().toString(36).slice(2, 10)}`;
+      const id = mintId("fsl");
       socket.send({ type: "fs_listdir", id, path });
       return id;
     },
+    requestFsChanges(): string {
+      const id = mintId("fsc");
+      socket.send({ type: "fs_changes", id });
+      return id;
+    },
     requestFsRead(path: string): string {
-      const id = `fsr-${Math.random().toString(36).slice(2, 10)}`;
+      const id = mintId("fsr");
       socket.send({ type: "fs_read", id, path });
       return id;
     },
     requestFsDiff(path: string): string {
-      const id = `fsd-${Math.random().toString(36).slice(2, 10)}`;
+      const id = mintId("fsd");
       socket.send({ type: "fs_diff", id, path });
       return id;
+    },
+    requestSubscription(act: SubscriptionAct): string {
+      return sendSubscriptionRequest((m) => socket.send(m), act);
+    },
+    // Phase FD — the sendBang mint shape; per-viewport correlation only.
+    uploadBegin(name: string, size: number): string {
+      const id = mintId("up");
+      socket.send({ type: "file_upload_begin", id, name, size });
+      return id;
+    },
+    uploadChunk(id: string, data: string) {
+      socket.send({ type: "file_upload_chunk", id, data });
+    },
+    uploadAbort(id: string) {
+      socket.send({ type: "file_upload_abort", id });
     },
   };
 }

@@ -1,0 +1,206 @@
+/* ---- Transcript ----------------------------------------------------------
+   Everything the output zone renders: the empty-session welcome, command
+   strips and agent turns, thinking, service notices, tool calls, and the
+   `!` command's output. */
+
+/* #12: welcome shown in a fresh session with no transcript yet — centered in
+   the empty output zone so it's clearly "your session", not raw emptiness. */
+.zone-empty {
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 15px;
+  padding: 24px;
+  color: var(--fg-dim);
+  animation: rise 0.2s ease-out both;
+}
+
+.zone-empty-hello {
+  position: relative; /* anchors the hanging mark */
+}
+
+.zone-empty-mark {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px; /* clips the tile's corners; no outline by design */
+  position: absolute;
+  right: 100%; /* hangs left of the title so the TEXT owns the centerline */
+  margin-right: 18px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.zone-empty-title {
+  font-size: 33px;
+  font-weight: 650;
+  color: var(--fg-strong);
+}
+
+.zone-empty-sub {
+  max-width: 44ch;
+  font-size: 19px;
+  line-height: 1.55;
+}
+
+.glyph {
+  color: var(--accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  user-select: none;
+}
+
+/* User input renders as a command strip: a tinted band with a green edge
+   that segments the scrollback — everything between strips is agent output. */
+.turn-user {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.92em;
+  color: var(--fg-strong);
+  white-space: pre-wrap;
+  background: var(--surface-2);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin-top: 12px;
+  /* a pasted URL/token must wrap, not widen the zone into a sideways scroll */
+  overflow-wrap: anywhere;
+}
+
+.turn-user:first-child {
+  margin-top: 0;
+}
+
+/* Agent output sits slightly inset from the strips, on the bare canvas. */
+.turn-assistant {
+  padding: 0 4px;
+  color: var(--fg-body);
+  align-self: stretch;
+  line-height: 1.55;
+}
+
+.markdown :is(h1, h2, h3):first-child {
+  margin-top: 0;
+}
+
+.markdown a {
+  color: var(--info);
+}
+
+.markdown code {
+  background: var(--inline-code-bg);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 0.9em;
+}
+
+.markdown pre {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  overflow-x: auto;
+  color: var(--code-fg); /* --code-bg is pinned dark; never inherit light fg */
+}
+
+.markdown pre code {
+  background: none;
+  padding: 0;
+}
+
+.markdown table {
+  border-collapse: collapse;
+}
+
+.markdown th,
+.markdown td {
+  border: 1px solid var(--border-mid);
+  padding: 6px 12px;
+}
+
+/* ---- Thinking (Phase T2.1) ------------------------------------------------
+   The model's reasoning, full fidelity: streams dim and italic while the
+   turn runs, folds to one clickable line once real output starts.
+   Collapsed is fine — invisible is not. */
+
+.thinking-block {
+  /* flex-none: overflow:hidden (folded state) would otherwise let the
+     zone's flex column squash this row to zero height */
+  flex: none;
+  color: var(--fg-dimmer);
+  font-style: italic;
+  font-size: 0.88em;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-width: 80ch;
+  padding-left: 10px;
+  border-left: 2px solid var(--border-2);
+}
+
+.thinking-done {
+  cursor: pointer;
+}
+
+.thinking-done:hover {
+  color: var(--fg-dim);
+}
+
+.thinking-folded {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8em;
+  font-style: normal;
+}
+
+/* ---- Service-status line (F.2) ------------------------------------------
+   Events the terminal shows and the adapter would otherwise drop — a retry,
+   a compaction, a rate-limit warning, a model refusal. Same dim system-line
+   family as the thinking block, never agent markdown. rate_limit / refusal
+   read as warnings (amber); retry / compaction stay neutral-dim. */
+
+.notice-line {
+  flex: none; /* same reason as .thinking-block: don't let the flex column squash it */
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  color: var(--fg-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8em;
+  line-height: 1.5;
+  max-width: 80ch;
+  padding: 2px 0 2px 10px;
+  border-left: 2px solid var(--border-2);
+}
+
+.notice-glyph {
+  opacity: 0.85;
+}
+
+.notice-line[data-kind="rate_limit"],
+.notice-line[data-kind="refusal"] {
+  color: var(--warn-fg);
+  border-left-color: var(--warn-fg);
+}
+
+/* An engine's OWN words, badged with its name (2026-07-20 audit). Unbadged,
+   this line is Mirafold speaking; a verbatim model-chosen string must not be
+   able to pass for that. The badge replaces the glyph rather than joining it,
+   so the two cases can't be confused at a glance, and the dashed rule marks
+   the whole line as quoted from elsewhere. */
+.notice-line[data-source] {
+  border-left-style: dashed;
+}
+
+.notice-source {
+  flex: none;
+  align-self: center;
+  padding: 1px 6px;
+  border: 1px solid var(--border-2);
+  border-radius: 4px;
+  color: var(--fg-dimmer);
+  font-size: 0.85em;
+  letter-spacing: 0.02em;
+}
+

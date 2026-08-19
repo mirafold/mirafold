@@ -128,10 +128,20 @@ export class CodexEventMapper {
         } else if (phase === "completed") {
           this.ensureAnnounced(item.id, "Shell", item.command, { command: item.command });
           const capped = capOutput(item.aggregated_output ?? "");
+          // Codex reports probe commands (grep with no match, a failing
+          // test run) as status "completed" with a nonzero exit, and its
+          // own TUI shows them as ordinary completed commands — only
+          // status "failed" is an error. The exit code stays visible as
+          // an annotation, so nothing the terminal showed is lost.
+          const failed = item.status === "failed";
+          const exitNote =
+            !failed && item.exit_code != null && item.exit_code !== 0
+              ? `${capped.text ? "\n" : ""}(exit ${item.exit_code})`
+              : "";
           this.finishTool(item.id, {
-            output: capped.text,
+            output: capped.text + exitNote,
             truncatedBytes: capped.truncatedBytes,
-            isError: item.status === "failed" || (item.exit_code != null && item.exit_code !== 0),
+            isError: failed,
           });
         }
         break;

@@ -46,7 +46,7 @@ export function parseRenderId(output: unknown): string {
  *
  * Faithful-skin posture (inherit-don't-invent): passes only Mirafold's own
  * concerns — the session cwd and model when set. Auth is API-key (the free
- * Google-login path was deprecated by Google in 2026); the key stays in the
+ * Google-login path stopped serving individual accounts in 2026); the key stays in the
  * server env, injected into the child, never on the wire. Approval for the
  * user's own tools is inherited; only our `genui` MCP server is auto-trusted
  * (the analog of Codex's per-server `approve`), since headless can't prompt.

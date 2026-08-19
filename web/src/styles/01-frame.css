@@ -1,0 +1,97 @@
+/* ---- Base + page frame ------------------------------------------------------
+   html/body, .shell, .main-row/.main-col, and the zone containers. The
+   surface map, import order, and the structure-only rule (colors via
+   var(...) exclusively) live in ../styles.css — the import spine. */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+}
+
+/* The page itself never scrolls or pans sideways — wide content (tables,
+   code, tool output) scrolls inside its own overflow-x box. `clip` rather
+   than `hidden`: it forbids the overflow without creating a scroll
+   container, so vertical page scroll (the fleet) stays native. */
+html,
+body {
+  overflow-x: clip;
+  overscroll-behavior-x: none;
+}
+
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.shell {
+  /* One source of truth for the page's side gutters — .main-row cancels the
+     left one to keep the activity bar flush, so they must never drift. */
+  --gutter-left: 24px;
+  --gutter-right: 24px;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  padding: 0 var(--gutter-right) 0 var(--gutter-left);
+}
+
+/* The workbench row: activity bar on the left, everything else — transcript,
+   prompt box AND status bar — strictly to its right (VS Code frame). Only
+   banners above stay full-width, so the bar's border line runs unbroken from
+   the window's top edge to its bottom. The negative margin cancels .shell's
+   left gutter so the strip is FLUSH with the window edge — the visible band
+   from edge to border line IS the bar, with no dead page-margin inside it. */
+.main-row {
+  /* Air between the activity bar's border line and the content beside it;
+     .files-panel gives most of it back to sit near-flush (see there). */
+  --content-air: 12px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  margin-left: calc(-1 * var(--gutter-left));
+}
+
+.main-col {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding-left: var(--content-air);
+}
+
+/* Explorer (E.3) + transcript. The files panel is a fixed-width left column;
+   the zone-row fills the rest so the transcript keeps rendering beside it.
+   With the panel closed this collapses to just the transcript, full-width. */
+.zone-outer {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+/* Output area: transcript column + (only while something is pinned) the
+   dock or its collapsed edge tab. */
+.zone-row {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+
+.render-zone {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 24px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
