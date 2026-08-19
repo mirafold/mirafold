@@ -11,25 +11,40 @@ import type { AgentName } from "./protocol";
 // The matrix, by credential KIND and by layer (free LOCAL use vs the paid RELAY):
 //
 //   Anthropic (claude-code), closed:
-//     - subscription (OAuth login): PROHIBITED everywhere. Verbatim from the
-//       Claude Code docs "Legal and compliance" page (checked 2026-07-15):
-//       "Anthropic does not permit third-party developers to offer Claude.ai
-//       login or to route requests through Free, Pro, or Max plan credentials
-//       on behalf of their users." (Feb 2026 docs clarification; server-side
-//       token blocking live since Jan 2026.)
-//     - 2026-07-27 research note (external review; conclusion UNCHANGED —
-//       subscription stays blocked): Anthropic's posture moved twice more in
-//       H1 2026 — an April 2026 announcement extended the block to "all
-//       third-party harnesses" (hit OpenClaw, which made legitimate calls),
-//       then a June 15 partial reinstatement gave paid plans a dedicated
-//       monthly "Agent SDK"/programmatic credit pool (~$20–$200/mo by tier)
-//       spendable on third-party agents, with ordinary subscription quota
-//       reserved for official surfaces. Whether a faithful re-skin driving
-//       the official binary could legitimately ride that credit pool has no
-//       published answer; Anthropic's docs invite contacting them about
-//       permitted auth methods. Fold into the R.7 launch-week re-check as a
-//       possible OPPORTUNITY (a sanctioned subscription path), never a
-//       pre-answer — until verified in writing, this row stays blocked.
+//     - subscription (OAuth login): BLOCKED everywhere. The published sentence
+//       (Claude Code docs "Legal and compliance", re-checked 2026-08-17, still
+//       live): "Anthropic does not permit third-party developers to offer
+//       Claude.ai login or to route requests through Free, Pro, or Max plan
+//       credentials on behalf of their users." Read precisely, that names two
+//       acts — offering Claude.ai login, and routing requests ON BEHALF OF
+//       users — and Mirafold does neither: it spawns the official binary,
+//       never touches the credential, and is never in the request path. It is
+//       also the SOFTENED successor of a harder February 2026 sentence, since
+//       deleted ("Using OAuth tokens obtained through Claude Free, Pro, or Max
+//       accounts in any other product, tool, or service … is not permitted").
+//       So the citation is narrower than a flat prohibition — and the row stays
+//       blocked anyway, for the reason that actually carries it: volatility.
+//       Three policy revisions in six months, server-side enforcement that
+//       arrived before the docs (Jan 2026 token blocking, with collateral
+//       account bans), and a downside that lands on the USER's account, not
+//       ours. That fails the disclosed-uncertainty rule's "visibly permissive
+//       posture" condition (contrast the OpenAI row), so this row does not
+//       become a gray area even though the terms are now similarly ambiguous.
+//       Scope note: Free/Pro/Max fall under the Consumer Terms (§3(7) carries
+//       the third-party-client clause); Team/Enterprise fall under the
+//       Commercial Terms, which contain no such clause. Verified 2026-08-17.
+//     - Timeline correction (2026-08-17; an earlier note here was backwards):
+//       the April 2026 announcement extended the block to "all third-party
+//       harnesses" (hit OpenClaw), and a June 15 change that would have given
+//       paid plans a monthly Agent SDK credit pool spendable on third-party
+//       agents was PAUSED that day and never took effect — Anthropic's help
+//       center (support.claude.com/en/articles/15036540, June 16, 2026): "For
+//       now, nothing has changed: Claude Agent SDK, `claude -p`, and
+//       third-party app usage still draw from your subscription's usage
+//       limits." There is no sanctioned credit pool to ride; nothing to fold
+//       in as an opportunity. A written answer from Anthropic on whether a
+//       local UI driving the official binary is covered is the only thing that
+//       would move this row (inquiry drafted 2026-08-17, unsent).
 //     - API key: allowed locally; relay = API key only.
 //   Google Gemini (gemini-cli), closed: subscription/OAuth isn't even a path
 //     anymore — Google stopped serving Gemini CLI requests for individual
