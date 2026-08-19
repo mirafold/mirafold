@@ -867,7 +867,10 @@ with it. Both sequence BEFORE R.5.**
     scroll is the accepted behavior for the settings card at short heights
     (the theme picker's layout is Kyle-locked). → PLAN-ARCHIVE.md, "Moved 2026-08-12 (prune — completed bodies)."
   - **Beta-tarball era mechanics + status (2026-07-23 → 07-25)** —
-    hand-sent tarball distribution, the testers-subscribe-FOR-REAL rule,
+    invites SENT 2026-07-23 to 5–6 people (tarball + mirafold.com/beta;
+    the private beta genuinely ran with real invitees — external fact,
+    recovered 2026-08-19 from a stranded branch note), hand-sent tarball
+    distribution, the testers-subscribe-FOR-REAL rule,
     the first finding (an untrue stand-in model label; Kyle's standing
     call: show NOTHING until the real model is known), 0.2.0 rebuilds, the
     npm-audit-noise investigation (testers never see it — npm skips audit
