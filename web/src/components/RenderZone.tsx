@@ -18,9 +18,11 @@ import { ToolBlock } from "./ToolBlock";
 import { Artifact } from "./Artifact";
 import { PickerBlock } from "./PickerBlock";
 import { GearGlyph } from "./GearGlyph";
+import { ResponseDocument } from "./ResponseDocument";
 import { useFollowTail } from "../use-follow-tail";
 import { createTranscriptIngress } from "../delta-queue";
 import { deckElapsedSeconds } from "../subagent-deck";
+import { groupResponseDocuments } from "../response-document";
 import { shouldFocusPromptFromTranscriptPointer } from "../transcript-focus";
 import {
   createTranscriptProjection,
@@ -329,6 +331,10 @@ export function RenderZone({
     () => pinned.flatMap((id) => transcript.paintingsById.get(id) ?? []),
     [pinned, transcript.paintingsById],
   );
+  const displayItems = useMemo(
+    () => groupResponseDocuments(transcript.rows),
+    [transcript.rows],
+  );
 
   const handleTranscriptPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
     if (
@@ -341,6 +347,18 @@ export function RenderZone({
       focusPrompt();
     }
   };
+
+  const renderZoneEntry = (entry: OutputZoneRow) => (
+    <ZoneEntry
+      key={entry.id}
+      entry={entry}
+      toggleThinking={toggleThinking}
+      expandedThinking={expandedThinking}
+      handleAction={handleAction}
+      pinned={pinned}
+      togglePin={togglePin}
+    />
+  );
 
   return (
     <div className="zone-row">
@@ -408,17 +426,19 @@ export function RenderZone({
             </div>
           </div>
         )}
-        {transcript.rows.map((entry) => (
-          <ZoneEntry
-            key={entry.id}
-            entry={entry}
-            toggleThinking={toggleThinking}
-            expandedThinking={expandedThinking}
-            handleAction={handleAction}
-            pinned={pinned}
-            togglePin={togglePin}
-          />
-        ))}
+        {displayItems.map((item) =>
+          item.kind === "entry" ? (
+            renderZoneEntry(item.row)
+          ) : (
+            <ResponseDocument
+              key={item.key}
+              responseKey={item.responseKey}
+              continuation={item.continuation}
+            >
+              {item.rows.map(renderZoneEntry)}
+            </ResponseDocument>
+          ),
+        )}
       </div>
       {pinned.length > 0 &&
         (dockCollapsed ? (
@@ -610,7 +630,8 @@ function ZoneEntry({
   }
   return entry.role === "user" ? (
     <div className="turn turn-user">
-      <span className="glyph">❯</span> {entry.text}
+      <span className="glyph" aria-hidden="true">❯</span>
+      <span className="turn-user-text">{entry.text}</span>
     </div>
   ) : (
     <AssistantTurn text={entry.text} />

@@ -629,11 +629,21 @@
 .rc-chart svg {
   display: block;
   width: 100%;
+  /* The chart geometry is authored on a 640-unit canvas. Below roughly this
+     measure, scaling the whole SVG keeps it contained but makes axis/category
+     labels illegible. Preserve a readable canvas and let the chart—not the
+     workbench—own horizontal overflow under severe workspace pressure. */
+  min-width: 600px;
   height: auto;
 }
 
 .rc-chart-plot {
   position: relative;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hover) transparent;
 }
 
 .rc-chart-legend {
@@ -722,4 +732,3 @@
 .rc-link-label {
   font-weight: 500;
 }
-

@@ -11455,3 +11455,146 @@ phase's preamble, standing rules, and live notes stayed in PLAN.md.
   in-flight callers coalesce; itest harness pins it to 0). Tradeoff, eyes
   open: a just-started local model server takes up to ~8 s to appear
   (was ~3 s).
+
+## Moved 2026-08-19 (Phase LD — completed Step LD.1 body)
+
+- [x] **Step LD.1 — Structural composition, visually neutral**
+  - Goal: introduce the live document boundary without intentionally
+    redesigning its appearance.
+  - Build: add a pure `response-document.ts` grouping helper over projected
+    rows; hard/soft boundary classification and stable segment/response keys;
+    a small transparent `ResponseDocument`; `RenderZone` maps display items
+    while reusing the existing row renderer; minimal structural CSS reproduces
+    today's 14px row rhythm. Add a deterministic existing-wire MockSession
+    response for prose → render → prose → second painting → prose.
+  - Tests: grouping order/reference/no-mutation cases; hard and soft
+    boundaries; streaming before `turn_end`; later prose beneath a painting;
+    direct DOM identity sentinel across later deltas and a soft interruption;
+    pin/update/replay regression; transcript focus and terminal tail behavior.
+  - Files: `web/src/response-document.ts` + test,
+    `web/src/components/ResponseDocument.tsx`, `RenderZone.tsx`, transcript CSS,
+    MockSession fixture/tests, focused browser coverage. No protocol/registry
+    source change.
+  - Done when: focused unit/browser checks, full Tier 1, typecheck, build, and
+    existing Tier-3 coverage are green; projected row semantics and visible
+    geometry are unchanged apart from transparent wrapper elements.
+
+Completion record (2026-08-19): implemented on
+`feature/live-document-view`. The grouping helper derives display-only
+documents from `TranscriptSnapshot.rows`, with user/bang hard boundaries and
+shell rows as soft interruptions. Existing row objects and IDs are reused;
+the browser test proves an already-mounted registry card remains the same DOM
+node as later prose streams across a notice. A deterministic MockSession turn
+uses only existing wire messages. No protocol or registry source changed, and
+the transparent wrapper left all four existing visual baselines unchanged.
+Verified: Tier 1 865/865, typecheck, build, Tier 2 152/152, Tier 3 105/105,
+browser matrix 3/3, visual suite 4/4, and `git diff --check`.
+
+## Moved 2026-08-19 (Phase LD — completed Step LD.2 body)
+
+- [x] **Step LD.2 — Opinionated document treatment**
+  - Goal: make assistant output unmistakably read as one composed technical
+    document without turning it into stacked cards or an editorial webpage.
+  - Build: a wide rich-content lane (initial tuning range 1100–1200px or
+    available width) with an inner 72–78ch prose measure; deliberate Markdown
+    heading/body/list/blockquote/rule rhythm; locally contained code/table
+    overflow; registry/artifact alignment using existing theme tokens. Prose
+    stays transparent unless complete-screen review proves one quiet continuous
+    field necessary—never per-chunk cards, shadow, glow, or a giant outer card.
+  - Tests: dark and light canonical document states in the existing Ubuntu
+    visual suite, Markdown semantic coverage, axe, and one-sentence/long/mixed
+    fixtures. Snapshot changes are reviewed intentionally, not blanket-updated.
+  - Done when: Kyle's complete-screen review says the view is clearly
+    Mirafold, technically dense, and not over-designed; every theme contract
+    and required gate remains green.
+  - Engineering status (2026-08-19): complete on
+    `feature/live-document-view`. The response now uses a left-anchored 1160px
+    rich lane and 76ch prose lane, transparent prose, a restrained Markdown
+    hierarchy, and keyboard-reachable local overflow for fenced code and
+    Markdown tables. Existing compact paintings keep their natural measure;
+    wide technical paintings use the rich lane. The canonical dark/light
+    fixtures and one-sentence restraint oracle are in place. No protocol,
+    registry schema, production adapter, dependency, theme palette, or second
+    rendering path changed. Verified: Tier 1 **866/866**, typecheck, build,
+    Tier 2 **152/152**, Tier 3 **106/106**, browser matrix **3/3**, visual suite
+    **6/6**, and `git diff --check`. The checkbox remains open solely for
+    Kyle's required complete-screen visual review.
+
+Completion record (2026-08-19): Kyle approved the complete-screen result after
+iterating the response lane and user-turn treatment. The final response is
+left-anchored, with a 1160px rich lane and 76ch transparent prose lane. The
+user command strip keeps only the chevron and a solid accent edge; its neutral
+top/bottom outline fades toward the right, with no `YOU` label or hard right
+edge. The visual direction remains theme-native, dense, and free of stacked
+prose cards, shadows, or a giant outer response card. Verification is recorded
+in the compact Phase LD entry in `PLAN.md`.
+
+## Moved 2026-08-19 (Phase LD — completed Step LD.3 body)
+
+- [x] **Step LD.3 — Workspace and phone responsiveness**
+  - Goal: make the same composition native under every real center-width
+    pressure without a parallel rendering mode.
+  - Build/test: center only; Explorer; pin dock; both; file view; narrow
+    desktop; 390px phone; wide tables/code/diffs/charts/artifacts. Preserve
+    `min-width: 0` through flex ancestors, local overflow, prompt/status/touch
+    behavior, manual scroll position, and bottom-follow semantics. Add a
+    container query only if direct browser evidence requires one; phone
+    overrides remain in the repository's single phone block.
+  - Done when: no page-level horizontal overflow at any approved geometry,
+    rich content remains usable, and closing panels restores width naturally.
+
+Completion record (2026-08-19): direct browser measurements proved the
+existing flex/min-width contracts already shrink and restore the response at
+1440px and at a 980px Explorer + file view + response + pin-dock layout, with
+zero page overflow. The 390px relay-backed phone case fills the available
+transcript canvas, preserves prompt/status/Explorer behavior, and keeps the
+same document DOM node through the full-screen drawer. Complete-screen review
+found one issue geometry could not: a chart contained at 325px had unreadably
+scaled labels. The existing chart plot now owns keyboard-reachable horizontal
+overflow around a 600px minimum SVG canvas across all three managed browser
+engines; no container query or new breakpoint was needed. A
+deterministic existing-wire stress turn covers diff, chart, and sandboxed
+artifact beside the live-document table/code fixture. Verification: Tier 1
+866/866, typecheck, build, Tier 2 152/152, Tier 3 108/108, browser matrix 3/3,
+visual suite 6/6, and `git diff --check`. One earlier final-state Tier 3
+attempt was 107/108 when the existing CR.2 phone test timed out waiting for a
+file view; it then passed 3/3 focused unchanged and the unchanged full rerun
+passed 108/108.
+
+## Moved 2026-08-19 (Phase LD — completed Step LD.4 body)
+
+- [x] **Step LD.4 — Restraint and regression closure**
+  - Goal: remove anything that reads as decoration, excess height, or unstable
+    motion, then close the feature with literal evidence.
+  - Exercise: one-sentence, giant, text-only, render-heavy, tool-heavy,
+    heading-rich, heading-free, long-code/URL/filename, pin/unpin,
+    update-in-place, replay, error, notice, picker, subagent, every theme,
+    accessibility announcements, selection/focus, and reduced motion.
+  - Verification: `yarn test`, typecheck, build, full Tier 2/3, managed browser
+    matrix, visual constituent with reviewed baselines, and `git diff --check`.
+    The known local combined `yarn test:ui` timeout is reported against its
+    untouched-`next` baseline; constituent/CI results are the literal gate
+    unless that wrapper is repaired separately.
+  - Done when: every checkbox in `docs/LIVE-DOCUMENT-VIEW.md` is true, no
+    classic toggle or dual path exists, and the completed body is ready for the
+    normal archive/prune flow.
+
+Completion record (2026-08-19): the final dark/light complete-screen review
+confirmed that Kyle's approved transparent, left-anchored treatment is dense
+and restrained; no visual rule needed removal. A mock-only long-response turn
+uses existing wire messages to exercise a genuinely tall, heading-free,
+text-only document with a long URL, filename, and code line. Browser assertions
+prove local containment, reduced motion, selection and prompt focus, the
+existing 4,000-character announcer cap, axe cleanliness, and stable document
+DOM/geometry while every one of the seven shipped themes is applied. The LD.1
+and LD.3 timing assertions now prove both a registry painting and an artifact
+appear while the turn is active and before subsequent prose. Existing full
+Tier-3 cases exercised the remaining render-heavy, tool-heavy, pin/unpin,
+update-in-place, replay, error, notice, picker, subagent, scrolling, phone, and
+workspace cases. No protocol, registry schema, production adapter, dependency,
+classic toggle, dual path, or approved style changed. Verification: focused LD
+browser tests 4/4; Tier 1 867/867; typecheck; build; Tier 2 152/152; Tier 3
+109/109; managed browser matrix 3/3; visual constituent 6/6; and
+`git diff --check`. Per the phase's recorded baseline rule, the independently
+green browser and visual constituents—not the known combined-wrapper timeout—
+are the literal local UI gate.

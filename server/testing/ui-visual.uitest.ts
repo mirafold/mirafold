@@ -74,6 +74,19 @@ async function settleKpiTurn(page: Page, text: string): Promise<void> {
   await page.locator(".stop-btn").waitFor({ state: "detached" });
 }
 
+async function settleLiveDocument(page: Page): Promise<void> {
+  const prompt = page.locator(".prompt-box textarea");
+  await prompt.fill("live document demo");
+  await prompt.press("Enter");
+  await page
+    .locator(".turn-assistant", { hasText: "response finished as one live composition" })
+    .waitFor();
+  await page.locator(".stop-btn").waitFor({ state: "detached" });
+  await page.locator(".render-zone").evaluate((element) => {
+    element.scrollTop = 0;
+  });
+}
+
 test("visual: onboarding card", { skip: LINUX_ONLY }, async () => {
   await withFreshMockPage(
     browser,
@@ -124,6 +137,42 @@ test("visual: settled desktop session, light theme", { skip: LINUX_ONLY }, async
       await settleKpiTurn(page, "kpi visual baseline");
       await normalizeSessionFacts(page);
       await assertVisualSnapshot(browser, page, "desktop-session-light");
+    },
+  );
+});
+
+test("visual: live document composition", { skip: LINUX_ONLY }, async () => {
+  await withFreshMockPage(
+    browser,
+    {
+      token: "ui-visual-live-document",
+      env: HEADLESS_DAEMON_ENV,
+      context: visualContext({ width: 1440, height: 1100 }),
+    },
+    async (page) => {
+      await enterMockSession(page);
+      await settleLiveDocument(page);
+      await normalizeSessionFacts(page);
+      await assertVisualSnapshot(browser, page, "live-document");
+    },
+  );
+});
+
+test("visual: live document composition, light theme", { skip: LINUX_ONLY }, async () => {
+  await withFreshMockPage(
+    browser,
+    {
+      token: "ui-visual-live-document-light",
+      env: HEADLESS_DAEMON_ENV,
+      context: visualContext({ width: 1440, height: 1100 }),
+    },
+    async (page) => {
+      await enterMockSession(page);
+      await page.locator('.sb-theme-opt[title="Light theme"]').click();
+      await page.locator('.sb-theme-opt[title="Light theme"][aria-pressed="true"]').waitFor();
+      await settleLiveDocument(page);
+      await normalizeSessionFacts(page);
+      await assertVisualSnapshot(browser, page, "live-document-light");
     },
   );
 });

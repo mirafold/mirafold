@@ -506,6 +506,10 @@ export class MockSession implements AgentSession {
   // else is a canned reply drawn from the template deck.
   pushPrompt(text: string) {
     if (/revise the selected workspace change/i.test(text)) return this.playMarkdownReview();
+    if (/one sentence document/i.test(text)) return this.playShortDocument();
+    if (/live document demo/i.test(text)) return this.playLiveDocument();
+    if (/responsive document stress/i.test(text)) return this.playResponsiveDocumentStress();
+    if (/document closure stress/i.test(text)) return this.playDocumentClosureStress();
     if (/interactive|button/i.test(text)) return this.playActionCard();
     if (/todo|checklist|step by step|plan it/i.test(text)) return this.playChecklist();
     if (/delegate slowly/i.test(text)) return this.playSlowSubagent();
@@ -630,6 +634,153 @@ export class MockSession implements AgentSession {
       delay,
     );
     this.endTurn(delay);
+  }
+
+  /** LD.1/LD.2: one deterministic live composition using only existing wire
+   * messages. A shell notice softly interrupts two document segments so the
+   * browser test can prove both visual response continuity and mounted
+   * painting identity while later prose streams. The Markdown deck is also
+   * the canonical visual fixture for document hierarchy and local overflow. */
+  private playLiveDocument() {
+    this.beginTurn();
+    let delay = this.streamText(
+      "# Live response\n\nThe first section is already visible while the answer is still streaming.\n\n> Streaming is the motion; structure is the interface.",
+      120,
+      32,
+    );
+    delay += 520;
+    this.paintRender(delay, "card", {
+      title: "Live document checkpoint",
+      body: "This component mounted before the rest of the answer arrived.",
+      kind: "info",
+    });
+
+    delay += 320;
+    this.schedule(
+      () =>
+        this.emit({
+          type: "notice",
+          kind: "retry",
+          text: "The shell remains distinct inside the response rhythm.",
+        }),
+      delay,
+    );
+
+    delay = this.streamText(
+      "## Interpretation\n\nLater prose begins beneath the mounted component with `identity` intact.\n\n- exact order\n- immediate paint\n- no full-answer concatenation\n\n```ts\nconst stablePainting = \"checkpoint_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\";\n```\n\n### Evidence\n\n| Signal | Observation |\n| --- | --- |\n| Stream | visible before completion |\n| Identity | preserved across later deltas |\n\n- [x] mounted ancestry stays stable\n- [ ] restraint receives a final pass\n\n---",
+      delay + 420,
+      32,
+    );
+    delay += 420;
+    this.paintRender(delay, "table", {
+      title: "Composition checks",
+      columns: ["Property", "Observed result", "Invariant", "Owner"],
+      rows: [
+        ["Streaming", "visible before turn end", "immediate", "transcript"],
+        ["Component identity", "preserved", "stable ancestry", "React keys"],
+      ],
+    });
+
+    delay = this.streamText(
+      "### Conclusion\n\nThe response finished as one live composition.",
+      delay + 420,
+      32,
+    );
+    this.endTurn(delay, 700);
+  }
+
+  /** LD.2 restraint oracle: ordinary short answers still render as prose,
+   * without a component or an ornamental empty document surface. */
+  private playShortDocument() {
+    this.beginTurn();
+    const delay = this.streamText("The workspace is ready for the next decision.", 120, 24);
+    this.endTurn(delay, 300);
+  }
+
+  /** LD.3 browser-only stress fixture: existing diff/chart/artifact wire
+   * shapes in one document so width-pressure coverage is deterministic. */
+  private playResponsiveDocumentStress() {
+    this.beginTurn();
+    let delay = this.streamText(
+      "## Width stress\n\nThese wide paintings stay inside the live document as the workspace narrows.",
+      120,
+      24,
+    );
+
+    delay += 220;
+    this.paintRender(delay, "diff", {
+      title: "Narrow workspace diff",
+      files: [
+        {
+          path: "web/src/features/responsive-document/very-long-component-name.tsx",
+          before:
+            'export const responseMeasure = "a-fixed-width-that-could-force-the-workbench-sideways";',
+          after:
+            'export const responseMeasure = "min(100%, var(--response-rich-measure))";',
+          note: "contained at the document edge",
+        },
+      ],
+    });
+
+    delay += 260;
+    this.paintRender(delay, "chart", {
+      title: "Workspace pressure",
+      kind: "bar",
+      horizontal: true,
+      x: [
+        "center workspace only",
+        "Explorer and response",
+        "response and pin dock",
+        "Explorer, response, and pin dock",
+      ],
+      series: [{ name: "available width", values: [1160, 1081, 897, 325] }],
+    });
+
+    delay += 260;
+    this.schedule(
+      () =>
+        this.emit({
+          type: "artifact",
+          title: "Wide sandbox content",
+          html:
+            '<!doctype html><meta charset="utf-8"><style>body{margin:0;padding:12px;font:14px system-ui}.wide{width:720px;display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.wide span{padding:8px;border:1px solid #777}</style><div class="wide"><span>streaming</span><span>ordering</span><span>identity</span><span>containment</span></div>',
+          id: randomUUID(),
+        }),
+      delay,
+    );
+
+    delay = this.streamText(
+      "Every painting remains readable without widening the workbench.",
+      delay + 220,
+      24,
+    );
+    this.endTurn(delay, 300);
+  }
+
+  /** LD.4 browser-only stress fixture: one long, heading-free Markdown row
+   *  proves that plain technical prose remains dense and contains hostile
+   *  intrinsic widths without borrowing a registry component. */
+  private playDocumentClosureStress() {
+    const paragraphs = Array.from(
+      { length: 36 },
+      (_, index) =>
+        `Paragraph ${index + 1} keeps the answer deliberately ordinary: a compact explanation, a concrete observation, and enough continuous prose to exercise real transcript scrollback.`,
+    ).join("\n\n");
+    const longUrl = `https://example.invalid/diagnostics/${"stream-segment-".repeat(18)}final`;
+    const longFilename = `packages/${"deeply-nested-workspace/".repeat(12)}response-document-regression.tsx`;
+    const longCode = `const invariant = "${"stable-mounted-response-document-".repeat(18)}";`;
+    const response = [
+      "This heading-free technical note is intentionally long, but it should still read like work rather than an article template.",
+      paragraphs,
+      `The full diagnostic endpoint remains usable without widening the page: <${longUrl}>`,
+      `The same is true of an unbroken workspace filename: \`${longFilename}\`.`,
+      `\`\`\`ts\n${longCode}\n\`\`\``,
+      "Closure stress complete.",
+    ].join("\n\n");
+
+    this.beginTurn();
+    const delay = this.streamText(response, 100, 2);
+    this.endTurn(delay, 250);
   }
 
   /** Deterministic hook: the two kinds of system line side by side — one

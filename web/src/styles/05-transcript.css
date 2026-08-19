@@ -66,8 +66,54 @@
   overflow-wrap: anywhere;
 }
 
+.turn-user:not(.turn-bang) {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 8px;
+  border: 0;
+  border-left: 3px solid var(--accent);
+  padding: 10px 14px;
+}
+
+.turn-user:not(.turn-bang)::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    linear-gradient(to right, var(--border-mid) 0%, var(--border-mid) 35%, transparent 68%) top left / 100% 1px no-repeat,
+    linear-gradient(to right, var(--border-mid) 0%, var(--border-mid) 35%, transparent 68%) bottom left / 100% 1px no-repeat;
+  pointer-events: none;
+}
+
+.turn-user-text {
+  min-width: 0;
+  color: var(--fg-strong);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
 .turn-user:first-child {
   margin-top: 0;
+}
+
+/* Live response composition. The wrapper stays transparent: measure, rhythm,
+   type hierarchy and the two content lanes make the answer cohere without a
+   giant card or one box per streamed prose chunk. */
+.response-document {
+  --response-rich-measure: 1160px;
+  --response-prose-measure: 76ch;
+  width: 100%;
+  max-width: var(--response-rich-measure);
+  min-width: 0;
+  /* Preserve the transcript's established left axis. A width cap may leave
+     breathing room on the right; it must never manufacture a left indent. */
+  margin-inline: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
 }
 
 /* Agent output sits slightly inset from the strips, on the bare canvas. */
@@ -78,12 +124,143 @@
   line-height: 1.55;
 }
 
+/* Prose and compact paintings share the left edge; technical paintings that
+   earn the space use the rich lane. No padding or surface is added to prose,
+   so a one-line answer remains a one-line answer. */
+.response-document > .turn-assistant {
+  width: min(100%, var(--response-prose-measure));
+  min-width: 0;
+  padding-inline: 0;
+  line-height: 1.62;
+  overflow-wrap: anywhere;
+}
+
+.response-document > .turn-render {
+  width: 100%;
+  min-width: 0;
+  padding-inline: 0;
+}
+
+.response-document > .turn-render > :is(
+    .rc-table,
+    .rc-code,
+    .rc-diff,
+    .rc-diagram,
+    .rc-image,
+    .rc-console,
+    .rc-chart,
+    .artifact
+  ) {
+  width: 100%;
+  max-width: 100%;
+}
+
+.response-document > .pin-stub {
+  margin-inline: 0;
+}
+
+/* Markdown hierarchy: compact technical-document rhythm, strong enough to
+   scan but intentionally below editorial/blog scale. */
+.response-document .markdown > :first-child,
+.response-document .markdown blockquote > :first-child {
+  margin-top: 0;
+}
+
+.response-document .markdown > :last-child,
+.response-document .markdown blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+.response-document .markdown :is(h1, h2, h3) {
+  color: var(--fg-strong);
+  text-wrap: balance;
+}
+
+.response-document .markdown h1 {
+  margin: 0 0 0.75rem;
+  padding-bottom: 0.68rem;
+  border-bottom: 1px solid var(--border-faint);
+  font-size: 1.5rem;
+  font-weight: 680;
+  line-height: 1.22;
+  letter-spacing: -0.025em;
+}
+
+.response-document .markdown h1 + p {
+  color: var(--fg-mid);
+  font-size: 1.03em;
+}
+
+.response-document .markdown h2 {
+  margin: 1.45rem 0 0.65rem;
+  padding-left: 10px;
+  border-left: 2px solid var(--accent);
+  font-size: 1.18rem;
+  font-weight: 650;
+  line-height: 1.3;
+  letter-spacing: -0.012em;
+}
+
+.response-document .markdown h3 {
+  margin: 1.2rem 0 0.55rem;
+  font-size: 1rem;
+  font-weight: 650;
+  line-height: 1.35;
+  color: var(--fg-mid);
+}
+
+.response-document .markdown p {
+  margin: 0.68em 0;
+}
+
+.response-document .markdown :is(ul, ol) {
+  margin: 0.7em 0;
+  padding-left: 1.4rem;
+}
+
+.response-document .markdown li + li {
+  margin-top: 0.28em;
+}
+
+.response-document .markdown :is(ul, ol) :is(ul, ol) {
+  margin-block: 0.35em;
+}
+
+.response-document .markdown .contains-task-list {
+  padding-left: 0;
+  list-style: none;
+}
+
+.response-document .markdown .task-list-item > input {
+  margin: 0 0.55em 0 0;
+  accent-color: var(--accent);
+}
+
+.response-document .markdown blockquote {
+  margin: 0.9rem 0;
+  padding: 0.45rem 0.85rem;
+  background: var(--surface-3);
+  border: 0;
+  border-left: 2px solid var(--border-hover);
+  color: var(--fg-mid);
+}
+
+.response-document .markdown hr {
+  margin: 1.25rem 0;
+  border: 0;
+  border-top: 1px solid var(--border-faint);
+}
+
 .markdown :is(h1, h2, h3):first-child {
   margin-top: 0;
 }
 
 .markdown a {
   color: var(--info);
+}
+
+.response-document .markdown a {
+  text-underline-offset: 0.16em;
 }
 
 .markdown code {
@@ -102,6 +279,18 @@
   color: var(--code-fg); /* --code-bg is pinned dark; never inherit light fg */
 }
 
+.response-document :is(.markdown pre, .markdown-table-scroll) {
+  max-width: 100%;
+  margin: 0.9rem 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hover) transparent;
+}
+
+.response-document .markdown pre {
+  width: 100%;
+  line-height: 1.55;
+}
+
 .markdown pre code {
   background: none;
   padding: 0;
@@ -115,6 +304,41 @@
 .markdown td {
   border: 1px solid var(--border-mid);
   padding: 6px 12px;
+}
+
+.response-document .markdown-table-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hover) transparent;
+}
+
+.response-document .markdown-table-scroll table {
+  width: max-content;
+  min-width: 100%;
+  margin: 0;
+}
+
+.response-document .markdown-table-scroll th,
+.response-document .markdown-table-scroll td {
+  border: 0;
+  border-bottom: 1px solid var(--border-faint);
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.response-document .markdown-table-scroll th {
+  background: var(--surface);
+  color: var(--fg-dim);
+  font-size: 0.8em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.response-document .markdown-table-scroll tr:last-child td {
+  border-bottom: 0;
 }
 
 /* ---- Thinking (Phase T2.1) ------------------------------------------------
@@ -203,4 +427,3 @@
   font-size: 0.85em;
   letter-spacing: 0.02em;
 }
-
