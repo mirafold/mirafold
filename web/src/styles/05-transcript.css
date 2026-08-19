@@ -161,11 +161,13 @@
 
 /* Markdown hierarchy: compact technical-document rhythm, strong enough to
    scan but intentionally below editorial/blog scale. */
-.response-document .markdown > :first-child {
+.response-document .markdown > :first-child,
+.response-document .markdown blockquote > :first-child {
   margin-top: 0;
 }
 
-.response-document .markdown > :last-child {
+.response-document .markdown > :last-child,
+.response-document .markdown blockquote > :last-child {
   margin-bottom: 0;
 }
 
@@ -243,14 +245,6 @@
   color: var(--fg-mid);
 }
 
-.response-document .markdown blockquote > :first-child {
-  margin-top: 0;
-}
-
-.response-document .markdown blockquote > :last-child {
-  margin-bottom: 0;
-}
-
 .response-document .markdown hr {
   margin: 1.25rem 0;
   border: 0;
@@ -285,13 +279,16 @@
   color: var(--code-fg); /* --code-bg is pinned dark; never inherit light fg */
 }
 
-.response-document .markdown pre {
-  width: 100%;
+.response-document :is(.markdown pre, .markdown-table-scroll) {
   max-width: 100%;
   margin: 0.9rem 0;
-  line-height: 1.55;
   scrollbar-width: thin;
   scrollbar-color: var(--border-hover) transparent;
+}
+
+.response-document .markdown pre {
+  width: 100%;
+  line-height: 1.55;
 }
 
 .markdown pre code {
@@ -310,8 +307,6 @@
 }
 
 .response-document .markdown-table-scroll {
-  max-width: 100%;
-  margin: 0.9rem 0;
   overflow-x: auto;
   border: 1px solid var(--border);
   border-radius: 8px;

@@ -1,4 +1,8 @@
-import { useState } from "react";
+import {
+  useState,
+  type MouseEventHandler,
+  type ReactNode,
+} from "react";
 import type { ComponentProps } from "@registry-spec";
 
 // Categorical palette validated (dataviz six-checks) against the app's dark
@@ -193,6 +197,21 @@ function Legend({ series }: { series: ComponentProps<"chart">["series"] }) {
   );
 }
 
+/** The shared keyboard-reachable scroll boundary for every chart shape. */
+function ChartPlot({
+  children,
+  onMouseLeave,
+}: {
+  children: ReactNode;
+  onMouseLeave: MouseEventHandler<HTMLDivElement>;
+}) {
+  return (
+    <div className="rc-chart-plot" tabIndex={0} onMouseLeave={onMouseLeave}>
+      {children}
+    </div>
+  );
+}
+
 /** The tooltip's shared body — hovered category, then one row per finite
  *  series value. Each caller keeps its own positioned wrapper div. */
 function TipRows({
@@ -256,7 +275,7 @@ function PieChart({ title, x, series }: ComponentProps<"chart">) {
   return (
     <div className="rc rc-chart">
       {title && <div className="rc-title">{title}</div>}
-      <div className="rc-chart-plot" tabIndex={0} onMouseLeave={() => setHover(null)}>
+      <ChartPlot onMouseLeave={() => setHover(null)}>
         <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={title ?? "pie chart"}>
           {segs.map((s, i) => (
             <path
@@ -308,7 +327,7 @@ function PieChart({ title, x, series }: ComponentProps<"chart">) {
             </div>
           </div>
         )}
-      </div>
+      </ChartPlot>
     </div>
   );
 }
@@ -338,7 +357,7 @@ function HBarChart({ title, x, series, yLabel, stacked }: ComponentProps<"chart"
     <div className="rc rc-chart">
       {title && <div className="rc-title">{title}</div>}
       {series.length >= 2 && <Legend series={series} />}
-      <div className="rc-chart-plot" tabIndex={0} onMouseLeave={() => setHover(null)}>
+      <ChartPlot onMouseLeave={() => setHover(null)}>
         <svg viewBox={`0 0 ${W} ${hgt}`} role="img" aria-label={title ?? "bar chart"}>
           {/* recessive vertical grid + value labels along the bottom */}
           {tks.map((t, i) => (
@@ -448,7 +467,7 @@ function HBarChart({ title, x, series, yLabel, stacked }: ComponentProps<"chart"
             <TipRows x={x} series={series} yLabel={yLabel} hover={hover} />
           </div>
         )}
-      </div>
+      </ChartPlot>
     </div>
   );
 }
@@ -499,7 +518,7 @@ function VChart({ title, kind, x, series, yLabel, stacked }: ComponentProps<"cha
     <div className="rc rc-chart">
       {title && <div className="rc-title">{title}</div>}
       {series.length >= 2 && <Legend series={series} />}
-      <div className="rc-chart-plot" tabIndex={0} onMouseLeave={() => setHover(null)}>
+      <ChartPlot onMouseLeave={() => setHover(null)}>
         <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={title ?? `${kind} chart`}>
           {/* recessive grid + y labels */}
           {tks.map((t, i) => (
@@ -667,7 +686,7 @@ function VChart({ title, kind, x, series, yLabel, stacked }: ComponentProps<"cha
             <TipRows x={x} series={series} yLabel={yLabel} hover={hover} />
           </div>
         )}
-      </div>
+      </ChartPlot>
     </div>
   );
 }

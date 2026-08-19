@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "nod
 import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { type Browser, type Page } from "playwright-core";
+import { type Browser, type Locator, type Page } from "playwright-core";
 import { fixtureGit as git, startDaemon, TestClient, type Daemon } from "./itest-harness";
 import { assertAxeClean, launchChrome, noSideScroll } from "./e2e-harness";
 import type { ClientMsg } from "../protocol";
@@ -161,6 +161,145 @@ async function withFreshMockSession(
       await daemon.stop();
     }
   }
+}
+
+async function submitPrompt(p: Page, text: string): Promise<Locator> {
+  const prompt = p.locator(".prompt-box textarea");
+  await prompt.fill(text);
+  await prompt.press("Enter");
+  return prompt;
+}
+
+async function settleLiveDocument(p: Page): Promise<Locator> {
+  const prompt = await submitPrompt(p, "live document demo");
+  await p
+    .locator(".turn-assistant", { hasText: "response finished as one live composition" })
+    .waitFor({ timeout: 30_000 });
+  await p.locator(".activity-line").waitFor({ state: "detached", timeout: 15_000 });
+  return prompt;
+}
+
+function readLiveDocumentPresentation(p: Page) {
+  return p.evaluate(() => {
+    const userTurn = document.querySelector(".turn-user") as HTMLElement | null;
+    const response = document.querySelector(".response-document") as HTMLElement | null;
+    const prose = response?.querySelector(".turn-assistant") as HTMLElement | null;
+    const card = response?.querySelector(".rc-card") as HTMLElement | null;
+    const wideTable = document.querySelector(".response-document .rc-table") as HTMLElement | null;
+    const h1 = document.querySelector(".response-document h1") as HTMLElement | null;
+    const h2 = document.querySelector(".response-document h2") as HTMLElement | null;
+    const h3 = document.querySelector(".response-document h3") as HTMLElement | null;
+    const quote = document.querySelector(".response-document blockquote") as HTMLElement | null;
+    const code = document.querySelector(
+      ".response-document .markdown pre code.hljs",
+    ) as HTMLElement | null;
+    const markdownTable = document.querySelector(
+      ".response-document .markdown-table-scroll",
+    ) as HTMLElement | null;
+    if (
+      !userTurn ||
+      !response ||
+      !prose ||
+      !card ||
+      !wideTable ||
+      !h1 ||
+      !h2 ||
+      !h3 ||
+      !quote ||
+      !code ||
+      !markdownTable
+    ) {
+      return null;
+    }
+    const userTurnRect = userTurn.getBoundingClientRect();
+    const responseRect = response.getBoundingClientRect();
+    const proseRect = prose.getBoundingClientRect();
+    const h1Style = getComputedStyle(h1);
+    const h2Style = getComputedStyle(h2);
+    const h3Style = getComputedStyle(h3);
+    const userStyle = getComputedStyle(userTurn);
+    const userOutlineStyle = getComputedStyle(userTurn, "::before");
+    const quoteStyle = getComputedStyle(quote);
+    return {
+      documentWidth: responseRect.width,
+      leftAxisDelta: responseRect.left - userTurnRect.left,
+      userLabels: userTurn.querySelectorAll(".turn-user-label").length,
+      userBackground: userStyle.backgroundColor,
+      userAccentRule: Number.parseFloat(userStyle.borderLeftWidth),
+      userRightBorder: Number.parseFloat(userStyle.borderRightWidth),
+      userOutline: userOutlineStyle.backgroundImage,
+      proseWidth: proseRect.width,
+      cardWidth: card.getBoundingClientRect().width,
+      wideTableWidth: wideTable.getBoundingClientRect().width,
+      h1Size: Number.parseFloat(h1Style.fontSize),
+      h2Size: Number.parseFloat(h2Style.fontSize),
+      h3Size: Number.parseFloat(h3Style.fontSize),
+      h1Divider: Number.parseFloat(h1Style.borderBottomWidth),
+      h2Marker: Number.parseFloat(h2Style.borderLeftWidth),
+      quoteRule: Number.parseFloat(quoteStyle.borderLeftWidth),
+      quoteBackground: quoteStyle.backgroundColor,
+      proseBackground: getComputedStyle(prose).backgroundColor,
+      codeOwnsOverflow: code.scrollWidth > code.clientWidth,
+      markdownTableTabIndex: markdownTable.tabIndex,
+      pageOverflow:
+        document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    };
+  });
+}
+
+function readResponsiveDocumentLayout(p: Page) {
+  return p.evaluate(() => {
+    const zone = document.querySelector(".render-zone") as HTMLElement | null;
+    const response = document.querySelector(".response-document") as HTMLElement | null;
+    const prose = response?.querySelector(".turn-assistant") as HTMLElement | null;
+    const code = document.querySelector(
+      ".response-document .markdown pre code.hljs",
+    ) as HTMLElement | null;
+    const markdownTable = document.querySelector(
+      ".response-document .markdown-table-scroll",
+    ) as HTMLElement | null;
+    const richTable = document.querySelector(
+      ".response-document .rc-table",
+    ) as HTMLElement | null;
+    if (!zone || !response || !prose || !code || !markdownTable || !richTable) {
+      return null;
+    }
+    const zoneRect = zone.getBoundingClientRect();
+    const responseRect = response.getBoundingClientRect();
+    const proseRect = prose.getBoundingClientRect();
+    const markdownTableRect = markdownTable.getBoundingClientRect();
+    const richTableRect = richTable.getBoundingClientRect();
+    const zoneStyle = getComputedStyle(zone);
+    const contentLeft = zoneRect.left + Number.parseFloat(zoneStyle.paddingLeft);
+    const contentRight = zoneRect.right - Number.parseFloat(zoneStyle.paddingRight);
+    const fileContent = document.querySelector(".files-view .fv-content") as HTMLElement | null;
+    const filePanel = document.querySelector(".files-panel") as HTMLElement | null;
+    const fileContentRect = fileContent?.getBoundingClientRect();
+    const filePanelRect = filePanel?.getBoundingClientRect();
+    return {
+      documentWidth: responseRect.width,
+      proseWidth: proseRect.width,
+      proseHeight: proseRect.height,
+      pageOverflow:
+        document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      documentContained:
+        responseRect.left >= contentLeft - 1 && responseRect.right <= contentRight + 1,
+      markdownTableContained:
+        markdownTableRect.left >= responseRect.left - 1 &&
+        markdownTableRect.right <= responseRect.right + 1,
+      richTableContained:
+        richTableRect.left >= responseRect.left - 1 &&
+        richTableRect.right <= responseRect.right + 1,
+      codeOwnsOverflow: code.scrollWidth > code.clientWidth,
+      fileContentContained:
+        !fileContentRect ||
+        !filePanelRect ||
+        (fileContentRect.left >= filePanelRect.left - 1 &&
+          fileContentRect.right <= filePanelRect.right + 1),
+      scrollTop: zone.scrollTop,
+      bottomDistance: zone.scrollHeight - zone.clientHeight - zone.scrollTop,
+    };
+  });
 }
 
 test("no token → 403, nothing served", async () => {
@@ -687,79 +826,9 @@ test("LD.1: a response document streams around a stable painting and soft shell 
 test("LD.2: document measure, hierarchy, rich lane, local overflow, and short-answer restraint", async () => {
   await withFreshMockSession("live-document-visual-2a91", async (p) => {
     await p.setViewportSize({ width: 1440, height: 1000 });
-    const prompt = p.locator(".prompt-box textarea");
-    await prompt.fill("live document demo");
-    await prompt.press("Enter");
-    await p
-      .locator(".turn-assistant", { hasText: "response finished as one live composition" })
-      .waitFor({ timeout: 30_000 });
-    await p.locator(".activity-line").waitFor({ state: "detached", timeout: 15_000 });
+    const prompt = await settleLiveDocument(p);
 
-    const metrics = await p.evaluate(() => {
-      const userTurn = document.querySelector(".turn-user") as HTMLElement | null;
-      const response = document.querySelector(".response-document") as HTMLElement | null;
-      const prose = response?.querySelector(".turn-assistant") as HTMLElement | null;
-      const card = response?.querySelector(".rc-card") as HTMLElement | null;
-      const wideTable = document.querySelector(".response-document .rc-table") as HTMLElement | null;
-      const h1 = document.querySelector(".response-document h1") as HTMLElement | null;
-      const h2 = document.querySelector(".response-document h2") as HTMLElement | null;
-      const h3 = document.querySelector(".response-document h3") as HTMLElement | null;
-      const quote = document.querySelector(".response-document blockquote") as HTMLElement | null;
-      const code = document.querySelector(
-        ".response-document .markdown pre code.hljs",
-      ) as HTMLElement | null;
-      const markdownTable = document.querySelector(
-        ".response-document .markdown-table-scroll",
-      ) as HTMLElement | null;
-      if (
-        !userTurn ||
-        !response ||
-        !prose ||
-        !card ||
-        !wideTable ||
-        !h1 ||
-        !h2 ||
-        !h3 ||
-        !quote ||
-        !code ||
-        !markdownTable
-      ) {
-        return null;
-      }
-      const userTurnRect = userTurn.getBoundingClientRect();
-      const responseRect = response.getBoundingClientRect();
-      const proseRect = prose.getBoundingClientRect();
-      const h1Style = getComputedStyle(h1);
-      const h2Style = getComputedStyle(h2);
-      const h3Style = getComputedStyle(h3);
-      const userStyle = getComputedStyle(userTurn);
-      const userOutlineStyle = getComputedStyle(userTurn, "::before");
-      const quoteStyle = getComputedStyle(quote);
-      return {
-        documentWidth: responseRect.width,
-        leftAxisDelta: responseRect.left - userTurnRect.left,
-        userLabels: userTurn.querySelectorAll(".turn-user-label").length,
-        userBackground: userStyle.backgroundColor,
-        userAccentRule: Number.parseFloat(userStyle.borderLeftWidth),
-        userRightBorder: Number.parseFloat(userStyle.borderRightWidth),
-        userOutline: userOutlineStyle.backgroundImage,
-        proseWidth: proseRect.width,
-        cardWidth: card.getBoundingClientRect().width,
-        wideTableWidth: wideTable.getBoundingClientRect().width,
-        h1Size: Number.parseFloat(h1Style.fontSize),
-        h2Size: Number.parseFloat(h2Style.fontSize),
-        h3Size: Number.parseFloat(h3Style.fontSize),
-        h1Divider: Number.parseFloat(h1Style.borderBottomWidth),
-        h2Marker: Number.parseFloat(h2Style.borderLeftWidth),
-        quoteRule: Number.parseFloat(getComputedStyle(quote).borderLeftWidth),
-        quoteBackground: quoteStyle.backgroundColor,
-        proseBackground: getComputedStyle(prose).backgroundColor,
-        codeOwnsOverflow: code.scrollWidth > code.clientWidth,
-        markdownTableTabIndex: markdownTable.tabIndex,
-        pageOverflow:
-          document.documentElement.scrollWidth - document.documentElement.clientWidth,
-      };
-    });
+    const metrics = await readLiveDocumentPresentation(p);
 
     assert.ok(metrics, "the canonical document fixture did not fully render");
     assert.ok(metrics.documentWidth > 900 && metrics.documentWidth <= 1160.5);
@@ -815,70 +884,9 @@ test("LD.2: document measure, hierarchy, rich lane, local overflow, and short-an
 test("LD.3: response documents reflow across Explorer, file view, pin dock, and narrow desktop", async () => {
   await withFreshMockSession("live-document-responsive-18c4", async (p) => {
     await p.setViewportSize({ width: 1440, height: 1000 });
-    const prompt = p.locator(".prompt-box textarea");
-    await prompt.fill("live document demo");
-    await prompt.press("Enter");
-    await p
-      .locator(".turn-assistant", { hasText: "response finished as one live composition" })
-      .waitFor({ timeout: 30_000 });
-    await p.locator(".activity-line").waitFor({ state: "detached", timeout: 15_000 });
+    const prompt = await settleLiveDocument(p);
 
-    const measure = () =>
-      p.evaluate(() => {
-        const zone = document.querySelector(".render-zone") as HTMLElement | null;
-        const response = document.querySelector(".response-document") as HTMLElement | null;
-        const prose = response?.querySelector(".turn-assistant") as HTMLElement | null;
-        const code = document.querySelector(
-          ".response-document .markdown pre code.hljs",
-        ) as HTMLElement | null;
-        const markdownTable = document.querySelector(
-          ".response-document .markdown-table-scroll",
-        ) as HTMLElement | null;
-        const richTable = document.querySelector(
-          ".response-document .rc-table",
-        ) as HTMLElement | null;
-        if (!zone || !response || !prose || !code || !markdownTable || !richTable) {
-          return null;
-        }
-        const zoneRect = zone.getBoundingClientRect();
-        const responseRect = response.getBoundingClientRect();
-        const proseRect = prose.getBoundingClientRect();
-        const markdownTableRect = markdownTable.getBoundingClientRect();
-        const richTableRect = richTable.getBoundingClientRect();
-        const zoneStyle = getComputedStyle(zone);
-        const contentLeft = zoneRect.left + Number.parseFloat(zoneStyle.paddingLeft);
-        const contentRight = zoneRect.right - Number.parseFloat(zoneStyle.paddingRight);
-        const fileContent = document.querySelector(
-          ".files-view .fv-content",
-        ) as HTMLElement | null;
-        const filePanel = document.querySelector(".files-panel") as HTMLElement | null;
-        const fileContentRect = fileContent?.getBoundingClientRect();
-        const filePanelRect = filePanel?.getBoundingClientRect();
-        return {
-          zoneWidth: zoneRect.width,
-          documentWidth: responseRect.width,
-          proseWidth: proseRect.width,
-          proseHeight: proseRect.height,
-          pageOverflow:
-            document.documentElement.scrollWidth - document.documentElement.clientWidth,
-          documentContained:
-            responseRect.left >= contentLeft - 1 && responseRect.right <= contentRight + 1,
-          markdownTableContained:
-            markdownTableRect.left >= responseRect.left - 1 &&
-            markdownTableRect.right <= responseRect.right + 1,
-          richTableContained:
-            richTableRect.left >= responseRect.left - 1 &&
-            richTableRect.right <= responseRect.right + 1,
-          codeOwnsOverflow: code.scrollWidth > code.clientWidth,
-          fileContentContained:
-            !fileContentRect ||
-            !filePanelRect ||
-            (fileContentRect.left >= filePanelRect.left - 1 &&
-              fileContentRect.right <= filePanelRect.right + 1),
-          scrollTop: zone.scrollTop,
-          bottomDistance: zone.scrollHeight - zone.clientHeight - zone.scrollTop,
-        };
-      });
+    const measure = () => readResponsiveDocumentLayout(p);
 
     const center = await measure();
     assert.ok(center, "center-only response metrics are missing");
@@ -935,8 +943,7 @@ test("LD.3: response documents reflow across Explorer, file view, pin dock, and 
     await p.locator(".render-zone").evaluate((element) => {
       element.scrollTop = element.scrollHeight;
     });
-    await prompt.fill("responsive document stress");
-    await prompt.press("Enter");
+    await submitPrompt(p, "responsive document stress");
     const stressDocument = p.locator(".response-document", { hasText: "Width stress" });
     await stressDocument.locator(".rc-diff").waitFor({ timeout: 15_000 });
     await stressDocument.locator(".rc-chart").waitFor({ timeout: 15_000 });
@@ -1041,9 +1048,7 @@ test("LD.4: long text, focus, announcements, reduced motion, and every theme rem
   await withFreshMockSession("live-document-closure-63bc", async (p) => {
     await p.setViewportSize({ width: 1440, height: 800 });
     await p.emulateMedia({ reducedMotion: "reduce" });
-    const prompt = p.locator(".prompt-box textarea");
-    await prompt.fill("document closure stress");
-    await prompt.press("Enter");
+    const prompt = await submitPrompt(p, "document closure stress");
 
     const response = p.locator(".response-document", {
       hasText: "This heading-free technical note",
