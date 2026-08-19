@@ -1,9 +1,8 @@
 import { useState } from "react";
 import { ArmedButton } from "./ArmedButton";
-import { ChangesGlyph } from "./ChangesGlyph";
 import { ConnectDevice, type RelayInfo, type SubscriptionRequest } from "./ConnectDevice";
 import type { SubscriptionReply } from "../subscription-card";
-import { FilesGlyph } from "./FilesGlyph";
+import { WorkspaceGlyph } from "./WorkspaceGlyph";
 import { GearGlyph } from "./GearGlyph";
 import { useArmedConfirm } from "../use-armed-confirm";
 import { useIsPhone } from "../use-is-phone";
@@ -51,12 +50,9 @@ export function StatusBar({
   billing,
   subRequest,
   subReply,
-  filesOpen,
-  filesDisabled,
-  onToggleFiles,
-  changesOpen,
-  changesDisabled,
-  onToggleChanges,
+  workspaceOpen,
+  workspaceDisabled,
+  onToggleWorkspace,
 }: {
   connected: boolean;
   // Why the socket is down, when the relay refused it (no daemon / at capacity /
@@ -85,18 +81,17 @@ export function StatusBar({
   // The daemon's version, off the agents hello — the first thing a
   // bug report needs (R.4g).
   version?: string;
-  // The Explorer toggle's PHONE home (2026-07-25, Kyle): the activity bar is
-  // a desktop affordance, so on ≤640px the bar hides and this button carries
-  // the same open/collapse — boxed off at the far left by its own separator
+  // The workspace toggle's PHONE home (2026-07-25, Kyle): the activity bar
+  // is a desktop affordance, so on ≤640px the bar hides and this ONE button
+  // opens the full-screen workspace drawer (Files / Changes — the drawer's
+  // own head switches between them; two side-by-side icons here were too
+  // crowded, 2026-08-18) — boxed off at the far left by its own separator
   // line (the rail's border, folded into the row). Not rendered on desktop
   // at all (useIsPhone), where home must stay the bar's first control
   // (2026-07-16 order).
-  filesOpen?: boolean;
-  filesDisabled?: boolean;
-  onToggleFiles?: () => void;
-  changesOpen?: boolean;
-  changesDisabled?: boolean;
-  onToggleChanges?: () => void;
+  workspaceOpen?: boolean;
+  workspaceDisabled?: boolean;
+  onToggleWorkspace?: () => void;
   // Phase CS: the manage-subscription plumbing, passed through to the pair
   // card (present only when the daemon runs on a license key).
   billing?: boolean;
@@ -138,30 +133,20 @@ export function StatusBar({
 
   return (
     <div className="status-bar">
-      {/* Phone-only (desktop's activity bar owns these there): the workspace
-          toggles sit one notch OUTSIDE home, boxed off as navigation distinct
+      {/* Phone-only (desktop's activity bar owns this there): the workspace
+          toggle sits one notch OUTSIDE home, boxed off as navigation distinct
           from the session controls. */}
-      {phone && onToggleFiles && onToggleChanges && (
+      {phone && onToggleWorkspace && (
         <div className="sb-side-nav" aria-label="Workspace views">
           <button
-            className={"sb-files" + (filesOpen ? " is-active" : "")}
-            onClick={onToggleFiles}
-            disabled={filesDisabled}
-            title={filesOpen ? "Hide files" : "Show files"}
-            aria-label="Files"
-            aria-expanded={filesOpen}
+            className={"sb-workspace" + (workspaceOpen ? " is-active" : "")}
+            onClick={onToggleWorkspace}
+            disabled={workspaceDisabled}
+            title={workspaceOpen ? "Hide workspace" : "Show workspace (files and changes)"}
+            aria-label="Workspace"
+            aria-expanded={workspaceOpen}
           >
-            <FilesGlyph size={20} />
-          </button>
-          <button
-            className={"sb-changes" + (changesOpen ? " is-active" : "")}
-            onClick={onToggleChanges}
-            disabled={changesDisabled}
-            title={changesOpen ? "Hide workspace changes" : "Show workspace changes"}
-            aria-label="Workspace changes"
-            aria-expanded={changesOpen}
-          >
-            <ChangesGlyph size={20} />
+            <WorkspaceGlyph size={20} />
           </button>
         </div>
       )}

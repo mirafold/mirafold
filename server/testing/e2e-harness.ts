@@ -79,6 +79,31 @@ export async function enterMockSession(page: Page): Promise<void> {
   await page.locator(".prompt-box textarea").waitFor();
 }
 
+/** Phone-head oracle (2026-08-18): every selector renders, none overlaps
+ *  another (rectangle intersection — a control on the row below is fine, one
+ *  on top of its neighbour is not), and each sits fully inside the viewport:
+ *  the drawers are overflow:hidden, so a control pushed off the edge is
+ *  clipped, not side-scrolled, and `noSideScroll` alone would miss it. */
+export const assertApartOnScreen = async (page: Page, viewportWidth: number, selectors: string[]) => {
+  const boxes: { sel: string; x: number; y: number; width: number; height: number }[] = [];
+  for (const sel of selectors) {
+    const box = await page.locator(sel).boundingBox();
+    assert.ok(box, `${sel} did not render at ${viewportWidth}px`);
+    assert.ok(
+      box.x >= 0 && box.x + box.width <= viewportWidth,
+      `${sel} is off-screen at ${viewportWidth}px (${JSON.stringify(box)})`,
+    );
+    boxes.push({ sel, ...box });
+  }
+  for (const a of boxes) {
+    for (const b of boxes) {
+      if (a === b) continue;
+      const apart = a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y;
+      assert.ok(apart, `${a.sel} overlaps ${b.sel} at ${viewportWidth}px (${JSON.stringify([a, b])})`);
+    }
+  }
+};
+
 /** Phone-width oracle: the page must never pan sideways. */
 export const noSideScroll = async (p: Page) => {
   const over = await p.evaluate(

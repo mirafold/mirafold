@@ -2,6 +2,7 @@ import { useRef, type RefObject } from "react";
 import type { ZoneMsg } from "../../session-bus";
 import { useEscapeKey } from "../../use-escape";
 import { useFocusTrap } from "../../use-focus-trap";
+import type { WorkspaceSurface } from "../WorkspaceTabs";
 import { useIsPhone } from "../../use-is-phone";
 import { FileView } from "../files/FileView";
 import {
@@ -21,6 +22,7 @@ export function ChangesPanel({
   requestRead,
   requestDiff,
   onClose,
+  onSwitch,
   onCreateDraft,
   promptContainerRef,
   promptVisible,
@@ -33,6 +35,7 @@ export function ChangesPanel({
   requestRead: (path: string) => string;
   requestDiff: (path: string) => string;
   onClose: () => void;
+  onSwitch?: (surface: WorkspaceSurface) => void;
   onCreateDraft: (text: string) => void;
   promptContainerRef?: RefObject<HTMLElement | null>;
   promptVisible?: boolean;
@@ -101,6 +104,7 @@ export function ChangesPanel({
         pending={changeSet.pending}
         onRefresh={requestSet}
         onClose={onClose}
+        onSwitch={onSwitch}
       />
 
       {changeSet.error && items.length > 0 && (

@@ -2834,7 +2834,7 @@ test("E2.4: the Projects-root proof — lazy expands into two repos with per-rep
       const phone = await phoneCtx.newPage();
       await phone.goto(`${base}/?token=${TOKEN}`);
       await phone.goto(`${base}/s/${created.sessionId}`);
-      await phone.locator(".sb-files").focus();
+      await phone.locator(".sb-workspace").focus();
       await phone.keyboard.press("Enter");
       await phone.waitForSelector(".files-panel[role=dialog]");
       await phone.locator('.files-dir:has(.files-name:text-is("repoA"))').tap();
