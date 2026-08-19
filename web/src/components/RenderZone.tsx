@@ -4,7 +4,6 @@ import {
   useEffect,
   useMemo,
   useReducer,
-  useRef,
   useState,
 } from "react";
 import ReactMarkdown from "react-markdown";
@@ -17,101 +16,19 @@ import { mdOverrides, mdUrlTransform } from "../registry/Md";
 import { PinDock } from "./PinDock";
 import { ToolBlock } from "./ToolBlock";
 import { Artifact } from "./Artifact";
-import { PickerBlock, type PickerRow } from "./PickerBlock";
+import { PickerBlock } from "./PickerBlock";
 import { GearGlyph } from "./GearGlyph";
 import { useFollowTail } from "../use-follow-tail";
-import { queueDelta, type QueuedDelta } from "../delta-queue";
-import { groupSettledTools, type ActivityItem, type FoldedActivity } from "../tool-visibility";
-import { deckElapsedSeconds, subagentSummary } from "../subagent-deck";
+import { createTranscriptIngress } from "../delta-queue";
+import { deckElapsedSeconds } from "../subagent-deck";
 import { shouldFocusPromptFromTranscriptPointer } from "../transcript-focus";
-
-// The scrollback is a flat list of entries: text blocks and rendered
-// components, in the exact order they arrived on the wire.
-type Entry =
-  | { kind: "text"; id: number; role: "user" | "assistant"; text: string; done: boolean }
-  | {
-      kind: "render";
-      id: number;
-      renderId: string; // wire id — re-sends with this id update props in place
-      component: string;
-      props: Record<string, unknown>;
-    }
-  | {
-      kind: "tool";
-      id: number;
-      toolId: string; // wire id — the matching tool_result completes this record
-      name: string;
-      detail?: string;
-      input?: Record<string, unknown>; // full args (T2.2), rendered in the expansion
-      output?: string; // undefined until the result arrives
-      truncatedBytes?: number; // T2.3: bytes elided past the cap, if any
-      parentId?: string; // T2.4: Task wire id if this is a subagent's call
-      isError?: boolean;
-      batchId: number; // user-turn batch; successful calls fold together at its end
-      settled: boolean;
-      // SA.1: when this client appended the record — the subagent deck's
-      // elapsed ticker. Only honest for a record seen arriving LIVE, so the
-      // deck shows elapsed only while running AND not replayed (a replayed
-      // record's stamp is the attach moment, not the spawn — bughunt
-      // 2026-08-14).
-      startedAt: number;
-      replayed?: boolean;
-    }
-  | {
-      // SA.2: a subagent's narration or reasoning — prose the wire tags with
-      // a parentId. Lives inside its deck's expansion, never at top level,
-      // and renders as INERT PLAIN TEXT (trusted-shell rule: subagent words
-      // never get markdown inside shell chrome).
-      kind: "subtext";
-      id: number;
-      parentId: string; // the spawn wire id whose deck holds this
-      variant: "text" | "thinking";
-      text: string;
-    }
-  | {
-      kind: "artifact";
-      id: number;
-      artifactId: string; // wire id — re-sends with this id replace the html
-      html: string;
-      title?: string;
-    }
-  | {
-      kind: "thinking";
-      id: number;
-      text: string;
-      done: boolean; // done ⇒ folded to one line unless the user expands it
-      expanded: boolean;
-    }
-  | {
-      // A service-status line (retry, compaction, rate limit, refusal) —
-      // the UI must not lie in degraded service. Persistent, dim, non-agent (F.2).
-      kind: "notice";
-      id: number;
-      text: string;
-      noticeKind?: string;
-      // The engine whose own words these are; absent = Mirafold's own voice.
-      source?: string;
-    }
-  | {
-      kind: "bang"; // a `!` shell command (4.9): its strip + live PTY output
-      id: number;
-      bangId: string; // wire id — output/end messages complete this record
-      command: string;
-      output: string;
-      exitCode?: number | null; // undefined while running; null = killed
-      done: boolean;
-    }
-  | {
-      // Shell-owned selector re-skinning terminal chrome (/model, /effort).
-      kind: "picker";
-      id: number;
-      pickerId: string; // wire id — the action's sourceId when a row is picked
-      title: string;
-      rows: PickerRow[];
-      hint?: string;
-    };
-type ToolCall = Extract<Entry, { kind: "tool" }>;
-type SubtextEntry = Extract<Entry, { kind: "subtext" }>;
+import {
+  createTranscriptProjection,
+  type OutputZoneRow,
+  type SubagentDeckRow,
+  type ThinkingRow,
+  type ToolFoldRow,
+} from "../transcript-projection";
 
 /** The transcript fields ToolBlock renders, picked off any tool-shaped
  *  record — the one spread all three ToolBlock sites share. */
@@ -130,9 +47,6 @@ const toolBlockProps = (call: {
   truncatedBytes: call.truncatedBytes,
   isError: call.isError,
 });
-type ThinkingEntry = Extract<Entry, { kind: "thinking" }>;
-
-let nextId = 0;
 
 // Memoized on the entry's text: a settled block's markdown tree is reused
 // as-is while later entries stream.
@@ -155,12 +69,14 @@ const AssistantTurn = memo(function AssistantTurn({ text }: { text: string }) {
 // memo comparison is the entry reference itself.
 const ThinkingBlock = memo(function ThinkingBlock({
   entry,
+  expanded,
   onToggle,
 }: {
-  entry: Extract<Entry, { kind: "thinking" }>;
+  entry: ThinkingRow;
+  expanded: boolean;
   onToggle: (id: number) => void;
 }) {
-  const folded = entry.done && !entry.expanded;
+  const folded = entry.done && !expanded;
   return (
     <div
       className={
@@ -180,7 +96,7 @@ const ThinkingBlock = memo(function ThinkingBlock({
 /** The deck's full activity, in true stream order (SA.2): tool rows plus the
  *  subagent's own narration and reasoning. Prose is INERT PLAIN TEXT —
  *  subagent words never render as markdown inside shell chrome. */
-function SubagentActivity({ items }: { items: Array<ToolCall | SubtextEntry> }) {
+function SubagentActivity({ items }: { items: SubagentDeckRow["items"] }) {
   return (
     <div className="subagent-calls">
       {items.map((item) =>
@@ -208,15 +124,12 @@ function SubagentActivity({ items }: { items: Array<ToolCall | SubtextEntry> }) 
  * inert plain text; the deck itself is shell chrome. Elapsed ticks only
  * while running — a settled or replayed card never shows a stale duration. */
 const SubagentDeck = memo(function SubagentDeck({
-  task,
-  items,
+  row,
 }: {
-  task: ToolCall;
-  items: Array<ToolCall | SubtextEntry>;
+  row: SubagentDeckRow;
 }) {
+  const { task, items, summary: s } = row;
   const [open, setOpen] = useState(false);
-  const calls = items.filter((item) => item.kind === "tool");
-  const s = subagentSummary(task, calls);
   const running = s.state === "running";
   const [, tick] = useReducer((n: number) => n + 1, 0);
   useEffect(() => {
@@ -270,20 +183,16 @@ const SubagentDeck = memo(function SubagentDeck({
  * command); expansion replays calls and thinking in true transcript order.
  * The count and summary speak of ACTIONS only — narration isn't one. */
 function ToolActivityGroup({
-  items,
+  row,
+  expandedThinking,
   onToggleThinking,
 }: {
-  items: Array<FoldedActivity<ToolCall, ThinkingEntry>>;
+  row: ToolFoldRow;
+  expandedThinking: ReadonlySet<number>;
   onToggleThinking: (id: number) => void;
 }) {
+  const { items } = row;
   const [open, setOpen] = useState(false);
-  const calls = items.flatMap((item) => (item.kind === "tool" ? [item.tool] : []));
-  const counts = new Map<string, number>();
-  for (const call of calls) counts.set(call.name, (counts.get(call.name) ?? 0) + 1);
-  const summary = [...counts]
-    .slice(0, 3)
-    .map(([name, count]) => `${name}${count > 1 ? ` ×${count}` : ""}`)
-    .join(" · ");
   return (
     <div className="tool-activity-group">
       <button
@@ -293,9 +202,9 @@ function ToolActivityGroup({
       >
         <span className="subagent-caret">{open ? "▾" : "▸"}</span>
         <span className="tool-activity-label">
-          <GearGlyph size="1em" /> worked · {calls.length} action{calls.length === 1 ? "" : "s"}
+          <GearGlyph size="1em" /> worked · {row.actionCount} action{row.actionCount === 1 ? "" : "s"}
         </span>
-        <span className="tool-activity-summary">{summary}</span>
+        <span className="tool-activity-summary">{row.summary}</span>
       </button>
       {open && (
         <div className="tool-activity-calls">
@@ -303,7 +212,12 @@ function ToolActivityGroup({
             item.kind === "tool" ? (
               <ToolBlock key={item.tool.id} {...toolBlockProps(item.tool)} />
             ) : (
-              <ThinkingBlock key={item.thinking.id} entry={item.thinking} onToggle={onToggleThinking} />
+              <ThinkingBlock
+                key={item.thinking.id}
+                entry={item.thinking}
+                expanded={expandedThinking.has(item.thinking.id)}
+                onToggle={onToggleThinking}
+              />
             ),
           )}
         </div>
@@ -313,9 +227,9 @@ function ToolActivityGroup({
 }
 
 /**
- * The output zone — an interpreter for the wire protocol. Level 1: streamed
- * text renders as sanitized markdown (react-markdown never emits raw HTML).
- * Level 2: `render` messages mount registry components inline.
+ * The output zone renders projected transcript rows. Level 1: streamed text
+ * renders as sanitized markdown (react-markdown never emits raw HTML).
+ * Level 2: projected render rows mount registry components inline.
  */
 export function RenderZone({
   subscribe,
@@ -334,7 +248,6 @@ export function RenderZone({
   busy: boolean;
   focusPrompt: () => void;
 }) {
-  const [entries, setEntries] = useState<Entry[]>([]);
   // Pinning is pure output-zone state: wire ids (render or artifact) in pin
   // order. The dock only exists while something is pinned (PLAN Step 1.6).
   const [pinned, setPinned] = useState<string[]>([]);
@@ -342,350 +255,37 @@ export function RenderZone({
   // Streamed output scrolls you down only while you're already at the bottom
   // (2026-07-20, Kyle) — terminal-scrollback behavior, in use-follow-tail.ts.
   const tail = useFollowTail();
-  // The text block currently receiving deltas. Kept in a ref so a user prompt
-  // sent mid-stream can't detach the tail of the reply.
-  const streamingId = useRef<number | null>(null);
-  // SA.2: the open subtext entry per (parentId|variant) — a subagent's
-  // consecutive prose extends in place; its own next tool call closes it so
-  // the deck's expansion keeps true stream order.
-  const subtextIds = useRef(new Map<string, number>());
-  // The thinking block currently receiving deltas (T2.1).
-  const thinkingId = useRef<number | null>(null);
-  // User prompts may queue while a turn is running. Tool events still belong
-  // to the OLDEST open turn, so a FIFO — not "latest prompt" — assigns the
-  // compaction batch correctly.
-  const openToolBatches = useRef<number[]>([]);
-  const orphanToolBatch = useRef(-1);
-
-  useEffect(
-    () => {
-      const apply = (msg: ZoneMsg) => {
-        // SA.2: a subagent's prose routes to its deck BEFORE the fold/close
-        // logic below — a child streaming must not fold the parent's open
-        // thinking or close the parent's streaming text block. Consecutive
-        // same-parent same-variant deltas extend one subtext entry, so the
-        // card reads as prose, not confetti.
-        if ((msg.type === "text_delta" || msg.type === "thinking_delta") && msg.parentId) {
-          const parentId = msg.parentId;
-          const text = msg.text;
-          const variant = msg.type === "text_delta" ? ("text" as const) : ("thinking" as const);
-          const key = `${parentId}|${variant}`;
-          const openId = subtextIds.current.get(key);
-          if (openId !== undefined) {
-            setEntries((es) =>
-              es.map((e) =>
-                e.kind === "subtext" && e.id === openId ? { ...e, text: e.text + text } : e,
-              ),
-            );
-          } else {
-            const newId = nextId++;
-            subtextIds.current.set(key, newId);
-            setEntries((es) => [...es, { kind: "subtext", id: newId, parentId, variant, text }]);
-          }
-          return;
-        }
-        // Collapse-on-finalize (T2.1): the open thinking block folds the
-        // moment the turn's real output starts.
-        const foldThinking = () => {
-          const id = thinkingId.current;
-          if (id === null) return;
-          thinkingId.current = null;
-          setEntries((es) =>
-            es.map((e) => (e.kind === "thinking" && e.id === id ? { ...e, done: true } : e)),
-          );
-        };
-        if (
-          msg.type === "text_delta" ||
-          msg.type === "render" ||
-          msg.type === "picker" ||
-          msg.type === "tool_use" ||
-          msg.type === "artifact" ||
-          msg.type === "turn_end"
-        ) {
-          foldThinking();
-        }
-        switch (msg.type) {
-          case "user_prompt": {
-            // Sending re-arms follow: typing a message says you're back in
-            // the conversation, so jump to the tail even if you'd scrolled up.
-            tail.armFollow();
-            const id = nextId++;
-            openToolBatches.current.push(id);
-            setEntries((es) => [
-              ...es,
-              { kind: "text", id, role: "user", text: msg.text, done: true },
-            ]);
-            break;
-          }
-          case "thinking_delta": {
-            const id = thinkingId.current;
-            if (id !== null) {
-              setEntries((es) =>
-                es.map((e) =>
-                  e.kind === "thinking" && e.id === id ? { ...e, text: e.text + msg.text } : e,
-                ),
-              );
-            } else {
-              const newId = nextId++;
-              thinkingId.current = newId;
-              setEntries((es) => [
-                ...es,
-                { kind: "thinking", id: newId, text: msg.text, done: false, expanded: false },
-              ]);
-            }
-            break;
-          }
-          case "text_delta": {
-            const id = streamingId.current;
-            if (id !== null) {
-              setEntries((es) =>
-                es.map((e) =>
-                  e.kind === "text" && e.id === id ? { ...e, text: e.text + msg.text } : e,
-                ),
-              );
-            } else {
-              const newId = nextId++;
-              streamingId.current = newId;
-              setEntries((es) => [
-                ...es,
-                { kind: "text", id: newId, role: "assistant", text: msg.text, done: false },
-              ]);
-            }
-            break;
-          }
-          case "render": {
-            // Close the streaming text block so any further deltas open a new
-            // one *after* this component — the transcript keeps wire order.
-            streamingId.current = null;
-            const id = nextId++;
-            setEntries((es) => {
-              const i = es.findIndex((e) => e.kind === "render" && e.renderId === msg.id);
-              if (i >= 0) {
-                // Update-in-place: same wire id replaces that component's props.
-                const updated = [...es];
-                updated[i] = { ...(updated[i] as Entry & { kind: "render" }), component: msg.component, props: msg.props };
-                return updated;
-              }
-              return [
-                ...es,
-                { kind: "render", id, renderId: msg.id, component: msg.component, props: msg.props },
-              ];
-            });
-            break;
-          }
-          case "picker": {
-            // Same wire-order rule as `render`: close the streaming block.
-            streamingId.current = null;
-            const id = nextId++;
-            setEntries((es) => [
-              ...es,
-              { kind: "picker", id, pickerId: msg.id, title: msg.title, rows: msg.rows, hint: msg.hint },
-            ]);
-            break;
-          }
-          case "artifact": {
-            // Same wire-order rule as `render`: close the streaming block.
-            streamingId.current = null;
-            const id = nextId++;
-            setEntries((es) => {
-              const i = es.findIndex(
-                (e) => e.kind === "artifact" && e.artifactId === msg.id,
-              );
-              if (i >= 0) {
-                const updated = [...es];
-                updated[i] = {
-                  ...(updated[i] as Entry & { kind: "artifact" }),
-                  html: msg.html,
-                  title: msg.title,
-                };
-                return updated;
-              }
-              return [
-                ...es,
-                { kind: "artifact", id, artifactId: msg.id, html: msg.html, title: msg.title },
-              ];
-            });
-            break;
-          }
-          case "tool_use": {
-            // Close the streaming text block (same reason as `render`):
-            // later deltas must open a new block after this record.
-            streamingId.current = null;
-            // A subagent's own tool call closes ITS open prose runs, so
-            // narration after the call opens a new entry below it (SA.2).
-            if (msg.parentId) {
-              subtextIds.current.delete(`${msg.parentId}|text`);
-              subtextIds.current.delete(`${msg.parentId}|thinking`);
-            }
-            const id = nextId++;
-            const batchId = openToolBatches.current[0] ?? orphanToolBatch.current;
-            setEntries((es) => [
-              ...es,
-              {
-                kind: "tool",
-                id,
-                toolId: msg.id,
-                name: msg.name,
-                detail: msg.detail,
-                input: msg.input,
-                parentId: msg.parentId,
-                batchId,
-                settled: false,
-                startedAt: Date.now(),
-                ...(msg.replay ? { replayed: true } : {}),
-              },
-            ]);
-            break;
-          }
-          case "tool_result": {
-            setEntries((es) =>
-              es.map((e) =>
-                e.kind === "tool" && e.toolId === msg.id
-                  ? { ...e, output: msg.output, truncatedBytes: msg.truncatedBytes, isError: msg.isError }
-                  : e,
-              ),
-            );
-            break;
-          }
-          // `status` frames are Shell's to interpret (the ActivityLine label);
-          // the transcript renders nothing for them.
-          case "turn_end": {
-            const id = streamingId.current;
-            streamingId.current = null;
-            subtextIds.current.clear();
-            const batchId = openToolBatches.current.shift() ?? orphanToolBatch.current--;
-            setEntries((es) =>
-              es.map((e) => {
-                if (e.kind === "text" && e.id === id) return { ...e, done: true };
-                // A tool still pending at turn end was interrupted — settle
-                // its record so the row doesn't pulse forever.
-                if (e.kind === "tool" && e.batchId === batchId) {
-                  return {
-                    ...e,
-                    settled: true,
-                    ...(e.output === undefined
-                      ? { output: "(interrupted — no result)", isError: true }
-                      : {}),
-                  };
-                }
-                return e;
-              }),
-            );
-            break;
-          }
-          case "error": {
-            // Close the streaming text block like every other appended entry —
-            // a delta after the error must open a NEW block below it, keeping
-            // wire order (2026-07-28 fix: it glued onto the block ABOVE the
-            // error). notice/user_prompt omit this deliberately and say so.
-            streamingId.current = null;
-            const id = nextId++;
-            setEntries((es) => [
-              ...es,
-              {
-                kind: "text",
-                id,
-                role: "assistant",
-                text: `**Error:** ${msg.message}`,
-                done: true,
-              },
-            ]);
-            break;
-          }
-          case "notice": {
-            // A dim system line in transcript order. It does NOT fold thinking
-            // or close the streaming text block — a retry/compaction is a status
-            // aside, not the turn's real output starting.
-            const id = nextId++;
-            setEntries((es) => [
-              ...es,
-              { kind: "notice", id, text: msg.text, noticeKind: msg.kind, source: msg.source },
-            ]);
-            break;
-          }
-          case "bang_start": {
-            // Same wire-order rule as `render`: close the streaming block.
-            streamingId.current = null;
-            const id = nextId++;
-            setEntries((es) => [
-              ...es,
-              { kind: "bang", id, bangId: msg.id, command: msg.command, output: "", done: false },
-            ]);
-            break;
-          }
-          case "bang_output": {
-            setEntries((es) =>
-              es.map((e) =>
-                e.kind === "bang" && e.bangId === msg.id
-                  ? { ...e, output: e.output + msg.data }
-                  : e,
-              ),
-            );
-            break;
-          }
-          case "bang_end": {
-            setEntries((es) =>
-              es.map((e) =>
-                e.kind === "bang" && e.bangId === msg.id
-                  ? { ...e, exitCode: msg.exitCode, done: true }
-                  : e,
-              ),
-            );
-            break;
-          }
-          case "zone_reset": {
-            // A (re)attach replays the session's history from scratch.
-            streamingId.current = null;
-            thinkingId.current = null;
-            // Stale open-subtext keys would swallow replayed subagent prose
-            // into entry ids that no longer exist (bughunt 2026-08-14 r2).
-            subtextIds.current.clear();
-            openToolBatches.current = [];
-            orphanToolBatch.current = -1;
-            tail.resetTail(); // a replayed transcript lands at its end
-            setEntries([]);
-            // pinned renderIds survive — the replayed render entries carry
-            // the same wire ids, so pins re-bind to the repainted blocks.
-            break;
-          }
-        }
-      };
-      // Streamed deltas batch into one state pass per animation frame (the
-      // timer stands in where frames pause — a hidden tab). Anything else
-      // applies the pending batch first, so entries keep exact wire order —
-      // and every non-transcript bus listener still hears the raw stream.
-      const queue: QueuedDelta[] = [];
-      let frame: number | null = null;
-      let timer: ReturnType<typeof setTimeout> | null = null;
-      const flush = () => {
-        if (frame !== null) cancelAnimationFrame(frame);
-        if (timer !== null) clearTimeout(timer);
-        frame = null;
-        timer = null;
-        for (const m of queue.splice(0)) apply(m);
-      };
-      const unsubscribe = subscribe((msg) => {
-        if (msg.type === "text_delta" || msg.type === "thinking_delta") {
-          queueDelta(queue, msg);
-          if (frame === null) {
-            frame = requestAnimationFrame(flush);
-            timer = setTimeout(flush, 50);
-          }
-          return;
-        }
-        flush();
-        apply(msg);
-      });
-      return () => {
-        unsubscribe();
-        if (frame !== null) cancelAnimationFrame(frame);
-        if (timer !== null) clearTimeout(timer);
-      };
-    },
-    [subscribe],
+  const [projection] = useState(() => createTranscriptProjection());
+  const [transcript, setTranscript] = useState(
+    () => projection.apply([], Date.now).snapshot,
+  );
+  // Disclosure belongs to the renderer, but the ids survive a thinking row
+  // moving into a completed tool fold just as the old entry field did.
+  const [expandedThinking, setExpandedThinking] = useState<ReadonlySet<number>>(
+    () => new Set(),
   );
 
-  useEffect(tail.followTail, [entries]);
+  useEffect(() => {
+    const ingress = createTranscriptIngress((messages) => {
+      const result = projection.apply(messages, Date.now);
+      for (const intent of result.tailIntents) {
+        if (intent === "arm-follow") {
+          tail.armFollow();
+        } else {
+          tail.resetTail();
+          setExpandedThinking(new Set());
+        }
+      }
+      setTranscript(result.snapshot);
+    });
+    const unsubscribe = subscribe(ingress.accept);
+    return () => {
+      unsubscribe();
+      ingress.dispose();
+    };
+  }, [projection, subscribe]);
+
+  useEffect(tail.followTail, [transcript, expandedThinking]);
 
   const togglePin = useCallback(
     (renderId: string) =>
@@ -714,83 +314,20 @@ export function RenderZone({
 
   const toggleThinking = useCallback(
     (id: number) =>
-      setEntries((es) =>
-        es.map((e) =>
-          e.kind === "thinking" && e.id === id ? { ...e, expanded: !e.expanded } : e,
-        ),
-      ),
+      setExpandedThinking((current) => {
+        const next = new Set(current);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      }),
     [],
   );
 
-  // Dock items reference the same entry objects the transcript holds, so an
+  // Dock items reference the same painting objects the transcript holds, so an
   // update-in-place render/artifact (same wire id) keeps pinned blocks live.
   const pinnedItems = useMemo(
-    () =>
-      pinned.flatMap((id) => {
-        const entry = entries.find(
-          (e) =>
-            (e.kind === "render" && e.renderId === id) ||
-            (e.kind === "artifact" && e.artifactId === id),
-        );
-        return entry && (entry.kind === "render" || entry.kind === "artifact") ? [entry] : [];
-      }),
-    [entries, pinned],
-  );
-
-  // The ACTIVE picker — the one whose arrow-key capture is live: the newest
-  // copy, and only until the user moves on (a later user turn retires it).
-  const activePickerId = useMemo(() => {
-    let active: number | null = null;
-    for (const e of entries) {
-      if (e.kind === "picker") active = e.id;
-      else if (e.kind === "text" && e.role === "user") active = null;
-    }
-    return active;
-  }, [entries]);
-
-  // Everything a subagent deck shows, grouped under its spawn's wire id and
-  // in true stream order: child calls (T2.4/SA.1) interleaved with the
-  // subagent's prose (SA.2). Also the deck's anchor test — narration can
-  // arrive before the first child tool call, and a spawn with only prose is
-  // still a deck. A FAILED child is excluded: it moves to its own expanded
-  // top-level row, and keeping it here too would show the same failure twice
-  // between result and turn_end.
-  const cardItemsByParent = useMemo(() => {
-    const byParent = new Map<string, Array<ToolCall | SubtextEntry>>();
-    for (const e of entries) {
-      if ((e.kind !== "tool" && e.kind !== "subtext") || !e.parentId) continue;
-      if (e.kind === "tool" && e.isError) continue;
-      const arr = byParent.get(e.parentId) ?? [];
-      arr.push(e);
-      byParent.set(e.parentId, arr);
-    }
-    return byParent;
-  }, [entries]);
-
-  const compactedTools = useMemo(
-    () =>
-      groupSettledTools(
-        entries.flatMap((entry): Array<ActivityItem<ToolCall, ThinkingEntry>> =>
-          entry.kind === "tool"
-            ? entry.parentId && !entry.isError
-              ? // A subagent's call lives inside its deck — invisible to the
-                // fold, and OMITTED (not a boundary) so a parent-level run is
-                // not split by child traffic it never displaces (SA.1).
-                []
-              : cardItemsByParent.has(entry.toolId)
-                ? // A subagent deck is a visible block: folding across it
-                  // would move later work ahead of it. Hard boundary.
-                  [null]
-                : [{ kind: "tool" as const, tool: entry }]
-            : entry.kind === "thinking"
-              ? [{ kind: "thinking" as const, thinking: entry }]
-              : entry.kind === "subtext"
-                ? // Inside its deck — invisible to folding, like child calls.
-                  []
-                : [null],
-        ),
-      ),
-    [entries, cardItemsByParent],
+    () => pinned.flatMap((id) => transcript.paintingsById.get(id) ?? []),
+    [pinned, transcript.paintingsById],
   );
 
   const handleTranscriptPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -827,7 +364,7 @@ export function RenderZone({
         onTouchMove={tail.onTouchMove}
         onPointerUp={handleTranscriptPointerUp}
       >
-        {entries.length === 0 && !busy && (
+        {!transcript.hasTranscriptContent && !busy && (
           // A fresh session (no transcript yet) shows an inviting welcome
           // instead of raw emptiness. Shell-owned and agent-neutral (#12).
           <div className="zone-empty">
@@ -871,14 +408,12 @@ export function RenderZone({
             </div>
           </div>
         )}
-        {entries.map((entry) => (
+        {transcript.rows.map((entry) => (
           <ZoneEntry
             key={entry.id}
             entry={entry}
             toggleThinking={toggleThinking}
-            cardItemsByParent={cardItemsByParent}
-            compactedTools={compactedTools}
-            activePickerId={activePickerId}
+            expandedThinking={expandedThinking}
             handleAction={handleAction}
             pinned={pinned}
             togglePin={togglePin}
@@ -908,33 +443,31 @@ export function RenderZone({
 
 /** One transcript entry's presentation — the per-kind branches of the
  *  scrollback. File-local on purpose: the renderers lean on RenderZone's
- *  context (pin state, subagent grouping, the mediated action path), and
- *  brand-mark.test.ts reads this file as text. */
+ *  context (pin state and the mediated action path), and brand-mark.test.ts
+ *  reads this file as text. */
 function ZoneEntry({
   entry,
   toggleThinking,
-  cardItemsByParent,
-  compactedTools,
-  activePickerId,
+  expandedThinking,
   handleAction,
   pinned,
   togglePin,
 }: {
-  entry: Entry;
+  entry: OutputZoneRow;
   toggleThinking: (id: number) => void;
-  cardItemsByParent: Map<string, Array<ToolCall | SubtextEntry>>;
-  compactedTools: ReturnType<typeof groupSettledTools<ToolCall, ThinkingEntry>>;
-  activePickerId: number | null;
+  expandedThinking: ReadonlySet<number>;
   handleAction: (action: Action, sourceId: string) => void;
   pinned: string[];
   togglePin: (renderId: string) => void;
 }) {
-  // A subagent's prose lives inside its deck's expansion, never top-level.
-  if (entry.kind === "subtext") return null;
   if (entry.kind === "thinking") {
-    // Narration absorbed into a "worked" fold renders inside that fold.
-    if (compactedTools.hidden.has(entry.id)) return null;
-    return <ThinkingBlock entry={entry} onToggle={toggleThinking} />;
+    return (
+      <ThinkingBlock
+        entry={entry}
+        expanded={expandedThinking.has(entry.id)}
+        onToggle={toggleThinking}
+      />
+    );
   }
   if (entry.kind === "notice") {
     const glyph =
@@ -983,17 +516,19 @@ function ZoneEntry({
       </div>
     );
   }
+  if (entry.kind === "tool-fold") {
+    return (
+      <ToolActivityGroup
+        row={entry}
+        expandedThinking={expandedThinking}
+        onToggleThinking={toggleThinking}
+      />
+    );
+  }
+  if (entry.kind === "subagent-deck") {
+    return <SubagentDeck row={entry} />;
+  }
   if (entry.kind === "tool") {
-    const compacted = compactedTools.anchors.get(entry.id);
-    if (compacted) return <ToolActivityGroup items={compacted} onToggleThinking={toggleThinking} />;
-    if (compactedTools.hidden.has(entry.id)) return null;
-    // Subagent calls are rendered nested inside their deck (below),
-    // not at the top level.
-    if (entry.parentId && !entry.isError) return null;
-    const items = cardItemsByParent.get(entry.toolId);
-    // A spawn with visible children IS the deck — the anchor is the
-    // referenced-as-parentId relationship, never the tool's name (SA.1).
-    if (items && items.length > 0) return <SubagentDeck task={entry} items={items} />;
     return (
       <div className="tool-group">
         <ToolBlock {...toolBlockProps(entry)} />
@@ -1008,7 +543,7 @@ function ZoneEntry({
           title={entry.title}
           rows={entry.rows}
           hint={entry.hint}
-          active={entry.id === activePickerId}
+          active={entry.active}
           onPick={(text) => handleAction({ kind: "prompt", text }, entry.pickerId)}
         />
       </div>
