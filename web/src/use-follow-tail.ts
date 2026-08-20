@@ -78,6 +78,10 @@ export function useFollowTail() {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const following = useRef(true);
   const lastTop = useRef(0);
+  // A navigation-owned scroll can legitimately land at the current bottom.
+  // Remember its settled position so that scroll event cannot masquerade as
+  // the reader returning to the tail. Any later movement clears the hold.
+  const navigationTop = useRef<number | null>(null);
   const touchY = useRef<number | null>(null);
 
   const atBottom = (el: HTMLElement) => bottomGap(el) <= BOTTOM_SLACK_PX;
@@ -85,6 +89,13 @@ export function useFollowTail() {
   const onScroll = () => {
     const el = scrollerRef.current;
     if (!el) return;
+    if (navigationTop.current !== null) {
+      if (Math.abs(el.scrollTop - navigationTop.current) <= 1) {
+        lastTop.current = el.scrollTop;
+        return;
+      }
+      navigationTop.current = null;
+    }
     // The backstop: an upward move we got no input event for.
     if (el.scrollTop < lastTop.current - 1) following.current = false;
     if (atBottom(el)) following.current = true;
@@ -95,6 +106,7 @@ export function useFollowTail() {
   // synchronously: waiting for onScroll is racy because streamed paint can
   // move the bottom by more than the slack before that event runs.
   const onWheel = (e: WheelIntent) => {
+    navigationTop.current = null;
     if (e.deltaY < 0) {
       following.current = false;
       return;
@@ -120,6 +132,7 @@ export function useFollowTail() {
     const y = firstTouchY(e);
     if (y === undefined) return;
     const previousY = touchY.current;
+    if (previousY !== null && y !== previousY) navigationTop.current = null;
     if (previousY !== null && y > previousY) following.current = false;
     else {
       const el = scrollerRef.current;
@@ -139,13 +152,36 @@ export function useFollowTail() {
   };
 
   const armFollow = () => {
+    navigationTop.current = null;
     following.current = true;
+  };
+
+  const isAtBottom = () => {
+    const el = scrollerRef.current;
+    return Boolean(el && atBottom(el));
+  };
+
+  // A shell-owned jump into scrollback is just as intentional as an upward
+  // wheel/touch gesture. Own the assignment here so following is disabled
+  // before it and the browser-clamped destination is recorded synchronously.
+  const scrollToDetached = (top: number) => {
+    following.current = false;
+    const el = scrollerRef.current;
+    if (!el) {
+      navigationTop.current = null;
+      return;
+    }
+    navigationTop.current = el.scrollTop;
+    el.scrollTop = Math.max(0, top);
+    navigationTop.current = el.scrollTop;
+    lastTop.current = el.scrollTop;
   };
 
   // Emptying the content collapses scrollTop, which the backstop would
   // otherwise read as the reader scrolling up — so the last position is
   // forgotten along with the content it described.
   const resetTail = () => {
+    navigationTop.current = null;
     following.current = true;
     lastTop.current = 0;
   };
@@ -158,6 +194,8 @@ export function useFollowTail() {
     onTouchMove,
     followTail,
     armFollow,
+    isAtBottom,
+    scrollToDetached,
     resetTail,
   };
 }

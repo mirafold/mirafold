@@ -69,7 +69,7 @@
 .turn-user:not(.turn-bang) {
   position: relative;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: baseline;
   column-gap: 8px;
   border: 0;
@@ -93,6 +93,60 @@
   color: var(--fg-strong);
   font-size: 0.92rem;
   line-height: 1.5;
+}
+
+/* Submitted-input navigation (Phase IH). Desktop has enough horizontal room
+   to keep both chronological arrows directly in every command strip. They are
+   shell-owned controls outside the model-authored text; phone replaces them
+   with the prompt-area disclosure in the one phone block. */
+.turn-bang.input-nav-stop {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: baseline;
+  column-gap: 8px;
+}
+
+.input-nav-inline {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-self: center;
+  gap: 3px;
+  margin: -4px -7px -4px 4px;
+}
+
+.input-nav-arrow {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--fg-dim);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.input-nav-arrow:hover:not(:disabled),
+.input-nav-arrow:focus-visible {
+  color: var(--accent);
+  background: var(--surface-hover);
+  border-color: var(--border-hover);
+}
+
+.input-nav-arrow:disabled {
+  color: var(--fg-faint);
+  opacity: 0.38;
+  cursor: default;
+}
+
+.input-nav-stop.is-input-nav-current {
+  box-shadow: inset 0 0 0 1px var(--border-hover);
 }
 
 .turn-user:first-child {

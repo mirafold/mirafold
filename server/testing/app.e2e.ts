@@ -2766,9 +2766,9 @@ test("an overflowing prose transcript supports keyboard scrolling and End re-arm
     const geom = () =>
       zone.evaluate((el) => ({ top: el.scrollTop, h: el.scrollHeight, view: el.clientHeight }));
 
-    // Make deterministic overflow out of inert prose only. With no link or
-    // button inside the log, the scroller itself is the keyboard access path
-    // axe's scrollable-region-focusable rule requires.
+    // Make deterministic overflow out of inert response prose. Submitted
+    // inputs now intentionally carry the Phase-IH arrow pairs; beyond those,
+    // the scroller itself remains the keyboard PageUp/End access path.
     for (let i = 0; i < 8; i++) {
       const before = await page2.locator(".notice-line[data-source]").count();
       await page2.locator("textarea").fill(`notice attribution ${i}`);
@@ -2788,10 +2788,15 @@ test("an overflowing prose transcript supports keyboard scrolling and End re-arm
       `notice turns did not make scrollback (content ${seeded.h}px, viewport ${seeded.view}px)`,
     );
     assert.equal(await zone.getAttribute("tabindex"), "0");
+    const descendantControls = await zone
+      .locator("a, button, input, select, textarea, [tabindex]")
+      .count();
+    const navigationControls = await zone.locator(".input-nav-arrow").count();
+    assert.equal(navigationControls, 16, "each of eight submitted inputs needs both arrows");
     assert.equal(
-      await zone.locator("a, button, input, select, textarea, [tabindex]").count(),
-      0,
-      "fixture unexpectedly gained a focusable transcript descendant",
+      descendantControls,
+      navigationControls,
+      "fixture gained a transcript control outside submitted-input navigation",
     );
     await assertAxeClean(page2, "overflowing prose-only transcript");
 

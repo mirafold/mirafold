@@ -683,6 +683,9 @@ web/               the browser app (React 19 + Vite)
                        desktop — on phone Enter is a newline and the ↑ button
                        sends, R.4l); native pre-submit / and $ completions +
                        transcript-click focus path
+    InputNavigation.tsx
+                       desktop submitted-input strips and the temporary phone
+                       disclosure; shell-owned navigation controls only
     BangBar.tsx        the `!` command's stdin bar (4.9): per-viewport input
                        with password auto-masking — ephemeral, never broadcast
     PermBar.tsx        the permission strip + its full-command card (2026-07-28):
@@ -790,6 +793,12 @@ web/               the browser app (React 19 + Vite)
   src/prompt-draft.ts
                      preserves composed prompt text while appending a visible,
                      unsent Changes feedback draft
+  src/input-navigation.ts
+                     pure submitted-input classification, chronological
+                     movement, and viewport-to-input selection
+  src/use-input-navigation.ts
+                     selected-input state, transcript DOM destinations, and
+                     explicit scroll/focus navigation
   src/folder-picker-requests.ts
                      correlated local picker requests shared by the session
                      shell and the fleet's new-session card
@@ -1291,6 +1300,27 @@ subscription handles each `ZoneMsg`:
   attribution rule in §3.
 - `zone_reset` → clear everything; the replay that follows repaints it.
 
+Submitted user prompts and `!` command strips are also chronological
+navigation stops. Desktop keeps an always-visible ↑/↓ pair inside the right
+edge of every strip; the selected destination aligns just below the
+transcript's reading edge, never wraps, and leaves the composed draft alone.
+Once a strip is selected, ArrowUp/ArrowDown move and Escape returns to the
+prompt. The same ArrowUp from a truly empty desktop prompt starts at the newest
+input, except while a live provider picker owns that key. On phone the strip
+arrows are hidden: a 40px `⋯` above the submit arrow opens a temporary
+older/newer card at the input governing the current viewport. It stays open
+for repeated taps, closes on toggle, an outside tap, or keyboard focus moving
+to another shell control, and adds no prompt or status-bar layout height. The
+selected transcript stop remains a valid hardware-keyboard continuation. It
+temporarily yields that anchor to a permission,
+live shell-input, or upload strip because those immediate actions own the same
+space. This is viewport-local shell state; it sends no wire message and does
+not edit or resubmit history. Every explicit jump suspends live-tail following,
+even when the browser can only clamp the destination to the current bottom.
+Scrolling away and back resumes following; on desktop, an unmodified End from
+an input-navigation stop or the focused transcript scroller is the direct
+return-to-live-tail intent.
+
 **Actions (Phase 2):** `RenderBlock` wraps each rendered component in an
 `ActionContext` provider that binds the block's render id as the action's
 `sourceId` — components call `useAction()` / render an `ActionRow`, never
@@ -1315,7 +1345,10 @@ streams — but **conditionally**, the way a terminal's scrollback behaves:
 scroll up and the view holds where you put it while output lands below,
 until you come back to the bottom. It scrolls **instantly**, never smoothly
 (`web/src/use-follow-tail.ts` — a smooth animation is permanently in flight
-during streaming and makes the reader's own wheel inert; see V.4).
+during streaming and makes the reader's own wheel inert; see V.4). An explicit
+input-navigation jump is the exception: it remains detached even if it lands at
+the current bottom, until the reader scrolls away and back or presses End from
+a desktop input-navigation stop or the focused transcript scroller.
 
 Adding UI capability = adding a `case` here for a new message type (plus, in
 Phase 1, dispatching `render` messages into a component registry). That's
@@ -1325,9 +1358,10 @@ the whole extension model.
 
 A textarea with the green `❯` glyph that auto-grows with content (wraps and
 newlines both) up to 8 lines, then scrolls internally — a thin scrollbar is
-the "there's more" cue — and collapses back to one line on send. Enter
-submits (trimmed, non-empty), Shift+Enter inserts a newline. No send
-button — that's part of the identity, not an omission. While a turn is in
+the "there's more" cue — and collapses back to one line on send. On desktop,
+Enter submits (trimmed, non-empty), Shift+Enter inserts a newline, and there is
+no send button — that is part of the identity, not an omission. On phone,
+Enter remains a newline and the existing ↑ button submits. While a turn is in
 flight a `■ esc` stop affordance appears (T.2); it and the page-wide Esc key
 both interrupt the turn, leaving the session warm.
 

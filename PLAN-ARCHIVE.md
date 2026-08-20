@@ -11598,3 +11598,94 @@ browser tests 4/4; Tier 1 867/867; typecheck; build; Tier 2 152/152; Tier 3
 `git diff --check`. Per the phase's recorded baseline rule, the independently
 green browser and visual constituents—not the known combined-wrapper timeout—
 are the literal local UI gate.
+
+## Moved 2026-08-19 (Phase IH — completed body)
+
+## Phase IH — Input history navigation (opened 2026-08-19; Kyle-directed)
+
+**Product call.** Submitted user inputs become direct navigation stops. On
+desktop, every user-authored command strip carries always-visible older/newer
+arrow buttons at its right edge. On phone, those inline buttons disappear;
+instead a small `⋯` control sits immediately above the existing submit arrow
+and opens a temporary, anchored older/newer control. The phone control consumes
+no layout height and appears only when at least two submitted inputs exist.
+
+**Verified starting state.** `createTranscriptProjection()` already exposes
+stable projected IDs for ordinary user prompts and `!` command rows;
+`RenderZone` owns their DOM presentation and the output-zone scroller;
+`PromptBox` owns the phone-only submit arrow. There is no conversation top bar
+or `⋯` menu to reuse. Desktop transcript clicks currently focus the prompt box;
+phone transcript touches deliberately do not. Provider-native picker rows
+already capture ArrowUp/ArrowDown from an empty prompt box while active.
+
+**Behavior boundary.** Up always means the next older submitted input and Down
+the next newer one; navigation never wraps, and an unavailable direction is
+disabled. Ordinary prompts and `!` commands are both stops because both are
+user-authored command strips; assistant, tool, thinking, notice, picker,
+painting, and subagent rows are not. Navigation changes selection, focus, and
+output-zone scroll only. Draft text is never copied, replaced, submitted, or
+discarded. No wire message, projection meaning, response grouping, server,
+adapter, dependency, prompt-send rule, provider-picker priority, or manual
+tail-follow contract changes.
+
+This is a normal-sized Phase executable in one pass. Its Steps are the logical
+parts completed together:
+
+- [x] **Step IH.1 — Navigation model and desktop path.** Add a pure tested
+  chronological target model; render always-visible arrow buttons inside each
+  desktop command strip; align the selected destination beneath the output
+  zone's top edge; and support ArrowUp/ArrowDown/Escape after selection plus
+  ArrowUp from an empty desktop prompt box when no live provider picker owns
+  the key.
+- [x] **Step IH.2 — Phone disclosure and anchored controls.** Hide the inline
+  strip controls at phone width. Place the mobile-only `⋯` immediately above
+  the submit arrow; opening it selects the input governing the current
+  viewport and reveals a temporary older/newer card up and left of the anchor.
+  Keep it open for repeated taps, close it by toggling or tapping elsewhere,
+  and preserve the existing prompt/status geometry and touch behavior.
+- [x] **Step IH.3 — Regression closure.** Pin chronology, endpoints, viewport
+  anchoring, draft preservation, keyboard ownership, focus/scroll, phone
+  placement, temporary disclosure, touch targets, no sideways overflow,
+  reduced motion, and axe cleanliness in the matching unit/browser tiers;
+  update README behavior documentation and run the proportionate dotenv-opaque
+  verification gates.
+
+Done when desktop and 390px phone browser runs prove all three paths against a
+real output-zone DOM, every new control is keyboard/screen-reader usable, the
+normal phone screen gains no row or layout height, and the behavior boundary
+above remains literal.
+
+Implementation record (2026-08-19): submitted-input navigation is viewport-local
+trusted-shell state built from the existing transcript projection's stable row
+IDs. Desktop command strips carry always-visible, keyboard/screen-reader-usable
+older/newer controls; empty-prompt ArrowUp enters at the newest input while a
+live provider picker keeps its existing key priority. Phone strips retain their
+full text width and a 40px `⋯` above submit opens the temporary count +
+older/newer card without moving the prompt or status bar. Permission, live
+shell-input, and upload strips suppress and close that disclosure while they
+own the same physical space. Ordinary prompts and `!` command strips are the
+only stops; endpoints disable rather than wrap; the unsent draft is preserved;
+explicit jumps detach tail following. README documents the behavior. No wire,
+server, adapter, response grouping, prompt-send rule, or dependency changed.
+The final refactor keeps pure chronology in `input-navigation.ts`, DOM
+selection/scroll mechanics in `use-input-navigation.ts`, and both responsive
+control surfaces in `components/InputNavigation.tsx`. Same-day correctness
+review closed every proven interaction defect across browser-clamped tail
+ownership, both no-motion End paths, repeated activation, desktop/phone replay
+focus, sequential phone focus, selected versus page-wide Escape, phone
+touch/hardware-keyboard ownership, live-turn endpoint focus, and live
+provider-picker key arbitration, plus phone modal/workspace focus layering.
+The regressions pin those sibling paths. The
+review also aligned the live-tail documentation and made the replay test remove
+its own temporary session directory.
+Verification before the final phone focus-layer correction: focused model/tail
+units 7/7, typecheck, guarded client/server build, dotenv-safe Tier 1 818/818
+across 87 files (the three files with
+deliberate dotenv fixtures excluded), dotenv-safe Tier 2 139/139 (its deliberate
+dotenv-fixture file excluded), focused browser regressions 4/4, full Tier 3
+114/114, browser matrix 3/3, visual suite 6/6, inspected desktop/phone renders,
+and `git diff --check`. The settled correction then passed typecheck, builds,
+focused units 7/7, and feature Chrome 4/4. Its final Tier 1 aggregate rerun is
+still unresolved because two untouched adapter test files pass alone but exit
+only under the multi-file runner; diagnose that runner and rerun the complete
+merge gates before moving the draft forward.

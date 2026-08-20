@@ -2632,6 +2632,44 @@ is one complete single-pass `$next` chunk.
   wrapper. Full original Step body → **PLAN-ARCHIVE.md, “Moved 2026-08-19
   (Phase LD — completed Step LD.4 body).”**
 
+## Phase IH — Input history navigation (implemented 2026-08-19; merge gate pending)
+
+- [x] **Steps IH.1–IH.3 — Submitted-input navigation** — complete on
+  `feature/prompt-navigation`. Desktop command strips now carry direct,
+  always-visible older/newer arrows; an empty prompt's ArrowUp enters at the
+  newest input, selected strips own ArrowUp/ArrowDown/Escape, and live provider
+  pickers retain priority. Phone hides strip arrows and discloses a temporary
+  `⋯` card immediately above submit without adding layout height; permission,
+  live shell-input, and upload strips temporarily own that shared space. Both
+  paths preserve the unsent draft, never wrap, include ordinary prompts and
+  `!` commands only, and detach explicit jumps from tail-following. No wire,
+  server, adapter, response grouping, prompt-send rule, or dependency changed.
+  The final refactor keeps pure chronology in `input-navigation.ts`, DOM
+  selection/scroll mechanics in `use-input-navigation.ts`, and both responsive
+  control surfaces in `components/InputNavigation.tsx`. Same-day correctness
+  review closed every proven interaction defect across browser-clamped tail
+  ownership, both no-motion End paths, repeated activation, desktop/phone
+  replay focus, sequential phone focus, selected versus page-wide Escape,
+  phone touch/hardware-keyboard ownership, live-turn endpoint focus, and live
+  provider-picker key arbitration, plus phone modal/workspace focus layering.
+  The regressions pin those sibling paths.
+  The review also aligned the live-tail documentation and made the replay test
+  remove its own temporary session directory.
+  Verified before the final phone focus-layer correction: focused model/tail
+  units **7/7**, typecheck, guarded client/server build, dotenv-safe Tier 1
+  **818/818** across 87 files (three deliberate
+  dotenv-fixture files excluded), dotenv-safe Tier 2 **139/139** (the deliberate
+  dotenv-fixture integration file excluded), focused browser regressions
+  **4/4**, full Tier 3 **114/114**, browser matrix **3/3**, visual suite
+  **6/6**, inspected 900×600 desktop and 390×844 phone renders, and
+  `git diff --check`. The settled correction then passed typecheck, builds,
+  focused units **7/7**, and feature Chrome **4/4**. Its final Tier 1 aggregate
+  rerun remains unresolved because two untouched adapter test files pass alone
+  but exit only under the multi-file runner; diagnose that runner and rerun the
+  complete merge gates before moving this draft forward. Full original Phase
+  body → **PLAN-ARCHIVE.md, “Moved
+  2026-08-19 (Phase IH — completed body).”**
+
 ## Phase PN — Panes (file views beside the transcript)
 
 **Why.** Kyle (2026-07-26): open a file and see it in its own pane. Also the

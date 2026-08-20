@@ -6,6 +6,10 @@ import {
   promptCompletionMatch,
 } from "../prompt-completions";
 import { mergePromptDraft } from "../prompt-draft";
+import {
+  PhoneInputNavigation,
+  type PhoneInputNavigationModel,
+} from "./InputNavigation";
 
 // Phone vs. desktop is decided once at module load (a mid-session resize
 // isn't worth a listener, R.4) and drives two deliberate divergences:
@@ -51,6 +55,8 @@ type PromptBoxProps = {
   containerRef?: RefObject<HTMLDivElement | null>;
   draft?: PromptDraft;
   globalTriggersDisabled?: boolean;
+  onNavigateLatestInput?: () => boolean;
+  inputNavigation?: PhoneInputNavigationModel;
 };
 
 export type PromptDraft = { id: number; text: string };
@@ -136,6 +142,8 @@ export function PromptBox({
   containerRef,
   draft,
   globalTriggersDisabled = false,
+  onNavigateLatestInput,
+  inputNavigation,
 }: PromptBoxProps) {
   const [text, setText] = useState("");
   const [cursor, setCursor] = useState(0);
@@ -185,6 +193,11 @@ export function PromptBox({
   // selection, which focusing a textarea would collapse just as the reader
   // was copying out of the transcript.
   useEffect(() => {
+    // A phone navigation tap can legitimately leave BODY focused, especially
+    // when its destination button becomes disabled at an endpoint. A turn
+    // ending must not use that as a reason to close the card and summon the
+    // software keyboard.
+    if (IS_PHONE && inputNavigation?.open) return;
     const active = document.activeElement;
     if (active && active !== document.body) return;
     if (window.getSelection()?.isCollapsed === false) return;
@@ -334,6 +347,7 @@ export function PromptBox({
         aria-expanded={menuOpen}
         aria-controls={menuOpen ? PROMPT_OPTIONS_ID : undefined}
         aria-activedescendant={menuOpen ? `${PROMPT_OPTIONS_ID}-${selectedIndex}` : undefined}
+        onFocus={inputNavigation?.onClose}
         onChange={(e) => {
           setText(e.target.value);
           setCursor(e.target.selectionStart);
@@ -364,6 +378,20 @@ export function PromptBox({
             setMenuDismissed(true);
             return;
           }
+          if (
+            !IS_PHONE &&
+            e.key === "ArrowUp" &&
+            text.length === 0 &&
+            !e.ctrlKey &&
+            !e.altKey &&
+            !e.metaKey &&
+            !e.shiftKey &&
+            onNavigateLatestInput?.()
+          ) {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
           // Phone: Enter NEVER submits — it inserts a newline (the native
           // textarea behavior, deliberately left alone) and the ↑ button is
           // the one way to send, matching every mobile chat app (R.4l,
@@ -391,6 +419,9 @@ export function PromptBox({
             ↑
           </button>
         )
+      )}
+      {IS_PHONE && inputNavigation && (
+        <PhoneInputNavigation navigation={inputNavigation} completionOpen={menuOpen} />
       )}
     </div>
   );
