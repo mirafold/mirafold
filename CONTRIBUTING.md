@@ -18,7 +18,8 @@ message. PRs with unsigned commits can't be merged.
 ## Before you open a PR
 
 - Node 22, yarn. `yarn typecheck` must pass.
-- Tests run in three tiers (README §8): `yarn test` (unit, fast),
+- The core test tiers are summarized in [README.md](README.md#development):
+  `yarn test` (unit, fast),
   `yarn test:server` (real daemon + real sockets, mock-forced),
   `yarn test:e2e` (headless Chrome, rebuilds dist first). New code lands
   with tests in the matching tier. UI-facing changes also run through

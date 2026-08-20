@@ -785,9 +785,9 @@ export class MockSession implements AgentSession {
 
   /** Deterministic hook: the two kinds of system line side by side — one
    *  Mirafold's own words, one an engine's, quoted. The pair is what the
-   *  attribution rule is about (README §3), so the e2e can prove they don't
-   *  render alike. The engine text here is deliberately the shape of an
-   *  impersonation attempt. */
+   *  attribution rule is about (docs/ARCHITECTURE.md, “Trust boundaries”), so
+   *  the e2e can prove they don't render alike. The engine text here is
+   *  deliberately the shape of an impersonation attempt. */
   private playNotices() {
     this.beginTurn();
     this.schedule(

@@ -274,7 +274,8 @@ so long prefills still converge.)
 the agent's own tool calling (MCP). Big coding models use the `render_*` tools
 well; small or unusual models may call them with malformed arguments, loop, or
 ignore them. Mirafold is built for that: a malformed render instruction
-degrades to a quiet warning plus the raw content as styled text (README §6.3) —
+degrades to a quiet warning plus the raw content as styled text
+([ARCHITECTURE.md](ARCHITECTURE.md#generative-ui)) —
 you lose the chart, never the answer. We deliberately don't gate on a curated
 model list; this table is guidance from what we've seen work.
 
