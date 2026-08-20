@@ -110,6 +110,100 @@
      the theme pill folds into that card too — it stays desktop-only per
      the Phase S lock. nowrap + an ellipsizing agent name means the name
      can never push a control off the row. */
+  /* Submitted-input navigation is deliberately disclosed on demand on phone.
+     The tiny ⋯ is absolutely anchored above the submit arrow, so the normal
+     prompt/status geometry gains no row and no height. Its temporary card
+     opens up and left, over the output zone, and remains fixed for repeated
+     taps while the transcript moves behind it. */
+  .input-nav-inline {
+    display: none;
+  }
+
+  .turn-user:not(.turn-bang),
+  .turn-bang.input-nav-stop {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .input-nav-phone {
+    position: absolute;
+    z-index: 34;
+    right: 8px;
+    bottom: calc(100% + 4px);
+    width: 40px;
+    height: 40px;
+  }
+
+  .input-nav-phone-toggle {
+    width: 40px;
+    height: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 0 5px;
+    color: var(--fg-dim);
+    background: var(--surface-2);
+    border: 1px solid var(--border-mid);
+    border-radius: 999px;
+    box-shadow: 0 5px 18px rgb(0 0 0 / 22%);
+    font: inherit;
+    font-size: 21px;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .input-nav-phone-toggle[aria-expanded="true"] {
+    color: var(--accent);
+    border-color: var(--border-hover);
+  }
+
+  .input-nav-phone-card {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 7px);
+    width: max-content;
+    min-width: 210px;
+    padding: 8px;
+    color: var(--fg-body);
+    background: var(--surface-2);
+    border: 1px solid var(--border-hover);
+    border-radius: 8px;
+    box-shadow: 0 12px 34px rgb(0 0 0 / 30%);
+  }
+
+  .input-nav-phone-count {
+    padding: 1px 5px 7px;
+    color: var(--fg-faint);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.76em;
+    text-align: center;
+  }
+
+  .input-nav-phone-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+
+  .input-nav-phone-actions button {
+    min-width: 0;
+    min-height: 40px;
+    padding: 7px 10px;
+    color: var(--fg-strong);
+    background: var(--surface-3);
+    border: 1px solid var(--border-mid);
+    border-radius: 6px;
+    font: inherit;
+    font-size: 0.82em;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .input-nav-phone-actions button:disabled {
+    color: var(--fg-faint);
+    opacity: 0.46;
+    cursor: default;
+  }
+
   .status-bar {
     flex-wrap: nowrap;
     column-gap: 5px;

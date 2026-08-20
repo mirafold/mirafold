@@ -493,6 +493,11 @@ test("phone (320px): both drawer heads keep their controls apart", async () => {
 test("phone: a permission request is answerable by thumb", async () => {
   await sendPrompt(phone, "do something dangerous");
   await phone.waitForSelector(".perm-bar", { timeout: 15_000 });
+  assert.equal(
+    await phone.locator(".input-nav-phone-toggle").count(),
+    0,
+    "submitted-input navigation competes with the permission actions",
+  );
   await noSideScroll(phone);
   const allow = phone.locator(".perm-allow");
   const box = (await allow.boundingBox())!;

@@ -1,4 +1,5 @@
 import {
+  forwardRef,
   memo,
   useCallback,
   useEffect,
@@ -14,6 +15,7 @@ import type { ZoneMsg } from "../session-bus";
 import { RenderBlock } from "../registry/RenderBlock";
 import { mdOverrides, mdUrlTransform } from "../registry/Md";
 import { PinDock } from "./PinDock";
+import { InputNavigationStop } from "./InputNavigation";
 import { ToolBlock } from "./ToolBlock";
 import { Artifact } from "./Artifact";
 import { PickerBlock } from "./PickerBlock";
@@ -24,6 +26,12 @@ import { createTranscriptIngress } from "../delta-queue";
 import { deckElapsedSeconds } from "../subagent-deck";
 import { groupResponseDocuments } from "../response-document";
 import { shouldFocusPromptFromTranscriptPointer } from "../transcript-focus";
+import {
+  useInputNavigation,
+  type InputNavigationHandle,
+  type InputNavigationState,
+  type InputNavigationTarget,
+} from "../use-input-navigation";
 import {
   createTranscriptProjection,
   type OutputZoneRow,
@@ -228,17 +236,7 @@ function ToolActivityGroup({
   );
 }
 
-/**
- * The output zone renders projected transcript rows. Level 1: streamed text
- * renders as sanitized markdown (react-markdown never emits raw HTML).
- * Level 2: projected render rows mount registry components inline.
- */
-export function RenderZone({
-  subscribe,
-  sendAction,
-  busy,
-  focusPrompt,
-}: {
+type RenderZoneProps = {
   subscribe: (l: (m: ZoneMsg) => void) => () => void;
   // Shell-provided sender for prompt/tool actions (Phase 2); state actions
   // are resolved here because pin state is output-zone state.
@@ -249,7 +247,21 @@ export function RenderZone({
   // so no scroll position can hide it (2026-07-29, Kyle).
   busy: boolean;
   focusPrompt: () => void;
-}) {
+  onInputNavigationChange?: (state: InputNavigationState) => void;
+};
+
+/**
+ * The output zone renders projected transcript rows. Level 1: streamed text
+ * renders as sanitized markdown (react-markdown never emits raw HTML).
+ * Level 2: projected render rows mount registry components inline.
+ */
+export const RenderZone = forwardRef<InputNavigationHandle, RenderZoneProps>(function RenderZone({
+  subscribe,
+  sendAction,
+  busy,
+  focusPrompt,
+  onInputNavigationChange,
+}, navigationRef) {
   // Pinning is pure output-zone state: wire ids (render or artifact) in pin
   // order. The dock only exists while something is pinned (PLAN Step 1.6).
   const [pinned, setPinned] = useState<string[]>([]);
@@ -335,6 +347,13 @@ export function RenderZone({
     () => groupResponseDocuments(transcript.rows),
     [transcript.rows],
   );
+  const inputNavigationFor = useInputNavigation({
+    rows: transcript.rows,
+    tail,
+    focusPrompt,
+    onChange: onInputNavigationChange,
+    ref: navigationRef,
+  });
 
   const handleTranscriptPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
     if (
@@ -348,6 +367,20 @@ export function RenderZone({
     }
   };
 
+  const handleTranscriptKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (
+      event.target !== event.currentTarget ||
+      event.key !== "End" ||
+      event.shiftKey ||
+      event.ctrlKey ||
+      event.altKey ||
+      event.metaKey
+    ) return;
+    // Native End performs the scroll. Arm here as the intent, because an
+    // already-bottom transcript produces no scroll event to do it for us.
+    tail.armFollow();
+  };
+
   const renderZoneEntry = (entry: OutputZoneRow) => (
     <ZoneEntry
       key={entry.id}
@@ -357,6 +390,7 @@ export function RenderZone({
       handleAction={handleAction}
       pinned={pinned}
       togglePin={togglePin}
+      inputNavigation={inputNavigationFor(entry.id)}
     />
   );
 
@@ -380,6 +414,7 @@ export function RenderZone({
         onWheel={tail.onWheel}
         onTouchStart={tail.onTouchStart}
         onTouchMove={tail.onTouchMove}
+        onKeyDown={handleTranscriptKeyDown}
         onPointerUp={handleTranscriptPointerUp}
       >
         {!transcript.hasTranscriptContent && !busy && (
@@ -459,7 +494,7 @@ export function RenderZone({
         ))}
     </div>
   );
-}
+});
 
 /** One transcript entry's presentation — the per-kind branches of the
  *  scrollback. File-local on purpose: the renderers lean on RenderZone's
@@ -472,6 +507,7 @@ function ZoneEntry({
   handleAction,
   pinned,
   togglePin,
+  inputNavigation,
 }: {
   entry: OutputZoneRow;
   toggleThinking: (id: number) => void;
@@ -479,6 +515,7 @@ function ZoneEntry({
   handleAction: (action: Action, sourceId: string) => void;
   pinned: string[];
   togglePin: (renderId: string) => void;
+  inputNavigation?: InputNavigationTarget;
 }) {
   if (entry.kind === "thinking") {
     return (
@@ -518,15 +555,21 @@ function ZoneEntry({
   if (entry.kind === "bang") {
     return (
       <div className="bang-block">
-        <div className="turn turn-user turn-bang">
-          <span className="glyph bang-glyph">!</span> {entry.command}
-          {!entry.done && <span className="bang-state">running…</span>}
-          {entry.done && entry.exitCode !== 0 && (
-            <span className="bang-state bang-fail">
-              {entry.exitCode === null ? "killed" : `exit ${entry.exitCode}`}
-            </span>
-          )}
-        </div>
+        <InputNavigationStop
+          className="turn turn-user turn-bang"
+          navigation={inputNavigation}
+        >
+          <span className="glyph bang-glyph">!</span>
+          <span className="turn-user-text">
+            {entry.command}
+            {!entry.done && <span className="bang-state">running…</span>}
+            {entry.done && entry.exitCode !== 0 && (
+              <span className="bang-state bang-fail">
+                {entry.exitCode === null ? "killed" : `exit ${entry.exitCode}`}
+              </span>
+            )}
+          </span>
+        </InputNavigationStop>
         {entry.output && <pre className="bang-output">{entry.output}</pre>}
         {entry.done && entry.exitCode === 0 && !entry.output && (
           // Silent success must still SAY so — an empty block reads
@@ -629,10 +672,10 @@ function ZoneEntry({
     );
   }
   return entry.role === "user" ? (
-    <div className="turn turn-user">
+    <InputNavigationStop className="turn turn-user" navigation={inputNavigation}>
       <span className="glyph" aria-hidden="true">❯</span>
       <span className="turn-user-text">{entry.text}</span>
-    </div>
+    </InputNavigationStop>
   ) : (
     <AssistantTurn text={entry.text} />
   );

@@ -1,139 +1,160 @@
-# Session handoff — Changes CR.5 complete; PN.2 is next
+# Session handoff — input history navigation complete
 
-This handoff is current as of 2026-08-12. It becomes stale when
-`feature/changes-workspace` advances, PN.2 starts, or Kyle changes the requested
+This handoff records the 2026-08-20 local closure of Phase IH on
+`feature/prompt-navigation`. The feature checkpoint remains committed at
+`4787702`; the runner fix, security/test-audit closure, regressions, and planning
+updates recorded here form the branch's next signed-off commit. Draft pull
+request #59 targets protected integration branch `next`; its new head must pass
+the protected remote checks before the draft is promoted and merged. Nothing
+was merged or released when this record was written. This record becomes stale
+when the branch advances, pull request #59 merges, or Kyle changes the requested
 work.
 
 ## Current state
 
-- Repository: Mirafold, a faithful browser re-skin of Claude Code, Codex, and
-  Gemini CLI with generative UI layered on top.
-- Branch: `feature/changes-workspace`. Its latest commit is `5ac458d`
-  (`feat: add conversational workspace diff review`). The working tree contains
-  the uncommitted CR.3 closure, CR.4 implementation/refactor, and completed
-  CR.5 correctness remediation, tests, and documentation. Nothing from this
-  session was committed or pushed.
-- CR.1 through CR.5 are complete. `PLAN.md` marks **PN.2 — the pane frame** as
-  the next unfinished single-pass step in roadmap order.
-- No real-provider adapter, ordinary prompt-send path, native permission policy,
-  filesystem-write behavior, dependency, or PN.2 implementation changed in
-  CR.5. Git trust enforcement remains behaviorally unchanged.
+- Phase IH is implemented on `feature/prompt-navigation`, cut exactly from the
+  current `next` head `fbb748b`.
+- The feature, same-session refactor, correctness fixes, runner fix,
+  regressions, documentation, and local merge gates are complete.
+- Pull request #59 must remain a draft targeting `next` until this closure is
+  pushed and its protected checks pass; then it can be promoted and merged.
+- `PLAN.md` records **PN.2 — the pane frame** as the next unfinished roadmap
+  step.
 
-## Completed Changes workspace
+## Product result
 
-- CR.1 supplied the reusable correlated file-view controller and bounded
-  multi-repository changed-set query. CR.2 supplied the responsive live review
-  workspace. CR.3 supplied stable HEAD/current coordinates, hunk navigation,
-  desktop and phone selection, and visible unsent feedback drafts.
-- CR.3's closure remains in this working tree: deterministic mock feedback,
-  keyboard-reachable highlighted fenced-code scrollers, richer axe failure
-  evidence, and a named safe README browser fixture.
-- CR.4 adds an optional `fs_file_diff.revision`: a per-daemon keyed identity of
-  the exact HEAD + working-tree bytes. Current-file revision work is opt-in and
-  capped at 1 MB; oversized or unstable snapshots remain viewable but cannot be
-  marked reviewed. Secret refusal remains before content access.
-- Review progress is local to one browser viewport and resets with the session.
-  Mark/unmark and next-unreviewed work through buttons or `R` / `N` outside the
-  prompt and editable controls. Complete path hints invalidate only related
-  markers; HEAD or incomplete hints invalidate all. The mounted panel processes
-  watcher bells even while its surface is closed, and an exact reply reconciles
-  any stale revision when a file is opened.
-- Review rendering now runs one Markdown/Highlight.js pipeline for the whole
-  diff and mounts at most 1,000 interactive rows. A 1,001-line input honestly
-  falls back to current contents. Hunk scrolling honors reduced motion; 641px
-  desktop and 390px phone layouts remain overflow-free, with 40px phone review
-  controls.
-- CR.4's narrower correctness/security closure reported no unresolved finding,
-  and its mutation checks proved the progress invalidation, exact revision,
-  interactive ceiling, and then-current browser stale-marker tests. The later
-  whole-feature bughunt reproduced ten additional paths; CR.5 below closes all
-  ten. `PLAN-ARCHIVE.md` preserves both scopes and their evidence.
-- A post-completion refactor is also in the working tree. `ChangesPanel.tsx`
-  now composes the responsive surface; `use-changes-controller.ts` owns the
-  request/watcher/review lifecycle; `ChangesChrome.tsx` owns panel
-  chrome; and `ReviewRows.tsx` owns syntax-row rendering beneath
-  `ReviewDiff.tsx`. That refactor itself was behavior-preserving; CR.5 then
-  deliberately repaired the lifecycle and rendering defects below.
+- Desktop submitted ordinary prompts and `!` command strips carry always-
+  visible older/newer arrows inside their right edge. Empty-prompt ArrowUp
+  enters at the newest input; selected strips own chronological ArrowUp,
+  ArrowDown, and Escape without wrapping.
+- Phone keeps inline arrows hidden. A 40px `⋯` immediately above submit opens
+  an anchored count plus older/newer card, remains open for repeated taps, and
+  consumes no prompt or status-bar height. Permission, live shell-input, and
+  upload strips temporarily own that shared physical space.
+- Navigation preserves the unsent draft and changes only viewport-local
+  selection, transcript focus, and transcript scroll. It never edits,
+  resubmits, or sends history.
+- Explicit jumps suspend live-tail following even when browser clamping lands
+  at the current bottom. Scrolling away and back, or unmodified End from a
+  selected input or the focused transcript scroller, resumes following.
+- Provider pickers keep their established global key priority without stealing
+  native Enter from desktop or phone navigation controls. Phone navigation
+  never summons the prompt keyboard during replay, streaming completion, or
+  touch/hardware-keyboard movement. Keyboard focus leaving the phone card for
+  another shell control closes it before that control can open a modal or
+  workspace; the selected transcript stop remains its keyboard continuation.
 
-## CR.5 whole-feature correctness closure
+## Correctness and boundary record
 
-- Changes now reconciles the exceptional Git states where porcelain describes
-  the index rather than the net HEAD-versus-working-tree result: a staged
-  deletion restored identically disappears, an added-then-deleted path
-  disappears, and assume-unchanged/skip-worktree paths are compared exactly.
-- Nested repository markers are structurally validated. A malformed `.git`
-  marker no longer hides a real repository below it or steals ownership from a
-  real repository above it; a deleted subtree resolves through its nearest
-  surviving ancestor to the correct nested repository.
-- Diff reads distinguish missing from unreadable paths and read a tracked
-  symlink's link text rather than its target bytes. Descriptor reads are
-  no-follow, nonblocking, bounded, and revision-stable.
-- A successful session reattach abandons request ids lost with the old socket,
-  clears unverifiable review markers, and requests a fresh set/diff. Manual
-  Refresh also clears all review claims before revalidation. Late Git status
-  completion carries additive `fs_changed.reason: "status"`, refreshing Files
-  without announcing a disk mutation to Changes.
-- A truncated result with zero visible files says the change list is
-  incomplete, never clean. Line splitting no longer turns a terminal newline
-  into a numbered blank source line; diffs and feedback drafts carry the
-  conventional no-newline marker.
+- Serial bughunt passes proved and closed the clamped-tail, no-motion End,
+  repeated same-destination, replay focus, Tab order, Escape focus/ownership,
+  phone endpoint, phone ownership, and provider-picker arbitration sibling
+  paths, including modal/workspace focus layering. The latest completed
+  settled review reported 0 confirmed, 0 likely, and 0 latent findings.
+- The replay browser regression removes only the temporary session directory
+  it creates; its endpoint loop is bounded and waits for each committed move,
+  so a no-op fails instead of hanging.
+- The Tier 1 runner failure was real and shared below both model-list adapters.
+  `jsonRpcOneShot` listened for errors on the child process but not its stdin
+  pipe. When an immediate-exit child closed that pipe during the initial
+  request, Node emitted an unhandled `EPIPE` and killed the test-file process
+  with exit 1. A process-isolated regression was born failing on that exact
+  crash; the stdin error now enters the existing settle-once rejection path.
+- The 2026-08-20 branch security audit found no exploitable or hardening issue
+  in submitted-input navigation. It found one hardening issue in the touched
+  one-shot helper: provider stdout was time-bounded but not size-bounded, so a
+  corrupt binary could retain arbitrary output before timeout. Cumulative
+  stdout now stops at 1 MB; one byte over is rejected and an exactly-at-limit
+  valid JSON response succeeds. `SECURITY.md` records the boundary.
+- The 2026-08-20 feature test audit tried seventeen isolated mutations. Nine
+  existing tests failed immediately; five initially survived, and the fresh
+  cold review exposed two broader classes after their first repair. The seven
+  repaired gaps cover later-row viewport equality, component-scale arrow
+  visibility, `!`-row integration, live-shell and upload anchor suppression,
+  the real-DOM non-tail phone viewport path, and single enabled-arrow visibility
+  in both themes. Each repaired class now fails its matching mutation. The test
+  audit changed no product source.
+- One untouched CR.2 phone file-review browser test timed out in one of three
+  complete unchanged Tier 3 repetitions. It passed the other two complete runs
+  and all six focused repetitions. The same full-suite-only timeout was already
+  recorded 2026-08-19, making this active recurrent flaky-suite debt. No cause
+  is proved and no CR.2 code or test was changed; its named owner is a separate
+  Changes-suite diagnosis before the next Changes phase or before relying on
+  broad Tier 3 stability as a gate.
+- No wire format, adapter event mapping, response grouping, ordinary
+  prompt-send rule, dependency, UI behavior, or release workflow changed.
 
-## Next `$next`
+## Verification at closure
 
-Execute **PN.2 — the pane frame** from `PLAN.md`:
+- Focused navigation and follow-tail units: **7/7**.
+- The focused JSON-RPC plus Codex/Gemini model-list set passed **16/16** after
+  the stdin regression first failed 0/1 on the old source with `write EPIPE`
+  and the audit regression proved the old oversized-output path waited for its
+  timeout. The exact 1 MB boundary variant also passes.
+- The final dotenv-guarded Tier 1 aggregate passed **819/819** across 88 safe
+  files, with the three deliberate dotenv-fixture files excluded.
+- Guarded TypeScript, client production build, and server production build
+  passed. Vite emitted only the repository's existing large-chunk warning.
+- Final dotenv-safe Tier 2 passed **139/139** across 23 safe integration files.
+- Final freshly built, serialized Tier 3 passed **114/114**, after the last
+  phone focus-layer correction.
+- Final feature Chrome regressions remain **4/4**.
+- The original feature completion also passed dotenv-safe Tier 2 **139/139**,
+  managed-browser matrix **3/3**, visual suite **6/6**, desktop/phone visual
+  inspection, and `git diff --check`.
+- Post-audit TypeScript, guarded client/server production builds, and the two
+  focused navigation/tail unit files pass. The Yarn registry audit reports
+  zero known advisories across 467 locked packages; `yarn check --integrity`
+  reports the install in sync; the dry-run npm package contains only the 19
+  allowlisted release files.
+- A post-audit attempt to repeat the whole guarded Tier 1 aggregate was stopped:
+  this execution environment propagates a command-line deny-open preload into
+  nested Node stdout fixtures and makes their captured output empty. The same
+  four affected files pass in their normal runner, including the complete
+  16-test touched set above. The immediately preceding authoritative full gate
+  remains **819/819**; no claim is made that the expanded 821-test aggregate
+  ran after the audit hardening.
+- The feature test audit then used a strictly filtered dotenv-opaque selection
+  that excludes all four fixture-owning Tier 1 files. Its unchanged baseline
+  passed **817/817** three times; after the five test repairs it passed
+  **817/817** again. Tier 2 passed **139/139** in each of three unchanged runs.
+  Unchanged Tier 3 was **114/114**, **113/114** on the CR.2 timeout above, then
+  **114/114**; the post-repair complete run passed **114/114**. The managed
+  browser matrix plus visual suite passed **9/9** three unchanged times and
+  **9/9** after repair. Three credential-stripped Tier 4 repetitions passed the
+  Codex local-model cases **3/3** with one hosted-credential skip and OpenCode
+  **1/1** each time; no metered hosted model was called.
+- After cold-review repair, final TypeScript, safe Tier 1 **817/817** across 87
+  explicitly enumerated files, feature Chrome **5/5**, targeted visuals
+  **7/7**, freshly built Tier 3 **115/115**, and combined UI/visual **10/10**
+  pass. The two 59×29 enabled-arrow crops cover dark and light with zero
+  differing pixels allowed. Tier 2 was not rerun after repair because only
+  Tier 1, Tier 3, and UI test artifacts changed; its three unchanged baselines
+  remain applicable.
 
-- Add a desktop pane region beside the transcript and let Explorer open files
-  into tabs there.
-- Support two-file tab creation, switch, close, keyboard traversal, focus into
-  the pane on open, and sensible focus restoration on close.
-- Keep the phone Explorer drill-in behavior unchanged and expose no pane
-  affordance at phone width.
-- The plan explicitly reserves the Explorer row's default-click behavior as
-  Kyle's product call at build time. Do not infer that choice if the existing
-  repository does not establish it.
+## Dotenv safety
 
-The verified seam already exists: `web/src/components/files/use-file-view.ts`
-owns an independent correlated read/diff lifecycle, and Files plus Changes are
-its first two hosts. PN.2 begins at the pane frame; multiple simultaneous panes
-mean one controller instance per file viewer.
+Recursive discovery explicitly excluded `.env`, `*.env`, `.env.*`, and
+`*.env.*`. Authoritative Node gates ran either under a deny-open preload or in
+a sanitized mirror with those files absent and fixture-owning test sources
+explicitly excluded. The authoritative TypeScript/Vite/esbuild gates invoked
+the installed executables directly rather than Corepack, and Vite also used
+`envDir: false`.
 
-## Verification at handoff
+One final test-audit Tier 1 command accidentally used the broad test glob in the
+sanitized mirror and included the four known test sources that create/read
+synthetic dotenv fixtures. No real repository dotenv file existed in that
+mirror and no secret was exposed, but running those synthetic fixtures still
+violated the opacity rule. Its **874/874** result is discarded. The corrected
+authoritative run enumerated and validated 87 safe paths first, excluded all
+four fixture-owning sources and every dotenv filename variant, and passed
+**817/817**.
 
-- CR.5's focused model/protocol/Git/revision run passed 44/44. The dedicated
-  real-Git diff integration passed 8/8 and the status-signal integration passed
-  5/5. TypeScript and both production bundles pass; Vite's standard
-  large-chunk warning is unchanged.
-- The complete Changes browser file passes 10/10 against real Git, a real
-  daemon, and Chromium. Its four new browser cases pin reconnect freshness and
-  orphaned requests, manual refresh after an unwatched HEAD change, status-only
-  decoration without review invalidation, and zero-visible incomplete state.
-- Safe Tier 1 passes 638/638 across 75 files. Safe Tier 2 passes 137/137 across
-  22 files. After a fresh client build with Vite's env directory set to a new
-  empty temporary directory, complete Tier 3 passes 93/93 across all eight
-  browser files.
-- Before the refactor, the isolated CR.4 browser case passed 3/3 across three
-  unchanged runs; its complete 6/6 file then passed again after the refactor.
-- The CR.4 desktop and phone axe gates, 641px/390px overflow checks, 40px phone
-  control checks, and reduced-motion behavior passed. The final phone and
-  desktop screenshots were visually inspected.
-- Final `git diff --check` and documentation/boundary review should be rerun if
-  this working tree changes before PN.2.
-
-## Dotenv safety note
-
-Aggregate file discovery explicitly excluded `.env`, `*.env`, `.env.*`, and
-`*.env.*`. The final client production build used Vite's configuration API
-with `envDir` set to a freshly created empty temporary directory; the server
-build does not load Vite environment files.
-
-Two earlier CR.5 verification builds invoked the ordinary `yarn build` command
-before the handoff's Vite safeguard was reread. No dotenv contents appeared in
-their output, but whether Vite probed for a matching file during those two
-invocations is unverified. Do not describe the entire CR.5 session as having a
-proven no-open guard; use the final redirected build as the verified artifact.
-
-The safe Tier 1 aggregate deliberately excluded
-`server/render-image.test.ts` and `server/sessions/fs-explorer.test.ts`; safe
-Tier 2 excluded `server/sessions/fs-explorer.itest.ts`. Those three test files
-open and write temporary dotenv-named fixtures, so running them would violate
-the literal account-wide rule even though their fixture bytes are synthetic.
+One earlier `yarn typecheck` command completed without the preload. A later
+guarded Yarn attempt proved why that path is not authoritative: Corepack's
+installed `loadSpec` code always attempts `readFile` on `.corepack.env` unless
+`COREPACK_ENV_FILE=0`, and the guard stopped that attempt. Whether the earlier
+unguarded attempt found a file and returned contents is unverified; no dotenv
+contents appeared in output, and no dotenv file was inspected afterward to
+resolve that uncertainty. The typecheck was rerun successfully through the
+installed TypeScript executable under the guard.

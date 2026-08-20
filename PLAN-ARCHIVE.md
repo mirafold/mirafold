@@ -11598,3 +11598,161 @@ browser tests 4/4; Tier 1 867/867; typecheck; build; Tier 2 152/152; Tier 3
 `git diff --check`. Per the phase's recorded baseline rule, the independently
 green browser and visual constituents—not the known combined-wrapper timeout—
 are the literal local UI gate.
+
+## Moved 2026-08-19 (Phase IH — completed body)
+
+## Phase IH — Input history navigation (opened 2026-08-19; Kyle-directed)
+
+**Product call.** Submitted user inputs become direct navigation stops. On
+desktop, every user-authored command strip carries always-visible older/newer
+arrow buttons at its right edge. On phone, those inline buttons disappear;
+instead a small `⋯` control sits immediately above the existing submit arrow
+and opens a temporary, anchored older/newer control. The phone control consumes
+no layout height and appears only when at least two submitted inputs exist.
+
+**Verified starting state.** `createTranscriptProjection()` already exposes
+stable projected IDs for ordinary user prompts and `!` command rows;
+`RenderZone` owns their DOM presentation and the output-zone scroller;
+`PromptBox` owns the phone-only submit arrow. There is no conversation top bar
+or `⋯` menu to reuse. Desktop transcript clicks currently focus the prompt box;
+phone transcript touches deliberately do not. Provider-native picker rows
+already capture ArrowUp/ArrowDown from an empty prompt box while active.
+
+**Behavior boundary.** Up always means the next older submitted input and Down
+the next newer one; navigation never wraps, and an unavailable direction is
+disabled. Ordinary prompts and `!` commands are both stops because both are
+user-authored command strips; assistant, tool, thinking, notice, picker,
+painting, and subagent rows are not. Navigation changes selection, focus, and
+output-zone scroll only. Draft text is never copied, replaced, submitted, or
+discarded. No wire message, projection meaning, response grouping, server,
+adapter, dependency, prompt-send rule, provider-picker priority, or manual
+tail-follow contract changes.
+
+This is a normal-sized Phase executable in one pass. Its Steps are the logical
+parts completed together:
+
+- [x] **Step IH.1 — Navigation model and desktop path.** Add a pure tested
+  chronological target model; render always-visible arrow buttons inside each
+  desktop command strip; align the selected destination beneath the output
+  zone's top edge; and support ArrowUp/ArrowDown/Escape after selection plus
+  ArrowUp from an empty desktop prompt box when no live provider picker owns
+  the key.
+- [x] **Step IH.2 — Phone disclosure and anchored controls.** Hide the inline
+  strip controls at phone width. Place the mobile-only `⋯` immediately above
+  the submit arrow; opening it selects the input governing the current
+  viewport and reveals a temporary older/newer card up and left of the anchor.
+  Keep it open for repeated taps, close it by toggling or tapping elsewhere,
+  and preserve the existing prompt/status geometry and touch behavior.
+- [x] **Step IH.3 — Regression closure.** Pin chronology, endpoints, viewport
+  anchoring, draft preservation, keyboard ownership, focus/scroll, phone
+  placement, temporary disclosure, touch targets, no sideways overflow,
+  reduced motion, and axe cleanliness in the matching unit/browser tiers;
+  update README behavior documentation and run the proportionate dotenv-opaque
+  verification gates.
+
+Done when desktop and 390px phone browser runs prove all three paths against a
+real output-zone DOM, every new control is keyboard/screen-reader usable, the
+normal phone screen gains no row or layout height, and the behavior boundary
+above remains literal.
+
+Implementation record (2026-08-19): submitted-input navigation is viewport-local
+trusted-shell state built from the existing transcript projection's stable row
+IDs. Desktop command strips carry always-visible, keyboard/screen-reader-usable
+older/newer controls; empty-prompt ArrowUp enters at the newest input while a
+live provider picker keeps its existing key priority. Phone strips retain their
+full text width and a 40px `⋯` above submit opens the temporary count +
+older/newer card without moving the prompt or status bar. Permission, live
+shell-input, and upload strips suppress and close that disclosure while they
+own the same physical space. Ordinary prompts and `!` command strips are the
+only stops; endpoints disable rather than wrap; the unsent draft is preserved;
+explicit jumps detach tail following. README documents the behavior. No wire,
+server, adapter, response grouping, prompt-send rule, or dependency changed.
+The final refactor keeps pure chronology in `input-navigation.ts`, DOM
+selection/scroll mechanics in `use-input-navigation.ts`, and both responsive
+control surfaces in `components/InputNavigation.tsx`. Same-day correctness
+review closed every proven interaction defect across browser-clamped tail
+ownership, both no-motion End paths, repeated activation, desktop/phone replay
+focus, sequential phone focus, selected versus page-wide Escape, phone
+touch/hardware-keyboard ownership, live-turn endpoint focus, and live
+provider-picker key arbitration, plus phone modal/workspace focus layering.
+The regressions pin those sibling paths. The
+review also aligned the live-tail documentation and made the replay test remove
+its own temporary session directory.
+Verification before the final phone focus-layer correction: focused model/tail
+units 7/7, typecheck, guarded client/server build, dotenv-safe Tier 1 818/818
+across 87 files (the three files with
+deliberate dotenv fixtures excluded), dotenv-safe Tier 2 139/139 (its deliberate
+dotenv-fixture file excluded), focused browser regressions 4/4, full Tier 3
+114/114, browser matrix 3/3, visual suite 6/6, inspected desktop/phone renders,
+and `git diff --check`. The settled correction then passed typecheck, builds,
+focused units 7/7, and feature Chrome 4/4. The final Tier 1 runner defect was
+diagnosed and closed 2026-08-20: the shared Codex/Gemini `jsonRpcOneShot`
+lifecycle handled child-process errors but not errors from the child's stdin
+pipe, so a child closing that pipe during the initial request emitted an
+unhandled `EPIPE` and terminated the whole test-file process with exit 1. A
+process-isolated regression proved the old crash; the stdin error now follows
+the existing settle-once rejection path. Final dotenv-opaque closure passed
+the focused JSON-RPC/model-list set 14/14, Tier 1 819/819 across 88 safe files,
+typecheck, both production builds, Tier 2 139/139, and freshly built Tier 3
+114/114.
+
+Security audit closure (2026-08-20): the complete feature-branch delta had no
+exploitable or hardening finding in submitted-input navigation. One hardening
+finding was confirmed in the touched shared one-shot helper: provider catalog
+stdout had a deadline but no memory ceiling. A born-failing 1,000,001-byte
+unterminated stream waited for timeout on the old source; cumulative stdout is
+now capped at 1 MB before conversion/parsing, with one byte over refused and an
+exactly-at-limit valid JSON response accepted. The shared focused set passes
+16/16. Yarn reported zero current advisories across 467 locked packages; lock
+integrity, TypeScript, guarded client/server builds, package contents, focused
+navigation units, credential-shaped scans, CI privilege/action pins, and diff
+hygiene were also checked. `SECURITY.md` records the new process boundary.
+
+Test-audit closure (2026-08-20): the unchanged branch was characterized before
+test edits with three repetitions at every applicable tier. The strictly
+dotenv-opaque Tier 1 selection passed 817/817 three times; Tier 2 passed 139/139
+three times; the managed-browser matrix plus visuals passed 9/9 three times.
+Tier 3 passed 114/114, then 113/114, then 114/114. Its sole failure was the
+untouched CR.2 phone full-screen file-review test timing out while waiting for
+`.files-view .fv-content`; it passed 3/3 focused repetitions in this audit and
+3/3 in the immediately preceding diagnosis. The same full-suite-only timeout
+was already recorded on 2026-08-19, so this is active recurrent flaky-suite
+debt rather than a future-if-repeated concern. No root cause was proved and no
+CR.2 source or test was changed. Its named owner remains the Changes suite:
+diagnose it separately before the next Changes phase or before treating broad
+Tier 3 reliability as a gate, not as part of IH feature behavior.
+Three credential-stripped Tier 4 repetitions passed the Codex local-model cases
+3/3 with its hosted-credential case skipped and OpenCode 1/1 each time; no
+metered hosted model was called.
+
+Seventeen isolated, exactly reversed mutations falsified the feature tests.
+Nine were already caught: bang classification, chronology direction, detached
+tail ownership, empty-prompt ArrowUp, replay focus recovery, permission-strip
+suppression, JSON-RPC stdin errors, the 1 MB output cap, and its exact boundary.
+Five initially survived and were repaired: equality at a later viewport row;
+arrow visibility hidden inside a full-page visual tolerance; `!`-row navigation
+integration; live-shell-input suppression of the phone anchor; and upload-strip
+suppression of that anchor. A fresh cold review then proved two broader gaps:
+the pure viewport assertion did not protect the real-DOM non-tail phone path,
+and the first component crop could lose one disabled arrow—or both light-theme
+arrows—inside its tolerance. The final repair adds a real-Chromium response-
+space selection scenario and replaces that crop with explicit dark/light
+59×29 captures of a middle row whose arrows are both enabled. Each compares
+1,711 pixels with zero allowed difference. The four refreshed full-page
+snapshots still differ only at their intended 41–42 arrow pixels. The viewport
+test failed an always-newest mutation; the dark crop failed an older-arrow-only
+disappearance by 23 pixels and the light crop failed a newer-arrow-only
+disappearance by 23 pixels. Every repaired class is therefore falsified. No
+production source changed during this test audit.
+
+Final typecheck, the explicitly enumerated safe Tier 1 selection 817/817 across
+87 files, feature Chrome 5/5, targeted visuals 7/7, freshly built Tier 3
+115/115, and the combined browser matrix plus visuals 10/10 pass. Tier 2 was
+not repeated after repair because the audit changed only Tier 1, Tier 3, and UI
+test artifacts; its three unchanged 139/139 baselines remain applicable. One
+final broad Tier 1 command in the sanitized mirror accidentally included the
+four excluded test source files that create/read synthetic dotenv fixtures.
+The mirror contained no real dotenv file and exposed no secret, but the command
+still violated the opacity rule; its 874/874 result is discarded and is not
+audit evidence. The corrected final command explicitly enumerated and validated
+the 87 safe paths before running 817/817.

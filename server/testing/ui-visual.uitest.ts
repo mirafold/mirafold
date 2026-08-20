@@ -64,13 +64,20 @@ async function normalizeSessionFacts(page: Page): Promise<void> {
 }
 
 async function settleKpiTurn(page: Page, text: string): Promise<void> {
+  const inputs = page.locator(".input-nav-stop");
+  const stats = page.locator(".rc-stat-value", { hasText: "96.8%" });
+  const replies = page.locator(".turn-assistant", {
+    hasText: "Coverage is climbing as the new tests land.",
+  });
+  const inputsBefore = await inputs.count();
+  const statsBefore = await stats.count();
+  const repliesBefore = await replies.count();
   const prompt = page.locator(".prompt-box textarea");
   await prompt.fill(text);
   await prompt.press("Enter");
-  await page.locator(".rc-stat-value", { hasText: "96.8%" }).waitFor();
-  await page
-    .locator(".turn-assistant", { hasText: "Coverage is climbing as the new tests land." })
-    .waitFor();
+  await inputs.nth(inputsBefore).waitFor();
+  await stats.nth(statsBefore).waitFor();
+  await replies.nth(repliesBefore).waitFor();
   await page.locator(".stop-btn").waitFor({ state: "detached" });
 }
 
@@ -137,6 +144,46 @@ test("visual: settled desktop session, light theme", { skip: LINUX_ONLY }, async
       await settleKpiTurn(page, "kpi visual baseline");
       await normalizeSessionFacts(page);
       await assertVisualSnapshot(browser, page, "desktop-session-light");
+    },
+  );
+});
+
+test("visual: enabled submitted-input navigation, both themes", { skip: LINUX_ONLY }, async () => {
+  await withFreshMockPage(
+    browser,
+    {
+      token: "ui-visual-input-navigation",
+      env: HEADLESS_DAEMON_ENV,
+      context: visualContext({ width: 1280, height: 900 }),
+    },
+    async (page) => {
+      await enterMockSession(page);
+      for (let index = 0; index < 3; index += 1) {
+        await settleKpiTurn(page, "kpi visual baseline");
+      }
+      await normalizeSessionFacts(page);
+      const middleNavigation = page.locator(".input-nav-stop").nth(1);
+      await middleNavigation.evaluate((element) => element.setAttribute("data-visual-navigation", ""));
+      await middleNavigation.locator(".input-nav-older:not(:disabled)").waitFor();
+      await middleNavigation.locator(".input-nav-newer:not(:disabled)").waitFor();
+
+      await page.locator('.sb-theme-opt[title="Dark theme"]').click();
+      await page.locator('.sb-theme-opt[title="Dark theme"][aria-pressed="true"]').waitFor();
+      await assertVisualSnapshot(
+        browser,
+        page,
+        "submitted-input-navigation",
+        "[data-visual-navigation] .input-nav-inline",
+      );
+
+      await page.locator('.sb-theme-opt[title="Light theme"]').click();
+      await page.locator('.sb-theme-opt[title="Light theme"][aria-pressed="true"]').waitFor();
+      await assertVisualSnapshot(
+        browser,
+        page,
+        "submitted-input-navigation-light",
+        "[data-visual-navigation] .input-nav-inline",
+      );
     },
   );
 });
