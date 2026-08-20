@@ -11685,7 +11685,74 @@ deliberate dotenv fixtures excluded), dotenv-safe Tier 2 139/139 (its deliberate
 dotenv-fixture file excluded), focused browser regressions 4/4, full Tier 3
 114/114, browser matrix 3/3, visual suite 6/6, inspected desktop/phone renders,
 and `git diff --check`. The settled correction then passed typecheck, builds,
-focused units 7/7, and feature Chrome 4/4. Its final Tier 1 aggregate rerun is
-still unresolved because two untouched adapter test files pass alone but exit
-only under the multi-file runner; diagnose that runner and rerun the complete
-merge gates before moving the draft forward.
+focused units 7/7, and feature Chrome 4/4. The final Tier 1 runner defect was
+diagnosed and closed 2026-08-20: the shared Codex/Gemini `jsonRpcOneShot`
+lifecycle handled child-process errors but not errors from the child's stdin
+pipe, so a child closing that pipe during the initial request emitted an
+unhandled `EPIPE` and terminated the whole test-file process with exit 1. A
+process-isolated regression proved the old crash; the stdin error now follows
+the existing settle-once rejection path. Final dotenv-opaque closure passed
+the focused JSON-RPC/model-list set 14/14, Tier 1 819/819 across 88 safe files,
+typecheck, both production builds, Tier 2 139/139, and freshly built Tier 3
+114/114.
+
+Security audit closure (2026-08-20): the complete feature-branch delta had no
+exploitable or hardening finding in submitted-input navigation. One hardening
+finding was confirmed in the touched shared one-shot helper: provider catalog
+stdout had a deadline but no memory ceiling. A born-failing 1,000,001-byte
+unterminated stream waited for timeout on the old source; cumulative stdout is
+now capped at 1 MB before conversion/parsing, with one byte over refused and an
+exactly-at-limit valid JSON response accepted. The shared focused set passes
+16/16. Yarn reported zero current advisories across 467 locked packages; lock
+integrity, TypeScript, guarded client/server builds, package contents, focused
+navigation units, credential-shaped scans, CI privilege/action pins, and diff
+hygiene were also checked. `SECURITY.md` records the new process boundary.
+
+Test-audit closure (2026-08-20): the unchanged branch was characterized before
+test edits with three repetitions at every applicable tier. The strictly
+dotenv-opaque Tier 1 selection passed 817/817 three times; Tier 2 passed 139/139
+three times; the managed-browser matrix plus visuals passed 9/9 three times.
+Tier 3 passed 114/114, then 113/114, then 114/114. Its sole failure was the
+untouched CR.2 phone full-screen file-review test timing out while waiting for
+`.files-view .fv-content`; it passed 3/3 focused repetitions in this audit and
+3/3 in the immediately preceding diagnosis. The same full-suite-only timeout
+was already recorded on 2026-08-19, so this is active recurrent flaky-suite
+debt rather than a future-if-repeated concern. No root cause was proved and no
+CR.2 source or test was changed. Its named owner remains the Changes suite:
+diagnose it separately before the next Changes phase or before treating broad
+Tier 3 reliability as a gate, not as part of IH feature behavior.
+Three credential-stripped Tier 4 repetitions passed the Codex local-model cases
+3/3 with its hosted-credential case skipped and OpenCode 1/1 each time; no
+metered hosted model was called.
+
+Seventeen isolated, exactly reversed mutations falsified the feature tests.
+Nine were already caught: bang classification, chronology direction, detached
+tail ownership, empty-prompt ArrowUp, replay focus recovery, permission-strip
+suppression, JSON-RPC stdin errors, the 1 MB output cap, and its exact boundary.
+Five initially survived and were repaired: equality at a later viewport row;
+arrow visibility hidden inside a full-page visual tolerance; `!`-row navigation
+integration; live-shell-input suppression of the phone anchor; and upload-strip
+suppression of that anchor. A fresh cold review then proved two broader gaps:
+the pure viewport assertion did not protect the real-DOM non-tail phone path,
+and the first component crop could lose one disabled arrow—or both light-theme
+arrows—inside its tolerance. The final repair adds a real-Chromium response-
+space selection scenario and replaces that crop with explicit dark/light
+59×29 captures of a middle row whose arrows are both enabled. Each compares
+1,711 pixels with zero allowed difference. The four refreshed full-page
+snapshots still differ only at their intended 41–42 arrow pixels. The viewport
+test failed an always-newest mutation; the dark crop failed an older-arrow-only
+disappearance by 23 pixels and the light crop failed a newer-arrow-only
+disappearance by 23 pixels. Every repaired class is therefore falsified. No
+production source changed during this test audit.
+
+Final typecheck, the explicitly enumerated safe Tier 1 selection 817/817 across
+87 files, feature Chrome 5/5, targeted visuals 7/7, freshly built Tier 3
+115/115, and the combined browser matrix plus visuals 10/10 pass. Tier 2 was
+not repeated after repair because the audit changed only Tier 1, Tier 3, and UI
+test artifacts; its three unchanged 139/139 baselines remain applicable. One
+final broad Tier 1 command in the sanitized mirror accidentally included the
+four excluded test source files that create/read synthetic dotenv fixtures.
+The mirror contained no real dotenv file and exposed no secret, but the command
+still violated the opacity rule; its 874/874 result is discarded and is not
+audit evidence. The corrected final command explicitly enumerated and validated
+the 87 safe paths before running 817/817.

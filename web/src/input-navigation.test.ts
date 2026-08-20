@@ -32,6 +32,7 @@ test("inputIndexAtViewport binds response space to its preceding input", () => {
   const tops = [120, 460, 900];
   assert.equal(inputIndexAtViewport(tops, 80), 0);
   assert.equal(inputIndexAtViewport(tops, 120), 0);
+  assert.equal(inputIndexAtViewport(tops, 460), 1);
   assert.equal(inputIndexAtViewport(tops, 700), 1);
   assert.equal(inputIndexAtViewport(tops, 2_000), 2);
   assert.equal(inputIndexAtViewport([], 700), null);

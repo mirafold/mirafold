@@ -332,6 +332,76 @@ test("explicit input jumps stay detached until End returns to the live tail", as
   );
 });
 
+test("phone disclosure selects the input governing a non-tail response", async () => {
+  await withFreshMockPage(
+    browser,
+    {
+      token: "input-navigation-phone-viewport-4f2a",
+      context: {
+        viewport: { width: 390, height: 844 },
+        deviceScaleFactor: 3,
+        isMobile: true,
+        hasTouch: true,
+      },
+    },
+    async (page) => {
+      await enterMockSession(page);
+      for (let index = 0; index < 6; index += 1) {
+        await sendShortTurn(page, `phone-viewport-${index}`, "phone");
+      }
+
+      // Put the reading edge inside an earlier response, not on an input row
+      // and not within the tail's 24px bottom slack. The expected row comes
+      // from the real rendered coordinates, independently of the hook.
+      const expectedIndex = await page.evaluate(() => {
+        const scroller = document.querySelector(".render-zone") as HTMLElement;
+        const inputs = [...document.querySelectorAll(".input-nav-stop")];
+        const readingEdge = scroller.getBoundingClientRect().top + 1;
+        const maximumScrollTop = scroller.scrollHeight - scroller.clientHeight;
+        for (let index = 0; index < inputs.length - 1; index += 1) {
+          const current = inputs[index].getBoundingClientRect();
+          const next = inputs[index + 1].getBoundingClientRect();
+          const responseMidpoint = (current.bottom + next.top) / 2;
+          const desiredScrollTop = scroller.scrollTop + responseMidpoint - readingEdge;
+          if (desiredScrollTop > 0 && desiredScrollTop < maximumScrollTop - 24) {
+            scroller.scrollTop = desiredScrollTop;
+            return index;
+          }
+        }
+        return -1;
+      });
+      assert.notEqual(expectedIndex, -1, "fixture could not expose an earlier response at the reading edge");
+      await page.waitForFunction(() => {
+        const scroller = document.querySelector(".render-zone") as HTMLElement;
+        return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight > 24;
+      });
+      const premise = await page.evaluate((index) => {
+        const scroller = document.querySelector(".render-zone") as HTMLElement;
+        const inputs = [...document.querySelectorAll(".input-nav-stop")];
+        const readingEdge = scroller.getBoundingClientRect().top + 1;
+        const current = inputs[index].getBoundingClientRect();
+        const next = inputs[index + 1].getBoundingClientRect();
+        return {
+          insideResponse: current.bottom < readingEdge && readingEdge < next.top,
+          bottomGap: scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight,
+        };
+      }, expectedIndex);
+      assert.equal(premise.insideResponse, true, "reading edge did not land inside response space");
+      assert.ok(premise.bottomGap > 24, `fixture remained within ${premise.bottomGap}px of the tail`);
+
+      await page.locator(".input-nav-phone-toggle").tap();
+      const card = page.locator(".input-nav-phone-card");
+      await card.waitFor();
+      assert.match(await card.innerText(), new RegExp(`input ${expectedIndex + 1} of 6`, "i"));
+      assert.match(
+        (await page.locator(".input-nav-stop").nth(expectedIndex).getAttribute("class")) ?? "",
+        /is-input-nav-current/,
+      );
+      assert.notEqual(expectedIndex, 5, "fixture accidentally selected the newest input");
+    },
+  );
+});
+
 test("full transcript replay recovers navigation focus without summoning the phone prompt", async () => {
   const sessionDir = mkdtempSync(path.join(os.tmpdir(), "mirafold-input-nav-replay-"));
   let daemon: Daemon | undefined;
@@ -690,6 +760,69 @@ test("phone discloses temporary navigation directly above the submit arrow", asy
         false,
         "turn completion summoned the phone prompt",
       );
+
+      // An upload strip owns the same prompt-adjacent space. Use the local
+      // oversize refusal so the fixture is deterministic and never reads or
+      // sends the file bytes; dismissal must hand the anchor back.
+      await toggle.tap();
+      await card.waitFor({ state: "detached" });
+      await page.evaluate(`
+        const dt = new DataTransfer();
+        dt.items.add(new File([new Uint8Array(10_000_001)], "history-too-large.bin"));
+        document.body.dispatchEvent(new DragEvent("dragenter", { bubbles: true, cancelable: true, dataTransfer: dt }));
+        document.body.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt }));
+      `);
+      const uploadError = page.locator(".drop-chip.is-error");
+      await uploadError.waitFor();
+      assert.equal(
+        await page.locator(".input-nav-phone-toggle").count(),
+        0,
+        "submitted-input navigation competed with the upload strip",
+      );
+      await uploadError.locator(".drop-chip-dismiss").tap();
+      await uploadError.waitFor({ state: "detached" });
+      await toggle.waitFor();
+
+      // A live ! command both becomes a submitted-input stop and temporarily
+      // yields the phone anchor to its stdin bar. Killing it returns the
+      // anchor, whose viewport selection must include the new bang row.
+      const inputsBeforeBang = await page.locator(".input-nav-stop").count();
+      await prompt.fill("!sleep 20");
+      await page.locator(".prompt-send").tap();
+      const bangInput = page.locator(".bang-bar-input");
+      await bangInput.waitFor({ timeout: 15_000 });
+      assert.equal(
+        await page.locator(".input-nav-phone-toggle").count(),
+        0,
+        "submitted-input navigation competed with live shell input",
+      );
+      const bangStop = page.locator(".turn-bang.input-nav-stop").last();
+      await bangStop.waitFor();
+      assert.equal(await bangStop.locator(".input-nav-arrow").count(), 2);
+      assert.equal(await page.locator(".input-nav-stop").count(), inputsBeforeBang + 1);
+      await bangInput.focus();
+      await page.keyboard.press("Escape");
+      await bangInput.waitFor({ state: "detached", timeout: 15_000 });
+      await toggle.waitFor();
+      await toggle.tap();
+      await card.waitFor();
+      const bangNewer = card.getByRole("button", { name: "Go to newer input" });
+      for (let step = 1; step < inputsBeforeBang + 1; step += 1) {
+        if (await bangNewer.isDisabled()) break;
+        const positionBeforeMove = await card.locator(".input-nav-phone-count").innerText();
+        await bangNewer.tap();
+        await page.waitForFunction(
+          (before) => document.querySelector(".input-nav-phone-count")?.textContent !== before,
+          positionBeforeMove,
+          { timeout: 3_000 },
+        );
+      }
+      assert.equal(await bangNewer.isDisabled(), true, "newer movement never reached the bang row");
+      assert.match(
+        await card.locator(".input-nav-phone-count").innerText(),
+        new RegExp(`input ${inputsBeforeBang + 1} of ${inputsBeforeBang + 1}`, "i"),
+      );
+      assert.match((await bangStop.getAttribute("class")) ?? "", /is-input-nav-current/);
     },
   );
 });

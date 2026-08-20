@@ -2632,7 +2632,7 @@ is one complete single-pass `$next` chunk.
   wrapper. Full original Step body → **PLAN-ARCHIVE.md, “Moved 2026-08-19
   (Phase LD — completed Step LD.4 body).”**
 
-## Phase IH — Input history navigation (implemented 2026-08-19; merge gate pending)
+## Phase IH — Input history navigation (complete 2026-08-20)
 
 - [x] **Steps IH.1–IH.3 — Submitted-input navigation** — complete on
   `feature/prompt-navigation`. Desktop command strips now carry direct,
@@ -2663,12 +2663,55 @@ is one complete single-pass `$next` chunk.
   **4/4**, full Tier 3 **114/114**, browser matrix **3/3**, visual suite
   **6/6**, inspected 900×600 desktop and 390×844 phone renders, and
   `git diff --check`. The settled correction then passed typecheck, builds,
-  focused units **7/7**, and feature Chrome **4/4**. Its final Tier 1 aggregate
-  rerun remains unresolved because two untouched adapter test files pass alone
-  but exit only under the multi-file runner; diagnose that runner and rerun the
-  complete merge gates before moving this draft forward. Full original Phase
-  body → **PLAN-ARCHIVE.md, “Moved
-  2026-08-19 (Phase IH — completed body).”**
+  focused units **7/7**, and feature Chrome **4/4**. The final Tier 1 runner
+  defect was diagnosed and closed 2026-08-20: the shared Codex/Gemini
+  `jsonRpcOneShot` lifecycle handled child-process errors but not errors from
+  the child's stdin pipe, so a child closing that pipe during the initial
+  request emitted an unhandled `EPIPE` and terminated the whole test-file
+  process with exit 1. A process-isolated regression proved the old crash; the
+  stdin error now follows the existing settle-once rejection path. Final
+  dotenv-opaque closure passed the focused JSON-RPC/model-list set **14/14**,
+  Tier 1 **819/819** across 88 safe files, typecheck, both production builds,
+  Tier 2 **139/139**, and freshly built Tier 3 **114/114**. A 2026-08-20
+  security audit of the complete branch delta found no submitted-input-
+  navigation finding and closed one hardening issue in the touched one-shot
+  helper: Codex/Gemini catalog stdout now has a cumulative 1 MB ceiling instead
+  of relying on time alone. The old source retained a 1,000,001-byte
+  unterminated stream until timeout; post-fix one byte over is refused, an
+  exactly-at-limit JSON reply succeeds, and the shared focused set passes
+  **16/16**. Current registry advisories are zero across 467 locked packages;
+  lock integrity, TypeScript, both builds, package allowlist, and focused
+  navigation units also pass.
+
+  The 2026-08-20 feature test audit repeated the unchanged dotenv-opaque
+  baselines three times: Tier 1 **817/817**, Tier 2 **139/139**, and the full UI
+  matrix plus visuals **9/9** each time. Tier 3 was **114/114**, **113/114**,
+  then **114/114**; the sole failure was the untouched CR.2 phone file-review
+  timeout. That is the same full-suite-only failure recorded 2026-08-19, so it
+  is active recurrent Changes-suite debt, not a future-if-repeated concern; it
+  passed **6/6** focused repetitions and the final full run without a proved
+  cause or any CR.2 edit. Three credential-stripped Tier 4 repetitions passed
+  the Codex local-model cases **3/3** with its one hosted-credential case
+  skipped, and OpenCode **1/1**.
+
+  Seventeen one-at-a-time mutations ultimately exposed seven real test gaps:
+  later-row viewport equality; component-scale arrow visibility; `!`-row
+  integration; live-shell and upload anchor suppression; real-DOM non-tail
+  phone viewport selection; and single-arrow visibility in both dark and light
+  themes. The cold review caught the final two classes after the first repairs.
+  Tests now cover all seven: the phone fixture proves the coordinate path in
+  response space, and two inspected 59×29 enabled-arrow crops compare 1,711
+  pixels with zero allowed difference. Every repaired test failed against its
+  matching mutation, including independent dark-older and light-newer arrow
+  disappearance. No product source changed in the test audit. Final typecheck,
+  safe Tier 1 **817/817**, feature Chrome **5/5**, targeted visuals **7/7**,
+  freshly built Tier 3 **115/115**, and combined UI/visual **10/10** pass; the
+  three unchanged Tier 2 **139/139** baselines remain applicable. One broad
+  sanitized-mirror Tier 1 command accidentally included four synthetic
+  dotenv-fixture test sources. No real dotenv file was present and no secret
+  was exposed, but that run violated the opacity rule and is discarded; only
+  the explicitly enumerated 87-file safe run counts. Full original Phase body
+  → **PLAN-ARCHIVE.md, “Moved 2026-08-19 (Phase IH — completed body).”**
 
 ## Phase PN — Panes (file views beside the transcript)
 

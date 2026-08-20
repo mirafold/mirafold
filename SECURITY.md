@@ -402,3 +402,16 @@ machine (the origin+token gate refuses everyone else) — there is no
 cross-origin or other-user adversary in the threat model, so this is
 self-resource-use, not an attack, and a blunt socket cap risks breaking
 legitimate many-tab / fleet-view usage.
+
+**One-shot provider catalog stdout is capped at 1 MB (2026-08-20 audit).**
+The Codex app-server and Gemini ACP catalog probes already had 10–15 second
+deadlines, but their shared newline-delimited JSON-RPC helper accumulated
+stdout without a byte ceiling. A corrupt or buggy provider binary could emit
+an unterminated or high-volume stream and make the daemon retain arbitrary
+data until the timer fired. `jsonrpc-oneshot.ts` now counts cumulative bytes
+before converting or parsing chunks, kills the child, and rejects once output
+exceeds 1,000,000 bytes—the same budget used for local model-server catalogs.
+The limit is intentionally far above ordinary provider replies while bounding
+both incomplete lines and floods of complete lines. A born-failing regression
+proves one byte over is refused; an exactly-at-limit valid JSON reply proves
+the boundary remains usable.

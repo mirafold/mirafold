@@ -1,5 +1,10 @@
 import { spawn } from "node:child_process";
 
+// Provider catalog replies are normally tens of kilobytes. Bound cumulative
+// stdout as it crosses the process boundary so a corrupt binary cannot retain
+// arbitrary data during the otherwise time-bounded lookup.
+const ONE_SHOT_STDOUT_MAX_BYTES = 1_000_000;
+
 // One-shot newline-delimited JSON-RPC against a spawned agent binary — the
 // plumbing shared by codex-model-list.ts (`codex app-server`) and
 // gemini-model-list.ts (`gemini --acp`): spawn, drive the exchange, settle
@@ -39,11 +44,18 @@ export function jsonRpcOneShot<T>(opts: {
     };
     const timer = setTimeout(() => finish(new Error(`${opts.label}: timed out`)), opts.timeoutMs);
     child.on("error", (err) => finish(err));
+    child.stdin.on("error", (err) => finish(err));
     child.on("exit", () => finish(new Error(`${opts.label}: exited before answering`)));
 
     const send: OneShotSend = (obj) => child.stdin.write(`${JSON.stringify(obj)}\n`);
     let buf = "";
+    let stdoutBytes = 0;
     child.stdout.on("data", (chunk: Buffer) => {
+      stdoutBytes += chunk.byteLength;
+      if (stdoutBytes > ONE_SHOT_STDOUT_MAX_BYTES) {
+        finish(new Error(`${opts.label}: stdout exceeded ${ONE_SHOT_STDOUT_MAX_BYTES} bytes`));
+        return;
+      }
       buf += chunk.toString();
       let nl: number;
       while ((nl = buf.indexOf("\n")) >= 0) {
