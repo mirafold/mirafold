@@ -201,6 +201,142 @@ test("phone: pairs by URL, opens the session, drives a turn with a rendered comp
   assert.ok(promptFont >= 16, `prompt textarea is ${promptFont}px — iOS will zoom on focus`);
 });
 
+test("phone LD.3: the live document fills the canvas and survives the full-screen Explorer", async () => {
+  const documentsBefore = await phone.locator(".response-document").count();
+  await sendPrompt(phone, "live document demo");
+  const firstDocument = phone.locator(".response-document").nth(documentsBefore);
+  const secondDocument = phone.locator(".response-document").nth(documentsBefore + 1);
+  await firstDocument.locator("h1", { hasText: "Live response" }).waitFor({ timeout: 15_000 });
+  await secondDocument
+    .locator(".turn-assistant", { hasText: "response finished as one live composition" })
+    .waitFor({ timeout: 30_000 });
+  await phone.locator(".activity-line").waitFor({ state: "detached", timeout: 15_000 });
+
+  const metrics = await phone.evaluate((start) => {
+    const zone = document.querySelector(".render-zone") as HTMLElement | null;
+    const documents = document.querySelectorAll(".response-document");
+    const first = documents[start] as HTMLElement | undefined;
+    const second = documents[start + 1] as HTMLElement | undefined;
+    const prose = first?.querySelector(".turn-assistant") as HTMLElement | null;
+    const h1 = first?.querySelector("h1") as HTMLElement | null;
+    const code = second?.querySelector(".markdown pre") as HTMLElement | null;
+    const markdownTable = second?.querySelector(
+      ".markdown-table-scroll",
+    ) as HTMLElement | null;
+    const richTable = second?.querySelector(".rc-table") as HTMLElement | null;
+    const prompt = document.querySelector(".prompt-box") as HTMLElement | null;
+    const status = document.querySelector(".status-bar") as HTMLElement | null;
+    if (
+      !zone ||
+      !first ||
+      !second ||
+      !prose ||
+      !h1 ||
+      !code ||
+      !markdownTable ||
+      !richTable ||
+      !prompt ||
+      !status
+    ) {
+      return null;
+    }
+    const zoneRect = zone.getBoundingClientRect();
+    const firstRect = first.getBoundingClientRect();
+    const secondRect = second.getBoundingClientRect();
+    const proseRect = prose.getBoundingClientRect();
+    const codeRect = code.getBoundingClientRect();
+    const markdownTableRect = markdownTable.getBoundingClientRect();
+    const richTableRect = richTable.getBoundingClientRect();
+    const promptRect = prompt.getBoundingClientRect();
+    const statusRect = status.getBoundingClientRect();
+    const zoneStyle = getComputedStyle(zone);
+    const available =
+      zoneRect.width -
+      Number.parseFloat(zoneStyle.paddingLeft) -
+      Number.parseFloat(zoneStyle.paddingRight);
+    return {
+      available,
+      firstWidth: firstRect.width,
+      secondWidth: secondRect.width,
+      proseWidth: proseRect.width,
+      gap: Number.parseFloat(getComputedStyle(first).rowGap),
+      h1Size: Number.parseFloat(getComputedStyle(h1).fontSize),
+      codeContained: codeRect.left >= secondRect.left - 1 && codeRect.right <= secondRect.right + 1,
+      codeOverflowMode: getComputedStyle(code).overflowX,
+      markdownTableContained:
+        markdownTableRect.left >= secondRect.left - 1 &&
+        markdownTableRect.right <= secondRect.right + 1,
+      markdownTableOverflowMode: getComputedStyle(markdownTable).overflowX,
+      markdownTableTabIndex: markdownTable.tabIndex,
+      richTableContained:
+        richTableRect.left >= secondRect.left - 1 && richTableRect.right <= secondRect.right + 1,
+      pageOverflow:
+        document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      bottomDistance: zone.scrollHeight - zone.clientHeight - zone.scrollTop,
+      promptVisible:
+        promptRect.top >= 0 &&
+        promptRect.bottom <= window.innerHeight + 1 &&
+        promptRect.width > 0 &&
+        promptRect.height > 0,
+      statusVisible:
+        statusRect.top >= 0 &&
+        statusRect.bottom <= window.innerHeight + 1 &&
+        statusRect.width > 0 &&
+        statusRect.height > 0,
+      pinButtonsHidden: [...document.querySelectorAll(".pin-btn")].every(
+        (element) => getComputedStyle(element).display === "none",
+      ),
+    };
+  }, documentsBefore);
+
+  assert.ok(metrics, "phone document fixture did not fully render");
+  assert.ok(Math.abs(metrics.firstWidth - metrics.available) <= 1);
+  assert.ok(Math.abs(metrics.secondWidth - metrics.available) <= 1);
+  assert.ok(Math.abs(metrics.proseWidth - metrics.available) <= 1);
+  assert.ok(metrics.gap <= 12.5, `phone document gap is ${metrics.gap}px`);
+  assert.ok(metrics.h1Size >= 20 && metrics.h1Size <= 26);
+  assert.equal(metrics.codeContained, true);
+  assert.equal(metrics.codeOverflowMode, "auto");
+  assert.equal(metrics.markdownTableContained, true);
+  assert.equal(metrics.markdownTableOverflowMode, "auto");
+  assert.equal(metrics.markdownTableTabIndex, 0);
+  assert.equal(metrics.richTableContained, true);
+  assert.ok(metrics.pageOverflow <= 1);
+  assert.ok(metrics.bottomDistance <= 2);
+  assert.equal(metrics.promptVisible, true);
+  assert.equal(metrics.statusVisible, true);
+  assert.equal(metrics.pinButtonsHidden, true);
+  assert.equal(await phone.locator(".pin-dock").count(), 0);
+  await noSideScroll(phone);
+
+  await firstDocument.evaluate((element) => {
+    element.setAttribute("data-ld3-phone-identity", "before-explorer");
+  });
+  await phone.locator(".sb-workspace").focus();
+  await phone.keyboard.press("Enter");
+  await phone.waitForSelector(".files-panel[role=dialog]");
+  await settled(phone, ".files-panel");
+  assert.equal(
+    await firstDocument.getAttribute("data-ld3-phone-identity"),
+    "before-explorer",
+    "opening the phone Explorer remounted the response document",
+  );
+  await noSideScroll(phone);
+
+  await phone.keyboard.press("Escape");
+  await phone.waitForSelector(".files-panel", { state: "detached" });
+  assert.equal(
+    await firstDocument.getAttribute("data-ld3-phone-identity"),
+    "before-explorer",
+    "closing the phone Explorer remounted the response document",
+  );
+  assert.ok(
+    Math.abs((await firstDocument.evaluate((element) => element.getBoundingClientRect().width)) - metrics.firstWidth) <= 1,
+    "the document did not restore its phone width after Explorer closed",
+  );
+  await noSideScroll(phone);
+});
+
 test("phone (E.4): the files panel is a full-screen drill-in — tree → file → back → Esc, no side-scroll", async () => {
   // On phone the rail is gone entirely (a permanent strip is too much of a
   // 390px screen, 2026-07-25) — the toggle lives in the status bar instead,
@@ -357,6 +493,11 @@ test("phone (320px): both drawer heads keep their controls apart", async () => {
 test("phone: a permission request is answerable by thumb", async () => {
   await sendPrompt(phone, "do something dangerous");
   await phone.waitForSelector(".perm-bar", { timeout: 15_000 });
+  assert.equal(
+    await phone.locator(".input-nav-phone-toggle").count(),
+    0,
+    "submitted-input navigation competes with the permission actions",
+  );
   await noSideScroll(phone);
   const allow = phone.locator(".perm-allow");
   const box = (await allow.boundingBox())!;

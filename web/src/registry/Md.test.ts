@@ -47,3 +47,11 @@ test("highlighted fenced code is keyboard-focusable while inline code stays iner
   assert.match(highlighted, /tabindex="0"/);
   assert.ok(!inline.includes("tabindex"), `inline code became a tab stop: ${inline}`);
 });
+
+test("a Markdown table keeps its semantics inside a keyboard-reachable local scroller", () => {
+  const html = render("| Name | Result |\n| --- | --- |\n| stream | immediate |");
+  assert.match(html, /<div class="markdown-table-scroll" tabindex="0">/);
+  assert.match(html, /<table>/);
+  assert.match(html, /<th>Name<\/th>/);
+  assert.match(html, /<td>immediate<\/td>/);
+});

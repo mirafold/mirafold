@@ -48,8 +48,12 @@ export function PickerBlock({
   useEffect(() => {
     if (!live) return;
     const onKey = (e: KeyboardEvent) => {
+      if (e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return;
       if (!["ArrowUp", "ArrowDown", "Enter", "Escape"].includes(e.key)) return;
       const t = e.target as HTMLElement | null;
+      const phoneNavigation = t?.closest("[data-input-navigation-phone]");
+      if (phoneNavigation?.querySelector(".input-nav-phone-card")) return;
+      if (e.key === "Enter" && t?.closest("[data-input-navigation-control]")) return;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) {
         // Only the idle (empty) prompt box cedes these keys to the picker.
         const idlePrompt = t.tagName === "TEXTAREA" && (t as HTMLTextAreaElement).value === "";
@@ -71,8 +75,11 @@ export function PickerBlock({
       else setDismissed(true);
     };
     // Capture phase, so the empty prompt box's own Enter handler never runs.
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
+    // Document capture still precedes the prompt target, but lets a
+    // window-capture disclosure (phone input navigation) claim Escape first
+    // instead of both same-target listeners acting on one keypress.
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
     // `highlight` in deps keeps Enter picking what's currently lit.
   }, [live, highlight, rows.length]);
 

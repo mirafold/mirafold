@@ -1,6 +1,13 @@
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Children, cloneElement, isValidElement, type ComponentProps, type ReactElement, type ReactNode } from "react";
+import {
+  Children,
+  cloneElement,
+  isValidElement,
+  type ComponentProps,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 
 // remark-gfm's task-list checkbox (`- [x] thing`) renders as a bare
 // `<input disabled>` with no accessible name — a screen reader announces
@@ -28,6 +35,19 @@ function childrenText(children: ReactNode): string {
 export const mdUrlTransform = (url: string): string =>
   /^exps?:/i.test(url) ? url : defaultUrlTransform(url);
 
+/** Keep wide tables semantic while making their local overflow reachable. */
+function ScrollableMarkdownTable({
+  node: _node,
+  children,
+  ...props
+}: ComponentProps<"table"> & { node?: unknown }) {
+  return (
+    <div className="markdown-table-scroll" tabIndex={0}>
+      <table {...props}>{children}</table>
+    </div>
+  );
+}
+
 // The markdown renderer overrides shared with RenderZone's turn text: anchors
 // get the safety rule (links open in a new tab, and react-markdown never emits
 // raw HTML from its source), and task-list items get an accessible checkbox label.
@@ -51,6 +71,7 @@ export const mdOverrides = {
       {children}
     </code>
   ),
+  table: ScrollableMarkdownTable,
   li: ({ node: _node, children, ...props }: ComponentProps<"li"> & { node?: unknown }) => {
     const kids = Children.toArray(children);
     const checkbox = kids[0];

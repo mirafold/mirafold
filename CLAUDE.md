@@ -7,13 +7,15 @@ with Mirafold's generative UI layered on top: a Codex user gets Codex, never
 "Claude things". One adapter per agent in `server/adapters/`, none privileged;
 the agent is picked per session at onboarding.
 
-Where things live: **README.md** — architecture, the two load-bearing
-contracts, conventions. **PLAN.md** — work steps in order, one per prompt;
-don't start a step until the previous "Done when" is satisfied; check steps
-off with a dated status note. **BUSINESS.md** — why and in what sequence
-(milestone gates). **GLOSSARY.md** — the decided product vocabulary (paintings
-vs. decks, the surfaces, prompt box, …); use its terms in docs, copy, and
-conversation — the "(was)" column exists to recognize old terms, not reuse them.
+Where things live: **docs/ARCHITECTURE.md** — architecture, the two
+load-bearing contracts, trust boundaries, and conventions. **README.md** —
+the user and contributor essentials. **PLAN.md** — work steps in order, one
+per prompt; don't start a step until the previous "Done when" is satisfied;
+check steps off with a dated status note. **BUSINESS.md** — why and in what
+sequence (milestone gates). **GLOSSARY.md** — the decided product vocabulary
+(paintings vs. decks, the surfaces, prompt box, …); use its terms in docs,
+copy, and conversation — the "(was)" column exists to recognize old terms,
+not reuse them.
 
 ## Environment
 
@@ -49,8 +51,8 @@ conversation — the "(was)" column exists to recognize old terms, not reuse the
   taken verbatim from an engine, rendered where the user reads Mirafold as
   speaking (the dim `notice` line), must be attributed to that engine —
   `notice.source` badges it. Compose the sentence yourself and it's ours;
-  pass the engine's words through and it carries `source` (README §3,
-  2026-07-20 audit).
+  pass the engine's words through and it carries `source`
+  (docs/ARCHITECTURE.md, “Trust boundaries,” 2026-07-20 audit).
 - **Trust is never broken, under any reasonable interpretation** — of
   anything Mirafold has claimed or reasonably suggested, not only what's
   written down explicitly. This is the general standard, not a file-specific
@@ -95,7 +97,8 @@ conversation — the "(was)" column exists to recognize old terms, not reuse the
 - **Verification**: front-end steps are verified end-to-end in headless
   Chrome (`playwright-core` + `/usr/bin/google-chrome`), driving real
   typing/clicks; server steps over a real WebSocket. A step isn't done until
-  its "Done when" has actually been observed. The suite (README §8):
+  its "Done when" has actually been observed. The suite (README.md,
+  “Development,” and CONTRIBUTING.md):
   `yarn test` (Tier-1 unit, every commit) · `yarn test:server` (Tier-2, real
   daemon + real sockets, mock-forced) · `yarn test:e2e` (Tier-3 headless
   Chrome, rebuilds dist first). node:test + tsx, zero test deps; no test may

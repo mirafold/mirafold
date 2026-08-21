@@ -398,7 +398,8 @@ Deviations a reviewer might flag, with why they stand:
 
 - **Gemini writes `<cwd>/.gemini/settings.json` into the user's project.**
   Required for per-session MCP injection (Gemini merges project over global —
-  the non-destructive option). Documented in README §2.2; acceptable, but any
+  the non-destructive option). Documented in
+  [ARCHITECTURE.md](ARCHITECTURE.md#agent-adapters); acceptable, but any
   alternative that appears in a future Gemini version (CLI flag for an extra
   MCP server) should replace it.
 - **Gemini spawns one process per turn** while Claude/Codex hold a warm

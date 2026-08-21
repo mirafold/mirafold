@@ -54,6 +54,32 @@ for (const browserName of MANAGED_BROWSER_NAMES) {
               "the KPI update duplicated its card",
             );
 
+            // LD.3: every managed engine can keyboard-scroll the chart's
+            // readable minimum canvas without widening the workbench.
+            await page.setViewportSize({ width: 650, height: 800 });
+            await prompt.fill("responsive document stress");
+            await prompt.press("Enter");
+            const chartPlot = page.locator(".response-document .rc-chart-plot").last();
+            await chartPlot.waitFor();
+            await page
+              .locator(".turn-assistant", { hasText: "without widening the workbench" })
+              .waitFor();
+            assert.equal(await chartPlot.getAttribute("tabindex"), "0");
+            assert.equal(
+              await chartPlot.evaluate((element) => element.scrollWidth > element.clientWidth),
+              true,
+              `${browserName} did not keep narrow-chart overflow local`,
+            );
+            await chartPlot.focus();
+            await page.keyboard.press("ArrowRight");
+            await page.waitForFunction(
+              () =>
+                document.activeElement?.classList.contains("rc-chart-plot") === true &&
+                document.activeElement.scrollLeft > 0,
+            );
+            await noSideScroll(page);
+            await page.setViewportSize({ width: 1180, height: 800 });
+
             await page.locator(".sb-settings").click();
             const settings = page.locator(".settings-card");
             await settings.waitFor();

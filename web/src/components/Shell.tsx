@@ -32,6 +32,11 @@ import type { WireMsg } from "@protocol";
 import { useEscapeKey } from "../use-escape";
 import { Announcer, turnResponse, useAnnouncer } from "./Announcer";
 import { PermBar, type PermAsk } from "./PermBar";
+import type { InputNavigationDirection } from "../input-navigation";
+import type {
+  InputNavigationHandle,
+  InputNavigationState,
+} from "../use-input-navigation";
 
 const ZERO_USAGE: Usage = { turnIn: 0, turnOut: 0, sumIn: 0, sumOut: 0, cost: 0 };
 
@@ -46,9 +51,38 @@ const ZERO_USAGE: Usage = { turnIn: 0, turnOut: 0, sumIn: 0, sumOut: 0, cost: 0 
 export function Shell() {
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const promptContainerRef = useRef<HTMLDivElement>(null);
-  const focusPrompt = useCallback(() => {
-    promptRef.current?.focus({ preventScroll: true });
+  // RenderZone owns transcript destinations; Shell bridges that controller to
+  // the prompt keyboard entry and the phone-only disclosure state.
+  const inputNavigationRef = useRef<InputNavigationHandle>(null);
+  const [inputNavigationState, setInputNavigationState] = useState<InputNavigationState>({
+    position: null,
+    total: 0,
+  });
+  const [phoneInputNavigationOpen, setPhoneInputNavigationOpen] = useState(false);
+  const closeInputNavigation = useCallback(() => {
+    setPhoneInputNavigationOpen(false);
+    inputNavigationRef.current?.close();
   }, []);
+  const focusPrompt = useCallback(() => {
+    closeInputNavigation();
+    promptRef.current?.focus({ preventScroll: true });
+  }, [closeInputNavigation]);
+  const updateInputNavigationState = useCallback((next: InputNavigationState) => {
+    setInputNavigationState(next);
+    if (next.total < 2) setPhoneInputNavigationOpen(false);
+  }, []);
+  const openPhoneInputNavigation = useCallback(() => {
+    if (inputNavigationRef.current?.openAtViewport()) {
+      setPhoneInputNavigationOpen(true);
+    }
+  }, []);
+  const movePhoneInputNavigation = useCallback((direction: InputNavigationDirection) => {
+    inputNavigationRef.current?.move(direction, false);
+  }, []);
+  const navigateToLatestInput = useCallback(
+    () => inputNavigationRef.current?.openLatest() ?? false,
+    [],
+  );
   // ── The turn ──────────────────────────────────────────────────────────
   // Whether a turn is in flight — drives the stop affordance, Esc, and the
   // activity indicator. Derived entirely from the wire: user_prompt sets it,
@@ -689,10 +723,12 @@ export function Shell() {
                 sessionKey={meta.sessionId}
               />
               <RenderZone
+                ref={inputNavigationRef}
                 subscribe={bus.subscribe}
                 sendAction={bus.sendAction}
                 busy={busy}
                 focusPrompt={focusPrompt}
+                onInputNavigationChange={updateInputNavigationState}
               />
             </div>
             <ActivityLine busy={busy} label={activityLabel(activity)} />
@@ -736,6 +772,20 @@ export function Shell() {
               containerRef={promptContainerRef}
               draft={promptDraft}
               globalTriggersDisabled={showOnboarding || settingsOpen}
+              onNavigateLatestInput={navigateToLatestInput}
+              inputNavigation={{
+                // The disclosure occupies the space directly above the
+                // prompt. Yield it to transient answer/input/upload strips;
+                // navigation returns as soon as that higher-priority work is
+                // gone.
+                available: asks.length === 0 && !bang.my && uploads.length === 0,
+                open: phoneInputNavigationOpen,
+                position: inputNavigationState.position,
+                total: inputNavigationState.total,
+                onOpen: openPhoneInputNavigation,
+                onClose: closeInputNavigation,
+                onMove: movePhoneInputNavigation,
+              }}
             />
             <StatusBar
               connected={connected}

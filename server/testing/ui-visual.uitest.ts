@@ -64,14 +64,34 @@ async function normalizeSessionFacts(page: Page): Promise<void> {
 }
 
 async function settleKpiTurn(page: Page, text: string): Promise<void> {
+  const inputs = page.locator(".input-nav-stop");
+  const stats = page.locator(".rc-stat-value", { hasText: "96.8%" });
+  const replies = page.locator(".turn-assistant", {
+    hasText: "Coverage is climbing as the new tests land.",
+  });
+  const inputsBefore = await inputs.count();
+  const statsBefore = await stats.count();
+  const repliesBefore = await replies.count();
   const prompt = page.locator(".prompt-box textarea");
   await prompt.fill(text);
   await prompt.press("Enter");
-  await page.locator(".rc-stat-value", { hasText: "96.8%" }).waitFor();
+  await inputs.nth(inputsBefore).waitFor();
+  await stats.nth(statsBefore).waitFor();
+  await replies.nth(repliesBefore).waitFor();
+  await page.locator(".stop-btn").waitFor({ state: "detached" });
+}
+
+async function settleLiveDocument(page: Page): Promise<void> {
+  const prompt = page.locator(".prompt-box textarea");
+  await prompt.fill("live document demo");
+  await prompt.press("Enter");
   await page
-    .locator(".turn-assistant", { hasText: "Coverage is climbing as the new tests land." })
+    .locator(".turn-assistant", { hasText: "response finished as one live composition" })
     .waitFor();
   await page.locator(".stop-btn").waitFor({ state: "detached" });
+  await page.locator(".render-zone").evaluate((element) => {
+    element.scrollTop = 0;
+  });
 }
 
 test("visual: onboarding card", { skip: LINUX_ONLY }, async () => {
@@ -124,6 +144,82 @@ test("visual: settled desktop session, light theme", { skip: LINUX_ONLY }, async
       await settleKpiTurn(page, "kpi visual baseline");
       await normalizeSessionFacts(page);
       await assertVisualSnapshot(browser, page, "desktop-session-light");
+    },
+  );
+});
+
+test("visual: enabled submitted-input navigation, both themes", { skip: LINUX_ONLY }, async () => {
+  await withFreshMockPage(
+    browser,
+    {
+      token: "ui-visual-input-navigation",
+      env: HEADLESS_DAEMON_ENV,
+      context: visualContext({ width: 1280, height: 900 }),
+    },
+    async (page) => {
+      await enterMockSession(page);
+      for (let index = 0; index < 3; index += 1) {
+        await settleKpiTurn(page, "kpi visual baseline");
+      }
+      await normalizeSessionFacts(page);
+      const middleNavigation = page.locator(".input-nav-stop").nth(1);
+      await middleNavigation.evaluate((element) => element.setAttribute("data-visual-navigation", ""));
+      await middleNavigation.locator(".input-nav-older:not(:disabled)").waitFor();
+      await middleNavigation.locator(".input-nav-newer:not(:disabled)").waitFor();
+
+      await page.locator('.sb-theme-opt[title="Dark theme"]').click();
+      await page.locator('.sb-theme-opt[title="Dark theme"][aria-pressed="true"]').waitFor();
+      await assertVisualSnapshot(
+        browser,
+        page,
+        "submitted-input-navigation",
+        "[data-visual-navigation] .input-nav-inline",
+      );
+
+      await page.locator('.sb-theme-opt[title="Light theme"]').click();
+      await page.locator('.sb-theme-opt[title="Light theme"][aria-pressed="true"]').waitFor();
+      await assertVisualSnapshot(
+        browser,
+        page,
+        "submitted-input-navigation-light",
+        "[data-visual-navigation] .input-nav-inline",
+      );
+    },
+  );
+});
+
+test("visual: live document composition", { skip: LINUX_ONLY }, async () => {
+  await withFreshMockPage(
+    browser,
+    {
+      token: "ui-visual-live-document",
+      env: HEADLESS_DAEMON_ENV,
+      context: visualContext({ width: 1440, height: 1100 }),
+    },
+    async (page) => {
+      await enterMockSession(page);
+      await settleLiveDocument(page);
+      await normalizeSessionFacts(page);
+      await assertVisualSnapshot(browser, page, "live-document");
+    },
+  );
+});
+
+test("visual: live document composition, light theme", { skip: LINUX_ONLY }, async () => {
+  await withFreshMockPage(
+    browser,
+    {
+      token: "ui-visual-live-document-light",
+      env: HEADLESS_DAEMON_ENV,
+      context: visualContext({ width: 1440, height: 1100 }),
+    },
+    async (page) => {
+      await enterMockSession(page);
+      await page.locator('.sb-theme-opt[title="Light theme"]').click();
+      await page.locator('.sb-theme-opt[title="Light theme"][aria-pressed="true"]').waitFor();
+      await settleLiveDocument(page);
+      await normalizeSessionFacts(page);
+      await assertVisualSnapshot(browser, page, "live-document-light");
     },
   );
 });

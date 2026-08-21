@@ -218,7 +218,8 @@ deliberate-design question, not a bug.
 (disclosed, 2026-07-29 audit).** The working indicator above the prompt box
 shows what the turn is doing — and when that's a tool call, the word it
 prints is the engine's own tool name, third-party MCP servers included
-(`mcp__server__tool`). The shell's voice rule (README §3) says a string
+(`mcp__server__tool`). The shell's voice rule
+([architecture: trust boundaries](docs/ARCHITECTURE.md#trust-boundaries)) says a string
 taken verbatim from an engine and shown where the user reads *Mirafold*
 speaking must be attributed to it. This is judged to stay on the right side
 of that line: the label is a bare noun, not a sentence — the indicator's own
@@ -402,3 +403,16 @@ machine (the origin+token gate refuses everyone else) — there is no
 cross-origin or other-user adversary in the threat model, so this is
 self-resource-use, not an attack, and a blunt socket cap risks breaking
 legitimate many-tab / fleet-view usage.
+
+**One-shot provider catalog stdout is capped at 1 MB (2026-08-20 audit).**
+The Codex app-server and Gemini ACP catalog probes already had 10–15 second
+deadlines, but their shared newline-delimited JSON-RPC helper accumulated
+stdout without a byte ceiling. A corrupt or buggy provider binary could emit
+an unterminated or high-volume stream and make the daemon retain arbitrary
+data until the timer fired. `jsonrpc-oneshot.ts` now counts cumulative bytes
+before converting or parsing chunks, kills the child, and rejects once output
+exceeds 1,000,000 bytes—the same budget used for local model-server catalogs.
+The limit is intentionally far above ordinary provider replies while bounding
+both incomplete lines and floods of complete lines. A born-failing regression
+proves one byte over is refused; an exactly-at-limit valid JSON reply proves
+the boundary remains usable.
