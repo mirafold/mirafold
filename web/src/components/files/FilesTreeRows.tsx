@@ -37,13 +37,17 @@ export function DirChildren({
   expanded,
   onToggleDir,
   onOpenFile,
+  onOpenFullView,
 }: {
   path: string;
   depth: number;
   store: DirStore;
   expanded: Set<string>;
   onToggleDir: (path: string) => void;
-  onOpenFile: (path: string, status?: string) => void;
+  onOpenFile: (path: string, status: string | undefined, opener: HTMLButtonElement) => void;
+  /** Desktop-only escape hatch for the established Explorer drill-in and
+   * its enlarged lightbox. Absent on phone, where the row itself drills in. */
+  onOpenFullView?: (path: string, status?: string) => void;
 }) {
   const dirState = store.get(path);
   const pad = { paddingLeft: `${depth * 12 + 6}px` };
@@ -89,6 +93,7 @@ export function DirChildren({
                   expanded={expanded}
                   onToggleDir={onToggleDir}
                   onOpenFile={onOpenFile}
+                  onOpenFullView={onOpenFullView}
                 />
               )}
             </li>
@@ -98,10 +103,12 @@ export function DirChildren({
         // click goes through fs_read like any file — the daemon's jail
         // decides whether its target is readable.
         return (
-          <li key={entry.name} role="treeitem">
+          <li key={entry.name} role="treeitem" className="files-leaf-row">
             <button
               className="files-row files-file-row"
-              onClick={() => onOpenFile(entryPath, entry.status)}
+              aria-label={onOpenFullView ? `Open ${entryPath} in pane` : undefined}
+              title={onOpenFullView ? "Open in pane" : undefined}
+              onClick={(event) => onOpenFile(entryPath, entry.status, event.currentTarget)}
             >
               <ExplorerIndent depth={depth} />
               <span className="files-caret" />
@@ -116,6 +123,17 @@ export function DirChildren({
                 </span>
               )}
             </button>
+            {onOpenFullView && (
+              <button
+                type="button"
+                className="files-full-view"
+                title="Open full view"
+                aria-label={`Open ${entryPath} in full view`}
+                onClick={() => onOpenFullView(entryPath, entry.status)}
+              >
+                ⤢
+              </button>
+            )}
           </li>
         );
       })}

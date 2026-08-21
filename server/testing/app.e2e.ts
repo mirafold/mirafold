@@ -905,7 +905,9 @@ test("LD.3: response documents reflow across Explorer, file view, pin dock, and 
     const both = await measure();
     assert.ok(both, "Explorer plus pin-dock response metrics are missing");
 
-    await p.locator(".files-file-row", { hasText: "package.json" }).first().click();
+    await openExplorerFullView(
+      p.locator(".files-file-row", { hasText: "package.json" }).first(),
+    );
     await p.waitForSelector(".files-view .fv-content");
     const fileAndDock = await measure();
     assert.ok(fileAndDock, "file-view plus pin-dock response metrics are missing");
@@ -3078,6 +3080,12 @@ const eventually = async (check: () => boolean, message: string, timeout = 10_00
   await page.waitForFunction(check, undefined, { timeout }).catch(() => assert.fail(message));
 };
 
+/** PN.2 makes the desktop row itself open a pane. The established Explorer
+ * drill-in/lightbox remains the row's adjacent full-view action. */
+const openExplorerFullView = async (row: Locator) => {
+  await row.locator("xpath=..").locator(".files-full-view").click();
+};
+
 test("E.3: the files panel lists the working tree, opens a file beside the transcript, drills back", async () => {
   // The e2e daemon runs in the Mirafold repo itself — a real git repo — so
   // the tree is live git data. package.json is always tracked and top-level.
@@ -3131,7 +3139,7 @@ test("E.3: the files panel lists the working tree, opens a file beside the trans
   assert.ok(await page.locator(".prompt-box textarea, textarea").first().isVisible());
 
   // Open the file → its content shows in the panel's file view.
-  await pkg.click();
+  await openExplorerFullView(pkg);
   await page.waitForSelector(".files-view .fv-content");
   assert.match(await page.locator(".files-view .fv-content").innerText(), /"name"/);
 
@@ -3142,6 +3150,86 @@ test("E.3: the files panel lists the working tree, opens a file beside the trans
   await eventually(() => !document.querySelector(".files-panel"), "the toggle left the panel open");
 });
 
+test("PN.2: desktop file rows open keyboard-clean tabs; switch and close preserve focus", async () => {
+  await withFreshMockSession("e2e-pn2-tabs-9c2f", async (p) => {
+    await p.locator(".ab-files").click();
+    await p.waitForSelector(".files-panel");
+    const pkg = p.locator(".files-file-row", { hasText: "package.json" }).first();
+    const readme = p.locator(".files-file-row", { hasText: "README.md" }).first();
+    const activeContent = p.locator('.file-pane-panel:not([hidden]) .fv-content');
+    await pkg.waitFor({ timeout: 15_000 });
+    await readme.waitFor({ timeout: 15_000 });
+
+    // Keyboard activation takes focus into the pane's active tab, and the
+    // Explorer remains available beside it to open another file.
+    await pkg.focus();
+    await p.keyboard.press("Enter");
+    await activeContent.waitFor();
+    assert.match(await activeContent.innerText(), /"name"/);
+    assert.equal(await p.locator(".file-pane-tab").count(), 1);
+    assert.equal(
+      await p.evaluate(() => document.activeElement?.getAttribute("role")),
+      "tab",
+      "opening a file did not move focus into its pane tab",
+    );
+
+    await readme.click();
+    await p.waitForFunction(() => document.querySelectorAll(".file-pane-tab").length === 2);
+    await p
+      .waitForFunction(() =>
+        document
+          .querySelector('.file-pane-panel:not([hidden]) .fv-content')
+          ?.textContent?.includes("Mirafold"),
+      )
+      .catch(async () =>
+        assert.fail(
+          `second pane did not resolve; active=${JSON.stringify(await p.locator('.file-pane-tab[aria-selected="true"]').allInnerTexts())} ` +
+            `view=${JSON.stringify(await p.locator(".file-pane-panel:not([hidden])").allInnerTexts())}`,
+        ),
+      );
+    assert.equal(
+      await p.locator('.file-pane-tab[aria-selected="true"]').getAttribute("aria-label"),
+      "README.md",
+    );
+    assert.ok(await p.locator(".render-zone").isVisible(), "the pane displaced the transcript");
+    assert.ok(await p.locator(".prompt-box textarea").isVisible(), "the pane displaced the prompt");
+    await assertAxeClean(p, "tabbed file pane");
+
+    // Arrow keys use roving-tab semantics. Tab reaches the active close button;
+    // closing selects the neighboring tab and keeps keyboard focus in the tabs.
+    await p.locator('.file-pane-tab[aria-selected="true"]').press("ArrowLeft");
+    assert.equal(
+      await p.locator('.file-pane-tab[aria-selected="true"]').getAttribute("aria-label"),
+      "package.json",
+    );
+    assert.match(await activeContent.innerText(), /"name"/);
+    await p.keyboard.press("Tab");
+    assert.equal(
+      await p.evaluate(() => document.activeElement?.getAttribute("aria-label")),
+      "Close package.json",
+    );
+    await p.keyboard.press("Enter");
+    assert.equal(await p.locator(".file-pane-tab").count(), 1);
+    assert.equal(
+      await p.evaluate(() => document.activeElement?.getAttribute("aria-label")),
+      "README.md",
+      "closing the active tab did not focus its neighbor",
+    );
+
+    // Closing the last tab returns to the exact Explorer row that opened it.
+    await p.keyboard.press("Tab");
+    await p.keyboard.press("Enter");
+    await p.waitForSelector(".file-pane-region", { state: "detached" });
+    assert.equal(
+      await p.evaluate(() => document.activeElement?.getAttribute("aria-label")),
+      "Open README.md in pane",
+      "closing the last tab did not return focus to its opener",
+    );
+    await p.locator(".ab-files").click();
+    await p.waitForSelector(".files-panel", { state: "detached" });
+  });
+});
+
 test("E.6: ⤢ lifts the file view into a dimmed lightbox; Esc and the backdrop restore it in place", async () => {
   await page.locator(".ab-files").click();
   await page.waitForSelector(".files-panel");
@@ -3150,7 +3238,7 @@ test("E.6: ⤢ lifts the file view into a dimmed lightbox; Esc and the backdrop 
   // that unwrapped they would side-scroll a 340px panel.
   const lock = page.locator(".files-file-row", { hasText: "yarn.lock" }).first();
   await lock.waitFor({ timeout: 15_000 });
-  await lock.click();
+  await openExplorerFullView(lock);
   await page.waitForSelector(".files-view .fv-content");
 
   // The view is the ONE scroller — the transcript's 360px tool-output cap
@@ -3406,7 +3494,7 @@ test("E2.4: the Projects-root proof — lazy expands into two repos with per-rep
 
     // Open the modified file: a status click leads with the DIFF, and the
     // diff resolves through repoA — the nested repo — not the session root.
-    await page.locator(".files-file-row:has-text('changed.txt')").click();
+    await openExplorerFullView(page.locator(".files-file-row:has-text('changed.txt')"));
     await page.waitForSelector(".files-view .tool-diff");
     const diffText = await page.locator(".files-view .tool-diff").innerText();
     assert.match(diffText, /the before line/);
@@ -3428,7 +3516,7 @@ test("E2.4: the Projects-root proof — lazy expands into two repos with per-rep
       await page.locator(".files-file-row:has-text('notes.md') .files-status").innerText(),
       "U",
     );
-    await page.locator(".files-file-row:has-text('app.ts')").click();
+    await openExplorerFullView(page.locator(".files-file-row:has-text('app.ts')"));
     await page.waitForSelector(".files-view .fv-content");
     assert.match(await page.locator(".files-view .fv-content").innerText(), /export const b/);
     await page.locator(".files-back").click();
@@ -3643,7 +3731,7 @@ test("C.2: axe-core finds no serious/critical WCAG violations across the app", a
     await p.waitForSelector(".files-panel .files-row");
     // Pick a named safe fixture. Alphabetical-first is `.env.example` in this
     // checkout, and dotenv files are intentionally opaque to this test run.
-    await p.locator(".files-file-row", { hasText: "README.md" }).click();
+    await openExplorerFullView(p.locator(".files-file-row", { hasText: "README.md" }));
     await p.waitForSelector(".files-view .fv-content").catch(async () =>
       assert.fail(
         `enlarged-view fixture did not open; selected=${JSON.stringify(await p.locator(".files-file-name").allInnerTexts())} ` +

@@ -18,6 +18,7 @@
 
 @import "./styles/01-frame.css";
 @import "./styles/02-explorer.css";
+@import "./styles/02-panes.css";
 @import "./styles/03-changes.css";
 @import "./styles/04-banners.css";
 @import "./styles/05-transcript.css";

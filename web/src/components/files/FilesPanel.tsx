@@ -26,13 +26,12 @@ import { useFileView } from "./use-file-view";
 // incrementally — one fs_listdir per directory, fetched on first expand and
 // cached (files-tree.ts holds the store). Opening fetches the root and
 // prefetches its first level; the whole-tree fs_list is retired from the
-// client (the server keeps answering it for older bundles). Interaction is
-// drill-in on both platforms — the tree, then a file view laid OVER it with
-// a back button — so a narrow surface never shows tree and file at once, the
-// tree stays mounted underneath (its scroll survives a round trip), and the
-// two platforms differ only in the frame: desktop = a docked LEFT column
-// beside the transcript; phone (≤640px) = a full-screen dialog
-// (focus-trapped, Esc = back one layer / close from the tree).
+// client (the server keeps answering it for older bundles). On desktop a file
+// row opens PN.2's persistent tabbed pane; the adjacent full-view action keeps
+// this component's established drill-in/lightbox available. Phone has no pane
+// affordance: its row still opens the file view OVER the mounted tree, whose
+// scroll survives the round trip, inside a full-screen dialog (focus-trapped,
+// Esc = back one layer / close from the tree).
 //
 // SHELL-OWNED: it holds the bus (socket) and the agent paints nothing here.
 // Replies are correlated by the echoed id — one outstanding id PER DIRECTORY
@@ -61,6 +60,7 @@ export function FilesPanel({
   requestDiff,
   onClose,
   onSwitch,
+  onOpenInPane,
   rootLabel,
   sessionKey,
 }: {
@@ -73,6 +73,9 @@ export function FilesPanel({
   /** Phone drawer view switch (Files ⇄ Changes); rendered in the head on
    *  ≤640px only — desktop's rail owns the choice there. */
   onSwitch?: (surface: WorkspaceSurface) => void;
+  /** Desktop's primary file-row action. Phone deliberately omits it and
+   * keeps the established full-screen tree → file drill-in. */
+  onOpenInPane?: (path: string, status: string | undefined, opener: HTMLElement) => void;
   /** ~-abbreviated session root — its basename names the tree's root row,
    *  the full path lives in that row's tooltip. */
   rootLabel?: string;
@@ -369,10 +372,17 @@ export function FilesPanel({
                   store={store}
                   expanded={expanded}
                   onToggleDir={toggleDir}
-                  onOpenFile={(path, status) =>
-                    // A changed file leads with its diff — that's what you want
-                    // to see; an unchanged file has only content.
-                    openFile(path, status, status ? "diff" : "content")
+                  onOpenFile={(path, status, opener) => {
+                    // Desktop's default is the persistent pane. Phone keeps
+                    // its established full-screen drill-in unchanged.
+                    if (!phone && onOpenInPane) onOpenInPane(path, status, opener);
+                    else openFile(path, status, status ? "diff" : "content");
+                  }}
+                  onOpenFullView={
+                    !phone && onOpenInPane
+                      ? (path, status) =>
+                          openFile(path, status, status ? "diff" : "content")
+                      : undefined
                   }
                 />
               </div>
@@ -464,6 +474,4 @@ export function FilesPanel({
     </aside>
   );
 }
-
-
 

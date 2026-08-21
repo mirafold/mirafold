@@ -19,7 +19,8 @@ configuration, and permission model.
   Protocol (MCP) tools.
 - Persistent sessions, multiple attached browser views, and a mission-control
   view for supervising several sessions at once.
-- Read-only workspace browsing and Git change review beside the conversation.
+- Read-only workspace browsing, tabbed file panes, and Git change review beside
+  the conversation.
 - A real pseudo-terminal (PTY) for `!` commands, including interactive
   programs and password prompts, inside shell-owned UI.
 - Optional remote browser and phone access through an end-to-end-encrypted
@@ -73,8 +74,9 @@ Inside a session:
 - Type ordinary prompts in the command box.
 - Prefix a command with `!` to run it in Mirafold's interactive shell.
 - Open `/` for mission control and `/s/<session-id>` for a session viewport.
-- Use the Files and Changes workspaces to inspect the current directory and
-  its Git working-tree changes.
+- Use the Files workspace to inspect the current directory; on desktop, opening
+  a file keeps it in a tabbed pane beside the conversation. Use Changes for its
+  Git working-tree review.
 
 ## Development
 

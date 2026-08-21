@@ -1,0 +1,137 @@
+/* ── File panes (PN.2) ────────────────────────────────────────────────────
+   One tabbed desktop pane region between the auxiliary workspace and the
+   transcript. It can shrink under workspace pressure; the transcript remains
+   the flexible center. Phone does not render this surface at all. */
+
+.file-pane-region {
+  position: relative;
+  flex: 0 1 clamp(300px, 36vw, 520px);
+  width: clamp(300px, 36vw, 520px);
+  max-width: calc(100% - 220px);
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--fg-body);
+  background: var(--bg);
+  border-right: 1px solid var(--border);
+  box-shadow: inset -1px 0 0 var(--border-ghost);
+  animation: file-pane-in 0.16s ease-out;
+}
+
+/* With no Explorer/Changes sibling, reclaim the frame's activity-bar air in
+   the same way those auxiliary surfaces do. */
+.zone-outer > .file-pane-region:first-child {
+  margin-left: calc(-1 * var(--content-air));
+}
+
+@keyframes file-pane-in {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+}
+
+.file-pane-tabbar {
+  flex: 0 0 40px;
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  background: var(--bg-inset);
+  border-bottom: 1px solid var(--border);
+}
+
+.file-pane-tabs {
+  flex: 1;
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hover) transparent;
+}
+
+.file-pane-tab {
+  flex: 0 1 190px;
+  min-width: 92px;
+  overflow: hidden;
+  padding: 0 10px;
+  color: var(--fg-dim);
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--border-faint);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.76em;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.file-pane-close {
+  flex: 0 0 34px;
+  min-width: 0;
+  padding: 0;
+  color: var(--fg-dim);
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--border-faint);
+  font: inherit;
+  font-size: 1em;
+  cursor: pointer;
+}
+
+.file-pane-tab[aria-selected="true"] {
+  color: var(--fg-body);
+  background: var(--bg);
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.file-pane-tab:hover,
+.file-pane-close:hover {
+  color: var(--fg-strong);
+  background: var(--surface-hover);
+}
+
+.file-pane-panel {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.file-pane-panel[hidden] {
+  display: none;
+}
+
+.file-pane-path {
+  flex: 0 0 38px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 9px 6px 10px;
+  color: var(--fg-dimmer);
+  background: var(--bg);
+  border-bottom: 1px solid var(--border-faint);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.72em;
+}
+
+.file-pane-path > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-pane-path .files-file-tabs {
+  margin-left: auto;
+}
+
+.file-pane-view {
+  background: var(--bg);
+}

@@ -299,7 +299,11 @@ test("CR.2 desktop: Changes is a live split review workspace, mutually exclusive
   await desktop.locator(".ab-files").click();
   await desktop.waitForSelector(".files-panel");
   assert.equal(await desktop.locator(".changes-panel").count(), 0);
-  await desktop.locator(".files-file-row", { hasText: "a-added.ts" }).click();
+  await desktop
+    .locator(".files-file-row", { hasText: "a-added.ts" })
+    .locator("xpath=..")
+    .locator(".files-full-view")
+    .click();
   await desktop.waitForSelector(".files-view .fv-content");
   assert.match(await desktop.locator(".files-view .fv-content").innerText(), /added after/);
   await desktop.locator(".ab-files").click();

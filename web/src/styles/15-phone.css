@@ -357,6 +357,13 @@
     padding-bottom: env(safe-area-inset-bottom);
   }
 
+  /* PN.2 is desktop-only by contract. The React surface also returns null at
+     this breakpoint; these rules fail closed during a resize frame. */
+  .file-pane-region,
+  .files-full-view {
+    display: none;
+  }
+
   /* Changes on phone (CR.2): the same snapshot as desktop, reframed as one
      file at a time. The rail disappears; close, position, previous, and next
      remain fixed while only the diff scrolls. */

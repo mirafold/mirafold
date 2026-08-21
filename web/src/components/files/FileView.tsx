@@ -2,9 +2,9 @@ import type { WireMsg } from "@protocol";
 import { diffSnippet, DiffLines } from "../../registry/Diff";
 import { formatBytes } from "../ToolBlock";
 
-// The right pane of the Explorer: one file's content, or its git diff. A
-// dumb presenter — useFileView owns the request/reply state and hands the
-// resolved view down through whichever shell surface embeds it. Plain <pre>
+// One file's content, or its git diff. A dumb presenter — useFileView owns
+// the request/reply state and hands the resolved view down through whichever
+// shell surface embeds it (Explorer, Changes, or a tabbed file pane). Plain <pre>
 // (the tool-code look), no syntax
 // highlighting: file content matches tool output exactly, and diffs reuse
 // the one red/green renderer ToolBlock and the registry diff share.

@@ -132,6 +132,13 @@ consumers. `Shell` owns connection state, onboarding, the prompt, permission
 and terminal-input bars, status, workspace panels, settings, notifications,
 and other trusted controls.
 
+[`FilesPanel.tsx`](../web/src/components/files/FilesPanel.tsx) owns the lazy
+workspace tree and the phone drill-in. On desktop, its primary file action
+opens [`FilePaneRegion.tsx`](../web/src/components/files/FilePaneRegion.tsx),
+whose tabs each own an independent `useFileView` request controller; correlated
+replies therefore cannot paint the wrong tab. These are shell-owned,
+viewport-local surfaces and never enter transcript replay.
+
 [`RenderZone.tsx`](../web/src/components/RenderZone.tsx) receives the transcript
 stream. Pure projection code converts wire messages into ordered transcript
 rows, groups eligible rows into response documents, and keeps provider-native

@@ -8,6 +8,7 @@ import { Onboarding } from "./Onboarding";
 import { PromptBox, type PromptDraft } from "./PromptBox";
 import { RenderZone } from "./RenderZone";
 import { FilesPanel } from "./files/FilesPanel";
+import { FilePaneRegion, type FilePaneRegionHandle } from "./files/FilePaneRegion";
 import { ChangesPanel } from "./changes/ChangesPanel";
 import type { WorkspaceSurface } from "./WorkspaceTabs";
 import { StatusBar, type Usage } from "./StatusBar";
@@ -182,6 +183,7 @@ export function Shell() {
   // the invariant that keeps the transcript visible on desktop and prevents
   // stacked full-screen layers on phone.
   const [auxiliary, setAuxiliary] = useState<WorkspaceSurface | null>(null);
+  const filePanesRef = useRef<FilePaneRegionHandle>(null);
   const filesOpen = auxiliary === "files";
   const changesOpen = auxiliary === "changes";
   const [reviewPromptVisible, setReviewPromptVisible] = useState(false);
@@ -707,6 +709,9 @@ export function Shell() {
                 onSwitch={switchAuxiliary}
                 rootLabel={tildify(meta.cwd, daemonInfo.home)}
                 sessionKey={meta.sessionId}
+                onOpenInPane={(path, status, opener) =>
+                  filePanesRef.current?.open(path, status, opener)
+                }
               />
               <ChangesPanel
                 open={changesOpen && Boolean(meta.sessionId)}
@@ -720,6 +725,13 @@ export function Shell() {
                 promptContainerRef={promptContainerRef}
                 promptVisible={reviewPromptVisible}
                 rootLabel={tildify(meta.cwd, daemonInfo.home)}
+                sessionKey={meta.sessionId}
+              />
+              <FilePaneRegion
+                ref={filePanesRef}
+                subscribe={bus.subscribe}
+                requestRead={bus.requestFsRead}
+                requestDiff={bus.requestFsDiff}
                 sessionKey={meta.sessionId}
               />
               <RenderZone

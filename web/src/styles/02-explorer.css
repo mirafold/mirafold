@@ -228,6 +228,51 @@
   margin: 1px 6px;
 }
 
+/* PN.2 changes the desktop row's primary action to "open in pane" while
+   preserving the established drill-in/lightbox behind one quiet secondary
+   action. On phone that action is not rendered and the row stays full-width. */
+.files-leaf-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  margin: 1px 6px;
+}
+
+.files-ul .files-leaf-row .files-row {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+  margin: 0;
+}
+
+.files-full-view {
+  flex: 0 0 27px;
+  align-self: stretch;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: var(--fg-dimmer);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  font: inherit;
+  font-size: 0.75em;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease, background-color 0.12s ease;
+}
+
+.files-leaf-row:hover .files-full-view,
+.files-leaf-row:focus-within .files-full-view {
+  opacity: 1;
+}
+
+.files-full-view:hover,
+.files-full-view:focus-visible {
+  color: var(--fg-body);
+  background: var(--surface-hover);
+}
+
 .files-row:hover {
   background: var(--surface-hover);
 }
@@ -556,4 +601,3 @@
   color: var(--fg-dim);
   font-style: italic;
 }
-
