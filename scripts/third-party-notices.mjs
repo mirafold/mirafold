@@ -65,7 +65,7 @@ in the open-source packages below. Their licenses and copyright notices are
 reproduced here in full, as those licenses require. Server-side dependencies
 are not bundled (installed separately by npm, each carrying its own license
 file in node_modules) and the agent engines carry their own licenses — see
-README §12.
+the [README's License section](README.md#license).
 
 Where a package is dual-licensed with an OR expression, Mirafold elects the
 permissive option: **dompurify** (compiled inside mermaid's prebuilt bundle)

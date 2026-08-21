@@ -218,7 +218,8 @@ deliberate-design question, not a bug.
 (disclosed, 2026-07-29 audit).** The working indicator above the prompt box
 shows what the turn is doing — and when that's a tool call, the word it
 prints is the engine's own tool name, third-party MCP servers included
-(`mcp__server__tool`). The shell's voice rule (README §3) says a string
+(`mcp__server__tool`). The shell's voice rule
+([architecture: trust boundaries](docs/ARCHITECTURE.md#trust-boundaries)) says a string
 taken verbatim from an engine and shown where the user reads *Mirafold*
 speaking must be attributed to it. This is judged to stay on the right side
 of that line: the label is a bare noun, not a sentence — the indicator's own
