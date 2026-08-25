@@ -48,7 +48,7 @@ export function parseRenderId(output: unknown): string {
  * concerns — the session cwd and model when set. Auth is API-key (the free
  * Google-login path stopped serving individual accounts in 2026); the key stays in the
  * server env, injected into the child, never on the wire. Approval for the
- * user's own tools is inherited; only our `genui` MCP server is auto-trusted
+ * user's own tools is inherited; only our `mirafold` MCP server is auto-trusted
  * (the analog of Codex's per-server `approve`), since headless can't prompt.
  */
 export class GeminiCliSession implements AgentSession {
@@ -68,7 +68,7 @@ export class GeminiCliSession implements AgentSession {
   private model?: string;
   private workspaceDir: string;
   private listModels: () => Promise<GeminiModelCatalog>;
-  // Non-genui tool ids we announced, and buffered genui render calls awaiting
+  // Non-render tool ids we announced, and buffered Mirafold render calls awaiting
   // their tool_result (which carries the assigned component id).
   private announced = new Set<string>();
   private pendingRenders = new Map<string, { tool: string; params: Record<string, unknown> }>();
@@ -605,7 +605,7 @@ export class GeminiCliSession implements AgentSession {
     }
   }
 
-  /** A buffered genui tool call → the render/artifact WireMsg it stands for. */
+  /** A buffered Mirafold render tool call → the render/artifact WireMsg it stands for. */
   private emitGenerativeUI(pending: { tool: string; params: Record<string, unknown> }, output: unknown) {
     const id = typeof pending.params["id"] === "string" ? (pending.params["id"] as string) : parseRenderId(output);
     const msg = generativeUIMsg(pending.tool, pending.params, id, this.workspaceDir);

@@ -1,6 +1,6 @@
 /* ---- Pinned tokens (S.1) ---------------------------------------------------
-   Code and diff surfaces stay pinned dark in EVERY theme (the #8-adjacent
-   decision, USER-TESTING-FEEDBACK.md): hljs github-dark keeps working
+   Code and diff surfaces stay pinned dark in EVERY theme (a beta-tester
+   decision: light IDEs commonly keep code blocks dark): hljs github-dark keeps working
    unswapped, exactly as a light IDE's code blocks commonly stay dark. Theme
    files must NOT redefine these — a per-theme override door exists in the
    design but is deliberately not exercised (PLAN Phase S charter). */

@@ -12,9 +12,12 @@ import type { Action } from "@protocol";
  *   shell's DOM, socket, and anything stored under the app origin are
  *   unreachable — not filtered, structurally absent.
  * - A CSP (`default-src 'none'`) is injected in a wrapper <head> that always
- *   precedes the content, cutting every network path: fetch, XHR, WebSocket,
- *   external <script>/<img>/font/CSS. Multiple CSPs intersect, so content
- *   shipping its own <meta> policy can only tighten this, never loosen it.
+ *   precedes the content, cutting every resource-fetch path: fetch, XHR,
+ *   WebSocket, external <script>/<img>/font/CSS. (Navigation is not a fetch
+ *   directive — a self-navigation still issues one request; it is contained
+ *   by the liveness check below, not prevented.) Multiple CSPs intersect, so
+ *   content shipping its own <meta> policy can only tighten this, never
+ *   loosen it.
  * - No allow-popups / allow-top-navigation / allow-forms / allow-modals /
  *   allow-downloads: it can't open windows, navigate the shell, submit
  *   forms, block the UI with alert(), or write files.

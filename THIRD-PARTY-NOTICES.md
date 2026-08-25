@@ -118,7 +118,7 @@ web-side dependency change.
 | delaunator | 5.1.0 | ISC |
 | dequal | 2.0.3 | MIT |
 | devlop | 1.1.0 | MIT |
-| dompurify | 3.4.12 | (MPL-2.0 OR Apache-2.0) |
+| dompurify | 3.4.13 | (MPL-2.0 OR Apache-2.0) |
 | es-toolkit | 1.50.0 | MIT |
 | escape-string-regexp | 5.0.0 | MIT |
 | estree-util-is-identifier-name | 3.0.0 | MIT |
@@ -162,7 +162,7 @@ web-side dependency change.
 | mdast-util-to-hast | 13.2.1 | MIT |
 | mdast-util-to-markdown | 2.1.2 | MIT |
 | mdast-util-to-string | 4.0.0 | MIT |
-| mermaid | 11.16.0 | MIT |
+| mermaid | 11.16.1 | MIT |
 | micromark | 4.0.2 | MIT |
 | micromark-core-commonmark | 2.0.3 | MIT |
 | micromark-extension-gfm | 3.0.0 | MIT |
@@ -2964,7 +2964,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ---
 
-### dompurify@3.4.12 ((MPL-2.0 OR Apache-2.0))
+### dompurify@3.4.13 ((MPL-2.0 OR Apache-2.0))
 
 ```
 Apache License
@@ -4470,7 +4470,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ---
 
-### mermaid@11.16.0 (MIT)
+### mermaid@11.16.1 (MIT)
 
 ```
 The MIT License (MIT)

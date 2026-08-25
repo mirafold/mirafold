@@ -9,11 +9,10 @@ human or agent, on any model — can extend the provider surface without
 re-deriving the architecture or violating an invariant that only lived in
 someone's head.
 
-Grounded in the shipped code through 2026-08-13 (Phase P's providers, Phase
-UX's native prompt catalogs, durable resume contract, UX.8 security closure,
-and Phase OC's OpenCode adapter: `claude-code`, `codex`, `gemini-cli`,
-`opencode`, plus `mock`). File references are the source of truth if this
-document and the code ever disagree — then fix this document.
+Grounded in the shipped code through 2026-08-25 (four providers —
+`claude-code`, `codex`, `gemini-cli`, `opencode` — plus `mock`). File
+references are the source of truth if this document and the code ever disagree
+— then fix this document.
 
 ---
 
@@ -86,17 +85,27 @@ interface AgentSession {
   onMessage(cb: (msg: WireMsg) => void): void;
   interrupt(): void;
   resolvePermission(id: string, allow: boolean): void;
+  readonly modelName: string | undefined;
   readonly resumeId?: string;
   onResumeId?(cb: (id: string) => void): void;
+  onBackendKind?(cb: (update: { kind: CredentialKind; provider?: string }) => void): void;
+  verifyBackendKind?(): Promise<void>;
   refreshPromptOptions?(): void;
   close(): void;
 }
 ```
 
+`modelName` is the best-known model label (`undefined` until the engine has
+named one — the UI shows nothing rather than a stand-in). `onBackendKind` and
+`verifyBackendKind` exist only for providers whose credential kind cannot be
+known before the engine runs (§6 step 4b).
+
 The TypeScript interface is necessary but not sufficient. The behavioral
 contract each implementation must satisfy:
 
-**Construction** — takes `{ workspaceDir, model?, resumeId? }`. `workspaceDir`
+**Construction** — takes `{ workspaceDir, model?, resumeId? }` plus whatever
+backend binding the provider needs (Claude: `kind`, `endpoint`, `endpointAuth`;
+Codex: `provider`; see the concrete constructors). `workspaceDir`
 is the session's real working directory (registry-owned; already validated).
 `model` is the per-agent override from `modelFor()`; `undefined` means inherit
 the agent's own default (I2). `resumeId`, when present, must reopen that exact
@@ -123,8 +132,8 @@ exact selected Claude endpoint or Codex provider base URL before emitting a
 `WireMsg`; the generic registry/log scrubber is only the final backstop.
 
 **`pushPrompt(text)`** — feeds one user turn. Must accept a prompt while a
-turn is in flight: queue it (Claude: async-generator queue; Codex/Gemini: a
-serial worker) rather than dropping or interleaving. The `!` bang transcript
+turn is in flight: queue it (Claude: async-generator queue; Codex, Gemini,
+OpenCode: a serial worker) rather than dropping or interleaving. The `!` bang transcript
 arrives through this same method as prepended context — adapters need no bang
 awareness (agent-neutral by design).
 
@@ -167,8 +176,9 @@ for the user to submit a partial command. Every advertised command must be
 intercepted and executed as that command on the adapter's active drive surface;
 never copy a TUI/ACP catalog onto an SDK/stream-json surface that will send the
 text to the model as prose. Today Claude uses SDK `supportedCommands()` plus
-`commands_changed`; Codex emits its shell-reimplemented `/model` plus live
-app-server `skills/list` for `$`; Gemini emits its shell-reimplemented `/model`.
+`commands_changed`; Codex emits its shell-reimplemented `/model` and `/effort`
+plus live app-server `skills/list` for `$`; Gemini emits its shell-reimplemented
+`/model`; OpenCode emits `/model` and `/agent` plus the engine's own catalog.
 Catalogs are shell metadata, not sequenced transcript history, and must fail
 soft without inventing provider commands. Any provider/workspace-supplied
 catalog text must carry a fixed adapter-assigned `PromptOption.source` (Claude
@@ -184,9 +194,11 @@ are denied. Must be a no-op when idle.
 
 **`resolvePermission(id, allow)`** — completes a previously emitted
 `permission_request`. Only meaningful for providers whose engine exposes an
-approval callback (today: Claude Code only, via `canUseTool`); others make
+approval surface (today: Claude Code via `canUseTool`, OpenCode via
+`permission.asked`, and Gemini's one-time workspace-trust ask); others make
 this a no-op (I3). Deny is the default posture on timeout
-(`PERMISSION_TIMEOUT_MS`, default 60 s), disconnect, and interrupt. An
+(`PERMISSION_TIMEOUT_MS`, default 60 s; Gemini's trust ask uses its own longer
+`TRUST_PROMPT_TIMEOUT_MS`), disconnect, and interrupt. An
 adapter that emits `permission_request` MUST also emit `permission_resolved
 { id, allow }` for EVERY resolution path — answer, timeout, interrupt — so
 every attached viewport drops its bar the moment the ask dies instead of
@@ -307,7 +319,7 @@ Adapter obligations for either path:
    `permissions.ts`; Codex: per-server `default_tools_approval_mode`; OpenCode:
    the render server is the only MCP added via `OPENCODE_CONFIG_CONTENT` and the
    user's own permission rules otherwise apply; Gemini:
-   `--allowed-mcp-server-names genui`). Never blanket-approve the user's other
+   `--allowed-mcp-server-names mirafold`). Never blanket-approve the user's other
    tools to make ours run — that's forcing a posture the terminal doesn't have.
    OpenCode advertises MCP tools as `mirafold_<tool>`, so the adapter recognizes
    its own render calls by the `mirafold_` prefix and paints them, suppressing
@@ -341,12 +353,16 @@ proven sequence (used for Codex, Gemini, and OpenCode; keep it):
    (subprocess SDK) or `gemini-cli.ts` (headless CLI). Identify the native
    durable conversation id/resume call and any pre-submit command discovery
    surface at the same time; honor every rule in §3.
-4. **Wire the seam** — exactly five touchpoints, all in two files:
+4. **Wire the seam** — six touchpoints in two server files, plus display
+   metadata in one browser file:
    - `protocol.ts`: add the name to the `AgentName` union (additive).
-   - `adapters/index.ts`: `credentialKind()` case (what counts as live) and
+   - `adapters/index.ts`: `credentialKind()` case (what counts as live),
      `backendOptions()` case (the picker's menu of ways it can run),
      `modelFor()` case (its own env var, never a shared one), `ADAPTER_AGENTS`
      entry (onboarding offers it), `createSession()` case.
+   - `web/src/agents-meta.ts`: the human label and connect/blocked hints
+     (`LABEL`, `CONNECT_HINT`, `BLOCKED_HINT`). This is display copy, not
+     behavior — shared code still never branches on the agent name.
 4b. **Only if the provider's credential kind can change mid-session or isn't
    knowable at hello time** (OpenCode is the first such — its kind is a fact
    about the underlying provider, resolved from the running engine and mutable
@@ -372,8 +388,9 @@ proven sequence (used for Codex, Gemini, and OpenCode; keep it):
    call rendered as `tool_use`/`tool_result`, one render component painted via
    MCP, usage in the status bar, warm turn-2 recall, interrupt mid-turn, native
    command completion before submit, and process restart followed by resume of
-   the same provider conversation id. The front end and shared code should need
-   **zero provider-specific changes**; if they do, stop and re-read §2.
+   the same provider conversation id. Shared code (protocol, registry, security,
+   output zone, generative UI) should need **zero provider-specific branches**;
+   if it does, stop and re-read §2.
 
 ## 7. Local models (Phase L) — the settled posture
 

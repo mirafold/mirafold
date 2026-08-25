@@ -18,6 +18,7 @@ export const PROJECT_ENV_KEYS: ReadonlySet<string> = new Set([
   "GEMINI_API_KEY",
   "GOOGLE_API_KEY",
   "GEMINI_MODEL",
+  "OPENCODE_MODEL",
   "MAX_THINKING_TOKENS",
 
   // Daemon, local-model, logging, and relay configuration.

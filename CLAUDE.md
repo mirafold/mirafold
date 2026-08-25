@@ -1,8 +1,8 @@
 # CLAUDE.md
 
 Mirafold — a **faithful browser re-skin of terminal coding agents**. It
-re-skins whichever terminal agent you already use — **Claude Code, Codex, and
-Gemini CLI** all shipped (PLAN Phase P complete) — faithful to that agent,
+re-skins whichever terminal agent you already use — **Claude Code, Codex,
+Gemini CLI, and OpenCode** all shipped — faithful to that agent,
 with Mirafold's generative UI layered on top: a Codex user gets Codex, never
 "Claude things". One adapter per agent in `server/adapters/`, none privileged;
 the agent is picked per session at onboarding.
@@ -93,7 +93,8 @@ not reuse them.
   per-row citations live in **one file**, `server/provider-policy.ts`;
   consume it, never re-encode the rule elsewhere.
 - **Shared modules** cross server/web only via aliases declared in BOTH
-  `tsconfig.json` and `vite.config.ts` (`@protocol`, `@registry-spec`).
+  `tsconfig.json` and `vite.config.ts` (`@protocol`, `@registry-spec`,
+  `@relay-crypto`).
 - **Verification**: front-end steps are verified end-to-end in headless
   Chrome (`playwright-core` + `/usr/bin/google-chrome`), driving real
   typing/clicks; server steps over a real WebSocket. A step isn't done until

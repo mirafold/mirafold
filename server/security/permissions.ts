@@ -1,8 +1,10 @@
 import path from "node:path";
 import type { CanUseTool } from "@anthropic-ai/claude-agent-sdk";
 
-// Local read-only tools: no side effects and no network egress, allowed without
-// a prompt — same as the terminal. WebFetch/WebSearch are deliberately NOT here:
+// Tools allowed without a prompt — same as the terminal: local reads, plus the
+// two bookkeeping tools whose only side effects are the agent's own task list
+// and subagent spawn (a subagent's consequential calls still prompt on their
+// own). No network egress. WebFetch/WebSearch are deliberately NOT here:
 // the terminal prompts on undecided network fetches, and auto-allowing them
 // would (a) diverge from that fidelity and (b) hand a prompt injection a
 // zero-click exfil egress. They fall through to `ask` like any consequential

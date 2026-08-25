@@ -641,9 +641,11 @@ export class SessionRegistry {
       const body = JSON.stringify(msg);
       log.debug(`${msg.type} ${body.length > 300 ? body.slice(0, 300) + "…" : body}`);
     }
-    // Resume cursor, one stamp for all viewports. Stamped on a shallow
-    // copy — the adapter's object is never mutated or held by the buffer, so
-    // an adapter re-emitting a message can't corrupt an already-buffered seq (4.4).
+    // Resume cursor, one stamp for all viewports. Stamped on a shallow copy,
+    // so the adapter's own object never carries a seq and re-emitting it can't
+    // corrupt an already-buffered seq. The copy is shallow: nested objects
+    // (render props, tool input) stay shared with the adapter, which must not
+    // mutate a message after emitting it.
     msg = { ...msg, seq: entry.nextSeq++ };
     entry.buffer.push(msg);
     entry.bufferBytes += msgBytes(msg);

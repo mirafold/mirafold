@@ -320,11 +320,12 @@ const heartbeat = setInterval(() => sweepLiveness(wss.clients, liveViewports), W
 heartbeat.unref(); // the listening server keeps the process alive; the beat shouldn't
 wss.on("close", () => clearInterval(heartbeat));
 
-// Bind to loopback only. This daemon runs on the user's machine and the socket
-// has no authentication (multi-user auth is Step 4.5; the relay dials out in
-// 4.7). The Origin guard already blocks hostile browser pages; binding to
-// 127.0.0.1 also keeps non-browser LAN clients — which send no Origin and so
-// pass the guard — off the socket entirely.
+// Bind to loopback only. The launch token (above) is the authentication; the
+// Origin guard blocks hostile browser pages when auth is on (with auth off it
+// admits any loopback origin — see the warning above); binding to 127.0.0.1
+// keeps non-browser LAN clients — which send no Origin and so pass the guard
+// — off the socket entirely. Remote viewports never reach this listener: the
+// relay path is an outbound dial (below).
 // A second daemon (another project, another terminal) must not crash on
 // EADDRINUSE — walk up a few ports; the launcher reads the final URL off stdout (4.10).
 const basePort = envInt("PORT", 3000);

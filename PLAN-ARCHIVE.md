@@ -1,10 +1,10 @@
-# genui-shell — Build Plan · Archive (completed phases)
+# Mirafold — Build Plan · Archive (completed phases)
 
 Completed phases, moved out of **PLAN.md** to keep the live plan focused on what's
 left. Full dated status notes are preserved here verbatim. The locked decisions
 and the remaining steps stay in PLAN.md; the design-identity / security-model /
-wire-protocol references live in README §7 / §3 / §2.1 (PLAN.md keeps a pointer —
-the duplicated copies were retired 2026-07-15).
+wire-protocol references live in docs/ARCHITECTURE.md, SECURITY.md, and
+server/protocol.ts (the duplicated copies were retired 2026-07-15).
 
 **Done:** Phase 0 (the spine) · Phase T (terminal parity) · Phase 1 (component
 registry) · Phase 2 (action bridge) · Phase 3 (sandboxed artifacts) · Phase T2

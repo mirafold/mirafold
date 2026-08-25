@@ -155,8 +155,9 @@ React component. Unknown components and malformed props degrade without
 taking down the session.
 
 When no registry component can express the result, an agent may emit an HTML
-artifact. Artifacts are the only raw agent HTML path and run inside a
-network-blocked, opaque-origin iframe. Their actions cross a narrow,
+artifact. Artifacts are the only raw agent HTML path and run inside an
+opaque-origin iframe whose CSP blocks every resource fetch (self-navigation is
+contained by a liveness check, not prevented). Their actions cross a narrow,
 nonce-validated bridge and re-enter the same server mediation used by registry
 components.
 
@@ -297,8 +298,11 @@ accepted residual risks in detail.
 | `docs/` | Architecture, adapters, local models, release process, and feature specifications |
 
 Tests live beside their source. Suffixes select the tier: `*.test.ts` for
-unit tests, `*.itest.ts` for daemon integration, `*.e2e.ts` for browser end to
-end, `*.uitest.ts` for managed-browser and visual checks, and `*.ltest.ts` for
+in-process unit tests (they may touch the OS — temp dirs, a real `git`, a
+loopback listener — but never a daemon), `*.itest.ts` for out-of-process
+integration (a real daemon, MCP child, or filesystem watcher), `*.e2e.ts` for
+tests that need the built bundle (mostly headless-browser end to end),
+`*.uitest.ts` for managed-browser and visual checks, and `*.ltest.ts` for
 opt-in live-agent tests.
 
 ## Standing constraints

@@ -8,8 +8,8 @@ name: Release
 # Auth is npm TRUSTED PUBLISHING (OIDC): npmjs.com is configured to accept
 # `mirafold` publishes only from this workflow — identity-federated, NO npm
 # token stored anywhere, so the repo's no-secrets-in-CI bound (PLAN C.1)
-# holds and a stolen npm password can't publish. Until Kyle completes the
-# npmjs.com trusted-publisher form, a real publish from here fails auth —
+# holds and a stolen npm password can't publish. If npmjs.com's trusted-
+# publisher binding is ever removed, a real publish from here fails auth —
 # that's the fail-closed direction.
 #
 # Launch morning (R.7): Kyle pushes the SIGNED release tag (tarball SHA-256
@@ -86,6 +86,11 @@ jobs:
       # full config on every PR, so drift is caught there.
       - run: yarn tsc -p tsconfig.ci.json --noEmit
       - run: yarn test
+      # The bundled-license notices must match what the build inlines; a stale
+      # file is a compliance gap (MIT/BSD require the text to travel with
+      # copies). Regenerate and refuse if anything changed.
+      - name: Third-party notices are current
+        run: node scripts/third-party-notices.mjs && git diff --exit-code THIRD-PARTY-NOTICES.md
 
       # Pack once (prepack builds), record the tarball's SHA-256 in the job
       # summary — Kyle pastes it into the GitHub Release notes to match the
