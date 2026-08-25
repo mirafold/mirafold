@@ -2808,7 +2808,7 @@ off fresh `next`, one PR, merged before the next is cut.
   - Done when: the e2e proves a `!!` command runs, shows, replays, and the
     mock adapter's prompt log stays empty.
 
-## Phase TR — Transcript readability (written + opened 2026-08-25; Kyle-directed)
+## Phase TR — Transcript readability (opened + ✅ COMPLETE 2026-08-25; Kyle-directed; PR `feature/transcript-readability` → `next`)
 
 Findings (2026-08-25 sweep): per-call bodies are always collapsed except on
 error (`ToolBlock.tsx`); the higher-level fold ("worked · N actions",
