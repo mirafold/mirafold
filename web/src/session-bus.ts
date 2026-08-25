@@ -32,8 +32,9 @@ export interface SessionBus {
    *  daemon/platform failure rejects with the shell-owned explanation. */
   pickFolder(cwd?: string): Promise<string | undefined>;
   sendPrompt(text: string): void;
-  /** Returns the minted bang id so the issuing viewport can correlate. */
-  sendBang(command: string): string;
+  /** Returns the minted bang id so the issuing viewport can correlate.
+   *  `silent` is the `!!` form: the agent never sees the transcript. */
+  sendBang(command: string, silent?: boolean): string;
   sendBangInput(id: string, data: string): void;
   killBang(id: string): void;
   interrupt(): void;
@@ -130,9 +131,9 @@ export function createSessionBus(): SessionBus {
     },
     // Run a shell command in the session's cwd (the `!` path). The id
     // is minted here so this viewport can correlate the broadcast stream.
-    sendBang(command: string): string {
+    sendBang(command: string, silent = false): string {
       const id = mintId("bang");
-      socket.send({ type: "bang", command, id });
+      socket.send({ type: "bang", command, id, ...(silent ? { silent: true } : {}) });
       return id;
     },
     // EPHEMERAL: PTY stdin (possibly a password) — the server writes it to

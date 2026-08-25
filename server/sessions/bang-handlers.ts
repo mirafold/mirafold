@@ -30,10 +30,11 @@ const BANG_CONTEXT_CAP = envInt("BANG_CONTEXT_CAP", 16_000);
 // agent-context tail above keeps accumulating — only the broadcast stops.
 const BANG_OUTPUT_CAP_BYTES = envInt("BANG_OUTPUT_CAP_BYTES", 262_144);
 
-// Minimum gap between `!` commands per session: each bang costs a model
+// Minimum gap between `!` commands per session: each `!` bang costs a model
 // turn, so a hostile client bursting bangs is a token-burn vector, not just
-// PTY churn. Humans never trip 400ms — the same threshold the action bridge
-// uses.
+// PTY churn (a silent `!!` costs no turn but keeps the same gate — the PTY
+// churn alone is worth throttling). Humans never trip 400ms — the same
+// threshold the action bridge uses.
 const BANG_MIN_INTERVAL_MS = envInt("BANG_MIN_INTERVAL_MS", 400);
 
 // A handoff file bigger than the longest legal path was not written by the
@@ -125,9 +126,18 @@ const applyCwdHandoff = (
  * Run one `!` command in the session's PTY and drive its whole
  * lifecycle — the bang_start/…/bang_end grammar, the head-kept wire budget
  * (what viewports and the replay ring see), and the tail-kept context
- * accumulator that rides into the agent's next prompt.
+ * accumulator that rides into the agent's next prompt. A `silent` (`!!`)
+ * command runs the same PTY path and shows the same output, but the
+ * transcript stops at the wire: no accumulator, no model turn — the shell
+ * used as a shell.
  */
-const startBang = (registry: SessionRegistry, e: SessionEntry, command: string, id: string) => {
+const startBang = (
+  registry: SessionRegistry,
+  e: SessionEntry,
+  command: string,
+  id: string,
+  silent: boolean,
+) => {
   // Tail-kept accumulator, capped as data arrives — a long-running
   // command (`!yes`) must not grow server memory until exit.
   let output = "";
@@ -171,7 +181,7 @@ const startBang = (registry: SessionRegistry, e: SessionEntry, command: string, 
   // then deleted) — fall back to the workspace root, not a failed spawn.
   if (!existsSync(e.bangCwd)) e.bangCwd = e.cwd;
   const runCwd = e.bangCwd;
-  registry.broadcast(e, { type: "bang_start", command, id });
+  registry.broadcast(e, { type: "bang_start", command, id, ...(silent ? { silent: true } : {}) });
   try {
     // Out-of-band cwd handoff file (pty.ts) — never part of the PTY stream.
     // Inside the try: a failing mkdtemp must error the session, not the daemon.
@@ -180,7 +190,7 @@ const startBang = (registry: SessionRegistry, e: SessionEntry, command: string, 
       command,
       runCwd,
       (data) => {
-        keepContextTail(data);
+        if (!silent) keepContextTail(data);
         broadcastWireHead(data);
       },
       (exitCode) => {
@@ -191,6 +201,13 @@ const startBang = (registry: SessionRegistry, e: SessionEntry, command: string, 
             data: `(… ${wireElided} bytes elided …)\n`,
             id,
           });
+        }
+        if (silent) {
+          // `!!`: the command is over and nothing follows — bang_end is a
+          // true idle edge here, and the cwd still carries to the next bang.
+          registry.broadcast(e, { type: "bang_end", id, exitCode });
+          applyCwdHandoff(registry, e, runCwd, cwdFile);
+          return;
         }
         // The transcript below starts a model turn of its own. Record that
         // before bang_end derives fleet/gate state so there is no false-idle
@@ -248,7 +265,8 @@ export type BangHandlers = {
 export function createBangHandlers({ registry, getEntry, sendError, viewport }: BangDeps): BangHandlers {
   const start = (msg: Bang): void => {
     // The `!` passthrough: run it in a PTY in the session's bang
-    // cwd; the finished transcript reaches the agent as its own turn.
+    // cwd; the finished transcript reaches the agent as its own turn —
+    // unless `silent` (`!!`), in which case it reaches nobody.
     const entry = getEntry();
     if (!entry || typeof msg.command !== "string" || !msg.command.trim()) return;
     // `id` is a client-minted string (ClientMsg). Validate the RAW value —
@@ -273,7 +291,8 @@ export function createBangHandlers({ registry, getEntry, sendError, viewport }: 
       return;
     }
     entry.lastBangAt = Date.now();
-    startBang(registry, entry, msg.command, msg.id);
+    // Exactly `true` — a hostile client's truthy string is not a silent bang.
+    startBang(registry, entry, msg.command, msg.id, msg.silent === true);
   };
 
   const input = (msg: BangInput): void => {

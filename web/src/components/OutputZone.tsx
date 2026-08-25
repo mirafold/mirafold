@@ -573,7 +573,12 @@ function ZoneEntry({
           className="turn turn-user turn-bang"
           navigation={inputNavigation}
         >
-          <span className="glyph bang-glyph">!</span>
+          <span
+            className={entry.silent ? "glyph bang-glyph bang-glyph-silent" : "glyph bang-glyph"}
+            title={entry.silent ? "Shell only — the agent never sees this command" : undefined}
+          >
+            {entry.silent ? "!!" : "!"}
+          </span>
           <span className="turn-user-text">
             {entry.command}
             {!entry.done && <span className="bang-state">running…</span>}

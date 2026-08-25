@@ -88,6 +88,21 @@ test("every request mints a correlation id its frame carries, so each surface ma
   assert.equal(new Set(Object.values(ids)).size, 7, "ids are distinct");
 });
 
+test("a silent (!!) bang sends silent: true, and a plain ! sends no flag at all", (t) => {
+  const { bus, sock } = setup(t);
+  const before = sock().sent.length;
+  bus.sendBang("ls");
+  bus.sendBang("ls", true);
+  const frames = sock().parsedSent().slice(before) as { type: string; silent?: unknown }[];
+  assert.deepEqual(
+    frames.map((f) => [f.type, "silent" in f, f.silent]),
+    [
+      ["bang", false, undefined],
+      ["bang", true, true],
+    ],
+  );
+});
+
 test("connection listeners see transitions, and a relay refusal code arrives as its reason", (t) => {
   const { bus, sock } = setup(t);
   const seen: [boolean, string | undefined][] = [];

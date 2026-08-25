@@ -202,7 +202,9 @@ export type SessionMsgBody =
   // program echoes typed input (echo on), that echo arrives here as ordinary
   // PTY output — exactly the terminal's behavior; password prompts turn echo
   // off, so a password never reaches the wire, the ring, or other viewports.
-  | { type: "bang_start"; command: string; id: string }
+  // `silent` marks a `!!` command: shell only — its transcript never reaches
+  // the agent, so viewports draw the `!!` glyph (replay included).
+  | { type: "bang_start"; command: string; id: string; silent?: true }
   | { type: "bang_output"; data: string; id: string }
   // exitCode null = killed by signal (user stop, session close).
   | { type: "bang_end"; id: string; exitCode: number | null };
@@ -611,7 +613,9 @@ export type ClientMsg =
   // Run `command` in a PTY in the session's cwd — the `!` path,
   // never routed through the model. `id` is client-minted so the issuing
   // viewport can correlate the broadcast stream and own the stdin affordance.
-  | { type: "bang"; command: string; id: string }
+  // `silent` (the `!!` form): run it, show it, and never hand the transcript
+  // to the agent — not as a turn, not as later context.
+  | { type: "bang"; command: string; id: string; silent?: true }
   // EPHEMERAL SECRET PATH: a line typed into the running command's stdin
   // (possibly a password). Written to the PTY and nothing else — never
   // broadcast, never buffered, never logged, never re-serialized into a

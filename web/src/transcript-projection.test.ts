@@ -356,6 +356,22 @@ test("bang start, output, and end update one stable row", () => {
     { output: endRow.output, done: endRow.done, exitCode: endRow.exitCode },
     { output: "/tmp", done: true, exitCode: 0 },
   );
+  assert.equal(endRow.silent, undefined, "a plain ! row carries no silent flag");
+});
+
+test("a silent (!!) bang row carries the flag from bang_start through its end", () => {
+  const projection = createTranscriptProjection();
+  const rows = apply(
+    projection,
+    { type: "bang_start", id: "s", command: "git status", silent: true },
+    { type: "bang_output", id: "s", data: "clean" },
+    { type: "bang_end", id: "s", exitCode: 0 },
+  );
+  const row = rowsOf(rows, "bang")[0]!;
+  assert.deepEqual(
+    { silent: row.silent, output: row.output, done: row.done },
+    { silent: true, output: "clean", done: true },
+  );
 });
 
 test("unchanged rows retain identity; unmatched updates still publish like the existing state map", () => {
