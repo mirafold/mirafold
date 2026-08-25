@@ -71,7 +71,10 @@ in [docs/local-models.md](docs/local-models.md).
 Inside a session:
 
 - Type ordinary prompts in the command box.
-- Prefix a command with `!` to run it in Mirafold's interactive shell.
+- Prefix a command with `!` to run it in Mirafold's interactive shell; the
+  agent then sees the transcript as its own turn, as in the terminal. Prefix
+  it with `!!` to run it the same way but shell-only — the agent never sees
+  it.
 - Open `/` for mission control and `/s/<session-id>` for a session viewport.
 - Use the Files and Changes workspaces to inspect the current directory and
   its Git working-tree changes.

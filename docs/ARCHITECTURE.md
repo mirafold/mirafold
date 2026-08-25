@@ -58,7 +58,8 @@ The daemon delegates by responsibility:
 - [`server/security/`](../server/security/) owns local authentication,
   executable trust, and tool-permission policy.
 - [`server/pty/`](../server/pty/) owns the interactive `!` pseudo-terminal
-  (PTY) shell.
+  (PTY) shell (`!` hands the finished transcript to the agent as its own
+  turn; `!!` is shell-only — the agent never sees it).
 - [`server/relay/`](../server/relay/) owns pairing, encryption, the daemon's
   outbound relay client, and its transport contract.
 

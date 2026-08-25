@@ -1413,6 +1413,36 @@ test("! cd .. — silent success says so, the escape is announced, and the agent
   });
 });
 
+test("!! echo — the silent bang shows its `!!` strip and output, and the agent never answers", async () => {
+  // The previous test's turn must be fully over first: its trailing painting
+  // would otherwise land after this block (a bang row is a hard document
+  // boundary) and read as an answer to the silent command.
+  await page.waitForSelector(".activity-line", { state: "detached", timeout: 30_000 });
+  await page.locator("textarea").click();
+  await page.keyboard.type("!!echo shell-only");
+  await page.keyboard.press("Enter");
+
+  const block = page.locator(".bang-block").last();
+  await block.locator(".bang-glyph-silent").waitFor();
+  assert.equal(await block.locator(".bang-glyph").innerText(), "!!");
+  await block.locator(".bang-output").waitFor();
+  assert.match(await block.locator(".bang-output").innerText(), /shell-only/);
+  await block.locator(".bang-state", { hasText: "running" }).waitFor({ state: "detached" });
+
+  // The mock answers every prompt it is handed within a second or so; give
+  // it three and prove nothing followed this block — no turn, no document.
+  await page.waitForTimeout(3000);
+  const after = await block.evaluate((el) => {
+    let n = 0;
+    for (let s = el.nextElementSibling; s; s = s.nextElementSibling) {
+      if (s.classList.contains("response-document") || s.classList.contains("turn-assistant")) n++;
+    }
+    return n;
+  });
+  assert.equal(after, 0, "a !! command must not start an agent turn");
+  assert.equal(await page.locator(".activity-line").count(), 0, "no turn is running");
+});
+
 test("entering a session puts the caret in the prompt box — no click first", async () => {
   await page.goto(`${base}/`);
   await page.waitForSelector(".fleet-row");

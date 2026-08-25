@@ -8,6 +8,7 @@ import { GeminiCliSession } from "./gemini-cli";
 import type { GeminiModelCatalog } from "./gemini-model-list";
 import { isWorkspaceTrusted } from "../sessions/workspace-trust";
 import { MIRAFOLD_MCP, renderMcpCommand } from "./render-mcp-cmd";
+import { MIRAFOLD_CONTEXT } from "../render-tools";
 
 const RENDER_MCP_COMMAND = renderMcpCommand().command;
 
@@ -684,6 +685,7 @@ test("guidance skips slash-leading turns and rides the first prose turn instead"
     args = spawnArgs(argsLog);
     const prompt = args[args.indexOf("-p") + 1];
     assert.match(prompt, /## Generative UI/);
+    assert.ok(prompt.includes(MIRAFOLD_CONTEXT), "the environment fact rides the first prose turn");
     assert.match(prompt, /hello$/);
 
     s.pushPrompt("again");

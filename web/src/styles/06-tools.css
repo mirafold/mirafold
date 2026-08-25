@@ -279,9 +279,15 @@
 
 /* The `!` passthrough. The strip echoes the command-strip look
    with an amber `!` in place of the green `❯`; output is a plain mono block
-   streaming live below it. */
+   streaming live below it. The silent `!!` form doubles the glyph, tightened
+   so it holds the single glyph's column. */
 .turn-bang .bang-glyph {
   color: var(--warn-fg);
+}
+
+.turn-bang .bang-glyph-silent {
+  letter-spacing: -0.18em;
+  margin-right: 0.18em;
 }
 
 .bang-state {

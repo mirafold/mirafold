@@ -197,6 +197,57 @@ test("bang `cd` persists inside the workspace, escapes reset with the terminal's
   await bd.stop();
 });
 
+test("a silent `!!` bang runs, shows, replays and persists its cd — and the agent never hears of it", async () => {
+  const bd = await startDaemon();
+  const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), "mirafold-bang-silent-")));
+  mkdirSync(path.join(root, "child"));
+  const client = new TestClient(bd.port);
+  await client.opened();
+  await client.type("agents");
+  client.send({ type: "create", agent: "claude-code", cwd: root } as never);
+  await client.type("session_created");
+  const outputOf = (id: string) =>
+    (client.received as Any[])
+      .filter((m) => m.type === "bang_output" && m.id === id)
+      .map((m) => m.data)
+      .join("");
+  const modelTraffic = () =>
+    (client.received as Any[]).filter((m) => m.type === "turn_end" || m.type === "text_delta").length;
+
+  // The silent form: the start frame carries the flag (so every viewport and
+  // the replay ring draw `!!`), the output flows, the cd sticks…
+  client.send({ type: "bang", id: "s1", command: "cd child && echo shell-only", silent: true } as never);
+  const start = (await client.type("bang_start")) as Any;
+  assert.equal(start.silent, true);
+  await client.waitFor((m) => m.type === "bang_end" && (m as Any).id === "s1", "bang_end s1", 20_000);
+  assert.match(outputOf("s1"), /shell-only/);
+  // …and the mock — which answers EVERY pushPrompt with a turn — stays
+  // silent, because no prompt was ever pushed.
+  await new Promise((r) => setTimeout(r, 1500));
+  assert.equal(modelTraffic(), 0, "a silent bang must not start a model turn");
+
+  // The cd carried into the next command, and a plain `!` still hands its
+  // transcript to the agent — the seam works both ways in one session.
+  client.send({ type: "bang", id: "p1", command: "pwd" } as never);
+  const plain = (await client.type("bang_start")) as Any;
+  assert.equal("silent" in plain, false, "a plain bang carries no silent flag");
+  await client.waitFor((m) => m.type === "bang_end" && (m as Any).id === "p1", "bang_end p1", 20_000);
+  assert.ok(outputOf("p1").includes(path.join(root, "child")), "the silent cd did not persist");
+  await client.type("turn_end", 30_000);
+
+  // A late viewport replays the silent row with its flag intact.
+  const { client: late } = await attachSession(bd.port, (client.received as Any[]).find((m) => m.type === "session_created")!.sessionId);
+  const replayed = (await late.waitFor(
+    (m) => m.type === "bang_start" && (m as Any).id === "s1",
+    "replayed silent bang_start",
+  )) as Any;
+  assert.equal(replayed.silent, true);
+
+  late.close();
+  client.close();
+  await bd.stop();
+});
+
 test("a command that swaps the cwd handoff for a FIFO can't stall the daemon (audit f.3)", async () => {
   const bd = await startDaemon();
   const { client } = await createSession(bd.port);

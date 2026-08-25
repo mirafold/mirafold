@@ -84,6 +84,8 @@ export type BangRow = {
   output: string;
   exitCode?: number | null;
   done: boolean;
+  /** The `!!` form — shell only, the agent never saw it. */
+  silent?: true;
 };
 
 export type PickerTranscriptRow = {
@@ -653,6 +655,7 @@ export function createTranscriptProjection(): TranscriptProjection {
             command: msg.command,
             output: "",
             done: false,
+            ...(msg.silent ? { silent: true as const } : {}),
           },
         ];
         return true;

@@ -7,6 +7,7 @@ import type { Codex, CodexOptions, ThreadEvent } from "@openai/codex-sdk";
 import type { WireMsg } from "../protocol";
 import { CodexSession, resolveRolloutModel, rolloutDateDir } from "./codex";
 import { MIRAFOLD_MCP } from "./render-mcp-cmd";
+import { MIRAFOLD_CONTEXT } from "../render-tools";
 
 // L.2b2: the Codex event→WireMsg mapping and the turn grammar, on synthetic
 // ThreadEvents — no engine, no network. The session is real; only its private
@@ -169,6 +170,7 @@ test("first turn carries RENDER_GUIDANCE + the deferred-tools addendum; later tu
   assert.equal(prompts.length, 2);
   // The guidance block, the deferral instruction, and the user's own text.
   assert.ok(prompts[0].includes("## Generative UI"));
+  assert.ok(prompts[0].includes(MIRAFOLD_CONTEXT), "the environment fact rides the first turn");
   assert.ok(prompts[0].includes("DEFERRED"));
   assert.ok(prompts[0].includes("tool search"));
   assert.ok(prompts[0].endsWith("first ask"));

@@ -4,7 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import { mkdtempSync } from "node:fs";
 import type { WireMsg } from "../protocol";
-import { RENDER_GUIDANCE } from "../render-tools";
+import { MIRAFOLD_CONTEXT, RENDER_GUIDANCE } from "../render-tools";
 import { OpenCodeSession } from "./opencode";
 import type { OpenCodeEvent, OpenCodeTransport } from "./opencode-client";
 import { waitFor } from "../testing/wait-for";
@@ -1199,6 +1199,7 @@ test("BUGFIX3: an unavailable fork falls back to a disclosed fresh session", asy
   );
   const text = (fake.prompts[1]?.["parts"] as { text: string }[])[0]?.text ?? "";
   assert.ok(text.startsWith(RENDER_GUIDANCE), "a fresh engine session receives fresh guidance");
+  assert.ok(text.includes(MIRAFOLD_CONTEXT), "the environment fact rides the guidance");
   feed(idle(`${SES}_2`));
   await awaitTurnEnd(2);
   session.close();

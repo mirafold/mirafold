@@ -6,6 +6,7 @@ import { mkdtempSync } from "node:fs";
 import type { query, Options } from "@anthropic-ai/claude-agent-sdk";
 import type { WireMsg } from "../protocol";
 import { ClaudeCodeSession } from "./claude-code";
+import { MIRAFOLD_CONTEXT, RENDER_GUIDANCE } from "../render-tools";
 
 // The Claude Code SDK-message→WireMsg mapping and the turn grammar, on
 // synthetic SDKMessages — no CLI, no network. The session is real; only the
@@ -816,6 +817,14 @@ test("recovery: Claude receives the saved SDK resume id and exposes its live com
 
   assert.equal(options?.resume, s.resumeId);
   assert.equal(options?.sessionId, undefined);
+  // The environment fact rides the same system-prompt append as the render
+  // guidance — the one injection point Claude has.
+  assert.deepEqual(options?.systemPrompt, {
+    type: "preset",
+    preset: "claude_code",
+    append: RENDER_GUIDANCE,
+  });
+  assert.ok(RENDER_GUIDANCE.includes(MIRAFOLD_CONTEXT));
   assert.deepEqual(
     seen.find((msg) => msg.type === "prompt_options"),
     {

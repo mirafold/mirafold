@@ -388,10 +388,13 @@ export function Shell() {
   // its own turn, exactly as the terminal harness does.
   const send = (text: string) => {
     setReviewPromptVisible(false);
-    const m = text.match(/^!\s*(.+)$/s);
+    // `!!` is the silent form: same shell, same output, but the agent is
+    // never told — the user is just using the terminal.
+    const m = text.match(/^!(!?)\s*(.+)$/s);
     if (m) {
-      const command = m[1].trim();
-      setBang({ my: { id: bus.sendBang(command), command }, tail: "" });
+      const silent = m[1] === "!";
+      const command = m[2].trim();
+      setBang({ my: { id: bus.sendBang(command, silent), command }, tail: "" });
     } else {
       bus.sendPrompt(text);
     }
