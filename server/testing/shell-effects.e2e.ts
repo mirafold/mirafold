@@ -400,7 +400,7 @@ test("diagram component: mermaid renders as SVG inside the sandbox; broken sourc
 
 test("a notice in the engine's own words is badged; the shell's own words aren't", async () => {
   // Own the session whose output is under test. The shared page has just
-  // navigated through two Explorer fixtures; under runner load its attach /
+  // navigated through two folder tree fixtures; under runner load its attach /
   // replay can still be settling when this prompt is typed, so a timeout can
   // happen before the notice path runs and say nothing about attribution.
   await withFreshMockSession(browser, "e2e-notice-attribution-9c2f", async (page2) => {

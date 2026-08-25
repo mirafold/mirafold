@@ -116,7 +116,7 @@ export function openConnection(
   // hostile client could spam — bound the probe rate per connection. A
   // throttled refresh still answers, from the cache.
   const probeGate = minInterval(REFRESH_MIN_INTERVAL_MS);
-  // The Explorer/Changes fs_list/fs_listdir/fs_read/fs_diff/fs_changes
+  // The folder tree/Changes fs_list/fs_listdir/fs_read/fs_diff/fs_changes
   // handling, with its own per-connection throttle + git-in-flight state
   // (fs-handlers.ts). `entry` and `closed` are read through getters because
   // both change over the connection's life.
@@ -605,7 +605,7 @@ export function openConnection(
         folderPicker.pick(msg);
         break;
       case "fs_list":
-        // Explorer tree/read/diff — per-viewport queries handled
+        // folder tree tree/read/diff — per-viewport queries handled
         // in fs-handlers.ts (jail, throttle, git-in-flight, one reply each).
         fs.list(msg);
         break;

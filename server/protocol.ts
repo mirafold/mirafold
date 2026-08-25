@@ -505,7 +505,7 @@ export type BackendChoice = {
   model?: string;
 };
 
-/** One Explorer tree entry: a FILE, by root-relative /-separated path —
+/** One folder tree tree entry: a FILE, by root-relative /-separated path —
  *  directories are inferred client-side (git's `ls-files` view has no
  *  directory rows either, so repo and non-repo trees stay one shape; the
  *  known cost is that empty directories are invisible). `status` is the git

@@ -1,4 +1,4 @@
-// The Explorer/Changes git layer: one-shot, bounded `git` invocations for the
+// The folder tree/Changes git layer: one-shot, bounded `git` invocations for the
 // session root — the tracked+untracked tree with change status behind
 // `fs_list`, the complete changed set behind `fs_changes`, and HEAD's version
 // of a file behind `fs_diff`. Every
@@ -17,13 +17,13 @@ import {
 import path from "node:path";
 import type { FsChangeRepo, FsDirEntry, FsEntry } from "../protocol";
 import { GIT_TIMEOUT_MS, invalidateRepoTrustCache, repoTrust } from "./git-trust";
-// The walk's caps, shared (fs-explorer.ts) — both replies ride the same wire.
+// The walk's caps, shared (fs-folder-tree.ts) — both replies ride the same wire.
 import {
   contentRevision,
   FS_TREE_MAX_ENTRIES,
   FS_TREE_MAX_PATH_BYTES,
   readWorkspaceDiffEntry,
-} from "./fs-explorer";
+} from "./fs-folder-tree";
 import { envInt } from "../env";
 import { isSecretFile } from "../security/permissions";
 

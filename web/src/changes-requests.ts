@@ -1,5 +1,5 @@
 import type { ChangeItem } from "./changes";
-import { bellRefreshDelay } from "./files-tree";
+import { bellRefreshDelay } from "./folder-tree";
 
 // A disk bell can immediately follow the query that opening the surface sent.
 // Keep the follow-up outside the daemon's min-interval/git-in-flight window,

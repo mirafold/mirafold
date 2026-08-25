@@ -21,7 +21,7 @@ import {
   type ReviewProgress,
 } from "../../review-progress";
 import type { ZoneMsg } from "../../session-bus";
-import { useFileView } from "../files/use-file-view";
+import { useFileView } from "../folder-tree/use-file-view";
 
 type ChangeSetReply = Extract<WireMsg, { type: "fs_change_set" }>;
 

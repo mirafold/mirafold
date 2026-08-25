@@ -9,7 +9,7 @@ import { startDaemon, TestClient, type Daemon } from "../testing/itest-harness";
 
 // CR.1 against a real daemon and WebSocket: a Projects-style parent session
 // receives every nested repo's changed files in explicit groups, a repo
-// subdirectory stays scoped to itself, and the new query keeps the Explorer's
+// subdirectory stays scoped to itself, and the new query keeps the folder tree's
 // per-connection throttle/error-reply contract.
 
 type ChangeSet = Extract<WireMsg, { type: "fs_change_set" }>;

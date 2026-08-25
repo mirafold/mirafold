@@ -12,7 +12,7 @@
  * free to discard the tab and rebuild it on return. The URL is unchanged (the
  * fragment was scrubbed on first load, by design) — so a rebuilt tab with no
  * stored code has no way to reach the daemon at all, and lands on a shell that
- * looks like a fresh session: no transcript, Explorer disabled, no end button,
+ * looks like a fresh session: no transcript, folder tree disabled, no end button,
  * prompts going nowhere. Reproduced exactly by wiping the store and reloading.
  *
  * What persisting it costs: the code is a bearer credential — whoever holds it

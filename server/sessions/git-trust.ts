@@ -2,7 +2,7 @@
 //
 // The problem: git can be told, by settings living inside a repository's own
 // `.git/config`, to RUN a program during ordinary read-only commands. The
-// Explorer runs `git status` automatically the moment a panel opens — no
+// folder tree runs `git status` automatically the moment a panel opens — no
 // permission prompt, because it is the daemon's own call, not an agent tool.
 // So a repository that arrived carrying its own `.git` directory (a tarball
 // or zip, never a `git clone` — cloning deliberately does not copy config)

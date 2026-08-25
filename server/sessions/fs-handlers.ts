@@ -1,7 +1,7 @@
-// The Explorer's per-viewport request layer — the fs_list / fs_listdir /
+// The folder tree's per-viewport request layer — the fs_list / fs_listdir /
 // fs_read / fs_diff / fs_changes message handlers, kept out of
-// connection.ts's switch so the Explorer's request handling lives beside
-// its data layer (fs-explorer.ts, git.ts) instead of swelling the
+// connection.ts's switch so the folder tree's request handling lives beside
+// its data layer (fs-folder-tree.ts, git.ts) instead of swelling the
 // dispatcher. connection.ts builds one of these per connection and
 // delegates the five cases to it.
 //
@@ -28,7 +28,7 @@ import {
   reviewDiffRevision,
   sniffBinary,
   sortAndCapDir,
-} from "./fs-explorer";
+} from "./fs-folder-tree";
 import {
   cleanRelPath,
   decorateGitDir,
@@ -45,7 +45,7 @@ import { isSecretFile } from "../security/permissions";
 import { errText } from "../adapters";
 import { envInt } from "../env";
 
-// Minimum gap between Explorer requests per connection AND per type — fs_list
+// Minimum gap between folder tree requests per connection AND per type — fs_list
 // walks the tree, so a hostile client must not turn it into a CPU grinder; the
 // per-type split keeps a legitimate list-then-read pair from tripping it. A
 // throttled request still gets a reply (an error), never silence — the client's
@@ -396,7 +396,7 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
     if (!gitSlot.take()) return sendErr(GIT_BUSY);
 
     // Capture the immutable workspace root before awaiting. The query uses the
-    // same trusted, hook-disabled git runner as the Explorer's existing tree
+    // same trusted, hook-disabled git runner as the folder tree's existing tree
     // and diff paths, but returns all changed files grouped by repository.
     const root = entry.cwd;
     void workspaceChanges(root)

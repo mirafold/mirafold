@@ -17,7 +17,7 @@ import {
   type VersionedReviewSelection,
 } from "../../change-review";
 import { formatBytes } from "../ToolBlock";
-import { diffTooLarge, FileView, type FileViewState } from "../files/FileView";
+import { diffTooLarge, FileView, type FileViewState } from "../folder-tree/FileView";
 import { ReviewRows } from "./ReviewRows";
 import { useHunkNavigation } from "./use-hunk-navigation";
 

@@ -1,6 +1,6 @@
 /** The Changes glyph is a unified-diff fragment: a deleted line, an added
  * line, and trailing context, each code line beside its gutter mark. Drawn
- * on FilesGlyph's exact 14×20 artwork box with the same 1.5 stroke, so the
+ * on FolderTreeGlyph's exact 14×20 artwork box with the same 1.5 stroke, so the
  * two icons occupy the same footprint at the same `size` — equal width,
  * equal height, equal stroke weight. */
 export function DiffPanelGlyph({ size = 28 }: { size?: number }) {

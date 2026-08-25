@@ -76,11 +76,11 @@ const sessionUrl = (sessionId: string): string =>
 // Phone (2026-08-18): the status bar has ONE workspace toggle that reopens
 // the last-used view (Files on a fresh page); the drawer's own head switches.
 // Tapping the already-active tab is a no-op, so this is safe either way.
-const openPhoneWorkspace = async (page: Page, view: "files" | "diff-panel"): Promise<void> => {
+const openPhoneWorkspace = async (page: Page, view: "folder-tree" | "diff-panel"): Promise<void> => {
   await page.locator(".sb-workspace").tap();
-  await page.waitForSelector(".files-panel[role=dialog], .diff-panel-panel[role=dialog]");
-  await page.locator(`.workspace-tab:has-text("${view === "files" ? "Files" : "Changes"}")`).tap();
-  await page.waitForSelector(view === "files" ? ".files-panel[role=dialog]" : ".diff-panel-panel[role=dialog]");
+  await page.waitForSelector(".folder-tree-panel[role=dialog], .diff-panel-panel[role=dialog]");
+  await page.locator(`.workspace-tab:has-text("${view === "folder-tree" ? "Files" : "Changes"}")`).tap();
+  await page.waitForSelector(view === "folder-tree" ? ".folder-tree-panel[role=dialog]" : ".diff-panel-panel[role=dialog]");
 };
 
 const selectDesktopFile = async (name: string): Promise<void> => {
@@ -229,11 +229,11 @@ test("CR.2 desktop: Changes is a live split review workspace, mutually exclusive
 
   // The one auxiliary slot: Files opens, then Changes replaces it rather than
   // stacking a third column beside the conversation.
-  await desktop.locator(".ab-files").click();
-  await desktop.waitForSelector(".files-panel");
+  await desktop.locator(".ab-folder-tree").click();
+  await desktop.waitForSelector(".folder-tree-panel");
   await desktop.locator(".ab-diff-panel").click();
   await desktop.waitForSelector(".diff-panel-panel");
-  assert.equal(await desktop.locator(".files-panel").count(), 0);
+  assert.equal(await desktop.locator(".folder-tree-panel").count(), 0);
   assert.match((await desktop.locator(".ab-diff-panel").getAttribute("class")) ?? "", /is-active/);
 
   await desktop.waitForSelector(".diff-panel-file");
@@ -302,13 +302,13 @@ test("CR.2 desktop: Changes is a live split review workspace, mutually exclusive
 
   // Files still follows its original tree → file drill-in after CR.2's shell
   // state refactor, and switching back closes Changes by construction.
-  await desktop.locator(".ab-files").click();
-  await desktop.waitForSelector(".files-panel");
+  await desktop.locator(".ab-folder-tree").click();
+  await desktop.waitForSelector(".folder-tree-panel");
   assert.equal(await desktop.locator(".diff-panel-panel").count(), 0);
-  await desktop.locator(".files-file-row", { hasText: "a-added.ts" }).click();
-  await desktop.waitForSelector(".files-view .fv-content");
-  assert.match(await desktop.locator(".files-view .fv-content").innerText(), /added after/);
-  await desktop.locator(".ab-files").click();
+  await desktop.locator(".folder-tree-file-row", { hasText: "a-added.ts" }).click();
+  await desktop.waitForSelector(".folder-tree-view .fv-content");
+  assert.match(await desktop.locator(".folder-tree-view .fv-content").innerText(), /added after/);
+  await desktop.locator(".ab-folder-tree").click();
 });
 
 test("CR.3 desktop: pointer and keyboard ranges create editable prompt drafts and invalidate live", async () => {
@@ -746,9 +746,9 @@ test("CR.2 phone: full-screen one-file review has persistent navigation and pres
   await noSideScroll(phone);
 
   await phone.locator(".diff-panel-close").tap();
-  await openPhoneWorkspace(phone, "files");
-  await phone.locator(".files-file-row", { hasText: "a-added.ts" }).tap();
-  await phone.waitForSelector(".files-view .fv-content");
+  await openPhoneWorkspace(phone, "folder-tree");
+  await phone.locator(".folder-tree-file-row", { hasText: "a-added.ts" }).tap();
+  await phone.waitForSelector(".folder-tree-view .fv-content");
   await noSideScroll(phone);
   await phone.keyboard.press("Escape");
   await phone.keyboard.press("Escape");
@@ -1034,7 +1034,7 @@ test("CR.4: review progress resumes and only the changed revision reopens on des
     await mobile.waitForSelector(".diff-panel-panel", { state: "detached" });
     // The single toggle reopens the LAST view — Changes — with no tab tap.
     await mobile.locator(".sb-workspace").tap();
-    await mobile.waitForSelector(".files-panel[role=dialog], .diff-panel-panel[role=dialog]");
+    await mobile.waitForSelector(".folder-tree-panel[role=dialog], .diff-panel-panel[role=dialog]");
     assert.equal(
       await mobile.locator(".diff-panel-panel[role=dialog]").count(),
       1,
@@ -1181,8 +1181,8 @@ test("CR.5: late Git decoration refreshes Files without invalidating Changes rev
     await page.locator(".diff-panel-review-toggle").click();
     assert.equal(await page.locator(".diff-panel-progress").innerText(), "1 / 1 reviewed");
 
-    await page.locator(".ab-files").click();
-    await page.waitForSelector(".files-file-row");
+    await page.locator(".ab-folder-tree").click();
+    await page.waitForSelector(".folder-tree-file-row");
     await page.waitForTimeout(1_500); // NEGATIVE proof: no bell may arrive while Files is open
     await page.locator(".ab-diff-panel").click();
     await page.waitForSelector(".diff-panel-current-path");

@@ -3,11 +3,11 @@ import type { AgentName, PromptOption } from "@protocol";
 import { ActivityLine, activityLabel, type Activity } from "./ActivityLine";
 import { BangBar } from "./BangBar";
 import { DiffPanelGlyph } from "./DiffPanelGlyph";
-import { FilesGlyph } from "./FilesGlyph";
+import { FolderTreeGlyph } from "./FolderTreeGlyph";
 import { AgentPicker } from "./AgentPicker";
 import { PromptBox, type PromptDraft } from "./PromptBox";
 import { OutputZone } from "./OutputZone";
-import { FilesPanel } from "./files/FilesPanel";
+import { FolderTreePanel } from "./folder-tree/FolderTreePanel";
 import { DiffPanel } from "./diff-panel/DiffPanel";
 import type { WorkspaceSurface } from "./WorkspaceTabs";
 import { StatusBar, type Usage } from "./StatusBar";
@@ -153,7 +153,7 @@ export function Shell() {
   // the invariant that keeps the transcript visible on desktop and prevents
   // stacked full-screen layers on phone.
   const [auxiliary, setAuxiliary] = useState<WorkspaceSurface | null>(null);
-  const filesOpen = auxiliary === "files";
+  const folderTreeOpen = auxiliary === "folder-tree";
   const diffPanelOpen = auxiliary === "diff-panel";
   const [reviewPromptVisible, setReviewPromptVisible] = useState(false);
   const [promptDraft, setPromptDraft] = useState<PromptDraft>();
@@ -175,7 +175,7 @@ export function Shell() {
   // not two side-by-side icons; it reopens whichever surface was used last
   // (Files until Changes has been chosen once), and the drawer's own head
   // switches between them. Desktop keeps the two-icon rail unchanged.
-  const lastSurface = useRef<WorkspaceSurface>("files");
+  const lastSurface = useRef<WorkspaceSurface>("folder-tree");
   if (auxiliary) lastSurface.current = auxiliary;
   const toggleWorkspace = () => toggleAuxiliary(lastSurface.current);
   const switchAuxiliary = (surface: WorkspaceSurface) => {
@@ -460,16 +460,16 @@ export function Shell() {
             rendering beside it; both closed = transcript full-width. */}
         <div className="main-row">
           <ActivityBar
-            filesOpen={filesOpen}
+            folderTreeOpen={folderTreeOpen}
             diffPanelOpen={diffPanelOpen}
             disabled={!meta.sessionId}
-            onToggleFiles={() => toggleAuxiliary("files")}
+            onToggleFolderTree={() => toggleAuxiliary("folder-tree")}
             onToggleDiffPanel={() => toggleAuxiliary("diff-panel")}
           />
           <div className="main-col">
             <div className="zone-outer">
-              <FilesPanel
-                open={filesOpen && Boolean(meta.sessionId)}
+              <FolderTreePanel
+                open={folderTreeOpen && Boolean(meta.sessionId)}
                 subscribe={bus.subscribe}
                 requestListdir={bus.requestFsListdir}
                 requestRead={bus.requestFsRead}
@@ -645,29 +645,29 @@ function NoticeLine({ text, onDismiss }: { text: string; onDismiss: () => void }
  *  permanent 46px rail is too much of a 390px screen — and both toggles live
  *  in the status bar instead. */
 function ActivityBar({
-  filesOpen,
+  folderTreeOpen,
   diffPanelOpen,
   disabled,
-  onToggleFiles,
+  onToggleFolderTree,
   onToggleDiffPanel,
 }: {
-  filesOpen: boolean;
+  folderTreeOpen: boolean;
   diffPanelOpen: boolean;
   disabled: boolean;
-  onToggleFiles: () => void;
+  onToggleFolderTree: () => void;
   onToggleDiffPanel: () => void;
 }) {
   return (
     <div className="activity-bar">
       <button
-        className={"ab-btn ab-files" + (filesOpen ? " is-active" : "")}
-        onClick={onToggleFiles}
+        className={"ab-btn ab-folder-tree" + (folderTreeOpen ? " is-active" : "")}
+        onClick={onToggleFolderTree}
         disabled={disabled}
-        title={filesOpen ? "Hide files" : "Show files"}
+        title={folderTreeOpen ? "Hide files" : "Show files"}
         aria-label="Files"
-        aria-expanded={filesOpen}
+        aria-expanded={folderTreeOpen}
       >
-        <FilesGlyph />
+        <FolderTreeGlyph />
       </button>
       <button
         className={"ab-btn ab-diff-panel" + (diffPanelOpen ? " is-active" : "")}

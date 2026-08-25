@@ -31,23 +31,23 @@ const sendPrompt = async (p: Page, text: string) => {
   await p.locator(".prompt-send").tap();
 };
 
-// Geometry is asserted at REST: the drawers slide in (02-explorer.css
-// files-in, 03-diff-panel.css diff-panel-in) and a mid-transform boundingBox reads
+// Geometry is asserted at REST: the drawers slide in (02-folder-tree.css
+// folder-tree-in, 03-diff-panel.css diff-panel-in) and a mid-transform boundingBox reads
 // a sub-pixel short (39.9999 for a 40px button) — the 2026-08-18 flake.
 const settled = (page: Page, selector: string) =>
   page.locator(selector).evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
 
 // Esc walks the drawer out one layer at a time (file → tree → closed).
 const closeDrawer = async (page: Page) => {
-  for (let i = 0; i < 3 && (await page.locator(".files-panel, .diff-panel-panel").count()) > 0; i += 1) {
-    const layers = await page.locator(".files-panel [role=region], .files-panel, .diff-panel-panel").count();
+  for (let i = 0; i < 3 && (await page.locator(".folder-tree-panel, .diff-panel-panel").count()) > 0; i += 1) {
+    const layers = await page.locator(".folder-tree-panel [role=region], .folder-tree-panel, .diff-panel-panel").count();
     await page.keyboard.press("Escape");
     await page.waitForFunction(
-      (before) => document.querySelectorAll(".files-panel [role=region], .files-panel, .diff-panel-panel").length < before,
+      (before) => document.querySelectorAll(".folder-tree-panel [role=region], .folder-tree-panel, .diff-panel-panel").length < before,
       layers,
     );
   }
-  await page.waitForSelector(".files-panel, .diff-panel-panel", { state: "detached" });
+  await page.waitForSelector(".folder-tree-panel, .diff-panel-panel", { state: "detached" });
 };
 
 
@@ -206,7 +206,7 @@ test("phone: pairs by URL, opens the session, drives a turn with a rendered comp
   assert.ok(promptFont >= 16, `prompt textarea is ${promptFont}px — iOS will zoom on focus`);
 });
 
-test("phone LD.3: the live document fills the canvas and survives the full-screen Explorer", async () => {
+test("phone LD.3: the live document fills the canvas and survives the full-screen folder tree", async () => {
   const documentsBefore = await phone.locator(".response-document").count();
   await sendPrompt(phone, MOCK_PROMPTS["live-document"]);
   const firstDocument = phone.locator(".response-document").nth(documentsBefore);
@@ -315,29 +315,29 @@ test("phone LD.3: the live document fills the canvas and survives the full-scree
   await noSideScroll(phone);
 
   await firstDocument.evaluate((element) => {
-    element.setAttribute("data-ld3-phone-identity", "before-explorer");
+    element.setAttribute("data-ld3-phone-identity", "before-folder tree");
   });
   await phone.locator(".sb-workspace").focus();
   await phone.keyboard.press("Enter");
-  await phone.waitForSelector(".files-panel[role=dialog]");
-  await settled(phone, ".files-panel");
+  await phone.waitForSelector(".folder-tree-panel[role=dialog]");
+  await settled(phone, ".folder-tree-panel");
   assert.equal(
     await firstDocument.getAttribute("data-ld3-phone-identity"),
-    "before-explorer",
-    "opening the phone Explorer remounted the response document",
+    "before-folder tree",
+    "opening the phone folder tree remounted the response document",
   );
   await noSideScroll(phone);
 
   await phone.keyboard.press("Escape");
-  await phone.waitForSelector(".files-panel", { state: "detached" });
+  await phone.waitForSelector(".folder-tree-panel", { state: "detached" });
   assert.equal(
     await firstDocument.getAttribute("data-ld3-phone-identity"),
-    "before-explorer",
-    "closing the phone Explorer remounted the response document",
+    "before-folder tree",
+    "closing the phone folder tree remounted the response document",
   );
   assert.ok(
     Math.abs((await firstDocument.evaluate((element) => element.getBoundingClientRect().width)) - metrics.firstWidth) <= 1,
-    "the document did not restore its phone width after Explorer closed",
+    "the document did not restore its phone width after folder tree closed",
   );
   await noSideScroll(phone);
 });
@@ -360,14 +360,14 @@ test("phone (E.4): the files panel is a full-screen drill-in — tree → file �
   assert.equal(await phone.locator(".sb-files, .sb-changes").count(), 0, "the two-icon pair must be gone on phone");
   await phone.locator(".sb-workspace").focus();
   await phone.keyboard.press("Enter");
-  await phone.waitForSelector(".files-panel[role=dialog]");
+  await phone.waitForSelector(".folder-tree-panel[role=dialog]");
   // The toggle reports the drawer's state (it stays in the DOM under the
   // full-screen drawer; while open it is covered and focus-trapped away, so
   // "toggle closes" is not a reachable phone path — Esc/‹ are).
   assert.equal(await phone.locator(".sb-workspace").getAttribute("aria-expanded"), "true");
   await noSideScroll(phone);
   const width = await phone.evaluate(() => {
-    const el = document.querySelector(".files-panel");
+    const el = document.querySelector(".folder-tree-panel");
     return el ? Math.round(el.getBoundingClientRect().width) : 0;
   });
   assert.ok(width >= 380, `panel is ${width}px wide — not full-screen`);
@@ -375,9 +375,9 @@ test("phone (E.4): the files panel is a full-screen drill-in — tree → file �
   // Both drawer views exit the same way — a leading ‹ at the top-left (the
   // Files × at the top-right was the odd one out) — and the drawer's own
   // head switches between them; switching keeps the exit where it was.
-  assert.equal(await phone.locator(".files-panel-head .files-panel-back").getAttribute("aria-label"), "Back to conversation");
-  await settled(phone, ".files-panel");
-  const filesBack = (await phone.locator(".files-panel-back").boundingBox())!;
+  assert.equal(await phone.locator(".folder-tree-panel-head .folder-tree-panel-back").getAttribute("aria-label"), "Back to conversation");
+  await settled(phone, ".folder-tree-panel");
+  const filesBack = (await phone.locator(".folder-tree-panel-back").boundingBox())!;
   assert.ok(filesBack.x < 60 && filesBack.y < 120, `files back is at ${filesBack.x},${filesBack.y} — not top-left`);
   assert.ok(
     filesBack.width >= 40 && filesBack.height >= 40,
@@ -385,14 +385,14 @@ test("phone (E.4): the files panel is a full-screen drill-in — tree → file �
   );
   // The switch is the phone's ONLY way between the views, so it obeys the
   // ≥40px thumb rule itself (the pill's buttons, not the pill).
-  const filesTabs = (await phone.locator(".files-panel-head .workspace-tabs").boundingBox())!;
-  for (const tab of await phone.locator(".files-panel-head .workspace-tab").all()) {
+  const filesTabs = (await phone.locator(".folder-tree-panel-head .workspace-tabs").boundingBox())!;
+  for (const tab of await phone.locator(".folder-tree-panel-head .workspace-tab").all()) {
     const box = (await tab.boundingBox())!;
     assert.ok(box.height >= 40 && box.width >= 40, `workspace tab is ${box.width}×${box.height} — under the 40px thumb rule`);
   }
-  await phone.locator('.files-panel-head .workspace-tab:has-text("Changes")').tap();
+  await phone.locator('.folder-tree-panel-head .workspace-tab:has-text("Changes")').tap();
   await phone.waitForSelector(".diff-panel-panel[role=dialog]");
-  assert.equal(await phone.locator(".files-panel").count(), 0, "one drawer view at a time");
+  assert.equal(await phone.locator(".folder-tree-panel").count(), 0, "one drawer view at a time");
   await settled(phone, ".diff-panel-panel");
   const changesBack = (await phone.locator(".diff-panel-head .diff-panel-close").boundingBox())!;
   assert.equal(await phone.locator(".diff-panel-head .diff-panel-close").getAttribute("aria-label"), "Back to conversation");
@@ -411,38 +411,38 @@ test("phone (E.4): the files panel is a full-screen drill-in — tree → file �
     `switch jumps between heads: files ${filesTabs.x},${filesTabs.y} vs changes ${changesTabs.x},${changesTabs.y}`,
   );
   await phone.locator('.diff-panel-head .workspace-tab:has-text("Files")').tap();
-  await phone.waitForSelector(".files-panel[role=dialog]");
+  await phone.waitForSelector(".folder-tree-panel[role=dialog]");
   await noSideScroll(phone);
 
   // The tree is live git data (the daemon runs in the repo) — drill into a file.
-  const pkg = phone.locator(".files-file-row", { hasText: "package.json" }).first();
+  const pkg = phone.locator(".folder-tree-file-row", { hasText: "package.json" }).first();
   await pkg.waitFor({ timeout: 15_000 });
   assert.equal(
-    await pkg.locator(".files-caret + .files-node-icon-config[aria-hidden=true] + .files-name").count(),
+    await pkg.locator(".folder-tree-caret + .folder-tree-node-icon-config[aria-hidden=true] + .folder-tree-name").count(),
     1,
     "phone tree keeps the decorative configuration glyph before the name",
   );
   await pkg.tap();
-  await phone.waitForSelector(".files-view .fv-content");
+  await phone.waitForSelector(".folder-tree-view .fv-content");
   await noSideScroll(phone);
   // The enlarge button is a desktop affordance — the phone frame is already
   // full-screen, so it must not render here (E.6).
-  assert.equal(await phone.locator(".files-enlarge").count(), 0, "enlarge button on phone");
+  assert.equal(await phone.locator(".folder-tree-enlarge").count(), 0, "enlarge button on phone");
 
   // Esc drills BACK one layer (to the tree), never straight out — the
   // stacked-layer contract; the panel stays open.
   await phone.keyboard.press("Escape");
-  await phone.waitForSelector(".files-tree");
+  await phone.waitForSelector(".folder-tree");
   assert.equal(
-    await phone.locator(".files-file").count(),
+    await phone.locator(".folder-tree-file").count(),
     0,
     "Esc from a file must return to the tree, not close the panel",
   );
-  assert.equal(await phone.locator(".files-panel").count(), 1, "the panel is still open");
+  assert.equal(await phone.locator(".folder-tree-panel").count(), 1, "the panel is still open");
 
   // Esc from the tree closes the panel, and focus returns to the opener.
   await phone.keyboard.press("Escape");
-  assert.equal(await phone.locator(".files-panel").count(), 0, "Esc from the tree closes the panel");
+  assert.equal(await phone.locator(".folder-tree-panel").count(), 0, "Esc from the tree closes the panel");
   assert.equal(await phone.locator(".sb-workspace").getAttribute("aria-expanded"), "false");
   await noSideScroll(phone);
   const focusedFiles = await phone.evaluate(
@@ -464,13 +464,13 @@ test("phone (320px): both drawer heads keep their controls apart", async () => {
   try {
     await phone.locator(".sb-workspace").tap();
     // Whichever view was used last: land on Files explicitly.
-    await phone.waitForSelector(".files-panel[role=dialog], .diff-panel-panel[role=dialog]");
+    await phone.waitForSelector(".folder-tree-panel[role=dialog], .diff-panel-panel[role=dialog]");
     await phone.locator('.workspace-tab:has-text("Files")').tap();
-    await phone.waitForSelector(".files-panel[role=dialog]");
-    await settled(phone, ".files-panel");
-    await assertApartOnScreen(phone, 320, [".files-panel-back", ".files-panel-head .workspace-tabs", ".files-refresh"]);
+    await phone.waitForSelector(".folder-tree-panel[role=dialog]");
+    await settled(phone, ".folder-tree-panel");
+    await assertApartOnScreen(phone, 320, [".folder-tree-panel-back", ".folder-tree-panel-head .workspace-tabs", ".folder-tree-refresh"]);
     await noSideScroll(phone);
-    await phone.locator('.files-panel-head .workspace-tab:has-text("Changes")').tap();
+    await phone.locator('.folder-tree-panel-head .workspace-tab:has-text("Changes")').tap();
     await phone.waitForSelector(".diff-panel-panel[role=dialog]");
     await phone.waitForSelector(".diff-panel-count");
     await settled(phone, ".diff-panel-panel");
@@ -597,7 +597,7 @@ test("phone: a network flip mid-turn resumes the stream without losing the trans
 });
 
 // The backgrounded-phone bug (2026-07-25, Kyle's phone): leave the browser for
-// a few minutes, come back, and the session was dead — no transcript, Explorer
+// a few minutes, come back, and the session was dead — no transcript, folder tree
 // disabled, no end button, prompts going nowhere — while the same session was
 // fine on the desktop. Cause: the pairing code lived in per-tab sessionStorage,
 // which a browser is free to drop when it discards a backgrounded tab; the
@@ -611,12 +611,12 @@ test("phone: a discarded tab comes back paired — the session survives, transcr
   await phone.reload();
 
   // Attached again: the end button only renders with a live session, and the
-  // Explorer toggle is disabled without one.
+  // folder tree toggle is disabled without one.
   await phone.waitForSelector(".sb-end", { timeout: 20_000 });
   assert.equal(
     await phone.locator(".sb-workspace").isDisabled(),
     false,
-    "Explorer still disabled — the viewport never attached",
+    "Folder tree still disabled — the viewport never attached",
   );
   await phone.waitForFunction(
     (n) => document.querySelectorAll(".turn-user").length >= n,

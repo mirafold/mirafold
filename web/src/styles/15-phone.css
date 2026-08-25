@@ -341,10 +341,10 @@
     display: none;
   }
 
-  /* Explorer on phone: the docked column becomes a full-screen
+  /* folder tree on phone: the docked column becomes a full-screen
      drill-in layer over everything, GitHub-mobile style. Same component,
      different frame; the file view still overlays the tree within it. */
-  .files-panel {
+  .folder-tree-panel {
     position: fixed;
     inset: 0;
     width: 100%;
@@ -575,7 +575,7 @@
 
   /* Bigger tap targets on the touch surface (the ≥40px rule) without
      disturbing the desktop density. */
-  .files-row {
+  .folder-tree-row {
     padding: 9px 8px;
     min-height: 42px;
   }
@@ -583,18 +583,18 @@
   /* Files head on phone: back chevron leading (top-left, same exit as
      Changes), the .workspace-tabs switch beside it, refresh
      trailing — a centered flex row, not the desktop's baseline title bar. */
-  .files-panel-head {
+  .folder-tree-panel-head {
     align-items: center;
     gap: 6px;
     padding: 8px 8px 7px 8px;
   }
 
-  .files-panel-action {
+  .folder-tree-panel-action {
     width: 40px;
     height: 40px;
   }
 
-  .files-root {
+  .folder-tree-root {
     padding: 4px 6px 5px;
   }
 
@@ -689,7 +689,7 @@
   /* Same glyph, size, weight AND width as .diff-panel-close (42px) so the two
      exits are one control in two places — and the switch beside them lands
      at the same x/y in both heads (8 + 42 + 6, row centred at y = 7). */
-  .files-panel-back {
+  .folder-tree-panel-back {
     width: 42px;
     font: inherit;
     font-size: 20px;

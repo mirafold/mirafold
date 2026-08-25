@@ -3,7 +3,7 @@ import { useWorkspacePanelFrame } from "../../use-workspace-panel-frame";
 import type { ZoneMsg } from "../../session-bus";
 import type { WorkspaceSurface } from "../WorkspaceTabs";
 import { useIsPhone } from "../../use-is-phone";
-import { FileView } from "../files/FileView";
+import { FileView } from "../folder-tree/FileView";
 import {
   ChangeFileHeader,
   ChangesHeader,

@@ -1,22 +1,22 @@
 import { useEffect, useRef, useState } from "react";
 import { useWorkspacePanelFrame } from "../../use-workspace-panel-frame";
 import type { ZoneMsg } from "../../session-bus";
-import { rootNameOf, shownListing } from "../../files-tree";
+import { rootNameOf, shownListing } from "../../folder-tree";
 import { useEscapeKey } from "../../use-escape";
 import { useFocusTrap } from "../../use-focus-trap";
 import { useIsPhone } from "../../use-is-phone";
 import { FileView } from "./FileView";
-import { ExplorerChevron, ExplorerNodeGlyph } from "./ExplorerNodeGlyph";
-import { DirChildren } from "./FilesTreeRows";
+import { FolderTreeChevron, FolderTreeNodeGlyph } from "./FolderTreeNodeGlyph";
+import { DirChildren } from "./FolderTreeRows";
 import { RefreshIcon } from "../RefreshIcon";
 import { WorkspaceTabs, type WorkspaceSurface } from "../WorkspaceTabs";
 import { useFileView } from "./use-file-view";
-import { useFilesTree } from "./use-files-tree";
+import { useFolderTree } from "./use-folder-tree";
 
-// The Explorer's shell-owned panel: a read-only browser of the session's
+// The folder tree's shell-owned panel: a read-only browser of the session's
 // working tree, built
 // incrementally — one fs_listdir per directory, fetched on first expand and
-// cached (files-tree.ts holds the store). Opening fetches the root and
+// cached (folder-tree.ts holds the store). Opening fetches the root and
 // prefetches its first level; the client never sends the whole-tree
 // fs_list (the server keeps answering it for older bundles). Interaction is
 // drill-in on both platforms — the tree, then a file view laid OVER it with
@@ -27,11 +27,11 @@ import { useFilesTree } from "./use-files-tree";
 // (focus-trapped, Esc = back one layer / close from the tree).
 //
 // SHELL-OWNED: it holds the bus (socket) and the agent paints nothing here.
-// Replies are correlated by the echoed id (use-files-tree.ts for the
+// Replies are correlated by the echoed id (use-folder-tree.ts for the
 // directories, use-file-view.ts for the file); a stale reply (superseded
 // click, since-switched session) is dropped, never rendered.
 
-export function FilesPanel({
+export function FolderTreePanel({
   open,
   subscribe,
   requestListdir,
@@ -57,7 +57,7 @@ export function FilesPanel({
   /** meta.sessionId — a change means a different workspace: reset + refetch. */
   sessionKey?: string;
 }) {
-  const { store, expanded, rootOpen, setRootOpen, toggleDir, refreshTree } = useFilesTree({
+  const { store, expanded, rootOpen, setRootOpen, toggleDir, refreshTree } = useFolderTree({
     open,
     subscribe,
     requestListdir,
@@ -114,7 +114,7 @@ export function FilesPanel({
   useEscapeKey(maxi ? () => setMaximized(false) : undefined, { exclusive: true });
 
   // A session switch drops the enlarge with everything else (the tree's own
-  // reset lives in useFilesTree).
+  // reset lives in useFolderTree).
   useEffect(() => setMaximized(false), [sessionKey]);
 
   // Opening (or a session switch while open) returns to the tree view.
@@ -134,19 +134,19 @@ export function FilesPanel({
   const rootName = rootNameOf(rootLabel);
 
   return (
-    <aside className="files-panel" aria-label="Files" ref={panelRef} {...frame}>
+    <aside className="folder-tree-panel" aria-label="Files" ref={panelRef} {...frame}>
       {/* The tree stays mounted; the file view (when a file is open) is laid
           over it, so back reveals the tree at its prior scroll. */}
-      <div className="files-main">
-        <div className="files-tree">
+      <div className="folder-tree-main">
+        <div className="folder-tree">
           {/* Phone head: back chevron LEADING (top-left, thumb-reachable —
               the same exit Changes has; a top-right × would be the odd one
               out), then the drawer's Files/Changes switch in the
               title's place. Desktop keeps the plain title, no close. */}
-          <header className="files-panel-head">
+          <header className="folder-tree-panel-head">
             {phone && (
               <button
-                className="files-panel-action files-panel-back"
+                className="folder-tree-panel-action folder-tree-panel-back"
                 onClick={onClose}
                 title="Back to conversation"
                 aria-label="Back to conversation"
@@ -155,18 +155,18 @@ export function FilesPanel({
               </button>
             )}
             {phone && onSwitch ? (
-              <WorkspaceTabs active="files" onSwitch={onSwitch} />
+              <WorkspaceTabs active="folder-tree" onSwitch={onSwitch} />
             ) : (
-              <h2 className="files-panel-title">Files</h2>
+              <h2 className="folder-tree-panel-title">Files</h2>
             )}
-            <div className="files-panel-actions">
+            <div className="folder-tree-panel-actions">
               <button
-                className="files-panel-action files-refresh"
+                className="folder-tree-panel-action folder-tree-refresh"
                 onClick={refresh}
                 title="Refresh"
                 aria-label="Refresh files"
               >
-                <RefreshIcon className="files-action-icon" />
+                <RefreshIcon className="folder-tree-action-icon" />
               </button>
             </div>
           </header>
@@ -176,25 +176,25 @@ export function FilesPanel({
               tooltip. ARIA:
               it's a disclosure button OVER the tree widget, not a treeitem
               inside it — role=tree owns only treeitems/groups (axe). */}
-          <div className="files-root">
+          <div className="folder-tree-root">
             <button
-              className="files-row files-dir files-root-row"
+              className="folder-tree-row folder-tree-dir folder-tree-root-row"
               onClick={() => setRootOpen((o) => !o)}
               title={rootLabel}
               aria-expanded={rootOpen}
             >
-              <span className="files-caret">
-                <ExplorerChevron open={rootOpen} />
+              <span className="folder-tree-caret">
+                <FolderTreeChevron open={rootOpen} />
               </span>
-              <ExplorerNodeGlyph name={rootName} entryKind="dir" open={rootOpen} />
-              <span className="files-name">{rootName}</span>
+              <FolderTreeNodeGlyph name={rootName} entryKind="dir" open={rootOpen} />
+              <span className="folder-tree-name">{rootName}</span>
             </button>
           </div>
           {rootOpen &&
             (rootState?.phase === "error" && !rootListing ? (
-              <div className="files-empty files-error">{rootState.error}</div>
+              <div className="folder-tree-empty folder-tree-error">{rootState.error}</div>
             ) : rootListing && rootListing.entries.length === 0 ? (
-              <div className="files-empty">(no files)</div>
+              <div className="folder-tree-empty">(no files)</div>
             ) : rootListing ? (
               <div role="tree" aria-label="Working tree">
                 <DirChildren
@@ -211,7 +211,7 @@ export function FilesPanel({
                 />
               </div>
             ) : (
-              <div className="files-empty">…</div>
+              <div className="folder-tree-empty">…</div>
             ))}
         </div>
 
@@ -221,40 +221,40 @@ export function FilesPanel({
                 behind the lifted box — clicking it is the universal "put it
                 back". Below the box, above everything the box floats over. */}
             {maxi && (
-              <div className="files-dim" onClick={() => setMaximized(false)} aria-hidden="true" />
+              <div className="folder-tree-dim" onClick={() => setMaximized(false)} aria-hidden="true" />
             )}
             {/* One node in BOTH frames — enlarging toggles a class, never
                 remounts, so the view's scroll position survives the round
                 trip in each direction. */}
             <div
-              className={"files-file" + (maxi ? " is-maximized" : "")}
+              className={"folder-tree-file" + (maxi ? " is-maximized" : "")}
               ref={fileRef}
               role={maxi ? "dialog" : undefined}
               aria-modal={maxi ? true : undefined}
               tabIndex={maxi ? -1 : undefined}
             >
-              <div className="files-file-path">
+              <div className="folder-tree-file-path">
                 <button
-                  className="files-back"
+                  className="folder-tree-back"
                   onClick={closeFile}
                   title="Back to files"
                   aria-label="Back to files"
                 >
                   ‹
                 </button>
-                <span className="files-file-name" title={selected.path}>
+                <span className="folder-tree-file-name" title={selected.path}>
                   {selected.path}
                 </span>
                 {selected.status && (
-                  <span className="files-file-tabs">
+                  <span className="folder-tree-file-tabs">
                     <button
-                      className={"files-tab" + (mode === "content" ? " is-active" : "")}
+                      className={"folder-tree-tab" + (mode === "content" ? " is-active" : "")}
                       onClick={() => openFile(selected.path, selected.status, "content")}
                     >
                       file
                     </button>
                     <button
-                      className={"files-tab" + (mode === "diff" ? " is-active" : "")}
+                      className={"folder-tree-tab" + (mode === "diff" ? " is-active" : "")}
                       onClick={() => openFile(selected.path, selected.status, "diff")}
                     >
                       diff
@@ -263,14 +263,14 @@ export function FilesPanel({
                 )}
               </div>
               {/* tabIndex + a named region because this div SCROLLS
-                  (02-explorer.css `.files-view { overflow: auto }`): without a tab
+                  (02-folder-tree.css `.folder-tree-view { overflow: auto }`): without a tab
                   stop, a keyboard-only user could open a file or a diff and
                   never scroll it — axe `scrollable-region-focusable`, serious.
                   A focusable region needs an accessible name, hence
-                  role + label. Costs one tab stop in the Explorer, which is
+                  role + label. Costs one tab stop in the folder tree, which is
                   the point: the content is reachable. */}
               <div
-                className="files-view"
+                className="folder-tree-view"
                 tabIndex={0}
                 role="region"
                 aria-label={`${selected.path} — ${mode === "diff" ? "diff" : "contents"}`}
@@ -282,7 +282,7 @@ export function FilesPanel({
                   corner — and stays under the pointer across a toggle. */}
               {!phone && (
                 <button
-                  className="files-btn files-enlarge"
+                  className="folder-tree-btn folder-tree-enlarge"
                   onClick={() => setMaximized((m) => !m)}
                   title={maxi ? "Restore size" : "Enlarge"}
                   aria-label={maxi ? "Restore file view size" : "Enlarge file view"}

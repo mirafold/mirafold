@@ -2,7 +2,7 @@ import type { WireMsg } from "@protocol";
 import { diffSnippet, DiffLines } from "../../registry/Diff";
 import { formatBytes } from "../ToolBlock";
 
-// The right pane of the Explorer: one file's content, or its git diff. A
+// The right pane of the folder tree: one file's content, or its git diff. A
 // dumb presenter — useFileView owns the request/reply state and hands the
 // resolved view down through whichever shell surface embeds it. Plain <pre>
 // (the tool-code look), no syntax

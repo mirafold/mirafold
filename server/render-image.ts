@@ -6,7 +6,7 @@
 // generativeUIMsg for the stdio adapters); the stdio stub itself stays a thin
 // schema-only process with no file access.
 //
-// Security posture mirrors the Explorer's read path: realpath containment via
+// Security posture mirrors the folder tree's read path: realpath containment via
 // `inside()` (a planted symlink can't walk out), the secret-file denial, a
 // hard byte cap, and a magic-byte allowlist of RASTER formats only — SVG is
 // deliberately excluded (it's a document format with script surface, not a
@@ -40,7 +40,7 @@ const SNIFFS: [kind: string, ok: (b: Buffer) => boolean][] = [
 
 /** Resolves an agent-authored image render into wire props: `src` filled on
  *  success, `error` on refusal — never both, and never anything the agent
- *  wrote in either field. Synchronous on purpose (the fs-explorer precedent):
+ *  wrote in either field. Synchronous on purpose (the fs-folder-tree precedent):
  *  the read is byte-capped, so no call holds the event loop meaningfully. */
 export function resolveImageProps(
   root: string,

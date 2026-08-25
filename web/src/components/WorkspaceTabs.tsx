@@ -1,7 +1,7 @@
-export type WorkspaceSurface = "files" | "diff-panel";
+export type WorkspaceSurface = "folder-tree" | "diff-panel";
 
 const SURFACES: readonly (readonly [WorkspaceSurface, string])[] = [
-  ["files", "Files"],
+  ["folder-tree", "Files"],
   ["diff-panel", "Changes"],
 ];
 

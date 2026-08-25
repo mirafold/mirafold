@@ -1,18 +1,18 @@
-import { shownListing, type DirStore } from "../../files-tree";
+import { shownListing, type DirStore } from "../../folder-tree";
 import { changeStatus } from "../../changes";
-import { ExplorerChevron, ExplorerNodeGlyph } from "./ExplorerNodeGlyph";
+import { FolderTreeChevron, FolderTreeNodeGlyph } from "./FolderTreeNodeGlyph";
 
-// The Explorer tree's ROWS — the pure recursive renderer split out of
-// FilesPanel (which keeps the panel: frame, bus wiring, refresh policy).
+// The folder tree tree's ROWS — the pure recursive renderer split out of
+// FolderTreePanel (which keeps the panel: frame, bus wiring, refresh policy).
 // Everything here derives from props; no bus, no effects.
 
 /** Quiet vertical hierarchy guides, like the optional guides in established
  * IDE project trees. The width keeps the established 12px-per-depth rhythm;
  * the lazy tree's data and interaction model do not know about them. */
-function ExplorerIndent({ depth }: { depth: number }) {
+function FolderTreeIndent({ depth }: { depth: number }) {
   return (
     <span
-      className="files-indent-guides"
+      className="folder-tree-indent-guides"
       style={{ width: `${depth * 12}px` }}
       aria-hidden="true"
     />
@@ -54,17 +54,17 @@ export function DirChildren({
     // error row if it refused. Non-interactive rows are aria-disabled
     // treeitems — still part of the tree for the reading order.
     return (
-      <ul className="files-ul" role="group">
-        <li role="treeitem" aria-disabled="true" className="files-note-row" style={pad}>
+      <ul className="folder-tree-ul" role="group">
+        <li role="treeitem" aria-disabled="true" className="folder-tree-note-row" style={pad}>
           {dirState.phase === "error" ? dirState.error : "…"}
         </li>
       </ul>
     );
   }
   return (
-    <ul className="files-ul" role="group">
+    <ul className="folder-tree-ul" role="group">
       {listing.entries.length === 0 && (
-        <li role="treeitem" aria-disabled="true" className="files-note-row" style={pad}>
+        <li role="treeitem" aria-disabled="true" className="folder-tree-note-row" style={pad}>
           (empty)
         </li>
       )}
@@ -74,13 +74,13 @@ export function DirChildren({
           const isOpen = expanded.has(entryPath);
           return (
             <li key={entry.name} role="treeitem" aria-expanded={isOpen}>
-              <button className="files-row files-dir" onClick={() => onToggleDir(entryPath)}>
-                <ExplorerIndent depth={depth} />
-                <span className="files-caret">
-                  <ExplorerChevron open={isOpen} />
+              <button className="folder-tree-row folder-tree-dir" onClick={() => onToggleDir(entryPath)}>
+                <FolderTreeIndent depth={depth} />
+                <span className="folder-tree-caret">
+                  <FolderTreeChevron open={isOpen} />
                 </span>
-                <ExplorerNodeGlyph name={entry.name} entryKind="dir" open={isOpen} />
-                <span className="files-name">{entry.name}</span>
+                <FolderTreeNodeGlyph name={entry.name} entryKind="dir" open={isOpen} />
+                <span className="folder-tree-name">{entry.name}</span>
               </button>
               {isOpen && (
                 <DirChildren
@@ -101,16 +101,16 @@ export function DirChildren({
         return (
           <li key={entry.name} role="treeitem">
             <button
-              className="files-row files-file-row"
+              className="folder-tree-row folder-tree-file-row"
               onClick={() => onOpenFile(entryPath, entry.status)}
             >
-              <ExplorerIndent depth={depth} />
-              <span className="files-caret" />
-              <ExplorerNodeGlyph name={entry.name} entryKind={entry.kind} />
-              <span className="files-name">{entry.name}</span>
+              <FolderTreeIndent depth={depth} />
+              <span className="folder-tree-caret" />
+              <FolderTreeNodeGlyph name={entry.name} entryKind={entry.kind} />
+              <span className="folder-tree-name">{entry.name}</span>
               {entry.status && (
                 <span
-                  className={`files-status files-status-${entry.status}`}
+                  className={`folder-tree-status folder-tree-status-${entry.status}`}
                   title={statusLabel(entry.status)}
                 >
                   {entry.status}
@@ -121,7 +121,7 @@ export function DirChildren({
         );
       })}
       {listing.truncated && (
-        <li role="treeitem" aria-disabled="true" className="files-note-row" style={pad}>
+        <li role="treeitem" aria-disabled="true" className="folder-tree-note-row" style={pad}>
           …more entries than can be listed
         </li>
       )}

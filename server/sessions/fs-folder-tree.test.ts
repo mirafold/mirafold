@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { listDir, listTree, readWorkspaceFile } from "./fs-explorer";
+import { listDir, listTree, readWorkspaceFile } from "./fs-folder-tree";
 
 // E.1's module contract, on real temp directories: the walk's shape and caps,
 // the jail, the secret denial, and the read's binary/truncation/UTF-8 honesty.

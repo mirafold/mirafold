@@ -1,4 +1,4 @@
-/* ── Explorer files panel ────────────────────────────────────────── */
+/* ── folder tree files panel ────────────────────────────────────────── */
 
 /* The activity bar — the workbench's permanent left edge (VS Code
    convention): a thin strip whose files icon opens/collapses the panel.
@@ -10,7 +10,7 @@
   flex-direction: column;
   align-items: center;
   gap: 28px;
-  padding-top: 20px; /* aligns the toggle with the Explorer title bar */
+  padding-top: 20px; /* aligns the toggle with the folder tree title bar */
   border-right: 1px solid var(--border);
 }
 
@@ -46,9 +46,9 @@
   cursor: default;
 }
 
-.files-panel {
+.folder-tree-panel {
   flex-shrink: 0;
-  /* Cancel the transcript's air completely: rail + Explorer are one stable
+  /* Cancel the transcript's air completely: rail + folder tree are one stable
      workbench unit, while the transcript and prompt retain their gutter. */
   margin-left: calc(-1 * var(--content-air));
   /* A professional project tree does not resize as folders are expanded.
@@ -61,20 +61,20 @@
   border-right: 1px solid var(--border);
   box-shadow: inset -1px 0 0 var(--border-ghost);
   overflow: hidden;
-  animation: files-in 0.18s ease-out;
+  animation: folder-tree-in 0.18s ease-out;
 }
 
-@keyframes files-in {
+@keyframes folder-tree-in {
   from {
     opacity: 0;
     transform: translateX(-12px);
   }
 }
 
-/* A proper tool-window header separates the Explorer itself from the checked-
+/* A proper tool-window header separates the folder tree itself from the checked-
    out workspace root. It echoes the pin dock's compact uppercase title and
    moves refresh out of the tree's bottom corner into predictable chrome. */
-.files-panel-head {
+.folder-tree-panel-head {
   position: sticky;
   top: 0;
   z-index: 3;
@@ -87,7 +87,7 @@
   border-bottom: 1px solid var(--border);
 }
 
-.files-panel-title {
+.folder-tree-panel-title {
   margin: 0;
   min-width: 0;
   padding-bottom: 5px;
@@ -100,14 +100,14 @@
   text-transform: uppercase;
 }
 
-.files-panel-actions {
+.folder-tree-panel-actions {
   margin-left: auto;
   display: flex;
   align-items: center;
   gap: 2px;
 }
 
-.files-panel-action {
+.folder-tree-panel-action {
   width: 28px;
   height: 28px;
   display: grid;
@@ -121,13 +121,13 @@
   transition: color 0.12s ease, background-color 0.12s ease, border-color 0.12s ease;
 }
 
-.files-panel-action:hover {
+.folder-tree-panel-action:hover {
   color: var(--fg-body);
   background: var(--surface-hover);
   border-color: var(--border-2);
 }
 
-.files-action-icon {
+.folder-tree-action-icon {
   width: 15px;
   height: 15px;
   fill: none;
@@ -139,7 +139,7 @@
 
 /* The tree's root row — the session's checked-out directory. Sticky, so the
    workspace identity survives a deep scroll beneath the title bar. */
-.files-root {
+.folder-tree-root {
   position: sticky;
   top: 56px;
   z-index: 2;
@@ -150,19 +150,19 @@
   border-bottom: 1px solid var(--border-faint);
 }
 
-.files-root-row {
+.folder-tree-root-row {
   flex: 1;
   min-width: 0;
 }
 
-.files-root-row .files-name {
+.folder-tree-root-row .folder-tree-name {
   font-weight: 600;
   color: var(--fg-strong);
   letter-spacing: 0.01em;
 }
 
-.files-back,
-.files-btn {
+.folder-tree-back,
+.folder-tree-btn {
   background: transparent;
   color: var(--fg-dim);
   border: 1px solid var(--border-2);
@@ -172,22 +172,22 @@
   font-size: 0.82em;
 }
 
-.files-back:hover,
-.files-btn:hover {
+.folder-tree-back:hover,
+.folder-tree-btn:hover {
   color: var(--fg-body);
   border-color: var(--border-hover);
 }
 
 /* Tree + file view share this box; the file view overlays the tree (below)
    so back reveals the tree at its prior scroll. */
-.files-main {
+.folder-tree-main {
   position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
 }
 
-.files-tree {
+.folder-tree {
   flex: 1;
   min-height: 0;
   overflow: auto;
@@ -197,13 +197,13 @@
   scrollbar-color: var(--border-hover) transparent;
 }
 
-.files-ul {
+.folder-tree-ul {
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
-.files-row {
+.folder-tree-row {
   position: relative;
   display: flex;
   align-items: center;
@@ -223,20 +223,20 @@
   transition: background-color 0.12s ease, color 0.12s ease;
 }
 
-.files-ul .files-row {
+.folder-tree-ul .folder-tree-row {
   width: calc(100% - 12px);
   margin: 1px 6px;
 }
 
-.files-row:hover {
+.folder-tree-row:hover {
   background: var(--surface-hover);
 }
 
-.files-row:active {
+.folder-tree-row:active {
   background: var(--surface-2);
 }
 
-.files-caret {
+.folder-tree-caret {
   flex-shrink: 0;
   display: grid;
   place-items: center;
@@ -245,7 +245,7 @@
   color: var(--fg-dim);
 }
 
-.files-chevron {
+.folder-tree-chevron {
   display: block;
   width: 12px;
   height: 12px;
@@ -258,11 +258,11 @@
   transition: transform 0.12s ease;
 }
 
-.files-chevron.is-open {
+.folder-tree-chevron.is-open {
   transform: rotate(90deg);
 }
 
-.files-indent-guides {
+.folder-tree-indent-guides {
   align-self: stretch;
   flex-shrink: 0;
   background: repeating-linear-gradient(
@@ -274,23 +274,23 @@
   );
 }
 
-.files-name {
+.folder-tree-name {
   min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.files-dir .files-name {
+.folder-tree-dir .folder-tree-name {
   color: var(--fg-body);
   font-weight: 550;
 }
 
-.files-file-row .files-name {
+.folder-tree-file-row .folder-tree-name {
   color: var(--fg-mid);
 }
 
-.files-node-icon {
+.folder-tree-node-icon {
   width: 14px;
   height: 14px;
   flex-shrink: 0;
@@ -298,43 +298,43 @@
   transition: opacity 0.12s ease, color 0.12s ease;
 }
 
-.files-root-row .files-node-icon {
+.folder-tree-root-row .folder-tree-node-icon {
   width: 14px;
   height: 14px;
 }
 
-.files-row:hover .files-node-icon {
+.folder-tree-row:hover .folder-tree-node-icon {
   opacity: 1;
 }
 
-.files-node-icon-folder,
-.files-node-icon-folder-open {
+.folder-tree-node-icon-folder,
+.folder-tree-node-icon-folder-open {
   color: var(--info);
 }
 
-.files-node-icon-code,
-.files-node-icon-image {
+.folder-tree-node-icon-code,
+.folder-tree-node-icon-image {
   color: var(--accent);
 }
 
-.files-node-icon-config {
+.folder-tree-node-icon-config {
   color: var(--warn-fg);
 }
 
-.files-node-icon-style {
+.folder-tree-node-icon-style {
   color: var(--info);
 }
 
-.files-node-icon-document {
+.folder-tree-node-icon-document {
   color: var(--fg-mid);
 }
 
-.files-node-icon-file,
-.files-node-icon-symlink {
+.folder-tree-node-icon-file,
+.folder-tree-node-icon-symlink {
   color: var(--fg-dimmer);
 }
 
-.files-status {
+.folder-tree-status {
   margin-left: auto;
   flex-shrink: 0;
   min-width: 16px;
@@ -345,32 +345,32 @@
   text-align: center;
 }
 
-.files-status-M {
+.folder-tree-status-M {
   color: var(--accent);
 }
-.files-status-A {
+.folder-tree-status-A {
   color: var(--accent);
 }
-.files-status-D {
+.folder-tree-status-D {
   color: var(--fg-dim);
 }
-.files-status-U {
+.folder-tree-status-U {
   color: var(--fg-dim);
 }
 
-.files-empty {
+.folder-tree-empty {
   padding: 12px 10px;
   color: var(--fg-dim);
   font-size: 0.85em;
 }
 
-.files-error {
+.folder-tree-error {
   color: var(--fg-dim);
 }
 
 /* Non-interactive in-tree rows: a dir's loading "…", "(empty)", an
    error, or the per-dir truncation note — dim, italic, indented like a row. */
-.files-note-row {
+.folder-tree-note-row {
   padding: 3px 10px;
   color: var(--fg-dim);
   font-size: 0.85em;
@@ -380,7 +380,7 @@
 
 /* Laid over the still-mounted tree (opaque), so it fully covers it on desktop
    and phone alike; back just unmounts this layer. */
-.files-file {
+.folder-tree-file {
   position: absolute;
   inset: 0;
   /* Above both sticky tree strips (workspace z2, title bar z3), or their
@@ -396,21 +396,21 @@
    the transcript never reflows and is visibly still there behind the dim.
    Same z band as the phone drill-in layer: above the transcript and status
    bar, below the 60 modals (a permission card must never be buried). */
-.files-dim {
+.folder-tree-dim {
   position: fixed;
   inset: 0;
   z-index: var(--z-layer-dim);
   background: rgba(0, 0, 0, 0.55);
-  animation: files-dim-in 0.12s ease-out;
+  animation: folder-tree-dim-in 0.12s ease-out;
 }
 
-@keyframes files-dim-in {
+@keyframes folder-tree-dim-in {
   from {
     opacity: 0;
   }
 }
 
-.files-file.is-maximized {
+.folder-tree-file.is-maximized {
   position: fixed;
   /* The rim: enough dimmed workspace to read as a layer. Each axis steps in
      by 5% of the viewport per edge on top of the base rim (~10% smaller
@@ -422,10 +422,10 @@
   border-radius: 10px;
   box-shadow: var(--shadow-pop);
   overflow: hidden; /* the rounded corners clip the scrolling view */
-  animation: files-pop-in 0.12s ease-out;
+  animation: folder-tree-pop-in 0.12s ease-out;
 }
 
-@keyframes files-pop-in {
+@keyframes folder-tree-pop-in {
   from {
     opacity: 0;
     transform: scale(0.985);
@@ -435,11 +435,11 @@
 /* The wide frame earns a bigger read: the 0.8em content and 0.82em header
    chrome are density choices for the narrow column; the enlarged frame
    relaxes them all. */
-.files-file.is-maximized .fv-content {
+.folder-tree-file.is-maximized .fv-content {
   font-size: 1em;
 }
 
-.files-file.is-maximized .files-back {
+.folder-tree-file.is-maximized .folder-tree-back {
   font-size: 0.95em;
 }
 
@@ -448,11 +448,11 @@
    wide tabs, tabs absent on clean files) can never tug it off-center or
    make it shift between files. Ellipsis still trims long paths; the 60%
    cap keeps them clear of both flanks. */
-.files-file.is-maximized .files-file-path {
+.folder-tree-file.is-maximized .folder-tree-file-path {
   position: relative;
 }
 
-.files-file.is-maximized .files-file-name {
+.folder-tree-file.is-maximized .folder-tree-file-name {
   font-size: 0.95em;
   position: absolute;
   left: 50%;
@@ -463,7 +463,7 @@
 
 /* Floats in the file box's bottom-right corner (the refresh idiom, opposite
    corner); the surface background keeps it legible over scrolling content. */
-.files-enlarge {
+.folder-tree-enlarge {
   position: absolute;
   right: 8px;
   bottom: 10px;
@@ -472,7 +472,7 @@
   background: var(--surface);
 }
 
-.files-file-path {
+.folder-tree-file-path {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -480,7 +480,7 @@
   border-bottom: 1px solid var(--border);
 }
 
-.files-file-name {
+.folder-tree-file-name {
   font-family: var(--font-mono);
   font-size: 0.82em;
   color: var(--fg-dim);
@@ -489,14 +489,14 @@
   text-overflow: ellipsis;
 }
 
-.files-file-tabs {
+.folder-tree-file-tabs {
   margin-left: auto;
   display: flex;
   gap: 4px;
   flex-shrink: 0;
 }
 
-.files-tab {
+.folder-tree-tab {
   background: transparent;
   color: var(--fg-dim);
   border: 1px solid var(--border-2);
@@ -506,13 +506,13 @@
   font-size: 0.8em;
 }
 
-.files-tab.is-active {
+.folder-tree-tab.is-active {
   color: var(--fg-body);
   border-color: var(--border-hover);
   background: var(--surface);
 }
 
-.files-view {
+.folder-tree-view {
   flex: 1;
   min-height: 0;
   overflow: auto;
@@ -520,12 +520,12 @@
 }
 
 /* The tool-code look minus the transcript's 360px height cap: in every
-   frame (docked, phone, enlarged) the file fills the panel and .files-view
+   frame (docked, phone, enlarged) the file fills the panel and .folder-tree-view
    is the ONE scroller — while .tool-code's wrapping stays, so lines fold at
    the frame's width and there is never a side-scroll.
    The descendant selector beats .tool-code's later-declared rule on
    specificity. */
-.files-view .fv-content {
+.folder-tree-view .fv-content {
   max-height: none;
   overflow-y: visible;
 }

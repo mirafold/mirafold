@@ -611,7 +611,7 @@ export class SessionRegistry {
           };
           this.fanout(entry, notice);
           createLogger(`session ${entry.id}`).error(
-            `fs watcher stopped — the Explorer falls back to turn-end/manual refresh: ${errText(err)}`,
+            `fs watcher stopped — the folder tree falls back to turn-end/manual refresh: ${errText(err)}`,
           );
         },
       },

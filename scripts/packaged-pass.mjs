@@ -121,12 +121,12 @@ try {
   const bangText = await page.locator(".bang-output").last().innerText();
   check("! passthrough runs a real PTY", bangText.includes("packaged-pass-marker"), bangText.trim().slice(0, 40));
 
-  // 6. Explorer — the daemon's own fs surface against a real repo.
-  await page.locator(".ab-files").click();
-  await page.waitForSelector(".files-panel .files-row", { timeout: 20_000 });
-  await page.locator(".files-file-row").first().click();
-  await page.waitForSelector(".files-view .fv-content", { timeout: 20_000 });
-  check("Explorer lists and opens a file", true);
+  // 6. folder tree — the daemon's own fs surface against a real repo.
+  await page.locator(".ab-folder-tree").click();
+  await page.waitForSelector(".folder-tree-panel .folder-tree-row", { timeout: 20_000 });
+  await page.locator(".folder-tree-file-row").first().click();
+  await page.waitForSelector(".folder-tree-view .fv-content", { timeout: 20_000 });
+  check("Folder tree lists and opens a file", true);
 
   // 7. The render MCP server ships and starts — the generative-UI path for
   //    REAL agents, which the mock never exercises.
