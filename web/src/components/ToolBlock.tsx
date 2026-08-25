@@ -75,9 +75,13 @@ function ToolInput({ name, input }: { name: string; input: Record<string, unknow
     // MultiEdit: a sequence of {old_string, new_string} edits.
     return (
       <div className="tool-input">
-        {(input["edits"] as Record<string, unknown>[]).map((e, i) => (
-          <EditDiff key={i} oldText={String(e["old_string"] ?? "")} newText={String(e["new_string"] ?? "")} />
-        ))}
+        {(input["edits"] as unknown[]).map((raw, i) => {
+          // Engine-authored input: each element is checked, not assumed.
+          const e = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
+          return (
+            <EditDiff key={i} oldText={String(e["old_string"] ?? "")} newText={String(e["new_string"] ?? "")} />
+          );
+        })}
       </div>
     );
   }

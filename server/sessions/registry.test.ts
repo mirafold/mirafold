@@ -721,7 +721,6 @@ test("a `!` bang beside a pending ask never wipes it — bang traffic is not tur
   const { reg, entry } = freshSession();
   reg.broadcast(entry, { type: "permission_request", tool: "Bash", detail: "rm -rf /", id: "p1" });
   assert.equal(entry.status, "permission");
-  entry.midTurnPromptUsed = true;
   reg.broadcast(entry, { type: "bang_start", command: "git diff", id: "b1" });
   assert.equal(entry.status, "permission", "bang traffic does not lift the hold");
   reg.broadcast(entry, { type: "bang_output", data: "diff --git …", id: "b1" });
@@ -733,7 +732,6 @@ test("a `!` bang beside a pending ask never wipes it — bang traffic is not tur
     ["p1"],
     "the ask keeps its fleet allow/deny until ITS OWN resolution",
   );
-  assert.equal(entry.midTurnPromptUsed, true, "the burst gate clears on turn grammar only");
   reg.end(entry.id);
 });
 
@@ -753,21 +751,22 @@ test("bang_end beside an active model turn stays working and never reopens the p
   assert.equal(entry.modelTurnsPending, 1);
   assert.equal(reg.dispatchPrompt(entry, "queued"), true);
   assert.equal(entry.modelTurnsPending, 2);
-  assert.equal(entry.midTurnPromptUsed, true);
   assert.equal(reg.dispatchPrompt(entry, "refused before bang"), false);
 
   reg.broadcast(entry, { type: "bang_start", command: "git status", id: "b1" });
   reg.broadcast(entry, { type: "bang_end", id: "b1", exitCode: 0 });
   assert.equal(entry.status, "working", "the original model turn still owns the session");
-  assert.equal(entry.modelTurnsPending, 2);
-  assert.equal(entry.midTurnPromptUsed, true, "bang lifecycle is not model turn grammar");
+  assert.equal(entry.modelTurnsPending, 2, "bang lifecycle is not model turn grammar");
   assert.equal(reg.dispatchPrompt(entry, "refused after bang"), false);
 
   reg.broadcast(entry, { type: "turn_end" });
   assert.equal(entry.status, "working", "the queued turn becomes current without a false-idle boundary");
   assert.equal(entry.modelTurnsPending, 1);
-  assert.equal(entry.midTurnPromptUsed, false, "the new current turn earns one queued-follow-up slot");
-  assert.equal(reg.dispatchPrompt(entry, "follow-up for queued turn"), true);
+  assert.equal(
+    reg.dispatchPrompt(entry, "follow-up for queued turn"),
+    true,
+    "the new current turn earns one queued-follow-up slot",
+  );
   assert.equal(entry.modelTurnsPending, 2);
   reg.broadcast(entry, { type: "turn_end" });
   assert.equal(entry.modelTurnsPending, 1);

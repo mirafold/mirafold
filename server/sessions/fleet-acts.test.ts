@@ -227,7 +227,6 @@ test("a throttle-refused bang answers the issuer only — nothing enters the ses
   send(watcher.c, { type: "attach", sessionId: e.id });
   const watcherMark = watcher.seen.length;
   reg.broadcast(e, { type: "status", state: "thinking" }); // a model turn is live
-  e.midTurnPromptUsed = true;
   e.lastBangAt = Date.now(); // a bang just finished — inside the 400 ms window
   send(issuer.c, { type: "bang", command: "true", id: "b2" });
   assert.ok(
@@ -240,6 +239,5 @@ test("a throttle-refused bang answers the issuer only — nothing enters the ses
   );
   assert.ok(!e.buffer.some((m) => m.type === "bang_end"), "the replay ring stays clean");
   assert.equal(e.status, "working", "a mid-turn session never flips idle over a refused bang");
-  assert.equal(e.midTurnPromptUsed, true, "the burst gate stays closed");
   reg.end(e.id);
 });

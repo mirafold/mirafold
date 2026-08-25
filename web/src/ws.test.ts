@@ -696,6 +696,27 @@ test("relay path: a completed handshake resets the ladder (health = usable chann
   client.close();
 });
 
+test("relay path: a failed seal closes the socket instead of silently skipping every later send", async (t) => {
+  const { client, sock } = setupRelay(t);
+  client.setHello(() => null);
+  await drainUntil(() => FakeWS.instances.length > 0, "first dial after derivePair");
+  const healthy = sock();
+  healthy.open();
+  await answerHandshake(healthy, client);
+  const subtle = globalThis.crypto.subtle as unknown as Record<string, unknown>;
+  Object.defineProperty(subtle, "encrypt", {
+    configurable: true,
+    value: () => Promise.reject(new Error("seal failed")),
+  });
+  try {
+    client.send({ type: "ping" });
+    await drainUntil(() => healthy.readyState === FakeWS.CLOSING, "socket closed after a failed seal");
+  } finally {
+    delete subtle.encrypt;
+  }
+  client.close();
+});
+
 test("relay path: an unanswered handshake is bounded — the deadline closes into the retry ladder", async (t) => {
   const { client, sock } = setupRelay(t);
   client.setHello(() => null);

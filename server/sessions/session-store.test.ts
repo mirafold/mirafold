@@ -14,6 +14,7 @@ import type { Backend } from "../adapters";
 import { SessionRegistry } from "./registry";
 import { SessionCheckpointStore, type StoredSession } from "./session-store";
 import type { WireMsg } from "../protocol";
+import { PROMPT_LABEL_CAP, normalizePromptOptions } from "../prompt-options";
 
 const MOCK_BACKEND: Backend = { agent: "codex", kind: "none", live: false };
 
@@ -200,6 +201,19 @@ test("a corrupt checkpoint is retained and reported, never silently treated as a
   assert.throws(() => registry.open("badc0ffe"), /saved but its checkpoint is unavailable/);
   assert.equal(registry.end("badc0ffe"), true, "explicit end is the deletion path");
   assert.equal(readdirSync(dir).length, 0);
+});
+
+test("a catalog entry capped by the daemon's own caps round-trips through the checkpoint", () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "mirafold-session-caps-"));
+  const store = new SessionCheckpointStore(dir);
+  const stored = fixture("caps");
+  const long = "x".repeat(5_000);
+  stored.promptOptions = normalizePromptOptions([
+    { trigger: "/", value: "/long", label: long, description: long, argumentHint: long, kind: "command" },
+  ]);
+  store.write(stored);
+  const reloaded = store.loadAll().sessions.get("caps");
+  assert.equal(reloaded?.promptOptions[0]?.label.length, PROMPT_LABEL_CAP + 1);
 });
 
 test("UX.8: strict checkpoint decoding accepts every persistable transcript frame", () => {

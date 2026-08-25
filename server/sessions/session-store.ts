@@ -19,16 +19,26 @@ import { z } from "zod";
 import type { PromptOption, SessionMeta, WireMsg } from "../protocol";
 import type { Backend } from "../adapters";
 import { createLogger, scrubSelectedEndpoint, stateDir } from "../log";
-import { promptOptionIsControlSafe } from "../prompt-options";
+import {
+  PROMPT_ALIAS_CAP,
+  PROMPT_DESCRIPTION_CAP,
+  PROMPT_LABEL_CAP,
+  PROMPT_OPTION_CAP,
+  PROMPT_VALUE_CAP,
+  promptOptionIsControlSafe,
+} from "../prompt-options";
+import { BUFFER_CAP, MAX_CHECKPOINT_BYTES } from "./limits";
 
 const log = createLogger("session-store");
 const SCHEMA_VERSION = 1;
-const MAX_CHECKPOINT_BYTES = 40_000_000;
-// Must match the registry's fixed replay-ring count ceiling. A record written
-// by Mirafold never exceeds it; rejecting more keeps a corrupt local file from
-// expanding into an unbounded array during recovery.
-const MAX_BUFFER_MESSAGES = 4_000;
-const MAX_PROMPT_OPTIONS = 500;
+// A record written by Mirafold never exceeds the ring's count cap; rejecting
+// more keeps a corrupt local file from expanding into an unbounded array
+// during recovery.
+const MAX_BUFFER_MESSAGES = BUFFER_CAP;
+const MAX_PROMPT_OPTIONS = PROMPT_OPTION_CAP;
+// normalizePromptOptions caps each text and appends one ellipsis character,
+// so the longest legitimate stored form is the cap plus one.
+const CAPPED = (cap: number) => cap + 1;
 const SESSION_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 export type StoredSession = {
@@ -222,12 +232,12 @@ const storedWireMessageSchema = z.discriminatedUnion("type", [
 const promptOptionSchema = z
   .object({
     trigger: z.enum(["/", "$"]),
-    value: z.string().min(2).max(200),
-    label: z.string().min(1).max(121),
-    description: z.string().max(501).optional(),
-    argumentHint: z.string().max(201).optional(),
+    value: z.string().min(2).max(PROMPT_VALUE_CAP),
+    label: z.string().min(1).max(CAPPED(PROMPT_LABEL_CAP)),
+    description: z.string().max(CAPPED(PROMPT_DESCRIPTION_CAP)).optional(),
+    argumentHint: z.string().max(CAPPED(PROMPT_VALUE_CAP)).optional(),
     kind: z.enum(["command", "skill"]),
-    aliases: z.array(z.string().max(200)).max(20).optional(),
+    aliases: z.array(z.string().max(PROMPT_VALUE_CAP)).max(PROMPT_ALIAS_CAP).optional(),
     source: z.enum(["claude-code", "codex", "gemini-cli", "opencode", "mirafold"]).optional(),
   })
   .strict()

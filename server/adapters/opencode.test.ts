@@ -287,6 +287,30 @@ test("a mirafold render call paints the component, no raw tool block", async () 
   session.close();
 });
 
+test("an agent-chosen render id (update-in-place) paints under that id", async () => {
+  const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("hi");
+  feed(
+    snap({
+      type: "tool",
+      id: "t1",
+      tool: "mirafold_render_progress",
+      state: {
+        status: "completed",
+        input: { id: "deploy-status", label: "deploy", value: 40 },
+        output: "Rendered progress (id: deploy-status)",
+      },
+    }),
+    idle(),
+  );
+  await awaitTurnEnd();
+  const render = msgs.find((m) => m.type === "render");
+  assert.equal(render?.component, "progress");
+  assert.equal(render?.id, "deploy-status");
+  assert.equal(msgs.some((m) => m.type === "tool_use" || m.type === "tool_result"), false);
+  session.close();
+});
+
 test("mirafold emit_artifact paints an artifact", async () => {
   const { session, msgs, prompt, feed, awaitTurnEnd } = makeSession();
   await prompt("hi");

@@ -24,18 +24,7 @@ import { recoverStoredTranscript } from "./session-recovery";
 import { SessionCheckpointStore, type StoredSession } from "./session-store";
 import { normalizePromptOptions } from "../prompt-options";
 
-// Replay depth: enough to reconstruct a long working session; beyond it the
-// oldest messages fall off and a late viewport sees a truncated head.
-const BUFFER_CAP = 4000;
-// The same ring, capped by BYTES as well (2026-07-27 audit). The count cap
-// alone assumed every message was text the agent had to type, which bounded
-// it implicitly — `render_image` broke that: a six-character path inlines up
-// to 2 MB of picture into one buffered message, and render tools are
-// auto-allowed, so nothing prompts. Measured: 40 image renders held 96 MB,
-// and the count cap's own ceiling worked out to ~10 GB. Evict oldest-first on
-// either cap; a viewport that falls behind the trimmed head just replays from
-// a truncated head, exactly as it does when the count cap trims.
-const BUFFER_MAX_BYTES = envInt("SESSION_BUFFER_MAX_BYTES", 32_000_000);
+import { BUFFER_CAP, BUFFER_MAX_BYTES } from "./limits";
 
 /** Rough retained size of a buffered message. JSON length is the honest proxy
  *  for the payloads that matter here (a data: URI is one long string) and
@@ -207,9 +196,6 @@ export type SessionEntry = {
   // When the last `!` command started — the burst throttle in connection.ts
   // (each bang costs a model turn, so bursts burn tokens).
   lastBangAt?: number;
-  // The prompt-burst gate (dispatchPrompt): has the running turn already
-  // accepted its one queued follow-up? Cleared only by model turn grammar.
-  midTurnPromptUsed?: boolean;
   // Enqueued + running model turns, independent from the composite fleet
   // status: a permission hold or a `!` PTY can temporarily own `status` while
   // model work remains underneath. Never persisted — recovery starts idle.
@@ -666,8 +652,7 @@ export class SessionRegistry {
       } else {
         entry.modelTurnsPending = Math.max(0, entry.modelTurnsPending - 1);
       }
-      entry.midTurnPromptUsed = entry.modelTurnsPending > 1;
-      entry.status = entry.modelTurnsPending > 0 ? "working" : "idle";
+        entry.status = entry.modelTurnsPending > 0 ? "working" : "idle";
     } else if (msg.type === "bang_end") {
       // The `!` PTY is its own lifecycle running BESIDE the model turn — its
       // end is NOT the turn reaching a terminal state. Treating it as one
@@ -815,11 +800,6 @@ export class SessionRegistry {
     return afterSeq >= firstBuffered - 1;
   }
 
-  /**
-   * Replay history into the viewport, then subscribe it to the live stream.
-   * With `afterSeq` (pre-validated via canResume) only the unseen tail is
-   * replayed — the reconnecting viewport keeps its state, no repaint.
-   */
   /** Mark an attached viewport as REMOTE (relay) — connection.ts calls this
    *  right after attach for a relay connection, so a later kind flip can
    *  evict it (audit 2026-08-13). Idempotent; a subset of `viewports`. */
@@ -841,6 +821,11 @@ export class SessionRegistry {
     }
   }
 
+  /**
+   * Replay history into the viewport, then subscribe it to the live stream.
+   * With `afterSeq` (pre-validated via canResume) only the unseen tail is
+   * replayed — the reconnecting viewport keeps its state, no repaint.
+   */
   attach(entry: SessionEntry, viewport: Viewport, afterSeq?: number) {
     clearTimeout(entry.idleTimer);
     // The ring must be complete before it replays — an open delta window
@@ -1132,7 +1117,6 @@ export class SessionRegistry {
   dispatchPrompt(entry: SessionEntry, text: string): boolean {
     if (entry.modelTurnsPending > 1) return false;
     entry.modelTurnsPending += 1;
-    entry.midTurnPromptUsed = entry.modelTurnsPending > 1;
     entry.errorAwaitingTurnEnd = false;
     this.broadcast(entry, { type: "user_prompt", text });
     entry.session.pushPrompt(text);
@@ -1146,7 +1130,6 @@ export class SessionRegistry {
   markModelTurnStarted(entry: SessionEntry) {
     if (this.entries.get(entry.id) !== entry) return;
     entry.modelTurnsPending += 1;
-    entry.midTurnPromptUsed = entry.modelTurnsPending > 1;
     entry.errorAwaitingTurnEnd = false;
   }
 

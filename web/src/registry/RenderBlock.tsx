@@ -30,7 +30,11 @@ function Fallback({
   );
 }
 
-class RenderBoundary extends ReactComponent<
+/** Contains a throw from one piece of agent-derived content to that piece —
+ *  the registry components use it around every paint, and the output zone
+ *  wraps every transcript row in it so a malformed engine record can never
+ *  unmount the shell (socket, prompt box, permission bar included). */
+export class RenderBoundary extends ReactComponent<
   { fallback: ReactNode; children: ReactNode },
   { failed: boolean }
 > {

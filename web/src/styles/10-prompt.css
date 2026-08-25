@@ -78,7 +78,7 @@
 .prompt-option-source {
   flex: none;
   padding: 1px 5px;
-  color: var(--fg-muted);
+  color: var(--fg-dim);
   background: var(--surface-3);
   border: 1px solid var(--border);
   border-radius: 999px;

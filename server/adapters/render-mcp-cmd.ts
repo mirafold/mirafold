@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -44,8 +45,32 @@ export const renderToolEntries = Object.entries(RENDER_TOOL_COMPONENT) as [
 
 /** Matches the component id inside the render-MCP stub's ack text
  *  ("Rendered card (id: …)") — the fallback channel when an engine drops
- *  structured content. */
-export const RENDER_ID_RE = /id:\s*([0-9a-fA-F-]{8,})/;
+ *  structured content. The id is whatever the agent chose (any non-space
+ *  text), not only a uuid: `render_progress({id:"deploy-status"})` is the
+ *  documented update-in-place idiom. */
+export const RENDER_ID_RE = /\(id:\s*([^\s)]+)\)/;
+
+/**
+ * The ONE precedence for the component id a Mirafold render call paints
+ * under, shared by every adapter that watches a stdio-MCP engine: the stub's
+ * structured ack (what it assigned), then the id the agent passed in the
+ * call's arguments (what it will re-send for an update-in-place), then the
+ * regex over the ack prose (the least reliable channel), then a fresh uuid.
+ * The stub acks with the agent's own id when one was passed, so in practice
+ * the channels agree; the order only decides who wins if an engine mangles
+ * one of them.
+ */
+export function renderIdFor(source: {
+  structured?: unknown;
+  argId?: unknown;
+  ackText?: unknown;
+}): string {
+  const structured = source.structured as { renderId?: unknown } | undefined;
+  if (structured && typeof structured.renderId === "string") return structured.renderId;
+  if (typeof source.argId === "string") return source.argId;
+  const match = RENDER_ID_RE.exec(String(source.ackText ?? ""));
+  return match ? match[1] : randomUUID();
+}
 
 /**
  * The render/artifact WireMsg a Mirafold MCP tool call stands for (P.3/P.5):

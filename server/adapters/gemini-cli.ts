@@ -6,7 +6,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import type { PromptOption, WireMsg } from "../protocol";
 import { RENDER_GUIDANCE } from "../render-tools";
 import { type AgentSession, capOutput, emitPromptOptions, errText, toolDetail } from "./types";
-import { MIRAFOLD_MCP, RENDER_ID_RE, generativeUIMsg, renderMcpCommand } from "./render-mcp-cmd";
+import { MIRAFOLD_MCP, generativeUIMsg, renderIdFor, renderMcpCommand } from "./render-mcp-cmd";
 import { geminiBin, listGeminiModels, type GeminiModelCatalog } from "./gemini-model-list";
 import { emitModelPicker } from "./model-picker";
 import { isWorkspaceTrusted, trustWorkspace } from "../sessions/workspace-trust";
@@ -32,8 +32,7 @@ const GEMINI_FATAL_INPUT_ERROR = 42;
 
 /** The component id the render-mcp stub returned, parsed from its output text. */
 export function parseRenderId(output: unknown): string {
-  const m = String(output ?? "").match(RENDER_ID_RE);
-  return m ? m[1] : randomUUID();
+  return renderIdFor({ ackText: output });
 }
 
 /**
@@ -607,7 +606,7 @@ export class GeminiCliSession implements AgentSession {
 
   /** A buffered Mirafold render tool call → the render/artifact WireMsg it stands for. */
   private emitGenerativeUI(pending: { tool: string; params: Record<string, unknown> }, output: unknown) {
-    const id = typeof pending.params["id"] === "string" ? (pending.params["id"] as string) : parseRenderId(output);
+    const id = renderIdFor({ ackText: output, argId: pending.params["id"] });
     const msg = generativeUIMsg(pending.tool, pending.params, id, this.workspaceDir);
     if (msg) this.emit(msg);
   }

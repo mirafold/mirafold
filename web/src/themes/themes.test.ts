@@ -92,6 +92,34 @@ test("base.css defines exactly the pinned tokens", () => {
   assert.deepEqual(declared, [...PINNED_TOKENS].sort());
 });
 
+// The structural stylesheets (styles/*.css) and every .tsx may consume only
+// tokens some theme or base.css defines — a `var(--x)` naming an undefined
+// property is invalid at computed-value time and silently resets the whole
+// declaration (a border disappears, a background goes transparent).
+test("styles and components consume only defined tokens", () => {
+  const webDir = join(themesDir, "..");
+  const walk = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
+      entry.isDirectory() ? walk(join(dir, entry.name)) : [join(dir, entry.name)],
+    );
+  const consumers = walk(webDir).filter(
+    (file) => (file.endsWith(".css") && !file.includes("/themes/")) || file.endsWith(".tsx"),
+  );
+  const defined = new Set<string>([...THEME_TOKENS, ...PINNED_TOKENS]);
+  for (const file of consumers) {
+    if (!file.endsWith(".css")) continue;
+    // Local custom properties a stylesheet declares for itself count too.
+    for (const m of readFileSync(file, "utf8").matchAll(/^\s*(--[a-z0-9-]+)\s*:/gm)) defined.add(m[1]);
+  }
+  const undefinedUses: string[] = [];
+  for (const file of consumers) {
+    for (const m of readFileSync(file, "utf8").matchAll(/var\((--[a-z0-9-]+)/g)) {
+      if (!defined.has(m[1])) undefinedUses.push(`${file.slice(webDir.length + 1)}: ${m[1]}`);
+    }
+  }
+  assert.deepEqual(undefinedUses, []);
+});
+
 test("contract and pinned token lists don't overlap", () => {
   const overlap = THEME_TOKENS.filter((k) => (PINNED_TOKENS as readonly string[]).includes(k));
   assert.deepEqual(overlap, []);

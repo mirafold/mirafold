@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { WireMsg } from "../protocol";
 import { capOutput, toolDetail, SubagentProseBudget, type TodoItem } from "./types";
-import { generativeUIMsg, MIRAFOLD_MCP, RENDER_ID_RE } from "./render-mcp-cmd";
+import { generativeUIMsg, MIRAFOLD_MCP, renderIdFor } from "./render-mcp-cmd";
 import type { OpenCodeEvent } from "./opencode-client";
 
 // OpenCode advertises MCP tools as `<server>_<tool>` (OC.0 capture:
@@ -457,16 +457,20 @@ export class OpenCodeEventMapper {
     if (track.finished || (status !== "completed" && status !== "error")) return;
     track.finished = true;
     const renderTool = tool.slice(MCP_PREFIX.length);
-    const ackId = RENDER_ID_RE.exec(String(state["output"] ?? ""))?.[1];
     const msg =
-      status === "completed" && ackId
-        ? generativeUIMsg(renderTool, input, ackId, this.options.workspaceDir)
+      status === "completed"
+        ? generativeUIMsg(
+            renderTool,
+            input,
+            renderIdFor({ ackText: state["output"], argId: input["id"] }),
+            this.options.workspaceDir,
+          )
         : null;
     if (msg) {
       this.options.emit(msg);
       return;
     }
-    // Unrecognized render ack or a failed call: fall back to the honest tool
+    // An unknown render tool or a failed call: fall back to the honest tool
     // record rather than silently dropping what the agent did.
     this.announceTool(track, partID, tool, input);
     const { text, truncatedBytes } = capOutput(String(state["error"] ?? state["output"] ?? ""));

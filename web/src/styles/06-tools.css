@@ -149,7 +149,7 @@
   margin: 4px 0;
   padding: 6px 10px;
   border: 1px solid var(--border-mid);
-  border-left: 2px solid var(--border-strong);
+  border-left: 2px solid var(--border-hover);
   border-radius: 6px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.8em;
@@ -184,7 +184,7 @@
 }
 
 .subagent-deck-failed .subagent-dot {
-  background: var(--error-fg);
+  background: var(--error);
 }
 
 @keyframes subagent-pulse {

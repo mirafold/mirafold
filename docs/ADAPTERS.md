@@ -328,8 +328,11 @@ Adapter obligations for either path:
    calls and emit the corresponding `render`/`artifact` WireMsg instead (the
    shared `emitGenerativeUI` path); other MCP servers' calls surface as
    ordinary tool records.
-3. Re-sending a render `id` is an in-place update — adapters must preserve the
-   id the MCP stub returns (Codex/Gemini extract it from the tool result text).
+3. Re-sending a render `id` is an in-place update — adapters must paint under
+   the id the agent will re-send. `renderIdFor()` in `render-mcp-cmd.ts` is the
+   one precedence (stub structured ack → the call's `id` argument → the ack
+   text → a fresh uuid); every stdio adapter feeds it its channels rather than
+   parsing the ack itself.
 
 ## 6. Adding the next provider — the checklist
 

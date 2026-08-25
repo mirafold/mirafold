@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { McpToolCallItem, ThreadEvent, ThreadItem } from "@openai/codex-sdk";
 import type { WireMsg } from "../protocol";
 import { type TodoItem, capOutput, joinTextBlocks } from "./types";
-import { MIRAFOLD_MCP, RENDER_ID_RE, generativeUIMsg } from "./render-mcp-cmd";
+import { MIRAFOLD_MCP, generativeUIMsg, renderIdFor } from "./render-mcp-cmd";
 import { convertMermaidCharts } from "./mermaid-chart";
 
 type Emit = (message: WireMsg) => void;
@@ -12,16 +12,14 @@ export function mcpText(content: unknown): string {
   return joinTextBlocks(content);
 }
 
-// The component id the render-mcp stub assigned (structuredContent is the
-// primary channel; the "(id: …)" text is a fallback if an engine drops it) —
-// used so the browser paints the same id the agent can re-send for update-in-place.
+// The component id the render-mcp stub assigned — the shared precedence in
+// render-mcp-cmd.ts, fed Codex's three channels.
 export function extractRenderId(item: McpToolCallItem): string {
-  const structured = item.result?.structured_content as { renderId?: unknown } | undefined;
-  if (structured && typeof structured.renderId === "string") return structured.renderId;
-  const match = mcpText(item.result?.content).match(RENDER_ID_RE);
-  if (match) return match[1];
-  const argumentId = (item.arguments as { id?: unknown } | undefined)?.id;
-  return typeof argumentId === "string" ? argumentId : randomUUID();
+  return renderIdFor({
+    structured: item.result?.structured_content,
+    ackText: mcpText(item.result?.content),
+    argId: (item.arguments as { id?: unknown } | undefined)?.id,
+  });
 }
 
 export class CodexEventMapper {

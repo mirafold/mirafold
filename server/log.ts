@@ -117,8 +117,6 @@ export function scrub(msg: string): string {
       // Fragments do not reach HTTP, but a raw configured URL may use one as
       // local secret-bearing metadata and logs are promised paste-safe.
       .replace(/(https?:\/\/[^\s"'`#]+)#[^\s"'`]+/gi, "$1#[redacted]")
-      // ?key=… / &api_key=… / ?access_token=… — the Gemini-style query credential
-      .replace(/([?&](?:key|api[-_]?key|access[-_]?token|auth|token)=)[^&\s"'`]+/gi, "$1[redacted]")
       // Authorization headers echoed into an error string
       .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi, "$1 [redacted]")
       // OpenAI / Anthropic / OpenRouter style: sk-…, sk-ant-…, sk-or-…

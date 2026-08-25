@@ -349,10 +349,10 @@
   color: var(--accent);
 }
 .files-status-A {
-  color: var(--ok, var(--accent));
+  color: var(--accent);
 }
 .files-status-D {
-  color: var(--danger, var(--fg-dim));
+  color: var(--fg-dim);
 }
 .files-status-U {
   color: var(--fg-dim);
@@ -365,7 +365,7 @@
 }
 
 .files-error {
-  color: var(--danger, var(--fg-dim));
+  color: var(--fg-dim);
 }
 
 .files-truncated {
@@ -541,7 +541,7 @@
 }
 
 .fv-error {
-  color: var(--danger, var(--fg-dim));
+  color: var(--fg-dim);
 }
 
 .fv-note {

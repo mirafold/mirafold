@@ -263,12 +263,12 @@
 
 .changes-status-A,
 .changes-current-status.changes-status-A {
-  color: var(--ok, var(--accent));
+  color: var(--accent);
 }
 
 .changes-status-D,
 .changes-current-status.changes-status-D {
-  color: var(--danger, var(--fg-dim));
+  color: var(--fg-dim);
 }
 
 .changes-status-U,
@@ -291,7 +291,7 @@
 }
 
 .changes-file.is-reviewed .changes-reviewed-mark {
-  color: var(--ok, var(--accent));
+  color: var(--accent);
 }
 
 .changes-repo-note {
@@ -304,7 +304,7 @@
 }
 
 .changes-repo-error {
-  color: var(--danger, var(--fg-dim));
+  color: var(--fg-dim);
 }
 
 .changes-review {
@@ -404,8 +404,8 @@
 }
 
 .changes-review-toggle[aria-pressed="true"] {
-  color: var(--ok, var(--accent));
-  border-color: var(--ok, var(--border-hover));
+  color: var(--accent);
+  border-color: var(--border-hover);
 }
 
 .changes-view {

@@ -12,7 +12,7 @@ import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import type { Action } from "@protocol";
 import type { ZoneMsg } from "../session-bus";
-import { RenderBlock } from "../registry/RenderBlock";
+import { RenderBlock, RenderBoundary } from "../registry/RenderBlock";
 import { mdOverrides, mdUrlTransform } from "../registry/Md";
 import { PinDock } from "./PinDock";
 import { InputNavigationStop } from "./InputNavigation";
@@ -382,16 +382,17 @@ export const RenderZone = forwardRef<InputNavigationHandle, RenderZoneProps>(fun
   };
 
   const renderZoneEntry = (entry: OutputZoneRow) => (
-    <ZoneEntry
-      key={entry.id}
-      entry={entry}
-      toggleThinking={toggleThinking}
-      expandedThinking={expandedThinking}
-      handleAction={handleAction}
-      pinned={pinned}
-      togglePin={togglePin}
-      inputNavigation={inputNavigationFor(entry.id)}
-    />
+    <RenderBoundary key={entry.id} fallback={<ZoneRowFallback entry={entry} />}>
+      <ZoneEntry
+        entry={entry}
+        toggleThinking={toggleThinking}
+        expandedThinking={expandedThinking}
+        handleAction={handleAction}
+        pinned={pinned}
+        togglePin={togglePin}
+        inputNavigation={inputNavigationFor(entry.id)}
+      />
+    </RenderBoundary>
   );
 
   return (
@@ -500,6 +501,19 @@ export const RenderZone = forwardRef<InputNavigationHandle, RenderZoneProps>(fun
  *  scrollback. File-local on purpose: the renderers lean on RenderZone's
  *  context (pin state and the mediated action path), and brand-mark.test.ts
  *  reads this file as text. */
+/** What a row degrades to when its renderer throws on engine-authored data:
+ *  the raw record, legible, in place — never a blank viewport. */
+function ZoneRowFallback({ entry }: { entry: OutputZoneRow }) {
+  return (
+    <div className="rc rc-fallback">
+      <div className="rc-fallback-note">
+        ⚠ couldn't draw this <code>{entry.kind}</code> row — showing its raw content
+      </div>
+      <pre>{JSON.stringify(entry, null, 2).slice(0, 4_000)}</pre>
+    </div>
+  );
+}
+
 function ZoneEntry({
   entry,
   toggleThinking,

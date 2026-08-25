@@ -224,16 +224,23 @@ export class SocketClient {
         if (sock.readyState === WebSocket.OPEN) sock.send(text);
         return;
       }
-      sendChain = sendChain.then(async () => {
-        if (this.ws === sock && cipher && sock.readyState === WebSocket.OPEN) {
-          sock.send(await cipher.seal(text));
-        } else {
-          // Accepted by send() while ready, but the socket died before this
-          // chained seal ran — requeue instead of vanishing: `pending` is
-          // the queue that survives disconnects (2026-07-29 bughunt).
-          this.pending.push(msg);
-        }
-      });
+      sendChain = sendChain
+        .then(async () => {
+          if (this.ws === sock && cipher && sock.readyState === WebSocket.OPEN) {
+            sock.send(await cipher.seal(text));
+          } else {
+            // Accepted by send() while ready, but the socket died before this
+            // chained seal ran — requeue instead of vanishing: `pending` is
+            // the queue that survives disconnects (2026-07-29 bughunt).
+            this.pending.push(msg);
+          }
+        })
+        .catch(() => {
+          // A failed seal would otherwise reject the chain and silently skip
+          // every later send on this socket. Fail closed like the receive
+          // side: drop the socket into the ordinary retry ladder.
+          if (this.ws === sock) sock.close();
+        });
     };
 
     // A handshake the daemon never answers must not wedge forever: the
