@@ -2747,9 +2747,13 @@ CA** (smallest first; CX's paragraph also stops an agent misattributing
 Codex's sandbox to "a Mirafold session policy"). Each phase is one branch
 off fresh `next`, one PR, merged before the next is cut.
 
-## Phase CX — Agent context + the silent bang (written + opened 2026-08-25; Kyle-directed)
+## Phase CX — Agent context + the silent bang (opened + ✅ COMPLETE 2026-08-25; Kyle-directed; PR `feature/agent-context-silent-bang` → `next`)
 
-- [ ] **Step CX.1 — Tell the agent where it is**
+- [x] **Step CX.1 — Tell the agent where it is** — done 2026-08-25:
+  `MIRAFOLD_CONTEXT` opens `RENDER_GUIDANCE` under "## Where you are"; Tier-1
+  proves the paragraph reaches Claude's `systemPrompt.append` and the
+  first-turn prepend of Codex, Gemini and OpenCode. Live check (the
+  "what environment am I in?" turn) is Kyle's to run.
   - Finding: the only environment text any engine receives is one sentence
     in `RENDER_GUIDANCE` ("Your output renders in a web app…"). No name, no
     "not a terminal". Agents assume a terminal/desktop and say so.
@@ -2770,7 +2774,17 @@ off fresh `next`, one PR, merged before the next is cut.
     (Kyle-run) asking "what environment am I in?" names Mirafold and not a
     terminal.
 
-- [ ] **Step CX.2 — `!!` runs a command with no agent turn**
+- [x] **Step CX.2 — `!!` runs a command with no agent turn** — done 2026-08-25:
+  additive `silent?: true` on `bang` and `bang_start`; the handler skips the
+  context accumulator, `markModelTurnStarted` and `pushPrompt` for a silent
+  bang (cwd handoff and the 400 ms gate unchanged); `!!` glyph on the row,
+  tightened to the `!` column, with a hover title saying the agent never
+  sees it. Proven: Tier-1 (projection row, bus frame), Tier-2
+  (`bang.itest.ts`: flag on start + replay, output flows, no turn for 1.5 s
+  while the mock answers every prompt, `cd` carries into a following `!`
+  that DOES turn), Tier-3 (`app.e2e.ts`: `!!echo` strip + output, nothing
+  follows the block, no activity line). Full suites green: Tier-1 924,
+  Tier-2 153, Tier-3 116.
   - Finding: `!` (the bang line) runs in a PTY and then pushes the transcript
     to the agent as its own model turn (`bang-handlers.ts`) — faithful to
     Claude Code's terminal `!`. There is no way to just use the shell.
