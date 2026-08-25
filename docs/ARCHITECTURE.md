@@ -155,6 +155,40 @@ tool activity, errors, and shell boundaries visible. The output zone delegates
 structured content to [`web/src/registry/`](../web/src/registry/) and arbitrary
 HTML to the sandboxed [`Artifact`](../web/src/components/Artifact.tsx) host.
 
+### Keyboard ownership
+
+Several shell parts listen for keys on `window` or `document`. Which one
+wins is decided by the DOM's dispatch order — capture-phase listeners run
+before bubble-phase ones, a `window` capture listener before a `document`
+capture listener — and by whether the owner stops propagation. The table is
+that order, top to bottom; a key an upper row claims never reaches a lower
+one.
+
+| Owner | Keys | Registered as | Active while | Claims the key? |
+| --- | --- | --- | --- | --- |
+| [`useFocusTrap`](../web/src/use-focus-trap.ts) | Tab, Shift+Tab | `document`, capture | a modal overlay, the enlarged file box, or a phone workspace dialog is open | yes — cycles focus inside the container |
+| [`useEscapeKey`](../web/src/use-escape.ts) with `exclusive` — [`ModalCard`](../web/src/components/ModalCard.tsx), [`useWorkspacePanelFrame`](../web/src/use-workspace-panel-frame.ts) (phone Files/Changes dialog), the file-box enlarge in [`FilesPanel`](../web/src/components/files/FilesPanel.tsx) | Escape | `window`, capture + `stopPropagation` | that overlay is open | yes — dismisses / drills back / restores; nothing below sees it |
+| Phone input-history card in [`InputNavigation`](../web/src/components/InputNavigation.tsx) | Escape | `window`, capture + `stopPropagation` | the ⋯ card is open | yes — closes it and restores focus to its toggle |
+| [`PickerBlock`](../web/src/components/PickerBlock.tsx) | ArrowUp, ArrowDown, Enter, Escape | `document`, capture + `stopPropagation` | a live `/model`-style picker is showing | yes, unless a non-empty input, a picker row, or the phone card owns focus — only the idle (empty) prompt box cedes these keys |
+| Prompt trigger in [`PromptBox`](../web/src/components/PromptBox.tsx) | `/`, `$` | `window`, capture + `stopPropagation` | a provider catalog offers that trigger and `globalTriggersDisabled` is off | yes, when typed outside an editable field or dialog — focuses the prompt box and inserts the trigger |
+| Review shortcuts in [`useChangesController`](../web/src/components/changes/use-changes-controller.ts) | `r`, `n` | `window`, bubble | the Changes panel is open | only outside inputs and the prompt box (`REVIEW_SHORTCUT_EXCLUSION`), and only if nothing above called `preventDefault` |
+| Busy interrupt in [`Shell`](../web/src/components/Shell.tsx) (`useEscapeKey`, non-exclusive) | Escape | `window`, bubble | a turn is running | the fallback: runs only when no exclusive owner above claimed the key |
+
+Focused-element handlers sit outside this order because they see the key
+first and only for their own element: the prompt box's textarea (completion
+menu open: ArrowUp/ArrowDown move, Tab/Enter accept, Escape dismisses the
+menu; otherwise ArrowUp on an empty desktop box enters input history, Enter
+sends on desktop and inserts a newline on phone, Shift+Enter is always a
+newline) and the transcript's input-history strips (ArrowUp/ArrowDown/
+Escape while one is selected).
+
+Adding a global listener means choosing a row: an owner that must win uses
+capture plus `stopPropagation` (the `exclusive` idiom); an owner that must
+yield registers on bubble and checks `defaultPrevented` and the event target.
+[`phone.e2e.ts`](../server/testing/phone.e2e.ts) and
+[`input-navigation.e2e.ts`](../server/testing/input-navigation.e2e.ts) pin the
+rows that have collided before.
+
 ### Generative UI
 
 Mirafold exposes drawing tools to each agent through the Model Context Protocol
