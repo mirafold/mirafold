@@ -10,7 +10,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 
-import type { Backend } from "../adapters";
+import { restoreBackend, type Backend } from "../adapters";
 import { SessionRegistry } from "./registry";
 import { SessionCheckpointStore, type StoredSession } from "./session-store";
 import type { WireMsg } from "../protocol";
@@ -116,11 +116,7 @@ test("restore keeps an unauthenticated saved endpoint when daemon configuration 
       endpointSource: "configured",
       endpointAuth: "none",
     };
-    const registry = new SessionRegistry(MOCK_BACKEND, 0);
-    const restore = registry as unknown as {
-      backendForRestore(session: StoredSession): Backend;
-    };
-    assert.equal(restore.backendForRestore(stored).endpoint, "http://127.0.0.1:1111");
+    assert.equal(restoreBackend(stored).endpoint, "http://127.0.0.1:1111");
   } finally {
     if (prior === undefined) delete process.env.ANTHROPIC_BASE_URL;
     else process.env.ANTHROPIC_BASE_URL = prior;
@@ -143,12 +139,8 @@ test("UX.8: restore refuses authenticated endpoint drift before a current creden
       endpointSource: "configured",
       endpointAuth: "auth-token",
     };
-    const registry = new SessionRegistry(MOCK_BACKEND, 0);
-    const restore = registry as unknown as {
-      backendForRestore(session: StoredSession): Backend;
-    };
     assert.throws(
-      () => restore.backendForRestore(stored),
+      () => restoreBackend(stored),
       /authenticated Claude endpoint or credential mode changed/,
     );
   } finally {
@@ -175,11 +167,7 @@ test("UX.8: restore permits credential rotation at the same bound endpoint and m
       endpointSource: "configured",
       endpointAuth: "auth-token",
     };
-    const registry = new SessionRegistry(MOCK_BACKEND, 0);
-    const restore = registry as unknown as {
-      backendForRestore(session: StoredSession): Backend;
-    };
-    assert.deepEqual(restore.backendForRestore(stored), stored.backend);
+    assert.deepEqual(restoreBackend(stored), stored.backend);
   } finally {
     for (const key of keys) {
       if (savedEnv[key] === undefined) delete process.env[key];

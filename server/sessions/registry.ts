@@ -8,7 +8,7 @@ import {
   errText,
   resolveBackend,
   resolveBackendFor,
-  resolveChosenBackend,
+  restoreBackend,
   type AgentName,
   type AgentSession,
   type Backend,
@@ -346,7 +346,7 @@ export class SessionRegistry {
     const stored = this.dormant.get(id);
     if (!stored) return undefined;
 
-    const backend = this.backendForRestore(stored);
+    const backend = restoreBackend(stored);
     const cwd = resolveCwd(stored.cwd);
     const model = stored.model ?? backend.model;
     const restoredBackend = { ...backend, ...(model ? { model } : {}) };
@@ -421,54 +421,6 @@ export class SessionRegistry {
     // detached session instead of pinning a revived engine forever.
     if (entry.viewports.size === 0) this.armIdleUnload(entry);
     return entry;
-  }
-
-  private backendForRestore(stored: StoredSession): Backend {
-    const saved = stored.backend;
-    if (!saved.live) return saved;
-    if (saved.kind === "local" && saved.endpoint) {
-      // A discovered endpoint was an explicit user choice. Preserve it
-      // exactly even while discovery warms, but force the no-real-credential
-      // invariant for legacy checkpoints that predate endpointSource.
-      if (saved.agent !== "claude-code" || saved.endpointSource !== "configured") {
-        return saved.agent === "claude-code"
-          ? { ...saved, endpointSource: "discovered", endpointAuth: "none" }
-          : saved;
-      }
-
-      // An unauthenticated configured endpoint is safe to preserve even when
-      // daemon configuration changes: the adapter will continue stripping
-      // both real credentials and use only its fixed dummy token.
-      if ((saved.endpointAuth ?? "none") === "none") return saved;
-
-      // Never combine endpoint A from an owner-only checkpoint with the
-      // current credential selected for endpoint B. Recovery is allowed only
-      // when destination and bound credential mode are still exact.
-      const current = resolveBackendFor("claude-code");
-      if (
-        current.kind !== "local" ||
-        current.endpointSource !== "configured" ||
-        current.endpoint !== saved.endpoint ||
-        current.endpointAuth !== saved.endpointAuth
-      ) {
-        throw new Error(
-          `session ${stored.id} is saved but its authenticated Claude endpoint or credential mode changed. Restore the original daemon configuration or end the saved session; no current credential was sent to the saved endpoint.`,
-        );
-      }
-      return saved;
-    }
-    const resolved = resolveChosenBackend(saved.agent, {
-      kind: saved.kind,
-      endpoint: saved.endpoint,
-      provider: saved.provider,
-      model: stored.model ?? saved.model,
-    });
-    if ("error" in resolved) {
-      throw new Error(
-        `session ${stored.id} is saved but its original backend is unavailable: ${resolved.error}. The saved session was not replaced.`,
-      );
-    }
-    return resolved;
   }
 
   private restoredBangCwd(root: string, candidate: string): string {
