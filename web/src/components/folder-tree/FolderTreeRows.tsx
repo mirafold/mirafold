@@ -1,6 +1,6 @@
 import { shownListing, type DirStore } from "../../folder-tree";
 import { changeStatus } from "../../changes";
-import { FolderTreeChevron, FolderTreeNodeGlyph } from "./FolderTreeNodeGlyph";
+import { FolderTreeChevron, FolderTreeNodeGlyph, FolderTreeNodeSpacer } from "./FolderTreeNodeGlyph";
 
 // The folder tree tree's ROWS — the pure recursive renderer split out of
 // FolderTreePanel (which keeps the panel: frame, bus wiring, refresh policy).
@@ -79,7 +79,7 @@ export function DirChildren({
                 <span className="folder-tree-caret">
                   <FolderTreeChevron open={isOpen} />
                 </span>
-                <FolderTreeNodeGlyph name={entry.name} entryKind="dir" open={isOpen} />
+                <FolderTreeNodeSpacer />
                 <span className="folder-tree-name">{entry.name}</span>
               </button>
               {isOpen && (

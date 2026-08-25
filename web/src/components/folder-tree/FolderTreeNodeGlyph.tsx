@@ -1,8 +1,11 @@
 export type FolderTreeEntryKind = "dir" | "file" | "symlink";
 
+/** The glyph is for leaves only: a directory row carries no icon (Kyle,
+ *  2026-08-25 — the chevron already says "folder"), just the spacer that
+ *  keeps names in one column (`FolderTreeNodeSpacer`). */
+export type FolderTreeLeafKind = Exclude<FolderTreeEntryKind, "dir">;
+
 export type FolderTreeNodeGlyphKind =
-  | "folder"
-  | "folder-open"
   | "symlink"
   | "code"
   | "config"
@@ -81,10 +84,8 @@ const CONFIG_NAMES = new Set([
  * every language or reproduce a full IDE icon theme. */
 export function folderTreeNodeGlyphKind(
   name: string,
-  entryKind: FolderTreeEntryKind,
-  open = false,
+  entryKind: FolderTreeLeafKind,
 ): FolderTreeNodeGlyphKind {
-  if (entryKind === "dir") return open ? "folder-open" : "folder";
   if (entryKind === "symlink") return "symlink";
 
   const lower = name.toLowerCase();
@@ -112,16 +113,19 @@ export function FolderTreeChevron({ open }: { open: boolean }) {
   );
 }
 
+/** The icon column, empty: holds a directory name in line with file names. */
+export function FolderTreeNodeSpacer() {
+  return <span className="folder-tree-node-icon folder-tree-node-spacer" aria-hidden="true" />;
+}
+
 export function FolderTreeNodeGlyph({
   name,
   entryKind,
-  open = false,
 }: {
   name: string;
-  entryKind: FolderTreeEntryKind;
-  open?: boolean;
+  entryKind: FolderTreeLeafKind;
 }) {
-  const kind = folderTreeNodeGlyphKind(name, entryKind, open);
+  const kind = folderTreeNodeGlyphKind(name, entryKind);
   const page = (
     <>
       <path d="M3 1.75h6.1L13 5.65v8.6H3z" />
@@ -141,13 +145,6 @@ export function FolderTreeNodeGlyph({
       aria-hidden="true"
       focusable="false"
     >
-      {kind === "folder" && <path d="M1.75 3.5H6l1.35 1.55h6.9v7.45H1.75z" />}
-      {kind === "folder-open" && (
-        <>
-          <path d="M2.25 6V3.5H6l1.35 1.55h6.4v1.2" />
-          <path d="M2 6.25h12.25l-1.55 6.25H3.25z" />
-        </>
-      )}
       {kind === "symlink" && (
         <>
           <path d="M6.35 5.25H5a3 3 0 0 0 0 6h1.35" />

@@ -6,7 +6,7 @@ import { useEscapeKey } from "../../use-escape";
 import { useFocusTrap } from "../../use-focus-trap";
 import { useIsPhone } from "../../use-is-phone";
 import { FileView } from "./FileView";
-import { FolderTreeChevron, FolderTreeNodeGlyph } from "./FolderTreeNodeGlyph";
+import { FolderTreeChevron, FolderTreeNodeSpacer } from "./FolderTreeNodeGlyph";
 import { DirChildren } from "./FolderTreeRows";
 import { RefreshIcon } from "../RefreshIcon";
 import { WorkspaceTabs, type WorkspaceSurface } from "../WorkspaceTabs";
@@ -186,7 +186,7 @@ export function FolderTreePanel({
               <span className="folder-tree-caret">
                 <FolderTreeChevron open={rootOpen} />
               </span>
-              <FolderTreeNodeGlyph name={rootName} entryKind="dir" open={rootOpen} />
+              <FolderTreeNodeSpacer />
               <span className="folder-tree-name">{rootName}</span>
             </button>
           </div>

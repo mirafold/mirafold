@@ -1681,10 +1681,18 @@ test("E.3: the files panel lists the working tree, opens a file beside the trans
   assert.ok((await root.innerText()).includes(repoDir), `root row names the checkout folder (${repoDir})`);
   assert.equal(await page.locator(".folder-tree-title").count(), 0, "the old path header is gone");
   assert.equal(
-    await root.locator(".folder-tree-caret + .folder-tree-node-icon-folder-open + .folder-tree-name").count(),
+    await root.locator(".folder-tree-caret + .folder-tree-node-spacer + .folder-tree-name").count(),
     1,
-    "the expanded root orders its chevron, open-folder glyph, then name",
+    "the root orders its chevron, the empty icon column, then its name — no folder glyph",
   );
+  assert.equal(await page.locator(".folder-tree-node-icon-folder, .folder-tree-node-icon-folder-open").count(), 0);
+  // Folder and file names share one column at the same depth: the spacer
+  // holds the icon's width on directory rows.
+  const serverDir = page.locator(".folder-tree-dir", { hasText: "server" }).first();
+  await serverDir.waitFor({ timeout: 15_000 });
+  const dirNameX = (await serverDir.locator(".folder-tree-name").boundingBox())!.x;
+  const fileNameX = (await pkg.locator(".folder-tree-name").boundingBox())!.x;
+  assert.ok(Math.abs(dirNameX - fileNameX) < 0.5, `names align (dir ${dirNameX}, file ${fileNameX})`);
   assert.equal(
     await pkg.locator(".folder-tree-caret + .folder-tree-node-icon-config[aria-hidden=true] + .folder-tree-name").count(),
     1,
@@ -1696,9 +1704,9 @@ test("E.3: the files panel lists the working tree, opens a file beside the trans
     "collapsed root still lists files",
   );
   assert.equal(
-    await root.locator(".folder-tree-node-icon-folder").count(),
+    await root.locator(".folder-tree-caret + .folder-tree-node-spacer + .folder-tree-name").count(),
     1,
-    "the collapsed root carries the closed-folder glyph",
+    "the collapsed root keeps the same chevron-spacer-name order",
   );
   await root.click();
   await pkg.waitFor({ timeout: 15_000 });

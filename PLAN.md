@@ -2909,7 +2909,13 @@ glyph beside the chevron.
   - Done when: e2e — a fenced block in a mock turn shows the head with the
     language and a `copy` that flips to `copied`; `render_code` unchanged.
 
-- [ ] **Step TR.4 — No folder icon on folder rows**
+- [x] **Step TR.4 — No folder icon on folder rows** — done 2026-08-25:
+  directory rows and the root row render `FolderTreeNodeSpacer` (the empty
+  14 px icon column) in place of the folder glyph; the chevron is the folder.
+  The `folder`/`folder-open` glyph kinds and the `open` prop are gone from
+  `FolderTreeNodeGlyph` (leaves only). `app.e2e.ts` asserts chevron → spacer
+  → name on the root both open and closed, zero folder glyphs, and that a
+  dir name and a file name at the same depth share one x.
   - Decision (Kyle): drop the folder glyph from directory rows and the root
     row; keep the rotating chevron; files keep their icons; keep an empty
     spacer where the glyph was so names align in one column.
