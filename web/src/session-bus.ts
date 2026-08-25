@@ -40,7 +40,7 @@ export interface SessionBus {
   answerPermission(id: string, allow: boolean): void;
   endSession(): void;
   sendAction(action: Action, sourceId: string): void;
-  /** Explorer/Changes: request ONE directory's listing, the complete changed
+  /** folder tree/Changes: request ONE directory's listing, the complete changed
    *  set, a file's content, or a file's diff. Each mints and returns a
    *  correlation id — the reply echoes it, so a
    *  component can drop a reply that isn't the one it's currently waiting
@@ -67,7 +67,7 @@ export function createSessionBus(): SessionBus {
   const daemon = createDaemonClient(socket);
   // The URL carries the session identity; no id yet means "create one".
   let sessionId = sessionIdFromPath(location.pathname);
-  // Attach to a known session; otherwise send nothing and wait at onboarding
+  // Attach to a known session; otherwise send nothing and wait in the agent picker
   // (no agent is assumed, so we don't auto-create). The hello names the
   // last seq this viewport saw, asking for a tail-only resume.
   socket.setHello(() =>
@@ -157,7 +157,7 @@ export function createSessionBus(): SessionBus {
     sendAction(action: Action, sourceId: string) {
       socket.send({ type: "action", action, sourceId });
     },
-    // Explorer/Changes requests. Ids are minted here (the sendBang shape) and
+    // folder tree/Changes requests. Ids are minted here (the sendBang shape) and
     // returned so each shell surface correlates the one reply it gets.
     requestFsListdir(path: string): string {
       const id = mintId("fsl");

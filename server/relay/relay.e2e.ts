@@ -37,7 +37,7 @@ after(async () => {
 test("local page: create a session and run a deterministic mock turn", async () => {
   local = await browser.newPage();
   await local.goto(`http://127.0.0.1:${d.port}/`);
-  await local.locator(".onb-agent", { hasText: "Claude Code" }).click();
+  await local.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
   await local.waitForURL(/\/s\/[\w-]+/);
   await local.locator("textarea").click();
   await local.keyboard.type("plan it step by step");
@@ -77,7 +77,7 @@ test("typing in the remote browser drives the session; both transcripts mirror",
   // through the tap — the "saw 40" flake, reproduced 2/20 under saturation
   // 2026-07-19. The streaming mirror itself was never wrong; keying on turn
   // completion is deterministic.)
-  const zone = (p: Page) => p.locator(".render-zone").innerText();
+  const zone = (p: Page) => p.locator(".output-zone").innerText();
   await remote.waitForSelector(".stop-btn", { timeout: 15_000 }); // the turn is running…
   await Promise.all([
     remote.waitForSelector(".stop-btn", { state: "detached", timeout: 30_000 }),

@@ -3,7 +3,7 @@ import { useCallback, useRef, useState } from "react";
 // Screen-reader announcements. The design decision worth knowing:
 // streaming output is NOT announced as it arrives. An aria-live region on the
 // transcript re-reads or interrupts itself on every token, which is unusable.
-// So the transcript stays silent (RenderZone: role="log" + aria-live="off" —
+// So the transcript stays silent (OutputZone: role="log" + aria-live="off" —
 // navigable and readable on demand) and these two regions speak only at
 // semantic boundaries: polite for turn progress, assertive for what must
 // interrupt (permission prompts, errors, a dropped socket).

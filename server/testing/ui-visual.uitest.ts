@@ -25,7 +25,7 @@ after(async () => {
 });
 
 // The daemon advertises its native folder picker only when the host has a
-// display and a picker binary, and onboarding renders "browse…" from that
+// display and a picker binary, and agent picker renders "browse…" from that
 // flag. Headless CI has neither, so pin the daemon to "no display" everywhere
 // and the card renders identically on a desktop and on a runner.
 const HEADLESS_DAEMON_ENV = { DISPLAY: "", WAYLAND_DISPLAY: "" };
@@ -90,25 +90,25 @@ async function settleLiveDocument(page: Page): Promise<void> {
     .locator(".turn-assistant", { hasText: "response finished as one live composition" })
     .waitFor();
   await page.locator(".stop-btn").waitFor({ state: "detached" });
-  await page.locator(".render-zone").evaluate((element) => {
+  await page.locator(".output-zone").evaluate((element) => {
     element.scrollTop = 0;
   });
 }
 
-test("visual: onboarding card", { skip: LINUX_ONLY }, async () => {
+test("visual: agent-picker card", { skip: LINUX_ONLY }, async () => {
   await withFreshMockPage(
     browser,
     {
-      token: "ui-visual-onboarding",
+      token: "ui-visual-agent-picker",
       env: HEADLESS_DAEMON_ENV,
       context: visualContext({ width: 1280, height: 900 }),
     },
     async (page) => {
-      const cwd = page.locator(".onb-cwd");
+      const cwd = page.locator(".agent-picker-cwd");
       await cwd.waitFor();
       await cwd.fill("/workspace/mirafold");
       await cwd.evaluate((element) => (element as HTMLInputElement).blur());
-      await assertVisualSnapshot(browser, page, "onboarding", ".onb-card");
+      await assertVisualSnapshot(browser, page, "agent-picker", ".agent-picker-card");
     },
   );
 });

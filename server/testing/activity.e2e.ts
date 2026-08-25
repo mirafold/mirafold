@@ -33,7 +33,7 @@ test("streaming holds a scrolled-up reader in place, and re-follows once back at
     await page2.setViewportSize({ width: 900, height: 520 });
     await page2.waitForSelector("textarea");
 
-    const zone = page2.locator(".render-zone");
+    const zone = page2.locator(".output-zone");
     const geom = () =>
       zone.evaluate((el) => ({ top: el.scrollTop, h: el.scrollHeight, view: el.clientHeight }));
     const sendPlan = async () => {
@@ -95,7 +95,7 @@ test("streaming holds a scrolled-up reader in place, and re-follows once back at
     await page2.mouse.wheel(0, -1_000);
     await page2.waitForFunction(
       ({ top }) => {
-        const el = document.querySelector(".render-zone");
+        const el = document.querySelector(".output-zone");
         return Boolean(
           el &&
             el.scrollTop < top - 100 &&
@@ -133,7 +133,7 @@ test("streaming holds a scrolled-up reader in place, and re-follows once back at
     // New output must grow below without moving the scrolled-up reader.
     await page2.waitForFunction(
       ({ top, h }) => {
-        const el = document.querySelector(".render-zone");
+        const el = document.querySelector(".output-zone");
         return Boolean(el && el.scrollHeight > h && Math.abs(el.scrollTop - top) <= 1);
       },
       before,
@@ -157,14 +157,14 @@ test("streaming holds a scrolled-up reader in place, and re-follows once back at
     });
     await page2.locator("textarea").fill(MOCK_PROMPTS["permission-ask"]);
     await page2.keyboard.press("Enter");
-    await page2.waitForSelector(".perm-bar", { timeout: 15_000 });
+    await page2.waitForSelector(".permission-bar", { timeout: 15_000 });
 
     await zone.hover();
     const latchedAtWheel = await geom();
     await page2.mouse.wheel(0, -1_000);
     await page2.waitForFunction(
       ({ top }) => {
-        const el = document.querySelector(".render-zone");
+        const el = document.querySelector(".output-zone");
         return Boolean(
           el &&
             el.scrollTop < top - 100 &&
@@ -182,11 +182,11 @@ test("streaming holds a scrolled-up reader in place, and re-follows once back at
     await page2.mouse.wheel(0, beforeReturn.h + beforeReturn.view);
     await page2.waitForFunction(
       () => {
-        const el = document.querySelector(".render-zone");
+        const el = document.querySelector(".output-zone");
         return Boolean(
           el &&
             document.querySelector(".stop-btn") &&
-            document.querySelector(".perm-bar") &&
+            document.querySelector(".permission-bar") &&
             el.scrollHeight - el.scrollTop - el.clientHeight <= 60,
         );
       },
@@ -199,10 +199,10 @@ test("streaming holds a scrolled-up reader in place, and re-follows once back at
     // new user prompt (which would arm following independently). Do not
     // merely prove one scroll landed: that later content must carry the
     // viewport with it.
-    await page2.locator(".perm-allow").click();
+    await page2.locator(".permission-allow").click();
     await page2.waitForFunction(
       (h) => {
-        const el = document.querySelector(".render-zone");
+        const el = document.querySelector(".output-zone");
         return Boolean(
           el &&
             el.scrollHeight > h &&
@@ -216,7 +216,7 @@ test("streaming holds a scrolled-up reader in place, and re-follows once back at
       timeout: 15_000,
     });
     await page2.waitForFunction(() => {
-      const el = document.querySelector(".render-zone");
+      const el = document.querySelector(".output-zone");
       return Boolean(el && el.scrollHeight - el.scrollTop - el.clientHeight <= 60);
     });
   });
@@ -226,7 +226,7 @@ test("an overflowing prose transcript supports keyboard scrolling and End re-arm
   await withFreshMockSession(browser, "e2e-transcript-keyboard-9c2f", async (page2) => {
     await page2.setViewportSize({ width: 900, height: 520 });
     await page2.waitForSelector("textarea");
-    const zone = page2.locator(".render-zone");
+    const zone = page2.locator(".output-zone");
     const geom = () =>
       zone.evaluate((el) => ({ top: el.scrollTop, h: el.scrollHeight, view: el.clientHeight }));
 
@@ -268,7 +268,7 @@ test("an overflowing prose transcript supports keyboard scrolling and End re-arm
     // not just that the browser performed one isolated scroll.
     await page2.locator("textarea").fill(MOCK_PROMPTS["permission-ask"]);
     await page2.keyboard.press("Enter");
-    await page2.waitForSelector(".perm-bar", { timeout: 15_000 });
+    await page2.waitForSelector(".permission-bar", { timeout: 15_000 });
 
     await zone.focus();
     const focus = await zone.evaluate((el) => {
@@ -287,7 +287,7 @@ test("an overflowing prose transcript supports keyboard scrolling and End re-arm
     await page2.keyboard.press("PageUp");
     await page2.waitForFunction(
       ({ top }) => {
-        const el = document.querySelector(".render-zone");
+        const el = document.querySelector(".output-zone");
         return Boolean(
           el &&
             el.scrollTop < top - 100 &&
@@ -301,7 +301,7 @@ test("an overflowing prose transcript supports keyboard scrolling and End re-arm
     await page2.keyboard.press("End");
     await page2.waitForFunction(
       () => {
-        const el = document.querySelector(".render-zone");
+        const el = document.querySelector(".output-zone");
         return Boolean(el && el.scrollHeight - el.scrollTop - el.clientHeight <= 60);
       },
       undefined,
@@ -309,10 +309,10 @@ test("an overflowing prose transcript supports keyboard scrolling and End re-arm
     );
     const rearmed = await geom();
 
-    await page2.locator(".perm-allow").click();
+    await page2.locator(".permission-allow").click();
     await page2.waitForFunction(
       (h) => {
-        const el = document.querySelector(".render-zone");
+        const el = document.querySelector(".output-zone");
         return Boolean(
           el &&
             el.scrollHeight > h &&
@@ -365,7 +365,7 @@ test("a busy turn never looks idle: the indicator is up, moving, and on screen w
 
     await page2.locator("textarea").fill(MOCK_PROMPTS["permission-ask"]);
     await page2.keyboard.press("Enter");
-    await page2.waitForSelector(".perm-bar", { timeout: 15_000 });
+    await page2.waitForSelector(".permission-bar", { timeout: 15_000 });
     // The permission bar holds the busy state open, so this waits for real
     // movement rather than betting that a timed mock reply stays alive long
     // enough for two browser round-trips.
@@ -379,7 +379,7 @@ test("a busy turn never looks idle: the indicator is up, moving, and on screen w
     // The elapsed text and viewport placement cannot disappear between two
     // Playwright calls now.
     const held = await page2.evaluate(() => {
-      document.querySelector(".render-zone")!.scrollTop = 0;
+      document.querySelector(".output-zone")!.scrollTop = 0;
       const line = document.querySelector(".activity-line");
       const r = line?.getBoundingClientRect();
       return {
@@ -390,7 +390,7 @@ test("a busy turn never looks idle: the indicator is up, moving, and on screen w
     assert.match(held.text, /\(\d+s\)/, "no elapsed counter in the activity line");
     assert.ok(held.visible, "indicator off screen while the transcript is scrolled up");
 
-    await page2.locator(".perm-deny").click();
+    await page2.locator(".permission-deny").click();
     await page2.waitForFunction(() => !document.querySelector(".stop-btn"), undefined, {
       timeout: 15_000,
     });

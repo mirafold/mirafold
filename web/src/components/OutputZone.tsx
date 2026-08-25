@@ -236,7 +236,7 @@ function ToolActivityGroup({
   );
 }
 
-type RenderZoneProps = {
+type OutputZoneProps = {
   subscribe: (l: (m: ZoneMsg) => void) => () => void;
   // Shell-provided sender for prompt/tool actions; state actions
   // are resolved here because pin state is output-zone state.
@@ -255,7 +255,7 @@ type RenderZoneProps = {
  * renders as sanitized markdown (react-markdown never emits raw HTML).
  * Level 2: projected render rows mount registry components inline.
  */
-export const RenderZone = forwardRef<InputNavigationHandle, RenderZoneProps>(function RenderZone({
+export const OutputZone = forwardRef<InputNavigationHandle, OutputZoneProps>(function OutputZone({
   subscribe,
   sendAction,
   busy,
@@ -381,7 +381,7 @@ export const RenderZone = forwardRef<InputNavigationHandle, RenderZoneProps>(fun
     tail.armFollow();
   };
 
-  const renderZoneEntry = (entry: OutputZoneRow) => (
+  const outputZoneEntry = (entry: OutputZoneRow) => (
     <RenderBoundary key={entry.id} fallback={<ZoneRowFallback entry={entry} />}>
       <ZoneEntry
         entry={entry}
@@ -402,7 +402,7 @@ export const RenderZone = forwardRef<InputNavigationHandle, RenderZoneProps>(fun
           "polite" would re-read the transcript on every streamed token. The
           spoken half lives in Announcer.tsx. */}
       <div
-        className="render-zone"
+        className="output-zone"
         role="log"
         aria-live="off"
         aria-label="Conversation transcript"
@@ -464,14 +464,14 @@ export const RenderZone = forwardRef<InputNavigationHandle, RenderZoneProps>(fun
         )}
         {displayItems.map((item) =>
           item.kind === "entry" ? (
-            renderZoneEntry(item.row)
+            outputZoneEntry(item.row)
           ) : (
             <ResponseDocument
               key={item.key}
               responseKey={item.responseKey}
               continuation={item.continuation}
             >
-              {item.rows.map(renderZoneEntry)}
+              {item.rows.map(outputZoneEntry)}
             </ResponseDocument>
           ),
         )}
@@ -498,7 +498,7 @@ export const RenderZone = forwardRef<InputNavigationHandle, RenderZoneProps>(fun
 });
 
 /** One transcript entry's presentation — the per-kind branches of the
- *  scrollback. File-local on purpose: the renderers lean on RenderZone's
+ *  scrollback. File-local on purpose: the renderers lean on OutputZone's
  *  context (pin state and the mediated action path), and brand-mark.test.ts
  *  reads this file as text. */
 /** What a row degrades to when its renderer throws on engine-authored data:

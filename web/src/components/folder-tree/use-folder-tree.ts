@@ -9,10 +9,10 @@ import {
   emptyDirStore,
   pruneDirStore,
   type DirStore,
-} from "../../files-tree";
+} from "../../folder-tree";
 
-// The Explorer's tree controller — the fetch/refresh half of FilesPanel,
-// beside the pure store in files-tree.ts. Owns the per-directory
+// The folder tree's tree controller — the fetch/refresh half of FolderTreePanel,
+// beside the pure store in folder-tree.ts. Owns the per-directory
 // correlation ids, the open-panel prefetch, the refresh boundary, and the
 // bell coalescing; the panel keeps the frame, the file view, and the rows.
 // Replies are correlated by the echoed id — one outstanding id PER
@@ -34,7 +34,7 @@ const PREFETCH_MAX_DIRS = 24;
 // token bucket. A bell during the gap coalesces onto one trailing refresh.
 const BELL_REFRESH_MIN_GAP_MS = 1_000;
 
-export function useFilesTree({
+export function useFolderTree({
   open,
   subscribe,
   requestListdir,
@@ -103,7 +103,7 @@ export function useFilesTree({
   };
 
   // Subscribe once; the refs above make the handlers care only about the
-  // latest requests. RenderZone ignores fs_* the same way (unknown to it).
+  // latest requests. OutputZone ignores fs_* the same way (unknown to it).
   useEffect(
     () =>
       subscribe((m) => {

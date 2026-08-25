@@ -1,4 +1,4 @@
-// The welcome's inline brand mark (RenderZone.tsx) is a hand-kept copy of
+// The welcome's inline brand mark (OutputZone.tsx) is a hand-kept copy of
 // web/public/logo.svg — JSX can't consume the asset's markup directly, so
 // this guard fails loudly on drift instead (the repo's hand-kept-mirror
 // idiom, same as the relay contract guard). Editing the logo means editing
@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const logo = readFileSync(join(here, "../../public/logo.svg"), "utf8");
-const zone = readFileSync(join(here, "RenderZone.tsx"), "utf8");
+const zone = readFileSync(join(here, "OutputZone.tsx"), "utf8");
 
 test("the welcome's inline brand mark matches logo.svg", () => {
   const rect = logo.match(/<rect[^>]*\brx="([\d.]+)"[^>]*\bfill="([^"]+)"/);

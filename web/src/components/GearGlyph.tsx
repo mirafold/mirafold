@@ -5,7 +5,7 @@
    the one glyph in the bar that would leave the text font.
 
    Drawn as one closed outline around the notched edge plus a hub circle, no
-   fill, so it sits in the same flat line language as FilesGlyph and the ⌂/☀/☾
+   fill, so it sits in the same flat line language as FolderTreeGlyph and the ⌂/☀/☾
    text glyphs beside it. Six teeth, not the conventional eight: at button size
    eight gaps mush into a blur. `size` takes any CSS length so the inline uses
    can ride the surrounding text at "1em" while the button pins 20px.

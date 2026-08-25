@@ -56,7 +56,7 @@ test("hello goes first on every open; sends while connecting queue in order", (t
   );
 });
 
-test("a null hello sends nothing but still flushes the queue (P.4 onboarding)", (t) => {
+test("a null hello sends nothing but still flushes the queue (P.4 agent picker)", (t) => {
   const { client, sock } = setup(t);
   client.setHello(() => null);
   client.send({ type: "prompt", text: "queued" });

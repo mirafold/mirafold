@@ -105,7 +105,7 @@ things follow, and they are the whole list:
 
 **Local model servers can't be authenticated.** Mirafold discovers local
 model servers (Ollama, LM Studio, vLLM, llama.cpp) by probing localhost's
-well-known ports and offers what answers in the onboarding picker. A local
+well-known ports and offers what answers in the agent picker. A local
 server has no identity to verify — anything on your machine that can bind a
 free port can answer like a model server, and a session routed through an
 impostor exposes the conversation (including code context) to it and lets
@@ -189,7 +189,7 @@ defense-in-depth, not the boundary: creating either takes a tool that prompts
 so the closed routes are the zero-click ones. A prompt-free path to the
 daemon's secrets is a vulnerability we want reported.
 
-The **Explorer's** read-only file browser (`fs_list`/`fs_listdir`/`fs_read`/
+The **folder tree's** read-only file browser (`fs_list`/`fs_listdir`/`fs_read`/
 `fs_diff`, Phases E and E2) shares this same guard: it refuses
 `.env`/`.env.local` *content* by basename (the file still appears in the tree —
 its name isn't secret) and jails every path to the session's working directory
@@ -202,7 +202,7 @@ design (the browser shows you your own project); the daemon's own `.env` is
 the file that's protected (2026-07-24 audit).
 
 **A user-opened lightbox may sit above the permission bar and the stop
-button (accepted, 2026-07-28 audit).** The Explorer's desktop enlarge (⤢,
+button (accepted, 2026-07-28 audit).** The folder tree's desktop enlarge (⤢,
 E.6) floats the file view over a translucent dim that covers the prompt
 area: a permission prompt arriving mid-read paints *behind* the dim —
 visible through it, but inert until one Esc or click restores the frame —
@@ -210,7 +210,7 @@ and stopping the agent likewise costs one extra gesture. This is chosen,
 not missed: only the user can create the state (nothing on the wire can
 open, close, or restyle the layer), the muted controls remain visible
 through the dim, escape is a single gesture, and the phone's full-screen
-Explorer (E.4) already covers the same controls completely opaquely. The
+folder tree (E.4) already covers the same controls completely opaquely. The
 permission *modal* (z-60) still ranks above the lightbox (z-54/55). The
 trusted-shell rule this brushes against — nothing may intercept the
 permission or stop affordances — is about the AGENT; it is intact. Do not
@@ -236,7 +236,7 @@ ever becomes engine *prose* rather than an identifier, it needs the
 
 **Git metadata is read from the containing repo, which can sit ABOVE the
 session directory** (Phase E2.3/E2.4, 2026-07-26 audit — this sharpens an
-earlier, now-imprecise claim that the Explorer "can't reach outside the
+earlier, now-imprecise claim that the folder tree "can't reach outside the
 session directory at all"). To show the right change letters and honor the
 right ignore rules — including at a Projects-style root holding several
 repos — the daemon finds the repo that contains a directory by walking
@@ -265,7 +265,7 @@ than left implied.
 **A repository does not get to run programs just by being browsed**
 (2026-07-26 audit). Git can be told, by settings inside a repository's own
 `.git/config`, to run a program during ordinary read-only commands — and the
-Explorer runs `git status` automatically the moment a Files panel opens, with
+folder tree runs `git status` automatically the moment a Files panel opens, with
 no permission prompt, because it is the daemon's own call rather than an agent
 tool. A repository that arrived carrying its own `.git` directory (an archive,
 never a `git clone` — cloning deliberately does not copy config) could

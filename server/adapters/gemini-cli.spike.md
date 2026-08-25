@@ -98,7 +98,7 @@ Codex's per-server `default_tools_approval_mode: "approve"`.
 - `agentHasCredentials("gemini-cli")`: true if `GEMINI_API_KEY` or a Google OAuth
   login exists (`~/.gemini/oauth_creds.json` or equivalent — confirm path live).
 - `createSession` gains a `gemini-cli` case → `GeminiCliSession`.
-- add `gemini-cli` to `ADAPTER_AGENTS` so onboarding (P.4) offers it.
+- add `gemini-cli` to `ADAPTER_AGENTS` so agent picker (P.4) offers it.
 - `modelFor("gemini-cli")` already returns `GEMINI_MODEL` (P.2).
 
 ## Blocking dependency for the *live* Done-when (Kyle-only, free)

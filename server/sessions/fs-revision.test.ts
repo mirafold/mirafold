@@ -8,7 +8,7 @@ import {
   diffContentRevision,
   readWorkspaceFile,
   reviewDiffRevision,
-} from "./fs-explorer";
+} from "./fs-folder-tree";
 
 const roots: string[] = [];
 const tempRoot = (): string => {

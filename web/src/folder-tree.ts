@@ -1,11 +1,11 @@
 import type { FsDirEntry } from "@protocol";
 
-// The Explorer's lazy per-directory store — the client half of the
+// The folder tree's lazy per-directory store — the client half of the
 // fs_listdir/fs_dir pair. The panel holds no flat whole-tree listing;
 // it holds one DirState per directory it has asked about, keyed by
 // root-relative /-separated path ("" = the session root), and fetches a
 // directory the first time it's expanded. Pure data + pure transitions here
-// (Tier-1 testable); FilesPanel owns the correlation-id bookkeeping and the
+// (Tier-1 testable); FolderTreePanel owns the correlation-id bookkeeping and the
 // actual requests.
 //
 // A directory is one of: absent from the map (unfetched — expanding it must

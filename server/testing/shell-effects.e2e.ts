@@ -24,7 +24,7 @@ test("provider completions open before submit, transcript click focuses, and set
     token,
     async (page2) => {
       const prompt = page2.locator(".prompt-box textarea");
-      const transcript = page2.locator(".render-zone");
+      const transcript = page2.locator(".output-zone");
 
       // A trigger typed into page chrome is moved into the prompt and paints
       // the provider catalog without sending a turn.
@@ -250,7 +250,7 @@ test("NF: hidden viewport toasts a permission then the turn end; visibility clos
       await page2.locator("textarea").click();
       await page2.keyboard.type(MOCK_PROMPTS["permission-ask"]);
       await page2.keyboard.press("Enter");
-      await page2.waitForSelector(".perm-bar");
+      await page2.waitForSelector(".permission-bar");
       await page2.waitForFunction(
         () => (window as unknown as { __TOASTS__?: unknown[] }).__TOASTS__?.length === 1,
         undefined,
@@ -263,7 +263,7 @@ test("NF: hidden viewport toasts a permission then the turn end; visibility clos
 
       // Answering retires the permission toast (the state moved on); the
       // finishing turn then toasts once more under the same tag.
-      await page2.locator(".perm-allow").click();
+      await page2.locator(".permission-allow").click();
       await page2.waitForFunction(
         () => {
           const t = (window as unknown as { __TOASTS__: { closed: boolean }[] }).__TOASTS__;
@@ -400,7 +400,7 @@ test("diagram component: mermaid renders as SVG inside the sandbox; broken sourc
 
 test("a notice in the engine's own words is badged; the shell's own words aren't", async () => {
   // Own the session whose output is under test. The shared page has just
-  // navigated through two Explorer fixtures; under runner load its attach /
+  // navigated through two folder tree fixtures; under runner load its attach /
   // replay can still be settling when this prompt is typed, so a timeout can
   // happen before the notice path runs and say nothing about attribution.
   await withFreshMockSession(browser, "e2e-notice-attribution-9c2f", async (page2) => {

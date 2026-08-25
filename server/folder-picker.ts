@@ -1,6 +1,6 @@
 // Host-native working-directory picker: the browser cannot turn a
 // FileSystemDirectoryHandle into the absolute path an agent process needs as
-// cwd, so an explicit onboarding click asks the LOCAL daemon to open the
+// cwd, so an explicit agent picker click asks the LOCAL daemon to open the
 // operating system's own directory dialog. No shell is involved: every path
 // is an argv/env value, never executable text.
 

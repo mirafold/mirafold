@@ -1,6 +1,6 @@
 import type { ZoneMsg } from "./session-bus";
 import type { Activity } from "./components/ActivityLine";
-import type { PermAsk } from "./components/PermBar";
+import type { PermAsk } from "./components/PermissionBar";
 import { turnResponse } from "./components/Announcer";
 import { nextOpenTurns } from "./turn-busy";
 

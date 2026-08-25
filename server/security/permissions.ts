@@ -37,7 +37,7 @@ const DETAIL_FIELD: Record<string, string> = {
 // caught — but Bash asks), so it closes the obvious routes, not every one.
 // One source for WHICH filenames are secret: the tool guard below derives its
 // daemon-cwd absolute pair from it, and `isSecretFile` (consumed by
-// fs-explorer, fs-handlers, render-image) applies it by basename to any file
+// fs-folder-tree, fs-handlers, render-image) applies it by basename to any file
 // under a session root — stricter there on purpose (a browsing UI invites
 // wandering in a way a typed command doesn't), and derived from the same set
 // so the guards can't drift.
@@ -54,7 +54,7 @@ const SECRET_PATHS = new Set([...SECRET_FILE_BASENAMES].map((n) => path.resolve(
 // can still pin the case-insensitive behavior.
 const CASE_INSENSITIVE_FS = process.platform === "darwin" || process.platform === "win32";
 
-/** True when `p` names a secret env file (by basename) — the Explorer's
+/** True when `p` names a secret env file (by basename) — the folder tree's
  *  content-read denial. Listing may still SHOW the file (honesty over
  *  hiding); only reading its contents is refused. On a case-insensitive
  *  filesystem `.Env`/`.ENV` name the same file as `.env`, so they match too. */

@@ -52,7 +52,7 @@ after(async () => {
 
 test("mid-turn daemon death clears working state; restart reopens the saved session", async () => {
   await page.goto(`http://127.0.0.1:${d.port}/`);
-  await page.locator(".onb-agent", { hasText: "Claude Code" }).click();
+  await page.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
   await page.waitForURL(/\/s\/[\w-]+/);
   const oldUrl = page.url();
 
@@ -90,7 +90,7 @@ test("subagent narration survives a mid-turn reconnect replay (bughunt 2026-08-1
   // opens a subagent prose run and then idles for seconds — the
   // deterministic window in which the transcript is reset mid-turn.
   await page.goto(`http://127.0.0.1:${d.port}/?new=1`);
-  await page.locator(".onb-agent", { hasText: "Claude Code" }).click();
+  await page.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
   await page.waitForURL(/\/s\/[\w-]+/);
   await page.locator("textarea").click();
   await page.keyboard.type(MOCK_PROMPTS["slow-subagent"]);

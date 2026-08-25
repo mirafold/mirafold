@@ -1,9 +1,9 @@
-/* The Explorer files glyph — the desktop activity bar's Files toggle (the
+/* The folder tree files glyph — the desktop activity bar's Files toggle (the
    phone status bar carries WorkspaceGlyph instead). A single document sheet,
    drawn symmetric about the viewBox center — a two-page glyph reads as
    hanging right (its front page's mass sits right of center) even when its
    bounds are centered. Tight viewBox: the drawing fills the box. */
-export function FilesGlyph({ size = 28 }: { size?: number }) {
+export function FolderTreeGlyph({ size = 28 }: { size?: number }) {
   return (
     <svg
       viewBox="5 2 14 20"

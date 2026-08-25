@@ -12,7 +12,7 @@
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --z-menu: 30; /* the prompt's completion menu */
   --z-phone-disclosure: 34; /* the phone's input-navigation strip */
-  --z-onboarding: 50;
+  --z-agent-picker: 50;
   --z-layer-dim: 54; /* the dimming rim behind an enlarged layer */
   --z-layer: 55; /* an enlarged file, a phone drawer: above the transcript + status bar */
   --z-layer-above: 56; /* the review draft prompt over a phone drawer */
@@ -66,7 +66,7 @@ body {
    from edge to border line IS the bar, with no dead page-margin inside it. */
 .main-row {
   /* Air between the activity bar's border line and the content beside it;
-     .files-panel gives most of it back to sit near-flush (see there). */
+     .folder-tree-panel gives most of it back to sit near-flush (see there). */
   --content-air: 12px;
   flex: 1;
   min-height: 0;
@@ -83,7 +83,7 @@ body {
   padding-left: var(--content-air);
 }
 
-/* Explorer + transcript. The files panel is a fixed-width left column;
+/* folder tree + transcript. The files panel is a fixed-width left column;
    the zone-row fills the rest so the transcript keeps rendering beside it.
    With the panel closed this collapses to just the transcript, full-width. */
 .zone-outer {
@@ -101,7 +101,7 @@ body {
   display: flex;
 }
 
-.render-zone {
+.output-zone {
   flex: 1;
   min-width: 0;
   overflow-y: auto;

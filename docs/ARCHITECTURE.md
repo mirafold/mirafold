@@ -144,11 +144,11 @@ can unload while the checkpoint remains available for lazy recovery.
 
 [`session-bus.ts`](../web/src/session-bus.ts) owns one
 [`SocketClient`](../web/src/ws.ts) and fans incoming messages to shell
-consumers. `Shell` owns connection state, onboarding, the prompt, permission
+consumers. `Shell` owns connection state, agent picker, the prompt, permission
 and terminal-input bars, status, workspace panels, settings, notifications,
 and other trusted controls.
 
-[`RenderZone.tsx`](../web/src/components/RenderZone.tsx) receives the transcript
+[`OutputZone.tsx`](../web/src/components/OutputZone.tsx) receives the transcript
 stream. Pure projection code converts wire messages into ordered transcript
 rows, groups eligible rows into response documents, and keeps provider-native
 tool activity, errors, and shell boundaries visible. The output zone delegates
@@ -167,11 +167,11 @@ one.
 | Owner | Keys | Registered as | Active while | Claims the key? |
 | --- | --- | --- | --- | --- |
 | [`useFocusTrap`](../web/src/use-focus-trap.ts) | Tab, Shift+Tab | `document`, capture | a modal overlay, the enlarged file box, or a phone workspace dialog is open | yes — cycles focus inside the container |
-| [`useEscapeKey`](../web/src/use-escape.ts) with `exclusive` — [`ModalCard`](../web/src/components/ModalCard.tsx), [`useWorkspacePanelFrame`](../web/src/use-workspace-panel-frame.ts) (phone Files/Changes dialog), the file-box enlarge in [`FilesPanel`](../web/src/components/files/FilesPanel.tsx) | Escape | `window`, capture + `stopPropagation` | that overlay is open | yes — dismisses / drills back / restores; nothing below sees it |
+| [`useEscapeKey`](../web/src/use-escape.ts) with `exclusive` — [`ModalCard`](../web/src/components/ModalCard.tsx), [`useWorkspacePanelFrame`](../web/src/use-workspace-panel-frame.ts) (phone Files/Changes dialog), the file-box enlarge in [`FolderTreePanel`](../web/src/components/folder-tree/FolderTreePanel.tsx) | Escape | `window`, capture + `stopPropagation` | that overlay is open | yes — dismisses / drills back / restores; nothing below sees it |
 | Phone input-history card in [`InputNavigation`](../web/src/components/InputNavigation.tsx) | Escape | `window`, capture + `stopPropagation` | the ⋯ card is open | yes — closes it and restores focus to its toggle |
 | [`PickerBlock`](../web/src/components/PickerBlock.tsx) | ArrowUp, ArrowDown, Enter, Escape | `document`, capture + `stopPropagation` | a live `/model`-style picker is showing | yes, unless a non-empty input, a picker row, or the phone card owns focus — only the idle (empty) prompt box cedes these keys |
 | Prompt trigger in [`PromptBox`](../web/src/components/PromptBox.tsx) | `/`, `$` | `window`, capture + `stopPropagation` | a provider catalog offers that trigger and `globalTriggersDisabled` is off | yes, when typed outside an editable field or dialog — focuses the prompt box and inserts the trigger |
-| Review shortcuts in [`useChangesController`](../web/src/components/changes/use-changes-controller.ts) | `r`, `n` | `window`, bubble | the Changes panel is open | only outside inputs and the prompt box (`REVIEW_SHORTCUT_EXCLUSION`), and only if nothing above called `preventDefault` |
+| Review shortcuts in [`useDiffPanelController`](../web/src/components/diff-panel/use-diff-panel-controller.ts) | `r`, `n` | `window`, bubble | the diff panel is open | only outside inputs and the prompt box (`REVIEW_SHORTCUT_EXCLUSION`), and only if nothing above called `preventDefault` |
 | Busy interrupt in [`Shell`](../web/src/components/Shell.tsx) (`useEscapeKey`, non-exclusive) | Escape | `window`, bubble | a turn is running | the fallback: runs only when no exclusive owner above claimed the key |
 
 Focused-element handlers sit outside this order because they see the key
@@ -290,7 +290,7 @@ accepted residual risks in detail.
    authenticated URL.
 2. The browser connects and receives the available agents, backend choices,
    default directory, and daemon capabilities.
-3. Onboarding submits a validated agent, backend, and existing directory.
+3. AgentPicker submits a validated agent, backend, and existing directory.
 4. The registry creates an entry and `adapters/index.ts` constructs the chosen
    real adapter or the scripted mock.
 5. The browser receives `session_created`, adopts `/s/<id>`, and attaches as a

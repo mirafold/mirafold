@@ -58,7 +58,7 @@ checkout safe.
 
 ## First run
 
-Onboarding asks for a supported agent, one of its detected backends, and a
+AgentPicker asks for a supported agent, one of its detected backends, and a
 working directory. Mirafold uses the selected agent's native engine and any
 supported authentication it detects. If no usable live backend is available,
 the session runs the built-in scripted demo so the entire interface can be

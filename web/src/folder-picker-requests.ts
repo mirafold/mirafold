@@ -7,7 +7,7 @@ type PendingRequest = {
 };
 
 /** Correlated client half of N2's folder-picker request/reply. Shared by the
- *  session shell and mission control: both surfaces own an Onboarding card. */
+ *  session shell and mission control: both surfaces own an AgentPicker card. */
 export function createFolderPickerRequests(
   send: (msg: PickFolder) => void | boolean,
   mintId: () => string = () => `fp-${Math.random().toString(36).slice(2, 10)}`,

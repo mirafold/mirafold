@@ -269,7 +269,7 @@
   color: var(--fg-faint);
 }
 
-.perm-bar {
+.permission-bar {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -286,7 +286,7 @@
 /* Everything except allow/deny is one button: it opens the full-command
    card, because the one-line preview truncates (always on phone) and the
    body is what a thumb tries to tap. */
-.perm-body {
+.permission-body {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -301,11 +301,11 @@
   cursor: pointer;
 }
 
-.perm-body:hover .perm-detail {
+.permission-body:hover .permission-detail {
   color: var(--fg-strong);
 }
 
-.perm-badge {
+.permission-badge {
   color: var(--warn-fg);
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -314,7 +314,7 @@
 }
 
 /* The ask came from a subagent — a dim factual chip, shell-composed. */
-.perm-subagent {
+.permission-subagent {
   color: var(--fg-faint);
   border: 1px solid var(--border-mid);
   border-radius: 4px;
@@ -323,13 +323,13 @@
   flex-shrink: 0;
 }
 
-.perm-tool {
+.permission-tool {
   color: var(--fg-strong);
   font-weight: 600;
   flex-shrink: 0;
 }
 
-.perm-detail {
+.permission-detail {
   flex: 1;
   min-width: 0;
   color: var(--fg-mid);
@@ -338,13 +338,13 @@
   text-overflow: ellipsis;
 }
 
-.perm-more {
+.permission-more {
   color: var(--fg-dim);
   flex-shrink: 0;
 }
 
-.perm-allow,
-.perm-deny {
+.permission-allow,
+.permission-deny {
   flex-shrink: 0;
   padding: 3px 12px;
   font: inherit;
@@ -353,22 +353,22 @@
   background: transparent;
 }
 
-.perm-allow {
+.permission-allow {
   color: var(--accent);
   border: 1px solid var(--ok-border);
 }
 
-.perm-allow:hover {
+.permission-allow:hover {
   background: var(--ok-bg);
   border-color: var(--ok-border-strong);
 }
 
-.perm-deny {
+.permission-deny {
   color: var(--error);
   border: 1px solid var(--err-border);
 }
 
-.perm-deny:hover {
+.permission-deny:hover {
   background: var(--err-bg);
   border-color: var(--err-border-strong);
 }
@@ -376,7 +376,7 @@
 /* The full-command card: same modal shell as pairing/settings (backdrop and
    card rules live with those), plus the command itself — wrapped, scrollable
    past 60vh, and focusable so a keyboard can scroll it. */
-.perm-modal-head {
+.permission-modal-head {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -385,7 +385,7 @@
   font-size: 0.9em;
 }
 
-.perm-modal-detail {
+.permission-modal-detail {
   display: block;
   font-family: var(--font-mono);
   font-size: 0.9em;

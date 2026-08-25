@@ -109,7 +109,7 @@ test("Q.4 garbage frames mid-session: daemon survives, 2nd viewport stays quiet,
   const malformed = aTail.filter((m) => m.type === "error" && m.message === "malformed client message");
   assert.equal(malformed.length, 4);
   // The three valid-id/bad-path fs_reads each got exactly one error reply;
-  // the bad-id Explorer/Changes frames got nothing at all.
+  // the bad-id folder tree/Changes frames got nothing at all.
   const fsFiles = aTail.filter((m) => m.type === "fs_file") as Any[];
   assert.equal(fsFiles.length, 3);
   assert.ok(fsFiles.every((m) => typeof m.error === "string"));

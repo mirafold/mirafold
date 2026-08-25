@@ -14,7 +14,7 @@ export const isCurrentReply = (awaited: string | null, replyId: string): boolean
 /**
  * Reusable controller for Mirafold's shell-owned file presenter. It owns the
  * correlated fs_read/fs_diff request, stale-reply rejection, selected path,
- * mode, and resolved view state. FilesPanel supplies Explorer chrome; the
+ * mode, and resolved view state. FolderTreePanel supplies folder tree chrome; the
  * Changes workspace supplies review chrome without duplicating this
  * request lifecycle.
  */

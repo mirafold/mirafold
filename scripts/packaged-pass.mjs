@@ -61,7 +61,7 @@ const daemon = spawn(process.execPath, [path.join(PKG, "dist-server", "index.js"
     GOOGLE_API_KEY: "",
     CLAUDE_CONFIG_DIR: path.join(ws, ".no-claude"),
     CODEX_HOME: path.join(ws, ".no-codex"),
-    // Off, or onboarding gains a second step (the N backend picker) on any
+    // Off, or agent picker gains a second step (the N backend picker) on any
     // machine that happens to be running Ollama — which is not what this pass
     // is measuring, and would make it pass or fail by accident.
     MIRAFOLD_LOCAL_DISCOVERY: "off",
@@ -85,11 +85,11 @@ page.on("pageerror", (e) => consoleErrors.push(String(e)));
 try {
   // 1. The shell loads from the packaged dist/ (not a dev server).
   await page.goto(`${base}/`, { waitUntil: "load" });
-  await page.waitForSelector(".onb-agent", { timeout: 20_000 });
-  check("onboarding renders from the packaged bundle", true);
+  await page.waitForSelector(".agent-picker-agent", { timeout: 20_000 });
+  check("agent picker renders from the packaged bundle", true);
 
   // 2. A session starts and its URL is directly loadable — the dot-path bug.
-  await page.locator(".onb-agent").first().click();
+  await page.locator(".agent-picker-agent").first().click();
   await page.waitForURL(/\/s\/[\w-]+/, { timeout: 20_000 });
   const sessionUrl = page.url();
   await page.waitForSelector("textarea", { timeout: 20_000 });
@@ -121,12 +121,12 @@ try {
   const bangText = await page.locator(".bang-output").last().innerText();
   check("! passthrough runs a real PTY", bangText.includes("packaged-pass-marker"), bangText.trim().slice(0, 40));
 
-  // 6. Explorer — the daemon's own fs surface against a real repo.
-  await page.locator(".ab-files").click();
-  await page.waitForSelector(".files-panel .files-row", { timeout: 20_000 });
-  await page.locator(".files-file-row").first().click();
-  await page.waitForSelector(".files-view .fv-content", { timeout: 20_000 });
-  check("Explorer lists and opens a file", true);
+  // 6. folder tree — the daemon's own fs surface against a real repo.
+  await page.locator(".ab-folder-tree").click();
+  await page.waitForSelector(".folder-tree-panel .folder-tree-row", { timeout: 20_000 });
+  await page.locator(".folder-tree-file-row").first().click();
+  await page.waitForSelector(".folder-tree-view .fv-content", { timeout: 20_000 });
+  check("Folder tree lists and opens a file", true);
 
   // 7. The render MCP server ships and starts — the generative-UI path for
   //    REAL agents, which the mock never exercises.

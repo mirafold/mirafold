@@ -60,7 +60,7 @@ type FolderPickerStubWindow = Window & {
 };
 
 // The operating-system service has injected-process coverage in Tier 1. This
-// stub keeps the browser proof on the real SocketClient -> Onboarding path
+// stub keeps the browser proof on the real SocketClient -> AgentPicker path
 // while replacing only the native dialog's correlated reply.
 const installFolderPickerWireStub = (p: Page) =>
   p.addInitScript(() => {
@@ -164,7 +164,7 @@ test("?token= mints the cookie, cleans the URL, boots the shell", async () => {
 });
 
 test("the agent picker flexes to the window — no internal scrollbar through the squeeze ramp", async () => {
-  // The card's vertical chrome compresses with the window (--onb-squeeze in
+  // The card's vertical chrome compresses with the window (--agent-picker-squeeze in
   // styles.css) so its overflow-y:auto scrollbar is a last resort, not a
   // routine sight. The guarantee is calibrated to the credentialed picker
   // (short per-row detail lines — the state a set-up user sees); the fresh
@@ -191,20 +191,20 @@ test("the agent picker flexes to the window — no internal scrollbar through th
   const page2 = await browser.newPage();
   try {
     await page2.goto(`http://127.0.0.1:${d2.port}/?token=${token}`);
-    await page2.waitForSelector(".onb-card");
+    await page2.waitForSelector(".agent-picker-card");
     await page2.setViewportSize({ width: 1100, height: 1400 });
     await page2.waitForFunction(() => window.innerHeight === 1400);
     const fullGlyph = await page2.evaluate(
-      () => document.querySelector(".onb-glyph")!.getBoundingClientRect().height,
+      () => document.querySelector(".agent-picker-glyph")!.getBoundingClientRect().height,
     );
     for (const h of [760, 745, 730]) {
       await page2.setViewportSize({ width: 1100, height: h });
       await page2.waitForFunction((height) => window.innerHeight === height, h);
       const m = await page2.evaluate(() => {
-        const c = document.querySelector(".onb-card")!;
+        const c = document.querySelector(".agent-picker-card")!;
         return {
           overflow: c.scrollHeight - c.clientHeight,
-          glyph: document.querySelector(".onb-glyph")!.getBoundingClientRect().height,
+          glyph: document.querySelector(".agent-picker-glyph")!.getBoundingClientRect().height,
         };
       });
       assert.ok(m.overflow <= 2, `picker scrolls ${m.overflow}px internally at ${h}px window height`);
@@ -237,15 +237,15 @@ test(
       await page2.goto(`http://127.0.0.1:${d2.port}/?token=${token}`);
       await page2.setViewportSize({ width: 390, height: 844 });
       await noSideScroll(page2);
-      await assertAxeClean(page2, "onboarding working directory");
+      await assertAxeClean(page2, "agent picker working directory");
 
       await advertiseStubbedFolderPicker(page2, picked);
 
-      const cwdInput = page2.locator("#onb-cwd");
-      await page2.locator(".onb-cwd-browse").click();
+      const cwdInput = page2.locator("#agent-picker-cwd");
+      await page2.locator(".agent-picker-cwd-browse").click();
       await page2.waitForFunction(
         (expected) =>
-          (document.querySelector("#onb-cwd") as HTMLInputElement | null)?.value === expected,
+          (document.querySelector("#agent-picker-cwd") as HTMLInputElement | null)?.value === expected,
         picked,
       );
       const chosenView = await cwdInput.evaluate((element) => {
@@ -294,16 +294,16 @@ test(
       // A rejected cwd belongs to the value that was submitted. Replacing the
       // value must remove that stale error before the user retries creation.
       await cwdInput.fill(missing);
-      await page2.locator(".onb-agent", { hasText: "Claude Code" }).click();
-      await page2.waitForSelector(".onb-error");
-      assert.match(await page2.locator(".onb-error").innerText(), /no such directory/i);
+      await page2.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
+      await page2.waitForSelector(".agent-picker-error");
+      assert.match(await page2.locator(".agent-picker-error").innerText(), /no such directory/i);
 
       await cwdInput.fill(picked);
       assert.equal(await cwdInput.inputValue(), picked);
-      await page2.locator(".onb-error").waitFor({ state: "detached" });
+      await page2.locator(".agent-picker-error").waitFor({ state: "detached" });
 
       await page2.setViewportSize({ width: 1100, height: 800 });
-      await page2.locator(".onb-agent", { hasText: "Claude Code" }).click();
+      await page2.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
       await page2.waitForURL(/\/s\/[\w-]+/);
       await page2.waitForSelector(".sb-cwd");
       assert.equal(await page2.locator(".sb-cwd").getAttribute("title"), picked);
@@ -315,31 +315,31 @@ test(
   },
 );
 
-test("onboarding → a full mock turn renders in the DOM", async () => {
+test("agent picker → a full mock turn renders in the DOM", async () => {
   // An empty registry opens straight into "choose your agent".
   // Every credential-less row carries its one-line fix on the picker
   // itself (the harness forces all three agents credential-less) (R.4b).
-  await page.waitForSelector(".onb-agent-hint");
+  await page.waitForSelector(".agent-picker-agent-hint");
   // One hint per offerable agent (the harness forces every agent
   // credential-less) — four since the OpenCode adapter (PLAN OC.4b).
-  assert.equal(await page.locator(".onb-agent-hint").count(), 4);
+  assert.equal(await page.locator(".agent-picker-agent-hint").count(), 4);
   const opencodeRowText = await page
-    .locator(".onb-agent", { hasText: "OpenCode" })
+    .locator(".agent-picker-agent", { hasText: "OpenCode" })
     .innerText();
   assert.match(opencodeRowText, /opencode auth login/);
   assert.match(opencodeRowText, /OPENCODE_MODEL/);
-  const claudeRow = page.locator(".onb-agent", { hasText: "Claude Code" });
+  const claudeRow = page.locator(".agent-picker-agent", { hasText: "Claude Code" });
   assert.match(await claudeRow.innerText(), /ANTHROPIC_API_KEY|`claude`/);
   // Disclosed-uncertainty rule (K.3 amendment, 2026-07-15): the Codex row
   // offers `codex login` WITH the uncertainty caveat, plus the API-key path.
   const codexRowText = await page
-    .locator(".onb-agent", { hasText: "Codex" })
+    .locator(".agent-picker-agent", { hasText: "Codex" })
     .innerText();
   assert.match(codexRowText, /codex login/);
   assert.match(codexRowText, /not clearly permitted/);
   assert.match(codexRowText, /OPENAI_API_KEY/);
   // The local/open-model path is named on the picker screen itself (R.4k).
-  assert.match(await page.locator(".onb-local-note").innerText(), /local\/open model/i);
+  assert.match(await page.locator(".agent-picker-local-note").innerText(), /local\/open model/i);
 
   await claudeRow.click();
   await page.waitForURL(/\/s\/[\w-]+/);
@@ -414,8 +414,8 @@ test("A.1: tool_use and permission_request announce (assertive interrupts polite
   assert.match(alertText, /Permission needed: Bash\./);
   assert.match(alertText, /rm -rf \/var\/cache\/app/);
   // The permission bar itself is on-screen with the same detail.
-  assert.equal(await page.locator(".perm-tool").innerText(), "Bash");
-  await page.locator(".perm-allow").click();
+  assert.equal(await page.locator(".permission-tool").innerText(), "Bash");
+  await page.locator(".permission-allow").click();
   // Allowed → the mock "runs" the command: a tool_use announces at the
   // polite region ("Running Bash."), then the turn concludes.
   await page.waitForFunction(
@@ -432,46 +432,46 @@ test("A.1: tool_use and permission_request announce (assertive interrupts polite
     { timeout: 15_000 },
   );
   // The permission bar clears once answered.
-  assert.equal(await page.locator(".perm-bar").count(), 0);
+  assert.equal(await page.locator(".permission-bar").count(), 0);
 });
 
 test("the permission strip expands to the full command on click, and collapses away", async () => {
   await page.locator("textarea").click();
   await page.keyboard.type(MOCK_PROMPTS["permission-ask"]);
   await page.keyboard.press("Enter");
-  await page.waitForSelector(".perm-bar", { timeout: 15_000 });
+  await page.waitForSelector(".permission-bar", { timeout: 15_000 });
   // The strip's body — everything except allow/deny — is one click target…
-  await page.locator(".perm-body").click();
+  await page.locator(".permission-body").click();
   // …opening the card with the WHOLE command, not the one-line preview.
-  await page.waitForSelector(".perm-modal-card");
+  await page.waitForSelector(".permission-modal-card");
   assert.match(
-    await page.locator(".perm-modal-detail").innerText(),
+    await page.locator(".permission-modal-detail").innerText(),
     /rm -rf \/var\/cache\/app && systemctl restart app/,
   );
   // A click away dismisses WITHOUT answering: the ask (and the turn paused
   // behind it) must both survive.
   await page.mouse.click(8, 8);
   await eventually(
-    () => !document.querySelector(".perm-modal-card"),
+    () => !document.querySelector(".permission-modal-card"),
     "clicking the backdrop did not close the card",
   );
-  assert.equal(await page.locator(".perm-bar").count(), 1, "backdrop click answered the ask");
+  assert.equal(await page.locator(".permission-bar").count(), 1, "backdrop click answered the ask");
   // Esc is exclusive to the card: it closes it, never reaching the busy
   // interrupt — the ModalCard contract the settings card pinned first.
-  await page.locator(".perm-body").click();
-  await page.waitForSelector(".perm-modal-card");
-  await settled(page, ".perm-modal-card"); // its entrance transition, then Esc
+  await page.locator(".permission-body").click();
+  await page.waitForSelector(".permission-modal-card");
+  await settled(page, ".permission-modal-card"); // its entrance transition, then Esc
   await page.keyboard.press("Escape");
-  await eventually(() => !document.querySelector(".perm-modal-card"), "Esc did not close the card");
-  assert.equal(await page.locator(".perm-bar").count(), 1, "Esc through the card killed the ask");
+  await eventually(() => !document.querySelector(".permission-modal-card"), "Esc did not close the card");
+  assert.equal(await page.locator(".permission-bar").count(), 1, "Esc through the card killed the ask");
   assert.equal(await page.locator(".stop-btn").count(), 1, "Esc through the card halted the turn");
   // Focus lands back on the strip that opened the card (A.3).
   const focusedBody = await page.evaluate(
-    () => document.activeElement?.classList.contains("perm-body") ?? false,
+    () => document.activeElement?.classList.contains("permission-body") ?? false,
   );
   assert.ok(focusedBody, "focus did not return to the strip on close");
   // Deny to clean up; the turn runs out.
-  await page.locator(".perm-deny").click();
+  await page.locator(".permission-deny").click();
   await page.waitForFunction(() => !document.querySelector(".stop-btn"), undefined, {
     timeout: 15_000,
   });
@@ -676,12 +676,12 @@ test("R.4i: a subscription-only Claude shows a BLOCKED row with the API-key fix,
   const page2 = await browser.newPage();
   try {
     await page2.goto(`http://127.0.0.1:${d2.port}/?token=${token}`);
-    const claudeRow = page2.locator(".onb-agent", { hasText: "Claude Code" });
+    const claudeRow = page2.locator(".agent-picker-agent", { hasText: "Claude Code" });
     await claudeRow.waitFor();
     // Warn-toned "subscription not supported", not the neutral demo status.
-    assert.equal(await claudeRow.locator(".onb-blocked").count(), 1);
+    assert.equal(await claudeRow.locator(".agent-picker-blocked").count(), 1);
     assert.match(
-      await claudeRow.locator(".onb-agent-status").innerText(),
+      await claudeRow.locator(".agent-picker-agent-status").innerText(),
       /subscription not supported/,
     );
     // The honest hint: WHY (terms) plus the concrete fix (an API key).
@@ -690,7 +690,7 @@ test("R.4i: a subscription-only Claude shows a BLOCKED row with the API-key fix,
     assert.match(rowText, /ANTHROPIC_API_KEY/);
     // Codex/Gemini are credential-less here → their ordinary demo hints, no block.
     assert.equal(
-      await page2.locator(".onb-agent", { hasText: "Codex" }).locator(".onb-blocked").count(),
+      await page2.locator(".agent-picker-agent", { hasText: "Codex" }).locator(".agent-picker-blocked").count(),
       0,
     );
   } finally {
@@ -704,7 +704,7 @@ test("UX.8: a live picker names its backing without exposing a configured host",
   // Point Claude Code at a local endpoint (ANTHROPIC_BASE_URL) → kind `local`,
   // live, and the picker must identify an endpoint without disclosing its
   // configured hostname. The URL need not resolve —
-  // we only read onboarding, never drive a turn.
+  // we only read agent picker, never drive a turn.
   const token = "e2e-local-9c2f";
   const d2 = await startDaemon({
     MIRAFOLD_TOKEN: token,
@@ -717,15 +717,15 @@ test("UX.8: a live picker names its backing without exposing a configured host",
   const page2 = await browser.newPage();
   try {
     await page2.goto(`http://127.0.0.1:${d2.port}/?token=${token}`);
-    const claudeRow = page2.locator(".onb-agent", { hasText: "Claude Code" });
+    const claudeRow = page2.locator(".agent-picker-agent", { hasText: "Claude Code" });
     await claudeRow.waitFor();
-    assert.match(await claudeRow.locator(".onb-agent-status").innerText(), /ready/);
-    const detail = await claudeRow.locator(".onb-agent-detail").innerText();
+    assert.match(await claudeRow.locator(".agent-picker-agent-status").innerText(), /ready/);
+    const detail = await claudeRow.locator(".agent-picker-agent-detail").innerText();
     assert.equal(detail, "local endpoint");
     assert.doesNotMatch(detail, /localhost|11434/);
-    const geminiRow = page2.locator(".onb-agent", { hasText: "Gemini CLI" });
-    assert.match(await geminiRow.locator(".onb-agent-status").innerText(), /ready/);
-    assert.match(await geminiRow.locator(".onb-agent-detail").innerText(), /Gemini API key/);
+    const geminiRow = page2.locator(".agent-picker-agent", { hasText: "Gemini CLI" });
+    assert.match(await geminiRow.locator(".agent-picker-agent-status").innerText(), /ready/);
+    assert.match(await geminiRow.locator(".agent-picker-agent-detail").innerText(), /Gemini API key/);
   } finally {
     await page2.close();
     await d2.stop();
@@ -761,77 +761,77 @@ test("N.4: a genuine choice opens the second step; a local server appears LIVE; 
     await page2.goto(`http://127.0.0.1:${d2.port}/?token=${token}`);
 
     // Codex: two usable credentials → the second step, not an instant create.
-    await page2.locator(".onb-agent", { hasText: "Codex" }).click();
-    await page2.waitForSelector(".onb-backends");
-    assert.equal(await page2.locator(".onb-backend").count(), 2);
-    const subRow = page2.locator(".onb-backend", { hasText: "ChatGPT subscription" });
+    await page2.locator(".agent-picker-agent", { hasText: "Codex" }).click();
+    await page2.waitForSelector(".agent-picker-backends");
+    assert.equal(await page2.locator(".agent-picker-backend").count(), 2);
+    const subRow = page2.locator(".agent-picker-backend", { hasText: "ChatGPT subscription" });
     // The disclosed-uncertainty caveat rides the OPTION (K.3: uncertainty,
     // never permission), and the row is a live choice, not blocked.
     assert.match(await subRow.innerText(), /not clearly permitted/);
     assert.match(await subRow.innerText(), /your account, your call/);
-    assert.equal(await page2.locator(".onb-backend-blocked").count(), 0);
+    assert.equal(await page2.locator(".agent-picker-backend-blocked").count(), 0);
     // Every row names the model it runs — the line that makes rows comparable
     // (2026-07-20). The api-key row's is the env override.
     assert.equal(
-      await page2.locator(".onb-backend", { hasText: "OpenAI API key" })
-        .locator(".onb-backend-model")
+      await page2.locator(".agent-picker-backend", { hasText: "OpenAI API key" })
+        .locator(".agent-picker-backend-model")
         .innerText(),
       "gpt-5.6-sol",
     );
     // No server discovered yet → the live hint, and no catalog anywhere.
-    assert.match(await page2.locator(".onb-live-hint").innerText(), /shows up here/);
-    assert.equal(await page2.locator(".onb-model").count(), 0);
+    assert.match(await page2.locator(".agent-picker-live-hint").innerText(), /shows up here/);
+    assert.equal(await page2.locator(".agent-picker-model").count(), 0);
 
     // Start the fixture "ollama" NOW, picker open — it must appear without a
     // reload (the refresh_agents poll re-probes every ~3s).
     fixture.setUp(true);
-    const ollamaRow = page2.locator(".onb-backend", { hasText: "ollama" });
+    const ollamaRow = page2.locator(".agent-picker-backend", { hasText: "ollama" });
     await ollamaRow.waitFor({ timeout: 15_000 });
     // It's ONE row like every other, promising a catalog rather than splaying
     // it inline — and the hint that told you to go configure one is gone.
-    assert.equal(await page2.locator(".onb-backend").count(), 3);
+    assert.equal(await page2.locator(".agent-picker-backend").count(), 3);
     assert.match(await ollamaRow.innerText(), /1 model — choose/);
-    assert.equal(await page2.locator(".onb-model").count(), 0);
-    assert.equal(await page2.locator(".onb-live-hint").count(), 0);
+    assert.equal(await page2.locator(".agent-picker-model").count(), 0);
+    assert.equal(await page2.locator(".agent-picker-live-hint").count(), 0);
     // "runs on your machine" is a per-row tag, and ONLY the discovered
     // loopback server carries it — never the paid remote credential rows.
-    assert.equal(await page2.locator(".onb-backend-tag").count(), 1);
-    assert.equal(await ollamaRow.locator(".onb-backend-tag").innerText(), "local");
+    assert.equal(await page2.locator(".agent-picker-backend-tag").count(), 1);
+    assert.equal(await ollamaRow.locator(".agent-picker-backend-tag").innerText(), "local");
 
     // The third step: the catalog, one click deeper.
     await ollamaRow.click();
-    await page2.waitForSelector(".onb-server-name");
-    assert.match(await page2.locator(".onb-server-name").innerText(), /ollama/);
-    assert.equal(await page2.locator(".onb-model").innerText(), "llama3.2:3b");
+    await page2.waitForSelector(".agent-picker-server-name");
+    assert.match(await page2.locator(".agent-picker-server-name").innerText(), /ollama/);
+    assert.equal(await page2.locator(".agent-picker-model").innerText(), "llama3.2:3b");
 
     // Esc walks back one step at a time: catalog → backends → agents.
     await page2.keyboard.press("Escape");
-    await page2.waitForSelector(".onb-backend");
-    await page2.locator(".onb-back").click();
-    await page2.waitForSelector(".onb-list");
+    await page2.waitForSelector(".agent-picker-backend");
+    await page2.locator(".agent-picker-back").click();
+    await page2.waitForSelector(".agent-picker-list");
 
     // Claude: two usable (env endpoint + API key) + ollama speaks anthropic
     // too, and the prohibited subscription is VISIBLE but gray with the why.
-    await page2.locator(".onb-agent", { hasText: "Claude Code" }).click();
-    await page2.waitForSelector(".onb-backends");
-    assert.equal(await page2.locator(".onb-backend", { hasText: "ollama" }).count(), 1); // dialect-filtered in
-    const blocked = page2.locator(".onb-backend-blocked");
+    await page2.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
+    await page2.waitForSelector(".agent-picker-backends");
+    assert.equal(await page2.locator(".agent-picker-backend", { hasText: "ollama" }).count(), 1); // dialect-filtered in
+    const blocked = page2.locator(".agent-picker-backend-blocked");
     assert.equal(await blocked.count(), 1);
     assert.ok(await blocked.isDisabled(), "a prohibited subscription must not be clickable");
     assert.match(await blocked.innerText(), /Claude subscription/);
     assert.match(await blocked.innerText(), /third-party apps/);
     // The env endpoint the probe never found keeps its own row without
     // disclosing its configured hostname or port.
-    const configuredLocal = page2.locator(".onb-backend", { hasText: "local endpoint" });
+    const configuredLocal = page2.locator(".agent-picker-backend", { hasText: "local endpoint" });
     const configuredLocalText = await configuredLocal.innerText();
     assert.match(configuredLocalText, /local endpoint/);
     assert.doesNotMatch(configuredLocalText, /localhost|9999/);
-    assert.equal(await configuredLocal.locator(".onb-backend-tag").innerText(), "local");
+    assert.equal(await configuredLocal.locator(".agent-picker-backend-tag").innerText(), "local");
 
     // Gemini: no credentials, no dialect → no second step; the click-through
     // demo create still works one-click (and proves the panel isn't sticky).
-    await page2.locator(".onb-back").click();
-    await page2.locator(".onb-agent", { hasText: "Gemini" }).click();
+    await page2.locator(".agent-picker-back").click();
+    await page2.locator(".agent-picker-agent", { hasText: "Gemini" }).click();
     await page2.waitForURL(/\/s\/[\w-]+/, { timeout: 15_000 });
   } finally {
     await page2.close();
@@ -1090,7 +1090,7 @@ test("an artifact pins to the dock via its chrome control, and unpins back", asy
   await page.locator(".pin-dock .artifact-pin").click();
   await page.waitForSelector(".pin-dock", { state: "detached" });
   assert.equal(await page.locator(".pin-stub").count(), 0);
-  assert.equal(await page.locator(".render-zone iframe.artifact-frame").count(), 1);
+  assert.equal(await page.locator(".output-zone iframe.artifact-frame").count(), 1);
 });
 
 test("hostile artifact is contained: escapes fail, sandbox is exactly allow-scripts (R.4e)", async () => {
@@ -1161,8 +1161,8 @@ test("2026-07-29 reload replays history silently — no re-announced turns in th
   // the long shared-session history the suite accumulates by this point.
   const sharedSession = page.url();
   await page.goto(`${base}/?new=1`);
-  await page.waitForSelector(".onb-agent");
-  await page.locator(".onb-agent", { hasText: "Claude Code" }).click();
+  await page.waitForSelector(".agent-picker-agent");
+  await page.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
   await page.waitForURL(/\/s\/[\w-]+/);
   const freshSession = page.url();
   await page.locator("textarea").click();
@@ -1270,8 +1270,8 @@ test("2026-07-30 a turn that dies by error leaves the shell idle, not wedged on 
   // something other than what this test claims.
   const shared = page.url(); // hand it back at the end
   await page.goto(`${base}/?new=1`);
-  await page.waitForSelector(".onb-agent");
-  await page.locator(".onb-agent", { hasText: "Claude Code" }).click();
+  await page.waitForSelector(".agent-picker-agent");
+  await page.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
   await page.waitForURL(/\/s\/[\w-]+/);
   const errSession = page.url();
 
@@ -1342,17 +1342,17 @@ test("fleet: the cwd is the row's hover tooltip; clicking outside the new-sessio
   // "+ new session" opens the picker; a backdrop click (outside the card)
   // changes your mind — possible only because a fleet exists behind it.
   await page.locator(".fleet-new").click();
-  await page.waitForSelector(".onb-card");
-  await page.locator(".onb-overlay").click({ position: { x: 5, y: 5 } });
-  assert.equal(await page.locator(".onb-overlay").count(), 0);
+  await page.waitForSelector(".agent-picker-card");
+  await page.locator(".agent-picker-overlay").click({ position: { x: 5, y: 5 } });
+  assert.equal(await page.locator(".agent-picker-overlay").count(), 0);
   // A click INSIDE the card must not dismiss it…
   await page.locator(".fleet-new").click();
-  await page.waitForSelector(".onb-card");
-  await page.locator(".onb-title").click();
-  assert.equal(await page.locator(".onb-overlay").count(), 1);
+  await page.waitForSelector(".agent-picker-card");
+  await page.locator(".agent-picker-title").click();
+  assert.equal(await page.locator(".agent-picker-overlay").count(), 1);
   // …and Esc closes it, same idiom as the settings card.
   await page.keyboard.press("Escape");
-  assert.equal(await page.locator(".onb-overlay").count(), 0);
+  assert.equal(await page.locator(".agent-picker-overlay").count(), 0);
 });
 
 test("A.3b: the session name is the row's one link; buttons ride above the stretched overlay", async () => {
@@ -1443,7 +1443,7 @@ test("status bar: new sits beside home, end is the far-right control, ?new opens
   const fresh = await browser.newPage();
   await fresh.context().addCookies([{ name: "mirafold_token", value: TOKEN, url: base }]);
   await fresh.goto(`${base}${href}`);
-  await fresh.waitForSelector(".onb-card");
+  await fresh.waitForSelector(".agent-picker-card");
   await fresh.close();
 });
 
@@ -1571,17 +1571,17 @@ const eventually = async (check: () => boolean, message: string, timeout = 10_00
   await page.waitForFunction(check, undefined, { timeout }).catch(() => assert.fail(message));
 };
 
-/** A checkout-independent Explorer fixture: the shape the E.3/E.5/E.6/E2.2
+/** A checkout-independent folder tree fixture: the shape the E.3/E.5/E.6/E2.2
  *  tests read — a tracked package.json, a tall long-lined yarn.lock,
  *  server/protocol.ts, web/src/main.tsx — inside its own temp git repo, so a
- *  rename in THIS repository can never fail an Explorer test. Seeded once
+ *  rename in THIS repository can never fail an folder tree test. Seeded once
  *  over the wire on the shared daemon; each test navigates the shared page
  *  to it and hands the original session back when done. */
-let explorerFixture: { url: string; dir: string } | null = null;
-const explorerFixtureUrl = async (): Promise<string> => {
-  if (explorerFixture) return explorerFixture.url;
-  const dir = mkdtempSync(path.join(os.tmpdir(), "e2e-explorer-"));
-  writeFileSync(path.join(dir, "package.json"), '{\n  "name": "explorer-fixture",\n  "private": true\n}\n');
+let folderTreeFixture: { url: string; dir: string } | null = null;
+const folderTreeFixtureUrl = async (): Promise<string> => {
+  if (folderTreeFixture) return folderTreeFixture.url;
+  const dir = mkdtempSync(path.join(os.tmpdir(), "e2e-folder tree-"));
+  writeFileSync(path.join(dir, "package.json"), '{\n  "name": "folder-tree-fixture",\n  "private": true\n}\n');
   writeFileSync(
     path.join(dir, "yarn.lock"),
     Array.from({ length: 200 }, (_, i) => `"fixture-package-${i}@^1.0.0":\n  version "1.0.${i}"\n  resolved "https://registry.example/fixture-package-${i}/-/fixture-package-${i}-1.0.${i}.tgz#${"f".repeat(40)}"\n`).join("\n"),
@@ -1590,20 +1590,20 @@ const explorerFixtureUrl = async (): Promise<string> => {
   writeFileSync(path.join(dir, "server", "protocol.ts"), "export type WireMsg = { type: string };\n");
   mkdirSync(path.join(dir, "web", "src"), { recursive: true });
   writeFileSync(path.join(dir, "web", "src", "main.tsx"), "export const main = () => null;\n");
-  writeFileSync(path.join(dir, "README.md"), "# Explorer fixture\n");
+  writeFileSync(path.join(dir, "README.md"), "# folder tree fixture\n");
   git(dir, "init", "-q");
   git(dir, "add", "-A");
   git(dir, "commit", "-qm", "fixture");
   const { client, sessionId } = await createSession(d.port, "claude-code", { cwd: dir, token: TOKEN });
   client.close();
-  explorerFixture = { url: `${base}/s/${sessionId}`, dir };
-  return explorerFixture.url;
+  folderTreeFixture = { url: `${base}/s/${sessionId}`, dir };
+  return folderTreeFixture.url;
 };
-/** Run `body` on the Explorer fixture session, then return to the session the
+/** Run `body` on the folder tree fixture session, then return to the session the
  *  shared page was on. */
-const onExplorerFixture = async (body: () => Promise<void>) => {
+const onFolderTreeFixture = async (body: () => Promise<void>) => {
   const back = page.url();
-  await page.goto(await explorerFixtureUrl());
+  await page.goto(await folderTreeFixtureUrl());
   await page.waitForSelector("textarea", { timeout: 30_000 });
   try {
     await body();
@@ -1613,42 +1613,42 @@ const onExplorerFixture = async (body: () => Promise<void>) => {
   }
 };
 
-test("E.3: the files panel lists the working tree, opens a file beside the transcript, drills back", () => onExplorerFixture(async () => {
-  await page.locator(".ab-files").click();
-  await page.waitForSelector(".files-panel");
-  const pkg = page.locator(".files-file-row", { hasText: "package.json" }).first();
+test("E.3: the files panel lists the working tree, opens a file beside the transcript, drills back", () => onFolderTreeFixture(async () => {
+  await page.locator(".ab-folder-tree").click();
+  await page.waitForSelector(".folder-tree-panel");
+  const pkg = page.locator(".folder-tree-file-row", { hasText: "package.json" }).first();
   await pkg.waitFor({ timeout: 15_000 });
 
   // The tree leads with the checked-out ROOT as its top node — the folder's
   // NAME (no path header above the tree); collapsing it folds the whole tree.
-  const root = page.locator(".files-root-row");
-  const repoDir = path.basename(explorerFixture!.dir);
-  const panelHead = page.locator(".files-panel-head");
-  assert.equal(await panelHead.locator(".files-panel-title").innerText(), "FILES");
+  const root = page.locator(".folder-tree-root-row");
+  const repoDir = path.basename(folderTreeFixture!.dir);
+  const panelHead = page.locator(".folder-tree-panel-head");
+  assert.equal(await panelHead.locator(".folder-tree-panel-title").innerText(), "FILES");
   assert.equal(
-    await panelHead.locator(".files-refresh[aria-label='Refresh files']").count(),
+    await panelHead.locator(".folder-tree-refresh[aria-label='Refresh files']").count(),
     1,
-    "the Explorer title bar owns its refresh action",
+    "the folder tree title bar owns its refresh action",
   );
   assert.ok((await root.innerText()).includes(repoDir), `root row names the checkout folder (${repoDir})`);
-  assert.equal(await page.locator(".files-title").count(), 0, "the old path header is gone");
+  assert.equal(await page.locator(".folder-tree-title").count(), 0, "the old path header is gone");
   assert.equal(
-    await root.locator(".files-caret + .files-node-icon-folder-open + .files-name").count(),
+    await root.locator(".folder-tree-caret + .folder-tree-node-icon-folder-open + .folder-tree-name").count(),
     1,
     "the expanded root orders its chevron, open-folder glyph, then name",
   );
   assert.equal(
-    await pkg.locator(".files-caret + .files-node-icon-config[aria-hidden=true] + .files-name").count(),
+    await pkg.locator(".folder-tree-caret + .folder-tree-node-icon-config[aria-hidden=true] + .folder-tree-name").count(),
     1,
     "package.json carries its decorative configuration glyph before its name",
   );
   await root.click();
   await eventually(
-    () => document.querySelectorAll(".files-file-row").length === 0,
+    () => document.querySelectorAll(".folder-tree-file-row").length === 0,
     "collapsed root still lists files",
   );
   assert.equal(
-    await root.locator(".files-node-icon-folder").count(),
+    await root.locator(".folder-tree-node-icon-folder").count(),
     1,
     "the collapsed root carries the closed-folder glyph",
   );
@@ -1657,38 +1657,38 @@ test("E.3: the files panel lists the working tree, opens a file beside the trans
 
   // The transcript and the prompt box both stay usable beside the open panel
   // (the squeeze risk — the panel and transcript are separate flex columns).
-  assert.ok(await page.locator(".render-zone").isVisible());
+  assert.ok(await page.locator(".output-zone").isVisible());
   assert.ok(await page.locator(".prompt-box textarea, textarea").first().isVisible());
 
   // Open the file → its content shows in the panel's file view.
   await pkg.click();
-  await page.waitForSelector(".files-view .fv-content");
-  assert.match(await page.locator(".files-view .fv-content").innerText(), /"name"/);
+  await page.waitForSelector(".folder-tree-view .fv-content");
+  assert.match(await page.locator(".folder-tree-view .fv-content").innerText(), /"name"/);
 
   // Back returns to the tree; the toggle closes the panel entirely.
-  await page.locator(".files-back").click();
-  await page.waitForSelector(".files-tree");
-  await page.locator(".ab-files").click();
-  await eventually(() => !document.querySelector(".files-panel"), "the toggle left the panel open");
+  await page.locator(".folder-tree-back").click();
+  await page.waitForSelector(".folder-tree");
+  await page.locator(".ab-folder-tree").click();
+  await eventually(() => !document.querySelector(".folder-tree-panel"), "the toggle left the panel open");
 }));
 
-test("E.6: ⤢ lifts the file view into a dimmed lightbox; Esc and the backdrop restore it in place", () => onExplorerFixture(async () => {
-  await page.locator(".ab-files").click();
-  await page.waitForSelector(".files-panel");
+test("E.6: ⤢ lifts the file view into a dimmed lightbox; Esc and the backdrop restore it in place", () => onFolderTreeFixture(async () => {
+  await page.locator(".ab-folder-tree").click();
+  await page.waitForSelector(".folder-tree-panel");
   // yarn.lock, not package.json: the scroll assertions below need a file
   // tall enough to overflow the view in BOTH frames, with lines long enough
   // that unwrapped they would side-scroll a 340px panel.
-  const lock = page.locator(".files-file-row", { hasText: "yarn.lock" }).first();
+  const lock = page.locator(".folder-tree-file-row", { hasText: "yarn.lock" }).first();
   await lock.waitFor({ timeout: 15_000 });
   await lock.click();
-  await page.waitForSelector(".files-view .fv-content");
+  await page.waitForSelector(".folder-tree-view .fv-content");
 
   // The view is the ONE scroller — the transcript's 360px tool-output cap
   // is lifted here — and lines WRAP at the frame's width, never side-scroll
   // (both deliberate, 2026-07-28).
-  await page.locator(".files-view").evaluate((el) => (el.scrollTop = 40));
+  await page.locator(".folder-tree-view").evaluate((el) => (el.scrollTop = 40));
   assert.equal(
-    await page.locator(".files-view").evaluate((el) => el.scrollTop),
+    await page.locator(".folder-tree-view").evaluate((el) => el.scrollTop),
     40,
     "the docked view is not scrollable — the tool-output height cap is back",
   );
@@ -1696,18 +1696,18 @@ test("E.6: ⤢ lifts the file view into a dimmed lightbox; Esc and the backdrop 
     await page.locator(".fv-content").evaluate((el) => el.scrollWidth <= el.clientWidth),
     "long lines side-scroll instead of wrapping",
   );
-  await page.locator(".files-enlarge").click();
-  await page.waitForSelector(".files-file.is-maximized");
-  assert.ok(await page.locator(".files-dim").isVisible(), "no backdrop behind the lifted box");
+  await page.locator(".folder-tree-enlarge").click();
+  await page.waitForSelector(".folder-tree-file.is-maximized");
+  assert.ok(await page.locator(".folder-tree-dim").isVisible(), "no backdrop behind the lifted box");
   // The enlarged bar is a title bar: the name centers on the BAR, immune to
   // its uneven flanks (yarn.lock is clean, so this pins the no-tabs case).
   assert.ok(
     await page.evaluate(() => {
       const bar = document
-        .querySelector(".files-file.is-maximized .files-file-path")!
+        .querySelector(".folder-tree-file.is-maximized .folder-tree-file-path")!
         .getBoundingClientRect();
       const name = document
-        .querySelector(".files-file.is-maximized .files-file-name")!
+        .querySelector(".folder-tree-file.is-maximized .folder-tree-file-name")!
         .getBoundingClientRect();
       return Math.abs((name.left + name.right) / 2 - (bar.left + bar.right) / 2) < 2;
     }),
@@ -1715,7 +1715,7 @@ test("E.6: ⤢ lifts the file view into a dimmed lightbox; Esc and the backdrop 
   );
   // Same node, same scroller in both frames — scroll survives the enlarge.
   assert.equal(
-    await page.locator(".files-view").evaluate((el) => el.scrollTop),
+    await page.locator(".folder-tree-view").evaluate((el) => el.scrollTop),
     40,
     "scroll position reset across the enlarge",
   );
@@ -1723,45 +1723,45 @@ test("E.6: ⤢ lifts the file view into a dimmed lightbox; Esc and the backdrop 
   // Esc restores the frame WITHOUT closing the file view or the panel — the
   // exclusive handler must also keep the key from Shell's busy interrupt.
   await page.keyboard.press("Escape");
-  await eventually(() => !document.querySelector(".files-file.is-maximized"), "Esc left it enlarged");
-  assert.ok(await page.locator(".files-view .fv-content").isVisible(), "Esc closed the file view");
-  assert.equal(await page.locator(".files-dim").count(), 0, "backdrop outlived the restore");
+  await eventually(() => !document.querySelector(".folder-tree-file.is-maximized"), "Esc left it enlarged");
+  assert.ok(await page.locator(".folder-tree-view .fv-content").isVisible(), "Esc closed the file view");
+  assert.equal(await page.locator(".folder-tree-dim").count(), 0, "backdrop outlived the restore");
 
   // The backdrop click is the other way back (the lightbox contract).
-  await page.locator(".files-enlarge").click();
-  await page.waitForSelector(".files-dim");
-  await page.locator(".files-dim").click({ position: { x: 5, y: 5 } });
+  await page.locator(".folder-tree-enlarge").click();
+  await page.waitForSelector(".folder-tree-dim");
+  await page.locator(".folder-tree-dim").click({ position: { x: 5, y: 5 } });
   await eventually(
-    () => !document.querySelector(".files-file.is-maximized"),
+    () => !document.querySelector(".folder-tree-file.is-maximized"),
     "backdrop click left it enlarged",
   );
 
-  await page.locator(".files-back").click(); // tidy up for later tests
-  await page.locator(".ab-files").click();
-  await eventually(() => !document.querySelector(".files-panel"), "the toggle left the panel open");
+  await page.locator(".folder-tree-back").click(); // tidy up for later tests
+  await page.locator(".ab-folder-tree").click();
+  await eventually(() => !document.querySelector(".folder-tree-panel"), "the toggle left the panel open");
 }));
 
-test("E.5: expanded dirs survive a close/reopen, and a turn's auto-refresh keeps tree state", () => onExplorerFixture(async () => {
-  await page.locator(".ab-files").click();
-  await page.waitForSelector(".files-panel");
+test("E.5: expanded dirs survive a close/reopen, and a turn's auto-refresh keeps tree state", () => onFolderTreeFixture(async () => {
+  await page.locator(".ab-folder-tree").click();
+  await page.waitForSelector(".folder-tree-panel");
 
   // Expand a known top-level directory (the fixture has server/). Exact-match
   // the name span so a substring never hits a sibling.
-  const serverDir = page.locator('.files-dir:has(.files-name:text-is("server"))').first();
+  const serverDir = page.locator('.folder-tree-dir:has(.folder-tree-name:text-is("server"))').first();
   await serverDir.waitFor({ timeout: 15_000 });
   await serverDir.click();
   // A child appears — protocol.ts is a tracked file directly under server/.
-  await page.waitForSelector(".files-file-row:has-text('protocol.ts')");
+  await page.waitForSelector(".folder-tree-file-row:has-text('protocol.ts')");
 
   // Close and reopen within the same session — the expansion is remembered
   // (E.5: reset is keyed on session switch, not on open).
-  await page.locator(".ab-files").click();
-  await eventually(() => !document.querySelector(".files-panel"), "the toggle left the panel open");
-  await page.locator(".ab-files").click();
-  await page.waitForSelector(".files-tree");
+  await page.locator(".ab-folder-tree").click();
+  await eventually(() => !document.querySelector(".folder-tree-panel"), "the toggle left the panel open");
+  await page.locator(".ab-folder-tree").click();
+  await page.waitForSelector(".folder-tree");
   await eventually(
     () =>
-      [...document.querySelectorAll(".files-file-row")].some((el) =>
+      [...document.querySelectorAll(".folder-tree-file-row")].some((el) =>
         el.textContent?.includes("protocol.ts"),
       ),
     "expanded dir was collapsed on reopen",
@@ -1786,27 +1786,27 @@ test("E.5: expanded dirs survive a close/reopen, and a turn's auto-refresh keeps
     undefined,
     { polling: 150, timeout: 10_000 },
   );
-  await eventually(() => !!document.querySelector(".files-panel"), "auto-refresh closed the panel");
+  await eventually(() => !!document.querySelector(".folder-tree-panel"), "auto-refresh closed the panel");
   await eventually(
     () =>
-      [...document.querySelectorAll(".files-file-row")].some((el) =>
+      [...document.querySelectorAll(".folder-tree-file-row")].some((el) =>
         el.textContent?.includes("protocol.ts"),
       ),
     "auto-refresh collapsed the expanded dir",
   );
 
-  await page.locator(".ab-files").click(); // tidy up for later tests
+  await page.locator(".ab-folder-tree").click(); // tidy up for later tests
 }));
 
-test("E2.2: the tree is LAZY — open fetches root + first level only; expand fetches exactly that dir; cache re-expands with no request; turn-end refetches only expanded dirs", () => onExplorerFixture(async () => {
+test("E2.2: the tree is LAZY — open fetches root + first level only; expand fetches exactly that dir; cache re-expands with no request; turn-end refetches only expanded dirs", () => onFolderTreeFixture(async () => {
   await installFsRecorder(page);
   const sent = () => fsSent(page);
   const mark = async () => (await sent()).length;
 
   // Open: the root and (prefetched) first level arrive — every listing
   // request is depth ≤ 1, and the whole-tree fs_list is never sent.
-  await page.locator(".ab-files").click();
-  await page.waitForSelector(".files-file-row:has-text('package.json')");
+  await page.locator(".ab-folder-tree").click();
+  await page.waitForSelector(".folder-tree-file-row:has-text('package.json')");
   // The prefetch fan-out is done when no new fs_ frame lands for a poll.
   await page.waitForFunction(
     () => {
@@ -1831,15 +1831,15 @@ test("E2.2: the tree is LAZY — open fetches root + first level only; expand fe
   // Expanding a PREFETCHED first-level dir renders from cache — no request.
   // (web/ was fetched by the open prefetch above.)
   let m0 = await mark();
-  const webDir = page.locator('.files-dir:has(.files-name:text-is("web"))').first();
+  const webDir = page.locator('.folder-tree-dir:has(.folder-tree-name:text-is("web"))').first();
   await webDir.click();
-  await page.waitForSelector('.files-dir:has(.files-name:text-is("src"))');
+  await page.waitForSelector('.folder-tree-dir:has(.folder-tree-name:text-is("src"))');
   assert.equal((await sent()).length, m0, "a prefetched dir expands with no request");
 
   // Expanding a DEEP dir fetches exactly that dir and nothing else.
   m0 = await mark();
-  await page.locator('.files-dir:has(.files-name:text-is("src"))').first().click();
-  await page.waitForSelector(".files-file-row:has-text('main.tsx')");
+  await page.locator('.folder-tree-dir:has(.folder-tree-name:text-is("src"))').first().click();
+  await page.waitForSelector(".folder-tree-file-row:has-text('main.tsx')");
   const deep = (await sent()).slice(m0);
   assert.deepEqual(
     deep.map((m) => `${m.type}:${m.path}`),
@@ -1851,11 +1851,11 @@ test("E2.2: the tree is LAZY — open fetches root + first level only; expand fe
   m0 = await mark();
   await webDir.click(); // collapse web (web/src stays expanded underneath)
   await eventually(
-    () => ![...document.querySelectorAll(".files-file-row")].some((el) => el.textContent?.includes("main.tsx")),
+    () => ![...document.querySelectorAll(".folder-tree-file-row")].some((el) => el.textContent?.includes("main.tsx")),
     "collapse left the subtree visible",
   );
   await webDir.click(); // re-expand
-  await page.waitForSelector(".files-file-row:has-text('main.tsx')");
+  await page.waitForSelector(".folder-tree-file-row:has-text('main.tsx')");
   assert.equal((await sent()).length, m0, "collapse/re-expand made requests despite the cache");
 
   // A turn's auto-refresh (E.5, lazy since E2.2) refetches ONLY the root and
@@ -1882,7 +1882,7 @@ test("E2.2: the tree is LAZY — open fetches root + first level only; expand fe
     `turn-end refetched beyond root + expanded dirs: ${onTurn.map((m) => `${m.type}:${m.path}`).join(", ")}`,
   );
 
-  await page.locator(".ab-files").click(); // tidy up for later tests
+  await page.locator(".ab-folder-tree").click(); // tidy up for later tests
 }));
 
 test("E2.4: the Projects-root proof — lazy expands into two repos with per-repo statuses, ignore rules, and a nested-repo diff; never a whole-tree request; phone drills the same fixture", async () => {
@@ -1926,60 +1926,60 @@ test("E2.4: the Projects-root proof — lazy expands into two repos with per-rep
     // frame must be caught. (Fresh window after goto: re-install.)
     await installFsRecorder(page);
 
-    await page.locator(".ab-files").click();
+    await page.locator(".ab-folder-tree").click();
     // The root: three dirs, no statuses anywhere — the root is no repo.
-    await page.waitForSelector('.files-dir:has(.files-name:text-is("repoA"))');
-    assert.equal(await page.locator(".files-status").count(), 0, "statuses at a non-repo root");
+    await page.waitForSelector('.folder-tree-dir:has(.folder-tree-name:text-is("repoA"))');
+    assert.equal(await page.locator(".folder-tree-status").count(), 0, "statuses at a non-repo root");
 
     // Into the dirty repo: its own gitignore hides dist/, its statuses ride
     // the rows — the modified file badged M, the clean file unbadged.
-    await page.locator('.files-dir:has(.files-name:text-is("repoA"))').click();
-    await page.waitForSelector(".files-file-row:has-text('changed.txt')");
+    await page.locator('.folder-tree-dir:has(.folder-tree-name:text-is("repoA"))').click();
+    await page.waitForSelector(".folder-tree-file-row:has-text('changed.txt')");
     assert.equal(
-      await page.locator('.files-dir:has(.files-name:text-is("dist"))').count(),
+      await page.locator('.folder-tree-dir:has(.folder-tree-name:text-is("dist"))').count(),
       0,
       "repoA's ignored dist/ must not be listed",
     );
     assert.equal(
-      await page.locator(".files-file-row:has-text('changed.txt') .files-status").innerText(),
+      await page.locator(".folder-tree-file-row:has-text('changed.txt') .folder-tree-status").innerText(),
       "M",
     );
     assert.equal(
-      await page.locator(".files-file-row:has-text('kept.txt') .files-status").count(),
+      await page.locator(".folder-tree-file-row:has-text('kept.txt') .folder-tree-status").count(),
       0,
       "a clean tracked file carries no badge",
     );
 
     // Open the modified file: a status click leads with the DIFF, and the
     // diff resolves through repoA — the nested repo — not the session root.
-    await page.locator(".files-file-row:has-text('changed.txt')").click();
-    await page.waitForSelector(".files-view .tool-diff");
-    const diffText = await page.locator(".files-view .tool-diff").innerText();
+    await page.locator(".folder-tree-file-row:has-text('changed.txt')").click();
+    await page.waitForSelector(".folder-tree-view .tool-diff");
+    const diffText = await page.locator(".folder-tree-view .tool-diff").innerText();
     assert.match(diffText, /the before line/);
     assert.match(diffText, /the after line/);
-    await page.locator(".files-back").click();
-    await page.waitForSelector(".files-tree");
+    await page.locator(".folder-tree-back").click();
+    await page.waitForSelector(".folder-tree");
 
     // Into the second repo: ITS rules now — secret.log hidden here (and only
     // here), its untracked file badged U. Open a file in this repo too: the
     // clean one arrives as plain content.
-    await page.locator('.files-dir:has(.files-name:text-is("repoB"))').click();
-    await page.waitForSelector(".files-file-row:has-text('app.ts')");
+    await page.locator('.folder-tree-dir:has(.folder-tree-name:text-is("repoB"))').click();
+    await page.waitForSelector(".folder-tree-file-row:has-text('app.ts')");
     assert.equal(
-      await page.locator(".files-file-row:has-text('secret.log')").count(),
+      await page.locator(".folder-tree-file-row:has-text('secret.log')").count(),
       0,
       "repoB's ignored secret.log must not be listed",
     );
     assert.equal(
-      await page.locator(".files-file-row:has-text('notes.md') .files-status").innerText(),
+      await page.locator(".folder-tree-file-row:has-text('notes.md') .folder-tree-status").innerText(),
       "U",
     );
-    await page.locator(".files-file-row:has-text('app.ts')").click();
-    await page.waitForSelector(".files-view .fv-content");
-    assert.match(await page.locator(".files-view .fv-content").innerText(), /export const b/);
-    await page.locator(".files-back").click();
-    await page.waitForSelector(".files-tree");
-    await page.locator(".ab-files").click(); // close the panel
+    await page.locator(".folder-tree-file-row:has-text('app.ts')").click();
+    await page.waitForSelector(".folder-tree-view .fv-content");
+    assert.match(await page.locator(".folder-tree-view .fv-content").innerText(), /export const b/);
+    await page.locator(".folder-tree-back").click();
+    await page.waitForSelector(".folder-tree");
+    await page.locator(".ab-folder-tree").click(); // close the panel
 
     // The pinned claim: the entire flow — open, prefetch, expands, refreshes
     // — rode the lazy pair. Not one whole-tree request anywhere.
@@ -2004,21 +2004,21 @@ test("E2.4: the Projects-root proof — lazy expands into two repos with per-rep
       await phone.goto(`${base}/s/${created.sessionId}`);
       await phone.locator(".sb-workspace").focus();
       await phone.keyboard.press("Enter");
-      await phone.waitForSelector(".files-panel[role=dialog]");
-      await phone.locator('.files-dir:has(.files-name:text-is("repoA"))').tap();
-      await phone.waitForSelector(".files-file-row:has-text('changed.txt')");
+      await phone.waitForSelector(".folder-tree-panel[role=dialog]");
+      await phone.locator('.folder-tree-dir:has(.folder-tree-name:text-is("repoA"))').tap();
+      await phone.waitForSelector(".folder-tree-file-row:has-text('changed.txt')");
       assert.equal(
-        await phone.locator(".files-file-row:has-text('changed.txt') .files-status").innerText(),
+        await phone.locator(".folder-tree-file-row:has-text('changed.txt') .folder-tree-status").innerText(),
         "M",
         "the per-repo badge rides the phone drill-in too",
       );
-      await phone.locator(".files-file-row:has-text('kept.txt')").tap();
-      await phone.waitForSelector(".files-view .fv-content");
-      assert.match(await phone.locator(".files-view .fv-content").innerText(), /kept content/);
+      await phone.locator(".folder-tree-file-row:has-text('kept.txt')").tap();
+      await phone.waitForSelector(".folder-tree-view .fv-content");
+      assert.match(await phone.locator(".folder-tree-view .fv-content").innerText(), /kept content/);
       await phone.keyboard.press("Escape");
-      await phone.waitForSelector(".files-tree");
+      await phone.waitForSelector(".folder-tree");
       await phone.keyboard.press("Escape");
-      assert.equal(await phone.locator(".files-panel").count(), 0, "Esc from the tree closes the panel");
+      assert.equal(await phone.locator(".folder-tree-panel").count(), 0, "Esc from the tree closes the panel");
     } finally {
       await phoneCtx.close();
     }
@@ -2044,14 +2044,14 @@ test("W.2: the live tree — a write behind the UI's back appears with zero clic
   try {
     await page.goto(`${base}/s/${created.sessionId}`);
     await installFsRecorder(page);
-    await page.locator(".ab-files").click();
-    await page.waitForSelector(".files-file-row:has-text('top.txt')");
+    await page.locator(".ab-folder-tree").click();
+    await page.waitForSelector(".folder-tree-file-row:has-text('top.txt')");
 
     // The headline: a file written with NO interaction — no clicks, no agent
     // turn — appears by itself (server debounce 400ms + one refetch ≪ this
     // timeout; the claim is "you never need the button").
     writeFileSync(path.join(ws, "fresh.txt"), "surprise\n");
-    await page.waitForSelector(".files-file-row:has-text('fresh.txt')", { timeout: 3_000 });
+    await page.waitForSelector(".folder-tree-file-row:has-text('fresh.txt')", { timeout: 3_000 });
 
     // A new file inside a collapsed, never-fetched dir: the bell rings, the
     // refetch unit is root + EXPANDED dirs — so colly/sub is rightly never
@@ -2064,7 +2064,7 @@ test("W.2: the live tree — a write behind the UI's back appears with zero clic
       "a bell must not fetch a collapsed, unfetched dir",
     );
     assert.equal(
-      await page.locator(".files-file-row:has-text('hidden.txt')").count(),
+      await page.locator(".folder-tree-file-row:has-text('hidden.txt')").count(),
       0,
       "nothing expanded shows the hidden file — correct",
     );
@@ -2079,7 +2079,7 @@ test("W.2: the live tree — a write behind the UI's back appears with zero clic
           ).length,
       );
     const beforeClick = await rootFetches();
-    await page.locator(".files-refresh").click();
+    await page.locator(".folder-tree-refresh").click();
     await page.waitForFunction(
       (n) =>
         (window as unknown as { __fsSent: { type: string; path?: string }[] }).__fsSent.filter(
@@ -2088,14 +2088,14 @@ test("W.2: the live tree — a write behind the UI's back appears with zero clic
       beforeClick,
       { timeout: 5_000 },
     );
-    await page.waitForSelector(".files-file-row:has-text('fresh.txt')");
+    await page.waitForSelector(".folder-tree-file-row:has-text('fresh.txt')");
 
     // The lazy invariant survives the live tree: not one whole-tree request.
     assert.ok(
       (await fsSent(page)).every((m) => m.type !== "fs_list"),
       "a whole-tree fs_list rode the live-tree flow",
     );
-    await page.locator(".ab-files").click(); // close the panel for later tests
+    await page.locator(".ab-folder-tree").click(); // close the panel for later tests
   } finally {
     seed.close();
     await page.goto(backUrl);
@@ -2121,12 +2121,12 @@ test("C.2: axe-core finds no serious/critical WCAG violations across the app", a
     const baseAx = `http://127.0.0.1:${dax.port}`;
     await p.goto(`${baseAx}/?token=${token}`);
 
-    // 1) Onboarding ("choose your agent") — empty registry opens here.
-    await p.waitForSelector(".onb-agent");
-    await assertAxeClean(p, "onboarding");
+    // 1) AgentPicker ("choose your agent") — empty registry opens here.
+    await p.waitForSelector(".agent-picker-agent");
+    await assertAxeClean(p, "agent-picker");
 
     // 2) A live session with a rendered transcript + checklist.
-    await p.locator(".onb-agent", { hasText: "Claude Code" }).click();
+    await p.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
     await p.waitForURL(/\/s\/[\w-]+/);
     await p.waitForSelector(".demo-banner");
     await p.locator("textarea").click();
@@ -2135,32 +2135,32 @@ test("C.2: axe-core finds no serious/critical WCAG violations across the app", a
     await p.waitForSelector("text=Plan complete — all four steps done.", { timeout: 30_000 });
     await assertAxeClean(p, "session transcript");
 
-    // 2b) Explorer files panel open, tree listed (E.3).
-    await p.locator(".ab-files").click();
-    await p.waitForSelector(".files-panel .files-row");
+    // 2b) folder tree files panel open, tree listed (E.3).
+    await p.locator(".ab-folder-tree").click();
+    await p.waitForSelector(".folder-tree-panel .folder-tree-row");
     await assertAxeClean(p, "files panel");
-    await p.locator(".ab-files").click(); // close before the next surface
+    await p.locator(".ab-folder-tree").click(); // close before the next surface
 
     // 2c) The ⤢ enlarged file view (E.6) — a near-full-screen surface over a
     // dimmed workspace, i.e. its own focus/labelling problem, swept for the
     // first time 2026-07-30 (the accessibility statement named it as unswept).
-    await p.locator(".ab-files").click();
-    await p.waitForSelector(".files-panel .files-row");
+    await p.locator(".ab-folder-tree").click();
+    await p.waitForSelector(".folder-tree-panel .folder-tree-row");
     // Pick a named safe fixture. Alphabetical-first is `.env.example` in this
     // checkout, and dotenv files are intentionally opaque to this test run.
-    await p.locator(".files-file-row", { hasText: "README.md" }).click();
-    await p.waitForSelector(".files-view .fv-content").catch(async () =>
+    await p.locator(".folder-tree-file-row", { hasText: "README.md" }).click();
+    await p.waitForSelector(".folder-tree-view .fv-content").catch(async () =>
       assert.fail(
-        `enlarged-view fixture did not open; selected=${JSON.stringify(await p.locator(".files-file-name").allInnerTexts())} ` +
-          `view=${JSON.stringify(await p.locator(".files-view").allInnerTexts())}`,
+        `enlarged-view fixture did not open; selected=${JSON.stringify(await p.locator(".folder-tree-file-name").allInnerTexts())} ` +
+          `view=${JSON.stringify(await p.locator(".folder-tree-view").allInnerTexts())}`,
       ),
     );
-    await p.locator(".files-enlarge").click();
-    await p.waitForSelector(".files-file.is-maximized");
+    await p.locator(".folder-tree-enlarge").click();
+    await p.waitForSelector(".folder-tree-file.is-maximized");
     await assertAxeClean(p, "enlarged file view");
-    await p.locator(".files-enlarge").click();
-    await p.waitForSelector(".files-file.is-maximized", { state: "detached" });
-    await p.locator(".ab-files").click(); // close the panel
+    await p.locator(".folder-tree-enlarge").click();
+    await p.waitForSelector(".folder-tree-file.is-maximized", { state: "detached" });
+    await p.locator(".ab-folder-tree").click(); // close the panel
 
     // 2d) The pin dock — a live region of pinned components that outlives the
     // turn that made them, and the one surface whose content the AGENT wrote.
@@ -2258,10 +2258,10 @@ test("CS: manage subscription — status, cancel behind its confirm, scheduled s
   const p = await browser.newPage();
   try {
     await p.goto(`http://127.0.0.1:${d2.port}/?token=${token}`);
-    // An empty registry opens the onboarding overlay, which sits over the
+    // An empty registry opens the agent picker overlay, which sits over the
     // fleet's pair button — enter a session and use the status bar's instead
     // (both hosts render the same card).
-    await p.locator(".onb-agent", { hasText: "Claude Code" }).click();
+    await p.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
     await p.waitForURL(/\/s\/[\w-]+/);
 
     // The resting UI shows only the pair button; nothing cancel-shaped.

@@ -17,7 +17,7 @@ import {
   type VersionedReviewSelection,
 } from "../../change-review";
 import { formatBytes } from "../ToolBlock";
-import { diffTooLarge, FileView, type FileViewState } from "../files/FileView";
+import { diffTooLarge, FileView, type FileViewState } from "../folder-tree/FileView";
 import { ReviewRows } from "./ReviewRows";
 import { useHunkNavigation } from "./use-hunk-navigation";
 
@@ -173,10 +173,10 @@ export function ReviewDiff({
   if (lines.length === 0) return <FileView state={state} />;
 
   return (
-    <div className="changes-diff-review">
+    <div className="diff-panel-diff-review">
       <TruncationNote state={state} />
-      <div className="changes-review-tools">
-        <div className="changes-hunk-nav" aria-label="Changed hunk navigation">
+      <div className="diff-panel-review-tools">
+        <div className="diff-panel-hunk-nav" aria-label="Changed hunk navigation">
           <button
             type="button"
             onClick={() => goToHunk(currentHunk - 1)}
@@ -198,7 +198,7 @@ export function ReviewDiff({
           </button>
           <button
             type="button"
-            className="changes-select-hunk"
+            className="diff-panel-select-hunk"
             disabled={!hunk}
             aria-pressed={hunkSelected}
             onClick={toggleHunkSelection}
@@ -206,8 +206,8 @@ export function ReviewDiff({
             {hunkSelected ? "Unselect hunk" : "Select hunk"}
           </button>
         </div>
-        <div className="changes-draft-actions">
-          <span className="changes-selection-count">
+        <div className="diff-panel-draft-actions">
+          <span className="diff-panel-selection-count">
             {selectedLines.length > 0 ? `${selectedLines.length} selected` : "Select lines to respond"}
           </span>
           <button type="button" disabled={selectedLines.length === 0} onClick={() => createDraft("explain")}>
@@ -224,7 +224,7 @@ export function ReviewDiff({
       </div>
 
       <div
-        className="changes-diff-lines"
+        className="diff-panel-diff-lines"
         role="listbox"
         aria-label={`${state.path} changed lines`}
         aria-multiselectable="true"

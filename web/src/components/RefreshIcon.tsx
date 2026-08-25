@@ -1,4 +1,4 @@
-/** The one refresh glyph both shell panels draw (Changes chrome, Explorer
+/** The one refresh glyph both shell panels draw (Changes chrome, folder tree
  *  actions) — stroke styling comes from each panel's own CSS class. */
 export function RefreshIcon({ className }: { className?: string }) {
   return (

@@ -96,7 +96,7 @@ test("ending a session requires two clicks, then returns to an empty fleet", asy
 
     await end.click();
     await page.waitForURL(`${base}/`);
-    await page.locator(".onb-agent").first().waitFor();
+    await page.locator(".agent-picker-agent").first().waitFor();
     assert.equal(
       await page.locator(".fleet-row").count(),
       0,
@@ -105,11 +105,11 @@ test("ending a session requires two clicks, then returns to an empty fleet", asy
   });
 });
 
-test("ending one of multiple sessions returns to the fleet without opening onboarding", async () => {
+test("ending one of multiple sessions returns to the fleet without opening agent picker", async () => {
   await withFreshMockSession("ui-end-session-with-survivor-e2e", async (page, base) => {
     const remaining = await page.context().newPage();
     await remaining.goto(`${base}/?new=1`);
-    await remaining.locator(".onb-agent", { hasText: "Claude Code" }).click();
+    await remaining.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
     await remaining.waitForURL(/\/s\/[\w-]+/);
     const remainingId = new URL(remaining.url()).pathname.split("/").pop()!;
 
@@ -124,7 +124,7 @@ test("ending one of multiple sessions returns to the fleet without opening onboa
       remainingId,
     );
 
-    assert.equal(await page.locator(".onb-card").count(), 0, "onboarding covered the surviving fleet");
+    assert.equal(await page.locator(".agent-picker-card").count(), 0, "agent picker covered the surviving fleet");
     assert.equal(await page.locator(".fleet-id").innerText(), remainingId);
     await remaining.close();
   });

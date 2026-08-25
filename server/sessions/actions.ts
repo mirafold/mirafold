@@ -22,7 +22,7 @@ type ActionTool = {
 // symlinks, so a link planted in the workspace can't point the listing out of
 // it. realpathSync throws on a missing path (nothing to list anyway → treat as
 // outside). `root` is realpath'd too, so the prefix compare is against the
-// canonical base. Exported: fs-explorer.ts jails every Explorer
+// canonical base. Exported: fs-folder-tree.ts jails every folder tree
 // path through this same guard — one containment rule, no drift.
 export const inside = (root: string, candidate: string): string | null => {
   let real: string;
@@ -50,7 +50,7 @@ const ACTION_TOOLS: Record<string, ActionTool> = {
           // Per-entry stat failures (a dangling symlink; a file the agent
           // deleted between readdir and stat) mark that ROW, never the whole
           // listing — one broken link must not turn every sibling invisible
-          // (fs-explorer handles the same case).
+          // (fs-folder-tree handles the same case).
           try {
             const s = statSync(path.join(target, n));
             return `${s.isDirectory() ? "d" : "-"} ${String(s.size).padStart(8)}  ${n}${s.isDirectory() ? "/" : ""}`;

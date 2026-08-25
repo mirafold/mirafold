@@ -12,7 +12,7 @@ composition**.
 The key product idea is:
 
 > An agent response should feel like a document/interface being constructed
-> live in front of the user, not like terminal text with occasional widgets
+> live in front of the user, not like terminal text with occasional paintings
 > dropped between paragraphs.
 
 This is intentionally the more opinionated direction. It should make Mirafold
@@ -24,7 +24,7 @@ useful as a coding-agent shell:
 - exact visible transcript order;
 - rich components appearing as soon as they arrive;
 - no wait for response completion;
-- Explorer, file view, pin dock, prompt, status bar, tool activity,
+- folder tree, file view, pin dock, prompt, status bar, tool activity,
   permissions, and other shell behavior;
 - all existing themes;
 - the existing registry, protocol, and security/trust boundaries.
@@ -144,7 +144,7 @@ chrome.
 
 Do not put a visible bordered card around every independently streamed prose
 chunk. That would turn prose + component + prose into card + card + card,
-increase scroll height, and reinforce the inserted-widget feeling this phase
+increase scroll height, and reinforce the inserted-painting feeling this phase
 exists to remove.
 
 The daring treatment should come first from:
@@ -188,11 +188,11 @@ TranscriptSnapshot.rows (projected visible top-level rows)
     ↓
 pure response-composition grouping
     ↓
-RenderZone / ResponseDocument
+OutputZone / ResponseDocument
 ```
 
 Do not independently rescan raw wire messages or recreate transcript
-visibility rules in `RenderZone`.
+visibility rules in `OutputZone`.
 
 Do not:
 
@@ -315,7 +315,7 @@ acceptable when the transcript requires them.
 ## 8. `ResponseDocument`
 
 Introduce a small shell-presentation component named `ResponseDocument` if it
-keeps `RenderZone` focused.
+keeps `OutputZone` focused.
 
 It is not a registry component and must not be added to
 `web/src/registry/index.ts` or `server/registry-spec.ts`.
@@ -409,9 +409,9 @@ Explicitly exercise:
 
 ```text
 center only
-Explorer + center
+folder tree + center
 center + Pin Dock
-Explorer + center + Pin Dock
+folder tree + center + Pin Dock
 ```
 
 The document must:
@@ -435,7 +435,7 @@ On phone, use essentially the full available transcript width.
 Existing phone behavior remains authoritative:
 
 - the pin dock remains desktop-only;
-- Explorer remains a full-screen drill-in;
+- folder tree remains a full-screen drill-in;
 - the transcript remains the scroll surface;
 - touch behavior remains unchanged;
 - the page never scrolls sideways.
@@ -548,7 +548,7 @@ sanitization assumptions remain unchanged.
 
 Preserve the current accessibility model:
 
-- `.render-zone` remains the conversation `role="log"`;
+- `.output-zone` remains the conversation `role="log"`;
 - `aria-live="off"` remains on the log;
 - the separate announcer remains responsible for spoken turn summaries;
 - streaming must not repeatedly announce the whole document;
@@ -568,7 +568,7 @@ Preserve terminal scrollback semantics:
 - when already at the bottom, streaming continues following the tail;
 - when the user scrolls up, streaming does not drag them down;
 - returning to the bottom rearms following;
-- opening/closing Explorer or the pin dock does not unexpectedly reset the
+- opening/closing folder tree or the pin dock does not unexpectedly reset the
   user's transcript position;
 - wrapper growth must not introduce continuous decorative height animation.
 
@@ -604,7 +604,7 @@ required.
 
 Small transparent layout wrapper only.
 
-### `web/src/components/RenderZone.tsx`
+### `web/src/components/OutputZone.tsx`
 
 Calls the grouping helper, maps display items, and reuses the existing
 per-row renderer. It must not regain projection/state-machine logic.
@@ -677,7 +677,7 @@ content.
 
 ## 24. Browser E2E: workspace widths
 
-Exercise normal desktop, Explorer open, pin dock open, and both simultaneously.
+Exercise normal desktop, folder tree open, pin dock open, and both simultaneously.
 Assert:
 
 - no page-level horizontal overflow;
@@ -696,7 +696,7 @@ At a 390px-class viewport verify:
 - headings remain readable;
 - spacing remains dense;
 - code/table overflow remains local;
-- prompt, status, touch, and Explorer behavior remain unchanged.
+- prompt, status, touch, and folder tree behavior remain unchanged.
 
 ## 26. Themes and visual baselines
 
@@ -746,7 +746,7 @@ and review dark/light canonical snapshots.
 
 ### Step LD.3 — Workspace responsiveness
 
-Refine Explorer, file view, pin dock, combined-side, narrow-desktop, phone,
+Refine folder tree, file view, pin dock, combined-side, narrow-desktop, phone,
 and wide-content cases. Add container-query behavior only if direct testing
 proves it necessary.
 
@@ -767,7 +767,7 @@ This phase does not include:
 - semantic analysis of prose;
 - replacing Markdown;
 - changing pin semantics;
-- redesigning Explorer, prompt, status, permissions, or themes;
+- redesigning folder tree, prompt, status, permissions, or themes;
 - a new breakpoint system without evidence;
 - visual-regression infrastructure from scratch;
 - conventional chat bubbles;
@@ -784,7 +784,7 @@ Prefer the implementation that satisfies all of these:
 5. Theme stays Mirafold.
 6. Rich components feel embedded rather than inserted.
 7. Serious technical density matters.
-8. Explorer and pinning are first-class workspace pressure.
+8. folder tree and pinning are first-class workspace pressure.
 9. Mounted identity includes ancestry, not only keys.
 10. Visual unity does not require semantically absorbing shell chrome.
 11. No extra abstraction without a concrete need.
@@ -810,7 +810,7 @@ Prefer the implementation that satisfies all of these:
 - [x] Replay reconstructs the same visible transcript.
 - [x] Tool, thinking, notice, picker, permission, and subagent trust identities
       remain distinct.
-- [x] Explorer, pin dock, and both together apply pressure without overflow.
+- [x] folder tree, pin dock, and both together apply pressure without overflow.
 - [x] Phone has no page-level horizontal scrolling.
 - [x] Wide content owns its local overflow.
 - [x] Existing themes work without a document palette.

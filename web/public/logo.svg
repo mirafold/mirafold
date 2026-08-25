@@ -1,7 +1,7 @@
 <!-- Large-format Mirafold mark: bracket-M with the >_ shell prompt inside
      (traced 2026-07-17 from Kyle's reference; thin strokes — the large mark
      reads at the favicon's apparent weight, not its literal stroke ratio).
-     Shown on the onboarding card, and the source for the apple-touch icon
+     Shown on the agent-picker card, and the source for the apple-touch icon
      (scripts/make-icons.sh). The browser-tab favicon stays the simplified
      M-only favicon.svg — the >_ detail is illegible at 16px. -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">

@@ -97,7 +97,7 @@ function readLiveDocumentPresentation(p: Page) {
 
 function readResponsiveDocumentLayout(p: Page) {
   return p.evaluate(() => {
-    const zone = document.querySelector(".render-zone") as HTMLElement | null;
+    const zone = document.querySelector(".output-zone") as HTMLElement | null;
     const response = document.querySelector(".response-document") as HTMLElement | null;
     const prose = response?.querySelector(".turn-assistant") as HTMLElement | null;
     const code = document.querySelector(
@@ -120,8 +120,8 @@ function readResponsiveDocumentLayout(p: Page) {
     const zoneStyle = getComputedStyle(zone);
     const contentLeft = zoneRect.left + Number.parseFloat(zoneStyle.paddingLeft);
     const contentRight = zoneRect.right - Number.parseFloat(zoneStyle.paddingRight);
-    const fileContent = document.querySelector(".files-view .fv-content") as HTMLElement | null;
-    const filePanel = document.querySelector(".files-panel") as HTMLElement | null;
+    const fileContent = document.querySelector(".folder-tree-view .fv-content") as HTMLElement | null;
+    const filePanel = document.querySelector(".folder-tree-panel") as HTMLElement | null;
     const fileContentRect = fileContent?.getBoundingClientRect();
     const filePanelRect = filePanel?.getBoundingClientRect();
     return {
@@ -312,7 +312,7 @@ test("LD.2: document measure, hierarchy, rich lane, local overflow, and short-an
   });
 });
 
-test("LD.3: response documents reflow across Explorer, file view, pin dock, and narrow desktop", async () => {
+test("LD.3: response documents reflow across folder tree, file view, pin dock, and narrow desktop", async () => {
   await withFreshMockSession(browser, "live-document-responsive-18c4", async (p) => {
     await p.setViewportSize({ width: 1440, height: 1000 });
     const prompt = await settleLiveDocument(p);
@@ -322,10 +322,10 @@ test("LD.3: response documents reflow across Explorer, file view, pin dock, and 
     const center = await measure();
     assert.ok(center, "center-only response metrics are missing");
 
-    await p.locator(".ab-files").click();
-    await p.waitForSelector(".files-panel .files-row");
-    const explorer = await measure();
-    assert.ok(explorer, "Explorer response metrics are missing");
+    await p.locator(".ab-folder-tree").click();
+    await p.waitForSelector(".folder-tree-panel .folder-tree-row");
+    const folderTree = await measure();
+    assert.ok(folderTree, "Folder tree response metrics are missing");
 
     const checkpointTurn = p.locator(".turn-render", {
       has: p.locator(".rc-card", { hasText: "Live document checkpoint" }),
@@ -334,10 +334,10 @@ test("LD.3: response documents reflow across Explorer, file view, pin dock, and 
     await checkpointTurn.locator(".pin-btn").click();
     await p.waitForSelector(".pin-dock .rc-card");
     const both = await measure();
-    assert.ok(both, "Explorer plus pin-dock response metrics are missing");
+    assert.ok(both, "Folder tree plus pin-dock response metrics are missing");
 
-    await p.locator(".files-file-row", { hasText: "package.json" }).first().click();
-    await p.waitForSelector(".files-view .fv-content");
+    await p.locator(".folder-tree-file-row", { hasText: "package.json" }).first().click();
+    await p.waitForSelector(".folder-tree-view .fv-content");
     const fileAndDock = await measure();
     assert.ok(fileAndDock, "file-view plus pin-dock response metrics are missing");
 
@@ -348,8 +348,8 @@ test("LD.3: response documents reflow across Explorer, file view, pin dock, and 
 
     for (const [name, metrics] of [
       ["center", center],
-      ["Explorer", explorer],
-      ["Explorer + dock", both],
+      ["Folder tree", folderTree],
+      ["Folder tree + dock", both],
       ["file view + dock", fileAndDock],
       ["narrow three-pane", narrow],
     ] as const) {
@@ -357,11 +357,11 @@ test("LD.3: response documents reflow across Explorer, file view, pin dock, and 
       assert.equal(metrics.documentContained, true, `${name} document escaped the center column`);
       assert.equal(metrics.markdownTableContained, true, `${name} Markdown table escaped its document`);
       assert.equal(metrics.richTableContained, true, `${name} registry table escaped its document`);
-      assert.equal(metrics.fileContentContained, true, `${name} file content escaped Explorer`);
+      assert.equal(metrics.fileContentContained, true, `${name} file content escaped folder tree`);
     }
     assert.equal(center.codeOwnsOverflow, true, "wide code did not retain local overflow");
-    assert.ok(center.documentWidth > explorer.documentWidth);
-    assert.ok(explorer.documentWidth > both.documentWidth);
+    assert.ok(center.documentWidth > folderTree.documentWidth);
+    assert.ok(folderTree.documentWidth > both.documentWidth);
     assert.ok(Math.abs(fileAndDock.documentWidth - both.documentWidth) <= 1);
     assert.ok(both.documentWidth > narrow.documentWidth);
     assert.ok(narrow.documentWidth >= 280, `narrow document collapsed to ${narrow.documentWidth}px`);
@@ -371,7 +371,7 @@ test("LD.3: response documents reflow across Explorer, file view, pin dock, and 
     // Exercise the remaining intrinsically wide content while all three
     // desktop columns are present at 980px. The artifact deliberately has a
     // 720px internal canvas: its own iframe must scroll, never the workbench.
-    await p.locator(".render-zone").evaluate((element) => {
+    await p.locator(".output-zone").evaluate((element) => {
       element.scrollTop = element.scrollHeight;
     });
     await typePrompt(p, MOCK_PROMPTS["responsive-document"]);
@@ -444,19 +444,19 @@ test("LD.3: response documents reflow across Explorer, file view, pin dock, and 
 
     // A user who has scrolled back must not be snapped to the tail merely
     // because workspace chrome closes and the document reflows wider.
-    const manualScroll = await p.locator(".render-zone").evaluate((element) => {
+    const manualScroll = await p.locator(".output-zone").evaluate((element) => {
       element.scrollTop = 120;
       return element.scrollTop;
     });
     assert.ok(manualScroll > 0, "fixture is not tall enough to exercise manual scroll");
-    await p.locator(".ab-files").click();
-    await p.waitForSelector(".files-panel", { state: "detached" });
+    await p.locator(".ab-folder-tree").click();
+    await p.waitForSelector(".folder-tree-panel", { state: "detached" });
     const dockOnly = await measure();
     assert.ok(dockOnly, "dock-only response metrics are missing");
     assert.ok(dockOnly.documentWidth > narrow.documentWidth);
     assert.ok(
       Math.abs(dockOnly.scrollTop - manualScroll) <= 2,
-      `closing Explorer moved manual scroll from ${manualScroll}px to ${dockOnly.scrollTop}px`,
+      `closing folder tree moved manual scroll from ${manualScroll}px to ${dockOnly.scrollTop}px`,
     );
 
     await p.locator(".pin-dock .dock-btn").click();
@@ -488,7 +488,7 @@ test("LD.4: long text, focus, announcements, reduced motion, and every theme rem
     await p.locator(".activity-line").waitFor({ state: "detached", timeout: 15_000 });
 
     const shape = await response.evaluate((element) => {
-      const zone = document.querySelector(".render-zone") as HTMLElement | null;
+      const zone = document.querySelector(".output-zone") as HTMLElement | null;
       const prose = element.querySelector(".turn-assistant") as HTMLElement | null;
       const code = element.querySelector("pre code.hljs") as HTMLElement | null;
       const style = prose ? getComputedStyle(prose) : null;
@@ -529,7 +529,7 @@ test("LD.4: long text, focus, announcements, reduced motion, and every theme rem
       1,
     );
 
-    const log = p.locator('.render-zone[role="log"]');
+    const log = p.locator('.output-zone[role="log"]');
     assert.equal(await log.getAttribute("aria-live"), "off");
     await p.waitForFunction(
       () =>

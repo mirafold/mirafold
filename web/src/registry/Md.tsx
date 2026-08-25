@@ -48,7 +48,7 @@ function ScrollableMarkdownTable({
   );
 }
 
-// The markdown renderer overrides shared with RenderZone's turn text: anchors
+// The markdown renderer overrides shared with OutputZone's turn text: anchors
 // get the safety rule (links open in a new tab, and react-markdown never emits
 // raw HTML from its source), and task-list items get an accessible checkbox label.
 export const mdOverrides = {

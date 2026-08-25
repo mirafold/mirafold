@@ -238,7 +238,7 @@ export class SessionRegistry {
       throw new Error(`session limit reached (${MAX_SESSIONS})`);
     }
     const id = randomUUID().slice(0, 8);
-    // Which agent this session runs: the caller's choice at onboarding,
+    // Which agent this session runs: the caller's choice in the agent picker,
     // resolved to a fresh backend here; no choice → the daemon default. Secrets
     // stay server-side — the client only ever names the agent. A chosen
     // backend arrives PRE-VALIDATED (connection.ts ran resolveChosenBackend —
@@ -611,7 +611,7 @@ export class SessionRegistry {
           };
           this.fanout(entry, notice);
           createLogger(`session ${entry.id}`).error(
-            `fs watcher stopped — the Explorer falls back to turn-end/manual refresh: ${errText(err)}`,
+            `fs watcher stopped — the folder tree falls back to turn-end/manual refresh: ${errText(err)}`,
           );
         },
       },

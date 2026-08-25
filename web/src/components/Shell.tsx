@@ -2,13 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentName, PromptOption } from "@protocol";
 import { ActivityLine, activityLabel, type Activity } from "./ActivityLine";
 import { BangBar } from "./BangBar";
-import { ChangesGlyph } from "./ChangesGlyph";
-import { FilesGlyph } from "./FilesGlyph";
-import { Onboarding } from "./Onboarding";
+import { DiffPanelGlyph } from "./DiffPanelGlyph";
+import { FolderTreeGlyph } from "./FolderTreeGlyph";
+import { AgentPicker } from "./AgentPicker";
 import { PromptBox, type PromptDraft } from "./PromptBox";
-import { RenderZone } from "./RenderZone";
-import { FilesPanel } from "./files/FilesPanel";
-import { ChangesPanel } from "./changes/ChangesPanel";
+import { OutputZone } from "./OutputZone";
+import { FolderTreePanel } from "./folder-tree/FolderTreePanel";
+import { DiffPanel } from "./diff-panel/DiffPanel";
 import type { WorkspaceSurface } from "./WorkspaceTabs";
 import { StatusBar, type Usage } from "./StatusBar";
 import { createSessionBus } from "../session-bus";
@@ -28,7 +28,7 @@ import { createFileDrop, quoteForPrompt, type UploadEntry } from "../file-drop";
 import type { WireMsg } from "@protocol";
 import { useEscapeKey } from "../use-escape";
 import { Announcer, useAnnouncer } from "./Announcer";
-import { PermBar } from "./PermBar";
+import { PermissionBar } from "./PermissionBar";
 import type { InputNavigationDirection } from "../input-navigation";
 import { sessionIdFromPath } from "../session-url";
 import type {
@@ -41,7 +41,7 @@ const ZERO_USAGE: Usage = { turnIn: 0, turnOut: 0, sumIn: 0, sumOut: 0, cost: 0 
 /**
  * The trusted shell. Owns the socket and the prompt box; neither is ever
  * re-rendered or touched by agent output. The agent only paints into
- * RenderZone via the message bus below.
+ * OutputZone via the message bus below.
  *
  * A connection is a viewport onto a registry session. The URL is
  * the session identity (/s/<id>) — refresh-safe and shareable across tabs.
@@ -49,7 +49,7 @@ const ZERO_USAGE: Usage = { turnIn: 0, turnOut: 0, sumIn: 0, sumOut: 0, cost: 0 
 export function Shell() {
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const promptContainerRef = useRef<HTMLDivElement>(null);
-  // RenderZone owns transcript destinations; Shell bridges that controller to
+  // OutputZone owns transcript destinations; Shell bridges that controller to
   // the prompt keyboard entry and the phone-only disclosure state.
   const inputNavigationRef = useRef<InputNavigationHandle>(null);
   const [inputNavigationState, setInputNavigationState] = useState<InputNavigationState>({
@@ -108,7 +108,7 @@ export function Shell() {
   // Replaced whole whenever the adapter reports a changed catalog.
   const [promptOptions, setPromptOptions] = useState<PromptOption[]>([]);
   // Everything the daemon's `agents` hello carries, kept together: which
-  // agents it offers (onboarding; a URL that already names a session
+  // agents it offers (agent picker; a URL that already names a session
   // skips the picker), where it was launched (the default session cwd)
   // + home for ~-abbreviation, the pairing info for the "connect a device"
   // QR (local viewports only), and its build version.
@@ -129,10 +129,10 @@ export function Shell() {
     // on a subscription login, which can't be driven over the paid relay.
     // Shown until dismissed.
     refused: string | null;
-    // The last create error, so the onboarding card can show a rejected
+    // The last create error, so the agent picker card can show a rejected
     // working dir.
-    onboarding: string | null;
-  }>({ session: false, refused: null, onboarding: null });
+    agentPicker: string | null;
+  }>({ session: false, refused: null, agentPicker: null });
 
   // ── The `!` command ───────────────────────────────────────────────
   const [bang, setBang] = useState<{
@@ -153,8 +153,8 @@ export function Shell() {
   // the invariant that keeps the transcript visible on desktop and prevents
   // stacked full-screen layers on phone.
   const [auxiliary, setAuxiliary] = useState<WorkspaceSurface | null>(null);
-  const filesOpen = auxiliary === "files";
-  const changesOpen = auxiliary === "changes";
+  const folderTreeOpen = auxiliary === "folder-tree";
+  const diffPanelOpen = auxiliary === "diff-panel";
   const [reviewPromptVisible, setReviewPromptVisible] = useState(false);
   const [promptDraft, setPromptDraft] = useState<PromptDraft>();
   const promptDraftId = useRef(0);
@@ -164,7 +164,7 @@ export function Shell() {
     setReviewPromptVisible(true);
   }, []);
   const toggleAuxiliary = (surface: WorkspaceSurface) => {
-    if (surface !== "changes" || auxiliary !== "changes") setReviewPromptVisible(false);
+    if (surface !== "diff-panel" || auxiliary !== "diff-panel") setReviewPromptVisible(false);
     setAuxiliary((current) => (current === surface ? null : surface));
   };
   const closeAuxiliary = () => {
@@ -175,7 +175,7 @@ export function Shell() {
   // not two side-by-side icons; it reopens whichever surface was used last
   // (Files until Changes has been chosen once), and the drawer's own head
   // switches between them. Desktop keeps the two-icon rail unchanged.
-  const lastSurface = useRef<WorkspaceSurface>("files");
+  const lastSurface = useRef<WorkspaceSurface>("folder-tree");
   if (auxiliary) lastSurface.current = auxiliary;
   const toggleWorkspace = () => toggleAuxiliary(lastSurface.current);
   const switchAuxiliary = (surface: WorkspaceSurface) => {
@@ -268,18 +268,18 @@ export function Shell() {
           setMeta({ sessionId: m.sessionId, cwd: m.cwd, agent: m.agent, model: m.model, demo: m.demo });
           setNotices((n) => ({
             ...n,
-            onboarding: null,
+            agentPicker: null,
             ...(m.fallback ? { session: true } : {}),
           }));
         } else if (m.type === "refused") {
           // No session — the relay refused this subscription-backed
-          // attach. Show the reason (also surfaced at onboarding if we're there).
-          setNotices((n) => ({ ...n, refused: m.message, onboarding: m.message }));
+          // attach. Show the reason (also surfaced in the agent picker if we're there).
+          setNotices((n) => ({ ...n, refused: m.message, agentPicker: m.message }));
           announce(m.message, true);
         } else if (m.type === "error") {
-          // Only the onboarding card consumes this; in-session errors already
+          // Only the agent picker card consumes this; in-session errors already
           // render in the output zone (the turn reducer brought busy down).
-          setNotices((n) => ({ ...n, onboarding: m.message }));
+          setNotices((n) => ({ ...n, agentPicker: m.message }));
         } else if (m.type === "bang_start") {
           setBang((b) => ({ ...b, tail: "" }));
         } else if (m.type === "bang_output") {
@@ -341,7 +341,7 @@ export function Shell() {
   }, [bus, applyTurn]);
   useEscapeKey(busy ? interrupt : undefined);
 
-  // Stable identity: Onboarding keys its poll interval on this prop, so a
+  // Stable identity: AgentPicker keys its poll interval on this prop, so a
   // fresh arrow each render would restart the 3s timer instead of letting
   // it fire.
   const refreshAgents = useCallback(() => bus.refreshAgents(), [bus]);
@@ -397,28 +397,28 @@ export function Shell() {
     }
   };
 
-  // Onboarding shows until this viewport has a session — but not when the URL
+  // AgentPicker shows until this viewport has a session — but not when the URL
   // already names one (that path attaches straight through).
-  const showOnboarding = !hasUrlSession && !meta.sessionId;
+  const showAgentPicker = !hasUrlSession && !meta.sessionId;
 
   return (
-    <div className={"shell" + (changesOpen && reviewPromptVisible ? " changes-draft-visible" : "")}>
+    <div className={"shell" + (diffPanelOpen && reviewPromptVisible ? " diff-panel-draft-visible" : "")}>
       <Announcer message={announcement} />
-      {showOnboarding && (
-        <Onboarding
+      {showAgentPicker && (
+        <AgentPicker
           agents={daemonInfo.agents}
           defaultCwd={tildify(daemonInfo.cwd, daemonInfo.home)}
-          error={notices.onboarding}
-          onCwdChange={() => setNotices((n) => ({ ...n, onboarding: null }))}
+          error={notices.agentPicker}
+          onCwdChange={() => setNotices((n) => ({ ...n, agentPicker: null }))}
           onBrowse={daemonInfo.folderPicker ? bus.pickFolder : undefined}
           onPick={(agent, cwd, backend) => {
-            setNotices((n) => ({ ...n, onboarding: null }));
+            setNotices((n) => ({ ...n, agentPicker: null }));
             bus.createSession(agent, cwd, backend);
           }}
           onRefresh={refreshAgents}
         />
       )}
-      <div className="behind-dialog" inert={showOnboarding || undefined}>
+      <div className="behind-dialog" inert={showAgentPicker || undefined}>
         {notices.session && (
           // SHELL-OWNED notice — honest about the swap the server made.
           <NoticeLine
@@ -460,16 +460,16 @@ export function Shell() {
             rendering beside it; both closed = transcript full-width. */}
         <div className="main-row">
           <ActivityBar
-            filesOpen={filesOpen}
-            changesOpen={changesOpen}
+            folderTreeOpen={folderTreeOpen}
+            diffPanelOpen={diffPanelOpen}
             disabled={!meta.sessionId}
-            onToggleFiles={() => toggleAuxiliary("files")}
-            onToggleChanges={() => toggleAuxiliary("changes")}
+            onToggleFolderTree={() => toggleAuxiliary("folder-tree")}
+            onToggleDiffPanel={() => toggleAuxiliary("diff-panel")}
           />
           <div className="main-col">
             <div className="zone-outer">
-              <FilesPanel
-                open={filesOpen && Boolean(meta.sessionId)}
+              <FolderTreePanel
+                open={folderTreeOpen && Boolean(meta.sessionId)}
                 subscribe={bus.subscribe}
                 requestListdir={bus.requestFsListdir}
                 requestRead={bus.requestFsRead}
@@ -479,8 +479,8 @@ export function Shell() {
                 rootLabel={tildify(meta.cwd, daemonInfo.home)}
                 sessionKey={meta.sessionId}
               />
-              <ChangesPanel
-                open={changesOpen && Boolean(meta.sessionId)}
+              <DiffPanel
+                open={diffPanelOpen && Boolean(meta.sessionId)}
                 subscribe={bus.subscribe}
                 requestChanges={bus.requestFsChanges}
                 requestRead={bus.requestFsRead}
@@ -493,7 +493,7 @@ export function Shell() {
                 rootLabel={tildify(meta.cwd, daemonInfo.home)}
                 sessionKey={meta.sessionId}
               />
-              <RenderZone
+              <OutputZone
                 ref={inputNavigationRef}
                 subscribe={bus.subscribe}
                 sendAction={bus.sendAction}
@@ -503,7 +503,7 @@ export function Shell() {
               />
             </div>
             <ActivityLine busy={busy} label={activityLabel(activity)} />
-            <PermBar asks={asks} onAnswer={answer} />
+            <PermissionBar asks={asks} onAnswer={answer} />
             {bang.my && (
               <BangBar
                 command={bang.my.command}
@@ -542,7 +542,7 @@ export function Shell() {
               textareaRef={promptRef}
               containerRef={promptContainerRef}
               draft={promptDraft}
-              globalTriggersDisabled={showOnboarding || settingsOpen}
+              globalTriggersDisabled={showAgentPicker || settingsOpen}
               onNavigateLatestInput={navigateToLatestInput}
               inputNavigation={{
                 // The disclosure occupies the space directly above the
@@ -645,39 +645,39 @@ function NoticeLine({ text, onDismiss }: { text: string; onDismiss: () => void }
  *  permanent 46px rail is too much of a 390px screen — and both toggles live
  *  in the status bar instead. */
 function ActivityBar({
-  filesOpen,
-  changesOpen,
+  folderTreeOpen,
+  diffPanelOpen,
   disabled,
-  onToggleFiles,
-  onToggleChanges,
+  onToggleFolderTree,
+  onToggleDiffPanel,
 }: {
-  filesOpen: boolean;
-  changesOpen: boolean;
+  folderTreeOpen: boolean;
+  diffPanelOpen: boolean;
   disabled: boolean;
-  onToggleFiles: () => void;
-  onToggleChanges: () => void;
+  onToggleFolderTree: () => void;
+  onToggleDiffPanel: () => void;
 }) {
   return (
     <div className="activity-bar">
       <button
-        className={"ab-btn ab-files" + (filesOpen ? " is-active" : "")}
-        onClick={onToggleFiles}
+        className={"ab-btn ab-folder-tree" + (folderTreeOpen ? " is-active" : "")}
+        onClick={onToggleFolderTree}
         disabled={disabled}
-        title={filesOpen ? "Hide files" : "Show files"}
+        title={folderTreeOpen ? "Hide files" : "Show files"}
         aria-label="Files"
-        aria-expanded={filesOpen}
+        aria-expanded={folderTreeOpen}
       >
-        <FilesGlyph />
+        <FolderTreeGlyph />
       </button>
       <button
-        className={"ab-btn ab-changes" + (changesOpen ? " is-active" : "")}
-        onClick={onToggleChanges}
+        className={"ab-btn ab-diff-panel" + (diffPanelOpen ? " is-active" : "")}
+        onClick={onToggleDiffPanel}
         disabled={disabled}
-        title={changesOpen ? "Hide workspace changes" : "Show workspace changes"}
+        title={diffPanelOpen ? "Hide workspace changes" : "Show workspace changes"}
         aria-label="Workspace changes"
-        aria-expanded={changesOpen}
+        aria-expanded={diffPanelOpen}
       >
-        <ChangesGlyph />
+        <DiffPanelGlyph />
       </button>
     </div>
   );

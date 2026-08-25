@@ -1,6 +1,6 @@
-export type ExplorerEntryKind = "dir" | "file" | "symlink";
+export type FolderTreeEntryKind = "dir" | "file" | "symlink";
 
-export type ExplorerNodeGlyphKind =
+export type FolderTreeNodeGlyphKind =
   | "folder"
   | "folder-open"
   | "symlink"
@@ -76,14 +76,14 @@ const CONFIG_NAMES = new Set([
   "makefile",
 ]);
 
-/** A deliberately bounded file-family classifier for the Explorer's tiny
+/** A deliberately bounded file-family classifier for the folder tree's tiny
  * decorative glyph. It communicates broad shape, not a promise to identify
  * every language or reproduce a full IDE icon theme. */
-export function explorerNodeGlyphKind(
+export function folderTreeNodeGlyphKind(
   name: string,
-  entryKind: ExplorerEntryKind,
+  entryKind: FolderTreeEntryKind,
   open = false,
-): ExplorerNodeGlyphKind {
+): FolderTreeNodeGlyphKind {
   if (entryKind === "dir") return open ? "folder-open" : "folder";
   if (entryKind === "symlink") return "symlink";
 
@@ -99,10 +99,10 @@ export function explorerNodeGlyphKind(
   return "file";
 }
 
-export function ExplorerChevron({ open }: { open: boolean }) {
+export function FolderTreeChevron({ open }: { open: boolean }) {
   return (
     <svg
-      className={`files-chevron${open ? " is-open" : ""}`}
+      className={`folder-tree-chevron${open ? " is-open" : ""}`}
       viewBox="0 0 12 12"
       aria-hidden="true"
       focusable="false"
@@ -112,16 +112,16 @@ export function ExplorerChevron({ open }: { open: boolean }) {
   );
 }
 
-export function ExplorerNodeGlyph({
+export function FolderTreeNodeGlyph({
   name,
   entryKind,
   open = false,
 }: {
   name: string;
-  entryKind: ExplorerEntryKind;
+  entryKind: FolderTreeEntryKind;
   open?: boolean;
 }) {
-  const kind = explorerNodeGlyphKind(name, entryKind, open);
+  const kind = folderTreeNodeGlyphKind(name, entryKind, open);
   const page = (
     <>
       <path d="M3 1.75h6.1L13 5.65v8.6H3z" />
@@ -131,7 +131,7 @@ export function ExplorerNodeGlyph({
 
   return (
     <svg
-      className={`files-node-icon files-node-icon-${kind}`}
+      className={`folder-tree-node-icon folder-tree-node-icon-${kind}`}
       viewBox="0 0 16 16"
       fill="none"
       stroke="currentColor"

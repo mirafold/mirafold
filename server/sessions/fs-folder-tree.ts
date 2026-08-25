@@ -1,4 +1,4 @@
-// The Explorer's server half: the shell's read-only view of a
+// The folder tree's server half: the shell's read-only view of a
 // session's working tree — the tree walk behind `fs_list` and the file read
 // behind `fs_read`. Everything resolves through `inside()`'s realpath
 // containment against the session root (a planted symlink can't walk out)
@@ -276,7 +276,7 @@ const readRegularFile = (
     // cannot be swapped for an out-of-workspace symlink between validation
     // and the descriptor read. O_NONBLOCK keeps a swapped FIFO/device from
     // stalling before fstat can reject it. `inside()` has already resolved
-    // ordinary Explorer symlinks, preserving that existing behavior there.
+    // ordinary folder tree symlinks, preserving that existing behavior there.
     fd = openSync(
       real,
       constants.O_RDONLY |
@@ -294,7 +294,7 @@ const readRegularFile = (
     if (!st.isFile()) return { error: "not a regular file" };
     const size = st.size;
     // The review path reads and hashes one stable, bounded snapshot through
-    // the same descriptor. Ordinary Explorer reads stay on the original 64 KB
+    // the same descriptor. Ordinary folder tree reads stay on the original 64 KB
     // sniffed path and pay none of this work.
     const revisionCap = options.revisionCapBytes ?? FS_FILE_REVISION_CAP_BYTES;
     return options.revision && size <= revisionCap
@@ -338,7 +338,7 @@ const readSnapshot = (fd: number, size: number): FileResult => {
   };
 };
 
-/** The Explorer read: sniff the head for binaryness, then keep at most the
+/** The folder tree read: sniff the head for binaryness, then keep at most the
  *  display cap — never the whole file. */
 const readSniffed = (fd: number, size: number): FileResult => {
   const sniffLen = Math.min(size, SNIFF_BYTES);

@@ -3,7 +3,7 @@ import { useEscapeKey } from "../use-escape";
 import { useFocusTrap } from "../use-focus-trap";
 
 /**
- * The one modal idiom every card shares (pairing, settings, onboarding): a
+ * The one modal idiom every card shares (pairing, settings, agent picker): a
  * backdrop that dismisses, a focus-trapped dialog with the ARIA a screen
  * reader needs, and Escape doing what the backdrop does. Mount it only while
  * the card is open — the trap activates on mount and hands focus back to the

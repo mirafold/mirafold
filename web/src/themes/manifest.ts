@@ -204,7 +204,7 @@ surfaces are pinned (base.css) and hljs github-dark owns code coloring.
 
 After transcription: the guards catch mechanical drift (missing/stray tokens,
 unreadable --fg/--bg); the QA walk catches taste — terminal output,
-tool blocks, diffs-on-pinned-dark, permission bar, onboarding, generative-UI
+tool blocks, diffs-on-pinned-dark, permission bar, agent picker, generative-UI
 components — and hand-tunes the derived tiers where the recipe's output
 misses. Record notable deviations in the theme file's header comment.
 ---------------------------------------------------------------------------- */

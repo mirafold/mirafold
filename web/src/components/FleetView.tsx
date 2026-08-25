@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SessionMeta } from "@protocol";
-import { Onboarding } from "./Onboarding";
+import { AgentPicker } from "./AgentPicker";
 import { ArmedButton } from "./ArmedButton";
 import { ConnectDevice } from "./ConnectDevice";
 import { createDaemonClient } from "../daemon-client";
@@ -101,7 +101,7 @@ export function FleetView() {
   const [showNew, setShowNew] = useState(() => new URLSearchParams(location.search).has("new"));
   const [onbError, setOnbError] = useState<string | null>(null);
   // A fleet ACT's error reply (unknown session, relay gate) — a dismissible
-  // header line, kept apart from the onboarding card's error slot.
+  // header line, kept apart from the agent picker card's error slot.
   const [actionError, setActionError] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   // SessionId whose "end" button is armed (first click); a second click
@@ -154,7 +154,7 @@ export function FleetView() {
       } else if (m.type === "subscription") {
         setSubReply(m);
       } else if (m.type === "session_created") {
-        // The create issued from the onboarding card below: enter the session.
+        // The create issued from the agent picker card below: enter the session.
         location.assign(sessionPath(m.sessionId));
       } else if (m.type === "error") {
         // While the picker is open its card owns errors (a refused create);
@@ -230,7 +230,7 @@ export function FleetView() {
     );
   }, [notifier, connected, sessions]);
 
-  // Stable identity: Onboarding keys its poll interval on this prop, so a
+  // Stable identity: AgentPicker keys its poll interval on this prop, so a
   // fresh arrow each render would restart the 3s timer instead of letting
   // it fire.
   const refreshAgents = useCallback(() => client.refreshAgents(), [client]);
@@ -253,15 +253,15 @@ export function FleetView() {
   };
 
   // First run (no sessions yet) opens straight into "choose your agent".
-  const onboarding = showNew || (sessions !== null && sessions.length === 0);
-  pickerOpenRef.current = onboarding;
+  const agentPicker = showNew || (sessions !== null && sessions.length === 0);
+  pickerOpenRef.current = agentPicker;
 
   const ordered = cockpitOrder(sessions ?? []);
 
   return (
     <div className="fleet">
-      {onboarding && (
-        <Onboarding
+      {agentPicker && (
+        <AgentPicker
           agents={agents}
           defaultCwd={tildify(daemon.cwd, daemon.home)}
           error={onbError}
@@ -286,7 +286,7 @@ export function FleetView() {
           }
         />
       )}
-      <div className="behind-dialog" inert={onboarding || undefined}>
+      <div className="behind-dialog" inert={agentPicker || undefined}>
         <header className="fleet-head">
           <span className="glyph">❯</span>
           <h1 className="fleet-title">Mirafold</h1>
@@ -570,12 +570,12 @@ function PermissionLine({
   const morePerms = (s.permissions?.length ?? 0) - 1;
   return (
     <div className="fleet-perm">
-      <span className="fleet-perm-detail" title={`${perm.tool} · ${perm.detail}`}>
+      <span className="fleet-permission-detail" title={`${perm.tool} · ${perm.detail}`}>
         {perm.tool} · {perm.detail}
       </span>
-      {morePerms > 0 && <span className="fleet-perm-more">+{morePerms} more</span>}
+      {morePerms > 0 && <span className="fleet-permission-more">+{morePerms} more</span>}
       <button
-        className="fleet-perm-allow"
+        className="fleet-permission-allow"
         disabled={answered.has(perm.id)}
         aria-label={`Allow ${perm.tool} in session ${s.name}`}
         onClick={() => onAnswer(perm.id, true)}
@@ -583,7 +583,7 @@ function PermissionLine({
         allow
       </button>
       <button
-        className="fleet-perm-deny"
+        className="fleet-permission-deny"
         disabled={answered.has(perm.id)}
         aria-label={`Deny ${perm.tool} in session ${s.name}`}
         onClick={() => onAnswer(perm.id, false)}

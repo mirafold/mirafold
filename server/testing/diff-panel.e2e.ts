@@ -12,7 +12,7 @@ import { fixtureGit as git, startDaemon, TestClient, type Daemon, createSession 
 // review, every honest state, line/hunk selection, editable prompt drafts,
 // and revision-keyed viewport-local review progress.
 
-const TOKEN = "changes-e2e-token";
+const TOKEN = "diff-panel-e2e-token";
 
 let daemon: Daemon;
 let browser: Browser;
@@ -76,17 +76,17 @@ const sessionUrl = (sessionId: string): string =>
 // Phone (2026-08-18): the status bar has ONE workspace toggle that reopens
 // the last-used view (Files on a fresh page); the drawer's own head switches.
 // Tapping the already-active tab is a no-op, so this is safe either way.
-const openPhoneWorkspace = async (page: Page, view: "files" | "changes"): Promise<void> => {
+const openPhoneWorkspace = async (page: Page, view: "folder-tree" | "diff-panel"): Promise<void> => {
   await page.locator(".sb-workspace").tap();
-  await page.waitForSelector(".files-panel[role=dialog], .changes-panel[role=dialog]");
-  await page.locator(`.workspace-tab:has-text("${view === "files" ? "Files" : "Changes"}")`).tap();
-  await page.waitForSelector(view === "files" ? ".files-panel[role=dialog]" : ".changes-panel[role=dialog]");
+  await page.waitForSelector(".folder-tree-panel[role=dialog], .diff-panel-panel[role=dialog]");
+  await page.locator(`.workspace-tab:has-text("${view === "folder-tree" ? "Files" : "Changes"}")`).tap();
+  await page.waitForSelector(view === "folder-tree" ? ".folder-tree-panel[role=dialog]" : ".diff-panel-panel[role=dialog]");
 };
 
 const selectDesktopFile = async (name: string): Promise<void> => {
-  await desktop.locator(".changes-file", { hasText: name }).click();
+  await desktop.locator(".diff-panel-file", { hasText: name }).click();
   await desktop.waitForFunction(
-    (suffix) => document.querySelector(".changes-current-path")?.textContent?.endsWith(String(suffix)),
+    (suffix) => document.querySelector(".diff-panel-current-path")?.textContent?.endsWith(String(suffix)),
     name,
   );
   await desktop.waitForFunction(viewLanded);
@@ -96,17 +96,17 @@ const selectDesktopFile = async (name: string): Promise<void> => {
  *  binary/error note — once the presenter is no longer in its loading state.
  *  (Runs inside the page; keep it a plain function expression.) */
 const viewLanded = () => {
-  const view = document.querySelector(".changes-view");
+  const view = document.querySelector(".diff-panel-view");
   if (!view) return false;
   const blank = view.querySelector(".fv-blank");
   return !(blank && blank.textContent?.startsWith("Loading"));
 };
 
 const desktopDiffText = async (kind: "add" | "del"): Promise<string> =>
-  (await desktop.locator(`.changes-view .diff-${kind}`).allInnerTexts()).join("\n");
+  (await desktop.locator(`.diff-panel-view .diff-${kind}`).allInnerTexts()).join("\n");
 
 before(async () => {
-  fixtureRoot = mkdtempSync(path.join(os.tmpdir(), "mirafold-changes-e2e-"));
+  fixtureRoot = mkdtempSync(path.join(os.tmpdir(), "mirafold-diff-panel-e2e-"));
   changedRepo = path.join(fixtureRoot, "changed-repo");
   plainRoot = path.join(fixtureRoot, "plain-workspace");
   cleanRepo = path.join(fixtureRoot, "clean-repo");
@@ -229,21 +229,21 @@ test("CR.2 desktop: Changes is a live split review workspace, mutually exclusive
 
   // The one auxiliary slot: Files opens, then Changes replaces it rather than
   // stacking a third column beside the conversation.
-  await desktop.locator(".ab-files").click();
-  await desktop.waitForSelector(".files-panel");
-  await desktop.locator(".ab-changes").click();
-  await desktop.waitForSelector(".changes-panel");
-  assert.equal(await desktop.locator(".files-panel").count(), 0);
-  assert.match((await desktop.locator(".ab-changes").getAttribute("class")) ?? "", /is-active/);
+  await desktop.locator(".ab-folder-tree").click();
+  await desktop.waitForSelector(".folder-tree-panel");
+  await desktop.locator(".ab-diff-panel").click();
+  await desktop.waitForSelector(".diff-panel-panel");
+  assert.equal(await desktop.locator(".folder-tree-panel").count(), 0);
+  assert.match((await desktop.locator(".ab-diff-panel").getAttribute("class")) ?? "", /is-active/);
 
-  await desktop.waitForSelector(".changes-file");
-  assert.equal(await desktop.locator(".changes-file").count(), 5);
-  assert.equal(await desktop.locator(".changes-count").innerText(), "5 visible");
-  assert.match(await desktop.locator(".changes-warning").innerText(), /incomplete/i);
-  assert.match(await desktop.locator(".changes-repo h3").innerText(), /changed-repo/i);
+  await desktop.waitForSelector(".diff-panel-file");
+  assert.equal(await desktop.locator(".diff-panel-file").count(), 5);
+  assert.equal(await desktop.locator(".diff-panel-count").innerText(), "5 visible");
+  assert.match(await desktop.locator(".diff-panel-warning").innerText(), /incomplete/i);
+  assert.match(await desktop.locator(".diff-panel-repo h3").innerText(), /changed-repo/i);
   const widths = await desktop.evaluate(() => ({
-    changes: document.querySelector(".changes-panel")!.getBoundingClientRect().width,
-    transcript: document.querySelector(".render-zone")!.getBoundingClientRect().width,
+    changes: document.querySelector(".diff-panel-panel")!.getBoundingClientRect().width,
+    transcript: document.querySelector(".output-zone")!.getBoundingClientRect().width,
   }));
   assert.ok(widths.changes >= 500, `desktop Changes surface is only ${widths.changes}px wide`);
   assert.ok(widths.transcript >= 300, `conversation was hidden/squeezed to ${widths.transcript}px`);
@@ -252,9 +252,9 @@ test("CR.2 desktop: Changes is a live split review workspace, mutually exclusive
   // not a surprise modal; both review and conversation retain useful width.
   await desktop.setViewportSize({ width: 641, height: 780 });
   const narrow = await desktop.evaluate(() => ({
-    panelPosition: getComputedStyle(document.querySelector(".changes-panel")!).position,
-    review: document.querySelector(".changes-review")!.getBoundingClientRect().width,
-    transcript: document.querySelector(".render-zone")!.getBoundingClientRect().width,
+    panelPosition: getComputedStyle(document.querySelector(".diff-panel-panel")!).position,
+    review: document.querySelector(".diff-panel-review")!.getBoundingClientRect().width,
+    transcript: document.querySelector(".output-zone")!.getBoundingClientRect().width,
   }));
   assert.notEqual(narrow.panelPosition, "fixed", "641px was reframed as the phone modal");
   assert.ok(narrow.review >= 155, `narrow-desktop review is only ${narrow.review}px wide`);
@@ -264,9 +264,9 @@ test("CR.2 desktop: Changes is a live split review workspace, mutually exclusive
 
   await selectDesktopFile("a-added.ts");
   await desktop
-    .waitForSelector(".changes-view .diff-add", { timeout: 5_000 })
+    .waitForSelector(".diff-panel-view .diff-add", { timeout: 5_000 })
     .catch(async () =>
-      assert.fail(`added diff did not render; view says: ${await desktop.locator(".changes-view").innerText()}`),
+      assert.fail(`added diff did not render; view says: ${await desktop.locator(".diff-panel-view").innerText()}`),
     );
   assert.match(await desktopDiffText("add"), /added after/);
   await selectDesktopFile("d-deleted.ts");
@@ -277,7 +277,7 @@ test("CR.2 desktop: Changes is a live split review workspace, mutually exclusive
   await selectDesktopFile("u-untracked.ts");
   assert.match(await desktopDiffText("add"), /untracked after/);
   await selectDesktopFile("z-binary.bin");
-  assert.match(await desktop.locator(".changes-view").innerText(), /Binary file.*not shown/i);
+  assert.match(await desktop.locator(".diff-panel-view").innerText(), /Binary file.*not shown/i);
 
   // Select the modified file, mutate it outside Mirafold, and observe the
   // watcher refresh both the complete set and the open diff without a click.
@@ -287,53 +287,53 @@ test("CR.2 desktop: Changes is a live split review workspace, mutually exclusive
     modifiedSource("modified after live refresh", "tail after"),
   );
   await desktop.waitForFunction(
-    () => document.querySelector(".changes-view .diff-add")?.textContent?.includes("live refresh"),
+    () => document.querySelector(".diff-panel-view .diff-add")?.textContent?.includes("live refresh"),
     undefined,
     { timeout: 15_000 },
   );
-  assert.ok((await desktop.locator(".changes-current-path").innerText()).endsWith("m-modified.ts"));
+  assert.ok((await desktop.locator(".diff-panel-current-path").innerText()).endsWith("m-modified.ts"));
 
-  await desktop.screenshot({ path: path.join(os.tmpdir(), "mirafold-changes-desktop-dark.png") });
+  await desktop.screenshot({ path: path.join(os.tmpdir(), "mirafold-diff-panel-desktop-dark.png") });
   await assertAxeClean(desktop, "desktop workspace changes (dark)");
   await desktop.locator('.sb-theme-opt[title="Light theme"]').click();
   assert.match(await desktopDiffText("add"), /live refresh/, "theme switch lost the open diff");
-  await desktop.screenshot({ path: path.join(os.tmpdir(), "mirafold-changes-desktop-light.png") });
+  await desktop.screenshot({ path: path.join(os.tmpdir(), "mirafold-diff-panel-desktop-light.png") });
   await assertAxeClean(desktop, "desktop workspace changes (light)");
 
   // Files still follows its original tree → file drill-in after CR.2's shell
   // state refactor, and switching back closes Changes by construction.
-  await desktop.locator(".ab-files").click();
-  await desktop.waitForSelector(".files-panel");
-  assert.equal(await desktop.locator(".changes-panel").count(), 0);
-  await desktop.locator(".files-file-row", { hasText: "a-added.ts" }).click();
-  await desktop.waitForSelector(".files-view .fv-content");
-  assert.match(await desktop.locator(".files-view .fv-content").innerText(), /added after/);
-  await desktop.locator(".ab-files").click();
+  await desktop.locator(".ab-folder-tree").click();
+  await desktop.waitForSelector(".folder-tree-panel");
+  assert.equal(await desktop.locator(".diff-panel-panel").count(), 0);
+  await desktop.locator(".folder-tree-file-row", { hasText: "a-added.ts" }).click();
+  await desktop.waitForSelector(".folder-tree-view .fv-content");
+  assert.match(await desktop.locator(".folder-tree-view .fv-content").innerText(), /added after/);
+  await desktop.locator(".ab-folder-tree").click();
 });
 
 test("CR.3 desktop: pointer and keyboard ranges create editable prompt drafts and invalidate live", async () => {
   desktop = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   await desktop.goto(sessionUrl(changedSession));
-  await desktop.waitForSelector(".ab-changes");
-  await desktop.locator(".ab-changes").click();
-  await desktop.waitForSelector(".changes-review-line");
+  await desktop.waitForSelector(".ab-diff-panel");
+  await desktop.locator(".ab-diff-panel").click();
+  await desktop.waitForSelector(".diff-panel-review-line");
   await selectDesktopFile("m-modified.ts");
 
-  const deleted = desktop.locator('.changes-review-line.is-del[data-old-line="2"]');
-  const added = desktop.locator('.changes-review-line.is-add[data-new-line="2"]');
+  const deleted = desktop.locator('.diff-panel-review-line.is-del[data-old-line="2"]');
+  const added = desktop.locator('.diff-panel-review-line.is-add[data-new-line="2"]');
   await deleted.waitFor({ timeout: 5_000 }).catch(async () =>
     assert.fail(
-      `modified review lines did not render; selected=${await desktop.locator(".changes-current-path").innerText()} ` +
-        `view=${JSON.stringify(await desktop.locator(".changes-view").innerText())}`,
+      `modified review lines did not render; selected=${await desktop.locator(".diff-panel-current-path").innerText()} ` +
+        `view=${JSON.stringify(await desktop.locator(".diff-panel-view").innerText())}`,
     ),
   );
-  assert.equal(await deleted.locator(".changes-line-old").innerText(), "2");
-  assert.equal(await added.locator(".changes-line-new").innerText(), "2");
-  assert.equal(await added.locator(".changes-line-old").innerText(), "");
+  assert.equal(await deleted.locator(".diff-panel-line-old").innerText(), "2");
+  assert.equal(await added.locator(".diff-panel-line-new").innerText(), "2");
+  assert.equal(await added.locator(".diff-panel-line-old").innerText(), "");
   assert.ok(await added.locator(".hljs-keyword", { hasText: "const" }).count(), "TypeScript was not highlighted");
-  assert.equal(await desktop.locator(".changes-hunk-nav > span").innerText(), "Hunk 1 of 2");
+  assert.equal(await desktop.locator(".diff-panel-hunk-nav > span").innerText(), "Hunk 1 of 2");
   await desktop.locator('[aria-label="Next changed hunk"]').click();
-  assert.equal(await desktop.locator(".changes-hunk-nav > span").innerText(), "Hunk 2 of 2");
+  assert.equal(await desktop.locator(".diff-panel-hunk-nav > span").innerText(), "Hunk 2 of 2");
   await desktop.locator('[aria-label="Previous changed hunk"]').click();
 
   // Pointer drag selects the exact replacement pair.
@@ -342,10 +342,10 @@ test("CR.3 desktop: pointer and keyboard ranges create editable prompt drafts an
   await added.hover();
   await desktop.mouse.up();
   await desktop.waitForFunction(
-    () => document.querySelector(".changes-selection-count")?.textContent === "2 selected",
+    () => document.querySelector(".diff-panel-selection-count")?.textContent === "2 selected",
   );
   const turnsBeforeDraft = await desktop.locator(".turn-user").count();
-  await desktop.locator(".changes-draft-actions button", { hasText: "Explain" }).click();
+  await desktop.locator(".diff-panel-draft-actions button", { hasText: "Explain" }).click();
   const prompt = desktop.locator(".prompt-box textarea");
   await desktop.waitForFunction(
     () => (document.querySelector(".prompt-box textarea") as HTMLTextAreaElement)?.value.includes("Explain the selected"),
@@ -356,7 +356,7 @@ test("CR.3 desktop: pointer and keyboard ranges create editable prompt drafts an
     "desktop review action did not focus the editable draft",
   );
   assert.equal(await desktop.locator(".turn-user").count(), turnsBeforeDraft, "Explain sent without user approval");
-  assert.ok(await desktop.locator(".changes-panel").isVisible(), "creating a draft hid the diff context");
+  assert.ok(await desktop.locator(".diff-panel-panel").isVisible(), "creating a draft hid the diff context");
   assert.match(await prompt.inputValue(), /File: "m-modified\.ts"/);
   assert.match(await prompt.inputValue(), /Range: HEAD line 2; working tree line 2/);
   assert.match(await prompt.inputValue(), /-   const modified = "modified before";/);
@@ -368,14 +368,14 @@ test("CR.3 desktop: pointer and keyboard ranges create editable prompt drafts an
   await deleted.focus();
   await desktop.keyboard.press("Space");
   await desktop.keyboard.press("Shift+ArrowDown");
-  assert.equal(await desktop.locator(".changes-selection-count").innerText(), "2 selected");
-  await desktop.locator(".changes-draft-actions button", { hasText: "Request change" }).click();
+  assert.equal(await desktop.locator(".diff-panel-selection-count").innerText(), "2 selected");
+  await desktop.locator(".diff-panel-draft-actions button", { hasText: "Request change" }).click();
   await desktop.waitForFunction(
     () => (document.querySelector(".prompt-box textarea") as HTMLTextAreaElement)?.value.includes("Please revise"),
   );
   assert.match(await prompt.inputValue(), /^Keep this user-authored note\.\n\nPlease revise/);
   await prompt.fill(`${await prompt.inputValue()}\nUse clearer naming.`);
-  await desktop.screenshot({ path: path.join(os.tmpdir(), "mirafold-changes-cr3-desktop.png") });
+  await desktop.screenshot({ path: path.join(os.tmpdir(), "mirafold-diff-panel-cr3-desktop.png") });
   await assertAxeClean(desktop, "desktop conversational change review");
   await prompt.press("Enter");
   await desktop.locator(".turn-user", { hasText: "Use clearer naming." }).waitFor();
@@ -392,9 +392,9 @@ test("CR.3 desktop: pointer and keyboard ranges create editable prompt drafts an
     "highlighted markdown scrollers are not keyboard-reachable",
   );
   assert.equal(
-    await desktop.locator(".changes-selection-count").innerText(),
+    await desktop.locator(".diff-panel-selection-count").innerText(),
     "2 selected",
-    `selection changed before the disk rewrite; notice=${JSON.stringify(await desktop.locator(".changes-review-notice").allInnerTexts())}`,
+    `selection changed before the disk rewrite; notice=${JSON.stringify(await desktop.locator(".diff-panel-review-notice").allInnerTexts())}`,
   );
 
   // A genuine disk revision invalidates the old coordinates; an identical
@@ -404,27 +404,27 @@ test("CR.3 desktop: pointer and keyboard ranges create editable prompt drafts an
     modifiedSource("modified after CR.3 disk refresh", "tail after"),
   );
   await desktop
-    .locator(".changes-review-notice", { hasText: "Selection cleared because this file changed." })
+    .locator(".diff-panel-review-notice", { hasText: "Selection cleared because this file changed." })
     .waitFor({ timeout: 15_000 })
     .catch(async () =>
       assert.fail(
-        `live invalidation was not announced; selected=${await desktop.locator(".changes-current-path").innerText()} ` +
-          `count=${JSON.stringify(await desktop.locator(".changes-selection-count").allInnerTexts())} ` +
-          `notice=${JSON.stringify(await desktop.locator(".changes-review-notice").allInnerTexts())} ` +
-          `view=${JSON.stringify((await desktop.locator(".changes-view").innerText()).slice(0, 800))}`,
+        `live invalidation was not announced; selected=${await desktop.locator(".diff-panel-current-path").innerText()} ` +
+          `count=${JSON.stringify(await desktop.locator(".diff-panel-selection-count").allInnerTexts())} ` +
+          `notice=${JSON.stringify(await desktop.locator(".diff-panel-review-notice").allInnerTexts())} ` +
+          `view=${JSON.stringify((await desktop.locator(".diff-panel-view").innerText()).slice(0, 800))}`,
       ),
   );
-  assert.equal(await desktop.locator(".changes-selection-count").innerText(), "Select lines to respond");
+  assert.equal(await desktop.locator(".diff-panel-selection-count").innerText(), "Select lines to respond");
 
   // The selection owner is the persistent panel, not the textual renderer:
   // changing to a non-text file still clears and explains the old range.
-  await desktop.locator('.changes-review-line.is-add[data-new-line="2"]').focus();
+  await desktop.locator('.diff-panel-review-line.is-add[data-new-line="2"]').focus();
   await desktop.keyboard.press("Space");
-  assert.equal(await desktop.locator(".changes-selection-count").innerText(), "1 selected");
+  assert.equal(await desktop.locator(".diff-panel-selection-count").innerText(), "1 selected");
   await selectDesktopFile("z-binary.bin");
-  assert.match(await desktop.locator(".changes-view").innerText(), /Binary file.*not shown/i);
+  assert.match(await desktop.locator(".diff-panel-view").innerText(), /Binary file.*not shown/i);
   assert.equal(
-    await desktop.locator(".changes-review-notice").innerText(),
+    await desktop.locator(".diff-panel-review-notice").innerText(),
     "Selection cleared because another file was opened.",
   );
   await noSideScroll(desktop);
@@ -438,8 +438,8 @@ test("CR.3 hunk navigation reaches terminal hunks, opens on the first hunk, and 
   const hunkVisible = (oldLine: number) =>
     page.waitForFunction(
       (line) => {
-        const row = document.querySelector(`.changes-review-line.is-del[data-old-line="${line}"]`);
-        const view = document.querySelector(".changes-diff-lines");
+        const row = document.querySelector(`.diff-panel-review-line.is-del[data-old-line="${line}"]`);
+        const view = document.querySelector(".diff-panel-diff-lines");
         if (!row || !view) return false;
         const r = row.getBoundingClientRect();
         const v = view.getBoundingClientRect();
@@ -448,12 +448,12 @@ test("CR.3 hunk navigation reaches terminal hunks, opens on the first hunk, and 
       oldLine,
       { timeout: 5_000 },
     );
-  const hunkLabel = () => page.locator(".changes-hunk-nav > span").innerText();
+  const hunkLabel = () => page.locator(".diff-panel-hunk-nav > span").innerText();
 
   await page.goto(sessionUrl(hunkSession));
-  await page.waitForSelector(".ab-changes");
-  await page.locator(".ab-changes").click();
-  await page.waitForSelector(".changes-review-line");
+  await page.waitForSelector(".ab-diff-panel");
+  await page.locator(".ab-diff-panel").click();
+  await page.waitForSelector(".diff-panel-review-line");
 
   // Opening a file lands on its first hunk, not the top of the file, so
   // "Hunk 1 of N" is what the viewport actually shows.
@@ -475,13 +475,13 @@ test("CR.3 hunk navigation reaches terminal hunks, opens on the first hunk, and 
 
   // "Select hunk" is a toggle: the same button unselects the exact range
   // it selected, and says which of the two it will do.
-  const selectHunk = page.locator(".changes-select-hunk");
+  const selectHunk = page.locator(".diff-panel-select-hunk");
   await selectHunk.click();
-  assert.match(await page.locator(".changes-selection-count").innerText(), /\d+ selected/);
+  assert.match(await page.locator(".diff-panel-selection-count").innerText(), /\d+ selected/);
   assert.equal(await selectHunk.getAttribute("aria-pressed"), "true");
   assert.equal(await selectHunk.innerText(), "Unselect hunk");
   await selectHunk.click();
-  assert.equal(await page.locator(".changes-selection-count").innerText(), "Select lines to respond");
+  assert.equal(await page.locator(".diff-panel-selection-count").innerText(), "Select lines to respond");
   assert.equal(await selectHunk.getAttribute("aria-pressed"), "false");
   assert.equal(await selectHunk.innerText(), "Select hunk");
 
@@ -496,7 +496,7 @@ test("CR.3 hunk navigation reaches terminal hunks, opens on the first hunk, and 
   // re-zero every frame until it holds through one full frame.
   await page.waitForFunction(
     () => {
-      const view = document.querySelector(".changes-diff-lines");
+      const view = document.querySelector(".diff-panel-diff-lines");
       if (!view) return false;
       if (view.scrollTop !== 0) {
         view.scrollTop = 0;
@@ -510,7 +510,7 @@ test("CR.3 hunk navigation reaches terminal hunks, opens on the first hunk, and 
   writeFileSync(path.join(hunkRepo, "walk.ts"), walkSource({ 60: "edit refreshed", 130: "edit" }));
   await page.waitForFunction(
     () =>
-      Array.from(document.querySelectorAll(".changes-review-line .changes-line-code")).some((node) =>
+      Array.from(document.querySelectorAll(".diff-panel-review-line .diff-panel-line-code")).some((node) =>
         (node.textContent ?? "").includes("edit refreshed"),
       ),
     undefined,
@@ -518,7 +518,7 @@ test("CR.3 hunk navigation reaches terminal hunks, opens on the first hunk, and 
   );
   await page.waitForTimeout(300); // NEGATIVE proof: the refresh must not have scrolled by now
   assert.equal(
-    await page.evaluate(() => document.querySelector(".changes-diff-lines")?.scrollTop ?? -1),
+    await page.evaluate(() => document.querySelector(".diff-panel-diff-lines")?.scrollTop ?? -1),
     0,
     "live refresh yanked the review viewport away from the reader's position",
   );
@@ -534,19 +534,19 @@ test("CR.2 desktop: the panel resizes by drag and keyboard, clamps to a conversa
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   const widths = () =>
     page.evaluate(() => ({
-      panel: document.querySelector(".changes-panel")?.getBoundingClientRect().width ?? -1,
+      panel: document.querySelector(".diff-panel-panel")?.getBoundingClientRect().width ?? -1,
       zone: document.querySelector(".zone-outer")?.getBoundingClientRect().width ?? -1,
     }));
   const openChanges = async () => {
-    await page.waitForSelector(".ab-changes");
-    await page.locator(".ab-changes").click();
-    await page.waitForSelector(".changes-resize");
+    await page.waitForSelector(".ab-diff-panel");
+    await page.locator(".ab-diff-panel").click();
+    await page.waitForSelector(".diff-panel-resize");
   };
   const dragHandleBy = async (dx: number) => {
     // hover() waits for a stable bounding box — the panel's 0.18s slide-in
     // otherwise yields coordinates the 8px handle has already left.
-    await page.locator(".changes-resize").hover();
-    const box = await page.locator(".changes-resize").boundingBox();
+    await page.locator(".diff-panel-resize").hover();
+    const box = await page.locator(".diff-panel-resize").boundingBox();
     assert.ok(box, "resize handle not visible");
     await page.mouse.move(box!.x + box!.width / 2, box!.y + 300);
     await page.mouse.down();
@@ -560,8 +560,8 @@ test("CR.2 desktop: the panel resizes by drag and keyboard, clamps to a conversa
 
   // A plain click (no movement) is not a resize: it must not convert the
   // responsive default width into a fixed stored width.
-  await page.locator(".changes-resize").hover();
-  await page.locator(".changes-resize").click();
+  await page.locator(".diff-panel-resize").hover();
+  await page.locator(".diff-panel-resize").click();
   assert.equal(
     await page.evaluate(() => localStorage.getItem("mirafold-changes-panel-width")),
     null,
@@ -573,7 +573,7 @@ test("CR.2 desktop: the panel resizes by drag and keyboard, clamps to a conversa
   await dragHandleBy(2000);
   // The separator's accessible geometry must reflect the drag that just
   // ended, not the pre-drag width.
-  const stretchedNow = Number(await page.locator(".changes-resize").getAttribute("aria-valuenow"));
+  const stretchedNow = Number(await page.locator(".diff-panel-resize").getAttribute("aria-valuenow"));
   const stretchedPanel = (await widths()).panel;
   assert.ok(
     Math.abs(stretchedNow - stretchedPanel) <= 2,
@@ -595,7 +595,7 @@ test("CR.2 desktop: the panel resizes by drag and keyboard, clamps to a conversa
   );
 
   // The separator is a keyboard control.
-  await page.locator(".changes-resize").focus();
+  await page.locator(".diff-panel-resize").focus();
   await page.keyboard.press("ArrowRight");
   await page.keyboard.press("ArrowRight");
   const stepped = await widths();
@@ -617,18 +617,18 @@ test("CR.2 desktop: the panel resizes by drag and keyboard, clamps to a conversa
   // no pointerup handler ever runs) must not strand the drag state: after
   // returning to desktop, measurements and dragging both work.
   {
-    await page.locator(".changes-resize").hover();
-    const box = await page.locator(".changes-resize").boundingBox();
+    await page.locator(".diff-panel-resize").hover();
+    const box = await page.locator(".diff-panel-resize").boundingBox();
     await page.mouse.move(box!.x + box!.width / 2, box!.y + 300);
     await page.mouse.down();
     await page.mouse.move(box!.x + box!.width / 2 + 40, box!.y + 300, { steps: 2 });
     await page.setViewportSize({ width: 600, height: 900 });
-    await page.waitForSelector(".changes-resize", { state: "detached" }); // the phone flip commits
+    await page.waitForSelector(".diff-panel-resize", { state: "detached" }); // the phone flip commits
     await page.mouse.up(); // released into a void — no pointerup handler exists
     await page.setViewportSize({ width: 1280, height: 900 });
-    await page.waitForSelector(".changes-resize");
+    await page.waitForSelector(".diff-panel-resize");
     await page.waitForTimeout(200); // the handle's position settles after the flip back
-    const roundTripNow = Number(await page.locator(".changes-resize").getAttribute("aria-valuenow"));
+    const roundTripNow = Number(await page.locator(".diff-panel-resize").getAttribute("aria-valuenow"));
     const roundTripPanel = (await widths()).panel;
     assert.ok(
       Math.abs(roundTripNow - roundTripPanel) <= 2,
@@ -638,7 +638,7 @@ test("CR.2 desktop: the panel resizes by drag and keyboard, clamps to a conversa
   }
 
   // Double-click resets to the default and leaves nothing stored.
-  await page.locator(".changes-resize").dblclick();
+  await page.locator(".diff-panel-resize").dblclick();
   const reset = await widths();
   assert.ok(
     Math.abs(reset.panel - base.panel) <= 2,
@@ -669,36 +669,36 @@ test("CR.2 phone: full-screen one-file review has persistent navigation and pres
   // Give the mounted transcript a real scroll offset. The fixed review layer
   // must not remount or reset it when the user returns to chat.
   await phone.addStyleTag({
-    content: '.render-zone::before { content: ""; display: block; flex: 0 0 1600px; }',
+    content: '.output-zone::before { content: ""; display: block; flex: 0 0 1600px; }',
   });
-  await phone.locator(".render-zone").evaluate((element) => (element.scrollTop = 320));
-  const transcriptScroll = await phone.locator(".render-zone").evaluate((element) => element.scrollTop);
+  await phone.locator(".output-zone").evaluate((element) => (element.scrollTop = 320));
+  const transcriptScroll = await phone.locator(".output-zone").evaluate((element) => element.scrollTop);
   assert.ok(transcriptScroll > 0, "phone transcript fixture did not become scrollable");
 
-  await openPhoneWorkspace(phone, "changes");
-  await phone.waitForSelector(".changes-current-path");
-  assert.equal(await phone.locator(".changes-count").innerText(), "5 visible");
+  await openPhoneWorkspace(phone, "diff-panel");
+  await phone.waitForSelector(".diff-panel-current-path");
+  assert.equal(await phone.locator(".diff-panel-count").innerText(), "5 visible");
   // 320px (iPhone-SE floor) with a real review in progress: the head's row
   // two — progress beside the count pill — and row one stay apart and
   // on-screen (2026-08-18 bughunt: the pill sat on the switch at this width).
   await phone.setViewportSize({ width: 320, height: 568 });
-  await phone.locator(".changes-panel").evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
+  await phone.locator(".diff-panel-panel").evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
   await assertApartOnScreen(phone, 320, [
-    ".changes-head .changes-close",
-    ".changes-head .workspace-tabs",
-    ".changes-progress",
-    ".changes-count",
-    ".changes-refresh",
+    ".diff-panel-head .diff-panel-close",
+    ".diff-panel-head .workspace-tabs",
+    ".diff-panel-progress",
+    ".diff-panel-count",
+    ".diff-panel-refresh",
   ]);
   await noSideScroll(phone);
   await phone.setViewportSize({ width: 390, height: 844 });
-  assert.equal(await phone.locator(".changes-rail").count(), 0, "the desktop changed-file rail rendered on phone");
-  assert.ok((await phone.locator(".changes-current-path").innerText()).endsWith("a-added.ts"));
+  assert.equal(await phone.locator(".diff-panel-rail").count(), 0, "the desktop changed-file rail rendered on phone");
+  assert.ok((await phone.locator(".diff-panel-current-path").innerText()).endsWith("a-added.ts"));
 
   const targets = await phone.evaluate(() =>
     [
-      ".changes-close",
-      ".changes-refresh",
+      ".diff-panel-close",
+      ".diff-panel-refresh",
       '[aria-label="Previous changed file"]',
       '[aria-label="Next changed file"]',
     ].map((selector) => {
@@ -714,21 +714,21 @@ test("CR.2 phone: full-screen one-file review has persistent navigation and pres
   for (const name of expected) {
     await phone.locator('[aria-label="Next changed file"]').tap();
     await phone.waitForFunction(
-      (suffix) => document.querySelector(".changes-current-path")?.textContent?.endsWith(String(suffix)),
+      (suffix) => document.querySelector(".diff-panel-current-path")?.textContent?.endsWith(String(suffix)),
       name,
     );
     await phone.waitForFunction(viewLanded);
   }
-  assert.match(await phone.locator(".changes-view").innerText(), /Binary file.*not shown/i);
+  assert.match(await phone.locator(".diff-panel-view").innerText(), /Binary file.*not shown/i);
   assert.equal(await phone.locator('[aria-label="Next changed file"]').isDisabled(), true);
   await noSideScroll(phone);
-  await phone.screenshot({ path: path.join(os.tmpdir(), "mirafold-changes-phone-dark.png") });
+  await phone.screenshot({ path: path.join(os.tmpdir(), "mirafold-diff-panel-phone-dark.png") });
   await assertAxeClean(phone, "phone workspace changes (dark)");
 
-  await phone.locator(".changes-close").tap();
-  await phone.waitForSelector(".changes-panel", { state: "detached" });
+  await phone.locator(".diff-panel-close").tap();
+  await phone.waitForSelector(".diff-panel-panel", { state: "detached" });
   assert.equal(
-    await phone.locator(".render-zone").evaluate((element) => element.scrollTop),
+    await phone.locator(".output-zone").evaluate((element) => element.scrollTop),
     transcriptScroll,
     "returning to chat changed the transcript scroll position",
   );
@@ -739,16 +739,16 @@ test("CR.2 phone: full-screen one-file review has persistent navigation and pres
   const lightGroup = phone.locator('.theme-group[aria-label="Light themes"]');
   await lightGroup.locator(".theme-row", { hasText: "Standard" }).tap();
   await phone.locator(".settings-close").tap();
-  await openPhoneWorkspace(phone, "changes");
-  assert.ok((await phone.locator(".changes-current-path").innerText()).endsWith("z-binary.bin"));
-  await phone.screenshot({ path: path.join(os.tmpdir(), "mirafold-changes-phone-light.png") });
+  await openPhoneWorkspace(phone, "diff-panel");
+  assert.ok((await phone.locator(".diff-panel-current-path").innerText()).endsWith("z-binary.bin"));
+  await phone.screenshot({ path: path.join(os.tmpdir(), "mirafold-diff-panel-phone-light.png") });
   await assertAxeClean(phone, "phone workspace changes (light)");
   await noSideScroll(phone);
 
-  await phone.locator(".changes-close").tap();
-  await openPhoneWorkspace(phone, "files");
-  await phone.locator(".files-file-row", { hasText: "a-added.ts" }).tap();
-  await phone.waitForSelector(".files-view .fv-content");
+  await phone.locator(".diff-panel-close").tap();
+  await openPhoneWorkspace(phone, "folder-tree");
+  await phone.locator(".folder-tree-file-row", { hasText: "a-added.ts" }).tap();
+  await phone.waitForSelector(".folder-tree-view .fv-content");
   await noSideScroll(phone);
   await phone.keyboard.press("Escape");
   await phone.keyboard.press("Escape");
@@ -764,25 +764,25 @@ test("CR.3 phone: tap and whole-hunk selection keep context beside the editable 
   const page = await context.newPage();
   try {
     await page.goto(sessionUrl(changedSession));
-    await openPhoneWorkspace(page, "changes");
-    await page.waitForSelector(".changes-current-path");
+    await openPhoneWorkspace(page, "diff-panel");
+    await page.waitForSelector(".diff-panel-current-path");
     for (const name of ["d-deleted.ts", "m-modified.ts"]) {
       await page.locator('[aria-label="Next changed file"]').tap();
       await page.waitForFunction(
-        (suffix) => document.querySelector(".changes-current-path")?.textContent?.endsWith(String(suffix)),
+        (suffix) => document.querySelector(".diff-panel-current-path")?.textContent?.endsWith(String(suffix)),
         name,
       );
       await page.waitForFunction(viewLanded);
     }
 
-    const added = page.locator('.changes-review-line.is-add[data-new-line="2"]');
+    const added = page.locator('.diff-panel-review-line.is-add[data-new-line="2"]');
     await added.tap();
-    assert.equal(await page.locator(".changes-selection-count").innerText(), "1 selected");
-    await page.locator(".changes-select-hunk").tap();
-    assert.equal(await page.locator(".changes-selection-count").innerText(), "2 selected");
+    assert.equal(await page.locator(".diff-panel-selection-count").innerText(), "1 selected");
+    await page.locator(".diff-panel-select-hunk").tap();
+    assert.equal(await page.locator(".diff-panel-selection-count").innerText(), "2 selected");
 
     const turnsBeforeDraft = await page.locator(".turn-user").count();
-    await page.locator(".changes-draft-actions button", { hasText: "Request change" }).tap();
+    await page.locator(".diff-panel-draft-actions button", { hasText: "Request change" }).tap();
     const prompt = page.locator(".prompt-box textarea");
     await page.waitForFunction(
       () => (document.querySelector(".prompt-box textarea") as HTMLTextAreaElement)?.value.includes("Please revise"),
@@ -793,12 +793,12 @@ test("CR.3 phone: tap and whole-hunk selection keep context beside the editable 
       "phone review action did not focus the editable draft",
     );
     assert.equal(await page.locator(".turn-user").count(), turnsBeforeDraft, "phone action sent without approval");
-    assert.ok(await page.locator(".changes-panel").isVisible(), "phone action closed the review context");
+    assert.ok(await page.locator(".diff-panel-panel").isVisible(), "phone action closed the review context");
     assert.ok(await page.locator(".prompt-box").isVisible(), "phone draft stayed hidden behind the review layer");
     assert.match(await prompt.inputValue(), /File: "m-modified\.ts"/);
 
     const geometry = await page.evaluate(() => {
-      const selected = document.querySelector(".changes-review-line.is-selected")!.getBoundingClientRect();
+      const selected = document.querySelector(".diff-panel-review-line.is-selected")!.getBoundingClientRect();
       const promptBox = document.querySelector(".prompt-box")!.getBoundingClientRect();
       return {
         selectedAbovePrompt: selected.bottom <= promptBox.top,
@@ -810,10 +810,10 @@ test("CR.3 phone: tap and whole-hunk selection keep context beside the editable 
 
     const targets = await page.evaluate(() =>
       [
-        ".changes-select-hunk",
-        ".changes-draft-actions button:first-of-type",
-        ".changes-draft-actions button:last-of-type",
-        ".changes-review-line.is-selected",
+        ".diff-panel-select-hunk",
+        ".diff-panel-draft-actions button:first-of-type",
+        ".diff-panel-draft-actions button:last-of-type",
+        ".diff-panel-review-line.is-selected",
         ".prompt-send",
       ].map((selector) => {
         const rect = document.querySelector(selector)!.getBoundingClientRect();
@@ -824,16 +824,16 @@ test("CR.3 phone: tap and whole-hunk selection keep context beside the editable 
       assert.ok(target.width >= 40 && target.height >= 40, `${target.selector} is ${target.width}×${target.height}`);
     }
     await noSideScroll(page);
-    await page.screenshot({ path: path.join(os.tmpdir(), "mirafold-changes-cr3-phone.png") });
+    await page.screenshot({ path: path.join(os.tmpdir(), "mirafold-diff-panel-cr3-phone.png") });
     await assertAxeClean(page, "phone conversational change review");
 
     // Moving to a different file clears the no-longer-valid coordinates but
     // preserves the already-visible draft about the original exact path.
     await page.locator('[aria-label="Next changed file"]').tap();
     await page.waitForFunction(
-      () => document.querySelector(".changes-current-path")?.textContent?.endsWith("u-untracked.ts"),
+      () => document.querySelector(".diff-panel-current-path")?.textContent?.endsWith("u-untracked.ts"),
     );
-    await page.locator(".changes-review-notice", { hasText: "Selection cleared because another file was opened." }).waitFor();
+    await page.locator(".diff-panel-review-notice", { hasText: "Selection cleared because another file was opened." }).waitFor();
     assert.match(await prompt.inputValue(), /File: "m-modified\.ts"/);
     await prompt.fill(`${await prompt.inputValue()}\nUse the safer name.`);
     await page.locator(".prompt-send").tap();
@@ -856,49 +856,49 @@ test("CR.4: review progress resumes and only the changed revision reopens on des
   const mobile = await context.newPage();
   const waitForRevision = async (target: Page) => {
     await target.waitForFunction(() => {
-      const button = document.querySelector(".changes-review-toggle") as HTMLButtonElement | null;
+      const button = document.querySelector(".diff-panel-review-toggle") as HTMLButtonElement | null;
       return Boolean(button && !button.disabled);
     });
   };
-  const progressText = (target: Page) => target.locator(".changes-progress").innerText();
+  const progressText = (target: Page) => target.locator(".diff-panel-progress").innerText();
   try {
     await page.goto(sessionUrl(changedSession));
-    await page.waitForSelector(".ab-changes");
-    await page.locator(".ab-changes").click();
-    await page.waitForSelector(".changes-current-path");
+    await page.waitForSelector(".ab-diff-panel");
+    await page.locator(".ab-diff-panel").click();
+    await page.waitForSelector(".diff-panel-current-path");
 
     // Review three exact revisions, then inspect a different file while one
     // of those revisions changes behind the UI.
     for (const name of ["a-added.ts", "d-deleted.ts", "m-modified.ts"]) {
-      await page.locator(".changes-file", { hasText: name }).click();
+      await page.locator(".diff-panel-file", { hasText: name }).click();
       await page.waitForFunction(
-        (suffix) => document.querySelector(".changes-current-path")?.textContent?.endsWith(String(suffix)),
+        (suffix) => document.querySelector(".diff-panel-current-path")?.textContent?.endsWith(String(suffix)),
         name,
       );
       await waitForRevision(page);
-      await page.locator(".changes-review-toggle").click();
-      assert.equal(await page.locator(".changes-review-toggle").getAttribute("aria-pressed"), "true");
+      await page.locator(".diff-panel-review-toggle").click();
+      assert.equal(await page.locator(".diff-panel-review-toggle").getAttribute("aria-pressed"), "true");
     }
     assert.equal(await progressText(page), "3 / 5 reviewed");
-    await page.locator(".changes-file", { hasText: "a-added.ts" }).click();
+    await page.locator(".diff-panel-file", { hasText: "a-added.ts" }).click();
     await page.waitForFunction(
-      () => document.querySelector(".changes-current-path")?.textContent?.endsWith("a-added.ts"),
+      () => document.querySelector(".diff-panel-current-path")?.textContent?.endsWith("a-added.ts"),
     );
     writeFileSync(
       path.join(changedRepo, "m-modified.ts"),
       modifiedSource("modified after CR.4 desktop refresh", "tail after"),
     );
-    await page.locator(".changes-review-notice", { hasText: "m-modified.ts changed and is unreviewed again." }).waitFor({ timeout: 15_000 });
+    await page.locator(".diff-panel-review-notice", { hasText: "m-modified.ts changed and is unreviewed again." }).waitFor({ timeout: 15_000 });
     assert.equal(await progressText(page), "2 / 5 reviewed");
-    assert.match((await page.locator(".changes-file", { hasText: "a-added.ts" }).getAttribute("class")) ?? "", /is-reviewed/);
-    assert.match((await page.locator(".changes-file", { hasText: "d-deleted.ts" }).getAttribute("class")) ?? "", /is-reviewed/);
-    assert.doesNotMatch((await page.locator(".changes-file", { hasText: "m-modified.ts" }).getAttribute("class")) ?? "", /is-reviewed/);
+    assert.match((await page.locator(".diff-panel-file", { hasText: "a-added.ts" }).getAttribute("class")) ?? "", /is-reviewed/);
+    assert.match((await page.locator(".diff-panel-file", { hasText: "d-deleted.ts" }).getAttribute("class")) ?? "", /is-reviewed/);
+    assert.doesNotMatch((await page.locator(".diff-panel-file", { hasText: "m-modified.ts" }).getAttribute("class")) ?? "", /is-reviewed/);
 
     // Next-unreviewed lands on the invalidated file. Reduced-motion preference
     // reaches the hunk jump itself, not only the CSS animation kill switch.
-    await page.locator(".changes-next-unreviewed").click();
+    await page.locator(".diff-panel-next-unreviewed").click();
     await page.waitForFunction(
-      () => document.querySelector(".changes-current-path")?.textContent?.endsWith("m-modified.ts"),
+      () => document.querySelector(".diff-panel-current-path")?.textContent?.endsWith("m-modified.ts"),
     );
     await waitForRevision(page);
     await page.emulateMedia({ reducedMotion: "reduce" });
@@ -920,12 +920,12 @@ test("CR.4: review progress resumes and only the changed revision reopens on des
 
     // R/N are review shortcuts only outside editable controls. In the prompt,
     // the same keys remain ordinary authored text.
-    await page.locator(".changes-view").focus();
+    await page.locator(".diff-panel-view").focus();
     await page.keyboard.press("r");
     assert.equal(await progressText(page), "3 / 5 reviewed");
     await page.keyboard.press("n");
     await page.waitForFunction(
-      () => document.querySelector(".changes-current-path")?.textContent?.endsWith("u-untracked.ts"),
+      () => document.querySelector(".diff-panel-current-path")?.textContent?.endsWith("u-untracked.ts"),
     );
     const prompt = page.locator(".prompt-box textarea");
     await prompt.fill("");
@@ -941,42 +941,42 @@ test("CR.4: review progress resumes and only the changed revision reopens on des
       "focus elsewhere inside the prompt activated a review shortcut",
     );
     await prompt.fill("");
-    await page.locator(".changes-view").dispatchEvent("keydown", { key: "r", repeat: true });
+    await page.locator(".diff-panel-view").dispatchEvent("keydown", { key: "r", repeat: true });
     assert.equal(await progressText(page), "3 / 5 reviewed", "a held shortcut toggled progress repeatedly");
-    await page.locator(".changes-view").focus();
+    await page.locator(".diff-panel-view").focus();
     await page.keyboard.press("r");
     assert.equal(await progressText(page), "4 / 5 reviewed");
     await page.keyboard.press("n");
     await page.waitForFunction(
-      () => document.querySelector(".changes-current-path")?.textContent?.endsWith("z-binary.bin"),
+      () => document.querySelector(".diff-panel-current-path")?.textContent?.endsWith("z-binary.bin"),
     );
     await waitForRevision(page);
-    await page.locator(".changes-review-toggle").click();
+    await page.locator(".diff-panel-review-toggle").click();
     assert.equal(await progressText(page), "5 / 5 reviewed");
-    assert.equal(await page.locator(".changes-next-unreviewed").isDisabled(), true);
+    assert.equal(await page.locator(".diff-panel-next-unreviewed").isDisabled(), true);
 
     // Closing the surface does not stop its viewport-local watcher bookkeeping:
     // a revision changed while hidden must be reopened honestly on return.
-    await page.locator(".ab-changes").click();
-    await page.waitForSelector(".changes-panel", { state: "detached" });
+    await page.locator(".ab-diff-panel").click();
+    await page.waitForSelector(".diff-panel-panel", { state: "detached" });
     writeFileSync(path.join(changedRepo, "d-deleted.ts"), "deleted path restored during closed review\n");
     await page.waitForTimeout(1_500); // the watcher's debounce + the bell must land while the surface is closed
-    await page.locator(".ab-changes").click();
-    await page.waitForSelector(".changes-current-path");
+    await page.locator(".ab-diff-panel").click();
+    await page.waitForSelector(".diff-panel-current-path");
     assert.equal(await progressText(page), "4 / 5 reviewed");
-    await page.locator(".changes-review-notice", { hasText: "d-deleted.ts changed and is unreviewed again." }).waitFor();
-    assert.ok((await page.locator(".changes-current-path").innerText()).endsWith("z-binary.bin"));
-    await page.locator(".changes-next-unreviewed").click();
+    await page.locator(".diff-panel-review-notice", { hasText: "d-deleted.ts changed and is unreviewed again." }).waitFor();
+    assert.ok((await page.locator(".diff-panel-current-path").innerText()).endsWith("z-binary.bin"));
+    await page.locator(".diff-panel-next-unreviewed").click();
     await page.waitForFunction(
-      () => document.querySelector(".changes-current-path")?.textContent?.endsWith("d-deleted.ts"),
+      () => document.querySelector(".diff-panel-current-path")?.textContent?.endsWith("d-deleted.ts"),
     );
     await waitForRevision(page);
-    await page.locator(".changes-review-toggle").click();
+    await page.locator(".diff-panel-review-toggle").click();
     assert.equal(await progressText(page), "5 / 5 reviewed");
 
     // At the narrowest desktop width, the added controls introduce no overflow.
     await page.setViewportSize({ width: 641, height: 780 });
-    const desktopOverflow = await page.locator(".changes-panel").evaluate((element) => ({
+    const desktopOverflow = await page.locator(".diff-panel-panel").evaluate((element) => ({
       clientWidth: element.clientWidth,
       scrollWidth: element.scrollWidth,
     }));
@@ -992,35 +992,35 @@ test("CR.4: review progress resumes and only the changed revision reopens on des
     // on phone, change one behind it, then wrap directly to that sole reopened
     // revision and resume after closing/reopening the full-screen layer.
     await mobile.goto(sessionUrl(changedSession));
-    await openPhoneWorkspace(mobile, "changes");
-    await mobile.waitForSelector(".changes-current-path");
+    await openPhoneWorkspace(mobile, "diff-panel");
+    await mobile.waitForSelector(".diff-panel-current-path");
     assert.equal(await progressText(mobile), "0 / 5 reviewed", "review progress leaked between viewports");
     for (let index = 0; index < 5; index += 1) {
       await waitForRevision(mobile);
-      await mobile.locator(".changes-review-toggle").tap();
+      await mobile.locator(".diff-panel-review-toggle").tap();
       if (index < 4) {
         await mobile.locator('[aria-label="Next changed file"]').tap();
         await mobile.waitForFunction(
-          (position) => document.querySelector(".changes-position")?.textContent?.includes(`${position} / 5`),
+          (position) => document.querySelector(".diff-panel-position")?.textContent?.includes(`${position} / 5`),
           index + 2,
         );
       }
     }
     assert.equal(await progressText(mobile), "5 / 5 reviewed");
     writeFileSync(path.join(changedRepo, "a-added.ts"), "added after CR.4 phone refresh\n");
-    await mobile.locator(".changes-review-notice", { hasText: "a-added.ts changed and is unreviewed again." }).waitFor({ timeout: 15_000 });
+    await mobile.locator(".diff-panel-review-notice", { hasText: "a-added.ts changed and is unreviewed again." }).waitFor({ timeout: 15_000 });
     assert.equal(await progressText(mobile), "4 / 5 reviewed");
-    await mobile.locator(".changes-next-unreviewed").tap();
+    await mobile.locator(".diff-panel-next-unreviewed").tap();
     await mobile.waitForFunction(
-      () => document.querySelector(".changes-current-path")?.textContent?.endsWith("a-added.ts"),
+      () => document.querySelector(".diff-panel-current-path")?.textContent?.endsWith("a-added.ts"),
     );
     await waitForRevision(mobile);
-    assert.match(await mobile.locator(".changes-view").innerText(), /CR\.4 phone refresh/);
-    await mobile.locator(".changes-review-toggle").tap();
+    assert.match(await mobile.locator(".diff-panel-view").innerText(), /CR\.4 phone refresh/);
+    await mobile.locator(".diff-panel-review-toggle").tap();
     assert.equal(await progressText(mobile), "5 / 5 reviewed");
 
     const phoneTargets = await mobile.evaluate(() =>
-      [".changes-review-toggle", ".changes-next-unreviewed"].map((selector) => {
+      [".diff-panel-review-toggle", ".diff-panel-next-unreviewed"].map((selector) => {
         const rect = document.querySelector(selector)!.getBoundingClientRect();
         return { selector, width: rect.width, height: rect.height };
       }),
@@ -1030,19 +1030,19 @@ test("CR.4: review progress resumes and only the changed revision reopens on des
     }
     await noSideScroll(mobile);
     await assertAxeClean(mobile, "phone resumable change review");
-    await mobile.locator(".changes-close").tap();
-    await mobile.waitForSelector(".changes-panel", { state: "detached" });
+    await mobile.locator(".diff-panel-close").tap();
+    await mobile.waitForSelector(".diff-panel-panel", { state: "detached" });
     // The single toggle reopens the LAST view — Changes — with no tab tap.
     await mobile.locator(".sb-workspace").tap();
-    await mobile.waitForSelector(".files-panel[role=dialog], .changes-panel[role=dialog]");
+    await mobile.waitForSelector(".folder-tree-panel[role=dialog], .diff-panel-panel[role=dialog]");
     assert.equal(
-      await mobile.locator(".changes-panel[role=dialog]").count(),
+      await mobile.locator(".diff-panel-panel[role=dialog]").count(),
       1,
       "the workspace toggle must reopen the last-used view (Changes), not Files",
     );
-    await mobile.waitForSelector(".changes-current-path");
+    await mobile.waitForSelector(".diff-panel-current-path");
     assert.equal(await progressText(mobile), "5 / 5 reviewed");
-    assert.ok((await mobile.locator(".changes-current-path").innerText()).endsWith("a-added.ts"));
+    assert.ok((await mobile.locator(".diff-panel-current-path").innerText()).endsWith("a-added.ts"));
   } finally {
     await page.close();
     await context.close();
@@ -1085,14 +1085,14 @@ test("CR.5: reconnect abandons lost requests, refreshes bytes, and clears unveri
   });
   try {
     await page.goto(sessionUrl(lifecycleSession));
-    await page.waitForSelector(".ab-changes");
-    await page.locator(".ab-changes").click();
-    await page.waitForSelector(".changes-current-path");
+    await page.waitForSelector(".ab-diff-panel");
+    await page.locator(".ab-diff-panel").click();
+    await page.waitForSelector(".diff-panel-current-path");
     await page.waitForFunction(
-      () => !(document.querySelector(".changes-review-toggle") as HTMLButtonElement)?.disabled,
+      () => !(document.querySelector(".diff-panel-review-toggle") as HTMLButtonElement)?.disabled,
     );
-    await page.locator(".changes-review-toggle").click();
-    assert.equal(await page.locator(".changes-progress").innerText(), "1 / 1 reviewed");
+    await page.locator(".diff-panel-review-toggle").click();
+    assert.equal(await page.locator(".diff-panel-progress").innerText(), "1 / 1 reviewed");
 
     await page.evaluate(() => {
       (window as typeof window & { __changesSocket?: WebSocket }).__changesSocket?.close();
@@ -1104,18 +1104,18 @@ test("CR.5: reconnect abandons lost requests, refreshes bytes, and clears unveri
     await page.waitForFunction(
       () =>
         document.querySelector(".sb-dot")?.getAttribute("title") === "connected" &&
-        document.querySelector(".changes-view")?.textContent?.includes("after reconnect"),
+        document.querySelector(".diff-panel-view")?.textContent?.includes("after reconnect"),
       undefined,
       { timeout: 15_000 },
     );
-    assert.equal(await page.locator(".changes-progress").innerText(), "0 / 1 reviewed");
+    assert.equal(await page.locator(".diff-panel-progress").innerText(), "0 / 1 reviewed");
 
     // Lose an fs_changes reply itself. The reattach must release the pending
     // gate, enable Refresh again, and show the mutation made while offline.
     await page.evaluate(() => {
       (window as typeof window & { __dropNextChanges?: boolean }).__dropNextChanges = true;
     });
-    await page.locator(".changes-refresh").click();
+    await page.locator(".diff-panel-refresh").click();
     await page.waitForFunction(
       () => document.querySelector(".sb-dot")?.getAttribute("title") !== "connected",
     );
@@ -1123,12 +1123,12 @@ test("CR.5: reconnect abandons lost requests, refreshes bytes, and clears unveri
     await page.waitForFunction(
       () =>
         document.querySelector(".sb-dot")?.getAttribute("title") === "connected" &&
-        document.querySelector(".changes-view")?.textContent?.includes("after lost request"),
+        document.querySelector(".diff-panel-view")?.textContent?.includes("after lost request"),
       undefined,
       { timeout: 15_000 },
     );
-    assert.equal(await page.locator(".changes-refresh").isDisabled(), false);
-    assert.doesNotMatch(await page.locator(".changes-review").innerText(), /Loading workspace changes/);
+    assert.equal(await page.locator(".diff-panel-refresh").isDisabled(), false);
+    assert.doesNotMatch(await page.locator(".diff-panel-review").innerText(), /Loading workspace changes/);
   } finally {
     await page.close();
   }
@@ -1138,31 +1138,31 @@ test("CR.5: manual refresh invalidates every review claim before an unwatched HE
   const page = await browser.newPage({ viewport: { width: 1100, height: 760 } });
   try {
     await page.goto(sessionUrl(manualSession));
-    await page.waitForSelector(".ab-changes");
-    await page.locator(".ab-changes").click();
-    await page.waitForSelector(".changes-current-path");
+    await page.waitForSelector(".ab-diff-panel");
+    await page.locator(".ab-diff-panel").click();
+    await page.waitForSelector(".diff-panel-current-path");
     for (const name of ["a.ts", "b.ts"]) {
-      await page.locator(".changes-file", { hasText: name }).click();
+      await page.locator(".diff-panel-file", { hasText: name }).click();
       await page.waitForFunction(
-        (suffix) => document.querySelector(".changes-current-path")?.textContent?.endsWith(String(suffix)),
+        (suffix) => document.querySelector(".diff-panel-current-path")?.textContent?.endsWith(String(suffix)),
         name,
       );
       await page.waitForFunction(
-        () => !(document.querySelector(".changes-review-toggle") as HTMLButtonElement)?.disabled,
+        () => !(document.querySelector(".diff-panel-review-toggle") as HTMLButtonElement)?.disabled,
       );
-      await page.locator(".changes-review-toggle").click();
+      await page.locator(".diff-panel-review-toggle").click();
     }
-    assert.equal(await page.locator(".changes-progress").innerText(), "2 / 2 reviewed");
+    assert.equal(await page.locator(".diff-panel-progress").innerText(), "2 / 2 reviewed");
 
     git(manualRepo, "reset", "--soft", "HEAD^");
-    await page.locator(".changes-refresh").click();
-    assert.equal(await page.locator(".changes-progress").innerText(), "0 / 2 reviewed");
+    await page.locator(".diff-panel-refresh").click();
+    assert.equal(await page.locator(".diff-panel-progress").innerText(), "0 / 2 reviewed");
     await page.waitForFunction(
-      () => document.querySelector(".changes-view .diff-del")?.textContent?.includes("baseline"),
+      () => document.querySelector(".diff-panel-view .diff-del")?.textContent?.includes("baseline"),
       undefined,
       { timeout: 10_000 },
     );
-    assert.equal(await page.locator(".changes-refresh").isDisabled(), false);
+    assert.equal(await page.locator(".diff-panel-refresh").isDisabled(), false);
   } finally {
     await page.close();
   }
@@ -1172,21 +1172,21 @@ test("CR.5: late Git decoration refreshes Files without invalidating Changes rev
   const page = await browser.newPage({ viewport: { width: 1100, height: 760 } });
   try {
     await page.goto(sessionUrl(statusSession));
-    await page.waitForSelector(".ab-changes");
-    await page.locator(".ab-changes").click();
-    await page.waitForSelector(".changes-current-path");
+    await page.waitForSelector(".ab-diff-panel");
+    await page.locator(".ab-diff-panel").click();
+    await page.waitForSelector(".diff-panel-current-path");
     await page.waitForFunction(
-      () => !(document.querySelector(".changes-review-toggle") as HTMLButtonElement)?.disabled,
+      () => !(document.querySelector(".diff-panel-review-toggle") as HTMLButtonElement)?.disabled,
     );
-    await page.locator(".changes-review-toggle").click();
-    assert.equal(await page.locator(".changes-progress").innerText(), "1 / 1 reviewed");
+    await page.locator(".diff-panel-review-toggle").click();
+    assert.equal(await page.locator(".diff-panel-progress").innerText(), "1 / 1 reviewed");
 
-    await page.locator(".ab-files").click();
-    await page.waitForSelector(".files-file-row");
+    await page.locator(".ab-folder-tree").click();
+    await page.waitForSelector(".folder-tree-file-row");
     await page.waitForTimeout(1_500); // NEGATIVE proof: no bell may arrive while Files is open
-    await page.locator(".ab-changes").click();
-    await page.waitForSelector(".changes-current-path");
-    assert.equal(await page.locator(".changes-progress").innerText(), "1 / 1 reviewed");
+    await page.locator(".ab-diff-panel").click();
+    await page.waitForSelector(".diff-panel-current-path");
+    assert.equal(await page.locator(".diff-panel-progress").innerText(), "1 / 1 reviewed");
   } finally {
     await page.close();
   }
@@ -1196,12 +1196,12 @@ test("CR.5: zero visible entries in an incomplete result never claim the tree is
   const page = await browser.newPage({ viewport: { width: 1100, height: 760 } });
   try {
     await page.goto(sessionUrl(incompleteSession));
-    await page.waitForSelector(".ab-changes");
-    await page.locator(".ab-changes").click();
-    await page.locator(".changes-state strong", { hasText: "Change list is incomplete" }).waitFor();
-    assert.equal(await page.locator(".changes-count").innerText(), "0 visible");
-    assert.match(await page.locator(".changes-warning").innerText(), /incomplete/i);
-    assert.doesNotMatch(await page.locator(".changes-state").innerText(), /working tree is clean/i);
+    await page.waitForSelector(".ab-diff-panel");
+    await page.locator(".ab-diff-panel").click();
+    await page.locator(".diff-panel-state strong", { hasText: "Change list is incomplete" }).waitFor();
+    assert.equal(await page.locator(".diff-panel-count").innerText(), "0 visible");
+    assert.match(await page.locator(".diff-panel-warning").innerText(), /incomplete/i);
+    assert.doesNotMatch(await page.locator(".diff-panel-state").innerText(), /working tree is clean/i);
   } finally {
     await page.close();
   }
@@ -1217,10 +1217,10 @@ test("CR.2 honest states: no repository, clean tree, and safely refused Git conf
     ] as const;
     for (const [sessionId, expected] of cases) {
       await page.goto(sessionUrl(sessionId));
-      await page.waitForSelector(".ab-changes");
-      await page.locator(".ab-changes").click();
-      await page.locator(".changes-state strong", { hasText: expected }).waitFor();
-      assert.equal(await page.locator(".changes-state strong").innerText(), expected);
+      await page.waitForSelector(".ab-diff-panel");
+      await page.locator(".ab-diff-panel").click();
+      await page.locator(".diff-panel-state strong", { hasText: expected }).waitFor();
+      assert.equal(await page.locator(".diff-panel-state strong").innerText(), expected);
     }
   } finally {
     await page.close();

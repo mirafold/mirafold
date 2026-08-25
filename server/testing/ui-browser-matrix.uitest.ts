@@ -14,7 +14,7 @@ import {
 // keyboard, modal, and layout failures while keeping the PR gate bounded.
 for (const browserName of MANAGED_BROWSER_NAMES) {
   test(
-    `${browserName}: onboarding, a rendered turn, settings, and containment work`,
+    `${browserName}: agent picker, a rendered turn, settings, and containment work`,
     { timeout: 45_000 },
     async () => {
       const token = `ui-matrix-${browserName}`;
@@ -32,7 +32,7 @@ for (const browserName of MANAGED_BROWSER_NAMES) {
           },
           async (page, _base, pageErrors) => {
             assert.equal(
-              (await page.locator(".onb-title").innerText()).trim(),
+              (await page.locator(".agent-picker-title").innerText()).trim(),
               "Choose your agent",
             );
             await noSideScroll(page);

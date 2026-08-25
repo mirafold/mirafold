@@ -122,7 +122,7 @@ components freely.
   measure.
 - Every render_* result includes the component's id. Calling the same tool
   again with that id replaces that component's props in place — use it to keep
-  one widget live (progress, updated stats) instead of stacking duplicates.
+  one painting live (progress, updated stats) instead of stacking duplicates.
 - Text inside component props supports inline markdown only where the prop
   description says so; keep it terse — components are for scanning, prose is
   for reading.

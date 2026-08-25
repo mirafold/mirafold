@@ -83,7 +83,7 @@ test("single quotes, quoted table names, and trailing comments all read", () => 
 });
 
 // The full scan (2026-07-19): every declared [model_providers.<id>] entry —
-// id, name, base_url, env_key — plus the default, so onboarding can offer one
+// id, name, base_url, env_key — plus the default, so agent picker can offer one
 // row per provider with honest key gating.
 
 test("parseCodexProviders: every declared entry, file order, all read keys", () => {

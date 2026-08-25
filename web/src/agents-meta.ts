@@ -5,7 +5,7 @@ type BackendKind = NonNullable<AgentInfo["kind"]>;
 
 // Shared display metadata for the offerable agents. LABEL is the human
 // name; CONNECT_HINT is the one concrete action that makes that agent live —
-// shown on the onboarding picker's credential-less rows and in the in-session
+// shown on the agent picker's credential-less rows and in the in-session
 // demo banner, so "no credentials" is never a dead end.
 
 export const LABEL: Record<AgentName, string> = {

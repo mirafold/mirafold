@@ -33,7 +33,7 @@ export function sendSubscriptionRequest(send: (m: ClientMsg) => void, act: Subsc
 export function createDaemonClient(socket: SocketClient) {
   const folderPicker = createFolderPickerRequests((msg) => socket.sendIfOpen(msg));
   return {
-    /** The user picked an agent at onboarding — create a session on it.
+    /** The user picked an agent in the agent picker — create a session on it.
      *  `cwd` omitted → the daemon's launch dir; `backend` is the second-step
      *  choice, omitted → the daemon's credential-precedence default. */
     createSession(agent: AgentName, cwd?: string, backend?: BackendChoice) {

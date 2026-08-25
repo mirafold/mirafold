@@ -8,7 +8,7 @@ import {
   emptyDirStore,
   pruneDirStore,
   shownListing,
-} from "./files-tree";
+} from "./folder-tree";
 
 // The lazy per-directory store: fetch-state transitions, the
 // keep-entries-while-refetching rule (a refresh must never read as a

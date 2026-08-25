@@ -3,18 +3,18 @@ import { useWorkspacePanelFrame } from "../../use-workspace-panel-frame";
 import type { ZoneMsg } from "../../session-bus";
 import type { WorkspaceSurface } from "../WorkspaceTabs";
 import { useIsPhone } from "../../use-is-phone";
-import { FileView } from "../files/FileView";
+import { FileView } from "../folder-tree/FileView";
 import {
   ChangeFileHeader,
   ChangesHeader,
   ChangesRail,
   ReviewProgressControls,
-} from "./ChangesChrome";
+} from "./DiffPanelChrome";
 import { usePanelResize } from "./panel-resize";
 import { ReviewDiff } from "./ReviewDiff";
-import { useChangesController } from "./use-changes-controller";
+import { useDiffPanelController } from "./use-diff-panel-controller";
 
-export function ChangesPanel({
+export function DiffPanel({
   open,
   subscribe,
   requestChanges,
@@ -65,7 +65,7 @@ export function ChangesPanel({
     incomplete,
     headerCount,
     stateMessage,
-  } = useChangesController({
+  } = useDiffPanelController({
     open,
     subscribe,
     requestChanges,
@@ -91,7 +91,7 @@ export function ChangesPanel({
 
   return (
     <aside
-      className="changes-panel"
+      className="diff-panel-panel"
       aria-label="Workspace changes"
       ref={panelRef}
       style={resize.panelStyle}
@@ -110,17 +110,17 @@ export function ChangesPanel({
       />
 
       {changeSet.error && items.length > 0 && (
-        <div className="changes-warning" role="status">
+        <div className="diff-panel-warning" role="status">
           Refresh failed: {changeSet.error}. Showing the last complete result.
         </div>
       )}
       {incomplete && changeSet.loaded && (
-        <div className="changes-warning" role="status">
+        <div className="diff-panel-warning" role="status">
           This list is incomplete; only the visible changes can be reviewed here.
         </div>
       )}
 
-      <div className="changes-body">
+      <div className="diff-panel-body">
         {!phone && items.length > 0 && (
           <ChangesRail
             repos={changeSet.repos}
@@ -132,9 +132,9 @@ export function ChangesPanel({
           />
         )}
 
-        <section className="changes-review" aria-label="Change review">
+        <section className="diff-panel-review" aria-label="Change review">
           {stateMessage ? (
-            <div className="changes-state">
+            <div className="diff-panel-state">
               <strong>{stateMessage.title}</strong>
               <span>{stateMessage.detail}</span>
             </div>
@@ -155,10 +155,10 @@ export function ChangesPanel({
                 onNextUnreviewed={goToNextUnreviewed}
               />
               {reviewNotice && (
-                <div className="changes-review-notice" role="status">{reviewNotice}</div>
+                <div className="diff-panel-review-notice" role="status">{reviewNotice}</div>
               )}
               <div
-                className="changes-view"
+                className="diff-panel-view"
                 tabIndex={0}
                 role="region"
                 aria-label={`${selectedItem.path} — diff`}
