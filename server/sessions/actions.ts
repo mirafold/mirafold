@@ -1,4 +1,4 @@
-// Action mediation (Step 2.3). `tool` actions from components run HERE,
+// Action mediation. `tool` actions from components run HERE,
 // against an explicit allowlist with validated args — the client never
 // calls anything directly, and off-list names are rejected and logged.
 // Results are broadcast as tool_use/tool_result records, so an action's
@@ -22,7 +22,7 @@ type ActionTool = {
 // symlinks, so a link planted in the workspace can't point the listing out of
 // it. realpathSync throws on a missing path (nothing to list anyway → treat as
 // outside). `root` is realpath'd too, so the prefix compare is against the
-// canonical base. Exported since E.1: fs-explorer.ts jails every Explorer
+// canonical base. Exported: fs-explorer.ts jails every Explorer
 // path through this same guard — one containment rule, no drift.
 export const inside = (root: string, candidate: string): string | null => {
   let real: string;
@@ -49,8 +49,8 @@ const ACTION_TOOLS: Record<string, ActionTool> = {
         .map((n) => {
           // Per-entry stat failures (a dangling symlink; a file the agent
           // deleted between readdir and stat) mark that ROW, never the whole
-          // listing — one broken link used to turn every sibling invisible
-          // (2026-07-29 bughunt; fs-explorer already handles the same case).
+          // listing — one broken link must not turn every sibling invisible
+          // (fs-explorer handles the same case).
           try {
             const s = statSync(path.join(target, n));
             return `${s.isDirectory() ? "d" : "-"} ${String(s.size).padStart(8)}  ${n}${s.isDirectory() ? "/" : ""}`;

@@ -23,16 +23,16 @@ import type { Action } from "@protocol";
  *   forms, block the UI with alert(), or write files.
  * - The html lands via React's `srcDoc` prop (attribute-escaped), so markup
  *   can't terminate the iframe element and spill into the shell document.
- * - The postMessage bridge (Step 3.3) is the ONE outward channel, and it is
+ * - The postMessage bridge is the ONE outward channel, and it is
  *   validated at every hop: the listener accepts messages only from THIS
  *   iframe's contentWindow, only from the opaque origin ("null"), and only
  *   when stamped with the per-mount NONCE the boot script closes over — so
  *   no other frame, and no document that replaces this one, can speak on
  *   it. The payload must parse as a prompt or tool Action (state ops and
  *   malformed shapes are dropped), it is rate-limited, and what passes
- *   still only reaches the server's Step 2.3 allowlist mediation — the
+ *   still only reaches the server's allowlist mediation — the
  *   bridge grants no capability a registry component doesn't have.
- * - Self-navigation (location=, <a>, meta refresh) is detected (Step 3.4)
+ * - Self-navigation (location=, <a>, meta refresh) is detected
  *   by liveness, not load-counting: every wrapped document announces
  *   artifactReady (nonce-stamped) on its own load event, and the host
  *   expects that announce shortly after every frame load event. A foreign
@@ -41,7 +41,7 @@ import type { Action } from "@protocol";
  *   note takes its place. Note a navigated document KEEPS the opaque
  *   origin, so the origin check alone would not kill the bridge — the
  *   nonce is what does.
- * - Crashes are handled, not trusted (Step 3.4): an injected first-script
+ * - Crashes are handled, not trusted: an injected first-script
  *   hook reports uncaught errors/rejections over the postMessage channel.
  *   An early crash (artifact broken on arrival) swaps the frame for the
  *   source-as-code fallback; a late error only flags the chrome — a working
@@ -87,7 +87,7 @@ function bootScript(nonce: string): string {
   );
 }
 
-// Exported for the R.4e Tier-1 sandbox tests only — not part of any API.
+// Exported for the Tier-1 sandbox tests only — not part of any API.
 export function wrap(html: string, nonce: string): string {
   return (
     "<!doctype html><html><head><meta charset=\"utf-8\">" +
@@ -113,7 +113,7 @@ const READY_GRACE_MS = 400;
 type Failure = { kind: "crash"; message: string } | { kind: "navigation" };
 
 /** Strict parse of a bridge payload; anything not exactly right is null.
- *  Exported for the R.4e Tier-1 sandbox tests only — not part of any API. */
+ *  Exported for the Tier-1 sandbox tests only — not part of any API. */
 export function parseBridgeAction(data: unknown): Action | null {
   if (typeof data !== "object" || data === null) return null;
   const d = data as Record<string, unknown>;
@@ -172,9 +172,9 @@ export function Artifact({
 
   // Each html is a GENERATION: a liveness deadline armed by an earlier
   // life's load event must stand down when update-in-place replaces the
-  // document — it used to fire against the reset counters and kill a
-  // healthy updated artifact as "navigation" (2026-07-29 bughunt; any
-  // update landing within the grace window of the prior load could trip it).
+  // document — otherwise an update landing within the grace window of the
+  // prior load fires it against the reset counters and kills a healthy
+  // updated artifact as "navigation".
   const generation = useRef(0);
 
   // New html = a new artifact life: reset failure state and the liveness

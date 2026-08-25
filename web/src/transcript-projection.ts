@@ -347,8 +347,8 @@ function buildSnapshot(
         : row.kind === "artifact"
           ? row.artifactId
           : undefined;
-    // The old dock lookup used Array.find(), so a cross-kind wire-id collision
-    // binds to the first painting in transcript order.
+    // A cross-kind wire-id collision binds to the first painting in
+    // transcript order (first wins, as Array.find() would).
     if (paintingId !== undefined && !paintingsById.has(paintingId)) {
       paintingsById.set(paintingId, row as PaintingRow);
     }

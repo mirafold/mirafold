@@ -1,8 +1,8 @@
 /* The settings/tool gear — one drawing, four homes: the status bar's settings
    button, the in-session status line, the subagent group head, and the fleet
-   details activity line. It replaces the bare ⚙ character (U+2699), which the
-   system renders from the color-emoji font — shaded, dimensional and filled,
-   the only glyph in the bar that left the text font (2026-07-25, Kyle).
+   details activity line. Not the bare ⚙ character (U+2699): the system
+   renders that from the color-emoji font — shaded, dimensional and filled,
+   the one glyph in the bar that would leave the text font.
 
    Drawn as one closed outline around the notched edge plus a hub circle, no
    fill, so it sits in the same flat line language as FilesGlyph and the ⌂/☀/☾

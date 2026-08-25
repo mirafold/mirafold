@@ -27,11 +27,11 @@ export const PROJECT_ENV_KEYS: ReadonlySet<string> = new Set([
   "MIRAFOLD_DEBUG",
   // NOT MIRAFOLD_LOG_FILE: it's a daemon-OPERATOR setting (where the daemon
   // writes its own log), not project data. Honoring it from a checkout's
-  // .env gave a hostile repo an arbitrary file-APPEND primitive — point it at
-  // ~/.bashrc or a crontab, and since log lines can carry engine stderr
-  // verbatim, an embedded newline writes an unprefixed line (audit
-  // 2026-08-13). That is outside the disclosed set of what a project .env may
-  // do (endpoints, relay access, resource limits, auth posture).
+  // .env would give a hostile repo an arbitrary file-APPEND primitive — point
+  // it at ~/.bashrc or a crontab, and since log lines can carry engine stderr
+  // verbatim, an embedded newline writes an unprefixed line. That is outside
+  // the disclosed set of what a project .env may do (endpoints, relay access,
+  // resource limits, auth posture).
   "MIRAFOLD_LOCAL_ENDPOINTS",
   "MIRAFOLD_LOCAL_DISCOVERY",
   "MIRAFOLD_CODEX_LOCAL_TURN_TIMEOUT_MS",

@@ -1,4 +1,4 @@
-// File drag-and-drop input (Phase FD), client half. A browser drop hands
+// File drag-and-drop input, client half. A browser drop hands
 // over a file's NAME and BYTES — never its real path — so the shell streams
 // the bytes to the daemon in bounded base64 chunks and, on the staged-path
 // reply, hands the path to the prompt. Pure state + chunk math live here so

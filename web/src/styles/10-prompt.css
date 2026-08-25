@@ -103,11 +103,11 @@
   line-height: 1.5; /* match the textarea so the glyph sits on the first line */
 }
 
-/* The session's working dir at the prompt (Step 4.8) — dim, mono, terminal-
+/* The session's working dir at the prompt — dim, mono, terminal-
    prompt style: `~/Projects/foo ❯`. Ellipsizes from the left so the leaf
    (the part that identifies the project) always stays visible. Collapsible
    down to just the caret — click the path to hide it, the caret to bring it
-   back; the choice persists (2026-07-16). */
+   back; the choice persists. */
 .prompt-cwd {
   background: none;
   border: 0;
@@ -225,15 +225,15 @@
   color: var(--error);
 }
 
-/* Permission bar (Phase T.3): drawn by the trusted shell above the prompt
+/* Permission bar: drawn by the trusted shell above the prompt
    box — agent output cannot render, wrap, or fake this surface. Amber is
    the "decision needed" accent. */
 
-/* The always-visible work indicator (2026-07-29): prompt-area chrome, never
-   a transcript entry, so no scroll position can hide it. The glyph frames
-   cycle from ActivityLine.tsx (JS, where reduced motion is honored) — the
-   2026-07-25 lesson baked in: a CSS pulse here was silently killed by the
-   rise-animation override and the line sat frozen. */
+/* The always-visible work indicator: prompt-area chrome, never a
+   transcript entry, so no scroll position can hide it. The glyph frames
+   cycle from ActivityLine.tsx (JS, where reduced motion is honored): a CSS
+   pulse here is silently killed by the rise-animation override and the
+   line sits frozen. */
 .activity-line {
   display: flex;
   align-items: baseline;
@@ -246,7 +246,7 @@
   animation: rise 0.16s ease-out both;
   /* The label is engine-supplied (a tool name, MCP servers included) and
      this line is chrome, not scrollable transcript — so an over-long one
-     must ellipsize here rather than widen the page (2026-07-29 audit).
+     must ellipsize here rather than widen the page.
      The server cap is the first bound; this is the layout's own. */
   min-width: 0;
 }
@@ -285,7 +285,7 @@
 
 /* Everything except allow/deny is one button: it opens the full-command
    card, because the one-line preview truncates (always on phone) and the
-   body is what a thumb tries to tap (2026-07-28, Kyle). */
+   body is what a thumb tries to tap. */
 .perm-body {
   display: flex;
   align-items: center;
@@ -313,7 +313,7 @@
   flex-shrink: 0;
 }
 
-/* SA.3: the ask came from a subagent — a dim factual chip, shell-composed. */
+/* The ask came from a subagent — a dim factual chip, shell-composed. */
 .perm-subagent {
   color: var(--fg-faint);
   border: 1px solid var(--border-mid);
@@ -402,7 +402,7 @@
   scrollbar-width: thin;
 }
 
-/* Stop affordance (Phase T.2): shell-drawn, visible only while a turn is
+/* Stop affordance: shell-drawn, visible only while a turn is
    in flight. Esc does the same thing from anywhere. */
 .stop-btn {
   flex-shrink: 0;
@@ -423,7 +423,7 @@
   border-color: var(--err-border);
 }
 
-/* ---- File drag-and-drop (Phase FD) --------------------------------------
+/* ---- File drag-and-drop --------------------------------------
    Shell-owned drop affordances: a full-window overlay while a file drag is
    over the page, and a compact upload strip above the prompt box. */
 

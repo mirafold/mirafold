@@ -1,4 +1,4 @@
-/* ── Workspace changes (CR.2) ────────────────────────────────────────────
+/* ── Workspace changes ────────────────────────────────────────────
    One wider auxiliary workspace beside the still-mounted transcript. The
    changed-file rail is compact; the diff receives the majority of the width.
    `max-width` protects a readable conversation column at the 641px boundary. */
@@ -435,7 +435,7 @@
   overflow-y: visible;
 }
 
-/* CR.3 review tools stay inside the diff's one scroller. The source itself is
+/* Review tools stay inside the diff's one scroller. The source itself is
    a four-column code surface: HEAD line, working-tree line, sign, highlighted
    text. Full-file context remains present so hunk jumps never strand a change
    outside the function that explains it. */

@@ -18,8 +18,7 @@ type Listener = (msg: WireMsg) => void;
 // constant in relay-protocol.ts at all) — relay-protocol.ts pulls in
 // node:crypto and can't cross into the web bundle, so these three codes are
 // duplicated. Pinned DIRECTLY against contract.ts by relay-service.itest.ts,
-// which feeds each contract code through viewportRefusalReason (2026-07-29
-// bughunt: the old note claimed a pin that didn't exist).
+// which feeds each contract code through viewportRefusalReason.
 const VIEWPORT_CLOSE = {
   NO_DAEMON: 4003, // CLOSE_BAD_CODE — no daemon paired under this id
   OVERLOADED: 4004, // CLOSE_OVERLOADED — relay or this pair at capacity
@@ -29,8 +28,8 @@ const VIEWPORT_CLOSE = {
 /** A relay close code that means this viewport was REFUSED (not a routine
  *  drop), mapped to a short line for the connection indicator. undefined = an
  *  ordinary disconnect → the plain "reconnecting…". Exported for the unit test.
- *  Surfaced visibly beside the status dot when down-with-reason (2026-07-28,
- *  Kyle's call), not just in the dot's tooltip. Note OVERLOADED can arrive
+ *  Surfaced visibly beside the status dot when down-with-reason, not just in
+ *  the dot's tooltip. Note OVERLOADED can arrive
  *  mid-session too, not only at the door: the relay closes a receiver whose
  *  socket buffered past its backpressure limit with the same code, so its
  *  wording stays true for both ("at capacity" covers shedding a stalled
@@ -48,15 +47,15 @@ export function viewportRefusalReason(code: number | undefined): string | undefi
   }
 }
 
-// Heartbeat (4.4): a wifi blip with no FIN leaves the socket half-open and
+// Heartbeat: a wifi blip with no FIN leaves the socket half-open and
 // silently dead — the browser would wait forever. Ping on an interval and
 // treat any inbound traffic as life; a ping that goes unanswered past the
 // deadline closes the socket, which routes into the normal reconnect path.
 export const PING_INTERVAL_MS = 25_000;
 export const PONG_DEADLINE_MS = 8_000;
 // Relay path only: how long an answered upgrade may sit handshake-pending
-// before the socket is closed into the retry ladder (2026-07-29 bughunt —
-// nothing else bounds that wait; see connect()).
+// before the socket is closed into the retry ladder (nothing else bounds
+// that wait; see connect()).
 export const HANDSHAKE_DEADLINE_MS = 15_000;
 // Reconnect backoff: fast first retry (the daemon is local), capped so a
 // long outage doesn't hammer; `online`/tab-visible events short-circuit it.
@@ -65,7 +64,7 @@ export const BACKOFF_MAX_MS = 5_000;
 
 // Uncaught front-end errors ride the socket into the daemon's flight-recorder
 // log — otherwise a front-end crash dies in the devtools console and the log a
-// bug report attaches says nothing (R.4g follow-through, 2026-07-23).
+// bug report attaches says nothing.
 // Installed once per page, forwarding through the most recent SocketClient
 // (whose pending queue survives disconnects). Capped so an error loop can't
 // flood the daemon, clipped so one giant message can't bloat a frame — the
@@ -100,19 +99,19 @@ function installErrorForwarding() {
 /**
  * The shell's WebSocket client. Lives in the trusted shell — agent output
  * never touches it. Reconnects automatically on drop; every (re)open first
- * sends the hello (attach/create, Step 4.2) so the connection is a viewport
+ * sends the hello (attach/create) so the connection is a viewport
  * on the right session before anything else flows.
  *
  * Tracks the last broadcast `seq` seen so the hello can ask for a
  * tail-only resume, heartbeats to catch half-open sockets, and backs off
  * between attempts (with instant retry when the network returns).
  *
- * Phase R.3: with a pairing code present, the connection is end-to-end
+ * With a pairing code present, the connection is end-to-end
  * encrypted — the relay sees only the code's derived pairId in the URL and
  * ciphertext frames. Each (re)connect performs the handshake before the
  * hello, and any frame that fails to authenticate closes the socket (fail
  * closed → normal reconnect → fresh handshake). A local page has no code and
- * none of this engages (4.4).
+ * none of this engages.
  */
 export class SocketClient {
   private ws?: WebSocket;
@@ -126,7 +125,7 @@ export class SocketClient {
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private pongTimer: ReturnType<typeof setTimeout> | null = null;
   // Returns the join message (attach/create) for this open, or null to send
-  // nothing yet — P.4 waits at onboarding until the user picks an agent.
+  // nothing yet — onboarding waits until the user picks an agent.
   private hello: (() => ClientMsg | null) | null = null;
   /** Last broadcast seq seen — the resume cursor sent as attach.afterSeq. */
   lastSeq: number | null = null;
@@ -199,8 +198,8 @@ export class SocketClient {
     if (this.closedByUs) return; // a queued reconnect must not outlive close()
     // A superseded socket's onclose is inert and never ran stopHeartbeat, so
     // its still-armed pong deadline would otherwise outlive it and fire
-    // against the SUCCESSOR socket mid-connect (2026-07-29 bughunt) — clear
-    // the previous life's timers before dialing.
+    // against the SUCCESSOR socket mid-connect — clear the previous life's
+    // timers before dialing.
     this.stopHeartbeat();
     // Each handler checks it still belongs to the current socket: a superseded
     // socket's late onclose must not kill the new heartbeat, fire close
@@ -209,7 +208,7 @@ export class SocketClient {
     this.ws = sock;
     this.ready = false;
 
-    // R.3 per-connection channel state. Send/receive each chain their async
+    // Per-connection channel state. Send/receive each chain their async
     // seal/open so frame ORDER is preserved — the strict +1 counters make
     // order part of the security contract, not just a nicety.
     const pair = this.pair;
@@ -231,7 +230,7 @@ export class SocketClient {
           } else {
             // Accepted by send() while ready, but the socket died before this
             // chained seal ran — requeue instead of vanishing: `pending` is
-            // the queue that survives disconnects (2026-07-29 bughunt).
+            // the queue that survives disconnects.
             this.pending.push(msg);
           }
         })
@@ -245,8 +244,8 @@ export class SocketClient {
 
     // A handshake the daemon never answers must not wedge forever: the
     // heartbeat only starts at finishOpen and reconnectNow bails on an OPEN
-    // socket, so nothing else bounds this wait (2026-07-29 bughunt). The
-    // deadline closes the socket into the ordinary retry ladder.
+    // socket, so nothing else bounds this wait. The deadline closes the
+    // socket into the ordinary retry ladder.
     let handshakeTimer: ReturnType<typeof setTimeout> | null = null;
 
     sock.onopen = () => {
@@ -279,9 +278,9 @@ export class SocketClient {
             cipher = await frameCiphers(pair, clientNonce!, daemonNonce, "c");
             // The socket can close while those awaits ran — onclose fires
             // synchronously, this chained continuation later. Finishing the
-            // open anyway flashed "connected" on a dead socket and spliced
-            // `pending` into sends that all failed their readyState guard —
-            // every queued message destroyed (2026-07-29 bughunt).
+            // open anyway would flash "connected" on a dead socket and splice
+            // `pending` into sends that all fail their readyState guard —
+            // every queued message destroyed.
             if (this.ws !== sock || sock.readyState !== WebSocket.OPEN) return;
             if (handshakeTimer) clearTimeout(handshakeTimer);
             this.finishOpen();
@@ -315,11 +314,11 @@ export class SocketClient {
   /** The channel is usable (handshaken, on the relay path) — start the app flow. */
   private finishOpen() {
     // Backoff resets HERE, not in onopen: a relay refusal is a close CODE,
-    // which requires a completed upgrade — resetting on open meant a
+    // which requires a completed upgrade — resetting on open would let a
     // permanently-refused viewport (dead pairing, at-capacity relay)
-    // redialed at BACKOFF_MIN forever, ~2 Hz, with the ladder never
-    // climbing (2026-07-29 bughunt). Only a channel that actually became
-    // usable is evidence of health.
+    // redial at BACKOFF_MIN forever, ~2 Hz, with the ladder never
+    // climbing. Only a channel that actually became usable is evidence of
+    // health.
     this.backoff = BACKOFF_MIN_MS;
     this.ready = true;
     for (const cb of this.openListeners) cb();
@@ -349,8 +348,8 @@ export class SocketClient {
     this.pingTimer = setInterval(() => {
       if (!this.ready || this.ws?.readyState !== WebSocket.OPEN) return;
       // The deadline closes the socket it was armed FOR — closing `this.ws`
-      // let a stale deadline from a superseded socket kill its successor
-      // (2026-07-29 bughunt).
+      // would let a stale deadline from a superseded socket kill its
+      // successor.
       const sock = this.ws;
       this.transmit({ type: "ping" } satisfies ClientMsg);
       this.pongTimer ??= setTimeout(() => {
@@ -401,7 +400,7 @@ export class SocketClient {
   }
 
   // attach/create/client_error announce this bundle's build (additive field) so
-  // the daemon can log a skewed pair — one choke point, no caller threads it (R.4g).
+  // the daemon can log a skewed pair — one choke point, no caller threads it.
   private stamp(msg: ClientMsg): ClientMsg {
     return msg.type === "attach" || msg.type === "create" || msg.type === "client_error"
       ? { ...msg, clientVersion: CLIENT_VERSION }
@@ -429,7 +428,7 @@ export class SocketClient {
   close() {
     this.closedByUs = true;
     // Stop being the error-forwarding socket: reports after close would only
-    // queue into `pending` on a client that never reconnects (2026-07-28 fix).
+    // queue into `pending` on a client that never reconnects.
     if (errorSocket === this) errorSocket = null;
     this.stopHeartbeat();
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);

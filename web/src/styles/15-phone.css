@@ -1,4 +1,4 @@
-/* ---- Responsive: the ONE phone block (Steps R.4 / R.4l) --------------------
+/* ---- Responsive: the ONE phone block --------------------
    Every max-width: 640px rule lives in this single block (the cockpit's
    phone rules ride at its tail), so "what changes on the phone" has exactly
    one home — and staying last keeps every override after its base rule.
@@ -107,8 +107,8 @@
      The dot and the agent name read as one unit (connected — to what);
      everything else that was on the facts row lives in the settings
      card's Session section (opened by the gear or the agent chip), and
-     the theme pill folds into that card too — it stays desktop-only per
-     the Phase S lock. nowrap + an ellipsizing agent name means the name
+     the theme pill folds into that card too — it stays desktop-only (the
+     pill is locked unchanged). nowrap + an ellipsizing agent name means the name
      can never push a control off the row. */
   /* Submitted-input navigation is deliberately disclosed on demand on phone.
      The tiny ⋯ is absolutely anchored above the submit arrow, so the normal
@@ -341,7 +341,7 @@
     display: none;
   }
 
-  /* Explorer on phone (E.4): the docked column becomes a full-screen
+  /* Explorer on phone: the docked column becomes a full-screen
      drill-in layer over everything, GitHub-mobile style. Same component,
      different frame; the file view still overlays the tree within it. */
   .files-panel {
@@ -357,7 +357,7 @@
     padding-bottom: env(safe-area-inset-bottom);
   }
 
-  /* Changes on phone (CR.2): the same snapshot as desktop, reframed as one
+  /* Changes on phone: the same snapshot as desktop, reframed as one
      file at a time. The rail disappears; close, position, previous, and next
      remain fixed while only the diff scrolls. */
   .changes-panel {
@@ -381,7 +381,7 @@
 
   /* Row one holds only the fixed-width Files | Changes switch between the
      two 42px buttons — nothing else competes with it, so it fits at any
-     phone width (at 320px the count pill used to land on it, 2026-08-18).
+     phone width (at 320px the count pill would land on it).
      The count rides row two, right-aligned beside the review progress. */
   .changes-head {
     min-height: 68px;
@@ -573,15 +573,15 @@
     padding: 7px 9px;
   }
 
-  /* Bigger tap targets on the touch surface (the ≥40px rule from the phone
-     pass) without disturbing the desktop density. */
+  /* Bigger tap targets on the touch surface (the ≥40px rule) without
+     disturbing the desktop density. */
   .files-row {
     padding: 9px 8px;
     min-height: 42px;
   }
 
   /* Files head on phone: back chevron leading (top-left, same exit as
-     Changes, 2026-08-18 Kyle), the .workspace-tabs switch beside it, refresh
+     Changes), the .workspace-tabs switch beside it, refresh
      trailing — a centered flex row, not the desktop's baseline title bar. */
   .files-panel-head {
     align-items: center;
@@ -599,7 +599,7 @@
   }
 
   /* The rail is a desktop affordance — a permanent 46px strip is too much
-     of a 390px screen (2026-07-25, Kyle). Its toggles fold down into the
+     of a 390px screen. Its toggles fold down into the
      status bar (.sb-workspace below); the shell and prompt box above run
      full-width. */
   .activity-bar {
@@ -607,7 +607,7 @@
   }
 
   /* Files + Changes fold the desktop activity rail into ONE phone toggle
-     (two side-by-side icons crowded the bar, 2026-08-18 Kyle) that opens the
+     (two side-by-side icons crowd the bar) that opens the
      full-screen workspace drawer; the drawer's head carries the
      .workspace-tabs switch between the two views. The separator after it
      keeps the workspace distinct from home/new/session controls. */

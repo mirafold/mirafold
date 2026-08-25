@@ -83,7 +83,7 @@ body {
   padding-left: var(--content-air);
 }
 
-/* Explorer (E.3) + transcript. The files panel is a fixed-width left column;
+/* Explorer + transcript. The files panel is a fixed-width left column;
    the zone-row fills the rest so the transcript keeps rendering beside it.
    With the panel closed this collapses to just the transcript, full-width. */
 .zone-outer {

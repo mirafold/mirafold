@@ -62,12 +62,12 @@ const MAX_SESSIONS = envInt("MAX_SESSIONS", 100);
 // a length bound at its source — they come from `system/init`, the Codex
 // rollout file, Gemini stats, and (the realistic path) any third-party MCP
 // server the user installed, whose tool names pass through verbatim. Real
-// values are a few dozen chars; a 200 KB one made the whole PAGE scroll
-// sideways once the activity indicator moved into prompt-area chrome, where
-// growth widens the layout instead of a scroll box (2026-07-29 audit,
-// proven). Capped HERE — one choke point covers every adapter at once — and
-// the line also ellipsizes in CSS. Bloat insurance, not an escape guard:
-// React already renders a hostile string inert.
+// values are a few dozen chars; a 200 KB one makes the whole PAGE scroll
+// sideways because the activity indicator lives in prompt-area chrome, where
+// growth widens the layout instead of a scroll box. Capped HERE — one choke
+// point covers every adapter at once — and the line also ellipsizes in CSS.
+// Bloat insurance, not an escape guard: React already renders a hostile
+// string inert.
 const LABEL_CAP = 120;
 const capLabel = (s: string) => (s.length > LABEL_CAP ? s.slice(0, LABEL_CAP) + "…" : s);
 
@@ -137,16 +137,15 @@ export type SessionEntry = SessionActivityState & {
   bangCwd: string;
   agent: AgentName;
   // False ⇒ the agent had no credentials and `session` is the scripted
-  // mock — carried to the shell as session_created.demo so the banner draws (R.4b).
+  // mock — carried to the shell as session_created.demo so the banner draws.
   live: boolean;
   // The credential kind behind this session — read by the relay gate in
-  // connection.ts to refuse a subscription-backed session over the paid relay (R.4i).
+  // connection.ts to refuse a subscription-backed session over the paid relay.
   kind: CredentialKind;
-  // OC.4c: true while `kind` is the hello-time OPTIMISTIC answer for an
-  // adapter that can only classify truthfully once its engine starts
-  // (OpenCode). The relay gate refuses remote actions outright until the
-  // session's onBackendKind publish clears it — provider-policy.ts
-  // relayGateRefusal.
+  // True while `kind` is the hello-time OPTIMISTIC answer for an adapter
+  // that can only classify truthfully once its engine starts (OpenCode).
+  // The relay gate refuses remote actions outright until the session's
+  // onBackendKind publish clears it — provider-policy.ts relayGateRefusal.
   kindPending?: boolean;
   // Exact server-side backend selection, persisted so recovery cannot silently
   // move the conversation to a different credential/provider/model server.
@@ -158,11 +157,11 @@ export type SessionEntry = SessionActivityState & {
    *  it; delivers into `deliver()` in exact stream order. */
   ring: ReplayRing;
   viewports: Set<Viewport>;
-  // The subset of `viewports` that are REMOTE (relay) — the ones the R.4i
-  // relay gate governs. Tracked so a mid-session credential-kind flip to a
+  // The subset of `viewports` that are REMOTE (relay) — the ones the relay
+  // gate governs. Tracked so a mid-session credential-kind flip to a
   // relay-ineligible kind (an OpenCode `/model` switch) can detach them, the
-  // same posture the attach gate takes for a fresh remote attach (audit
-  // 2026-08-13). Always a subset of `viewports`.
+  // same posture the attach gate takes for a fresh remote attach. Always a
+  // subset of `viewports`.
   remoteViewports: Set<Viewport>;
   // Fleet metadata: display name (defaults to the cwd leaf, renamable) and
   // when the stream last moved. The stream-derived state (status, turn
@@ -201,7 +200,7 @@ export type RegistryOptions = {
 };
 
 /**
- * Sessions decoupled from connections (Step 4.2). A session outlives any
+ * Sessions decoupled from connections. A session outlives any
  * socket: connections attach as viewports, every emitted WireMsg is fanned
  * out to all of them and kept in a ring buffer that replays on attach, and
  * closing a tab merely detaches. Idle timeout unloads a warm engine to its
@@ -214,7 +213,7 @@ export class SessionRegistry {
   private restoreErrors = new Map<string, string>();
 
   // Which agent every session in this registry runs, resolved once from
-  // config (Phase P.1). The agent is chosen here, not hardcoded downstream.
+  // config. The agent is chosen here, not hardcoded downstream.
   private backend: Backend;
   private deltaCoalesceMs: number;
   private store?: SessionCheckpointStore;
@@ -239,25 +238,23 @@ export class SessionRegistry {
       throw new Error(`session limit reached (${MAX_SESSIONS})`);
     }
     const id = randomUUID().slice(0, 8);
-    // Which agent this session runs (P.4): the caller's choice at onboarding,
+    // Which agent this session runs: the caller's choice at onboarding,
     // resolved to a fresh backend here; no choice → the daemon default. Secrets
-    // stay server-side — the client only ever names the agent. N.5: a chosen
+    // stay server-side — the client only ever names the agent. A chosen
     // backend arrives PRE-VALIDATED (connection.ts ran resolveChosenBackend —
     // this registry never sees raw client input) and wins over precedence.
     const backend =
       opts?.backend ?? (opts?.agent ? resolveBackendFor(opts.agent) : this.backend);
     // cwd is whatever the caller chose; the default is the directory the
-    // daemon was launched from — the terminal's own model (Step 4.8; the
-    // earlier workspace/<id> scratch default was itself a parity gap). Any
-    // dir is fair game — safe because the socket binds to loopback
-    // (server/index.ts), so only local-you can pick it, exactly as with the
-    // terminal. (An interim build jailed this under workspace/; relaxed
-    // 2026-07-05 — loopback already closes the remote-cwd vector.) A chosen
+    // daemon was launched from — the terminal's own model. Any dir is fair
+    // game — safe because the socket binds to loopback (server/index.ts), so
+    // only local-you can pick it, exactly as with the terminal; loopback
+    // already closes the remote-cwd vector, so no jail is needed. A chosen
     // dir must already exist — `cd`, not `mkdir -p` — so a typo errors
     // instead of silently creating and working in a stray directory.
     const dir = resolveCwd(opts?.cwd);
-    // The configured agent becomes a concrete engine at this one seam
-    // (Phase P.1). Falls back to the mock when the agent has no credentials.
+    // The configured agent becomes a concrete engine at this one seam.
+    // Falls back to the mock when the agent has no credentials.
     const session: AgentSession = this.makeSession(backend, { cwd: dir });
     const entry: SessionEntry = {
       ...IDLE_STATE,
@@ -340,7 +337,7 @@ export class SessionRegistry {
     entry.session.onResumeId?.(() => {
       if (this.entries.get(entry.id) === entry) this.checkpoint(entry);
     });
-    // OC.4c: an adapter with an optimistic hello-time kind publishes the
+    // An adapter with an optimistic hello-time kind publishes the
     // truthful one once its engine classifies the pinned provider. Until
     // then the entry is kindPending and the relay gate refuses remote
     // actions (provider-policy.ts relayGateRefusal). The truthful kind is
@@ -356,7 +353,7 @@ export class SessionRegistry {
         // A mid-session flip to a relay-ineligible kind (an OpenCode `/model`
         // switch to a subscription or the Zen gateway) must evict any remote
         // (relay) viewport already attached — the same posture the attach
-        // gate takes for a fresh remote attach (audit 2026-08-13). The
+        // gate takes for a fresh remote attach. The
         // drive-time gate in connection.ts refuses their prompts regardless;
         // this stops them receiving the now-subscription stream at all.
         if (!allowedOverRelay(update.kind)) this.evictRemoteViewports(entry);
@@ -476,23 +473,23 @@ export class SessionRegistry {
   private deliver(entry: SessionEntry, msg: WireMsg) {
     const log = createLogger(`session ${entry.id}`);
     // The likeliest live failures (bad key, engine died, CLI missing)
-    // arrive here as adapter-emitted `error` WireMsgs and used to reach only
-    // the browser — mirror them to the terminal, timestamped, because the
-    // terminal log is what a stranger pastes into a bug report (R.4g).
+    // arrive here as adapter-emitted `error` WireMsgs — mirror them to the
+    // terminal, timestamped, because the terminal log is what a stranger
+    // pastes into a bug report.
     if (msg.type === "error") {
       log.error(msg.message);
     }
-    // Paintings-adoption instrumentation (2026-08-13 audit): one LOCAL log
-    // line per generative-UI paint, from the choke point every adapter's
-    // stream crosses — so "does this engine actually reach for the render
-    // tools" is answerable from the daemon log instead of guessed. Local
-    // only; nothing leaves the machine.
+    // Paintings-adoption instrumentation: one LOCAL log line per
+    // generative-UI paint, from the choke point every adapter's stream
+    // crosses — so "does this engine actually reach for the render tools"
+    // is answerable from the daemon log instead of guessed. Local only;
+    // nothing leaves the machine.
     if (msg.type === "render" || msg.type === "artifact") {
       log.info(`paint ${msg.type === "render" ? msg.component : "artifact"} agent=${entry.agent}`);
     }
     // MIRAFOLD_DEBUG=1 traces every normalized event on the session
     // stream (bang_input never crosses broadcast, so no secret can land
-    // here). One line per WireMsg, payload truncated (R.4g).
+    // here). One line per WireMsg, payload truncated.
     if (verbose) {
       const body = JSON.stringify(msg);
       log.debug(`${msg.type} ${body.length > 300 ? body.slice(0, 300) + "…" : body}`);
@@ -531,7 +528,7 @@ export class SessionRegistry {
   /**
    * Can a viewport that last saw `afterSeq` resume with a tail replay?
    * Only if nothing after it has fallen off the ring buffer, and it isn't
-   * from some other life (a seq we never issued) (4.4).
+   * from some other life (a seq we never issued).
    */
   canResume(entry: SessionEntry, afterSeq: number): boolean {
     return entry.ring.canResume(afterSeq);
@@ -539,7 +536,7 @@ export class SessionRegistry {
 
   /** Mark an attached viewport as REMOTE (relay) — connection.ts calls this
    *  right after attach for a relay connection, so a later kind flip can
-   *  evict it (audit 2026-08-13). Idempotent; a subset of `viewports`. */
+   *  evict it. Idempotent; a subset of `viewports`. */
   markRemote(entry: SessionEntry, viewport: Viewport) {
     if (entry.viewports.has(viewport)) entry.remoteViewports.add(viewport);
   }
@@ -570,7 +567,7 @@ export class SessionRegistry {
     if (entry.promptOptions.length) {
       viewport({ type: "prompt_options", options: entry.promptOptions });
     }
-    // First viewport in → the doorbell starts (W.1); last detach stops it.
+    // First viewport in → the doorbell starts; last detach stops it.
     if (entry.viewports.size === 1 && !entry.fsWatch) {
       entry.fsWatch = this.startFsWatch(entry);
     }
@@ -578,13 +575,13 @@ export class SessionRegistry {
   }
 
   /**
-   * The live-tree doorbell (W.1/W.2): every ring fans an fs_changed to the
+   * The live-tree doorbell: every ring fans an fs_changed to the
    * ATTACHED viewports — per-viewport plumbing like the fs_* replies, never
    * through broadcast(): disk state is a query, not session history, so the
    * bell must not enter the replay ring. Statuses are invalidated BEFORE
    * the fan so a bell-triggered refetch can't be served a pre-change answer
-   * still inside its TTL. Watcher failure degrades to Phase E behavior
-   * (turn-end refresh + the manual button): one shell-composed notice to
+   * still inside its TTL. Watcher failure degrades to the bell-less
+   * behavior (turn-end refresh + the manual button): one shell-composed notice to
    * attached viewports, one log line, never a crash — and a later fresh
    * first attach retries.
    */
@@ -627,12 +624,12 @@ export class SessionRegistry {
     entry.viewports.delete(viewport);
     entry.remoteViewports.delete(viewport);
     if (entry.viewports.size === 0) {
-      entry.fsWatch?.stop(); // nobody listening → no watches held (W.1)
+      entry.fsWatch?.stop(); // nobody listening → no watches held
       entry.fsWatch = undefined;
     }
     this.checkpoint(entry);
     this.notifyWatchers(); // viewport counts are fleet metadata
-    // The `=== entry` guard skips this for a session already ended (#11):
+    // The `=== entry` guard skips this for a session already ended:
     // end() deletes it from the map, so a later detach mustn't re-arm the idle
     // timer or double-close the engine.
     if (entry.viewports.size === 0 && this.entries.get(entry.id) === entry) {
@@ -691,7 +688,7 @@ export class SessionRegistry {
    * Explicit teardown — the user chose "end session". Kill any running
    * PTY, close the engine, drop it from the fleet, and tell attached viewports
    * it's over (they leave to mission control). A subsequent detach on this
-   * entry is a no-op (guarded above), so close() runs exactly once (#11).
+   * entry is a no-op (guarded above), so close() runs exactly once.
    */
   end(id: string): boolean {
     const entry = this.entries.get(id);
@@ -720,7 +717,7 @@ export class SessionRegistry {
     return true;
   }
 
-  // ---- Fleet watchers (4.6): connections that observe the registry itself —
+  // ---- Fleet watchers: connections that observe the registry itself —
   // the mission-control page — rather than any one session's stream.
 
   private watchers = new Set<Viewport>();
@@ -737,11 +734,11 @@ export class SessionRegistry {
       lastActivity: e.lastActivity,
       viewports: e.viewports.size,
       createdAt: e.createdAt,
-      // Copies, and absent-when-empty (M.1): a watcher's serialized
+      // Copies, and absent-when-empty: a watcher's serialized
       // snapshot must not alias entry state, and old clients strip fields
       // they don't know rather than seeing empty placeholders.
       ...(e.activity ? { activity: { ...e.activity } } : {}),
-      // askedAt stays server-side — the wire shape is unchanged (M.1).
+      // askedAt stays server-side — the wire shape is unchanged.
       ...(e.permissions.length
         ? { permissions: e.permissions.map(({ id, tool, detail }) => ({ id, tool, detail })) }
         : {}),
@@ -798,7 +795,7 @@ export class SessionRegistry {
     return true;
   }
 
-  // ---- Cockpit acts (M.2): sessionId-addressed, usable from a fleet watcher
+  // ---- Cockpit acts: sessionId-addressed, usable from a fleet watcher
   // without attaching. Each returns false for an unknown session — the caller
   // turns that into an error reply, never a crash. The relay gate for the
   // acts that drive the model lives in connection.ts, beside its attach twin.
@@ -836,13 +833,12 @@ export class SessionRegistry {
    * burst gate. Returns false when the gate refuses; the caller owes the
    * sender PROMPT_GATE_REFUSAL and nothing reaches the stream.
    *
-   * The gate (2026-07-27 audit finding 5, redone 2026-07-28 — the first
-   * attempt timed from the last accepted prompt, which punished legitimate
-   * back-to-back turns and was reverted): nothing else bounds a client that
-   * bursts prompts, each of which costs a model turn, and the artifact
-   * bridge reaches `action{kind:prompt}` with no user gesture (its 400ms
-   * gate is client-side — a hostile client simply wouldn't run it). Keyed
-   * on the turn grammar, never a clock: a prompt while idle starts the
+   * The gate: nothing else bounds a client that bursts prompts, each of
+   * which costs a model turn, and the artifact bridge reaches
+   * `action{kind:prompt}` with no user gesture (its 400ms gate is
+   * client-side — a hostile client simply wouldn't run it). Keyed on the
+   * turn grammar, never a clock (timing from the last accepted prompt
+   * punishes legitimate back-to-back turns): a prompt while idle starts the
    * turn; ONE more may arrive while it runs — the terminal agents queue
    * typed-mid-turn input, so refusing a single queued follow-up would break
    * parity (desktop Enter still sends while busy); anything past that is

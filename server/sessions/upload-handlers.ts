@@ -1,4 +1,4 @@
-// File drag-and-drop input (Phase FD) — the file_upload_begin/chunk/abort
+// File drag-and-drop input — the file_upload_begin/chunk/abort
 // message handlers, on the fs-handlers template: per-connection state,
 // handlers never throw (the local WS path has no try/catch above this, so
 // an escaped throw would exit the daemon), and every well-formed request
@@ -8,7 +8,7 @@
 // filesystem path; the daemon stages them OUTSIDE the working tree (no
 // working-tree writes — that surface belongs to the user and the agent) and
 // answers with the staged absolute path for the prompt. Cleanup rides the
-// OS's tmp reaping — a recorded v1 decision, not an accident.
+// OS's tmp reaping — a deliberate decision, not an accident.
 
 import fs from "node:fs";
 import type { ConnectionContext } from "./handler-context";
@@ -40,7 +40,7 @@ export const FILE_UPLOAD_MAX_CHUNK_BYTES = envInt("FILE_UPLOAD_MAX_CHUNK_BYTES",
 export const FILE_UPLOAD_STALL_MS = envInt("FILE_UPLOAD_STALL_MS", 30_000);
 
 // An upload is model input staging, so it follows the prompt/cockpit relay
-// gate exactly — one verdict, one wording (provider-policy.ts, OC.4c).
+// gate exactly — one verdict, one wording (provider-policy.ts).
 
 /** Path-free, control-free, bounded display name; never empty. */
 export function safeUploadName(raw: unknown): string {
@@ -106,7 +106,7 @@ export function createUploadHandlers({ viewport, getEntry, remote, isClosed }: U
     // unref: a pending stall reaper must never hold the process open — the
     // daemon's server handle keeps its loop alive, and a test child that
     // leaves an upload mid-flight would otherwise idle ~30s before exiting
-    // (measured: one leaked pair cost every Tier-1 run 30s — bughunt).
+    // (one leaked pair costs every Tier-1 run 30s).
     up.stall = setTimeout(() => fail(id, "upload stalled — dropped"), FILE_UPLOAD_STALL_MS);
     up.stall.unref?.();
   };
@@ -152,8 +152,8 @@ export function createUploadHandlers({ viewport, getEntry, remote, isClosed }: U
       }
       if (active.has(msg.id)) {
         // Refuse the NEW begin only — `fail` would tear down the healthy
-        // in-flight upload that legitimately owns this id (bughunt: a client
-        // id-collision destroyed the original transfer mid-flight).
+        // in-flight upload that legitimately owns this id (a client
+        // id-collision would destroy the original transfer mid-flight).
         reply({ type: "file_upload_error", id: msg.id, message: "duplicate upload id" });
         return;
       }
@@ -196,8 +196,8 @@ export function createUploadHandlers({ viewport, getEntry, remote, isClosed }: U
       }
       // Buffer.from(str, "base64") never throws — it silently DROPS invalid
       // characters, which under-counts `received` and turns a corrupt chunk
-      // into a 30s stall-death instead of this typed error (refactor finding,
-      // BUG-2). Validate the grammar explicitly: the client's encoder emits
+      // into a 30s stall-death instead of this typed error.
+      // Validate the grammar explicitly: the client's encoder emits
       // exactly canonical unpadded-or-padded base64, so anything else is
       // corruption.
       if (

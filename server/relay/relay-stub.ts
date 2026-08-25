@@ -1,11 +1,10 @@
-// Phase R.1 — the in-repo relay stub, for dev and Tier-2/3 tests (the real
-// deployed service is R.2, a separate repo). It is exactly as dumb as the
-// real one must be: match ONE daemon dial-in to any number of browser
-// viewports by pairing code, shuttle opaque payloads, parse only the
-// envelope's routing fields — never `p`, never a WireMsg — log no frame
-// contents, store nothing. It also serves ./dist so a real browser can load
-// the app "remotely" in dev and Tier-3 tests; whether the production relay
-// serves the shell at all is an R.2 decision.
+// The in-repo relay stub, for dev and Tier-2/3 tests (the real deployed
+// service lives in a separate repo). It is exactly as dumb as the real one
+// must be: match ONE daemon dial-in to any number of browser viewports by
+// pairing code, shuttle opaque payloads, parse only the envelope's routing
+// fields — never `p`, never a WireMsg — log no frame contents, store
+// nothing. It also serves ./dist so a real browser can load the app
+// "remotely" in dev and Tier-3 tests.
 
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
@@ -46,7 +45,7 @@ export function startRelayStub(
   opts: {
     port?: number;
     tap?: RelayTap;
-    /** R.5 test knob: when set, a daemon dial-in whose ENTITLEMENT_HEADER is
+    /** Test knob: when set, a daemon dial-in whose ENTITLEMENT_HEADER is
      *  not exactly this string is refused CLOSE_UNENTITLED — models the real
      *  relay's gate without crypto (signature verification is the real relay's
      *  job and is tested in its own repo + the sibling itest). */
@@ -73,7 +72,7 @@ export function startRelayStub(
     const pairId = url.searchParams.get(PAIR_PARAM) ?? "";
     if (url.pathname === DAEMON_PATH) {
       wss.handleUpgrade(req, socket, head, (ws) => {
-        // R.5 gate (when the test knob is on): exact-match the header, like
+        // Entitlement gate (when the test knob is on): exact-match the header, like
         // the real relay refuses after accepting the upgrade.
         if (opts.entitlementToken !== undefined) {
           const h = req.headers[ENTITLEMENT_HEADER];

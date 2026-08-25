@@ -31,7 +31,7 @@ import { isSecretFile } from "../security/permissions";
 // content for the wire — this only bounds process memory.
 const GIT_MAX_BUFFER = 10 * 1024 * 1024;
 
-// CR.1's complete change-set bounds. Unlike gitTree, this query carries only
+// The complete change-set bounds. Unlike gitTree, this query carries only
 // changed paths, but a generated/vendor churn burst can still be enormous.
 // Count and UTF-8 bytes cap the reply; repo/node caps bound Projects-root
 // discovery before any git child runs. All four can be tightened in tests.
@@ -51,7 +51,7 @@ type RunResult =
  *  drivers than we will neutralize is refused outright, degrading to the
  *  plain non-git listing.
  *  `--no-optional-locks` because these are BACKGROUND reads over a watched
- *  tree (Phase W): a plain `git status` may take `.git/index.lock` and
+ *  tree: a plain `git status` may take `.git/index.lock` and
  *  rewrite the index's stat cache — a write the watcher would hear, ringing
  *  a bell whose refetch runs another status… our own reads must never feed
  *  the doorbell. It also happens to stop the one hook (`post-index-change`)
@@ -111,8 +111,8 @@ export const cleanRelPath = (rel: string): string | null => {
  * untracked directory arrives collapsed to ONE `?? dir/` record — that's a
  * prefix, not a file, so it lands in `untrackedDirs` (slashless, the
  * parseStatusIgnoredZ convention) instead of masquerading as a file status
- * (2026-07-28 fix: it used to ship as a phantom `dir/` tree entry while the
- * real files inside carried no status). Exported pure for the Tier-1 pin.
+ * (otherwise it ships as a phantom `dir/` tree entry while the real files
+ * inside carry no status). Exported pure for the Tier-1 pin.
  */
 export const parseStatusZ = (
   out: string,
@@ -217,9 +217,9 @@ const netChangeAgainstHead = async (
   if (isSecretFile(rel) || isDotenvPath(rel)) {
     return { status: fallback, verified: false };
   }
-  // Start the subprocess first, then read the tree while it runs — the same
-  // interleaving the old Promise.all had, without dressing a synchronous
-  // read up as a concurrent task.
+  // Start the subprocess first, then read the tree while it runs — the
+  // interleaving of a Promise.all, without dressing a synchronous read up
+  // as a concurrent task.
   const headPromise = gitShowHead(root, rel);
   const working = readWorkingTreeEntry(root, rel);
   const head = await headPromise;
@@ -253,7 +253,7 @@ const exceptionalTrackedPaths = (out: string): { rel: string; tag: string }[] =>
 // bounded file read. A pathological pile of exceptional paths (a huge
 // mid-merge, an index full of odd flags) must not turn one fs_changes reply
 // into minutes of sequential subprocesses — beyond this many, the answer is
-// honestly incomplete instead (bughunt 2026-08-13).
+// honestly incomplete instead.
 const MAX_NET_COMPARISONS = 200;
 
 export type GitTree =
@@ -371,7 +371,7 @@ export async function gitChanges(
     const records = parsed.records.get(repoPath) ?? [];
     // Add-like then deleted (AD, and the rename/copy destinations RD/CD —
     // parseStatusZ collapses R/C to A only in `files`, so the raw tag is
-    // matched here; bughunt: RD produced a phantom "A" for a path absent
+    // matched here; otherwise RD produces a phantom "A" for a path absent
     // from both HEAD and the working tree) nets to nothing-or-something
     // only a direct comparison can answer.
     if (
@@ -382,7 +382,7 @@ export async function gitChanges(
     }
     // Unmerged paths (UU/AA/DD/…): porcelain's conflict answer STANDS. A
     // conflicted file whose bytes happen to equal HEAD is still mid-merge —
-    // net-dropping it hid an unresolved conflict (bughunt 2026-08-13).
+    // net-dropping it would hide an unresolved conflict.
     if (records.some((xy) => xy.includes("U") || xy === "AA" || xy === "DD")) {
       unmerged.add(rel);
     }
@@ -406,16 +406,15 @@ export async function gitChanges(
       // A SECRET path the user ALSO configured git to ignore (the classic
       // `--skip-worktree .env`): doubly excluded, by our secret rule and by
       // their own git flag. Reporting "incomplete" forever for that setup
-      // buried the signal (bughunt 2026-08-13); the configured exclusion
-      // narrows the promise instead — this path is simply not part of the
-      // reviewable set.
+      // would bury the signal; the configured exclusion narrows the promise
+      // instead — this path is simply not part of the reviewable set.
       if (isSecretFile(rel) || isDotenvPath(rel)) {
         statusByRel.delete(rel);
         continue;
       }
       // Sparse checkouts skip-worktree every excluded file and legitimately
       // leave it off disk — that absence is the configured state, not a
-      // deletion (bughunt: a clean sparse monorepo reported every excluded
+      // deletion (otherwise a clean sparse monorepo reports every excluded
       // file "D", one git-show subprocess each). The cheap existence read
       // answers it without ever spawning git.
       if (readWorkingTreeEntry(root, rel).kind === "absent") {
@@ -688,7 +687,7 @@ export async function gitShowHead(root: string, rel: string): Promise<GitShow> {
 const gitErr = (op: string, r: { code: number | null; stderr: string }): string =>
   `git ${op} failed${r.stderr ? `: ${r.stderr.slice(0, 200)}` : ""}`;
 
-// --- The per-repo layer for the lazy tree (E2.3) ---
+// --- The per-repo layer for the lazy tree ---
 //
 // A Projects-style session root holds several repos side by side, so git
 // fidelity becomes per-NESTED-repo: each directory listing is decorated by
@@ -701,8 +700,8 @@ const gitErr = (op: string, r: { code: number | null; stderr: string }): string 
  * submodules — existsSync covers both, and `git -C` accepts both). Nearest
  * wins, so a repo nested inside another repo gets its own view. The walk
  * runs to the filesystem root, not the session root, because a session
- * rooted at a SUBDIRECTORY of a repo (the Phase E trap) finds its repo
- * above the jail — same discovery rule git itself uses.
+ * rooted at a SUBDIRECTORY of a repo finds its repo above the jail — same
+ * discovery rule git itself uses.
  */
 export const findRepoRoot = (
   realDir: string,
@@ -759,10 +758,10 @@ export const parseStatusIgnoredZ = (out: string): RepoStatusData => {
   return { files, untrackedDirs, ignored };
 };
 
-// One git child at a time across ALL per-repo status queries — the E-phase
-// one-git-child-in-flight discipline extended to E2.3: an open-panel
-// prefetch burst spanning N repos QUEUES N calls (each request still gets
-// its reply), it never forks N subprocesses at once.
+// One git child at a time across ALL per-repo status queries — the
+// one-git-child-in-flight discipline: an open-panel prefetch burst spanning
+// N repos QUEUES N calls (each request still gets its reply), it never
+// forks N subprocesses at once.
 let repoQueue: Promise<unknown> = Promise.resolve();
 const enqueue = <T>(job: () => Promise<T>): Promise<T> => {
   const run = repoQueue.then(job, job);
@@ -775,7 +774,7 @@ const enqueue = <T>(job: () => Promise<T>): Promise<T> => {
 
 // Per-repo cache, keyed by repo root: the prefetch burst shares ONE status
 // subprocess per repo (concurrent callers coalesce on the cached promise).
-// Invalidation is the TTL plus Phase W's watcher bell (below) — the TTL
+// Invalidation is the TTL plus the watcher bell (below) — the TTL
 // stays short enough that a turn-end refresh reads fresh state even where
 // no watcher runs, long enough to cover the burst. Errors cache too: a
 // broken repo shouldn't be re-probed per request.
@@ -783,7 +782,7 @@ const REPO_STATUS_TTL_MS = envInt("FS_GIT_STATUS_TTL_MS", 3_000);
 const statusCache = new Map<string, { at: number; value: Promise<RepoStatus> }>();
 
 /**
- * Drop every cached repo status — Phase W's watcher bell (W.2): disk just
+ * Drop every cached repo status — the watcher bell: disk just
  * changed, so a bell-triggered refetch must read statuses fresh instead of
  * being served a pre-change answer still inside its TTL. Global rather than
  * per-session-root on purpose: a change often lands in a repo shared across
@@ -810,7 +809,7 @@ export function repoStatus(repoRoot: string): Promise<RepoStatus> {
     if (!r.ok) return r.notGit ? { notGit: true as const } : { error: gitErr("status", r) };
     return parseStatusIgnoredZ(String(r.stdout));
   });
-  // W.H2: the TTL clock starts when the answer ARRIVES, not when it was
+  // The TTL clock starts when the answer ARRIVES, not when it was
   // asked for. In flight = always fresh (at: Infinity), so late callers
   // coalesce onto the running call — a request-time stamp would expire
   // mid-flight whenever git (plus its queue time) outran the TTL, and every
@@ -836,8 +835,8 @@ const underAny = (p: string, set: Set<string>): boolean => {
 
 /**
  * Decorate one directory's raw entries with the repo's view: ignored entries
- * DROP (the repo's own ignore rules, honored — E2.2's known interim closed),
- * statuses attach (a file's own record; a wholly-untracked dir shows U, and
+ * DROP (the repo's own ignore rules, honored), statuses attach (a file's
+ * own record; a wholly-untracked dir shows U, and
  * so does anything beneath one — porcelain's collapse means those children
  * have no record of their own), and deleted children MERGE in (they exist in
  * status but not on disk; the whole-tree view kept them visible, so does

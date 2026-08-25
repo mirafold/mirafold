@@ -1,4 +1,4 @@
-// Mermaid xychart → chart component conversion (V.2's deterministic backstop).
+// Mermaid xychart → chart component conversion (a deterministic backstop).
 //
 // Codex's engine (gpt-5.6 family) has a strong learned preference for
 // hand-writing ```mermaid xychart-beta``` blocks when asked for a chart — in
@@ -34,12 +34,12 @@ const unquote = (s: string) => {
 };
 
 /** Parse a `[a, "b, c", d]` bracket list into trimmed, unquoted items.
- *  Commas INSIDE quotes are content, not separators — a naive split turned
- *  `x-axis ["Jan, 2026"]` into two mangled categories with stray quote
- *  chars, and when the count happened to match the series it painted a
- *  WRONG chart, the exact thing this file's doctrine forbids (2026-07-29
- *  bughunt). An unterminated quote falls through as raw text; the length
- *  check downstream fails it open to a code block. */
+ *  Commas INSIDE quotes are content, not separators — a naive split would
+ *  turn `x-axis ["Jan, 2026"]` into two mangled categories with stray quote
+ *  chars, and when the count happened to match the series it would paint a
+ *  WRONG chart, the exact thing this file's doctrine forbids. An
+ *  unterminated quote falls through as raw text; the length check
+ *  downstream fails it open to a code block. */
 function bracketList(line: string): string[] | undefined {
   const m = line.match(/\[([\s\S]*)\]/);
   if (!m) return undefined;

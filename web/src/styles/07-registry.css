@@ -64,7 +64,7 @@
   color: var(--fg-dim);
 }
 
-/* action buttons (Phase 2) — the one interactive surface inside components */
+/* action buttons — the one interactive surface inside components */
 .rc-actions {
   display: flex;
   flex-wrap: wrap;
@@ -103,7 +103,7 @@
   color: var(--accent);
 }
 
-/* todo list (T2.5): the terminal's live task list, updated in place */
+/* todo list: the terminal's live task list, updated in place */
 .rc-todos {
   max-width: 560px;
 }
@@ -385,8 +385,7 @@
   color: var(--fg-dim);
 }
 
-/* ---- Registry components, continued (moved beside their siblings from the
-   picker file, which held them by accident of history) ---- */
+/* ---- Registry components, continued ---- */
 
 /* file tree — flat wire paths, nested only client-side */
 .rc-tree {
@@ -475,7 +474,7 @@
   font-size: 0.85em;
 }
 
-/* stat — the single-number KPI tile (S.3), the natural pin-dock resident */
+/* stat — the single-number KPI tile, the natural pin-dock resident */
 .rc-stat {
   max-width: 280px;
 }
@@ -889,7 +888,7 @@
   border-color: var(--border-mid);
 }
 
-/* fallback for malformed render instructions (Step 1.4) */
+/* fallback for malformed render instructions */
 .rc-fallback {
   border-style: dashed;
 }

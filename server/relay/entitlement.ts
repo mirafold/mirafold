@@ -1,10 +1,10 @@
-// R.5 — the daemon's entitlement token source. The relay admits a dial-out
+// The daemon's entitlement token source. The relay admits a dial-out
 // only with a valid signed token on the ENTITLEMENT_HEADER (when its gate is
 // on); this module is where that token comes from. Two supplies:
 //
 //  - MIRAFOLD_ENTITLEMENT_TOKEN: a hand-issued token used verbatim — an
 //    OPS/EMERGENCY path only, never a tester channel (beta testers pay real
-//    subscriptions and get license keys via /pay; Kyle's rule, 2026-07-23).
+//    subscriptions and get license keys via /pay).
 //    When set, the exchange machinery below never starts — precedence beats
 //    mutual exclusion so ops can override a broken exchange without
 //    unsetting anything.
@@ -87,7 +87,7 @@ export function createEntitlementTokenSource(env: {
   // The license key POSTs to the exchange in the clear if the operator pointed
   // MIRAFOLD_ENTITLEMENT_URL at a plaintext non-loopback host — anyone on the
   // path then reads the key. Warn loudly; still proceed (self-host is a real
-  // path), matching the weak-pin / auth-off posture in index.ts (2026-08-11 audit).
+  // path), matching the weak-pin / auth-off posture in index.ts.
   if (carriesCredentialInClear(url)) {
     log.warn(
       `MIRAFOLD_ENTITLEMENT_URL is a plaintext (http://) address to a non-local host — ` +

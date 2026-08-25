@@ -4,7 +4,7 @@
 // IN-PROCESS via makeRenderServer (render-tools.ts); this is the out-of-process
 // twin for engines that only speak stdio MCP.
 //
-// Key design (P.3): this process is a THIN STUB. It can't reach into a session
+// Key design: this process is a THIN STUB. It can't reach into a session
 // to emit a `render` WireMsg — it's a grandchild subprocess of the daemon. So it
 // only (a) advertises the tool schemas so the agent knows the vocabulary and the
 // agent's engine validates args, and (b) returns the component's id. Each

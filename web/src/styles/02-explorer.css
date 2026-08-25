@@ -1,4 +1,4 @@
-/* ── Explorer files panel (E.3) ────────────────────────────────────────── */
+/* ── Explorer files panel ────────────────────────────────────────── */
 
 /* The activity bar — the workbench's permanent left edge (VS Code
    convention): a thin strip whose files icon opens/collapses the panel.
@@ -368,7 +368,7 @@
   color: var(--fg-dim);
 }
 
-/* Non-interactive in-tree rows (E2.2): a dir's loading "…", "(empty)", an
+/* Non-interactive in-tree rows: a dir's loading "…", "(empty)", an
    error, or the per-dir truncation note — dim, italic, indented like a row. */
 .files-note-row {
   padding: 3px 10px;
@@ -391,7 +391,7 @@
   flex-direction: column;
 }
 
-/* E.6: the deliberate desktop enlarge. The ⤢ button lifts the SAME box into
+/* The deliberate desktop enlarge. The ⤢ button lifts the SAME box into
    a fixed near-full-screen frame over the dimmed workspace — a lightbox, so
    the transcript never reflows and is visibly still there behind the dim.
    Same z band as the phone drill-in layer: above the transcript and status
@@ -415,7 +415,7 @@
   /* The rim: enough dimmed workspace to read as a layer. Each axis steps in
      by 5% of the viewport per edge on top of the base rim (~10% smaller
      than edge-flush overall); the vertical split is deliberately uneven —
-     same box height, sat 1.5vh above center (Kyle, 2026-07-28). */
+     same box height, sat 1.5vh above center. */
   inset: calc(24px + 3.5vh) calc(36px + 5vw) calc(24px + 6.5vh);
   z-index: var(--z-layer);
   border: 1px solid var(--border);
@@ -522,7 +522,7 @@
 /* The tool-code look minus the transcript's 360px height cap: in every
    frame (docked, phone, enlarged) the file fills the panel and .files-view
    is the ONE scroller — while .tool-code's wrapping stays, so lines fold at
-   the frame's width and there is never a side-scroll (Kyle, 2026-07-28).
+   the frame's width and there is never a side-scroll.
    The descendant selector beats .tool-code's later-declared rule on
    specificity. */
 .files-view .fv-content {

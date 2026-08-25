@@ -60,9 +60,9 @@ export function reduceTurn(
   }
   const m = input.msg;
   // Replayed history must repaint state but never re-fire live-only side
-  // effects: on every reload/reconnect the full-buffer replay re-spoke each
-  // historical turn to screen readers, ending with an old response presented
-  // as though it just arrived.
+  // effects: otherwise every reload/reconnect's full-buffer replay would
+  // re-speak each historical turn to screen readers, ending with an old
+  // response presented as though it just arrived.
   const live = !("replay" in m && m.replay);
   const next: TurnState = { ...prev, openTurns: nextOpenTurns(prev.openTurns, m.type, !live) };
   if (m.type === "user_prompt") {

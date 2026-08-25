@@ -3,7 +3,7 @@
    strips and agent turns, thinking, service notices, tool calls, and the
    `!` command's output. */
 
-/* #12: welcome shown in a fresh session with no transcript yet — centered in
+/* Welcome shown in a fresh session with no transcript yet — centered in
    the empty output zone so it's clearly "your session", not raw emptiness. */
 .zone-empty {
   margin: auto;
@@ -95,7 +95,7 @@
   line-height: 1.5;
 }
 
-/* Submitted-input navigation (Phase IH). Desktop has enough horizontal room
+/* Submitted-input navigation. Desktop has enough horizontal room
    to keep both chronological arrows directly in every command strip. They are
    shell-owned controls outside the model-authored text; phone replaces them
    with the prompt-area disclosure in the one phone block. */
@@ -395,7 +395,7 @@
   border-bottom: 0;
 }
 
-/* ---- Thinking (Phase T2.1) ------------------------------------------------
+/* ---- Thinking ------------------------------------------------
    The model's reasoning, full fidelity: streams dim and italic while the
    turn runs, folds to one clickable line once real output starts.
    Collapsed is fine — invisible is not. */
@@ -432,7 +432,7 @@
   font-style: normal;
 }
 
-/* ---- Service-status line (F.2) ------------------------------------------
+/* ---- Service-status line ------------------------------------------
    Events the terminal shows and the adapter would otherwise drop — a retry,
    a compaction, a rate-limit warning, a model refusal. Same dim system-line
    family as the thinking block, never agent markdown. rate_limit / refusal
@@ -462,7 +462,7 @@
   border-left-color: var(--warn-fg);
 }
 
-/* An engine's OWN words, badged with its name (2026-07-20 audit). Unbadged,
+/* An engine's OWN words, badged with its name. Unbadged,
    this line is Mirafold speaking; a verbatim model-chosen string must not be
    able to pass for that. The badge replaces the glyph rather than joining it,
    so the two cases can't be confused at a glance, and the dashed rule marks

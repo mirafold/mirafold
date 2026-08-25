@@ -26,8 +26,8 @@ const statusLabel = (s: string) => {
   return code === "?" ? s : label.toLowerCase();
 };
 
-// One directory's children, rendered from the store — recursion IS the tree
-// (E2.2): an expanded child dir renders its own DirChildren, which shows a
+// One directory's children, rendered from the store — recursion IS the
+// tree: an expanded child dir renders its own DirChildren, which shows a
 // loading row until its fs_dir lands, then its listing. The wire stays
 // non-recursive; nesting exists only here.
 export function DirChildren({
@@ -94,7 +94,7 @@ export function DirChildren({
             </li>
           );
         }
-        // Files and symlinks are both leaves (E2.1's kind rule); a symlink
+        // Files and symlinks are both leaves; a symlink
         // click goes through fs_read like any file — the daemon's jail
         // decides whether its target is readable.
         return (

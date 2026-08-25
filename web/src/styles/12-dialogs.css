@@ -4,17 +4,16 @@
 
 /* Transparent wrapper so `inert` can hide everything behind an open dialog
    from the accessibility tree without touching flex/grid layout — aria-modal
-   alone doesn't stop Orca's Browse-mode cursor from reading into it (2026-07-20). */
+   alone doesn't stop Orca's Browse-mode cursor from reading into it. */
 .behind-dialog {
   display: contents;
 }
 
-/* ---- Onboarding: shell-owned agent picker (P.4) ------------------------- */
+/* ---- Onboarding: shell-owned agent picker ------------------------- */
 /* The card's vertical chrome flexes with the window so its internal
    scrollbar is a genuine last resort, not a routine sight. --onb-squeeze
-   runs 16px (full chrome, tall windows — the sizes read exactly as before)
-   down to 0px (a floor a notch tighter than the old max-height:700px compact
-   tier, which this replaces); every vertical metric interpolates on it, with
+   runs 16px (full chrome, tall windows) down to 0px; every vertical metric
+   interpolates on it, with
    its full→floor range in a trailing comment. The card lives inside .fleet's
    zoom (1.15), which inflates used vh values by that factor — the constants
    below divide it back out (9.1vh ≈ 10.5 real vh). Re-derive them if the
@@ -29,10 +28,9 @@
   background: var(--overlay);
   backdrop-filter: blur(3px);
   padding: calc(12px + var(--onb-squeeze) * 0.75) 24px; /* 12→24px */
-  /* Intercept moved 66→70 when the FOURTH agent row landed (OC.4b): the
-     floor now arrives ~44px of window earlier, buying the compression the
-     extra row needs through the 730–760px band. Tall-window chrome (the
-     16px cap) is untouched. */
+  /* Intercept 70, not 66: the floor arrives ~44px of window earlier,
+     buying the compression the fourth agent row needs through the
+     730–760px band. Tall-window chrome (the 16px cap) is untouched. */
   --onb-squeeze: clamp(0px, calc(9.1vh - 70px), 16px);
 }
 
@@ -74,7 +72,7 @@
   color: var(--fg-dim);
 }
 
-/* The working-directory field (Step 4.8) — prefilled with the daemon's
+/* The working-directory field — prefilled with the daemon's
    launch dir, editable to point the session anywhere that exists. */
 .onb-cwd-label {
   display: block;
@@ -197,7 +195,7 @@
   font-weight: 600;
 }
 
-/* R.4b: the one-line fix for a credential-less agent, on the picker itself. */
+/* The one-line fix for a credential-less agent, on the picker itself. */
 .onb-agent-hint {
   font-family: var(--font-mono);
   font-size: 13px;
@@ -205,7 +203,7 @@
   color: var(--fg-dim);
 }
 
-/* R.4k: the "what's behind this row" line for a live agent (local endpoint or
+/* The "what's behind this row" line for a live agent (local endpoint or
    configured model) — accent-tinted so it reads as confirmation, not a warning. */
 .onb-agent-detail {
   font-family: var(--font-mono);
@@ -214,7 +212,7 @@
   color: var(--accent);
 }
 
-/* R.4k: the local-model signpost under the picker — dim, one notch above the
+/* The local-model signpost under the picker — dim, one notch above the
    card background, so "run your own model" is discoverable without shouting. */
 .onb-local-note {
   margin-top: calc(8px + var(--onb-squeeze) * 0.5); /* 8→16px */
@@ -233,7 +231,7 @@
   letter-spacing: 0.02em;
 }
 
-/* ---- N.4: the second step — how the picked agent is backed -------------- */
+/* ---- The second step — how the picked agent is backed -------------- */
 
 .onb-backends {
   display: flex;
@@ -330,7 +328,7 @@
   color: var(--fg-dim);
 }
 
-/* R.4l (c): unavailable stays VISIBLE but clearly unavailable — gray, no
+/* Unavailable stays VISIBLE but clearly unavailable — gray, no
    hover invitation, warn-toned name so the why draws the eye. */
 .onb-backend-blocked {
   cursor: default;
@@ -387,13 +385,13 @@
   color: var(--fg-dim);
 }
 
-/* R.4i: a prohibited subscription is present — warn-toned, not the neutral
+/* A prohibited subscription is present — warn-toned, not the neutral
    demo grey, so it reads as "attention needed", not just "no key". */
 .onb-blocked {
   color: var(--warn-fg);
 }
 
-/* ---- Connect a device (Step R.4) -------------------------------------------
+/* ---- Connect a device -------------------------------------------
    Shell-owned pairing affordance: a status-bar / fleet-header button opening
    a QR of the pairing URL. The QR stays black-on-white in both themes —
    scanners want contrast, not theming. */
@@ -412,7 +410,7 @@
   padding: 24px;
 }
 
-/* The pairing, settings, and full-command cards share one modal idiom (S.4):
+/* The pairing, settings, and full-command cards share one modal idiom:
    same card shell, head, title, and close — only the width differs. */
 .pair-card,
 .settings-card,
@@ -454,8 +452,8 @@
 }
 
 /* The pairing card reads at arm's length — you're holding a phone up to it,
-   not leaning into the screen — so its whole head row goes up 1.5× (2026-07-25,
-   Kyle). One override on the row scales the ❯ glyph, the title (0.95em of it)
+   not leaning into the screen — so its whole head row goes up 1.5×. One
+   override on the row scales the ❯ glyph, the title (0.95em of it)
    and the ✕ (font: inherit) together, and leaves the settings card, which
    shares the head/title/close rules around it, exactly where it was. */
 .pair-head {
@@ -494,7 +492,7 @@
 
 .pair-hint {
   margin: 14px 2px 10px;
-  /* 1.5× the old 0.82em, with the URL row below on the same ramp. */
+  /* 1.5× 0.82em, with the URL row below on the same ramp. */
   font-size: 1.23em;
   line-height: 1.5;
   color: var(--fg-dim);
@@ -535,7 +533,7 @@
   overflow-wrap: anywhere;
 }
 
-/* ---- Manage subscription (Phase CS) — inside the pairing card --------------
+/* ---- Manage subscription — inside the pairing card --------------
    The resting card shows only the deliberately neutral link below the URL;
    cancel lives in the manage view, behind its own confirm. Same modal, same
    type ramp as the pair content around it. */
@@ -605,10 +603,10 @@
   color: var(--error);
 }
 
-/* ---- Settings card (S.4) ----------------------------------------------------
-   Shell-owned, same modal idiom as the pairing card. One section today
-   (Theme); built to grow more sections. The gear (.sb-settings) sits beside
-   the pill in the status bar; the pill itself is locked unchanged. */
+/* ---- Settings card ----------------------------------------------------
+   Shell-owned, same modal idiom as the pairing card. The gear (.sb-settings)
+   sits beside the pill in the status bar; the pill itself is locked
+   unchanged. */
 
 .settings-section-title {
   font-size: 0.85em;
@@ -617,7 +615,7 @@
   margin-bottom: 10px;
 }
 
-/* Session facts (R.4l) — the card is the phone's one home for these. */
+/* Session facts — the card is the phone's one home for these. */
 .settings-kv {
   margin: 0 0 18px;
   display: flex;
@@ -708,7 +706,7 @@
   flex-shrink: 0;
 }
 
-/* ---- Needs-you notifications (Phase NF) — the card's third section. ------
+/* ---- Needs-you notifications — the card's third section. ------
    Same row idiom as .theme-row; the switch state reads in the trailing
    on/off word (aria-checked carries it for screen readers). */
 

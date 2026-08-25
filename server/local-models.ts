@@ -1,6 +1,6 @@
-// Local model server discovery (Phase N.2). HTTP probing ONLY — never
+// Local model server discovery. HTTP probing ONLY — never
 // filesystem scanning: per-tool model storage layouts are unstable, and an
-// unserved model is unusable anyway (the Phase N charter decision). Probes go
+// unserved model is unusable anyway. Probes go
 // to localhost's well-known runtime ports plus MIRAFOLD_LOCAL_ENDPOINTS —
 // nothing else is ever probed.
 //
@@ -29,12 +29,12 @@ export type LocalServer = {
 const PROBE_TIMEOUT_MS = 500;
 
 // Bloat insurance where engine-external data first enters our process (the
-// R.6 model-label-cap philosophy): a corrupt catalog must not balloon the
-// hello frame N.3 puts it on.
+// model-label-cap philosophy): a corrupt catalog must not balloon the
+// hello frame it rides.
 const MAX_MODELS = 128;
 const MAX_NAME_LENGTH = 120;
 
-// The probe budget bounds TIME; this bounds SIZE (2026-07-17 audit). Over
+// The probe budget bounds TIME; this bounds SIZE. Over
 // loopback a hostile local listener can push hundreds of MB inside 500ms,
 // and parsing that would spike the daemon's memory — a real catalog is a few
 // KB, so anything past this is refused, not read.
@@ -185,7 +185,7 @@ async function refreshCache(targets: { origin: string; runtime: string }[]): Pro
 /**
  * Sweep the targets (defaults to probeTargets()) in parallel and refresh the
  * cache. Bounded by PROBE_TIMEOUT_MS regardless of hung sockets; never
- * throws. Callers fire-and-forget at startup and re-run on N.3's
+ * throws. Callers fire-and-forget at startup and re-run on
  * `refresh_agents` — a probe must never delay startup or error a session.
  * The default sweep is TTL-cached and coalesces concurrent callers onto one
  * in-flight sweep; explicit `targets` (tests) always probe.

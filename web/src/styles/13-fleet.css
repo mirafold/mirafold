@@ -1,4 +1,4 @@
-/* ---- Mission control (Step 4.6) -------------------------------------------
+/* ---- Mission control -------------------------------------------
    The fleet page at / — every live session, its coarse state, one click to
    drop in. Shell-owned; theme-aware via the same tokens. */
 
@@ -7,7 +7,7 @@
   margin: 0 auto;
   padding: 48px 24px;
   /* The whole page reads a notch larger than the in-session workbench
-     (2026-07-25, Kyle; 1.25 tried first — too much) — zoom, not font-size,
+     (1.25 is too much) — zoom, not font-size,
      so px paddings, dots, and controls scale together. The phone block
      resets it: that layout is sized to fit one row at 390px. NOTE: this
      zoom also scales the modals hosted inside .fleet (the agent picker and
@@ -63,7 +63,7 @@
 }
 
 .fleet-row {
-  /* A.3b: anchors .fleet-link's stretched overlay below. */
+  /* Anchors .fleet-link's stretched overlay below. */
   position: relative;
   display: flex;
   align-items: center;
@@ -110,10 +110,10 @@
   white-space: nowrap;
 }
 
-/* A.3b: the session name is the row's ONE link (a screen reader hears
+/* The session name is the row's ONE link (a screen reader hears
    "<name>, link" — not the whole row's columns as one label); the overlay
    stretches its hit area over the row so a mouse still opens the session
-   from anywhere, exactly as when the row itself was an anchor. */
+   from anywhere. */
 .fleet-link {
   color: inherit;
   text-decoration: none;
@@ -133,8 +133,8 @@
   z-index: 1;
 }
 
-/* #6: the rename pencil is always visible (was opacity:0, hover-only — Kyle
-   couldn't tell a name was editable), brightening on row/self hover. */
+/* The rename pencil is always visible (hover-only, a user can't tell a
+   name is editable), brightening on row/self hover. */
 .fleet-edit {
   margin-left: 6px;
   background: none;
@@ -179,7 +179,7 @@
   flex-shrink: 0;
 }
 
-/* #6: the model the session runs, read left of the agent (model → agent). */
+/* The model the session runs, read left of the agent (model → agent). */
 .fleet-model {
   color: var(--fg-dim);
   white-space: nowrap;
@@ -197,7 +197,7 @@
   flex-shrink: 0;
 }
 
-/* #11: per-row "end session" — dim by default, danger-toned on hover/armed.
+/* Per-row "end session" — dim by default, danger-toned on hover/armed.
    Two-click (end → end?) guards against an accidental kill. */
 .fleet-end {
   flex-shrink: 0;
@@ -225,7 +225,7 @@
   background: var(--err-bg);
 }
 
-/* ---- Phase M cockpit: the enriched fleet rows -----------------------------
+/* ---- The cockpit: the enriched fleet rows -----------------------------
    All additive — the classic .fleet-row styling above is untouched. Each
    session renders as a .fleet-item: the row plus its cockpit sub-lines
    (pending permission, quick prompt). */
@@ -237,9 +237,9 @@
 }
 
 /* The open-viewport count, in the plumbing columns' mono voice. (Activity
-   and usage moved OFF the bar into the .fleet-details sub-line — 2026-07-24,
-   Kyle: the full working-state row overflowed its border, and volatile
-   inline text made the layout jumpy.) */
+   and usage live OFF the bar in the .fleet-details sub-line: a full
+   working-state row overflows its border, and volatile inline text makes
+   the layout jumpy.) */
 .fleet-viewports {
   font-family: var(--font-mono);
   font-size: 0.78em;

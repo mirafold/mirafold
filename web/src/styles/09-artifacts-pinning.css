@@ -1,4 +1,4 @@
-/* ---- Artifacts (Phase 3) -------------------------------------------------
+/* ---- Artifacts -------------------------------------------------
    Shell-drawn frame around the sandboxed iframe. The chrome bar (label +
    "sandboxed" badge) lives OUTSIDE the iframe so agent content can't fake
    or restyle it. User-resizable vertically; the iframe fills the rest. */
@@ -66,7 +66,7 @@
   background: var(--surface);
 }
 
-/* Failure fallback (Step 3.4): the frame is gone; source takes its place. */
+/* Failure fallback: the frame is gone; source takes its place. */
 .artifact-failed {
   height: auto;
   max-height: 340px;

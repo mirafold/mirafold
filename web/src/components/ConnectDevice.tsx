@@ -16,7 +16,7 @@ import {
 // viewports the relay's HTTP origin + the pairing code (agents hello); this
 // renders them as a QR of the pairing URL — the fragment form, so the code
 // never appears in any HTTP request, only on this screen and the phone's.
-// Trusted-shell surface end to end: agent output can never paint or read it (R.4).
+// Trusted-shell surface end to end: agent output can never paint or read it.
 
 // The hello's pairing info (protocol.ts `agents.relay`): `ws` is the relay's
 // ws(s) origin, present when `url` is a separate static app origin — it rides
@@ -24,7 +24,7 @@ import {
 export type { RelayInfo } from "../daemon-hello";
 import type { RelayInfo } from "../daemon-hello";
 
-// Names the dialog for a screen reader (A.2). A constant is safe: the card is
+// Names the dialog for a screen reader. A constant is safe: the card is
 // mounted only while open, and one status bar means one of these.
 const TITLE_ID = "pair-card-title";
 
@@ -52,7 +52,7 @@ function QrSvg({ text }: { text: string }) {
       role="img"
       aria-label="pairing QR code"
     >
-      {/* Literal black-on-white (S.1 exception): QR modules are for camera
+      {/* Literal black-on-white: QR modules are for camera
           scanners, not the theme — max contrast in every theme, never var(). */}
       <rect x={-2} y={-2} width={count + 4} height={count + 4} fill="#ffffff" />
       <path d={d} fill="#000000" />
@@ -60,10 +60,10 @@ function QrSvg({ text }: { text: string }) {
   );
 }
 
-/** Phase CS: mints + sends one subscription request; returns its id. */
+/** Mints + sends one subscription request; returns its id. */
 export type SubscriptionRequest = (act: SubscriptionAct) => string;
 
-// Phase CS — the manage-subscription view behind the neutral link below.
+// The manage-subscription view behind the neutral link below.
 // Everything shown is shell-owned copy composed by subscription-card.ts;
 // cancel sits behind its own confirm step quoting the real consequence, and
 // a scheduled cancel offers undo for the whole remainder of the period.
@@ -141,7 +141,7 @@ function ManageSubscription({
 // fragment (`&s=<id>`) so the scanned phone lands IN it, not on the fleet
 // list. Mission control's pair button passes nothing and keeps landing on the
 // fleet — no special case.
-// `billing` + `subRequest` + `subReply` (Phase CS): present when this daemon
+// `billing` + `subRequest` + `subReply`: present when this daemon
 // runs on a license key — the card then carries the neutral "manage
 // subscription" link. Nothing cancel-shaped is ever passively visible: the
 // resting UI shows only the pair button; cancel lives two deliberate steps
@@ -222,8 +222,7 @@ export function ConnectDevice({
               </div>
               {/* Can't scan? Copy the link and send it to your own phone. Copy is
                   the one action, full width; the URL below it wraps to a couple of
-                  readable lines — the old one-line box scrolled sideways, which was
-                  the thing worth killing (2026-07-25, Kyle). */}
+                  readable lines — a one-line box would scroll sideways. */}
               <button
                 className="pair-copy"
                 onClick={() => {
@@ -238,7 +237,7 @@ export function ConnectDevice({
               <code className="pair-url" tabIndex={0}>
                 {href}
               </code>
-              {/* Phase CS: deliberately neutral wording — the resting card
+              {/* Deliberately neutral wording — the resting card
                   invites managing, never leaving; cancel appears only inside,
                   behind its own confirm. */}
               {billing && subRequest && (

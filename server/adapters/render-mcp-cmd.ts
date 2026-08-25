@@ -73,13 +73,13 @@ export function renderIdFor(source: {
 }
 
 /**
- * The render/artifact WireMsg a Mirafold MCP tool call stands for (P.3/P.5):
+ * The render/artifact WireMsg a Mirafold MCP tool call stands for:
  * the stub only validated the args and returned the id — the adapter watching
  * the agent's own event stream paints the message here. Returns null for an
  * unknown Mirafold MCP tool (ignore rather than paint junk).
  */
-// `workspaceDir` is REQUIRED for the same reason it is on makeRenderServer
-// (2026-07-27 audit): it jails the image tool's read. Making it optional
+// `workspaceDir` is REQUIRED for the same reason it is on makeRenderServer:
+// it jails the image tool's read. Making it optional
 // would let a future adapter skip containment by simply forgetting it.
 export function generativeUIMsg(
   tool: string,
@@ -108,10 +108,10 @@ export function generativeUIMsg(
 /**
  * How to spawn the stdio render-MCP server (server/render-mcp.ts) for engines
  * that load MCP servers as subprocesses (Codex, Gemini CLI). Two homes:
- * - Packaged install (4.10): the esbuild bundle emits render-mcp.js BESIDE
- *   this code (dist-server/) — run it with the daemon's own node binary.
+ * - Packaged install: the esbuild bundle emits render-mcp.js BESIDE this
+ *   code (dist-server/) — run it with the daemon's own node binary.
  * - Dev checkout: no compiled twin exists — run the TS source under the
- *   repo's tsx, exactly as before.
+ *   repo's tsx.
  */
 export function renderMcpCommand(): { command: string; args: string[] } {
   const compiled = path.join(HERE, "render-mcp.js");

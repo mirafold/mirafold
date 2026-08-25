@@ -33,7 +33,7 @@ const log = createLogger("mirafold");
 
 // Last-gasp handlers — a crash stays loud and exits nonzero, it just
 // signs its name first so a stranger's report contains something actionable
-// (R.4g) — and the flight-recorder file keeps it even if the terminal is gone.
+// — and the flight-recorder file keeps it even if the terminal is gone.
 const lastGasp = (kind: string) => (err: unknown) => {
   const detail = err instanceof Error ? (err.stack ?? err.message) : String(err);
   log.error(`v${VERSION} crashed (${kind}): ${detail}`);
@@ -96,13 +96,11 @@ function resolveRelayDial(plan: Extract<RelayPlan, { kind: "dial" }>) {
 // directive that matters most there: it is the only one that limits where data
 // can go OUT, so it is the wall in front of exfiltration.
 //
-// It used to read `'self' ws: wss:`. A bare scheme source matches ANY host on
-// that scheme, so those two entries permitted a socket to any server on the
-// internet — exactly what this line exists to prevent. They were written that
-// way on 2026-07-06 when the dev page (Vite :5173) and the daemon socket
-// (:3000) were different origins, and never revisited once the architecture
-// settled (the daemon dials the relay itself; the browser talks to its own
-// origin). Narrowed to same-origin + the configured relay, 2026-07-27 audit.
+// Never a bare scheme source (`ws:`, `wss:`): one matches ANY host on that
+// scheme, permitting a socket to any server on the internet — exactly what
+// this line exists to prevent. Same-origin + the configured relay is all the
+// architecture needs (the daemon dials the relay itself; the browser talks
+// to its own origin).
 //
 // `script-src`/`style-src` keep 'unsafe-inline' because the pre-paint theme
 // script in index.html and React's inline style attributes need it — the
@@ -135,12 +133,12 @@ app.use((_req, res, next) => {
 });
 
 // The built front end lives at ../dist relative to THIS FILE, not the cwd —
-// the daemon launches from any directory (4.8/4.10). Resolves correctly from
+// the daemon launches from any directory. Resolves correctly from
 // both homes: server/ in the dev checkout, dist-server/ in the packaged
 // install. (Dev uses Vite on :5173 anyway.)
 const DIST = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "dist");
 
-// Socket auth (Step 4.5). The loopback bind keeps the internet and the LAN out,
+// Socket auth. The loopback bind keeps the internet and the LAN out,
 // but "same machine" includes every OTHER user account on a shared box — and the
 // socket drives a shell as us. A per-launch token closes that: it gates the
 // served app AND the WebSocket, so another local user (who never sees the token)
@@ -177,7 +175,7 @@ if (AUTH_ENABLED) {
       return res.redirect(safeRedirectPath(req.path));
     }
     // A bare denial is a dead end — name the recovery. The right URL
-    // (with ?token=…) is in the terminal that launched mirafold (R.4b).
+    // (with ?token=…) is in the terminal that launched mirafold.
     res
       .status(403)
       .type("text/plain")
@@ -194,9 +192,9 @@ app.use(express.static(DIST));
 // inspects EVERY segment of an absolute path, so passing the joined path 404s
 // whenever the package is installed under a dot-directory — which is where
 // `npm i -g` puts it for nvm (~/.nvm/…), asdf, volta and fnm users. `GET /`
-// kept working (express.static passes a root, so only the request path is
-// checked), so the breakage looked like "onboarding dies on the first session
-// URL, but only for some people" (2026-07-30).
+// keeps working regardless (express.static passes a root, so only the request
+// path is checked), so the breakage looks like "onboarding dies on the first
+// session URL, but only for some people".
 app.get("/s/:id", (_req, res) => res.sendFile("index.html", { root: DIST }));
 
 const server = createServer(app);
@@ -232,32 +230,32 @@ wss.on("error", (err: NodeJS.ErrnoException) => {
 
 const registry = new SessionRegistry({ store: new SessionCheckpointStore() });
 
-// Local model server discovery (N.3): fire-and-forget so a server already
+// Local model server discovery: fire-and-forget so a server already
 // running lands in the first hello's `backends`; never awaited — startup
 // must not wait on a probe. The picker's refresh_agents re-probes after.
 void probeLocalServers();
 
 
-// Phase CS: the manage-subscription backend — present only when this daemon
+// The manage-subscription backend — present only when this daemon
 // runs on a license key (subscription.ts decides; token-override and
 // self-host get nothing). Handed to LOCAL viewports only: billing actions
 // stay on the machine that holds the key, so the relay path never sees it.
 const subscriptionActions = createSubscriptionActions(process.env);
 
 // Per-socket liveness, read by the heartbeat below to reap half-open
-// leftovers whose `close` never arrived (see ws-liveness.ts) (#10).
+// leftovers whose `close` never arrived (see ws-liveness.ts).
 const liveViewports = new WeakMap<WebSocket, boolean>();
 
 wss.on("connection", (ws) => {
-  // The per-viewport logic lives in connection.ts (shared with the R.1 relay
+  // The per-viewport logic lives in connection.ts (shared with the relay
   // path); this block only binds it to the local WebSocket transport.
   liveViewports.set(ws, true);
   // Without a per-socket listener, a transport error — an oversized frame
   // tripping maxPayload is the everyday case (a >1 MB paste into the prompt
   // box) — is an UNHANDLED 'error' event: it rides uncaughtException into
-  // lastGasp and kills the whole daemon, every session included (2026-07-29
-  // bughunt). Log it; ws closes the offending socket itself and `close` →
-  // conn.close does the detach.
+  // lastGasp and kills the whole daemon, every session included. Log it; ws
+  // closes the offending socket itself and `close` → conn.close does the
+  // detach.
   ws.on("error", (err) => log.error(`[viewport] socket error: ${String(err)}`));
   ws.on("pong", () => liveViewports.set(ws, true));
   const viewport = (msg: WireMsg) => {
@@ -276,7 +274,7 @@ wss.on("connection", (ws) => {
 // a socket that misses a ping/pong round is a half-open leftover; terminating
 // it fires `close` → conn.close → registry.detach, keeping viewport counts
 // honest and letting idle sessions actually reach their reaper. Local sockets
-// only — remote viewports have their own idle reaper (RELAY_VIEWPORT_IDLE_MS) (#10).
+// only — remote viewports have their own idle reaper (RELAY_VIEWPORT_IDLE_MS).
 const WS_HEARTBEAT_MS = envInt("WS_HEARTBEAT_MS", 30_000);
 const heartbeat = setInterval(() => sweepLiveness(wss.clients, liveViewports), WS_HEARTBEAT_MS);
 heartbeat.unref(); // the listening server keeps the process alive; the beat shouldn't
@@ -289,7 +287,7 @@ wss.on("close", () => clearInterval(heartbeat));
 // — off the socket entirely. Remote viewports never reach this listener: the
 // relay path is an outbound dial (below).
 // A second daemon (another project, another terminal) must not crash on
-// EADDRINUSE — walk up a few ports; the launcher reads the final URL off stdout (4.10).
+// EADDRINUSE — walk up a few ports; the launcher reads the final URL off stdout.
 const basePort = envInt("PORT", 3000);
 const listen = (port: number) => {
   const onListening = () => {
@@ -308,7 +306,7 @@ const listen = (port: number) => {
   const onBusy = (err: NodeJS.ErrnoException) => {
     // The stale "listening" callback must go with the failed attempt, or the
     // walk's eventual success fires EVERY attempt's callback and the log
-    // claims "server on" ports we never bound — a line users copy (R.4b).
+    // claims "server on" ports we never bound — a line users copy.
     server.removeListener("listening", onListening);
     if (err.code === "EADDRINUSE" && port - basePort < 20) {
       log.info(`:${port} busy — trying :${port + 1}`);

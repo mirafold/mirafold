@@ -6,9 +6,9 @@ const DISARM_MS = 3_000;
 /**
  * The arming core, hook-free so node:test can drive it (the repo has no DOM
  * harness). Each arm() bumps a generation, and a timer stands down only its
- * OWN generation: identifying the owner by key value alone let an older
- * timer cut a re-armed SAME key short — armed for 1s instead of 3, so the
- * user's confirm click re-armed instead of firing (2026-07-29 bughunt).
+ * OWN generation: identifying the owner by key value alone would let an
+ * older timer cut a re-armed SAME key short — armed for 1s instead of 3, so
+ * the user's confirm click re-arms instead of firing.
  */
 export class ArmerCore<K> {
   private gen = 0;
@@ -29,7 +29,7 @@ export class ArmerCore<K> {
 }
 
 /**
- * Two-click confirm for a destructive control (#11): the first click ARMS the
+ * Two-click confirm for a destructive control: the first click ARMS the
  * key ("end" → "end?"), a second click within a few seconds is the real
  * action, and doing nothing disarms. `K` is whatever identifies the armed
  * control — a session id where many rows share the state, `true` where one

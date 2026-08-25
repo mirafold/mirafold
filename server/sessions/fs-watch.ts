@@ -1,4 +1,4 @@
-// The live tree's doorbell (Phase W.1): one filesystem watcher per session,
+// The live tree's doorbell: one filesystem watcher per session,
 // alive only while a viewport is attached. Doorbell, not precision: any
 // change under the session root fires ONE coalesced callback per window,
 // carrying a best-effort, capped list of touched paths — consumers must
@@ -11,9 +11,9 @@
 // IS the repo root. A session scoped to a SUBDIRECTORY of a repo has its
 // `.git` above the watched root, so out-of-band commits ring nothing there;
 // turn-end refresh and the button remain the floor, as they are for every
-// missed event.) Failure is fail-open to Phase E behavior:
-// any error stops this watcher and reports once via onError; the turn-end
-// refresh and the manual button remain the floor.
+// missed event.) Failure is fail-open: any error stops this watcher and
+// reports once via onError; the turn-end refresh and the manual button
+// remain the floor.
 //
 // One backend wart, healed here: the inotify backend misses a subtree
 // created faster than it can register watches — `mkdir -p a/b` reports only
@@ -38,9 +38,9 @@ import { envInt } from "../env";
 // only accumulate. A fixed window from the first event — not a trailing
 // debounce — so an agent writing continuously can never starve the bell.
 const FS_WATCH_DEBOUNCE_MS = envInt("FS_WATCH_DEBOUNCE_MS", 400);
-// The paths hint stays small on the wire (W.2); past the cap the bell rings
+// The paths hint stays small on the wire; past the cap the bell rings
 // with `truncated` and the client refetches everything it shows anyway.
-// Capped on COUNT and BYTES both (2026-07-26 audit): a path may be thousands
+// Capped on COUNT and BYTES both: a path may be thousands
 // of characters, so a count-only cap would let one bell carry a quarter
 // megabyte — bandwidth a phone viewport pays for over the relay, every
 // window. Real projects never approach either bound.

@@ -103,7 +103,7 @@ const ThinkingBlock = memo(function ThinkingBlock({
   );
 });
 
-/** The deck's full activity, in true stream order (SA.2): tool rows plus the
+/** The deck's full activity, in true stream order: tool rows plus the
  *  subagent's own narration and reasoning. Prose is INERT PLAIN TEXT —
  *  subagent words never render as markdown inside shell chrome. */
 function SubagentActivity({ items }: { items: SubagentDeckRow["items"] }) {
@@ -127,7 +127,7 @@ function SubagentActivity({ items }: { items: SubagentDeckRow["items"] }) {
   );
 }
 
-/** SA.1: a spawn whose wire id other records reference as parentId becomes a
+/** A spawn whose wire id other records reference as parentId becomes a
  * live subagent deck — calm summary (agent type, the spawn's own description,
  * state, tool count, elapsed while running, current action), expandable to
  * the nested calls. Everything shown is the engine's own data rendered as
@@ -238,13 +238,13 @@ function ToolActivityGroup({
 
 type RenderZoneProps = {
   subscribe: (l: (m: ZoneMsg) => void) => () => void;
-  // Shell-provided sender for prompt/tool actions (Phase 2); state actions
+  // Shell-provided sender for prompt/tool actions; state actions
   // are resolved here because pin state is output-zone state.
   sendAction: (action: Action, sourceId: string) => void;
   // Shell's turn-in-flight flag — only the welcome card reads it here (it
   // must not flash up mid-turn on an entry-less transcript). The activity
   // indicator itself is Shell chrome (ActivityLine), not a transcript entry,
-  // so no scroll position can hide it (2026-07-29, Kyle).
+  // so no scroll position can hide it.
   busy: boolean;
   focusPrompt: () => void;
   onInputNavigationChange?: (state: InputNavigationState) => void;
@@ -263,18 +263,18 @@ export const RenderZone = forwardRef<InputNavigationHandle, RenderZoneProps>(fun
   onInputNavigationChange,
 }, navigationRef) {
   // Pinning is pure output-zone state: wire ids (render or artifact) in pin
-  // order. The dock only exists while something is pinned (PLAN Step 1.6).
+  // order. The dock only exists while something is pinned.
   const [pinned, setPinned] = useState<string[]>([]);
   const [dockCollapsed, setDockCollapsed] = useState(false);
   // Streamed output scrolls you down only while you're already at the bottom
-  // (2026-07-20, Kyle) — terminal-scrollback behavior, in use-follow-tail.ts.
+  // — terminal-scrollback behavior, in use-follow-tail.ts.
   const tail = useFollowTail();
   const [projection] = useState(() => createTranscriptProjection());
   const [transcript, setTranscript] = useState(
     () => projection.apply([], Date.now).snapshot,
   );
   // Disclosure belongs to the renderer, but the ids survive a thinking row
-  // moving into a completed tool fold just as the old entry field did.
+  // moving into a completed tool fold.
   const [expandedThinking, setExpandedThinking] = useState<ReadonlySet<number>>(
     () => new Set(),
   );
@@ -400,7 +400,7 @@ export const RenderZone = forwardRef<InputNavigationHandle, RenderZoneProps>(fun
       {/* role="log" names this as the running conversation so a screen reader
           can navigate it; aria-live is explicitly OFF because log's implicit
           "polite" would re-read the transcript on every streamed token. The
-          spoken half lives in Announcer.tsx (A.1). */}
+          spoken half lives in Announcer.tsx. */}
       <div
         className="render-zone"
         role="log"
@@ -420,7 +420,7 @@ export const RenderZone = forwardRef<InputNavigationHandle, RenderZoneProps>(fun
       >
         {!transcript.hasTranscriptContent && !busy && (
           // A fresh session (no transcript yet) shows an inviting welcome
-          // instead of raw emptiness. Shell-owned and agent-neutral (#12).
+          // instead of raw emptiness. Shell-owned and agent-neutral.
           <div className="zone-empty">
             {/* The greeting lockup (settled 2026-07-18 after live mock
                 iteration with Kyle — don't relitigate): the FULL brand mark,
@@ -547,8 +547,8 @@ function ZoneEntry({
         : entry.noticeKind === "compaction"
           ? "⊙"
           : "⚠"; // rate_limit / refusal / unknown
-    // An engine's own words are BADGED and set apart (2026-07-20
-    // audit): unbadged, this dim line is Mirafold speaking, and text
+    // An engine's own words are BADGED and set apart: unbadged,
+    // this dim line is Mirafold speaking, and text
     // chosen by a model — or by whatever a model just read — must
     // never be able to pass for that.
     return (

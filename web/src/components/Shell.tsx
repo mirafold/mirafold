@@ -43,7 +43,7 @@ const ZERO_USAGE: Usage = { turnIn: 0, turnOut: 0, sumIn: 0, sumOut: 0, cost: 0 
  * RenderZone via the message bus below.
  *
  * A connection is a viewport onto a registry session. The URL is
- * the session identity (/s/<id>) — refresh-safe and shareable across tabs (4.2).
+ * the session identity (/s/<id>) — refresh-safe and shareable across tabs.
  */
 export function Shell() {
   const promptRef = useRef<HTMLTextAreaElement>(null);
@@ -90,9 +90,9 @@ export function Shell() {
   const [turn, setTurn] = useState(IDLE_TURN);
   const { busy, activity, asks } = turn;
 
-  // ── The session + daemon (status-bar state, T2.6 — all shell-owned) ─────
+  // ── The session + daemon (status-bar state — all shell-owned) ─────
   const [connected, setConnected] = useState(false);
-  // A relay refusal reason while disconnected (R.4: no daemon / at capacity /
+  // A relay refusal reason while disconnected (no daemon / at capacity /
   // origin), surfaced in the status indicator; undefined = an ordinary drop.
   const [connNote, setConnNote] = useState<string | undefined>(undefined);
   const [meta, setMeta] = useState<{
@@ -107,12 +107,12 @@ export function Shell() {
   // Replaced whole whenever the adapter reports a changed catalog.
   const [promptOptions, setPromptOptions] = useState<PromptOption[]>([]);
   // Everything the daemon's `agents` hello carries, kept together: which
-  // agents it offers (P.4 onboarding; a URL that already names a session
-  // skips the picker), where it was launched (4.8 — the default session cwd)
+  // agents it offers (onboarding; a URL that already names a session
+  // skips the picker), where it was launched (the default session cwd)
   // + home for ~-abbreviation, the pairing info for the "connect a device"
-  // QR (R.4, local viewports only), and its build version.
+  // QR (local viewports only), and its build version.
   const [daemonInfo, setDaemonInfo] = useState<DaemonInfo>(NO_DAEMON_INFO);
-  // Phase CS: the latest `subscription` reply — the pair card's manage view
+  // The latest `subscription` reply — the pair card's manage view
   // correlates it by id, so holding just the newest one is enough.
   const [subReply, setSubReply] = useState<SubscriptionReply | null>(null);
 
@@ -126,14 +126,14 @@ export function Shell() {
     session: boolean;
     // The daemon refused this REMOTE viewport because the session runs
     // on a subscription login, which can't be driven over the paid relay.
-    // Shown until dismissed (R.4i).
+    // Shown until dismissed.
     refused: string | null;
     // The last create error, so the onboarding card can show a rejected
-    // working dir (4.8).
+    // working dir.
     onboarding: string | null;
   }>({ session: false, refused: null, onboarding: null });
 
-  // ── The `!` command (4.9) ───────────────────────────────────────────────
+  // ── The `!` command ───────────────────────────────────────────────
   const [bang, setBang] = useState<{
     // The bang THIS viewport issued, if still running — only the issuer gets
     // the stdin affordance (a sudo prompt must never fan out to a second tab
@@ -170,7 +170,7 @@ export function Shell() {
     setAuxiliary(null);
     setReviewPromptVisible(false);
   };
-  // Phone (2026-08-18, Kyle): the status bar carries ONE workspace toggle,
+  // Phone: the status bar carries ONE workspace toggle,
   // not two side-by-side icons; it reopens whichever surface was used last
   // (Files until Changes has been chosen once), and the drawer's own head
   // switches between them. Desktop keeps the two-icon rail unchanged.
@@ -189,18 +189,18 @@ export function Shell() {
   // Needs-you notifications: preference + browser grant (use-notify-preference.ts).
   const { notifyOn, notifyPerm, toggleNotify } = useNotifyPreference();
 
-  // The socket + pub/sub live in session-bus.ts (H.9); one bus per mount.
+  // The socket + pub/sub live in session-bus.ts; one bus per mount.
   // useState's lazy initializer, NOT useMemo: Fast Refresh re-runs useMemo on
   // every hot edit (dependency lists are deliberately ignored), and each
   // re-run opened a fresh socket while the orphaned one stayed attached —
-  // inflating the fleet's viewport count during dev (2026-07-25, Kyle).
+  // inflating the fleet's viewport count during dev.
   // State survives a hot update, so the one bus lives as long as the page.
   const [bus] = useState(createSessionBus);
   // Same lazy-useState idiom: one notifier (and one visibilitychange
   // listener) for the page's life. Null where the API doesn't exist.
   const [notifier] = useState(createDomNotifier);
 
-  // ── File drag-and-drop (Phase FD) ───────────────────────────────────────
+  // ── File drag-and-drop ───────────────────────────────────────
   // Shell chrome end to end: the drop overlay, the upload strip, and the
   // staged-path insertion are shell-owned; agent output can't reach any of
   // them. The pure core lives in file-drop.ts; the ref indirection lets the
@@ -217,7 +217,7 @@ export function Shell() {
     }),
   );
 
-  // Screen-reader announcements (A.1) — see Announcer.tsx for why the
+  // Screen-reader announcements — see Announcer.tsx for why the
   // transcript itself stays silent and these speak at turn boundaries.
   const { message: announcement, announce } = useAnnouncer();
   // Every turn transition goes through here: reduce, adopt, then speak the
@@ -233,7 +233,7 @@ export function Shell() {
     },
     [announce],
   );
-  // Phase FD: a staged path lands in the prompt through the draft merge —
+  // A staged path lands in the prompt through the draft merge —
   // which never discards composed text — quoted the way a terminal drop
   // quotes, with a polite announcement naming what happened.
   attachDroppedPath.current = (path, name) => {
@@ -288,7 +288,7 @@ export function Shell() {
           setBang((b) => (b.my && b.my.id === m.id ? { ...b, my: null } : b));
         } else if (m.type === "usage") {
           // Tokens are per-turn → sum for the session total. Cost is already
-          // the session-cumulative figure → take it as-is, never add (T2.6).
+          // the session-cumulative figure → take it as-is, never add.
           // Reset-on-zone_reset keeps both replay-safe: re-summing tokens and
           // re-taking the final cost both land on the right number.
           setUsage((u) => ({
@@ -312,7 +312,7 @@ export function Shell() {
       bus.onConnection((c, refusal) => {
         setConnected(c);
         setConnNote(c ? undefined : refusal);
-        // A.1: losing the socket is silent on screen except for a dot
+        // Losing the socket is silent on screen except for a dot
         // changing colour — assertive, and only on a real transition.
         if (wasConnected.current !== null && wasConnected.current !== c) {
           if (c) announce("Reconnected.");
@@ -345,12 +345,12 @@ export function Shell() {
   // it fire.
   const refreshAgents = useCallback(() => bus.refreshAgents(), [bus]);
 
-  // Tab title + favicon status light (Step 4.2) — painter in tab-status.ts.
+  // Tab title + favicon status light — painter in tab-status.ts.
   useEffect(() => {
     paintTabStatus(asks.length > 0 ? "permission" : busy ? "busy" : "idle");
   }, [busy, asks.length]);
 
-  // Needs-you notifications (NF.1): the same tri-state the tab light paints,
+  // Needs-you notifications: the same tri-state the tab light paints,
   // pushed through the notifier so a hidden viewport can toast. reset() on
   // any disconnect: the drop forces busy→false above, and that forced edge
   // must never read as a finished turn.
@@ -383,7 +383,7 @@ export function Shell() {
   };
 
   // A leading `!` is intercepted by the trusted shell and runs as a real
-  // shell command (4.9); the finished transcript then reaches the agent as
+  // shell command; the finished transcript then reaches the agent as
   // its own turn, exactly as the terminal harness does.
   const send = (text: string) => {
     setReviewPromptVisible(false);
@@ -419,7 +419,7 @@ export function Shell() {
       )}
       <div className="behind-dialog" inert={showOnboarding || undefined}>
         {notices.session && (
-          // SHELL-OWNED notice — honest about the swap the server made (R.4c).
+          // SHELL-OWNED notice — honest about the swap the server made.
           <NoticeLine
             text={
               "that session no longer exists — started a new one (it was ended, removed, or predates durable recovery)"
@@ -428,7 +428,7 @@ export function Shell() {
           />
         )}
         {notices.refused && (
-          // SHELL-OWNED — the relay refused a subscription-backed session (R.4i).
+          // SHELL-OWNED — the relay refused a subscription-backed session.
           <NoticeLine
             text={notices.refused}
             onDismiss={() => setNotices((n) => ({ ...n, refused: null }))}
@@ -437,7 +437,7 @@ export function Shell() {
         {meta.demo && (
           // SHELL-OWNED banner — the agent paints nothing here, so a demo
           // session is unmistakably labeled and the label can't be faked or
-          // cleared (same trust rule as the permission bar) (R.4b).
+          // cleared (same trust rule as the permission bar).
           <div className="demo-banner">
             <span className="demo-banner-badge">demo</span>
             <span className="demo-banner-text">
@@ -601,7 +601,7 @@ export function Shell() {
                     onToggle: toggleNotify,
                   }
             }
-            // The card's Session section (R.4l) — on phone this is THE place
+            // The card's Session section — on phone this is THE place
             // these facts live (the bar carries only the agent name; the
             // prompt crumb is desktop-only), so it gets everything.
             session={{
@@ -640,7 +640,7 @@ function NoticeLine({ text, onDismiss }: { text: string; onDismiss: () => void }
 /** The workbench's permanent left strip (VS Code's activity-bar convention):
  *  always present so the affordance never moves; its Files and Changes icons
  *  share one auxiliary workspace slot. Disabled until there's a session.
- *  DESKTOP ONLY (2026-07-25, Kyle): on ≤640px the strip is hidden — a
+ *  DESKTOP ONLY: on ≤640px the strip is hidden — a
  *  permanent 46px rail is too much of a 390px screen — and both toggles live
  *  in the status bar instead. */
 function ActivityBar({

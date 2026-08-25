@@ -51,7 +51,7 @@ const SECRET_PATHS = new Set([...SECRET_FILE_BASENAMES].map((n) => path.resolve(
 // this guard exists to close. Compare the way the host filesystem does. Linux is
 // case-sensitive, so `.ENV` there is a genuinely different file and stays out of
 // scope. Derived once from the platform; injectable so a case-sensitive CI host
-// can still pin the case-insensitive behavior. (2026-08-11 audit.)
+// can still pin the case-insensitive behavior.
 const CASE_INSENSITIVE_FS = process.platform === "darwin" || process.platform === "win32";
 
 /** True when `p` names a secret env file (by basename) — the Explorer's

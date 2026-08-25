@@ -22,12 +22,12 @@ import { RefreshIcon } from "../RefreshIcon";
 import { WorkspaceTabs, type WorkspaceSurface } from "../WorkspaceTabs";
 import { useFileView } from "./use-file-view";
 
-// The Explorer's shell-owned panel (E.3 desktop, E.4 phone; lazy since
-// E2.2): a read-only browser of the session's working tree, built
+// The Explorer's shell-owned panel: a read-only browser of the session's
+// working tree, built
 // incrementally — one fs_listdir per directory, fetched on first expand and
 // cached (files-tree.ts holds the store). Opening fetches the root and
-// prefetches its first level; the whole-tree fs_list is retired from the
-// client (the server keeps answering it for older bundles). Interaction is
+// prefetches its first level; the client never sends the whole-tree
+// fs_list (the server keeps answering it for older bundles). Interaction is
 // drill-in on both platforms — the tree, then a file view laid OVER it with
 // a back button — so a narrow surface never shows tree and file at once, the
 // tree stays mounted underneath (its scroll survives a round trip), and the
@@ -48,7 +48,7 @@ type FsDir = Extract<WireMsg, { type: "fs_dir" }>;
 // user actually clicks.
 const PREFETCH_MAX_DIRS = 24;
 
-// Minimum gap between BELL-triggered refreshes (W.2). Bells arrive already
+// Minimum gap between BELL-triggered refreshes. Bells arrive already
 // server-debounced per session, but each refresh here spends one fs_listdir
 // per shown directory — sustained bells over a many-dir tree would drain the
 // token bucket. A bell during the gap coalesces onto one trailing refresh.
@@ -85,7 +85,7 @@ export function FilesPanel({
   const [rootOpen, setRootOpen] = useState(true);
   const file = useFileView({ subscribe, requestRead, requestDiff, scopeKey: sessionKey });
   const { selected, mode, view, openFile } = file;
-  // E.6: the deliberate desktop enlarge — the file box lifted out of the
+  // The deliberate desktop enlarge — the file box lifted out of the
   // narrow column into a near-full-screen lightbox over the dimmed
   // workspace. User-initiated only (the ⤢ button); every path that closes
   // the file view drops it too.
@@ -104,9 +104,9 @@ export function FilesPanel({
     setMaximized(false);
   };
 
-  // Correlation ids: one outstanding fs_listdir PER DIRECTORY (the E.3-era
-  // single listId ref is gone — the lazy tree legitimately has several
-  // fetches in flight). The extracted file controller owns its one correlated
+  // Correlation ids: one outstanding fs_listdir PER DIRECTORY (the lazy
+  // tree legitimately has several fetches in flight). The extracted file
+  // controller owns its one correlated
   // request independently. A directory reply whose id doesn't match its
   // directory's current id is stale and is ignored.
   const dirReqIds = useRef<Map<string, string>>(new Map());
@@ -125,7 +125,7 @@ export function FilesPanel({
     setStore((s) => beginDirFetch(s, path));
   };
 
-  // The refresh boundary (open, E.5 turn-end, the button): refetch the root
+  // The refresh boundary (open, turn-end, the button): refetch the root
   // and every expanded dir in place (previous rows stay visible while the
   // replies swap them), and DROP cached-but-collapsed dirs — their next
   // expand fetches fresh instead of serving a pre-turn listing.
@@ -144,7 +144,7 @@ export function FilesPanel({
   const refreshRef = useRef(refreshTree);
   refreshRef.current = refreshTree;
 
-  // The doorbell's client half (W.2): one pending refresh at most, run when
+  // The doorbell's client half: one pending refresh at most, run when
   // the coalescing gap allows — an immediate first ring, trailing after.
   const bellTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastBellRefreshAt = useRef(0);
@@ -172,8 +172,8 @@ export function FilesPanel({
   // On desktop the panel is a docked column beside a usable transcript — no trap.
   // Esc on phone drills back one layer, then closes from the tree — the
   // stacked-layer contract. closeFile, not bare setSelected: a drill-back is
-  // a close path, and leaving `maximized` armed here meant a
-  // desktop→phone→desktop resize dance re-enlarged the NEXT opened file.
+  // a close path, and leaving `maximized` armed here would let a
+  // desktop→phone→desktop resize dance re-enlarge the NEXT opened file.
   const frame = useWorkspacePanelFrame({
     panelRef,
     phone,
@@ -211,16 +211,16 @@ export function FilesPanel({
             }
           }
         } else if (m.type === "turn_end" && openRef.current) {
-          // E.5: the agent likely just touched files — refetch the root and
+          // The agent likely just touched files — refetch the root and
           // the EXPANDED dirs only (the lazy refresh unit), pruning stale
           // collapsed cache. No prefetch: collapsed first-level dirs refetch
           // on their next expand. Through the bell's coalescing gap, not a
           // direct refresh: an attach/reconnect replays EVERY historical
-          // turn_end in one burst, and one refresh per replayed turn drained
-          // the server's fs token bucket for nothing (2026-07-29 bughunt).
+          // turn_end in one burst, and one refresh per replayed turn would
+          // drain the server's fs token bucket for nothing.
           onBell();
         } else if (m.type === "fs_changed") {
-          // W.2: disk changed behind the UI — same refresh unit as turn-end
+          // Disk changed behind the UI — same refresh unit as turn-end
           // (root + expanded; a new file in a collapsed, unfetched dir
           // rightly causes no fetch), coalesced through the gap above. A
           // status-ready signal uses the same refresh without claiming a disk
@@ -242,7 +242,7 @@ export function FilesPanel({
 
   // A session switch means a different workspace — clear everything, expanded
   // dirs included. (Kept separate from the open effect below so expanded state
-  // SURVIVES a close/reopen within one session — E.5.)
+  // SURVIVES a close/reopen within one session.)
   useEffect(() => {
     setMaximized(false);
     // The ref mirror is cleared alongside the state: the open effect below

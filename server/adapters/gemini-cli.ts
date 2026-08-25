@@ -14,21 +14,21 @@ import { isWorkspaceTrusted, trustWorkspace } from "../sessions/workspace-trust"
 import { AsyncQueue, CLOSE } from "./async-queue";
 import { ResumeIdState } from "./resume-id";
 
-// Same generative-UI stdio MCP server the Codex adapter injects (P.3). Gemini
+// Same generative-UI stdio MCP server the Codex adapter injects. Gemini
 // loads MCP servers from settings.json, so we write a per-session project
 // `.gemini/settings.json` naming it (merged over the user's global config).
 const RENDER_MCP = renderMcpCommand();
 // Gemini names MCP tools `mcp_<server>_<tool>`; ours therefore start with this.
 const MCP_PREFIX = `mcp_${MIRAFOLD_MCP}_`;
-// How much of a failed turn's stderr rides into the surfaced error (F.4).
+// How much of a failed turn's stderr rides into the surfaced error.
 const STDERR_TAIL_CAP = 4000;
-// How long the folder-trust ask waits for an answer before denying (P.6b) —
+// How long the folder-trust ask waits for an answer before denying —
 // the same posture as Claude's permission prompt: an unanswered ask must not
 // pin a turn open forever.
 const TRUST_PROMPT_TIMEOUT_MS = 5 * 60_000;
 // Gemini CLI's ExitCodes.FATAL_INPUT_ERROR — the exit for an unusable
 // `--resume`/`--session-id` id, thrown in resolveSessionId() before any
-// stdout event (verified against v0.51.0, 2026-07-23).
+// stdout event (verified against v0.51.0).
 const GEMINI_FATAL_INPUT_ERROR = 42;
 
 /** The component id the render-mcp stub returned, parsed from its output text. */
@@ -42,7 +42,7 @@ export function parseRenderId(output: unknown): string {
  * interface). One `gemini -p … -o stream-json` process runs per turn; a stable
  * session id keeps the conversation warm (`--session-id` the first turn,
  * `--resume` after — Gemini's analog of the Codex thread). Events normalize into
- * the shared `WireMsg` union — no protocol change (P.5 spike).
+ * the shared `WireMsg` union — no protocol change.
  *
  * Faithful-skin posture (inherit-don't-invent): passes only Mirafold's own
  * concerns — the session cwd and model when set. Auth is API-key (the free
@@ -59,10 +59,10 @@ export class GeminiCliSession implements AgentSession {
   private sessionId: string;
   private started: boolean; // first turn creates the session, later turns resume
   private resumeIdState: ResumeIdState;
-  // RENDER_GUIDANCE rides ahead of the first NON-slash turn (V.2): headless
+  // RENDER_GUIDANCE rides ahead of the first NON-slash turn: headless
   // Gemini only recognizes a slash command at position 0 of the prompt, so
-  // prepending to a slash turn would silently turn it into chat (observed
-  // live 2026-07-19); the guidance waits for the first prose turn.
+  // prepending to a slash turn would silently turn it into chat; the
+  // guidance waits for the first prose turn.
   private guidance = new RenderGuidanceOnce(RENDER_GUIDANCE);
   private modelLabel: string | undefined;
   private model?: string;
@@ -72,21 +72,21 @@ export class GeminiCliSession implements AgentSession {
   // their tool_result (which carries the assigned component id).
   private announced = new Set<string>();
   private pendingRenders = new Map<string, { tool: string; params: Record<string, unknown> }>();
-  // The folder-trust ask (P.6b), keyed by wire id → resolver. At most one is
+  // The folder-trust ask, keyed by wire id → resolver. At most one is
   // ever in flight: it gates the first turn in an untrusted workspace, and a
   // yes is remembered on disk, so later turns never reach it.
   private permissions = new PermissionLedger((msg) => this.emit(msg));
   // Set once the user says yes IN THIS SESSION — the disk record is the
   // durable answer, this just avoids re-reading it every turn.
   private trusted = false;
-  // Whether the render-MCP entry has been merged into project settings yet
-  // (K.2): deferred until trust is confirmed, unlike the auth stub below.
+  // Whether the render-MCP entry has been merged into project settings yet:
+  // deferred until trust is confirmed, unlike the auth stub below.
   private mcpSettingsWritten = false;
 
   // `modelLabel` is undefined until configured or a turn reports the concrete
-  // model — the UI shows nothing, never a stand-in that reads as a model name
-  // (2026-07-23, Kyle). "auto" is a genuine configured value (router mode);
-  // honestModel() refines it per turn. The fleet uses this label (F.3).
+  // model — the UI shows nothing, never a stand-in that reads as a model name.
+  // "auto" is a genuine configured value (router mode); honestModel()
+  // refines it per turn. The fleet uses this label.
   get modelName(): string | undefined {
     return this.modelLabel;
   }
@@ -113,8 +113,8 @@ export class GeminiCliSession implements AgentSession {
     this.started = Boolean(opts.resumeId);
     this.resumeIdState = new ResumeIdState(opts.resumeId || undefined);
     this.listModels = opts.listModels ?? (() => listGeminiModels(this.workspaceDir));
-    // Only ever creates a settings.json that didn't already exist (K.2,
-    // 2026-08-06): a file that predates this session is the user's, and
+    // Only ever creates a settings.json that didn't already exist: a file
+    // that predates this session is the user's, and
     // consent to modify it — same as the MCP entry below — doesn't exist
     // yet at construction time. No read, no parse, no backup, no rewrite of
     // anything pre-existing until ensureTrusted() actually resolves true.
@@ -206,7 +206,7 @@ export class GeminiCliSession implements AgentSession {
   }
 
   // Headless Gemini has no interactive-approval channel for its OWN tool calls
-  // (like Codex exec). The one thing it does ask is folder trust (P.6b), and
+  // (like Codex exec). The one thing it does ask is folder trust, and
   // that ask is shell-owned — the browser's answer lands here.
   resolvePermission(id: string, allow: boolean) {
     this.permissions.resolve(id, allow);
@@ -276,14 +276,14 @@ export class GeminiCliSession implements AgentSession {
   }
 
   /**
-   * V.2 /model parity, Gemini half. Terminal Gemini's /model opens a picker
-   * dialog — TUI chrome headless can't reach (a headless bare /model is a
-   * fatal "dialog not supported" exit that surfaces here as a silent empty
-   * turn; observed live 2026-07-19). So the shell re-skins it: the LIST is
-   * Gemini's own catalog (gemini-model-list.ts — the same access-gated rows
-   * the terminal dialog builds), rendered as a `question` component whose
-   * click sends `/model set <id>` back through this same path — Gemini's own
-   * switch syntax. A switch changes the `-m` the next spawn passes; the
+   * Terminal Gemini's /model opens a picker dialog — TUI chrome headless
+   * can't reach (a headless bare /model is a fatal "dialog not supported"
+   * exit that surfaces here as a silent empty turn). So the shell re-skins
+   * it: the LIST is Gemini's own catalog (gemini-model-list.ts — the same
+   * access-gated rows the terminal dialog builds), shown as the shell-owned
+   * `picker` message (model-picker.ts) whose chosen row sends
+   * `/model set <id>` back through this same path — Gemini's own switch
+   * syntax. A switch changes the `-m` the next spawn passes; the
    * resumed session keeps its history, exactly what the terminal dialog does.
    *
    * Terminal fidelity on the verbs: `/model set <name> [--persist]` switches,
@@ -348,7 +348,7 @@ export class GeminiCliSession implements AgentSession {
       this.emit({ type: "turn_end" });
       return;
     }
-    // The consequential half of settings.json (K.2): only merged in once the
+    // The consequential half of settings.json: only merged in once the
     // trust gate above has actually passed, and only once per session.
     if (!this.mcpSettingsWritten) {
       this.writeMcpSettings();
@@ -359,7 +359,7 @@ export class GeminiCliSession implements AgentSession {
 
   private spawnTurn(text: string): Promise<void> {
     return new Promise((resolve) => {
-      // V.2: the headless stream-json surface has no system-prompt/instructions
+      // The headless stream-json surface has no system-prompt/instructions
       // hook (unlike Claude's `systemPrompt.append`), so RENDER_GUIDANCE rides
       // ahead of the first turn instead — the only injection point this engine
       // has. Slash-leading turns are skipped: headless Gemini only recognizes
@@ -387,8 +387,8 @@ export class GeminiCliSession implements AgentSession {
           // Only reached once ensureTrusted() holds the user's yes. This is
           // ALSO what makes auth work, which is not obvious: 0.53.0 does not
           // load a project's `.gemini/settings.json` for an UNTRUSTED folder,
-          // so the `selectedType: "gemini-api-key"` we write there was being
-          // ignored and the CLI fell back to the user-scope selection — an
+          // so the `selectedType: "gemini-api-key"` we write there is
+          // ignored and the CLI falls back to the user-scope selection — an
           // `oauth-personal` login dies on IneligibleTierError (the free-tier
           // client Google retired) while a perfectly good API key sits unused.
           // One cause, two symptoms.
@@ -408,7 +408,7 @@ export class GeminiCliSession implements AgentSession {
       // Whether any stdout event parsed this turn, and a capped stderr
       // tail — so a stderr-only non-zero exit (the trust-folder trap: Gemini
       // writes the error to stderr, exits 55, and emits NOTHING on stdout)
-      // surfaces as an error instead of a silent "thinking…" then nothing (F.4).
+      // surfaces as an error instead of a silent "thinking…" then nothing.
       let sawEvent = false;
       let stderrTail = "";
       const end = () => {
@@ -438,9 +438,9 @@ export class GeminiCliSession implements AgentSession {
           buf = buf.slice(nl + 1);
         }
       });
-      // Usually diagnostics, but sometimes the ONLY signal (F.4). Keep a
+      // Usually diagnostics, but sometimes the ONLY signal. Keep a
       // capped tail for the stderr-only-failure path; MIRAFOLD_DEBUG=1 also
-      // streams it live (R.4g).
+      // streams it live.
       child.stderr.on("data", (d: Buffer) => {
         stderrTail = (stderrTail + d.toString()).slice(-STDERR_TAIL_CAP);
         if (verbose) createLogger("gemini-cli").debug(`stderr — ${d}`);
@@ -450,11 +450,11 @@ export class GeminiCliSession implements AgentSession {
         if (this.child === child) this.child = undefined;
         // A non-zero exit that produced no stdout events, with something
         // on stderr, is a silent failure — surface it (code null = a signal
-        // kill/interrupt, not this case) (F.4).
+        // kill/interrupt, not this case).
         if (!this.closed && !sawEvent && code != null && code !== 0 && stderrTail.trim()) {
           this.emit({ type: "error", message: `gemini exited ${code}: ${stderrTail.trim()}` });
         }
-        // Self-heal a wrong id mode (2026-07-23). Gemini treats both id-mode
+        // Self-heal a wrong id mode. Gemini treats both id-mode
         // mistakes as FATAL_INPUT_ERROR (42) and exits before emitting any
         // event: `--resume` with an id it never persisted (a first turn that
         // failed before the session file was written — bad auth, missing
@@ -482,7 +482,7 @@ export class GeminiCliSession implements AgentSession {
   // init.model can be the literal "auto" (router mode) while the real
   // model(s) the router actually used show up only in result.stats.models.
   // Prefer those concrete names when the init label is a placeholder — the
-  // status bar should name what ran, like the terminal's own status line (F.3).
+  // status bar should name what ran, like the terminal's own status line.
   private honestModel(models: unknown): string | undefined {
     const vague = !this.modelLabel || this.modelLabel === "auto";
     if (!vague) return this.modelLabel;
@@ -566,9 +566,9 @@ export class GeminiCliSession implements AgentSession {
         const stats = (ev["stats"] ?? {}) as Record<string, unknown>;
         const model = this.honestModel(stats["models"]);
         // The refinement must land on modelLabel too — modelName is what the
-        // fleet and status bar read (F.3), and it stayed "auto" forever while
-        // only the usage line got the concrete names (2026-07-28 fix). Router
-        // mode re-vagues at the next turn's init, so each turn re-refines.
+        // fleet and status bar read; otherwise it stays "auto" forever while
+        // only the usage line gets the concrete names. Router mode re-vagues
+        // at the next turn's init, so each turn re-refines.
         if (model) this.modelLabel = model;
         this.emit({
           type: "usage",

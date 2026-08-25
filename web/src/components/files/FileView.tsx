@@ -15,7 +15,7 @@ import { formatBytes } from "../ToolBlock";
 const MAX_DIFF_CELLS = 4_000_000;
 
 /** True when diffing before/after would exceed the LCS cell ceiling — the
- *  client-side guard against a hang on huge files (E.3). Pure, for Tier-1. */
+ *  client-side guard against a hang on huge files. Pure, for Tier-1. */
 export function diffTooLarge(before: string, after: string): boolean {
   const b = before === "" ? 0 : before.split("\n").length;
   const a = after === "" ? 0 : after.split("\n").length;

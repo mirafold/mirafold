@@ -1,4 +1,4 @@
-// Phase CS — the daemon's side of self-serve subscription management. Active
+// The daemon's side of self-serve subscription management. Active
 // only in `license-key` mode: the license key is the bearer credential to the
 // billing backend's manage endpoints, so token-override (ops) and self-host
 // (no key) daemons have nothing to manage and get no affordance. The key

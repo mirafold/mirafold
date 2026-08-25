@@ -1,4 +1,4 @@
-// Per-viewport wire handler for N2's host-native working-directory picker.
+// Per-viewport wire handler for the host-native working-directory picker.
 // The dialog is local shell chrome: never broadcast, replayed, or reachable
 // through the paid relay. Every well-formed request gets one correlated reply.
 

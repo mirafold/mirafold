@@ -12,8 +12,8 @@ import { codexSlashOptions } from "./codex-prompt-options";
 import { PermissionLedger } from "./wire-helpers";
 
 // component → its real render_* tool name, inverted from the one mapping
-// (2026-07-28 fix: a hand-rolled inverse here produced tool names no agent
-// can call — "render_key-value" for the real render_keyvalue).
+// (a hand-rolled inverse here would produce tool names no agent can call —
+// "render_key-value" for the real render_keyvalue).
 const RENDER_TOOL_BY_COMPONENT = new Map<string, string>(
   Object.entries(RENDER_TOOL_COMPONENT).map(([tool, component]) => [component, tool]),
 );
@@ -41,7 +41,7 @@ const TOPICS = [
   "prompt-caching economics",
   "CRDT merge strategies",
 ] as const;
-// Mock tool calls (Phase T.1): each yields a full use→result pair so the
+// Mock tool calls: each yields a full use→result pair so the
 // transcript's tool blocks are exercised API-free; the last one is an error.
 const MOCK_TOOLS: (() => {
   name: string;
@@ -51,8 +51,7 @@ const MOCK_TOOLS: (() => {
   input?: Record<string, unknown>;
 })[] = [
   // ONE draw shared by the row's detail and its input — two independent picks
-  // could name different files in the collapsed row vs the expanded diff
-  // (2026-07-28 fix).
+  // could name different files in the collapsed row vs the expanded diff.
   () => {
     const file = pick(FILES);
     return {
@@ -272,7 +271,7 @@ const TEMPLATES: ((prompt: string) => string)[] = [
 ];
 
 // Sample `render` payloads (mock-first: the render flow works API-free).
-// Props must satisfy the registry spec — validated by the 1.2 smoke test.
+// Props must satisfy the registry spec — validated by registry-spec.test.ts.
 export const MOCK_RENDERS: (() => { component: string; props: Record<string, unknown> })[] = [
   () => ({
     component: "card",
@@ -441,7 +440,7 @@ export const MOCK_RENDERS: (() => { component: string; props: Record<string, unk
 // into the artifact's own DOM (the one place it CAN write), so a browser test
 // reads containment results through the frame. It also fires the bridge
 // abuses whose proof is a NON-event in the transcript: forged/unstamped
-// postMessages and an action burst against the rate limit (R.4e).
+// postMessages and an action burst against the rate limit.
 const HOSTILE_ARTIFACT =
   "<h2>hostile artifact</h2>" +
   '<div id="dom">pending</div>' +
@@ -467,7 +466,7 @@ const HOSTILE_ARTIFACT =
 
 /**
  * Stand-in session for API-free development: emits a scripted WireMsg
- * stream that covers every Phase 0 message type. Replies are drawn from
+ * stream that covers the wire protocol's base message types. Replies are drawn from
  * a shuffled deck of five templates so no template repeats until all
  * five have been seen.
  */
@@ -608,17 +607,17 @@ export class MockSession implements AgentSession {
   }
 
   interrupt() {
-    // ONE turn_end per OPEN turn (2026-07-30). This scenario engine schedules
-    // a whole turn as timers, and abandonTurn() clears the timer table — so
-    // with a queued turn also in flight, both turns' scheduled `turn_end`s
-    // died while a single one was emitted here. The daemon's mid-turn burst
-    // gate deliberately admits one queued prompt, so two open turns is the
-    // NORMAL case for a user who types again and then hits stop; the orphaned
-    // turn left the shell's counter above zero and its activity indicator
-    // stuck on "working…" for the life of the session, healing on neither a
-    // later turn nor a reload (replay rebuilds the imbalance). It cost a long
-    // Tier-3 flake hunt; the real adapters don't share the shape, because
-    // each of their turns completes on its own path.
+    // ONE turn_end per OPEN turn. This scenario engine schedules a whole
+    // turn as timers, and abandonTurn() clears the timer table — so with a
+    // queued turn also in flight, both turns' scheduled `turn_end`s die, and
+    // a single one emitted here would orphan the other. The daemon's
+    // mid-turn burst gate deliberately admits one queued prompt, so two open
+    // turns is the NORMAL case for a user who types again and then hits
+    // stop; an orphaned turn leaves the shell's counter above zero and its
+    // activity indicator stuck on "working…" for the life of the session,
+    // healing on neither a later turn nor a reload (replay rebuilds the
+    // imbalance). The real adapters don't share the shape, because each of
+    // their turns completes on its own path.
     //
     // Floor of one: interrupting an idle session still answers, matching the
     // claude-code adapter's "extra turn_end after the abort settles" — the
@@ -638,11 +637,10 @@ export class MockSession implements AgentSession {
   }
 
   /** A turn that dies the way a real engine dies: `error` and NO `turn_end`
-   *  (2026-07-30). Every real adapter can produce this — an API failure, a
-   *  killed CLI, a dropped frame — and the daemon already treats it as
-   *  terminal (registry.ts flips the session to idle). It exists here so the
-   *  shell's recovery is pinned by a deterministic test instead of the
-   *  1-in-4 Tier-3 wedge that exposed it. */
+   *  — every real adapter can produce this (an API failure, a killed CLI, a
+   *  dropped frame) and the daemon already treats it as terminal
+   *  (registry.ts flips the session to idle). It exists here so the shell's
+   *  recovery is pinned by a deterministic test. */
   private playTurnError() {
     this.beginTurn();
     this.schedule(
@@ -651,7 +649,7 @@ export class MockSession implements AgentSession {
     );
   }
 
-  /** Deterministic 2.2 hook: a card with action buttons so the
+  /** Deterministic hook: a card with action buttons so the
    *  click→action→turn loop runs API-free. */
   private playActionCard() {
     this.beginTurn();
@@ -684,7 +682,7 @@ export class MockSession implements AgentSession {
     this.endTurn(delay);
   }
 
-  /** LD.1/LD.2: one deterministic live composition using only existing wire
+  /** One deterministic live composition using only existing wire
    * messages. A shell notice softly interrupts two document segments so the
    * browser test can prove both visual response continuity and mounted
    * painting identity while later prose streams. The Markdown deck is also
@@ -737,7 +735,7 @@ export class MockSession implements AgentSession {
     this.endTurn(delay, 700);
   }
 
-  /** LD.2 restraint oracle: ordinary short answers still render as prose,
+  /** Restraint oracle: ordinary short answers still render as prose,
    * without a component or an ornamental empty document surface. */
   private playShortDocument() {
     this.beginTurn();
@@ -745,7 +743,7 @@ export class MockSession implements AgentSession {
     this.endTurn(delay, 300);
   }
 
-  /** LD.3 browser-only stress fixture: existing diff/chart/artifact wire
+  /** Browser-only stress fixture: existing diff/chart/artifact wire
    * shapes in one document so width-pressure coverage is deterministic. */
   private playResponsiveDocumentStress() {
     this.beginTurn();
@@ -805,7 +803,7 @@ export class MockSession implements AgentSession {
     this.endTurn(delay, 300);
   }
 
-  /** LD.4 browser-only stress fixture: one long, heading-free Markdown row
+  /** Browser-only stress fixture: one long, heading-free Markdown row
    *  proves that plain technical prose remains dense and contains hostile
    *  intrinsic widths without borrowing a registry component. */
   private playDocumentClosureStress() {
@@ -913,7 +911,7 @@ export class MockSession implements AgentSession {
     this.endTurn(160, 0);
   }
 
-  /** Deterministic T2.5 hook: a live checklist — one render id, statuses
+  /** Deterministic hook: a live checklist — one render id, statuses
    *  progressing in place. */
   private playChecklist() {
     const rid = randomUUID();
@@ -940,7 +938,7 @@ export class MockSession implements AgentSession {
     this.endTurn(d);
   }
 
-  /** Deterministic S.1/S.2 hook: the chart stretch shapes in one turn — a
+  /** Deterministic hook: the chart stretch shapes in one turn — a
    *  pie that folds past 6 slices, a stacked bar, a horizontal bar with
    *  labels the vertical axis would truncate, and a MALFORMED pie (two
    *  series) whose designed degradation is the raw-props fallback. */
@@ -1074,7 +1072,7 @@ export class MockSession implements AgentSession {
     this.endTurn(d);
   }
 
-  /** Deterministic S.3 hook: a KPI tile kept live — one render id, the
+  /** Deterministic hook: a KPI tile kept live — one render id, the
    *  number moving in place. */
   private playStat() {
     const rid = randomUUID();
@@ -1116,7 +1114,7 @@ export class MockSession implements AgentSession {
     this.endTurn(d, 300);
   }
 
-  /** Deterministic CR.3 hook: the ordinary Request change draft receives
+  /** Deterministic hook: the ordinary Request change draft receives
    * highlighted markdown code, so phone accessibility never depends on which
    * shuffled demo template happened to answer. */
   private playMarkdownReview() {
@@ -1143,7 +1141,7 @@ export class MockSession implements AgentSession {
     this.endTurn(d);
   }
 
-  /** Deterministic SA.1 hook (supersedes the T2.4 single-Task version): a
+  /** Deterministic hook: a
    *  parallel fan-out — three spawns whose inner calls interleave and whose
    *  finishes land OUT OF ORDER (the first-spawned is not the first done),
    *  so three live cards tick independently in one transcript. */
@@ -1154,7 +1152,7 @@ export class MockSession implements AgentSession {
       type: string;
       desc: string;
       spawnAt: number;
-      // SA.2: the subagent's own narration, streamed into its card's
+      // The subagent's own narration, streamed into its card's
       // expansion right after the spawn (message-grain, like the real
       // Claude Code lane).
       says: string;
@@ -1230,7 +1228,7 @@ export class MockSession implements AgentSession {
         this.schedule(() => this.emit({ type: "tool_result", output: t.output, id: cid, parentId: fan.id }), d);
       }
       // One reasoning line mid-run for the slow agent — the expansion shows
-      // thinking dimmer than narration (SA.2).
+      // thinking dimmer than narration.
       if (fan.type === "general-purpose") {
         this.schedule(
           () => this.emit({ type: "thinking_delta", text: "The relay never sees it — confirming the browser side.", parentId: fan.id }),
@@ -1248,7 +1246,7 @@ export class MockSession implements AgentSession {
     this.endTurn(d);
   }
 
-  /** Deterministic reconnect-window hook (bughunt 2026-08-14 r2): ONE spawn
+  /** Deterministic reconnect-window hook: ONE spawn
    *  whose narration streams early and whose first tool call comes SECONDS
    *  later — a wide, deterministic window in which the subagent's prose run
    *  is open, for tests that reset the transcript mid-turn (daemon restart,
@@ -1278,7 +1276,7 @@ export class MockSession implements AgentSession {
     this.endTurn(d);
   }
 
-  /** Deterministic T2.3 hook: a tool whose output blows past the cap,
+  /** Deterministic hook: a tool whose output blows past the cap,
    *  exercising the elision marker. */
   private playHugeOutput() {
     const id = randomUUID();
@@ -1304,7 +1302,7 @@ export class MockSession implements AgentSession {
     this.endTurn(d);
   }
 
-  /** Deterministic 3.2/3.3 hook: a small interactive artifact with bridge
+  /** Deterministic hook: a small interactive artifact with bridge
    *  buttons (one allowlisted tool, one off-allowlist, one prompt) so
    *  sandbox + bridge run API-free. */
   private playBridgeArtifact() {
@@ -1343,7 +1341,7 @@ export class MockSession implements AgentSession {
     this.endTurn(delay);
   }
 
-  /** Deterministic T.3 hook: pause on a permission_request so the prompt bar
+  /** Deterministic hook: pause on a permission_request so the prompt bar
    *  is exercisable API-free. */
   private playPermissionAsk() {
     this.beginTurn();
@@ -1370,7 +1368,7 @@ export class MockSession implements AgentSession {
 
     let delay = 120;
     this.beginTurn();
-    // A short scripted thought streams before the work starts (T2.1).
+    // A short scripted thought streams before the work starts.
     const thought =
       "Reading the prompt again — the useful answer here is a quick check of " +
       "current state, then a compact summary with one component that fits the " +
@@ -1381,7 +1379,7 @@ export class MockSession implements AgentSession {
     }
     delay += 200;
     // Drawn without replacement — two identical tool rows in one turn read
-    // as a rendering bug to a first-time viewer (R.4b).
+    // as a rendering bug to a first-time viewer.
     for (const factory of shuffled(MOCK_TOOLS).slice(0, randInt(1, 2))) {
       const t = factory();
       const id = randomUUID();
@@ -1405,7 +1403,7 @@ export class MockSession implements AgentSession {
       );
     }
     delay = this.streamText(reply, delay + 250, 12);
-    // Every mock turn ends with a rendered component so the Phase 1 pipeline
+    // Every mock turn ends with a rendered component so the render pipeline
     // is exercised without an API key.
     const { component, props } = pick(MOCK_RENDERS)();
     const label = RENDER_TOOL_BY_COMPONENT.get(component) ?? `render_${component}`;
@@ -1414,8 +1412,8 @@ export class MockSession implements AgentSession {
     delay += 400;
     this.paintRender(delay, component, props);
     // Per-turn tokens so the meters run — but NO costUsd: a fabricated
-    // dollar figure is the one number a demo viewer takes as real (R.4b;
-    // omitted → the status bar shows no cost at all) (T2.6).
+    // dollar figure is the one number a demo viewer takes as real
+    // (omitted → the status bar shows no cost at all).
     const inTok = randInt(1800, 7200);
     const outTok = randInt(200, 900);
     this.schedule(
@@ -1431,7 +1429,7 @@ export class MockSession implements AgentSession {
     this.endTurn(delay);
   }
 
-  /** Deterministic UX.2 hook: two successful actions fold together after the
+  /** Deterministic hook: two successful actions fold together after the
    * turn, while the failed action remains an honest top-level row. */
   private playToolActivity() {
     const calls: Array<{
@@ -1498,7 +1496,7 @@ export class MockSession implements AgentSession {
     this.endTurn(delay + 40);
   }
 
-  /** Emit a one-artifact turn: brief text, then the artifact (Step 3.4 hooks). */
+  /** Emit a one-artifact turn: brief text, then the artifact. */
   private playArtifact(title: string, html: string) {
     this.beginTurn();
     let delay = this.streamText(`Here's the ${title} artifact.`, 300);
@@ -1511,8 +1509,7 @@ export class MockSession implements AgentSession {
 
   /** ONE artifact id, three htmls in quick succession — deliberately inside
    *  the shell's liveness grace window: a stale deadline from an earlier
-   *  html's load used to kill the healthy update as "navigation"
-   *  (2026-07-29 bughunt). */
+   *  html's load must not kill the healthy update as "navigation". */
   private playUpdatingArtifact() {
     const id = randomUUID();
     this.beginTurn();

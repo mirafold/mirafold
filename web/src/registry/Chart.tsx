@@ -9,7 +9,7 @@ import type { ComponentProps } from "@registry-spec";
 // surface #141a26 — fixed slot order is the CVD-safety mechanism, never cycle
 // or reorder it. Adjacent-pair CVD sits in the floor band, so ≥2-series
 // charts always carry secondary encoding: legend + tooltip + end labels.
-// Mid-luminance slots hold up on the light theme too (4.3); axis/grid inks
+// Mid-luminance slots hold up on the light theme too; axis/grid inks
 // come from the theme tokens via style (SVG attributes can't carry var()).
 const COLORS = ["#3987e5", "#199e70", "#c98500", "#008300", "#9085e9", "#e66767"];
 const SURFACE = { stroke: "var(--surface)" };
@@ -118,7 +118,7 @@ export function arcPath(
  *  Tier-1. */
 /** The drawn-value scale every cartesian mark shares: values clipped to the
  *  x axis (marks render one value per label, so extras must not stretch the
- *  axis with invisible data — 2026-07-28), domained, snapped to nice ticks;
+ *  axis with invisible data), domained, snapped to nice ticks;
  *  an all-equal domain widens by 1 so the axis never collapses. */
 function chartScale(
   series: { values: number[] }[],
@@ -153,7 +153,7 @@ export function showXLabel(i: number, len: number, stride: number): boolean {
 
 /** Grouped-bar geometry: bars plus gaps always fit the group's 72% band, so
  *  a crowded chart thins its bars instead of bleeding into the neighboring
- *  category (the old 2px bar floor with a fixed 2px gap overflowed the band
+ *  category (a fixed bar floor with a fixed gap would overflow the band
  *  at high category×series counts). Pure, for Tier-1. */
 export function groupedBarLayout(
   band: number,
@@ -249,7 +249,7 @@ export function Chart(props: ComponentProps<"chart">) {
     // The one-series rule is part of the vocabulary (the schema's describe
     // says so); a violated pie must not guess which series to draw. Throwing
     // routes into RenderBlock's error boundary → the legible raw-props
-    // fallback — the designed degradation (PLAN S.1), not a crash.
+    // fallback — the designed degradation, not a crash.
     if (props.series.length !== 1) throw new Error("pie requires exactly one series");
     return <PieChart {...props} />;
   }
@@ -475,7 +475,7 @@ function HBarChart({ title, x, series, yLabel, stacked }: ComponentProps<"chart"
 function VChart({ title, kind, x, series, yLabel, stacked }: ComponentProps<"chart">) {
   const [hover, setHover] = useState<number | null>(null);
 
-  // S.2: stacked columns — the y scale spans the column TOTALS, not any one
+  // Stacked columns — the y scale spans the column TOTALS, not any one
   // series. A single series has nothing to stack; the flag is a quiet no-op.
   const isStacked = kind === "bar" && stacked === true && series.length > 1;
   const cols = isStacked ? stackSegments(series, x.length) : null;
@@ -498,9 +498,8 @@ function VChart({ title, kind, x, series, yLabel, stacked }: ComponentProps<"cha
       ? series
           .map((s, si) => {
             // Same clip as the marks and the axis ("scale on what is
-            // DRAWN"): surplus values past x.length placed a series' end
-            // label — its one CVD-safe identifier — far off-canvas
-            // (2026-07-29 bughunt).
+            // DRAWN"): surplus values past x.length would place a series'
+            // end label — its one CVD-safe identifier — far off-canvas.
             const drawn = s.values.slice(0, x.length);
             const last = [...drawn].reverse().findIndex(Number.isFinite);
             const li = last === -1 ? -1 : drawn.length - 1 - last;

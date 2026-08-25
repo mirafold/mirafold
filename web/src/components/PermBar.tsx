@@ -7,7 +7,7 @@ export type PermAsk = {
   tool: string;
   detail: string;
   id: string;
-  /** SA.3: set when the asker is a subagent — the bar shows a dim chip. */
+  /** Set when the asker is a subagent — the bar shows a dim chip. */
   parentId?: string;
 };
 
@@ -35,7 +35,7 @@ export function PermBar({
       <div className="perm-bar">
         {/* The whole strip minus allow/deny is ONE tap target for the
             full-command card — on a phone the preview truncates, and tapping
-            the body is what a thumb tries first (2026-07-28, Kyle). */}
+            the body is what a thumb tries first. */}
         <button
           className="perm-body"
           onClick={() => setDetailAskId(asks[0].id)}

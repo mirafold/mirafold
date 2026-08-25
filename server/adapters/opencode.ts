@@ -29,7 +29,7 @@ import {
 const INTERRUPT_GRACE_MS = envInt("MIRAFOLD_OPENCODE_INTERRUPT_GRACE_MS", 5_000);
 
 // Concurrent unanswered permission asks before new ones auto-deny at the
-// engine — bloat insurance against a flooding engine (audit 2026-08-13). A
+// engine — bloat insurance against a flooding engine. A
 // human answers one at a time; a real turn never approaches this.
 const MAX_PENDING_PERMISSIONS = 64;
 
@@ -70,11 +70,11 @@ export class OpenCodeSession implements AgentSession {
   // The engine's command catalog, learned at start — routes `/name` inputs
   // to the engine's dispatcher and feeds the prompt-options catalog.
   private engineCommands: OpenCodeCommandEntry[] = [];
-  // OC.4c: the classified backend kind, published to the registry once the
+  // The classified backend kind, published to the registry once the
   // provider verdict lands (and re-published on a /model provider switch).
   private kindListeners = new Set<(u: { kind: CredentialKind; provider?: string }) => void>();
   private lastKind?: { kind: CredentialKind; provider?: string };
-  // The judged provider/model pin — every prompt carries it (OC.3).
+  // The judged provider/model pin — every prompt carries it.
   private modelPin?: { providerID: string; modelID: string };
   // Providers whose gray-area disclosure already ran this session — the
   // notice states standing terms, so it rides once per provider, not per turn.
@@ -93,7 +93,7 @@ export class OpenCodeSession implements AgentSession {
   private turnToken = 0;
   // Engine idles owed for turns whose send() was accepted. A turn abandoned
   // by the interrupt grace still owes one — its late idle must consume this
-  // debt instead of ending the NEXT turn (bughunt round 2, reproduced).
+  // debt instead of ending the NEXT turn.
   private pendingEngineIdles = 0;
   // Whether the ACTIVE turn's request reached the engine — an idle can only
   // end a turn whose engine work exists.
@@ -126,7 +126,7 @@ export class OpenCodeSession implements AgentSession {
     if (this.lastKind) cb(this.lastKind);
   }
 
-  /** Phase RC: the full lazy-start path — engine + policy + engine session —
+  /** The full lazy-start path — engine + policy + engine session —
    *  which publishes the truthful kind on the way (adoptPin). A failure has
    *  already reset the started latch, so a later local prompt retries. */
   verifyBackendKind(): Promise<void> {
@@ -153,8 +153,8 @@ export class OpenCodeSession implements AgentSession {
     this.modelPin = parseModelPin(opts.model);
     // Provider-QUALIFIED, opencode's own addressing: the bare id is
     // ambiguous across providers, and the checkpointed modelName must
-    // round-trip through parseModelPin on restore (bughunt 2026-08-13 —
-    // a bare label silently lost the pin after recovery).
+    // round-trip through parseModelPin on restore (a bare label would
+    // silently lose the pin after recovery).
     this.modelLabel = this.modelPin
       ? `${this.modelPin.providerID}/${this.modelPin.modelID}`
       : undefined;
@@ -222,10 +222,9 @@ export class OpenCodeSession implements AgentSession {
       if (this.graceTimer) return; // repeated Stop clicks share one abort/deadline
       // A FAILED abort must not end the turn instantly — that is the one
       // case where the engine is still generating, and freeing the worker
-      // interleaves the next prompt with the live stream (bughunt
-      // 2026-08-13). The grace starts BEFORE the HTTP call: an abort request
-      // that never settles must still release the turn (release review,
-      // 2026-08-14). The engine's own idle usually wins this race.
+      // interleaves the next prompt with the live stream. The grace starts
+      // BEFORE the HTTP call: an abort request that never settles must still
+      // release the turn. The engine's own idle usually wins this race.
       this.graceTimer = setTimeout(fallback, this.interruptGraceMs);
       this.graceTimer.unref?.();
       void Promise.resolve()
@@ -260,13 +259,13 @@ export class OpenCodeSession implements AgentSession {
     if (!this.closed) this.mapper.handle(ev);
   }
 
-  // Two latches, deliberately split (bughunt 2026-08-13). ENGINE: spawn +
-  // event stream + command catalog — needs no pin, so `/model` can rescue a
-  // pinless session instead of dying on the very policy error it exists to
-  // fix. STARTED: policy + engine session on top. A policy/creation failure
-  // resets only the outer latch — re-running the engine latch respawned a
-  // fresh `opencode serve` per retry, orphaning the previous server and
-  // doubling the event pump.
+  // Two latches, deliberately split. ENGINE: spawn + event stream + command
+  // catalog — needs no pin, so `/model` can rescue a pinless session instead
+  // of dying on the very policy error it exists to fix. STARTED: policy +
+  // engine session on top. A policy/creation failure resets only the outer
+  // latch — re-running the engine latch would respawn a fresh `opencode
+  // serve` per retry, orphaning the previous server and doubling the event
+  // pump.
   private engineUp?: Promise<void>;
 
   private ensureEngine(): Promise<void> {
@@ -311,7 +310,7 @@ export class OpenCodeSession implements AgentSession {
     });
   }
 
-  /** The R.4i gate, provider-resolved (PLAN OC.3): every turn of this session
+  /** The provider-policy gate, provider-resolved: every turn of this session
    *  runs on the pinned provider (we set `model` on each prompt), so the pin
    *  is what the policy judges — classified from the running engine's own
    *  catalog, never from the user's auth.json. Refusals throw; the message
@@ -331,7 +330,7 @@ export class OpenCodeSession implements AgentSession {
   }
 
   /** Classify `pin`, and on an allowed verdict make it THIS session's pin:
-   *  publish the truthful kind to the registry (OC.4c — the relay gate's
+   *  publish the truthful kind to the registry (the relay gate's
    *  input) and emit the gray-area disclosure when the provider carries one.
    *  Returns the refusal reason instead when the pin may not run — the
    *  shared verdict behind session start and a `/model` switch. */
@@ -386,9 +385,9 @@ export class OpenCodeSession implements AgentSession {
       await this.ensureStarted();
       // An interrupt during startup already ended this turn — sending now
       // would run a GHOST turn outside any envelope: its stream interleaves
-      // with the next prompt and its eventual idle ends the wrong turn
-      // (bughunt 2026-08-13). The guidance flag is untouched too, so the
-      // first REAL turn still carries it.
+      // with the next prompt and its eventual idle ends the wrong turn.
+      // The guidance flag is untouched too, so the first REAL turn still
+      // carries it.
       if (!this.turnActive || this.turnToken !== token) return;
       if (this.contextResetNoticePending) {
         this.contextResetNoticePending = false;
@@ -430,7 +429,7 @@ export class OpenCodeSession implements AgentSession {
         // command — and a RESTORED session replays checkpointed command
         // options before its engine has started, so the catalog must be
         // loaded first or an advertised `/init` would reach the model as
-        // prose (bughunt round 2; ADAPTERS.md's interception rule). A
+        // prose (ADAPTERS.md's interception rule). A
         // failed engine start falls back to the prompt path, whose own
         // error surfacing covers it.
         if (/^\/[\w:-]/.test(trimmed) && this.engineCommands.length === 0) {
@@ -461,7 +460,7 @@ export class OpenCodeSession implements AgentSession {
       listModels: async () => {
         await this.ensureEngine();
         // Every ALLOWED provider rows here — gray areas included, since
-        // OC.4c flows their true kind to the registry and their disclosure
+        // their true kind flows to the registry and their disclosure
         // rides the pick (the picker offers only what a pick can run).
         const allowed = new Set(
           (await this.transport.providerCatalog())
@@ -478,7 +477,7 @@ export class OpenCodeSession implements AgentSession {
         try {
           // Engine latch only: `/model` must be able to RESCUE a pinless
           // session, and ensureStarted's policy gate throws exactly the
-          // no-pin error this command exists to fix (bughunt 2026-08-13).
+          // no-pin error this command exists to fix.
           await this.ensureEngine();
           return await this.adoptPin(pin);
         } catch (err) {
@@ -528,8 +527,8 @@ export class OpenCodeSession implements AgentSession {
 
   /** The engine PROCESS died after a successful start (crash, OOM, kill).
    *  Surface it, end any live turn, and reset the latches so the next
-   *  prompt respawns a fresh engine — without this the session stayed
-   *  busy-wedged forever (bughunt round 2). */
+   *  prompt respawns a fresh engine — without this the session would stay
+   *  busy-wedged forever. */
   private onEngineDied(detail: string) {
     if (this.closed) return;
     this.recoveryGeneration += 1;
@@ -599,11 +598,11 @@ export class OpenCodeSession implements AgentSession {
     clearTimeout(this.graceTimer);
     this.graceTimer = undefined;
     // A turn's end moots its gated asks: without this, a stale
-    // permission_resolved fired up to PERMISSION_TIMEOUT_MS later, mid-next-
-    // turn (bughunt). No engine reply — the engine has already moved on.
+    // permission_resolved would fire up to PERMISSION_TIMEOUT_MS later,
+    // mid-next-turn. No engine reply — the engine has already moved on.
     this.permissions.denyAll("moot");
     // Usage flushes inside the end path — one per completed turn, just
-    // before turn_end, never between turns (bughunt round 2).
+    // before turn_end, never between turns.
     if (!this.closed) this.mapper.flushUsage();
     this.mapper.endTurn();
     if (!this.closed) this.emit({ type: "turn_end" });
@@ -627,8 +626,8 @@ export class OpenCodeSession implements AgentSession {
       return;
     }
     // A SUBAGENT's ask (parentId set) rides the same bar, same timer, same
-    // deny-by-default; before the lane opened these were dropped whole and a
-    // gated subagent simply hung.
+    // deny-by-default; dropping them whole would leave a gated subagent
+    // hung.
     void this.permissions.ask(
       {
         id: ask.id,

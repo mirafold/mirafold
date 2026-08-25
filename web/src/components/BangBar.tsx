@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 /**
- * Stdin for the running `!` command (4.9) — SHELL-OWNED UI on the ephemeral
+ * Stdin for the running `!` command — SHELL-OWNED UI on the ephemeral
  * input path: what's typed here goes to the PTY and nowhere else (never the
  * replay ring, never other viewports), and only the issuing viewport mounts
  * it. Masks itself when the command's output ends in a password prompt

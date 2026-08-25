@@ -12,7 +12,7 @@ import {
 } from "./InputNavigation";
 
 // Phone vs. desktop is decided once at module load (a mid-session resize
-// isn't worth a listener, R.4) and drives two deliberate divergences:
+// isn't worth a listener) and drives two deliberate divergences:
 // the placeholder (the desktop keyboard lore wraps to three ugly lines on
 // a phone; anything longer than bare "Message" clips beside the cwd crumb
 // at 16px) and the SUBMIT GESTURE — see the Enter handler below.
@@ -48,7 +48,7 @@ type PromptBoxProps = {
   onInterrupt: () => void;
   // The session's working dir, shown at the prompt like a terminal's
   // `~/Projects/foo ❯`. Shell-owned — rendered here, never by agent output,
-  // so it can't be spoofed (4.8).
+  // so it can't be spoofed.
   cwd?: string;
   options: PromptOption[];
   textareaRef: RefObject<HTMLTextAreaElement | null>;
@@ -150,7 +150,7 @@ export function PromptBox({
   const [activeOption, setActiveOption] = useState(0);
   const [menuDismissed, setMenuDismissed] = useState(false);
   // The cwd is collapsible down to just the ❯ caret — reader's choice,
-  // persisted (2026-07-16). The status bar still carries the folder leaf,
+  // persisted. The status bar still carries the folder leaf,
   // so a collapsed prompt never hides which project this is.
   const [cwdShown, setCwdShown] = useState(
     () => localStorage.getItem(CWD_SHOWN_KEY) !== "hidden",
@@ -184,7 +184,7 @@ export function PromptBox({
   };
 
   // The caret starts in the prompt box, so entering a session (new or
-  // existing) means you can just type — no click first (2026-07-20, Kyle).
+  // existing) means you can just type — no click first.
   // Re-taken when a turn ends, because ending it unmounts whatever the user
   // last clicked (the stop button, a permission answer) and drops focus to
   // the body. Two things are left alone: focus that something else holds —
@@ -312,7 +312,7 @@ export function PromptBox({
       {/* The cwd crumb and its collapse-to-caret trick are desktop-only:
           on phone it ate a third of the typing width and the caret toggle
           isn't discoverable by touch — the folder lives in the settings
-          card's Session section there instead (R.4l, Kyle 2026-07-22). */}
+          card's Session section there instead. */}
       {cwd && cwdShown && !IS_PHONE && (
         <button
           type="button"
@@ -394,8 +394,8 @@ export function PromptBox({
           }
           // Phone: Enter NEVER submits — it inserts a newline (the native
           // textarea behavior, deliberately left alone) and the ↑ button is
-          // the one way to send, matching every mobile chat app (R.4l,
-          // Kyle 2026-07-22; pinned by phone.e2e.ts). Desktop keeps
+          // the one way to send, matching every mobile chat app (pinned
+          // by phone.e2e.ts). Desktop keeps
           // Enter-to-send, Shift+Enter for newline.
           if (e.key === "Enter" && !e.shiftKey && !IS_PHONE) {
             e.preventDefault();

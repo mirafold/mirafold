@@ -27,8 +27,8 @@ function childrenText(children: ReactNode): string {
 }
 
 // react-markdown blanks the href of any scheme off its allowlist
-// (javascript:, data:, …). Two adjustments, both from the 2026-07-28 phone
-// session: exp/exps — Expo Go's deep-link schemes, how a mobile app built in
+// (javascript:, data:, …). Two adjustments: exp/exps — Expo Go's
+// deep-link schemes, how a mobile app built in
 // a session reaches the phone — are re-allowed (a plain external-app
 // navigation, no script surface); everything else stays stripped, and a
 // stripped link renders as its text, never a clickable anchor going nowhere.

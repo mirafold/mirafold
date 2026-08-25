@@ -1,4 +1,4 @@
-// The one door all daemon logging goes through (R.4g grown up):
+// The one door all daemon logging goes through:
 //
 // - console: `[ISO] [component] level: message` lines. info+ always; debug
 //   only with MIRAFOLD_DEBUG=1 (or the launcher's --verbose). Debug goes to
@@ -27,8 +27,8 @@ import path from "node:path";
 import { envFlag } from "./env";
 
 /** True when debug-level output is enabled (MIRAFOLD_DEBUG=1 / --verbose).
- *  MIRAFOLD_DEBUG=0 and =false mean OFF (2026-07-29 bughunt — Boolean("0")
- *  is true, so setting 0 to disable debug used to enable it). */
+ *  MIRAFOLD_DEBUG=0 and =false mean OFF (Boolean("0") is true, so a naive
+ *  check would treat 0 as enabling debug). */
 export const verbose = envFlag(process.env.MIRAFOLD_DEBUG) || process.argv.includes("--verbose");
 
 const MAX_LINE = 4_000; // payload-scale content has no business in a log line
@@ -97,7 +97,7 @@ const clip = (msg: string) => (msg.length > MAX_LINE ? `${msg.slice(0, MAX_LINE)
  * is a raw tail of engine stderr. Gemini's REST API authenticates with the key
  * in the QUERY STRING, and CLI/SDK failure paths routinely echo the failing
  * request URL — so a plausible crash writes a live API key into the exact file
- * we tell users to attach to bug reports (2026-07-27 audit).
+ * we tell users to attach to bug reports.
  *
  * Patterns are deliberately shaped (known credential prefixes, named query
  * params) rather than entropy-guessing, so ordinary log text is never mangled.
@@ -127,8 +127,7 @@ export function scrub(msg: string): string {
       .replace(/\bgh[pousr]_[A-Za-z0-9]{20,}\b/g, "[redacted-key]")
       // AWS access key ids (Bedrock — an engine Claude Code supports; the
       // adapter passes process.env through, so a session echoing SigV4 or a
-      // key id into engine stderr must not land in the flight recorder —
-      // audit 2026-08-13).
+      // key id into engine stderr must not land in the flight recorder).
       .replace(/\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, "[redacted-key]")
       // Google Vertex OAuth access tokens (ya29.…)
       .replace(/\bya29\.[0-9A-Za-z_-]{20,}/g, "[redacted-key]")

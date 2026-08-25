@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-// Live phone-width detection (E.4). PromptBox's IS_PHONE is a module-load
+// Live phone-width detection. PromptBox's IS_PHONE is a module-load
 // constant — fine for a one-shot layout choice, wrong for a component that
 // must re-render when the viewport crosses the breakpoint (a rotate, a
 // desktop window resize, and every e2e that drives one page across widths).

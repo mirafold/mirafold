@@ -1,8 +1,8 @@
 import type { FsDirEntry } from "@protocol";
 
-// The Explorer's lazy per-directory store (E2.2) — the client half of the
-// fs_listdir/fs_dir pair. The panel no longer holds one flat whole-tree
-// listing; it holds one DirState per directory it has asked about, keyed by
+// The Explorer's lazy per-directory store — the client half of the
+// fs_listdir/fs_dir pair. The panel holds no flat whole-tree listing;
+// it holds one DirState per directory it has asked about, keyed by
 // root-relative /-separated path ("" = the session root), and fetches a
 // directory the first time it's expanded. Pure data + pure transitions here
 // (Tier-1 testable); FilesPanel owns the correlation-id bookkeeping and the
@@ -51,7 +51,7 @@ export function beginDirFetch(store: DirStore, path: string): DirStore {
 
 /** Apply an fs_dir reply body to `path`. The caller has already dropped
  *  stale replies (per-dir correlation ids live in the panel); this is only
- *  the state transition. An error keeps prior entries (see DirState.error). */
+ *  the state transition. An error keeps a prior listing as `stale`. */
 export function applyDirReply(
   store: DirStore,
   path: string,
@@ -83,7 +83,7 @@ export function pruneDirStore(store: DirStore, keep: ReadonlySet<string>): DirSt
   return new Map([...store].filter(([path]) => path === "" || keep.has(path)));
 }
 
-/** How long a bell-triggered refresh must wait (W.2): immediately when the
+/** How long a bell-triggered refresh must wait: immediately when the
  *  last one is at least `gapMs` old, else the remainder of the gap — the
  *  client-side coalescing that keeps a busy disk (bells are server-debounced
  *  but each refresh spends one request per shown directory) from draining
@@ -93,7 +93,7 @@ export const bellRefreshDelay = (nowMs: number, lastRefreshMs: number, gapMs: nu
 
 /** The child-directory paths of one listing — what the open-panel prefetch
  *  walks (fetch the first level so expanding it is instant). Symlinks are
- *  leaves by kind (E2.1's rule), so only `dir` children qualify. */
+ *  leaves by kind, so only `dir` children qualify. */
 export function childDirPaths(parent: string, entries: FsDirEntry[]): string[] {
   return entries
     .filter((e) => e.kind === "dir")

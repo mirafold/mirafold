@@ -1,5 +1,5 @@
-// Socket auth primitives (Step 4.5), extracted from index.ts so the security
-// predicates are unit-testable in isolation. The token gates both the HTTP app
+// Socket auth primitives, kept out of index.ts so the security predicates
+// are unit-testable in isolation. The token gates both the HTTP app
 // and the WebSocket; index.ts wires these into the Express middleware and the
 // ws verifyClient. Pure functions only — no env reads, no server state.
 
@@ -59,7 +59,7 @@ export function cookieToken(cookieHeader?: string): string | undefined {
  * starts with "/", but one starting with "//" (or "/\", which browsers treat
  * the same) becomes a protocol-relative Location header — an off-machine
  * redirect. Only someone who already holds the token can trigger it, so this
- * is principle, not a live hole (2026-07-15 audit #4).
+ * is principle, not a live hole.
  */
 export function safeRedirectPath(path: string): string {
   return path.startsWith("//") || path.startsWith("/\\") ? "/" : path;
@@ -96,7 +96,7 @@ function selfOrigins(port: number): Set<string> {
  * attaches our cookie to its handshake and the socket drives a shell as the
  * user. Scheme is part of the match for the same reason (cookies aren't
  * scheme-isolated, so an https loopback page could present ours too), and we
- * only ever serve http (2026-07-27 audit).
+ * only ever serve http.
  *
  * With auth OFF there is no cookie to steal and any local page can connect
  * regardless — index.ts says exactly that, loudly, at boot — so the looser

@@ -1,9 +1,9 @@
-// The Explorer's per-viewport request layer (Phase E) — the fs_list /
-// fs_listdir / fs_read / fs_diff / fs_changes message handlers, lifted out of
-// connection.ts's switch so the Explorer's
-// request handling lives beside its data layer (fs-explorer.ts,
-// git.ts) instead of swelling the dispatcher. connection.ts builds one of
-// these per connection and delegates the five cases to it.
+// The Explorer's per-viewport request layer — the fs_list / fs_listdir /
+// fs_read / fs_diff / fs_changes message handlers, kept out of
+// connection.ts's switch so the Explorer's request handling lives beside
+// its data layer (fs-explorer.ts, git.ts) instead of swelling the
+// dispatcher. connection.ts builds one of these per connection and
+// delegates the five cases to it.
 //
 // Every reply is per-viewport: answered on THIS connection only (like
 // pong/sessions), never broadcast, never replay-buffered — disk state is a
@@ -52,8 +52,8 @@ import { envInt } from "../env";
 // request/reply correlation must always resolve.
 const FS_MIN_INTERVAL_MS = envInt("FS_MIN_INTERVAL_MS", 250);
 
-// fs_listdir's throttle is a token BUCKET, not the min-interval family
-// (E2.1): opening the panel legitimately fires root + a first level of
+// fs_listdir's throttle is a token BUCKET, not the min-interval family:
+// opening the panel legitimately fires root + a first level of
 // fetches in the same instant, which a min-interval would refuse — and one
 // readdir is orders cheaper than the tree walk the interval was sized for.
 // Capacity = refill rate, one knob: a full burst of this many, sustained at
@@ -61,7 +61,7 @@ const FS_MIN_INTERVAL_MS = envInt("FS_MIN_INTERVAL_MS", 250);
 const FS_LISTDIR_MAX_PER_SEC = envInt("FS_LISTDIR_MAX_PER_SEC", 32);
 const GIT_BUSY = "a git query is already running — retry shortly";
 
-// W.H1: how long a directory listing may wait on its repo's git status
+// How long a directory listing may wait on its repo's git status
 // before shipping plain. Status calls serialize in one GLOBAL queue, so one
 // pathological repo (network mount, cold cache) would otherwise hold every
 // viewport's listings hostage for up to the 5s git timeout. Well above the
@@ -77,9 +77,9 @@ export const CLIENT_ID_RE = /^[\w-]{1,64}$/;
 export const badClientId = (id: unknown): boolean =>
   typeof id !== "string" || !CLIENT_ID_RE.test(id);
 
-// E2.4: HEAD's version comes from the repo that CONTAINS the file —
+// HEAD's version comes from the repo that CONTAINS the file —
 // nearest .git above its directory — so a file in a NESTED repo diffs
-// through that repo, closing E2.3's recorded gap. The wire path is
+// through that repo. The wire path is
 // already textually contained (cleanRelPath), and the directory
 // resolves through the realpath jail before any discovery. For a deleted
 // subtree, walk upward to the nearest surviving ancestor and carry the
@@ -136,13 +136,13 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
   const changesGate = minInterval(FS_MIN_INTERVAL_MS);
   const listdirBucket = tokenBucket(FS_LISTDIR_MAX_PER_SEC);
   const gitSlot = inflightSlot();
-  // Repos whose status outran the listing bound (W.H1) — this connection is
+  // Repos whose status outran the listing bound — this connection is
   // owed ONE follow-up bell per repo when that status lands, however many
   // listings timed out against it (a prefetch burst must not ring N times).
   const lateStatusBells = new Set<string>();
-  // Repos already reported as configuring programs Mirafold refused to run
-  // (the 2026-07-26 audit's default): the prefetch burst hits one repo many
-  // times, and the user needs to be told once, not per directory.
+  // Repos already reported as configuring programs Mirafold refused to run:
+  // the prefetch burst hits one repo many times, and the user needs to be
+  // told once, not per directory.
   const trustNoticed = new Set<string>();
 
   /**
@@ -230,19 +230,19 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
           ...(r.truncated ? { truncated: true } : {}),
         });
       };
-      // E2.3: a directory inside a repo lists through THAT repo's view —
+      // A directory inside a repo lists through THAT repo's view —
       // its own ignore rules honored, its own statuses attached (cached per
       // repo, one git child at a time — repoStatus serializes). Outside any
-      // repo: the plain listing, byte-identical to E2.1. Git trouble
+      // repo: the plain listing. Git trouble
       // degrades to the plain listing, never to an error — the entries are
       // disk truth either way; statuses are the garnish. Note gitSlot
       // stays out of this path: the burst is legitimate here, so the
       // discipline is repoStatus's queue, not a refusal.
       //
-      // W.H1: the reply never waits on git past the bound. On timeout the
+      // The reply never waits on git past the bound. On timeout the
       // plain listing ships NOW; when the status finally settles usable,
       // one synthetic bell tells this viewport to refetch — by then the
-      // status is cached (TTL from settle, W.H2), so the refetch decorates
+      // status is cached (TTL from settle), so the refetch decorates
       // instantly instead of timing out again. A status that settles
       // degraded (not a repo, git error) rings nothing: plain was final.
       const repoRoot = findRepoRoot(raw.real);

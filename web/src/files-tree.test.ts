@@ -9,7 +9,7 @@ import {
   pruneDirStore,
 } from "./files-tree";
 
-// The lazy per-directory store (E2.2): fetch-state transitions, the
+// The lazy per-directory store: fetch-state transitions, the
 // keep-entries-while-refetching rule (a refresh must never read as a
 // collapse), error handling, the refresh-boundary prune, and the prefetch
 // walk. All pure — the panel adds only correlation ids and requests.

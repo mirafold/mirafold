@@ -190,13 +190,13 @@ export function defaultAgent(): AgentName {
     : "claude-code";
 }
 
-/** Resolve one named agent's backend (kind + live + model), per-session (P.4). */
+/** Resolve one named agent's backend (kind + live + model), per-session. */
 export function resolveBackendFor(agent: AgentName): Backend {
   const kind = credentialKind(agent);
   // `live` ⇒ the REAL agent runs. A prohibited subscription (claude/gemini —
   // written bans; codex only if provider-policy ever flips it) is NOT live —
   // it falls back to the mock, so we never actually drive it — and onboarding
-  // shows it as `blocked` with the API-key fix (R.4i).
+  // shows it as `blocked` with the API-key fix.
   const backend: Backend = {
     agent,
     kind,
@@ -219,7 +219,7 @@ export function resolveBackendFor(agent: AgentName): Backend {
     if (provider) backend.provider = provider;
   } else if (agent === "opencode") {
     // The pinned provider (OPENCODE_MODEL's provider half) — the input the
-    // relay gate and the OC.3 session-start classification both judge.
+    // relay gate and the session-start classification both judge.
     const provider = parseModelPin(backend.model)?.providerID;
     if (provider) backend.provider = provider;
   }
@@ -231,7 +231,7 @@ export const ADAPTER_AGENTS: AgentName[] = ["claude-code", "codex", "gemini-cli"
 
 /** One way an agent could run on this machine. `usable` is provider-policy's
  *  verdict; a present-but-prohibited subscription rides as `blocked` —
- *  listed visible, never hidden (Kyle's requirement (c), Phase N charter).
+ *  listed visible, never hidden.
  *  `provider`/`hint` ride to the wire (a config-declared provider row and
  *  why it's unusable); `endpointUrl` and its auth/source are internal-only.
  *  A Claude configured row exposes `backendId`, an opaque daemon handle. */
@@ -251,9 +251,9 @@ export type BackendOption = {
 
 /**
  * EVERY way the named agent could run — one entry per detected credential,
- * no precedence collapse (N.1). `credentialKind()` stays the single-answer
- * view (its precedence order remains the default until N.5 lets a session
- * carry an explicit choice); this is the full menu the N.4 picker offers.
+ * no precedence collapse. `credentialKind()` stays the single-answer view
+ * (its precedence order is the default when a session carries no explicit
+ * choice); this is the full menu the picker offers.
  * Order is the picker's display order: local endpoint, API key, subscription.
  * Every row carries the `model` it would run when config/env determines it —
  * a row must never commit the user to a model it didn't name.
@@ -342,8 +342,7 @@ export function backendOptions(agent: AgentName): BackendOption[] {
  *
  * Each row also names the model it will run: a provider pick forces the
  * provider id and passes NO model, so Codex resolves the config's own
- * top-level `model` — which is what the user would get in a terminal, and
- * what the row was hiding before (2026-07-20).
+ * top-level `model` — which is what the user would get in a terminal.
  */
 function codexProviderRows(): { defaultRow?: BackendOption; otherRows: BackendOption[] } {
   const { defaultProvider, model, entries } = codexProviders();
@@ -376,7 +375,7 @@ function providerRowDetail(e: CodexProviderEntry): string {
   return e.name ?? e.id;
 }
 
-// Which local-server API dialect each agent can drive (N.3): compatibility is
+// Which local-server API dialect each agent can drive: compatibility is
 // the DIALECT, never the model — Ollama speaks the Anthropic shape (and the
 // OpenAI one), LM Studio/vLLM/llama.cpp only the OpenAI one, and Gemini CLI
 // has no BYO-endpoint path at all.
@@ -385,18 +384,18 @@ const AGENT_DIALECT: Record<AgentName, LocalDialect | null> = {
   codex: "openai",
   "gemini-cli": null,
   // OpenCode reaches local servers through its own provider config, not a
-  // Mirafold-injected endpoint — no discovered-server rows until OC.4 decides.
+  // Mirafold-injected endpoint — so no discovered-server rows.
   opencode: null,
 };
 
 /**
- * The full second-step menu for one agent (N.3): the N.1 credential options
+ * The full second-step menu for one agent: the credential options
  * plus every discovered local server the agent's dialect can drive. Pure —
  * `advertisedBackends` binds it to the live probe cache. When the configured
  * BYO endpoint (claude's ANTHROPIC_BASE_URL, codex's config.toml provider)
  * names the same host:port as a discovered compatible server, the discovered
- * row wins — it carries the model catalog; two rows for one server would be
- * the kind of confusion this phase exists to end.
+ * row wins — it carries the model catalog; two rows for one server would
+ * only confuse.
  */
 export function mergeBackends(
   agent: AgentName,
@@ -443,11 +442,11 @@ function advertisedBackends(agent: AgentName): AgentBackend[] {
 /**
  * What onboarding advertises: each offerable agent, whether it's `live` (usable
  * locally now), and whether it's `blocked` — a prohibited subscription is
- * present, so the picker shows the API-key fix instead of a demo or a dead badge
- * (R.4i). `blocked` is additive/optional on the wire; old clients see `live:
- * false` and degrade to the demo path. N.3 adds `backends` — the full
- * second-step menu (omitted when empty: the row is a plain demo/credential
- * story and the picker needs no second step).
+ * present, so the picker shows the API-key fix instead of a demo or a dead
+ * badge. `blocked` is additive/optional on the wire; old clients see `live:
+ * false` and degrade to the demo path. `backends` is the full second-step
+ * menu (omitted when empty: the row is a plain demo/credential story and the
+ * picker needs no second step).
  */
 export function availableAgents(): AgentInfo[] {
   return ADAPTER_AGENTS.map((agent) => {
@@ -474,8 +473,8 @@ export function availableAgents(): AgentInfo[] {
  * isn't a bare "ready" — the confusion a local-model user hits ("I don't see my
  * model"). A `local` kind shows the endpoint it was pointed at; otherwise a
  * configured model override, if any. Honest scope: the TRULY resolved model
- * only arrives from the engine's init on the first turn (F.3, the status bar) —
- * this is the CONFIGURED target, which is exactly what was invisible before (R.4k).
+ * only arrives from the engine's init on the first turn (the status bar) —
+ * this is the CONFIGURED target.
  */
 function agentDetail(agent: AgentName, kind: CredentialKind): string | undefined {
   if (kind === "local") return endpointDetail(agent);
@@ -566,7 +565,7 @@ function modelFor(agent: AgentName): string | undefined {
 
 /**
  * Validate the onboarding picker's backend choice against CURRENT detection +
- * provider policy, and resolve it to a Backend (N.5). The client is NEVER
+ * provider policy, and resolve it to a Backend. The client is NEVER
  * trusted: a forged kind, a prohibited subscription, a server that stopped
  * since the pick, or a model not in its catalog all refuse with a human
  * message down the existing create-error path — the picker shows it and the
@@ -602,12 +601,12 @@ export function resolveChosenBackend(
   const model = typeof c.model === "string" ? c.model : undefined;
   if (agent === "opencode") {
     // An OpenCode backend's `provider` is the session's CLASSIFICATION
-    // annotation (OC.4c publishes it), not a picker identity — the generic
-    // identity rules below rejected every checkpointed backend, making any
-    // session that ever ran a turn unrecoverable once dormant (bughunt
-    // 2026-08-13, reproduced; round 2 caught kind "local" — a BYO config
-    // provider like Ollama — still falling through to the codex-only local
-    // branch). Validation here is deliberately shallow: the adapter
+    // annotation (published at session start), not a picker identity — the
+    // generic identity rules below would reject every checkpointed backend,
+    // making any session that ever ran a turn unrecoverable once dormant
+    // (and kind "local" — a BYO config provider like Ollama — would fall
+    // through to the codex-only local branch). Validation here is
+    // deliberately shallow: the adapter
     // re-classifies the pinned provider at start and `kindPending` keeps the
     // relay gate closed until it does, so restore only needs "is the agent
     // still credentialed at all".
@@ -782,9 +781,8 @@ export function restoreBackend(stored: Pick<StoredSession, "id" | "backend" | "m
  * Build the session for a backend. The one seam where "which agent" becomes a
  * concrete engine: each real agent drives its own loop and normalizes to
  * `WireMsg`; a backend with no credentials falls back to the mock. `kind` +
- * `endpoint` carry a chosen backend into the adapter (N.5); a default-resolved
- * backend passes its precedence kind, which the adapters treat exactly as the
- * pre-N behavior.
+ * `endpoint` carry a chosen backend into the adapter; a default-resolved
+ * backend passes its precedence kind the same way.
  */
 export function createSession(
   backend: Backend,

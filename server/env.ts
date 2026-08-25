@@ -1,9 +1,9 @@
 // Numeric env knobs, parsed strictly. A malformed value must NARROW the
 // policy, never widen it (the same posture the Origin guard states): a typo'd
-// MAX_WS_PAYLOAD="1MB" used to parse to NaN, which ws treats as UNLIMITED,
-// and WS_HEARTBEAT_MS="30s" became a 1 ms setInterval that terminated every
-// viewport before its pong could arrive (2026-07-29 bughunt). Garbage falls
-// back to the default, loudly.
+// MAX_WS_PAYLOAD="1MB" would parse to NaN, which ws treats as UNLIMITED,
+// and WS_HEARTBEAT_MS="30s" would become a 1 ms setInterval that terminates
+// every viewport before its pong can arrive. Garbage falls back to the
+// default, loudly.
 
 import { createLogger } from "./log";
 
@@ -33,7 +33,7 @@ export function envOff(raw: string | undefined): boolean {
 }
 
 /** A boolean env flag: set and not "0"/"false" (any case) means ON — so
- *  MIRAFOLD_DEBUG=0 actually turns debug OFF (2026-07-29 bughunt). */
+ *  MIRAFOLD_DEBUG=0 actually turns debug OFF. */
 export function envFlag(raw: string | undefined): boolean {
   const v = (raw ?? "").trim().toLowerCase();
   return v !== "" && v !== "0" && v !== "false";

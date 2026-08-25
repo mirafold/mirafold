@@ -86,7 +86,7 @@ const pickerRowSchema = z
 // Every object is strict and sequenced: a locally tampered/corrupt record can
 // never smuggle an arbitrary frame back into the trusted browser shell.
 const storedWireMessageSchema = z.discriminatedUnion("type", [
-  // `parentId` (SA.2): a subagent's prose, grouped under its spawn record.
+  // `parentId`: a subagent's prose, grouped under its spawn record.
   z
     .object({
       type: z.literal("text_delta"),
@@ -152,7 +152,7 @@ const storedWireMessageSchema = z.discriminatedUnion("type", [
       tool: z.string(),
       detail: z.string(),
       id: idSchema,
-      // SA.3: set when the asker is a subagent (opaque spawn handle).
+      // Set when the asker is a subagent (opaque spawn handle).
       parentId: idSchema.optional(),
       seq: sequenceSchema,
     })
@@ -185,7 +185,7 @@ const storedWireMessageSchema = z.discriminatedUnion("type", [
       seq: sequenceSchema,
     })
     .strict(),
-  // `parentId` (SA.2): a subagent's reasoning, grouped under its spawn record.
+  // `parentId`: a subagent's reasoning, grouped under its spawn record.
   z
     .object({
       type: z.literal("thinking_delta"),
@@ -370,7 +370,7 @@ function decodePromptOptions(raw: unknown[], backend: Backend): PromptOption[] {
     return z.array(promptOptionSchema).parse(raw).map((option) => {
       // Provenance is recomputed from trusted checkpoint backend identity,
       // never trusted from the mutable record itself. This also migrates
-      // pre-UX.8 catalogs before their first replay.
+      // catalogs saved without `source` before their first replay.
       const { source: _storedSource, ...catalog } = option;
       const source =
         backend.live && backend.agent === "claude-code"

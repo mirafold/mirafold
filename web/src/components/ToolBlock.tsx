@@ -4,7 +4,7 @@ import { DiffLines } from "../registry/Diff";
 
 /**
  * Transcript record of one tool call: a dim monospace row, collapsed by
- * default — click to expand. The expansion shows the FULL input (T2.2) —
+ * default — click to expand. The expansion shows the FULL input —
  * Edit/MultiEdit as a red/green line diff, Write as the new file's content,
  * everything else as pretty JSON — followed by the result. Errors arrive
  * expanded. While the result is pending the row pulses.

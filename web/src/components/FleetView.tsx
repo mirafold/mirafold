@@ -14,7 +14,7 @@ import { paintTabStatus } from "../tab-status";
 import { agentLabel } from "../agents-meta";
 import { createDomNotifier, folderTitle } from "../notify";
 
-// 4.6 Mission control, grown into the Phase M cockpit: every live session in
+// Mission control, the fleet cockpit: every live session in
 // the registry with name, cwd, live activity, pending permission, and usage —
 // and the grid acts on sessions (answer a permission, interrupt, dispatch a
 // prompt) without entering them. This is shell UI end to end: agent output
@@ -72,7 +72,7 @@ function wantsAnswer(s: SessionMeta): boolean {
   return s.status === "permission" || (s.permissions?.length ?? 0) > 0;
 }
 
-/** Cockpit ordering (Kyle's call, Phase M): rows hold a stable creation
+/** Cockpit ordering: rows hold a stable creation
  *  order so eyes can park on a session; the one exception is sessions
  *  awaiting permission, which surface to a top group — longest-stalled
  *  first (their stream is blocked, so lastActivity is when they stalled).
@@ -91,20 +91,20 @@ export function FleetView() {
   const [sessions, setSessions] = useState<SessionMeta[] | null>(null);
   const [daemon, setDaemon] = useState<DaemonInfo>(NO_DAEMON_INFO);
   const agents = daemon.agents;
-  // Phase CS: the latest `subscription` reply for the pair card's manage view
+  // The latest `subscription` reply for the pair card's manage view
   // (id-correlated there, so only the newest matters).
   const [subReply, setSubReply] = useState<SubscriptionReply | null>(null);
   const [connected, setConnected] = useState(false);
   // ?new=1 lands straight on the picker — that's the URL the in-session "new"
-  // button opens in a fresh tab (2026-07-20, Kyle).
+  // button opens in a fresh tab.
   const [showNew, setShowNew] = useState(() => new URLSearchParams(location.search).has("new"));
   const [onbError, setOnbError] = useState<string | null>(null);
   // A fleet ACT's error reply (unknown session, relay gate) — a dismissible
-  // header line, kept apart from the onboarding card's error slot (M.3).
+  // header line, kept apart from the onboarding card's error slot.
   const [actionError, setActionError] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   // SessionId whose "end" button is armed (first click); a second click
-  // ends it (#11). The stop (interrupt) button gets the same two-click arm.
+  // ends it. The stop (interrupt) button gets the same two-click arm.
   const endConfirm = useArmedConfirm<string>();
   const stopConfirm = useArmedConfirm<string>();
   // Permission ids already answered from the grid — buttons disable
@@ -114,13 +114,13 @@ export function FleetView() {
   const [promptFor, setPromptFor] = useState<string | null>(null);
   // SessionId whose details sub-line is open (one at a time, like promptFor):
   // the row's volatile extras — live activity, tokens · cost — live behind
-  // the down-caret disclosure instead of crowding the bar (2026-07-24, Kyle).
+  // the down-caret disclosure instead of crowding the bar.
   const [detailsFor, setDetailsFor] = useState<string | null>(null);
   const [, setTick] = useState(0); // re-render so ago/elapsed labels stay honest
 
   // useState's lazy initializer, NOT useMemo — same reason as Shell's bus:
   // Fast Refresh re-runs useMemo on every hot edit, leaking a socket each
-  // time; state survives the hot update (2026-07-25).
+  // time; state survives the hot update.
   const [socket] = useState(() => {
     const s = new SocketClient();
     s.setHello(() => ({ type: "watch_sessions" }));
@@ -157,7 +157,7 @@ export function FleetView() {
         location.assign(`/s/${m.sessionId}`);
       } else if (m.type === "error") {
         // While the picker is open its card owns errors (a refused create);
-        // otherwise the reply belongs to a grid act — the header line (M.3).
+        // otherwise the reply belongs to a grid act — the header line.
         if (pickerOpenRef.current) setOnbError(m.message);
         else setActionError(m.message);
       }
@@ -185,7 +185,7 @@ export function FleetView() {
     return () => clearInterval(timer);
   }, [hasLive]);
 
-  // M.5: the fleet TAB is a cockpit signal too — the same badge grammar as a
+  // The fleet TAB is a cockpit signal too — the same badge grammar as a
   // session tab (amber = something needs you, blue = fleet busy), title
   // carrying the needs-you count. paintTabStatus draws the favicon; the
   // fleet's own title overwrites its session wording.
@@ -199,7 +199,7 @@ export function FleetView() {
         : "Mirafold — sessions";
   }, [needsYou, fleetBusy]);
 
-  // Needs-you notifications (NF.1): a hidden cockpit toasts per session. No
+  // Needs-you notifications: a hidden cockpit toasts per session. No
   // toggle UI here — the preference set in any session's settings card is
   // read live from storage by the notifier. reset() on disconnect: stale
   // snapshots must not diff against a world the socket no longer sees.
@@ -304,7 +304,7 @@ export function FleetView() {
             + new session
           </button>
         </header>
-        {/* Screen-reader pulse for the cockpit's "act here" state (M.3). */}
+        {/* Screen-reader pulse for the cockpit's "act here" state. */}
         <span className="sr-only" aria-live="polite">
           {needsYou > 0
             ? `${needsYou} session${needsYou === 1 ? " needs" : "s need"} your permission`
@@ -386,20 +386,19 @@ function FleetRow({
   sendQuickPrompt: (sessionId: string, text: string) => void;
 }) {
   return (
-    // A wrapper per session (M.3): the classic row plus its cockpit
+    // A wrapper per session: the classic row plus its cockpit
     // sub-lines — the pending-permission line and the quick-prompt
     // line — so the row's stretched click-overlay
     // (.fleet-link::after, bounded by .fleet-row's position) never
     // covers the sub-line controls.
     <div className="fleet-item">
-      {/* A.3b: the row is a plain container, NOT an anchor — buttons
+      {/* The row is a plain container, NOT an anchor — buttons
           inside a link are invalid HTML and made screen readers read the
           whole row (id, status, "end") as one link label. The session
           NAME is the link; its stretched overlay (.fleet-link::after)
           keeps click-anywhere-to-open for mouse users, and the real
           controls ride above the overlay.
-          The cwd stays OFF the row (an on-row column was tried
-          2026-07-22 and re-removed the same day as clutter — Kyle):
+          The cwd stays OFF the row (an on-row column is clutter):
           desktop gets it on hover here; phone gets it in the settings
           card's Session section, one tap inside. */}
       <div className="fleet-row" title={tildify(s.cwd, home)}>
@@ -411,8 +410,8 @@ function FleetRow({
           onCommit={(name) => commitRename(s.sessionId, name)}
           onCancel={() => setRenaming(null)}
         />
-        {/* Agent before model, matching the in-session status bar (2026-07-17, Kyle);
-            model only when known, like the bar (2026-07-23). */}
+        {/* Agent before model, matching the in-session status bar;
+            model only when known, like the bar. */}
         <span className="fleet-agent">{s.agent}</span>
         {s.model && (
           <span className="fleet-model" title="model">
@@ -423,12 +422,12 @@ function FleetRow({
         <span className="fleet-id" title="session id">
           {s.sessionId}
         </span>
-        {/* The status WORD came off the row (2026-07-25, Kyle): the
+        {/* The status WORD is off the row: the
             dot already says it — blinking blue = working. Kept for
             screen readers, which can't read a colored dot. */}
         <span className="sr-only">{STATUS_LABEL[s.status]}</span>
         <span className="fleet-ago">{ago(s.lastActivity)}</span>
-        {/* M.5: who's watching — 0 is the interesting number (an
+        {/* Who's watching — 0 is the interesting number (an
             unwatched session still working for you). */}
         <span className="fleet-viewports" title="open viewports">
           ⧉ {s.viewports}
@@ -553,7 +552,7 @@ function SessionName({
   );
 }
 
-/** The "act here" sub-line (M.3): WHAT the session wants, inert plain text,
+/** The "act here" sub-line: WHAT the session wants, inert plain text,
  *  answerable in place. Oldest first, exactly like the in-session permission
  *  bar; renders nothing when the queue is empty. */
 function PermissionLine({
@@ -594,8 +593,8 @@ function PermissionLine({
   );
 }
 
-/** The on-demand details sub-line (2026-07-24, Kyle): the row's volatile
- *  extras — live activity and tokens · cost — moved off the bar so the
+/** The on-demand details sub-line: the row's volatile extras — live
+ *  activity and tokens · cost — kept off the bar so the
  *  glance set stays stable; opened per-row by the caret disclosure, one at
  *  a time. Renders from the same snapshots as the row, so it live-updates
  *  while open. Activity text is engine-derived — inert plain text, never
