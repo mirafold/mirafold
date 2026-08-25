@@ -6,7 +6,7 @@ import path from "node:path";
 import { type Browser, type BrowserContext, type Page } from "playwright-core";
 import type { ClientMsg } from "../protocol";
 import { assertApartOnScreen, assertAxeClean, launchChrome, noSideScroll } from "./e2e-harness";
-import { fixtureGit as git, startDaemon, TestClient, type Daemon } from "./itest-harness";
+import { fixtureGit as git, startDaemon, TestClient, type Daemon, createSession as seedSession } from "./itest-harness";
 
 // CR.2–CR.4 in a real browser against a real daemon and real Git: responsive
 // review, every honest state, line/hunk selection, editable prompt drafts,
@@ -65,13 +65,9 @@ const walkSource = (tags: Record<number, string>): string =>
   "\n";
 
 const createSession = async (cwd: string): Promise<string> => {
-  const client = new TestClient(daemon.port, { token: TOKEN });
-  await client.opened();
-  await client.type("agents");
-  client.send({ type: "create", agent: "claude-code", cwd } as ClientMsg);
-  const created = (await client.type("session_created")) as { sessionId: string };
+  const { client, sessionId } = await seedSession(daemon.port, "claude-code", { cwd, token: TOKEN });
   client.close();
-  return created.sessionId;
+  return sessionId;
 };
 
 const sessionUrl = (sessionId: string): string =>
@@ -93,7 +89,12 @@ const selectDesktopFile = async (name: string): Promise<void> => {
     (suffix) => document.querySelector(".changes-current-path")?.textContent?.endsWith(String(suffix)),
     name,
   );
-  await desktop.waitForTimeout(300);
+  // The diff for the selected file has landed once its rows exist and the
+  // presenter is no longer loading — the fixed nap this replaces waited for
+  // exactly that.
+  await desktop.waitForFunction(
+    () => document.querySelector('.changes-view [role="listbox"], .changes-view .fv-content') !== null,
+  );
 };
 
 const desktopDiffText = async (kind: "add" | "del"): Promise<string> =>

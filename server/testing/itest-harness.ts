@@ -104,6 +104,14 @@ export function startDaemon(env: Record<string, string> = {}): Promise<Daemon> {
   child.stdout.on("data", (d: Buffer) => (log += d));
   child.stderr.on("data", (d: Buffer) => (log += d));
   return new Promise<Daemon>((resolve, reject) => {
+    // A daemon that exits before it listens (a syntax error, a refused
+    // port, a missing module) must fail this promise NOW, with its log —
+    // not after the 15 s deadline with "did not start".
+    child.once("exit", (code, signal) => {
+      clearInterval(poll);
+      clearTimeout(deadline);
+      reject(new Error(`daemon exited (${code ?? signal}) before listening; log:\n${log}`));
+    });
     const deadline = setTimeout(() => {
       // A failed boot must not leak: the poll would fire for the rest of the
       // process, and the child — maybe listening but never having printed —
@@ -250,15 +258,18 @@ export class TestClient {
   }
 }
 
-/** Open a client, wait for the `agents` hello, create a session on `agent`. */
+/** Open a client, wait for the `agents` hello, create a session on `agent`
+ *  (in `cwd` when given — the way a browser test seeds a session AT a
+ *  fixture the UI has no picker for). */
 export async function createSession(
   port: number,
   agent = "claude-code",
+  options: { cwd?: string; token?: string } = {},
 ): Promise<{ client: TestClient; sessionId: string }> {
-  const client = new TestClient(port);
+  const client = new TestClient(port, options.token !== undefined ? { token: options.token } : undefined);
   await client.opened();
   await client.type("agents");
-  client.send({ type: "create", agent } as ClientMsg);
+  client.send({ type: "create", agent, ...(options.cwd ? { cwd: options.cwd } : {}) } as ClientMsg);
   const created = (await client.type("session_created")) as WireMsg & { sessionId: string };
   return { client, sessionId: created.sessionId };
 }

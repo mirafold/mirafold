@@ -471,6 +471,15 @@ const HOSTILE_ARTIFACT =
  * a shuffled deck of five templates so no template repeats until all
  * five have been seen.
  */
+/** One scripted scenario: what triggers it and what it plays. */
+type MockScenario = {
+  id: string;
+  /** The canonical phrase a test sends to trigger exactly this scenario. */
+  prompt: string;
+  match: RegExp | ((text: string) => boolean);
+  play: (session: MockSession) => void;
+};
+
 export class MockSession implements AgentSession {
   private listeners = new Set<(msg: WireMsg) => void>();
   private timers: ReturnType<typeof setTimeout>[] = [];
@@ -503,56 +512,94 @@ export class MockSession implements AgentSession {
     emitPromptOptions((msg) => this.emit(msg), options);
   }
 
-  // Each deterministic hook exercises one UI capability API-free; anything
-  // else is a canned reply drawn from the template deck.
-  pushPrompt(text: string) {
-    if (/revise the selected workspace change/i.test(text)) return this.playMarkdownReview();
-    if (/one sentence document/i.test(text)) return this.playShortDocument();
-    if (/live document demo/i.test(text)) return this.playLiveDocument();
-    if (/responsive document stress/i.test(text)) return this.playResponsiveDocumentStress();
-    if (/document closure stress/i.test(text)) return this.playDocumentClosureStress();
-    if (/interactive|button/i.test(text)) return this.playActionCard();
-    if (/todo|checklist|step by step|plan it/i.test(text)) return this.playChecklist();
-    if (/delegate slowly/i.test(text)) return this.playSlowSubagent();
-    if (/subagent|delegate/i.test(text)) return this.playSubagent();
-    if (/huge|big output|large output|truncat/i.test(text)) return this.playHugeOutput();
-    if (/artifact/i.test(text)) {
-      // broken/navigating artifacts exercise the failure fallbacks (3.4).
-      if (/broken|crash/i.test(text)) {
-        return this.playArtifact(
+  /**
+   * The scripted scenarios, in dispatch order — the FIRST match plays. Each
+   * exercises one UI capability API-free; a prompt matching none draws a
+   * canned reply from the template deck. `prompt` is the canonical phrase
+   * (MOCK_PROMPTS) a browser test sends; order matters where phrases overlap
+   * ("delegate slowly" before "delegate", the artifact variants before the
+   * generic artifact), and mock-scenarios.test.ts proves every canonical
+   * prompt routes to its own scenario and nowhere earlier.
+   */
+  private static readonly SCENARIOS: readonly MockScenario[] = [
+    { id: "markdown-review", prompt: "revise the selected workspace change", match: /revise the selected workspace change/i, play: (m) => m.playMarkdownReview() },
+    { id: "short-document", prompt: "one sentence document", match: /one sentence document/i, play: (m) => m.playShortDocument() },
+    { id: "live-document", prompt: "live document demo", match: /live document demo/i, play: (m) => m.playLiveDocument() },
+    { id: "responsive-document", prompt: "responsive document stress", match: /responsive document stress/i, play: (m) => m.playResponsiveDocumentStress() },
+    { id: "document-closure", prompt: "document closure stress", match: /document closure stress/i, play: (m) => m.playDocumentClosureStress() },
+    { id: "action-card", prompt: "show me an interactive card", match: /interactive|button/i, play: (m) => m.playActionCard() },
+    { id: "checklist", prompt: "plan it step by step", match: /todo|checklist|step by step|plan it/i, play: (m) => m.playChecklist() },
+    { id: "slow-subagent", prompt: "delegate slowly", match: /delegate slowly/i, play: (m) => m.playSlowSubagent() },
+    { id: "subagent", prompt: "delegate this to subagents", match: /subagent|delegate/i, play: (m) => m.playSubagent() },
+    { id: "huge-output", prompt: "produce a huge output", match: /huge|big output|large output|truncat/i, play: (m) => m.playHugeOutput() },
+    // The artifact variants exercise the failure fallbacks and the
+    // update-in-place path; the generic bridge artifact comes last.
+    {
+      id: "artifact-broken",
+      prompt: "show a broken artifact",
+      match: (t) => /artifact/i.test(t) && /broken|crash/i.test(t),
+      play: (m) =>
+        m.playArtifact(
           "broken demo",
           '<h2>about to crash</h2><script>throw new Error("deliberate mock crash")</script>',
-        );
-      }
-      if (/navigat|escape/i.test(text)) {
-        // about:blank triggers the same liveness kill as any external URL,
-        // hermetically — the e2e containment test must not need the network.
-        return this.playArtifact(
-          "navigating demo",
-          '<h2>leaving…</h2><script>location.href="about:blank"</script>',
-        );
-      }
-      // An artifact that ATTEMPTS the escapes, reporting each result
-      // into its own DOM so the e2e can assert containment from outside (R.4e).
-      if (/hostile/i.test(text)) return this.playArtifact("hostile demo", HOSTILE_ARTIFACT);
+        ),
+    },
+    {
+      id: "artifact-navigating",
+      prompt: "show a navigating artifact",
+      // about:blank triggers the same liveness kill as any external URL,
+      // hermetically — the e2e containment test must not need the network.
+      match: (t) => /artifact/i.test(t) && /navigat|escape/i.test(t),
+      play: (m) =>
+        m.playArtifact("navigating demo", '<h2>leaving…</h2><script>location.href="about:blank"</script>'),
+    },
+    {
+      id: "artifact-hostile",
+      prompt: "show a hostile artifact",
+      // An artifact that ATTEMPTS the escapes, reporting each result into its
+      // own DOM so the e2e can assert containment from outside.
+      match: (t) => /artifact/i.test(t) && /hostile/i.test(t),
+      play: (m) => m.playArtifact("hostile demo", HOSTILE_ARTIFACT),
+    },
+    {
+      id: "artifact-updating",
+      prompt: "show an updating artifact",
       // Same id re-sent with new html — the update-in-place mechanism the
-      // per-artifact UUIDs above never exercise (2026-07-29 bughunt).
-      if (/updat/i.test(text)) return this.playUpdatingArtifact();
-      return this.playBridgeArtifact();
-    }
-    if (/fail the turn|turn error/i.test(text)) return this.playTurnError();
-    if (/dangerous|sudo|rm -rf/i.test(text)) return this.playPermissionAsk();
-    if (/notice|attribution/i.test(text)) return this.playNotices();
-    if (/question|choose|decide/i.test(text)) return this.playQuestion();
-    if (/picker/i.test(text)) return this.playPicker();
-    if (/chart demo/i.test(text)) return this.playCharts();
-    if (/console/i.test(text)) return this.playConsole();
-    if (/tool activity|transcript compact/i.test(text)) return this.playToolActivity();
-    if (/screenshot/i.test(text)) return this.playImage();
-    if (/diagram/i.test(text)) return this.playDiagram();
-    if (/kpi/i.test(text)) return this.playStat();
-    if (/snippet/i.test(text)) return this.playCode();
-    if (/health/i.test(text)) return this.playStatusList();
+      // per-artifact UUIDs never exercise.
+      match: (t) => /artifact/i.test(t) && /updat/i.test(t),
+      play: (m) => m.playUpdatingArtifact(),
+    },
+    { id: "artifact", prompt: "show an artifact", match: /artifact/i, play: (m) => m.playBridgeArtifact() },
+    { id: "turn-error", prompt: "fail the turn", match: /fail the turn|turn error/i, play: (m) => m.playTurnError() },
+    { id: "permission-ask", prompt: "run something dangerous", match: /dangerous|sudo|rm -rf/i, play: (m) => m.playPermissionAsk() },
+    { id: "notices", prompt: "show a notice with attribution", match: /notice|attribution/i, play: (m) => m.playNotices() },
+    { id: "question", prompt: "ask me a question", match: /question|choose|decide/i, play: (m) => m.playQuestion() },
+    { id: "picker", prompt: "open the picker", match: /picker/i, play: (m) => m.playPicker() },
+    { id: "charts", prompt: "chart demo", match: /chart demo/i, play: (m) => m.playCharts() },
+    { id: "console", prompt: "show a console", match: /console/i, play: (m) => m.playConsole() },
+    { id: "tool-activity", prompt: "show tool activity", match: /tool activity|transcript compact/i, play: (m) => m.playToolActivity() },
+    { id: "image", prompt: "take a screenshot", match: /screenshot/i, play: (m) => m.playImage() },
+    { id: "diagram", prompt: "draw a diagram", match: /diagram/i, play: (m) => m.playDiagram() },
+    { id: "stat", prompt: "kpi demo", match: /kpi/i, play: (m) => m.playStat() },
+    { id: "code", prompt: "show a snippet", match: /snippet/i, play: (m) => m.playCode() },
+    { id: "status-list", prompt: "service health", match: /health/i, play: (m) => m.playStatusList() },
+  ];
+
+  /** The scenario `text` would play, by id — none means the template deck. */
+  static scenarioFor(text: string): string | undefined {
+    return MockSession.SCENARIOS.find((s) => (s.match instanceof RegExp ? s.match.test(text) : s.match(text)))?.id;
+  }
+
+  /** id → canonical prompt, for tests that must trigger exactly one scenario. */
+  static get prompts(): Readonly<Record<string, string>> {
+    return Object.fromEntries(MockSession.SCENARIOS.map((s) => [s.id, s.prompt]));
+  }
+
+  pushPrompt(text: string) {
+    const scenario = MockSession.SCENARIOS.find((s) =>
+      s.match instanceof RegExp ? s.match.test(text) : s.match(text),
+    );
+    if (scenario) return scenario.play(this);
     this.playTemplateTurn(text);
   }
 
