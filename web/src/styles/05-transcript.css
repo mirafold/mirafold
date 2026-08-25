@@ -324,7 +324,22 @@
   font-size: 0.9em;
 }
 
-.markdown pre {
+/* A fenced block in prose is dressed as the `code` painting (Md.tsx
+   FencedCode): the painting's box around the shared head + body. The bare
+   `pre` rules below stay for any pre that is not that body. */
+.markdown-fence {
+  background: var(--surface);
+  border: 1px solid var(--border-2);
+  border-radius: 10px;
+  overflow: hidden;
+  max-width: 100%;
+}
+
+.markdown-fence .rc-code-body code {
+  padding: 0 12px;
+}
+
+.markdown pre:not(.rc-code-body) {
   background: var(--code-bg);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -333,7 +348,7 @@
   color: var(--code-fg); /* --code-bg is pinned dark; never inherit light fg */
 }
 
-.response-document :is(.markdown pre, .markdown-table-scroll) {
+.response-document :is(.markdown pre:not(.rc-code-body), .markdown-fence, .markdown-table-scroll) {
   max-width: 100%;
   margin: 0.9rem 0;
   scrollbar-width: thin;

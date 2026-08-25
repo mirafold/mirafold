@@ -2883,7 +2883,17 @@ glyph beside the chevron.
     click → at bottom, following, pill gone; never visible while at bottom;
     phone viewport places it bottom-center.
 
-- [ ] **Step TR.3 — Prose code fences get `render_code`'s header strip**
+- [x] **Step TR.3 — Prose code fences get `render_code`'s header strip** —
+  done 2026-08-25: `CodeHead` extracted from `registry/Code.tsx` and shared;
+  `mdOverrides.pre` (`FencedCode` in `Md.tsx`) wraps every fence in
+  `.markdown-fence.rc-code` — the painting's box, the same head (language
+  from the highlight class, else "code"; `CopyButton` with the verbatim
+  text) over `pre.rc-code-body` — deliberately not `.rc`, so a fence never
+  counts as a painting. Tier-1 (`Md.test.ts`: head + copy + body class, bare
+  fence, inline code untouched, `fenceLanguage`/`nodeText`), Tier-3
+  (`app.e2e.ts`: the live-document fence shows `ts`, highlighting intact,
+  copy → "copied" and the clipboard holds the fence verbatim). Both
+  live-document visual baselines regenerated again for the new look.
   - Decision (Kyle, "option 2"): a fenced code block the agent types in
     prose renders with the same header strip as the `render_code` painting
     — language on the left (when the fence names one), `copy` on the right

@@ -559,6 +559,24 @@ test("code component: header, client-tokenized lines, emphasized range, copy aff
   assert.equal(await block.locator(".rc-copy").innerText(), "copy");
 });
 
+test("a fenced block the agent types in prose wears the code painting's header: language + a working copy button", async () => {
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.locator("textarea").click();
+  await page.keyboard.type("live document demo");
+  await page.keyboard.press("Enter");
+  const fence = page.locator(".markdown-fence", { hasText: "stablePainting" });
+  await fence.waitFor({ timeout: 15_000 });
+  assert.equal(await fence.locator(".rc-code-name").innerText(), "ts");
+  assert.ok((await fence.locator("pre.rc-code-body code.hljs .hljs-keyword").count()) > 0, "fence lost its highlighting");
+  assert.equal(await fence.locator(".rc, .rc-card").count(), 0, "a fence is prose, never a painting");
+  assert.equal(await fence.locator(".rc-copy").innerText(), "copy");
+  await fence.locator(".rc-copy").click();
+  await fence.locator(".rc-copy", { hasText: "copied" }).waitFor({ timeout: 5_000 });
+  const clipboard = await page.evaluate(() => navigator.clipboard.readText());
+  assert.match(clipboard, /^const stablePainting = "checkpoint_x+";$/, "the clipboard holds the fence verbatim");
+  await page.locator(".activity-line").waitFor({ state: "detached", timeout: 30_000 });
+});
+
 test("status-list component: one verdict pill per row, glyph + word, all five states", async () => {
   await page.locator("textarea").click();
   await page.keyboard.type("health checks demo");

@@ -2,7 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { Md, mdOverrides } from "./Md";
+import ReactMarkdown from "react-markdown";
+import rehypeHighlight from "rehype-highlight";
+import { Md, fenceLanguage, mdOverrides, nodeText } from "./Md";
 
 const render = (text: string) => renderToStaticMarkup(createElement(Md, { text }));
 
@@ -54,4 +56,40 @@ test("a Markdown table keeps its semantics inside a keyboard-reachable local scr
   assert.match(html, /<table>/);
   assert.match(html, /<th>Name<\/th>/);
   assert.match(html, /<td>immediate<\/td>/);
+});
+
+// Turn prose renders through the same pipeline as OutputZone's AssistantTurn:
+// react-markdown + rehype-highlight + mdOverrides.
+const renderTurn = (text: string) =>
+  renderToStaticMarkup(
+    createElement(ReactMarkdown, { rehypePlugins: [rehypeHighlight], components: mdOverrides }, text),
+  );
+
+test("a fenced block in prose gets the code painting's header strip: language, copy, shared body class", () => {
+  const html = renderTurn("Run this:\n\n```sh\nyarn typecheck && yarn test\n```");
+  assert.match(html, /class="markdown-fence rc-code"/);
+  assert.match(html, /<div class="rc-code-head"><span class="rc-code-name">sh<\/span>/);
+  assert.match(html, /class="rc-copy"[^>]*>copy</);
+  assert.match(html, /<pre class="rc-code-body"><code class="hljs language-sh" tabindex="0">/);
+  // Not a painting: never the registry's .rc box.
+  assert.doesNotMatch(html, /class="rc rc-code"/);
+});
+
+test("a bare fence is named \"code\"; inline code is untouched", () => {
+  const bare = renderTurn("```\nplain\n```");
+  assert.match(bare, /<span class="rc-code-name">code<\/span>/);
+  const inline = renderTurn("use `yarn dev` here");
+  assert.doesNotMatch(inline, /rc-code-head/);
+  assert.match(inline, /<code>yarn dev<\/code>/);
+});
+
+test("fenceLanguage reads the fence's language off the highlight class; nodeText keeps indentation", () => {
+  assert.equal(fenceLanguage("hljs language-ts"), "ts");
+  assert.equal(fenceLanguage("language-c++ hljs"), "c++");
+  assert.equal(fenceLanguage("hljs"), undefined);
+  assert.equal(fenceLanguage(undefined), undefined);
+  assert.equal(
+    nodeText(["  if (a) {\n", createElement("span", null, "    b();"), "\n  }\n"]),
+    "  if (a) {\n    b();\n  }\n",
+  );
 });
