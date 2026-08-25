@@ -34,6 +34,10 @@ not reuse them.
 
 - Normal work branches (`feature/*`, `fix/*`, `refactor/*`) start from
   `next` and open pull requests back into `next`.
+- **One branch at a time: finish it, merge it, then branch.** A new work
+  branch is cut only from a fresh `next` after the previous branch has
+  merged — never stacked on an unmerged branch, never opened while another
+  is still in review (absolute, 2026-08-25).
 - **Every commit carries `Signed-off-by`** (the DCO check blocks merges
   without it). A local `prepare-commit-msg` hook appends it automatically —
   if a commit somehow lacks it, `git rebase --signoff` repairs the branch.
