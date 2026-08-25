@@ -101,7 +101,7 @@ body {
   display: flex;
 }
 
-.render-zone {
+.output-zone {
   flex: 1;
   min-width: 0;
   overflow-y: auto;

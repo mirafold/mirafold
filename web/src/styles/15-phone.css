@@ -45,7 +45,7 @@
     touch-action: manipulation; /* no double-tap zoom on controls */
   }
 
-  .render-zone {
+  .output-zone {
     padding: 14px 2px;
     gap: 12px;
   }

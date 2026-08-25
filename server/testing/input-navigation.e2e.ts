@@ -109,7 +109,7 @@ test("desktop command strips expose direct chronological arrows and keyboard nav
         "the destination input did not receive keyboard focus",
       );
       const aligned = await page.evaluate(() => {
-        const zone = document.querySelector(".render-zone")!.getBoundingClientRect();
+        const zone = document.querySelector(".output-zone")!.getBoundingClientRect();
         const current = document.querySelector(".is-input-nav-current")!.getBoundingClientRect();
         return Math.round(current.top - zone.top);
       });
@@ -233,7 +233,7 @@ test("explicit input jumps stay detached until End returns to the live tail", as
       await inputs.last().locator(".input-nav-older").click();
       await page.keyboard.press("ArrowDown");
 
-      const atJump = await page.locator(".render-zone").evaluate((element) => ({
+      const atJump = await page.locator(".output-zone").evaluate((element) => ({
         top: element.scrollTop,
         height: element.scrollHeight,
         bottom: element.scrollHeight - element.scrollTop - element.clientHeight,
@@ -244,11 +244,11 @@ test("explicit input jumps stay detached until End returns to the live tail", as
       );
 
       await page.waitForFunction(
-        (height) => document.querySelector(".render-zone")!.scrollHeight > height + 30,
+        (height) => document.querySelector(".output-zone")!.scrollHeight > height + 30,
         atJump.height,
         { timeout: 5_000 },
       );
-      const afterGrowth = await page.locator(".render-zone").evaluate((element) => ({
+      const afterGrowth = await page.locator(".output-zone").evaluate((element) => ({
         top: element.scrollTop,
         height: element.scrollHeight,
       }));
@@ -271,7 +271,7 @@ test("explicit input jumps stay detached until End returns to the live tail", as
       );
       await inputs.last().locator(".input-nav-older").click();
       await page.keyboard.press("ArrowDown");
-      const beforeEnd = await page.locator(".render-zone").evaluate((element) => ({
+      const beforeEnd = await page.locator(".output-zone").evaluate((element) => ({
         top: element.scrollTop,
         height: element.scrollHeight,
         bottom: element.scrollHeight - element.scrollTop - element.clientHeight,
@@ -280,11 +280,11 @@ test("explicit input jumps stay detached until End returns to the live tail", as
 
       await page.keyboard.press("End");
       await page.waitForFunction(
-        (height) => document.querySelector(".render-zone")!.scrollHeight > height + 30,
+        (height) => document.querySelector(".output-zone")!.scrollHeight > height + 30,
         beforeEnd.height,
         { timeout: 5_000 },
       );
-      const afterEnd = await page.locator(".render-zone").evaluate((element) => ({
+      const afterEnd = await page.locator(".output-zone").evaluate((element) => ({
         top: element.scrollTop,
         bottom: element.scrollHeight - element.scrollTop - element.clientHeight,
       }));
@@ -305,7 +305,7 @@ test("explicit input jumps stay detached until End returns to the live tail", as
       );
       await inputs.last().locator(".input-nav-older").click();
       await page.keyboard.press("ArrowDown");
-      const beforeScrollerEnd = await page.locator(".render-zone").evaluate((element) => ({
+      const beforeScrollerEnd = await page.locator(".output-zone").evaluate((element) => ({
         top: element.scrollTop,
         height: element.scrollHeight,
         bottom: element.scrollHeight - element.scrollTop - element.clientHeight,
@@ -314,14 +314,14 @@ test("explicit input jumps stay detached until End returns to the live tail", as
         beforeScrollerEnd.bottom <= 24,
         `scroller End premise was not at bottom: ${JSON.stringify(beforeScrollerEnd)}`,
       );
-      await page.locator(".render-zone").focus();
+      await page.locator(".output-zone").focus();
       await page.keyboard.press("End");
       await page.waitForFunction(
-        (height) => document.querySelector(".render-zone")!.scrollHeight > height + 30,
+        (height) => document.querySelector(".output-zone")!.scrollHeight > height + 30,
         beforeScrollerEnd.height,
         { timeout: 5_000 },
       );
-      const afterScrollerEnd = await page.locator(".render-zone").evaluate((element) => ({
+      const afterScrollerEnd = await page.locator(".output-zone").evaluate((element) => ({
         top: element.scrollTop,
         bottom: element.scrollHeight - element.scrollTop - element.clientHeight,
       }));
@@ -355,7 +355,7 @@ test("phone disclosure selects the input governing a non-tail response", async (
       // and not within the tail's 24px bottom slack. The expected row comes
       // from the real rendered coordinates, independently of the hook.
       const expectedIndex = await page.evaluate(() => {
-        const scroller = document.querySelector(".render-zone") as HTMLElement;
+        const scroller = document.querySelector(".output-zone") as HTMLElement;
         const inputs = [...document.querySelectorAll(".input-nav-stop")];
         const readingEdge = scroller.getBoundingClientRect().top + 1;
         const maximumScrollTop = scroller.scrollHeight - scroller.clientHeight;
@@ -373,11 +373,11 @@ test("phone disclosure selects the input governing a non-tail response", async (
       });
       assert.notEqual(expectedIndex, -1, "fixture could not expose an earlier response at the reading edge");
       await page.waitForFunction(() => {
-        const scroller = document.querySelector(".render-zone") as HTMLElement;
+        const scroller = document.querySelector(".output-zone") as HTMLElement;
         return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight > 24;
       });
       const premise = await page.evaluate((index) => {
-        const scroller = document.querySelector(".render-zone") as HTMLElement;
+        const scroller = document.querySelector(".output-zone") as HTMLElement;
         const inputs = [...document.querySelectorAll(".input-nav-stop")];
         const readingEdge = scroller.getBoundingClientRect().top + 1;
         const current = inputs[index].getBoundingClientRect();
@@ -504,7 +504,7 @@ test("full transcript replay recovers navigation focus without summoning the pho
     assert.equal(await page.locator(".is-input-nav-current").count(), 0);
     assert.equal(await page.locator(".input-nav-phone-card").count(), 0);
     assert.equal(
-      await page.evaluate(() => document.activeElement?.matches(".render-zone")),
+      await page.evaluate(() => document.activeElement?.matches(".output-zone")),
       true,
       "phone replay summoned the prompt instead of recovering to the transcript",
     );
@@ -664,7 +664,7 @@ test("phone discloses temporary navigation directly above the submit arrow", asy
       await assertAxeClean(page, "phone submitted-input navigation");
       await noSideScroll(page);
 
-      await page.locator(".render-zone").tap({ position: { x: 4, y: 4 } });
+      await page.locator(".output-zone").tap({ position: { x: 4, y: 4 } });
       await card.waitFor({ state: "detached" });
       assert.equal(await prompt.inputValue(), "phone draft stays here");
       assert.equal(

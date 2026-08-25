@@ -243,7 +243,7 @@ test("CR.2 desktop: Changes is a live split review workspace, mutually exclusive
   assert.match(await desktop.locator(".changes-repo h3").innerText(), /changed-repo/i);
   const widths = await desktop.evaluate(() => ({
     changes: document.querySelector(".changes-panel")!.getBoundingClientRect().width,
-    transcript: document.querySelector(".render-zone")!.getBoundingClientRect().width,
+    transcript: document.querySelector(".output-zone")!.getBoundingClientRect().width,
   }));
   assert.ok(widths.changes >= 500, `desktop Changes surface is only ${widths.changes}px wide`);
   assert.ok(widths.transcript >= 300, `conversation was hidden/squeezed to ${widths.transcript}px`);
@@ -254,7 +254,7 @@ test("CR.2 desktop: Changes is a live split review workspace, mutually exclusive
   const narrow = await desktop.evaluate(() => ({
     panelPosition: getComputedStyle(document.querySelector(".changes-panel")!).position,
     review: document.querySelector(".changes-review")!.getBoundingClientRect().width,
-    transcript: document.querySelector(".render-zone")!.getBoundingClientRect().width,
+    transcript: document.querySelector(".output-zone")!.getBoundingClientRect().width,
   }));
   assert.notEqual(narrow.panelPosition, "fixed", "641px was reframed as the phone modal");
   assert.ok(narrow.review >= 155, `narrow-desktop review is only ${narrow.review}px wide`);
@@ -669,10 +669,10 @@ test("CR.2 phone: full-screen one-file review has persistent navigation and pres
   // Give the mounted transcript a real scroll offset. The fixed review layer
   // must not remount or reset it when the user returns to chat.
   await phone.addStyleTag({
-    content: '.render-zone::before { content: ""; display: block; flex: 0 0 1600px; }',
+    content: '.output-zone::before { content: ""; display: block; flex: 0 0 1600px; }',
   });
-  await phone.locator(".render-zone").evaluate((element) => (element.scrollTop = 320));
-  const transcriptScroll = await phone.locator(".render-zone").evaluate((element) => element.scrollTop);
+  await phone.locator(".output-zone").evaluate((element) => (element.scrollTop = 320));
+  const transcriptScroll = await phone.locator(".output-zone").evaluate((element) => element.scrollTop);
   assert.ok(transcriptScroll > 0, "phone transcript fixture did not become scrollable");
 
   await openPhoneWorkspace(phone, "changes");
@@ -728,7 +728,7 @@ test("CR.2 phone: full-screen one-file review has persistent navigation and pres
   await phone.locator(".changes-close").tap();
   await phone.waitForSelector(".changes-panel", { state: "detached" });
   assert.equal(
-    await phone.locator(".render-zone").evaluate((element) => element.scrollTop),
+    await phone.locator(".output-zone").evaluate((element) => element.scrollTop),
     transcriptScroll,
     "returning to chat changed the transcript scroll position",
   );

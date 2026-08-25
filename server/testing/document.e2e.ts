@@ -97,7 +97,7 @@ function readLiveDocumentPresentation(p: Page) {
 
 function readResponsiveDocumentLayout(p: Page) {
   return p.evaluate(() => {
-    const zone = document.querySelector(".render-zone") as HTMLElement | null;
+    const zone = document.querySelector(".output-zone") as HTMLElement | null;
     const response = document.querySelector(".response-document") as HTMLElement | null;
     const prose = response?.querySelector(".turn-assistant") as HTMLElement | null;
     const code = document.querySelector(
@@ -371,7 +371,7 @@ test("LD.3: response documents reflow across Explorer, file view, pin dock, and 
     // Exercise the remaining intrinsically wide content while all three
     // desktop columns are present at 980px. The artifact deliberately has a
     // 720px internal canvas: its own iframe must scroll, never the workbench.
-    await p.locator(".render-zone").evaluate((element) => {
+    await p.locator(".output-zone").evaluate((element) => {
       element.scrollTop = element.scrollHeight;
     });
     await typePrompt(p, MOCK_PROMPTS["responsive-document"]);
@@ -444,7 +444,7 @@ test("LD.3: response documents reflow across Explorer, file view, pin dock, and 
 
     // A user who has scrolled back must not be snapped to the tail merely
     // because workspace chrome closes and the document reflows wider.
-    const manualScroll = await p.locator(".render-zone").evaluate((element) => {
+    const manualScroll = await p.locator(".output-zone").evaluate((element) => {
       element.scrollTop = 120;
       return element.scrollTop;
     });
@@ -488,7 +488,7 @@ test("LD.4: long text, focus, announcements, reduced motion, and every theme rem
     await p.locator(".activity-line").waitFor({ state: "detached", timeout: 15_000 });
 
     const shape = await response.evaluate((element) => {
-      const zone = document.querySelector(".render-zone") as HTMLElement | null;
+      const zone = document.querySelector(".output-zone") as HTMLElement | null;
       const prose = element.querySelector(".turn-assistant") as HTMLElement | null;
       const code = element.querySelector("pre code.hljs") as HTMLElement | null;
       const style = prose ? getComputedStyle(prose) : null;
@@ -529,7 +529,7 @@ test("LD.4: long text, focus, announcements, reduced motion, and every theme rem
       1,
     );
 
-    const log = p.locator('.render-zone[role="log"]');
+    const log = p.locator('.output-zone[role="log"]');
     assert.equal(await log.getAttribute("aria-live"), "off");
     await p.waitForFunction(
       () =>

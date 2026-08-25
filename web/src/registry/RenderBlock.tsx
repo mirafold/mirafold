@@ -58,7 +58,7 @@ export const RenderBlock = memo(function RenderBlock({
   component: string;
   props: Record<string, unknown>;
   renderId: string;
-  // Provided by the shell via RenderZone; binds this block's identity to
+  // Provided by the shell via OutputZone; binds this block's identity to
   // every action it emits. Components ask; the shell sends.
   onAction: (action: Action, sourceId: string) => void;
 }) {

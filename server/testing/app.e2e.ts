@@ -1090,7 +1090,7 @@ test("an artifact pins to the dock via its chrome control, and unpins back", asy
   await page.locator(".pin-dock .artifact-pin").click();
   await page.waitForSelector(".pin-dock", { state: "detached" });
   assert.equal(await page.locator(".pin-stub").count(), 0);
-  assert.equal(await page.locator(".render-zone iframe.artifact-frame").count(), 1);
+  assert.equal(await page.locator(".output-zone iframe.artifact-frame").count(), 1);
 });
 
 test("hostile artifact is contained: escapes fail, sandbox is exactly allow-scripts (R.4e)", async () => {
@@ -1657,7 +1657,7 @@ test("E.3: the files panel lists the working tree, opens a file beside the trans
 
   // The transcript and the prompt box both stay usable beside the open panel
   // (the squeeze risk — the panel and transcript are separate flex columns).
-  assert.ok(await page.locator(".render-zone").isVisible());
+  assert.ok(await page.locator(".output-zone").isVisible());
   assert.ok(await page.locator(".prompt-box textarea, textarea").first().isVisible());
 
   // Open the file → its content shows in the panel's file view.

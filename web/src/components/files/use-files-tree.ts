@@ -103,7 +103,7 @@ export function useFilesTree({
   };
 
   // Subscribe once; the refs above make the handlers care only about the
-  // latest requests. RenderZone ignores fs_* the same way (unknown to it).
+  // latest requests. OutputZone ignores fs_* the same way (unknown to it).
   useEffect(
     () =>
       subscribe((m) => {

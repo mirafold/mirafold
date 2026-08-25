@@ -188,11 +188,11 @@ TranscriptSnapshot.rows (projected visible top-level rows)
     ↓
 pure response-composition grouping
     ↓
-RenderZone / ResponseDocument
+OutputZone / ResponseDocument
 ```
 
 Do not independently rescan raw wire messages or recreate transcript
-visibility rules in `RenderZone`.
+visibility rules in `OutputZone`.
 
 Do not:
 
@@ -315,7 +315,7 @@ acceptable when the transcript requires them.
 ## 8. `ResponseDocument`
 
 Introduce a small shell-presentation component named `ResponseDocument` if it
-keeps `RenderZone` focused.
+keeps `OutputZone` focused.
 
 It is not a registry component and must not be added to
 `web/src/registry/index.ts` or `server/registry-spec.ts`.
@@ -548,7 +548,7 @@ sanitization assumptions remain unchanged.
 
 Preserve the current accessibility model:
 
-- `.render-zone` remains the conversation `role="log"`;
+- `.output-zone` remains the conversation `role="log"`;
 - `aria-live="off"` remains on the log;
 - the separate announcer remains responsible for spoken turn summaries;
 - streaming must not repeatedly announce the whole document;
@@ -604,7 +604,7 @@ required.
 
 Small transparent layout wrapper only.
 
-### `web/src/components/RenderZone.tsx`
+### `web/src/components/OutputZone.tsx`
 
 Calls the grouping helper, maps display items, and reuses the existing
 per-row renderer. It must not regain projection/state-machine logic.

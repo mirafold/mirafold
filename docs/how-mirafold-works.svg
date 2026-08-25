@@ -321,7 +321,7 @@
   <text x="290" y="1986" font-size="11" fill="#16a34a">&#10003; <tspan fill="#1f2937">ConnectDevice</tspan></text>
   <text x="290" y="2003" font-size="11" fill="#16a34a">&#10003; <tspan fill="#1f2937">ToolBlock</tspan></text>
   <text x="290" y="2020" font-size="11" fill="#16a34a">&#10003; <tspan fill="#1f2937">Artifact</tspan></text>
-  <text x="290" y="2037" font-size="11" fill="#16a34a">&#10003; <tspan fill="#1f2937">RenderZone</tspan></text>
+  <text x="290" y="2037" font-size="11" fill="#16a34a">&#10003; <tspan fill="#1f2937">OutputZone</tspan></text>
   <text x="290" y="2054" font-size="11" fill="#16a34a">&#10003; <tspan fill="#1f2937">PickerBlock</tspan></text>
   <text x="290" y="2071" font-size="11" fill="#16a34a">&#10003; <tspan fill="#1f2937">ThemePicker</tspan></text>
   <text x="140" y="2092" font-size="10" font-style="italic" fill="#64748b">(+ Announcer, ModalCard &#8212; all shell chrome)</text>

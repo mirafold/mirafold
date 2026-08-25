@@ -24,7 +24,7 @@ test("provider completions open before submit, transcript click focuses, and set
     token,
     async (page2) => {
       const prompt = page2.locator(".prompt-box textarea");
-      const transcript = page2.locator(".render-zone");
+      const transcript = page2.locator(".output-zone");
 
       // A trigger typed into page chrome is moved into the prompt and paints
       // the provider catalog without sending a turn.

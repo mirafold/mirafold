@@ -148,7 +148,7 @@ consumers. `Shell` owns connection state, onboarding, the prompt, permission
 and terminal-input bars, status, workspace panels, settings, notifications,
 and other trusted controls.
 
-[`RenderZone.tsx`](../web/src/components/RenderZone.tsx) receives the transcript
+[`OutputZone.tsx`](../web/src/components/OutputZone.tsx) receives the transcript
 stream. Pure projection code converts wire messages into ordered transcript
 rows, groups eligible rows into response documents, and keeps provider-native
 tool activity, errors, and shell boundaries visible. The output zone delegates

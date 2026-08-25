@@ -151,7 +151,7 @@ export function StatusBar({
       )}
       {/* Home (⌂ → mission control) is the outermost far-LEFT control; the
           dot stays glued to the agent text it reports on. (The brand mark
-          belongs to the empty-session welcome in RenderZone, not here.) */}
+          belongs to the empty-session welcome in OutputZone, not here.) */}
       <a className="sb-home" href="/" title="All sessions (mission control)">
         ⌂
       </a>

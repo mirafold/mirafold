@@ -502,7 +502,7 @@ test("M.1 activity follows the status stream; since resets only on a label CHANG
   reg.broadcast(entry, { type: "status", state: "tool", label: "Bash" });
   assert.equal(entry.activity?.label, "Bash");
   reg.broadcast(entry, { type: "text_delta", text: "x" });
-  assert.equal(entry.activity?.label, "Bash", "text streaming keeps the label — RenderZone parity");
+  assert.equal(entry.activity?.label, "Bash", "text streaming keeps the label — OutputZone parity");
   reg.broadcast(entry, { type: "turn_end" });
   assert.equal(entry.activity, undefined, "cleared at idle");
   reg.end(entry.id);

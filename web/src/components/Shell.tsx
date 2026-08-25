@@ -6,7 +6,7 @@ import { ChangesGlyph } from "./ChangesGlyph";
 import { FilesGlyph } from "./FilesGlyph";
 import { Onboarding } from "./Onboarding";
 import { PromptBox, type PromptDraft } from "./PromptBox";
-import { RenderZone } from "./RenderZone";
+import { OutputZone } from "./OutputZone";
 import { FilesPanel } from "./files/FilesPanel";
 import { ChangesPanel } from "./changes/ChangesPanel";
 import type { WorkspaceSurface } from "./WorkspaceTabs";
@@ -41,7 +41,7 @@ const ZERO_USAGE: Usage = { turnIn: 0, turnOut: 0, sumIn: 0, sumOut: 0, cost: 0 
 /**
  * The trusted shell. Owns the socket and the prompt box; neither is ever
  * re-rendered or touched by agent output. The agent only paints into
- * RenderZone via the message bus below.
+ * OutputZone via the message bus below.
  *
  * A connection is a viewport onto a registry session. The URL is
  * the session identity (/s/<id>) — refresh-safe and shareable across tabs.
@@ -49,7 +49,7 @@ const ZERO_USAGE: Usage = { turnIn: 0, turnOut: 0, sumIn: 0, sumOut: 0, cost: 0 
 export function Shell() {
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const promptContainerRef = useRef<HTMLDivElement>(null);
-  // RenderZone owns transcript destinations; Shell bridges that controller to
+  // OutputZone owns transcript destinations; Shell bridges that controller to
   // the prompt keyboard entry and the phone-only disclosure state.
   const inputNavigationRef = useRef<InputNavigationHandle>(null);
   const [inputNavigationState, setInputNavigationState] = useState<InputNavigationState>({
@@ -493,7 +493,7 @@ export function Shell() {
                 rootLabel={tildify(meta.cwd, daemonInfo.home)}
                 sessionKey={meta.sessionId}
               />
-              <RenderZone
+              <OutputZone
                 ref={inputNavigationRef}
                 subscribe={bus.subscribe}
                 sendAction={bus.sendAction}

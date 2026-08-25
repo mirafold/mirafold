@@ -90,7 +90,7 @@ async function settleLiveDocument(page: Page): Promise<void> {
     .locator(".turn-assistant", { hasText: "response finished as one live composition" })
     .waitFor();
   await page.locator(".stop-btn").waitFor({ state: "detached" });
-  await page.locator(".render-zone").evaluate((element) => {
+  await page.locator(".output-zone").evaluate((element) => {
     element.scrollTop = 0;
   });
 }

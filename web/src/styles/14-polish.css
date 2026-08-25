@@ -69,7 +69,7 @@ html {
   scrollbar-color: var(--border-hover) transparent;
 }
 
-.render-zone,
+.output-zone,
 .pin-dock {
   scrollbar-width: thin;
 }

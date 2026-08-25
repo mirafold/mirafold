@@ -34,7 +34,7 @@ const shuffled = <T,>(arr: readonly T[]): T[] =>
 
 const PROJECTS = ["aurora", "helios", "quasar", "meridian", "lattice", "voyager"] as const;
 const SERVICES = ["api-gateway", "auth", "billing", "search", "ingest", "renderer", "scheduler"] as const;
-const FILES = ["server/session.ts", "web/src/RenderZone.tsx", "lib/cache.ts", "worker/queue.ts"] as const;
+const FILES = ["server/session.ts", "web/src/OutputZone.tsx", "lib/cache.ts", "worker/queue.ts"] as const;
 const TOPICS = [
   "local-first sync engines",
   "WebGPU compute pipelines",

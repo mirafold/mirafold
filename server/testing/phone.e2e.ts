@@ -134,7 +134,7 @@ test("phone: pairs by URL, opens the session, drives a turn with a rendered comp
 
   // Desktop transcript clicks focus the prompt; a touch on the same inert
   // surface must not summon the phone keyboard.
-  const transcript = phone.locator(".render-zone");
+  const transcript = phone.locator(".output-zone");
   await transcript.tap({ position: { x: 2, y: 2 } });
   assert.equal(
     await phone.evaluate(() => document.activeElement?.matches(".prompt-box textarea") ?? false),
@@ -218,7 +218,7 @@ test("phone LD.3: the live document fills the canvas and survives the full-scree
   await phone.locator(".activity-line").waitFor({ state: "detached", timeout: 15_000 });
 
   const metrics = await phone.evaluate((start) => {
-    const zone = document.querySelector(".render-zone") as HTMLElement | null;
+    const zone = document.querySelector(".output-zone") as HTMLElement | null;
     const documents = document.querySelectorAll(".response-document");
     const first = documents[start] as HTMLElement | undefined;
     const second = documents[start + 1] as HTMLElement | undefined;
