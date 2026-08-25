@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AgentInfo, SessionMeta } from "@protocol";
+import type { SessionMeta } from "@protocol";
 import { Onboarding } from "./Onboarding";
 import { ArmedButton } from "./ArmedButton";
-import { ConnectDevice, type RelayInfo } from "./ConnectDevice";
-import { sendSubscriptionRequest, type SubscriptionAct } from "../session-bus";
+import { ConnectDevice } from "./ConnectDevice";
+import { createDaemonClient } from "../daemon-client";
+import { NO_DAEMON_INFO, daemonInfoFrom, type DaemonInfo } from "../daemon-hello";
 import type { SubscriptionReply } from "../subscription-card";
 import { GearGlyph } from "./GearGlyph";
 import { SocketClient } from "../ws";
@@ -12,7 +13,6 @@ import { useArmedConfirm } from "../use-armed-confirm";
 import { paintTabStatus } from "../tab-status";
 import { agentLabel } from "../agents-meta";
 import { createDomNotifier, folderTitle } from "../notify";
-import { createFolderPickerRequests } from "../folder-picker-requests";
 
 // 4.6 Mission control, grown into the Phase M cockpit: every live session in
 // the registry with name, cwd, live activity, pending permission, and usage —
@@ -89,16 +89,8 @@ function cockpitOrder(sessions: SessionMeta[]): SessionMeta[] {
 
 export function FleetView() {
   const [sessions, setSessions] = useState<SessionMeta[] | null>(null);
-  const [agents, setAgents] = useState<AgentInfo[] | null>(null);
-  const [daemon, setDaemon] = useState<{
-    cwd?: string;
-    home?: string;
-    folderPicker?: boolean;
-    // The agents hello's relay info (protocol.ts) — RelayInfo mirrors its
-    // shape, `ws` included (static-origin serving).
-    relay?: RelayInfo;
-    billing?: "license-key";
-  }>({});
+  const [daemon, setDaemon] = useState<DaemonInfo>(NO_DAEMON_INFO);
+  const agents = daemon.agents;
   // Phase CS: the latest `subscription` reply for the pair card's manage view
   // (id-correlated there, so only the newest matters).
   const [subReply, setSubReply] = useState<SubscriptionReply | null>(null);
@@ -134,9 +126,8 @@ export function FleetView() {
     s.setHello(() => ({ type: "watch_sessions" }));
     return s;
   });
-  const [folderPicker] = useState(() =>
-    createFolderPickerRequests((msg) => socket.sendIfOpen(msg)),
-  );
+  // The requests this page shares with the session bus (daemon-client.ts).
+  const [client] = useState(() => createDaemonClient(socket));
 
   // The socket's message handler lives for the socket's life; it reads the
   // picker's openness through this ref so error ROUTING follows the live
@@ -145,7 +136,7 @@ export function FleetView() {
 
   useEffect(() => {
     const offMsg = socket.onMessage((m) => {
-      if (folderPicker.handle(m)) return;
+      if (client.handle(m)) return;
       if (m.type === "sessions") {
         setSessions(m.sessions);
         // Answered ids leave the set once the server's queue no longer
@@ -158,14 +149,7 @@ export function FleetView() {
           return kept.length === prev.size ? prev : new Set(kept);
         });
       } else if (m.type === "agents") {
-        setAgents(m.agents);
-        setDaemon({
-          cwd: m.cwd,
-          home: m.home,
-          folderPicker: m.folderPicker,
-          relay: m.relay,
-          billing: m.billing,
-        });
+        setDaemon(daemonInfoFrom(m));
       } else if (m.type === "subscription") {
         setSubReply(m);
       } else if (m.type === "session_created") {
@@ -180,17 +164,17 @@ export function FleetView() {
     });
     const offOpen = socket.onOpen(() => setConnected(true));
     const offClose = socket.onClose(() => {
-      folderPicker.disconnect();
+      client.disconnect();
       setConnected(false);
     });
     return () => {
       offMsg();
       offOpen();
       offClose();
-      folderPicker.disconnect();
+      client.disconnect();
       socket.close();
     };
-  }, [socket, folderPicker]);
+  }, [socket, client]);
 
   // Ago labels are honest at 30s; the second-resolution elapsed readout wants
   // a 1s tick — but only while something is actually active, so an idle
@@ -248,16 +232,9 @@ export function FleetView() {
   // Stable identity: Onboarding keys its poll interval on this prop, so a
   // fresh arrow each render would restart the 3s timer instead of letting
   // it fire.
-  const refreshAgents = useCallback(() => socket.send({ type: "refresh_agents" }), [socket]);
-  // Phase CS: the pair card's manage view mints + sends over this socket.
-  const subRequest = useCallback(
-    (act: SubscriptionAct) => sendSubscriptionRequest((m) => socket.send(m), act),
-    [socket],
-  );
-  const browseFolder = useCallback(
-    (cwd?: string) => folderPicker.request(cwd),
-    [folderPicker],
-  );
+  const refreshAgents = useCallback(() => client.refreshAgents(), [client]);
+  const subRequest = client.requestSubscription;
+  const browseFolder = client.pickFolder;
 
   const commitRename = (id: string, name: string) => {
     setRenaming(null);
@@ -291,7 +268,7 @@ export function FleetView() {
           onBrowse={daemon.folderPicker ? browseFolder : undefined}
           onPick={(agent, cwd, backend) => {
             setOnbError(null);
-            socket.send({ type: "create", agent, cwd, ...(backend ? { backend } : {}) });
+            client.createSession(agent, cwd, backend);
           }}
           onRefresh={refreshAgents}
           // Dismissible only when a fleet exists behind it — on first run

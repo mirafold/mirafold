@@ -18,10 +18,11 @@ import {
 // never appears in any HTTP request, only on this screen and the phone's.
 // Trusted-shell surface end to end: agent output can never paint or read it (R.4).
 
-// `ws` (static-origin serving): the relay's ws(s) origin, present when `url`
-// is a separate static app origin — it rides the QR fragment so the loaded
-// page knows where to dial. Absent = the page dials its own host.
-export type RelayInfo = { url: string; code: string; ws?: string };
+// The hello's pairing info (protocol.ts `agents.relay`): `ws` is the relay's
+// ws(s) origin, present when `url` is a separate static app origin — it rides
+// the QR fragment so the loaded page knows where to dial.
+export type { RelayInfo } from "../daemon-hello";
+import type { RelayInfo } from "../daemon-hello";
 
 // Names the dialog for a screen reader (A.2). A constant is safe: the card is
 // mounted only while open, and one status bar means one of these.

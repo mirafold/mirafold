@@ -15,7 +15,9 @@
 // behavior emits exactly those) must not re-open a closed turn, or busy
 // wedges on with no turn_end ever coming.
 
-const ACTIVITY_TYPES = new Set(["status", "thinking_delta", "text_delta", "tool_use"]);
+import type { ZoneMsg } from "./session-bus";
+
+const ACTIVITY_TYPES = new Set<ZoneMsg["type"]>(["status", "thinking_delta", "text_delta", "tool_use"]);
 
 // Terminal for a turn — the SAME set the daemon uses to decide a session went
 // idle and to clear its burst gate (`server/sessions/registry.ts`: "turn_end
@@ -33,9 +35,9 @@ const ACTIVITY_TYPES = new Set(["status", "thinking_delta", "text_delta", "tool_
 // closing one may read idle a beat early. That self-heals on the very next
 // activity frame (Shell re-arms busy on any of ACTIVITY_TYPES), whereas the
 // wedge it replaces never healed at all. Transient wrong beats permanent wrong.
-const TERMINAL_TYPES = new Set(["turn_end", "error"]);
+const TERMINAL_TYPES = new Set<ZoneMsg["type"]>(["turn_end", "error"]);
 
-export function nextOpenTurns(current: number, msgType: string, replayed = false): number {
+export function nextOpenTurns(current: number, msgType: ZoneMsg["type"], replayed = false): number {
   if (msgType === "user_prompt") return current + 1;
   if (TERMINAL_TYPES.has(msgType)) return Math.max(0, current - 1);
   if (replayed && ACTIVITY_TYPES.has(msgType)) return Math.max(current, 1);

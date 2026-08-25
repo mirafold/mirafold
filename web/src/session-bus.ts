@@ -1,30 +1,9 @@
-import type { Action, AgentName, BackendChoice, ClientMsg, WireMsg } from "@protocol";
+import type { Action, AgentName, BackendChoice, WireMsg } from "@protocol";
 import { SocketClient } from "./ws";
-import { createFolderPickerRequests } from "./folder-picker-requests";
+import { createDaemonClient, mintId, type SubscriptionAct } from "./daemon-client";
 
-/** A per-viewport correlation id (the sendBang shape, 4.9): minted client-
- *  side so each surface can match the one reply/stream it asked for. */
-const mintId = (prefix: string): string =>
-  `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
-
-/** Phase CS: mint + send one manage-subscription request over any sender —
- *  shared by the session bus and the fleet's own socket. The single
- *  `subscription` reply echoes the returned id. */
-export type SubscriptionAct = "status" | "cancel" | "uncancel";
-export function sendSubscriptionRequest(
-  send: (m: ClientMsg) => void,
-  act: SubscriptionAct,
-): string {
-  const id = mintId("sub");
-  send(
-    act === "status"
-      ? { type: "subscription_status", id }
-      : act === "cancel"
-        ? { type: "subscription_cancel", id }
-        : { type: "subscription_uncancel", id },
-  );
-  return id;
-}
+export type { SubscriptionAct } from "./daemon-client";
+export { sendSubscriptionRequest } from "./daemon-client";
 
 /**
  * What the output zone consumes: the wire protocol plus one local control
@@ -84,7 +63,7 @@ export function createSessionBus(): SessionBus {
   const socket = new SocketClient();
   const listeners = new Set<(m: ZoneMsg) => void>();
   const connListeners = new Set<(c: boolean, refusal?: string) => void>();
-  const folderPicker = createFolderPickerRequests((msg) => socket.sendIfOpen(msg));
+  const daemon = createDaemonClient(socket);
   // The URL carries the session identity; no id yet means "create one".
   let sessionId = location.pathname.match(/^\/s\/([\w-]+)/)?.[1] ?? null;
   // Attach to a known session; otherwise send nothing and wait at onboarding
@@ -99,11 +78,11 @@ export function createSessionBus(): SessionBus {
     for (const c of connListeners) c(true);
   });
   socket.onClose((refusal) => {
-    folderPicker.disconnect();
+    daemon.disconnect();
     for (const c of connListeners) c(false, refusal);
   });
   socket.onMessage((m) => {
-    if (folderPicker.handle(m)) return;
+    if (daemon.handle(m)) return;
     if (m.type === "session_created") {
       sessionId = m.sessionId;
       history.replaceState(null, "", `/s/${m.sessionId}`);
@@ -137,20 +116,12 @@ export function createSessionBus(): SessionBus {
         connListeners.delete(cb);
       };
     },
-    // The user picked an agent at onboarding — create a session on it.
-    // session_created sets `sessionId`, so a later reconnect re-attaches (P.4).
-    // `cwd` is the working dir typed at the picker; omitted → the
-    // daemon's launch dir (4.8). `backend` is the second-step choice (N.4);
-    // omitted → the daemon's credential-precedence default.
+    // session_created sets `sessionId`, so a later reconnect re-attaches.
     createSession(agent: AgentName, cwd?: string, backend?: BackendChoice) {
-      socket.send({ type: "create", agent, cwd, ...(backend ? { backend } : {}) });
+      daemon.createSession(agent, cwd, backend);
     },
-    refreshAgents() {
-      socket.send({ type: "refresh_agents" });
-    },
-    pickFolder(cwd?: string): Promise<string | undefined> {
-      return folderPicker.request(cwd);
-    },
+    refreshAgents: daemon.refreshAgents,
+    pickFolder: daemon.pickFolder,
     sendPrompt(text: string) {
       // No local echo — the server broadcasts the user_prompt to every
       // viewport (including this one), so all tabs stay identical.
@@ -207,9 +178,7 @@ export function createSessionBus(): SessionBus {
       socket.send({ type: "fs_diff", id, path });
       return id;
     },
-    requestSubscription(act: SubscriptionAct): string {
-      return sendSubscriptionRequest((m) => socket.send(m), act);
-    },
+    requestSubscription: daemon.requestSubscription,
     // Phase FD — the sendBang mint shape; per-viewport correlation only.
     uploadBegin(name: string, size: number): string {
       const id = mintId("up");
