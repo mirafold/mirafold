@@ -85,7 +85,7 @@ export type SessionMsgBody =
   // wire (not keyof the registry spec) so an unknown/malformed instruction is
   // still representable and can degrade gracefully client-side. Re-sending
   // an already-seen `id` updates that component's props in place — the
-  // mechanism that keeps pinned widgets live.
+  // mechanism that keeps pinned paintings live.
   | { type: "render"; component: string; props: Record<string, unknown>; id: string }
   // A SHELL-owned selector re-skinning interactive terminal chrome (/model,
   // /effort): arrow-key + click selection over the engine's own catalog, any

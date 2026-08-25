@@ -12,7 +12,7 @@ composition**.
 The key product idea is:
 
 > An agent response should feel like a document/interface being constructed
-> live in front of the user, not like terminal text with occasional widgets
+> live in front of the user, not like terminal text with occasional paintings
 > dropped between paragraphs.
 
 This is intentionally the more opinionated direction. It should make Mirafold
@@ -144,7 +144,7 @@ chrome.
 
 Do not put a visible bordered card around every independently streamed prose
 chunk. That would turn prose + component + prose into card + card + card,
-increase scroll height, and reinforce the inserted-widget feeling this phase
+increase scroll height, and reinforce the inserted-painting feeling this phase
 exists to remove.
 
 The daring treatment should come first from:
