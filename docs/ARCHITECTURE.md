@@ -103,8 +103,24 @@ credential constraints, MCP requirements, and the add-an-adapter checklist.
 
 [`SessionRegistry`](../server/sessions/registry.ts) owns active and dormant
 sessions. Each entry contains the adapter, working directory, attached local
-and remote viewports, sequenced replay buffer, prompt catalog, usage, pending
-permissions, and lifecycle state.
+and remote viewports, the sequenced replay ring
+([`replay-ring.ts`](../server/sessions/replay-ring.ts)), prompt catalog, and
+the stream-derived activity state — status, turn counters, pending
+permissions, usage — computed by the pure reducer in
+[`session-state.ts`](../server/sessions/session-state.ts).
+
+Measured costs (2026-08-25, one machine, for sizing decisions): a checkpoint
+of a 4,000-message text ring (0.6 MB) takes ~14 ms; a ring holding fifteen
+2 MB image renders (30 MB, near the byte cap) takes ~300 ms synchronously
+(~156 ms `JSON.stringify` + ~181 ms write and fsync), and the debounced
+interior checkpoint can run every 250 ms while such a session streams.
+Boundary checkpoints are synchronous on purpose (a `turn_end` must not be
+observable before its record is durable); moving the interior ones off the
+loop would need a generation guard so an older async write can never land
+over a newer boundary write, and has not been done because only image-heavy
+sessions pay the cost. The browser's transcript projection copies its ledger
+per streamed delta: ~0.26 ms per delta at 1,200 entries and ~0.9 ms at
+6,000, replaying 6,000 entries in ~100 ms — under a frame, left as is.
 
 [`connection.ts`](../server/sessions/connection.ts) is the transport-neutral
 message boundary used by local WebSockets and relay viewports. It validates
