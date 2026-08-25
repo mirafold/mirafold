@@ -7,6 +7,7 @@ import { classifyOpenCodeProvider, type CredentialKind } from "../provider-polic
 import { agentBin, errText, PERMISSION_TIMEOUT_MS, type AgentSession } from "./types";
 import { AsyncQueue, CLOSE } from "./async-queue";
 import { ResumeIdState } from "./resume-id";
+import { PermissionLedger, RenderGuidanceOnce } from "./wire-helpers";
 import { renderMcpCommand, MIRAFOLD_MCP } from "./render-mcp-cmd";
 import {
   OpenCodeServerProcess,
@@ -61,7 +62,7 @@ export class OpenCodeSession implements AgentSession {
   private wantedResumeId?: string;
   private started?: Promise<void>;
   private closed = false;
-  private firstTurn = true;
+  private guidance = new RenderGuidanceOnce(RENDER_GUIDANCE);
   private modelLabel?: string;
   // The picked OpenCode agent (build/plan/custom primary); unset = the
   // engine's own default rides (no `agent` field on prompts).
@@ -80,7 +81,11 @@ export class OpenCodeSession implements AgentSession {
   private disclosedProviders = new Set<string>();
   private permissionTimeoutMs: number;
   private interruptGraceMs: number;
-  private pendingPermissions = new Map<string, ReturnType<typeof setTimeout>>();
+  // Emission stops at close(): the ledger still resolves (engine replies,
+  // promise settlement) but nothing more reaches a viewport.
+  private permissions = new PermissionLedger((msg) => {
+    if (!this.closed) this.emit(msg);
+  });
   // Per-turn end latch: exactly one turn_end per prompt (idle, error,
   // interrupt fallback, or close — whichever comes first).
   private turnActive = false;
@@ -202,7 +207,7 @@ export class OpenCodeSession implements AgentSession {
     if (!this.turnActive) return;
     const token = this.turnToken;
     const sessionID = this.sessionID;
-    this.denyPendingPermissions();
+    this.permissions.denyAll();
     const fallback = () => {
       this.graceTimer = undefined;
       if (!this.turnActive || this.turnToken !== token) return;
@@ -232,9 +237,7 @@ export class OpenCodeSession implements AgentSession {
   }
 
   resolvePermission(id: string, allow: boolean) {
-    const timer = this.pendingPermissions.get(id);
-    if (timer === undefined) return; // stale/unknown — already resolved
-    this.resolvePermissionInternal(id, allow, timer, true);
+    this.permissions.resolve(id, allow); // stale/unknown ids are a no-op
   }
 
   close() {
@@ -243,7 +246,7 @@ export class OpenCodeSession implements AgentSession {
     this.recoveryGeneration += 1;
     clearTimeout(this.graceTimer);
     this.graceTimer = undefined;
-    this.denyPendingPermissions();
+    this.permissions.denyAll();
     this.endTurn(); // release a worker awaiting an in-flight turn
     this.transport.close();
     this.queue.push(CLOSE);
@@ -513,16 +516,13 @@ export class OpenCodeSession implements AgentSession {
 
   private runTurn(text: string): Promise<void> {
     return this.runEngineTurn(async () => {
-      const prompt = this.firstTurn ? `${RENDER_GUIDANCE}\n\n---\n\n${text}` : text;
+      const prompt = this.guidance.carry(text);
       await this.transport.prompt(this.sessionID as string, {
         parts: [{ type: "text", text: prompt }],
         ...(this.modelPin ? { model: this.modelPin } : {}),
         ...(this.currentAgent ? { agent: this.currentAgent } : {}),
       });
-      // Flipped only once the engine ACCEPTED the prompt: flipping before the
-      // await burns the guidance on a failed first turn and every later turn
-      // runs bare (the codex adapter's 2026-07-29 lesson, inherited).
-      this.firstTurn = false;
+      this.guidance.delivered(); // only once the engine ACCEPTED the prompt
     });
   }
 
@@ -537,7 +537,7 @@ export class OpenCodeSession implements AgentSession {
     this.started = undefined;
     this.sessionID = undefined;
     this.pendingEngineIdles = 0;
-    this.denyPendingPermissions(false);
+    this.permissions.denyAll("moot");
     this.emit({ type: "error", message: detail });
     this.endTurn();
   }
@@ -565,7 +565,7 @@ export class OpenCodeSession implements AgentSession {
         // refuse it. Fresh context is an honest degraded recovery, and the
         // next turn says so before sending anything to the model.
         if (this.closed || generation !== this.recoveryGeneration) return;
-        this.firstTurn = true;
+        this.guidance.reset();
         this.contextResetNoticePending = true;
         next = await this.transport.createSession();
       }
@@ -601,7 +601,7 @@ export class OpenCodeSession implements AgentSession {
     // A turn's end moots its gated asks: without this, a stale
     // permission_resolved fired up to PERMISSION_TIMEOUT_MS later, mid-next-
     // turn (bughunt). No engine reply — the engine has already moved on.
-    this.denyPendingPermissions(false);
+    this.permissions.denyAll("moot");
     // Usage flushes inside the end path — one per completed turn, just
     // before turn_end, never between turns (bughunt round 2).
     if (!this.closed) this.mapper.flushUsage();
@@ -617,64 +617,43 @@ export class OpenCodeSession implements AgentSession {
     detail: string;
     parentId?: string;
   }) {
-    if (this.closed || this.pendingPermissions.has(ask.id)) return;
+    if (this.closed || this.permissions.has(ask.id)) return;
     // Cap concurrent unanswered asks: a hostile/looping engine spamming
-    // distinct permission ids can't grow this map + its timers without bound
-    // (audit 2026-08-13 hardening). Beyond the cap the ask is auto-denied at
-    // the engine — the same deny-by-default the timeout applies, just now.
-    if (this.pendingPermissions.size >= MAX_PENDING_PERMISSIONS) {
+    // distinct permission ids can't grow the ledger + its timers without
+    // bound. Beyond the cap the ask is auto-denied at the engine — the same
+    // deny-by-default the timeout applies, just now.
+    if (this.permissions.size >= MAX_PENDING_PERMISSIONS) {
       void this.transport.replyPermission(ask.id, "reject").catch(() => {});
       return;
     }
-    // Deny-by-default: an unanswered ask must not pin the turn open forever.
-    // A SUBAGENT's ask (parentId set — SA.3) rides the same bar, same timer,
-    // same deny-by-default; before the lane opened these were dropped whole
-    // and a gated subagent simply hung (SA.0 finding).
-    const timer = setTimeout(() => {
-      const pending = this.pendingPermissions.get(ask.id);
-      if (pending !== undefined) this.resolvePermissionInternal(ask.id, false, pending, true);
-    }, this.permissionTimeoutMs);
-    this.pendingPermissions.set(ask.id, timer);
-    this.emit({
-      type: "permission_request",
-      tool: ask.permission,
-      detail: ask.detail,
-      id: ask.id,
-      ...(ask.parentId ? { parentId: ask.parentId } : {}),
-    });
-  }
-
-  /** protocol.ts contract: permission_request MUST resolve visibly on EVERY
-   *  path — browser answer, timeout, external reply, interrupt, close. */
-  private resolvePermissionInternal(
-    id: string,
-    allow: boolean,
-    timer: ReturnType<typeof setTimeout>,
-    replyToEngine: boolean,
-  ) {
-    clearTimeout(timer);
-    this.pendingPermissions.delete(id);
-    if (replyToEngine) {
-      void this.transport
-        .replyPermission(id, allow ? "once" : "reject")
-        .catch((err) => {
+    // A SUBAGENT's ask (parentId set) rides the same bar, same timer, same
+    // deny-by-default; before the lane opened these were dropped whole and a
+    // gated subagent simply hung.
+    void this.permissions.ask(
+      {
+        id: ask.id,
+        tool: ask.permission,
+        detail: ask.detail,
+        ...(ask.parentId ? { parentId: ask.parentId } : {}),
+      },
+      this.permissionTimeoutMs,
+      (allow, how) => {
+        // The engine hears every resolution WE own. A reply the stream
+        // reported from another client ("external") or a turn/engine that is
+        // already gone ("moot") gets none — the engine already knows.
+        if (how === "external" || how === "moot") return;
+        void this.transport.replyPermission(ask.id, allow ? "once" : "reject").catch((err) => {
           if (!this.closed)
             this.emit({ type: "error", message: `permission reply failed: ${errText(err)}` });
         });
-    }
-    if (!this.closed) this.emit({ type: "permission_resolved", id, allow });
+      },
+    );
   }
 
   /** The stream reported a reply we didn't send (another attached client). */
   private onPermissionReplied(requestID: string, reply: string) {
-    const timer = this.pendingPermissions.get(requestID);
-    if (timer === undefined) return; // our own echo — already resolved
-    this.resolvePermissionInternal(requestID, reply !== "reject", timer, false);
-  }
-
-  private denyPendingPermissions(replyToEngine = true) {
-    for (const [id, timer] of [...this.pendingPermissions])
-      this.resolvePermissionInternal(id, false, timer, replyToEngine);
+    // Our own echo has already resolved; resolve() is a no-op then.
+    this.permissions.resolve(requestID, reply !== "reject", "external");
   }
 }
 

@@ -12,6 +12,7 @@ import type { PromptOption, WireMsg } from "../protocol";
 import { makeCanUseTool } from "../security/permissions";
 import { makeRenderServer, RENDER_GUIDANCE } from "../render-tools";
 import { ResumeIdState } from "./resume-id";
+import { ChecklistPainter, PermissionLedger } from "./wire-helpers";
 import {
   type AgentSession,
   type TodoItem,
@@ -133,12 +134,11 @@ export class ClaudeCodeSession implements AgentSession {
   private announcedTools = new Set<string>();
   // The live checklist. `tasks` is the session task list (id → item),
   // built from Task*/TodoWrite calls and persisted across turns like the SDK's
-  // own list; `todoRenderId` is the render block it paints into, reset each
-  // turn so the checklist re-anchors to the latest activity. `taskSeq` mirrors
-  // the SDK's 1-based sequential ids so TaskUpdate.taskId lines up (T2.5).
+  // own list; `checklist` paints it (one render block per turn). `taskSeq`
+  // mirrors the SDK's 1-based sequential ids so TaskUpdate.taskId lines up.
   private tasks = new Map<string, TodoItem>();
   private taskSeq = 0;
-  private todoRenderId?: string;
+  private checklist = new ChecklistPainter((msg) => this.emit(msg));
   // Did this turn stream any assistant text via stream_event? If so, the
   // buffered `assistant` text message is a duplicate and must be skipped. If
   // NOT (slash-command output — /context, /usage, unsupported commands — all
@@ -147,8 +147,7 @@ export class ClaudeCodeSession implements AgentSession {
   private streamedText = false;
   // SA.2: per-subagent narration budget for the turn (cleared with it).
   private subagentProse = new SubagentProseBudget();
-  // In-flight permission prompts, keyed by wire id → resolver.
-  private pendingAsks = new Map<string, (allow: boolean) => void>();
+  private permissions = new PermissionLedger((msg) => this.emit(msg));
 
   // Label shown in the status bar. Undefined when `model` is unset (the SDK
   // falls back to its own default) until system/init names the real one — the
@@ -299,7 +298,7 @@ export class ClaudeCodeSession implements AgentSession {
     if (this.closed) return;
     // A pending permission prompt would keep the aborted turn hanging —
     // interrupt means the user walked away from it: deny.
-    this.denyAllPending();
+    this.permissions.denyAll();
     // The SDK also emits a result for the aborted turn; the extra turn_end
     // after the abort settles is a client-side no-op, kept as a guarantee.
     this.engine
@@ -309,13 +308,13 @@ export class ClaudeCodeSession implements AgentSession {
   }
 
   resolvePermission(id: string, allow: boolean) {
-    this.pendingAsks.get(id)?.(allow);
+    this.permissions.resolve(id, allow);
   }
 
   close() {
     if (this.closed) return;
     this.closed = true;
-    this.denyAllPending();
+    this.permissions.denyAll();
     this.queue.push(CLOSE);
     this.engine.interrupt().catch(() => {});
   }
@@ -323,28 +322,8 @@ export class ClaudeCodeSession implements AgentSession {
   /** Pause the tool call on a browser prompt; deny on timeout or close. */
   private ask = (tool: string, detail: string): Promise<boolean> => {
     if (this.closed) return Promise.resolve(false);
-    return new Promise((resolve) => {
-      const id = randomUUID();
-      const finish = (allow: boolean) => {
-        clearTimeout(timer);
-        this.pendingAsks.delete(id);
-        // Every resolution path lands here (answer, timeout, deny-all), so
-        // this is the one place the resolution is announced to the stream —
-        // other viewports drop their bar on it instead of holding a stale
-        // ask until turn_end (protocol.ts permission_resolved, 2026-07-28).
-        this.emit({ type: "permission_resolved", id, allow });
-        resolve(allow);
-      };
-      const timer = setTimeout(() => finish(false), PERMISSION_TIMEOUT_MS);
-      this.pendingAsks.set(id, finish);
-      this.emit({ type: "permission_request", tool, detail, id });
-    });
+    return this.permissions.ask({ tool, detail }, PERMISSION_TIMEOUT_MS);
   };
-
-  /** Deny every in-flight permission prompt — the interrupt/close teardown. */
-  private denyAllPending() {
-    for (const finish of [...this.pendingAsks.values()]) finish(false);
-  }
 
   /** Fold a Task-family or TodoWrite call into the live checklist (T2.5). */
   private trackTasks(name: string, input: unknown) {
@@ -391,18 +370,7 @@ export class ClaudeCodeSession implements AgentSession {
   }
 
   private emitChecklist() {
-    // Never PAINT an empty checklist — but once one is on screen this turn
-    // (todoRenderId set), an emptied list must update it: the old early
-    // return froze the painted block showing already-deleted tasks forever
-    // (2026-07-29 bughunt).
-    if (this.tasks.size === 0 && !this.todoRenderId) return;
-    this.todoRenderId ??= randomUUID();
-    this.emit({
-      type: "render",
-      component: "todo-list",
-      props: { todos: [...this.tasks.values()] },
-      id: this.todoRenderId,
-    });
+    this.checklist.paint([...this.tasks.values()]);
   }
 
   private emit(msg: WireMsg) {
@@ -599,7 +567,7 @@ export class ClaudeCodeSession implements AgentSession {
         costUsd: (msg as { total_cost_usd?: number }).total_cost_usd,
       });
     }
-    this.todoRenderId = undefined; // next turn starts a fresh checklist
+    this.checklist.reset(); // next turn starts a fresh checklist
     this.streamedText = false; // F.1: next turn's streamed/buffered decision is independent
     // A tool announced but never resolved (interrupt mid-call) must not sit
     // in the set for the session's life; results never span turns, so the

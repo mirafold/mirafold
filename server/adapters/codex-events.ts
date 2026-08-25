@@ -3,6 +3,7 @@ import type { McpToolCallItem, ThreadEvent, ThreadItem } from "@openai/codex-sdk
 import type { WireMsg } from "../protocol";
 import { type TodoItem, capOutput, joinTextBlocks } from "./types";
 import { MIRAFOLD_MCP, generativeUIMsg, renderIdFor } from "./render-mcp-cmd";
+import { ChecklistPainter } from "./wire-helpers";
 import { convertMermaidCharts } from "./mermaid-chart";
 
 type Emit = (message: WireMsg) => void;
@@ -24,7 +25,7 @@ export function extractRenderId(item: McpToolCallItem): string {
 
 export class CodexEventMapper {
   private announced = new Set<string>();
-  private todoRenderId?: string;
+  private readonly checklist: ChecklistPainter;
 
   constructor(
     private readonly options: {
@@ -37,10 +38,12 @@ export class CodexEventMapper {
       providerDiagnostic: (value: unknown) => string;
       onThreadStarted: (threadId: string) => void;
     },
-  ) {}
+  ) {
+    this.checklist = new ChecklistPainter(options.emit);
+  }
 
   endTurn() {
-    this.todoRenderId = undefined;
+    this.checklist.reset();
   }
 
   handle(event: ThreadEvent, end: () => void) {
@@ -240,19 +243,10 @@ export class CodexEventMapper {
   }
 
   private emitChecklist(items: { text: string; completed: boolean }[]) {
-    // Never paint an empty checklist, but an emptied list must still update
-    // one already painted during this turn.
-    if (!items.length && !this.todoRenderId) return;
-    this.todoRenderId ??= randomUUID();
     const todos: TodoItem[] = items.map((item) => ({
       content: item.text,
       status: item.completed ? "completed" : "pending",
     }));
-    this.options.emit({
-      type: "render",
-      component: "todo-list",
-      props: { todos },
-      id: this.todoRenderId,
-    });
+    this.checklist.paint(todos);
   }
 }

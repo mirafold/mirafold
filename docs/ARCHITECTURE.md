@@ -318,10 +318,14 @@ opt-in live-agent tests.
 - The visual language is a terminal workbench, not a chat application:
   monospace command input, rich output, no message bubbles, and
   provider-native activity that compacts only after it settles.
-- Some duplication is deliberate. Adapter worker/listener boilerplate stays
-  local to each adapter so their lifecycles remain independent; the distinct
-  render/artifact update paths and the scripted mock are not genericized only
-  to reduce line count.
+- Adapter drive loops stay local. How an engine is pumped, aborted, and
+  resumed differs per engine and is deliberately not shared; the
+  wire-contract obligations that must behave identically everywhere (the
+  permission ledger, the checklist painting, the first-turn guidance, the
+  slash-turn envelope, output caps) live once in `server/adapters/` shared
+  modules (`wire-helpers.ts`, `types.ts`) and every adapter composes them.
+  The distinct render/artifact update paths and the scripted mock are not
+  genericized only to reduce line count.
 
 Current work belongs in [PLAN.md](../PLAN.md), completed history in
 [PLAN-ARCHIVE.md](../PLAN-ARCHIVE.md), and decided product terms in

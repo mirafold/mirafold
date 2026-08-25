@@ -7,6 +7,7 @@ import type { PromptOption, WireMsg } from "../protocol";
 import { RENDER_GUIDANCE } from "../render-tools";
 import { type AgentSession, capOutput, emitPromptOptions, errText, toolDetail } from "./types";
 import { MIRAFOLD_MCP, generativeUIMsg, renderIdFor, renderMcpCommand } from "./render-mcp-cmd";
+import { PermissionLedger, RenderGuidanceOnce, runSlashTurn } from "./wire-helpers";
 import { geminiBin, listGeminiModels, type GeminiModelCatalog } from "./gemini-model-list";
 import { emitModelPicker } from "./model-picker";
 import { isWorkspaceTrusted, trustWorkspace } from "../sessions/workspace-trust";
@@ -61,8 +62,8 @@ export class GeminiCliSession implements AgentSession {
   // RENDER_GUIDANCE rides ahead of the first NON-slash turn (V.2): headless
   // Gemini only recognizes a slash command at position 0 of the prompt, so
   // prepending to a slash turn would silently turn it into chat (observed
-  // live 2026-07-19). Tracked apart from `started` for exactly that case.
-  private guidanceInjected = false;
+  // live 2026-07-19); the guidance waits for the first prose turn.
+  private guidance = new RenderGuidanceOnce(RENDER_GUIDANCE);
   private modelLabel: string | undefined;
   private model?: string;
   private workspaceDir: string;
@@ -74,7 +75,7 @@ export class GeminiCliSession implements AgentSession {
   // The folder-trust ask (P.6b), keyed by wire id → resolver. At most one is
   // ever in flight: it gates the first turn in an untrusted workspace, and a
   // yes is remembered on disk, so later turns never reach it.
-  private pendingAsks = new Map<string, (allow: boolean) => void>();
+  private permissions = new PermissionLedger((msg) => this.emit(msg));
   // Set once the user says yes IN THIS SESSION — the disk record is the
   // durable answer, this just avoids re-reading it every turn.
   private trusted = false;
@@ -201,19 +202,14 @@ export class GeminiCliSession implements AgentSession {
 
   interrupt() {
     this.child?.kill("SIGTERM"); // ends the in-flight turn; session stays warm
-    this.denyAllPending(); // an unanswered trust ask would pin the turn open
-  }
-
-  /** Deny every in-flight ask — the interrupt/close teardown. */
-  private denyAllPending() {
-    for (const finish of [...this.pendingAsks.values()]) finish(false);
+    this.permissions.denyAll(); // an unanswered trust ask would pin the turn open
   }
 
   // Headless Gemini has no interactive-approval channel for its OWN tool calls
   // (like Codex exec). The one thing it does ask is folder trust (P.6b), and
   // that ask is shell-owned — the browser's answer lands here.
   resolvePermission(id: string, allow: boolean) {
-    this.pendingAsks.get(id)?.(allow);
+    this.permissions.resolve(id, allow);
   }
 
   /**
@@ -230,37 +226,23 @@ export class GeminiCliSession implements AgentSession {
       return Promise.resolve(true);
     }
     if (this.closed) return Promise.resolve(false);
-    return new Promise((resolve) => {
-      const id = randomUUID();
-      const finish = (allow: boolean) => {
-        clearTimeout(timer);
-        this.pendingAsks.delete(id);
-        // Announced on EVERY resolution path (answer, timeout, teardown), so
-        // other viewports drop their bar instead of holding a stale ask —
-        // protocol.ts's rule for permission_request.
-        this.emit({ type: "permission_resolved", id, allow });
+    return this.permissions.ask(
+      { tool: "Gemini", detail: `trust this folder — ${this.workspaceDir}` },
+      TRUST_PROMPT_TIMEOUT_MS,
+      (allow) => {
         if (allow) {
           this.trusted = true;
           trustWorkspace(this.workspaceDir); // remembered: asked once, ever
         }
-        resolve(allow);
-      };
-      const timer = setTimeout(() => finish(false), TRUST_PROMPT_TIMEOUT_MS);
-      this.pendingAsks.set(id, finish);
-      this.emit({
-        type: "permission_request",
-        tool: "Gemini",
-        detail: `trust this folder — ${this.workspaceDir}`,
-        id,
-      });
-    });
+      },
+    );
   }
 
   close() {
     if (this.closed) return;
     this.closed = true;
     this.child?.kill("SIGTERM");
-    this.denyAllPending();
+    this.permissions.denyAll();
     this.queue.push(CLOSE);
   }
 
@@ -308,9 +290,8 @@ export class GeminiCliSession implements AgentSession {
    * anything else (`/model`, `/model manage`, stray args — the terminal
    * ignores args and opens the dialog) shows the picker.
    */
-  private async runModelCommand(arg: string) {
-    this.emit({ type: "status", state: "thinking" });
-    try {
+  private runModelCommand(arg: string): Promise<void> {
+    return runSlashTurn((msg) => this.emit(msg), async () => {
       if (arg !== "set" && !arg.startsWith("set ")) {
         let catalog: GeminiModelCatalog;
         try {
@@ -349,9 +330,7 @@ export class GeminiCliSession implements AgentSession {
         ? " (--persist writes the terminal's own settings file — here the switch lasts this session)"
         : "";
       this.emit({ type: "text_delta", text: `Model set to ${name}.${persistNote}` });
-    } finally {
-      this.emit({ type: "turn_end" });
-    }
+    });
   }
 
   private async runTurn(text: string): Promise<void> {
@@ -386,14 +365,12 @@ export class GeminiCliSession implements AgentSession {
       // has. Slash-leading turns are skipped: headless Gemini only recognizes
       // a slash command at position 0, so the prepend would demote the user's
       // command to chat; the guidance waits for the first prose turn.
-      const inject = !this.guidanceInjected && !text.trimStart().startsWith("/");
+      const inject = this.guidance.pending && !text.trimStart().startsWith("/");
+      const prompt = inject ? this.guidance.carry(text) : text;
       // Optimistic — REVERTED below if the child dies without ever reading
       // the prompt (no stdout event: the exit-42 id-mode collision, a spawn
-      // failure, bad auth). Leaving it consumed there ran every later turn
-      // bare, so the model never saw the render tools for the session's
-      // whole life (2026-07-29 bughunt).
-      if (inject) this.guidanceInjected = true;
-      const prompt = inject ? `${RENDER_GUIDANCE}\n\n---\n\n${text}` : text;
+      // failure, bad auth).
+      if (inject) this.guidance.delivered();
       const args = ["-p", prompt, "-o", "stream-json", "--allowed-mcp-server-names", MIRAFOLD_MCP];
       if (this.model) args.push("-m", this.model);
       // `resumed` is THIS turn's mode; `started` is optimistic (set before the
@@ -491,12 +468,12 @@ export class GeminiCliSession implements AgentSession {
         }
         // No stdout event ⇒ the prompt was never read — give the guidance
         // back to the next prose turn (see the inject note above).
-        if (!sawEvent && inject) this.guidanceInjected = false;
+        if (!sawEvent && inject) this.guidance.reset();
         end(); // covers the case where no `result` event arrived (crash/kill)
       });
       child.on("error", (err) => {
         if (!this.closed) this.emit({ type: "error", message: `gemini spawn failed: ${err.message}` });
-        if (inject) this.guidanceInjected = false; // spawn failed — nothing was read
+        if (inject) this.guidance.reset(); // spawn failed — nothing was read
         end();
       });
     });

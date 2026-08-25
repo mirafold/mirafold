@@ -1,4 +1,5 @@
 import type { ModelReasoningEffort } from "@openai/codex-sdk";
+import { runSlashTurn } from "./wire-helpers";
 import type { PromptOption, WireMsg } from "../protocol";
 import { emitPromptOptions } from "./types";
 import type { CodexModel } from "./codex-model-list";
@@ -29,16 +30,6 @@ const isEffort = (
   value: string,
   efforts: readonly CodexReasoningEffort[],
 ): value is CodexReasoningEffort => (efforts as readonly string[]).includes(value);
-
-/** Slash commands use the same visible turn envelope as engine turns. */
-async function runSlashTurn(emit: Emit, body: () => Promise<void> | void): Promise<void> {
-  emit({ type: "status", state: "thinking" });
-  try {
-    await body();
-  } finally {
-    emit({ type: "turn_end" });
-  }
-}
 
 export function runCodexModelCommand(options: {
   arg: string;

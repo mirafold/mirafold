@@ -9,6 +9,7 @@ import {
 } from "./types";
 import { RENDER_TOOL_COMPONENT } from "./render-mcp-cmd";
 import { codexSlashOptions } from "./codex-prompt-options";
+import { PermissionLedger } from "./wire-helpers";
 
 // component → its real render_* tool name, inverted from the one mapping
 // (2026-07-28 fix: a hand-rolled inverse here produced tool names no agent
@@ -476,7 +477,7 @@ export class MockSession implements AgentSession {
   private deck: number[] = [];
   // Turns opened but not yet closed — interrupt() must close every one.
   private openTurns = 0;
-  private pendingAsks = new Map<string, (allow: boolean) => void>();
+  private permissions = new PermissionLedger((msg) => this.emit(msg));
 
   constructor(private agent: AgentName = "claude-code") {}
 
@@ -582,7 +583,7 @@ export class MockSession implements AgentSession {
   }
 
   resolvePermission(id: string, allow: boolean) {
-    this.pendingAsks.get(id)?.(allow);
+    this.permissions.resolve(id, allow);
   }
 
   close() {
@@ -1298,30 +1299,19 @@ export class MockSession implements AgentSession {
   /** Deterministic T.3 hook: pause on a permission_request so the prompt bar
    *  is exercisable API-free. */
   private playPermissionAsk() {
-    const id = randomUUID();
     this.beginTurn();
     this.schedule(() => {
-      const timer = setTimeout(
-        () => this.pendingAsks.get(id)?.(false),
+      void this.permissions.ask(
+        { tool: "Bash", detail: "rm -rf /var/cache/app && systemctl restart app" },
         PERMISSION_TIMEOUT_MS,
+        (allow, how) => {
+          // The scripted follow-up belongs to the asking turn: an answer or
+          // a timeout plays it; an abandoned turn (interrupt/close) does not.
+          if (how === "teardown") return;
+          if (allow) this.playDangerousAllowed();
+          else this.playDangerousDenied();
+        },
       );
-      this.timers.push(timer);
-      this.pendingAsks.set(id, (allow) => {
-        clearTimeout(timer);
-        this.pendingAsks.delete(id);
-        // Answer AND timeout resolve through here — announce it so every
-        // viewport drops the bar, mirroring the real adapter's contract
-        // (protocol.ts permission_resolved).
-        this.emit({ type: "permission_resolved", id, allow });
-        if (allow) this.playDangerousAllowed();
-        else this.playDangerousDenied();
-      });
-      this.emit({
-        type: "permission_request",
-        tool: "Bash",
-        detail: "rm -rf /var/cache/app && systemctl restart app",
-        id,
-      });
     }, 450);
   }
 
@@ -1546,13 +1536,8 @@ export class MockSession implements AgentSession {
     this.timers = [];
     // protocol.ts: permission_resolved MUST fire on EVERY resolution path —
     // interrupt/close included, or a second viewport keeps a dead bar and
-    // the replay buffer holds an unresolved ask forever (2026-07-29
-    // bughunt). Emitted directly, not through the resolver: its scripted
-    // follow-up belongs to the turn being abandoned.
-    for (const id of this.pendingAsks.keys()) {
-      this.emit({ type: "permission_resolved", id, allow: false });
-    }
-    this.pendingAsks.clear();
+    // the replay buffer holds an unresolved ask forever.
+    this.permissions.denyAll();
   }
 
   /** Open the scripted turn envelope: `status: thinking` at t=0. */

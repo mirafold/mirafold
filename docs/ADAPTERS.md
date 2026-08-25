@@ -202,8 +202,9 @@ this a no-op (I3). Deny is the default posture on timeout
 adapter that emits `permission_request` MUST also emit `permission_resolved
 { id, allow }` for EVERY resolution path — answer, timeout, interrupt — so
 every attached viewport drops its bar the moment the ask dies instead of
-holding a stale prompt a tap can only no-op against (2026-07-28; funnel all
-paths through one `finish`, as `claude-code.ts` does).
+holding a stale prompt a tap can only no-op against. Use `PermissionLedger`
+(`wire-helpers.ts`) — every path funnels through its one `finish`, so the rule
+is structural rather than remembered per adapter.
 
 **`close()`** — idempotent teardown: end generators, abort turns, kill child
 processes, clear timers. After `close()`, no further messages may be emitted.

@@ -1,7 +1,7 @@
-import { randomUUID } from "node:crypto";
 import type { WireMsg } from "../protocol";
 import { capOutput, toolDetail, SubagentProseBudget, type TodoItem } from "./types";
 import { generativeUIMsg, MIRAFOLD_MCP, renderIdFor } from "./render-mcp-cmd";
+import { ChecklistPainter } from "./wire-helpers";
 import type { OpenCodeEvent } from "./opencode-client";
 
 // OpenCode advertises MCP tools as `<server>_<tool>` (OC.0 capture:
@@ -45,7 +45,7 @@ export class OpenCodeEventMapper {
   private turnUsage = new Map<string, TurnTokens>();
   private lastModel?: string;
   private lastStatus?: "thinking" | "tool";
-  private todoRenderId?: string;
+  private readonly checklist: ChecklistPainter;
   // SA.3, the subagent lane: a child session's traffic maps to its spawn's
   // task PART id — the same opaque handle every wire lane groups by. Edges
   // come from the parent task part's state.metadata ({sessionId,
@@ -87,7 +87,9 @@ export class OpenCodeEventMapper {
       onEngineIdle: () => void;
       endTurn: () => void;
     },
-  ) {}
+  ) {
+    this.checklist = new ChecklistPainter(options.emit);
+  }
 
   startTurn() {
     this.turnUsage.clear();
@@ -122,7 +124,7 @@ export class OpenCodeEventMapper {
   }
 
   endTurn() {
-    this.todoRenderId = undefined;
+    this.checklist.reset();
     this.lastStatus = undefined;
   }
 
@@ -485,10 +487,6 @@ export class OpenCodeEventMapper {
 
   private onTodos(todos: unknown) {
     const list = Array.isArray(todos) ? todos : [];
-    // Never paint an empty checklist, but an emptied list must still update
-    // one already painted during this turn (same rule as the codex mapper).
-    if (!list.length && !this.todoRenderId) return;
-    this.todoRenderId ??= randomUUID();
     const items: TodoItem[] = list.map((t) => {
       const todo = (t ?? {}) as Record<string, unknown>;
       const status = String(todo["status"] ?? "pending");
@@ -500,12 +498,7 @@ export class OpenCodeEventMapper {
             : "pending",
       };
     });
-    this.options.emit({
-      type: "render",
-      component: "todo-list",
-      props: { todos: items },
-      id: this.todoRenderId,
-    });
+    this.checklist.paint(items);
   }
 }
 
