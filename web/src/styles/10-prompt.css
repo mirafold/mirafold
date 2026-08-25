@@ -269,6 +269,79 @@
   color: var(--fg-faint);
 }
 
+/* The line-walker (2026-08-25, Kyle) — the indicator's resident glyph
+   creature, pacing the line's spare right-hand width. Positions land as
+   inline `left` in ch from ActivityLine.tsx (JS-driven, like the asterisk
+   frames, so reduced motion is honored there — the walker parks). The track
+   clips: on a narrow viewport the walker simply wanders offstage rather
+   than wrapping the line. */
+.walker-track {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-self: stretch;
+  overflow: hidden;
+}
+
+.walker {
+  position: absolute;
+  bottom: 0;
+  white-space: pre;
+  color: var(--fg-dim);
+  cursor: pointer;
+  user-select: none;
+}
+
+.walker.is-hop {
+  animation: walker-hop 0.36s ease-out;
+}
+
+@keyframes walker-hop {
+  35% {
+    transform: translateY(-0.5em);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+
+.walker-mini {
+  position: absolute;
+  bottom: 0.1em;
+  font-size: 0.72em;
+  white-space: pre;
+  color: var(--fg-faint);
+}
+
+.walker-mini.is-ghost {
+  animation: walker-evaporate 0.55s ease-out forwards;
+}
+
+@keyframes walker-evaporate {
+  to {
+    opacity: 0;
+    transform: translateY(-0.7em);
+    filter: blur(2px);
+  }
+}
+
+/* The walker's brief farewell after busy comes down (bow on turn_end,
+   flinch on error). Deliberately NOT .activity-line: that selector means
+   "turn in flight" to tests and tooling, and this line is a curtain call. */
+.walker-outro {
+  display: flex;
+  margin-top: 8px;
+  padding: 0 15px;
+  min-height: 1.2em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  color: var(--fg-dim);
+}
+
+.walker-outro .walker-track {
+  flex: 1 1 auto;
+}
+
 .perm-bar {
   display: flex;
   align-items: center;

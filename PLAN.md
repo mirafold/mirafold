@@ -3051,6 +3051,32 @@ parse into the Step 1.4 raw-props fallback — legible, and the designed path.
 
 ---
 
+## Phase LW — The line-walker (opened + ✅ COMPLETE 2026-08-25; Kyle-directed)
+
+- [x] **LW.1 — The line-walker on the activity indicator** ✅ 2026-08-25 —
+  Kyle's pick from the wait-state whimsy round: a tiny glyph creature
+  `(•ᴗ•)` paces the ActivityLine's spare width while a turn runs. Every
+  behavior mirrors a real wire fact (pure derivations in
+  `web/src/walker.ts`, Tier-1-pinned): carrying `▪` = a root tool call is
+  open; sitting with thought-dots = 20s+ of uninterrupted thinking; a mini
+  walker = a live subagent (parentId-keyed, name-agnostic exactly like the
+  SA deck), parading on its own track stretch and evaporating when its root
+  tool_result lands; the bow/flinch outro = how the turn really ended —
+  rendered under its own `.walker-outro` class so `.activity-line` still
+  means "turn in flight" to every test and tool watching it. Click = hop, a
+  no-op by design ("does nothing about the turn" is the honesty line).
+  Reduced motion parks the walker at cell 0 (mood faces still change —
+  they're state, not motion) and skips ghosts + outro, keeping the visual
+  suites deterministic. Decoration never becomes status: the label +
+  elapsed stay the information, and nothing here renders agent-authored
+  content. **Done when** — observed 2026-08-25, headless Chromium against
+  the mock's subagent fan-out: pacing + blink frames, `⊃▪`/`▪⊂` carry in
+  both facings, concurrent minis, out-of-order ghost evaporation, the
+  `(_ _)` bow after turn_end, zero page errors; a second reduced-motion run
+  parked with no ghosts and no outro. Replay bursts suppress ghost
+  farewells (`GHOST_MIN_LIFE_MS`) so a mid-turn reload doesn't flash
+  history as theater.
+
 ## Post-release ideas (parked — organize after R.7)
 
 The unordered post-R.7 idea backlog lives in **POST-RELEASE.md** (moved out of

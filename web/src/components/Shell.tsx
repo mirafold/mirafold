@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentInfo, AgentName, PromptOption } from "@protocol";
-import { ActivityLine, activityLabel, type Activity } from "./ActivityLine";
+import { ActivityLine, type Activity, type TurnEnd } from "./ActivityLine";
 import { BangBar } from "./BangBar";
 import { ChangesGlyph } from "./ChangesGlyph";
 import { FilesGlyph } from "./FilesGlyph";
@@ -14,6 +14,7 @@ import { StatusBar, type Usage } from "./StatusBar";
 import { createSessionBus } from "../session-bus";
 import type { SubscriptionReply } from "../subscription-card";
 import { nextOpenTurns } from "../turn-busy";
+import { nextSubagents } from "../walker";
 import { traceTurn } from "../turn-trace";
 import {
   MODE_STORAGE_KEY,
@@ -102,6 +103,12 @@ export function Shell() {
   // status frame (or announced tool), cleared back to the generic "working…"
   // the moment it could go stale (tool_result, streamed text, turn_end).
   const [activity, setActivity] = useState<Activity>(null);
+  // Live subagents (parent tool_use ids), folded off the wire by the
+  // walker.ts reducer — each one is a mini line-walker on the indicator.
+  const [subagents, setSubagents] = useState<readonly string[]>([]);
+  // How the last turn ended, for the walker's outro. A ref, set BEFORE the
+  // setBusy that ends the turn, so the outro render reads it fresh.
+  const turnEnd = useRef<TurnEnd>("silent");
   // Pending permission prompts, oldest first; the bar shows one at a time.
   // SHELL-OWNED UI: the agent can paint nothing here, so it can't fake it.
   const [asks, setAsks] = useState<PermAsk[]>([]);
@@ -338,6 +345,7 @@ export function Shell() {
         // the wasConnected guard below blocks for "Reconnected"
         // (2026-07-29 bughunt).
         const live = !("replay" in m && m.replay);
+        setSubagents((s) => nextSubagents(s, m as { type: string; id?: string; parentId?: string }));
         const openBefore = openTurns.current;
         openTurns.current = nextOpenTurns(openTurns.current, m.type, !live);
         traceTurn(m.type, !live, openBefore, openTurns.current, m.type === "user_prompt" ? m.text : undefined);
@@ -394,6 +402,7 @@ export function Shell() {
           // (bughunt 2026-08-14 r2).
           if (!m.parentId) setActivity((a) => (a?.state === "tool" ? null : a));
         } else if (m.type === "turn_end") {
+          turnEnd.current = "done";
           setBusy(openTurns.current > 0);
           setActivity(null);
           setAsks([]); // a request that outlived its turn is void (server denies)
@@ -455,6 +464,7 @@ export function Shell() {
           // Without this the shell showed "working…" for the life of the
           // session after any errored turn, and a reload replayed the same
           // imbalance rather than clearing it (2026-07-30).
+          turnEnd.current = "error";
           setBusy(openTurns.current > 0);
           setActivity(null);
           // Only the onboarding card consumes this; in-session errors already
@@ -483,6 +493,7 @@ export function Shell() {
           }));
         } else if (m.type === "zone_reset") {
           openTurns.current = 0;
+          turnEnd.current = "silent";
           setBusy(false);
           setActivity(null);
           setAsks([]);
@@ -512,8 +523,10 @@ export function Shell() {
         // the turn-activity frames above) re-derives busy after reconnect (R.4c).
         if (!c) {
           openTurns.current = 0;
+          turnEnd.current = "silent";
           setBusy(false);
           setActivity(null);
+          setSubagents([]);
         }
       }),
     [bus, announce],
@@ -731,7 +744,12 @@ export function Shell() {
                 onInputNavigationChange={updateInputNavigationState}
               />
             </div>
-            <ActivityLine busy={busy} label={activityLabel(activity)} />
+            <ActivityLine
+              busy={busy}
+              activity={activity}
+              subagents={subagents}
+              end={turnEnd.current}
+            />
             <PermBar asks={asks} onAnswer={answer} />
             {bang.my && (
               <BangBar
