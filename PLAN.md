@@ -2719,6 +2719,13 @@ is one complete single-pass `$next` chunk.
 
 ## Phase PN — Panes (file views beside the transcript)
 
+**ON HOLD — do not build file panes for now (Kyle, 2026-08-25).** This phase
+is NOT a `/next` candidate: skip PN.2 and PN.3 when picking the next step, and
+do not continue or merge `feature/file-panes` (that branch was started by
+mistake). Phase TP below depends on this pane frame, so it is on hold too.
+The phase stays written down only so the design is not lost; Kyle lifts the
+hold explicitly when he wants it.
+
 **Why.** Kyle (2026-07-26): open a file and see it in its own pane. Also the
 structural prerequisite for TP — pane content must be a self-contained
 component from day one so a terminal can slot into the same frame later.
@@ -2762,6 +2769,9 @@ instance per viewer.
     unrelated file's change (hint present) causes no refetch of that pane.
 
 ## Phase TP — Terminal pane (vim on the desktop; promoted from POST-RELEASE.md)
+
+**ON HOLD with Phase PN (Kyle, 2026-08-25)** — TP slots into PN's pane
+frame, so it is not a `/next` candidate until the PN hold is lifted.
 
 The POST-RELEASE "Embedded terminal pane" intake entry (2026-07-22),
 promoted 2026-07-26. Its settled scope carries over verbatim: a real
