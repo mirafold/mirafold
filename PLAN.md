@@ -2738,6 +2738,206 @@ is one complete single-pass `$next` chunk.
   the explicitly enumerated 87-file safe run counts. Full original Phase body
   → **PLAN-ARCHIVE.md, “Moved 2026-08-19 (Phase IH — completed body).”**
 
+## Three phases from Kyle's 2026-08-25 usage notes (Kyle-directed; each opens ONLY on his express request naming it)
+
+Kyle used Mirafold for a day and brought back nine findings. Investigated
+2026-08-25 (three code sweeps, findings recorded per phase below); every
+decision was settled with him the same day. Recommended order: **CX → TR →
+CA** (smallest first; CX's paragraph also stops an agent misattributing
+Codex's sandbox to "a Mirafold session policy"). Each phase is one branch
+off fresh `next`, one PR, merged before the next is cut.
+
+## Phase CX — Agent context + the silent bang (written + opened 2026-08-25; Kyle-directed)
+
+- [ ] **Step CX.1 — Tell the agent where it is**
+  - Finding: the only environment text any engine receives is one sentence
+    in `RENDER_GUIDANCE` ("Your output renders in a web app…"). No name, no
+    "not a terminal". Agents assume a terminal/desktop and say so.
+  - Goal: every engine knows it is inside Mirafold, a browser app, without
+    spending context on anything more (Kyle: ~40 words, nothing about the
+    surfaces).
+  - Build: append one paragraph to `RENDER_GUIDANCE` (agent-neutral — Claude
+    gets it via `systemPrompt.append`, Codex/Gemini/OpenCode via the
+    first-turn prepend, all already wired): *"You are running inside
+    Mirafold, a browser app that re-skins this coding agent. The user reads
+    your output in a web page (sometimes on a phone), not in a terminal, a
+    desktop app, or an IDE — don't refer them to a terminal, Ctrl-C, or
+    'open in your editor.'"*
+  - Files: `server/render-tools.ts`; Tier-1 test that the paragraph reaches
+    each adapter's injection point (`claude-code.test.ts` system prompt
+    append, `RenderGuidanceOnce` carry for the other three).
+  - Done when: Tier-1 proves all four adapters carry it; a live turn
+    (Kyle-run) asking "what environment am I in?" names Mirafold and not a
+    terminal.
+
+- [ ] **Step CX.2 — `!!` runs a command with no agent turn**
+  - Finding: `!` (the bang line) runs in a PTY and then pushes the transcript
+    to the agent as its own model turn (`bang-handlers.ts`) — faithful to
+    Claude Code's terminal `!`. There is no way to just use the shell.
+  - Decisions (Kyle, 2026-08-25): `!` stays exactly as it is (fidelity);
+    `!!` = same PTY path, same broadcast/replay to every viewport (shell-
+    owned, not secret), same `cd` persistence and jail, same 400 ms
+    throttle, and **the agent never sees it — not even as later context.**
+  - Build: additive only. `bang` client message gains `silent?: true`;
+    `bang_start` gains `silent?: true` so every viewport and the replay ring
+    draw the row right; `bang-handlers.ts` skips `markModelTurnStarted` and
+    `pushPrompt` when silent (no false-busy window, no queued-follow-up slot
+    consumed); `Shell.tsx`'s intercept becomes `^!(!?)\s*(.+)$`; the bang
+    row shows a `!!` glyph. Prompt completions unchanged.
+  - Files: `server/protocol.ts`, `server/sessions/bang-handlers.ts`,
+    `web/src/components/Shell.tsx`, `OutputZone.tsx` (bang row),
+    `transcript-projection.ts`, `styles/06-tools.css`; tests: Tier-2
+    `bang.itest.ts` (silent → the session's `pushPrompt` is never called,
+    output still broadcast + replayed, cwd persists across `!!` then `!`),
+    Tier-1 projection, Tier-3 e2e (`!!echo hi` → `!!` row with output, the
+    activity line never starts, the mock received no prompt).
+  - Done when: the e2e proves a `!!` command runs, shows, replays, and the
+    mock adapter's prompt log stays empty.
+
+## Phase TR — Transcript readability (written 2026-08-25; NOT YET OPENED)
+
+Findings (2026-08-25 sweep): per-call bodies are always collapsed except on
+error (`ToolBlock.tsx`); the higher-level fold ("worked · N actions",
+`tool-visibility.ts`) already exists but forms only after `turn_end`, only
+for runs of ≥2 successful calls, and any prose between two calls splits the
+run — so a narrating agent produces a one-by-one parade forever. A manual
+expand is lost when a row reflows into the fold (remount). There is no
+jump-to-bottom affordance (only the `End` key with the scroller focused).
+Prose code fences render as a bare `<pre>` with no copy button while
+`render_code` has a header strip + `CopyButton`. Folder rows carry a folder
+glyph beside the chevron.
+
+- [ ] **Step TR.1 — The fold forms live, absorbs short narration, keeps
+  the user's expands**
+  - Decisions (Kyle): fold **during** the turn — "working · N actions"
+    growing, only the in-flight call shown beneath it as its own row;
+    flips to "worked · N actions" at turn end. Narration of **≤ 2 lines**
+    between calls is absorbed into the fold (shown inside, in order, like
+    interior thinking); a longer paragraph stays visible and ends the run.
+    Failed/interrupted calls stay outside and open, as today. A manual
+    expand survives the reflow.
+  - Build: `tool-visibility.ts` relaxes the `settled` requirement to
+    "finished + successful" for live folding with the running call as the
+    trailing boundary; short-text absorption beside thinking absorption;
+    tool disclosure state lifted into `OutputZone` keyed by tool id (the
+    `expandedThinking` pattern). Fold label by turn state.
+  - Files: `web/src/tool-visibility.ts` (+test), `transcript-projection.ts`
+    (+test), `components/OutputZone.tsx`, `ToolBlock.tsx`; mock scenario
+    `tool-activity` gains a one-line narration between calls and a longer
+    paragraph; `server/testing/shell-effects.e2e.ts`.
+  - Done when: e2e shows, mid-turn, one growing `.tool-activity-group` with
+    only the running call outside it; the short narration is inside the
+    fold and the paragraph outside; a click-expanded call is still expanded
+    after `turn_end`; the failing call still stands alone, open.
+
+- [ ] **Step TR.2 — Jump to latest**
+  - Decision (Kyle): a small round pill with a single `↓`, bottom-right of
+    the transcript scroller inside `.zone-row`, ~12 px above the scroller's
+    bottom edge (above the activity line / prompt box, out of the 76ch
+    reading column); bottom-center on the phone. Visible only while
+    follow-tail is detached; fades out on reaching the bottom or sending a
+    prompt. Click = what `End` does (`armFollow` + scroll). No count, no
+    label; `aria-label="Jump to latest"`.
+  - Build: `use-follow-tail.ts` surfaces `following` as render state;
+    the pill component; CSS in `01-frame.css`.
+  - Files: `web/src/use-follow-tail.ts` (+test), `components/OutputZone.tsx`,
+    `styles/01-frame.css`; e2e in `document.e2e.ts` or a new
+    `follow-tail.e2e.ts`.
+  - Done when: e2e — scroll up during a streaming mock turn → pill visible;
+    click → at bottom, following, pill gone; never visible while at bottom;
+    phone viewport places it bottom-center.
+
+- [ ] **Step TR.3 — Prose code fences get `render_code`'s header strip**
+  - Decision (Kyle, "option 2"): a fenced code block the agent types in
+    prose renders with the same header strip as the `render_code` painting
+    — language on the left (when the fence names one), `copy` on the right
+    — so the two ways of showing code are one object.
+  - Build: a `pre` override in `registry/Md.tsx` (today it overrides only
+    `a`/`code`/`table`/`li`) that wraps the highlighted `<code>` in the
+    shared head from `registry/Code.tsx` (extract the head into a small
+    shared component; `CopyButton` copies the raw fence text). Applies
+    wherever `Md` renders — turn prose and card text alike.
+  - Files: `web/src/registry/Md.tsx`, `registry/Code.tsx`,
+    `registry/CopyButton.tsx`, `styles/05-transcript.css` /
+    `07-registry.css`; a mock scenario turn containing a fence; e2e.
+  - Done when: e2e — a fenced block in a mock turn shows the head with the
+    language and a `copy` that flips to `copied`; `render_code` unchanged.
+
+- [ ] **Step TR.4 — No folder icon on folder rows**
+  - Decision (Kyle): drop the folder glyph from directory rows and the root
+    row; keep the rotating chevron; files keep their icons; keep an empty
+    spacer where the glyph was so names align in one column.
+  - Files: `components/folder-tree/FolderTreeRows.tsx`,
+    `FolderTreePanel.tsx` (root row), `styles/02-folder-tree.css`; e2e.
+  - Done when: e2e — no `.folder-tree-node-icon-folder` /
+    `-folder-open` in the tree; a dir name and a file name at the same
+    depth share the same x.
+
+## Phase CA — Codex on app-server: terminal-equal permissions (written 2026-08-25; NOT YET OPENED)
+
+**Finding (verified 2026-08-25).** Mirafold passes Codex **no** sandbox or
+approval settings (`codex.ts` leaves `sandboxMode`/`approvalPolicy` unset
+on purpose) and never writes `~/.codex/config.toml`; the `.git`-is-read-only
+rule Kyle hit is Codex's own workspace-write sandbox, identical in the
+terminal. The real mismatch: the adapter drives Codex through
+`@openai/codex-sdk`, which spawns **`codex exec`** — Codex's
+*non-interactive* mode. In the terminal, with `approval_policy =
+"on-request"`, a sandbox block (writing `.git` on commit, network, a path
+outside the workspace) makes Codex **ask** "retry outside the sandbox?";
+under `exec` nobody can be asked (`resolvePermission` is a no-op, the SDK
+has no approval callback), so the command fails and the model improvises —
+which is why Kyle ended up hand-editing `config.toml`. Codex is the only
+adapter without a working approval round-trip. **Target (Kyle): no
+difference for the user between Codex in the terminal and Codex in
+Mirafold.** The fix is Codex's `app-server` JSON-RPC protocol — what its
+own TUI and the VS Code extension use — whose approval requests map onto
+the existing `permission_request` / `permission_resolved` messages and the
+permission bar. `app-server` is already spawned for the model and skills
+catalogs (`codex-model-list.ts`, `codex-skills-list.ts`).
+
+- [ ] **Step CA.1 — The spike (throwaway, time-boxed)**
+  - Goal: watch the protocol do what the docs say before any product code.
+  - Build: drive `codex app-server` by hand from a scratch folder against
+    the installed `codex-cli` (0.149.1 today): initialize; new thread + one
+    turn; the full event stream (item shapes vs the exec-JSON ones the
+    mapper knows); an approval request when the sandbox blocks a `git
+    commit`, a network call, and an out-of-workspace write — and what
+    answering approve/deny does; thread resume; the first-open "trust this
+    folder?" dialog (surfaced, or client-owned?); how the `-c` config
+    overrides and `model_provider` binding ride along. Record all of it,
+    including the no-go list, in `server/adapters/codex.spike.md`.
+  - Done when: the spike doc records a real observed approval round trip
+    (a sandboxed commit produced a request; approving it made it succeed)
+    and names every place terminal-equal behavior is or isn't reachable.
+
+- [ ] **Step CA.2 — The transport**
+  - Build: `codex-app-server.ts` — a JSON-RPC-over-stdio client (the
+    `jsonrpc-oneshot.ts` patterns, made long-lived) replacing the SDK spawn
+    in `codex-binding.ts` / `codex.ts`; same config overrides and provider
+    binding; `codex-events.ts` adapted to the app-server item stream;
+    resume preserved. Dependency call recorded: whether `@openai/codex-sdk`
+    still earns its place or is removed.
+  - Done when: Tier-2 `codex.test.ts` green on the new transport with a
+    scripted app-server stub; interrupt, resume, `/model`, `/effort` intact.
+
+- [ ] **Step CA.3 — The approval round trip**
+  - Build: app-server approval requests → `permission_request` (tool +
+    detail, with the "retry outside the sandbox" meaning stated in the
+    shell's own words, engine words badged with `source`); the permission
+    bar's answer → the protocol's approve/deny; a `PermissionLedger` like
+    the other adapters; answers already sync across viewports.
+  - Done when: Tier-2 proves request → bar → answer → command proceeds or
+    is denied, and a denied request never runs.
+
+- [ ] **Step CA.4 — Fidelity acceptance (live, Kyle-run)**
+  - `codex-live.ltest.ts`: in a workspace-write sandbox, the agent commits
+    → Mirafold prompts → approve → the commit lands; deny → it doesn't;
+    `~/.codex/config.toml` byte-identical before and after (never written);
+    a relay viewport answers the same prompt. Kyle's verdict that it feels
+    like the terminal is the bar.
+
+---
+
 ## Phase PN — Panes (file views beside the transcript)
 
 **ON HOLD — do not build file panes for now (Kyle, 2026-08-25).** This phase
