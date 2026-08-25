@@ -42,6 +42,11 @@ not reuse them.
   to merge when it appears ready. Opening the pull request or getting green
   checks is not merge approval; merge only after Kyle says yes.
 - `docs/RELEASING.md` is the canonical branch and release runbook.
+- **No handoff files in the tree.** Session state belongs in memory and in
+  PLAN.md; a `HANDOFF.md` or any per-session note is never committed, and
+  `.gitignore` blocks the name. (One rode along in feature commits from
+  2026-08-09 to 2026-08-25 and its stale "next step" line steered a later
+  session into on-hold work.)
 
 ## Non-negotiables
 

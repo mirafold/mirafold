@@ -9,5 +9,7 @@ dist-server/
 
 # Local-only, candid user-testing notes — never publish to this public repo.
 docs/USER-TESTING-FEEDBACK.md
+# Session handoffs live in memory and PLAN.md, never in the tree (CLAUDE.md).
+HANDOFF.md
 .gemini/
 *.tgz
