@@ -38,7 +38,7 @@ test("M.2 remote gate: prompt_session and answer_permission are refused on a sub
   assert.equal(errors(seen).length, 2);
   assert.ok(errors(seen).every((m) => m.includes("subscription")));
   assert.ok(
-    !e.buffer.some((m) => m.type === "user_prompt"),
+    !e.ring.buffer.some((m) => m.type === "user_prompt"),
     "the refused prompt never reached the session stream",
   );
   reg.end(e.id);
@@ -73,7 +73,7 @@ test("M.2 local connections are never gated — a subscription session takes a g
   const { c, seen } = conn(reg, false);
   send(c, { type: "prompt_session", sessionId: e.id, text: "hi" });
   assert.equal(errors(seen).length, 0);
-  assert.ok(e.buffer.some((m) => m.type === "user_prompt"));
+  assert.ok(e.ring.buffer.some((m) => m.type === "user_prompt"));
   reg.end(e.id);
 });
 
@@ -96,7 +96,7 @@ test("AUDIT: a mid-session flip to subscription refuses the remote viewport's ow
 
   assert.equal(errors(seen).filter((m) => m.includes("subscription")).length, 2);
   assert.ok(
-    !e.buffer.some((m) => m.type === "user_prompt"),
+    !e.ring.buffer.some((m) => m.type === "user_prompt"),
     "neither drive path reached the subscription session over the relay",
   );
   reg.end(e.id);
@@ -110,7 +110,7 @@ test("AUDIT: a local tab's prompt on the same flipped session is NOT gated", () 
   e.kind = "subscription";
   send(c, { type: "prompt", text: "local subscription use is the disclosed gray area" });
   assert.equal(errors(seen).length, 0);
-  assert.ok(e.buffer.some((m) => m.type === "user_prompt"));
+  assert.ok(e.ring.buffer.some((m) => m.type === "user_prompt"));
   reg.end(e.id);
 });
 
@@ -164,7 +164,7 @@ test("M.2 an empty or whitespace grid prompt is ignored, like the in-session pro
   const { c, seen } = conn(reg, false);
   send(c, { type: "prompt_session", sessionId: e.id, text: "   \n " });
   assert.equal(errors(seen).length, 0);
-  assert.ok(!e.buffer.some((m) => m.type === "user_prompt"));
+  assert.ok(!e.ring.buffer.some((m) => m.type === "user_prompt"));
   reg.end(e.id);
 });
 
@@ -237,7 +237,7 @@ test("a throttle-refused bang answers the issuer only — nothing enters the ses
     !watcher.seen.slice(watcherMark).some((m) => m.type === "bang_end"),
     "no fabricated bang_end reaches other viewports",
   );
-  assert.ok(!e.buffer.some((m) => m.type === "bang_end"), "the replay ring stays clean");
+  assert.ok(!e.ring.buffer.some((m) => m.type === "bang_end"), "the replay ring stays clean");
   assert.equal(e.status, "working", "a mid-turn session never flips idle over a refused bang");
   reg.end(e.id);
 });

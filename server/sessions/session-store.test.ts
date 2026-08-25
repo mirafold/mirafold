@@ -410,13 +410,13 @@ test("restoring a checkpoint closes an in-flight browser turn without discarding
   const restored = second.open(original.id)!;
   assert.equal(restored.status, "idle");
   assert.equal(
-    second.canResume(restored, original.nextSeq - 1),
+    second.canResume(restored, original.ring.nextSeq - 1),
     false,
     "a browser cursor from the prior daemon cannot skip recovery frames",
   );
-  assert.equal(restored.buffer.at(-1)?.type, "turn_end");
+  assert.equal(restored.ring.buffer.at(-1)?.type, "turn_end");
   assert.ok(
-    restored.buffer.some(
+    restored.ring.buffer.some(
       (msg) => msg.type === "notice" && msg.text.includes("turn was interrupted"),
     ),
   );
@@ -433,7 +433,7 @@ test("restoring a checkpoint closes an interrupted shell command", () => {
   first.broadcast(original, { type: "bang_output", id: "bang-1", data: "halfway\n" });
 
   const restored = new SessionRegistry(MOCK_BACKEND, 0, store).open(original.id)!;
-  const end = restored.buffer.find(
+  const end = restored.ring.buffer.find(
     (msg): msg is Extract<WireMsg, { type: "bang_end" }> =>
       msg.type === "bang_end" && msg.id === "bang-1",
   );

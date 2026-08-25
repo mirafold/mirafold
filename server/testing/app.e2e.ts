@@ -344,8 +344,10 @@ test("provider completions open before submit, transcript click focuses, and set
       await page2.keyboard.press("/");
       await page2.locator(".prompt-options").waitFor();
       assert.equal(await prompt.inputValue(), "/");
-      assert.equal(await page2.locator(".prompt-options [role=option]").count(), 1);
+      // The Codex catalog: exactly the commands the adapter intercepts itself.
+      assert.equal(await page2.locator(".prompt-options [role=option]").count(), 2);
       assert.equal(await page2.locator(".prompt-option-value", { hasText: "/model" }).count(), 1);
+      assert.equal(await page2.locator(".prompt-option-value", { hasText: "/effort" }).count(), 1);
       assert.equal(await page2.locator(".turn-user").count(), 0, "opening a catalog submitted a turn");
 
       await page2.keyboard.press("Escape");

