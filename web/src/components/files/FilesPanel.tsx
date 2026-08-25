@@ -1,18 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useWorkspacePanelFrame } from "../../use-workspace-panel-frame";
-import type { WireMsg } from "@protocol";
 import type { ZoneMsg } from "../../session-bus";
-import {
-  applyDirReply,
-  beginDirFetch,
-  bellRefreshDelay,
-  childDirPaths,
-  emptyDirStore,
-  pruneDirStore,
-  rootNameOf,
-  shownListing,
-  type DirStore,
-} from "../../files-tree";
+import { rootNameOf, shownListing } from "../../files-tree";
 import { useEscapeKey } from "../../use-escape";
 import { useFocusTrap } from "../../use-focus-trap";
 import { useIsPhone } from "../../use-is-phone";
@@ -22,6 +11,7 @@ import { DirChildren } from "./FilesTreeRows";
 import { RefreshIcon } from "../RefreshIcon";
 import { WorkspaceTabs, type WorkspaceSurface } from "../WorkspaceTabs";
 import { useFileView } from "./use-file-view";
+import { useFilesTree } from "./use-files-tree";
 
 // The Explorer's shell-owned panel: a read-only browser of the session's
 // working tree, built
@@ -37,23 +27,9 @@ import { useFileView } from "./use-file-view";
 // (focus-trapped, Esc = back one layer / close from the tree).
 //
 // SHELL-OWNED: it holds the bus (socket) and the agent paints nothing here.
-// Replies are correlated by the echoed id — one outstanding id PER DIRECTORY
-// (dirReqIds) plus one for the file view; a stale reply (superseded click,
-// since-switched session) is dropped, never rendered.
-
-type FsDir = Extract<WireMsg, { type: "fs_dir" }>;
-
-// The open-panel prefetch fetches the root's child dirs so their first
-// expand is instant — capped under the server's token bucket (default 32/s)
-// so a many-repo Projects root can't drain it and starve the expand the
-// user actually clicks.
-const PREFETCH_MAX_DIRS = 24;
-
-// Minimum gap between BELL-triggered refreshes. Bells arrive already
-// server-debounced per session, but each refresh here spends one fs_listdir
-// per shown directory — sustained bells over a many-dir tree would drain the
-// token bucket. A bell during the gap coalesces onto one trailing refresh.
-const BELL_REFRESH_MIN_GAP_MS = 1_000;
+// Replies are correlated by the echoed id (use-files-tree.ts for the
+// directories, use-file-view.ts for the file); a stale reply (superseded
+// click, since-switched session) is dropped, never rendered.
 
 export function FilesPanel({
   open,
@@ -81,9 +57,12 @@ export function FilesPanel({
   /** meta.sessionId — a change means a different workspace: reset + refetch. */
   sessionKey?: string;
 }) {
-  const [store, setStore] = useState<DirStore>(emptyDirStore());
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [rootOpen, setRootOpen] = useState(true);
+  const { store, expanded, rootOpen, setRootOpen, toggleDir, refreshTree } = useFilesTree({
+    open,
+    subscribe,
+    requestListdir,
+    sessionKey,
+  });
   const file = useFileView({ subscribe, requestRead, requestDiff, scopeKey: sessionKey });
   const { selected, mode, view, openFile } = file;
   // The deliberate desktop enlarge — the file box lifted out of the
@@ -103,63 +82,6 @@ export function FilesPanel({
   const resetFile = () => {
     file.reset();
     setMaximized(false);
-  };
-
-  // Correlation ids: one outstanding fs_listdir PER DIRECTORY (the lazy
-  // tree legitimately has several fetches in flight). The extracted file
-  // controller owns its one correlated
-  // request independently. A directory reply whose id doesn't match its
-  // directory's current id is stale and is ignored.
-  const dirReqIds = useRef<Map<string, string>>(new Map());
-  // When true, the next root reply fans out the first-level prefetch —
-  // armed by opening (and session switch), not by turn-end refreshes.
-  const prefetchArmed = useRef(false);
-  // The subscribe effect below runs once; these refs let its handlers read
-  // current panel state without re-subscribing.
-  const openRef = useRef(open);
-  openRef.current = open;
-  const expandedRef = useRef(expanded);
-  expandedRef.current = expanded;
-
-  const fetchDir = (path: string) => {
-    dirReqIds.current.set(path, requestListdir(path));
-    setStore((s) => beginDirFetch(s, path));
-  };
-
-  // The refresh boundary (open, turn-end, the button): refetch the root
-  // and every expanded dir in place (previous rows stay visible while the
-  // replies swap them), and DROP cached-but-collapsed dirs — their next
-  // expand fetches fresh instead of serving a pre-turn listing.
-  const refreshTree = (prefetch: boolean) => {
-    prefetchArmed.current = prefetch;
-    const keep = expandedRef.current;
-    for (const path of dirReqIds.current.keys()) {
-      if (path !== "" && !keep.has(path)) dirReqIds.current.delete(path);
-    }
-    setStore((s) => pruneDirStore(s, keep));
-    fetchDir("");
-    for (const path of keep) fetchDir(path);
-  };
-  // Ref-stable mirror for the subscribe handler (it closes over the first
-  // render otherwise).
-  const refreshRef = useRef(refreshTree);
-  refreshRef.current = refreshTree;
-
-  // The doorbell's client half: one pending refresh at most, run when
-  // the coalescing gap allows — an immediate first ring, trailing after.
-  const bellTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastBellRefreshAt = useRef(0);
-  const onBell = () => {
-    if (!openRef.current || bellTimer.current) return;
-    bellTimer.current = setTimeout(
-      () => {
-        bellTimer.current = null;
-        lastBellRefreshAt.current = Date.now();
-        // Re-checked at fire time — the panel may have closed during the gap.
-        if (openRef.current) refreshRef.current(false);
-      },
-      bellRefreshDelay(Date.now(), lastBellRefreshAt.current, BELL_REFRESH_MIN_GAP_MS),
-    );
   };
 
   // Phone = a full-screen dialog; desktop = a docked column. Live (not the
@@ -191,102 +113,20 @@ export function FilesPanel({
   useFocusTrap(fileRef, maxi);
   useEscapeKey(maxi ? () => setMaximized(false) : undefined, { exclusive: true });
 
-  // Subscribe once; the refs above make the handlers care only about the
-  // latest requests. RenderZone ignores fs_* the same way (unknown to it).
-  useEffect(
-    () =>
-      subscribe((m) => {
-        if (m.type === "fs_dir") {
-          const d = m as FsDir;
-          if (dirReqIds.current.get(d.path) !== d.id) return; // stale per-dir
-          dirReqIds.current.delete(d.path);
-          setStore((s) => applyDirReply(s, d.path, d));
-          // The open-panel prefetch: the root reply just named the first
-          // level — fetch its child dirs so expanding them is instant.
-          if (d.path === "" && prefetchArmed.current) {
-            prefetchArmed.current = false;
-            if (!d.error) {
-              for (const p of childDirPaths("", d.entries).slice(0, PREFETCH_MAX_DIRS)) {
-                if (!dirReqIds.current.has(p)) fetchDir(p);
-              }
-            }
-          }
-        } else if (m.type === "turn_end" && openRef.current) {
-          // The agent likely just touched files — refetch the root and
-          // the EXPANDED dirs only (the lazy refresh unit), pruning stale
-          // collapsed cache. No prefetch: collapsed first-level dirs refetch
-          // on their next expand. Through the bell's coalescing gap, not a
-          // direct refresh: an attach/reconnect replays EVERY historical
-          // turn_end in one burst, and one refresh per replayed turn would
-          // drain the server's fs token bucket for nothing.
-          onBell();
-        } else if (m.type === "fs_changed") {
-          // Disk changed behind the UI — same refresh unit as turn-end
-          // (root + expanded; a new file in a collapsed, unfetched dir
-          // rightly causes no fetch), coalesced through the gap above. A
-          // status-ready signal uses the same refresh without claiming a disk
-          // mutation. The watcher hint isn't consulted: refetch what you show.
-          onBell();
-        }
-      }),
-    [subscribe],
-  );
+  // A session switch drops the enlarge with everything else (the tree's own
+  // reset lives in useFilesTree).
+  useEffect(() => setMaximized(false), [sessionKey]);
 
-  // A pending bell refresh must not fire into an unmounted panel.
-  useEffect(
-    () => () => {
-      if (bellTimer.current) clearTimeout(bellTimer.current);
-      bellTimer.current = null;
-    },
-    [],
-  );
-
-  // A session switch means a different workspace — clear everything, expanded
-  // dirs included. (Kept separate from the open effect below so expanded state
-  // SURVIVES a close/reopen within one session.)
+  // Opening (or a session switch while open) returns to the tree view.
   useEffect(() => {
-    setMaximized(false);
-    // The ref mirror is cleared alongside the state: the open effect below
-    // runs in the same commit and reads expandedRef — it must not refetch
-    // the OLD session's expanded dirs against the new root.
-    const cleared = new Set<string>();
-    setExpanded(cleared);
-    expandedRef.current = cleared;
-    setRootOpen(true);
-    setStore(emptyDirStore());
-    dirReqIds.current.clear();
-    prefetchArmed.current = false;
-  }, [sessionKey]);
-
-  // Opening (or a session switch while open) fetches root + expanded dirs and
-  // arms the first-level prefetch. Returns to the tree view, but leaves
-  // expanded dirs intact across a close/reopen.
-  useEffect(() => {
-    if (!open || !sessionKey) return;
-    resetFile();
-    refreshRef.current(true);
-  }, [open, sessionKey, requestListdir]);
+    if (open && sessionKey) resetFile();
+  }, [open, sessionKey]);
 
   if (!open) return null;
 
   const refresh = () => {
     refreshTree(true);
     if (selected) openFile(selected.path, selected.status, mode);
-  };
-
-  const toggleDir = (path: string) => {
-    const opening = !expanded.has(path);
-    setExpanded((s) => {
-      const next = new Set(s);
-      next.has(path) ? next.delete(path) : next.add(path);
-      return next;
-    });
-    // First expand (or expand after an error/invalidation) fetches; a cached
-    // re-expand renders from the store with no request.
-    if (opening) {
-      const st = store.get(path);
-      if ((!st || st.phase === "error") && !dirReqIds.current.has(path)) fetchDir(path);
-    }
   };
 
   const rootState = store.get("");
