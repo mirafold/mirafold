@@ -1,4 +1,4 @@
-// The calm-summary derivation for a subagent deck (PLAN Phase SA.1) — pure,
+// The calm-summary derivation for a subagent deck — pure,
 // so Tier-1 can pin it without a DOM. A "card" is any tool_use that other
 // wire records reference as their parentId; the anchor is name-agnostic
 // (Claude Code's spawn tool is `Agent` in SDK 0.3.201, was `Task`; OpenCode's
@@ -37,8 +37,8 @@ const RESULT_LINE_MAX = 120;
 /** The deck's elapsed readout, or undefined when no honest number exists:
  *  only a RUNNING spawn whose record this client saw arrive LIVE has a
  *  truthful start stamp. A REPLAYED record's stamp is the attach/reload
- *  moment, not the spawn — showing it would tick a false duration
- *  (bughunt 2026-08-14) — and a settled deck's duration was never measured. */
+ *  moment, not the spawn — showing it would tick a false duration — and a
+ *  settled deck's duration was never measured. */
 export function deckElapsedSeconds(
   task: { startedAt: number; replayed?: boolean },
   running: boolean,

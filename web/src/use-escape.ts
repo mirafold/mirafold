@@ -9,8 +9,8 @@ import { useEffect } from "react";
  * `exclusive` makes the handler OWN the keypress: capture phase plus
  * stopPropagation, so no other Escape listener fires — PickerBlock's idiom.
  * Every overlay wants this: without it, dismissing a card during a busy turn
- * also reached Shell's bubble-phase interrupt and silently halted the turn
- * (2026-07-28 review). The busy interrupt itself stays non-exclusive — it is
+ * would also reach Shell's bubble-phase interrupt and silently halt the
+ * turn. The busy interrupt itself stays non-exclusive — it is
  * the fallback that runs only when nothing above it claimed the key.
  */
 export function useEscapeKey(

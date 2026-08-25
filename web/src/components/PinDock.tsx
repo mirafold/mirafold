@@ -21,7 +21,7 @@ export function PinDock({
   onAction: (action: Action, sourceId: string) => void;
 }) {
   return (
-    // A landmark needs a name to be worth navigating to (A.3).
+    // A landmark needs a name to be worth navigating to.
     <aside className="pin-dock" aria-label="Pinned">
       <div className="pin-dock-head">
         <span className="pin-dock-title">Pinned</span>

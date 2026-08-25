@@ -1,4 +1,4 @@
-/* ---- Tool calls (Phase T.1) ---------------------------------------------
+/* ---- Tool calls ---------------------------------------------
    Terminal-style records of what the agent actually did: one dim monospace
    row per call, collapsed by default; errors arrive expanded. Negative
    margins tighten consecutive rows against the zone's 14px gap so a run of
@@ -19,7 +19,7 @@
   border: none;
   cursor: pointer;
   text-align: left;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.85em;
   color: var(--fg-dim);
 }
@@ -58,7 +58,7 @@
   background: var(--code-bg);
   border: 1px solid var(--border);
   border-radius: 8px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.8em;
   line-height: 1.5;
   color: var(--code-fg);
@@ -78,7 +78,7 @@
   border-color: var(--err-border);
 }
 
-/* Tool input (T2.2): full args in the expansion — diff / code / JSON. */
+/* Tool input: full args in the expansion — diff / code / JSON. */
 .tool-input {
   margin: 4px 0 2px 22px;
 }
@@ -91,7 +91,7 @@
   background: var(--code-bg);
   border: 1px solid var(--border);
   border-radius: 8px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.8em;
   line-height: 1.5;
   color: var(--code-fg);
@@ -132,7 +132,7 @@
   color: var(--fg-dimmer);
 }
 
-/* Truncation marker (T2.3): explicit, dim, never mistaken for real output. */
+/* Truncation marker: explicit, dim, never mistaken for real output. */
 .tool-elided {
   color: var(--warn-fg);
   font-style: italic;
@@ -142,16 +142,16 @@
   display: contents;
 }
 
-/* Subagent card (SA.1, supersedes the T2.4 group): a spawn with visible
+/* Subagent card: a spawn with visible
    children renders as a live card — calm one-glance summary, expandable to
    the nested calls. Shell chrome; all content inert plain text. */
 .subagent-deck {
   margin: 4px 0;
   padding: 6px 10px;
   border: 1px solid var(--border-mid);
-  border-left: 2px solid var(--border-strong);
+  border-left: 2px solid var(--border-hover);
   border-radius: 6px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.8em;
 }
 
@@ -184,7 +184,7 @@
 }
 
 .subagent-deck-failed .subagent-dot {
-  background: var(--error-fg);
+  background: var(--error);
 }
 
 @keyframes subagent-pulse {
@@ -248,7 +248,7 @@
   border-left: 1px solid var(--border-mid);
 }
 
-/* SA.2: the subagent's own words inside the expansion — inert plain text,
+/* The subagent's own words inside the expansion — inert plain text,
    pre-wrapped so streamed prose keeps its line breaks, dim like thinking. */
 .subagent-prose {
   padding: 3px 0;
@@ -277,7 +277,7 @@
   }
 }
 
-/* The `!` passthrough (Step 4.9). The strip echoes the command-strip look
+/* The `!` passthrough. The strip echoes the command-strip look
    with an amber `!` in place of the green `❯`; output is a plain mono block
    streaming live below it. */
 .turn-bang .bang-glyph {
@@ -305,7 +305,7 @@
 .bang-output {
   margin: 0 0 4px;
   padding: 8px 14px 10px 30px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.88em;
   line-height: 1.45;
   color: var(--fg-mid);
@@ -314,3 +314,47 @@
   overflow-x: auto;
 }
 
+/* A settled run of tool calls, folded into one expandable row. */
+.tool-activity-group {
+  margin: 3px 0 7px;
+}
+
+.tool-activity-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 4px 7px;
+  color: var(--fg-faint);
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  font: 0.82em/1.4 var(--font-mono);
+  text-align: left;
+  cursor: pointer;
+}
+
+.tool-activity-head:hover {
+  color: var(--fg-dim);
+  background: var(--surface-hover);
+}
+
+.tool-activity-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.tool-activity-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-activity-calls {
+  margin: 4px 0 2px 16px;
+  padding-left: 8px;
+  border-left: 1px solid var(--border-faint);
+}

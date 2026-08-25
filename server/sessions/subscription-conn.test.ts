@@ -27,9 +27,9 @@ function fakeActions(result: SubscriptionResult = { view: { status: "active" } }
 }
 
 function conn(remote: boolean, actions?: SubscriptionActions) {
-  const reg = new SessionRegistry(NONE);
+  const reg = new SessionRegistry({ backend: NONE });
   const seen: WireMsg[] = [];
-  const c = openConnection(reg, (m) => seen.push(m), "test", undefined, remote, actions);
+  const c = openConnection(reg, (m) => seen.push(m), { label: "test", remote, subscription: actions });
   return { c, seen };
 }
 const send = (c: Connection, msg: unknown) => c.handleMessage(JSON.stringify(msg));

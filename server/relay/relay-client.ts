@@ -53,23 +53,22 @@ const RECONNECT_MAX_MS = envInt("RELAY_RECONNECT_MAX_MS", 30_000);
 // "paired" log — but NOT the backoff reset. That decision waits for the close,
 // where the close code is known: in production a proxy (Fly's) can deliver a
 // refusal close ~5 s after open (locally it's ms), long past any sane confirm
-// window, and a timer-based reset there meant an invalid/lapsed license
-// churn-dialed at ~6 s forever — false "paired", reset, refused, repeat
-// (found 2026-07-30, live against production). A refusal close never resets
-// backoff; a confirmed connection's ordinary drop still reconnects fast.
+// window, and a timer-based reset there would have an invalid/lapsed license
+// churn-dialing at ~6 s forever — false "paired", reset, refused, repeat.
+// A refusal close never resets backoff; a confirmed connection's ordinary
+// drop still reconnects fast.
 const PAIR_CONFIRM_MS = envInt("RELAY_PAIR_CONFIRM_MS", 400);
 // Inbound envelope cap. Must cover the relay's own per-frame cap
 // (RELAY_MAX_PAYLOAD_BYTES — 8 MB default in the service and the stub alike),
 // NOT the local socket's: a frame the relay forwards but this socket refuses
 // is a ws protocol violation, and ws closes the WHOLE dial-out connection —
-// dropping every remote viewport, not the one that misbehaved (2026-07-29
-// bughunt: a >1.13 MB phone paste killed the entire pairing). Envelope
+// dropping every remote viewport, not the one that misbehaved. Envelope
 // wrapping overhead rides on top; the bound stays finite, which is all the
 // no-unbounded-allocation posture needs. Exported for the alignment pin in
 // relay.itest.ts.
 export const MAX_ENVELOPE = envInt("RELAY_MAX_PAYLOAD_BYTES", 8_000_000) + 16_384;
 // Ceilings on what the relay can make the daemon hold. The relay is untrusted
-// for resource pressure too (R.2 adds relay-side caps, but the daemon must
+// for resource pressure too (the relay has its own caps, but the daemon must
 // survive a hostile one): viewport announcements past the cap are refused
 // outright, and a handshaken viewport that goes silent past the idle window
 // is dropped. The web client heartbeats every 25s, so only a dead peer — or a
@@ -95,24 +94,24 @@ type Remote = {
 };
 
 /**
- * Phase R.1/R.3: serve the registry THROUGH an outbound connection. The
- * daemon dials the relay — no listening port is ever opened for remote
- * access — and every remote viewport the relay announces becomes an ordinary
- * Connection, the same code path as a local WebSocket, so 4.2 fan-out,
- * replay, and 4.4 resume work unchanged.
+ * Serve the registry THROUGH an outbound connection. The daemon dials the
+ * relay — no listening port is ever opened for remote access — and every
+ * remote viewport the relay announces becomes an ordinary Connection, the
+ * same code path as a local WebSocket, so fan-out, replay, and resume work
+ * unchanged.
  *
  * The relay never sees the pairing code (only its derived pairId rides
  * the dial URL) and never sees a plaintext frame. Each viewport must open
  * with a valid E2E handshake under the code-derived key; every later frame
  * is AES-GCM under that channel's fresh directional keys. Anything that
  * fails to authenticate — wrong code, tampered, replayed — drops the
- * viewport: fail closed, never fail open (R.3).
+ * viewport: fail closed, never fail open.
  */
 export function startRelayClient(opts: {
   url: string;
   code: string;
   registry: SessionRegistry;
-  /** R.5 entitlement token source (see entitlement.ts). Resolved fresh per
+  /** Entitlement token source (see entitlement.ts). Resolved fresh per
    *  dial; `refresh: true` after an unentitled refusal so an expired token is
    *  re-exchanged before the retry. undefined token = dial with no header (a
    *  gated relay refuses; an ungated one doesn't care). */
@@ -224,9 +223,9 @@ export function startRelayClient(opts: {
                       }
                     });
                   },
-                  "relay",
-                  undefined, // no pairing info crosses the relay path
-                  true, // R.4i: remote viewport — subject to the relay gate
+                  // No pairing info crosses the relay path; a remote viewport
+                  // is subject to the relay gate.
+                  { label: "relay", remote: true },
                 );
               } else {
                 const text = await r.cipher.open(p); // throws → drop below

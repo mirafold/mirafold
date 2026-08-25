@@ -1,4 +1,4 @@
-// Phase CS — the manage-subscription card's brain, kept pure so Tier 1 pins
+// The manage-subscription card's brain, kept pure so Tier 1 pins
 // it: the request/reply state machine (id-correlated, stale replies dropped)
 // and the shell-owned copy composed from the daemon's subscription view.
 // The component (ConnectDevice.tsx) only renders what this module decides.

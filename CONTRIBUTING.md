@@ -24,7 +24,9 @@ message. PRs with unsigned commits can't be merged.
   `yarn test:e2e` (headless Chrome, rebuilds dist first). New code lands
   with tests in the matching tier. UI-facing changes also run through
   `yarn test:ui` (managed Chromium, Firefox, and WebKit plus the Ubuntu visual
-  baselines). No automated test may ever reach a real model.
+  baselines). Tiers 1–3 never reach a model or the network; `yarn test:live`
+  (Tier 4, opt-in, never CI) may drive installed agent binaries and a local
+  model server.
 - Comments only for non-obvious constraints — the code says what it does.
 - The non-negotiables in [CLAUDE.md](CLAUDE.md) bind every change: the wire
   protocol only ever *adds* message types; agent output never touches

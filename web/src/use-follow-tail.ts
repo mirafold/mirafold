@@ -13,22 +13,22 @@ import { useRef } from "react";
  * (they sent a message), and `resetTail()` when the content is replaced
  * wholesale.
  *
- * Two decisions here were bought with a bug (2026-07-20, traced in a real
- * browser — don't undo either without re-reading that trace):
+ * Two decisions here, each guarding a real browser failure — don't undo
+ * either:
  *
  *  1. **Following scrolls INSTANTLY, never smoothly.** A smooth scroll is an
  *     animation, and during streaming `followTail` fires every ~35ms, so the
- *     animation was permanently in flight. While it runs it owns `scrollTop`:
- *     the reader's wheel deltas were overwritten by the next animation frame
- *     and never became scroll events at all — the wheel was inert. It also
- *     could never catch a tail growing faster than it animates, leaving a
- *     "following" reader ~5000px behind the live output.
+ *     animation would be permanently in flight. While it runs it owns
+ *     `scrollTop`: the reader's wheel deltas are overwritten by the next
+ *     animation frame and never become scroll events at all — the wheel is
+ *     inert. It also can never catch a tail growing faster than it animates,
+ *     leaving a "following" reader ~5000px behind the live output.
  *  2. **The reader's INPUT is what detaches, not a position delta.** A wheel
  *     or touch drag says "the reader is steering" whether or not the viewport
  *     ends up moving, so it can't be suppressed the way a delta can. The
  *     position test stays as a backstop for the scrolls that have no input
  *     event of their own — a scrollbar drag, find-in-page, a keyboard scroll
- *     — and is trustworthy now that our own scrolls are single downward jumps
+ *     — and is trustworthy because our own scrolls are single downward jumps
  *     rather than an easing curve.
  */
 
@@ -122,10 +122,10 @@ export function useFollowTail() {
   // Dragging the content DOWN scrolls the transcript up — the touch equivalent
   // of a negative wheel delta.
   //
-  // Verified to fire and detach on a real emulated-touch swipe, but NOT proven
-  // necessary: touch already held correctly without these handlers, because a
+  // Fires and detaches on a real emulated-touch swipe, but NOT proven
+  // necessary: touch holds correctly without these handlers, because a
   // finger drag isn't suppressed by a programmatic smooth scroll the way the
-  // wheel was (Chrome/Linux, 2026-07-20). Kept as a guard for the platform
+  // wheel is (Chrome/Linux). Kept as a guard for the platform
   // that can't be tested here — iOS Safari, which the relay's phone viewport
   // actually targets, and whose momentum scrolling is a different animal.
   const onTouchMove = (e: TouchIntent) => {

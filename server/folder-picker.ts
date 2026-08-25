@@ -1,4 +1,4 @@
-// Host-native working-directory picker (N2): the browser cannot turn a
+// Host-native working-directory picker: the browser cannot turn a
 // FileSystemDirectoryHandle into the absolute path an agent process needs as
 // cwd, so an explicit onboarding click asks the LOCAL daemon to open the
 // operating system's own directory dialog. No shell is involved: every path

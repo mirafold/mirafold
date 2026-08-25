@@ -1,8 +1,8 @@
 # CLAUDE.md
 
 Mirafold — a **faithful browser re-skin of terminal coding agents**. It
-re-skins whichever terminal agent you already use — **Claude Code, Codex, and
-Gemini CLI** all shipped (PLAN Phase P complete) — faithful to that agent,
+re-skins whichever terminal agent you already use — **Claude Code, Codex,
+Gemini CLI, and OpenCode** all shipped — faithful to that agent,
 with Mirafold's generative UI layered on top: a Codex user gets Codex, never
 "Claude things". One adapter per agent in `server/adapters/`, none privileged;
 the agent is picked per session at onboarding.
@@ -11,7 +11,10 @@ Where things live: **docs/ARCHITECTURE.md** — architecture, the two
 load-bearing contracts, trust boundaries, and conventions. **README.md** —
 the user and contributor essentials. **PLAN.md** — work steps in order, one
 per prompt; don't start a step until the previous "Done when" is satisfied;
-check steps off with a dated status note. **BUSINESS.md** — why and in what
+check steps off with a dated status note. **`/next` is permission within the
+phase already in progress, never permission to start a new phase — a new
+phase starts only on Kyle's express request naming it (PLAN.md, "How to use
+this plan"; absolute, 2026-08-25). **BUSINESS.md** — why and in what
 sequence (milestone gates). **GLOSSARY.md** — the decided product vocabulary
 (paintings vs. decks, the surfaces, prompt box, …); use its terms in docs,
 copy, and conversation — the "(was)" column exists to recognize old terms,
@@ -31,6 +34,10 @@ not reuse them.
 
 - Normal work branches (`feature/*`, `fix/*`, `refactor/*`) start from
   `next` and open pull requests back into `next`.
+- **One branch at a time: finish it, merge it, then branch.** A new work
+  branch is cut only from a fresh `next` after the previous branch has
+  merged — never stacked on an unmerged branch, never opened while another
+  is still in review (absolute, 2026-08-25).
 - **Every commit carries `Signed-off-by`** (the DCO check blocks merges
   without it). A local `prepare-commit-msg` hook appends it automatically —
   if a commit somehow lacks it, `git rebase --signoff` repairs the branch.
@@ -39,6 +46,11 @@ not reuse them.
   to merge when it appears ready. Opening the pull request or getting green
   checks is not merge approval; merge only after Kyle says yes.
 - `docs/RELEASING.md` is the canonical branch and release runbook.
+- **No handoff files in the tree.** Session state belongs in memory and in
+  PLAN.md; a `HANDOFF.md` or any per-session note is never committed, and
+  `.gitignore` blocks the name. (One rode along in feature commits from
+  2026-08-09 to 2026-08-25 and its stale "next step" line steered a later
+  session into on-hold work.)
 
 ## Non-negotiables
 
@@ -93,7 +105,8 @@ not reuse them.
   per-row citations live in **one file**, `server/provider-policy.ts`;
   consume it, never re-encode the rule elsewhere.
 - **Shared modules** cross server/web only via aliases declared in BOTH
-  `tsconfig.json` and `vite.config.ts` (`@protocol`, `@registry-spec`).
+  `tsconfig.json` and `vite.config.ts` (`@protocol`, `@registry-spec`,
+  `@relay-crypto`).
 - **Verification**: front-end steps are verified end-to-end in headless
   Chrome (`playwright-core` + `/usr/bin/google-chrome`), driving real
   typing/clicks; server steps over a real WebSocket. A step isn't done until

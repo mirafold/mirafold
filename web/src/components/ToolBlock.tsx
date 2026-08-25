@@ -4,7 +4,7 @@ import { DiffLines } from "../registry/Diff";
 
 /**
  * Transcript record of one tool call: a dim monospace row, collapsed by
- * default — click to expand. The expansion shows the FULL input (T2.2) —
+ * default — click to expand. The expansion shows the FULL input —
  * Edit/MultiEdit as a red/green line diff, Write as the new file's content,
  * everything else as pretty JSON — followed by the result. Errors arrive
  * expanded. While the result is pending the row pulses.
@@ -75,9 +75,13 @@ function ToolInput({ name, input }: { name: string; input: Record<string, unknow
     // MultiEdit: a sequence of {old_string, new_string} edits.
     return (
       <div className="tool-input">
-        {(input["edits"] as Record<string, unknown>[]).map((e, i) => (
-          <EditDiff key={i} oldText={String(e["old_string"] ?? "")} newText={String(e["new_string"] ?? "")} />
-        ))}
+        {(input["edits"] as unknown[]).map((raw, i) => {
+          // Engine-authored input: each element is checked, not assumed.
+          const e = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
+          return (
+            <EditDiff key={i} oldText={String(e["old_string"] ?? "")} newText={String(e["new_string"] ?? "")} />
+          );
+        })}
       </div>
     );
   }

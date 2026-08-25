@@ -1,16 +1,17 @@
 // Standalone stdio MCP server exposing Mirafold's generative-UI vocabulary
 // (render_* + emit_artifact) to agents that load MCP servers as subprocesses —
-// Codex today (Gemini CLI next). The Claude adapter injects the same tools
+// Codex, Gemini CLI, and OpenCode. The Claude adapter injects the same tools
 // IN-PROCESS via makeRenderServer (render-tools.ts); this is the out-of-process
 // twin for engines that only speak stdio MCP.
 //
-// Key design (P.3): this process is a THIN STUB. It can't reach into a session
+// Key design: this process is a THIN STUB. It can't reach into a session
 // to emit a `render` WireMsg — it's a grandchild subprocess of the daemon. So it
 // only (a) advertises the tool schemas so the agent knows the vocabulary and the
-// agent's engine validates args, and (b) returns the component's id. The adapter
-// (codex.ts) watches the agent's own `mcp_tool_call` event stream, reads the
-// arguments, and synthesizes the render/artifact WireMsg into the right session —
-// same event-normalization path it uses for every other Codex item. The id is
+// agent's engine validates args, and (b) returns the component's id. Each
+// adapter (codex-events.ts, gemini-cli.ts, opencode-events.ts) watches its
+// engine's own tool-call event stream, reads the arguments, and synthesizes the
+// render/artifact WireMsg into the right session — the same event-normalization
+// path it uses for every other item of that engine. The id is
 // returned here (structuredContent + parseable text) so the agent can re-use it
 // for update-in-place and the adapter paints the same id the agent will re-send.
 //

@@ -1,4 +1,5 @@
 import { test, before, after } from "node:test";
+import { MOCK_PROMPTS } from "./mock-prompts";
 import assert from "node:assert/strict";
 import { type Browser, type BrowserContext, type Page } from "playwright-core";
 import { startDaemon, type Daemon } from "./itest-harness";
@@ -39,8 +40,12 @@ const settled = (page: Page, selector: string) =>
 // Esc walks the drawer out one layer at a time (file → tree → closed).
 const closeDrawer = async (page: Page) => {
   for (let i = 0; i < 3 && (await page.locator(".files-panel, .changes-panel").count()) > 0; i += 1) {
+    const layers = await page.locator(".files-panel [role=region], .files-panel, .changes-panel").count();
     await page.keyboard.press("Escape");
-    await page.waitForTimeout(50);
+    await page.waitForFunction(
+      (before) => document.querySelectorAll(".files-panel [role=region], .files-panel, .changes-panel").length < before,
+      layers,
+    );
   }
   await page.waitForSelector(".files-panel, .changes-panel", { state: "detached" });
 };
@@ -116,7 +121,7 @@ test("phone: pairs by URL, opens the session, drives a turn with a rendered comp
   );
 
   await phone.locator("textarea").fill("");
-  await sendPrompt(phone, "plan it step by step");
+  await sendPrompt(phone, MOCK_PROMPTS["checklist"]);
   // Mid-turn the phone shows the activity indicator too — the busy signal
   // rides the same bundle over the relay, not a desktop-only affordance
   // (2026-07-28).
@@ -203,7 +208,7 @@ test("phone: pairs by URL, opens the session, drives a turn with a rendered comp
 
 test("phone LD.3: the live document fills the canvas and survives the full-screen Explorer", async () => {
   const documentsBefore = await phone.locator(".response-document").count();
-  await sendPrompt(phone, "live document demo");
+  await sendPrompt(phone, MOCK_PROMPTS["live-document"]);
   const firstDocument = phone.locator(".response-document").nth(documentsBefore);
   const secondDocument = phone.locator(".response-document").nth(documentsBefore + 1);
   await firstDocument.locator("h1", { hasText: "Live response" }).waitFor({ timeout: 15_000 });
@@ -573,7 +578,7 @@ test("phone: a network flip mid-turn resumes the stream without losing the trans
   // handle would be detached afterwards.
   const marker = await phone.waitForSelector(".turn-user");
 
-  await sendPrompt(phone, "plan it step by step");
+  await sendPrompt(phone, MOCK_PROMPTS["checklist"]);
   await phone.waitForSelector("text=Read the current implementation", { timeout: 15_000 });
 
   await phoneCtx.setOffline(true); // wifi drops mid-turn…

@@ -1,6 +1,6 @@
 name: CI
 
-# Runs the test suite automatically. Tiers (README §8): Tier 1 (unit) is
+# Runs the test suite automatically. Tiers (README "Development"): Tier 1 (unit) is
 # seconds and runs on every push to main and every PR; Tier 2 (real daemon +
 # sockets), Tier 3 (headless Chrome, rebuilds dist), and the compact managed-
 # browser/visual UI gate are minutes and run on PRs only (Kyle's call,
@@ -11,8 +11,8 @@ name: CI
 #
 # The harness forces credentials empty → MockSession, so there are no secrets to
 # provision, no API spend, and no live-model flakiness (PLAN Phase C sizing).
-# The DCO sign-off check is owed too (K.9) but is gated on the public flip; add
-# it when the repo goes public (R.7).
+# The DCO sign-off check is a separate required check provided by the DCO
+# GitHub App (docs/RELEASING.md), not a job here.
 #
 # ONE cross-repo arrangement: server/relay/relay-service.itest.ts imports the
 # relay under test from the SIBLING ../mirafold-relay checkout (README §"sibling
@@ -80,6 +80,11 @@ jobs:
       # Full tsconfig.json now — the sibling is present, so nothing is excluded.
       - run: yarn typecheck
       - run: yarn test
+      # The bundled-license notices must match what the build inlines; a stale
+      # file is a compliance gap (MIT/BSD require the text to travel with
+      # copies). Regenerate and refuse if anything changed.
+      - name: Third-party notices are current
+        run: node scripts/third-party-notices.mjs && git diff --exit-code THIRD-PARTY-NOTICES.md
 
   integration:
     name: integration + e2e (Tier 2 + Tier 3)

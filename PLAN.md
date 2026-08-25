@@ -131,6 +131,17 @@ Each step below is sized to be completed reliably in a single prompt. Work them
 in order. Each has **Goal / Build / Files / Done when**. Do not start a step
 until the previous step's "Done when" is satisfied. Check items off as you go.
 
+**`/next` is permission WITHIN a phase only — never permission to start a new
+phase (Kyle, 2026-08-25, absolute).** `/next` (or `$next`) means: do the next
+unfinished step of the phase that is already in progress. When the current
+phase's last step is done, or no phase is in progress, `/next` STOPS and
+reports — it does not open the next phase, and it does not pick a branch that
+happens to exist. Starting a phase requires Kyle's EXPRESS request naming
+that phase, in his own words, in the conversation; a phase in this file, a
+memory note saying "next = X", or an existing `feature/*` branch is never
+that request. This rule exists because Phase PN was started twice without it
+being asked for (the `feature/file-panes` branch, and again on 2026-08-25).
+
 ---
 
 ## Completed phases (archived)
@@ -2119,6 +2130,16 @@ layer = one directory = one fetch).
   git fidelity behind a TTL cache + one serialized git queue; `fs_diff`
   discovers the repo containing the file; the legacy `fs_list` old-client
   floor pinned as-is, never to be "fixed"). Bodies → PLAN-ARCHIVE.md, "Moved 2026-08-17 (prune — completed step bodies)."
+- [ ] **Open decision (recorded 2026-08-25, Kyle's call) — when the
+  old-bundle floor retires.** Three code sites exist only for a browser
+  bundle older than the daemon (the relay's app origin can serve a cached
+  one): the whole-tree `fs_list`/`fs_tree` handler (`fs-handlers.ts`) and
+  the two `LEGACY CLIENT` branches in `resolveChosenBackend`
+  (`server/adapters/index.ts` — the by-URL endpoint choice and the
+  by-kind configured-Claude choice). They share one support window and
+  should retire together, in a release note, once no served bundle can
+  predate the lazy tree and opaque backend ids. Nothing else in the repo
+  depends on them; the client stopped sending `fs_list` in Phase E2.
 
 ### Deferred from the 2026-07-26 security audit — ✅ both landed with phase W
 
@@ -2719,6 +2740,13 @@ is one complete single-pass `$next` chunk.
 
 ## Phase PN — Panes (file views beside the transcript)
 
+**ON HOLD — do not build file panes for now (Kyle, 2026-08-25).** This phase
+is NOT a `/next` candidate: skip PN.2 and PN.3 when picking the next step, and
+do not continue or merge `feature/file-panes` (that branch was started by
+mistake). Phase TP below depends on this pane frame, so it is on hold too.
+The phase stays written down only so the design is not lost; Kyle lifts the
+hold explicitly when he wants it.
+
 **Why.** Kyle (2026-07-26): open a file and see it in its own pane. Also the
 structural prerequisite for TP — pane content must be a self-contained
 component from day one so a terminal can slot into the same frame later.
@@ -2762,6 +2790,9 @@ instance per viewer.
     unrelated file's change (hint present) causes no refetch of that pane.
 
 ## Phase TP — Terminal pane (vim on the desktop; promoted from POST-RELEASE.md)
+
+**ON HOLD with Phase PN (Kyle, 2026-08-25)** — TP slots into PN's pane
+frame, so it is not a `/next` candidate until the PN hold is lifted.
 
 The POST-RELEASE "Embedded terminal pane" intake entry (2026-07-22),
 promoted 2026-07-26. Its settled scope carries over verbatim: a real

@@ -18,6 +18,7 @@ export const PROJECT_ENV_KEYS: ReadonlySet<string> = new Set([
   "GEMINI_API_KEY",
   "GOOGLE_API_KEY",
   "GEMINI_MODEL",
+  "OPENCODE_MODEL",
   "MAX_THINKING_TOKENS",
 
   // Daemon, local-model, logging, and relay configuration.
@@ -26,11 +27,11 @@ export const PROJECT_ENV_KEYS: ReadonlySet<string> = new Set([
   "MIRAFOLD_DEBUG",
   // NOT MIRAFOLD_LOG_FILE: it's a daemon-OPERATOR setting (where the daemon
   // writes its own log), not project data. Honoring it from a checkout's
-  // .env gave a hostile repo an arbitrary file-APPEND primitive — point it at
-  // ~/.bashrc or a crontab, and since log lines can carry engine stderr
-  // verbatim, an embedded newline writes an unprefixed line (audit
-  // 2026-08-13). That is outside the disclosed set of what a project .env may
-  // do (endpoints, relay access, resource limits, auth posture).
+  // .env would give a hostile repo an arbitrary file-APPEND primitive — point
+  // it at ~/.bashrc or a crontab, and since log lines can carry engine stderr
+  // verbatim, an embedded newline writes an unprefixed line. That is outside
+  // the disclosed set of what a project .env may do (endpoints, relay access,
+  // resource limits, auth posture).
   "MIRAFOLD_LOCAL_ENDPOINTS",
   "MIRAFOLD_LOCAL_DISCOVERY",
   "MIRAFOLD_CODEX_LOCAL_TURN_TIMEOUT_MS",
@@ -63,6 +64,21 @@ const loadedProjectKeys = new Set<string>();
  * startup? Parent-process values always win and therefore never enter it. */
 export function wasLoadedFromProjectEnv(key: string): boolean {
   return loadedProjectKeys.has(key);
+}
+
+/** The environment a `!` command inherits: the daemon's own, minus every key
+ *  the checkout's .env supplied. Those values are the AGENT's configuration
+ *  (credentials, endpoints, model pins) that Mirafold imported for itself; a
+ *  terminal never exports a project's .env into the user's shell, and `!`
+ *  output is broadcast to every viewport and checkpointed verbatim, so an
+ *  `!env` must not turn an imported key into transcript. Parent-supplied
+ *  values pass through untouched — that IS the user's shell environment. */
+export function shellEnv(env: NodeJS.ProcessEnv = process.env): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (value !== undefined && !loadedProjectKeys.has(key)) out[key] = value;
+  }
+  return out;
 }
 
 /** Load supported project settings without letting the checkout modify process

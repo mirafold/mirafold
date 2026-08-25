@@ -12,6 +12,7 @@ import {
   spawnBang,
   CWD_FILE_ENV,
 } from "./pty";
+import { loadProjectEnv } from "../project-env";
 
 test("strips CSI color/style sequences", () => {
   assert.equal(cleanPtyOutput("\x1b[31mred\x1b[0m"), "red");
@@ -140,6 +141,41 @@ test("cwdCapturePrefix refuses unknown shells and all of win32", () => {
   assert.equal(cwdCapturePrefix("C:\\Windows\\System32\\cmd.exe", "win32"), null);
   // Even a POSIX-named shell on win32 gets no wrapper — ConPTY/cmd territory.
   assert.equal(cwdCapturePrefix("/bin/bash", "win32"), null);
+});
+
+test("a `!` command inherits the parent environment but never a key the checkout's .env supplied", async (t) => {
+  if (process.platform === "win32") return;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mirafold-pty-env-"));
+  // GEMINI_MODEL is on the .env allowlist and harmless; the parent value
+  // beside it is what a real terminal would export.
+  const envFile = path.join(dir, ".env");
+  fs.writeFileSync(envFile, "GEMINI_MODEL=from-project-dotenv\n");
+  const had = process.env.GEMINI_MODEL;
+  delete process.env.GEMINI_MODEL;
+  loadProjectEnv(envFile);
+  process.env.MIRAFOLD_PTY_CONTROL = "from-parent-shell";
+  t.after(() => {
+    if (had === undefined) delete process.env.GEMINI_MODEL;
+    else process.env.GEMINI_MODEL = had;
+    delete process.env.MIRAFOLD_PTY_CONTROL;
+  });
+  assert.equal(process.env.GEMINI_MODEL, "from-project-dotenv", "the daemon itself imported the key");
+
+  let output = "";
+  const exit = await new Promise<number | null>((resolve) => {
+    spawnBang(
+      'printf "gm=%s ctl=%s\\n" "$GEMINI_MODEL" "$MIRAFOLD_PTY_CONTROL"',
+      dir,
+      (chunk) => {
+        output += chunk;
+      },
+      resolve,
+    );
+  });
+  assert.equal(exit, 0);
+  assert.match(output, /ctl=from-parent-shell/);
+  assert.doesNotMatch(output, /from-project-dotenv/);
+  assert.match(output, /gm= /);
 });
 
 test("spawnBang throws (not crashes) when the shell binary is missing", () => {

@@ -25,6 +25,7 @@ const ROOTS = [
   "react-markdown",
   "remark-gfm",
   "rehype-highlight",
+  "highlight.js", // imported directly by web/src/main.tsx (its CSS theme), not only via rehype-highlight
   "qrcode-generator",
   "mermaid", // inlined verbatim as mermaid.min.js (?raw import) — its own deps (d3, dompurify, …) are embedded in that prebuilt file
 ];

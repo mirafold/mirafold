@@ -7,16 +7,19 @@ inference server, your Mirafold session is fully local. There is no proxy,
 no shim, and nothing genui-specific to configure: you set the agent up exactly
 as you would for the terminal, and the browser skin follows.
 
-Two of the three supported agents have a real local path today:
+Three of the four supported agents have a real local path today:
 
 | Agent | Local path | How |
 |---|---|---|
 | **Claude Code** | ✅ Ollama (v0.14+) | Ollama speaks Anthropic's Messages API |
 | **Codex** | ✅ Ollama / LM Studio / vLLM | an OpenAI-compatible provider (auto-configured, or `~/.codex/config.toml`) |
+| **OpenCode** | ✅ any provider OpenCode itself supports | declare it in your own `opencode.json` (Ollama, LM Studio, OpenRouter, …); Mirafold adds nothing and the session classifies as `local` when the engine reports a local provider |
 | **Gemini CLI** | ❌ none | the CLI only talks to Google's endpoints — no supported local path |
 
-Both paths assume a local server that already has a model pulled. All examples
-below use [Ollama](https://ollama.com); LM Studio and vLLM notes follow.
+The two recipes below (Claude Code, Codex) assume a local server that already
+has a model pulled. All examples use [Ollama](https://ollama.com); LM Studio
+and vLLM notes follow. OpenCode needs no Mirafold-side recipe: configure it as
+you would for the terminal.
 
 ---
 
@@ -285,8 +288,9 @@ model list; this table is guidance from what we've seen work.
   values; nothing is billed and no traffic leaves your machine (Path A's
   `cloud`-suffixed Ollama models are the exception — those run on Ollama's
   hosted service; avoid them if you want strictly local).
-- **Can different sessions mix local and cloud?** Not yet — provider selection
-  is per-daemon environment today. Per-session choice is PLAN Step L.3.
+- **Can different sessions mix local and cloud?** Yes — the backend is chosen
+  per session at onboarding (a discovered local server, a configured provider,
+  or a cloud credential), and each session keeps its choice across restarts.
 - **Why not Gemini CLI?** Google's CLI has no endpoint override for
   self-hosted servers. If that changes, it becomes one adapter config note
   here, not a new feature.

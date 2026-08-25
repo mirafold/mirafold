@@ -1,6 +1,6 @@
 import type { ComponentProps } from "@registry-spec";
 
-// The KPI tile (PLAN S.3): one glanceable number, the natural pin-dock
+// The KPI tile: one glanceable number, the natural pin-dock
 // resident, kept live by update-in-place re-sends on the same wire id.
 
 /** Arrow + tone for the delta — direction rides the glyph (never color

@@ -7,7 +7,7 @@ export type QueuedDelta = Extract<WireMsg, { type: "text_delta" | "thinking_delt
 /**
  * Append a streamed delta to the pending batch, merging it into the tail
  * entry when both are the same delta type AND the same origin (parentId —
- * SA.2: with parallel subagents streaming, type alone would concatenate one
+ * with parallel subagents streaming, type alone would concatenate one
  * agent's prose into another's). The batch replays in arrival order, so a
  * merged entry's text is exactly the concatenation of the deltas it
  * absorbed — the same contract the daemon's coalescer keeps.

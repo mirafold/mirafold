@@ -267,7 +267,7 @@ test("recovery and discovery: Codex resumes and advertises only implemented / co
   assert.ok(latest?.type === "prompt_options");
   assert.deepEqual(
     latest.options.filter((option) => option.trigger === "/").map((option) => option.value),
-    ["/model"],
+    ["/model", "/effort"],
     "TUI-only commands must never be advertised then sent to the model as prose",
   );
   assert.equal(

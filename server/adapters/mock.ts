@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { AgentName, PromptOption, WireMsg } from "../protocol";
+import type { AgentName, PromptOption, SessionMsg } from "../protocol";
 import {
   type AgentSession,
   type TodoItem,
@@ -9,10 +9,11 @@ import {
 } from "./types";
 import { RENDER_TOOL_COMPONENT } from "./render-mcp-cmd";
 import { codexSlashOptions } from "./codex-prompt-options";
+import { PermissionLedger } from "./wire-helpers";
 
 // component → its real render_* tool name, inverted from the one mapping
-// (2026-07-28 fix: a hand-rolled inverse here produced tool names no agent
-// can call — "render_key-value" for the real render_keyvalue).
+// (a hand-rolled inverse here would produce tool names no agent can call —
+// "render_key-value" for the real render_keyvalue).
 const RENDER_TOOL_BY_COMPONENT = new Map<string, string>(
   Object.entries(RENDER_TOOL_COMPONENT).map(([tool, component]) => [component, tool]),
 );
@@ -40,7 +41,7 @@ const TOPICS = [
   "prompt-caching economics",
   "CRDT merge strategies",
 ] as const;
-// Mock tool calls (Phase T.1): each yields a full use→result pair so the
+// Mock tool calls: each yields a full use→result pair so the
 // transcript's tool blocks are exercised API-free; the last one is an error.
 const MOCK_TOOLS: (() => {
   name: string;
@@ -50,8 +51,7 @@ const MOCK_TOOLS: (() => {
   input?: Record<string, unknown>;
 })[] = [
   // ONE draw shared by the row's detail and its input — two independent picks
-  // could name different files in the collapsed row vs the expanded diff
-  // (2026-07-28 fix).
+  // could name different files in the collapsed row vs the expanded diff.
   () => {
     const file = pick(FILES);
     return {
@@ -271,7 +271,7 @@ const TEMPLATES: ((prompt: string) => string)[] = [
 ];
 
 // Sample `render` payloads (mock-first: the render flow works API-free).
-// Props must satisfy the registry spec — validated by the 1.2 smoke test.
+// Props must satisfy the registry spec — validated by registry-spec.test.ts.
 export const MOCK_RENDERS: (() => { component: string; props: Record<string, unknown> })[] = [
   () => ({
     component: "card",
@@ -440,7 +440,7 @@ export const MOCK_RENDERS: (() => { component: string; props: Record<string, unk
 // into the artifact's own DOM (the one place it CAN write), so a browser test
 // reads containment results through the frame. It also fires the bridge
 // abuses whose proof is a NON-event in the transcript: forged/unstamped
-// postMessages and an action burst against the rate limit (R.4e).
+// postMessages and an action burst against the rate limit.
 const HOSTILE_ARTIFACT =
   "<h2>hostile artifact</h2>" +
   '<div id="dom">pending</div>' +
@@ -466,17 +466,26 @@ const HOSTILE_ARTIFACT =
 
 /**
  * Stand-in session for API-free development: emits a scripted WireMsg
- * stream that covers every Phase 0 message type. Replies are drawn from
+ * stream that covers the wire protocol's base message types. Replies are drawn from
  * a shuffled deck of five templates so no template repeats until all
  * five have been seen.
  */
+/** One scripted scenario: what triggers it and what it plays. */
+type MockScenario = {
+  id: string;
+  /** The canonical phrase a test sends to trigger exactly this scenario. */
+  prompt: string;
+  match: RegExp | ((text: string) => boolean);
+  play: (session: MockSession) => void;
+};
+
 export class MockSession implements AgentSession {
-  private listeners = new Set<(msg: WireMsg) => void>();
+  private listeners = new Set<(msg: SessionMsg) => void>();
   private timers: ReturnType<typeof setTimeout>[] = [];
   private deck: number[] = [];
   // Turns opened but not yet closed — interrupt() must close every one.
   private openTurns = 0;
-  private pendingAsks = new Map<string, (allow: boolean) => void>();
+  private permissions = new PermissionLedger((msg) => this.emit(msg));
 
   constructor(private agent: AgentName = "claude-code") {}
 
@@ -502,75 +511,113 @@ export class MockSession implements AgentSession {
     emitPromptOptions((msg) => this.emit(msg), options);
   }
 
-  // Each deterministic hook exercises one UI capability API-free; anything
-  // else is a canned reply drawn from the template deck.
-  pushPrompt(text: string) {
-    if (/revise the selected workspace change/i.test(text)) return this.playMarkdownReview();
-    if (/one sentence document/i.test(text)) return this.playShortDocument();
-    if (/live document demo/i.test(text)) return this.playLiveDocument();
-    if (/responsive document stress/i.test(text)) return this.playResponsiveDocumentStress();
-    if (/document closure stress/i.test(text)) return this.playDocumentClosureStress();
-    if (/interactive|button/i.test(text)) return this.playActionCard();
-    if (/todo|checklist|step by step|plan it/i.test(text)) return this.playChecklist();
-    if (/delegate slowly/i.test(text)) return this.playSlowSubagent();
-    if (/subagent|delegate/i.test(text)) return this.playSubagent();
-    if (/huge|big output|large output|truncat/i.test(text)) return this.playHugeOutput();
-    if (/artifact/i.test(text)) {
-      // broken/navigating artifacts exercise the failure fallbacks (3.4).
-      if (/broken|crash/i.test(text)) {
-        return this.playArtifact(
+  /**
+   * The scripted scenarios, in dispatch order — the FIRST match plays. Each
+   * exercises one UI capability API-free; a prompt matching none draws a
+   * canned reply from the template deck. `prompt` is the canonical phrase
+   * (MOCK_PROMPTS) a browser test sends; order matters where phrases overlap
+   * ("delegate slowly" before "delegate", the artifact variants before the
+   * generic artifact), and mock-scenarios.test.ts proves every canonical
+   * prompt routes to its own scenario and nowhere earlier.
+   */
+  private static readonly SCENARIOS: readonly MockScenario[] = [
+    { id: "markdown-review", prompt: "revise the selected workspace change", match: /revise the selected workspace change/i, play: (m) => m.playMarkdownReview() },
+    { id: "short-document", prompt: "one sentence document", match: /one sentence document/i, play: (m) => m.playShortDocument() },
+    { id: "live-document", prompt: "live document demo", match: /live document demo/i, play: (m) => m.playLiveDocument() },
+    { id: "responsive-document", prompt: "responsive document stress", match: /responsive document stress/i, play: (m) => m.playResponsiveDocumentStress() },
+    { id: "document-closure", prompt: "document closure stress", match: /document closure stress/i, play: (m) => m.playDocumentClosureStress() },
+    { id: "action-card", prompt: "show me an interactive card", match: /interactive|button/i, play: (m) => m.playActionCard() },
+    { id: "checklist", prompt: "plan it step by step", match: /todo|checklist|step by step|plan it/i, play: (m) => m.playChecklist() },
+    { id: "slow-subagent", prompt: "delegate slowly", match: /delegate slowly/i, play: (m) => m.playSlowSubagent() },
+    { id: "subagent", prompt: "delegate this to subagents", match: /subagent|delegate/i, play: (m) => m.playSubagent() },
+    { id: "huge-output", prompt: "produce a huge output", match: /huge|big output|large output|truncat/i, play: (m) => m.playHugeOutput() },
+    // The artifact variants exercise the failure fallbacks and the
+    // update-in-place path; the generic bridge artifact comes last.
+    {
+      id: "artifact-broken",
+      prompt: "show a broken artifact",
+      match: (t) => /artifact/i.test(t) && /broken|crash/i.test(t),
+      play: (m) =>
+        m.playArtifact(
           "broken demo",
           '<h2>about to crash</h2><script>throw new Error("deliberate mock crash")</script>',
-        );
-      }
-      if (/navigat|escape/i.test(text)) {
-        // about:blank triggers the same liveness kill as any external URL,
-        // hermetically — the e2e containment test must not need the network.
-        return this.playArtifact(
-          "navigating demo",
-          '<h2>leaving…</h2><script>location.href="about:blank"</script>',
-        );
-      }
-      // An artifact that ATTEMPTS the escapes, reporting each result
-      // into its own DOM so the e2e can assert containment from outside (R.4e).
-      if (/hostile/i.test(text)) return this.playArtifact("hostile demo", HOSTILE_ARTIFACT);
+        ),
+    },
+    {
+      id: "artifact-navigating",
+      prompt: "show a navigating artifact",
+      // about:blank triggers the same liveness kill as any external URL,
+      // hermetically — the e2e containment test must not need the network.
+      match: (t) => /artifact/i.test(t) && /navigat|escape/i.test(t),
+      play: (m) =>
+        m.playArtifact("navigating demo", '<h2>leaving…</h2><script>location.href="about:blank"</script>'),
+    },
+    {
+      id: "artifact-hostile",
+      prompt: "show a hostile artifact",
+      // An artifact that ATTEMPTS the escapes, reporting each result into its
+      // own DOM so the e2e can assert containment from outside.
+      match: (t) => /artifact/i.test(t) && /hostile/i.test(t),
+      play: (m) => m.playArtifact("hostile demo", HOSTILE_ARTIFACT),
+    },
+    {
+      id: "artifact-updating",
+      prompt: "show an updating artifact",
       // Same id re-sent with new html — the update-in-place mechanism the
-      // per-artifact UUIDs above never exercise (2026-07-29 bughunt).
-      if (/updat/i.test(text)) return this.playUpdatingArtifact();
-      return this.playBridgeArtifact();
-    }
-    if (/fail the turn|turn error/i.test(text)) return this.playTurnError();
-    if (/dangerous|sudo|rm -rf/i.test(text)) return this.playPermissionAsk();
-    if (/notice|attribution/i.test(text)) return this.playNotices();
-    if (/question|choose|decide/i.test(text)) return this.playQuestion();
-    if (/picker/i.test(text)) return this.playPicker();
-    if (/chart demo/i.test(text)) return this.playCharts();
-    if (/console/i.test(text)) return this.playConsole();
-    if (/tool activity|transcript compact/i.test(text)) return this.playToolActivity();
-    if (/screenshot/i.test(text)) return this.playImage();
-    if (/diagram/i.test(text)) return this.playDiagram();
-    if (/kpi/i.test(text)) return this.playStat();
-    if (/snippet/i.test(text)) return this.playCode();
-    if (/health/i.test(text)) return this.playStatusList();
+      // per-artifact UUIDs never exercise.
+      match: (t) => /artifact/i.test(t) && /updat/i.test(t),
+      play: (m) => m.playUpdatingArtifact(),
+    },
+    { id: "artifact", prompt: "show an artifact", match: /artifact/i, play: (m) => m.playBridgeArtifact() },
+    { id: "turn-error", prompt: "fail the turn", match: /fail the turn|turn error/i, play: (m) => m.playTurnError() },
+    { id: "permission-ask", prompt: "run something dangerous", match: /dangerous|sudo|rm -rf/i, play: (m) => m.playPermissionAsk() },
+    { id: "notices", prompt: "show a notice with attribution", match: /notice|attribution/i, play: (m) => m.playNotices() },
+    { id: "question", prompt: "ask me a question", match: /question|choose|decide/i, play: (m) => m.playQuestion() },
+    { id: "picker", prompt: "open the picker", match: /picker/i, play: (m) => m.playPicker() },
+    { id: "charts", prompt: "chart demo", match: /chart demo/i, play: (m) => m.playCharts() },
+    { id: "console", prompt: "show a console", match: /console/i, play: (m) => m.playConsole() },
+    { id: "tool-activity", prompt: "show tool activity", match: /tool activity|transcript compact/i, play: (m) => m.playToolActivity() },
+    { id: "image", prompt: "take a screenshot", match: /screenshot/i, play: (m) => m.playImage() },
+    { id: "diagram", prompt: "draw a diagram", match: /diagram/i, play: (m) => m.playDiagram() },
+    { id: "stat", prompt: "kpi demo", match: /kpi/i, play: (m) => m.playStat() },
+    { id: "code", prompt: "show a snippet", match: /snippet/i, play: (m) => m.playCode() },
+    { id: "status-list", prompt: "service health", match: /health/i, play: (m) => m.playStatusList() },
+  ];
+
+  /** The scenario `text` would play, by id — none means the template deck. */
+  static scenarioFor(text: string): string | undefined {
+    return MockSession.SCENARIOS.find((s) => (s.match instanceof RegExp ? s.match.test(text) : s.match(text)))?.id;
+  }
+
+  /** id → canonical prompt, for tests that must trigger exactly one scenario. */
+  static get prompts(): Readonly<Record<string, string>> {
+    return Object.fromEntries(MockSession.SCENARIOS.map((s) => [s.id, s.prompt]));
+  }
+
+  pushPrompt(text: string) {
+    const scenario = MockSession.SCENARIOS.find((s) =>
+      s.match instanceof RegExp ? s.match.test(text) : s.match(text),
+    );
+    if (scenario) return scenario.play(this);
     this.playTemplateTurn(text);
   }
 
-  onMessage(cb: (msg: WireMsg) => void) {
+  onMessage(cb: (msg: SessionMsg) => void) {
     this.listeners.add(cb);
   }
 
   interrupt() {
-    // ONE turn_end per OPEN turn (2026-07-30). This scenario engine schedules
-    // a whole turn as timers, and abandonTurn() clears the timer table — so
-    // with a queued turn also in flight, both turns' scheduled `turn_end`s
-    // died while a single one was emitted here. The daemon's mid-turn burst
-    // gate deliberately admits one queued prompt, so two open turns is the
-    // NORMAL case for a user who types again and then hits stop; the orphaned
-    // turn left the shell's counter above zero and its activity indicator
-    // stuck on "working…" for the life of the session, healing on neither a
-    // later turn nor a reload (replay rebuilds the imbalance). It cost a long
-    // Tier-3 flake hunt; the real adapters don't share the shape, because
-    // each of their turns completes on its own path.
+    // ONE turn_end per OPEN turn. This scenario engine schedules a whole
+    // turn as timers, and abandonTurn() clears the timer table — so with a
+    // queued turn also in flight, both turns' scheduled `turn_end`s die, and
+    // a single one emitted here would orphan the other. The daemon's
+    // mid-turn burst gate deliberately admits one queued prompt, so two open
+    // turns is the NORMAL case for a user who types again and then hits
+    // stop; an orphaned turn leaves the shell's counter above zero and its
+    // activity indicator stuck on "working…" for the life of the session,
+    // healing on neither a later turn nor a reload (replay rebuilds the
+    // imbalance). The real adapters don't share the shape, because each of
+    // their turns completes on its own path.
     //
     // Floor of one: interrupting an idle session still answers, matching the
     // claude-code adapter's "extra turn_end after the abort settles" — the
@@ -582,7 +629,7 @@ export class MockSession implements AgentSession {
   }
 
   resolvePermission(id: string, allow: boolean) {
-    this.pendingAsks.get(id)?.(allow);
+    this.permissions.resolve(id, allow);
   }
 
   close() {
@@ -590,11 +637,10 @@ export class MockSession implements AgentSession {
   }
 
   /** A turn that dies the way a real engine dies: `error` and NO `turn_end`
-   *  (2026-07-30). Every real adapter can produce this — an API failure, a
-   *  killed CLI, a dropped frame — and the daemon already treats it as
-   *  terminal (registry.ts flips the session to idle). It exists here so the
-   *  shell's recovery is pinned by a deterministic test instead of the
-   *  1-in-4 Tier-3 wedge that exposed it. */
+   *  — every real adapter can produce this (an API failure, a killed CLI, a
+   *  dropped frame) and the daemon already treats it as terminal
+   *  (registry.ts flips the session to idle). It exists here so the shell's
+   *  recovery is pinned by a deterministic test. */
   private playTurnError() {
     this.beginTurn();
     this.schedule(
@@ -603,7 +649,7 @@ export class MockSession implements AgentSession {
     );
   }
 
-  /** Deterministic 2.2 hook: a card with action buttons so the
+  /** Deterministic hook: a card with action buttons so the
    *  click→action→turn loop runs API-free. */
   private playActionCard() {
     this.beginTurn();
@@ -636,7 +682,7 @@ export class MockSession implements AgentSession {
     this.endTurn(delay);
   }
 
-  /** LD.1/LD.2: one deterministic live composition using only existing wire
+  /** One deterministic live composition using only existing wire
    * messages. A shell notice softly interrupts two document segments so the
    * browser test can prove both visual response continuity and mounted
    * painting identity while later prose streams. The Markdown deck is also
@@ -689,7 +735,7 @@ export class MockSession implements AgentSession {
     this.endTurn(delay, 700);
   }
 
-  /** LD.2 restraint oracle: ordinary short answers still render as prose,
+  /** Restraint oracle: ordinary short answers still render as prose,
    * without a component or an ornamental empty document surface. */
   private playShortDocument() {
     this.beginTurn();
@@ -697,7 +743,7 @@ export class MockSession implements AgentSession {
     this.endTurn(delay, 300);
   }
 
-  /** LD.3 browser-only stress fixture: existing diff/chart/artifact wire
+  /** Browser-only stress fixture: existing diff/chart/artifact wire
    * shapes in one document so width-pressure coverage is deterministic. */
   private playResponsiveDocumentStress() {
     this.beginTurn();
@@ -757,7 +803,7 @@ export class MockSession implements AgentSession {
     this.endTurn(delay, 300);
   }
 
-  /** LD.4 browser-only stress fixture: one long, heading-free Markdown row
+  /** Browser-only stress fixture: one long, heading-free Markdown row
    *  proves that plain technical prose remains dense and contains hostile
    *  intrinsic widths without borrowing a registry component. */
   private playDocumentClosureStress() {
@@ -865,7 +911,7 @@ export class MockSession implements AgentSession {
     this.endTurn(160, 0);
   }
 
-  /** Deterministic T2.5 hook: a live checklist — one render id, statuses
+  /** Deterministic hook: a live checklist — one render id, statuses
    *  progressing in place. */
   private playChecklist() {
     const rid = randomUUID();
@@ -892,7 +938,7 @@ export class MockSession implements AgentSession {
     this.endTurn(d);
   }
 
-  /** Deterministic S.1/S.2 hook: the chart stretch shapes in one turn — a
+  /** Deterministic hook: the chart stretch shapes in one turn — a
    *  pie that folds past 6 slices, a stacked bar, a horizontal bar with
    *  labels the vertical axis would truncate, and a MALFORMED pie (two
    *  series) whose designed degradation is the raw-props fallback. */
@@ -1026,7 +1072,7 @@ export class MockSession implements AgentSession {
     this.endTurn(d);
   }
 
-  /** Deterministic S.3 hook: a KPI tile kept live — one render id, the
+  /** Deterministic hook: a KPI tile kept live — one render id, the
    *  number moving in place. */
   private playStat() {
     const rid = randomUUID();
@@ -1068,7 +1114,7 @@ export class MockSession implements AgentSession {
     this.endTurn(d, 300);
   }
 
-  /** Deterministic CR.3 hook: the ordinary Request change draft receives
+  /** Deterministic hook: the ordinary Request change draft receives
    * highlighted markdown code, so phone accessibility never depends on which
    * shuffled demo template happened to answer. */
   private playMarkdownReview() {
@@ -1095,7 +1141,7 @@ export class MockSession implements AgentSession {
     this.endTurn(d);
   }
 
-  /** Deterministic SA.1 hook (supersedes the T2.4 single-Task version): a
+  /** Deterministic hook: a
    *  parallel fan-out — three spawns whose inner calls interleave and whose
    *  finishes land OUT OF ORDER (the first-spawned is not the first done),
    *  so three live cards tick independently in one transcript. */
@@ -1106,7 +1152,7 @@ export class MockSession implements AgentSession {
       type: string;
       desc: string;
       spawnAt: number;
-      // SA.2: the subagent's own narration, streamed into its card's
+      // The subagent's own narration, streamed into its card's
       // expansion right after the spawn (message-grain, like the real
       // Claude Code lane).
       says: string;
@@ -1182,7 +1228,7 @@ export class MockSession implements AgentSession {
         this.schedule(() => this.emit({ type: "tool_result", output: t.output, id: cid, parentId: fan.id }), d);
       }
       // One reasoning line mid-run for the slow agent — the expansion shows
-      // thinking dimmer than narration (SA.2).
+      // thinking dimmer than narration.
       if (fan.type === "general-purpose") {
         this.schedule(
           () => this.emit({ type: "thinking_delta", text: "The relay never sees it — confirming the browser side.", parentId: fan.id }),
@@ -1200,7 +1246,7 @@ export class MockSession implements AgentSession {
     this.endTurn(d);
   }
 
-  /** Deterministic reconnect-window hook (bughunt 2026-08-14 r2): ONE spawn
+  /** Deterministic reconnect-window hook: ONE spawn
    *  whose narration streams early and whose first tool call comes SECONDS
    *  later — a wide, deterministic window in which the subagent's prose run
    *  is open, for tests that reset the transcript mid-turn (daemon restart,
@@ -1230,7 +1276,7 @@ export class MockSession implements AgentSession {
     this.endTurn(d);
   }
 
-  /** Deterministic T2.3 hook: a tool whose output blows past the cap,
+  /** Deterministic hook: a tool whose output blows past the cap,
    *  exercising the elision marker. */
   private playHugeOutput() {
     const id = randomUUID();
@@ -1256,7 +1302,7 @@ export class MockSession implements AgentSession {
     this.endTurn(d);
   }
 
-  /** Deterministic 3.2/3.3 hook: a small interactive artifact with bridge
+  /** Deterministic hook: a small interactive artifact with bridge
    *  buttons (one allowlisted tool, one off-allowlist, one prompt) so
    *  sandbox + bridge run API-free. */
   private playBridgeArtifact() {
@@ -1295,33 +1341,22 @@ export class MockSession implements AgentSession {
     this.endTurn(delay);
   }
 
-  /** Deterministic T.3 hook: pause on a permission_request so the prompt bar
+  /** Deterministic hook: pause on a permission_request so the prompt bar
    *  is exercisable API-free. */
   private playPermissionAsk() {
-    const id = randomUUID();
     this.beginTurn();
     this.schedule(() => {
-      const timer = setTimeout(
-        () => this.pendingAsks.get(id)?.(false),
+      void this.permissions.ask(
+        { tool: "Bash", detail: "rm -rf /var/cache/app && systemctl restart app" },
         PERMISSION_TIMEOUT_MS,
+        (allow, how) => {
+          // The scripted follow-up belongs to the asking turn: an answer or
+          // a timeout plays it; an abandoned turn (interrupt/close) does not.
+          if (how === "teardown") return;
+          if (allow) this.playDangerousAllowed();
+          else this.playDangerousDenied();
+        },
       );
-      this.timers.push(timer);
-      this.pendingAsks.set(id, (allow) => {
-        clearTimeout(timer);
-        this.pendingAsks.delete(id);
-        // Answer AND timeout resolve through here — announce it so every
-        // viewport drops the bar, mirroring the real adapter's contract
-        // (protocol.ts permission_resolved).
-        this.emit({ type: "permission_resolved", id, allow });
-        if (allow) this.playDangerousAllowed();
-        else this.playDangerousDenied();
-      });
-      this.emit({
-        type: "permission_request",
-        tool: "Bash",
-        detail: "rm -rf /var/cache/app && systemctl restart app",
-        id,
-      });
     }, 450);
   }
 
@@ -1333,7 +1368,7 @@ export class MockSession implements AgentSession {
 
     let delay = 120;
     this.beginTurn();
-    // A short scripted thought streams before the work starts (T2.1).
+    // A short scripted thought streams before the work starts.
     const thought =
       "Reading the prompt again — the useful answer here is a quick check of " +
       "current state, then a compact summary with one component that fits the " +
@@ -1344,7 +1379,7 @@ export class MockSession implements AgentSession {
     }
     delay += 200;
     // Drawn without replacement — two identical tool rows in one turn read
-    // as a rendering bug to a first-time viewer (R.4b).
+    // as a rendering bug to a first-time viewer.
     for (const factory of shuffled(MOCK_TOOLS).slice(0, randInt(1, 2))) {
       const t = factory();
       const id = randomUUID();
@@ -1368,7 +1403,7 @@ export class MockSession implements AgentSession {
       );
     }
     delay = this.streamText(reply, delay + 250, 12);
-    // Every mock turn ends with a rendered component so the Phase 1 pipeline
+    // Every mock turn ends with a rendered component so the render pipeline
     // is exercised without an API key.
     const { component, props } = pick(MOCK_RENDERS)();
     const label = RENDER_TOOL_BY_COMPONENT.get(component) ?? `render_${component}`;
@@ -1377,8 +1412,8 @@ export class MockSession implements AgentSession {
     delay += 400;
     this.paintRender(delay, component, props);
     // Per-turn tokens so the meters run — but NO costUsd: a fabricated
-    // dollar figure is the one number a demo viewer takes as real (R.4b;
-    // omitted → the status bar shows no cost at all) (T2.6).
+    // dollar figure is the one number a demo viewer takes as real
+    // (omitted → the status bar shows no cost at all).
     const inTok = randInt(1800, 7200);
     const outTok = randInt(200, 900);
     this.schedule(
@@ -1394,7 +1429,7 @@ export class MockSession implements AgentSession {
     this.endTurn(delay);
   }
 
-  /** Deterministic UX.2 hook: two successful actions fold together after the
+  /** Deterministic hook: two successful actions fold together after the
    * turn, while the failed action remains an honest top-level row. */
   private playToolActivity() {
     const calls: Array<{
@@ -1461,7 +1496,7 @@ export class MockSession implements AgentSession {
     this.endTurn(delay + 40);
   }
 
-  /** Emit a one-artifact turn: brief text, then the artifact (Step 3.4 hooks). */
+  /** Emit a one-artifact turn: brief text, then the artifact. */
   private playArtifact(title: string, html: string) {
     this.beginTurn();
     let delay = this.streamText(`Here's the ${title} artifact.`, 300);
@@ -1474,8 +1509,7 @@ export class MockSession implements AgentSession {
 
   /** ONE artifact id, three htmls in quick succession — deliberately inside
    *  the shell's liveness grace window: a stale deadline from an earlier
-   *  html's load used to kill the healthy update as "navigation"
-   *  (2026-07-29 bughunt). */
+   *  html's load must not kill the healthy update as "navigation". */
   private playUpdatingArtifact() {
     const id = randomUUID();
     this.beginTurn();
@@ -1530,7 +1564,7 @@ export class MockSession implements AgentSession {
     this.endTurn(delay, 60);
   }
 
-  private emit(msg: WireMsg) {
+  private emit(msg: SessionMsg) {
     for (const cb of this.listeners) cb(msg);
   }
 
@@ -1546,13 +1580,8 @@ export class MockSession implements AgentSession {
     this.timers = [];
     // protocol.ts: permission_resolved MUST fire on EVERY resolution path —
     // interrupt/close included, or a second viewport keeps a dead bar and
-    // the replay buffer holds an unresolved ask forever (2026-07-29
-    // bughunt). Emitted directly, not through the resolver: its scripted
-    // follow-up belongs to the turn being abandoned.
-    for (const id of this.pendingAsks.keys()) {
-      this.emit({ type: "permission_resolved", id, allow: false });
-    }
-    this.pendingAsks.clear();
+    // the replay buffer holds an unresolved ask forever.
+    this.permissions.denyAll();
   }
 
   /** Open the scripted turn envelope: `status: thinking` at t=0. */

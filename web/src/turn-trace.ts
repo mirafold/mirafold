@@ -1,12 +1,11 @@
-// Opt-in trace of the open-turn counter's inputs (2026-07-30).
+// Opt-in trace of the open-turn counter's inputs.
 //
-// The counter behind the activity indicator (turn-busy.ts) wedged above zero
-// in a Tier-3 run: the indicator read "working…" for 30s while the polite
-// live region already held the finished response, i.e. `turn_end` had
-// arrived. A stuck counter can only be explained by the SEQUENCE of frames
-// that moved it — which frame types, live or replayed, and what the count did
-// on each. Reasoning about it from the source produced a confident hypothesis
-// that a direct probe then falsified, so: record the sequence instead.
+// The counter behind the activity indicator (turn-busy.ts) can wedge above
+// zero — "working…" still showing after `turn_end` has arrived. A stuck
+// counter can only be explained by the SEQUENCE of frames that moved it —
+// which frame types, live or replayed, and what the count did on each —
+// and reasoning about it from the source alone is unreliable, so record the
+// sequence.
 //
 // Costs one `Array.isArray` per received frame unless a harness has armed it
 // by setting `window.__MIRAFOLD_TURN_TRACE__ = []` before the app boots.

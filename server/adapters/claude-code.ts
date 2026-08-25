@@ -8,10 +8,11 @@ import {
   type SDKUserMessage,
   type SlashCommand,
 } from "@anthropic-ai/claude-agent-sdk";
-import type { PromptOption, WireMsg } from "../protocol";
+import type { PromptOption, SessionMsg } from "../protocol";
 import { makeCanUseTool } from "../security/permissions";
 import { makeRenderServer, RENDER_GUIDANCE } from "../render-tools";
 import { ResumeIdState } from "./resume-id";
+import { ChecklistPainter, PermissionLedger } from "./wire-helpers";
 import {
   type AgentSession,
   type TodoItem,
@@ -34,7 +35,7 @@ const log = createLogger("claude-code");
 // derive from this one constant.
 const UI_MCP = "ui";
 
-// The SDK's session-task-list tools (T2.5) — folded into the live checklist,
+// The SDK's session-task-list tools — folded into the live checklist,
 // never shown as raw tool rows. Note the subagent spawner is named "Agent"
 // in this SDK, not "Task", so it doesn't collide.
 const TASK_TOOLS = new Set([
@@ -47,11 +48,11 @@ const TASK_TOOLS = new Set([
   "TodoWrite",
 ]);
 
-/** Map a TodoWrite input to the todo-list component's props (T2.5).
+/** Map a TodoWrite input to the todo-list component's props.
  *  null = not a TodoWrite shape at all; [] = a VALID empty list — the agent
- *  clearing its tasks. Collapsing the two to null made an empty TodoWrite a
- *  no-op, so deleted items stayed painted and a later TaskCreate resurrected
- *  them (2026-07-29 bughunt). */
+ *  clearing its tasks. Collapsing the two to null would make an empty
+ *  TodoWrite a no-op: deleted items would stay painted and a later TaskCreate
+ *  would resurrect them. */
 export function normalizeTodos(input: unknown): TodoItem[] | null {
   if (typeof input !== "object" || input === null) return null;
   const todos = (input as { todos?: unknown }).todos;
@@ -67,7 +68,7 @@ export function normalizeTodos(input: unknown): TodoItem[] | null {
   return out;
 }
 
-// Capping happens at emit via capOutput (T2.3), never here.
+// Capping happens at emit via capOutput, never here.
 export function resultText(content: unknown): string {
   if (typeof content === "string") return content;
   if (Array.isArray(content)) return joinTextBlocks(content);
@@ -121,7 +122,7 @@ function firstPartyCredentialEnv(): Record<string, string> {
  */
 export class ClaudeCodeSession implements AgentSession {
   private queue = new AsyncQueue<string | typeof CLOSE>();
-  private listeners = new Set<(msg: WireMsg) => void>();
+  private listeners = new Set<(msg: SessionMsg) => void>();
   private engine: Query;
   private closed = false;
   // pump() exited — the SDK stream is gone. Distinct from `closed`: this is
@@ -133,27 +134,24 @@ export class ClaudeCodeSession implements AgentSession {
   private announcedTools = new Set<string>();
   // The live checklist. `tasks` is the session task list (id → item),
   // built from Task*/TodoWrite calls and persisted across turns like the SDK's
-  // own list; `todoRenderId` is the render block it paints into, reset each
-  // turn so the checklist re-anchors to the latest activity. `taskSeq` mirrors
-  // the SDK's 1-based sequential ids so TaskUpdate.taskId lines up (T2.5).
+  // own list; `checklist` paints it (one render block per turn). `taskSeq`
+  // mirrors the SDK's 1-based sequential ids so TaskUpdate.taskId lines up.
   private tasks = new Map<string, TodoItem>();
   private taskSeq = 0;
-  private todoRenderId?: string;
+  private checklist = new ChecklistPainter((msg) => this.emit(msg));
   // Did this turn stream any assistant text via stream_event? If so, the
   // buffered `assistant` text message is a duplicate and must be skipped. If
   // NOT (slash-command output — /context, /usage, unsupported commands — all
   // arrive as buffered assistant text with zero deltas), the buffered text is
-  // the ONLY copy and must be emitted, or the command runs but nothing paints (F.1).
+  // the ONLY copy and must be emitted, or the command runs but nothing paints.
   private streamedText = false;
-  // SA.2: per-subagent narration budget for the turn (cleared with it).
+  // Per-subagent narration budget for the turn (cleared with it).
   private subagentProse = new SubagentProseBudget();
-  // In-flight permission prompts, keyed by wire id → resolver.
-  private pendingAsks = new Map<string, (allow: boolean) => void>();
+  private permissions = new PermissionLedger((msg) => this.emit(msg));
 
   // Label shown in the status bar. Undefined when `model` is unset (the SDK
   // falls back to its own default) until system/init names the real one — the
-  // UI shows nothing, never a stand-in that reads as a model name
-  // (2026-07-23, Kyle; was the "default" stand-in, T2.6).
+  // UI shows nothing, never a stand-in that reads as a model name.
   private modelLabel: string | undefined;
   private providerSessionId: string;
   private resumeIdState: ResumeIdState;
@@ -174,8 +172,8 @@ export class ClaudeCodeSession implements AgentSession {
   // `engine` is the test seam (like Codex's thread swap / MIRAFOLD_GEMINI_BIN):
   // query() spawns the real CLI at construction, so tests must inject a
   // scripted stand-in here — there is no later moment to swap it.
-  // N.5: `kind`/`endpoint` carry the onboarding picker's backend choice.
-  // Undefined = the pre-N default (inherit the process env untouched).
+  // `kind`/`endpoint` carry the onboarding picker's backend choice.
+  // Undefined = inherit the process env untouched.
   constructor(opts: {
     workspaceDir: string;
     model?: string;
@@ -219,12 +217,12 @@ export class ClaudeCodeSession implements AgentSession {
         // this has to be seamless and unsurprising. Honoring host allowlists
         // (those tools then don't re-prompt in the browser) and letting
         // "remember X" write to the real ~/.claude memory are terminal-native
-        // behaviors, not leaks to isolate against — the earlier settingSources:[]
-        // mistook the terminal's own behavior for a threat. (`canUseTool` still
+        // behaviors, not leaks to isolate against — `settingSources: []` would
+        // mistake the terminal's own behavior for a threat. (`canUseTool` still
         // runs for anything the user's rules don't already decide.)
         includePartialMessages: true, // gives us token-level text deltas
         // MIRAFOLD_DEBUG=1 surfaces the engine's own stderr (the SDK
-        // swallows it otherwise) — where a bad key or dead CLI explains itself (R.4g).
+        // swallows it otherwise) — where a bad key or dead CLI explains itself.
         ...(verbose ? { stderr: (data: string) => log.debug(`stderr — ${this.safeEngineText(data)}`) } : {}),
         // Opt-in extended thinking; unset leaves the preset's behavior
         // (trigger words like "think hard" still work either way).
@@ -291,7 +289,7 @@ export class ClaudeCodeSession implements AgentSession {
     this.queue.push(text);
   }
 
-  onMessage(cb: (msg: WireMsg) => void) {
+  onMessage(cb: (msg: SessionMsg) => void) {
     this.listeners.add(cb);
   }
 
@@ -299,7 +297,7 @@ export class ClaudeCodeSession implements AgentSession {
     if (this.closed) return;
     // A pending permission prompt would keep the aborted turn hanging —
     // interrupt means the user walked away from it: deny.
-    this.denyAllPending();
+    this.permissions.denyAll();
     // The SDK also emits a result for the aborted turn; the extra turn_end
     // after the abort settles is a client-side no-op, kept as a guarantee.
     this.engine
@@ -309,13 +307,13 @@ export class ClaudeCodeSession implements AgentSession {
   }
 
   resolvePermission(id: string, allow: boolean) {
-    this.pendingAsks.get(id)?.(allow);
+    this.permissions.resolve(id, allow);
   }
 
   close() {
     if (this.closed) return;
     this.closed = true;
-    this.denyAllPending();
+    this.permissions.denyAll();
     this.queue.push(CLOSE);
     this.engine.interrupt().catch(() => {});
   }
@@ -323,36 +321,16 @@ export class ClaudeCodeSession implements AgentSession {
   /** Pause the tool call on a browser prompt; deny on timeout or close. */
   private ask = (tool: string, detail: string): Promise<boolean> => {
     if (this.closed) return Promise.resolve(false);
-    return new Promise((resolve) => {
-      const id = randomUUID();
-      const finish = (allow: boolean) => {
-        clearTimeout(timer);
-        this.pendingAsks.delete(id);
-        // Every resolution path lands here (answer, timeout, deny-all), so
-        // this is the one place the resolution is announced to the stream —
-        // other viewports drop their bar on it instead of holding a stale
-        // ask until turn_end (protocol.ts permission_resolved, 2026-07-28).
-        this.emit({ type: "permission_resolved", id, allow });
-        resolve(allow);
-      };
-      const timer = setTimeout(() => finish(false), PERMISSION_TIMEOUT_MS);
-      this.pendingAsks.set(id, finish);
-      this.emit({ type: "permission_request", tool, detail, id });
-    });
+    return this.permissions.ask({ tool, detail }, PERMISSION_TIMEOUT_MS);
   };
 
-  /** Deny every in-flight permission prompt — the interrupt/close teardown. */
-  private denyAllPending() {
-    for (const finish of [...this.pendingAsks.values()]) finish(false);
-  }
-
-  /** Fold a Task-family or TodoWrite call into the live checklist (T2.5). */
+  /** Fold a Task-family or TodoWrite call into the live checklist. */
   private trackTasks(name: string, input: unknown) {
     const rec = (input ?? {}) as Record<string, unknown>;
     if (name === "TodoWrite") {
       // TodoWrite replaces the whole list in one call — an EMPTY list
       // included, or deleted items linger and get resurrected by the next
-      // TaskCreate (2026-07-29 bughunt).
+      // TaskCreate.
       const todos = normalizeTodos(input);
       if (todos !== null) {
         this.tasks = new Map(todos.map((t, i) => [String(i + 1), t]));
@@ -391,26 +369,15 @@ export class ClaudeCodeSession implements AgentSession {
   }
 
   private emitChecklist() {
-    // Never PAINT an empty checklist — but once one is on screen this turn
-    // (todoRenderId set), an emptied list must update it: the old early
-    // return froze the painted block showing already-deleted tasks forever
-    // (2026-07-29 bughunt).
-    if (this.tasks.size === 0 && !this.todoRenderId) return;
-    this.todoRenderId ??= randomUUID();
-    this.emit({
-      type: "render",
-      component: "todo-list",
-      props: { todos: [...this.tasks.values()] },
-      id: this.todoRenderId,
-    });
+    this.checklist.paint([...this.tasks.values()]);
   }
 
-  private emit(msg: WireMsg) {
+  private emit(msg: SessionMsg) {
     for (const cb of this.listeners) cb(msg);
   }
 
   /** A subagent's narration/reasoning chunk: budget-capped, then onto its
-   *  deck's lane — or nothing at all once the budget is spent (SA.2). */
+   *  deck's lane — or nothing at all once the budget is spent. */
   private emitSubagentProse(parentId: string, type: "text_delta" | "thinking_delta", text: string) {
     const capped = this.subagentProse.take(parentId, text);
     if (capped) this.emit({ type, text: capped, parentId });
@@ -428,19 +395,19 @@ export class ClaudeCodeSession implements AgentSession {
     }
   }
 
-  /** Normalize the SDK's event stream into WireMsg. */
+  /** Normalize the SDK's event stream into SessionMsg. */
   private async pump() {
     try {
       for await (const msg of this.engine) {
         switch (msg.type) {
           case "stream_event": {
             // Subagent deltas never arrive here (SDK streams are main-session
-            // only — SA.0 probe); a subagent's prose forwards from its
-            // complete assistant messages below. Guard kept fail-safe.
+            // only); a subagent's prose forwards from its complete assistant
+            // messages below. Guard kept fail-safe.
             if (msg.parent_tool_use_id) break;
             const ev = msg.event;
             if (ev.type === "content_block_delta" && ev.delta.type === "text_delta") {
-              this.streamedText = true; // F.1: mark this turn as streamed
+              this.streamedText = true; // mark this turn as streamed
               this.emit({ type: "text_delta", text: ev.delta.text });
             } else if (ev.type === "content_block_delta" && ev.delta.type === "thinking_delta") {
               this.emit({ type: "thinking_delta", text: ev.delta.thinking });
@@ -457,20 +424,20 @@ export class ClaudeCodeSession implements AgentSession {
             break;
           }
           case "assistant": {
-            // Subagent tool CALLS are shown, nested (T2.4), and since SA.2 a
-            // subagent's PROSE rides too: the SDK never forwards subagent
-            // token deltas (stream_event stays main-session-only — the break
-            // above is belt and suspenders), but its COMPLETE assistant
-            // messages arrive live mid-run tagged parent_tool_use_id (SA.0
-            // probe), so text and thinking blocks forward at message grain,
-            // budget-capped per subagent. parentId = the spawn tool_use id.
+            // Subagent tool CALLS are shown, nested, and a subagent's PROSE
+            // rides too: the SDK never forwards subagent token deltas
+            // (stream_event stays main-session-only — the break above is belt
+            // and suspenders), but its COMPLETE assistant messages arrive
+            // live mid-run tagged parent_tool_use_id, so text and thinking
+            // blocks forward at message grain, budget-capped per subagent.
+            // parentId = the spawn tool_use id.
             const parentId = msg.parent_tool_use_id ?? undefined;
             for (const block of msg.message.content) {
               // Buffered assistant text with no preceding deltas — the
               // shape slash-command output arrives in. For the PARENT, emit
               // only when this turn streamed nothing (else it's a duplicate
               // of the stream) — renders the command output that would
-              // otherwise vanish (F.1). For a SUBAGENT there is never a
+              // otherwise vanish. For a SUBAGENT there is never a
               // delta stream to duplicate: forward, capped.
               if (block.type === "text") {
                 if (typeof block.text !== "string" || !block.text) continue;
@@ -493,7 +460,7 @@ export class ClaudeCodeSession implements AgentSession {
               // manages it via the Task* family (TaskCreate/TaskUpdate,
               // successor to TodoWrite); all of it — and its results, since
               // we never announce these — is folded into the checklist.
-              // A subagent's own task calls are internal: swallow, don't render (T2.5).
+              // A subagent's own task calls are internal: swallow, don't render.
               if (TASK_TOOLS.has(block.name)) {
                 if (!parentId) this.trackTasks(block.name, block.input);
                 continue;
@@ -555,7 +522,7 @@ export class ClaudeCodeSession implements AgentSession {
 
   /** Rate-limit frames, surfaced ONLY when they actually matter — approaching
    *  (allowed_warning) or hitting (rejected) the limit — never on the constant
-   *  plain "allowed"; observed live on ordinary turns (F.2). */
+   *  plain "allowed"; observed live on ordinary turns. */
   private handleRateLimitMsg(msg: object) {
     const info = (msg as { rate_limit_info?: { status?: unknown; rateLimitType?: unknown } })
       .rate_limit_info;
@@ -584,7 +551,7 @@ export class ClaudeCodeSession implements AgentSession {
       this.emit({ type: "error", message: this.safeEngineText(detail) });
     }
     // Per-turn usage for the status bar. Input includes cache
-    // tokens — that's the real context weight the user is paying for (T2.6).
+    // tokens — that's the real context weight the user is paying for.
     const u = (msg as { usage?: Record<string, number> }).usage;
     if (u) {
       const inputTokens =
@@ -599,18 +566,18 @@ export class ClaudeCodeSession implements AgentSession {
         costUsd: (msg as { total_cost_usd?: number }).total_cost_usd,
       });
     }
-    this.todoRenderId = undefined; // next turn starts a fresh checklist
-    this.streamedText = false; // F.1: next turn's streamed/buffered decision is independent
+    this.checklist.reset(); // next turn starts a fresh checklist
+    this.streamedText = false; // next turn's streamed/buffered decision is independent
     // A tool announced but never resolved (interrupt mid-call) must not sit
     // in the set for the session's life; results never span turns, so the
-    // boundary is the safe clear point (2026-07-28, Kyle's call — a stale
-    // cross-turn straggler is dropped rather than completing an old row).
+    // boundary is the safe clear point (a stale cross-turn straggler is
+    // dropped rather than completing an old row).
     this.announcedTools.clear();
     this.emit({ type: "turn_end" });
   }
 
   /** The engine's out-of-band `system` frames — each subtype an independent
-   *  status-bar/notice composition (F.2/F.3). */
+   *  status-bar/notice composition. */
   private handleSystemMsg(msg: object) {
     const sub = (msg as { subtype?: unknown }).subtype;
     if (sub === "commands_changed") {
@@ -625,19 +592,19 @@ export class ClaudeCodeSession implements AgentSession {
       // system/init carries the model the engine ACTUALLY resolved
       // (e.g. "claude-fable-5"), which differs from the configured value
       // or the "default" placeholder we start with — show the truth in
-      // the status bar, like the terminal's own status line (F.3).
+      // the status bar, like the terminal's own status line.
       const model = (msg as { model?: unknown }).model;
       if (typeof model === "string" && model) this.modelLabel = model;
     } else if (sub === "api_retry") {
       // The terminal shows "retrying (attempt n)…" here; without
-      // this we sit on "thinking…" looking hung through the backoff (F.2).
+      // this we sit on "thinking…" looking hung through the backoff.
       const m = msg as { attempt?: number; max_retries?: number };
       const n = typeof m.attempt === "number" ? m.attempt : undefined;
       const max = typeof m.max_retries === "number" ? m.max_retries : undefined;
       const which = n && max ? ` (attempt ${n}/${max})` : n ? ` (attempt ${n})` : "";
       this.emit({ type: "notice", text: `API error — retrying${which}…`, kind: "retry" });
     } else if (sub === "compact_boundary") {
-      // Context silently compacts today — say so (F.2).
+      // Context silently compacts — say so.
       const trigger = (msg as { compact_metadata?: { trigger?: unknown } }).compact_metadata
         ?.trigger;
       this.emit({
@@ -650,7 +617,7 @@ export class ClaudeCodeSession implements AgentSession {
       });
     } else if (sub === "model_refusal_fallback") {
       // The model declined and the turn was retried on a fallback —
-      // without this the swap is invisible (F.2).
+      // without this the swap is invisible.
       const fb = (msg as { fallback_model?: unknown }).fallback_model;
       this.emit({
         type: "notice",
@@ -662,7 +629,7 @@ export class ClaudeCodeSession implements AgentSession {
       });
     } else if (sub === "model_refusal_no_fallback") {
       // No fallback configured — the turn ends as an error (the
-      // result frame carries that); this line says WHY it ended (F.2).
+      // result frame carries that); this line says WHY it ended.
       this.emit({
         type: "notice",
         text: "the model declined to complete this request",

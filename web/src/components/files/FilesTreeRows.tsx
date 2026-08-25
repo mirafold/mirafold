@@ -1,4 +1,4 @@
-import type { DirStore } from "../../files-tree";
+import { shownListing, type DirStore } from "../../files-tree";
 import { changeStatus } from "../../changes";
 import { ExplorerChevron, ExplorerNodeGlyph } from "./ExplorerNodeGlyph";
 
@@ -26,8 +26,8 @@ const statusLabel = (s: string) => {
   return code === "?" ? s : label.toLowerCase();
 };
 
-// One directory's children, rendered from the store — recursion IS the tree
-// (E2.2): an expanded child dir renders its own DirChildren, which shows a
+// One directory's children, rendered from the store — recursion IS the
+// tree: an expanded child dir renders its own DirChildren, which shows a
 // loading row until its fs_dir lands, then its listing. The wire stays
 // non-recursive; nesting exists only here.
 export function DirChildren({
@@ -46,28 +46,29 @@ export function DirChildren({
   onOpenFile: (path: string, status?: string) => void;
 }) {
   const dirState = store.get(path);
+  if (!dirState) return null;
   const pad = { paddingLeft: `${depth * 12 + 6}px` };
-  if (!dirState?.entries) {
+  const listing = shownListing(dirState);
+  if (!listing) {
     // Nothing usable yet: an inline loading row while the fetch flies, an
     // error row if it refused. Non-interactive rows are aria-disabled
     // treeitems — still part of the tree for the reading order.
-    if (!dirState) return null;
     return (
       <ul className="files-ul" role="group">
         <li role="treeitem" aria-disabled="true" className="files-note-row" style={pad}>
-          {dirState.loading ? "…" : (dirState.error ?? "…")}
+          {dirState.phase === "error" ? dirState.error : "…"}
         </li>
       </ul>
     );
   }
   return (
     <ul className="files-ul" role="group">
-      {dirState.entries.length === 0 && (
+      {listing.entries.length === 0 && (
         <li role="treeitem" aria-disabled="true" className="files-note-row" style={pad}>
           (empty)
         </li>
       )}
-      {dirState.entries.map((entry) => {
+      {listing.entries.map((entry) => {
         const entryPath = path ? `${path}/${entry.name}` : entry.name;
         if (entry.kind === "dir") {
           const isOpen = expanded.has(entryPath);
@@ -94,7 +95,7 @@ export function DirChildren({
             </li>
           );
         }
-        // Files and symlinks are both leaves (E2.1's kind rule); a symlink
+        // Files and symlinks are both leaves; a symlink
         // click goes through fs_read like any file — the daemon's jail
         // decides whether its target is readable.
         return (
@@ -119,7 +120,7 @@ export function DirChildren({
           </li>
         );
       })}
-      {dirState.truncated && (
+      {listing.truncated && (
         <li role="treeitem" aria-disabled="true" className="files-note-row" style={pad}>
           …more entries than can be listed
         </li>

@@ -1,7 +1,6 @@
 import { useRef, type RefObject } from "react";
+import { useWorkspacePanelFrame } from "../../use-workspace-panel-frame";
 import type { ZoneMsg } from "../../session-bus";
-import { useEscapeKey } from "../../use-escape";
-import { useFocusTrap } from "../../use-focus-trap";
 import type { WorkspaceSurface } from "../WorkspaceTabs";
 import { useIsPhone } from "../../use-is-phone";
 import { FileView } from "../files/FileView";
@@ -77,9 +76,14 @@ export function ChangesPanel({
 
   const phone = useIsPhone();
   const panelRef = useRef<HTMLElement>(null);
-  const modal = phone && open;
-  useFocusTrap(panelRef, modal, promptVisible ? promptContainerRef : undefined);
-  useEscapeKey(modal ? onClose : undefined, { exclusive: true });
+  const frame = useWorkspacePanelFrame({
+    panelRef,
+    phone,
+    open,
+    onEscape: onClose,
+    trapExtra: promptVisible ? promptContainerRef : undefined,
+    modal: !promptVisible,
+  });
 
   const resize = usePanelResize(panelRef, !phone && open);
 
@@ -90,10 +94,8 @@ export function ChangesPanel({
       className="changes-panel"
       aria-label="Workspace changes"
       ref={panelRef}
-      role={phone ? "dialog" : undefined}
-      aria-modal={phone && !promptVisible ? true : undefined}
-      tabIndex={phone ? -1 : undefined}
       style={resize.panelStyle}
+      {...frame}
     >
       <ChangesHeader
         phone={phone}

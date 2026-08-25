@@ -9,6 +9,7 @@ import {
   webkit,
   type Browser,
   type BrowserContextOptions,
+  type Locator,
   type Page,
 } from "playwright-core";
 import axe from "axe-core";
@@ -73,11 +74,68 @@ export async function withFreshMockPage(
   }
 }
 
-export async function enterMockSession(page: Page): Promise<void> {
-  await page.locator(".onb-agent", { hasText: "Claude Code" }).click();
+export async function enterMockSession(page: Page, agent = "Claude Code"): Promise<void> {
+  await page.locator(".onb-agent", { hasText: agent }).click();
   await page.waitForURL(/\/s\/[\w-]+/);
   await page.locator(".prompt-box textarea").waitFor();
 }
+
+/** A fresh daemon + isolated page already inside a mock session on `agent`
+ *  — the one shape every hermetic browser test starts from. `prepare` runs
+ *  before the first navigation (the slot for addInitScript stubs that must
+ *  exist before the app boots). */
+export async function withFreshMockSession(
+  browser: Browser,
+  token: string,
+  run: (page: Page, base: string) => Promise<void>,
+  options: {
+    agent?: string;
+    prepare?: (page: Page) => Promise<void>;
+    context?: BrowserContextOptions;
+    env?: Record<string, string>;
+  } = {},
+): Promise<void> {
+  const daemon = await startDaemon({ ...options.env, MIRAFOLD_TOKEN: token });
+  try {
+    const context = await browser.newContext(options.context);
+    try {
+      const page = await context.newPage();
+      if (options.prepare) await options.prepare(page);
+      const base = `http://127.0.0.1:${daemon.port}`;
+      await page.goto(`${base}/?token=${token}`);
+      await enterMockSession(page, options.agent);
+      await run(page, base);
+    } finally {
+      await context.close();
+    }
+  } finally {
+    await daemon.stop();
+  }
+}
+
+/** Type a prompt into the composer and send it; returns the textarea. */
+export async function typePrompt(page: Page, text: string): Promise<Locator> {
+  const prompt = page.locator(".prompt-box textarea");
+  await prompt.fill(text);
+  await prompt.press("Enter");
+  return prompt;
+}
+
+/** The phone geometry every phone test frames itself with. */
+export const PHONE_CONTEXT: BrowserContextOptions = {
+  viewport: { width: 390, height: 844 },
+  deviceScaleFactor: 3,
+  isMobile: true,
+  hasTouch: true,
+};
+
+/** Wait until no turn is in flight (the stop affordance is gone). */
+export const waitTurnIdle = (page: Page, timeout = 30_000) =>
+  page.waitForFunction(() => !document.querySelector(".stop-btn"), undefined, { timeout });
+
+/** Wait for every running animation/transition under `selector` to finish. */
+export const settled = (page: Page, selector: string) =>
+  page.locator(selector).evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
 
 /** Phone-head oracle (2026-08-18): every selector renders, none overlaps
  *  another (rectangle intersection — a control on the row below is fine, one

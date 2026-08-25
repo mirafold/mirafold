@@ -1,13 +1,13 @@
-/* ---- Gruvbox Dark (S.6) -----------------------------------------------------
+/* ---- Gruvbox Dark -----------------------------------------------------------
    Transcribed from the canonical Base16 "Gruvbox dark, medium" scheme (Dawid
-   Kurek; gruvbox palette by Pavel Pertsev, MIT) via the S.2 recipe in
+   Kurek; gruvbox palette by Pavel Pertsev, MIT) via the recipe in
    manifest.ts. Warm grays, low-contrast borders, and the signature
    green-yellow accent are the theme — derived tiers are the recipe's mixes,
    hand-tunes from the QA walk noted inline.
-   V.1 contrast retune (2026-07-18, two rounds — terminal-grade floors): the
+   Deviations for the terminal-grade contrast floors: the
    background adopts the canonical HARD variant (bg0_h #1d2021, a real
    gruvbox contrast option) with the surface stack a tight envelope of it;
-   the whole fg ramp lifted past the canonical grays (faint was 1.7:1
+   the whole fg ramp sits past the canonical grays (canonical faint is 1.7:1
    worst-case), error brightened to clear 4.5:1 on --bg. Hues unchanged. */
 
 :root[data-theme="gruvbox-dark"] {
@@ -44,9 +44,9 @@
   --ok-bg: #393a28;
   --ok-border: #505127;
   --ok-border-strong: #696a27;
-  /* err/info tints darkened 2026-07-27: --error/--info render as TEXT on
-     them (status pills) and the originals sat at 4.38/4.49:1 — under the
-     guard's 4.5 floor. Darker bg, not brighter accents: the accents are
+  /* err/info tints darker than canonical: --error/--info render as TEXT on
+     them (status pills) and the canonical tints sit at 4.38/4.49:1 — under
+     the guard's 4.5 floor. Darker bg, not brighter accents: the accents are
      already tuned against every text surface. */
   --err-bg: #3c2926;
   --err-border: #63312b;

@@ -1,10 +1,10 @@
-// R.5 — the daemon's entitlement token source. The relay admits a dial-out
+// The daemon's entitlement token source. The relay admits a dial-out
 // only with a valid signed token on the ENTITLEMENT_HEADER (when its gate is
 // on); this module is where that token comes from. Two supplies:
 //
 //  - MIRAFOLD_ENTITLEMENT_TOKEN: a hand-issued token used verbatim — an
 //    OPS/EMERGENCY path only, never a tester channel (beta testers pay real
-//    subscriptions and get license keys via /pay; Kyle's rule, 2026-07-23).
+//    subscriptions and get license keys via /pay).
 //    When set, the exchange machinery below never starts — precedence beats
 //    mutual exclusion so ops can override a broken exchange without
 //    unsetting anything.
@@ -42,6 +42,26 @@ export type EntitlementMode = "token-override" | "license-key" | "none";
 
 const mask = (s: string) => `${s.slice(0, 6)}…`;
 
+export const DEFAULT_ENTITLEMENT_URL = "https://mirafold.com/api/entitlement";
+
+/** The one exchange endpoint both the token source and the manage-subscription
+ *  actions talk to. */
+export function resolveEntitlementUrl(env: { MIRAFOLD_ENTITLEMENT_URL?: string }): string {
+  return env.MIRAFOLD_ENTITLEMENT_URL?.trim() || DEFAULT_ENTITLEMENT_URL;
+}
+
+/** The billing backend's one request shape: POST the license key as JSON,
+ *  bounded by a timeout. Shared so the exchange and the manage actions can't
+ *  drift apart in headers, body, or timeout idiom. */
+export function postLicenseKey(endpoint: string, licenseKey: string, timeoutMs: number): Promise<Response> {
+  return fetch(endpoint, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ licenseKey }),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+}
+
 export function createEntitlementTokenSource(env: {
   MIRAFOLD_ENTITLEMENT_TOKEN?: string;
   MIRAFOLD_LICENSE_KEY?: string;
@@ -49,7 +69,7 @@ export function createEntitlementTokenSource(env: {
 }): EntitlementTokenSource & { mode: EntitlementMode } {
   const override = env.MIRAFOLD_ENTITLEMENT_TOKEN?.trim();
   const licenseKey = env.MIRAFOLD_LICENSE_KEY?.trim();
-  const url = env.MIRAFOLD_ENTITLEMENT_URL?.trim() || "https://mirafold.com/api/entitlement";
+  const url = resolveEntitlementUrl(env);
 
   if (override) {
     if (licenseKey) {
@@ -67,7 +87,7 @@ export function createEntitlementTokenSource(env: {
   // The license key POSTs to the exchange in the clear if the operator pointed
   // MIRAFOLD_ENTITLEMENT_URL at a plaintext non-loopback host — anyone on the
   // path then reads the key. Warn loudly; still proceed (self-host is a real
-  // path), matching the weak-pin / auth-off posture in index.ts (2026-08-11 audit).
+  // path), matching the weak-pin / auth-off posture in index.ts.
   if (carriesCredentialInClear(url)) {
     log.warn(
       `MIRAFOLD_ENTITLEMENT_URL is a plaintext (http://) address to a non-local host — ` +
@@ -84,12 +104,7 @@ export function createEntitlementTokenSource(env: {
   const exchange = async (): Promise<void> => {
     lastFetchMs = Date.now();
     try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ licenseKey }),
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS), // the local-models.ts idiom
-      });
+      const res = await postLicenseKey(url, licenseKey, FETCH_TIMEOUT_MS);
       if (res.status === 403) {
         const reason = ((await res.json().catch(() => ({}))) as { reason?: string }).reason;
         if (!denied) {

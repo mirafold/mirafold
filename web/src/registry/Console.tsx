@@ -92,7 +92,7 @@ export function Console({ command, output, exitCode }: ComponentProps<"console">
   const clipped = output.length > CONSOLE_CLIP;
   // A fixed-offset cut can land inside an escape sequence; the strip rules
   // then eat only `\x1b[`, leaking the tail ("31m") as literal text — drop a
-  // trailing partial sequence with the cut (2026-07-28 fix).
+  // trailing partial sequence with the cut.
   const spans = ansiSpans(
     clipped ? output.slice(0, CONSOLE_CLIP).replace(/\x1b\[?[0-9;]*$/, "") : output,
   );

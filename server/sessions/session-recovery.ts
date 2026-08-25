@@ -1,10 +1,10 @@
-import type { WireMsg } from "../protocol";
+import type { SessionMsg } from "../protocol";
 import type { StoredSession } from "./session-store";
 
 /** The one `!` process that was still open at a checkpoint boundary, if any.
  * The ring may have trimmed its start while retaining later output, so output
  * also establishes the id until a matching bang_end closes it. */
-function unclosedBangId(buffer: WireMsg[]): string | undefined {
+function unclosedBangId(buffer: SessionMsg[]): string | undefined {
   let open: string | undefined;
   for (const msg of buffer) {
     if (msg.type === "bang_start" || msg.type === "bang_output") open = msg.id;
@@ -17,7 +17,7 @@ function unclosedBangId(buffer: WireMsg[]): string | undefined {
  * Provider/backend restoration remains the registry's responsibility; this
  * function only copies and honestly closes the persisted transcript. */
 export function recoverStoredTranscript(stored: StoredSession): {
-  buffer: WireMsg[];
+  buffer: SessionMsg[];
   nextSeq: number;
 } {
   const buffer = stored.buffer.map((msg) => ({ ...msg }));

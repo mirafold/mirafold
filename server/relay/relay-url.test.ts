@@ -19,6 +19,7 @@ test("unset URL + license key → the baked default, app origin included", () =>
   assert.deepEqual(resolveRelayPlan({ MIRAFOLD_LICENSE_KEY: "mf_abc" }), {
     kind: "dial",
     url: DEFAULT_RELAY_URL,
+    origin: "wss://relay.mirafold.sh",
     source: "default",
     appUrl: DEFAULT_APP_URL,
   });
@@ -41,6 +42,7 @@ test("explicit URL dials with no entitlement and no default app origin", () => {
   assert.deepEqual(resolveRelayPlan({ MIRAFOLD_RELAY_URL: "ws://127.0.0.1:9100" }), {
     kind: "dial",
     url: "ws://127.0.0.1:9100",
+    origin: "ws://127.0.0.1:9100",
     source: "explicit",
     appUrl: undefined,
   });
@@ -100,10 +102,16 @@ test("audit 2026-08-11: cleartext-credential detection covers scheme and host", 
   assert.equal(carriesCredentialInClear("not a url"), false);
 });
 
-// A malformed explicit URL still reaches index.ts's REFUSED path (relayOrigin
-// null → no dial, loud warning) — this module doesn't validate, it resolves.
-test("a malformed explicit URL is passed through for the REFUSED warning, not swallowed", () => {
-  const plan = resolveRelayPlan({ MIRAFOLD_RELAY_URL: "https://not-a-ws-url" });
-  assert.equal(plan.kind, "dial");
-  assert.equal(plan.kind === "dial" && plan.url, "https://not-a-ws-url");
+// A malformed or non-ws explicit URL is REFUSED here, as its own off-reason:
+// index.ts warns once, remote access stays off, and the CSP admits nothing.
+test("a malformed explicit URL resolves to off/malformed-url, never a dial", () => {
+  for (const raw of ["https://not-a-ws-url", "garbage"]) {
+    assert.deepEqual(resolveRelayPlan({ MIRAFOLD_RELAY_URL: raw }), {
+      kind: "off",
+      reason: "malformed-url",
+      raw,
+    });
+  }
+  const plan = resolveRelayPlan({ MIRAFOLD_RELAY_URL: "wss://relay.example/path" });
+  assert.equal(plan.kind === "dial" && plan.origin, "wss://relay.example");
 });

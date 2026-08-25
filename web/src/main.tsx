@@ -4,12 +4,13 @@ import { FleetView } from "./components/FleetView";
 import { sessionHintFromFragment } from "./relay-pairing";
 import "highlight.js/styles/github-dark.css";
 // Palettes: base.css (pinned tokens) + every theme file, loaded by glob so a
-// new theme stays "one CSS file + one manifest row" with no import wiring
-// (S.5). Theme files scope to :root[data-theme=id] with disjoint token sets,
+// new theme stays "one CSS file + one manifest row" with no import wiring.
+// Theme files scope to :root[data-theme=id] with disjoint token sets,
 // so load order between them can't matter. Structure (styles.css) consumes
-// tokens via var(...) only (S.1).
+// tokens via var(...) only.
 import.meta.glob("./themes/*.css", { eager: true });
 import "./styles.css";
+import { sessionIdFromPath, sessionPath } from "./session-url";
 
 // index.html painted the canvas inline before any stylesheet existed (the
 // anti-white-flash script); the imports above own the pixels from here, so
@@ -26,11 +27,9 @@ document.documentElement.style.colorScheme = "";
 // dropping it would strand the device dialing a relay it has no credential
 // for. An explicit /s/ path wins over the hint.
 const hint = sessionHintFromFragment(location.hash);
-if (hint && !/^\/s\//.test(location.pathname)) {
-  history.replaceState(null, "", `/s/${hint}${location.search}${location.hash}`);
+if (hint && !location.pathname.startsWith("/s/")) {
+  history.replaceState(null, "", `${sessionPath(hint)}${location.search}${location.hash}`);
 }
 
-// Routing is the URL contract from 4.2/4.6: /s/<id> is a session viewport,
-// everything else is mission control (the fleet page at /).
-const isSession = /^\/s\/[\w-]+/.test(location.pathname);
+const isSession = sessionIdFromPath(location.pathname) !== null;
 createRoot(document.getElementById("root")!).render(isSession ? <Shell /> : <FleetView />);

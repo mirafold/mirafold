@@ -10,7 +10,7 @@ import { newSessionHref } from "../relay-pairing";
 
 // The workbench strip — model, session, cwd, connection, and token/cost
 // usage at a glance. Shell-owned (the agent can't paint here) and collapsible
-// per the side-surface rule: it folds to a single connection dot (T2.6).
+// per the side-surface rule: it folds to a single connection dot.
 
 export type Usage = {
   model?: string;
@@ -60,39 +60,38 @@ export function StatusBar({
   connectionNote?: string;
   agent?: string;
   // Shown whenever known — session_created carries the attach-time label
-  // ("default", "codex", …) and the usage stream refines it (2026-07-17, Kyle).
+  // ("default", "codex", …) and the usage stream refines it.
   model?: string;
   sessionId?: string;
   cwd?: string;
   usage: Usage;
-  // Shell-owned theme toggle — dark is the default and the identity (4.3).
+  // Shell-owned theme toggle — dark is the default and the identity.
   // The pill shows the MODE (which side is active); the theme id behind
-  // each side lives in Shell's slots (S.3).
+  // each side lives in Shell's slots.
   mode: "dark" | "light";
   onToggleTheme: () => void;
-  // Opens the settings card (S.4) — the gear beside the pill. The card
+  // Opens the settings card — the gear beside the pill. The card
   // itself mounts in Shell; this bar only carries the button.
   onOpenSettings?: () => void;
   // End this session (absent when there's no session yet). Two-click
-  // confirm lives in this shell-owned control, never in agent output (#11).
+  // confirm lives in this shell-owned control, never in agent output.
   onEndSession?: () => void;
-  // Pairing info for the "connect a device" QR (absent → no button) (R.4).
+  // Pairing info for the "connect a device" QR (absent → no button).
   relay?: RelayInfo;
   // The daemon's version, off the agents hello — the first thing a
-  // bug report needs (R.4g).
+  // bug report needs.
   version?: string;
-  // The workspace toggle's PHONE home (2026-07-25, Kyle): the activity bar
-  // is a desktop affordance, so on ≤640px the bar hides and this ONE button
-  // opens the full-screen workspace drawer (Files / Changes — the drawer's
-  // own head switches between them; two side-by-side icons here were too
-  // crowded, 2026-08-18) — boxed off at the far left by its own separator
-  // line (the rail's border, folded into the row). Not rendered on desktop
-  // at all (useIsPhone), where home must stay the bar's first control
-  // (2026-07-16 order).
+  // The workspace toggle's PHONE home: the activity bar is a desktop
+  // affordance, so on ≤640px the bar hides and this ONE button opens the
+  // full-screen workspace drawer (Files / Changes — the drawer's own head
+  // switches between them; two side-by-side icons here are too crowded) —
+  // boxed off at the far left by its own separator line (the rail's border,
+  // folded into the row). Not rendered on desktop at all (useIsPhone), where
+  // home must stay the bar's first control.
   workspaceOpen?: boolean;
   workspaceDisabled?: boolean;
   onToggleWorkspace?: () => void;
-  // Phase CS: the manage-subscription plumbing, passed through to the pair
+  // The manage-subscription plumbing, passed through to the pair
   // card (present only when the daemon runs on a license key).
   billing?: boolean;
   subRequest?: SubscriptionRequest;
@@ -101,12 +100,12 @@ export function StatusBar({
   const [open, setOpen] = useState(true);
   const phone = useIsPhone();
   // First click arms, second click ends — guards against a stray click
-  // killing a session (#11).
+  // killing a session.
   const endConfirm = useArmedConfirm<true>();
   const confirmEnd = endConfirm.armed === true;
   // The dot is a coloured circle — meaningless read aloud, so it's hidden
   // from the accessibility tree and its meaning rides on the button's label
-  // instead (A.1). Live transitions are announced by Shell's Announcer.
+  // instead. Live transitions are announced by Shell's Announcer.
   const dotState = connected ? "connected" : (connectionNote ?? "reconnecting…");
   const dot = (
     <span className={`sb-dot ${connected ? "sb-dot-on" : "sb-dot-off"}`} title={dotState} aria-hidden="true" />
@@ -126,7 +125,7 @@ export function StatusBar({
   }
 
   // The leaf names the project (session ≈ project); the prompt line carries
-  // the fuller ~-path (Step 4.8), so a leaf is enough here.
+  // the fuller ~-path, so a leaf is enough here.
   const cwdLeaf = cwd ? cwd.split("/").filter(Boolean).pop() : undefined;
   const showCwd = Boolean(cwdLeaf);
   const hasUsage = usage.sumIn + usage.sumOut > 0;
@@ -150,21 +149,19 @@ export function StatusBar({
           </button>
         </div>
       )}
-      {/* Home (⌂ → mission control) is the outermost far-LEFT control —
-          moved from the far right 2026-07-16 (Kyle); the dot stays glued to
-          the agent text it reports on. (A brand-M-as-home experiment lived
-          here for part of 2026-07-18 — reverted, Kyle's call; the brand mark
-          moved to the empty-session welcome in RenderZone instead.) */}
+      {/* Home (⌂ → mission control) is the outermost far-LEFT control; the
+          dot stays glued to the agent text it reports on. (The brand mark
+          belongs to the empty-session welcome in RenderZone, not here.) */}
       <a className="sb-home" href="/" title="All sessions (mission control)">
         ⌂
       </a>
-      {/* "new" sits beside home (2026-07-20, Kyle): a new browser tab on the
-          startup screen, so a session can be spun up from inside any session.
-          ?new opens mission control with the picker already up. End moved to
-          the far right, past the theme pill. On the relay path the href carries
-          the pairing fragment forward — a new tab inherits neither the fragment
-          nor sessionStorage, so without this the new tab has no daemon to reach
-          and hangs on "connecting" (mobile new-session bug, 2026-07-24). */}
+      {/* "new" sits beside home: a new browser tab on the startup screen, so
+          a session can be spun up from inside any session. ?new opens mission
+          control with the picker already up. End sits at the far right, past
+          the theme pill. On the relay path the href carries the pairing
+          fragment forward — a new tab inherits neither the fragment nor
+          sessionStorage, so without this the new tab has no daemon to reach
+          and hangs on "connecting". */}
       <a
         className="sb-new"
         href={newSessionHref()}
@@ -182,9 +179,9 @@ export function StatusBar({
       >
         {dot}
       </button>
-      {/* The refusal reason, visible (2026-07-28, Kyle's call): a relay
-          refusal's WHY used to live only in the dot's title — a hover
-          tooltip no touch device can reveal, on the path built for phones.
+      {/* The refusal reason, visible: a relay refusal's WHY can't live
+          only in the dot's title — a hover tooltip no touch device can
+          reveal, on the path built for phones.
           Shown only when down WITH a known reason; an ordinary blip keeps
           the quiet dot and the plain "reconnecting…" tooltip. No live
           region here — Shell's Announcer already speaks the transition;
@@ -194,7 +191,7 @@ export function StatusBar({
       )}
       {/* The agent chip is the session's identity element — tapping it opens
           the settings card's Session section ("what is this session?"), the
-          phone's path to the facts the bar no longer carries inline (R.4l). */}
+          phone's path to the facts the bar doesn't carry inline. */}
       {agent &&
         (onOpenSettings ? (
           <button
@@ -210,7 +207,7 @@ export function StatusBar({
           </span>
         ))}
       {/* Agent then model, left to right — model shown whenever known, even
-          when imperfect ("default", agent-named) (2026-07-17, Kyle). */}
+          when imperfect ("default", agent-named). */}
       {model && <span className="sb-item sb-model sb-sep" title="model">{model}</span>}
       {sessionId && <span className="sb-item sb-sep sb-session">{sessionId}</span>}
       {showCwd && (
@@ -246,9 +243,8 @@ export function StatusBar({
         subRequest={subRequest}
         subReply={subReply}
       />
-      {/* Settings gear (S.4) — beside the pill, which is now the far-right
-          control (home moved to the far left). The pill below is LOCKED
-          unchanged (Phase S). */}
+      {/* Settings gear — beside the pill, the far-right control. The pill
+          below is LOCKED unchanged. */}
       {onOpenSettings && (
         <button
           className="sb-settings"
@@ -279,8 +275,8 @@ export function StatusBar({
           ☾
         </button>
       </div>
-      {/* End (#11) is the outermost far-RIGHT control, past the theme pill
-          (2026-07-20, Kyle) — two-click confirm, shell-owned. */}
+      {/* End is the outermost far-RIGHT control, past the theme pill —
+          two-click confirm, shell-owned. */}
       {onEndSession && (
         <ArmedButton
           className="sb-end"

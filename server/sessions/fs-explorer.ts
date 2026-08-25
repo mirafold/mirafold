@@ -1,4 +1,4 @@
-// The Explorer's server half (Phase E.1): the shell's read-only view of a
+// The Explorer's server half: the shell's read-only view of a
 // session's working tree — the tree walk behind `fs_list` and the file read
 // behind `fs_read`. Everything resolves through `inside()`'s realpath
 // containment against the session root (a planted symlink can't walk out)
@@ -38,15 +38,15 @@ export const FS_TREE_MAX_PATH_BYTES = envInt("FS_TREE_MAX_PATH_BYTES", 400_000);
 // — the file cap never trips. This caps total nodes VISITED (files + dirs), so
 // the synchronous walk can't block the event loop on a pathological non-git
 // workspace (the git path is bounded separately by its subprocess limits).
-// Well above the entry cap: real projects hit files first (2026-07-24 audit).
+// Well above the entry cap: real projects hit files first.
 const FS_TREE_MAX_NODES = envInt("FS_TREE_MAX_NODES", 40_000);
 
 // Directories nobody browses that would drown the tree (and blow the caps
-// instantly). E.2's git view gets this pruning for free via .gitignore;
+// instantly). The git view gets this pruning for free via .gitignore;
 // this is the non-repo walk's equivalent floor.
 const SKIP_DIRS = new Set([".git", "node_modules"]);
 
-// Per-directory caps (E2.1). One fs_dir reply must stay far under the wire
+// Per-directory caps. One fs_dir reply must stay far under the wire
 // payload bounds even on a pathological flat directory — capped on entry
 // COUNT and NAME BYTES both (names, not paths: the reply carries names).
 // Strictly tighter than the whole-tree caps, since the unit is one readdir.
@@ -59,7 +59,7 @@ const FS_DIR_MAX_NAME_BYTES = envInt("FS_DIR_MAX_NAME_BYTES", 200_000);
 // so a multi-GB file never gets loaded to be truncated.
 const SNIFF_BYTES = 8_192;
 const FS_FILE_CAP_BYTES = envInt("FS_FILE_CAP_BYTES", 64_000);
-// CR.4 review markers must name actual content, not a path or a timestamp.
+// Review markers must name actual content, not a path or a timestamp.
 // Hashing is deliberately opt-in (only fs_diff asks) and bounded to 1 MB so
 // four allowed requests per second cannot turn synchronous file hashing into
 // an event-loop denial of service. Larger files remain viewable with the
@@ -71,7 +71,7 @@ const FS_FILE_REVISION_CAP_BYTES = 1024 * 1024;
 // a reusable public content fingerprint.
 const FILE_REVISION_KEY = randomBytes(32);
 
-/** NUL in the sniff window = binary. E.2 applies the same rule to git blobs
+/** NUL in the sniff window = binary. The same rule applies to git blobs
  *  (the fd path below sniffs its own window the same way). */
 export const sniffBinary = (buf: Buffer): boolean =>
   buf.subarray(0, Math.min(buf.length, SNIFF_BYTES)).includes(0);
@@ -153,7 +153,7 @@ export function listTree(
     for (const d of dirents) {
       if (truncated) return;
       // Every dirent counts toward the walk budget — directories included, so
-      // an empty-dir-heavy tree can't be walked without bound (audit finding).
+      // an empty-dir-heavy tree can't be walked without bound.
       if (++nodesSeen > maxNodes) {
         truncated = true;
         return;
@@ -181,7 +181,7 @@ export function listTree(
 /**
  * The raw readdir behind the lazy tree's fetch unit: jail, kinds, and the
  * SKIP_DIRS floor — but no sort, no caps, and the resolved real path kept.
- * Split out (E2.3) so the git layer can decorate or filter a listing BEFORE
+ * Split out so the git layer can decorate or filter a listing BEFORE
  * the caps apply — a dropped ignored entry must free its cap budget, and a
  * merged deleted entry must count against it. `rel` is the client's requested
  * root-relative path ("" or "." = the root). Symlinks are leaves by kind
@@ -245,7 +245,7 @@ export function sortAndCapDir(
 }
 
 /**
- * List ONE directory's children — the lazy tree's fetch unit (E2.1), plain
+ * List ONE directory's children — the lazy tree's fetch unit, plain
  * (no git view): readDirRaw + sortAndCapDir. The SKIP_DIRS floor carries
  * over: a `.git`/`node_modules` DIRECTORY is omitted, exactly as the
  * whole-tree walk prunes it. The tests' composition of the two exported

@@ -1,13 +1,13 @@
 /**
- * Phase R.3 — the remote (relay) path. A remote page is opened as
+ * The remote (relay) path. A remote page is opened as
  * /#code=<pairing code>: the code rides the URL FRAGMENT, which never leaves
  * the browser, so the relay's HTTP logs can't see it. It's stashed on the
  * device (in-app navigation — fleet row links, history.replaceState — drops the
  * fragment) and scrubbed from the address bar. Shell-owned state: agent output
  * can never read or set it.
  *
- * The stash is localStorage, NOT sessionStorage (2026-07-25, Kyle's phone).
- * Per-tab storage does not reliably survive what a phone actually does to a
+ * The stash is localStorage, NOT sessionStorage. Per-tab storage does not
+ * reliably survive what a phone actually does to a
  * backgrounded tab: switch to another app for a few minutes, and the browser is
  * free to discard the tab and rebuild it on return. The URL is unchanged (the
  * fragment was scrubbed on first load, by design) — so a rebuilt tab with no
@@ -16,12 +16,12 @@
  * prompts going nowhere. Reproduced exactly by wiping the store and reloading.
  *
  * What persisting it costs: the code is a bearer credential — whoever holds it
- * reaches the sessions — so it now outlives the tab on that device. Two things
+ * reaches the sessions — so it outlives the tab on that device. Two things
  * bound that: pairing codes are per-launch (a daemon restart makes every stored
  * code useless), and this stash expires on its own after PAIRING_MAX_AGE_MS.
  * sessionStorage is still READ, so a tab paired by an older build keeps working.
  *
- * Static-origin serving (R.4/R.5): the page may be served from a static origin
+ * Static-origin serving: the page may be served from a static origin
  * that is NOT the relay (app.mirafold.com serves the bundle; relay.mirafold.sh
  * carries the socket — the trust split: whoever serves the JS must not carry
  * the traffic, and vice versa). The fragment then also carries
@@ -67,7 +67,7 @@ const PAIRED_AT_KEY = "mirafold-relay-paired-at";
 const PAIRING_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** Reads the device's stored pairing, dropping one that has aged out. Falls
- *  back to sessionStorage for tabs paired before the store moved. Exported for
+ *  back to sessionStorage for tabs paired by a build that stored there. Exported for
  *  tests — takes its stores, touches no DOM. */
 export function storedPairing(
   store: Storage,
@@ -100,11 +100,11 @@ export function relayTargetFromPage(): { code: string; ws: string | null } | nul
 }
 
 /** storedPairing plus write-through: a pairing that only the LEGACY per-tab
- *  store still holds (paired before the 2026-07-25 localStorage move) is
+ *  store still holds (paired by a build that used sessionStorage) is
  *  migrated into the device store on use — newSessionHref reads that store
- *  only, so without this an old tab's "new session" link carried no fragment
- *  and the fresh tab hung on "connecting", the exact 2026-07-24 mobile bug
- *  this file exists to prevent (2026-07-29 bughunt). The device is actively
+ *  only, so without this an old tab's "new session" link would carry no
+ *  fragment and the fresh tab would hang on "connecting", the exact mobile
+ *  bug this file exists to prevent. The device is actively
  *  driving the pairing at the moment this runs, so stamping its age window
  *  here is honest. Exported for tests — takes its stores, touches no DOM. */
 export function adoptStoredPairing(
@@ -128,13 +128,13 @@ export function adoptStoredPairing(
  *  path the pairing target must be re-encoded into the new tab's fragment, or
  *  that tab finds no code, falls back to a local `ws://` origin with no daemon
  *  behind it, and hangs on "connecting" forever with the picker never arriving
- *  (the mobile new-session bug, 2026-07-24). The fragment stays client-side
+ *  (the mobile new-session bug). The fragment stays client-side
  *  exactly as the QR's did — it is never sent to the relay, and the new tab
  *  scrubs it on load. A local page has no stored code and gets the plain URL.
  *  Reads storage lazily so tests can drive it; `base` defaults to the real
  *  new-session URL. Goes through storedPairing, not raw reads: an aged-out
  *  pairing must not be re-encoded into a fresh tab, where the load-time stash
- *  would grant it a new PAIRING_MAX_AGE_MS window (2026-07-28 review). */
+ *  would grant it a new PAIRING_MAX_AGE_MS window. */
 export function newSessionHref(base = "/?new=1", storage: Storage = localStorage): string {
   const pairing = storedPairing(storage);
   if (!pairing) return base;

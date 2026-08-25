@@ -1,4 +1,4 @@
-// Repo-configured program execution, refused by default (2026-07-26 audit).
+// Repo-configured program execution, refused by default.
 //
 // The problem: git can be told, by settings living inside a repository's own
 // `.git/config`, to RUN a program during ordinary read-only commands. The
@@ -62,8 +62,8 @@ const SAFE: RepoTrust = { risky: [], disableArgs: [], allowed: false, unscannabl
  * brought with it; the user's global/system config (git-lfs's filters on any
  * machine that ever ran `git lfs install`, a global fsmonitor) is their own
  * terminal's behavior and must not be flagged — scanning the merged config
- * marked every repo risky for every LFS user (caught by CI's runners, which
- * preconfigure LFS system-wide, 2026-08-04). Reading config runs nothing
+ * would mark every repo risky for every LFS user (CI's runners preconfigure
+ * LFS system-wide). Reading config runs nothing
  * (probed) and still resolves `include.path` indirection from the local file,
  * so a setting hidden in an included file is found — a textual read of
  * `.git/config` would miss it. Failure (no repo, no git binary) yields no

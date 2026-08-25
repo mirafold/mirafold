@@ -1,4 +1,4 @@
-/* ── Explorer files panel (E.3) ────────────────────────────────────────── */
+/* ── Explorer files panel ────────────────────────────────────────── */
 
 /* The activity bar — the workbench's permanent left edge (VS Code
    convention): a thin strip whose files icon opens/collapses the panel.
@@ -92,7 +92,7 @@
   min-width: 0;
   padding-bottom: 5px;
   color: var(--fg-dim);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.72em;
   font-weight: 650;
   letter-spacing: 0.11em;
@@ -214,7 +214,7 @@
   background: transparent;
   border: none;
   color: var(--fg-body);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.82em;
   line-height: 1.2;
   text-align: left;
@@ -349,10 +349,10 @@
   color: var(--accent);
 }
 .files-status-A {
-  color: var(--ok, var(--accent));
+  color: var(--accent);
 }
 .files-status-D {
-  color: var(--danger, var(--fg-dim));
+  color: var(--fg-dim);
 }
 .files-status-U {
   color: var(--fg-dim);
@@ -365,14 +365,10 @@
 }
 
 .files-error {
-  color: var(--danger, var(--fg-dim));
+  color: var(--fg-dim);
 }
 
-.files-truncated {
-  font-style: italic;
-}
-
-/* Non-interactive in-tree rows (E2.2): a dir's loading "…", "(empty)", an
+/* Non-interactive in-tree rows: a dir's loading "…", "(empty)", an
    error, or the per-dir truncation note — dim, italic, indented like a row. */
 .files-note-row {
   padding: 3px 10px;
@@ -395,7 +391,7 @@
   flex-direction: column;
 }
 
-/* E.6: the deliberate desktop enlarge. The ⤢ button lifts the SAME box into
+/* The deliberate desktop enlarge. The ⤢ button lifts the SAME box into
    a fixed near-full-screen frame over the dimmed workspace — a lightbox, so
    the transcript never reflows and is visibly still there behind the dim.
    Same z band as the phone drill-in layer: above the transcript and status
@@ -403,7 +399,7 @@
 .files-dim {
   position: fixed;
   inset: 0;
-  z-index: 54;
+  z-index: var(--z-layer-dim);
   background: rgba(0, 0, 0, 0.55);
   animation: files-dim-in 0.12s ease-out;
 }
@@ -419,9 +415,9 @@
   /* The rim: enough dimmed workspace to read as a layer. Each axis steps in
      by 5% of the viewport per edge on top of the base rim (~10% smaller
      than edge-flush overall); the vertical split is deliberately uneven —
-     same box height, sat 1.5vh above center (Kyle, 2026-07-28). */
+     same box height, sat 1.5vh above center. */
   inset: calc(24px + 3.5vh) calc(36px + 5vw) calc(24px + 6.5vh);
-  z-index: 55;
+  z-index: var(--z-layer);
   border: 1px solid var(--border);
   border-radius: 10px;
   box-shadow: var(--shadow-pop);
@@ -485,7 +481,7 @@
 }
 
 .files-file-name {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.82em;
   color: var(--fg-dim);
   white-space: nowrap;
@@ -526,7 +522,7 @@
 /* The tool-code look minus the transcript's 360px height cap: in every
    frame (docked, phone, enlarged) the file fills the panel and .files-view
    is the ONE scroller — while .tool-code's wrapping stays, so lines fold at
-   the frame's width and there is never a side-scroll (Kyle, 2026-07-28).
+   the frame's width and there is never a side-scroll.
    The descendant selector beats .tool-code's later-declared rule on
    specificity. */
 .files-view .fv-content {
@@ -541,7 +537,7 @@
 }
 
 .fv-error {
-  color: var(--danger, var(--fg-dim));
+  color: var(--fg-dim);
 }
 
 .fv-note {

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { MOCK_PROMPTS } from "./mock-prompts";
 import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -54,7 +55,7 @@ async function sendShortTurn(
 async function sendPlanTurn(page: Page): Promise<void> {
   const inputsBefore = await page.locator(".input-nav-stop").count();
   const prompt = page.locator(".prompt-box textarea");
-  await prompt.fill("plan it step by step");
+  await prompt.fill(MOCK_PROMPTS["checklist"]);
   await prompt.press("Enter");
   await page.waitForFunction(
     (count) => document.querySelectorAll(".input-nav-stop").length > count,
@@ -725,7 +726,7 @@ test("phone discloses temporary navigation directly above the submit arrow", asy
       // Reaching an endpoint during a live turn can leave BODY focused when
       // the tapped button disables itself. Turn completion must not treat that
       // as permission to focus the phone prompt and close navigation.
-      await prompt.fill("plan it step by step");
+      await prompt.fill(MOCK_PROMPTS["checklist"]);
       await page.locator(".prompt-send").tap();
       await page.locator(".activity-line").waitFor({ timeout: 15_000 });
       await toggle.tap();

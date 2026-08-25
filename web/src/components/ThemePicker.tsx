@@ -2,13 +2,12 @@ import { THEMES, parseThemeTokens, type ThemeAppearance } from "../themes/manife
 import { ModalCard } from "./ModalCard";
 import { cost, tokens } from "./StatusBar";
 
-// The settings card (S.4) — SHELL-OWNED UI, the one new chrome affordance of
-// Phase S (the pill is locked unchanged). Centered modal over the scrim,
-// same idiom as the pairing card. Three sections: Session (R.4l — the facts
-// the phone status bar no longer carries inline: folder, model, usage…;
-// details-on-demand is the phone's one path to them, so this section is
-// load-bearing there and merely redundant on desktop), Theme, and
-// Notifications (Phase NF — prop-driven, Shell owns the logic).
+// The settings card — SHELL-OWNED UI (the pill is locked unchanged).
+// Centered modal over the scrim, same idiom as the pairing card. Three
+// sections: Session (the facts the phone status bar doesn't carry inline:
+// folder, model, usage…; details-on-demand is the phone's one path to them,
+// so this section is load-bearing there and merely redundant on desktop),
+// Theme, and Notifications (prop-driven, Shell owns the logic).
 //
 // Vite-only module: the swatch chips read each theme's real colors by
 // importing the theme CSS as raw text (import.meta.glob), so a new theme's
@@ -31,7 +30,7 @@ const chipColorsById = new Map(
   }),
 );
 
-// Names the dialog for a screen reader (A.2). A constant is safe: only one
+// Names the dialog for a screen reader. A constant is safe: only one
 // settings card is ever mounted.
 const TITLE_ID = "settings-card-title";
 
@@ -72,7 +71,7 @@ function sessionRows(session?: SessionFacts): [label: string, value: string][] {
   return rows.filter((r): r is [string, string] => Boolean(r[1]));
 }
 
-/** Needs-you notifications (NF.2), prop-driven — Shell owns the preference,
+/** Needs-you notifications, prop-driven — Shell owns the preference,
  *  the browser-permission dance, and the notifier; the card only shows the
  *  switch. Absent = the Notification API doesn't exist here (iOS Safari
  *  outside an installed PWA) and the section stays out entirely. */

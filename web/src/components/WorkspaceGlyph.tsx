@@ -1,7 +1,7 @@
 /** The phone workspace toggle's glyph: a panel with its side column — the
- * one drawer that holds both Files and Changes on ≤640px, where the two
- * separate desktop rail icons were too crowded for the status bar
- * (2026-08-18, Kyle). Drawn on FilesGlyph's 14×20 artwork box at the same
+ * one drawer that holds both Files and Changes on ≤640px, where two
+ * separate desktop rail icons are too crowded for the status bar.
+ * Drawn on FilesGlyph's 14×20 artwork box at the same
  * 1.5 stroke so it sits in the bar at the same footprint. */
 export function WorkspaceGlyph({ size = 28 }: { size?: number }) {
   return (

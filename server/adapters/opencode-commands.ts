@@ -1,26 +1,17 @@
-import type { PromptOption, WireMsg } from "../protocol";
+import type { PromptOption, SessionMsg } from "../protocol";
 import { emitPromptOptions, errText } from "./types";
 import { emitModelPicker } from "./model-picker";
+import { runSlashTurn } from "./wire-helpers";
 import type {
   OpenCodeAgentEntry,
   OpenCodeCommandEntry,
   OpenCodeModelEntry,
 } from "./opencode-client";
 
-type Emit = (message: WireMsg) => void;
+type Emit = (message: SessionMsg) => void;
 
 // OpenCode's TUI default primary agent — what runs before any explicit pick.
 export const OPENCODE_DEFAULT_AGENT = "build";
-
-/** Slash commands use the same visible turn envelope as engine turns. */
-async function runSlashTurn(emit: Emit, body: () => Promise<void> | void): Promise<void> {
-  emit({ type: "status", state: "thinking" });
-  try {
-    await body();
-  } finally {
-    emit({ type: "turn_end" });
-  }
-}
 
 /** `/model` + `/agent` are Mirafold's own re-skins (no source badge); the
  *  engine's command catalog rides behind them, badged `opencode` because the

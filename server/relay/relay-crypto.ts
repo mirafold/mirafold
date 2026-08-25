@@ -1,4 +1,4 @@
-// Phase R.3 — per-pair end-to-end encryption for the relay path. The relay
+// Per-pair end-to-end encryption for the relay path. The relay
 // operator (us, or any self-hoster) must not be able to read frames: the
 // pairing code never leaves the two endpoints (the relay is given only its
 // hash, for matching), every frame is AES-256-GCM under keys only the
@@ -24,9 +24,9 @@
 //   pairing code later and recorded traffic opens. Codes are per-launch by
 //   default, which bounds that window.
 
-// Key-derivation salt baked into every existing pairing — survived the 2026-07
-// Mirafold rebrand on purpose and must NEVER be renamed: changing it changes
-// every derived key, silently breaking all deployed pairs.
+// Key-derivation salt baked into every existing pairing. It keeps the
+// pre-rename product name on purpose and must NEVER be renamed: changing it
+// changes every derived key, silently breaking all deployed pairs.
 const VERSION = "genui-relay v1";
 
 // TS ≥5.7 types BufferSource as backed by a real ArrayBuffer; plain

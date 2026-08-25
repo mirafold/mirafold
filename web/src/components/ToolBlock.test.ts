@@ -1,7 +1,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { diffLines } from "../diff";
-import { formatBytes } from "./ToolBlock";
+import { ToolBlock, formatBytes } from "./ToolBlock";
+
+test("a malformed MultiEdit input renders instead of throwing (engine data is checked per element)", () => {
+  const html = renderToStaticMarkup(
+    createElement(ToolBlock, {
+      name: "MultiEdit",
+      input: { file_path: "a.ts", edits: [null, 42, { old_string: "a", new_string: "b" }] },
+      output: "",
+      isError: true, // a failed record opens by default, so the input renders
+    }),
+  );
+  assert.match(html, /tool-input/);
+});
 
 test("diffLines marks context, deletion, and addition", () => {
   assert.deepEqual(diffLines("a\nb\nc", "a\nB\nc"), [

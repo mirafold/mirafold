@@ -1,6 +1,6 @@
 import path from "node:path";
 import { existsSync } from "node:fs";
-import type { AgentName, PromptOption, WireMsg } from "../protocol";
+import type { AgentName, PromptOption, SessionMsg } from "../protocol";
 import type { CredentialKind } from "../provider-policy";
 import { locateTrustedExecutable } from "../security/executable-trust";
 
@@ -11,9 +11,9 @@ import { envInt } from "../env";
  *  the detection question ("show this agent as ready?"). An env override is
  *  explicit operator intent, but an override pointing at a missing file is
  *  not an installation: advertising "ready" for it would sell a first turn
- *  that can only ENOENT (revised 2026-08-13, Gemini-sunset sitting — it is
- *  also how the test harnesses force OpenCode absent on machines that have
- *  it installed for real). A bare-name override can't be stat'ed and stays
+ *  that can only ENOENT (it is also how the test harnesses force OpenCode
+ *  absent on machines that have it installed for real). A bare-name
+ *  override can't be stat'ed and stays
  *  trusted as-is. Without an override: normal command lookup — beside node
  *  first (global npm/nvm installs), then filtered PATH. Project files,
  *  relative entries, and npm's injected node_modules bins are never agent
@@ -53,16 +53,16 @@ export function errText(err: unknown): string {
  */
 export interface AgentSession {
   pushPrompt(text: string): void;
-  onMessage(cb: (msg: WireMsg) => void): void;
+  onMessage(cb: (msg: SessionMsg) => void): void;
   /** Halt the in-flight turn; the session stays warm for the next prompt. */
   interrupt(): void;
-  /** The browser's answer to a permission_request (Phase T.3). */
+  /** The browser's answer to a permission_request. */
   resolvePermission(id: string, allow: boolean): void;
   /** Current best-known model label, for the fleet row / status bar. Known
    *  at construction only when configured (opts.model/DEFAULT_MODEL); refines
    *  after the first turn for agents whose real model only appears mid-stream
-   *  (Claude, Gemini, Codex) (#6). `undefined` = not yet known — the UI shows
-   *  nothing, never a stand-in that reads as a model name (2026-07-23, Kyle). */
+   *  (Claude, Gemini, Codex). `undefined` = not yet known — the UI shows
+   *  nothing, never a stand-in that reads as a model name. */
   readonly modelName: string | undefined;
   /** Provider-owned id that can reopen this conversation after Mirafold's
    * daemon process is gone. Undefined only until a provider assigns one. */
@@ -72,13 +72,13 @@ export interface AgentSession {
    * identity at the readiness boundary instead of guessing from a later
    * unrelated wire event. */
   onResumeId?(cb: (id: string) => void): void;
-  /** OC.4c: an adapter whose hello-time credential kind is OPTIMISTIC
+  /** An adapter whose hello-time credential kind is OPTIMISTIC
    * (OpenCode — the provider-resolved truth needs the running engine)
    * publishes the classified kind here at session start. The registry
    * updates its entry so the relay gate judges truth; until the first
    * publish such entries are `kindPending` and refuse remote actions. */
   onBackendKind?(cb: (update: { kind: CredentialKind; provider?: string }) => void): void;
-  /** Phase RC: classify the backend kind NOW instead of at the first turn —
+  /** Classify the backend kind NOW instead of at the first turn —
    * resolves once the truthful kind has been published via `onBackendKind`,
    * rejects with the honest user-facing reason when it cannot be (no engine
    * binary, no pin, provider not connected, policy refusal). Only adapters
@@ -94,7 +94,7 @@ export interface AgentSession {
 /** Replace the browser's catalog in one atomic message. Kept here so every
  * adapter applies the same stable dedupe rule. */
 export function emitPromptOptions(
-  emit: (msg: WireMsg) => void,
+  emit: (msg: SessionMsg) => void,
   options: PromptOption[],
 ) {
   const seen = new Set<string>();
@@ -120,27 +120,33 @@ export type Backend = {
   agent: AgentName;
   // Which kind of credential drives this session — the input to the
   // per-provider relay policy (`provider-policy.ts`). Read by the relay gate to
-  // refuse subscription-backed sessions over the paid path (R.4i).
+  // refuse subscription-backed sessions over the paid path.
   kind: CredentialKind;
   live: boolean;
   model?: string;
-  // N.5/UX.7: the exact chosen local server or configured Claude endpoint.
-  // This is sensitive server-side configuration: it may contain URL auth or a
-  // signed query and is never serialized onto the browser wire. Persisting it
-  // in the owner-only checkpoint prevents recovery from silently drifting.
-  endpoint?: string;
-  // UX.8: why an endpoint is here. A discovered endpoint is always driven
-  // with both real Anthropic credentials withheld. A configured endpoint may
-  // use only the credential MODE explicitly bound to it at selection time.
-  endpointSource?: "configured" | "discovered";
-  endpointAuth?: "api-key" | "auth-token" | "none";
   // The chosen config-declared provider (codex `[model_providers.<id>]`) —
-  // the adapter forces it per-session so the pick's label stays true.
+  // the adapter forces it per-session so the pick's label stays true. For
+  // OpenCode it is the published classification annotation instead.
   provider?: string;
-};
+} & BackendEndpoint;
+
+/** The endpoint half of a `local` backend: the exact chosen local server or
+ *  configured Claude endpoint, and why it is here. Sensitive server-side
+ *  configuration — it may contain URL auth or a signed query and is never
+ *  serialized onto the browser wire; the owner-only checkpoint persists it so
+ *  recovery can't silently drift. Credential-backed kinds carry none. */
+export type BackendEndpoint =
+  | { endpoint?: undefined; endpointSource?: undefined; endpointAuth?: undefined }
+  // A server found running on this machine: always driven with both real
+  // Anthropic credentials withheld (Claude's adapter uses its fixed dummy
+  // token, hence `none`).
+  | { endpoint: string; endpointSource: "discovered"; endpointAuth?: "none" }
+  // The env-configured Claude endpoint: uses only the credential MODE
+  // explicitly bound to it at selection time. Claude-only.
+  | { endpoint: string; endpointSource: "configured"; endpointAuth: "api-key" | "auth-token" | "none" };
 
 /** process.env minus `keys` (and minus undefined slots) — the per-session
- *  engine env override that WITHHOLDS a credential (N.5). Both SDKs stop
+ *  engine env override that WITHHOLDS a credential. Both SDKs stop
  *  inheriting once `env` is passed, so the override must carry the full
  *  environment, not just the changed vars. */
 export function envWithout(...keys: string[]): Record<string, string> {
@@ -171,14 +177,14 @@ export function capOutput(text: string): { text: string; truncatedBytes?: number
   return { text: kept, truncatedBytes: total - OUTPUT_CAP_BYTES };
 }
 
-// SA.2: per-subagent narration budget — bounds what any ONE subagent's prose
+// Per-subagent narration budget — bounds what any ONE subagent's prose
 // (text + thinking) can add to the wire, the replay ring, and relay bytes.
 // Byte-based like the tool cap, honest like it too: exhaustion emits one
 // explicit marker, never a silent cut. Agent-neutral, shared by every
 // adapter that forwards a subagent lane.
 const SUBAGENT_TEXT_CAP_BYTES = envInt("SUBAGENT_TEXT_CAP_BYTES", 64_000);
 // Ceiling on DISTINCT subagents tracked per turn — flood insurance in the
-// part-cap spirit (audit 2026-08-14): a hostile/looping engine fabricating
+// part-cap spirit: a hostile/looping engine fabricating
 // unlimited parent ids must not grow the ledger without bound. A real turn
 // spawns a handful; past the cap a NEW subagent's prose is dropped silently,
 // exactly how the other per-turn caps degrade.
@@ -226,7 +232,7 @@ export class SubagentProseBudget {
   }
 }
 
-/** One entry of the live checklist component (T2.5); adapter-neutral shape. */
+/** One entry of the live checklist component; adapter-neutral shape. */
 export type TodoItem = { content: string; status: "pending" | "in_progress" | "completed" };
 
 /** Flatten an SDK/MCP content-block array to transcript text: text blocks

@@ -1,14 +1,14 @@
 // Render tools — the agent's vocabulary for painting registry components.
 // Each tool has NO side effects: calling it just emits a `render` WireMsg
 // into the session's output stream, interleaved with the text deltas at the
-// point of the call. The input schemas ARE the registry spec (Step 1.1),
+// point of the call. The input schemas ARE the registry spec,
 // plus an optional `id` for update-in-place.
 
 import { randomUUID } from "node:crypto";
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import { renderToolEntries, type RenderToolName } from "./adapters/render-mcp-cmd";
-import type { WireMsg } from "./protocol";
+import type { SessionMsg } from "./protocol";
 import { resolveImageProps } from "./render-image";
 import { registryShapes, type ComponentName } from "./registry-spec";
 import { actionToolNames } from "./sessions/actions";
@@ -64,7 +64,7 @@ const TOOL_DESCRIPTIONS: Record<RenderToolName, string> = {
 
 /** The generative-UI tool-preference nudge, shared across all three adapters:
  *  Claude appends it to the claude_code system-prompt preset (Session
- *  options); Codex and Gemini have no system-prompt hook (V.2), so their
+ *  options); Codex and Gemini have no system-prompt hook, so their
  *  adapters prepend it ahead of the first user turn instead. */
 export const RENDER_GUIDANCE = `
 ## Generative UI
@@ -132,11 +132,11 @@ components freely.
   runs a server-side helper — allowlisted names: ${actionToolNames.join(", ")}.
   Never promise a button behavior outside these two kinds.`;
 
-// `workspaceDir` is REQUIRED (2026-07-27 audit): it is what jails the image
+// `workspaceDir` is REQUIRED: it is what jails the image
 // tool's file read to the session's directory. Optional, a future adapter
 // could omit it and silently ship the agent's own `src` to the client,
 // skipping containment and the byte cap. Required, that's a compile error.
-export function makeRenderServer(emit: (msg: WireMsg) => void, workspaceDir: string) {
+export function makeRenderServer(emit: (msg: SessionMsg) => void, workspaceDir: string) {
   const emitRender = (component: ComponentName, id: string | undefined, props: object) => {
     const renderId = id ?? randomUUID();
     // image authors a PATH; the daemon inlines the bytes at the synthesis

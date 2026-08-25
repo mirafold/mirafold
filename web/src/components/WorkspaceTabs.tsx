@@ -5,7 +5,7 @@ const SURFACES: readonly (readonly [WorkspaceSurface, string])[] = [
   ["changes", "Changes"],
 ];
 
-/** The phone drawer's view switch (2026-08-18, Kyle): on ≤640px Files and
+/** The phone drawer's view switch: on ≤640px Files and
  * Changes share one full-screen drawer, opened by the status bar's single
  * workspace toggle, and this segmented control at the drawer's head is how
  * the user moves between them — in place of the two side-by-side status-bar

@@ -8,8 +8,8 @@ name: Release
 # Auth is npm TRUSTED PUBLISHING (OIDC): npmjs.com is configured to accept
 # `mirafold` publishes only from this workflow — identity-federated, NO npm
 # token stored anywhere, so the repo's no-secrets-in-CI bound (PLAN C.1)
-# holds and a stolen npm password can't publish. Until Kyle completes the
-# npmjs.com trusted-publisher form, a real publish from here fails auth —
+# holds and a stolen npm password can't publish. If npmjs.com's trusted-
+# publisher binding is ever removed, a real publish from here fails auth —
 # that's the fail-closed direction.
 #
 # Launch morning (R.7): Kyle pushes the SIGNED release tag (tarball SHA-256
@@ -86,16 +86,25 @@ jobs:
       # full config on every PR, so drift is caught there.
       - run: yarn tsc -p tsconfig.ci.json --noEmit
       - run: yarn test
+      # The bundled-license notices must match what the build inlines; a stale
+      # file is a compliance gap (MIT/BSD require the text to travel with
+      # copies). Regenerate and refuse if anything changed.
+      - name: Third-party notices are current
+        run: node scripts/third-party-notices.mjs && git diff --exit-code THIRD-PARTY-NOTICES.md
 
-      # Pack once (prepack builds), record the tarball's SHA-256 in the job
-      # summary — Kyle pastes it into the GitHub Release notes to match the
-      # signed tag message.
+      # Pack ONCE (prepack builds) and publish that exact file below — a bare
+      # `npm publish` would pack a second tarball, and the SHA-256 recorded
+      # here would only be the published bytes if the build happened to be
+      # deterministic. The SHA goes to the job summary for the GitHub Release
+      # notes.
       - name: Pack + SHA-256
         run: |
           TARBALL="$(npm pack 2>/dev/null | tail -1)"
           SHA="$(sha256sum "$TARBALL" | cut -d' ' -f1)"
           echo "tarball: $TARBALL"
           echo "sha256:  $SHA"
+          echo "TARBALL=$TARBALL" >> "$GITHUB_ENV"
+          echo "TARBALL_SHA=$SHA" >> "$GITHUB_ENV"
           {
             echo "### $TARBALL"
             echo ""
@@ -104,10 +113,31 @@ jobs:
             echo "\`\`\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Publish (tag push — provenance over trusted publishing)
+      # The signed tag message carries the SHA-256 of the tarball Kyle packed
+      # on his machine (docs/RELEASING.md step 5). It must equal this pack's
+      # SHA, or the signed attestation would describe bytes other than the
+      # ones about to ship: a non-deterministic build, or a tag cut from a
+      # different tree, is a red run here instead of a silent mismatch.
+      - name: Tag message SHA-256 ↔ packed tarball
         if: github.event_name == 'push'
-        run: npm publish --provenance --access public
+        run: |
+          git fetch --no-tags --depth=1 origin "+refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+          MSG="$(git for-each-ref "refs/tags/$GITHUB_REF_NAME" --format='%(contents:subject)')"
+          TAG_SHA="$(printf '%s' "$MSG" | sed -n 's/^sha256 \([0-9a-f]\{64\}\).*/\1/p')"
+          if [ -z "$TAG_SHA" ]; then
+            echo "tag $GITHUB_REF_NAME carries no 'sha256 <hex>' message (unsigned or lightweight tag?) — refusing to publish" >&2
+            exit 1
+          fi
+          if [ "$TAG_SHA" != "$TARBALL_SHA" ]; then
+            echo "tag message sha256 $TAG_SHA != packed tarball $TARBALL_SHA — refusing to publish" >&2
+            exit 1
+          fi
+          echo "tag message matches the packed tarball ($TARBALL_SHA)"
+
+      - name: Publish the packed tarball (tag push — provenance over trusted publishing)
+        if: github.event_name == 'push'
+        run: npm publish "./$TARBALL" --provenance --access public
 
       - name: Dry-run publish (rehearsal)
         if: github.event_name == 'workflow_dispatch'
-        run: npm publish --dry-run --access public
+        run: npm publish "./$TARBALL" --dry-run --access public

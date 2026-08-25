@@ -103,8 +103,24 @@ credential constraints, MCP requirements, and the add-an-adapter checklist.
 
 [`SessionRegistry`](../server/sessions/registry.ts) owns active and dormant
 sessions. Each entry contains the adapter, working directory, attached local
-and remote viewports, sequenced replay buffer, prompt catalog, usage, pending
-permissions, and lifecycle state.
+and remote viewports, the sequenced replay ring
+([`replay-ring.ts`](../server/sessions/replay-ring.ts)), prompt catalog, and
+the stream-derived activity state — status, turn counters, pending
+permissions, usage — computed by the pure reducer in
+[`session-state.ts`](../server/sessions/session-state.ts).
+
+Measured costs (2026-08-25, one machine, for sizing decisions): a checkpoint
+of a 4,000-message text ring (0.6 MB) takes ~14 ms; a ring holding fifteen
+2 MB image renders (30 MB, near the byte cap) takes ~300 ms synchronously
+(~156 ms `JSON.stringify` + ~181 ms write and fsync), and the debounced
+interior checkpoint can run every 250 ms while such a session streams.
+Boundary checkpoints are synchronous on purpose (a `turn_end` must not be
+observable before its record is durable); moving the interior ones off the
+loop would need a generation guard so an older async write can never land
+over a newer boundary write, and has not been done because only image-heavy
+sessions pay the cost. The browser's transcript projection copies its ledger
+per streamed delta: ~0.26 ms per delta at 1,200 entries and ~0.9 ms at
+6,000, replaying 6,000 entries in ~100 ms — under a frame, left as is.
 
 [`connection.ts`](../server/sessions/connection.ts) is the transport-neutral
 message boundary used by local WebSockets and relay viewports. It validates
@@ -139,6 +155,40 @@ tool activity, errors, and shell boundaries visible. The output zone delegates
 structured content to [`web/src/registry/`](../web/src/registry/) and arbitrary
 HTML to the sandboxed [`Artifact`](../web/src/components/Artifact.tsx) host.
 
+### Keyboard ownership
+
+Several shell parts listen for keys on `window` or `document`. Which one
+wins is decided by the DOM's dispatch order — capture-phase listeners run
+before bubble-phase ones, a `window` capture listener before a `document`
+capture listener — and by whether the owner stops propagation. The table is
+that order, top to bottom; a key an upper row claims never reaches a lower
+one.
+
+| Owner | Keys | Registered as | Active while | Claims the key? |
+| --- | --- | --- | --- | --- |
+| [`useFocusTrap`](../web/src/use-focus-trap.ts) | Tab, Shift+Tab | `document`, capture | a modal overlay, the enlarged file box, or a phone workspace dialog is open | yes — cycles focus inside the container |
+| [`useEscapeKey`](../web/src/use-escape.ts) with `exclusive` — [`ModalCard`](../web/src/components/ModalCard.tsx), [`useWorkspacePanelFrame`](../web/src/use-workspace-panel-frame.ts) (phone Files/Changes dialog), the file-box enlarge in [`FilesPanel`](../web/src/components/files/FilesPanel.tsx) | Escape | `window`, capture + `stopPropagation` | that overlay is open | yes — dismisses / drills back / restores; nothing below sees it |
+| Phone input-history card in [`InputNavigation`](../web/src/components/InputNavigation.tsx) | Escape | `window`, capture + `stopPropagation` | the ⋯ card is open | yes — closes it and restores focus to its toggle |
+| [`PickerBlock`](../web/src/components/PickerBlock.tsx) | ArrowUp, ArrowDown, Enter, Escape | `document`, capture + `stopPropagation` | a live `/model`-style picker is showing | yes, unless a non-empty input, a picker row, or the phone card owns focus — only the idle (empty) prompt box cedes these keys |
+| Prompt trigger in [`PromptBox`](../web/src/components/PromptBox.tsx) | `/`, `$` | `window`, capture + `stopPropagation` | a provider catalog offers that trigger and `globalTriggersDisabled` is off | yes, when typed outside an editable field or dialog — focuses the prompt box and inserts the trigger |
+| Review shortcuts in [`useChangesController`](../web/src/components/changes/use-changes-controller.ts) | `r`, `n` | `window`, bubble | the Changes panel is open | only outside inputs and the prompt box (`REVIEW_SHORTCUT_EXCLUSION`), and only if nothing above called `preventDefault` |
+| Busy interrupt in [`Shell`](../web/src/components/Shell.tsx) (`useEscapeKey`, non-exclusive) | Escape | `window`, bubble | a turn is running | the fallback: runs only when no exclusive owner above claimed the key |
+
+Focused-element handlers sit outside this order because they see the key
+first and only for their own element: the prompt box's textarea (completion
+menu open: ArrowUp/ArrowDown move, Tab/Enter accept, Escape dismisses the
+menu; otherwise ArrowUp on an empty desktop box enters input history, Enter
+sends on desktop and inserts a newline on phone, Shift+Enter is always a
+newline) and the transcript's input-history strips (ArrowUp/ArrowDown/
+Escape while one is selected).
+
+Adding a global listener means choosing a row: an owner that must win uses
+capture plus `stopPropagation` (the `exclusive` idiom); an owner that must
+yield registers on bubble and checks `defaultPrevented` and the event target.
+[`phone.e2e.ts`](../server/testing/phone.e2e.ts) and
+[`input-navigation.e2e.ts`](../server/testing/input-navigation.e2e.ts) pin the
+rows that have collided before.
+
 ### Generative UI
 
 Mirafold exposes drawing tools to each agent through the Model Context Protocol
@@ -155,8 +205,9 @@ React component. Unknown components and malformed props degrade without
 taking down the session.
 
 When no registry component can express the result, an agent may emit an HTML
-artifact. Artifacts are the only raw agent HTML path and run inside a
-network-blocked, opaque-origin iframe. Their actions cross a narrow,
+artifact. Artifacts are the only raw agent HTML path and run inside an
+opaque-origin iframe whose CSP blocks every resource fetch (self-navigation is
+contained by a liveness check, not prevented). Their actions cross a narrow,
 nonce-validated bridge and re-enter the same server mediation used by registry
 components.
 
@@ -297,8 +348,11 @@ accepted residual risks in detail.
 | `docs/` | Architecture, adapters, local models, release process, and feature specifications |
 
 Tests live beside their source. Suffixes select the tier: `*.test.ts` for
-unit tests, `*.itest.ts` for daemon integration, `*.e2e.ts` for browser end to
-end, `*.uitest.ts` for managed-browser and visual checks, and `*.ltest.ts` for
+in-process unit tests (they may touch the OS — temp dirs, a real `git`, a
+loopback listener — but never a daemon), `*.itest.ts` for out-of-process
+integration (a real daemon, MCP child, or filesystem watcher), `*.e2e.ts` for
+tests that need the built bundle (mostly headless-browser end to end),
+`*.uitest.ts` for managed-browser and visual checks, and `*.ltest.ts` for
 opt-in live-agent tests.
 
 ## Standing constraints
@@ -314,10 +368,14 @@ opt-in live-agent tests.
 - The visual language is a terminal workbench, not a chat application:
   monospace command input, rich output, no message bubbles, and
   provider-native activity that compacts only after it settles.
-- Some duplication is deliberate. Adapter worker/listener boilerplate stays
-  local to each adapter so their lifecycles remain independent; the distinct
-  render/artifact update paths and the scripted mock are not genericized only
-  to reduce line count.
+- Adapter drive loops stay local. How an engine is pumped, aborted, and
+  resumed differs per engine and is deliberately not shared; the
+  wire-contract obligations that must behave identically everywhere (the
+  permission ledger, the checklist painting, the first-turn guidance, the
+  slash-turn envelope, output caps) live once in `server/adapters/` shared
+  modules (`wire-helpers.ts`, `types.ts`) and every adapter composes them.
+  The distinct render/artifact update paths and the scripted mock are not
+  genericized only to reduce line count.
 
 Current work belongs in [PLAN.md](../PLAN.md), completed history in
 [PLAN-ARCHIVE.md](../PLAN-ARCHIVE.md), and decided product terms in

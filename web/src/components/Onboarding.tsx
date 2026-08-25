@@ -16,24 +16,24 @@ import { ModalCard } from "./ModalCard";
 // The shell-owned onboarding picker. No agent is assumed — first run is
 // "choose your agent." Credentials never reach the browser; the server tells us
 // only which agents are `live` (have creds). A non-live agent still runs, in the
-// API-free mock, so dev and demos work without keys (P.4).
+// API-free mock, so dev and demos work without keys.
 // A working-directory field beside the picker — prefilled with the dir the
 // daemon was launched from (terminal parity), editable to point a session
 // anywhere. The server rejects a path that doesn't exist; `error` is that
-// rejection, shown here so the user can fix the path and retry (4.8).
+// rejection, shown here so the user can fix the path and retry.
 // A credential-less row carries the one-line fix (login command or env
-// var) instead of a bare badge — the picker itself says what to set or run (R.4b).
-// N.4: the SECOND STEP (BackendMenu below). When a clicked agent has a genuine
+// var) instead of a bare badge — the picker itself says what to set or run.
+// The SECOND STEP (BackendMenu below). When a clicked agent has a genuine
 // choice of backing, the card flips to that agent's backend menu instead of
 // creating immediately. While the card is open, `onRefresh` polls the daemon
 // (refresh_agents → re-probe → fresh hello), so a just-started local server
 // appears without a reload.
 
-// How often the open picker asks the daemon to re-probe local servers (N.3's
-// refresh_agents; server-side throttled independently).
+// How often the open picker asks the daemon to re-probe local servers
+// (refresh_agents; server-side throttled independently).
 const REFRESH_POLL_MS = 3_000;
 
-// Names the dialog for a screen reader (A.2b). A constant is safe: only one
+// Names the dialog for a screen reader. A constant is safe: only one
 // onboarding card is ever mounted.
 const TITLE_ID = "onb-card-title";
 
@@ -81,15 +81,15 @@ function backendName(agent: AgentName, b: AgentBackend): string {
   return backendLabel(agent, b.kind);
 }
 
-/** Does this row run on the user's own machine (2026-07-20)? This privacy
- * claim comes only from the daemon's exact IP classification. Re-parsing a
- * hostname in the browser once treated `127.attacker.test` as local. */
+/** Does this row run on the user's own machine? This privacy claim comes
+ * only from the daemon's exact IP classification: re-parsing a hostname in
+ * the browser would treat `127.attacker.test` as local. */
 function runsOnThisMachine(b: AgentBackend): boolean {
   return b.onDevice === true;
 }
 
-/** What model this row runs — the line that makes the rows comparable
- *  (2026-07-20). A discovered server offers a catalog, so it promises the
+/** What model this row runs — the line that makes the rows comparable.
+ *  A discovered server offers a catalog, so it promises the
  *  count and defers the choice one click; every other row runs exactly one
  *  model and must say which, or say nothing when only the agent's own
  *  default applies. */
@@ -99,14 +99,14 @@ function modelLine(b: AgentBackend): string | undefined {
   return b.model;
 }
 
-/** N.4's second step: how the picked agent is backed — one uniform row per
+/** The second step: how the picked agent is backed — one uniform row per
  *  way to run, each naming its model. Usable credentials as buttons (the
  *  codex subscription with its disclosed-uncertainty caveat inline), a
  *  present-but-prohibited subscription VISIBLE but gray with the why (never
  *  hidden), and each discovered local server as ONE row that opens its
- *  catalog (the third step below). Before 2026-07-20 a server splayed its
- *  models inline while every other row hid its own — three rows that looked
- *  like three unrelated kinds of thing. */
+ *  catalog (the third step below). A server must not splay its models
+ *  inline while every other row hides its own — that reads as three
+ *  unrelated kinds of thing. */
 function BackendMenu({
   row,
   onBack,
@@ -150,7 +150,7 @@ function BackendMenu({
       </button>
       {backends.map((b, i) => (
         // Prohibited subscriptions stay VISIBLE but gray with the why —
-        // never hidden (R.4l (c)).
+        // never hidden.
         <button
           key={`b${i}`}
           className={`onb-backend${b.usable ? "" : " onb-backend-blocked"}`}
@@ -200,11 +200,11 @@ type OnboardingProps = {
   // Present only when this LOCAL daemon advertised a host-native picker.
   // Cancel resolves undefined; errors reject and stay inside this card.
   onBrowse?: (cwd?: string) => Promise<string | undefined>;
-  // Ask the daemon to re-probe local servers and re-send the hello (N.3);
+  // Ask the daemon to re-probe local servers and re-send the hello;
   // called on a slow poll while the card is open.
   onRefresh?: () => void;
   // Present only when there's something to go back to (an existing fleet) —
-  // then a click outside the card, or Esc, changes your mind (2026-07-16).
+  // then a click outside the card, or Esc, changes your mind.
   // Absent on first run / a sessionless shell, where dismissing would leave
   // a dead page.
   onDismiss?: () => void;
@@ -352,7 +352,7 @@ export function Onboarding({
               // Three states. live → ready. blocked → a prohibited
               // subscription is present; say so and name the API-key fix (still
               // clickable — it runs the demo, like any non-live agent). none →
-              // no credentials · demo (R.4i).
+              // no credentials · demo.
               const hint = blocked ? blockedHint(agent) : !live ? connectHint(agent) : undefined;
               const statusText = live
                 ? "ready"
@@ -366,9 +366,9 @@ export function Onboarding({
                   key={agent}
                   className="onb-agent"
                   onClick={() => {
-                    // N.4: a genuine choice of backing opens the second
+                    // A genuine choice of backing opens the second
                     // step; a single usable backend (or the demo path)
-                    // creates in one click, exactly as before.
+                    // creates in one click.
                     if (needsSecondStep(row)) {
                       setExpanded(null);
                       setPicking(agent);
@@ -382,10 +382,10 @@ export function Onboarding({
                     <span className="onb-agent-name">{agentLabel(agent)}</span>
                     <span className={`onb-agent-status ${statusClass}`}>{statusText}</span>
                   </span>
-                  {/* R.4k: a live agent shows what's behind it (local endpoint
+                  {/* A live agent shows what's behind it (local endpoint
                       or configured model), so a local-model user isn't left
-                      guessing whether their setup was picked up. 2026-07-20:
-                      it NAMES the credential too — the row is a decision made
+                      guessing whether their setup was picked up. It NAMES
+                      the credential too — the row is a decision made
                       for the user when only one backend is usable, and a
                       decision made for you still has to be stated. */}
                   {live && backing && <span className="onb-agent-detail">{backing}</span>}
@@ -396,9 +396,9 @@ export function Onboarding({
           )}
         </div>
       )}
-      {/* R.4k/N.4: local/open models are a first-class choice, not a fourth
-          agent — they're a mode of Claude Code or Codex, and since N.3 a
-          running server is DISCOVERED and appears in the picker live. */}
+      {/* Local/open models are a first-class choice, not a fourth
+          agent — they're a mode of Claude Code or Codex, and a running
+          server is DISCOVERED and appears in the picker live. */}
       {!pickingRow && <p className="onb-local-note">{localLiveHint()}</p>}
     </ModalCard>
   );

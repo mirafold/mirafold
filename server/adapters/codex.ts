@@ -7,13 +7,14 @@ import {
   type ModelReasoningEffort,
   type Thread,
 } from "@openai/codex-sdk";
-import type { WireMsg } from "../protocol";
+import type { SessionMsg } from "../protocol";
 import { RENDER_GUIDANCE } from "../render-tools";
 import type { AgentSession } from "./types";
 import type { CodexModel } from "./codex-model-list";
 import { AsyncQueue, CLOSE } from "./async-queue";
 import { listCodexSkills, type CodexSkill } from "./codex-skills-list";
 import { ResumeIdState } from "./resume-id";
+import { RenderGuidanceOnce } from "./wire-helpers";
 import { envInt } from "../env";
 import {
   codexEngineDefaultModel,
@@ -65,7 +66,7 @@ const DEFAULT_LOCAL_TURN_TIMEOUT_MS = envInt(
  */
 export class CodexSession implements AgentSession {
   private queue = new AsyncQueue<string | typeof CLOSE>();
-  private listeners = new Set<(msg: WireMsg) => void>();
+  private listeners = new Set<(msg: SessionMsg) => void>();
   private workspaceDir: string;
   private thread: Thread;
   // A model/effort switch resumes this same warm conversation with new options.
@@ -89,7 +90,7 @@ export class CodexSession implements AgentSession {
   private codexHome = process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex");
   private rolloutLookup = new CodexRolloutLookup();
   // The SDK has no instructions hook, so guidance rides on the first turn.
-  private firstTurn = true;
+  private guidance = new RenderGuidanceOnce(`${RENDER_GUIDANCE}\n${CODEX_DEFERRED_TOOLS_ADDENDUM}`);
   // A forced first-party provider must not inherit a custom provider's model.
   private needsEngineDefaultModel = false;
   // First-party catalogs must reject provider-qualified third-party model ids.
@@ -202,7 +203,7 @@ export class CodexSession implements AgentSession {
     if (!this.closed) this.queue.push(text);
   }
 
-  onMessage(cb: (msg: WireMsg) => void) {
+  onMessage(cb: (msg: SessionMsg) => void) {
     this.listeners.add(cb);
   }
 
@@ -223,7 +224,7 @@ export class CodexSession implements AgentSession {
     this.queue.push(CLOSE);
   }
 
-  private emit(msg: WireMsg) {
+  private emit(msg: SessionMsg) {
     for (const cb of this.listeners) cb(msg);
   }
 
@@ -334,16 +335,9 @@ export class CodexSession implements AgentSession {
     }
     try {
       if (this.needsEngineDefaultModel && !(await this.applyEngineDefaultModel())) return;
-      const prompt = this.firstTurn
-        ? `${RENDER_GUIDANCE}\n${CODEX_DEFERRED_TOOLS_ADDENDUM}\n\n---\n\n${text}`
-        : text;
+      const prompt = this.guidance.carry(text);
       const { events } = await this.thread.runStreamed(prompt, { signal: abort.signal });
-      // Consumed only once the engine ACCEPTED the prompt: flipping before
-      // the await meant a failed first turn (spawn failure, immediate
-      // reject) burned the guidance undelivered, and every later turn ran
-      // bare — no render calls for the session's whole life (2026-07-29
-      // bughunt; V.2 measured 0/9 render calls without the addendum).
-      this.firstTurn = false;
+      this.guidance.delivered(); // only once the engine ACCEPTED the prompt
       for await (const event of events) this.eventMapper.handle(event, end);
     } catch (err) {
       if (!this.closed && timeoutFired) {

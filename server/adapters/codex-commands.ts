@@ -1,12 +1,13 @@
 import type { ModelReasoningEffort } from "@openai/codex-sdk";
-import type { PromptOption, WireMsg } from "../protocol";
+import { runSlashTurn } from "./wire-helpers";
+import type { PromptOption, SessionMsg } from "../protocol";
 import { emitPromptOptions } from "./types";
 import type { CodexModel } from "./codex-model-list";
 import { emitModelPicker } from "./model-picker";
 import { codexSlashOptions } from "./codex-prompt-options";
 import type { CodexSkill } from "./codex-skills-list";
 
-type Emit = (message: WireMsg) => void;
+type Emit = (message: SessionMsg) => void;
 
 export type CodexReasoningEffort = ModelReasoningEffort | "none";
 // Internal-only: the model/config default remains in force until a user pick.
@@ -29,16 +30,6 @@ const isEffort = (
   value: string,
   efforts: readonly CodexReasoningEffort[],
 ): value is CodexReasoningEffort => (efforts as readonly string[]).includes(value);
-
-/** Slash commands use the same visible turn envelope as engine turns. */
-async function runSlashTurn(emit: Emit, body: () => Promise<void> | void): Promise<void> {
-  emit({ type: "status", state: "thinking" });
-  try {
-    await body();
-  } finally {
-    emit({ type: "turn_end" });
-  }
-}
 
 export function runCodexModelCommand(options: {
   arg: string;

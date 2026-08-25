@@ -1,10 +1,11 @@
-// The `!` passthrough's per-viewport request layer (4.9) — the bang /
+// The `!` passthrough's per-viewport request layer — the bang /
 // bang_input / bang_kill message handlers and the PTY lifecycle they drive,
-// lifted out of connection.ts's switch (the fs-handlers pattern) so the
+// kept out of connection.ts's switch (the fs-handlers pattern) so the
 // transport-agnostic dispatcher stays free of the PTY plumbing. connection.ts
 // builds one of these per connection and delegates the three cases to it.
 
 import { randomUUID } from "node:crypto";
+import type { ConnectionContext } from "./handler-context";
 import { existsSync, lstatSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -26,23 +27,23 @@ const BANG_CONTEXT_CAP = envInt("BANG_CONTEXT_CAP", 16_000);
 // TOOL_OUTPUT_CAP_BYTES pattern). Without it one runaway `!yes` floods every
 // viewport, is replayed in full to each new tab, and its chunks evict the
 // real transcript from the ring. The PTY keeps running past the cap and the
-// agent-context tail above keeps accumulating — only the broadcast stops (R.4d).
+// agent-context tail above keeps accumulating — only the broadcast stops.
 const BANG_OUTPUT_CAP_BYTES = envInt("BANG_OUTPUT_CAP_BYTES", 262_144);
 
-// Minimum gap between `!` commands per session (2026-07-17 audit, finding 5):
-// each bang now costs a model turn, so a hostile client bursting bangs is a
-// token-burn vector, not just PTY churn. Humans never trip 400ms — the same
-// threshold the action bridge uses.
+// Minimum gap between `!` commands per session: each bang costs a model
+// turn, so a hostile client bursting bangs is a token-burn vector, not just
+// PTY churn. Humans never trip 400ms — the same threshold the action bridge
+// uses.
 const BANG_MIN_INTERVAL_MS = envInt("BANG_MIN_INTERVAL_MS", 400);
 
 // A handoff file bigger than the longest legal path was not written by the
-// trap in pty.ts — refuse it (finding 3).
+// trap in pty.ts — refuse it.
 const CWD_HANDOFF_MAX_BYTES = 4096;
 
 /**
  * The transcript is fenced by <bash-input>/<bash-output>; output that itself
  * contains a closing fence could fake the block's end and smuggle what looks
- * like user text into the agent's turn (2026-07-17 audit, finding 4).
+ * like user text into the agent's turn.
  * Neutralize exactly that sequence — everything else reaches the model
  * verbatim. Exported for the Tier-1 test.
  */
@@ -53,14 +54,14 @@ export const escapeTranscriptFence = (s: string) => s.replaceAll("</bash-", "<\\
  *  newline realpaths to that literal name, passes the jail, and could
  *  otherwise forge a `<bash-output>`/`<bash-input>` block the model reads as
  *  genuine shell I/O — defeating the fence guard's documented structural
- *  guarantee (audit 2026-08-13). Neutralize the four structural characters;
+ *  guarantee. Neutralize the four structural characters;
  *  the value is oriented context, not a path anything reopens. */
 export const escapeTranscriptAttr = (s: string) =>
   s.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll("\n", " ").replaceAll("\r", " ");
 
 // Handoff files live in a daemon-owned 0700 directory (mkdtemp's mode), not
 // bare shared /tmp — on a multi-user machine no other user can pre-place,
-// replace, or read them (2026-07-17 audit, finding 1). Lazy so a daemon that
+// replace, or read them. Lazy so a daemon that
 // never runs a bang never creates it; individual files are removed per
 // command, the dir itself lives as long as the daemon.
 let bangTmpDir: string | undefined;
@@ -88,8 +89,8 @@ const applyCwdHandoff = (
     // Only a small regular file — the one thing the trap writes. A FIFO the
     // command swapped in would stall readFileSync (and with it the whole
     // daemon's event loop); a symlink could point the read elsewhere; an
-    // oversized file was never a path (2026-07-17 audit, finding 3). lstat
-    // never follows or blocks, so it's the safe gate.
+    // oversized file was never a path. lstat never follows or blocks, so
+    // it's the safe gate.
     const st = lstatSync(cwdFile);
     if (st.isFile() && st.size <= CWD_HANDOFF_MAX_BYTES) {
       // realpath also drops a trailing newline's worth of ambiguity: the
@@ -123,8 +124,8 @@ const applyCwdHandoff = (
 /**
  * Run one `!` command in the session's PTY and drive its whole
  * lifecycle — the bang_start/…/bang_end grammar, the head-kept wire budget
- * (what viewports and the replay ring see, R.4d), and the tail-kept context
- * accumulator that rides into the agent's next prompt (4.9).
+ * (what viewports and the replay ring see), and the tail-kept context
+ * accumulator that rides into the agent's next prompt.
  */
 const startBang = (registry: SessionRegistry, e: SessionEntry, command: string, id: string) => {
   // Tail-kept accumulator, capped as data arrives — a long-running
@@ -138,12 +139,12 @@ const startBang = (registry: SessionRegistry, e: SessionEntry, command: string, 
       output = output.slice(-BANG_CONTEXT_CAP);
     }
   };
-  // Per-command wire budget (bytes broadcast / bytes withheld) (R.4d).
+  // Per-command wire budget (bytes broadcast / bytes withheld).
   let wireSent = 0;
   let wireElided = 0;
   // Head-kept wire cap. Past it nothing is broadcast (so
   // nothing enters the ring); the marker announces the cut the
-  // moment it happens, and the exit path reports the total (R.4d).
+  // moment it happens, and the exit path reports the total.
   const broadcastWireHead = (data: string) => {
     const bytes = Buffer.byteLength(data, "utf8");
     const room = BANG_OUTPUT_CAP_BYTES - wireSent;
@@ -218,7 +219,7 @@ const startBang = (registry: SessionRegistry, e: SessionEntry, command: string, 
     );
     e.bang = { id, proc };
   } catch (err) {
-    // A throwing spawn (missing shell — the win32 /bin/bash trap, R.4f)
+    // A throwing spawn (missing shell — the win32 /bin/bash trap)
     // is a session-level error, never a daemon death: this handler runs
     // inside the ws message path of a process with no uncaughtException
     // net, so an escaped throw here would take every session with it.
@@ -234,15 +235,8 @@ type Bang = Extract<ClientMsg, { type: "bang" }>;
 type BangInput = Extract<ClientMsg, { type: "bang_input" }>;
 type BangKill = Extract<ClientMsg, { type: "bang_kill" }>;
 
-type BangDeps = {
+type BangDeps = Pick<ConnectionContext, "getEntry" | "sendError" | "viewport"> & {
   registry: SessionRegistry;
-  /** The session this connection watches, read at call time (it can change). */
-  getEntry: () => SessionEntry | null;
-  /** Error to this viewport AND the terminal log (connection.ts's sendError). */
-  sendError: (message: string) => void;
-  /** This viewport only — for plumbing that must not enter the session
-   *  stream (the throttle-refusal bang_end below). */
-  viewport: (msg: WireMsg) => void;
 };
 
 export type BangHandlers = {
@@ -253,7 +247,7 @@ export type BangHandlers = {
 
 export function createBangHandlers({ registry, getEntry, sendError, viewport }: BangDeps): BangHandlers {
   const start = (msg: Bang): void => {
-    // The `!` passthrough (4.9): run it in a PTY in the session's bang
+    // The `!` passthrough: run it in a PTY in the session's bang
     // cwd; the finished transcript reaches the agent as its own turn.
     const entry = getEntry();
     if (!entry || typeof msg.command !== "string" || !msg.command.trim()) return;
@@ -266,13 +260,13 @@ export function createBangHandlers({ registry, getEntry, sendError, viewport }: 
       sendError("a ! command is already running (stop it first)");
       return;
     }
-    // The burst throttle (finding 5) — checked only when nothing is
+    // The burst throttle — checked only when nothing is
     // running, so the already-running refusal above keeps its message.
     // The paired bang_end clears the ISSUER's locally-armed bar — and goes
     // to that viewport only: no other viewport ever saw a bang_start for
-    // this id, and a broadcast entered the session stream, where the
-    // registry read it as a terminal event — flipping a mid-turn session to
-    // idle and re-opening the burst gate (2026-07-29 bughunt).
+    // this id, and a broadcast would enter the session stream, where the
+    // registry reads it as a terminal event — flipping a mid-turn session to
+    // idle and re-opening the burst gate.
     if (entry.lastBangAt !== undefined && Date.now() - entry.lastBangAt < BANG_MIN_INTERVAL_MS) {
       sendError("! commands are arriving too fast — wait a moment");
       viewport({ type: "bang_end", id: msg.id, exitCode: null });

@@ -97,7 +97,7 @@ export function createCodexRuntimeBinding(options: {
   // share one engine version; machines without it retain the SDK fallback.
   // An explicit override is SPAWN intent and rides verbatim — even missing,
   // so the first turn ENOENTs honestly (the detection/spawn split of
-  // types.ts, 2026-08-13); only the unset case consults installation lookup.
+  // types.ts); only the unset case consults installation lookup.
   const installedCodex =
     process.env.MIRAFOLD_CODEX_BIN || installedAgentBin("MIRAFOLD_CODEX_BIN", "codex");
   const codex = (options.makeCodex ?? ((codexOptions: CodexOptions) => new Codex(codexOptions)))({

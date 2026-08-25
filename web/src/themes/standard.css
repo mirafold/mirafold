@@ -1,11 +1,12 @@
-/* ---- Standard (V.1, 2026-07-18) ---------------------------------------------
-   The plain-terminal theme, added at Kyle's request: styled the way a typical
+/* ---- Standard ---------------------------------------------------------------
+   The plain-terminal theme: styled the way a typical
    terminal is styled — pure black canvas, white/neutral-gray text, the classic
    bright ANSI accent colors (green/cyan/yellow/red). Not a Base16 port; the
    reference is the stock black-on-white-inverted terminal itself. Surfaces
-   are the standard tight envelope of --bg (the V.1 recipe); the neutral gray
-   text ramp carries no hue at all. Contrast is the point: every tier clears
-   the V.1 terminal-grade floors with room to spare (ceiling on black = 21:1). */
+   are the standard tight envelope of --bg (the recipe in manifest.ts); the
+   neutral gray text ramp carries no hue at all. Contrast is the point: every
+   tier clears the terminal-grade floors with room to spare (ceiling on
+   black = 21:1). */
 
 :root[data-theme="standard"] {
   color-scheme: dark;

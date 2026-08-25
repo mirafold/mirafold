@@ -1,43 +1,23 @@
-import type { Action, AgentName, BackendChoice, ClientMsg, WireMsg } from "@protocol";
+import type { Action, AgentName, BackendChoice, WireMsg } from "@protocol";
 import { SocketClient } from "./ws";
-import { createFolderPickerRequests } from "./folder-picker-requests";
+import { createDaemonClient, mintId, type SubscriptionAct } from "./daemon-client";
+import { sessionIdFromPath, sessionPath } from "./session-url";
 
-/** A per-viewport correlation id (the sendBang shape, 4.9): minted client-
- *  side so each surface can match the one reply/stream it asked for. */
-const mintId = (prefix: string): string =>
-  `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
-
-/** Phase CS: mint + send one manage-subscription request over any sender —
- *  shared by the session bus and the fleet's own socket. The single
- *  `subscription` reply echoes the returned id. */
-export type SubscriptionAct = "status" | "cancel" | "uncancel";
-export function sendSubscriptionRequest(
-  send: (m: ClientMsg) => void,
-  act: SubscriptionAct,
-): string {
-  const id = mintId("sub");
-  send(
-    act === "status"
-      ? { type: "subscription_status", id }
-      : act === "cancel"
-        ? { type: "subscription_cancel", id }
-        : { type: "subscription_uncancel", id },
-  );
-  return id;
-}
+export type { SubscriptionAct } from "./daemon-client";
+export { sendSubscriptionRequest } from "./daemon-client";
 
 /**
  * What the output zone consumes: the wire protocol plus one local control
  * message — zone_reset clears the transcript before a replay repaints it
- * (fired on a non-resumed session_created; a 4.4 tail resume skips it).
+ * (fired on a non-resumed session_created; a tail resume skips it).
  */
 export type ZoneMsg = WireMsg | { type: "zone_reset" };
 
 /**
- * The session bus (H.9): the shell's single connection to the daemon — one
+ * The session bus: the shell's single connection to the daemon — one
  * SocketClient plus the pub/sub that fans its messages out to the output
- * zone and the shell's own state. Extracted from Shell.tsx so the component
- * consumes a named interface instead of embedding a messaging system.
+ * zone and the shell's own state. Shell.tsx consumes this named interface
+ * instead of embedding a messaging system.
  */
 export interface SessionBus {
   /** Output-zone subscription; returns the unsubscribe. */
@@ -46,7 +26,7 @@ export interface SessionBus {
    *  (down only), undefined for an ordinary drop or when up. Returns unsubscribe. */
   onConnection(cb: (c: boolean, refusal?: string) => void): () => void;
   createSession(agent: AgentName, cwd?: string, backend?: BackendChoice): void;
-  /** Ask the daemon to re-probe local servers and re-send the agents hello (N.3). */
+  /** Ask the daemon to re-probe local servers and re-send the agents hello. */
   refreshAgents(): void;
   /** Open the host's native folder dialog. A cancel resolves undefined; a
    *  daemon/platform failure rejects with the shell-owned explanation. */
@@ -70,10 +50,10 @@ export interface SessionBus {
   requestFsChanges(): string;
   requestFsRead(path: string): string;
   requestFsDiff(path: string): string;
-  /** Phase CS: one manage-subscription request (status/cancel/uncancel);
+  /** One manage-subscription request (status/cancel/uncancel);
    *  the single `subscription` reply echoes the returned minted id. */
   requestSubscription(act: SubscriptionAct): string;
-  /** Phase FD: stream a dropped file's bytes to the daemon's staging dir.
+  /** Stream a dropped file's bytes to the daemon's staging dir.
    *  Mints and returns the correlation id; the done/error reply echoes it. */
   uploadBegin(name: string, size: number): string;
   uploadChunk(id: string, data: string): void;
@@ -84,12 +64,12 @@ export function createSessionBus(): SessionBus {
   const socket = new SocketClient();
   const listeners = new Set<(m: ZoneMsg) => void>();
   const connListeners = new Set<(c: boolean, refusal?: string) => void>();
-  const folderPicker = createFolderPickerRequests((msg) => socket.sendIfOpen(msg));
+  const daemon = createDaemonClient(socket);
   // The URL carries the session identity; no id yet means "create one".
-  let sessionId = location.pathname.match(/^\/s\/([\w-]+)/)?.[1] ?? null;
+  let sessionId = sessionIdFromPath(location.pathname);
   // Attach to a known session; otherwise send nothing and wait at onboarding
-  // (P.4 — no agent is assumed, so we don't auto-create). 4.4: the hello
-  // names the last seq this viewport saw, asking for a tail-only resume.
+  // (no agent is assumed, so we don't auto-create). The hello names the
+  // last seq this viewport saw, asking for a tail-only resume.
   socket.setHello(() =>
     sessionId
       ? { type: "attach", sessionId, afterSeq: socket.lastSeq ?? undefined }
@@ -99,17 +79,17 @@ export function createSessionBus(): SessionBus {
     for (const c of connListeners) c(true);
   });
   socket.onClose((refusal) => {
-    folderPicker.disconnect();
+    daemon.disconnect();
     for (const c of connListeners) c(false, refusal);
   });
   socket.onMessage((m) => {
-    if (folderPicker.handle(m)) return;
+    if (daemon.handle(m)) return;
     if (m.type === "session_created") {
       sessionId = m.sessionId;
-      history.replaceState(null, "", `/s/${m.sessionId}`);
+      history.replaceState(null, "", sessionPath(m.sessionId));
       // Full attach: the server replays the whole buffer next — clear the
-      // zone so pre-attach residue never sits above the transcript (4.8).
-      // Resumed attach (4.4): only the unseen tail follows — keep
+      // zone so pre-attach residue never sits above the transcript.
+      // Resumed attach: only the unseen tail follows — keep
       // everything (state, scroll, an in-flight streaming block).
       if (!m.resumed) {
         socket.lastSeq = null; // cursor restarts with the full replay
@@ -118,7 +98,7 @@ export function createSessionBus(): SessionBus {
     }
     if (m.type === "session_ended") {
       // The session is gone (ended here, from the fleet, or another tab)
-      // — leave to mission control; there's nothing left to attach to (#11).
+      // — leave to mission control; there's nothing left to attach to.
       location.assign("/");
       return;
     }
@@ -137,27 +117,19 @@ export function createSessionBus(): SessionBus {
         connListeners.delete(cb);
       };
     },
-    // The user picked an agent at onboarding — create a session on it.
-    // session_created sets `sessionId`, so a later reconnect re-attaches (P.4).
-    // `cwd` is the working dir typed at the picker; omitted → the
-    // daemon's launch dir (4.8). `backend` is the second-step choice (N.4);
-    // omitted → the daemon's credential-precedence default.
+    // session_created sets `sessionId`, so a later reconnect re-attaches.
     createSession(agent: AgentName, cwd?: string, backend?: BackendChoice) {
-      socket.send({ type: "create", agent, cwd, ...(backend ? { backend } : {}) });
+      daemon.createSession(agent, cwd, backend);
     },
-    refreshAgents() {
-      socket.send({ type: "refresh_agents" });
-    },
-    pickFolder(cwd?: string): Promise<string | undefined> {
-      return folderPicker.request(cwd);
-    },
+    refreshAgents: daemon.refreshAgents,
+    pickFolder: daemon.pickFolder,
     sendPrompt(text: string) {
       // No local echo — the server broadcasts the user_prompt to every
       // viewport (including this one), so all tabs stay identical.
       socket.send({ type: "prompt", text });
     },
     // Run a shell command in the session's cwd (the `!` path). The id
-    // is minted here so this viewport can correlate the broadcast stream (4.9).
+    // is minted here so this viewport can correlate the broadcast stream.
     sendBang(command: string): string {
       const id = mintId("bang");
       socket.send({ type: "bang", command, id });
@@ -178,7 +150,7 @@ export function createSessionBus(): SessionBus {
       socket.send({ type: "permission_response", id, allow });
     },
     // End this session — the server tears it down and replies
-    // session_ended, which routes this viewport back to mission control (#11).
+    // session_ended, which routes this viewport back to mission control.
     endSession() {
       if (sessionId) socket.send({ type: "end_session", sessionId });
     },
@@ -207,10 +179,8 @@ export function createSessionBus(): SessionBus {
       socket.send({ type: "fs_diff", id, path });
       return id;
     },
-    requestSubscription(act: SubscriptionAct): string {
-      return sendSubscriptionRequest((m) => socket.send(m), act);
-    },
-    // Phase FD — the sendBang mint shape; per-viewport correlation only.
+    requestSubscription: daemon.requestSubscription,
+    // The sendBang mint shape; per-viewport correlation only.
     uploadBegin(name: string, size: number): string {
       const id = mintId("up");
       socket.send({ type: "file_upload_begin", id, name, size });

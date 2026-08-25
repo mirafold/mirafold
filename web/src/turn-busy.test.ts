@@ -1,8 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import type { ZoneMsg } from "./session-bus";
 import { nextOpenTurns } from "./turn-busy";
 
-const run = (start: number, types: string[]) =>
+const run = (start: number, types: ZoneMsg["type"][]) =>
   types.reduce((n, t) => nextOpenTurns(n, t), start);
 
 // The straight-line 4.14 guarantee: a queued follow-up keeps the count >0

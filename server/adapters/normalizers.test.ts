@@ -43,7 +43,15 @@ test("mcpText joins text blocks and stringifies the rest", () => {
   assert.equal(mcpText(null), "");
 });
 
-test("extractRenderId prefers structured content, then parseable text, then the arg id", () => {
+test("extractRenderId prefers structured content, then the arg id, then parseable text", () => {
+  // The ack text carries whatever id the agent chose — not only a uuid
+  // (update-in-place names ids like "deploy-status").
+  assert.equal(
+    extractRenderId({
+      result: { content: [{ type: "text", text: "Rendered progress (id: deploy-status)" }] },
+    } as unknown as McpToolCallItem),
+    "deploy-status",
+  );
   assert.equal(
     extractRenderId({ result: { structured_content: { renderId: "sc-id" } } } as unknown as McpToolCallItem),
     "sc-id",

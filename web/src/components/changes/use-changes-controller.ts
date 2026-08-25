@@ -9,7 +9,7 @@ import {
   chooseChange,
   type ChangeItem,
 } from "../../changes";
-import { bellRefreshDelay } from "../../files-tree";
+import { createChangesRequests } from "../../changes-requests";
 import {
   emptyReviewProgress,
   fileIsReviewed,
@@ -40,13 +40,6 @@ const EMPTY_CHANGE_SET: ChangeSetState = {
   pending: false,
 };
 
-// A disk bell can immediately follow the query that opening the surface sent.
-// Keep the follow-up outside the daemon's min-interval/git-in-flight window,
-// and collapse bursts onto one fresh snapshot.
-const CHANGE_REFRESH_GAP_MS = 1_000;
-// The daemon's per-viewport fs_diff floor is 250ms. Keep a little scheduling
-// headroom and coalesce rapid navigation onto the newest requested file.
-const CHANGE_FILE_REQUEST_GAP_MS = 350;
 const REVIEW_SHORTCUT_EXCLUSION =
   ".prompt-box, input, textarea, select, [contenteditable='true']";
 
@@ -96,8 +89,8 @@ export function useChangesController({
     : -1;
   const selectedItem = selectedIndex >= 0 ? items[selectedIndex] : undefined;
 
-  const openRef = useRef(open);
-  openRef.current = open;
+  // The subscription and the request object live for the mount; the props
+  // and file-view callbacks they call are read through refs at call time.
   const selectedRef = useRef(file.selected);
   selectedRef.current = file.selected;
   const openFileRef = useRef(file.openFile);
@@ -106,78 +99,22 @@ export function useChangesController({
   resetFileRef.current = file.reset;
   const cancelFileRequestRef = useRef(file.cancelPending);
   cancelFileRequestRef.current = file.cancelPending;
-  const requestId = useRef<string | null>(null);
-  const pending = useRef(false);
-  const lastRequestAt = useRef(0);
-  const refreshQueued = useRef(false);
-  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const queuedFile = useRef<ChangeItem | null>(null);
-  const fileTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Every teardown path (disconnect, session switch, panel close, unmount)
-  // drops the same scheduled work: both coalescing timers and the queued
-  // file request they would have fired.
-  const clearScheduledWork = useCallback(() => {
-    if (refreshTimer.current) clearTimeout(refreshTimer.current);
-    refreshTimer.current = null;
-    if (fileTimer.current) clearTimeout(fileTimer.current);
-    fileTimer.current = null;
-    queuedFile.current = null;
-  }, []);
-  const lastFileRequestAt = useRef(0);
-
-  const requestChangeFile = useCallback((item: ChangeItem) => {
-    queuedFile.current = item;
-    if (fileTimer.current) return;
-    const run = () => {
-      fileTimer.current = null;
-      const next = queuedFile.current;
-      queuedFile.current = null;
-      if (!next || !openRef.current) return;
-      lastFileRequestAt.current = Date.now();
-      openFileRef.current(next.path, next.status, "diff");
-    };
-    const delay = bellRefreshDelay(
-      Date.now(),
-      lastFileRequestAt.current,
-      CHANGE_FILE_REQUEST_GAP_MS,
-    );
-    if (delay === 0) run();
-    else fileTimer.current = setTimeout(run, delay);
-  }, []);
-  const requestChangeFileRef = useRef(requestChangeFile);
-  requestChangeFileRef.current = requestChangeFile;
+  const requestChangesRef = useRef(requestChanges);
+  requestChangesRef.current = requestChanges;
+  // The request lifecycle — one change-set request in flight, coalesced
+  // refreshes and file opens — is the pure object in changes-requests.ts.
+  const [requests] = useState(() =>
+    createChangesRequests({
+      requestChanges: () => requestChangesRef.current(),
+      openFile: (item) => openFileRef.current(item.path, item.status, "diff"),
+    }),
+  );
 
   const requestSetNow = useCallback(() => {
-    if (pending.current || !sessionKey) {
-      if (pending.current) refreshQueued.current = true;
-      return;
+    if (requests.requestNow()) {
+      setChangeSet((current) => ({ ...current, pending: true, error: undefined }));
     }
-    pending.current = true;
-    lastRequestAt.current = Date.now();
-    requestId.current = requestChanges();
-    setChangeSet((current) => ({ ...current, pending: true, error: undefined }));
-  }, [requestChanges, sessionKey]);
-  const requestSetRef = useRef(requestSetNow);
-  requestSetRef.current = requestSetNow;
-
-  const scheduleRefresh = useCallback(() => {
-    if (!openRef.current) return;
-    if (pending.current) {
-      refreshQueued.current = true;
-      return;
-    }
-    if (refreshTimer.current) return;
-    refreshTimer.current = setTimeout(
-      () => {
-        refreshTimer.current = null;
-        if (openRef.current) requestSetRef.current();
-      },
-      bellRefreshDelay(Date.now(), lastRequestAt.current, CHANGE_REFRESH_GAP_MS),
-    );
-  }, []);
-  const scheduleRefreshRef = useRef(scheduleRefresh);
-  scheduleRefreshRef.current = scheduleRefresh;
+  }, [requests]);
 
   useEffect(
     () =>
@@ -188,13 +125,8 @@ export function useChangesController({
           // is the first safe point to abandon those ids and query the newly
           // attached session. Disk events while disconnected are unknowable,
           // so no prior reviewed marker remains a trustworthy claim.
-          requestId.current = null;
-          pending.current = false;
-          refreshQueued.current = false;
-          lastRequestAt.current = 0;
-          lastFileRequestAt.current = 0;
+          requests.reset();
           cancelFileRequestRef.current();
-          clearScheduledWork();
           setChangeSet((current) => ({ ...current, pending: false }));
           if (reviewProgressRef.current.size > 0) {
             commitReviewProgress(emptyReviewProgress());
@@ -202,12 +134,10 @@ export function useChangesController({
               "Connection resumed; reviewed files are unreviewed until the workspace is refreshed.",
             );
           }
-          if (openRef.current) scheduleRefreshRef.current();
+          requests.scheduleRefresh();
         } else if (message.type === "fs_change_set") {
           const reply = message as ChangeSetReply;
-          if (requestId.current !== reply.id) return;
-          requestId.current = null;
-          pending.current = false;
+          if (!requests.acceptReply(reply.id)) return;
 
           if (reply.error) {
             setChangeSet((current) => ({
@@ -224,17 +154,10 @@ export function useChangesController({
               pending: false,
             });
             const next = chooseChange(changeItems(reply.repos), selectedRef.current?.path);
-            if (next && openRef.current) {
-              requestChangeFileRef.current(next);
-            } else if (!next) {
-              resetFileRef.current();
-            }
+            if (next) requests.queueFile(next);
+            else resetFileRef.current();
           }
-
-          if (refreshQueued.current) {
-            refreshQueued.current = false;
-            scheduleRefreshRef.current();
-          }
+          requests.afterReply();
         } else if (message.type === "fs_changed") {
           if (message.reason !== "status") {
             const invalidation = invalidateReviewProgress(reviewProgressRef.current, message);
@@ -247,26 +170,20 @@ export function useChangesController({
               );
             }
           }
-          if (openRef.current) scheduleRefreshRef.current();
-        } else if (
-          openRef.current &&
-          message.type === "turn_end" &&
-          !("replay" in message && message.replay)
-        ) {
-          scheduleRefreshRef.current();
+          requests.scheduleRefresh();
+        } else if (message.type === "turn_end" && !("replay" in message && message.replay)) {
+          requests.scheduleRefresh();
         }
       }),
-    [commitReviewProgress, subscribe],
+    [commitReviewProgress, requests, subscribe],
   );
 
   useEffect(() => {
     setChangeSet(EMPTY_CHANGE_SET);
-    requestId.current = null;
-    pending.current = false;
-    refreshQueued.current = false;
-    clearScheduledWork();
+    requests.reset();
+    requests.setSession(sessionKey);
     commitReviewProgress(emptyReviewProgress());
-  }, [clearScheduledWork, commitReviewProgress, sessionKey]);
+  }, [commitReviewProgress, requests, sessionKey]);
 
   useEffect(() => {
     const next = pruneReviewProgress(reviewProgressRef.current, items);
@@ -303,15 +220,15 @@ export function useChangesController({
   }, [clearReviewSelection, sessionKey]);
 
   useEffect(() => {
+    requests.setOpen(open);
     if (!open || !sessionKey) {
-      refreshQueued.current = false;
-      clearScheduledWork();
+      requests.clearScheduled();
       return;
     }
-    scheduleRefreshRef.current();
-  }, [clearScheduledWork, open, sessionKey]);
+    requests.scheduleRefresh();
+  }, [open, requests, sessionKey]);
 
-  useEffect(() => clearScheduledWork, [clearScheduledWork]);
+  useEffect(() => () => requests.clearScheduled(), [requests]);
 
   const requestSet = useCallback(() => {
     // A manual refresh is the user's trust floor when a watcher hint may have
@@ -331,8 +248,8 @@ export function useChangesController({
     // inside the daemon's throttle window and replace a good result with an
     // error. An errored view remains deliberately retryable by clicking it.
     if (file.selected?.path === item.path && file.view.kind !== "error") return;
-    requestChangeFile(item);
-  }, [file.selected?.path, file.view.kind, requestChangeFile]);
+    requests.queueFile(item);
+  }, [file.selected?.path, file.view.kind, requests]);
   const move = (delta: number) => {
     const next = items[selectedIndex + delta];
     if (next) select(next);

@@ -16,19 +16,29 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
-import type { PromptOption, SessionMeta, WireMsg } from "../protocol";
+import type { PromptOption, SessionMeta, SessionMsg, SessionMsgBody } from "../protocol";
 import type { Backend } from "../adapters";
 import { createLogger, scrubSelectedEndpoint, stateDir } from "../log";
-import { promptOptionIsControlSafe } from "../prompt-options";
+import {
+  PROMPT_ALIAS_CAP,
+  PROMPT_DESCRIPTION_CAP,
+  PROMPT_LABEL_CAP,
+  PROMPT_OPTION_CAP,
+  PROMPT_VALUE_CAP,
+  promptOptionIsControlSafe,
+} from "../prompt-options";
+import { BUFFER_CAP, MAX_CHECKPOINT_BYTES } from "./limits";
 
 const log = createLogger("session-store");
 const SCHEMA_VERSION = 1;
-const MAX_CHECKPOINT_BYTES = 40_000_000;
-// Must match the registry's fixed replay-ring count ceiling. A record written
-// by Mirafold never exceeds it; rejecting more keeps a corrupt local file from
-// expanding into an unbounded array during recovery.
-const MAX_BUFFER_MESSAGES = 4_000;
-const MAX_PROMPT_OPTIONS = 500;
+// A record written by Mirafold never exceeds the ring's count cap; rejecting
+// more keeps a corrupt local file from expanding into an unbounded array
+// during recovery.
+const MAX_BUFFER_MESSAGES = BUFFER_CAP;
+const MAX_PROMPT_OPTIONS = PROMPT_OPTION_CAP;
+// normalizePromptOptions caps each text and appends one ellipsis character,
+// so the longest legitimate stored form is the cap plus one.
+const CAPPED = (cap: number) => cap + 1;
 const SESSION_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 export type StoredSession = {
@@ -39,7 +49,7 @@ export type StoredSession = {
   backend: Backend;
   resumeId?: string;
   promptOptions: PromptOption[];
-  buffer: WireMsg[];
+  buffer: SessionMsg[];
   nextSeq: number;
   name: string;
   status: SessionMeta["status"];
@@ -76,7 +86,7 @@ const pickerRowSchema = z
 // Every object is strict and sequenced: a locally tampered/corrupt record can
 // never smuggle an arbitrary frame back into the trusted browser shell.
 const storedWireMessageSchema = z.discriminatedUnion("type", [
-  // `parentId` (SA.2): a subagent's prose, grouped under its spawn record.
+  // `parentId`: a subagent's prose, grouped under its spawn record.
   z
     .object({
       type: z.literal("text_delta"),
@@ -142,7 +152,7 @@ const storedWireMessageSchema = z.discriminatedUnion("type", [
       tool: z.string(),
       detail: z.string(),
       id: idSchema,
-      // SA.3: set when the asker is a subagent (opaque spawn handle).
+      // Set when the asker is a subagent (opaque spawn handle).
       parentId: idSchema.optional(),
       seq: sequenceSchema,
     })
@@ -175,7 +185,7 @@ const storedWireMessageSchema = z.discriminatedUnion("type", [
       seq: sequenceSchema,
     })
     .strict(),
-  // `parentId` (SA.2): a subagent's reasoning, grouped under its spawn record.
+  // `parentId`: a subagent's reasoning, grouped under its spawn record.
   z
     .object({
       type: z.literal("thinking_delta"),
@@ -222,12 +232,12 @@ const storedWireMessageSchema = z.discriminatedUnion("type", [
 const promptOptionSchema = z
   .object({
     trigger: z.enum(["/", "$"]),
-    value: z.string().min(2).max(200),
-    label: z.string().min(1).max(121),
-    description: z.string().max(501).optional(),
-    argumentHint: z.string().max(201).optional(),
+    value: z.string().min(2).max(PROMPT_VALUE_CAP),
+    label: z.string().min(1).max(CAPPED(PROMPT_LABEL_CAP)),
+    description: z.string().max(CAPPED(PROMPT_DESCRIPTION_CAP)).optional(),
+    argumentHint: z.string().max(CAPPED(PROMPT_VALUE_CAP)).optional(),
     kind: z.enum(["command", "skill"]),
-    aliases: z.array(z.string().max(200)).max(20).optional(),
+    aliases: z.array(z.string().max(PROMPT_VALUE_CAP)).max(PROMPT_ALIAS_CAP).optional(),
     source: z.enum(["claude-code", "codex", "gemini-cli", "opencode", "mirafold"]).optional(),
   })
   .strict()
@@ -240,83 +250,115 @@ const promptOptionSchema = z
     { message: "unsafe prompt catalog entry" },
   );
 
-function decodeBackend(raw: unknown): Backend {
-  if (!isObject(raw)) throw new Error("malformed checkpoint backend");
-  const agent = raw.agent;
-  const kind = raw.kind;
-  if (
-    (agent !== "claude-code" && agent !== "codex" && agent !== "gemini-cli" && agent !== "opencode") ||
-    (kind !== "none" &&
-      kind !== "api-key" &&
-      kind !== "subscription" &&
-      kind !== "local" &&
-      kind !== "gateway") ||
-    typeof raw.live !== "boolean"
-  ) {
-    throw new Error("malformed checkpoint backend");
+const httpEndpointSchema = z.string().refine((value) => {
+  try {
+    const protocol = new URL(value).protocol;
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
   }
-  for (const key of ["model", "endpoint", "provider", "endpointSource", "endpointAuth"] as const) {
-    if (raw[key] !== undefined && typeof raw[key] !== "string") {
-      throw new Error("malformed checkpoint backend");
-    }
-  }
-  const endpoint = typeof raw.endpoint === "string" ? raw.endpoint : undefined;
-  const provider = typeof raw.provider === "string" ? raw.provider : undefined;
-  const rawSource = raw.endpointSource;
-  const rawAuth = raw.endpointAuth;
-  if (
-    (rawSource !== undefined && rawSource !== "configured" && rawSource !== "discovered") ||
-    (rawAuth !== undefined && rawAuth !== "api-key" && rawAuth !== "auth-token" && rawAuth !== "none") ||
-    (endpoint !== undefined && provider !== undefined) ||
-    // OC.4c: an OpenCode backend's `provider` is the published CLASSIFICATION
-    // annotation and rides with ANY kind; for other agents it stays a
-    // local-provider identity. Every checkpointed OpenCode session was
-    // rejected here after a daemon restart (bughunt round 2, reproduced).
-    ((endpoint !== undefined || rawSource !== undefined || rawAuth !== undefined) &&
-      kind !== "local") ||
-    (provider !== undefined && kind !== "local" && agent !== "opencode") ||
-    (kind === "gateway" && agent !== "opencode") ||
-    (rawSource !== undefined && endpoint === undefined) ||
-    (rawSource === "configured" && agent !== "claude-code") ||
-    (rawAuth !== undefined && agent !== "claude-code") ||
-    (rawAuth !== undefined && rawSource !== "configured" && rawAuth !== "none")
-  ) {
-    throw new Error("malformed checkpoint backend");
-  }
-  if (endpoint !== undefined) {
-    try {
-      const protocol = new URL(endpoint).protocol;
-      if (protocol !== "http:" && protocol !== "https:") {
-        throw new Error("unsupported endpoint protocol");
-      }
-    } catch {
-      throw new Error("malformed checkpoint backend");
-    }
-  }
-  // A pre-UX.8 Claude endpoint had no source/auth fields. Recover it as a
-  // discovered, unauthenticated target: preserving the conversation is safe,
-  // silently attaching a current credential would not be.
-  const legacyClaudeEndpoint =
-    agent === "claude-code" && kind === "local" && endpoint !== undefined && rawSource === undefined;
-  const endpointSource = legacyClaudeEndpoint ? "discovered" : rawSource;
-  const endpointAuth = legacyClaudeEndpoint ? "none" : rawAuth;
-  return {
-    agent,
-    kind,
-    live: raw.live,
-    ...(typeof raw.model === "string" ? { model: raw.model } : {}),
-    ...(endpoint !== undefined ? { endpoint } : {}),
-    ...(endpointSource === "configured" || endpointSource === "discovered"
-      ? { endpointSource }
-      : {}),
-    ...(endpointAuth === "api-key" || endpointAuth === "auth-token" || endpointAuth === "none"
-      ? { endpointAuth }
-      : {}),
-    ...(provider !== undefined ? { provider } : {}),
-  };
-}
+});
 
-function decodeTranscript(raw: unknown[], backend: Backend): WireMsg[] {
+/** A saved `Backend`. Unknown keys are dropped, never fatal (the record is
+ *  ours; an older daemon's extra field must not strand a session). The
+ *  co-occurrence rules are the ones `adapters/index.ts` produces; a record
+ *  outside them is treated as tampering. */
+const storedBackendSchema = z
+  .object({
+    agent: z.enum(["claude-code", "codex", "gemini-cli", "opencode"]),
+    kind: z.enum(["none", "api-key", "subscription", "local", "gateway"]),
+    live: z.boolean(),
+    model: z.string().optional(),
+    endpoint: httpEndpointSchema.optional(),
+    provider: z.string().optional(),
+    endpointSource: z.enum(["configured", "discovered"]).optional(),
+    endpointAuth: z.enum(["api-key", "auth-token", "none"]).optional(),
+  })
+  .refine(
+    (b) =>
+      !(b.endpoint !== undefined && b.provider !== undefined) &&
+      // An endpoint (and its source/auth) belongs to a `local` backend only.
+      !(
+        (b.endpoint !== undefined || b.endpointSource !== undefined || b.endpointAuth !== undefined) &&
+        b.kind !== "local"
+      ) &&
+      // OpenCode's `provider` is the published CLASSIFICATION annotation and
+      // rides with any kind; for other agents it is a local-provider identity.
+      !(b.provider !== undefined && b.kind !== "local" && b.agent !== "opencode") &&
+      !(b.kind === "gateway" && b.agent !== "opencode") &&
+      !(b.endpointSource !== undefined && b.endpoint === undefined) &&
+      // Configured (env) endpoints and header-credential modes are Claude-only.
+      !(b.endpointSource === "configured" && b.agent !== "claude-code") &&
+      !(b.endpointAuth !== undefined && b.agent !== "claude-code") &&
+      // A real credential mode rides only with a configured endpoint.
+      !(b.endpointAuth !== undefined && b.endpointSource !== "configured" && b.endpointAuth !== "none"),
+  )
+  .transform((b): Backend => {
+    const base = {
+      agent: b.agent,
+      kind: b.kind,
+      live: b.live,
+      ...(b.model !== undefined ? { model: b.model } : {}),
+      ...(b.provider !== undefined ? { provider: b.provider } : {}),
+    };
+    if (b.endpoint === undefined) return base;
+    if (b.endpointSource === "configured") {
+      return { ...base, endpoint: b.endpoint, endpointSource: "configured", endpointAuth: b.endpointAuth ?? "none" };
+    }
+    // Discovered — including an endpoint saved before `endpointSource`
+    // existed: recovering it as a discovered, unauthenticated target
+    // preserves the conversation; silently attaching a current credential
+    // would not be safe.
+    return {
+      ...base,
+      endpoint: b.endpoint,
+      endpointSource: "discovered",
+      ...(b.agent === "claude-code" ? { endpointAuth: "none" as const } : {}),
+    };
+  });
+
+const finiteNonnegativeSchema = z.number().finite().nonnegative();
+
+const storedUsageSchema = z.object({
+  inputTokens: nonnegativeIntSchema,
+  outputTokens: nonnegativeIntSchema,
+  costUsd: finiteNonnegativeSchema.optional(),
+});
+
+/** The checkpoint envelope — everything except the transcript and catalog,
+ *  which have their own decoders below. Version and id are checked before
+ *  this runs so a foreign record reports "mismatched", not "malformed". */
+const storedMetadataSchema = z.object({
+  cwd: z.string(),
+  bangCwd: z.string(),
+  name: z.string(),
+  nextSeq: z.number().int().min(1),
+  lastActivity: finiteNonnegativeSchema,
+  createdAt: finiteNonnegativeSchema,
+  status: z.enum(["idle", "working", "permission"]),
+  backend: storedBackendSchema,
+  resumeId: z.string().min(1).max(512).optional(),
+  model: z.string().optional(),
+  usage: storedUsageSchema.optional(),
+  buffer: z.array(z.unknown()).max(MAX_BUFFER_MESSAGES),
+  promptOptions: z.array(z.unknown()).max(MAX_PROMPT_OPTIONS),
+});
+
+// Compile-time: the stored schema covers exactly the transcript — every
+// message broadcast() can deliver has a strict schema above, and no
+// per-viewport message does. prompt_options is the replaceable catalog kept
+// beside the transcript, not in it.
+type StoredType = z.infer<typeof storedWireMessageSchema>["type"];
+type TranscriptType = Exclude<SessionMsgBody["type"], "prompt_options">;
+const storedCoversTranscript: [
+  Exclude<TranscriptType, StoredType>,
+  Exclude<StoredType, TranscriptType>,
+] extends [never, never]
+  ? true
+  : never = true;
+void storedCoversTranscript;
+
+function decodeTranscript(raw: unknown[], backend: Backend): SessionMsg[] {
   let decoded: z.infer<typeof storedWireMessageSchema>[];
   try {
     decoded = z.array(storedWireMessageSchema).parse(raw);
@@ -346,7 +388,7 @@ function decodePromptOptions(raw: unknown[], backend: Backend): PromptOption[] {
     return z.array(promptOptionSchema).parse(raw).map((option) => {
       // Provenance is recomputed from trusted checkpoint backend identity,
       // never trusted from the mutable record itself. This also migrates
-      // pre-UX.8 catalogs before their first replay.
+      // catalogs saved without `source` before their first replay.
       const { source: _storedSource, ...catalog } = option;
       const source =
         backend.live && backend.agent === "claude-code"
@@ -363,79 +405,41 @@ function decodePromptOptions(raw: unknown[], backend: Backend): PromptOption[] {
   }
 }
 
-function decodeUsage(raw: unknown): StoredSession["usage"] {
-  if (
-    raw !== undefined &&
-    (!isObject(raw) ||
-      !Number.isSafeInteger(raw.inputTokens) ||
-      (raw.inputTokens as number) < 0 ||
-      !Number.isSafeInteger(raw.outputTokens) ||
-      (raw.outputTokens as number) < 0 ||
-      (raw.costUsd !== undefined &&
-        (typeof raw.costUsd !== "number" || !Number.isFinite(raw.costUsd) || raw.costUsd < 0)))
-  ) {
-    throw new Error("malformed checkpoint usage");
-  }
-  return raw as StoredSession["usage"];
-}
-
 function decodeStoredSession(raw: unknown, expectedId: string): StoredSession {
   if (!isObject(raw) || raw.version !== SCHEMA_VERSION || raw.id !== expectedId) {
     throw new Error("unsupported or mismatched checkpoint");
   }
-  if (
-    typeof raw.cwd !== "string" ||
-    typeof raw.bangCwd !== "string" ||
-    typeof raw.name !== "string" ||
-    !Number.isSafeInteger(raw.nextSeq) ||
-    (raw.nextSeq as number) < 1 ||
-    typeof raw.lastActivity !== "number" ||
-    !Number.isFinite(raw.lastActivity) ||
-    raw.lastActivity < 0 ||
-    typeof raw.createdAt !== "number" ||
-    !Number.isFinite(raw.createdAt) ||
-    raw.createdAt < 0 ||
-    !Array.isArray(raw.buffer) ||
-    raw.buffer.length > MAX_BUFFER_MESSAGES ||
-    !Array.isArray(raw.promptOptions) ||
-    raw.promptOptions.length > MAX_PROMPT_OPTIONS
-  ) {
-    throw new Error("malformed checkpoint metadata");
+  const parsed = storedMetadataSchema.safeParse(raw);
+  if (!parsed.success) {
+    // Name the part that failed so a log line points at backend/usage/status
+    // rather than the whole record.
+    const part = String(parsed.error.issues[0]?.path[0] ?? "metadata");
+    throw new Error(
+      `malformed checkpoint ${["backend", "usage", "status"].includes(part) ? part : "metadata"}`,
+    );
   }
-  const status = raw.status;
-  if (status !== "idle" && status !== "working" && status !== "permission") {
-    throw new Error("malformed checkpoint status");
-  }
-  const backend = decodeBackend(raw.backend);
-  if (
-    (raw.resumeId !== undefined &&
-      (typeof raw.resumeId !== "string" || raw.resumeId.length === 0 || raw.resumeId.length > 512)) ||
-    (raw.model !== undefined && typeof raw.model !== "string")
-  ) {
-    throw new Error("malformed checkpoint provider identity");
-  }
-  const buffer = decodeTranscript(raw.buffer as unknown[], backend);
-  if ((buffer.at(-1)?.seq ?? 0) >= (raw.nextSeq as number)) {
+  const m = parsed.data;
+  const buffer = decodeTranscript(m.buffer, m.backend);
+  if ((buffer.at(-1)?.seq ?? 0) >= m.nextSeq) {
     throw new Error("malformed checkpoint sequence");
   }
-  const promptOptions = decodePromptOptions(raw.promptOptions as unknown[], backend);
-  const usage = decodeUsage(raw.usage);
+  const promptOptions = decodePromptOptions(m.promptOptions, m.backend);
   return {
     version: SCHEMA_VERSION,
     id: expectedId,
-    cwd: raw.cwd,
-    bangCwd: raw.bangCwd,
-    backend,
-    ...(typeof raw.resumeId === "string" ? { resumeId: raw.resumeId } : {}),
+    cwd: m.cwd,
+    bangCwd: m.bangCwd,
+    backend: m.backend,
+    ...(m.resumeId !== undefined ? { resumeId: m.resumeId } : {}),
     promptOptions,
     buffer,
-    nextSeq: raw.nextSeq as number,
-    name: raw.name,
-    status,
-    lastActivity: raw.lastActivity,
-    createdAt: raw.createdAt,
-    ...(typeof raw.model === "string" ? { model: raw.model } : {}),
-    ...(usage ? { usage } : {}),
+    nextSeq: m.nextSeq,
+    name: m.name,
+    status: m.status,
+    lastActivity: m.lastActivity,
+    createdAt: m.createdAt,
+    ...(m.model !== undefined ? { model: m.model } : {}),
+    ...(m.usage ? { usage: m.usage } : {}),
   };
 }
 

@@ -1,5 +1,4 @@
-// Workspace trust — "may an agent engine run in this folder at all?" (P.6b,
-// 2026-07-30).
+// Workspace trust — "may an agent engine run in this folder at all?"
 //
 // Distinct from git-trust.ts next door, which answers "may THIS repo's git
 // config run programs during our own read-only git calls?" That list is a
@@ -12,7 +11,7 @@
 // asks them once and remembers; Mirafold asks the same question through the
 // shell's own permission strip and remembers it here, so the answer stays the
 // user's. Blanket-trusting whatever folder is open would quietly undo the
-// protection, and would contradict how the 2026-07-26 audit answered the
+// protection, and would contradict how git-trust.ts answers the
 // identical question for git.
 //
 // Engine-neutral by design even though Gemini is today's only caller: the

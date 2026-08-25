@@ -6,7 +6,7 @@ import path from "node:path";
 import { expandHomePath, foldUsage, resolveCwd, SessionRegistry } from "./registry";
 import { PERMISSION_TIMEOUT_MS } from "../adapters/types";
 import type { Backend } from "../adapters";
-import type { WireMsg } from "../protocol";
+import type { SessionMsg, WireMsg } from "../protocol";
 import { SessionCheckpointStore } from "./session-store";
 
 test("resolveCwd defaults to the process cwd", () => {
@@ -53,17 +53,17 @@ function freshSession() {
   // deltaCoalesceMs 0: deltas pass straight through, so these tests can
   // drive broadcast() by hand and inspect state between synchronous calls.
   // The coalescing window itself has its own tests below.
-  const reg = new SessionRegistry(MOCK_BACKEND, 0);
+  const reg = new SessionRegistry({ backend: MOCK_BACKEND, deltaCoalesceMs: 0 });
   const dir = mkdtempSync(path.join(os.tmpdir(), "genui-reg-"));
   const entry = reg.create({ cwd: dir });
-  assert.equal(entry.buffer.length, 0); // create() streams nothing
-  assert.equal(entry.nextSeq, 1);
+  assert.equal(entry.ring.buffer.length, 0); // create() streams nothing
+  assert.equal(entry.ring.nextSeq, 1);
   return { reg, entry };
 }
 
 test("an active rename rolls back when its checkpoint cannot be written", () => {
   const store = new SessionCheckpointStore(mkdtempSync(path.join(os.tmpdir(), "genui-rename-store-")));
-  const reg = new SessionRegistry(MOCK_BACKEND, 0, store);
+  const reg = new SessionRegistry({ backend: MOCK_BACKEND, deltaCoalesceMs: 0, store: store });
   const dir = mkdtempSync(path.join(os.tmpdir(), "genui-rename-root-"));
   const entry = reg.create({ cwd: dir });
   const previous = entry.name;
@@ -77,7 +77,7 @@ test("an active rename rolls back when its checkpoint cannot be written", () => 
   reg.end(entry.id);
 });
 
-const delta = (): WireMsg => ({ type: "text_delta", text: "x" });
+const delta = (): SessionMsg => ({ type: "text_delta", text: "x" });
 
 test("prompt options are a replaceable unsequenced session snapshot, not transcript history", () => {
   const { reg, entry } = freshSession();
@@ -85,8 +85,8 @@ test("prompt options are a replaceable unsequenced session snapshot, not transcr
     type: "prompt_options",
     options: [{ trigger: "/", value: "/review", label: "review", kind: "command" }],
   });
-  assert.equal(entry.buffer.length, 0);
-  assert.equal(entry.nextSeq, 1);
+  assert.equal(entry.ring.buffer.length, 0);
+  assert.equal(entry.ring.nextSeq, 1);
   const seen: WireMsg[] = [];
   reg.attach(entry, (msg) => seen.push(msg));
   assert.deepEqual(seen, [
@@ -180,7 +180,7 @@ const BUFFER_MAX_BYTES = 32_000_000;
 
 /** One image-sized render — the payload class the byte cap exists for: a
  *  short agent-authored path becomes a multi-megabyte data: URI. */
-const bigRender = (mb: number): WireMsg => ({
+const bigRender = (mb: number): SessionMsg => ({
   type: "render",
   component: "image",
   props: { path: "shot.png", alt: "x", src: `data:image/png;base64,${"A".repeat(mb * 1_000_000)}` },
@@ -191,10 +191,10 @@ test("the replay byte budget counts UTF-8 bytes, not JavaScript code units", () 
   const { reg, entry } = freshSession();
   reg.broadcast(entry, { type: "text_delta", text: "😀" });
   assert.equal(
-    entry.bufferBytes,
-    Buffer.byteLength(JSON.stringify(entry.buffer[0])),
+    entry.ring.bytes,
+    Buffer.byteLength(JSON.stringify(entry.ring.buffer[0])),
   );
-  assert.ok(entry.bufferBytes > JSON.stringify(entry.buffer[0]).length);
+  assert.ok(entry.ring.bytes > JSON.stringify(entry.ring.buffer[0]).length);
   reg.end(entry.id);
 });
 
@@ -207,23 +207,23 @@ test("audit: the ring is capped by BYTES too — image renders can't grow the se
   for (let i = 0; i < 60; i++) reg.broadcast(entry, bigRender(2));
 
   assert.ok(
-    entry.bufferBytes <= BUFFER_MAX_BYTES,
-    `buffer held ${(entry.bufferBytes / 1e6).toFixed(0)} MB, over the ${BUFFER_MAX_BYTES / 1e6} MB cap`,
+    entry.ring.bytes <= BUFFER_MAX_BYTES,
+    `buffer held ${(entry.ring.bytes / 1e6).toFixed(0)} MB, over the ${BUFFER_MAX_BYTES / 1e6} MB cap`,
   );
   // Nowhere near the COUNT cap — so it was the byte cap that trimmed, which
   // is the whole point of this test.
-  assert.ok(entry.buffer.length < BUFFER_CAP, "count cap did the trimming, not the byte cap");
-  assert.ok(entry.buffer.length > 0, "the ring must not empty itself");
+  assert.ok(entry.ring.buffer.length < BUFFER_CAP, "count cap did the trimming, not the byte cap");
+  assert.ok(entry.ring.buffer.length > 0, "the ring must not empty itself");
   // The running total stays honest against a recount of what's retained.
-  const recounted = entry.buffer.reduce(
+  const recounted = entry.ring.buffer.reduce(
     (sum, m) => sum + Buffer.byteLength(JSON.stringify(m)),
     0,
   );
-  assert.equal(entry.bufferBytes, recounted);
+  assert.equal(entry.ring.bytes, recounted);
   // Newest is always kept; eviction is oldest-first, so seqs stay contiguous.
-  assert.equal(entry.buffer[entry.buffer.length - 1].seq, 60);
-  for (let k = 1; k < entry.buffer.length; k++) {
-    assert.equal(entry.buffer[k].seq, entry.buffer[k - 1].seq! + 1);
+  assert.equal(entry.ring.buffer[entry.ring.buffer.length - 1].seq, 60);
+  for (let k = 1; k < entry.ring.buffer.length; k++) {
+    assert.equal(entry.ring.buffer[k].seq, entry.ring.buffer[k - 1].seq! + 1);
   }
   reg.end(entry.id);
 });
@@ -234,9 +234,9 @@ test("audit: one payload larger than the whole byte budget still replays", () =>
   const { reg, entry } = freshSession();
   reg.broadcast(entry, delta());
   reg.broadcast(entry, bigRender(40));
-  assert.equal(entry.buffer.length, 1);
-  assert.equal(entry.buffer[0].type, "render");
-  assert.equal(entry.bufferBytes, JSON.stringify(entry.buffer[0]).length);
+  assert.equal(entry.ring.buffer.length, 1);
+  assert.equal(entry.ring.buffer[0].type, "render");
+  assert.equal(entry.ring.bytes, JSON.stringify(entry.ring.buffer[0]).length);
   reg.end(entry.id);
 });
 
@@ -245,8 +245,8 @@ test("audit: text sessions are untouched by the byte cap — the count cap still
   // sessions, silently shortening everyone's replay history.
   const { reg, entry } = freshSession();
   for (let i = 0; i < PUSH; i++) reg.broadcast(entry, delta());
-  assert.equal(entry.buffer.length, BUFFER_CAP);
-  assert.ok(entry.bufferBytes < BUFFER_MAX_BYTES / 100, "text sessions sit far under the byte cap");
+  assert.equal(entry.ring.buffer.length, BUFFER_CAP);
+  assert.ok(entry.ring.bytes < BUFFER_MAX_BYTES / 100, "text sessions sit far under the byte cap");
   reg.end(entry.id);
 });
 
@@ -254,18 +254,18 @@ test("Q.3 ring buffer stays bounded and holds exactly the newest window after ev
   const { reg, entry } = freshSession();
   for (let i = 0; i < PUSH; i++) reg.broadcast(entry, delta());
 
-  const cap = entry.buffer.length;
+  const cap = entry.ring.buffer.length;
   assert.equal(cap, BUFFER_CAP); // bounded at EXACTLY the cap — a ±1 off-by-one fails here
-  assert.equal(entry.nextSeq, PUSH + 1); // seqs 1..PUSH were issued in order
+  assert.equal(entry.ring.nextSeq, PUSH + 1); // seqs 1..PUSH were issued in order
 
   // The retained window is the NEWEST `cap` messages, contiguous by seq, with
   // the oldest (seq 1) evicted — an off-by-one in the splice would fail one of
   // these.
-  assert.equal(entry.buffer[cap - 1].seq, PUSH); // newest kept
-  assert.equal(entry.buffer[0].seq, PUSH - cap + 1); // oldest kept = start of the newest window
-  assert.ok(entry.buffer[0].seq! > 1, "seq 1 must have fallen off the ring");
+  assert.equal(entry.ring.buffer[cap - 1].seq, PUSH); // newest kept
+  assert.equal(entry.ring.buffer[0].seq, PUSH - cap + 1); // oldest kept = start of the newest window
+  assert.ok(entry.ring.buffer[0].seq! > 1, "seq 1 must have fallen off the ring");
   for (let k = 0; k < cap; k++) {
-    assert.equal(entry.buffer[k].seq, PUSH - cap + 1 + k); // no gaps in the window
+    assert.equal(entry.ring.buffer[k].seq, PUSH - cap + 1 + k); // no gaps in the window
   }
   reg.end(entry.id);
 });
@@ -273,7 +273,7 @@ test("Q.3 ring buffer stays bounded and holds exactly the newest window after ev
 test("Q.3 a late attach (no afterSeq) replays exactly the retained window, in order", () => {
   const { reg, entry } = freshSession();
   for (let i = 0; i < PUSH; i++) reg.broadcast(entry, delta());
-  const cap = entry.buffer.length;
+  const cap = entry.ring.buffer.length;
 
   const seen: number[] = [];
   reg.attach(entry, (m) => {
@@ -289,7 +289,7 @@ test("Q.3 a late attach (no afterSeq) replays exactly the retained window, in or
 test("Q.3 canResume flips false at exactly the evicted edge (the off-by-one)", () => {
   const { reg, entry } = freshSession();
   for (let i = 0; i < PUSH; i++) reg.broadcast(entry, delta());
-  const firstBuffered = entry.buffer[0].seq!;
+  const firstBuffered = entry.ring.buffer[0].seq!;
 
   // A viewport that last saw (firstBuffered - 1) can tail-resume: every seq it
   // hasn't seen is still buffered. One earlier, and the message at
@@ -300,8 +300,8 @@ test("Q.3 canResume flips false at exactly the evicted edge (the off-by-one)", (
 
   // Range guards: saw-the-latest resumes (empty tail); a seq never issued and
   // malformed inputs are refused.
-  assert.equal(reg.canResume(entry, entry.nextSeq - 1), true);
-  assert.equal(reg.canResume(entry, entry.nextSeq), false);
+  assert.equal(reg.canResume(entry, entry.ring.nextSeq - 1), true);
+  assert.equal(reg.canResume(entry, entry.ring.nextSeq), false);
   assert.equal(reg.canResume(entry, -1), false);
   assert.equal(reg.canResume(entry, 1.5), false);
   reg.end(entry.id);
@@ -310,7 +310,7 @@ test("Q.3 canResume flips false at exactly the evicted edge (the off-by-one)", (
 test("Q.3 a valid post-eviction tail resume replays exactly the unseen tail", () => {
   const { reg, entry } = freshSession();
   for (let i = 0; i < PUSH; i++) reg.broadcast(entry, delta());
-  const firstBuffered = entry.buffer[0].seq!;
+  const firstBuffered = entry.ring.buffer[0].seq!;
 
   // Resume from the exact edge → the whole retained window, nothing dropped.
   const fromEdge: number[] = [];
@@ -320,7 +320,7 @@ test("Q.3 a valid post-eviction tail resume replays exactly the unseen tail", ()
   reg.attach(entry, vp1, firstBuffered - 1);
   assert.equal(fromEdge[0], firstBuffered);
   assert.equal(fromEdge[fromEdge.length - 1], PUSH);
-  assert.equal(fromEdge.length, entry.buffer.length);
+  assert.equal(fromEdge.length, entry.ring.buffer.length);
   reg.detach(entry, vp1);
 
   // Resume from a mid-window seq → only strictly-greater seqs replay.
@@ -338,7 +338,7 @@ test("Q.3 a valid post-eviction tail resume replays exactly the unseen tail", ()
 test("Q.3 canResume on a small (un-evicted) buffer: seq 0 replays from the very start", () => {
   const { reg, entry } = freshSession();
   for (let i = 0; i < 5; i++) reg.broadcast(entry, delta()); // seqs 1..5, nothing evicted
-  assert.equal(entry.buffer[0].seq, 1);
+  assert.equal(entry.ring.buffer[0].seq, 1);
   assert.equal(reg.canResume(entry, 0), true); // saw nothing yet → full tail replay
   assert.equal(reg.canResume(entry, 5), true); // saw all → empty tail
   assert.equal(reg.canResume(entry, 6), false); // beyond what was issued
@@ -356,7 +356,7 @@ test("Q.3 canResume on a small (un-evicted) buffer: seq 0 replays from the very 
 // or by any other message arriving — order preserved either way.
 
 function coalescingSession(windowMs: number) {
-  const reg = new SessionRegistry(MOCK_BACKEND, windowMs);
+  const reg = new SessionRegistry({ backend: MOCK_BACKEND, deltaCoalesceMs: windowMs });
   const dir = mkdtempSync(path.join(os.tmpdir(), "genui-reg-"));
   const entry = reg.create({ cwd: dir });
   const seen: WireMsg[] = [];
@@ -372,13 +372,13 @@ test("coalescing: consecutive text deltas merge into ONE message — ring, viewp
   reg.broadcast(entry, { type: "text_delta", text: "a" });
   reg.broadcast(entry, { type: "text_delta", text: "b" });
   reg.broadcast(entry, { type: "text_delta", text: "c" });
-  assert.equal(entry.buffer.length, 0, "nothing enters the ring inside the window");
+  assert.equal(entry.ring.buffer.length, 0, "nothing enters the ring inside the window");
   await sleep(25);
-  assert.equal(entry.buffer.length, 1);
-  assert.deepEqual(entry.buffer[0], { type: "text_delta", text: "abc", seq: 1 });
+  assert.equal(entry.ring.buffer.length, 1);
+  assert.deepEqual(entry.ring.buffer[0], { type: "text_delta", text: "abc", seq: 1 });
   assert.deepEqual(seen, [{ type: "text_delta", text: "abc", seq: 1 }]);
   // The byte accounting counts the MERGED message, nothing else.
-  assert.equal(entry.bufferBytes, JSON.stringify(entry.buffer[0]).length);
+  assert.equal(entry.ring.bytes, JSON.stringify(entry.ring.buffer[0]).length);
   reg.end(entry.id);
 });
 
@@ -662,7 +662,7 @@ test("audit: engine-supplied labels are capped before they reach the ring", () =
   reg.broadcast(entry, { type: "tool_use", name: huge, id: "t1" });
   reg.broadcast(entry, { type: "usage", inputTokens: 1, outputTokens: 1, model: huge });
 
-  const [status, toolUse, usage] = entry.buffer as [
+  const [status, toolUse, usage] = entry.ring.buffer as [
     Extract<WireMsg, { type: "status" }>,
     Extract<WireMsg, { type: "tool_use" }>,
     Extract<WireMsg, { type: "usage" }>,
@@ -681,7 +681,7 @@ test("audit: ordinary labels pass through untouched (the cap is not a rewrite)",
   const { reg, entry } = freshSession();
   reg.broadcast(entry, { type: "status", state: "tool", label: "Bash" });
   reg.broadcast(entry, { type: "tool_use", name: "mcp__github__create_issue", id: "t1" });
-  const [status, toolUse] = entry.buffer as [
+  const [status, toolUse] = entry.ring.buffer as [
     Extract<WireMsg, { type: "status" }>,
     Extract<WireMsg, { type: "tool_use" }>,
   ];
@@ -699,7 +699,7 @@ test("UX.8: provider error URL credentials are scrubbed before wire, checkpoint 
     message: "failed https://alice:password@example.test/v1?sig=topsecret#fragment",
   });
   const wireError = seen.find((msg) => msg.type === "error");
-  const storedError = entry.buffer.find((msg) => msg.type === "error");
+  const storedError = entry.ring.buffer.find((msg) => msg.type === "error");
   for (const msg of [wireError, storedError]) {
     assert.equal(msg?.type, "error");
     if (msg?.type === "error") {
@@ -721,7 +721,6 @@ test("a `!` bang beside a pending ask never wipes it — bang traffic is not tur
   const { reg, entry } = freshSession();
   reg.broadcast(entry, { type: "permission_request", tool: "Bash", detail: "rm -rf /", id: "p1" });
   assert.equal(entry.status, "permission");
-  entry.midTurnPromptUsed = true;
   reg.broadcast(entry, { type: "bang_start", command: "git diff", id: "b1" });
   assert.equal(entry.status, "permission", "bang traffic does not lift the hold");
   reg.broadcast(entry, { type: "bang_output", data: "diff --git …", id: "b1" });
@@ -733,7 +732,6 @@ test("a `!` bang beside a pending ask never wipes it — bang traffic is not tur
     ["p1"],
     "the ask keeps its fleet allow/deny until ITS OWN resolution",
   );
-  assert.equal(entry.midTurnPromptUsed, true, "the burst gate clears on turn grammar only");
   reg.end(entry.id);
 });
 
@@ -753,21 +751,22 @@ test("bang_end beside an active model turn stays working and never reopens the p
   assert.equal(entry.modelTurnsPending, 1);
   assert.equal(reg.dispatchPrompt(entry, "queued"), true);
   assert.equal(entry.modelTurnsPending, 2);
-  assert.equal(entry.midTurnPromptUsed, true);
   assert.equal(reg.dispatchPrompt(entry, "refused before bang"), false);
 
   reg.broadcast(entry, { type: "bang_start", command: "git status", id: "b1" });
   reg.broadcast(entry, { type: "bang_end", id: "b1", exitCode: 0 });
   assert.equal(entry.status, "working", "the original model turn still owns the session");
-  assert.equal(entry.modelTurnsPending, 2);
-  assert.equal(entry.midTurnPromptUsed, true, "bang lifecycle is not model turn grammar");
+  assert.equal(entry.modelTurnsPending, 2, "bang lifecycle is not model turn grammar");
   assert.equal(reg.dispatchPrompt(entry, "refused after bang"), false);
 
   reg.broadcast(entry, { type: "turn_end" });
   assert.equal(entry.status, "working", "the queued turn becomes current without a false-idle boundary");
   assert.equal(entry.modelTurnsPending, 1);
-  assert.equal(entry.midTurnPromptUsed, false, "the new current turn earns one queued-follow-up slot");
-  assert.equal(reg.dispatchPrompt(entry, "follow-up for queued turn"), true);
+  assert.equal(
+    reg.dispatchPrompt(entry, "follow-up for queued turn"),
+    true,
+    "the new current turn earns one queued-follow-up slot",
+  );
   assert.equal(entry.modelTurnsPending, 2);
   reg.broadcast(entry, { type: "turn_end" });
   assert.equal(entry.modelTurnsPending, 1);
@@ -812,6 +811,6 @@ test("attach-replay stamps replay:true on a copy; live broadcast never carries i
   const replayed = replaySeen.filter((m) => m.type === "user_prompt" || m.type === "turn_end");
   assert.equal(replayed.length, 2);
   assert.ok(replayed.every((m) => m.replay === true), "replayed frames are stamped");
-  assert.ok(entry.buffer.every((m) => m.replay === undefined), "the ring itself stays unstamped");
+  assert.ok(entry.ring.buffer.every((m) => m.replay === undefined), "the ring itself stays unstamped");
   reg.end(entry.id);
 });

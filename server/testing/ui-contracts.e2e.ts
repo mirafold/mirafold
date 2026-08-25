@@ -1,7 +1,7 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { type Browser, type Page } from "playwright-core";
-import { enterMockSession, launchChrome, withFreshMockPage } from "./e2e-harness";
+import { launchChrome, withFreshMockSession as freshSession } from "./e2e-harness";
 
 let browser: Browser;
 
@@ -13,15 +13,8 @@ after(async () => {
   await browser?.close();
 });
 
-async function withFreshMockSession(
-  token: string,
-  run: (page: Page, base: string) => Promise<void>,
-): Promise<void> {
-  await withFreshMockPage(browser, { token }, async (page, base) => {
-    await enterMockSession(page);
-    await run(page, base);
-  });
-}
+const withFreshMockSession = (token: string, run: (page: Page, base: string) => Promise<void>) =>
+  freshSession(browser, token, run);
 
 test("desktop composer: Shift+Enter keeps a multiline draft; Enter sends it", async () => {
   await withFreshMockSession("ui-composer-e2e", async (page) => {

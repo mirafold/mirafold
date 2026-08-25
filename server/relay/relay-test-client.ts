@@ -1,4 +1,4 @@
-// Shared test helper (R.1/R.3/R.2): the browser side of the encrypted relay
+// Shared test helper: the browser side of the encrypted relay
 // channel, exactly as ws.ts implements it — connect with the derived pairId,
 // handshake, then seal/open every frame. Used by relay.itest.ts (against the
 // in-repo stub) and relay-service.itest.ts (against the deployable service),
@@ -51,8 +51,7 @@ export class RemoteClient {
     // structure exactly, and the parity is load-bearing: the daemon sends its
     // handshake reply and the encrypted hello back-to-back, and a once()+
     // late-listener shape loses any frame that lands during the key
-    // derivation awaits (the "seen: (empty)" Tier-2 flake, reproduced under
-    // CPU load 2026-07-19).
+    // derivation awaits.
     let hsRes!: () => void;
     let hsRej!: (e: Error) => void;
     const hsDone = new Promise<void>((res, rej) => {
@@ -63,10 +62,9 @@ export class RemoteClient {
     // connect (assert.rejects) opens then is closed by the relay immediately,
     // and under CPU load that close can reject hsDone DURING the
     // `await sealHandshake` below — before `await hsDone` is reached — so the
-    // rejection would otherwise be unhandled and crash the whole test process
-    // (the C.1 relay flake, root-caused 2026-07-23: 22/40 unhandled under
-    // single-core stress, daemon provably not involved). `await hsDone` still
-    // throws for the real caller; this only guarantees a handler always exists.
+    // rejection would otherwise be unhandled and crash the whole test process.
+    // `await hsDone` still throws for the real caller; this only guarantees a
+    // handler always exists.
     hsDone.catch(() => {});
     const t = setTimeout(() => hsRej(new Error("handshake timed out")), 10_000);
     c.ws.on("close", () => {
@@ -107,9 +105,8 @@ export class RemoteClient {
    *  can carry 2–4 padding bits that decoders silently ignore, so a last-char
    *  flip decodes to identical bytes ~25% of the time and the "tampered"
    *  frame legitimately opens — the itest then passes via the 90 s idle
-   *  reaper instead of proving tamper rejection (2026-07-29 bughunt; same
-   *  flake relay-crypto.test.ts fixed for itself, now fixed at the shared
-   *  helper). Every interior character is fully significant. */
+   *  reaper instead of proving tamper rejection. Every interior character is
+   *  fully significant. */
   async sendTampered() {
     const sealed = await this.cipher.seal(JSON.stringify({ type: "ping" }));
     const i = sealed.length - 8;

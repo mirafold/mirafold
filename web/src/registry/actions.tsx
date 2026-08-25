@@ -2,7 +2,7 @@ import { createContext, useContext } from "react";
 import type { Action } from "@protocol";
 
 /**
- * How a registry component emits an action (Phase 2). The provider is set
+ * How a registry component emits an action. The provider is set
  * per rendered block by RenderBlock, binding the block's render id as the
  * action's sourceId — components never see the socket, they ask the shell.
  */
