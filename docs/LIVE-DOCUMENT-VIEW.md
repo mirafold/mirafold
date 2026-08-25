@@ -250,7 +250,7 @@ These retain their current identity and renderer:
 
 - user prompt rows;
 - thinking rows;
-- tool rows and settled tool folds;
+- tool rows and tool folds (live while the turn runs, settled after);
 - notices;
 - bang commands and output;
 - picker rows;
@@ -292,7 +292,7 @@ identity.
 Initial soft interruptions:
 
 - thinking;
-- tool activity and settled tool folds;
+- tool activity and tool folds (live and settled);
 - notices;
 - pickers;
 - subagent decks.

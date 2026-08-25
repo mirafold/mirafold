@@ -40,6 +40,8 @@ import {
   type ToolFoldRow,
 } from "../transcript-projection";
 
+type ToolToggle = (id: number, expanded: boolean) => void;
+
 /** The transcript fields ToolBlock renders, picked off any tool-shaped
  *  record — the one spread all three ToolBlock sites share. */
 const toolBlockProps = (call: {
@@ -106,12 +108,26 @@ const ThinkingBlock = memo(function ThinkingBlock({
 /** The deck's full activity, in true stream order: tool rows plus the
  *  subagent's own narration and reasoning. Prose is INERT PLAIN TEXT —
  *  subagent words never render as markdown inside shell chrome. */
-function SubagentActivity({ items }: { items: SubagentDeckRow["items"] }) {
+function SubagentActivity({
+  items,
+  toolToggles,
+  onToggleTool,
+}: {
+  items: SubagentDeckRow["items"];
+  toolToggles: ReadonlyMap<number, boolean>;
+  onToggleTool: ToolToggle;
+}) {
   return (
     <div className="subagent-calls">
       {items.map((item) =>
         item.kind === "tool" ? (
-          <ToolBlock key={item.id} {...toolBlockProps(item)} />
+          <ToolBlock
+            key={item.id}
+            id={item.id}
+            toggled={toolToggles.get(item.id) ?? null}
+            onToggle={onToggleTool}
+            {...toolBlockProps(item)}
+          />
         ) : (
           <div
             key={item.id}
@@ -135,8 +151,12 @@ function SubagentActivity({ items }: { items: SubagentDeckRow["items"] }) {
  * while running — a settled or replayed card never shows a stale duration. */
 const SubagentDeck = memo(function SubagentDeck({
   row,
+  toolToggles,
+  onToggleTool,
 }: {
   row: SubagentDeckRow;
+  toolToggles: ReadonlyMap<number, boolean>;
+  onToggleTool: ToolToggle;
 }) {
   const { task, items, summary: s } = row;
   const [open, setOpen] = useState(false);
@@ -182,29 +202,39 @@ const SubagentDeck = memo(function SubagentDeck({
           <span className="subagent-result"> · {s.resultLine}</span>
         ) : null}
       </div>
-      {open && <SubagentActivity items={items} />}
+      {open && (
+        <SubagentActivity items={items} toolToggles={toolToggles} onToggleTool={onToggleTool} />
+      )}
     </div>
   );
 });
 
-/** A completed turn's successful engine activity: one terminal-sized line by
- * default, with every normalized call still available on demand. The fold can
- * carry the engine's interleaved narration (Codex thinks before nearly every
- * command); expansion replays calls and thinking in true transcript order.
- * The count and summary speak of ACTIONS only — narration isn't one. */
+/** A turn's successful engine activity: one terminal-sized line by default
+ * — "working · N actions" while the turn runs and the fold grows, "worked"
+ * once it settles — with every normalized call still available on demand.
+ * The fold can carry the engine's interleaved narration (Codex thinks before
+ * nearly every command, and a short remark between commands is narration
+ * too); expansion replays calls, thinking and remarks in true transcript
+ * order. Absorbed remarks are INERT PLAIN TEXT — agent words never render as
+ * markdown inside shell chrome. The count and summary speak of ACTIONS only —
+ * narration isn't one. */
 function ToolActivityGroup({
   row,
   expandedThinking,
   onToggleThinking,
+  toolToggles,
+  onToggleTool,
 }: {
   row: ToolFoldRow;
   expandedThinking: ReadonlySet<number>;
   onToggleThinking: (id: number) => void;
+  toolToggles: ReadonlyMap<number, boolean>;
+  onToggleTool: ToolToggle;
 }) {
   const { items } = row;
   const [open, setOpen] = useState(false);
   return (
-    <div className="tool-activity-group">
+    <div className={"tool-activity-group" + (row.live ? " tool-activity-live" : "")}>
       <button
         className="tool-activity-head"
         onClick={() => setOpen(!open)}
@@ -212,7 +242,8 @@ function ToolActivityGroup({
       >
         <span className="subagent-caret">{open ? "▾" : "▸"}</span>
         <span className="tool-activity-label">
-          <GearGlyph size="1em" /> worked · {row.actionCount} action{row.actionCount === 1 ? "" : "s"}
+          <GearGlyph size="1em" /> {row.live ? "working" : "worked"} · {row.actionCount} action
+          {row.actionCount === 1 ? "" : "s"}
         </span>
         <span className="tool-activity-summary">{row.summary}</span>
       </button>
@@ -220,14 +251,24 @@ function ToolActivityGroup({
         <div className="tool-activity-calls">
           {items.map((item) =>
             item.kind === "tool" ? (
-              <ToolBlock key={item.tool.id} {...toolBlockProps(item.tool)} />
-            ) : (
+              <ToolBlock
+                key={item.tool.id}
+                id={item.tool.id}
+                toggled={toolToggles.get(item.tool.id) ?? null}
+                onToggle={onToggleTool}
+                {...toolBlockProps(item.tool)}
+              />
+            ) : item.kind === "thinking" ? (
               <ThinkingBlock
                 key={item.thinking.id}
                 entry={item.thinking}
                 expanded={expandedThinking.has(item.thinking.id)}
                 onToggle={onToggleThinking}
               />
+            ) : (
+              <div key={item.text.id} className="tool-activity-narration">
+                {item.text.text}
+              </div>
             ),
           )}
         </div>
@@ -278,6 +319,12 @@ export const OutputZone = forwardRef<InputNavigationHandle, OutputZoneProps>(fun
   const [expandedThinking, setExpandedThinking] = useState<ReadonlySet<number>>(
     () => new Set(),
   );
+  // Tool disclosure lives here too: a finished call migrates from its own row
+  // into the live fold (a remount), and the user's expand must ride along.
+  // true/false = the user's choice; absent = the row's own default.
+  const [toolToggles, setToolToggles] = useState<ReadonlyMap<number, boolean>>(
+    () => new Map(),
+  );
 
   useEffect(() => {
     const ingress = createTranscriptIngress((messages) => {
@@ -288,6 +335,7 @@ export const OutputZone = forwardRef<InputNavigationHandle, OutputZoneProps>(fun
         } else {
           tail.resetTail();
           setExpandedThinking(new Set());
+          setToolToggles(new Map());
         }
       }
       setTranscript(result.snapshot);
@@ -299,7 +347,7 @@ export const OutputZone = forwardRef<InputNavigationHandle, OutputZoneProps>(fun
     };
   }, [projection, subscribe]);
 
-  useEffect(tail.followTail, [transcript, expandedThinking]);
+  useEffect(tail.followTail, [transcript, expandedThinking, toolToggles]);
 
   const togglePin = useCallback(
     (renderId: string) =>
@@ -324,6 +372,11 @@ export const OutputZone = forwardRef<InputNavigationHandle, OutputZoneProps>(fun
       sendAction(action, sourceId);
     },
     [sendAction],
+  );
+
+  const toggleTool = useCallback<ToolToggle>(
+    (id, expanded) => setToolToggles((current) => new Map(current).set(id, expanded)),
+    [],
   );
 
   const toggleThinking = useCallback(
@@ -387,6 +440,8 @@ export const OutputZone = forwardRef<InputNavigationHandle, OutputZoneProps>(fun
         entry={entry}
         toggleThinking={toggleThinking}
         expandedThinking={expandedThinking}
+        toggleTool={toggleTool}
+        toolToggles={toolToggles}
         handleAction={handleAction}
         pinned={pinned}
         togglePin={togglePin}
@@ -518,6 +573,8 @@ function ZoneEntry({
   entry,
   toggleThinking,
   expandedThinking,
+  toggleTool,
+  toolToggles,
   handleAction,
   pinned,
   togglePin,
@@ -526,6 +583,8 @@ function ZoneEntry({
   entry: OutputZoneRow;
   toggleThinking: (id: number) => void;
   expandedThinking: ReadonlySet<number>;
+  toggleTool: ToolToggle;
+  toolToggles: ReadonlyMap<number, boolean>;
   handleAction: (action: Action, sourceId: string) => void;
   pinned: string[];
   togglePin: (renderId: string) => void;
@@ -604,16 +663,23 @@ function ZoneEntry({
         row={entry}
         expandedThinking={expandedThinking}
         onToggleThinking={toggleThinking}
+        toolToggles={toolToggles}
+        onToggleTool={toggleTool}
       />
     );
   }
   if (entry.kind === "subagent-deck") {
-    return <SubagentDeck row={entry} />;
+    return <SubagentDeck row={entry} toolToggles={toolToggles} onToggleTool={toggleTool} />;
   }
   if (entry.kind === "tool") {
     return (
       <div className="tool-group">
-        <ToolBlock {...toolBlockProps(entry)} />
+        <ToolBlock
+          id={entry.id}
+          toggled={toolToggles.get(entry.id) ?? null}
+          onToggle={toggleTool}
+          {...toolBlockProps(entry)}
+        />
       </div>
     );
   }

@@ -1,4 +1,4 @@
-import { memo, useState } from "react";
+import { memo } from "react";
 import { diffLines } from "../diff";
 import { DiffLines } from "../registry/Diff";
 
@@ -7,25 +7,33 @@ import { DiffLines } from "../registry/Diff";
  * default — click to expand. The expansion shows the FULL input —
  * Edit/MultiEdit as a red/green line diff, Write as the new file's content,
  * everything else as pretty JSON — followed by the result. Errors arrive
- * expanded. While the result is pending the row pulses.
+ * expanded. While the result is pending the row pulses. Disclosure is
+ * CONTROLLED (`toggled` + `onToggle`, owned by the output zone): a row that
+ * finishes and moves into a live fold remounts, and a user's expand must
+ * survive that move.
  */
 export const ToolBlock = memo(function ToolBlock({
+  id,
   name,
   detail,
   input,
   output,
   truncatedBytes,
   isError,
+  toggled,
+  onToggle,
 }: {
+  id: number;
   name: string;
   detail?: string;
   input?: Record<string, unknown>;
   output?: string;
   truncatedBytes?: number;
   isError?: boolean;
+  /** null = user hasn't touched it; errors then default to open. */
+  toggled: boolean | null;
+  onToggle: (id: number, expanded: boolean) => void;
 }) {
-  // null = user hasn't touched it; errors then default to open.
-  const [toggled, setToggled] = useState<boolean | null>(null);
   const running = output === undefined;
   const expanded = toggled ?? (!running && isError === true);
 
@@ -35,7 +43,7 @@ export const ToolBlock = memo(function ToolBlock({
     >
       <button
         className="tool-head"
-        onClick={() => setToggled(!expanded)}
+        onClick={() => onToggle(id, !expanded)}
         title={expanded ? "Collapse" : "Expand"}
       >
         <span className="tool-caret">{running ? "•" : expanded ? "▾" : "▸"}</span>

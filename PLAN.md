@@ -2821,8 +2821,19 @@ Prose code fences render as a bare `<pre>` with no copy button while
 `render_code` has a header strip + `CopyButton`. Folder rows carry a folder
 glyph beside the chevron.
 
-- [ ] **Step TR.1 — The fold forms live, absorbs short narration, keeps
-  the user's expands**
+- [x] **Step TR.1 — The fold forms live, absorbs short narration, keeps
+  the user's expands** — done 2026-08-25: `groupToolActivity` (was
+  `groupSettledTools`) folds on *finished + successful* rather than settled,
+  so the fold grows mid-turn ("working · N actions", gear pulsing) with the
+  in-flight call as its own row beneath, and relabels "worked" at
+  `turn_end`; short assistant remarks (≤ 2 lines, ≤ 160 chars —
+  `isShortNarration`) are absorbed like interior thinking and replayed inside
+  the fold as inert plain text; tool disclosure is lifted into `OutputZone`
+  (`toolToggles`, the `expandedThinking` pattern) so a hand-expanded call
+  stays expanded after it moves into the fold. Mock `tool-activity` gained a
+  remark + a deliberately slow third call; `shell-effects.e2e.ts` asserts
+  the live fold, the running row, the survive-the-move expand, and the
+  absorbed remark. Tier-1 929, Tier-3 116 green.
   - Decisions (Kyle): fold **during** the turn — "working · N actions"
     growing, only the in-flight call shown beneath it as its own row;
     flips to "worked · N actions" at turn end. Narration of **≤ 2 lines**
