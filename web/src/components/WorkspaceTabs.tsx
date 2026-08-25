@@ -1,8 +1,8 @@
-export type WorkspaceSurface = "files" | "changes";
+export type WorkspaceSurface = "files" | "diff-panel";
 
 const SURFACES: readonly (readonly [WorkspaceSurface, string])[] = [
   ["files", "Files"],
-  ["changes", "Changes"],
+  ["diff-panel", "Changes"],
 ];
 
 /** The phone drawer's view switch: on ≤640px Files and

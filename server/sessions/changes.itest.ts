@@ -46,7 +46,7 @@ const waitForChanges = (client: TestClient, id: string): Promise<ChangeSet> =>
   ) as Promise<ChangeSet>;
 
 before(async () => {
-  workspace = mkdtempSync(path.join(os.tmpdir(), "changes-itest-"));
+  workspace = mkdtempSync(path.join(os.tmpdir(), "diff-panel-itest-"));
   alpha = path.join(workspace, "alpha");
   const beta = path.join(workspace, "group", "beta");
   initRepo(alpha);

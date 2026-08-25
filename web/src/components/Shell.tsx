@@ -2,13 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentName, PromptOption } from "@protocol";
 import { ActivityLine, activityLabel, type Activity } from "./ActivityLine";
 import { BangBar } from "./BangBar";
-import { ChangesGlyph } from "./ChangesGlyph";
+import { DiffPanelGlyph } from "./DiffPanelGlyph";
 import { FilesGlyph } from "./FilesGlyph";
 import { AgentPicker } from "./AgentPicker";
 import { PromptBox, type PromptDraft } from "./PromptBox";
 import { OutputZone } from "./OutputZone";
 import { FilesPanel } from "./files/FilesPanel";
-import { ChangesPanel } from "./changes/ChangesPanel";
+import { DiffPanel } from "./diff-panel/DiffPanel";
 import type { WorkspaceSurface } from "./WorkspaceTabs";
 import { StatusBar, type Usage } from "./StatusBar";
 import { createSessionBus } from "../session-bus";
@@ -154,7 +154,7 @@ export function Shell() {
   // stacked full-screen layers on phone.
   const [auxiliary, setAuxiliary] = useState<WorkspaceSurface | null>(null);
   const filesOpen = auxiliary === "files";
-  const changesOpen = auxiliary === "changes";
+  const diffPanelOpen = auxiliary === "diff-panel";
   const [reviewPromptVisible, setReviewPromptVisible] = useState(false);
   const [promptDraft, setPromptDraft] = useState<PromptDraft>();
   const promptDraftId = useRef(0);
@@ -164,7 +164,7 @@ export function Shell() {
     setReviewPromptVisible(true);
   }, []);
   const toggleAuxiliary = (surface: WorkspaceSurface) => {
-    if (surface !== "changes" || auxiliary !== "changes") setReviewPromptVisible(false);
+    if (surface !== "diff-panel" || auxiliary !== "diff-panel") setReviewPromptVisible(false);
     setAuxiliary((current) => (current === surface ? null : surface));
   };
   const closeAuxiliary = () => {
@@ -402,7 +402,7 @@ export function Shell() {
   const showAgentPicker = !hasUrlSession && !meta.sessionId;
 
   return (
-    <div className={"shell" + (changesOpen && reviewPromptVisible ? " changes-draft-visible" : "")}>
+    <div className={"shell" + (diffPanelOpen && reviewPromptVisible ? " diff-panel-draft-visible" : "")}>
       <Announcer message={announcement} />
       {showAgentPicker && (
         <AgentPicker
@@ -461,10 +461,10 @@ export function Shell() {
         <div className="main-row">
           <ActivityBar
             filesOpen={filesOpen}
-            changesOpen={changesOpen}
+            diffPanelOpen={diffPanelOpen}
             disabled={!meta.sessionId}
             onToggleFiles={() => toggleAuxiliary("files")}
-            onToggleChanges={() => toggleAuxiliary("changes")}
+            onToggleDiffPanel={() => toggleAuxiliary("diff-panel")}
           />
           <div className="main-col">
             <div className="zone-outer">
@@ -479,8 +479,8 @@ export function Shell() {
                 rootLabel={tildify(meta.cwd, daemonInfo.home)}
                 sessionKey={meta.sessionId}
               />
-              <ChangesPanel
-                open={changesOpen && Boolean(meta.sessionId)}
+              <DiffPanel
+                open={diffPanelOpen && Boolean(meta.sessionId)}
                 subscribe={bus.subscribe}
                 requestChanges={bus.requestFsChanges}
                 requestRead={bus.requestFsRead}
@@ -646,16 +646,16 @@ function NoticeLine({ text, onDismiss }: { text: string; onDismiss: () => void }
  *  in the status bar instead. */
 function ActivityBar({
   filesOpen,
-  changesOpen,
+  diffPanelOpen,
   disabled,
   onToggleFiles,
-  onToggleChanges,
+  onToggleDiffPanel,
 }: {
   filesOpen: boolean;
-  changesOpen: boolean;
+  diffPanelOpen: boolean;
   disabled: boolean;
   onToggleFiles: () => void;
-  onToggleChanges: () => void;
+  onToggleDiffPanel: () => void;
 }) {
   return (
     <div className="activity-bar">
@@ -670,14 +670,14 @@ function ActivityBar({
         <FilesGlyph />
       </button>
       <button
-        className={"ab-btn ab-changes" + (changesOpen ? " is-active" : "")}
-        onClick={onToggleChanges}
+        className={"ab-btn ab-diff-panel" + (diffPanelOpen ? " is-active" : "")}
+        onClick={onToggleDiffPanel}
         disabled={disabled}
-        title={changesOpen ? "Hide workspace changes" : "Show workspace changes"}
+        title={diffPanelOpen ? "Hide workspace changes" : "Show workspace changes"}
         aria-label="Workspace changes"
-        aria-expanded={changesOpen}
+        aria-expanded={diffPanelOpen}
       >
-        <ChangesGlyph />
+        <DiffPanelGlyph />
       </button>
     </div>
   );

@@ -3,7 +3,7 @@
  * on FilesGlyph's exact 14×20 artwork box with the same 1.5 stroke, so the
  * two icons occupy the same footprint at the same `size` — equal width,
  * equal height, equal stroke weight. */
-export function ChangesGlyph({ size = 28 }: { size?: number }) {
+export function DiffPanelGlyph({ size = 28 }: { size?: number }) {
   return (
     <svg
       viewBox="0 0 14 20"

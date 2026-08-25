@@ -43,7 +43,7 @@ const EMPTY_CHANGE_SET: ChangeSetState = {
 const REVIEW_SHORTCUT_EXCLUSION =
   ".prompt-box, input, textarea, select, [contenteditable='true']";
 
-export function useChangesController({
+export function useDiffPanelController({
   open,
   subscribe,
   requestChanges,

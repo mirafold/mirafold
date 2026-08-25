@@ -360,7 +360,7 @@
   /* Changes on phone: the same snapshot as desktop, reframed as one
      file at a time. The rail disappears; close, position, previous, and next
      remain fixed while only the diff scrolls. */
-  .changes-panel {
+  .diff-panel-panel {
     position: fixed;
     inset: 0;
     width: 100%;
@@ -375,7 +375,7 @@
 
   /* Full-screen already; nothing to resize. (Not rendered on phone either —
      this pins the takeover against any userWidth inline style.) */
-  .changes-resize {
+  .diff-panel-resize {
     display: none;
   }
 
@@ -383,7 +383,7 @@
      two 42px buttons — nothing else competes with it, so it fits at any
      phone width (at 320px the count pill would land on it).
      The count rides row two, right-aligned beside the review progress. */
-  .changes-head {
+  .diff-panel-head {
     min-height: 68px;
     display: grid;
     grid-template-columns: 42px minmax(0, 1fr) auto 42px;
@@ -396,13 +396,13 @@
 
   /* Both icon buttons sit on row one (not centred across the two rows) so
      the ‹ is at the same y as the Files head's — one exit, two places. */
-  .changes-head .changes-close {
+  .diff-panel-head .diff-panel-close {
     grid-area: close;
     align-self: start;
   }
 
-  .changes-title-block,
-  .changes-head .workspace-tabs {
+  .diff-panel-title-block,
+  .diff-panel-head .workspace-tabs {
     grid-area: title;
     justify-self: start;
     /* Row two is empty until the first snapshot; without this the grid
@@ -410,20 +410,20 @@
     align-self: start;
   }
 
-  .changes-head .changes-refresh {
+  .diff-panel-head .diff-panel-refresh {
     grid-area: refresh;
     align-self: start;
   }
 
-  .changes-subtitle {
+  .diff-panel-subtitle {
     display: none;
   }
 
-  .changes-title-block h2 {
+  .diff-panel-title-block h2 {
     font-size: 0.74em;
   }
 
-  .changes-count {
+  .diff-panel-count {
     grid-area: count;
     justify-self: end;
     align-self: center;
@@ -431,112 +431,112 @@
     font-size: 0.66em;
   }
 
-  .changes-progress {
+  .diff-panel-progress {
     grid-area: progress;
     max-width: none;
     font-size: 0.63em;
   }
 
-  .changes-icon-btn,
-  .changes-nav-btn {
+  .diff-panel-icon-btn,
+  .diff-panel-nav-btn {
     width: 42px;
     height: 42px;
   }
 
-  .changes-body,
-  .changes-review {
+  .diff-panel-body,
+  .diff-panel-review {
     width: 100%;
   }
 
-  .changes-rail {
+  .diff-panel-rail {
     display: none;
   }
 
-  .changes-file-head {
+  .diff-panel-file-head {
     min-height: 58px;
     gap: 5px;
     padding: 6px;
   }
 
-  .changes-current-file {
+  .diff-panel-current-file {
     flex-direction: column;
     align-items: stretch;
     gap: 2px;
   }
 
-  .changes-current-path {
+  .diff-panel-current-path {
     font-size: 0.76em;
   }
 
-  .changes-current-status {
+  .diff-panel-current-status {
     font-size: 0.64em;
   }
 
-  .changes-position {
+  .diff-panel-position {
     min-width: 38px;
     text-align: center;
   }
 
-  .changes-view {
+  .diff-panel-view {
     padding: 0 7px 14px;
     overscroll-behavior: contain;
   }
 
-  .changes-progress-tools {
+  .diff-panel-progress-tools {
     padding: 6px 7px;
   }
 
-  .changes-progress-tools button {
+  .diff-panel-progress-tools button {
     min-height: 40px;
     padding: 5px 7px;
   }
 
-  .changes-review-tools {
+  .diff-panel-review-tools {
     gap: 7px;
     margin: 0 -7px 6px;
     padding: 7px;
   }
 
-  .changes-hunk-nav,
-  .changes-draft-actions {
+  .diff-panel-hunk-nav,
+  .diff-panel-draft-actions {
     gap: 4px;
   }
 
-  .changes-hunk-nav button,
-  .changes-draft-actions button {
+  .diff-panel-hunk-nav button,
+  .diff-panel-draft-actions button {
     min-width: 40px;
     min-height: 40px;
     padding: 5px 8px;
   }
 
-  .changes-hunk-nav button:first-child,
-  .changes-hunk-nav button:nth-child(3) {
+  .diff-panel-hunk-nav button:first-child,
+  .diff-panel-hunk-nav button:nth-child(3) {
     width: 40px;
   }
 
-  .changes-select-hunk {
+  .diff-panel-select-hunk {
     margin-left: auto;
   }
 
-  .changes-review-line {
+  .diff-panel-review-line {
     min-height: 40px;
     grid-template-columns: 2.5em 2.5em 1.2em minmax(0, 1fr);
     font-size: 0.96em;
   }
 
-  .changes-line-no,
-  .changes-line-sign {
+  .diff-panel-line-no,
+  .diff-panel-line-sign {
     padding: 9px 3px;
   }
 
-  .changes-line-code {
+  .diff-panel-line-code {
     padding: 9px 6px;
   }
 
   /* A review action does not close the phone diff. It lifts the one trusted
      PromptBox above the full-screen layer and reserves scroll room beneath it,
      keeping both the exact selected context and editable draft visible. */
-  .changes-draft-visible .prompt-box {
+  .diff-panel-draft-visible .prompt-box {
     position: fixed;
     z-index: var(--z-layer-above);
     right: max(8px, env(safe-area-inset-right));
@@ -550,26 +550,26 @@
 
   /* Scroll room above the docked draft prompt: for a diff it belongs to
      the scrolling code card; for other file views the wrapper scrolls. */
-  .changes-draft-visible .changes-view:not(:has(> .changes-diff-review)) {
+  .diff-panel-draft-visible .diff-panel-view:not(:has(> .diff-panel-diff-review)) {
     padding-bottom: min(230px, 38dvh);
     scroll-padding-bottom: min(230px, 38dvh);
   }
 
-  .changes-draft-visible .changes-diff-lines {
+  .diff-panel-draft-visible .diff-panel-diff-lines {
     padding-bottom: min(230px, 38dvh);
     scroll-padding-bottom: min(230px, 38dvh);
   }
 
-  .changes-draft-visible .prompt-send {
+  .diff-panel-draft-visible .prompt-send {
     width: 40px;
     height: 40px;
   }
 
-  .changes-view .fv-content {
+  .diff-panel-view .fv-content {
     font-size: 0.82em;
   }
 
-  .changes-warning {
+  .diff-panel-warning {
     padding: 7px 9px;
   }
 
@@ -686,7 +686,7 @@
     border-radius: 7px;
   }
 
-  /* Same glyph, size, weight AND width as .changes-close (42px) so the two
+  /* Same glyph, size, weight AND width as .diff-panel-close (42px) so the two
      exits are one control in two places — and the switch beside them lands
      at the same x/y in both heads (8 + 42 + 6, row centred at y = 7). */
   .files-panel-back {

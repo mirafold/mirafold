@@ -171,7 +171,7 @@ one.
 | Phone input-history card in [`InputNavigation`](../web/src/components/InputNavigation.tsx) | Escape | `window`, capture + `stopPropagation` | the ⋯ card is open | yes — closes it and restores focus to its toggle |
 | [`PickerBlock`](../web/src/components/PickerBlock.tsx) | ArrowUp, ArrowDown, Enter, Escape | `document`, capture + `stopPropagation` | a live `/model`-style picker is showing | yes, unless a non-empty input, a picker row, or the phone card owns focus — only the idle (empty) prompt box cedes these keys |
 | Prompt trigger in [`PromptBox`](../web/src/components/PromptBox.tsx) | `/`, `$` | `window`, capture + `stopPropagation` | a provider catalog offers that trigger and `globalTriggersDisabled` is off | yes, when typed outside an editable field or dialog — focuses the prompt box and inserts the trigger |
-| Review shortcuts in [`useChangesController`](../web/src/components/changes/use-changes-controller.ts) | `r`, `n` | `window`, bubble | the Changes panel is open | only outside inputs and the prompt box (`REVIEW_SHORTCUT_EXCLUSION`), and only if nothing above called `preventDefault` |
+| Review shortcuts in [`useDiffPanelController`](../web/src/components/diff-panel/use-diff-panel-controller.ts) | `r`, `n` | `window`, bubble | the diff panel is open | only outside inputs and the prompt box (`REVIEW_SHORTCUT_EXCLUSION`), and only if nothing above called `preventDefault` |
 | Busy interrupt in [`Shell`](../web/src/components/Shell.tsx) (`useEscapeKey`, non-exclusive) | Escape | `window`, bubble | a turn is running | the fallback: runs only when no exclusive owner above claimed the key |
 
 Focused-element handlers sit outside this order because they see the key

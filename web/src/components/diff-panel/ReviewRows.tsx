@@ -42,7 +42,7 @@ function SyntaxReviewRows({ children, className }: { children?: ReactNode; class
           review.rowRefs.current[index] = node;
         }}
         className={
-          "changes-review-line" +
+          "diff-panel-review-line" +
           (line.sign === "+"
             ? " is-add diff-add"
             : line.sign === "-"
@@ -75,12 +75,12 @@ function SyntaxReviewRows({ children, className }: { children?: ReactNode; class
           review.selectLines(index, index);
         }}
       >
-        <span className="changes-line-no changes-line-old" aria-hidden="true">{line.oldLine ?? ""}</span>
-        <span className="changes-line-no changes-line-new" aria-hidden="true">{line.newLine ?? ""}</span>
-        <span className="changes-line-sign" aria-hidden="true">{line.sign}</span>
-        <span className="changes-line-code" aria-hidden="true">
+        <span className="diff-panel-line-no diff-panel-line-old" aria-hidden="true">{line.oldLine ?? ""}</span>
+        <span className="diff-panel-line-no diff-panel-line-new" aria-hidden="true">{line.newLine ?? ""}</span>
+        <span className="diff-panel-line-sign" aria-hidden="true">{line.sign}</span>
+        <span className="diff-panel-line-code" aria-hidden="true">
           <code className={className}>{syntax.length > 0 ? syntax : " "}</code>
-          {line.noNewline && <span className="changes-eof-note">no newline at EOF</span>}
+          {line.noNewline && <span className="diff-panel-eof-note">no newline at EOF</span>}
         </span>
       </div>
     );

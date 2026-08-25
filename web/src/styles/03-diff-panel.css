@@ -2,7 +2,7 @@
    One wider auxiliary workspace beside the still-mounted transcript. The
    changed-file rail is compact; the diff receives the majority of the width.
    `max-width` protects a readable conversation column at the 641px boundary. */
-.changes-panel {
+.diff-panel-panel {
   position: relative;
   flex: 0 1 clamp(370px, 55vw, 760px);
   width: clamp(370px, 55vw, 760px);
@@ -17,10 +17,10 @@
   background: var(--bg);
   border-right: 1px solid var(--border);
   box-shadow: inset -1px 0 0 var(--border-ghost);
-  animation: changes-in 0.18s ease-out;
+  animation: diff-panel-in 0.18s ease-out;
 }
 
-@keyframes changes-in {
+@keyframes diff-panel-in {
   from {
     opacity: 0;
     transform: translateX(-12px);
@@ -30,7 +30,7 @@
 /* The desktop resize handle rides the panel's right border (the panel clips
    overflow, so it sits fully inside). Its grab area is wider than its
    visible affordance, which lights up on hover and keyboard focus. */
-.changes-resize {
+.diff-panel-resize {
   position: absolute;
   top: 0;
   bottom: 0;
@@ -43,7 +43,7 @@
   outline: none;
 }
 
-.changes-resize::after {
+.diff-panel-resize::after {
   content: "";
   position: absolute;
   top: 0;
@@ -54,15 +54,15 @@
   transition: background 0.12s ease;
 }
 
-.changes-resize:hover::after {
+.diff-panel-resize:hover::after {
   background: var(--border-hover);
 }
 
-.changes-resize:focus-visible::after {
+.diff-panel-resize:focus-visible::after {
   background: var(--accent);
 }
 
-.changes-head {
+.diff-panel-head {
   flex-shrink: 0;
   min-height: 56px;
   display: flex;
@@ -73,7 +73,7 @@
   border-bottom: 1px solid var(--border);
 }
 
-.changes-title-block {
+.diff-panel-title-block {
   flex: 1;
   min-width: 0;
   display: flex;
@@ -81,7 +81,7 @@
   gap: 3px;
 }
 
-.changes-title-block h2 {
+.diff-panel-title-block h2 {
   margin: 0;
   overflow: hidden;
   color: var(--fg-strong);
@@ -95,7 +95,7 @@
   white-space: nowrap;
 }
 
-.changes-subtitle {
+.diff-panel-subtitle {
   overflow: hidden;
   color: var(--fg-dimmer);
   font-size: 0.72em;
@@ -104,7 +104,7 @@
   white-space: nowrap;
 }
 
-.changes-count {
+.diff-panel-count {
   flex-shrink: 0;
   padding: 3px 7px;
   color: var(--fg-dim);
@@ -116,7 +116,7 @@
   white-space: nowrap;
 }
 
-.changes-progress {
+.diff-panel-progress {
   flex-shrink: 1;
   min-width: 0;
   max-width: 108px;
@@ -128,8 +128,8 @@
   white-space: nowrap;
 }
 
-.changes-icon-btn,
-.changes-nav-btn {
+.diff-panel-icon-btn,
+.diff-panel-nav-btn {
   flex-shrink: 0;
   width: 32px;
   height: 32px;
@@ -146,20 +146,20 @@
   cursor: pointer;
 }
 
-.changes-icon-btn:hover:not(:disabled),
-.changes-nav-btn:hover:not(:disabled) {
+.diff-panel-icon-btn:hover:not(:disabled),
+.diff-panel-nav-btn:hover:not(:disabled) {
   color: var(--fg-body);
   background: var(--surface-hover);
   border-color: var(--border-2);
 }
 
-.changes-icon-btn:disabled,
-.changes-nav-btn:disabled {
+.diff-panel-icon-btn:disabled,
+.diff-panel-nav-btn:disabled {
   opacity: 0.35;
   cursor: default;
 }
 
-.changes-refresh svg {
+.diff-panel-refresh svg {
   width: 15px;
   height: 15px;
   fill: none;
@@ -169,7 +169,7 @@
   stroke-linejoin: round;
 }
 
-.changes-warning {
+.diff-panel-warning {
   flex-shrink: 0;
   padding: 7px 11px;
   color: var(--warn-fg);
@@ -179,14 +179,14 @@
   line-height: 1.35;
 }
 
-.changes-body {
+.diff-panel-body {
   flex: 1;
   min-width: 0;
   min-height: 0;
   display: flex;
 }
 
-.changes-rail {
+.diff-panel-rail {
   flex: 0 0 clamp(142px, 31%, 220px);
   min-width: 0;
   overflow: auto;
@@ -197,13 +197,13 @@
   scrollbar-color: var(--border-hover) transparent;
 }
 
-.changes-repo + .changes-repo {
+.diff-panel-repo + .diff-panel-repo {
   margin-top: 9px;
   padding-top: 7px;
   border-top: 1px solid var(--border-faint);
 }
 
-.changes-repo h3 {
+.diff-panel-repo h3 {
   margin: 0;
   padding: 5px 9px 6px;
   overflow: hidden;
@@ -218,7 +218,7 @@
   white-space: nowrap;
 }
 
-.changes-file {
+.diff-panel-file {
   width: calc(100% - 10px);
   min-height: 31px;
   margin: 1px 5px;
@@ -237,18 +237,18 @@
   cursor: pointer;
 }
 
-.changes-file:hover {
+.diff-panel-file:hover {
   color: var(--fg-body);
   background: var(--surface-hover);
 }
 
-.changes-file.is-active {
+.diff-panel-file.is-active {
   color: var(--fg-strong);
   background: var(--surface-2);
   border-color: var(--border-2);
 }
 
-.changes-status {
+.diff-panel-status {
   flex-shrink: 0;
   width: 17px;
   font-size: 0.9em;
@@ -256,45 +256,45 @@
   text-align: center;
 }
 
-.changes-status-M,
-.changes-current-status.changes-status-M {
+.diff-panel-status-M,
+.diff-panel-current-status.diff-panel-status-M {
   color: var(--accent);
 }
 
-.changes-status-A,
-.changes-current-status.changes-status-A {
+.diff-panel-status-A,
+.diff-panel-current-status.diff-panel-status-A {
   color: var(--accent);
 }
 
-.changes-status-D,
-.changes-current-status.changes-status-D {
+.diff-panel-status-D,
+.diff-panel-current-status.diff-panel-status-D {
   color: var(--fg-dim);
 }
 
-.changes-status-U,
-.changes-current-status.changes-status-U {
+.diff-panel-status-U,
+.diff-panel-current-status.diff-panel-status-U {
   color: var(--fg-dim);
 }
 
-.changes-file-name {
+.diff-panel-file-name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.changes-reviewed-mark {
+.diff-panel-reviewed-mark {
   flex-shrink: 0;
   margin-left: auto;
   color: var(--fg-faint);
   font-size: 1.05em;
 }
 
-.changes-file.is-reviewed .changes-reviewed-mark {
+.diff-panel-file.is-reviewed .diff-panel-reviewed-mark {
   color: var(--accent);
 }
 
-.changes-repo-note {
+.diff-panel-repo-note {
   padding: 5px 9px;
   color: var(--fg-dimmer);
   font-size: 0.72em;
@@ -303,11 +303,11 @@
   overflow-wrap: anywhere;
 }
 
-.changes-repo-error {
+.diff-panel-repo-error {
   color: var(--fg-dim);
 }
 
-.changes-review {
+.diff-panel-review {
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -316,7 +316,7 @@
   background: var(--bg);
 }
 
-.changes-file-head {
+.diff-panel-file-head {
   flex-shrink: 0;
   min-height: 46px;
   display: flex;
@@ -327,7 +327,7 @@
   border-bottom: 1px solid var(--border-faint);
 }
 
-.changes-current-file {
+.diff-panel-current-file {
   flex: 1;
   min-width: 0;
   display: flex;
@@ -335,7 +335,7 @@
   gap: 8px;
 }
 
-.changes-current-path {
+.diff-panel-current-path {
   min-width: 0;
   overflow: hidden;
   color: var(--fg-body);
@@ -346,7 +346,7 @@
   white-space: nowrap;
 }
 
-.changes-current-status {
+.diff-panel-current-status {
   flex-shrink: 0;
   color: var(--fg-dim);
   font-size: 0.68em;
@@ -355,7 +355,7 @@
   text-transform: uppercase;
 }
 
-.changes-position {
+.diff-panel-position {
   flex-shrink: 0;
   color: var(--fg-dimmer);
   font-family: var(--font-mono);
@@ -363,7 +363,7 @@
   white-space: nowrap;
 }
 
-.changes-progress-tools {
+.diff-panel-progress-tools {
   flex-shrink: 0;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -377,7 +377,7 @@
   border-bottom: 1px solid var(--border-faint);
 }
 
-.changes-progress-tools button {
+.diff-panel-progress-tools button {
   min-width: 0;
   min-height: 30px;
   padding: 4px 7px;
@@ -392,23 +392,23 @@
   cursor: pointer;
 }
 
-.changes-progress-tools button:hover:not(:disabled) {
+.diff-panel-progress-tools button:hover:not(:disabled) {
   color: var(--fg-body);
   background: var(--surface-hover);
   border-color: var(--border-hover);
 }
 
-.changes-progress-tools button:disabled {
+.diff-panel-progress-tools button:disabled {
   opacity: 0.4;
   cursor: default;
 }
 
-.changes-review-toggle[aria-pressed="true"] {
+.diff-panel-review-toggle[aria-pressed="true"] {
   color: var(--accent);
   border-color: var(--border-hover);
 }
 
-.changes-view {
+.diff-panel-view {
   flex: 1;
   min-height: 0;
   overflow: auto;
@@ -424,13 +424,13 @@
 /* For a diff, the SCROLLER is the code card itself (below), never this
    wrapper — the scrollbar must start under the docked hunk toolbar and
    stay inside the card's border, not run the panel's full height. */
-.changes-view:has(> .changes-diff-review) {
+.diff-panel-view:has(> .diff-panel-diff-review) {
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
-.changes-view .fv-content {
+.diff-panel-view .fv-content {
   max-height: none;
   overflow-y: visible;
 }
@@ -439,7 +439,7 @@
    a four-column code surface: HEAD line, working-tree line, sign, highlighted
    text. Full-file context remains present so hunk jumps never strand a change
    outside the function that explains it. */
-.changes-diff-review {
+.diff-panel-diff-review {
   min-width: 0;
   flex: 1;
   min-height: 0;
@@ -450,7 +450,7 @@
 /* Docked, not hovering: a full-bleed strip glued under the review-progress
    bar (negative margins cancel the wrapper's side padding). It sits OUTSIDE
    the scrolling code card, so the scrollbar can never rise beside it. */
-.changes-review-tools {
+.diff-panel-review-tools {
   flex-shrink: 0;
   display: grid;
   gap: 6px;
@@ -460,36 +460,36 @@
   border-bottom: 1px solid var(--border);
 }
 
-.changes-hunk-nav,
-.changes-draft-actions {
+.diff-panel-hunk-nav,
+.diff-panel-draft-actions {
   min-width: 0;
   display: flex;
   align-items: center;
   gap: 5px;
 }
 
-.changes-hunk-nav > span,
-.changes-selection-count {
+.diff-panel-hunk-nav > span,
+.diff-panel-selection-count {
   color: var(--fg-dimmer);
   font-family: var(--font-mono);
   font-size: 0.67em;
   white-space: nowrap;
 }
 
-.changes-hunk-nav > span {
+.diff-panel-hunk-nav > span {
   min-width: 76px;
   text-align: center;
 }
 
-.changes-selection-count {
+.diff-panel-selection-count {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.changes-hunk-nav button,
-.changes-draft-actions button {
+.diff-panel-hunk-nav button,
+.diff-panel-draft-actions button {
   min-height: 30px;
   padding: 4px 8px;
   color: var(--fg-dim);
@@ -502,31 +502,31 @@
   white-space: nowrap;
 }
 
-.changes-hunk-nav button:first-child,
-.changes-hunk-nav button:nth-child(3) {
+.diff-panel-hunk-nav button:first-child,
+.diff-panel-hunk-nav button:nth-child(3) {
   width: 30px;
   padding: 0;
   font-size: 1em;
 }
 
-.changes-hunk-nav button:hover:not(:disabled),
-.changes-draft-actions button:hover:not(:disabled) {
+.diff-panel-hunk-nav button:hover:not(:disabled),
+.diff-panel-draft-actions button:hover:not(:disabled) {
   color: var(--fg-body);
   background: var(--surface-hover);
   border-color: var(--border-hover);
 }
 
-.changes-hunk-nav button:disabled,
-.changes-draft-actions button:disabled {
+.diff-panel-hunk-nav button:disabled,
+.diff-panel-draft-actions button:disabled {
   opacity: 0.4;
   cursor: default;
 }
 
-.changes-draft-actions button:last-child {
+.diff-panel-draft-actions button:last-child {
   color: var(--accent);
 }
 
-.changes-review-notice {
+.diff-panel-review-notice {
   flex-shrink: 0;
   padding: 6px 9px;
   color: var(--fg-dim);
@@ -536,7 +536,7 @@
   line-height: 1.35;
 }
 
-.changes-diff-lines {
+.diff-panel-diff-lines {
   min-width: 0;
   flex: 1;
   min-height: 0;
@@ -554,7 +554,7 @@
   font-size: 0.76em;
 }
 
-.changes-review-line {
+.diff-panel-review-line {
   min-height: 27px;
   display: grid;
   grid-template-columns: 3.2em 3.2em 1.4em minmax(0, 1fr);
@@ -563,34 +563,34 @@
   line-height: 1.45;
 }
 
-.changes-review-line + .changes-review-line {
+.diff-panel-review-line + .diff-panel-review-line {
   border-top: 1px solid var(--border-faint);
 }
 
-.changes-review-line.is-add {
+.diff-panel-review-line.is-add {
   color: var(--diff-add-fg);
   background: var(--diff-add-bg);
 }
 
-.changes-review-line.is-del {
+.diff-panel-review-line.is-del {
   color: var(--diff-del-fg);
   background: var(--diff-del-bg);
 }
 
-.changes-review-line.is-context {
+.diff-panel-review-line.is-context {
   color: var(--code-fg);
   background: var(--code-bg);
 }
 
-.changes-review-line.is-selected {
+.diff-panel-review-line.is-selected {
   box-shadow:
     inset 3px 0 0 var(--accent),
     inset 0 0 0 1px var(--border-hover);
   filter: brightness(1.13);
 }
 
-.changes-line-no,
-.changes-line-sign {
+.diff-panel-line-no,
+.diff-panel-line-sign {
   display: flex;
   align-items: flex-start;
   justify-content: flex-end;
@@ -601,26 +601,26 @@
   user-select: none;
 }
 
-.changes-line-sign {
+.diff-panel-line-sign {
   justify-content: center;
   color: currentColor;
   background: transparent;
 }
 
-.changes-line-code {
+.diff-panel-line-code {
   min-width: 0;
   padding: 4px 8px;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
 
-.changes-eof-note {
+.diff-panel-eof-note {
   margin-left: 1ch;
   color: var(--fg-faint);
   font-style: italic;
 }
 
-.changes-line-code code.hljs {
+.diff-panel-line-code code.hljs {
   display: inline;
   overflow: visible;
   padding: 0;
@@ -630,7 +630,7 @@
   white-space: inherit;
 }
 
-.changes-state {
+.diff-panel-state {
   flex: 1;
   min-height: 180px;
   display: grid;
@@ -641,12 +641,12 @@
   text-align: center;
 }
 
-.changes-state strong {
+.diff-panel-state strong {
   color: var(--fg-body);
   font-size: 0.95em;
 }
 
-.changes-state span {
+.diff-panel-state span {
   max-width: 38ch;
   font-size: 0.78em;
   line-height: 1.5;

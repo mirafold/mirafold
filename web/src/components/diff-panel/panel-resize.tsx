@@ -31,7 +31,7 @@ const readStoredWidth = (): number | null => {
   }
 };
 
-/** The desktop Changes panel's drag-to-resize concern: floor = the default
+/** The desktop diff panel's drag-to-resize concern: floor = the default
  * width, ceiling = full width minus the conversation reserve, persisted per
  * browser. Returns the panel's inline style and the separator element to
  * render inside the panel (null while disabled, e.g. on phone). */
@@ -124,7 +124,7 @@ export function usePanelResize(
 
   const handle = enabled ? (
     <div
-      className="changes-resize"
+      className="diff-panel-resize"
       role="separator"
       aria-orientation="vertical"
       aria-label="Resize the changes panel"

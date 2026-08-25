@@ -32,22 +32,22 @@ const sendPrompt = async (p: Page, text: string) => {
 };
 
 // Geometry is asserted at REST: the drawers slide in (02-explorer.css
-// files-in, 03-changes.css changes-in) and a mid-transform boundingBox reads
+// files-in, 03-diff-panel.css diff-panel-in) and a mid-transform boundingBox reads
 // a sub-pixel short (39.9999 for a 40px button) — the 2026-08-18 flake.
 const settled = (page: Page, selector: string) =>
   page.locator(selector).evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
 
 // Esc walks the drawer out one layer at a time (file → tree → closed).
 const closeDrawer = async (page: Page) => {
-  for (let i = 0; i < 3 && (await page.locator(".files-panel, .changes-panel").count()) > 0; i += 1) {
-    const layers = await page.locator(".files-panel [role=region], .files-panel, .changes-panel").count();
+  for (let i = 0; i < 3 && (await page.locator(".files-panel, .diff-panel-panel").count()) > 0; i += 1) {
+    const layers = await page.locator(".files-panel [role=region], .files-panel, .diff-panel-panel").count();
     await page.keyboard.press("Escape");
     await page.waitForFunction(
-      (before) => document.querySelectorAll(".files-panel [role=region], .files-panel, .changes-panel").length < before,
+      (before) => document.querySelectorAll(".files-panel [role=region], .files-panel, .diff-panel-panel").length < before,
       layers,
     );
   }
-  await page.waitForSelector(".files-panel, .changes-panel", { state: "detached" });
+  await page.waitForSelector(".files-panel, .diff-panel-panel", { state: "detached" });
 };
 
 
@@ -391,11 +391,11 @@ test("phone (E.4): the files panel is a full-screen drill-in — tree → file �
     assert.ok(box.height >= 40 && box.width >= 40, `workspace tab is ${box.width}×${box.height} — under the 40px thumb rule`);
   }
   await phone.locator('.files-panel-head .workspace-tab:has-text("Changes")').tap();
-  await phone.waitForSelector(".changes-panel[role=dialog]");
+  await phone.waitForSelector(".diff-panel-panel[role=dialog]");
   assert.equal(await phone.locator(".files-panel").count(), 0, "one drawer view at a time");
-  await settled(phone, ".changes-panel");
-  const changesBack = (await phone.locator(".changes-head .changes-close").boundingBox())!;
-  assert.equal(await phone.locator(".changes-head .changes-close").getAttribute("aria-label"), "Back to conversation");
+  await settled(phone, ".diff-panel-panel");
+  const changesBack = (await phone.locator(".diff-panel-head .diff-panel-close").boundingBox())!;
+  assert.equal(await phone.locator(".diff-panel-head .diff-panel-close").getAttribute("aria-label"), "Back to conversation");
   // "One control in two places": the exit and the switch sit at the SAME
   // spot in both heads (both axes; 1px = sub-pixel rounding, nothing more),
   // so switching views never moves either under the thumb.
@@ -405,12 +405,12 @@ test("phone (E.4): the files panel is a full-screen drill-in — tree → file �
     samePlace(changesBack, filesBack),
     `exits drift between heads: files ${filesBack.x},${filesBack.y} vs changes ${changesBack.x},${changesBack.y}`,
   );
-  const changesTabs = (await phone.locator(".changes-head .workspace-tabs").boundingBox())!;
+  const changesTabs = (await phone.locator(".diff-panel-head .workspace-tabs").boundingBox())!;
   assert.ok(
     samePlace(changesTabs, filesTabs),
     `switch jumps between heads: files ${filesTabs.x},${filesTabs.y} vs changes ${changesTabs.x},${changesTabs.y}`,
   );
-  await phone.locator('.changes-head .workspace-tab:has-text("Files")').tap();
+  await phone.locator('.diff-panel-head .workspace-tab:has-text("Files")').tap();
   await phone.waitForSelector(".files-panel[role=dialog]");
   await noSideScroll(phone);
 
@@ -464,30 +464,30 @@ test("phone (320px): both drawer heads keep their controls apart", async () => {
   try {
     await phone.locator(".sb-workspace").tap();
     // Whichever view was used last: land on Files explicitly.
-    await phone.waitForSelector(".files-panel[role=dialog], .changes-panel[role=dialog]");
+    await phone.waitForSelector(".files-panel[role=dialog], .diff-panel-panel[role=dialog]");
     await phone.locator('.workspace-tab:has-text("Files")').tap();
     await phone.waitForSelector(".files-panel[role=dialog]");
     await settled(phone, ".files-panel");
     await assertApartOnScreen(phone, 320, [".files-panel-back", ".files-panel-head .workspace-tabs", ".files-refresh"]);
     await noSideScroll(phone);
     await phone.locator('.files-panel-head .workspace-tab:has-text("Changes")').tap();
-    await phone.waitForSelector(".changes-panel[role=dialog]");
-    await phone.waitForSelector(".changes-count");
-    await settled(phone, ".changes-panel");
+    await phone.waitForSelector(".diff-panel-panel[role=dialog]");
+    await phone.waitForSelector(".diff-panel-count");
+    await settled(phone, ".diff-panel-panel");
     // Row two: the review progress renders only with ≥1 change (this daemon
-    // runs in the checkout, clean in CI); changes.e2e pins the pair on its
+    // runs in the checkout, clean in CI); diff-panel.e2e pins the pair on its
     // 5-file fixture unconditionally.
-    const progress = (await phone.locator(".changes-progress").count()) > 0 ? [".changes-progress"] : [];
+    const progress = (await phone.locator(".diff-panel-progress").count()) > 0 ? [".diff-panel-progress"] : [];
     await assertApartOnScreen(phone, 320, [
-      ".changes-head .changes-close",
-      ".changes-head .workspace-tabs",
-      ".changes-count",
+      ".diff-panel-head .diff-panel-close",
+      ".diff-panel-head .workspace-tabs",
+      ".diff-panel-count",
       ...progress,
-      ".changes-refresh",
+      ".diff-panel-refresh",
     ]);
     await noSideScroll(phone);
-    await phone.locator(".changes-head .changes-close").tap();
-    await phone.waitForSelector(".changes-panel", { state: "detached" });
+    await phone.locator(".diff-panel-head .diff-panel-close").tap();
+    await phone.waitForSelector(".diff-panel-panel", { state: "detached" });
   } finally {
     // A failed assertion must not leave the drawer over the later tests.
     await closeDrawer(phone);

@@ -27,31 +27,31 @@ export function ChangesHeader({
   onSwitch?: (surface: WorkspaceSurface) => void;
 }) {
   return (
-    <header className="changes-head">
+    <header className="diff-panel-head">
       {phone && (
-        <button className="changes-icon-btn changes-close" onClick={onClose} aria-label="Back to conversation">
+        <button className="diff-panel-icon-btn diff-panel-close" onClick={onClose} aria-label="Back to conversation">
           ‹
         </button>
       )}
       {phone && onSwitch ? (
-        <WorkspaceTabs active="changes" onSwitch={onSwitch} />
+        <WorkspaceTabs active="diff-panel" onSwitch={onSwitch} />
       ) : (
-        <div className="changes-title-block">
+        <div className="diff-panel-title-block">
           <h2>Workspace changes</h2>
-          <span className="changes-subtitle">Working tree versus Git HEAD</span>
+          <span className="diff-panel-subtitle">Working tree versus Git HEAD</span>
         </div>
       )}
       {loaded && itemCount > 0 && (
         <span
-          className="changes-progress"
+          className="diff-panel-progress"
           aria-label={`${reviewedCount} of ${itemCount} visible files reviewed`}
         >
           {reviewedCount} / {itemCount} reviewed
         </span>
       )}
-      {loaded && <span className="changes-count">{headerCount}</span>}
+      {loaded && <span className="diff-panel-count">{headerCount}</span>}
       <button
-        className="changes-icon-btn changes-refresh"
+        className="diff-panel-icon-btn diff-panel-refresh"
         onClick={onRefresh}
         disabled={pending}
         title="Refresh workspace changes"
@@ -60,7 +60,7 @@ export function ChangesHeader({
         <RefreshIcon />
       </button>
       {!phone && (
-        <button className="changes-icon-btn changes-close" onClick={onClose} title="Close" aria-label="Close workspace changes">
+        <button className="diff-panel-icon-btn diff-panel-close" onClick={onClose} title="Close" aria-label="Close workspace changes">
           ×
         </button>
       )}
@@ -84,11 +84,11 @@ export function ChangesRail({
   onSelect: (item: ChangeItem) => void;
 }) {
   return (
-    <nav className="changes-rail" aria-label="Changed files">
+    <nav className="diff-panel-rail" aria-label="Changed files">
       {repos.map((repo) => (
-        <section className="changes-repo" key={repo.root || "."}>
+        <section className="diff-panel-repo" key={repo.root || "."}>
           <h3 title={repo.root || rootLabel}>{repoLabel(repo.root, rootLabel)}</h3>
-          {repo.error && <div className="changes-repo-note changes-repo-error">{repo.error}</div>}
+          {repo.error && <div className="diff-panel-repo-note diff-panel-repo-error">{repo.error}</div>}
           {repo.entries.map((entry) => {
             const item = itemsByPath.get(entry.path);
             if (!item) return null;
@@ -98,7 +98,7 @@ export function ChangesRail({
               <button
                 key={entry.path}
                 className={
-                  "changes-file" +
+                  "diff-panel-file" +
                   (selectedPath === entry.path ? " is-active" : "") +
                   (reviewed ? " is-reviewed" : "")
                 }
@@ -106,12 +106,12 @@ export function ChangesRail({
                 title={entry.path}
                 aria-current={selectedPath === entry.path ? "true" : undefined}
               >
-                <span className={`changes-status changes-status-${status.code}`} aria-label={status.label} title={status.label}>
+                <span className={`diff-panel-status diff-panel-status-${status.code}`} aria-label={status.label} title={status.label}>
                   {status.code}
                 </span>
-                <span className="changes-file-name">{item.displayPath}</span>
+                <span className="diff-panel-file-name">{item.displayPath}</span>
                 <span
-                  className="changes-reviewed-mark"
+                  className="diff-panel-reviewed-mark"
                   aria-label={reviewed ? "Reviewed" : "Unreviewed"}
                   title={reviewed ? "Reviewed" : "Unreviewed"}
                 >
@@ -120,7 +120,7 @@ export function ChangesRail({
               </button>
             );
           })}
-          {repo.truncated && <div className="changes-repo-note">More changed files were omitted.</div>}
+          {repo.truncated && <div className="diff-panel-repo-note">More changed files were omitted.</div>}
         </section>
       ))}
     </nav>
@@ -142,10 +142,10 @@ export function ChangeFileHeader({
 }) {
   const status = changeStatus(item.status);
   return (
-    <div className="changes-file-head">
+    <div className="diff-panel-file-head">
       {phone && (
         <button
-          className="changes-nav-btn"
+          className="diff-panel-nav-btn"
           onClick={() => onMove(-1)}
           disabled={index <= 0}
           aria-label="Previous changed file"
@@ -154,18 +154,18 @@ export function ChangeFileHeader({
           ‹
         </button>
       )}
-      <div className="changes-current-file">
-        <span className="changes-current-path" title={item.path}>{item.path}</span>
-        <span className={`changes-current-status changes-status-${status.code}`}>
+      <div className="diff-panel-current-file">
+        <span className="diff-panel-current-path" title={item.path}>{item.path}</span>
+        <span className={`diff-panel-current-status diff-panel-status-${status.code}`}>
           {status.label}
         </span>
       </div>
-      <span className="changes-position" aria-label={`Change ${index + 1} of ${itemCount}`}>
+      <span className="diff-panel-position" aria-label={`Change ${index + 1} of ${itemCount}`}>
         {index + 1} / {itemCount}
       </span>
       {phone && (
         <button
-          className="changes-nav-btn"
+          className="diff-panel-nav-btn"
           onClick={() => onMove(1)}
           disabled={index >= itemCount - 1}
           aria-label="Next changed file"
@@ -192,10 +192,10 @@ export function ReviewProgressControls({
   onNextUnreviewed: () => void;
 }) {
   return (
-    <div className="changes-progress-tools" aria-label="Review progress controls">
+    <div className="diff-panel-progress-tools" aria-label="Review progress controls">
       <button
         type="button"
-        className="changes-review-toggle"
+        className="diff-panel-review-toggle"
         onClick={onToggleReviewed}
         disabled={!selectedRevision}
         aria-pressed={selectedReviewed}
@@ -206,7 +206,7 @@ export function ReviewProgressControls({
       </button>
       <button
         type="button"
-        className="changes-next-unreviewed"
+        className="diff-panel-next-unreviewed"
         onClick={onNextUnreviewed}
         disabled={!hasNextUnreviewed}
         aria-keyshortcuts="N"
