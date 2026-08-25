@@ -2130,6 +2130,16 @@ layer = one directory = one fetch).
   git fidelity behind a TTL cache + one serialized git queue; `fs_diff`
   discovers the repo containing the file; the legacy `fs_list` old-client
   floor pinned as-is, never to be "fixed"). Bodies → PLAN-ARCHIVE.md, "Moved 2026-08-17 (prune — completed step bodies)."
+- [ ] **Open decision (recorded 2026-08-25, Kyle's call) — when the
+  old-bundle floor retires.** Three code sites exist only for a browser
+  bundle older than the daemon (the relay's app origin can serve a cached
+  one): the whole-tree `fs_list`/`fs_tree` handler (`fs-handlers.ts`) and
+  the two `LEGACY CLIENT` branches in `resolveChosenBackend`
+  (`server/adapters/index.ts` — the by-URL endpoint choice and the
+  by-kind configured-Claude choice). They share one support window and
+  should retire together, in a release note, once no served bundle can
+  predate the lazy tree and opaque backend ids. Nothing else in the repo
+  depends on them; the client stopped sending `fs_list` in Phase E2.
 
 ### Deferred from the 2026-07-26 security audit — ✅ both landed with phase W
 
