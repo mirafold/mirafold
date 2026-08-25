@@ -62,11 +62,27 @@ const TOOL_DESCRIPTIONS: Record<RenderToolName, string> = {
     "Render a mermaid diagram (flowchart, sequenceDiagram, stateDiagram-v2, classDiagram, erDiagram) from its source text. Use for ANY architecture/flow/relationship picture — never ASCII-art diagrams, and never a raw ```mermaid fence (that renders as literal code here). Data plots stay render_chart.",
 };
 
-/** The generative-UI tool-preference nudge, shared across all three adapters:
- *  Claude appends it to the claude_code system-prompt preset (Session
- *  options); Codex and Gemini have no system-prompt hook, so their
- *  adapters prepend it ahead of the first user turn instead. */
+/** The one thing every engine is told about its environment — deliberately
+ *  ~40 words and nothing about the surfaces, so it costs almost no context
+ *  (Kyle, 2026-08-25). Without it agents assume a terminal or desktop app
+ *  and hand the user terminal instructions, and one blamed Codex's own
+ *  sandbox on "a Mirafold session policy". */
+export const MIRAFOLD_CONTEXT =
+  "You are running inside Mirafold, a browser app that re-skins this coding " +
+  "agent. The user reads your output in a web page (sometimes on a phone), " +
+  "not in a terminal, a desktop app, or an IDE — don't refer them to a " +
+  "terminal, Ctrl-C, or \"open in your editor\".";
+
+/** The guidance every adapter injects, shared across all four: Claude appends
+ *  it to the claude_code system-prompt preset (Session options); Codex,
+ *  Gemini and OpenCode have no system-prompt hook, so their adapters prepend
+ *  it ahead of the first user turn instead. Opens with MIRAFOLD_CONTEXT so
+ *  the environment fact rides the same single injection point. */
 export const RENDER_GUIDANCE = `
+## Where you are
+
+${MIRAFOLD_CONTEXT}
+
 ## Generative UI
 
 Your output renders in a web app whose output zone can mount real UI
