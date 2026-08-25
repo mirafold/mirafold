@@ -17,7 +17,7 @@
      margin) — the buttons sit centered between line and window bottom. */
   margin: -2px 0 8px calc(-1 * var(--content-air));
   padding: 12px 10px 4px var(--content-air);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.74em;
   color: var(--fg-dimmer);
   border-top: 1px solid var(--border-ghost);
@@ -262,7 +262,7 @@
 .fleet-head .sb-pair {
   height: auto;
   padding: 5px 12px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.85em;
   color: var(--fg-dimmer);
 }

@@ -126,7 +126,7 @@
 
   .input-nav-phone {
     position: absolute;
-    z-index: 34;
+    z-index: var(--z-phone-disclosure);
     right: 8px;
     bottom: calc(100% + 4px);
     width: 40px;
@@ -173,7 +173,7 @@
   .input-nav-phone-count {
     padding: 1px 5px 7px;
     color: var(--fg-faint);
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-family: var(--font-mono);
     font-size: 0.76em;
     text-align: center;
   }
@@ -350,7 +350,7 @@
     width: 100%;
     max-width: none;
     margin-left: 0;
-    z-index: 55; /* above the transcript + status bar, below the 60 modals */
+    z-index: var(--z-layer);
     border-right: none;
     background: var(--bg-inset);
     padding-top: env(safe-area-inset-top);
@@ -366,7 +366,7 @@
     width: 100%;
     max-width: none;
     margin-left: 0;
-    z-index: 55;
+    z-index: var(--z-layer);
     background: var(--bg);
     border-right: none;
     padding-top: env(safe-area-inset-top);
@@ -538,7 +538,7 @@
      keeping both the exact selected context and editable draft visible. */
   .changes-draft-visible .prompt-box {
     position: fixed;
-    z-index: 56;
+    z-index: var(--z-layer-above);
     right: max(8px, env(safe-area-inset-right));
     bottom: max(8px, env(safe-area-inset-bottom));
     left: max(8px, env(safe-area-inset-left));

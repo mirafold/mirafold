@@ -92,7 +92,7 @@
   min-width: 0;
   padding-bottom: 5px;
   color: var(--fg-dim);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.72em;
   font-weight: 650;
   letter-spacing: 0.11em;
@@ -214,7 +214,7 @@
   background: transparent;
   border: none;
   color: var(--fg-body);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.82em;
   line-height: 1.2;
   text-align: left;
@@ -368,10 +368,6 @@
   color: var(--fg-dim);
 }
 
-.files-truncated {
-  font-style: italic;
-}
-
 /* Non-interactive in-tree rows (E2.2): a dir's loading "…", "(empty)", an
    error, or the per-dir truncation note — dim, italic, indented like a row. */
 .files-note-row {
@@ -403,7 +399,7 @@
 .files-dim {
   position: fixed;
   inset: 0;
-  z-index: 54;
+  z-index: var(--z-layer-dim);
   background: rgba(0, 0, 0, 0.55);
   animation: files-dim-in 0.12s ease-out;
 }
@@ -421,7 +417,7 @@
      than edge-flush overall); the vertical split is deliberately uneven —
      same box height, sat 1.5vh above center (Kyle, 2026-07-28). */
   inset: calc(24px + 3.5vh) calc(36px + 5vw) calc(24px + 6.5vh);
-  z-index: 55;
+  z-index: var(--z-layer);
   border: 1px solid var(--border);
   border-radius: 10px;
   box-shadow: var(--shadow-pop);
@@ -485,7 +481,7 @@
 }
 
 .files-file-name {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.82em;
   color: var(--fg-dim);
   white-space: nowrap;

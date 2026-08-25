@@ -31,7 +31,7 @@
 }
 
 .fleet-count {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.8em;
   color: var(--fg-dim);
 }
@@ -42,7 +42,7 @@
 
 .fleet-new {
   padding: 5px 14px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.85em;
   color: var(--accent);
   background: transparent;
@@ -170,7 +170,7 @@
 .fleet-model,
 .fleet-agent,
 .fleet-ago {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.78em;
 }
 
@@ -202,7 +202,7 @@
 .fleet-end {
   flex-shrink: 0;
   margin-left: 2px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.74em;
   color: var(--fg-faint);
   background: none;
@@ -241,7 +241,7 @@
    Kyle: the full working-state row overflowed its border, and volatile
    inline text made the layout jumpy.) */
 .fleet-viewports {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.78em;
   white-space: nowrap;
   color: var(--fg-faint);
@@ -259,7 +259,7 @@
   z-index: 1;
   flex-shrink: 0;
   margin-left: 2px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.74em;
   color: var(--fg-faint);
   background: none;
@@ -313,7 +313,7 @@
   gap: 14px;
   margin-left: 24px;
   padding: 7px 12px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.8em;
   background: var(--surface);
   border: 1px solid var(--border-2);
@@ -345,7 +345,7 @@
   gap: 10px;
   margin-left: 24px;
   padding: 7px 12px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.8em;
   background: var(--warn-bg);
   border: 1px solid var(--warn-border);
@@ -408,7 +408,7 @@
 
 .fleet-prompt-input {
   flex: 1;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.85em;
   color: var(--fg);
   background: var(--bg-inset);
@@ -426,7 +426,7 @@
   gap: 10px;
   margin-bottom: 10px;
   padding: 8px 12px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.82em;
   color: var(--error);
   background: var(--err-bg);

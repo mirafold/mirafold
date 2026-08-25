@@ -19,7 +19,7 @@
 
 .prompt-options {
   position: absolute;
-  z-index: 30;
+  z-index: var(--z-menu);
   left: 12px;
   right: 12px;
   bottom: calc(100% + 6px);
@@ -55,7 +55,7 @@
 
 .prompt-option-value,
 .prompt-option-hint {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
 }
 
 .prompt-option-value {
@@ -113,7 +113,7 @@
   border: 0;
   padding: 0;
   cursor: pointer;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.85em;
   line-height: 1.76; /* baseline-align with the 0.95em textarea text */
   color: var(--fg-faint);
@@ -152,7 +152,7 @@
   color: inherit;
   border: none;
   padding: 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.95em;
   line-height: 1.5;
   outline: none;
@@ -177,7 +177,7 @@
   background: var(--warn-bg-2);
   border: 1px solid var(--warn-border);
   border-radius: 8px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
 }
 
 .bang-bar-badge {
@@ -240,7 +240,7 @@
   gap: 7px;
   margin-top: 8px;
   padding: 0 15px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.85em;
   color: var(--fg-dim);
   animation: rise 0.16s ease-out both;
@@ -278,7 +278,7 @@
   background: var(--warn-bg);
   border: 1px solid var(--warn-border);
   border-radius: 8px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.85em;
   animation: rc-mount 0.18s ease-out;
 }
@@ -381,13 +381,13 @@
   align-items: center;
   gap: 10px;
   margin-bottom: 12px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.9em;
 }
 
 .perm-modal-detail {
   display: block;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.9em;
   line-height: 1.5;
   color: var(--fg-body);
@@ -408,7 +408,7 @@
   flex-shrink: 0;
   align-self: flex-start;
   padding: 2px 9px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.82em;
   line-height: 1.6;
   color: var(--fg-dim);
@@ -423,51 +423,6 @@
   border-color: var(--err-border);
 }
 
-.tool-activity-group {
-  margin: 3px 0 7px;
-}
-
-.tool-activity-head {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  width: 100%;
-  padding: 4px 7px;
-  color: var(--fg-faint);
-  background: transparent;
-  border: 0;
-  border-radius: 5px;
-  font: 0.82em/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  text-align: left;
-  cursor: pointer;
-}
-
-.tool-activity-head:hover {
-  color: var(--fg-dim);
-  background: var(--surface-hover);
-}
-
-.tool-activity-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex-shrink: 0;
-}
-
-.tool-activity-summary {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tool-activity-calls {
-  margin: 4px 0 2px 16px;
-  padding-left: 8px;
-  border-left: 1px solid var(--border-faint);
-}
-
-
 /* ---- File drag-and-drop (Phase FD) --------------------------------------
    Shell-owned drop affordances: a full-window overlay while a file drag is
    over the page, and a compact upload strip above the prompt box. */
@@ -475,7 +430,7 @@
 .drop-overlay {
   position: fixed;
   inset: 0;
-  z-index: 60;
+  z-index: var(--z-modal);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -490,7 +445,7 @@
   border: 1px dashed var(--accent);
   border-radius: 10px;
   color: var(--fg-strong);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 14px;
 }
 
@@ -510,7 +465,7 @@
   border-radius: 6px;
   background: var(--surface-2);
   color: var(--fg-dim);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   max-width: 100%;
   overflow-wrap: anywhere;

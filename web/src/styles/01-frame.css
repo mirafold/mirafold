@@ -3,6 +3,22 @@
    surface map, import order, and the structure-only rule (colors via
    var(...) exclusively) live in ../styles.css — the import spine. */
 
+/* Structural tokens — not colors (those are the themes'): the two type
+   stacks, and the z ladder for everything that leaves the page flow. Every
+   z-index that means "above the page" names a rung; small literals inside a
+   component are local stacking and stay literal. */
+:root {
+  --font-ui: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --z-menu: 30; /* the prompt's completion menu */
+  --z-phone-disclosure: 34; /* the phone's input-navigation strip */
+  --z-onboarding: 50;
+  --z-layer-dim: 54; /* the dimming rim behind an enlarged layer */
+  --z-layer: 55; /* an enlarged file, a phone drawer: above the transcript + status bar */
+  --z-layer-above: 56; /* the review draft prompt over a phone drawer */
+  --z-modal: 60; /* dialogs and the drop overlay: above everything */
+}
+
 * {
   box-sizing: border-box;
 }
@@ -25,7 +41,7 @@ body {
 }
 
 body {
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: var(--font-ui);
   background: var(--bg);
   color: var(--fg);
 }

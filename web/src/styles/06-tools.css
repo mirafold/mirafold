@@ -19,7 +19,7 @@
   border: none;
   cursor: pointer;
   text-align: left;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.85em;
   color: var(--fg-dim);
 }
@@ -58,7 +58,7 @@
   background: var(--code-bg);
   border: 1px solid var(--border);
   border-radius: 8px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.8em;
   line-height: 1.5;
   color: var(--code-fg);
@@ -91,7 +91,7 @@
   background: var(--code-bg);
   border: 1px solid var(--border);
   border-radius: 8px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.8em;
   line-height: 1.5;
   color: var(--code-fg);
@@ -151,7 +151,7 @@
   border: 1px solid var(--border-mid);
   border-left: 2px solid var(--border-hover);
   border-radius: 6px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.8em;
 }
 
@@ -305,7 +305,7 @@
 .bang-output {
   margin: 0 0 4px;
   padding: 8px 14px 10px 30px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.88em;
   line-height: 1.45;
   color: var(--fg-mid);
@@ -314,3 +314,47 @@
   overflow-x: auto;
 }
 
+/* A settled run of tool calls, folded into one expandable row. */
+.tool-activity-group {
+  margin: 3px 0 7px;
+}
+
+.tool-activity-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 4px 7px;
+  color: var(--fg-faint);
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  font: 0.82em/1.4 var(--font-mono);
+  text-align: left;
+  cursor: pointer;
+}
+
+.tool-activity-head:hover {
+  color: var(--fg-dim);
+  background: var(--surface-hover);
+}
+
+.tool-activity-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.tool-activity-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-activity-calls {
+  margin: 4px 0 2px 16px;
+  padding-left: 8px;
+  border-left: 1px solid var(--border-faint);
+}

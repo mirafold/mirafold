@@ -15,7 +15,7 @@
   background: var(--warn-bg);
   border: 1px solid var(--warn-border);
   border-radius: 8px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.8em;
   flex-shrink: 0;
 }

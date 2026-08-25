@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useWorkspacePanelFrame } from "../../use-workspace-panel-frame";
 import type { WireMsg } from "@protocol";
 import type { ZoneMsg } from "../../session-bus";
 import {
@@ -169,16 +170,15 @@ export function FilesPanel({
   // so without `open` in the active flag the trap's effect would run once at
   // mount — closed, a no-op — and never re-fire when the panel actually opens.
   // On desktop the panel is a docked column beside a usable transcript — no trap.
-  const modal = phone && open;
-  useFocusTrap(panelRef, modal);
   // Esc on phone drills back one layer, then closes from the tree — the
-  // stacked-layer contract, and it owns the key while open (exclusive: a
-  // drill-back must not also reach Shell's busy interrupt). Desktop leaves
-  // Esc to Shell (busy = interrupt). closeFile, not bare setSelected: a
-  // drill-back is a close path, and leaving `maximized` armed here meant a
+  // stacked-layer contract. closeFile, not bare setSelected: a drill-back is
+  // a close path, and leaving `maximized` armed here meant a
   // desktop→phone→desktop resize dance re-enlarged the NEXT opened file.
-  useEscapeKey(modal ? (selected ? closeFile : onClose) : undefined, {
-    exclusive: true,
+  const frame = useWorkspacePanelFrame({
+    panelRef,
+    phone,
+    open,
+    onEscape: selected ? closeFile : onClose,
   });
   // The enlarged frame exists only while a file is open on DESKTOP — phone is
   // already full-screen, so a breakpoint crossing mid-enlarge just re-frames
@@ -292,15 +292,7 @@ export function FilesPanel({
   const rootName = rootNameOf(rootLabel);
 
   return (
-    <aside
-      className="files-panel"
-      aria-label="Files"
-      ref={panelRef}
-      // Phone frames it as a modal dialog; desktop is a plain docked column.
-      role={phone ? "dialog" : undefined}
-      aria-modal={phone ? true : undefined}
-      tabIndex={phone ? -1 : undefined}
-    >
+    <aside className="files-panel" aria-label="Files" ref={panelRef} {...frame}>
       {/* The tree stays mounted; the file view (when a file is open) is laid
           over it, so back reveals the tree at its prior scroll (E.4). */}
       <div className="files-main">

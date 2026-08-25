@@ -46,14 +46,14 @@
 
 .glyph {
   color: var(--accent);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   user-select: none;
 }
 
 /* User input renders as a command strip: a tinted band with a green edge
    that segments the scrollback — everything between strips is agent output. */
 .turn-user {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.92em;
   color: var(--fg-strong);
   white-space: pre-wrap;
@@ -427,7 +427,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.8em;
   font-style: normal;
 }
@@ -444,7 +444,7 @@
   gap: 8px;
   align-items: baseline;
   color: var(--fg-dim);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.8em;
   line-height: 1.5;
   max-width: 80ch;
