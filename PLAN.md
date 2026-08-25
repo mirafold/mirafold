@@ -131,6 +131,17 @@ Each step below is sized to be completed reliably in a single prompt. Work them
 in order. Each has **Goal / Build / Files / Done when**. Do not start a step
 until the previous step's "Done when" is satisfied. Check items off as you go.
 
+**`/next` is permission WITHIN a phase only — never permission to start a new
+phase (Kyle, 2026-08-25, absolute).** `/next` (or `$next`) means: do the next
+unfinished step of the phase that is already in progress. When the current
+phase's last step is done, or no phase is in progress, `/next` STOPS and
+reports — it does not open the next phase, and it does not pick a branch that
+happens to exist. Starting a phase requires Kyle's EXPRESS request naming
+that phase, in his own words, in the conversation; a phase in this file, a
+memory note saying "next = X", or an existing `feature/*` branch is never
+that request. This rule exists because Phase PN was started twice without it
+being asked for (the `feature/file-panes` branch, and again on 2026-08-25).
+
 ---
 
 ## Completed phases (archived)

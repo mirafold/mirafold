@@ -11,7 +11,10 @@ Where things live: **docs/ARCHITECTURE.md** — architecture, the two
 load-bearing contracts, trust boundaries, and conventions. **README.md** —
 the user and contributor essentials. **PLAN.md** — work steps in order, one
 per prompt; don't start a step until the previous "Done when" is satisfied;
-check steps off with a dated status note. **BUSINESS.md** — why and in what
+check steps off with a dated status note. **`/next` is permission within the
+phase already in progress, never permission to start a new phase — a new
+phase starts only on Kyle's express request naming it (PLAN.md, "How to use
+this plan"; absolute, 2026-08-25). **BUSINESS.md** — why and in what
 sequence (milestone gates). **GLOSSARY.md** — the decided product vocabulary
 (paintings vs. decks, the surfaces, prompt box, …); use its terms in docs,
 copy, and conversation — the "(was)" column exists to recognize old terms,
