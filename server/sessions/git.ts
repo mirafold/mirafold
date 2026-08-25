@@ -116,9 +116,29 @@ export const cleanRelPath = (rel: string): string | null => {
  */
 export const parseStatusZ = (
   out: string,
-): { files: Map<string, string>; untrackedDirs: Set<string>; records: Map<string, string[]> } => {
+): { files: Map<string, string>; untrackedDirs: Set<string>; records: Map<string, string[]> } =>
+  parsePorcelainZ(out);
+
+/**
+ * The one parser for `git status --porcelain=v1 -z` (with or without
+ * `--ignored`). Framing rules: a rename/copy record carries TWO fields (the
+ * second is the source), so the loop must consume both or every later
+ * record is misaligned; renames collapse to A(to) + D(from) while a copy's
+ * source is never marked (it still sits on disk unchanged); a wholly-untracked
+ * directory arrives as ONE `?? dir/` record and lands in `untrackedDirs`
+ * (slashless) rather than masquerading as a file status; `!!` (ignored) gets
+ * its own set. `records` keeps every raw XY tag per path for callers that
+ * need to tell a rename from an add.
+ */
+export function parsePorcelainZ(out: string): {
+  files: Map<string, string>;
+  untrackedDirs: Set<string>;
+  ignored: Set<string>;
+  records: Map<string, string[]>;
+} {
   const files = new Map<string, string>();
   const untrackedDirs = new Set<string>();
+  const ignored = new Set<string>();
   const records = new Map<string, string[]>();
   const remember = (p: string, xy: string) => {
     const current = records.get(p);
@@ -135,15 +155,15 @@ export const parseStatusZ = (
       const from = fields[++i]; // the second field of this record
       remember(p, xy);
       files.set(p, "A");
-      // Rename: the source is gone → D. Copy: the source still exists,
-      // unchanged — marking it D would lie about a file sitting on disk.
       if (xy.includes("R") && from) {
         remember(from, xy);
         files.set(from, "D");
       }
       continue;
     }
-    if (xy === "??") {
+    if (xy === "!!") {
+      ignored.add(p.endsWith("/") ? p.slice(0, -1) : p);
+    } else if (xy === "??") {
       if (p.endsWith("/")) untrackedDirs.add(p.slice(0, -1));
       else {
         remember(p, xy);
@@ -156,8 +176,8 @@ export const parseStatusZ = (
       else files.set(p, "M");
     }
   }
-  return { files, untrackedDirs, records };
-};
+  return { files, untrackedDirs, ignored, records };
+}
 
 type WorkingTreeEntry =
   | { kind: "absent" }
@@ -730,37 +750,12 @@ export type RepoStatusData = {
 export type RepoStatus = RepoStatusData | { notGit: true } | { error: string };
 
 /**
- * Parse `git status --porcelain=v1 -z --ignored` into the per-repo view.
- * Same -z framing rules as parseStatusZ (the legacy whole-tree parser):
- * rename/copy records carry TWO fields, renames collapse to A(to) + D(from),
- * copies never mark the source, and the trailing-slash dir collapse lands in
- * its own set. New here: `!!` (ignored) gets a set of its own too.
- * Exported pure for the Tier-1 pin.
+ * `git status --porcelain=v1 -z --ignored` as the per-repo view — the
+ * parsePorcelainZ buckets minus the raw records. Exported pure for the
+ * Tier-1 pin.
  */
 export const parseStatusIgnoredZ = (out: string): RepoStatusData => {
-  const files = new Map<string, string>();
-  const untrackedDirs = new Set<string>();
-  const ignored = new Set<string>();
-  const fields = out.split("\0");
-  for (let i = 0; i < fields.length; i++) {
-    const rec = fields[i];
-    if (rec.length < 4) continue; // trailing empty field / junk
-    const xy = rec.slice(0, 2);
-    const p = rec.slice(3);
-    if (xy.includes("R") || xy.includes("C")) {
-      const from = fields[++i]; // the second field of this record
-      files.set(p, "A");
-      if (xy.includes("R") && from) files.set(from, "D");
-      continue;
-    }
-    if (xy === "!!") ignored.add(p.endsWith("/") ? p.slice(0, -1) : p);
-    else if (xy === "??") {
-      if (p.endsWith("/")) untrackedDirs.add(p.slice(0, -1));
-      else files.set(p, "U");
-    } else if (xy.includes("D")) files.set(p, "D");
-    else if (xy.includes("A")) files.set(p, "A");
-    else files.set(p, "M");
-  }
+  const { files, untrackedDirs, ignored } = parsePorcelainZ(out);
   return { files, untrackedDirs, ignored };
 };
 

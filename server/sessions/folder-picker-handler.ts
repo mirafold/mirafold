@@ -3,6 +3,7 @@
 // through the paid relay. Every well-formed request gets one correlated reply.
 
 import type { ClientMsg, WireMsg } from "../protocol";
+import type { ConnectionContext } from "./handler-context";
 import { errText } from "../adapters/types";
 import { pickHostDirectory, type PickHostDirectory } from "../folder-picker";
 import { CLIENT_ID_RE } from "./fs-handlers";
@@ -15,12 +16,11 @@ export type FolderPickerHandler = {
   close: () => void;
 };
 
-export function createFolderPickerHandler(opts: {
-  viewport: (msg: WireMsg) => void;
-  remote: boolean;
-  isClosed: () => boolean;
-  pickDirectory?: PickHostDirectory;
-}): FolderPickerHandler {
+export function createFolderPickerHandler(
+  opts: Pick<ConnectionContext, "viewport" | "remote" | "isClosed"> & {
+    pickDirectory?: PickHostDirectory;
+  },
+): FolderPickerHandler {
   const pickDirectory = opts.pickDirectory ?? pickHostDirectory;
   let active: AbortController | null = null;
 

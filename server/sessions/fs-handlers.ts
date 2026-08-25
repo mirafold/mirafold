@@ -14,6 +14,8 @@
 // throw would exit the daemon.
 
 import path from "node:path";
+import type { ConnectionContext } from "./handler-context";
+import { TOO_FAST, inflightSlot, minInterval, tokenBucket } from "../throttle";
 import type { ClientMsg, FsDirEntry, FsEntry, WireMsg } from "../protocol";
 import type { SessionEntry } from "./registry";
 import {
@@ -57,6 +59,7 @@ const FS_MIN_INTERVAL_MS = envInt("FS_MIN_INTERVAL_MS", 250);
 // Capacity = refill rate, one knob: a full burst of this many, sustained at
 // this many per second. A drained bucket still ANSWERS (error reply).
 const FS_LISTDIR_MAX_PER_SEC = envInt("FS_LISTDIR_MAX_PER_SEC", 32);
+const GIT_BUSY = "a git query is already running — retry shortly";
 
 // W.H1: how long a directory listing may wait on its repo's git status
 // before shipping plain. Status calls serialize in one GLOBAL queue, so one
@@ -112,14 +115,7 @@ type FsRead = Extract<ClientMsg, { type: "fs_read" }>;
 type FsDiff = Extract<ClientMsg, { type: "fs_diff" }>;
 type FsChanges = Extract<ClientMsg, { type: "fs_changes" }>;
 
-type FsDeps = {
-  /** Send one frame to this viewport (never the broadcast path). */
-  viewport: (m: WireMsg) => void;
-  /** The session this connection watches, read at call time (it can change). */
-  getEntry: () => SessionEntry | null;
-  /** Whether the socket is already gone — checked before any async reply. */
-  isClosed: () => boolean;
-};
+type FsDeps = Pick<ConnectionContext, "viewport" | "getEntry" | "isClosed">;
 
 export type FsHandlers = {
   list: (msg: FsList) => void;
@@ -130,18 +126,16 @@ export type FsHandlers = {
 };
 
 export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHandlers {
-  // Per-connection state: one throttle clock per request type, and at most one
-  // git child in flight (shared by list + diff + changes, like the bang
-  // already-running refusal).
-  let lastListAt = 0;
-  let lastReadAt = 0;
-  let lastDiffAt = 0;
-  let lastChangesAt = 0;
-  let gitInFlight = false;
-  // fs_listdir's token bucket (see FS_LISTDIR_MAX_PER_SEC above): fractional
-  // tokens accrue continuously, capped at one full burst.
-  let listdirTokens = FS_LISTDIR_MAX_PER_SEC;
-  let listdirRefilledAt = Date.now();
+  // Per-connection rate limits: one gate per request type, a bucket for the
+  // lazy tree (a panel opening fetches root + first level in one burst), and
+  // at most one git child in flight (shared by list + diff + changes, like
+  // the bang already-running refusal).
+  const listGate = minInterval(FS_MIN_INTERVAL_MS);
+  const readGate = minInterval(FS_MIN_INTERVAL_MS);
+  const diffGate = minInterval(FS_MIN_INTERVAL_MS);
+  const changesGate = minInterval(FS_MIN_INTERVAL_MS);
+  const listdirBucket = tokenBucket(FS_LISTDIR_MAX_PER_SEC);
+  const gitSlot = inflightSlot();
   // Repos whose status outran the listing bound (W.H1) — this connection is
   // owed ONE follow-up bell per repo when that status lands, however many
   // listings timed out against it (a prefetch burst must not ring N times).
@@ -175,18 +169,6 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
   };
 
   const badId = badClientId;
-  const tooSoon = (last: number): boolean => Date.now() - last < FS_MIN_INTERVAL_MS;
-  const takeListdirToken = (): boolean => {
-    const now = Date.now();
-    listdirTokens = Math.min(
-      FS_LISTDIR_MAX_PER_SEC,
-      listdirTokens + ((now - listdirRefilledAt) / 1_000) * FS_LISTDIR_MAX_PER_SEC,
-    );
-    listdirRefilledAt = now;
-    if (listdirTokens < 1) return false;
-    listdirTokens -= 1;
-    return true;
-  };
 
   const list = (msg: FsList): void => {
     if (badId(msg.id)) return;
@@ -194,16 +176,14 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
       viewport({ type: "fs_tree", id: msg.id, root, entries: [], git: false, error });
     const entry = getEntry();
     if (!entry) return sendErr("", "no session attached");
-    if (tooSoon(lastListAt)) return sendErr(entry.cwd, "requests are arriving too fast — retry shortly");
-    lastListAt = Date.now();
-    if (gitInFlight) return sendErr(entry.cwd, "a git query is already running — retry shortly");
+    if (!listGate.take()) return sendErr(entry.cwd, TOO_FAST);
+    if (!gitSlot.take()) return sendErr(entry.cwd, GIT_BUSY);
 
     // root captured before the await — the viewport may switch sessions under
     // it. Git's view first; not-a-repo / no-git degrades to the plain walk.
     const root = entry.cwd;
     const sendTree = (entries: FsEntry[], git: boolean, truncated: boolean) =>
       viewport({ type: "fs_tree", id: msg.id, root, entries, git, ...(truncated ? { truncated: true } : {}) });
-    gitInFlight = true;
     void gitTree(root)
       .then((g) => {
         if (isClosed()) return;
@@ -221,7 +201,7 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
         if (!isClosed()) sendErr(root, errText(err));
       })
       .finally(() => {
-        gitInFlight = false;
+        gitSlot.release();
       });
   };
 
@@ -236,7 +216,7 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
     }
     const entry = getEntry();
     if (!entry) return sendErr(msg.path, "no session attached");
-    if (!takeListdirToken()) return sendErr(msg.path, "requests are arriving too fast — retry shortly");
+    if (!listdirBucket.take()) return sendErr(msg.path, TOO_FAST);
     try {
       const raw = readDirRaw(entry.cwd, msg.path);
       if ("error" in raw) return sendErr(msg.path, raw.error);
@@ -255,7 +235,7 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
       // repo, one git child at a time — repoStatus serializes). Outside any
       // repo: the plain listing, byte-identical to E2.1. Git trouble
       // degrades to the plain listing, never to an error — the entries are
-      // disk truth either way; statuses are the garnish. Note gitInFlight
+      // disk truth either way; statuses are the garnish. Note gitSlot
       // stays out of this path: the burst is legitimate here, so the
       // discipline is repoStatus's queue, not a refusal.
       //
@@ -311,8 +291,7 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
     }
     const entry = getEntry();
     if (!entry) return sendErr(msg.path, "no session attached");
-    if (tooSoon(lastReadAt)) return sendErr(msg.path, "requests are arriving too fast — retry shortly");
-    lastReadAt = Date.now();
+    if (!readGate.take()) return sendErr(msg.path, TOO_FAST);
     try {
       const r = readWorkspaceFile(entry.cwd, msg.path);
       if ("error" in r) {
@@ -347,13 +326,11 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
     const entry = getEntry();
     if (!entry) return sendErr(rel, "no session attached");
     if (isSecretFile(rel)) return sendErr(rel, "environment files are never readable here");
-    if (tooSoon(lastDiffAt)) return sendErr(rel, "requests are arriving too fast — retry shortly");
-    lastDiffAt = Date.now();
-    if (gitInFlight) return sendErr(rel, "a git query is already running — retry shortly");
+    if (!diffGate.take()) return sendErr(rel, TOO_FAST);
+    if (!gitSlot.take()) return sendErr(rel, GIT_BUSY);
 
     const root = entry.cwd;
     const { repoRoot, repoRel } = resolveDiffRepo(root, rel);
-    gitInFlight = true;
     void gitShowHead(repoRoot ?? root, repoRel)
       .then((show) => {
         if (isClosed()) return;
@@ -405,7 +382,7 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
         if (!isClosed()) sendErr(rel, errText(err));
       })
       .finally(() => {
-        gitInFlight = false;
+        gitSlot.release();
       });
   };
 
@@ -415,17 +392,13 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
       viewport({ type: "fs_change_set", id: msg.id, repos: [], error });
     const entry = getEntry();
     if (!entry) return sendErr("no session attached");
-    if (tooSoon(lastChangesAt)) {
-      return sendErr("requests are arriving too fast — retry shortly");
-    }
-    lastChangesAt = Date.now();
-    if (gitInFlight) return sendErr("a git query is already running — retry shortly");
+    if (!changesGate.take()) return sendErr(TOO_FAST);
+    if (!gitSlot.take()) return sendErr(GIT_BUSY);
 
     // Capture the immutable workspace root before awaiting. The query uses the
     // same trusted, hook-disabled git runner as the Explorer's existing tree
     // and diff paths, but returns all changed files grouped by repository.
     const root = entry.cwd;
-    gitInFlight = true;
     void workspaceChanges(root)
       .then((result) => {
         if (isClosed()) return;
@@ -449,7 +422,7 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
         if (!isClosed()) sendErr(errText(err));
       })
       .finally(() => {
-        gitInFlight = false;
+        gitSlot.release();
       });
   };
 

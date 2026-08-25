@@ -5,6 +5,7 @@
 // builds one of these per connection and delegates the three cases to it.
 
 import { randomUUID } from "node:crypto";
+import type { ConnectionContext } from "./handler-context";
 import { existsSync, lstatSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -234,15 +235,8 @@ type Bang = Extract<ClientMsg, { type: "bang" }>;
 type BangInput = Extract<ClientMsg, { type: "bang_input" }>;
 type BangKill = Extract<ClientMsg, { type: "bang_kill" }>;
 
-type BangDeps = {
+type BangDeps = Pick<ConnectionContext, "getEntry" | "sendError" | "viewport"> & {
   registry: SessionRegistry;
-  /** The session this connection watches, read at call time (it can change). */
-  getEntry: () => SessionEntry | null;
-  /** Error to this viewport AND the terminal log (connection.ts's sendError). */
-  sendError: (message: string) => void;
-  /** This viewport only — for plumbing that must not enter the session
-   *  stream (the throttle-refusal bang_end below). */
-  viewport: (msg: WireMsg) => void;
 };
 
 export type BangHandlers = {

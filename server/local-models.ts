@@ -10,7 +10,7 @@
 // GET /v1/models (the de facto standard catalog endpoint) is OpenAI-shaped
 // only. Listing needs no model loaded in memory — the catalog is bookkeeping.
 
-import { envInt } from "./env";
+import { envInt, envOff } from "./env";
 
 export type LocalDialect = "anthropic" | "openai";
 
@@ -56,7 +56,7 @@ const WELL_KNOWN: { origin: string; runtime: string }[] = [
  *  The itest harness forces it off so a dev machine's real Ollama can never
  *  leak into a Tier-2 assertion. */
 export function probeTargets(): { origin: string; runtime: string }[] {
-  const wellKnown = process.env.MIRAFOLD_LOCAL_DISCOVERY === "off" ? [] : WELL_KNOWN;
+  const wellKnown = envOff(process.env.MIRAFOLD_LOCAL_DISCOVERY) ? [] : WELL_KNOWN;
   const extras = (process.env.MIRAFOLD_LOCAL_ENDPOINTS ?? "")
     .split(",")
     .map((s) => s.trim())

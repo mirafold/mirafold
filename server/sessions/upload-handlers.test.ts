@@ -31,6 +31,7 @@ function harness(over: { remote?: boolean; kind?: string; entry?: boolean } = {}
   const handlers = createUploadHandlers({
     viewport: (m) => sent.push(m),
     getEntry: () => entry,
+    isClosed: () => false,
     remote: over.remote ?? false,
   });
   const cleanup = () => {

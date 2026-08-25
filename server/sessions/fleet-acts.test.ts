@@ -20,7 +20,7 @@ const NONE: Backend = { agent: "claude-code", kind: "none", live: false };
 
 function conn(reg: SessionRegistry, remote: boolean) {
   const seen: WireMsg[] = [];
-  const c = openConnection(reg, (m) => seen.push(m), "test", undefined, remote);
+  const c = openConnection(reg, (m) => seen.push(m), { label: "test", remote });
   return { c, seen };
 }
 const send = (c: Connection, msg: unknown) => c.handleMessage(JSON.stringify(msg));
@@ -28,7 +28,7 @@ const errors = (seen: WireMsg[]) =>
   seen.filter((m) => m.type === "error").map((m) => (m as { message: string }).message);
 
 test("M.2 remote gate: prompt_session and answer_permission are refused on a subscription session", () => {
-  const reg = new SessionRegistry(SUB);
+  const reg = new SessionRegistry({ backend: SUB });
   const e = reg.create({ cwd: dir() });
   const { c, seen } = conn(reg, true);
 
@@ -48,7 +48,7 @@ test("M.2 remote gate: a DENY is not gated — stopping the model is not driving
   // Gating both paths left a phone watching a subscription session unable to
   // deny a pending ask at all; only PERMISSION_TIMEOUT_MS resolved it
   // (2026-07-28 fix). protocol.ts scopes the gate to the ALLOW path.
-  const reg = new SessionRegistry(SUB);
+  const reg = new SessionRegistry({ backend: SUB });
   const e = reg.create({ cwd: dir() });
   reg.broadcast(e, { type: "permission_request", tool: "Bash", detail: "a", id: "p1" });
   const { c, seen } = conn(reg, true);
@@ -59,7 +59,7 @@ test("M.2 remote gate: a DENY is not gated — stopping the model is not driving
 });
 
 test("M.2 remote gate: interrupt_session stays ungated (teardown, like end_session)", () => {
-  const reg = new SessionRegistry(SUB);
+  const reg = new SessionRegistry({ backend: SUB });
   const e = reg.create({ cwd: dir() });
   const { c, seen } = conn(reg, true);
   send(c, { type: "interrupt_session", sessionId: e.id });
@@ -68,7 +68,7 @@ test("M.2 remote gate: interrupt_session stays ungated (teardown, like end_sessi
 });
 
 test("M.2 local connections are never gated — a subscription session takes a grid prompt", () => {
-  const reg = new SessionRegistry(SUB);
+  const reg = new SessionRegistry({ backend: SUB });
   const e = reg.create({ cwd: dir() });
   const { c, seen } = conn(reg, false);
   send(c, { type: "prompt_session", sessionId: e.id, text: "hi" });
@@ -84,7 +84,7 @@ test("M.2 local connections are never gated — a subscription session takes a g
 
 test("AUDIT: a mid-session flip to subscription refuses the remote viewport's own prompt/action", () => {
   // The session attaches relay-eligible (api-key), then flips.
-  const reg = new SessionRegistry({ agent: "opencode", kind: "api-key", live: false });
+  const reg = new SessionRegistry({ backend: { agent: "opencode", kind: "api-key", live: false } });
   const e = reg.create({ cwd: dir() });
   const { c, seen } = conn(reg, true);
   send(c, { type: "attach", sessionId: e.id });
@@ -103,7 +103,7 @@ test("AUDIT: a mid-session flip to subscription refuses the remote viewport's ow
 });
 
 test("AUDIT: a local tab's prompt on the same flipped session is NOT gated", () => {
-  const reg = new SessionRegistry({ agent: "opencode", kind: "api-key", live: false });
+  const reg = new SessionRegistry({ backend: { agent: "opencode", kind: "api-key", live: false } });
   const e = reg.create({ cwd: dir() });
   const { c, seen } = conn(reg, false); // local
   send(c, { type: "attach", sessionId: e.id });
@@ -115,7 +115,7 @@ test("AUDIT: a local tab's prompt on the same flipped session is NOT gated", () 
 });
 
 test("AUDIT: evictRemoteViewports drops relay viewers, spares local ones, on an ineligible flip", () => {
-  const reg = new SessionRegistry({ agent: "opencode", kind: "api-key", live: false });
+  const reg = new SessionRegistry({ backend: { agent: "opencode", kind: "api-key", live: false } });
   const e = reg.create({ cwd: dir() });
   const remoteSeen: WireMsg[] = [];
   const localSeen: WireMsg[] = [];
@@ -140,7 +140,7 @@ test("AUDIT: evictRemoteViewports drops relay viewers, spares local ones, on an 
 });
 
 test("M.2 unknown session ids answer with an error; malformed acts are silently ignored", () => {
-  const reg = new SessionRegistry(NONE);
+  const reg = new SessionRegistry({ backend: NONE });
   const { c, seen } = conn(reg, false);
   send(c, { type: "prompt_session", sessionId: "nope", text: "x" });
   send(c, { type: "interrupt_session", sessionId: "nope" });
@@ -159,7 +159,7 @@ test("M.2 unknown session ids answer with an error; malformed acts are silently 
 });
 
 test("M.2 an empty or whitespace grid prompt is ignored, like the in-session prompt path", () => {
-  const reg = new SessionRegistry(NONE);
+  const reg = new SessionRegistry({ backend: NONE });
   const e = reg.create({ cwd: dir() });
   const { c, seen } = conn(reg, false);
   send(c, { type: "prompt_session", sessionId: e.id, text: "   \n " });
@@ -169,7 +169,7 @@ test("M.2 an empty or whitespace grid prompt is ignored, like the in-session pro
 });
 
 test("M.2 answer_permission drops ONLY the answered id from the queue, immediately", () => {
-  const reg = new SessionRegistry(NONE);
+  const reg = new SessionRegistry({ backend: NONE });
   const e = reg.create({ cwd: dir() });
   reg.broadcast(e, { type: "permission_request", tool: "Bash", detail: "a", id: "p1" });
   reg.broadcast(e, { type: "permission_request", tool: "Write", detail: "b", id: "p2" });
@@ -190,7 +190,7 @@ test("M.2 answer_permission drops ONLY the answered id from the queue, immediate
 // until a daemon restart.
 
 test("a relay-refused CREATE reaps the just-minted session — no leak", () => {
-  const reg = new SessionRegistry(SUB);
+  const reg = new SessionRegistry({ backend: SUB });
   const { c, seen } = conn(reg, true);
   for (let i = 0; i < 5; i++) send(c, { type: "create", cwd: dir() });
   assert.equal(seen.filter((m) => m.type === "refused").length, 5);
@@ -198,7 +198,7 @@ test("a relay-refused CREATE reaps the just-minted session — no leak", () => {
 });
 
 test("a relay-refused ATTACH reaps only a fallback-created session, never an existing one", () => {
-  const reg = new SessionRegistry(SUB);
+  const reg = new SessionRegistry({ backend: SUB });
   const local = reg.create({ cwd: dir() });
   const { c, seen } = conn(reg, true);
   // Attaching to the local tab's live session: refused, session untouched —
@@ -219,7 +219,7 @@ test("a relay-refused ATTACH reaps only a fallback-created session, never an exi
 // got a bang_end for an id it never saw a bang_start for.
 
 test("a throttle-refused bang answers the issuer only — nothing enters the session stream", () => {
-  const reg = new SessionRegistry(NONE);
+  const reg = new SessionRegistry({ backend: NONE });
   const e = reg.create({ cwd: dir() });
   const issuer = conn(reg, false);
   const watcher = conn(reg, false);

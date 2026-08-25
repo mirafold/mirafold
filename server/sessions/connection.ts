@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { minInterval } from "../throttle";
+import type { ConnectionContext } from "./handler-context";
 import os from "node:os";
 import type { AgentName, ClientMsg, WireMsg } from "../protocol";
 import { PROMPT_GATE_REFUSAL, type SessionEntry, type SessionRegistry } from "./registry";
@@ -78,24 +80,29 @@ export type Connection = {
  * logic, so to the registry a remote device is just another attached
  * viewport — same hello, same message grammar, same detach-on-close.
  */
+export type ConnectionOptions = {
+  label?: string;
+  /** Pairing info for the "connect a device" QR. The local WS path passes
+   *  it; the relay path never does — the code must not cross the relay.
+   *  Same shape the hello carries (protocol.ts `agents.relay`). */
+  relay?: { url: string; code: string; ws?: string };
+  /** True for a viewport arriving over the paid relay. The relay gate
+   *  refuses to attach such a viewport to a subscription-backed session;
+   *  local viewports are never gated. */
+  remote?: boolean;
+  /** Present when this daemon runs on a license key — the manage-
+   *  subscription card's backend. The local WS path passes it; billing
+   *  actions never ride the relay (the key stays with the machine that holds
+   *  it), so remote viewports get error replies and no hello flag. */
+  subscription?: SubscriptionActions;
+};
+
 export function openConnection(
   registry: SessionRegistry,
   viewport: (msg: WireMsg) => void,
-  label = "ws",
-  // Pairing info for the "connect a device" QR. The local WS path passes
-  // it; the relay path never does — the code must not cross the relay (R.4).
-  // Same shape the hello carries (protocol.ts `agents.relay`).
-  relay?: { url: string; code: string; ws?: string },
-  // True for a viewport arriving over the paid relay (relay-client passes
-  // it). The relay gate refuses to attach such a viewport to a subscription-
-  // backed session; local viewports are never gated (R.4i).
-  remote = false,
-  // Phase CS: present when this daemon runs on a license key — the manage-
-  // subscription card's backend. The local WS path passes it; billing
-  // actions never ride the relay (the key stays with the machine that
-  // holds it), so remote viewports get error replies and no hello flag.
-  subscription?: SubscriptionActions,
+  options: ConnectionOptions = {},
 ): Connection {
+  const { label = "ws", relay, remote = false, subscription } = options;
   const log = createLogger(label);
   // A connection is a viewport onto one registry session (Step 4.2) — or,
   // since 4.6, a fleet watcher observing the registry itself.
@@ -108,28 +115,29 @@ export function openConnection(
   // refresh_agents throttle (N.3): the picker polls on a slow interval, but a
   // hostile client could spam — bound the probe rate per connection. A
   // throttled refresh still answers, from the cache.
-  let lastProbeAt = 0;
+  const probeGate = minInterval(REFRESH_MIN_INTERVAL_MS);
   // The Explorer/Changes fs_list/fs_listdir/fs_read/fs_diff/fs_changes
   // handling, with its own per-connection throttle + git-in-flight state
   // (fs-handlers.ts). `entry` and `closed` are read through getters because
   // both change over the connection's life.
-  const fs = createFsHandlers({
+  // A viewport-scoped error reaches the terminal too — the browser may be a
+  // stranger's; the terminal log is what lands in a bug report.
+  const sendError = (message: string) => {
+    log.error(message);
+    viewport({ type: "error", message });
+  };
+  // One context for every per-connection handler factory (handler-context.ts).
+  const ctx: ConnectionContext = {
     viewport,
     getEntry: () => entry,
     isClosed: () => closed,
-  });
-  const folderPicker = createFolderPickerHandler({
-    viewport,
     remote,
-    isClosed: () => closed,
-  });
-  // File drag-and-drop staging (Phase FD) — per-connection chunked uploads,
-  // the fs-handlers pattern (upload-handlers.ts).
-  const uploads = createUploadHandlers({
-    viewport,
-    getEntry: () => entry,
-    remote,
-  });
+    sendError,
+  };
+  const fs = createFsHandlers(ctx);
+  const folderPicker = createFolderPickerHandler(ctx);
+  // File drag-and-drop staging — per-connection chunked uploads.
+  const uploads = createUploadHandlers(ctx);
 
   // Identity first, then the replayed history, then the live stream. 4.4:
   // a valid afterSeq turns the replay into a tail-only resume — the client
@@ -271,15 +279,11 @@ export function openConnection(
 
   // A viewport-scoped error reaches the terminal too — the browser may
   // be a stranger's; the terminal log is what lands in a bug report (R.4g).
-  const sendError = (message: string) => {
-    log.error(message);
-    viewport({ type: "error", message });
-  };
 
   // The `!` lifecycle (4.9) — PTY spawn, output budgets, cwd handoff, burst
   // throttle — handled per-connection in bang-handlers.ts, the fs-handlers
   // pattern.
-  const bang = createBangHandlers({ registry, getEntry: () => entry, sendError, viewport });
+  const bang = createBangHandlers({ ...ctx, registry });
 
   // The client announces its build on attach/create; a skewed pair is
   // the first thing to know about a weird bug report, so log it here (R.4g).
@@ -343,7 +347,7 @@ export function openConnection(
       // `open()` may just have lazily revived a dormant engine. A refused
       // remote act owns no viewport, so return that engine to the ordinary
       // idle-unload path instead of leaving it warm indefinitely.
-      if (target.viewports.size === 0) registry.detach(target, viewport);
+      registry.releaseIfUnviewed(target);
       return undefined;
     }
     return target;
@@ -427,9 +431,7 @@ export function openConnection(
           // session refused by the relay gate is left alone (a local tab may
           // own it); only a fallback-created one is reaped.
           if (existing) {
-            if (!attachTo(existing, afterSeq, false) && existing.viewports.size === 0) {
-              registry.detach(existing, viewport);
-            }
+            if (!attachTo(existing, afterSeq, false)) registry.releaseIfUnviewed(existing);
           } else {
             attachOrReapClassified(registry.create(), afterSeq, typeof msg.sessionId === "string");
           }
@@ -586,11 +588,10 @@ export function openConnection(
         // throttle window the cached answer goes back instead (still a reply:
         // the client's poll must never just vanish). The async resend checks
         // `closed` — the socket may be gone by the time the probe lands.
-        if (Date.now() - lastProbeAt < REFRESH_MIN_INTERVAL_MS) {
+        if (!probeGate.take()) {
           sendAgents();
           break;
         }
-        lastProbeAt = Date.now();
         void probeLocalServers().then(() => {
           if (!closed) sendAgents();
         });

@@ -185,7 +185,7 @@ test("a corrupt checkpoint is retained and reported, never silently treated as a
   assert.match(loaded.errors.get("badc0ffe") ?? "", /JSON/);
   assert.equal(readFileSync(path.join(dir, "badc0ffe.json"), "utf8"), "{broken");
 
-  const registry = new SessionRegistry(MOCK_BACKEND, 0, store);
+  const registry = new SessionRegistry({ backend: MOCK_BACKEND, deltaCoalesceMs: 0, store: store });
   assert.throws(() => registry.open("badc0ffe"), /saved but its checkpoint is unavailable/);
   assert.equal(registry.end("badc0ffe"), true, "explicit end is the deletion path");
   assert.equal(readdirSync(dir).length, 0);
@@ -351,14 +351,14 @@ test("a new registry lists and lazily reopens the exact saved transcript", () =>
   const root = mkdtempSync(path.join(os.tmpdir(), "mirafold-session-root-"));
   const storeDir = mkdtempSync(path.join(os.tmpdir(), "mirafold-session-store-"));
   const store = new SessionCheckpointStore(storeDir);
-  const first = new SessionRegistry(MOCK_BACKEND, 0, store);
+  const first = new SessionRegistry({ backend: MOCK_BACKEND, deltaCoalesceMs: 0, store: store });
   const original = first.create({ cwd: root });
   first.broadcast(original, { type: "user_prompt", text: "remember this" });
   first.broadcast(original, { type: "text_delta", text: "remembered" });
   first.broadcast(original, { type: "turn_end" });
   first.rename(original.id, "durable chat");
 
-  const second = new SessionRegistry(MOCK_BACKEND, 0, store);
+  const second = new SessionRegistry({ backend: MOCK_BACKEND, deltaCoalesceMs: 0, store: store });
   assert.equal(second.get(original.id), undefined, "startup does not eagerly launch an engine");
   assert.deepEqual(
     second.summary().map((row) => [row.sessionId, row.name, row.status, row.viewports]),
@@ -386,7 +386,7 @@ test("a viewportless dormant reopen arms the ordinary idle unload", async () => 
   stored.bangCwd = root;
   store.write(stored);
 
-  const registry = new SessionRegistry(MOCK_BACKEND, 0, store, 15);
+  const registry = new SessionRegistry({ backend: MOCK_BACKEND, deltaCoalesceMs: 0, store: store, idleTimeoutMs: 15 });
   const reopened = registry.open(stored.id)!;
   assert.ok(reopened.idleTimer, "activation must arm an unload without a viewport attach");
   await waitUntil(() => registry.get(stored.id) === undefined);
@@ -402,11 +402,11 @@ test("restoring a checkpoint closes an in-flight browser turn without discarding
   const root = mkdtempSync(path.join(os.tmpdir(), "mirafold-session-root-"));
   const storeDir = mkdtempSync(path.join(os.tmpdir(), "mirafold-session-store-"));
   const store = new SessionCheckpointStore(storeDir);
-  const first = new SessionRegistry(MOCK_BACKEND, 0, store);
+  const first = new SessionRegistry({ backend: MOCK_BACKEND, deltaCoalesceMs: 0, store: store });
   const original = first.create({ cwd: root });
   first.broadcast(original, { type: "user_prompt", text: "half finished" });
 
-  const second = new SessionRegistry(MOCK_BACKEND, 0, store);
+  const second = new SessionRegistry({ backend: MOCK_BACKEND, deltaCoalesceMs: 0, store: store });
   const restored = second.open(original.id)!;
   assert.equal(restored.status, "idle");
   assert.equal(
@@ -427,12 +427,12 @@ test("restoring a checkpoint closes an interrupted shell command", () => {
   const root = mkdtempSync(path.join(os.tmpdir(), "mirafold-session-root-"));
   const storeDir = mkdtempSync(path.join(os.tmpdir(), "mirafold-session-store-"));
   const store = new SessionCheckpointStore(storeDir);
-  const first = new SessionRegistry(MOCK_BACKEND, 0, store);
+  const first = new SessionRegistry({ backend: MOCK_BACKEND, deltaCoalesceMs: 0, store: store });
   const original = first.create({ cwd: root });
   first.broadcast(original, { type: "bang_start", command: "long task", id: "bang-1" });
   first.broadcast(original, { type: "bang_output", id: "bang-1", data: "halfway\n" });
 
-  const restored = new SessionRegistry(MOCK_BACKEND, 0, store).open(original.id)!;
+  const restored = new SessionRegistry({ backend: MOCK_BACKEND, deltaCoalesceMs: 0, store: store }).open(original.id)!;
   const end = restored.ring.buffer.find(
     (msg): msg is Extract<WireMsg, { type: "bang_end" }> =>
       msg.type === "bang_end" && msg.id === "bang-1",
@@ -447,7 +447,7 @@ test("restoring a checkpoint closes an interrupted shell command", () => {
 test("explicit End Session cannot be undone by a late adapter callback", () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), "mirafold-session-store-late-"));
   const store = new SessionCheckpointStore(dir);
-  const registry = new SessionRegistry(MOCK_BACKEND, 0, store);
+  const registry = new SessionRegistry({ backend: MOCK_BACKEND, deltaCoalesceMs: 0, store: store });
   const entry = registry.create({ cwd: dir });
   assert.equal(registry.end(entry.id), true);
 
@@ -475,7 +475,7 @@ test("a failed durable delete leaves the live session and filesystem watcher int
 
   const dir = mkdtempSync(path.join(os.tmpdir(), "mirafold-session-delete-"));
   const store = new FailingDeleteStore(dir);
-  const registry = new SessionRegistry(MOCK_BACKEND, 0, store);
+  const registry = new SessionRegistry({ backend: MOCK_BACKEND, deltaCoalesceMs: 0, store: store });
   const entry = registry.create({ cwd: dir });
   let stopped = false;
   const watch = {

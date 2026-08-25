@@ -13,20 +13,34 @@
 // pairing through the hosted relay loads the viewport from the hosted static
 // origin; an explicit relay with no MIRAFOLD_APP_URL keeps the HTTP-twin
 // fallback (dev + stub, where one host plays both parts — see index.ts).
+import { envOff } from "../env";
+
 export const DEFAULT_RELAY_URL = "wss://relay.mirafold.sh";
 export const DEFAULT_APP_URL = "https://app.mirafold.com";
 
-/** The documented opt-out values — remote access off, no default engaged. */
-const OPT_OUT = /^(off|none|disabled|false|0)$/i;
-
 export type RelayPlan =
-  /** Dial this relay. `appUrl` is set when a static app origin is known
-   *  (explicit MIRAFOLD_APP_URL, or the baked default riding the baked relay);
+  /** Dial this relay. `url` is a valid ws:/wss: URL and `origin` its bare
+   *  origin — the one outside destination the shell page's CSP admits.
+   *  `appUrl` is set when a static app origin is known (explicit
+   *  MIRAFOLD_APP_URL, or the baked default riding the baked relay);
    *  undefined keeps the HTTP-twin fallback. */
-  | { kind: "dial"; url: string; source: "explicit" | "default"; appUrl?: string }
+  | { kind: "dial"; url: string; origin: string; source: "explicit" | "default"; appUrl?: string }
   /** Remote access off. `opt-out` = user said so (quiet); `unentitled-default`
-   *  = nothing configured, so the bake stood down (one actionable boot line). */
-  | { kind: "off"; reason: "opt-out" | "unentitled-default" };
+   *  = nothing configured, so the bake stood down (one actionable boot line);
+   *  `malformed-url` = the explicit URL is not ws:/wss: and was REFUSED —
+   *  refusing beats honoring, and local sessions never depend on the relay. */
+  | { kind: "off"; reason: "opt-out" | "unentitled-default" }
+  | { kind: "off"; reason: "malformed-url"; raw: string };
+
+/** A relay URL's bare origin, or undefined when it is not a ws:/wss: URL. */
+export function relayOriginOf(url: string): string | undefined {
+  try {
+    const u = new URL(url);
+    return u.protocol === "ws:" || u.protocol === "wss:" ? u.origin : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * True when a bearer credential riding this URL would cross the network in the
@@ -66,9 +80,20 @@ export function resolveRelayPlan(env: {
 }): RelayPlan {
   const raw = env.MIRAFOLD_RELAY_URL?.trim();
   const appUrl = env.MIRAFOLD_APP_URL?.trim().replace(/\/+$/, "") || undefined;
-  if (raw && OPT_OUT.test(raw)) return { kind: "off", reason: "opt-out" };
-  if (raw) return { kind: "dial", url: raw, source: "explicit", appUrl };
+  if (raw && envOff(raw)) return { kind: "off", reason: "opt-out" };
+  if (raw) {
+    const origin = relayOriginOf(raw);
+    return origin
+      ? { kind: "dial", url: raw, origin, source: "explicit", appUrl }
+      : { kind: "off", reason: "malformed-url", raw };
+  }
   const entitled = !!(env.MIRAFOLD_ENTITLEMENT_TOKEN?.trim() || env.MIRAFOLD_LICENSE_KEY?.trim());
   if (!entitled) return { kind: "off", reason: "unentitled-default" };
-  return { kind: "dial", url: DEFAULT_RELAY_URL, source: "default", appUrl: appUrl ?? DEFAULT_APP_URL };
+  return {
+    kind: "dial",
+    url: DEFAULT_RELAY_URL,
+    origin: relayOriginOf(DEFAULT_RELAY_URL) as string,
+    source: "default",
+    appUrl: appUrl ?? DEFAULT_APP_URL,
+  };
 }

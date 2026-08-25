@@ -11,6 +11,7 @@
 // OS's tmp reaping — a recorded v1 decision, not an accident.
 
 import fs from "node:fs";
+import type { ConnectionContext } from "./handler-context";
 import os from "node:os";
 import path from "node:path";
 import type { ClientMsg, WireMsg } from "../protocol";
@@ -74,11 +75,7 @@ type ActiveUpload = {
   stall: NodeJS.Timeout;
 };
 
-type UploadDeps = {
-  viewport: (msg: WireMsg) => void;
-  getEntry: () => SessionEntry | null;
-  remote: boolean;
-};
+type UploadDeps = Pick<ConnectionContext, "viewport" | "getEntry" | "remote" | "isClosed">;
 
 export type UploadHandlers = {
   begin(msg: ClientMsg & { type: "file_upload_begin" }): void;
@@ -88,7 +85,11 @@ export type UploadHandlers = {
   dispose(): void;
 };
 
-export function createUploadHandlers({ viewport, getEntry, remote }: UploadDeps): UploadHandlers {
+export function createUploadHandlers({ viewport, getEntry, remote, isClosed }: UploadDeps): UploadHandlers {
+  // Staging completes asynchronously; a reply must never chase a closed socket.
+  const reply = (msg: WireMsg) => {
+    if (!isClosed()) viewport(msg);
+  };
   const active = new Map<string, ActiveUpload>();
 
   const fail = (id: string, message: string) => {
@@ -97,7 +98,7 @@ export function createUploadHandlers({ viewport, getEntry, remote }: UploadDeps)
       clearTimeout(up.stall);
       active.delete(id);
     }
-    viewport({ type: "file_upload_error", id, message });
+    reply({ type: "file_upload_error", id, message });
   };
 
   const armStall = (id: string, up: ActiveUpload) => {
@@ -117,7 +118,7 @@ export function createUploadHandlers({ viewport, getEntry, remote }: UploadDeps)
     active.delete(id);
     const entry = getEntry();
     if (!entry) {
-      viewport({ type: "file_upload_error", id, message: "no session attached" });
+      reply({ type: "file_upload_error", id, message: "no session attached" });
       return;
     }
     try {
@@ -126,9 +127,9 @@ export function createUploadHandlers({ viewport, getEntry, remote }: UploadDeps)
       const dest = collisionFreePath(dir, up.name);
       fs.writeFileSync(dest, Buffer.concat(up.chunks), { mode: 0o600 });
       log.info(`staged upload ${up.name} (${up.size} bytes) → session ${entry.id}`);
-      viewport({ type: "file_upload_done", id, path: dest, name: up.name });
+      reply({ type: "file_upload_done", id, path: dest, name: up.name });
     } catch (err) {
-      viewport({
+      reply({
         type: "file_upload_error",
         id,
         message: `could not stage the file: ${err instanceof Error ? err.message : String(err)}`,
@@ -153,7 +154,7 @@ export function createUploadHandlers({ viewport, getEntry, remote }: UploadDeps)
         // Refuse the NEW begin only — `fail` would tear down the healthy
         // in-flight upload that legitimately owns this id (bughunt: a client
         // id-collision destroyed the original transfer mid-flight).
-        viewport({ type: "file_upload_error", id: msg.id, message: "duplicate upload id" });
+        reply({ type: "file_upload_error", id: msg.id, message: "duplicate upload id" });
         return;
       }
       if (active.size >= FILE_UPLOAD_MAX_CONCURRENT) {
@@ -190,7 +191,7 @@ export function createUploadHandlers({ viewport, getEntry, remote }: UploadDeps)
       if (!up) {
         // Answer, don't hang the client's correlation: a chunk with no
         // begin (or after a failure) tells the sender its upload is dead.
-        viewport({ type: "file_upload_error", id: msg.id, message: "unknown upload" });
+        reply({ type: "file_upload_error", id: msg.id, message: "unknown upload" });
         return;
       }
       // Buffer.from(str, "base64") never throws — it silently DROPS invalid

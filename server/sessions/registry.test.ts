@@ -53,7 +53,7 @@ function freshSession() {
   // deltaCoalesceMs 0: deltas pass straight through, so these tests can
   // drive broadcast() by hand and inspect state between synchronous calls.
   // The coalescing window itself has its own tests below.
-  const reg = new SessionRegistry(MOCK_BACKEND, 0);
+  const reg = new SessionRegistry({ backend: MOCK_BACKEND, deltaCoalesceMs: 0 });
   const dir = mkdtempSync(path.join(os.tmpdir(), "genui-reg-"));
   const entry = reg.create({ cwd: dir });
   assert.equal(entry.ring.buffer.length, 0); // create() streams nothing
@@ -63,7 +63,7 @@ function freshSession() {
 
 test("an active rename rolls back when its checkpoint cannot be written", () => {
   const store = new SessionCheckpointStore(mkdtempSync(path.join(os.tmpdir(), "genui-rename-store-")));
-  const reg = new SessionRegistry(MOCK_BACKEND, 0, store);
+  const reg = new SessionRegistry({ backend: MOCK_BACKEND, deltaCoalesceMs: 0, store: store });
   const dir = mkdtempSync(path.join(os.tmpdir(), "genui-rename-root-"));
   const entry = reg.create({ cwd: dir });
   const previous = entry.name;
@@ -356,7 +356,7 @@ test("Q.3 canResume on a small (un-evicted) buffer: seq 0 replays from the very 
 // or by any other message arriving — order preserved either way.
 
 function coalescingSession(windowMs: number) {
-  const reg = new SessionRegistry(MOCK_BACKEND, windowMs);
+  const reg = new SessionRegistry({ backend: MOCK_BACKEND, deltaCoalesceMs: windowMs });
   const dir = mkdtempSync(path.join(os.tmpdir(), "genui-reg-"));
   const entry = reg.create({ cwd: dir });
   const seen: WireMsg[] = [];

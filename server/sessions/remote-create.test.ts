@@ -70,17 +70,17 @@ class FakeClassifyingSession implements AgentSession {
 
 function rig() {
   const sessions: FakeClassifyingSession[] = [];
-  const reg = new SessionRegistry(OC, 0, undefined, undefined, () => {
+  const reg = new SessionRegistry({ backend: OC, deltaCoalesceMs: 0, makeSession: () => {
     const s = new FakeClassifyingSession();
     sessions.push(s);
     return s;
-  });
+  } });
   return { reg, sessions };
 }
 
 function conn(reg: SessionRegistry, remote: boolean) {
   const seen: WireMsg[] = [];
-  const c = openConnection(reg, (m) => seen.push(m), "test", undefined, remote);
+  const c = openConnection(reg, (m) => seen.push(m), { label: "test", remote });
   return { c, seen };
 }
 const send = (c: Connection, msg: unknown) => c.handleMessage(JSON.stringify(msg));

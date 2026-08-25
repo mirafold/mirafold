@@ -16,8 +16,10 @@
 // outage degrades to the standing support-email path the site promises.
 
 import { createLogger } from "../log";
+import { inflightSlot, minInterval } from "../throttle";
+import { DEFAULT_ENTITLEMENT_URL, postLicenseKey, resolveEntitlementUrl } from "./entitlement";
 
-const log = createLogger("relay");
+const log = createLogger("billing");
 
 const FETCH_TIMEOUT_MS = 10_000;
 // A cancel is a hand-clicked action; anything faster than this per action
@@ -57,7 +59,7 @@ export function createSubscriptionActions(env: {
   if (env.MIRAFOLD_ENTITLEMENT_TOKEN?.trim()) return undefined; // ops override — no key in play
   const licenseKey = env.MIRAFOLD_LICENSE_KEY?.trim();
   if (!licenseKey) return undefined;
-  const url = env.MIRAFOLD_ENTITLEMENT_URL?.trim() || "https://mirafold.com/api/entitlement";
+  const url = resolveEntitlementUrl(env);
   const base = subscriptionBase(url);
   if (!base) {
     log.warn(
@@ -69,12 +71,7 @@ export function createSubscriptionActions(env: {
 
   const call = async (endpoint: string): Promise<SubscriptionResult> => {
     try {
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ licenseKey }),
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      });
+      const res = await postLicenseKey(endpoint, licenseKey, FETCH_TIMEOUT_MS);
       if (res.status === 403 || res.status === 400) {
         // Our backend's own composed refusal (unknown/superseded key). Shown
         // as-is but bounded: a self-hoster can point the exchange anywhere,
@@ -111,18 +108,16 @@ export function createSubscriptionActions(env: {
  * requests still get a reply — silence strands the card in "working".
  */
 export function createSubscriptionThrottle(minGapMs = MIN_GAP_MS) {
-  let lastStart = 0;
-  let inflight = false;
+  const gap = minInterval(minGapMs);
+  const slot = inflightSlot();
   return {
     tryStart(): boolean {
-      const now = Date.now();
-      if (inflight || now - lastStart < minGapMs) return false;
-      lastStart = now;
-      inflight = true;
+      if (slot.busy || !gap.take()) return false;
+      slot.take();
       return true;
     },
     done(): void {
-      inflight = false;
+      slot.release();
     },
   };
 }

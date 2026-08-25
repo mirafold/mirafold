@@ -187,6 +187,19 @@ export type SessionEntry = SessionActivityState & {
 };
 
 
+export type RegistryOptions = {
+  /** The daemon-default backend for a create() that names no agent. */
+  backend?: Backend;
+  /** The delta-merge window; 0 = no merging (tests that drive broadcast()
+   *  by hand and inspect state between calls pass 0). */
+  deltaCoalesceMs?: number;
+  store?: SessionCheckpointStore;
+  idleTimeoutMs?: number;
+  /** Test seam: the classify-before-create flow needs an entry whose session
+   *  exposes onBackendKind/verifyBackendKind without spawning a real engine. */
+  makeSession?: typeof createSession;
+};
+
 /**
  * Sessions decoupled from connections (Step 4.2). A session outlives any
  * socket: connections attach as viewports, every emitted WireMsg is fanned
@@ -202,20 +215,20 @@ export class SessionRegistry {
 
   // Which agent every session in this registry runs, resolved once from
   // config (Phase P.1). The agent is chosen here, not hardcoded downstream.
-  // `deltaCoalesceMs` is the delta-merge window; 0 = no merging (tests that
-  // drive broadcast() by hand and inspect state between calls pass 0).
-  constructor(
-    private backend: Backend = resolveBackend(),
-    private deltaCoalesceMs: number = DELTA_COALESCE_MS,
-    private store?: SessionCheckpointStore,
-    private idleTimeoutMs: number = IDLE_TIMEOUT_MS,
-    // Test seam (Phase RC): the classify-before-create flow needs an entry
-    // whose session exposes onBackendKind/verifyBackendKind without spawning
-    // a real engine.
-    private makeSession: typeof createSession = createSession,
-  ) {
-    if (store) {
-      const loaded = store.loadAll();
+  private backend: Backend;
+  private deltaCoalesceMs: number;
+  private store?: SessionCheckpointStore;
+  private idleTimeoutMs: number;
+  private makeSession: typeof createSession;
+
+  constructor(options: RegistryOptions = {}) {
+    this.backend = options.backend ?? resolveBackend();
+    this.deltaCoalesceMs = options.deltaCoalesceMs ?? DELTA_COALESCE_MS;
+    this.store = options.store;
+    this.idleTimeoutMs = options.idleTimeoutMs ?? IDLE_TIMEOUT_MS;
+    this.makeSession = options.makeSession ?? createSession;
+    if (this.store) {
+      const loaded = this.store.loadAll();
       this.dormant = loaded.sessions;
       this.restoreErrors = loaded.errors;
     }
@@ -622,6 +635,16 @@ export class SessionRegistry {
     // The `=== entry` guard skips this for a session already ended (#11):
     // end() deletes it from the map, so a later detach mustn't re-arm the idle
     // timer or double-close the engine.
+    if (entry.viewports.size === 0 && this.entries.get(entry.id) === entry) {
+      this.armIdleUnload(entry);
+    }
+  }
+
+  /** A session revived or minted by a request that ended up attaching nothing
+   *  (a refused remote attach or act): return it to the ordinary idle-unload
+   *  path instead of leaving its engine warm indefinitely. A no-op for a
+   *  session that has viewports or was already ended. */
+  releaseIfUnviewed(entry: SessionEntry) {
     if (entry.viewports.size === 0 && this.entries.get(entry.id) === entry) {
       this.armIdleUnload(entry);
     }
