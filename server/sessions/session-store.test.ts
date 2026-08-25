@@ -13,7 +13,7 @@ import path from "node:path";
 import { restoreBackend, type Backend } from "../adapters";
 import { SessionRegistry } from "./registry";
 import { SessionCheckpointStore, type StoredSession } from "./session-store";
-import type { WireMsg } from "../protocol";
+import type { SessionMsg, WireMsg } from "../protocol";
 import { PROMPT_LABEL_CAP, normalizePromptOptions } from "../prompt-options";
 
 const MOCK_BACKEND: Backend = { agent: "codex", kind: "none", live: false };
@@ -218,7 +218,7 @@ test("UX.8: strict checkpoint decoding accepts every persistable transcript fram
       source: "codex",
     },
   ];
-  const bodies: WireMsg[] = [
+  const bodies: SessionMsg[] = [
     { type: "text_delta", text: "hello" },
     { type: "status", state: "tool", label: "Read" },
     { type: "turn_end" },
@@ -250,7 +250,7 @@ test("UX.8: strict checkpoint decoding accepts every persistable transcript fram
     { type: "bang_output", data: "ok\n", id: "b1" },
     { type: "bang_end", id: "b1", exitCode: 0 },
   ];
-  stored.buffer = bodies.map((body, index) => ({ ...body, seq: index + 1 }) as WireMsg);
+  stored.buffer = bodies.map((body, index) => ({ ...body, seq: index + 1 }) as SessionMsg);
   stored.nextSeq = stored.buffer.length + 1;
   store.write(stored);
 

@@ -6,7 +6,7 @@ import path from "node:path";
 import { expandHomePath, foldUsage, resolveCwd, SessionRegistry } from "./registry";
 import { PERMISSION_TIMEOUT_MS } from "../adapters/types";
 import type { Backend } from "../adapters";
-import type { WireMsg } from "../protocol";
+import type { SessionMsg, WireMsg } from "../protocol";
 import { SessionCheckpointStore } from "./session-store";
 
 test("resolveCwd defaults to the process cwd", () => {
@@ -77,7 +77,7 @@ test("an active rename rolls back when its checkpoint cannot be written", () => 
   reg.end(entry.id);
 });
 
-const delta = (): WireMsg => ({ type: "text_delta", text: "x" });
+const delta = (): SessionMsg => ({ type: "text_delta", text: "x" });
 
 test("prompt options are a replaceable unsequenced session snapshot, not transcript history", () => {
   const { reg, entry } = freshSession();
@@ -180,7 +180,7 @@ const BUFFER_MAX_BYTES = 32_000_000;
 
 /** One image-sized render — the payload class the byte cap exists for: a
  *  short agent-authored path becomes a multi-megabyte data: URI. */
-const bigRender = (mb: number): WireMsg => ({
+const bigRender = (mb: number): SessionMsg => ({
   type: "render",
   component: "image",
   props: { path: "shot.png", alt: "x", src: `data:image/png;base64,${"A".repeat(mb * 1_000_000)}` },

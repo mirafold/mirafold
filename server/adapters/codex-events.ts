@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type { McpToolCallItem, ThreadEvent, ThreadItem } from "@openai/codex-sdk";
-import type { WireMsg } from "../protocol";
+import type { SessionMsg } from "../protocol";
 import { type TodoItem, capOutput, joinTextBlocks } from "./types";
 import { MIRAFOLD_MCP, generativeUIMsg, renderIdFor } from "./render-mcp-cmd";
 import { ChecklistPainter } from "./wire-helpers";
 import { convertMermaidCharts } from "./mermaid-chart";
 
-type Emit = (message: WireMsg) => void;
+type Emit = (message: SessionMsg) => void;
 
 export function mcpText(content: unknown): string {
   if (!Array.isArray(content)) return content == null ? "" : String(content);

@@ -8,7 +8,7 @@ import { randomUUID } from "node:crypto";
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import { renderToolEntries, type RenderToolName } from "./adapters/render-mcp-cmd";
-import type { WireMsg } from "./protocol";
+import type { SessionMsg } from "./protocol";
 import { resolveImageProps } from "./render-image";
 import { registryShapes, type ComponentName } from "./registry-spec";
 import { actionToolNames } from "./sessions/actions";
@@ -136,7 +136,7 @@ components freely.
 // tool's file read to the session's directory. Optional, a future adapter
 // could omit it and silently ship the agent's own `src` to the client,
 // skipping containment and the byte cap. Required, that's a compile error.
-export function makeRenderServer(emit: (msg: WireMsg) => void, workspaceDir: string) {
+export function makeRenderServer(emit: (msg: SessionMsg) => void, workspaceDir: string) {
   const emitRender = (component: ComponentName, id: string | undefined, props: object) => {
     const renderId = id ?? randomUUID();
     // image authors a PATH; the daemon inlines the bytes at the synthesis

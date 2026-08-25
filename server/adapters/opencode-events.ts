@@ -1,4 +1,4 @@
-import type { WireMsg } from "../protocol";
+import type { SessionMsg } from "../protocol";
 import { capOutput, toolDetail, SubagentProseBudget, type TodoItem } from "./types";
 import { generativeUIMsg, MIRAFOLD_MCP, renderIdFor } from "./render-mcp-cmd";
 import { ChecklistPainter } from "./wire-helpers";
@@ -64,7 +64,7 @@ export class OpenCodeEventMapper {
 
   constructor(
     private readonly options: {
-      emit: (msg: WireMsg) => void;
+      emit: (msg: SessionMsg) => void;
       workspaceDir: string;
       /** The ROOT session this mapper narrates. Subagent child sessions
        *  share the event stream under their own ids and ride the subagent

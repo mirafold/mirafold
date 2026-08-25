@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { AgentName, PromptOption, WireMsg } from "../protocol";
+import type { AgentName, PromptOption, SessionMsg } from "../protocol";
 import {
   type AgentSession,
   type TodoItem,
@@ -480,7 +480,7 @@ type MockScenario = {
 };
 
 export class MockSession implements AgentSession {
-  private listeners = new Set<(msg: WireMsg) => void>();
+  private listeners = new Set<(msg: SessionMsg) => void>();
   private timers: ReturnType<typeof setTimeout>[] = [];
   private deck: number[] = [];
   // Turns opened but not yet closed — interrupt() must close every one.
@@ -602,7 +602,7 @@ export class MockSession implements AgentSession {
     this.playTemplateTurn(text);
   }
 
-  onMessage(cb: (msg: WireMsg) => void) {
+  onMessage(cb: (msg: SessionMsg) => void) {
     this.listeners.add(cb);
   }
 
@@ -1564,7 +1564,7 @@ export class MockSession implements AgentSession {
     this.endTurn(delay, 60);
   }
 
-  private emit(msg: WireMsg) {
+  private emit(msg: SessionMsg) {
     for (const cb of this.listeners) cb(msg);
   }
 

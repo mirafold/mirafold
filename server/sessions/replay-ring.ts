@@ -1,15 +1,15 @@
-import type { WireMsg } from "../protocol";
+import type { SessionMsg } from "../protocol";
 import { BUFFER_CAP, BUFFER_MAX_BYTES } from "./limits";
 
 /** Rough retained size of a buffered message. JSON length is the honest proxy
  *  for the payloads that matter here (a data: URI is one long string) and
  *  costs one serialization per broadcast — the same work the verbose logger
  *  already does per message. */
-export function msgBytes(msg: WireMsg): number {
+export function msgBytes(msg: SessionMsg): number {
   return Buffer.byteLength(JSON.stringify(msg));
 }
 
-type Delta = Extract<WireMsg, { type: "text_delta" | "thinking_delta" }>;
+type Delta = Extract<SessionMsg, { type: "text_delta" | "thinking_delta" }>;
 
 /**
  * One session's sequenced replay ring: the retained tail of the session
@@ -27,7 +27,7 @@ type Delta = Extract<WireMsg, { type: "text_delta" | "thinking_delta" }>;
  * before it is delivered.
  */
 export class ReplayRing {
-  buffer: WireMsg[] = [];
+  buffer: SessionMsg[] = [];
   bytes = 0;
   nextSeq = 1;
   /** A tail cursor is meaningful only inside one daemon's stream epoch. A
@@ -43,14 +43,14 @@ export class ReplayRing {
     private readonly opts: {
       /** The coalescing window; 0 = every delta passes straight through. */
       coalesceMs: number;
-      deliver: (msg: WireMsg) => void;
+      deliver: (msg: SessionMsg) => void;
       countCap?: number;
       byteCap?: number;
     },
   ) {}
 
   /** A ring rebuilt from a checkpoint: full-replay only for this lifetime. */
-  static restore(buffer: WireMsg[], nextSeq: number, opts: ReplayRing["opts"]): ReplayRing {
+  static restore(buffer: SessionMsg[], nextSeq: number, opts: ReplayRing["opts"]): ReplayRing {
     const ring = new ReplayRing(opts);
     ring.buffer = buffer;
     ring.bytes = buffer.reduce((sum, msg) => sum + msgBytes(msg), 0);
@@ -63,7 +63,7 @@ export class ReplayRing {
   /** Route a message into the stream: consecutive same-lane deltas merge
    *  inside the window into one message whose text is their concatenation;
    *  anything else flushes the window first, then delivers. */
-  offer(msg: WireMsg) {
+  offer(msg: SessionMsg) {
     if (this.opts.coalesceMs > 0 && (msg.type === "text_delta" || msg.type === "thinking_delta")) {
       const pending = this.pendingDelta;
       // The merge key is (type, parentId): with parallel subagents streaming,
@@ -102,7 +102,7 @@ export class ReplayRing {
    *  it can't corrupt an already-buffered one; nested objects (render props,
    *  tool input) stay shared, so an adapter must not mutate a message after
    *  emitting it. Returns the stamped copy. */
-  push(msg: WireMsg): WireMsg {
+  push(msg: SessionMsg): SessionMsg {
     const stamped = { ...msg, seq: this.nextSeq++ };
     this.buffer.push(stamped);
     this.bytes += msgBytes(stamped);
@@ -143,9 +143,9 @@ export class ReplayRing {
    *  history identically but suppresses live-only side effects. The ring
    *  itself stays unstamped. The window is flushed first so the tail is
    *  complete. */
-  replayAfter(afterSeq?: number): WireMsg[] {
+  replayAfter(afterSeq?: number): SessionMsg[] {
     this.flush();
-    const out: WireMsg[] = [];
+    const out: SessionMsg[] = [];
     for (const msg of this.buffer) {
       if (afterSeq === undefined || (msg.seq ?? 0) > afterSeq) out.push({ ...msg, replay: true });
     }

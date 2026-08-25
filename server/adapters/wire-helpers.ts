@@ -4,10 +4,10 @@
 // pieces that must behave identically no matter which engine is underneath.
 
 import { randomUUID } from "node:crypto";
-import type { WireMsg } from "../protocol";
+import type { SessionMsg } from "../protocol";
 import type { TodoItem } from "./types";
 
-type Emit = (msg: WireMsg) => void;
+type Emit = (msg: SessionMsg) => void;
 
 /** Why an ask resolved. Adapters that must answer their engine use it to
  *  tell a resolution they own (answer / timeout / teardown) from one the

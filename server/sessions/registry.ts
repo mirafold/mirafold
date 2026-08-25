@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { PromptOption, SessionMeta, WireMsg } from "../protocol";
+import type { PromptOption, SessionMeta, SessionMsg, WireMsg } from "../protocol";
 import {
   createSession,
   errText,
@@ -74,7 +74,7 @@ const capLabel = (s: string) => (s.length > LABEL_CAP ? s.slice(0, LABEL_CAP) + 
 /** Bound engine-supplied shell metadata and scrub credential-bearing provider
  * errors before wire/checkpoint/log fanout. Returns the same object on the
  * common no-change path. */
-function normalizeWireMetadata(msg: WireMsg): WireMsg {
+function normalizeWireMetadata(msg: SessionMsg): SessionMsg {
   if (msg.type === "prompt_options") {
     return { ...msg, options: normalizePromptOptions(msg.options) };
   }
@@ -421,7 +421,7 @@ export class SessionRegistry {
     }
   }
 
-  private scheduleCheckpoint(entry: SessionEntry, msg: WireMsg) {
+  private scheduleCheckpoint(entry: SessionEntry, msg: SessionMsg) {
     if (!this.store) return;
     const synchronous =
       msg.type === "user_prompt" ||
@@ -450,7 +450,7 @@ export class SessionRegistry {
    * the other type — flushes the window first, so the buffered stream keeps
    * the adapter's exact order.
    */
-  broadcast(entry: SessionEntry, msg: WireMsg) {
+  broadcast(entry: SessionEntry, msg: SessionMsg) {
     // Adapter callbacks can settle after close (catalog probes, permission
     // denial, an aborted child). Once teardown has removed this exact entry,
     // none of those callbacks may fan out or recreate its deleted checkpoint.
@@ -470,7 +470,7 @@ export class SessionRegistry {
     entry.ring.offer(msg);
   }
 
-  private deliver(entry: SessionEntry, msg: WireMsg) {
+  private deliver(entry: SessionEntry, msg: SessionMsg) {
     const log = createLogger(`session ${entry.id}`);
     // The likeliest live failures (bad key, engine died, CLI missing)
     // arrive here as adapter-emitted `error` WireMsgs — mirror them to the

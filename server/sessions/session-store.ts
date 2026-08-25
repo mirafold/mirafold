@@ -16,7 +16,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
-import type { PromptOption, SessionMeta, WireMsg } from "../protocol";
+import type { PromptOption, SessionMeta, SessionMsg, SessionMsgBody } from "../protocol";
 import type { Backend } from "../adapters";
 import { createLogger, scrubSelectedEndpoint, stateDir } from "../log";
 import {
@@ -49,7 +49,7 @@ export type StoredSession = {
   backend: Backend;
   resumeId?: string;
   promptOptions: PromptOption[];
-  buffer: WireMsg[];
+  buffer: SessionMsg[];
   nextSeq: number;
   name: string;
   status: SessionMeta["status"];
@@ -340,7 +340,21 @@ const storedMetadataSchema = z.object({
   promptOptions: z.array(z.unknown()).max(MAX_PROMPT_OPTIONS),
 });
 
-function decodeTranscript(raw: unknown[], backend: Backend): WireMsg[] {
+// Compile-time: the stored schema covers exactly the transcript — every
+// message broadcast() can deliver has a strict schema above, and no
+// per-viewport message does. prompt_options is the replaceable catalog kept
+// beside the transcript, not in it.
+type StoredType = z.infer<typeof storedWireMessageSchema>["type"];
+type TranscriptType = Exclude<SessionMsgBody["type"], "prompt_options">;
+const storedCoversTranscript: [
+  Exclude<TranscriptType, StoredType>,
+  Exclude<StoredType, TranscriptType>,
+] extends [never, never]
+  ? true
+  : never = true;
+void storedCoversTranscript;
+
+function decodeTranscript(raw: unknown[], backend: Backend): SessionMsg[] {
   let decoded: z.infer<typeof storedWireMessageSchema>[];
   try {
     decoded = z.array(storedWireMessageSchema).parse(raw);

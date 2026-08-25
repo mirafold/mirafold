@@ -8,7 +8,7 @@ import {
   type SDKUserMessage,
   type SlashCommand,
 } from "@anthropic-ai/claude-agent-sdk";
-import type { PromptOption, WireMsg } from "../protocol";
+import type { PromptOption, SessionMsg } from "../protocol";
 import { makeCanUseTool } from "../security/permissions";
 import { makeRenderServer, RENDER_GUIDANCE } from "../render-tools";
 import { ResumeIdState } from "./resume-id";
@@ -122,7 +122,7 @@ function firstPartyCredentialEnv(): Record<string, string> {
  */
 export class ClaudeCodeSession implements AgentSession {
   private queue = new AsyncQueue<string | typeof CLOSE>();
-  private listeners = new Set<(msg: WireMsg) => void>();
+  private listeners = new Set<(msg: SessionMsg) => void>();
   private engine: Query;
   private closed = false;
   // pump() exited — the SDK stream is gone. Distinct from `closed`: this is
@@ -289,7 +289,7 @@ export class ClaudeCodeSession implements AgentSession {
     this.queue.push(text);
   }
 
-  onMessage(cb: (msg: WireMsg) => void) {
+  onMessage(cb: (msg: SessionMsg) => void) {
     this.listeners.add(cb);
   }
 
@@ -372,7 +372,7 @@ export class ClaudeCodeSession implements AgentSession {
     this.checklist.paint([...this.tasks.values()]);
   }
 
-  private emit(msg: WireMsg) {
+  private emit(msg: SessionMsg) {
     for (const cb of this.listeners) cb(msg);
   }
 
@@ -395,7 +395,7 @@ export class ClaudeCodeSession implements AgentSession {
     }
   }
 
-  /** Normalize the SDK's event stream into WireMsg. */
+  /** Normalize the SDK's event stream into SessionMsg. */
   private async pump() {
     try {
       for await (const msg of this.engine) {

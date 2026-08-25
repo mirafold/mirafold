@@ -1,4 +1,4 @@
-import type { PromptOption, WireMsg } from "../protocol";
+import type { PromptOption, SessionMsg } from "../protocol";
 import { emitPromptOptions, errText } from "./types";
 import { emitModelPicker } from "./model-picker";
 import { runSlashTurn } from "./wire-helpers";
@@ -8,7 +8,7 @@ import type {
   OpenCodeModelEntry,
 } from "./opencode-client";
 
-type Emit = (message: WireMsg) => void;
+type Emit = (message: SessionMsg) => void;
 
 // OpenCode's TUI default primary agent — what runs before any explicit pick.
 export const OPENCODE_DEFAULT_AGENT = "build";

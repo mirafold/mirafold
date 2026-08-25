@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { WireMsg } from "../protocol";
+import type { SessionMsg } from "../protocol";
 
 // The /model picker re-skin shared by the codex and gemini adapters: the
 // engine's own catalog painted as ONE shell-owned `picker` wire message —
@@ -17,7 +17,7 @@ export type ModelPickerRow = {
 };
 
 export function emitModelPicker(
-  emit: (msg: WireMsg) => void,
+  emit: (msg: SessionMsg) => void,
   rows: ModelPickerRow[],
   opts: {
     clickText: (id: string) => string;

@@ -54,8 +54,17 @@ export type PromptOption = {
  * ignore the field.
  */
 export type WireMsg = WireMsgBody & { seq?: number; replay?: true };
+/** The session-stream subset: what an adapter emits and the registry
+ *  broadcasts. Only these take a sequence number, replay on attach, and
+ *  persist in a checkpoint. */
+export type SessionMsg = SessionMsgBody & { seq?: number; replay?: true };
 
-type WireMsgBody =
+type WireMsgBody = SessionMsgBody | ViewportMsgBody;
+
+/** Session history — one session's stream, delivered to every attached
+ *  viewport in order. `prompt_options` rides here as the one replaceable
+ *  member: it is broadcast but never sequenced or kept in the transcript. */
+export type SessionMsgBody =
   // `parentId` (optional/additive, like tool_use's): when set, this prose is
   // a SUBAGENT's, grouped under the spawn record whose wire id it names. The
   // handle is OPAQUE and adapter-chosen — shared code only ever groups by
@@ -139,6 +148,69 @@ type WireMsgBody =
   // local echo) so every attached viewport — and the replay buffer — carries
   // them identically.
   | { type: "user_prompt"; text: string }
+  // Agent-authored HTML for the sandboxed iframe host (the ONLY channel raw
+  // agent markup may travel). Re-sending an id replaces that artifact in
+  // place — same rule as `render`.
+  | { type: "artifact"; html: string; id: string; title?: string }
+  // Per-turn token/cost accounting for the shell's status bar. One
+  // per completed turn (just before turn_end); the client sums for the
+  // session total. Replay-safe — buffered like everything else.
+  | {
+      type: "usage";
+      // Absent when the engine hasn't reported its resolved model yet — the
+      // status bar shows nothing rather than a stand-in.
+      model?: string;
+      inputTokens: number;
+      outputTokens: number;
+      costUsd?: number;
+    }
+  // The model's reasoning stream, full fidelity. Renders as a dim block that
+  // folds to one line once the turn's real output starts —
+  // collapse-on-finalize, never dropped. `parentId` rides here too, exactly
+  // as on text_delta: a subagent's reasoning, grouped under its deck.
+  | { type: "thinking_delta"; text: string; parentId?: string }
+  // A service-status line — an event the terminal shows and the adapter
+  // would otherwise drop, so the UI never lies in degraded service: an API
+  // retry (terminal shows "retrying…"; we'd sit on "thinking…" looking
+  // hung), a context compaction, a rate-limit warning, a model refusal (the
+  // turn appears to end for no reason). NOT an error — the turn continues
+  // (retry/compaction) or ends honestly (refusal, alongside the result).
+  // Drawn as a dim persistent system line, never agent markdown. `kind` lets
+  // the client tag it; old clients ignore it and show the text. `warning` is
+  // an engine's own non-fatal advisory, which the terminal shows as a
+  // warning — escalating it to a red `error` line would be louder than the
+  // agent we re-skin (Codex's ErrorItem, "a non-fatal error surfaced as an
+  // item", e.g. no metadata for a local model's slug).
+  // `source` names the ENGINE whose own words these are. Absent means
+  // Mirafold is speaking: every other notice is shell-authored prose, and
+  // the dim system line is a surface the user learns to trust as ours. A
+  // verbatim engine string rendered there unattributed could pose as
+  // Mirafold ("re-enter your API key at …") — so it carries the engine's
+  // name and the client badges it. Adapters: pass it whenever the text is
+  // the engine's, never when you composed the sentence yourself.
+  | {
+      type: "notice";
+      text: string;
+      kind?: "retry" | "compaction" | "rate_limit" | "refusal" | "warning";
+      source?: string;
+    }
+  // The `!` bash passthrough, run in a real PTY (interactive
+  // programs prompt normally). These three carry the command's lifecycle and
+  // its OUTPUT stream — broadcast and replay-buffered like everything else;
+  // what the user TYPES into the command travels only browser→server
+  // (bang_input below) and never appears on this side of the wire. When a
+  // program echoes typed input (echo on), that echo arrives here as ordinary
+  // PTY output — exactly the terminal's behavior; password prompts turn echo
+  // off, so a password never reaches the wire, the ring, or other viewports.
+  | { type: "bang_start"; command: string; id: string }
+  | { type: "bang_output"; data: string; id: string }
+  // exitCode null = killed by signal (user stop, session close).
+  | { type: "bang_end"; id: string; exitCode: number | null };
+
+/** Per-viewport plumbing: answers to one connection's own requests, fleet
+ *  and agent metadata, lifecycle notices. Never sequenced, replayed, or
+ *  persisted — a session_ended or fs_* reply is not history. */
+export type ViewportMsgBody =
   // Reply to attach/create — which session this viewport is on. `agent`
   // (optional/additive): which terminal agent is behind the session, so the
   // status bar can name it. `resumed`: true means the server honored
@@ -240,64 +312,6 @@ type WireMsgBody =
   // of session_created; the shell shows the reason. Never sent to local
   // viewports. `reason` is a stable machine tag; `message` is the human line.
   | { type: "refused"; reason: string; message: string }
-  // Agent-authored HTML for the sandboxed iframe host (the ONLY channel raw
-  // agent markup may travel). Re-sending an id replaces that artifact in
-  // place — same rule as `render`.
-  | { type: "artifact"; html: string; id: string; title?: string }
-  // Per-turn token/cost accounting for the shell's status bar. One
-  // per completed turn (just before turn_end); the client sums for the
-  // session total. Replay-safe — buffered like everything else.
-  | {
-      type: "usage";
-      // Absent when the engine hasn't reported its resolved model yet — the
-      // status bar shows nothing rather than a stand-in.
-      model?: string;
-      inputTokens: number;
-      outputTokens: number;
-      costUsd?: number;
-    }
-  // The model's reasoning stream, full fidelity. Renders as a dim block that
-  // folds to one line once the turn's real output starts —
-  // collapse-on-finalize, never dropped. `parentId` rides here too, exactly
-  // as on text_delta: a subagent's reasoning, grouped under its deck.
-  | { type: "thinking_delta"; text: string; parentId?: string }
-  // A service-status line — an event the terminal shows and the adapter
-  // would otherwise drop, so the UI never lies in degraded service: an API
-  // retry (terminal shows "retrying…"; we'd sit on "thinking…" looking
-  // hung), a context compaction, a rate-limit warning, a model refusal (the
-  // turn appears to end for no reason). NOT an error — the turn continues
-  // (retry/compaction) or ends honestly (refusal, alongside the result).
-  // Drawn as a dim persistent system line, never agent markdown. `kind` lets
-  // the client tag it; old clients ignore it and show the text. `warning` is
-  // an engine's own non-fatal advisory, which the terminal shows as a
-  // warning — escalating it to a red `error` line would be louder than the
-  // agent we re-skin (Codex's ErrorItem, "a non-fatal error surfaced as an
-  // item", e.g. no metadata for a local model's slug).
-  // `source` names the ENGINE whose own words these are. Absent means
-  // Mirafold is speaking: every other notice is shell-authored prose, and
-  // the dim system line is a surface the user learns to trust as ours. A
-  // verbatim engine string rendered there unattributed could pose as
-  // Mirafold ("re-enter your API key at …") — so it carries the engine's
-  // name and the client badges it. Adapters: pass it whenever the text is
-  // the engine's, never when you composed the sentence yourself.
-  | {
-      type: "notice";
-      text: string;
-      kind?: "retry" | "compaction" | "rate_limit" | "refusal" | "warning";
-      source?: string;
-    }
-  // The `!` bash passthrough, run in a real PTY (interactive
-  // programs prompt normally). These three carry the command's lifecycle and
-  // its OUTPUT stream — broadcast and replay-buffered like everything else;
-  // what the user TYPES into the command travels only browser→server
-  // (bang_input below) and never appears on this side of the wire. When a
-  // program echoes typed input (echo on), that echo arrives here as ordinary
-  // PTY output — exactly the terminal's behavior; password prompts turn echo
-  // off, so a password never reaches the wire, the ring, or other viewports.
-  | { type: "bang_start"; command: string; id: string }
-  | { type: "bang_output"; data: string; id: string }
-  // exitCode null = killed by signal (user stop, session close).
-  | { type: "bang_end"; id: string; exitCode: number | null }
   // The shell's read-only file browser. Per-viewport request/reply — like
   // `pong`/`sessions`, never buffered or sequenced: current disk state is a
   // query, not session history, so it must not enter the replay ring. `id`

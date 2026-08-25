@@ -1,6 +1,6 @@
 import path from "node:path";
 import { existsSync } from "node:fs";
-import type { AgentName, PromptOption, WireMsg } from "../protocol";
+import type { AgentName, PromptOption, SessionMsg } from "../protocol";
 import type { CredentialKind } from "../provider-policy";
 import { locateTrustedExecutable } from "../security/executable-trust";
 
@@ -53,7 +53,7 @@ export function errText(err: unknown): string {
  */
 export interface AgentSession {
   pushPrompt(text: string): void;
-  onMessage(cb: (msg: WireMsg) => void): void;
+  onMessage(cb: (msg: SessionMsg) => void): void;
   /** Halt the in-flight turn; the session stays warm for the next prompt. */
   interrupt(): void;
   /** The browser's answer to a permission_request. */
@@ -94,7 +94,7 @@ export interface AgentSession {
 /** Replace the browser's catalog in one atomic message. Kept here so every
  * adapter applies the same stable dedupe rule. */
 export function emitPromptOptions(
-  emit: (msg: WireMsg) => void,
+  emit: (msg: SessionMsg) => void,
   options: PromptOption[],
 ) {
   const seen = new Set<string>();
@@ -135,7 +135,8 @@ export type Backend = {
   endpointSource?: "configured" | "discovered";
   endpointAuth?: "api-key" | "auth-token" | "none";
   // The chosen config-declared provider (codex `[model_providers.<id>]`) —
-  // the adapter forces it per-session so the pick's label stays true.
+  // the adapter forces it per-session so the pick's label stays true. For
+  // OpenCode it is the published classification annotation instead.
   provider?: string;
 };
 

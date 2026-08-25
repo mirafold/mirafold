@@ -1,6 +1,6 @@
 import path from "node:path";
 import { mkdirSync } from "node:fs";
-import type { WireMsg } from "../protocol";
+import type { SessionMsg } from "../protocol";
 import { RENDER_GUIDANCE } from "../render-tools";
 import { envInt } from "../env";
 import { classifyOpenCodeProvider, type CredentialKind } from "../provider-policy";
@@ -53,7 +53,7 @@ const MAX_ENGINE_COMMANDS = 500;
  */
 export class OpenCodeSession implements AgentSession {
   private queue = new AsyncQueue<string | typeof CLOSE>();
-  private listeners = new Set<(msg: WireMsg) => void>();
+  private listeners = new Set<(msg: SessionMsg) => void>();
   private workspaceDir: string;
   private transport: OpenCodeTransport;
   private mapper: OpenCodeEventMapper;
@@ -199,7 +199,7 @@ export class OpenCodeSession implements AgentSession {
     if (!this.closed) this.queue.push(text);
   }
 
-  onMessage(cb: (msg: WireMsg) => void) {
+  onMessage(cb: (msg: SessionMsg) => void) {
     this.listeners.add(cb);
   }
 
@@ -251,7 +251,7 @@ export class OpenCodeSession implements AgentSession {
     this.queue.push(CLOSE);
   }
 
-  private emit(msg: WireMsg) {
+  private emit(msg: SessionMsg) {
     for (const cb of this.listeners) cb(msg);
   }
 

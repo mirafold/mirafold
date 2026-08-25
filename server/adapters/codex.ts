@@ -7,7 +7,7 @@ import {
   type ModelReasoningEffort,
   type Thread,
 } from "@openai/codex-sdk";
-import type { WireMsg } from "../protocol";
+import type { SessionMsg } from "../protocol";
 import { RENDER_GUIDANCE } from "../render-tools";
 import type { AgentSession } from "./types";
 import type { CodexModel } from "./codex-model-list";
@@ -66,7 +66,7 @@ const DEFAULT_LOCAL_TURN_TIMEOUT_MS = envInt(
  */
 export class CodexSession implements AgentSession {
   private queue = new AsyncQueue<string | typeof CLOSE>();
-  private listeners = new Set<(msg: WireMsg) => void>();
+  private listeners = new Set<(msg: SessionMsg) => void>();
   private workspaceDir: string;
   private thread: Thread;
   // A model/effort switch resumes this same warm conversation with new options.
@@ -203,7 +203,7 @@ export class CodexSession implements AgentSession {
     if (!this.closed) this.queue.push(text);
   }
 
-  onMessage(cb: (msg: WireMsg) => void) {
+  onMessage(cb: (msg: SessionMsg) => void) {
     this.listeners.add(cb);
   }
 
@@ -224,7 +224,7 @@ export class CodexSession implements AgentSession {
     this.queue.push(CLOSE);
   }
 
-  private emit(msg: WireMsg) {
+  private emit(msg: SessionMsg) {
     for (const cb of this.listeners) cb(msg);
   }
 

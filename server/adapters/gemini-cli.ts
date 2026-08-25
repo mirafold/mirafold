@@ -3,7 +3,7 @@ import { createLogger, verbose } from "../log";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import type { PromptOption, WireMsg } from "../protocol";
+import type { PromptOption, SessionMsg } from "../protocol";
 import { RENDER_GUIDANCE } from "../render-tools";
 import { type AgentSession, capOutput, emitPromptOptions, errText, toolDetail } from "./types";
 import { MIRAFOLD_MCP, generativeUIMsg, renderIdFor, renderMcpCommand } from "./render-mcp-cmd";
@@ -53,7 +53,7 @@ export function parseRenderId(output: unknown): string {
  */
 export class GeminiCliSession implements AgentSession {
   private queue = new AsyncQueue<string | typeof CLOSE>();
-  private listeners = new Set<(msg: WireMsg) => void>();
+  private listeners = new Set<(msg: SessionMsg) => void>();
   private closed = false;
   private child?: ChildProcessWithoutNullStreams;
   private sessionId: string;
@@ -196,7 +196,7 @@ export class GeminiCliSession implements AgentSession {
     if (!this.closed) this.queue.push(text);
   }
 
-  onMessage(cb: (msg: WireMsg) => void) {
+  onMessage(cb: (msg: SessionMsg) => void) {
     this.listeners.add(cb);
   }
 
@@ -246,7 +246,7 @@ export class GeminiCliSession implements AgentSession {
     this.queue.push(CLOSE);
   }
 
-  private emit(msg: WireMsg) {
+  private emit(msg: SessionMsg) {
     for (const cb of this.listeners) cb(msg);
   }
 
@@ -494,7 +494,7 @@ export class GeminiCliSession implements AgentSession {
     return names.length ? names.join(", ") : this.modelLabel;
   }
 
-  /** Normalize one JSONL event into WireMsg. */
+  /** Normalize one JSONL event into SessionMsg. */
   private handleEvent(ev: Record<string, unknown>) {
     // A session-bearing event proves the CLI accepted/created this id. An
     // error event alone does not: persisting after bad auth/input could make a
@@ -581,7 +581,7 @@ export class GeminiCliSession implements AgentSession {
     }
   }
 
-  /** A buffered Mirafold render tool call → the render/artifact WireMsg it stands for. */
+  /** A buffered Mirafold render tool call → the render/artifact SessionMsg it stands for. */
   private emitGenerativeUI(pending: { tool: string; params: Record<string, unknown> }, output: unknown) {
     const id = renderIdFor({ ackText: output, argId: pending.params["id"] });
     const msg = generativeUIMsg(pending.tool, pending.params, id, this.workspaceDir);

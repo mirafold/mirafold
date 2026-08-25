@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import type { WireMsg } from "../protocol";
+import type { SessionMsg } from "../protocol";
 import { PERMISSION_TIMEOUT_MS } from "../adapters/types";
 import { IDLE_STATE, PERMISSION_MIRROR_CAP, reduceSessionState, type SessionActivityState } from "./session-state";
 
-const run = (msgs: WireMsg[], start: SessionActivityState = IDLE_STATE, now = 1_000) =>
+const run = (msgs: SessionMsg[], start: SessionActivityState = IDLE_STATE, now = 1_000) =>
   msgs.reduce((s, msg) => reduceSessionState(s, { kind: "message", msg }, now).state, start);
 
 test("turn grammar: a prompt starts a turn, turn_end ends it; error + turn_end complete ONE turn", () => {
@@ -47,7 +47,7 @@ test("activity: since resets only on a label CHANGE; idle clears; bang shows its
 });
 
 test("the ask mirror is capped, ages out on the adapter's clock, and drops with its turn", () => {
-  const asks: WireMsg[] = Array.from({ length: PERMISSION_MIRROR_CAP + 5 }, (_, i) => ({
+  const asks: SessionMsg[] = Array.from({ length: PERMISSION_MIRROR_CAP + 5 }, (_, i) => ({
     type: "permission_request",
     tool: "Bash",
     detail: `d${i}`,

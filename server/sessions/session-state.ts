@@ -1,4 +1,4 @@
-import type { SessionMeta, WireMsg } from "../protocol";
+import type { SessionMeta, SessionMsg } from "../protocol";
 import { PERMISSION_TIMEOUT_MS } from "../adapters/types";
 
 // Cap on the fleet's pending-permission MIRROR: a flooded session — a hostile
@@ -38,7 +38,7 @@ export type SessionActivityState = {
 };
 
 export type SessionStateInput =
-  | { kind: "message"; msg: WireMsg }
+  | { kind: "message"; msg: SessionMsg }
   // dispatchPrompt / a `!` transcript handed to the engine: one more model
   // turn is enqueued or running.
   | { kind: "prompt_accepted" }

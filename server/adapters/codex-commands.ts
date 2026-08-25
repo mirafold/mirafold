@@ -1,13 +1,13 @@
 import type { ModelReasoningEffort } from "@openai/codex-sdk";
 import { runSlashTurn } from "./wire-helpers";
-import type { PromptOption, WireMsg } from "../protocol";
+import type { PromptOption, SessionMsg } from "../protocol";
 import { emitPromptOptions } from "./types";
 import type { CodexModel } from "./codex-model-list";
 import { emitModelPicker } from "./model-picker";
 import { codexSlashOptions } from "./codex-prompt-options";
 import type { CodexSkill } from "./codex-skills-list";
 
-type Emit = (message: WireMsg) => void;
+type Emit = (message: SessionMsg) => void;
 
 export type CodexReasoningEffort = ModelReasoningEffort | "none";
 // Internal-only: the model/config default remains in force until a user pick.

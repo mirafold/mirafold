@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { WireMsg } from "../protocol";
+import type { SessionMsg } from "../protocol";
 import { resolveImageProps } from "../render-image";
 import type { ComponentName } from "../registry-spec";
 
@@ -86,7 +86,7 @@ export function generativeUIMsg(
   params: Record<string, unknown>,
   id: string,
   workspaceDir: string,
-): WireMsg | null {
+): SessionMsg | null {
   let props = { ...params };
   delete props["id"];
   if (tool === "emit_artifact") {
