@@ -13,6 +13,7 @@ import { useArmedConfirm } from "../use-armed-confirm";
 import { paintTabStatus } from "../tab-status";
 import { agentLabel } from "../agents-meta";
 import { createDomNotifier, folderTitle } from "../notify";
+import { sessionPath } from "../session-url";
 
 // Mission control, the fleet cockpit: every live session in
 // the registry with name, cwd, live activity, pending permission, and usage —
@@ -154,7 +155,7 @@ export function FleetView() {
         setSubReply(m);
       } else if (m.type === "session_created") {
         // The create issued from the onboarding card below: enter the session.
-        location.assign(`/s/${m.sessionId}`);
+        location.assign(sessionPath(m.sessionId));
       } else if (m.type === "error") {
         // While the picker is open its card owns errors (a refused create);
         // otherwise the reply belongs to a grid act — the header line.
@@ -537,7 +538,7 @@ function SessionName({
     />
   ) : (
     <span className="fleet-name">
-      <a className="fleet-link" href={`/s/${s.sessionId}`}>
+      <a className="fleet-link" href={sessionPath(s.sessionId)}>
         {s.name}
       </a>
       <button

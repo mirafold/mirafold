@@ -30,6 +30,7 @@ import { useEscapeKey } from "../use-escape";
 import { Announcer, useAnnouncer } from "./Announcer";
 import { PermBar } from "./PermBar";
 import type { InputNavigationDirection } from "../input-navigation";
+import { sessionIdFromPath } from "../session-url";
 import type {
   InputNavigationHandle,
   InputNavigationState,
@@ -144,7 +145,7 @@ export function Shell() {
     tail: string;
   }>({ my: null, tail: "" });
 
-  const hasUrlSession = useMemo(() => /^\/s\/[\w-]+/.test(location.pathname), []);
+  const hasUrlSession = useMemo(() => sessionIdFromPath(location.pathname) !== null, []);
 
   // ── The auxiliary workspace ─────────────────────────────────────────────
   // Exactly one shell-owned side surface can be open: Files answers what

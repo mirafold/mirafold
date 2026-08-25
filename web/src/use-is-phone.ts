@@ -1,10 +1,8 @@
 import { useEffect, useState } from "react";
 
-// Live phone-width detection. PromptBox's IS_PHONE is a module-load
-// constant — fine for a one-shot layout choice, wrong for a component that
-// must re-render when the viewport crosses the breakpoint (a rotate, a
-// desktop window resize, and every e2e that drives one page across widths).
-// This tracks the media query for the component's lifetime.
+// Live phone-width detection: tracks the media query for the component's
+// lifetime, so a rotate, a desktop window resize, and an e2e that drives one
+// page across widths all re-render across the breakpoint.
 const PHONE_QUERY = "(max-width: 640px)";
 
 export function useIsPhone(): boolean {

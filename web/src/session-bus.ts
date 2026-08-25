@@ -1,6 +1,7 @@
 import type { Action, AgentName, BackendChoice, WireMsg } from "@protocol";
 import { SocketClient } from "./ws";
 import { createDaemonClient, mintId, type SubscriptionAct } from "./daemon-client";
+import { sessionIdFromPath, sessionPath } from "./session-url";
 
 export type { SubscriptionAct } from "./daemon-client";
 export { sendSubscriptionRequest } from "./daemon-client";
@@ -65,7 +66,7 @@ export function createSessionBus(): SessionBus {
   const connListeners = new Set<(c: boolean, refusal?: string) => void>();
   const daemon = createDaemonClient(socket);
   // The URL carries the session identity; no id yet means "create one".
-  let sessionId = location.pathname.match(/^\/s\/([\w-]+)/)?.[1] ?? null;
+  let sessionId = sessionIdFromPath(location.pathname);
   // Attach to a known session; otherwise send nothing and wait at onboarding
   // (no agent is assumed, so we don't auto-create). The hello names the
   // last seq this viewport saw, asking for a tail-only resume.
@@ -85,7 +86,7 @@ export function createSessionBus(): SessionBus {
     if (daemon.handle(m)) return;
     if (m.type === "session_created") {
       sessionId = m.sessionId;
-      history.replaceState(null, "", `/s/${m.sessionId}`);
+      history.replaceState(null, "", sessionPath(m.sessionId));
       // Full attach: the server replays the whole buffer next — clear the
       // zone so pre-attach residue never sits above the transcript.
       // Resumed attach: only the unseen tail follows — keep

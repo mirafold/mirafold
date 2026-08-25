@@ -1,4 +1,7 @@
-import type { AgentName } from "@protocol";
+import type { AgentInfo, AgentName } from "@protocol";
+
+/** The backing a picker row names — the wire's own vocabulary. */
+type BackendKind = NonNullable<AgentInfo["kind"]>;
 
 // Shared display metadata for the offerable agents. LABEL is the human
 // name; CONNECT_HINT is the one concrete action that makes that agent live —
@@ -85,10 +88,7 @@ export function blockedHint(agent: string): string | undefined {
  *  "OpenAI API key" — ChatGPT is their SUBSCRIPTION brand and they keep the
  *  two apart, which is why the subscription labels below don't match these
  *  one-for-one. That asymmetry is theirs, and inheriting it is the point. */
-export function backendLabel(
-  agent: string,
-  kind: "api-key" | "subscription" | "local" | "gateway",
-): string {
+export function backendLabel(agent: string, kind: BackendKind): string {
   // OpenCode Zen: the engine's built-in free gateway — no user
   // account behind it, so neither "API key" nor "subscription" is honest.
   if (kind === "gateway") return "OpenCode Zen (free models)";
@@ -124,7 +124,7 @@ export function localBackendLabel(agent: string, detail: string | undefined): st
  *  routes name the backing identically. */
 export function backingLine(
   agent: string,
-  kind: "api-key" | "subscription" | "local" | "gateway" | undefined,
+  kind: BackendKind | undefined,
   detail: string | undefined,
 ): string | undefined {
   if (!kind) return detail;

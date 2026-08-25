@@ -6,20 +6,11 @@ import {
   promptCompletionMatch,
 } from "../prompt-completions";
 import { mergePromptDraft } from "../prompt-draft";
+import { useIsPhone } from "../use-is-phone";
 import {
   PhoneInputNavigation,
   type PhoneInputNavigationModel,
 } from "./InputNavigation";
-
-// Phone vs. desktop is decided once at module load (a mid-session resize
-// isn't worth a listener) and drives two deliberate divergences:
-// the placeholder (the desktop keyboard lore wraps to three ugly lines on
-// a phone; anything longer than bare "Message" clips beside the cwd crumb
-// at 16px) and the SUBMIT GESTURE — see the Enter handler below.
-const IS_PHONE = window.matchMedia?.("(max-width: 640px)")?.matches ?? false;
-const PLACEHOLDER = IS_PHONE
-  ? "Message"
-  : "Enter to send · Shift+Enter for newline · !cmd runs in your shell";
 
 // Persists the collapsible-cwd choice; anything but "hidden" means shown.
 const CWD_SHOWN_KEY = "mirafold-prompt-cwd";
@@ -145,6 +136,14 @@ export function PromptBox({
   onNavigateLatestInput,
   inputNavigation,
 }: PromptBoxProps) {
+  // Phone drives two deliberate divergences: the placeholder (the desktop
+  // keyboard lore wraps to three ugly lines on a phone; anything longer than
+  // bare "Message" clips beside the cwd crumb at 16px) and the SUBMIT
+  // GESTURE — see the Enter handler below.
+  const phone = useIsPhone();
+  const placeholder = phone
+    ? "Message"
+    : "Enter to send · Shift+Enter for newline · !cmd runs in your shell";
   const [text, setText] = useState("");
   const [cursor, setCursor] = useState(0);
   const [activeOption, setActiveOption] = useState(0);
@@ -197,7 +196,7 @@ export function PromptBox({
     // when its destination button becomes disabled at an endpoint. A turn
     // ending must not use that as a reason to close the card and summon the
     // software keyboard.
-    if (IS_PHONE && inputNavigation?.open) return;
+    if (phone && inputNavigation?.open) return;
     const active = document.activeElement;
     if (active && active !== document.body) return;
     if (window.getSelection()?.isCollapsed === false) return;
@@ -313,7 +312,7 @@ export function PromptBox({
           on phone it ate a third of the typing width and the caret toggle
           isn't discoverable by touch — the folder lives in the settings
           card's Session section there instead. */}
-      {cwd && cwdShown && !IS_PHONE && (
+      {cwd && cwdShown && !phone && (
         <button
           type="button"
           className="prompt-cwd"
@@ -325,7 +324,7 @@ export function PromptBox({
           {"\u200E" + cwd + "\u200E"}
         </button>
       )}
-      {cwd && !IS_PHONE ? (
+      {cwd && !phone ? (
         <button
           type="button"
           className="glyph prompt-caret"
@@ -342,7 +341,7 @@ export function PromptBox({
         role="combobox"
         value={text}
         rows={1}
-        placeholder={PLACEHOLDER}
+        placeholder={placeholder}
         aria-autocomplete="list"
         aria-expanded={menuOpen}
         aria-controls={menuOpen ? PROMPT_OPTIONS_ID : undefined}
@@ -379,7 +378,7 @@ export function PromptBox({
             return;
           }
           if (
-            !IS_PHONE &&
+            !phone &&
             e.key === "ArrowUp" &&
             text.length === 0 &&
             !e.ctrlKey &&
@@ -397,7 +396,7 @@ export function PromptBox({
           // the one way to send, matching every mobile chat app (pinned
           // by phone.e2e.ts). Desktop keeps
           // Enter-to-send, Shift+Enter for newline.
-          if (e.key === "Enter" && !e.shiftKey && !IS_PHONE) {
+          if (e.key === "Enter" && !e.shiftKey && !phone) {
             e.preventDefault();
             submit();
           }
@@ -408,7 +407,7 @@ export function PromptBox({
           ■ esc
         </button>
       ) : (
-        IS_PHONE && (
+        phone && (
           <button
             className="prompt-send"
             onClick={submit}
@@ -420,7 +419,7 @@ export function PromptBox({
           </button>
         )
       )}
-      {IS_PHONE && inputNavigation && (
+      {phone && inputNavigation && (
         <PhoneInputNavigation navigation={inputNavigation} completionOpen={menuOpen} />
       )}
     </div>
