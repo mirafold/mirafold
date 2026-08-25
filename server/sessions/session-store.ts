@@ -294,22 +294,26 @@ const storedBackendSchema = z
       !(b.endpointAuth !== undefined && b.endpointSource !== "configured" && b.endpointAuth !== "none"),
   )
   .transform((b): Backend => {
-    // A Claude endpoint saved before source/auth existed: recover it as a
-    // discovered, unauthenticated target — preserving the conversation is
-    // safe, silently attaching a current credential would not be.
-    const legacyClaudeEndpoint =
-      b.agent === "claude-code" && b.kind === "local" && b.endpoint !== undefined && b.endpointSource === undefined;
-    const endpointSource = legacyClaudeEndpoint ? "discovered" : b.endpointSource;
-    const endpointAuth = legacyClaudeEndpoint ? "none" : b.endpointAuth;
-    return {
+    const base = {
       agent: b.agent,
       kind: b.kind,
       live: b.live,
       ...(b.model !== undefined ? { model: b.model } : {}),
-      ...(b.endpoint !== undefined ? { endpoint: b.endpoint } : {}),
-      ...(endpointSource !== undefined ? { endpointSource } : {}),
-      ...(endpointAuth !== undefined ? { endpointAuth } : {}),
       ...(b.provider !== undefined ? { provider: b.provider } : {}),
+    };
+    if (b.endpoint === undefined) return base;
+    if (b.endpointSource === "configured") {
+      return { ...base, endpoint: b.endpoint, endpointSource: "configured", endpointAuth: b.endpointAuth ?? "none" };
+    }
+    // Discovered — including an endpoint saved before `endpointSource`
+    // existed: recovering it as a discovered, unauthenticated target
+    // preserves the conversation; silently attaching a current credential
+    // would not be safe.
+    return {
+      ...base,
+      endpoint: b.endpoint,
+      endpointSource: "discovered",
+      ...(b.agent === "claude-code" ? { endpointAuth: "none" as const } : {}),
     };
   });
 

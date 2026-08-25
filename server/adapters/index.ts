@@ -197,33 +197,32 @@ export function resolveBackendFor(agent: AgentName): Backend {
   // written bans; codex only if provider-policy ever flips it) is NOT live —
   // it falls back to the mock, so we never actually drive it — and onboarding
   // shows it as `blocked` with the API-key fix.
-  const backend: Backend = {
+  const base = {
     agent,
     kind,
     live: allowedLocally(agent, kind),
     model: modelFor(agent),
   };
   if (kind === "local" && agent === "claude-code") {
+    // Malformed configured input carries no endpoint: the adapter still
+    // reaches its honest error path, and with no credential mode bound it
+    // inherits neither real credential while doing so.
     const endpoint = validEndpointUrl(process.env.ANTHROPIC_BASE_URL);
-    if (endpoint) {
-      backend.endpoint = endpoint;
-      backend.endpointSource = "configured";
-      backend.endpointAuth = configuredClaudeEndpointAuth();
-    } else {
-      // Malformed configured input still reaches the adapter's honest error
-      // path, but it never inherits either real credential while doing so.
-      backend.endpointAuth = "none";
-    }
-  } else if (kind === "local" && agent === "codex") {
+    return endpoint
+      ? { ...base, endpoint, endpointSource: "configured", endpointAuth: configuredClaudeEndpointAuth() }
+      : base;
+  }
+  if (kind === "local" && agent === "codex") {
     const provider = codexConfigProvider()?.provider;
-    if (provider) backend.provider = provider;
-  } else if (agent === "opencode") {
+    return provider ? { ...base, provider } : base;
+  }
+  if (agent === "opencode") {
     // The pinned provider (OPENCODE_MODEL's provider half) — the input the
     // relay gate and the session-start classification both judge.
-    const provider = parseModelPin(backend.model)?.providerID;
-    if (provider) backend.provider = provider;
+    const provider = parseModelPin(base.model)?.providerID;
+    return provider ? { ...base, provider } : base;
   }
-  return backend;
+  return base;
 }
 
 // Agents with a landed adapter — the onboarding picker's universe.

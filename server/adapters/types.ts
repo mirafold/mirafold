@@ -124,21 +124,26 @@ export type Backend = {
   kind: CredentialKind;
   live: boolean;
   model?: string;
-  // The exact chosen local server or configured Claude endpoint.
-  // This is sensitive server-side configuration: it may contain URL auth or a
-  // signed query and is never serialized onto the browser wire. Persisting it
-  // in the owner-only checkpoint prevents recovery from silently drifting.
-  endpoint?: string;
-  // Why an endpoint is here. A discovered endpoint is always driven
-  // with both real Anthropic credentials withheld. A configured endpoint may
-  // use only the credential MODE explicitly bound to it at selection time.
-  endpointSource?: "configured" | "discovered";
-  endpointAuth?: "api-key" | "auth-token" | "none";
   // The chosen config-declared provider (codex `[model_providers.<id>]`) —
   // the adapter forces it per-session so the pick's label stays true. For
   // OpenCode it is the published classification annotation instead.
   provider?: string;
-};
+} & BackendEndpoint;
+
+/** The endpoint half of a `local` backend: the exact chosen local server or
+ *  configured Claude endpoint, and why it is here. Sensitive server-side
+ *  configuration — it may contain URL auth or a signed query and is never
+ *  serialized onto the browser wire; the owner-only checkpoint persists it so
+ *  recovery can't silently drift. Credential-backed kinds carry none. */
+export type BackendEndpoint =
+  | { endpoint?: undefined; endpointSource?: undefined; endpointAuth?: undefined }
+  // A server found running on this machine: always driven with both real
+  // Anthropic credentials withheld (Claude's adapter uses its fixed dummy
+  // token, hence `none`).
+  | { endpoint: string; endpointSource: "discovered"; endpointAuth?: "none" }
+  // The env-configured Claude endpoint: uses only the credential MODE
+  // explicitly bound to it at selection time. Claude-only.
+  | { endpoint: string; endpointSource: "configured"; endpointAuth: "api-key" | "auth-token" | "none" };
 
 /** process.env minus `keys` (and minus undefined slots) — the per-session
  *  engine env override that WITHHOLDS a credential. Both SDKs stop
