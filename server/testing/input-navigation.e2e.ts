@@ -149,12 +149,12 @@ test("desktop command strips expose direct chronological arrows and keyboard nav
       // must continue to the shell's page-wide interrupt while a turn works.
       await prompt.fill("do something dangerous");
       await prompt.press("Enter");
-      await page.locator(".perm-bar").waitFor({ timeout: 15_000 });
+      await page.locator(".permission-bar").waitFor({ timeout: 15_000 });
       await inputs.nth(2).locator(".input-nav-older").focus();
       assert.equal(await page.locator(".is-input-nav-current").count(), 0);
       await page.keyboard.press("Escape");
       await page.locator(".stop-btn").waitFor({ state: "detached", timeout: 15_000 });
-      await page.locator(".perm-bar").waitFor({ state: "detached", timeout: 15_000 });
+      await page.locator(".permission-bar").waitFor({ state: "detached", timeout: 15_000 });
 
       // The existing terminal-style provider picker captures the same key in
       // the capture phase and therefore remains authoritative.
@@ -717,10 +717,10 @@ test("phone discloses temporary navigation directly above the submit arrow", asy
       // priority; navigation returns as soon as the request resolves.
       await prompt.fill("do something dangerous");
       await page.locator(".prompt-send").tap();
-      await page.locator(".perm-bar").waitFor({ timeout: 15_000 });
+      await page.locator(".permission-bar").waitFor({ timeout: 15_000 });
       assert.equal(await page.locator(".input-nav-phone-toggle").count(), 0);
-      await page.locator(".perm-deny").tap();
-      await page.locator(".perm-bar").waitFor({ state: "detached", timeout: 15_000 });
+      await page.locator(".permission-deny").tap();
+      await page.locator(".permission-bar").waitFor({ state: "detached", timeout: 15_000 });
       await page.locator(".input-nav-phone-toggle").waitFor();
 
       // Reaching an endpoint during a live turn can leave BODY focused when

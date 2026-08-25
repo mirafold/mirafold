@@ -89,7 +89,7 @@ test("session usage lands on the details line after the turn (tokens, no invente
 test("needs-you: the row names WHAT it wants; allow from the grid runs the tool; axe-clean", async () => {
   await say(session, "do something dangerous");
   await fleet.waitForSelector(".fleet-perm", { timeout: 15_000 });
-  const detail = await fleet.locator(".fleet-perm-detail").innerText();
+  const detail = await fleet.locator(".fleet-permission-detail").innerText();
   assert.match(detail, /Bash/);
   assert.match(detail, /rm -rf/);
   // The dot carries the state (title for sighted hover, sr-only text for
@@ -104,7 +104,7 @@ test("needs-you: the row names WHAT it wants; allow from the grid runs the tool;
   // permission line (its most content-rich state) on screen.
   await assertAxeClean(fleet, "cockpit with a pending permission");
 
-  await fleet.locator(".fleet-perm-allow").click();
+  await fleet.locator(".fleet-permission-allow").click();
   // The allowed tool really ran — observed in the session tab's transcript.
   await session.waitForSelector("text=Cache cleared and the service restarted", {
     timeout: 30_000,
@@ -116,7 +116,7 @@ test("needs-you: the row names WHAT it wants; allow from the grid runs the tool;
 test("deny from the grid: the command does not run", async () => {
   await say(session, "do something dangerous");
   await fleet.waitForSelector(".fleet-perm", { timeout: 15_000 });
-  await fleet.locator(".fleet-perm-deny").click();
+  await fleet.locator(".fleet-permission-deny").click();
   await session.waitForSelector("text=I won't run that command", { timeout: 30_000 });
   await fleet.waitForSelector(".fleet-perm", { state: "detached", timeout: 15_000 });
   await allIdle(1);
@@ -169,7 +169,7 @@ test("ordering: rows hold creation order while working; needs-you surfaces to th
   await fleet.waitForSelector(".fleet-perm", { timeout: 15_000 });
   assert.equal(await firstRowId(), secondId, "needs-you jumps to the top group");
 
-  await fleet.locator(".fleet-perm-deny").click();
+  await fleet.locator(".fleet-permission-deny").click();
   await fleet.waitForSelector(".fleet-perm", { state: "detached", timeout: 15_000 });
   await allIdle(2);
   assert.equal(await firstRowId(), sessionId, "answered → back to creation order");
@@ -191,7 +191,7 @@ test("M.5: the fleet tab itself signals needs-you (title count), and rows show v
     timeout: 5_000,
   });
 
-  await fleet.locator(".fleet-perm-deny").click();
+  await fleet.locator(".fleet-permission-deny").click();
   await fleet.waitForSelector(".fleet-perm", { state: "detached", timeout: 15_000 });
   await allIdle(2);
   await fleet.waitForFunction(() => document.title === "Mirafold — sessions", undefined, {
@@ -224,14 +224,14 @@ test("phone: glance set visible with no side-scroll; permission and prompt act b
   await noSideScroll(phone);
 
   // Thumb targets: the answer pair is ≥40px tall (the R.4l standard).
-  for (const sel of [".fleet-perm-allow", ".fleet-perm-deny"]) {
+  for (const sel of [".fleet-permission-allow", ".fleet-permission-deny"]) {
     const box = await phone.locator(sel).boundingBox();
     assert.ok(box && box.height >= 40, `${sel} is ${box?.height ?? 0}px tall — needs ≥40`);
   }
   await assertAxeClean(phone, "phone cockpit with a pending permission");
 
   // Deny by thumb; the hold clears everywhere.
-  await phone.locator(".fleet-perm-deny").tap();
+  await phone.locator(".fleet-permission-deny").tap();
   await session.waitForSelector("text=I won't run that command", { timeout: 30_000 });
   await phone.waitForSelector(".fleet-perm", { state: "detached", timeout: 15_000 });
   await allIdle(2);

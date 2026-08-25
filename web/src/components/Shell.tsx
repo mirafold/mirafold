@@ -28,7 +28,7 @@ import { createFileDrop, quoteForPrompt, type UploadEntry } from "../file-drop";
 import type { WireMsg } from "@protocol";
 import { useEscapeKey } from "../use-escape";
 import { Announcer, useAnnouncer } from "./Announcer";
-import { PermBar } from "./PermBar";
+import { PermissionBar } from "./PermissionBar";
 import type { InputNavigationDirection } from "../input-navigation";
 import { sessionIdFromPath } from "../session-url";
 import type {
@@ -503,7 +503,7 @@ export function Shell() {
               />
             </div>
             <ActivityLine busy={busy} label={activityLabel(activity)} />
-            <PermBar asks={asks} onAnswer={answer} />
+            <PermissionBar asks={asks} onAnswer={answer} />
             {bang.my && (
               <BangBar
                 command={bang.my.command}

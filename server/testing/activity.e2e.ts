@@ -157,7 +157,7 @@ test("streaming holds a scrolled-up reader in place, and re-follows once back at
     });
     await page2.locator("textarea").fill(MOCK_PROMPTS["permission-ask"]);
     await page2.keyboard.press("Enter");
-    await page2.waitForSelector(".perm-bar", { timeout: 15_000 });
+    await page2.waitForSelector(".permission-bar", { timeout: 15_000 });
 
     await zone.hover();
     const latchedAtWheel = await geom();
@@ -186,7 +186,7 @@ test("streaming holds a scrolled-up reader in place, and re-follows once back at
         return Boolean(
           el &&
             document.querySelector(".stop-btn") &&
-            document.querySelector(".perm-bar") &&
+            document.querySelector(".permission-bar") &&
             el.scrollHeight - el.scrollTop - el.clientHeight <= 60,
         );
       },
@@ -199,7 +199,7 @@ test("streaming holds a scrolled-up reader in place, and re-follows once back at
     // new user prompt (which would arm following independently). Do not
     // merely prove one scroll landed: that later content must carry the
     // viewport with it.
-    await page2.locator(".perm-allow").click();
+    await page2.locator(".permission-allow").click();
     await page2.waitForFunction(
       (h) => {
         const el = document.querySelector(".output-zone");
@@ -268,7 +268,7 @@ test("an overflowing prose transcript supports keyboard scrolling and End re-arm
     // not just that the browser performed one isolated scroll.
     await page2.locator("textarea").fill(MOCK_PROMPTS["permission-ask"]);
     await page2.keyboard.press("Enter");
-    await page2.waitForSelector(".perm-bar", { timeout: 15_000 });
+    await page2.waitForSelector(".permission-bar", { timeout: 15_000 });
 
     await zone.focus();
     const focus = await zone.evaluate((el) => {
@@ -309,7 +309,7 @@ test("an overflowing prose transcript supports keyboard scrolling and End re-arm
     );
     const rearmed = await geom();
 
-    await page2.locator(".perm-allow").click();
+    await page2.locator(".permission-allow").click();
     await page2.waitForFunction(
       (h) => {
         const el = document.querySelector(".output-zone");
@@ -365,7 +365,7 @@ test("a busy turn never looks idle: the indicator is up, moving, and on screen w
 
     await page2.locator("textarea").fill(MOCK_PROMPTS["permission-ask"]);
     await page2.keyboard.press("Enter");
-    await page2.waitForSelector(".perm-bar", { timeout: 15_000 });
+    await page2.waitForSelector(".permission-bar", { timeout: 15_000 });
     // The permission bar holds the busy state open, so this waits for real
     // movement rather than betting that a timed mock reply stays alive long
     // enough for two browser round-trips.
@@ -390,7 +390,7 @@ test("a busy turn never looks idle: the indicator is up, moving, and on screen w
     assert.match(held.text, /\(\d+s\)/, "no elapsed counter in the activity line");
     assert.ok(held.visible, "indicator off screen while the transcript is scrolled up");
 
-    await page2.locator(".perm-deny").click();
+    await page2.locator(".permission-deny").click();
     await page2.waitForFunction(() => !document.querySelector(".stop-btn"), undefined, {
       timeout: 15_000,
     });

@@ -353,7 +353,7 @@
   animation: rise 0.16s ease-out both;
 }
 
-.fleet-perm-detail {
+.fleet-permission-detail {
   color: var(--warn-fg);
   flex: 1;
   min-width: 0;
@@ -362,13 +362,13 @@
   text-overflow: ellipsis;
 }
 
-.fleet-perm-more {
+.fleet-permission-more {
   color: var(--fg-faint);
   flex-shrink: 0;
 }
 
-.fleet-perm-allow,
-.fleet-perm-deny {
+.fleet-permission-allow,
+.fleet-permission-deny {
   flex-shrink: 0;
   font-family: inherit;
   font-size: 0.92em;
@@ -381,18 +381,18 @@
   transition: color 0.12s ease, border-color 0.12s ease;
 }
 
-.fleet-perm-allow:hover:enabled {
+.fleet-permission-allow:hover:enabled {
   color: var(--accent);
   border-color: var(--border-hover);
 }
 
-.fleet-perm-deny:hover:enabled {
+.fleet-permission-deny:hover:enabled {
   color: var(--error);
   border-color: var(--err-border-strong);
 }
 
-.fleet-perm-allow:disabled,
-.fleet-perm-deny:disabled {
+.fleet-permission-allow:disabled,
+.fleet-permission-deny:disabled {
   opacity: 0.45;
   cursor: default;
 }

@@ -250,7 +250,7 @@ test("NF: hidden viewport toasts a permission then the turn end; visibility clos
       await page2.locator("textarea").click();
       await page2.keyboard.type(MOCK_PROMPTS["permission-ask"]);
       await page2.keyboard.press("Enter");
-      await page2.waitForSelector(".perm-bar");
+      await page2.waitForSelector(".permission-bar");
       await page2.waitForFunction(
         () => (window as unknown as { __TOASTS__?: unknown[] }).__TOASTS__?.length === 1,
         undefined,
@@ -263,7 +263,7 @@ test("NF: hidden viewport toasts a permission then the turn end; visibility clos
 
       // Answering retires the permission toast (the state moved on); the
       // finishing turn then toasts once more under the same tag.
-      await page2.locator(".perm-allow").click();
+      await page2.locator(".permission-allow").click();
       await page2.waitForFunction(
         () => {
           const t = (window as unknown as { __TOASTS__: { closed: boolean }[] }).__TOASTS__;

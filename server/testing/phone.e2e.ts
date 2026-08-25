@@ -497,14 +497,14 @@ test("phone (320px): both drawer heads keep their controls apart", async () => {
 
 test("phone: a permission request is answerable by thumb", async () => {
   await sendPrompt(phone, "do something dangerous");
-  await phone.waitForSelector(".perm-bar", { timeout: 15_000 });
+  await phone.waitForSelector(".permission-bar", { timeout: 15_000 });
   assert.equal(
     await phone.locator(".input-nav-phone-toggle").count(),
     0,
     "submitted-input navigation competes with the permission actions",
   );
   await noSideScroll(phone);
-  const allow = phone.locator(".perm-allow");
+  const allow = phone.locator(".permission-allow");
   const box = (await allow.boundingBox())!;
   assert.ok(box.height >= 36, `allow button is ${box.height}px tall — too small to tap`);
   await allow.tap();
@@ -517,24 +517,24 @@ test("phone: a permission request is answerable by thumb", async () => {
 // full command in a card; a tap anywhere else dismisses it unanswered.
 test("phone: the truncated command expands to a card on tap; a tap away dismisses, unanswered", async () => {
   await sendPrompt(phone, "do something dangerous");
-  await phone.waitForSelector(".perm-bar", { timeout: 15_000 });
+  await phone.waitForSelector(".permission-bar", { timeout: 15_000 });
   const clipped = await phone.evaluate(() => {
-    const el = document.querySelector(".perm-detail")!;
+    const el = document.querySelector(".permission-detail")!;
     return el.scrollWidth > el.clientWidth;
   });
   assert.ok(clipped, "the preview is not truncated at phone width — this test proves nothing");
-  await phone.locator(".perm-body").tap();
-  await phone.waitForSelector(".perm-modal-card");
+  await phone.locator(".permission-body").tap();
+  await phone.waitForSelector(".permission-modal-card");
   assert.match(
-    await phone.locator(".perm-modal-detail").innerText(),
+    await phone.locator(".permission-modal-detail").innerText(),
     /rm -rf \/var\/cache\/app && systemctl restart app/,
   );
   await noSideScroll(phone);
   await phone.touchscreen.tap(8, 8);
-  await phone.waitForFunction(() => !document.querySelector(".perm-modal-card"));
-  assert.equal(await phone.locator(".perm-bar").count(), 1, "the tap away answered the ask");
-  await phone.locator(".perm-deny").tap();
-  await phone.waitForFunction(() => !document.querySelector(".perm-bar"), undefined, {
+  await phone.waitForFunction(() => !document.querySelector(".permission-modal-card"));
+  assert.equal(await phone.locator(".permission-bar").count(), 1, "the tap away answered the ask");
+  await phone.locator(".permission-deny").tap();
+  await phone.waitForFunction(() => !document.querySelector(".permission-bar"), undefined, {
     timeout: 15_000,
   });
 });
@@ -554,13 +554,13 @@ test("phone: a permission answered on the desktop clears the phone's bar mid-tur
   );
 
   await sendPrompt(phone, "do something dangerous");
-  await phone.waitForSelector(".perm-bar", { timeout: 15_000 });
-  await desktop.waitForSelector(".perm-bar", { timeout: 15_000 });
-  await desktop.locator(".perm-allow").click();
+  await phone.waitForSelector(".permission-bar", { timeout: 15_000 });
+  await desktop.waitForSelector(".permission-bar", { timeout: 15_000 });
+  await desktop.locator(".permission-allow").click();
 
   await phone.waitForFunction(
     (n) =>
-      !document.querySelector(".perm-bar") &&
+      !document.querySelector(".permission-bar") &&
       document.body.innerText.split("restarted cleanly").length === n,
     before,
     { timeout: 15_000 },

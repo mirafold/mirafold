@@ -398,7 +398,7 @@
 
 .pair-backdrop,
 .settings-backdrop,
-.perm-modal-backdrop {
+.permission-modal-backdrop {
   position: fixed;
   inset: 0;
   z-index: var(--z-modal);
@@ -414,7 +414,7 @@
    same card shell, head, title, and close — only the width differs. */
 .pair-card,
 .settings-card,
-.perm-modal-card {
+.permission-modal-card {
   width: 100%;
   /* Same hard floor as .onb-card: never taller than the backdrop's padded
      box, so short viewports keep the 24px gutter and the card scrolls
@@ -438,7 +438,7 @@
   max-width: 420px;
 }
 
-.perm-modal-card {
+.permission-modal-card {
   max-width: 560px;
 }
 

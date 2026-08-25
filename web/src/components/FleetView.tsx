@@ -570,12 +570,12 @@ function PermissionLine({
   const morePerms = (s.permissions?.length ?? 0) - 1;
   return (
     <div className="fleet-perm">
-      <span className="fleet-perm-detail" title={`${perm.tool} · ${perm.detail}`}>
+      <span className="fleet-permission-detail" title={`${perm.tool} · ${perm.detail}`}>
         {perm.tool} · {perm.detail}
       </span>
-      {morePerms > 0 && <span className="fleet-perm-more">+{morePerms} more</span>}
+      {morePerms > 0 && <span className="fleet-permission-more">+{morePerms} more</span>}
       <button
-        className="fleet-perm-allow"
+        className="fleet-permission-allow"
         disabled={answered.has(perm.id)}
         aria-label={`Allow ${perm.tool} in session ${s.name}`}
         onClick={() => onAnswer(perm.id, true)}
@@ -583,7 +583,7 @@ function PermissionLine({
         allow
       </button>
       <button
-        className="fleet-perm-deny"
+        className="fleet-permission-deny"
         disabled={answered.has(perm.id)}
         aria-label={`Deny ${perm.tool} in session ${s.name}`}
         onClick={() => onAnswer(perm.id, false)}

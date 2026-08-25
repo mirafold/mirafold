@@ -414,8 +414,8 @@ test("A.1: tool_use and permission_request announce (assertive interrupts polite
   assert.match(alertText, /Permission needed: Bash\./);
   assert.match(alertText, /rm -rf \/var\/cache\/app/);
   // The permission bar itself is on-screen with the same detail.
-  assert.equal(await page.locator(".perm-tool").innerText(), "Bash");
-  await page.locator(".perm-allow").click();
+  assert.equal(await page.locator(".permission-tool").innerText(), "Bash");
+  await page.locator(".permission-allow").click();
   // Allowed → the mock "runs" the command: a tool_use announces at the
   // polite region ("Running Bash."), then the turn concludes.
   await page.waitForFunction(
@@ -432,46 +432,46 @@ test("A.1: tool_use and permission_request announce (assertive interrupts polite
     { timeout: 15_000 },
   );
   // The permission bar clears once answered.
-  assert.equal(await page.locator(".perm-bar").count(), 0);
+  assert.equal(await page.locator(".permission-bar").count(), 0);
 });
 
 test("the permission strip expands to the full command on click, and collapses away", async () => {
   await page.locator("textarea").click();
   await page.keyboard.type(MOCK_PROMPTS["permission-ask"]);
   await page.keyboard.press("Enter");
-  await page.waitForSelector(".perm-bar", { timeout: 15_000 });
+  await page.waitForSelector(".permission-bar", { timeout: 15_000 });
   // The strip's body — everything except allow/deny — is one click target…
-  await page.locator(".perm-body").click();
+  await page.locator(".permission-body").click();
   // …opening the card with the WHOLE command, not the one-line preview.
-  await page.waitForSelector(".perm-modal-card");
+  await page.waitForSelector(".permission-modal-card");
   assert.match(
-    await page.locator(".perm-modal-detail").innerText(),
+    await page.locator(".permission-modal-detail").innerText(),
     /rm -rf \/var\/cache\/app && systemctl restart app/,
   );
   // A click away dismisses WITHOUT answering: the ask (and the turn paused
   // behind it) must both survive.
   await page.mouse.click(8, 8);
   await eventually(
-    () => !document.querySelector(".perm-modal-card"),
+    () => !document.querySelector(".permission-modal-card"),
     "clicking the backdrop did not close the card",
   );
-  assert.equal(await page.locator(".perm-bar").count(), 1, "backdrop click answered the ask");
+  assert.equal(await page.locator(".permission-bar").count(), 1, "backdrop click answered the ask");
   // Esc is exclusive to the card: it closes it, never reaching the busy
   // interrupt — the ModalCard contract the settings card pinned first.
-  await page.locator(".perm-body").click();
-  await page.waitForSelector(".perm-modal-card");
-  await settled(page, ".perm-modal-card"); // its entrance transition, then Esc
+  await page.locator(".permission-body").click();
+  await page.waitForSelector(".permission-modal-card");
+  await settled(page, ".permission-modal-card"); // its entrance transition, then Esc
   await page.keyboard.press("Escape");
-  await eventually(() => !document.querySelector(".perm-modal-card"), "Esc did not close the card");
-  assert.equal(await page.locator(".perm-bar").count(), 1, "Esc through the card killed the ask");
+  await eventually(() => !document.querySelector(".permission-modal-card"), "Esc did not close the card");
+  assert.equal(await page.locator(".permission-bar").count(), 1, "Esc through the card killed the ask");
   assert.equal(await page.locator(".stop-btn").count(), 1, "Esc through the card halted the turn");
   // Focus lands back on the strip that opened the card (A.3).
   const focusedBody = await page.evaluate(
-    () => document.activeElement?.classList.contains("perm-body") ?? false,
+    () => document.activeElement?.classList.contains("permission-body") ?? false,
   );
   assert.ok(focusedBody, "focus did not return to the strip on close");
   // Deny to clean up; the turn runs out.
-  await page.locator(".perm-deny").click();
+  await page.locator(".permission-deny").click();
   await page.waitForFunction(() => !document.querySelector(".stop-btn"), undefined, {
     timeout: 15_000,
   });

@@ -259,14 +259,14 @@
   }
 
   /* Comfortable thumb targets on the answer-or-act surfaces. */
-  .perm-bar,
-  .perm-body {
+  .permission-bar,
+  .permission-body {
     flex-wrap: wrap;
     row-gap: 8px;
   }
 
-  .perm-allow,
-  .perm-deny,
+  .permission-allow,
+  .permission-deny,
   .stop-btn,
   .bang-bar-kill {
     min-height: 40px;
@@ -274,7 +274,7 @@
     padding-right: 16px;
   }
 
-  .perm-detail {
+  .permission-detail {
     flex-basis: 100%;
     order: 5;
   }
@@ -718,12 +718,12 @@
     row-gap: 6px;
   }
 
-  .fleet-perm-detail {
+  .fleet-permission-detail {
     flex: 1 1 100%;
   }
 
-  .fleet-perm-allow,
-  .fleet-perm-deny {
+  .fleet-permission-allow,
+  .fleet-permission-deny {
     min-height: 40px;
     padding: 5px 16px;
   }

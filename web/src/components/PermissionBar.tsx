@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ModalCard } from "./ModalCard";
 
-const TITLE_ID = "perm-modal-title";
+const TITLE_ID = "permission-modal-title";
 
 export type PermAsk = {
   tool: string;
@@ -16,7 +16,7 @@ export type PermAsk = {
  * can paint nothing here, so it can't fake it. Shows the oldest pending ask;
  * allow/deny answer it on the wire via `onAnswer`.
  */
-export function PermBar({
+export function PermissionBar({
   asks,
   onAnswer,
 }: {
@@ -32,40 +32,40 @@ export function PermBar({
   if (asks.length === 0) return null;
   return (
     <>
-      <div className="perm-bar">
+      <div className="permission-bar">
         {/* The whole strip minus allow/deny is ONE tap target for the
             full-command card — on a phone the preview truncates, and tapping
             the body is what a thumb tries first. */}
         <button
-          className="perm-body"
+          className="permission-body"
           onClick={() => setDetailAskId(asks[0].id)}
           title="Show the full command"
         >
-          <span className="perm-badge">permission</span>
-          {asks[0].parentId && <span className="perm-subagent">subagent</span>}
-          <span className="perm-tool">{asks[0].tool}</span>
-          <code className="perm-detail">{asks[0].detail}</code>
-          {asks.length > 1 && <span className="perm-more">+{asks.length - 1}</span>}
+          <span className="permission-badge">permission</span>
+          {asks[0].parentId && <span className="permission-subagent">subagent</span>}
+          <span className="permission-tool">{asks[0].tool}</span>
+          <code className="permission-detail">{asks[0].detail}</code>
+          {asks.length > 1 && <span className="permission-more">+{asks.length - 1}</span>}
         </button>
-        <button className="perm-allow" onClick={() => onAnswer(asks[0].id, true)}>
+        <button className="permission-allow" onClick={() => onAnswer(asks[0].id, true)}>
           allow
         </button>
-        <button className="perm-deny" onClick={() => onAnswer(asks[0].id, false)}>
+        <button className="permission-deny" onClick={() => onAnswer(asks[0].id, false)}>
           deny
         </button>
       </div>
       {detailAsk && (
         <ModalCard
-          overlayClass="perm-modal-backdrop"
-          cardClass="perm-modal-card"
+          overlayClass="permission-modal-backdrop"
+          cardClass="permission-modal-card"
           titleId={TITLE_ID}
           onDismiss={() => setDetailAskId(null)}
         >
-          <div className="perm-modal-head" id={TITLE_ID}>
-            <span className="perm-badge">permission</span>
-            <span className="perm-tool">{detailAsk.tool}</span>
+          <div className="permission-modal-head" id={TITLE_ID}>
+            <span className="permission-badge">permission</span>
+            <span className="permission-tool">{detailAsk.tool}</span>
           </div>
-          <code className="perm-modal-detail" tabIndex={0}>
+          <code className="permission-modal-detail" tabIndex={0}>
             {detailAsk.detail}
           </code>
         </ModalCard>
