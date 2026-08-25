@@ -419,7 +419,11 @@ Deviations a reviewer might flag, with why they stand:
 
 - **Gemini writes `<cwd>/.gemini/settings.json` into the user's project.**
   Required for per-session MCP injection (Gemini merges project over global —
-  the non-destructive option). Documented in
+  the non-destructive option). It happens only after the user answers the
+  folder-trust ask, and that ask says so in its own text (render tools +
+  API-key auth merged into this folder's `.gemini/settings.json`, which
+  terminal Gemini reads too) — consent to the write is explicit, not implied
+  by "trust". Documented in
   [ARCHITECTURE.md](ARCHITECTURE.md#agent-adapters); acceptable, but any
   alternative that appears in a future Gemini version (CLI flag for an extra
   MCP server) should replace it.

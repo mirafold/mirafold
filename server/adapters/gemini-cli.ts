@@ -226,8 +226,19 @@ export class GeminiCliSession implements AgentSession {
       return Promise.resolve(true);
     }
     if (this.closed) return Promise.resolve(false);
+    // The ask says what a yes DOES, not just what it's called: besides
+    // letting Gemini run here, it merges Mirafold's render-tool MCP entry and
+    // the API-key auth selection into this folder's `.gemini/settings.json`
+    // — a file terminal Gemini reads too. A user answering "trust" deserves
+    // to know that a project file changes as a result.
     return this.permissions.ask(
-      { tool: "Gemini", detail: `trust this folder — ${this.workspaceDir}` },
+      {
+        tool: "Gemini",
+        detail:
+          `trust this folder — ${this.workspaceDir}. ` +
+          `Yes lets Gemini run here and adds Mirafold's render tools and API-key auth ` +
+          `to this folder's .gemini/settings.json (merged, never overwritten; terminal Gemini reads it too).`,
+      },
       TRUST_PROMPT_TIMEOUT_MS,
       (allow) => {
         if (allow) {
