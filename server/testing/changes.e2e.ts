@@ -89,12 +89,15 @@ const selectDesktopFile = async (name: string): Promise<void> => {
     (suffix) => document.querySelector(".changes-current-path")?.textContent?.endsWith(String(suffix)),
     name,
   );
-  // The diff for the selected file has landed once its rows exist and the
-  // presenter is no longer loading — the fixed nap this replaces waited for
-  // exactly that.
-  await desktop.waitForFunction(
-    () => document.querySelector('.changes-view [role="listbox"], .changes-view .fv-content') !== null,
-  );
+  // The selected file's view has landed — diff rows, plain contents, or the
+  // binary/error note — once the presenter is no longer in its loading
+  // state; the fixed nap this replaces waited for exactly that.
+  await desktop.waitForFunction(() => {
+    const view = document.querySelector(".changes-view");
+    if (!view) return false;
+    const blank = view.querySelector(".fv-blank");
+    return !(blank && blank.textContent?.startsWith("Loading"));
+  });
 };
 
 const desktopDiffText = async (kind: "add" | "del"): Promise<string> =>

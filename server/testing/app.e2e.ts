@@ -2003,7 +2003,7 @@ test("W.2: the live tree — a write behind the UI's back appears with zero clic
   writeFileSync(path.join(ws, "colly", "sub", "inner.txt"), "inner\n");
 
   const { client: seed, sessionId: liveSeedId } = await createSession(d.port, "claude-code", { cwd: ws, token: TOKEN });
-  const created = (await seed.type("session_created")) as { sessionId: string } & Record<string, unknown>;
+  const created = { sessionId: liveSeedId };
   const backUrl = page.url();
   try {
     await page.goto(`${base}/s/${created.sessionId}`);
