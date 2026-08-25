@@ -13,39 +13,43 @@ import type { FsDirEntry } from "@protocol";
 // honest truncated flag), refetching (loading with the PREVIOUS entries kept
 // visible — a turn-end refresh must never read as a collapse), or errored.
 
-export type DirState = {
-  /** A fetch is in flight. With `entries` present this is a refetch — keep
-   *  showing what we have; the reply swaps it. */
-  loading: boolean;
-  /** The last successful listing; absent until the first reply lands. */
-  entries?: FsDirEntry[];
-  /** The last reply's per-directory cap flag — honest, per E2.1. */
-  truncated?: boolean;
-  /** The last reply was an error. Kept beside stale `entries` if we had any
-   *  (showing a known-good listing beats a bare error row on a throttled
-   *  refetch); the panel shows the error row only when there's nothing else. */
-  error?: string;
-};
+/** One successful fs_dir reply: the entries plus the per-directory cap flag. */
+export type DirListing = { entries: FsDirEntry[]; truncated: boolean };
+
+export type DirState =
+  /** A fetch is in flight. `stale` is the previous listing of a refetch —
+   *  keep showing it; the reply swaps it. */
+  | { phase: "loading"; stale?: DirListing }
+  | { phase: "ready"; listing: DirListing }
+  /** The last reply was an error. `stale` keeps a known-good listing beside
+   *  it (better than a bare error row on a throttled refetch); the panel
+   *  shows the error row only when there's nothing else. */
+  | { phase: "error"; error: string; stale?: DirListing };
+
+/** What the tree renders for a directory: the live listing when ready, else
+ *  whatever a refetch or error carried forward; undefined when nothing has
+ *  ever landed. */
+export const shownListing = (state: DirState): DirListing | undefined =>
+  state.phase === "ready" ? state.listing : state.stale;
 
 /** Immutable map, replaced wholesale on every transition — React state. */
 export type DirStore = ReadonlyMap<string, DirState>;
 
 export const emptyDirStore = (): DirStore => new Map();
 
-/** The carry-forward half of a transition: a prior listing (and its
- *  truncation flag) stays visible until the new reply decides. */
-const carriedEntries = (prev: DirState | undefined) =>
-  prev?.entries ? { entries: prev.entries, truncated: prev.truncated } : {};
+/** The carry-forward half of a transition: a prior listing stays visible
+ *  until the new reply decides. */
+const carried = (prev: DirState | undefined): { stale?: DirListing } => {
+  const stale = prev && shownListing(prev);
+  return stale ? { stale } : {};
+};
 
 /** Mark `path` as fetching. Previous entries (and truncation) stay visible;
  *  a previous error is cleared — the new reply decides. */
 export function beginDirFetch(store: DirStore, path: string): DirStore {
   const next = new Map(store);
   const prev = store.get(path);
-  next.set(path, {
-    loading: true,
-    ...carriedEntries(prev),
-  });
+  next.set(path, { phase: "loading", ...carried(prev) });
   return next;
 }
 
@@ -60,16 +64,11 @@ export function applyDirReply(
   const next = new Map(store);
   const prev = store.get(path);
   if (reply.error) {
-    next.set(path, {
-      loading: false,
-      error: reply.error,
-      ...carriedEntries(prev),
-    });
+    next.set(path, { phase: "error", error: reply.error, ...carried(prev) });
   } else {
     next.set(path, {
-      loading: false,
-      entries: reply.entries,
-      truncated: Boolean(reply.truncated),
+      phase: "ready",
+      listing: { entries: reply.entries, truncated: Boolean(reply.truncated) },
     });
   }
   return next;

@@ -10,6 +10,7 @@ import {
   emptyDirStore,
   pruneDirStore,
   rootNameOf,
+  shownListing,
   type DirStore,
 } from "../../files-tree";
 import { useEscapeKey } from "../../use-escape";
@@ -284,22 +285,23 @@ export function FilesPanel({
     // re-expand renders from the store with no request.
     if (opening) {
       const st = store.get(path);
-      if ((!st || st.error) && !dirReqIds.current.has(path)) fetchDir(path);
+      if ((!st || st.phase === "error") && !dirReqIds.current.has(path)) fetchDir(path);
     }
   };
 
   const rootState = store.get("");
+  const rootListing = rootState && shownListing(rootState);
   const rootName = rootNameOf(rootLabel);
 
   return (
     <aside className="files-panel" aria-label="Files" ref={panelRef} {...frame}>
       {/* The tree stays mounted; the file view (when a file is open) is laid
-          over it, so back reveals the tree at its prior scroll (E.4). */}
+          over it, so back reveals the tree at its prior scroll. */}
       <div className="files-main">
         <div className="files-tree">
           {/* Phone head: back chevron LEADING (top-left, thumb-reachable —
-              the same exit Changes has; a top-right × was the odd one out,
-              2026-08-18 Kyle), then the drawer's Files/Changes switch in the
+              the same exit Changes has; a top-right × would be the odd one
+              out), then the drawer's Files/Changes switch in the
               title's place. Desktop keeps the plain title, no close. */}
           <header className="files-panel-head">
             {phone && (
@@ -333,7 +335,7 @@ export function FilesPanel({
               a duplicate path header; the full ~-path lives in this row's
               tooltip. ARIA:
               it's a disclosure button OVER the tree widget, not a treeitem
-              inside it — role=tree owns only treeitems/groups (axe, C.2). */}
+              inside it — role=tree owns only treeitems/groups (axe). */}
           <div className="files-root">
             <button
               className="files-row files-dir files-root-row"
@@ -349,11 +351,11 @@ export function FilesPanel({
             </button>
           </div>
           {rootOpen &&
-            (rootState?.error && !rootState.entries ? (
+            (rootState?.phase === "error" && !rootListing ? (
               <div className="files-empty files-error">{rootState.error}</div>
-            ) : rootState?.entries && rootState.entries.length === 0 ? (
+            ) : rootListing && rootListing.entries.length === 0 ? (
               <div className="files-empty">(no files)</div>
-            ) : rootState?.entries ? (
+            ) : rootListing ? (
               <div role="tree" aria-label="Working tree">
                 <DirChildren
                   path=""
@@ -423,11 +425,10 @@ export function FilesPanel({
               {/* tabIndex + a named region because this div SCROLLS
                   (02-explorer.css `.files-view { overflow: auto }`): without a tab
                   stop, a keyboard-only user could open a file or a diff and
-                  never scroll it — axe `scrollable-region-focusable`, serious,
-                  found 2026-07-30 when the sweep was extended to the enlarged
-                  view. A focusable region needs an accessible name, hence
+                  never scroll it — axe `scrollable-region-focusable`, serious.
+                  A focusable region needs an accessible name, hence
                   role + label. Costs one tab stop in the Explorer, which is
-                  the point: the content is now reachable. */}
+                  the point: the content is reachable. */}
               <div
                 className="files-view"
                 tabIndex={0}
