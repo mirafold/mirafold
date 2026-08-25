@@ -2,6 +2,7 @@
 // a turn's START — which is why each test owns a fresh daemon and page.
 
 import { test, before, after } from "node:test";
+import { MOCK_PROMPTS } from "./mock-prompts";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { type Browser } from "playwright-core";
@@ -37,7 +38,7 @@ test("streaming holds a scrolled-up reader in place, and re-follows once back at
       zone.evaluate((el) => ({ top: el.scrollTop, h: el.scrollHeight, view: el.clientHeight }));
     const sendPlan = async () => {
       const before = await page2.locator(".turn-user", { hasText: "plan it step by step" }).count();
-      await page2.locator("textarea").fill("plan it step by step");
+      await page2.locator("textarea").fill(MOCK_PROMPTS["checklist"]);
       await page2.keyboard.press("Enter");
       await page2.waitForFunction(
         (n) =>
@@ -154,7 +155,7 @@ test("streaming holds a scrolled-up reader in place, and re-follows once back at
     await page2.waitForFunction(() => !document.querySelector(".stop-btn"), undefined, {
       timeout: 15_000,
     });
-    await page2.locator("textarea").fill("run something dangerous");
+    await page2.locator("textarea").fill(MOCK_PROMPTS["permission-ask"]);
     await page2.keyboard.press("Enter");
     await page2.waitForSelector(".perm-bar", { timeout: 15_000 });
 
@@ -265,7 +266,7 @@ test("an overflowing prose transcript supports keyboard scrolling and End re-arm
 
     // Hold a turn open so output after End can prove follow-tail was re-armed,
     // not just that the browser performed one isolated scroll.
-    await page2.locator("textarea").fill("run something dangerous");
+    await page2.locator("textarea").fill(MOCK_PROMPTS["permission-ask"]);
     await page2.keyboard.press("Enter");
     await page2.waitForSelector(".perm-bar", { timeout: 15_000 });
 
@@ -362,7 +363,7 @@ test("a busy turn never looks idle: the indicator is up, moving, and on screen w
       }, 16);
     });
 
-    await page2.locator("textarea").fill("run something dangerous");
+    await page2.locator("textarea").fill(MOCK_PROMPTS["permission-ask"]);
     await page2.keyboard.press("Enter");
     await page2.waitForSelector(".perm-bar", { timeout: 15_000 });
     // The permission bar holds the busy state open, so this waits for real

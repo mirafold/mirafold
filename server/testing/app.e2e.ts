@@ -1,4 +1,5 @@
 import { test, before, after } from "node:test";
+import { MOCK_PROMPTS } from "./mock-prompts";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
@@ -6,7 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { type Browser, type Locator, type Page } from "playwright-core";
 import { createSession, fixtureGit as git, startDaemon, TestClient, type Daemon } from "./itest-harness";
-import { assertAxeClean, launchChrome, noSideScroll, typePrompt, withFreshMockSession } from "./e2e-harness";
+import { assertAxeClean, launchChrome, noSideScroll, typePrompt, withFreshMockSession, settled } from "./e2e-harness";
 import type { ClientMsg } from "../protocol";
 import { startOllamaFixture } from "./ollama-fixture";
 import { startRelayStub } from "../relay/relay-stub";
@@ -192,13 +193,13 @@ test("the agent picker flexes to the window — no internal scrollbar through th
     await page2.goto(`http://127.0.0.1:${d2.port}/?token=${token}`);
     await page2.waitForSelector(".onb-card");
     await page2.setViewportSize({ width: 1100, height: 1400 });
-    await page2.waitForTimeout(60);
+    await page2.waitForFunction(() => window.innerHeight === 1400);
     const fullGlyph = await page2.evaluate(
       () => document.querySelector(".onb-glyph")!.getBoundingClientRect().height,
     );
     for (const h of [760, 745, 730]) {
       await page2.setViewportSize({ width: 1100, height: h });
-      await page2.waitForTimeout(60);
+      await page2.waitForFunction((height) => window.innerHeight === height, h);
       const m = await page2.evaluate(() => {
         const c = document.querySelector(".onb-card")!;
         return {
@@ -359,7 +360,7 @@ test("onboarding → a full mock turn renders in the DOM", async () => {
 
   // Real typing into the real prompt box; the checklist hook is deterministic.
   await page.locator("textarea").click();
-  await page.keyboard.type("plan it step by step");
+  await page.keyboard.type(MOCK_PROMPTS["checklist"]);
   await page.keyboard.press("Enter");
 
   // The typed prompt echoes back as the command strip (server broadcast).
@@ -400,7 +401,7 @@ test("A.1: announcer regions exist, spoke the turn, and the transcript is silent
 test("A.1: tool_use and permission_request announce (assertive interrupts polite)", async () => {
   const alert = page.locator('[role="alert"][aria-live="assertive"]');
   await page.locator("textarea").click();
-  await page.keyboard.type("run something dangerous");
+  await page.keyboard.type(MOCK_PROMPTS["permission-ask"]);
   await page.keyboard.press("Enter");
   // The mock pauses the turn on a permission_request (Bash, a fake
   // rm -rf) — assertive, so it must land in the alert region, not status.
@@ -436,7 +437,7 @@ test("A.1: tool_use and permission_request announce (assertive interrupts polite
 
 test("the permission strip expands to the full command on click, and collapses away", async () => {
   await page.locator("textarea").click();
-  await page.keyboard.type("run something dangerous");
+  await page.keyboard.type(MOCK_PROMPTS["permission-ask"]);
   await page.keyboard.press("Enter");
   await page.waitForSelector(".perm-bar", { timeout: 15_000 });
   // The strip's body — everything except allow/deny — is one click target…
@@ -459,7 +460,7 @@ test("the permission strip expands to the full command on click, and collapses a
   // interrupt — the ModalCard contract the settings card pinned first.
   await page.locator(".perm-body").click();
   await page.waitForSelector(".perm-modal-card");
-  await page.waitForTimeout(80);
+  await settled(page, ".perm-modal-card"); // its entrance transition, then Esc
   await page.keyboard.press("Escape");
   await eventually(() => !document.querySelector(".perm-modal-card"), "Esc did not close the card");
   assert.equal(await page.locator(".perm-bar").count(), 1, "Esc through the card killed the ask");
@@ -518,7 +519,7 @@ test("shell picker: arrow keys + Enter select a row, terminal-style", async () =
 
 test("stat component (S.3): the KPI tile updates in place and pins to the dock", async () => {
   await page.locator("textarea").click();
-  await page.keyboard.type("kpi demo");
+  await page.keyboard.type(MOCK_PROMPTS["stat"]);
   await page.keyboard.press("Enter");
   // Scoped by the deterministic hook's label — a random template turn
   // elsewhere in this session may paint its own (differently-labeled) tile.
@@ -612,7 +613,7 @@ test("console component: command header, ANSI colors as spans, junk escapes stri
 
 test("chart stretch (S.1/S.2): pie folds to 'other', stacked and horizontal bars, malformed pie degrades", async () => {
   await page.locator("textarea").click();
-  await page.keyboard.type("chart demo");
+  await page.keyboard.type(MOCK_PROMPTS["charts"]);
   await page.keyboard.press("Enter");
 
   // S.1 — the 8-category pie renders 6 slices: top 5 + "other", never a 7th hue.
@@ -1275,7 +1276,7 @@ test("2026-07-30 a turn that dies by error leaves the shell idle, not wedged on 
   const errSession = page.url();
 
   await page.locator("textarea").click();
-  await page.keyboard.type("fail the turn");
+  await page.keyboard.type(MOCK_PROMPTS["turn-error"]);
   await page.keyboard.press("Enter");
   await page.waitForSelector("text=the engine died mid-turn", { timeout: 30_000 });
   await page.waitForSelector(".activity-line", { state: "detached", timeout: 10_000 });
@@ -1291,7 +1292,7 @@ test("2026-07-30 a turn that dies by error leaves the shell idle, not wedged on 
   // …and the imbalance must not come back out of replay on the next attach.
   await page.goto(errSession);
   await page.waitForSelector(".turn-assistant", { timeout: 30_000 });
-  await page.waitForTimeout(700);
+  await page.waitForTimeout(700); // NEGATIVE proof: nothing may re-wedge in this window
   assert.equal(
     await page.locator(".activity-line").count(),
     0,
@@ -1491,10 +1492,10 @@ test("a queued follow-up keeps the indicator up across the turn boundary", async
       }, 16);
     });
     await page.locator("textarea").click();
-    await page.keyboard.type("plan it step by step");
+    await page.keyboard.type(MOCK_PROMPTS["checklist"]);
     await page.keyboard.press("Enter");
     await page.waitForSelector(".activity-line", { timeout: 15_000 });
-    await page.keyboard.type("chart demo");
+    await page.keyboard.type(MOCK_PROMPTS["charts"]);
     await page.keyboard.press("Enter");
     // Accepted (echoed) AND still mid-turn (stop button up) — the premise.
     const queued = await page
@@ -1511,7 +1512,7 @@ test("a queued follow-up keeps the indicator up across the turn boundary", async
     await page.waitForFunction(() => !document.querySelector(".stop-btn"), undefined, {
       timeout: 60_000,
     });
-    await page.waitForTimeout(200);
+    await page.waitForTimeout(200); // let the sampler's last animation frames land
     const frames = await page.evaluate(() => {
       const w = window as unknown as QueueWatch;
       window.clearInterval(w.__qWatch);
@@ -1537,7 +1538,7 @@ test("audit: an over-long engine label can't widen the page (the indicator ellip
   // the server caps at 120 chars (registry.test.ts pins that), and this
   // pins the layout's own guarantee against a label that slipped the cap.
   await page.locator("textarea").click();
-  await page.keyboard.type("plan it step by step");
+  await page.keyboard.type(MOCK_PROMPTS["checklist"]);
   await page.keyboard.press("Enter");
   await page.waitForSelector(".activity-line", { timeout: 15_000 });
   const geom = await page.evaluate(() => {
@@ -1570,9 +1571,49 @@ const eventually = async (check: () => boolean, message: string, timeout = 10_00
   await page.waitForFunction(check, undefined, { timeout }).catch(() => assert.fail(message));
 };
 
-test("E.3: the files panel lists the working tree, opens a file beside the transcript, drills back", async () => {
-  // The e2e daemon runs in the Mirafold repo itself — a real git repo — so
-  // the tree is live git data. package.json is always tracked and top-level.
+/** A checkout-independent Explorer fixture: the shape the E.3/E.5/E.6/E2.2
+ *  tests read — a tracked package.json, a tall long-lined yarn.lock,
+ *  server/protocol.ts, web/src/main.tsx — inside its own temp git repo, so a
+ *  rename in THIS repository can never fail an Explorer test. Seeded once
+ *  over the wire on the shared daemon; each test navigates the shared page
+ *  to it and hands the original session back when done. */
+let explorerFixture: { url: string; dir: string } | null = null;
+const explorerFixtureUrl = async (): Promise<string> => {
+  if (explorerFixture) return explorerFixture.url;
+  const dir = mkdtempSync(path.join(os.tmpdir(), "e2e-explorer-"));
+  writeFileSync(path.join(dir, "package.json"), '{\n  "name": "explorer-fixture",\n  "private": true\n}\n');
+  writeFileSync(
+    path.join(dir, "yarn.lock"),
+    Array.from({ length: 200 }, (_, i) => `"fixture-package-${i}@^1.0.0":\n  version "1.0.${i}"\n  resolved "https://registry.example/fixture-package-${i}/-/fixture-package-${i}-1.0.${i}.tgz#${"f".repeat(40)}"\n`).join("\n"),
+  );
+  mkdirSync(path.join(dir, "server"));
+  writeFileSync(path.join(dir, "server", "protocol.ts"), "export type WireMsg = { type: string };\n");
+  mkdirSync(path.join(dir, "web", "src"), { recursive: true });
+  writeFileSync(path.join(dir, "web", "src", "main.tsx"), "export const main = () => null;\n");
+  writeFileSync(path.join(dir, "README.md"), "# Explorer fixture\n");
+  git(dir, "init", "-q");
+  git(dir, "add", "-A");
+  git(dir, "commit", "-qm", "fixture");
+  const { client, sessionId } = await createSession(d.port, "claude-code", { cwd: dir, token: TOKEN });
+  client.close();
+  explorerFixture = { url: `${base}/s/${sessionId}`, dir };
+  return explorerFixture.url;
+};
+/** Run `body` on the Explorer fixture session, then return to the session the
+ *  shared page was on. */
+const onExplorerFixture = async (body: () => Promise<void>) => {
+  const back = page.url();
+  await page.goto(await explorerFixtureUrl());
+  await page.waitForSelector("textarea", { timeout: 30_000 });
+  try {
+    await body();
+  } finally {
+    await page.goto(back);
+    await page.waitForSelector("textarea", { timeout: 30_000 });
+  }
+};
+
+test("E.3: the files panel lists the working tree, opens a file beside the transcript, drills back", () => onExplorerFixture(async () => {
   await page.locator(".ab-files").click();
   await page.waitForSelector(".files-panel");
   const pkg = page.locator(".files-file-row", { hasText: "package.json" }).first();
@@ -1580,11 +1621,8 @@ test("E.3: the files panel lists the working tree, opens a file beside the trans
 
   // The tree leads with the checked-out ROOT as its top node — the folder's
   // NAME (no path header above the tree); collapsing it folds the whole tree.
-  // Asserted against the checkout's actual basename, not a literal: a public
-  // clone lands as `mirafold/` (or anything else), and the suite must pass
-  // from any of them.
   const root = page.locator(".files-root-row");
-  const repoDir = path.basename(path.resolve(import.meta.dirname, "..", ".."));
+  const repoDir = path.basename(explorerFixture!.dir);
   const panelHead = page.locator(".files-panel-head");
   assert.equal(await panelHead.locator(".files-panel-title").innerText(), "FILES");
   assert.equal(
@@ -1632,9 +1670,9 @@ test("E.3: the files panel lists the working tree, opens a file beside the trans
   await page.waitForSelector(".files-tree");
   await page.locator(".ab-files").click();
   await eventually(() => !document.querySelector(".files-panel"), "the toggle left the panel open");
-});
+}));
 
-test("E.6: ⤢ lifts the file view into a dimmed lightbox; Esc and the backdrop restore it in place", async () => {
+test("E.6: ⤢ lifts the file view into a dimmed lightbox; Esc and the backdrop restore it in place", () => onExplorerFixture(async () => {
   await page.locator(".ab-files").click();
   await page.waitForSelector(".files-panel");
   // yarn.lock, not package.json: the scroll assertions below need a file
@@ -1701,16 +1739,14 @@ test("E.6: ⤢ lifts the file view into a dimmed lightbox; Esc and the backdrop 
   await page.locator(".files-back").click(); // tidy up for later tests
   await page.locator(".ab-files").click();
   await eventually(() => !document.querySelector(".files-panel"), "the toggle left the panel open");
-});
+}));
 
-test("E.5: expanded dirs survive a close/reopen, and a turn's auto-refresh keeps tree state", async () => {
+test("E.5: expanded dirs survive a close/reopen, and a turn's auto-refresh keeps tree state", () => onExplorerFixture(async () => {
   await page.locator(".ab-files").click();
   await page.waitForSelector(".files-panel");
 
-  // Expand a known top-level directory (the repo has server/). Exact-match
-  // the name span: since E2.2 the lazy lister is git-blind until the git
-  // layer lands, so ignored siblings like dist-server/ are listed too — a
-  // substring match would hit dist-server first.
+  // Expand a known top-level directory (the fixture has server/). Exact-match
+  // the name span so a substring never hits a sibling.
   const serverDir = page.locator('.files-dir:has(.files-name:text-is("server"))').first();
   await serverDir.waitFor({ timeout: 15_000 });
   await serverDir.click();
@@ -1734,7 +1770,7 @@ test("E.5: expanded dirs survive a close/reopen, and a turn's auto-refresh keeps
   // A turn auto-refreshes the tree (E.5) without collapsing what's open or
   // closing the panel: run a full mock turn, then the expansion still holds.
   await page.locator("textarea").click();
-  await page.keyboard.type("plan it step by step");
+  await page.keyboard.type(MOCK_PROMPTS["checklist"]);
   await page.keyboard.press("Enter");
   await page.waitForSelector("text=Plan complete — all four steps done.", { timeout: 30_000 });
   // The turn_end refresh refetches expanded dirs; wait for that fan-out to
@@ -1760,9 +1796,9 @@ test("E.5: expanded dirs survive a close/reopen, and a turn's auto-refresh keeps
   );
 
   await page.locator(".ab-files").click(); // tidy up for later tests
-});
+}));
 
-test("E2.2: the tree is LAZY — open fetches root + first level only; expand fetches exactly that dir; cache re-expands with no request; turn-end refetches only expanded dirs", async () => {
+test("E2.2: the tree is LAZY — open fetches root + first level only; expand fetches exactly that dir; cache re-expands with no request; turn-end refetches only expanded dirs", () => onExplorerFixture(async () => {
   await installFsRecorder(page);
   const sent = () => fsSent(page);
   const mark = async () => (await sent()).length;
@@ -1826,7 +1862,7 @@ test("E2.2: the tree is LAZY — open fetches root + first level only; expand fe
   // the expanded dirs — never a whole-tree request, no first-level prefetch.
   m0 = await mark();
   await page.locator("textarea").click();
-  await page.keyboard.type("plan it step by step");
+  await page.keyboard.type(MOCK_PROMPTS["checklist"]);
   await page.keyboard.press("Enter");
   // Wait on the refetch TRAFFIC itself, not on transcript text — the E.5
   // test above ran this same prompt, so its completion line already matches
@@ -1840,14 +1876,14 @@ test("E2.2: the tree is LAZY — open fetches root + first level only; expand fe
     )
     .catch(() => assert.fail("turn-end sent no refresh at all"));
   const onTurn = (await sent()).slice(m0);
-  const expected = new Set(["", "server", "web", "web/src"]); // server/ expanded by the E.5 test above
+  const expected = new Set(["", "web", "web/src"]); // the root plus what THIS test expanded
   assert.ok(
     onTurn.every((m) => m.type === "fs_listdir" && expected.has(String(m.path))),
     `turn-end refetched beyond root + expanded dirs: ${onTurn.map((m) => `${m.type}:${m.path}`).join(", ")}`,
   );
 
   await page.locator(".ab-files").click(); // tidy up for later tests
-});
+}));
 
 test("E2.4: the Projects-root proof — lazy expands into two repos with per-repo statuses, ignore rules, and a nested-repo diff; never a whole-tree request; phone drills the same fixture", async () => {
   // The headline E2 use case, end to end: a session rooted at a folder that
@@ -2094,7 +2130,7 @@ test("C.2: axe-core finds no serious/critical WCAG violations across the app", a
     await p.waitForURL(/\/s\/[\w-]+/);
     await p.waitForSelector(".demo-banner");
     await p.locator("textarea").click();
-    await p.keyboard.type("plan it step by step");
+    await p.keyboard.type(MOCK_PROMPTS["checklist"]);
     await p.keyboard.press("Enter");
     await p.waitForSelector("text=Plan complete — all four steps done.", { timeout: 30_000 });
     await assertAxeClean(p, "session transcript");

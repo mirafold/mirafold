@@ -89,15 +89,17 @@ const selectDesktopFile = async (name: string): Promise<void> => {
     (suffix) => document.querySelector(".changes-current-path")?.textContent?.endsWith(String(suffix)),
     name,
   );
-  // The selected file's view has landed — diff rows, plain contents, or the
-  // binary/error note — once the presenter is no longer in its loading
-  // state; the fixed nap this replaces waited for exactly that.
-  await desktop.waitForFunction(() => {
-    const view = document.querySelector(".changes-view");
-    if (!view) return false;
-    const blank = view.querySelector(".fv-blank");
-    return !(blank && blank.textContent?.startsWith("Loading"));
-  });
+  await desktop.waitForFunction(viewLanded);
+};
+
+/** The selected file's view has landed — diff rows, plain contents, or the
+ *  binary/error note — once the presenter is no longer in its loading state.
+ *  (Runs inside the page; keep it a plain function expression.) */
+const viewLanded = () => {
+  const view = document.querySelector(".changes-view");
+  if (!view) return false;
+  const blank = view.querySelector(".fv-blank");
+  return !(blank && blank.textContent?.startsWith("Loading"));
 };
 
 const desktopDiffText = async (kind: "add" | "del"): Promise<string> =>
@@ -514,7 +516,7 @@ test("CR.3 hunk navigation reaches terminal hunks, opens on the first hunk, and 
     undefined,
     { timeout: 15_000 },
   );
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(300); // NEGATIVE proof: the refresh must not have scrolled by now
   assert.equal(
     await page.evaluate(() => document.querySelector(".changes-diff-lines")?.scrollTop ?? -1),
     0,
@@ -621,11 +623,11 @@ test("CR.2 desktop: the panel resizes by drag and keyboard, clamps to a conversa
     await page.mouse.down();
     await page.mouse.move(box!.x + box!.width / 2 + 40, box!.y + 300, { steps: 2 });
     await page.setViewportSize({ width: 600, height: 900 });
-    await page.waitForTimeout(200); // the phone flip commits; the handle is gone
+    await page.waitForSelector(".changes-resize", { state: "detached" }); // the phone flip commits
     await page.mouse.up(); // released into a void — no pointerup handler exists
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.waitForSelector(".changes-resize");
-    await page.waitForTimeout(200);
+    await page.waitForTimeout(200); // the handle's position settles after the flip back
     const roundTripNow = Number(await page.locator(".changes-resize").getAttribute("aria-valuenow"));
     const roundTripPanel = (await widths()).panel;
     assert.ok(
@@ -715,7 +717,7 @@ test("CR.2 phone: full-screen one-file review has persistent navigation and pres
       (suffix) => document.querySelector(".changes-current-path")?.textContent?.endsWith(String(suffix)),
       name,
     );
-    await phone.waitForTimeout(300);
+    await phone.waitForFunction(viewLanded);
   }
   assert.match(await phone.locator(".changes-view").innerText(), /Binary file.*not shown/i);
   assert.equal(await phone.locator('[aria-label="Next changed file"]').isDisabled(), true);
@@ -770,7 +772,7 @@ test("CR.3 phone: tap and whole-hunk selection keep context beside the editable 
         (suffix) => document.querySelector(".changes-current-path")?.textContent?.endsWith(String(suffix)),
         name,
       );
-      await page.waitForTimeout(300);
+      await page.waitForFunction(viewLanded);
     }
 
     const added = page.locator('.changes-review-line.is-add[data-new-line="2"]');
@@ -958,7 +960,7 @@ test("CR.4: review progress resumes and only the changed revision reopens on des
     await page.locator(".ab-changes").click();
     await page.waitForSelector(".changes-panel", { state: "detached" });
     writeFileSync(path.join(changedRepo, "d-deleted.ts"), "deleted path restored during closed review\n");
-    await page.waitForTimeout(1_500);
+    await page.waitForTimeout(1_500); // the watcher's debounce + the bell must land while the surface is closed
     await page.locator(".ab-changes").click();
     await page.waitForSelector(".changes-current-path");
     assert.equal(await progressText(page), "4 / 5 reviewed");
@@ -1181,7 +1183,7 @@ test("CR.5: late Git decoration refreshes Files without invalidating Changes rev
 
     await page.locator(".ab-files").click();
     await page.waitForSelector(".files-file-row");
-    await page.waitForTimeout(1_500);
+    await page.waitForTimeout(1_500); // NEGATIVE proof: no bell may arrive while Files is open
     await page.locator(".ab-changes").click();
     await page.waitForSelector(".changes-current-path");
     assert.equal(await page.locator(".changes-progress").innerText(), "1 / 1 reviewed");

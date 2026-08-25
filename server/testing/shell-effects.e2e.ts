@@ -3,6 +3,7 @@
 // notice. Every test owns a fresh daemon and page.
 
 import { test, before, after } from "node:test";
+import { MOCK_PROMPTS } from "./mock-prompts";
 import assert from "node:assert/strict";
 import { readFileSync, rmSync } from "node:fs";
 import path from "node:path";
@@ -247,7 +248,7 @@ test("NF: hidden viewport toasts a permission then the turn end; visibility clos
       // A permission lands while hidden → exactly one toast, session-tagged,
       // shell-composed title with the engine's ask as inert text.
       await page2.locator("textarea").click();
-      await page2.keyboard.type("run something dangerous");
+      await page2.keyboard.type(MOCK_PROMPTS["permission-ask"]);
       await page2.keyboard.press("Enter");
       await page2.waitForSelector(".perm-bar");
       await page2.waitForFunction(

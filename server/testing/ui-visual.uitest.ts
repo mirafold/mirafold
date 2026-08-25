@@ -1,4 +1,5 @@
 import { after, before, test } from "node:test";
+import { MOCK_PROMPTS } from "./mock-prompts";
 import type { Browser, BrowserContextOptions, Page, ViewportSize } from "playwright-core";
 import {
   enterMockSession,
@@ -83,7 +84,7 @@ async function settleKpiTurn(page: Page, text: string): Promise<void> {
 
 async function settleLiveDocument(page: Page): Promise<void> {
   const prompt = page.locator(".prompt-box textarea");
-  await prompt.fill("live document demo");
+  await prompt.fill(MOCK_PROMPTS["live-document"]);
   await prompt.press("Enter");
   await page
     .locator(".turn-assistant", { hasText: "response finished as one live composition" })

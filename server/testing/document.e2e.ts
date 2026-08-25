@@ -3,6 +3,7 @@
 // Every test owns a fresh daemon and page.
 
 import { test, before, after } from "node:test";
+import { MOCK_PROMPTS } from "./mock-prompts";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { THEMES } from "../../web/src/themes/manifest";
@@ -18,7 +19,7 @@ after(async () => {
 });
 
 async function settleLiveDocument(p: Page): Promise<Locator> {
-  const prompt = await typePrompt(p, "live document demo");
+  const prompt = await typePrompt(p, MOCK_PROMPTS["live-document"]);
   await p
     .locator(".turn-assistant", { hasText: "response finished as one live composition" })
     .waitFor({ timeout: 30_000 });
@@ -152,7 +153,7 @@ function readResponsiveDocumentLayout(p: Page) {
 test("LD.1: a response document streams around a stable painting and soft shell interruption", async () => {
   await withFreshMockSession(browser, "live-document-structure-7fd1", async (p) => {
     await p.locator("textarea").click();
-    await p.keyboard.type("live document demo");
+    await p.keyboard.type(MOCK_PROMPTS["live-document"]);
     await p.keyboard.press("Enter");
 
     await p.waitForSelector(".activity-line", { timeout: 15_000 });
@@ -285,7 +286,7 @@ test("LD.2: document measure, hierarchy, rich lane, local overflow, and short-an
     assert.ok(metrics.pageOverflow <= 1);
     await assertAxeClean(p, "live document composition");
 
-    await prompt.fill("one sentence document");
+    await prompt.fill(MOCK_PROMPTS["short-document"]);
     await prompt.press("Enter");
     const shortDocument = p.locator(".response-document").last();
     await shortDocument
@@ -373,7 +374,7 @@ test("LD.3: response documents reflow across Explorer, file view, pin dock, and 
     await p.locator(".render-zone").evaluate((element) => {
       element.scrollTop = element.scrollHeight;
     });
-    await typePrompt(p, "responsive document stress");
+    await typePrompt(p, MOCK_PROMPTS["responsive-document"]);
     const stressDocument = p.locator(".response-document", { hasText: "Width stress" });
     await stressDocument.locator(".rc-diff").waitFor({ timeout: 15_000 });
     await stressDocument.locator(".rc-chart").waitFor({ timeout: 15_000 });
@@ -478,7 +479,7 @@ test("LD.4: long text, focus, announcements, reduced motion, and every theme rem
   await withFreshMockSession(browser, "live-document-closure-63bc", async (p) => {
     await p.setViewportSize({ width: 1440, height: 800 });
     await p.emulateMedia({ reducedMotion: "reduce" });
-    const prompt = await typePrompt(p, "document closure stress");
+    const prompt = await typePrompt(p, MOCK_PROMPTS["document-closure"]);
 
     const response = p.locator(".response-document", {
       hasText: "This heading-free technical note",

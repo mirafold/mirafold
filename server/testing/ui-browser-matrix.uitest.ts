@@ -1,4 +1,5 @@
 import { test } from "node:test";
+import { MOCK_PROMPTS } from "./mock-prompts";
 import assert from "node:assert/strict";
 import {
   enterMockSession,
@@ -57,7 +58,7 @@ for (const browserName of MANAGED_BROWSER_NAMES) {
             // LD.3: every managed engine can keyboard-scroll the chart's
             // readable minimum canvas without widening the workbench.
             await page.setViewportSize({ width: 650, height: 800 });
-            await prompt.fill("responsive document stress");
+            await prompt.fill(MOCK_PROMPTS["responsive-document"]);
             await prompt.press("Enter");
             const chartPlot = page.locator(".response-document .rc-chart-plot").last();
             await chartPlot.waitFor();

@@ -1,4 +1,5 @@
 import { test, before, after } from "node:test";
+import { MOCK_PROMPTS } from "./mock-prompts";
 import assert from "node:assert/strict";
 import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import os from "node:os";
@@ -92,7 +93,7 @@ test("subagent narration survives a mid-turn reconnect replay (bughunt 2026-08-1
   await page.locator(".onb-agent", { hasText: "Claude Code" }).click();
   await page.waitForURL(/\/s\/[\w-]+/);
   await page.locator("textarea").click();
-  await page.keyboard.type("delegate slowly");
+  await page.keyboard.type(MOCK_PROMPTS["slow-subagent"]);
   await page.keyboard.press("Enter");
   // The deck is up and its narration has streamed (spawn at 300ms, prose at
   // 700ms, first tool not until 9s) — the subtext run is open NOW.
