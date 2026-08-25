@@ -193,7 +193,7 @@ app.use(express.static(DIST));
 // whenever the package is installed under a dot-directory — which is where
 // `npm i -g` puts it for nvm (~/.nvm/…), asdf, volta and fnm users. `GET /`
 // keeps working regardless (express.static passes a root, so only the request
-// path is checked), so the breakage looks like "onboarding dies on the first
+// path is checked), so the breakage looks like "agent picker dies on the first
 // session URL, but only for some people".
 app.get("/s/:id", (_req, res) => res.sendFile("index.html", { root: DIST }));
 

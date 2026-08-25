@@ -11,7 +11,7 @@
      so px paddings, dots, and controls scale together. The phone block
      resets it: that layout is sized to fit one row at 390px. NOTE: this
      zoom also scales the modals hosted inside .fleet (the agent picker and
-     the pair dialog); the picker's --onb-squeeze constants bake this factor
+     the pair dialog); the picker's --agent-picker-squeeze constants bake this factor
      in — re-derive them if this value moves. */
   zoom: 1.15;
 }
@@ -419,7 +419,7 @@
 }
 
 /* A grid act's error reply (unknown session, relay gate) — dismissible,
-   above the list, never inside the onboarding card's slot. */
+   above the list, never inside the agent picker card's slot. */
 .fleet-error {
   display: flex;
   align-items: center;

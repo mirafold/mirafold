@@ -199,7 +199,7 @@ test("the official launcher warns when npm exec supplies project binaries", asyn
 // dotfiles:"ignore" policy inspects EVERY segment of an ABSOLUTE path, so
 // `sendFile(join(DIST, "index.html"))` 404'd there while `GET /` kept working
 // (express.static passes a root, confining the check to the request path).
-// Reported 2026-07-30 from a real tester-style install: onboarding died on the
+// Reported 2026-07-30 from a real tester-style install: agent picker died on the
 // first session URL, for version-manager users only. Nothing caught it because
 // the repo checkout has no dot-segment — this test manufactures one, which is
 // the only way the suite can see the bug at all.

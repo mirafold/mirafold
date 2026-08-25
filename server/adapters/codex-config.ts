@@ -10,7 +10,7 @@ import { envInt } from "../env";
  * the user has declared — id, display name, where it points (`base_url`),
  * and which environment variable authenticates it (`env_key`). That's how
  * config-file BYO providers (Ollama made the default, or hosted open-model
- * APIs like OpenRouter — docs/local-models.md) become visible to onboarding:
+ * APIs like OpenRouter — docs/local-models.md) become visible to agent picker:
  * each is its own backend row, present only because the user themselves
  * declared it, usable only when its named key is actually present.
  *
@@ -116,7 +116,7 @@ export function parseCodexDefaultProvider(toml: string): CodexConfigProvider | u
   return { provider: defaultProvider, ...(baseUrl ? { baseUrl } : {}) };
 }
 
-// Short-lived read cache: onboarding's open-picker poll re-derives the whole
+// Short-lived read cache: the agent picker's open-picker poll re-derives the whole
 // backend menu every few seconds, and one pass reads this file several times.
 // One read serves a pass; an edited config still shows within seconds — the
 // TTL must stay short, this is a poll-smoother, never a boot-time snapshot.

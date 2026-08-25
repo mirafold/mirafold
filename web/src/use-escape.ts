@@ -2,7 +2,7 @@ import { useEffect } from "react";
 
 /**
  * Window-level "Escape dismisses/stops this" — the one idiom behind every
- * overlay (settings, connect-device, onboarding) and the busy interrupt.
+ * overlay (settings, connect-device, agent picker) and the busy interrupt.
  * Pass `undefined` while inactive; the listener exists only while a handler
  * is supplied.
  *

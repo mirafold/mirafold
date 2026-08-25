@@ -13,7 +13,7 @@
 
 /**
  * The terminal agents Mirafold can re-skin (one adapter each). The browser
- * picks which agent a session runs at onboarding, so the name is part of the
+ * picks which agent a session runs in the agent picker, so the name is part of the
  * shared contract (adapters/types.ts re-exports it).
  */
 export type AgentName = "claude-code" | "codex" | "gemini-cli" | "opencode";
@@ -240,7 +240,7 @@ export type ViewportMsgBody =
       fallback?: boolean;
     }
   // On connect, the server advertises which agents this daemon can run and
-  // which have credentials (`live`) — the onboarding picker's source. No
+  // which have credentials (`live`) — the agent picker's source. No
   // agent is assumed; `default` is only a hint for pre-selection.
   // `cwd` (optional/additive) — the directory the daemon was launched from,
   // i.e. the default working dir for new sessions (terminal parity) — and
@@ -437,7 +437,7 @@ export type ViewportMsgBody =
   // control; never buffered or sequenced.
   | { type: "session_ended"; sessionId: string };
 
-/** One agent's row in the `agents` hello — what the onboarding picker renders
+/** One agent's row in the `agents` hello — what the agent picker renders
  *  (tri-state via `live`/`blocked`, plus `detail` and `backends`).
  *  `kind` is the backing a one-click create would use — set only when `live`,
  *  so the row can NAME what it's about to run on. A single usable backend
@@ -492,7 +492,7 @@ export type AgentBackend = {
   hint?: string;
 };
 
-/** The onboarding picker's backend choice, riding `create`. `endpoint`
+/** The agent picker's backend choice, riding `create`. `endpoint`
  *  names a probe-discovered local server; `backendId` names a configured
  *  endpoint opaquely; `provider` names a config-declared provider row; `model`
  *  is the picked catalog entry. Labels and opaque identifiers only — never a
@@ -591,7 +591,7 @@ export type ClientMsg =
   // the daemon's log — the axis that matters once the relay puts the phone
   // bundle and the npm daemon on different release trains.
   | { type: "attach"; sessionId: string; afterSeq?: number; clientVersion?: string }
-  // `agent` names which terminal agent to run (chosen at onboarding);
+  // `agent` names which terminal agent to run (chosen in the agent picker);
   // omitted → the daemon's default. Credentials stay server-side, never sent.
   // `backend` (optional/additive): the second-step picker's choice — which
   // of the advertised backends to run on. Omitted → the daemon's
@@ -642,7 +642,7 @@ export type ClientMsg =
   | { type: "interrupt_session"; sessionId: string }
   | { type: "prompt_session"; sessionId: string; text: string }
   // Re-probe local model servers and re-send the `agents` hello. The
-  // onboarding picker sends this on a slow interval while open, so the
+  // agent picker sends this on a slow interval while open, so the
   // "start your local server and it appears here" promise is live — no
   // reload. Server-side throttled; a burst degrades to the cached answer.
   | { type: "refresh_agents" }

@@ -12,7 +12,7 @@
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --z-menu: 30; /* the prompt's completion menu */
   --z-phone-disclosure: 34; /* the phone's input-navigation strip */
-  --z-onboarding: 50;
+  --z-agent-picker: 50;
   --z-layer-dim: 54; /* the dimming rim behind an enlarged layer */
   --z-layer: 55; /* an enlarged file, a phone drawer: above the transcript + status bar */
   --z-layer-above: 56; /* the review draft prompt over a phone drawer */

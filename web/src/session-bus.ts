@@ -67,7 +67,7 @@ export function createSessionBus(): SessionBus {
   const daemon = createDaemonClient(socket);
   // The URL carries the session identity; no id yet means "create one".
   let sessionId = sessionIdFromPath(location.pathname);
-  // Attach to a known session; otherwise send nothing and wait at onboarding
+  // Attach to a known session; otherwise send nothing and wait in the agent picker
   // (no agent is assumed, so we don't auto-create). The hello names the
   // last seq this viewport saw, asking for a tail-only resume.
   socket.setHello(() =>

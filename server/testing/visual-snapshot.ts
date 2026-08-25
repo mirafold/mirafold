@@ -31,11 +31,11 @@ const SCREENSHOT_OPTIONS = {
       transition-duration: 0s !important;
     }
     body, button, input, textarea { font-family: "Liberation Sans", sans-serif !important; }
-    .onb-card, .onb-card *, .settings-card, .settings-card *,
+    .agent-picker-card, .agent-picker-card *, .settings-card, .settings-card *,
     .status-bar, .status-bar *, .prompt-box, .prompt-box *, .rc, .rc * {
       font-family: "Liberation Mono", monospace !important;
     }
-    .onb-title, .onb-sub { font-family: "Liberation Sans", sans-serif !important; }
+    .agent-picker-title, .agent-picker-sub { font-family: "Liberation Sans", sans-serif !important; }
   `,
 };
 

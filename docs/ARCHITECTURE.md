@@ -144,7 +144,7 @@ can unload while the checkpoint remains available for lazy recovery.
 
 [`session-bus.ts`](../web/src/session-bus.ts) owns one
 [`SocketClient`](../web/src/ws.ts) and fans incoming messages to shell
-consumers. `Shell` owns connection state, onboarding, the prompt, permission
+consumers. `Shell` owns connection state, agent picker, the prompt, permission
 and terminal-input bars, status, workspace panels, settings, notifications,
 and other trusted controls.
 
@@ -290,7 +290,7 @@ accepted residual risks in detail.
    authenticated URL.
 2. The browser connects and receives the available agents, backend choices,
    default directory, and daemon capabilities.
-3. Onboarding submits a validated agent, backend, and existing directory.
+3. AgentPicker submits a validated agent, backend, and existing directory.
 4. The registry creates an entry and `adapters/index.ts` constructs the chosen
    real adapter or the scripted mock.
 5. The browser receives `session_created`, adopts `/s/<id>`, and attaches as a

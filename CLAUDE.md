@@ -5,7 +5,7 @@ re-skins whichever terminal agent you already use — **Claude Code, Codex,
 Gemini CLI, and OpenCode** all shipped — faithful to that agent,
 with Mirafold's generative UI layered on top: a Codex user gets Codex, never
 "Claude things". One adapter per agent in `server/adapters/`, none privileged;
-the agent is picked per session at onboarding.
+the agent is picked per session in the agent picker.
 
 Where things live: **docs/ARCHITECTURE.md** — architecture, the two
 load-bearing contracts, trust boundaries, and conventions. **README.md** —

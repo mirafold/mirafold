@@ -60,7 +60,7 @@ type FolderPickerStubWindow = Window & {
 };
 
 // The operating-system service has injected-process coverage in Tier 1. This
-// stub keeps the browser proof on the real SocketClient -> Onboarding path
+// stub keeps the browser proof on the real SocketClient -> AgentPicker path
 // while replacing only the native dialog's correlated reply.
 const installFolderPickerWireStub = (p: Page) =>
   p.addInitScript(() => {
@@ -164,7 +164,7 @@ test("?token= mints the cookie, cleans the URL, boots the shell", async () => {
 });
 
 test("the agent picker flexes to the window — no internal scrollbar through the squeeze ramp", async () => {
-  // The card's vertical chrome compresses with the window (--onb-squeeze in
+  // The card's vertical chrome compresses with the window (--agent-picker-squeeze in
   // styles.css) so its overflow-y:auto scrollbar is a last resort, not a
   // routine sight. The guarantee is calibrated to the credentialed picker
   // (short per-row detail lines — the state a set-up user sees); the fresh
@@ -191,20 +191,20 @@ test("the agent picker flexes to the window — no internal scrollbar through th
   const page2 = await browser.newPage();
   try {
     await page2.goto(`http://127.0.0.1:${d2.port}/?token=${token}`);
-    await page2.waitForSelector(".onb-card");
+    await page2.waitForSelector(".agent-picker-card");
     await page2.setViewportSize({ width: 1100, height: 1400 });
     await page2.waitForFunction(() => window.innerHeight === 1400);
     const fullGlyph = await page2.evaluate(
-      () => document.querySelector(".onb-glyph")!.getBoundingClientRect().height,
+      () => document.querySelector(".agent-picker-glyph")!.getBoundingClientRect().height,
     );
     for (const h of [760, 745, 730]) {
       await page2.setViewportSize({ width: 1100, height: h });
       await page2.waitForFunction((height) => window.innerHeight === height, h);
       const m = await page2.evaluate(() => {
-        const c = document.querySelector(".onb-card")!;
+        const c = document.querySelector(".agent-picker-card")!;
         return {
           overflow: c.scrollHeight - c.clientHeight,
-          glyph: document.querySelector(".onb-glyph")!.getBoundingClientRect().height,
+          glyph: document.querySelector(".agent-picker-glyph")!.getBoundingClientRect().height,
         };
       });
       assert.ok(m.overflow <= 2, `picker scrolls ${m.overflow}px internally at ${h}px window height`);
@@ -237,15 +237,15 @@ test(
       await page2.goto(`http://127.0.0.1:${d2.port}/?token=${token}`);
       await page2.setViewportSize({ width: 390, height: 844 });
       await noSideScroll(page2);
-      await assertAxeClean(page2, "onboarding working directory");
+      await assertAxeClean(page2, "agent picker working directory");
 
       await advertiseStubbedFolderPicker(page2, picked);
 
-      const cwdInput = page2.locator("#onb-cwd");
-      await page2.locator(".onb-cwd-browse").click();
+      const cwdInput = page2.locator("#agent-picker-cwd");
+      await page2.locator(".agent-picker-cwd-browse").click();
       await page2.waitForFunction(
         (expected) =>
-          (document.querySelector("#onb-cwd") as HTMLInputElement | null)?.value === expected,
+          (document.querySelector("#agent-picker-cwd") as HTMLInputElement | null)?.value === expected,
         picked,
       );
       const chosenView = await cwdInput.evaluate((element) => {
@@ -294,16 +294,16 @@ test(
       // A rejected cwd belongs to the value that was submitted. Replacing the
       // value must remove that stale error before the user retries creation.
       await cwdInput.fill(missing);
-      await page2.locator(".onb-agent", { hasText: "Claude Code" }).click();
-      await page2.waitForSelector(".onb-error");
-      assert.match(await page2.locator(".onb-error").innerText(), /no such directory/i);
+      await page2.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
+      await page2.waitForSelector(".agent-picker-error");
+      assert.match(await page2.locator(".agent-picker-error").innerText(), /no such directory/i);
 
       await cwdInput.fill(picked);
       assert.equal(await cwdInput.inputValue(), picked);
-      await page2.locator(".onb-error").waitFor({ state: "detached" });
+      await page2.locator(".agent-picker-error").waitFor({ state: "detached" });
 
       await page2.setViewportSize({ width: 1100, height: 800 });
-      await page2.locator(".onb-agent", { hasText: "Claude Code" }).click();
+      await page2.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
       await page2.waitForURL(/\/s\/[\w-]+/);
       await page2.waitForSelector(".sb-cwd");
       assert.equal(await page2.locator(".sb-cwd").getAttribute("title"), picked);
@@ -315,31 +315,31 @@ test(
   },
 );
 
-test("onboarding → a full mock turn renders in the DOM", async () => {
+test("agent picker → a full mock turn renders in the DOM", async () => {
   // An empty registry opens straight into "choose your agent".
   // Every credential-less row carries its one-line fix on the picker
   // itself (the harness forces all three agents credential-less) (R.4b).
-  await page.waitForSelector(".onb-agent-hint");
+  await page.waitForSelector(".agent-picker-agent-hint");
   // One hint per offerable agent (the harness forces every agent
   // credential-less) — four since the OpenCode adapter (PLAN OC.4b).
-  assert.equal(await page.locator(".onb-agent-hint").count(), 4);
+  assert.equal(await page.locator(".agent-picker-agent-hint").count(), 4);
   const opencodeRowText = await page
-    .locator(".onb-agent", { hasText: "OpenCode" })
+    .locator(".agent-picker-agent", { hasText: "OpenCode" })
     .innerText();
   assert.match(opencodeRowText, /opencode auth login/);
   assert.match(opencodeRowText, /OPENCODE_MODEL/);
-  const claudeRow = page.locator(".onb-agent", { hasText: "Claude Code" });
+  const claudeRow = page.locator(".agent-picker-agent", { hasText: "Claude Code" });
   assert.match(await claudeRow.innerText(), /ANTHROPIC_API_KEY|`claude`/);
   // Disclosed-uncertainty rule (K.3 amendment, 2026-07-15): the Codex row
   // offers `codex login` WITH the uncertainty caveat, plus the API-key path.
   const codexRowText = await page
-    .locator(".onb-agent", { hasText: "Codex" })
+    .locator(".agent-picker-agent", { hasText: "Codex" })
     .innerText();
   assert.match(codexRowText, /codex login/);
   assert.match(codexRowText, /not clearly permitted/);
   assert.match(codexRowText, /OPENAI_API_KEY/);
   // The local/open-model path is named on the picker screen itself (R.4k).
-  assert.match(await page.locator(".onb-local-note").innerText(), /local\/open model/i);
+  assert.match(await page.locator(".agent-picker-local-note").innerText(), /local\/open model/i);
 
   await claudeRow.click();
   await page.waitForURL(/\/s\/[\w-]+/);
@@ -676,12 +676,12 @@ test("R.4i: a subscription-only Claude shows a BLOCKED row with the API-key fix,
   const page2 = await browser.newPage();
   try {
     await page2.goto(`http://127.0.0.1:${d2.port}/?token=${token}`);
-    const claudeRow = page2.locator(".onb-agent", { hasText: "Claude Code" });
+    const claudeRow = page2.locator(".agent-picker-agent", { hasText: "Claude Code" });
     await claudeRow.waitFor();
     // Warn-toned "subscription not supported", not the neutral demo status.
-    assert.equal(await claudeRow.locator(".onb-blocked").count(), 1);
+    assert.equal(await claudeRow.locator(".agent-picker-blocked").count(), 1);
     assert.match(
-      await claudeRow.locator(".onb-agent-status").innerText(),
+      await claudeRow.locator(".agent-picker-agent-status").innerText(),
       /subscription not supported/,
     );
     // The honest hint: WHY (terms) plus the concrete fix (an API key).
@@ -690,7 +690,7 @@ test("R.4i: a subscription-only Claude shows a BLOCKED row with the API-key fix,
     assert.match(rowText, /ANTHROPIC_API_KEY/);
     // Codex/Gemini are credential-less here → their ordinary demo hints, no block.
     assert.equal(
-      await page2.locator(".onb-agent", { hasText: "Codex" }).locator(".onb-blocked").count(),
+      await page2.locator(".agent-picker-agent", { hasText: "Codex" }).locator(".agent-picker-blocked").count(),
       0,
     );
   } finally {
@@ -704,7 +704,7 @@ test("UX.8: a live picker names its backing without exposing a configured host",
   // Point Claude Code at a local endpoint (ANTHROPIC_BASE_URL) → kind `local`,
   // live, and the picker must identify an endpoint without disclosing its
   // configured hostname. The URL need not resolve —
-  // we only read onboarding, never drive a turn.
+  // we only read agent picker, never drive a turn.
   const token = "e2e-local-9c2f";
   const d2 = await startDaemon({
     MIRAFOLD_TOKEN: token,
@@ -717,15 +717,15 @@ test("UX.8: a live picker names its backing without exposing a configured host",
   const page2 = await browser.newPage();
   try {
     await page2.goto(`http://127.0.0.1:${d2.port}/?token=${token}`);
-    const claudeRow = page2.locator(".onb-agent", { hasText: "Claude Code" });
+    const claudeRow = page2.locator(".agent-picker-agent", { hasText: "Claude Code" });
     await claudeRow.waitFor();
-    assert.match(await claudeRow.locator(".onb-agent-status").innerText(), /ready/);
-    const detail = await claudeRow.locator(".onb-agent-detail").innerText();
+    assert.match(await claudeRow.locator(".agent-picker-agent-status").innerText(), /ready/);
+    const detail = await claudeRow.locator(".agent-picker-agent-detail").innerText();
     assert.equal(detail, "local endpoint");
     assert.doesNotMatch(detail, /localhost|11434/);
-    const geminiRow = page2.locator(".onb-agent", { hasText: "Gemini CLI" });
-    assert.match(await geminiRow.locator(".onb-agent-status").innerText(), /ready/);
-    assert.match(await geminiRow.locator(".onb-agent-detail").innerText(), /Gemini API key/);
+    const geminiRow = page2.locator(".agent-picker-agent", { hasText: "Gemini CLI" });
+    assert.match(await geminiRow.locator(".agent-picker-agent-status").innerText(), /ready/);
+    assert.match(await geminiRow.locator(".agent-picker-agent-detail").innerText(), /Gemini API key/);
   } finally {
     await page2.close();
     await d2.stop();
@@ -761,77 +761,77 @@ test("N.4: a genuine choice opens the second step; a local server appears LIVE; 
     await page2.goto(`http://127.0.0.1:${d2.port}/?token=${token}`);
 
     // Codex: two usable credentials → the second step, not an instant create.
-    await page2.locator(".onb-agent", { hasText: "Codex" }).click();
-    await page2.waitForSelector(".onb-backends");
-    assert.equal(await page2.locator(".onb-backend").count(), 2);
-    const subRow = page2.locator(".onb-backend", { hasText: "ChatGPT subscription" });
+    await page2.locator(".agent-picker-agent", { hasText: "Codex" }).click();
+    await page2.waitForSelector(".agent-picker-backends");
+    assert.equal(await page2.locator(".agent-picker-backend").count(), 2);
+    const subRow = page2.locator(".agent-picker-backend", { hasText: "ChatGPT subscription" });
     // The disclosed-uncertainty caveat rides the OPTION (K.3: uncertainty,
     // never permission), and the row is a live choice, not blocked.
     assert.match(await subRow.innerText(), /not clearly permitted/);
     assert.match(await subRow.innerText(), /your account, your call/);
-    assert.equal(await page2.locator(".onb-backend-blocked").count(), 0);
+    assert.equal(await page2.locator(".agent-picker-backend-blocked").count(), 0);
     // Every row names the model it runs — the line that makes rows comparable
     // (2026-07-20). The api-key row's is the env override.
     assert.equal(
-      await page2.locator(".onb-backend", { hasText: "OpenAI API key" })
-        .locator(".onb-backend-model")
+      await page2.locator(".agent-picker-backend", { hasText: "OpenAI API key" })
+        .locator(".agent-picker-backend-model")
         .innerText(),
       "gpt-5.6-sol",
     );
     // No server discovered yet → the live hint, and no catalog anywhere.
-    assert.match(await page2.locator(".onb-live-hint").innerText(), /shows up here/);
-    assert.equal(await page2.locator(".onb-model").count(), 0);
+    assert.match(await page2.locator(".agent-picker-live-hint").innerText(), /shows up here/);
+    assert.equal(await page2.locator(".agent-picker-model").count(), 0);
 
     // Start the fixture "ollama" NOW, picker open — it must appear without a
     // reload (the refresh_agents poll re-probes every ~3s).
     fixture.setUp(true);
-    const ollamaRow = page2.locator(".onb-backend", { hasText: "ollama" });
+    const ollamaRow = page2.locator(".agent-picker-backend", { hasText: "ollama" });
     await ollamaRow.waitFor({ timeout: 15_000 });
     // It's ONE row like every other, promising a catalog rather than splaying
     // it inline — and the hint that told you to go configure one is gone.
-    assert.equal(await page2.locator(".onb-backend").count(), 3);
+    assert.equal(await page2.locator(".agent-picker-backend").count(), 3);
     assert.match(await ollamaRow.innerText(), /1 model — choose/);
-    assert.equal(await page2.locator(".onb-model").count(), 0);
-    assert.equal(await page2.locator(".onb-live-hint").count(), 0);
+    assert.equal(await page2.locator(".agent-picker-model").count(), 0);
+    assert.equal(await page2.locator(".agent-picker-live-hint").count(), 0);
     // "runs on your machine" is a per-row tag, and ONLY the discovered
     // loopback server carries it — never the paid remote credential rows.
-    assert.equal(await page2.locator(".onb-backend-tag").count(), 1);
-    assert.equal(await ollamaRow.locator(".onb-backend-tag").innerText(), "local");
+    assert.equal(await page2.locator(".agent-picker-backend-tag").count(), 1);
+    assert.equal(await ollamaRow.locator(".agent-picker-backend-tag").innerText(), "local");
 
     // The third step: the catalog, one click deeper.
     await ollamaRow.click();
-    await page2.waitForSelector(".onb-server-name");
-    assert.match(await page2.locator(".onb-server-name").innerText(), /ollama/);
-    assert.equal(await page2.locator(".onb-model").innerText(), "llama3.2:3b");
+    await page2.waitForSelector(".agent-picker-server-name");
+    assert.match(await page2.locator(".agent-picker-server-name").innerText(), /ollama/);
+    assert.equal(await page2.locator(".agent-picker-model").innerText(), "llama3.2:3b");
 
     // Esc walks back one step at a time: catalog → backends → agents.
     await page2.keyboard.press("Escape");
-    await page2.waitForSelector(".onb-backend");
-    await page2.locator(".onb-back").click();
-    await page2.waitForSelector(".onb-list");
+    await page2.waitForSelector(".agent-picker-backend");
+    await page2.locator(".agent-picker-back").click();
+    await page2.waitForSelector(".agent-picker-list");
 
     // Claude: two usable (env endpoint + API key) + ollama speaks anthropic
     // too, and the prohibited subscription is VISIBLE but gray with the why.
-    await page2.locator(".onb-agent", { hasText: "Claude Code" }).click();
-    await page2.waitForSelector(".onb-backends");
-    assert.equal(await page2.locator(".onb-backend", { hasText: "ollama" }).count(), 1); // dialect-filtered in
-    const blocked = page2.locator(".onb-backend-blocked");
+    await page2.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
+    await page2.waitForSelector(".agent-picker-backends");
+    assert.equal(await page2.locator(".agent-picker-backend", { hasText: "ollama" }).count(), 1); // dialect-filtered in
+    const blocked = page2.locator(".agent-picker-backend-blocked");
     assert.equal(await blocked.count(), 1);
     assert.ok(await blocked.isDisabled(), "a prohibited subscription must not be clickable");
     assert.match(await blocked.innerText(), /Claude subscription/);
     assert.match(await blocked.innerText(), /third-party apps/);
     // The env endpoint the probe never found keeps its own row without
     // disclosing its configured hostname or port.
-    const configuredLocal = page2.locator(".onb-backend", { hasText: "local endpoint" });
+    const configuredLocal = page2.locator(".agent-picker-backend", { hasText: "local endpoint" });
     const configuredLocalText = await configuredLocal.innerText();
     assert.match(configuredLocalText, /local endpoint/);
     assert.doesNotMatch(configuredLocalText, /localhost|9999/);
-    assert.equal(await configuredLocal.locator(".onb-backend-tag").innerText(), "local");
+    assert.equal(await configuredLocal.locator(".agent-picker-backend-tag").innerText(), "local");
 
     // Gemini: no credentials, no dialect → no second step; the click-through
     // demo create still works one-click (and proves the panel isn't sticky).
-    await page2.locator(".onb-back").click();
-    await page2.locator(".onb-agent", { hasText: "Gemini" }).click();
+    await page2.locator(".agent-picker-back").click();
+    await page2.locator(".agent-picker-agent", { hasText: "Gemini" }).click();
     await page2.waitForURL(/\/s\/[\w-]+/, { timeout: 15_000 });
   } finally {
     await page2.close();
@@ -1161,8 +1161,8 @@ test("2026-07-29 reload replays history silently — no re-announced turns in th
   // the long shared-session history the suite accumulates by this point.
   const sharedSession = page.url();
   await page.goto(`${base}/?new=1`);
-  await page.waitForSelector(".onb-agent");
-  await page.locator(".onb-agent", { hasText: "Claude Code" }).click();
+  await page.waitForSelector(".agent-picker-agent");
+  await page.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
   await page.waitForURL(/\/s\/[\w-]+/);
   const freshSession = page.url();
   await page.locator("textarea").click();
@@ -1270,8 +1270,8 @@ test("2026-07-30 a turn that dies by error leaves the shell idle, not wedged on 
   // something other than what this test claims.
   const shared = page.url(); // hand it back at the end
   await page.goto(`${base}/?new=1`);
-  await page.waitForSelector(".onb-agent");
-  await page.locator(".onb-agent", { hasText: "Claude Code" }).click();
+  await page.waitForSelector(".agent-picker-agent");
+  await page.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
   await page.waitForURL(/\/s\/[\w-]+/);
   const errSession = page.url();
 
@@ -1342,17 +1342,17 @@ test("fleet: the cwd is the row's hover tooltip; clicking outside the new-sessio
   // "+ new session" opens the picker; a backdrop click (outside the card)
   // changes your mind — possible only because a fleet exists behind it.
   await page.locator(".fleet-new").click();
-  await page.waitForSelector(".onb-card");
-  await page.locator(".onb-overlay").click({ position: { x: 5, y: 5 } });
-  assert.equal(await page.locator(".onb-overlay").count(), 0);
+  await page.waitForSelector(".agent-picker-card");
+  await page.locator(".agent-picker-overlay").click({ position: { x: 5, y: 5 } });
+  assert.equal(await page.locator(".agent-picker-overlay").count(), 0);
   // A click INSIDE the card must not dismiss it…
   await page.locator(".fleet-new").click();
-  await page.waitForSelector(".onb-card");
-  await page.locator(".onb-title").click();
-  assert.equal(await page.locator(".onb-overlay").count(), 1);
+  await page.waitForSelector(".agent-picker-card");
+  await page.locator(".agent-picker-title").click();
+  assert.equal(await page.locator(".agent-picker-overlay").count(), 1);
   // …and Esc closes it, same idiom as the settings card.
   await page.keyboard.press("Escape");
-  assert.equal(await page.locator(".onb-overlay").count(), 0);
+  assert.equal(await page.locator(".agent-picker-overlay").count(), 0);
 });
 
 test("A.3b: the session name is the row's one link; buttons ride above the stretched overlay", async () => {
@@ -1443,7 +1443,7 @@ test("status bar: new sits beside home, end is the far-right control, ?new opens
   const fresh = await browser.newPage();
   await fresh.context().addCookies([{ name: "mirafold_token", value: TOKEN, url: base }]);
   await fresh.goto(`${base}${href}`);
-  await fresh.waitForSelector(".onb-card");
+  await fresh.waitForSelector(".agent-picker-card");
   await fresh.close();
 });
 
@@ -2121,12 +2121,12 @@ test("C.2: axe-core finds no serious/critical WCAG violations across the app", a
     const baseAx = `http://127.0.0.1:${dax.port}`;
     await p.goto(`${baseAx}/?token=${token}`);
 
-    // 1) Onboarding ("choose your agent") — empty registry opens here.
-    await p.waitForSelector(".onb-agent");
-    await assertAxeClean(p, "onboarding");
+    // 1) AgentPicker ("choose your agent") — empty registry opens here.
+    await p.waitForSelector(".agent-picker-agent");
+    await assertAxeClean(p, "agent-picker");
 
     // 2) A live session with a rendered transcript + checklist.
-    await p.locator(".onb-agent", { hasText: "Claude Code" }).click();
+    await p.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
     await p.waitForURL(/\/s\/[\w-]+/);
     await p.waitForSelector(".demo-banner");
     await p.locator("textarea").click();
@@ -2258,10 +2258,10 @@ test("CS: manage subscription — status, cancel behind its confirm, scheduled s
   const p = await browser.newPage();
   try {
     await p.goto(`http://127.0.0.1:${d2.port}/?token=${token}`);
-    // An empty registry opens the onboarding overlay, which sits over the
+    // An empty registry opens the agent picker overlay, which sits over the
     // fleet's pair button — enter a session and use the status bar's instead
     // (both hosts render the same card).
-    await p.locator(".onb-agent", { hasText: "Claude Code" }).click();
+    await p.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
     await p.waitForURL(/\/s\/[\w-]+/);
 
     // The resting UI shows only the pair button; nothing cancel-shaped.

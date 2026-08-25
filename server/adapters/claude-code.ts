@@ -172,7 +172,7 @@ export class ClaudeCodeSession implements AgentSession {
   // `engine` is the test seam (like Codex's thread swap / MIRAFOLD_GEMINI_BIN):
   // query() spawns the real CLI at construction, so tests must inject a
   // scripted stand-in here — there is no later moment to swap it.
-  // `kind`/`endpoint` carry the onboarding picker's backend choice.
+  // `kind`/`endpoint` carry the agent picker's backend choice.
   // Undefined = inherit the process env untouched.
   constructor(opts: {
     workspaceDir: string;

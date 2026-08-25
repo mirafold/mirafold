@@ -8,7 +8,7 @@ export type CodexBackendKind = "api-key" | "subscription" | "local";
 
 const RENDER_MCP = renderMcpCommand();
 
-/** The provider half of an onboarding pick's enforcement. */
+/** The provider half of an agent picker pick's enforcement. */
 export function codexProviderBinding(
   kind: CodexBackendKind | undefined,
   endpoint: string | undefined,
@@ -87,7 +87,7 @@ export function createCodexRuntimeBinding(options: {
   const endpointForRedaction =
     endpoint ?? providerConfig.entries.find((entry) => entry.id === selectedProvider)?.baseUrl;
 
-  // Every explicit onboarding pick forces the provider its label promised.
+  // Every explicit agent picker pick forces the provider its label promised.
   // A discovered local endpoint gets a per-session Responses provider;
   // config-declared local providers keep their own table and are selected by
   // id. A bare local pick and an unspecified backend inherit Codex's config.

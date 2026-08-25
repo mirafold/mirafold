@@ -176,8 +176,8 @@ test("contrast floors: every text tier clears its floor on every text surface, i
 test("accent text clears 4.5:1 on every real text surface, in every theme", () => {
   // Accents render as real text (links, error prose, warn notices, status
   // words) — and, per a 2026-07-21 axe-core sweep, on the SAME card/badge
-  // surfaces body text does (.onb-blocked, .demo-banner-badge on
-  // --surface-2; .onb-agent-detail on --bg via a since-removed opacity
+  // surfaces body text does (.agent-picker-blocked, .demo-banner-badge on
+  // --surface-2; .agent-picker-agent-detail on --bg via a since-removed opacity
   // dim). Checking only --bg missed all three: each cleared 4.5:1 there but
   // fell short — 4.4, 4.41, 3.57 — on the surface actually rendered on.
   // Same TEXT_SURFACES list the tier floors use, for the same reason. The

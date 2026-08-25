@@ -363,7 +363,7 @@ proven sequence (used for Codex, Gemini, and OpenCode; keep it):
    - `adapters/index.ts`: `credentialKind()` case (what counts as live),
      `backendOptions()` case (the picker's menu of ways it can run),
      `modelFor()` case (its own env var, never a shared one), `ADAPTER_AGENTS`
-     entry (onboarding offers it), `createSession()` case.
+     entry (agent picker offers it), `createSession()` case.
    - `web/src/agents-meta.ts`: the human label and connect/blocked hints
      (`LABEL`, `CONNECT_HINT`, `BLOCKED_HINT`). This is display copy, not
      behavior — shared code still never branches on the agent name.

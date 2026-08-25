@@ -105,7 +105,7 @@ things follow, and they are the whole list:
 
 **Local model servers can't be authenticated.** Mirafold discovers local
 model servers (Ollama, LM Studio, vLLM, llama.cpp) by probing localhost's
-well-known ports and offers what answers in the onboarding picker. A local
+well-known ports and offers what answers in the agent picker. A local
 server has no identity to verify — anything on your machine that can bind a
 free port can answer like a model server, and a session routed through an
 impostor exposes the conversation (including code context) to it and lets

@@ -8,7 +8,7 @@
    and layers beyond the session view. IMPORT ORDER IS THE CASCADE — it is
    load-bearing in two places (equal-specificity overrides): the theme-fade
    transition list
-   (14-polish) must stay after .onb-agent (12-dialogs), and phone overrides
+   (14-polish) must stay after .agent-picker-agent (12-dialogs), and phone overrides
    must stay after their base rules — both satisfied by 14/15 staying last.
 
    A surface's phone overrides still live in 15-phone.css (the ONE phone

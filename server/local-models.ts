@@ -163,7 +163,7 @@ let cache: LocalServer[] = [];
 let cacheAt = 0;
 let inflight: Promise<LocalServer[]> | undefined;
 
-// One sweep answers every caller inside this window: each open onboarding
+// One sweep answers every caller inside this window: each open agent picker
 // card polls refresh_agents on its own clock, and a sweep is a real HTTP
 // probe per target. The TTL stays short enough that a freshly started
 // server still appears within one poll or two — a longer window would turn

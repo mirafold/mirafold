@@ -45,7 +45,7 @@ const VERIFY_KIND_TIMEOUT_MS = envInt("VERIFY_KIND_TIMEOUT_MS", 30_000);
 // relayGateRefusal) so the attach gate, cockpit acts, and uploads say the
 // same words about the same verdict — pending-kind included.
 
-// Agents the browser is allowed to name at onboarding. A create message
+// Agents the browser is allowed to name in the agent picker. A create message
 // naming anything else falls back to the daemon default rather than erroring.
 const OFFERABLE = new Set(ADAPTER_AGENTS);
 const asAgent = (v: unknown): AgentName | undefined =>
@@ -257,7 +257,7 @@ export function openConnection(
   };
 
   // Advertise which agents this daemon offers + which are live, so the
-  // onboarding picker can render before any session exists. No agent assumed.
+  // agent picker can render before any session exists. No agent assumed.
   // Also where the daemon was launched — the default cwd for new
   // sessions — plus home, so the client can show paths in ~-form.
   // Re-sent whole on refresh_agents — availableAgents() reads the live
@@ -371,7 +371,7 @@ export function openConnection(
       case "create": {
         // A bad cwd (typo'd path) rejects the create rather than silently
         // working somewhere else — the viewport stays unattached and the
-        // onboarding card shows the error.
+        // agent-picker card shows the error.
         noteClientVersion(msg.clientVersion);
         // One classification in flight per connection — a second
         // create arriving mid-verify would interleave two mints racing one

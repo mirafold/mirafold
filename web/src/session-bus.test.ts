@@ -37,7 +37,7 @@ test("a session URL attaches on open, naming the last seq seen", (t) => {
   assert.equal(hello.afterSeq, undefined, "a fresh page has no cursor to resume from");
 });
 
-test("no session in the URL sends nothing — the onboarding picker decides", (t) => {
+test("no session in the URL sends nothing — the agent picker decides", (t) => {
   const { sock } = setup(t, "/");
   assert.equal(sock().sent.length, 0);
 });

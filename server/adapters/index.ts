@@ -25,7 +25,7 @@ export type { AgentName, AgentSession, Backend } from "./types";
 export { errText } from "./types";
 import { envInt } from "../env";
 
-// Credential probes ride onboarding's open-picker poll, several per pass —
+// Credential probes ride the agent picker's open-picker poll, several per pass —
 // each path's answer is held briefly so a pass costs one stat per file. The
 // TTL must stay short: a fresh login (or logout) still shows within a couple
 // of seconds, which is the poll's whole point.
@@ -100,7 +100,7 @@ const probe = {
     // Anthropic first-party API key (or auth token) — never reaches the wire.
     apiKey: Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN),
     // A subscription login (`claude` in a terminal, no key) writes
-    // ~/.claude/.credentials.json. Detected so onboarding can name the fix;
+    // ~/.claude/.credentials.json. Detected so the agent picker can name the fix;
     // provider-policy then blocks it (Anthropic prohibits third-party use).
     subscriptionLogin: loginFileExists(process.env.CLAUDE_CONFIG_DIR, ".claude", ".credentials.json"),
   }),
@@ -136,7 +136,7 @@ const probe = {
  * What KIND of credential the named agent has configured — the input to the
  * per-provider policy. The kind is detected so the policy can decide whether
  * it's usable at all: an Anthropic/Gemini subscription is DETECTED here (so
- * onboarding can say why it won't run) but treated as prohibited by
+ * the agent picker can say why it won't run) but treated as prohibited by
  * `provider-policy.ts`. A local/BYO endpoint is its own kind — the user
  * pointed elsewhere, so first-party terms don't apply and anything goes —
  * and it comes first: it is what the terminal agent itself would run.
@@ -195,7 +195,7 @@ export function resolveBackendFor(agent: AgentName): Backend {
   const kind = credentialKind(agent);
   // `live` ⇒ the REAL agent runs. A prohibited subscription (claude/gemini —
   // written bans; codex only if provider-policy ever flips it) is NOT live —
-  // it falls back to the mock, so we never actually drive it — and onboarding
+  // it falls back to the mock, so we never actually drive it — and the agent picker
   // shows it as `blocked` with the API-key fix.
   const base = {
     agent,
@@ -225,7 +225,7 @@ export function resolveBackendFor(agent: AgentName): Backend {
   return base;
 }
 
-// Agents with a landed adapter — the onboarding picker's universe.
+// Agents with a landed adapter — the agent picker's universe.
 export const ADAPTER_AGENTS: AgentName[] = ["claude-code", "codex", "gemini-cli", "opencode"];
 
 /** One way an agent could run on this machine. `usable` is provider-policy's
@@ -439,7 +439,7 @@ function advertisedBackends(agent: AgentName): AgentBackend[] {
 }
 
 /**
- * What onboarding advertises: each offerable agent, whether it's `live` (usable
+ * What the agent picker advertises: each offerable agent, whether it's `live` (usable
  * locally now), and whether it's `blocked` — a prohibited subscription is
  * present, so the picker shows the API-key fix instead of a demo or a dead
  * badge. `blocked` is additive/optional on the wire; old clients see `live:
@@ -563,7 +563,7 @@ function modelFor(agent: AgentName): string | undefined {
 }
 
 /**
- * Validate the onboarding picker's backend choice against CURRENT detection +
+ * Validate the agent picker's backend choice against CURRENT detection +
  * provider policy, and resolve it to a Backend. The client is NEVER
  * trusted: a forged kind, a prohibited subscription, a server that stopped
  * since the pick, or a model not in its catalog all refuse with a human

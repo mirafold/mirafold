@@ -33,7 +33,7 @@ body,
 .status-bar,
 .pin-dock,
 .rc-link,
-.onb-agent {
+.agent-picker-agent {
   transition:
     background-color 0.22s ease,
     color 0.22s ease,

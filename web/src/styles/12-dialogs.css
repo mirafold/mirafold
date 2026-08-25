@@ -1,5 +1,5 @@
 /* ---- Dialogs & overlays --------------------------------------------------
-   The modal layer: onboarding's agent picker, the pairing QR card, and the
+   The modal layer: the agent picker, the pairing QR card, and the
    settings card. */
 
 /* Transparent wrapper so `inert` can hide everything behind an open dialog
@@ -9,32 +9,32 @@
   display: contents;
 }
 
-/* ---- Onboarding: shell-owned agent picker ------------------------- */
+/* ---- AgentPicker: shell-owned agent picker ------------------------- */
 /* The card's vertical chrome flexes with the window so its internal
-   scrollbar is a genuine last resort, not a routine sight. --onb-squeeze
+   scrollbar is a genuine last resort, not a routine sight. --agent-picker-squeeze
    runs 16px (full chrome, tall windows) down to 0px; every vertical metric
    interpolates on it, with
    its full→floor range in a trailing comment. The card lives inside .fleet's
    zoom (1.15), which inflates used vh values by that factor — the constants
    below divide it back out (9.1vh ≈ 10.5 real vh). Re-derive them if the
    fleet zoom ever moves. */
-.onb-overlay {
+.agent-picker-overlay {
   position: fixed;
   inset: 0;
-  z-index: var(--z-onboarding);
+  z-index: var(--z-agent-picker);
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--overlay);
   backdrop-filter: blur(3px);
-  padding: calc(12px + var(--onb-squeeze) * 0.75) 24px; /* 12→24px */
+  padding: calc(12px + var(--agent-picker-squeeze) * 0.75) 24px; /* 12→24px */
   /* Intercept 70, not 66: the floor arrives ~44px of window earlier,
      buying the compression the fourth agent row needs through the
      730–760px band. Tall-window chrome (the 16px cap) is untouched. */
-  --onb-squeeze: clamp(0px, calc(9.1vh - 70px), 16px);
+  --agent-picker-squeeze: clamp(0px, calc(9.1vh - 70px), 16px);
 }
 
-.onb-card {
+.agent-picker-card {
   width: 100%;
   max-width: 560px;
   /* Never taller than the overlay's padded box: below the squeeze floor
@@ -46,35 +46,35 @@
   background: var(--surface);
   border: 1px solid var(--border-2);
   border-radius: 12px;
-  padding: calc(18px + var(--onb-squeeze) * 1.125) 34px; /* 18→36px */
+  padding: calc(18px + var(--agent-picker-squeeze) * 1.125) 34px; /* 18→36px */
   box-shadow: var(--shadow-card);
   text-align: center;
 }
 
 
-.onb-glyph {
-  width: calc(40px + var(--onb-squeeze) * 2.5); /* 40→80px */
-  height: calc(40px + var(--onb-squeeze) * 2.5);
+.agent-picker-glyph {
+  width: calc(40px + var(--agent-picker-squeeze) * 2.5); /* 40→80px */
+  height: calc(40px + var(--agent-picker-squeeze) * 2.5);
 }
 
-.onb-title {
-  margin: calc(7px + var(--onb-squeeze) * 0.4375) 0 calc(3px + var(--onb-squeeze) * 0.1875); /* 7→14px / 3→6px */
-  font-size: calc(19px + var(--onb-squeeze) * 0.375); /* 19→25px */
+.agent-picker-title {
+  margin: calc(7px + var(--agent-picker-squeeze) * 0.4375) 0 calc(3px + var(--agent-picker-squeeze) * 0.1875); /* 7→14px / 3→6px */
+  font-size: calc(19px + var(--agent-picker-squeeze) * 0.375); /* 19→25px */
   font-weight: 650;
   color: var(--fg-strong);
 }
 
-.onb-sub {
-  margin: 0 auto calc(10px + var(--onb-squeeze) * 0.75); /* 10→22px */
+.agent-picker-sub {
+  margin: 0 auto calc(10px + var(--agent-picker-squeeze) * 0.75); /* 10→22px */
   max-width: 46ch;
-  font-size: calc(14px + var(--onb-squeeze) * 0.0625); /* 14→15px */
+  font-size: calc(14px + var(--agent-picker-squeeze) * 0.0625); /* 14→15px */
   line-height: 1.5;
   color: var(--fg-dim);
 }
 
 /* The working-directory field — prefilled with the daemon's
    launch dir, editable to point the session anywhere that exists. */
-.onb-cwd-label {
+.agent-picker-cwd-label {
   display: block;
   margin-bottom: 6px;
   text-align: left;
@@ -85,18 +85,18 @@
   color: var(--fg-dim);
 }
 
-.onb-cwd-row {
+.agent-picker-cwd-row {
   display: flex;
   align-items: stretch;
   gap: 8px;
-  margin-bottom: calc(10px + var(--onb-squeeze) * 0.25); /* 10→14px */
+  margin-bottom: calc(10px + var(--agent-picker-squeeze) * 0.25); /* 10→14px */
 }
 
-.onb-cwd {
+.agent-picker-cwd {
   flex: 1 1 auto;
   min-width: 0;
   width: auto;
-  padding: calc(8px + var(--onb-squeeze) * 0.1875) 13px; /* 8→11px */
+  padding: calc(8px + var(--agent-picker-squeeze) * 0.1875) 13px; /* 8→11px */
   background: var(--bg-inset);
   border: 1px solid var(--border-mid);
   border-radius: 8px;
@@ -106,15 +106,15 @@
   outline: none;
 }
 
-.onb-cwd:focus {
+.agent-picker-cwd:focus {
   border-color: var(--border-hover);
 }
 
-.onb-cwd::placeholder {
+.agent-picker-cwd::placeholder {
   color: var(--fg-faint);
 }
 
-.onb-cwd-browse {
+.agent-picker-cwd-browse {
   flex: none;
   padding: 0 13px;
   border: 1px solid var(--border-mid);
@@ -127,18 +127,18 @@
   transition: border-color 0.12s ease, background 0.12s ease;
 }
 
-.onb-cwd-browse:hover:not(:disabled) {
+.agent-picker-cwd-browse:hover:not(:disabled) {
   border-color: var(--border-hover);
   background: var(--surface-hover);
 }
 
-.onb-cwd-browse:disabled {
+.agent-picker-cwd-browse:disabled {
   cursor: wait;
   color: var(--fg-dim);
 }
 
 /* A rejected working dir (no such directory) — fix the path and retry. */
-.onb-error {
+.agent-picker-error {
   margin: -6px 0 12px;
   text-align: left;
   font-family: var(--font-mono);
@@ -146,57 +146,57 @@
   color: var(--error);
 }
 
-.onb-list {
+.agent-picker-list {
   display: flex;
   flex-direction: column;
-  gap: calc(5px + var(--onb-squeeze) * 0.3125); /* 5→10px */
+  gap: calc(5px + var(--agent-picker-squeeze) * 0.3125); /* 5→10px */
 }
 
-.onb-connecting {
+.agent-picker-connecting {
   color: var(--fg-dim);
   font-family: var(--font-mono);
   font-size: 13px;
   padding: 14px;
 }
 
-.onb-agent {
+.agent-picker-agent {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: calc(2px + var(--onb-squeeze) * 0.3125); /* 2→7px */
-  padding: calc(8px + var(--onb-squeeze) * 0.5625) calc(14px + var(--onb-squeeze) * 0.3125); /* 8→17px / 14→19px */
+  gap: calc(2px + var(--agent-picker-squeeze) * 0.3125); /* 2→7px */
+  padding: calc(8px + var(--agent-picker-squeeze) * 0.5625) calc(14px + var(--agent-picker-squeeze) * 0.3125); /* 8→17px / 14→19px */
   background: var(--surface-2);
   border: 1px solid var(--border-mid);
   border-radius: 9px;
   cursor: pointer;
   color: var(--fg-strong);
-  font-size: calc(15px + var(--onb-squeeze) * 0.125); /* 15→17px */
+  font-size: calc(15px + var(--agent-picker-squeeze) * 0.125); /* 15→17px */
   text-align: left;
   transition: border-color 0.12s ease, background 0.12s ease, transform 0.06s ease;
 }
 
-.onb-agent:hover {
+.agent-picker-agent:hover {
   border-color: var(--accent);
   background: var(--surface-hover);
 }
 
-.onb-agent:active {
+.agent-picker-agent:active {
   transform: translateY(1px);
 }
 
-.onb-agent-row {
+.agent-picker-agent-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
 
-.onb-agent-name {
+.agent-picker-agent-name {
   font-weight: 600;
 }
 
 /* The one-line fix for a credential-less agent, on the picker itself. */
-.onb-agent-hint {
+.agent-picker-agent-hint {
   font-family: var(--font-mono);
   font-size: 13px;
   line-height: 1.45;
@@ -205,7 +205,7 @@
 
 /* The "what's behind this row" line for a live agent (local endpoint or
    configured model) — accent-tinted so it reads as confirmation, not a warning. */
-.onb-agent-detail {
+.agent-picker-agent-detail {
   font-family: var(--font-mono);
   font-size: 13px;
   line-height: 1.45;
@@ -214,18 +214,18 @@
 
 /* The local-model signpost under the picker — dim, one notch above the
    card background, so "run your own model" is discoverable without shouting. */
-.onb-local-note {
-  margin-top: calc(8px + var(--onb-squeeze) * 0.5); /* 8→16px */
+.agent-picker-local-note {
+  margin-top: calc(8px + var(--agent-picker-squeeze) * 0.5); /* 8→16px */
   font-size: 13px;
   line-height: 1.55;
   color: var(--fg-dim);
 }
-.onb-local-note code {
+.agent-picker-local-note code {
   font-family: var(--font-mono);
   font-size: 12px;
 }
 
-.onb-agent-status {
+.agent-picker-agent-status {
   font-family: var(--font-mono);
   font-size: 13px;
   letter-spacing: 0.02em;
@@ -233,13 +233,13 @@
 
 /* ---- The second step — how the picked agent is backed -------------- */
 
-.onb-backends {
+.agent-picker-backends {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
-.onb-back {
+.agent-picker-back {
   align-self: flex-start;
   padding: 4px 2px;
   background: none;
@@ -249,12 +249,12 @@
   font-family: var(--font-mono);
   font-size: 13px;
 }
-.onb-back:hover {
+.agent-picker-back:hover {
   color: var(--fg-strong);
 }
 
 /* A backend row shares the agent row's look, one size down. */
-.onb-backend {
+.agent-picker-backend {
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -269,22 +269,22 @@
   text-align: left;
   transition: border-color 0.12s ease, background 0.12s ease, transform 0.06s ease;
 }
-.onb-backend:hover:not(:disabled) {
+.agent-picker-backend:hover:not(:disabled) {
   border-color: var(--accent);
   background: var(--surface-hover);
 }
-.onb-backend:active:not(:disabled) {
+.agent-picker-backend:active:not(:disabled) {
   transform: translateY(1px);
 }
 
-.onb-backend-row {
+.agent-picker-backend-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
 
-.onb-backend-name {
+.agent-picker-backend-name {
   font-weight: 600;
 }
 
@@ -292,7 +292,7 @@
    server and a paid remote endpoint, which the host alone only tells you if
    you read 127.0.0.1 as loopback. A quiet tag, not a status: it states a fact
    about the row, it isn't asking to be clicked. */
-.onb-backend-tag {
+.agent-picker-backend-tag {
   flex: none;
   padding: 2px 7px;
   border: 1px solid var(--border-mid);
@@ -303,7 +303,7 @@
   letter-spacing: 0.04em;
 }
 
-.onb-backend-detail {
+.agent-picker-backend-detail {
   font-family: var(--font-mono);
   font-size: 13px;
   color: var(--accent);
@@ -313,7 +313,7 @@
 /* The model this row runs — every row carries one, so it's the line the eye
    compares down the column. Dimmer than the accent detail: it answers "which
    model", it isn't the row's identity. */
-.onb-backend-model {
+.agent-picker-backend-model {
   font-family: var(--font-mono);
   font-size: 13px;
   color: var(--fg-dim);
@@ -321,7 +321,7 @@
 
 /* The disclosed-uncertainty caveat (codex subscription), and the why on a
    blocked row — dim monospace, same voice as the agent-row hints. */
-.onb-backend-caveat {
+.agent-picker-backend-caveat {
   font-family: var(--font-mono);
   font-size: 13px;
   line-height: 1.45;
@@ -330,16 +330,16 @@
 
 /* Unavailable stays VISIBLE but clearly unavailable — gray, no
    hover invitation, warn-toned name so the why draws the eye. */
-.onb-backend-blocked {
+.agent-picker-backend-blocked {
   cursor: default;
   opacity: 0.6;
 }
-.onb-backend-blocked .onb-backend-name {
+.agent-picker-backend-blocked .agent-picker-backend-name {
   color: var(--warn-fg);
 }
 
 /* The third step: which server's catalog you're in, above its models. */
-.onb-server-name {
+.agent-picker-server-name {
   align-self: flex-start;
   padding: 0 2px;
   text-align: left;
@@ -348,13 +348,13 @@
   color: var(--accent);
 }
 
-.onb-models {
+.agent-picker-models {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
 
-.onb-model {
+.agent-picker-model {
   padding: 7px 12px;
   background: var(--surface);
   border: 1px solid var(--border-mid);
@@ -365,29 +365,29 @@
   font-size: 13px;
   transition: border-color 0.12s ease, background 0.12s ease;
 }
-.onb-model:hover {
+.agent-picker-model:hover {
   border-color: var(--accent);
   background: var(--surface-hover);
 }
 
 /* The live "start it and it appears here" promise inside the second step. */
-.onb-live-hint {
+.agent-picker-live-hint {
   font-size: 13px;
   line-height: 1.55;
   color: var(--fg-dim);
 }
 
-.onb-live {
+.agent-picker-live {
   color: var(--accent);
 }
 
-.onb-demo {
+.agent-picker-demo {
   color: var(--fg-dim);
 }
 
 /* A prohibited subscription is present — warn-toned, not the neutral
    demo grey, so it reads as "attention needed", not just "no key". */
-.onb-blocked {
+.agent-picker-blocked {
   color: var(--warn-fg);
 }
 
@@ -416,7 +416,7 @@
 .settings-card,
 .permission-modal-card {
   width: 100%;
-  /* Same hard floor as .onb-card: never taller than the backdrop's padded
+  /* Same hard floor as .agent-picker-card: never taller than the backdrop's padded
      box, so short viewports keep the 24px gutter and the card scrolls
      internally instead of sitting flush (settings measures 583px natural —
      taller than a ~600px un-maximized Mac window). */

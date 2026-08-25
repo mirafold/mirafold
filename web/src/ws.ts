@@ -125,7 +125,7 @@ export class SocketClient {
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private pongTimer: ReturnType<typeof setTimeout> | null = null;
   // Returns the join message (attach/create) for this open, or null to send
-  // nothing yet — onboarding waits until the user picks an agent.
+  // nothing yet — agent picker waits until the user picks an agent.
   private hello: (() => ClientMsg | null) | null = null;
   /** Last broadcast seq seen — the resume cursor sent as attach.afterSeq. */
   lastSeq: number | null = null;

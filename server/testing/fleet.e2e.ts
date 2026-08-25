@@ -24,7 +24,7 @@ before(async () => {
   // First run: "/" opens straight into the picker; picking creates session 1.
   session = await browser.newPage();
   await session.goto(`${base}/`);
-  await session.locator(".onb-agent", { hasText: "Claude Code" }).click();
+  await session.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
   await session.waitForURL(/\/s\/[\w-]+/);
   sessionId = new URL(session.url()).pathname.split("/").pop()!;
 
@@ -149,7 +149,7 @@ test("ordering: rows hold creation order while working; needs-you surfaces to th
   // Session 2 via the fleet's own picker path.
   const second = await browser.newPage();
   await second.goto(`${base}/?new=1`);
-  await second.locator(".onb-agent", { hasText: "Claude Code" }).click();
+  await second.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
   await second.waitForURL(/\/s\/[\w-]+/);
   const secondId = new URL(second.url()).pathname.split("/").pop()!;
   assert.notEqual(secondId, sessionId);

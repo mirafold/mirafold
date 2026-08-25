@@ -34,7 +34,7 @@
      "the page pans sideways". Never below 16px on anything focusable. */
   .prompt-box textarea,
   .bang-bar-input,
-  .onb-cwd,
+  .agent-picker-cwd,
   .fleet-rename {
     font-size: 16px;
   }
@@ -328,7 +328,7 @@
     min-height: 36px;
   }
 
-  .onb-card {
+  .agent-picker-card {
     padding: 24px 18px;
   }
 

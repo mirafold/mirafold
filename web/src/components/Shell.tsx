@@ -4,7 +4,7 @@ import { ActivityLine, activityLabel, type Activity } from "./ActivityLine";
 import { BangBar } from "./BangBar";
 import { ChangesGlyph } from "./ChangesGlyph";
 import { FilesGlyph } from "./FilesGlyph";
-import { Onboarding } from "./Onboarding";
+import { AgentPicker } from "./AgentPicker";
 import { PromptBox, type PromptDraft } from "./PromptBox";
 import { OutputZone } from "./OutputZone";
 import { FilesPanel } from "./files/FilesPanel";
@@ -108,7 +108,7 @@ export function Shell() {
   // Replaced whole whenever the adapter reports a changed catalog.
   const [promptOptions, setPromptOptions] = useState<PromptOption[]>([]);
   // Everything the daemon's `agents` hello carries, kept together: which
-  // agents it offers (onboarding; a URL that already names a session
+  // agents it offers (agent picker; a URL that already names a session
   // skips the picker), where it was launched (the default session cwd)
   // + home for ~-abbreviation, the pairing info for the "connect a device"
   // QR (local viewports only), and its build version.
@@ -129,10 +129,10 @@ export function Shell() {
     // on a subscription login, which can't be driven over the paid relay.
     // Shown until dismissed.
     refused: string | null;
-    // The last create error, so the onboarding card can show a rejected
+    // The last create error, so the agent picker card can show a rejected
     // working dir.
-    onboarding: string | null;
-  }>({ session: false, refused: null, onboarding: null });
+    agentPicker: string | null;
+  }>({ session: false, refused: null, agentPicker: null });
 
   // ── The `!` command ───────────────────────────────────────────────
   const [bang, setBang] = useState<{
@@ -268,18 +268,18 @@ export function Shell() {
           setMeta({ sessionId: m.sessionId, cwd: m.cwd, agent: m.agent, model: m.model, demo: m.demo });
           setNotices((n) => ({
             ...n,
-            onboarding: null,
+            agentPicker: null,
             ...(m.fallback ? { session: true } : {}),
           }));
         } else if (m.type === "refused") {
           // No session — the relay refused this subscription-backed
-          // attach. Show the reason (also surfaced at onboarding if we're there).
-          setNotices((n) => ({ ...n, refused: m.message, onboarding: m.message }));
+          // attach. Show the reason (also surfaced in the agent picker if we're there).
+          setNotices((n) => ({ ...n, refused: m.message, agentPicker: m.message }));
           announce(m.message, true);
         } else if (m.type === "error") {
-          // Only the onboarding card consumes this; in-session errors already
+          // Only the agent picker card consumes this; in-session errors already
           // render in the output zone (the turn reducer brought busy down).
-          setNotices((n) => ({ ...n, onboarding: m.message }));
+          setNotices((n) => ({ ...n, agentPicker: m.message }));
         } else if (m.type === "bang_start") {
           setBang((b) => ({ ...b, tail: "" }));
         } else if (m.type === "bang_output") {
@@ -341,7 +341,7 @@ export function Shell() {
   }, [bus, applyTurn]);
   useEscapeKey(busy ? interrupt : undefined);
 
-  // Stable identity: Onboarding keys its poll interval on this prop, so a
+  // Stable identity: AgentPicker keys its poll interval on this prop, so a
   // fresh arrow each render would restart the 3s timer instead of letting
   // it fire.
   const refreshAgents = useCallback(() => bus.refreshAgents(), [bus]);
@@ -397,28 +397,28 @@ export function Shell() {
     }
   };
 
-  // Onboarding shows until this viewport has a session — but not when the URL
+  // AgentPicker shows until this viewport has a session — but not when the URL
   // already names one (that path attaches straight through).
-  const showOnboarding = !hasUrlSession && !meta.sessionId;
+  const showAgentPicker = !hasUrlSession && !meta.sessionId;
 
   return (
     <div className={"shell" + (changesOpen && reviewPromptVisible ? " changes-draft-visible" : "")}>
       <Announcer message={announcement} />
-      {showOnboarding && (
-        <Onboarding
+      {showAgentPicker && (
+        <AgentPicker
           agents={daemonInfo.agents}
           defaultCwd={tildify(daemonInfo.cwd, daemonInfo.home)}
-          error={notices.onboarding}
-          onCwdChange={() => setNotices((n) => ({ ...n, onboarding: null }))}
+          error={notices.agentPicker}
+          onCwdChange={() => setNotices((n) => ({ ...n, agentPicker: null }))}
           onBrowse={daemonInfo.folderPicker ? bus.pickFolder : undefined}
           onPick={(agent, cwd, backend) => {
-            setNotices((n) => ({ ...n, onboarding: null }));
+            setNotices((n) => ({ ...n, agentPicker: null }));
             bus.createSession(agent, cwd, backend);
           }}
           onRefresh={refreshAgents}
         />
       )}
-      <div className="behind-dialog" inert={showOnboarding || undefined}>
+      <div className="behind-dialog" inert={showAgentPicker || undefined}>
         {notices.session && (
           // SHELL-OWNED notice — honest about the swap the server made.
           <NoticeLine
@@ -542,7 +542,7 @@ export function Shell() {
               textareaRef={promptRef}
               containerRef={promptContainerRef}
               draft={promptDraft}
-              globalTriggersDisabled={showOnboarding || settingsOpen}
+              globalTriggersDisabled={showAgentPicker || settingsOpen}
               onNavigateLatestInput={navigateToLatestInput}
               inputNavigation={{
                 // The disclosure occupies the space directly above the

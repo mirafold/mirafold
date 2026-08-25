@@ -13,7 +13,7 @@ import {
 } from "../agents-meta";
 import { ModalCard } from "./ModalCard";
 
-// The shell-owned onboarding picker. No agent is assumed — first run is
+// The shell-owned agent picker. No agent is assumed — first run is
 // "choose your agent." Credentials never reach the browser; the server tells us
 // only which agents are `live` (have creds). A non-live agent still runs, in the
 // API-free mock, so dev and demos work without keys.
@@ -34,8 +34,8 @@ import { ModalCard } from "./ModalCard";
 const REFRESH_POLL_MS = 3_000;
 
 // Names the dialog for a screen reader. A constant is safe: only one
-// onboarding card is ever mounted.
-const TITLE_ID = "onb-card-title";
+// agent-picker card is ever mounted.
+const TITLE_ID = "agent-picker-card-title";
 
 function revealPathEnd(input: HTMLInputElement | null): void {
   if (input) input.scrollLeft = input.scrollWidth;
@@ -128,14 +128,14 @@ function BackendMenu({
   const server = backends.find((b) => b.endpoint === expanded && b.models?.length);
   if (server) {
     return (
-      <div className="onb-backends">
-        <button className="onb-back" onClick={() => onExpand(null)}>
+      <div className="agent-picker-backends">
+        <button className="agent-picker-back" onClick={() => onExpand(null)}>
           <span aria-hidden="true">← </span>all backends
         </button>
-        <span className="onb-server-name">{backendName(row.agent, server)}</span>
-        <div className="onb-models">
+        <span className="agent-picker-server-name">{backendName(row.agent, server)}</span>
+        <div className="agent-picker-models">
           {server.models?.map((m) => (
-            <button key={m} className="onb-model" onClick={() => onChoose(choiceOf(server, m))}>
+            <button key={m} className="agent-picker-model" onClick={() => onChoose(choiceOf(server, m))}>
               {m}
             </button>
           ))}
@@ -144,8 +144,8 @@ function BackendMenu({
     );
   }
   return (
-    <div className="onb-backends">
-      <button className="onb-back" onClick={onBack}>
+    <div className="agent-picker-backends">
+      <button className="agent-picker-back" onClick={onBack}>
         <span aria-hidden="true">← </span>all agents
       </button>
       {backends.map((b, i) => (
@@ -153,27 +153,27 @@ function BackendMenu({
         // never hidden.
         <button
           key={`b${i}`}
-          className={`onb-backend${b.usable ? "" : " onb-backend-blocked"}`}
+          className={`agent-picker-backend${b.usable ? "" : " agent-picker-backend-blocked"}`}
           disabled={!b.usable}
           onClick={() =>
             b.models?.length && b.endpoint ? onExpand(b.endpoint) : onChoose(choiceOf(b))
           }
         >
           {/* Name + tag, the agent row's idiom one size down. */}
-          <span className="onb-backend-row">
-            <span className="onb-backend-name">{backendName(row.agent, b)}</span>
-            {runsOnThisMachine(b) && <span className="onb-backend-tag">local</span>}
+          <span className="agent-picker-backend-row">
+            <span className="agent-picker-backend-name">{backendName(row.agent, b)}</span>
+            {runsOnThisMachine(b) && <span className="agent-picker-backend-tag">local</span>}
           </span>
-          {b.kind !== "local" && b.detail && <span className="onb-backend-detail">{b.detail}</span>}
-          {modelLine(b) && <span className="onb-backend-model">{modelLine(b)}</span>}
+          {b.kind !== "local" && b.detail && <span className="agent-picker-backend-detail">{b.detail}</span>}
+          {modelLine(b) && <span className="agent-picker-backend-model">{modelLine(b)}</span>}
           {b.usable && b.kind === "subscription" && subscriptionCaveat(row.agent) && (
-            <span className="onb-backend-caveat">{subscriptionCaveat(row.agent)}</span>
+            <span className="agent-picker-backend-caveat">{subscriptionCaveat(row.agent)}</span>
           )}
           {/* The row's own hint wins (a declared provider missing its env
               key names the exact variable); the per-agent hint covers the
               prohibited-subscription rows it was written for. */}
           {!b.usable && (
-            <span className="onb-backend-caveat">{b.hint ?? blockedHint(row.agent)}</span>
+            <span className="agent-picker-backend-caveat">{b.hint ?? blockedHint(row.agent)}</span>
           )}
         </button>
       ))}
@@ -183,13 +183,13 @@ function BackendMenu({
           above it was the single most confusing thing in this menu. */}
       {localCapable(row.agent) &&
         !backends.some((b) => b.models?.length || b.provider || b.endpoint || b.backendId) && (
-          <p className="onb-live-hint">{localLiveHint(row.agent)}</p>
+          <p className="agent-picker-live-hint">{localLiveHint(row.agent)}</p>
         )}
     </div>
   );
 }
 
-type OnboardingProps = {
+type AgentPickerProps = {
   agents: AgentInfo[] | null;
   defaultCwd?: string;
   error?: string | null;
@@ -210,7 +210,7 @@ type OnboardingProps = {
   onDismiss?: () => void;
 };
 
-export function Onboarding({
+export function AgentPicker({
   agents,
   defaultCwd,
   error,
@@ -219,7 +219,7 @@ export function Onboarding({
   onBrowse,
   onRefresh,
   onDismiss,
-}: OnboardingProps) {
+}: AgentPickerProps) {
   const [cwd, setCwd] = useState("");
   const [browsing, setBrowsing] = useState(false);
   const [browseError, setBrowseError] = useState<string | null>(null);
@@ -289,39 +289,39 @@ export function Onboarding({
   return (
     // Esc/backdrop walk back the same steps (stepBack above), so the modal's
     // one dismiss action is the step-back here.
-    <ModalCard overlayClass="onb-overlay" cardClass="onb-card" titleId={TITLE_ID} onDismiss={stepBack}>
-      <img className="onb-glyph" src="/logo.svg" alt="" aria-hidden="true" />
-      <h1 className="onb-title" id={TITLE_ID}>
+    <ModalCard overlayClass="agent-picker-overlay" cardClass="agent-picker-card" titleId={TITLE_ID} onDismiss={stepBack}>
+      <img className="agent-picker-glyph" src="/logo.svg" alt="" aria-hidden="true" />
+      <h1 className="agent-picker-title" id={TITLE_ID}>
         {pickingRow
           ? `${agentLabel(pickingRow.agent)} — ${expanded ? "pick a model" : "pick its backing"}`
           : "Choose your agent"}
       </h1>
       {!pickingRow && (
-        <p className="onb-sub">
+        <p className="agent-picker-sub">
           Mirafold re-skins the terminal agent you already use — faithfully, with
           a richer view on top.
         </p>
       )}
-      <label className="onb-cwd-label" htmlFor="onb-cwd">
+      <label className="agent-picker-cwd-label" htmlFor="agent-picker-cwd">
         working directory
       </label>
-      <div className="onb-cwd-row">
+      <div className="agent-picker-cwd-row">
         <input
           ref={cwdInput}
-          id="onb-cwd"
-          className="onb-cwd"
+          id="agent-picker-cwd"
+          className="agent-picker-cwd"
           type="text"
           value={cwd}
           spellCheck={false}
           placeholder={defaultCwd ?? "~/path/to/project"}
-          aria-describedby={currentError ? "onb-cwd-error" : undefined}
+          aria-describedby={currentError ? "agent-picker-cwd-error" : undefined}
           onChange={(e) => updateCwd(e.target.value)}
           onBlur={(e) => revealPathEnd(e.currentTarget)}
         />
         {onBrowse && (
           <button
             type="button"
-            className="onb-cwd-browse"
+            className="agent-picker-cwd-browse"
             disabled={browsing}
             onClick={() => void browseForDirectory()}
           >
@@ -330,7 +330,7 @@ export function Onboarding({
         )}
       </div>
       {currentError && (
-        <div className="onb-error" id="onb-cwd-error">
+        <div className="agent-picker-error" id="agent-picker-cwd-error">
           {currentError}
         </div>
       )}
@@ -343,9 +343,9 @@ export function Onboarding({
           onExpand={setExpanded}
         />
       ) : (
-        <div className="onb-list">
+        <div className="agent-picker-list">
           {agents === null ? (
-            <div className="onb-connecting">connecting…</div>
+            <div className="agent-picker-connecting">connecting…</div>
           ) : (
             agents.map((row) => {
               const { agent, live, blocked, kind, detail } = row;
@@ -359,12 +359,12 @@ export function Onboarding({
                 : blocked
                   ? "subscription not supported"
                   : "no credentials · demo";
-              const statusClass = live ? "onb-live" : blocked ? "onb-blocked" : "onb-demo";
+              const statusClass = live ? "agent-picker-live" : blocked ? "agent-picker-blocked" : "agent-picker-demo";
               const backing = backingLine(agent, kind, detail);
               return (
                 <button
                   key={agent}
-                  className="onb-agent"
+                  className="agent-picker-agent"
                   onClick={() => {
                     // A genuine choice of backing opens the second
                     // step; a single usable backend (or the demo path)
@@ -378,9 +378,9 @@ export function Onboarding({
                     pick(agent, only ? choiceOf(only) : undefined);
                   }}
                 >
-                  <span className="onb-agent-row">
-                    <span className="onb-agent-name">{agentLabel(agent)}</span>
-                    <span className={`onb-agent-status ${statusClass}`}>{statusText}</span>
+                  <span className="agent-picker-agent-row">
+                    <span className="agent-picker-agent-name">{agentLabel(agent)}</span>
+                    <span className={`agent-picker-agent-status ${statusClass}`}>{statusText}</span>
                   </span>
                   {/* A live agent shows what's behind it (local endpoint
                       or configured model), so a local-model user isn't left
@@ -388,8 +388,8 @@ export function Onboarding({
                       the credential too — the row is a decision made
                       for the user when only one backend is usable, and a
                       decision made for you still has to be stated. */}
-                  {live && backing && <span className="onb-agent-detail">{backing}</span>}
-                  {hint && <span className="onb-agent-hint">{hint}</span>}
+                  {live && backing && <span className="agent-picker-agent-detail">{backing}</span>}
+                  {hint && <span className="agent-picker-agent-hint">{hint}</span>}
                 </button>
               );
             })
@@ -399,7 +399,7 @@ export function Onboarding({
       {/* Local/open models are a first-class choice, not a fourth
           agent — they're a mode of Claude Code or Codex, and a running
           server is DISCOVERED and appears in the picker live. */}
-      {!pickingRow && <p className="onb-local-note">{localLiveHint()}</p>}
+      {!pickingRow && <p className="agent-picker-local-note">{localLiveHint()}</p>}
     </ModalCard>
   );
 }

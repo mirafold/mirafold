@@ -37,7 +37,7 @@ after(async () => {
 test("local page: create a session and run a deterministic mock turn", async () => {
   local = await browser.newPage();
   await local.goto(`http://127.0.0.1:${d.port}/`);
-  await local.locator(".onb-agent", { hasText: "Claude Code" }).click();
+  await local.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
   await local.waitForURL(/\/s\/[\w-]+/);
   await local.locator("textarea").click();
   await local.keyboard.type("plan it step by step");
