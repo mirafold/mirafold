@@ -452,6 +452,11 @@ export const OutputZone = forwardRef<InputNavigationHandle, OutputZoneProps>(fun
 
   return (
     <div className="zone-row">
+      {/* The transcript column: the scroller plus the one thing that floats
+          over it. The pill lives OUTSIDE the scroller's flow on purpose — a
+          child of the scroller would be scrolled "into view" (to the bottom)
+          by focus or by automation, which re-arms following and hides it. */}
+      <div className="transcript-column">
       {/* role="log" names this as the running conversation so a screen reader
           can navigate it; aria-live is explicitly OFF because log's implicit
           "polite" would re-read the transcript on every streamed token. The
@@ -530,6 +535,25 @@ export const OutputZone = forwardRef<InputNavigationHandle, OutputZoneProps>(fun
             </ResponseDocument>
           ),
         )}
+      </div>
+      {/* The way back down: shown only while the reader is up in scrollback
+          — the one fact use-follow-tail already tracks — bottom-right of the
+          transcript column (never over the pin dock), bottom-center on the
+          phone. */}
+      <button
+        type="button"
+        className={"jump-to-latest" + (tail.detached ? " is-visible" : "")}
+        aria-label="Jump to latest"
+        title="Jump to latest"
+        aria-hidden={!tail.detached}
+        tabIndex={tail.detached ? 0 : -1}
+        onClick={() => {
+          tail.jumpToTail();
+          focusPrompt();
+        }}
+      >
+        ↓
+      </button>
       </div>
       {pinned.length > 0 &&
         (dockCollapsed ? (

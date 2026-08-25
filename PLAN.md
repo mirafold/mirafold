@@ -2855,7 +2855,18 @@ glyph beside the chevron.
     fold and the paragraph outside; a click-expanded call is still expanded
     after `turn_end`; the failing call still stands alone, open.
 
-- [ ] **Step TR.2 — Jump to latest**
+- [x] **Step TR.2 — Jump to latest** — done 2026-08-25: `useFollowTail`
+  mirrors `following` into render state (`detached`) and gains
+  `jumpToTail()`; the `↓` pill is a sibling of the scroller inside a new
+  `.transcript-column` wrapper — deliberately OUTSIDE the scroll flow (a
+  sticky child was scrolled "into view" by focus/automation, which re-armed
+  following and hid it mid-tap) — bottom-right on desktop, bottom-center and
+  40 px on the phone, fades in/out, hidden from the tab order and a11y tree
+  while at the tail; click = arm + scroll + focus the prompt. New
+  `follow-tail.e2e.ts` (desktop + phone: appears only in scrollback,
+  placement, click/tap returns to the tail, sending a prompt hides it). The
+  two live-document visual baselines were regenerated: that snapshot scrolls
+  to the top, so the pill now legitimately shows in it.
   - Decision (Kyle): a small round pill with a single `↓`, bottom-right of
     the transcript scroller inside `.zone-row`, ~12 px above the scroller's
     bottom edge (above the activity line / prompt box, out of the 76ch
