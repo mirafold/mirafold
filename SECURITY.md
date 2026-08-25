@@ -92,9 +92,13 @@ things follow, and they are the whole list:
   persistable sequenced message shape. Per-viewport/control frames, replay
   stamps, malformed payloads, unsafe catalog controls, and non-monotonic
   sequences make the saved session unavailable instead of replaying into the
-  trusted shell. Checkpoints contain no standalone provider keys/tokens, but
-  can contain a sensitive configured endpoint URL; keep the state directory
-  private. An authenticated saved Claude endpoint is reopened only when the
+  trusted shell. Mirafold never writes a provider key or token into a
+  checkpoint itself, but `!` output is recorded verbatim — a command that
+  prints its environment records what it printed. That is why the `!` shell
+  inherits the parent terminal's environment but never a value the checkout's
+  `.env` supplied (those are the agent's credentials; a terminal would not
+  export them either). Checkpoints can contain a sensitive configured
+  endpoint URL; keep the state directory private. An authenticated saved Claude endpoint is reopened only when the
   current endpoint and header-credential mode still match exactly.
 
 ## Known trust decisions (disclosed, not bugs)

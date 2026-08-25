@@ -66,6 +66,21 @@ export function wasLoadedFromProjectEnv(key: string): boolean {
   return loadedProjectKeys.has(key);
 }
 
+/** The environment a `!` command inherits: the daemon's own, minus every key
+ *  the checkout's .env supplied. Those values are the AGENT's configuration
+ *  (credentials, endpoints, model pins) that Mirafold imported for itself; a
+ *  terminal never exports a project's .env into the user's shell, and `!`
+ *  output is broadcast to every viewport and checkpointed verbatim, so an
+ *  `!env` must not turn an imported key into transcript. Parent-supplied
+ *  values pass through untouched — that IS the user's shell environment. */
+export function shellEnv(env: NodeJS.ProcessEnv = process.env): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (value !== undefined && !loadedProjectKeys.has(key)) out[key] = value;
+  }
+  return out;
+}
+
 /** Load supported project settings without letting the checkout modify process
  *  identity. Existing values win, matching Node's process.loadEnvFile() rule:
  *  an explicit parent-process value always beats the file. Missing, unreadable,

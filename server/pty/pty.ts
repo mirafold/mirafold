@@ -4,6 +4,7 @@
 // break the install, and users need no compiler toolchain. Upstream's
 // postinstall compile crashed the daemon at first boot on default npm.
 import { spawn, type IPty } from "@lydell/node-pty";
+import { shellEnv } from "../project-env";
 import { existsSync } from "node:fs";
 import { basename, delimiter, isAbsolute, join } from "node:path";
 
@@ -162,8 +163,11 @@ export function spawnBang(
     cols: 120,
     rows: 30,
     cwd,
+    // Not process.env verbatim: keys the checkout's .env supplied stay out
+    // of the shell (project-env.ts shellEnv) — a terminal wouldn't export
+    // them, and `!` output is recorded.
     env: {
-      ...(process.env as Record<string, string>),
+      ...shellEnv(),
       ...(prefix && cwdFile ? { [CWD_FILE_ENV]: cwdFile } : {}),
     },
   });
