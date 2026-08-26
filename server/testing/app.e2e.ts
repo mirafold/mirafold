@@ -1440,8 +1440,11 @@ test("!! echo — the silent bang shows its `!!` strip and output, and the agent
   // boundary) and read as an answer to the silent command. The stop button
   // is the whole-turn signal; the activity line can blink off mid-turn.
   await page.locator(".stop-btn").waitFor({ state: "detached", timeout: 30_000 });
-  await page.locator("textarea").click();
-  await page.keyboard.type("!!echo shell-only");
+  // fill() (not click+type) so the composer is CLEARED first: a stray draft
+  // left by a prior test would push our text off position 0, the `!!` prefix
+  // would be lost, and the line would send as an ordinary prompt (the CI
+  // flake, 2026-08-25).
+  await page.locator("textarea").fill("!!echo shell-only");
   await page.keyboard.press("Enter");
 
   const block = page.locator(".bang-block").last();
@@ -1451,17 +1454,21 @@ test("!! echo — the silent bang shows its `!!` strip and output, and the agent
   assert.match(await block.locator(".bang-output").innerText(), /shell-only/);
   await block.locator(".bang-state", { hasText: "running" }).waitFor({ state: "detached" });
 
-  // The mock answers every prompt it is handed within a second or so; give
-  // it three and prove nothing followed this block — no turn, no document.
+  // Baseline the siblings AFTER this block, then prove none is added: the
+  // mock answers every prompt it is handed within a second or so, so a turn
+  // — if one wrongly started — would append a response-document/turn-assistant
+  // here. Baselining tolerates anything a prior turn already painted.
+  const followers = () =>
+    block.evaluate((el) => {
+      let n = 0;
+      for (let s = el.nextElementSibling; s; s = s.nextElementSibling) {
+        if (s.classList.contains("response-document") || s.classList.contains("turn-assistant")) n++;
+      }
+      return n;
+    });
+  const before = await followers();
   await page.waitForTimeout(3000);
-  const after = await block.evaluate((el) => {
-    let n = 0;
-    for (let s = el.nextElementSibling; s; s = s.nextElementSibling) {
-      if (s.classList.contains("response-document") || s.classList.contains("turn-assistant")) n++;
-    }
-    return n;
-  });
-  assert.equal(after, 0, "a !! command must not start an agent turn");
+  assert.equal(await followers(), before, "a !! command must not start an agent turn");
   assert.equal(await page.locator(".stop-btn").count(), 0, "no turn is running");
 });
 

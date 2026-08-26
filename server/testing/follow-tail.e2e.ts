@@ -77,7 +77,17 @@ test("desktop: the pill appears only in scrollback, sits bottom-right of the tra
     await send("one more");
     await pill.waitFor({ state: "hidden" });
     await waitTurnIdle(page);
-    assert.ok((await bottomGap(page)) <= 24, "sending a prompt should return the reader to the tail");
+    // Poll the tail: a final render can paint just after the turn settles,
+    // growing the scroll height so the follow catches up a frame later
+    // (a one-shot read flaked on the loaded CI runner, 2026-08-25).
+    await page.waitForFunction(
+      () => {
+        const el = document.querySelector(".output-zone") as HTMLElement | null;
+        return el ? el.scrollHeight - el.scrollTop - el.clientHeight <= 24 : false;
+      },
+      undefined,
+      { timeout: 10_000 },
+    );
     assert.equal(await pill.isVisible(), false);
   });
 });
