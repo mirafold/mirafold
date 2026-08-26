@@ -2925,7 +2925,7 @@ glyph beside the chevron.
     `-folder-open` in the tree; a dir name and a file name at the same
     depth share the same x.
 
-## Phase CA — Codex on app-server: terminal-equal permissions (written 2026-08-25; NOT YET OPENED)
+## Phase CA — Codex on app-server: terminal-equal permissions (written + opened 2026-08-25; Kyle-directed)
 
 **Finding (verified 2026-08-25).** Mirafold passes Codex **no** sandbox or
 approval settings (`codex.ts` leaves `sandboxMode`/`approvalPolicy` unset
