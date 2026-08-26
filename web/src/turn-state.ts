@@ -2,7 +2,7 @@ import type { ZoneMsg } from "./session-bus";
 import type { Activity } from "./components/ActivityLine";
 import type { PermAsk } from "./components/PermissionBar";
 import { turnResponse } from "./components/Announcer";
-import { nextOpenTurns } from "./turn-busy";
+import { nextTurnBalance } from "./turn-busy";
 
 /**
  * The turn as the trusted shell sees it, derived entirely from the wire —
@@ -17,6 +17,9 @@ export type TurnState = {
   busy: boolean;
   /** Unanswered prompts in flight, counted off the wire (turn-busy.ts). */
   openTurns: number;
+  /** A terminal error already closed its turn; suppresses the paired
+   * turn_end's second decrement and duplicate completion announcement. */
+  errorAwaitingTurnEnd: boolean;
   /** The engine's last status frame or announced tool; null = generic "working…". */
   activity: Activity;
   /** Pending permission prompts, oldest first — SHELL-OWNED UI. */
@@ -25,7 +28,14 @@ export type TurnState = {
   turnText: string;
 };
 
-export const IDLE_TURN: TurnState = { busy: false, openTurns: 0, activity: null, asks: [], turnText: "" };
+export const IDLE_TURN: TurnState = {
+  busy: false,
+  openTurns: 0,
+  errorAwaitingTurnEnd: false,
+  activity: null,
+  asks: [],
+  turnText: "",
+};
 
 export type Announcement = { text: string; assertive?: boolean };
 
@@ -44,16 +54,58 @@ export type TurnInput =
 const isActivity = (m: ZoneMsg): m is Extract<ZoneMsg, { type: "status" | "thinking_delta" | "text_delta" | "tool_use" }> =>
   m.type === "status" || m.type === "thinking_delta" || m.type === "text_delta" || m.type === "tool_use";
 
+/** Field-wise equality, so a no-op message returns `prev` ITSELF and React's
+ *  setState bails out. Every session frame — including the ones this
+ *  reducer ignores (render, bang_output, fs_dir…) — otherwise minted a fresh
+ *  object and re-rendered the whole Shell, the OutputZone's full row map
+ *  included: CPU per frame × transcript length, at a rate the engine
+ *  controls (2026-08-26). */
+const sameTurnState = (a: TurnState, b: TurnState): boolean =>
+  a.busy === b.busy &&
+  a.openTurns === b.openTurns &&
+  a.errorAwaitingTurnEnd === b.errorAwaitingTurnEnd &&
+  a.turnText === b.turnText &&
+  a.asks === b.asks &&
+  (a.activity === b.activity ||
+    (a.activity !== null &&
+      b.activity !== null &&
+      a.activity.state === b.activity.state &&
+      a.activity.label === b.activity.label));
+
 export function reduceTurn(
+  prev: TurnState,
+  input: TurnInput,
+): { state: TurnState; announcements: Announcement[] } {
+  const r = reduceTurnFresh(prev, input);
+  return sameTurnState(prev, r.state) ? { state: prev, announcements: r.announcements } : r;
+}
+
+function reduceTurnFresh(
   prev: TurnState,
   input: TurnInput,
 ): { state: TurnState; announcements: Announcement[] } {
   const announcements: Announcement[] = [];
   if (input.kind === "disconnected") {
-    return { state: { ...prev, openTurns: 0, busy: false, activity: null }, announcements };
+    return {
+      state: {
+        ...prev,
+        openTurns: 0,
+        errorAwaitingTurnEnd: false,
+        busy: false,
+        activity: null,
+      },
+      announcements,
+    };
   }
   if (input.kind === "interrupt") {
-    return { state: { ...prev, openTurns: Math.min(prev.openTurns, 1) }, announcements };
+    return {
+      state: {
+        ...prev,
+        openTurns: Math.min(prev.openTurns, 1),
+        errorAwaitingTurnEnd: false,
+      },
+      announcements,
+    };
   }
   if (input.kind === "answered") {
     return { state: { ...prev, asks: prev.asks.filter((a) => a.id !== input.id) }, announcements };
@@ -64,7 +116,20 @@ export function reduceTurn(
   // re-speak each historical turn to screen readers, ending with an old
   // response presented as though it just arrived.
   const live = !("replay" in m && m.replay);
-  const next: TurnState = { ...prev, openTurns: nextOpenTurns(prev.openTurns, m.type, !live) };
+  const errorIsTerminal = m.type !== "error" || m.terminal !== false;
+  const balance = nextTurnBalance(
+    {
+      openTurns: prev.openTurns,
+      errorAwaitingTurnEnd: prev.errorAwaitingTurnEnd,
+    },
+    m.type,
+    !live,
+    errorIsTerminal,
+  );
+  const next: TurnState = {
+    ...prev,
+    ...balance,
+  };
   if (m.type === "user_prompt") {
     next.busy = true;
     next.activity = { state: "thinking" };
@@ -103,7 +168,9 @@ export function reduceTurn(
     next.busy = next.openTurns > 0;
     next.activity = null;
     next.asks = []; // a request that outlived its turn is void (server denies)
-    if (live) announcements.push({ text: turnResponse(prev.turnText) });
+    if (live && !prev.errorAwaitingTurnEnd) {
+      announcements.push({ text: turnResponse(prev.turnText) });
+    }
     next.turnText = "";
   } else if (m.type === "permission_request") {
     next.asks = [
@@ -123,16 +190,18 @@ export function reduceTurn(
     // Answered on ANOTHER viewport, or auto-denied by the daemon's timeout —
     // drop it HERE too. A locally-answered ask is already gone, so the
     // filter no-ops and the announcement stays quiet.
-    if (prev.asks.some((a) => a.id === m.id)) {
+    if (live && prev.asks.some((a) => a.id === m.id)) {
       announcements.push({ text: m.allow ? "Permission allowed." : "Permission denied." });
     }
     next.asks = prev.asks.filter((a) => a.id !== m.id);
   } else if (m.type === "error") {
-    // An error ENDS the turn — the daemon says so (the registry flips the
-    // session to idle on it), so the indicator must come down here too.
-    next.busy = next.openTurns > 0;
-    next.activity = null;
-    announcements.push({ text: m.message, assertive: true });
+    if (m.terminal !== false) {
+      next.busy = next.openTurns > 0;
+      next.activity = null;
+      next.asks = [];
+      next.turnText = "";
+    }
+    if (live) announcements.push({ text: m.message, assertive: true });
   } else if (m.type === "zone_reset") {
     return { state: { ...IDLE_TURN }, announcements };
   }

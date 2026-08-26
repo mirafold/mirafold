@@ -1090,9 +1090,13 @@ test("sandboxed artifact: scripts run inside the iframe under the shell CSP", as
   assert.ok(frame, "artifact iframe has an accessible content frame");
 
   // The counter button proves the srcDoc document parsed AND its script
-  // executes under sandbox="allow-scripts" + the strict artifact CSP.
+  // executes under sandbox="allow-scripts" + the strict artifact CSP. The
+  // first click lands on the shell's activation layer (audit 2026-08-26:
+  // focus enters an artifact only on the user's gesture).
   await frame!.waitForSelector("#b", { timeout: 15_000 });
   assert.equal(await frame!.textContent("#n"), "0");
+  await page.locator(".artifact-activate").first().click();
+  await page.waitForSelector("text=sandboxed · live", { timeout: 5_000 });
   await frame!.click("#b");
   assert.equal(await frame!.textContent("#n"), "1");
 });
@@ -1171,6 +1175,51 @@ test("navigating artifact is blanked into the navigation-blocked fallback (R.4e)
   // and shows the fallback with the source.
   await page.waitForSelector("text=navigation blocked", { timeout: 30_000 });
   await page.waitForSelector("text=tried to navigate away", { timeout: 5_000 });
+});
+
+// AUDIT 2026-08-26: the focus guard. Hermetic — each in a FRESH session, so
+// the focus-stealing artifacts never enter this file's shared session: a
+// replayed thief re-grabs focus on every re-entry until it is blanked, and
+// the keystroke in flight during that grab is what the later `!` and caret
+// tests type. (The guard's residual is exactly that keystroke — SECURITY.md.)
+test("AUDIT 2026-08-26: an artifact that grabs keyboard focus is blanked and the prompt box keeps the keys", async () => {
+  await withFreshMockSession(browser, TOKEN, async (fresh) => {
+    await fresh.locator("textarea").click();
+    await fresh.keyboard.type("show me a focus-stealing artifact");
+    await fresh.keyboard.press("Enter");
+    // The focus grab arrives with the layer armed: the shell treats it like
+    // a navigation and takes the keys back.
+    await fresh.waitForSelector("text=focus grab blocked", { timeout: 30_000 });
+    await fresh.waitForSelector("text=grabbed keyboard focus", { timeout: 5_000 });
+    await fresh.locator("textarea").click();
+    await fresh.keyboard.type("typed after the grab");
+    assert.equal(await fresh.locator("textarea").inputValue(), "typed after the grab", "the prompt box has the keys");
+    assert.equal(await fresh.evaluate(() => document.activeElement?.tagName), "TEXTAREA");
+  });
+});
+
+test("AUDIT 2026-08-26: a second artifact cannot steal focus from inside a live one (no parent blur on frame→frame)", async () => {
+  await withFreshMockSession(browser, TOKEN, async (fresh) => {
+    // A live artifact the user is genuinely inside…
+    await fresh.locator("textarea").click();
+    await fresh.keyboard.type("show me an artifact");
+    await fresh.keyboard.press("Enter");
+    const iframe = await fresh.waitForSelector(".output-zone iframe.artifact-frame", { timeout: 30_000 });
+    const frame = await iframe.contentFrame();
+    await frame!.waitForSelector("#b", { timeout: 15_000 });
+    await fresh.locator(".output-zone .artifact-activate").click();
+    await frame!.click("#b");
+    assert.equal(await fresh.evaluate(() => document.activeElement?.tagName), "IFRAME");
+    await fresh.locator(".stop-btn").waitFor({ state: "detached", timeout: 30_000 });
+    // …then a second artifact arrives and grabs the keys frame-to-frame.
+    await fresh.locator("textarea").click();
+    await fresh.keyboard.type("show me a focus-stealing artifact");
+    await fresh.keyboard.press("Enter");
+    await fresh.waitForSelector("text=focus grab blocked", { timeout: 30_000 });
+    await fresh.locator("textarea").click();
+    await fresh.keyboard.type("keys stay here");
+    assert.equal(await fresh.locator("textarea").inputValue(), "keys stay here");
+  });
 });
 
 test("2026-07-29 reload replays history silently — no re-announced turns in the live regions", async () => {

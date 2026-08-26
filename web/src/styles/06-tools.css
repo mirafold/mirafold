@@ -45,6 +45,7 @@
 }
 
 .tool-detail {
+  unicode-bidi: isolate;
   color: var(--fg-dimmer);
   white-space: nowrap;
   overflow: hidden;

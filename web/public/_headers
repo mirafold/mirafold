@@ -1,0 +1,13 @@
+# Cloudflare Pages headers for the hosted viewport app (app.mirafold.com).
+# The daemon sets the same policy in server/index.ts (SHELL_CSP); this file
+# is what makes it true on the STATIC origin too — the bundle is one build
+# served from two places, and without this an artifact on the phone could
+# navigate to any host, keep its bridge alive from an attacker page, and
+# markdown images could beacon (audit 2026-08-26, measured live). Keep the
+# two policies aligned; web/src/csp.test.ts pins the host-independent part.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' wss://relay.mirafold.sh; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: no-referrer
+  Permissions-Policy: camera=(), microphone=(), geolocation=()

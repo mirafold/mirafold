@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SessionMeta } from "@protocol";
 import { AgentPicker } from "./AgentPicker";
+import { visibleControls } from "../visible-controls";
 import { ArmedButton } from "./ArmedButton";
 import { ConnectDevice } from "./ConnectDevice";
 import { createDaemonClient } from "../daemon-client";
@@ -570,8 +571,8 @@ function PermissionLine({
   const morePerms = (s.permissions?.length ?? 0) - 1;
   return (
     <div className="fleet-perm">
-      <span className="fleet-permission-detail" title={`${perm.tool} · ${perm.detail}`}>
-        {perm.tool} · {perm.detail}
+      <span className="fleet-permission-detail" title={visibleControls(`${perm.tool} · ${perm.detail}`)}>
+        {visibleControls(`${perm.tool} · ${perm.detail}`)}
       </span>
       {morePerms > 0 && <span className="fleet-permission-more">+{morePerms} more</span>}
       <button

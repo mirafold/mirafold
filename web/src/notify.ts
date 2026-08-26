@@ -1,4 +1,5 @@
 // Needs-you notifications: OS toasts when a session needs the
+import { visibleControls } from "./visible-controls";
 // user — a permission prompt appeared, or a turn finished — fired only from
 // a tab the user can't see. The design rules live in the pure reducer here
 // so Tier-1 can prove them without a DOM:
@@ -59,12 +60,16 @@ export function permissionToast(s: SessionSnapshot): ShowAction {
   // `tool` is the engine's verbatim tool name (third-party MCP names
   // included) — cap the WHOLE body, not just `detail`, so a long tool name
   // can't inflate the toast either (matches the in-page LABEL_CAP posture).
+  // Controls are made visible BEFORE the cap, so the cap bounds what the
+  // toast actually shows.
   const body = cap(
-    s.tool
-      ? s.detail
-        ? `${who} wants ${s.tool}: ${s.detail}`
-        : `${who} wants ${s.tool}.`
-      : `${who} is waiting on a permission.`,
+    visibleControls(
+      s.tool
+        ? s.detail
+          ? `${who} wants ${s.tool}: ${s.detail}`
+          : `${who} wants ${s.tool}.`
+        : `${who} is waiting on a permission.`,
+    ),
   );
   return {
     kind: "show",

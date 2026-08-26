@@ -84,19 +84,33 @@ export function storedPairing(
   return carried ? { code: carried, ws: legacy!.getItem(WS_KEY) } : null;
 }
 
-export function relayTargetFromPage(): { code: string; ws: string | null } | null {
+/** The pairing this page should dial: a fresh `#code=` fragment (stripped
+ *  from the address bar at once, NOT yet remembered — see rememberPairing),
+ *  else the device's stored pairing. */
+export function relayTargetFromPage(): { code: string; ws: string | null; fresh?: true } | null {
   const target = relayTargetFromFragment(location.hash);
   if (target) {
-    localStorage.setItem(CODE_KEY, target.code);
-    localStorage.setItem(PAIRED_AT_KEY, String(Date.now()));
-    // A fresh #code with no relay param must also CLEAR a stale stored origin —
-    // the new pairing decides where to dial, not a leftover from the last one.
-    if (target.ws) localStorage.setItem(WS_KEY, target.ws);
-    else localStorage.removeItem(WS_KEY);
     history.replaceState(null, "", location.pathname + location.search);
-    return target;
+    return { ...target, fresh: true };
   }
   return adoptStoredPairing(localStorage, sessionStorage);
+}
+
+/** Remember a pairing on this device — called only once its E2E handshake
+ *  has SUCCEEDED. Stashing on arrival let any crafted `#code=` link plant a
+ *  persistent hostile pairing that every later plain load would dial (audit
+ *  2026-08-26); a code the daemon never answered is nothing to keep. A fresh
+ *  code with no relay param also CLEARS a stale stored origin — the new
+ *  pairing decides where to dial, not a leftover from the last one. */
+export function rememberPairing(
+  target: { code: string; ws: string | null },
+  store: Storage = localStorage,
+  now: number = Date.now(),
+): void {
+  store.setItem(CODE_KEY, target.code);
+  store.setItem(PAIRED_AT_KEY, String(now));
+  if (target.ws) store.setItem(WS_KEY, target.ws);
+  else store.removeItem(WS_KEY);
 }
 
 /** storedPairing plus write-through: a pairing that only the LEGACY per-tab

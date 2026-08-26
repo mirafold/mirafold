@@ -33,14 +33,51 @@ test("an errored turn brings the indicator down and is announced assertively", (
   assert.deepEqual(r.announcements, [{ text: "engine died", assertive: true }]);
 });
 
+test("an error plus its paired turn_end leaves a queued follow-up busy", () => {
+  const queued = play([
+    { type: "user_prompt", text: "one" },
+    { type: "user_prompt", text: "two" },
+  ]).state;
+  const failed = reduceTurn(queued, {
+    kind: "message",
+    msg: { type: "error", message: "first failed" },
+  });
+  assert.equal(failed.state.openTurns, 1);
+  assert.equal(failed.state.busy, true);
+  const pairedEnd = reduceTurn(failed.state, { kind: "message", msg: { type: "turn_end" } });
+  assert.equal(pairedEnd.state.openTurns, 1);
+  assert.equal(pairedEnd.state.busy, true);
+  assert.equal(pairedEnd.state.errorAwaitingTurnEnd, false);
+  assert.deepEqual(pairedEnd.announcements, [], "the error's end is not announced twice");
+});
+
+test("a request-scoped error is announced without ending the active model turn", () => {
+  const active = play([
+    { type: "user_prompt", text: "x" },
+    { type: "status", state: "tool", label: "Bash" },
+    { type: "permission_request", tool: "Bash", detail: "rm file", id: "p1" },
+  ]).state;
+  const r = reduceTurn(active, {
+    kind: "message",
+    msg: { type: "error", message: "! failed to start", terminal: false },
+  });
+  assert.equal(r.state.openTurns, 1);
+  assert.equal(r.state.busy, true);
+  assert.deepEqual(r.state.activity, { state: "tool", label: "Bash" });
+  assert.deepEqual(r.state.asks.map((ask) => ask.id), ["p1"]);
+  assert.deepEqual(r.announcements, [{ text: "! failed to start", assertive: true }]);
+});
+
 test("replayed frames repaint state but announce nothing; the turn-end response is spoken once, live", () => {
   const replayed = play([
     { type: "user_prompt", text: "x", replay: true },
     { type: "text_delta", text: "hello", replay: true },
     { type: "permission_request", tool: "Bash", detail: "ls", id: "p1", replay: true },
+    { type: "permission_resolved", id: "p1", allow: false, replay: true },
+    { type: "error", message: "old failure", replay: true },
   ]);
   assert.deepEqual(replayed.said, []);
-  assert.equal(replayed.state.asks.length, 1, "a replayed ask may be genuinely pending");
+  assert.equal(replayed.state.asks.length, 0, "a replayed resolution still repaints the ask state");
   const live = play([
     { type: "user_prompt", text: "x" },
     { type: "text_delta", text: "hello **there**" },
@@ -81,4 +118,30 @@ test("disconnect zeroes the turn; interrupt leaves exactly one turn_end owed; zo
   assert.equal(dropped.busy, false);
   assert.equal(dropped.openTurns, 0);
   assert.deepEqual(reduceTurn(two, { kind: "message", msg: { type: "zone_reset" } }).state, IDLE_TURN);
+});
+
+// AUDIT 2026-08-26 (hardening): a message the reducer ignores — or one that
+// leaves every rendered field as it was — must return `prev` itself, or the
+// whole Shell re-renders per frame (the OutputZone's full row map included)
+// at a rate the engine controls.
+test("a no-op frame returns the previous state object; a real change returns a new one", () => {
+  const busy = play([
+    { type: "user_prompt", text: "x" },
+    { type: "status", state: "thinking" },
+  ]).state;
+  const ignored: ZoneMsg[] = [
+    { type: "render", component: "card", props: {}, id: "r1" },
+    { type: "bang_output", data: "…", id: "b1" },
+    { type: "thinking_delta", text: "still thinking" },
+    { type: "status", state: "thinking" },
+    { type: "usage", inputTokens: 1, outputTokens: 1 },
+  ];
+  for (const msg of ignored) {
+    assert.equal(reduceTurn(busy, { kind: "message", msg }).state, busy, `${msg.type} is identity-preserving`);
+  }
+  assert.equal(reduceTurn(busy, { kind: "interrupt" }).state, busy, "an interrupt with one open turn changes nothing");
+  assert.notEqual(reduceTurn(busy, { kind: "message", msg: { type: "text_delta", text: "hi" } }).state, busy);
+  assert.notEqual(reduceTurn(busy, { kind: "message", msg: { type: "tool_use", name: "Bash", id: "t1" } }).state, busy);
+  assert.notEqual(reduceTurn(busy, { kind: "disconnected" }).state, busy);
+  assert.equal(reduceTurn(IDLE_TURN, { kind: "disconnected" }).state, IDLE_TURN);
 });
