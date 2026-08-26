@@ -1,4 +1,3 @@
-import type { ModelReasoningEffort } from "@openai/codex-sdk";
 import { runSlashTurn } from "./wire-helpers";
 import type { PromptOption, SessionMsg } from "../protocol";
 import { emitPromptOptions } from "./types";
@@ -9,6 +8,9 @@ import type { CodexSkill } from "./codex-skills-list";
 
 type Emit = (message: SessionMsg) => void;
 
+/** Codex's reasoning-effort vocabulary (app-server `ReasoningEffort`), plus
+ *  the `none` the engine forwards to local Responses endpoints. */
+export type ModelReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh";
 export type CodexReasoningEffort = ModelReasoningEffort | "none";
 // Internal-only: the model/config default remains in force until a user pick.
 export const CODEX_EFFORT_STAND_IN = "default";

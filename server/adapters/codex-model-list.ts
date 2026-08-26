@@ -36,11 +36,13 @@ interface RawCodexModelRow {
 const codexBin = () => agentBin("MIRAFOLD_CODEX_BIN", "codex");
 
 /** `-c key=value` args for the spawn, values TOML-quoted. Nested tables
- *  flatten to dotted keys, the same form the codex CLI takes. */
-function configArgs(config: Record<string, unknown>, prefix = ""): string[] {
+ *  flatten to dotted keys, the same form the codex CLI takes; an ARRAY is a
+ *  leaf, written whole (JSON's `["a","b"]` is TOML's) — a dotted index
+ *  (`args.0=`) is rejected by the binary (CA.2, 2026-08-25). */
+export function configArgs(config: Record<string, unknown>, prefix = ""): string[] {
   return Object.entries(config).flatMap(([k, v]) => {
     const key = prefix ? `${prefix}.${k}` : k;
-    return typeof v === "object" && v !== null
+    return typeof v === "object" && v !== null && !Array.isArray(v)
       ? configArgs(v as Record<string, unknown>, key)
       : ["-c", `${key}=${JSON.stringify(v)}`];
   });

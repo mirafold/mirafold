@@ -2971,7 +2971,31 @@ catalogs (`codex-model-list.ts`, `codex-skills-list.ts`).
     (a sandboxed commit produced a request; approving it made it succeed)
     and names every place terminal-equal behavior is or isn't reachable.
 
-- [ ] **Step CA.2 — The transport**
+- [x] **Step CA.2 — The transport** — done 2026-08-25: `codex-app-server.ts`
+  (long-lived newline JSON-RPC client over stdio: our requests, the
+  engine's notifications, and the engine's own requests to us, kept apart
+  by shape) replaces `@openai/codex-sdk` (dependency REMOVED); `codex.ts`
+  spawns lazily on the first turn, `initialize` → `thread/start` (with
+  `developerInstructions` = RENDER_GUIDANCE + the deferred-tools addendum —
+  a real instructions hook at last) or `thread/resume` by id, `turn/start`
+  per prompt with `model`/`effort` as per-turn params (a `/model` or
+  `/effort` pick no longer restarts anything), `turn/interrupt` for stop; a
+  dead process is respawned and the thread resumed by id on the next
+  prompt. `codex-events.ts` maps the v2 `item/*` stream: prose streams as
+  deltas (held only from a code fence on, so a hand-written mermaid chart
+  still becomes the chart component), reasoning deltas, `commandExecution`
+  (declined → error row "(declined)"), `fileChange`, `mcpToolCall`
+  (`structuredContent`), `webSearch`, `turn/plan/updated` → checklist,
+  `thread/tokenUsage/updated` → one `usage` per turn (delta of totals),
+  `error`(willRetry)/`warning` → badged notices. The rollout-file model
+  lookup is gone — `thread/start` answers with the model. API-key picks pass
+  `-c forced_login_method="api"` (CA.1: app-server otherwise prefers
+  auth.json). Approvals are DECLINED fail-closed until CA.3. Fixed en route:
+  `configArgs` wrote arrays as `args.0=` (rejected by the binary) — arrays
+  now encode whole. `codex.test.ts` rewritten on an in-memory fake
+  app-server (59 tests); live smoke against the real binary: streamed prose,
+  model from thread/start, resume id, a declined out-of-workspace write.
+  Tier-1 935, Tier-2 153 green.
   - Build: `codex-app-server.ts` — a JSON-RPC-over-stdio client (the
     `jsonrpc-oneshot.ts` patterns, made long-lived) replacing the SDK spawn
     in `codex-binding.ts` / `codex.ts`; same config overrides and provider

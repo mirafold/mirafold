@@ -1,9 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { normalizeTodos, resultText } from "./claude-code";
-import { mcpText, extractRenderId } from "./codex";
+import { mcpText, extractRenderId, type CodexMcpToolCall } from "./codex";
 import { parseRenderId } from "./gemini-cli";
-import type { McpToolCallItem } from "@openai/codex-sdk";
 
 test("normalizeTodos keeps valid items and defaults an unknown status to pending", () => {
   const out = normalizeTodos({
@@ -49,21 +48,21 @@ test("extractRenderId prefers structured content, then the arg id, then parseabl
   assert.equal(
     extractRenderId({
       result: { content: [{ type: "text", text: "Rendered progress (id: deploy-status)" }] },
-    } as unknown as McpToolCallItem),
+    } as CodexMcpToolCall),
     "deploy-status",
   );
   assert.equal(
-    extractRenderId({ result: { structured_content: { renderId: "sc-id" } } } as unknown as McpToolCallItem),
+    extractRenderId({ result: { content: [], structuredContent: { renderId: "sc-id" } } } as CodexMcpToolCall),
     "sc-id",
   );
   assert.equal(
     extractRenderId({
       result: { content: [{ type: "text", text: "Rendered card (id: abc12345)" }] },
-    } as unknown as McpToolCallItem),
+    } as CodexMcpToolCall),
     "abc12345",
   );
   assert.equal(
-    extractRenderId({ arguments: { id: "arg-id" } } as unknown as McpToolCallItem),
+    extractRenderId({ arguments: { id: "arg-id" } } as CodexMcpToolCall),
     "arg-id",
   );
 });

@@ -2,24 +2,41 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import os from "node:os";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
-import type { Codex, CodexOptions, ThreadEvent } from "@openai/codex-sdk";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import type { WireMsg } from "../protocol";
-import { CodexSession, resolveRolloutModel, rolloutDateDir } from "./codex";
+import { CODEX_DEVELOPER_INSTRUCTIONS, CodexSession } from "./codex";
+import type { AppServerClient, AppServerSpawn, JsonRpcId } from "./codex-app-server";
 import { MIRAFOLD_MCP } from "./render-mcp-cmd";
 import { MIRAFOLD_CONTEXT } from "../render-tools";
 
-// L.2b2: the Codex event→WireMsg mapping and the turn grammar, on synthetic
-// ThreadEvents — no engine, no network. The session is real; only its private
-// `thread` is swapped for a stub whose runStreamed replays scripted turns, so
-// the whole worker → runTurn → handleEvent → onItem path runs as shipped.
+// The Codex app-server notification→WireMsg mapping and the turn grammar, on
+// a scripted in-memory app-server — no engine, no network. The session is
+// real; only the transport (`makeAppServer`) is swapped for a fake that
+// answers the protocol's requests and plays scripted notifications per turn,
+// so the whole worker → runTurn → mapper path runs as shipped.
 
 type Any = WireMsg & Record<string, any>;
-type Turn = ThreadEvent[] | ((signal: AbortSignal) => AsyncGenerator<ThreadEvent>);
+type Notification = [method: string, params: Record<string, unknown>];
+type TurnCtx = {
+  threadId: string;
+  turnId: string;
+  notify: (method: string, params: Record<string, unknown>) => void;
+  /** Ask the session something the way the engine does; resolves with its answer. */
+  serverRequest: (method: string, params: Record<string, unknown>) => Promise<unknown>;
+  /** Resolves when the session sends turn/interrupt for this turn. */
+  interrupted: Promise<void>;
+  complete: (status?: string, error?: unknown) => void;
+};
+type Scripted = Notification[] | ((ctx: TurnCtx) => Promise<void>);
 type SessionOpts = Omit<ConstructorParameters<typeof CodexSession>[0], "workspaceDir">;
 
 const tmp = mkdtempSync(path.join(os.tmpdir(), "mcp-codex-test-"));
-const ev = (e: Record<string, unknown>) => e as unknown as ThreadEvent;
+
+const DONE: Notification = ["turn/completed", { turn: { status: "completed" } }];
+const usage = (inputTokens: number, outputTokens: number, reasoningOutputTokens = 0): Notification => [
+  "thread/tokenUsage/updated",
+  { tokenUsage: { total: { inputTokens, outputTokens, reasoningOutputTokens, cachedInputTokens: 0, totalTokens: inputTokens + outputTokens }, last: {} } },
+];
 
 /** Poll the message log until the Nth turn_end lands (worker turns are async). */
 const waitForTurnEnds = (msgs: Any[], count = 1, timeoutMs = 5_000) =>
@@ -36,95 +53,194 @@ const waitForTurnEnds = (msgs: Any[], count = 1, timeoutMs = 5_000) =>
     }, 5);
   });
 
-/** A CodexSession on a stubbed thread; each pushPrompt consumes the next turn.
- *  `prompts` records the exact text each turn sent to the engine (V.2). */
-function makeSessionWithOptions(opts: SessionOpts, ...turns: Turn[]) {
-  const s = new CodexSession({ workspaceDir: tmp, ...opts });
-  const msgs: Any[] = [];
-  const prompts: string[] = [];
-  s.onMessage((m) => msgs.push(m as Any));
-  (s as unknown as { thread: unknown }).thread = {
-    runStreamed: async (text: string, opts: { signal: AbortSignal }) => {
-      prompts.push(text);
-      const turn = turns.shift() ?? [];
-      return {
-        events:
-          typeof turn === "function"
-            ? turn(opts.signal)
-            : (async function* () {
-                for (const e of turn) yield e;
-              })(),
-      };
-    },
+/** An in-memory `codex app-server`: answers initialize / thread/start /
+ *  thread/resume / turn/start / turn/interrupt, records every request, and
+ *  plays one scripted turn per turn/start. `exit()` simulates the process
+ *  dying. */
+function fakeAppServer(opts: { threadId?: string; model?: string; startError?: Error } = {}) {
+  const requests: { method: string; params: any }[] = [];
+  const specs: AppServerSpawn[] = [];
+  const turns: Scripted[] = [];
+  type FakeClient = AppServerClient & { exit: () => void };
+  const clients: FakeClient[] = [];
+  let turnSeq = 0;
+
+  function makeClient(spec: AppServerSpawn): FakeClient {
+    specs.push(spec);
+    const notificationListeners = new Set<(method: string, params: unknown) => void>();
+    const serverRequestListeners = new Set<(id: JsonRpcId, method: string, params: unknown) => void>();
+    const exitListeners = new Set<(exit: { code: number | null; signal: NodeJS.Signals | null }) => void>();
+    const pendingServer = new Map<JsonRpcId, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
+    let serverReqId = 0;
+    let exited = false;
+    let threadId = opts.threadId ?? "codex-thread-new";
+    let interruptResolve: (() => void) | undefined;
+    let activeTurn: string | undefined;
+    const notify = (method: string, params: Record<string, unknown>) => {
+      if (exited) return;
+      for (const cb of notificationListeners) cb(method, params);
+    };
+    const complete = (turnId: string, status = "completed", error?: unknown) => {
+      if (activeTurn !== turnId) return;
+      activeTurn = undefined;
+      notify("turn/completed", { threadId, turn: { id: turnId, status, ...(error !== undefined ? { error } : {}) } });
+    };
+    const play = async (turnId: string) => {
+      const script = turns.shift() ?? [];
+      const fill = (params: Record<string, unknown>) => ({ threadId, turnId, ...params });
+      if (typeof script === "function") {
+        await script({
+          threadId,
+          turnId,
+          notify: (method, params) => notify(method, fill(params)),
+          serverRequest: (method, params) =>
+            new Promise((resolve, reject) => {
+              const id = `srv-${++serverReqId}`;
+              pendingServer.set(id, { resolve, reject });
+              for (const cb of serverRequestListeners) cb(id, method, fill(params));
+            }),
+          interrupted: new Promise<void>((r) => (interruptResolve = r)),
+          complete: (status, error) => complete(turnId, status, error),
+        });
+        return;
+      }
+      for (const [method, params] of script) {
+        if (method === "turn/completed") {
+          const turn = (params["turn"] ?? {}) as { status?: string; error?: unknown };
+          complete(turnId, turn.status, turn.error);
+        } else {
+          notify(method, fill(params));
+        }
+      }
+    };
+    const client: FakeClient = {
+      async request(method: string, params?: any) {
+        requests.push({ method, params });
+        if (exited) throw new Error(`codex app-server exited before answering ${method}`);
+        switch (method) {
+          case "initialize":
+            if (opts.startError) throw opts.startError;
+            return {} as any;
+          case "thread/start":
+            return { thread: { id: threadId }, model: opts.model ?? "gpt-test" } as any;
+          case "thread/resume":
+            threadId = params.threadId;
+            return { thread: { id: threadId }, model: opts.model ?? "gpt-test" } as any;
+          case "turn/start": {
+            const turnId = `turn-${++turnSeq}`;
+            activeTurn = turnId;
+            setTimeout(() => void play(turnId), 0);
+            return { turn: { id: turnId } } as any;
+          }
+          case "turn/interrupt": {
+            interruptResolve?.();
+            setTimeout(() => complete(params.turnId, "interrupted"), 0);
+            return {} as any;
+          }
+          default:
+            return {} as any;
+        }
+      },
+      notify(method, params) {
+        requests.push({ method, params });
+      },
+      respond(id, result) {
+        pendingServer.get(id)?.resolve(result);
+        pendingServer.delete(id);
+      },
+      respondError(id, code, message) {
+        pendingServer.get(id)?.reject(new Error(`${code}: ${message}`));
+        pendingServer.delete(id);
+      },
+      onNotification(cb) {
+        notificationListeners.add(cb);
+      },
+      onServerRequest(cb) {
+        serverRequestListeners.add(cb);
+      },
+      onExit(cb) {
+        exitListeners.add(cb);
+      },
+      get exited() {
+        return exited;
+      },
+      stderrTail: "",
+      kill() {
+        client.exit();
+      },
+      exit() {
+        if (exited) return;
+        exited = true;
+        for (const cb of exitListeners) cb({ code: 1, signal: null });
+      },
+    };
+    clients.push(client);
+    return client;
+  }
+
+  return {
+    requests,
+    specs,
+    turns,
+    clients,
+    makeAppServer: (spec: AppServerSpawn) => makeClient(spec),
+    /** The prompt text of every turn the engine was asked to run. */
+    prompts: () => requests.filter((r) => r.method === "turn/start").map((r) => r.params.input[0].text as string),
+    turnStarts: () => requests.filter((r) => r.method === "turn/start").map((r) => r.params),
+    threadStarts: () => requests.filter((r) => r.method === "thread/start" || r.method === "thread/resume"),
   };
-  const turnEnds = () => msgs.filter((m) => m.type === "turn_end").length;
-  const awaitTurnEnd = (count = 1) => waitForTurnEnds(msgs, count);
-  return { s, msgs, prompts, turnEnds, awaitTurnEnd };
 }
 
-function makeSession(...turns: Turn[]) {
+function makeSessionWithOptions(opts: SessionOpts, ...turns: Scripted[]) {
+  const server = fakeAppServer();
+  server.turns.push(...turns);
+  const s = new CodexSession({ workspaceDir: tmp, ...opts, makeAppServer: server.makeAppServer });
+  const msgs: Any[] = [];
+  s.onMessage((m) => msgs.push(m as Any));
+  const turnEnds = () => msgs.filter((m) => m.type === "turn_end").length;
+  const awaitTurnEnd = (count = 1) => waitForTurnEnds(msgs, count);
+  return { s, msgs, server, prompts: server.prompts, turnEnds, awaitTurnEnd };
+}
+
+function makeSession(...turns: Scripted[]) {
   return makeSessionWithOptions({}, ...turns);
 }
 
-const HAPPY: ThreadEvent[] = [
-  ev({ type: "turn.started" }),
-  ev({ type: "item.completed", item: { type: "reasoning", id: "th1", text: "pondering" } }),
-  ev({ type: "item.completed", item: { type: "agent_message", id: "m1", text: "the reply" } }),
-  ev({
-    type: "item.started",
-    item: { type: "command_execution", id: "c1", command: "ls -la", status: "in_progress" },
-  }),
-  ev({
-    type: "item.completed",
-    item: {
-      type: "command_execution",
-      id: "c1",
-      command: "ls -la",
-      aggregated_output: "file.txt",
-      exit_code: 0,
-      status: "completed",
-    },
-  }),
-  ev({
-    type: "item.completed",
-    item: {
-      type: "file_change",
-      id: "f1",
-      status: "completed",
-      changes: [{ kind: "update", path: "src/a.ts" }],
-    },
-  }),
-  ev({
-    type: "item.started",
-    item: { type: "mcp_tool_call", id: "mc1", server: "docs", tool: "search", arguments: { q: "x" } },
-  }),
-  ev({
-    type: "item.completed",
-    item: {
-      type: "mcp_tool_call",
-      id: "mc1",
-      server: "docs",
-      tool: "search",
-      arguments: { q: "x" },
-      status: "completed",
-      result: { content: [{ type: "text", text: "3 hits" }] },
-    },
-  }),
-  ev({ type: "item.completed", item: { type: "web_search", id: "w1", query: "codex sdk" } }),
-  ev({
-    type: "turn.completed",
-    usage: { input_tokens: 100, cached_input_tokens: 90, output_tokens: 10, reasoning_output_tokens: 5 },
-  }),
+const HAPPY: Notification[] = [
+  ["turn/started", {}],
+  ["item/started", { item: { type: "reasoning", id: "th1" } }],
+  ["item/reasoning/summaryTextDelta", { itemId: "th1", delta: "pondering", summaryIndex: 0 }],
+  ["item/completed", { item: { type: "reasoning", id: "th1", summary: ["pondering"] } }],
+  ["item/started", { item: { type: "agentMessage", id: "m1", text: "" } }],
+  ["item/agentMessage/delta", { itemId: "m1", delta: "the " }],
+  ["item/agentMessage/delta", { itemId: "m1", delta: "reply" }],
+  ["item/completed", { item: { type: "agentMessage", id: "m1", text: "the reply" } }],
+  ["item/started", { item: { type: "commandExecution", id: "c1", command: "ls -la", status: "inProgress" } }],
+  ["item/commandExecution/outputDelta", { itemId: "c1", delta: "file.txt" }],
+  [
+    "item/completed",
+    { item: { type: "commandExecution", id: "c1", command: "ls -la", aggregatedOutput: "file.txt", exitCode: 0, status: "completed" } },
+  ],
+  ["item/completed", { item: { type: "fileChange", id: "f1", status: "completed", changes: [{ kind: "update", path: "src/a.ts", diff: "" }] } }],
+  ["item/started", { item: { type: "mcpToolCall", id: "mc1", server: "docs", tool: "search", arguments: { q: "x" }, status: "inProgress" } }],
+  [
+    "item/completed",
+    { item: { type: "mcpToolCall", id: "mc1", server: "docs", tool: "search", arguments: { q: "x" }, status: "completed", result: { content: [{ type: "text", text: "3 hits" }] } } },
+  ],
+  ["item/completed", { item: { type: "webSearch", id: "w1", query: "codex sdk" } }],
+  usage(100, 10, 5),
+  DONE,
 ];
 
-test("happy stream: full event→WireMsg mapping, exactly one turn_end", async () => {
+test("happy stream: full notification→WireMsg mapping, exactly one turn_end", async () => {
   const { s, msgs, turnEnds, awaitTurnEnd } = makeSession(HAPPY);
   s.pushPrompt("go");
   await awaitTurnEnd();
 
   assert.ok(msgs.every((m) => m.seq === undefined)); // seq is the registry's, never the adapter's
   assert.ok(msgs.some((m) => m.type === "thinking_delta" && m.text === "pondering"));
-  assert.ok(msgs.some((m) => m.type === "text_delta" && m.text === "the reply"));
+  // Prose streams as deltas, and the completed text adds nothing twice.
+  assert.deepEqual(msgs.filter((m) => m.type === "text_delta").map((m) => m.text), ["the ", "reply"]);
 
   // Each tool announced exactly once (started+completed never double-paints),
   // every tool_use paired to a result by id.
@@ -138,53 +254,68 @@ test("happy stream: full event→WireMsg mapping, exactly one turn_end", async (
       ["web_search", "w1"],
     ],
   );
-  for (const u of uses) {
-    assert.equal(msgs.filter((m) => m.type === "tool_result" && m.id === u.id).length, 1);
-  }
-  const shell = msgs.find((m) => m.type === "tool_result" && m.id === "c1")!;
-  assert.equal(shell.output, "file.txt");
-  assert.ok(!shell.isError);
-  assert.equal(msgs.find((m) => m.type === "tool_result" && m.id === "mc1")!.output, "3 hits");
+  const results = msgs.filter((m) => m.type === "tool_result");
+  assert.deepEqual(results.map((r) => r.id), ["c1", "f1", "mc1", "w1"]);
+  assert.equal(results[0].output, "file.txt");
+  assert.equal(results[1].output, "update src/a.ts");
+  assert.equal(results[2].output, "3 hits");
+  assert.equal(uses[0].detail, "ls -la");
+  assert.deepEqual(uses[0].input, { command: "ls -la" });
 
-  // cached_input_tokens is a subset of input_tokens — never re-added;
-  // reasoning tokens are output-side.
-  const usage = msgs.find((m) => m.type === "usage")!;
-  assert.equal(usage.inputTokens, 100);
-  assert.equal(usage.outputTokens, 15);
-
+  const u = msgs.find((m) => m.type === "usage")!;
+  assert.deepEqual([u.inputTokens, u.outputTokens], [100, 15]); // reasoning counts as output
+  assert.equal(u.model, "gpt-test"); // the engine named its model at thread/start
   assert.equal(turnEnds(), 1);
-  assert.equal(msgs[msgs.length - 1].type, "turn_end");
+  assert.equal(msgs.at(-1)!.type, "turn_end");
   s.close();
 });
 
-test("first turn carries RENDER_GUIDANCE + the deferred-tools addendum; later turns are bare (V.2)", async () => {
-  const doneTurn = [
-    ev({ type: "turn.completed", usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1, reasoning_output_tokens: 0 } }),
-  ];
-  const { s, prompts, awaitTurnEnd } = makeSession(doneTurn, doneTurn);
+test("usage is per turn: the second turn reports only its own tokens", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession([usage(100, 10), DONE], [usage(160, 25, 5), DONE]);
+  s.pushPrompt("one");
+  await awaitTurnEnd(1);
+  s.pushPrompt("two");
+  await awaitTurnEnd(2);
+  assert.deepEqual(
+    msgs.filter((m) => m.type === "usage").map((m) => [m.inputTokens, m.outputTokens]),
+    [
+      [100, 10],
+      [60, 20],
+    ],
+  );
+  s.close();
+});
+
+test("the render guidance rides thread/start as developerInstructions; turns carry the bare prompt (V.2)", async () => {
+  const { s, server, prompts, awaitTurnEnd } = makeSession([DONE], [DONE]);
   s.pushPrompt("first ask");
   await awaitTurnEnd(1);
   s.pushPrompt("second ask");
   await awaitTurnEnd(2);
 
-  assert.equal(prompts.length, 2);
-  // The guidance block, the deferral instruction, and the user's own text.
-  assert.ok(prompts[0].includes("## Generative UI"));
-  assert.ok(prompts[0].includes(MIRAFOLD_CONTEXT), "the environment fact rides the first turn");
-  assert.ok(prompts[0].includes("DEFERRED"));
-  assert.ok(prompts[0].includes("tool search"));
-  assert.ok(prompts[0].endsWith("first ask"));
-  // Later turns ride the warm thread — no re-injection.
-  assert.equal(prompts[1], "second ask");
+  const starts = server.threadStarts();
+  assert.equal(starts.length, 1, "one thread for the session's life");
+  assert.equal(starts[0].method, "thread/start");
+  const instructions = starts[0].params.developerInstructions as string;
+  assert.equal(instructions, CODEX_DEVELOPER_INSTRUCTIONS);
+  assert.ok(instructions.includes("## Generative UI"));
+  assert.ok(instructions.includes(MIRAFOLD_CONTEXT), "the environment fact reaches Codex at thread start");
+  assert.ok(instructions.includes("DEFERRED"));
+  assert.ok(instructions.includes("tool search"));
+  assert.equal(starts[0].params.cwd, tmp);
+  // Faithful skin: no sandbox / approval policy of our own.
+  assert.equal(starts[0].params.sandbox, undefined);
+  assert.equal(starts[0].params.approvalPolicy, undefined);
+  assert.deepEqual(prompts(), ["first ask", "second ask"]);
   s.close();
 });
 
-test("agent_message with a mermaid xychart paints a chart component; prose stays text (V.2)", async () => {
+test("agentMessage with a mermaid xychart paints a chart component; prose stays text (V.2)", async () => {
   const fence =
     "Here you go:\n\n```mermaid\nxychart-beta\n  title \"Revenue\"\n  x-axis [Jan, Feb]\n  y-axis \"USD\" 0 --> 20\n  bar [10, 15]\n```\n\nDone.";
   const { s, msgs, awaitTurnEnd } = makeSession([
-    ev({ type: "item.completed", item: { type: "agent_message", id: "m1", text: fence } }),
-    ev({ type: "turn.completed", usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1, reasoning_output_tokens: 0 } }),
+    ["item/completed", { item: { type: "agentMessage", id: "m1", text: fence } }],
+    DONE,
   ]);
   s.pushPrompt("chart please");
   await awaitTurnEnd();
@@ -206,59 +337,37 @@ test("agent_message with a mermaid xychart paints a chart component; prose stays
   s.close();
 });
 
-// V.2 /model: a session with injectable model list + a makeCodex stub that
-// records thread construction, so switches are observable without an engine.
-/** A makeCodex stub whose threads run one empty turn and record every
- *  start/resume + prompt — the engine-free harness both the /model and the
- *  provider-binding suites observe switches through. */
-function recordingCodex() {
-  const calls: { kind: "start" | "resume"; id?: string; options: any }[] = [];
-  const prompts: string[] = [];
-  const fakeThread = () => ({
-    runStreamed: async (text: string) => {
-      prompts.push(text);
-      return {
-        events: (async function* () {
-          yield ev({ type: "turn.completed", usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1, reasoning_output_tokens: 0 } });
-        })(),
-      };
-    },
-  });
-  const makeCodex = () =>
-    ({
-      startThread: (options: any) => {
-        calls.push({ kind: "start", options });
-        return fakeThread();
-      },
-      resumeThread: (id: string, options: any) => {
-        calls.push({ kind: "resume", id, options });
-        return fakeThread();
-      },
-    }) as any;
-  return { calls, prompts, makeCodex };
-}
+test("streamed prose flows live until a fence opens; the held remainder is converted on completion", async () => {
+  const fence = "```mermaid\nxychart-beta\n  x-axis [A]\n  y-axis \"n\" 0 --> 2\n  bar [1]\n```";
+  const full = `Intro. ${fence}\nOutro.`;
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ["item/agentMessage/delta", { itemId: "m1", delta: "Intro. " }],
+    ["item/agentMessage/delta", { itemId: "m1", delta: "```mermaid\nxychart-beta\n" }],
+    ["item/agentMessage/delta", { itemId: "m1", delta: "  x-axis [A]\n  y-axis \"n\" 0 --> 2\n  bar [1]\n```\nOutro." }],
+    ["item/completed", { item: { type: "agentMessage", id: "m1", text: full } }],
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const texts = msgs.filter((m) => m.type === "text_delta").map((m) => m.text);
+  assert.equal(texts[0], "Intro. ", "prose before the fence streamed immediately");
+  assert.ok(texts.every((t) => !t.includes("xychart")), "the fence never reached the transcript as text");
+  assert.ok(texts.some((t) => t.includes("Outro.")));
+  assert.equal(msgs.filter((m) => m.type === "render" && m.component === "chart").length, 1);
+  s.close();
+});
 
-function makeModelSession(listModels: () => Promise<any[]>, opts: SessionOpts = {}) {
-  const { calls, prompts, makeCodex } = recordingCodex();
-  const s = new CodexSession({ workspaceDir: tmp, ...opts, listModels, makeCodex });
-  const msgs: Any[] = [];
-  s.onMessage((m) => msgs.push(m as Any));
-  const awaitTurnEnd = (count = 1) => waitForTurnEnds(msgs, count);
-  return { s, msgs, calls, prompts, awaitTurnEnd };
-}
-
-test("recovery and discovery: Codex resumes and advertises only implemented / commands plus live $ skills", async () => {
-  const { calls, makeCodex } = recordingCodex();
+test("recovery and discovery: Codex resumes its thread and advertises only implemented / commands plus live $ skills", async () => {
+  const server = fakeAppServer();
+  server.turns.push([DONE]);
   const s = new CodexSession({
     workspaceDir: tmp,
     resumeId: "codex-thread-saved",
-    makeCodex,
+    makeAppServer: server.makeAppServer,
     listSkills: async () => [{ name: "audit", description: "defensive security audit" }],
   });
-  assert.deepEqual(calls.map((call) => [call.kind, call.id]), [
-    ["resume", "codex-thread-saved"],
-  ]);
   assert.equal(s.resumeId, "codex-thread-saved");
+  assert.equal(server.specs.length, 0, "nothing spawns until a turn needs the engine");
 
   const seen: WireMsg[] = [];
   s.onMessage((msg) => seen.push(msg));
@@ -277,24 +386,16 @@ test("recovery and discovery: Codex resumes and advertises only implemented / co
     "codex",
     "workspace/provider skill text must carry fixed catalog provenance",
   );
+
+  s.pushPrompt("continue");
+  await waitForTurnEnds(seen as Any[]);
+  const starts = server.threadStarts();
+  assert.deepEqual([starts[0].method, starts[0].params.threadId, starts[0].params.cwd], ["thread/resume", "codex-thread-saved", tmp]);
   s.close();
 });
 
-test("Codex announces its provider resume id at thread.started", async () => {
-  const { s, awaitTurnEnd } = makeSession([
-    ev({ type: "thread.started", thread_id: "codex-thread-new" }),
-    ev({
-      type: "turn.completed",
-      usage: {
-        input_tokens: 1,
-        cached_input_tokens: 0,
-        output_tokens: 1,
-        reasoning_output_tokens: 0,
-      },
-    }),
-  ]);
-  // Avoid the unrelated rollout-file model lookup in this identity test.
-  (s as unknown as { modelLabel: string }).modelLabel = "gpt-test";
+test("Codex announces its provider resume id when the thread starts", async () => {
+  const { s, awaitTurnEnd } = makeSession([DONE]);
   const resumeIds: string[] = [];
   s.onResumeId((id) => resumeIds.push(id));
   s.pushPrompt("start the thread");
@@ -304,11 +405,31 @@ test("Codex announces its provider resume id at thread.started", async () => {
   s.close();
 });
 
+test("the engine's resolved model becomes the label; a configured model is never overridden", async () => {
+  const unconfigured = makeSession([DONE]);
+  assert.equal(unconfigured.s.modelName, undefined, "unknown is reported as absent, never a stand-in");
+  unconfigured.s.pushPrompt("go");
+  await unconfigured.awaitTurnEnd();
+  assert.equal(unconfigured.s.modelName, "gpt-test");
+  unconfigured.s.close();
+
+  const configured = makeSessionWithOptions({ model: "o3-configured" }, [DONE]);
+  configured.s.pushPrompt("go");
+  await configured.awaitTurnEnd();
+  assert.equal(configured.s.modelName, "o3-configured");
+  assert.equal(configured.server.threadStarts()[0].params.model, "o3-configured");
+  configured.s.close();
+});
+
 const CATALOG = [
   { id: "gpt-9-sol", displayName: "GPT-9-Sol", description: "frontier", isDefault: true },
   { id: "gpt-9-terra", displayName: "GPT-9-Terra", description: "balanced", isDefault: false },
   { id: "gpt-9-luna", displayName: "GPT-9-Luna", description: "fast", isDefault: false },
 ];
+
+function makeModelSession(listModels: () => Promise<any[]>, opts: SessionOpts = {}, ...turns: Scripted[]) {
+  return makeSessionWithOptions({ ...opts, listModels }, ...turns);
+}
 
 test("bare /model paints the picker from codex's own catalog; no engine turn runs (V.2)", async () => {
   const { s, msgs, prompts, awaitTurnEnd } = makeModelSession(async () => CATALOG);
@@ -329,32 +450,31 @@ test("bare /model paints the picker from codex's own catalog; no engine turn run
   assert.equal(rows[0].label, "GPT-9-Sol");
   assert.equal(rows[0].detail, "frontier");
   assert.ok(p.hint?.includes("/model <model-id>"));
-  assert.equal(prompts.length, 0); // never reached the engine
+  assert.equal(prompts().length, 0); // never reached the engine
   s.close();
 });
 
-test("/model <id>: unstarted session restarts the thread; started session resumes it (V.2)", async () => {
-  const { s, msgs, calls, awaitTurnEnd } = makeModelSession(async () => CATALOG);
-  assert.equal(calls.length, 1); // the constructor's startThread
+test("/model <id> applies from the next turn on the same warm thread — no restart (V.2)", async () => {
+  const { s, msgs, server, awaitTurnEnd } = makeModelSession(async () => CATALOG, {}, [DONE], [DONE]);
   s.pushPrompt("/model gpt-9-terra");
   await awaitTurnEnd();
-  assert.deepEqual(calls[1], {
-    kind: "start", // no thread.started seen yet → nothing to resume
-    options: { workingDirectory: tmp, skipGitRepoCheck: true, model: "gpt-9-terra" },
-  });
   assert.equal(s.modelName, "gpt-9-terra");
   assert.ok(msgs.some((m) => m.type === "text_delta" && m.text.includes("gpt-9-terra")));
+  assert.equal(server.specs.length, 0, "a switch alone spawns nothing");
 
-  // Now with a live thread id: the switch must RESUME (history intact).
-  (s as any).threadId = "t-123";
-  s.pushPrompt("/model gpt-9-luna");
+  s.pushPrompt("hello");
   await awaitTurnEnd(2);
-  assert.deepEqual(calls[2], {
-    kind: "resume",
-    id: "t-123",
-    options: { workingDirectory: tmp, skipGitRepoCheck: true, model: "gpt-9-luna" },
-  });
-  assert.equal(s.modelName, "gpt-9-luna");
+  assert.equal(server.threadStarts()[0].params.model, "gpt-9-terra");
+  assert.equal(server.turnStarts()[0].model, "gpt-9-terra");
+
+  // A later switch rides the next turn/start; the thread is never restarted.
+  s.pushPrompt("/model gpt-9-luna");
+  await awaitTurnEnd(3);
+  s.pushPrompt("again");
+  await awaitTurnEnd(4);
+  assert.equal(server.turnStarts()[1].model, "gpt-9-luna");
+  assert.equal(server.threadStarts().length, 1);
+  assert.equal(server.clients.length, 1);
   s.close();
 });
 
@@ -374,10 +494,6 @@ test("/model failure paths: unreadable catalog errors honestly; extra words get 
   s.close();
 });
 
-// V-thread /effort scaffold: the reasoning-effort axis of the /model picker.
-// All five efforts ride the same shell-owned picker as /model (no row cap);
-// a pick resumes/restarts the warm thread carrying modelReasoningEffort,
-// exactly like /model carries model.
 test("bare /effort paints the effort picker; no engine turn runs", async () => {
   const { s, msgs, prompts, awaitTurnEnd } = makeModelSession(async () => CATALOG);
   s.pushPrompt("/effort");
@@ -387,7 +503,6 @@ test("bare /effort paints the effort picker; no engine turn runs", async () => {
   assert.ok(p, "effort picker rendered");
   assert.equal(p.title, "Select reasoning effort");
   const rows = p.rows as any[];
-  // All five efforts, in the engine's order; none marked current (untouched).
   assert.deepEqual(
     rows.map((r) => r.label),
     ["minimal", "low", "medium", "high", "xhigh"],
@@ -398,16 +513,16 @@ test("bare /effort paints the effort picker; no engine turn runs", async () => {
   );
   assert.ok(!rows.some((r) => r.current), "nothing current before a pick");
   assert.ok(p.hint?.includes("/effort <level>"));
-  assert.equal(prompts.length, 0); // never reached the engine
+  assert.equal(prompts().length, 0); // never reached the engine
   s.close();
 });
 
 test("a discovered local /effort picker adds none and passes it to Codex", async () => {
-  const { s, msgs, calls, prompts, awaitTurnEnd } = makeModelSession(async () => CATALOG, {
-    kind: "local",
-    endpoint: "http://127.0.0.1:11434",
-    localTurnTimeoutMs: 0,
-  });
+  const { s, msgs, server, prompts, awaitTurnEnd } = makeModelSession(
+    async () => CATALOG,
+    { kind: "local", endpoint: "http://127.0.0.1:11434", localTurnTimeoutMs: 0 },
+    [DONE],
+  );
 
   s.pushPrompt("/effort");
   await awaitTurnEnd();
@@ -420,44 +535,32 @@ test("a discovered local /effort picker adds none and passes it to Codex", async
 
   s.pushPrompt("/effort none");
   await awaitTurnEnd(2);
-  assert.deepEqual(calls.at(-1), {
-    kind: "start",
-    options: { workingDirectory: tmp, skipGitRepoCheck: true, modelReasoningEffort: "none" },
-  });
   assert.ok(msgs.some((m) => m.type === "text_delta" && m.text.includes("effort set to none")));
-  assert.equal(prompts.length, 0, "the local slash command never becomes model prose");
+  assert.equal(prompts().length, 0, "the local slash command never becomes model prose");
+  s.pushPrompt("hi");
+  await awaitTurnEnd(3);
+  assert.equal(server.turnStarts()[0].effort, "none");
   s.close();
 });
 
-test("/effort <level>: unstarted restarts, started resumes; threadOpts carries the effort", async () => {
-  const { s, msgs, calls, awaitTurnEnd } = makeModelSession(async () => CATALOG);
-  assert.equal(calls.length, 1); // constructor's startThread
+test("/effort <level> applies from the next turn; a set effort reads back as current", async () => {
+  const { s, msgs, server, awaitTurnEnd } = makeModelSession(async () => CATALOG, {}, [DONE]);
   s.pushPrompt("/effort high");
   await awaitTurnEnd();
-  assert.deepEqual(calls[1], {
-    kind: "start", // no thread.started yet → nothing to resume
-    options: { workingDirectory: tmp, skipGitRepoCheck: true, modelReasoningEffort: "high" },
-  });
   assert.ok(msgs.some((m) => m.type === "text_delta" && m.text.includes("effort set to high")));
 
-  // A pick now marks itself current in a fresh picker.
   s.pushPrompt("/effort");
   await awaitTurnEnd(2);
   const p = msgs.filter((m) => m.type === "picker").at(-1)!;
   const hi = (p.rows as any[]).find((r) => r.label === "high")!;
   assert.equal(hi.current, true, "the set effort reads back as current");
 
-  // With a live thread id the switch RESUMES (history intact), and a prior
-  // model override on threadOpts is preserved alongside the effort.
-  (s as any).threadId = "t-eff";
-  (s as any).threadOpts.model = "gpt-9-luna";
-  s.pushPrompt("/effort low");
+  s.pushPrompt("/model gpt-9-luna");
   await awaitTurnEnd(3);
-  assert.deepEqual(calls.at(-1), {
-    kind: "resume",
-    id: "t-eff",
-    options: { workingDirectory: tmp, skipGitRepoCheck: true, model: "gpt-9-luna", modelReasoningEffort: "low" },
-  });
+  s.pushPrompt("go");
+  await awaitTurnEnd(4);
+  const turn = server.turnStarts()[0];
+  assert.deepEqual([turn.model, turn.effort], ["gpt-9-luna", "high"], "model and effort ride the turn together");
   s.close();
 });
 
@@ -465,28 +568,18 @@ test("/effort <bad>: an unknown level gets a usage line, never reaches the engin
   const { s, msgs, prompts, awaitTurnEnd } = makeModelSession(async () => CATALOG);
   s.pushPrompt("/effort turbo");
   await awaitTurnEnd();
-  const usage = msgs.find((m) => m.type === "text_delta" && m.text.includes("Usage:"))!;
-  assert.ok(usage, "usage line emitted");
-  assert.ok(usage.text.includes("minimal, low, medium, high, xhigh"), "lists the valid levels");
-  assert.ok(!usage.text.includes("none"), "non-local sessions do not advertise the extension");
-  assert.equal(prompts.length, 0);
+  const line = msgs.find((m) => m.type === "text_delta" && m.text.includes("Usage:"))!;
+  assert.ok(line, "usage line emitted");
+  assert.ok(line.text.includes("minimal, low, medium, high, xhigh"), "lists the valid levels");
+  assert.ok(!line.text.includes("none"), "non-local sessions do not advertise the extension");
+  assert.equal(prompts().length, 0);
   s.close();
 });
 
 test("failed command: isError; completion without a start still announces", async () => {
   const { s, msgs, awaitTurnEnd } = makeSession([
-    ev({
-      type: "item.completed",
-      item: {
-        type: "command_execution",
-        id: "c9",
-        command: "false",
-        aggregated_output: "",
-        exit_code: 2,
-        status: "failed",
-      },
-    }),
-    ev({ type: "turn.completed", usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1, reasoning_output_tokens: 0 } }),
+    ["item/completed", { item: { type: "commandExecution", id: "c9", command: "false", aggregatedOutput: "", exitCode: 2, status: "failed" } }],
+    DONE,
   ]);
   s.pushPrompt("go");
   await awaitTurnEnd();
@@ -497,18 +590,8 @@ test("failed command: isError; completion without a start still announces", asyn
 
 test("a completed command with a nonzero exit is not an error — the exit code is annotated", async () => {
   const { s, msgs, awaitTurnEnd } = makeSession([
-    ev({
-      type: "item.completed",
-      item: {
-        type: "command_execution",
-        id: "c10",
-        command: "grep -r missing src/",
-        aggregated_output: "",
-        exit_code: 1,
-        status: "completed",
-      },
-    }),
-    ev({ type: "turn.completed", usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1, reasoning_output_tokens: 0 } }),
+    ["item/completed", { item: { type: "commandExecution", id: "c10", command: "grep -r missing src/", aggregatedOutput: "", exitCode: 1, status: "completed" } }],
+    DONE,
   ]);
   s.pushPrompt("go");
   await awaitTurnEnd();
@@ -518,28 +601,45 @@ test("a completed command with a nonzero exit is not an error — the exit code 
   s.close();
 });
 
-test("mcp MCP calls paint render/artifact, never tool rows; failures and unknowns are suppressed", async () => {
-  const mcp = (tool: string, args: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
-    ev({
-      type: "item.completed",
+test("a declined command (the user said no) is an error row that says so", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ["item/started", { item: { type: "commandExecution", id: "c11", command: "rm -rf /x", status: "inProgress" } }],
+    ["item/completed", { item: { type: "commandExecution", id: "c11", command: "rm -rf /x", aggregatedOutput: "", status: "declined" } }],
+    ["item/completed", { item: { type: "fileChange", id: "f2", status: "declined", changes: [{ kind: "add", path: "/etc/x", diff: "" }] } }],
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  const cmd = msgs.find((m) => m.type === "tool_result" && m.id === "c11")!;
+  assert.deepEqual([cmd.isError, cmd.output], [true, "(declined)"]);
+  const patch = msgs.find((m) => m.type === "tool_result" && m.id === "f2")!;
+  assert.deepEqual([patch.isError, patch.output], [true, "(declined)"]);
+  s.close();
+});
+
+test("mirafold MCP calls paint render/artifact, never tool rows; failures and unknowns are suppressed", async () => {
+  const mcp = (tool: string, args: Record<string, unknown>, extra: Record<string, unknown> = {}): Notification => [
+    "item/completed",
+    {
       item: {
-        type: "mcp_tool_call",
+        type: "mcpToolCall",
         id: `g-${tool}`,
         server: MIRAFOLD_MCP,
         tool,
         arguments: args,
         status: "completed",
-        result: { structured_content: { renderId: "rid-1" } },
+        result: { content: [], structuredContent: { renderId: "rid-1" } },
         ...extra,
       },
-    });
+    },
+  ];
   const { s, msgs, turnEnds, awaitTurnEnd } = makeSession([
-    ev({ type: "turn.started" }),
+    ["turn/started", {}],
     mcp("render_card", { title: "T", id: "keep-me" }),
     mcp("emit_artifact", { html: "<b>x</b>", title: "demo" }),
     mcp("render_table", { columns: ["a"] }, { status: "failed" }),
     mcp("render_bogus", {}),
-    ev({ type: "turn.completed", usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1, reasoning_output_tokens: 0 } }),
+    DONE,
   ]);
   s.pushPrompt("go");
   await awaitTurnEnd();
@@ -550,7 +650,7 @@ test("mcp MCP calls paint render/artifact, never tool rows; failures and unknown
   const render = msgs.find((m) => m.type === "render")!;
   assert.equal(render.component, "card");
   assert.deepEqual(render.props, { title: "T" }); // id stripped from props
-  assert.equal(render.id, "rid-1"); // structured_content wins
+  assert.equal(render.id, "rid-1"); // structuredContent wins
 
   const art = msgs.find((m) => m.type === "artifact")!;
   assert.equal(art.html, "<b>x</b>");
@@ -562,16 +662,11 @@ test("mcp MCP calls paint render/artifact, never tool rows; failures and unknown
   s.close();
 });
 
-test("checklist: one render id within a turn, a fresh one next turn", async () => {
-  const todo = (done: boolean) =>
-    ev({
-      type: "item.updated",
-      item: { type: "todo_list", id: "t", items: [{ text: "step", completed: done }] },
-    });
-  const usage = ev({ type: "turn.completed", usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1, reasoning_output_tokens: 0 } });
+test("checklist (turn/plan/updated): one render id within a turn, a fresh one next turn", async () => {
+  const plan = (status: string): Notification => ["turn/plan/updated", { plan: [{ step: "step", status }] }];
   const { s, msgs, awaitTurnEnd } = makeSession(
-    [todo(false), todo(true), usage],
-    [todo(false), usage],
+    [plan("pending"), plan("inProgress"), DONE],
+    [plan("completed"), DONE],
   );
   s.pushPrompt("one");
   await awaitTurnEnd(1);
@@ -581,33 +676,30 @@ test("checklist: one render id within a turn, a fresh one next turn", async () =
   assert.equal(renders.length, 3);
   assert.equal(renders[0].id, renders[1].id); // update-in-place within the turn
   assert.notEqual(renders[1].id, renders[2].id); // re-anchors next turn
+  assert.deepEqual(renders[1].props, { todos: [{ content: "step", status: "in_progress" }] });
   s.close();
 });
 
-test("turn.failed: error before the single turn_end", async () => {
+test("a failed turn: error before the single turn_end", async () => {
   const { s, msgs, turnEnds, awaitTurnEnd } = makeSession([
-    ev({ type: "turn.started" }),
-    ev({ type: "turn.failed", error: { message: "boom" } }),
+    ["turn/started", {}],
+    ["turn/completed", { turn: { status: "failed", error: { message: "boom" } } }],
   ]);
   s.pushPrompt("go");
   await awaitTurnEnd();
   const types = msgs.map((m) => m.type);
   assert.ok(types.indexOf("error") < types.indexOf("turn_end"));
   assert.equal(msgs.find((m) => m.type === "error")!.message, "boom");
-  assert.equal(turnEnds(), 1); // end() from turn.failed + finally must not double-fire
+  assert.equal(turnEnds(), 1);
   s.close();
 });
 
 test("a discovered local provider failure names the server/model recovery check", async () => {
   const { s, msgs, awaitTurnEnd } = makeSessionWithOptions(
-    {
-      kind: "local",
-      endpoint: "http://127.0.0.1:11434",
-      localTurnTimeoutMs: 0,
-    },
+    { kind: "local", endpoint: "http://127.0.0.1:11434", localTurnTimeoutMs: 0 },
     [
-      ev({ type: "turn.started" }),
-      ev({ type: "turn.failed", error: { message: "connection refused" } }),
+      ["turn/started", {}],
+      ["turn/completed", { turn: { status: "failed", error: { message: "connection refused" } } }],
     ],
   );
   s.pushPrompt("go");
@@ -618,22 +710,17 @@ test("a discovered local provider failure names the server/model recovery check"
   s.close();
 });
 
-test("a discovered local turn timeout aborts with one actionable error and one turn_end", async () => {
-  const { s, msgs, turnEnds, awaitTurnEnd } = makeSessionWithOptions(
-    {
-      kind: "local",
-      endpoint: "http://127.0.0.1:11434",
-      localTurnTimeoutMs: 25,
-    },
-    (signal) =>
-      (async function* (): AsyncGenerator<ThreadEvent> {
-        yield ev({ type: "turn.started" });
-        await new Promise<never>((_, reject) =>
-          signal.addEventListener("abort", () =>
-            reject(Object.assign(new Error("aborted"), { name: "AbortError" })),
-          ),
-        );
-      })(),
+/** A turn that runs until the session interrupts it (the fake completes it
+ *  as "interrupted" then, exactly like the engine). */
+const runsUntilInterrupted = async (ctx: TurnCtx) => {
+  ctx.notify("turn/started", {});
+  await ctx.interrupted;
+};
+
+test("a discovered local turn timeout interrupts with one actionable error and one turn_end", async () => {
+  const { s, msgs, server, turnEnds, awaitTurnEnd } = makeSessionWithOptions(
+    { kind: "local", endpoint: "http://127.0.0.1:11434", localTurnTimeoutMs: 25 },
+    runsUntilInterrupted,
   );
   s.pushPrompt("go");
   await awaitTurnEnd();
@@ -644,22 +731,14 @@ test("a discovered local turn timeout aborts with one actionable error and one t
   assert.match(errors[0].message, /\/effort none/);
   assert.match(errors[0].message, /MIRAFOLD_CODEX_LOCAL_TURN_TIMEOUT_MS/);
   assert.equal(turnEnds(), 1);
+  assert.ok(server.requests.some((r) => r.method === "turn/interrupt"), "the timeout interrupts the engine's turn");
   s.close();
 });
 
 test("a local timeout does not recommend /effort none when reasoning is already disabled", async () => {
   const { s, msgs, awaitTurnEnd } = makeSessionWithOptions(
-    {
-      kind: "local",
-      endpoint: "http://127.0.0.1:11434",
-      localTurnTimeoutMs: 25,
-    },
-    (signal) =>
-      (async function* (): AsyncGenerator<ThreadEvent> {
-        await new Promise<never>((_, reject) =>
-          signal.addEventListener("abort", () => reject(new Error("aborted"))),
-        );
-      })(),
+    { kind: "local", endpoint: "http://127.0.0.1:11434", localTurnTimeoutMs: 25 },
+    runsUntilInterrupted,
   );
   (s as unknown as { effortLabel: string }).effortLabel = "none";
   s.pushPrompt("go");
@@ -675,38 +754,23 @@ test("UX.8: a configured provider failure cannot echo its exact base URL", async
   const endpoint = "https://tenant.example/private/token-path";
   writeFileSync(
     path.join(home, "config.toml"),
-    [
-      'model_provider = "private"',
-      "[model_providers.private]",
-      `base_url = "${endpoint}"`,
-    ].join("\n"),
+    ['model_provider = "private"', "[model_providers.private]", `base_url = "${endpoint}"`].join("\n"),
   );
+  const server = fakeAppServer();
+  server.turns.push([
+    ["turn/completed", { turn: { status: "failed", error: { message: `request ${endpoint}/responses failed` } } }],
+  ]);
   const savedHome = process.env.CODEX_HOME;
   let s: CodexSession;
   try {
     process.env.CODEX_HOME = home;
-    s = new CodexSession({
-      workspaceDir: tmp,
-      kind: "local",
-      provider: "private",
-      makeCodex: () => ({ startThread: () => ({}) }) as unknown as Codex,
-    });
+    s = new CodexSession({ workspaceDir: tmp, kind: "local", provider: "private", makeAppServer: server.makeAppServer });
   } finally {
     if (savedHome === undefined) delete process.env.CODEX_HOME;
     else process.env.CODEX_HOME = savedHome;
   }
   const msgs: Any[] = [];
   s.onMessage((msg) => msgs.push(msg as Any));
-  (s as unknown as { thread: unknown }).thread = {
-    runStreamed: async () => ({
-      events: (async function* () {
-        yield ev({
-          type: "turn.failed",
-          error: { message: `request ${endpoint}/responses failed` },
-        });
-      })(),
-    }),
-  };
   s.pushPrompt("go");
   await waitForTurnEnds(msgs);
   const message = msgs.find((msg) => msg.type === "error")?.message ?? "";
@@ -715,162 +779,120 @@ test("UX.8: a configured provider failure cannot echo its exact base URL", async
   s.close();
 });
 
-test("a non-fatal error ITEM is a warning notice, and the turn keeps going", async () => {
-  // The SDK types ErrorItem "a non-fatal error surfaced as an item" — Codex's
-  // own advisory (no metadata for a local model's slug, say). Rendering it as
-  // an `error` was louder than the terminal we re-skin (2026-07-20).
+test("a retried engine error and a warning are attributed notices; the turn keeps going", async () => {
+  // Codex's own advisories are its words, so they carry `source` — unbadged,
+  // the dim system line is Mirafold's voice (2026-07-20 audit).
   const { s, msgs, awaitTurnEnd } = makeSession([
-    ev({ type: "turn.started" }),
-    ev({
-      type: "item.completed",
-      item: { type: "error", id: "e1", message: "Model metadata for `qwen3:1.7b` not found." },
-    }),
-    ev({ type: "item.completed", item: { type: "agent_message", id: "m1", text: "the reply" } }),
-    ev({
-      type: "turn.completed",
-      usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1, reasoning_output_tokens: 0 },
-    }),
+    ["turn/started", {}],
+    ["error", { error: { message: "stream disconnected" }, willRetry: true }],
+    ["warning", { message: "Model metadata for `qwen3:1.7b` not found." }],
+    ["item/completed", { item: { type: "agentMessage", id: "m1", text: "the reply" } }],
+    DONE,
   ]);
   s.pushPrompt("go");
   await awaitTurnEnd();
-  const notice = msgs.find((m) => m.type === "notice")!;
-  assert.equal(notice.kind, "warning");
-  assert.match(notice.text, /Model metadata/);
-  // The text is codex's own, so it must be attributed: unbadged, the dim
-  // system line is Mirafold's voice (2026-07-20 audit).
-  assert.equal(notice.source, "codex");
-  assert.ok(!msgs.some((m) => m.type === "error"), "a non-fatal item must not render as an error");
-  // The advisory did not eat the turn: the reply still arrived, after it.
+  const notices = msgs.filter((m) => m.type === "notice");
+  assert.deepEqual(
+    notices.map((n) => [n.kind, n.source]),
+    [
+      ["retry", "codex"],
+      ["warning", "codex"],
+    ],
+  );
+  assert.match(notices[0].text, /stream disconnected — retrying/);
+  assert.match(notices[1].text, /Model metadata/);
+  assert.ok(!msgs.some((m) => m.type === "error"), "a non-fatal advisory must not render as an error");
   const types = msgs.map((m) => m.type);
-  assert.ok(types.indexOf("notice") < types.indexOf("text_delta"));
+  assert.ok(types.indexOf("notice") < types.indexOf("text_delta"), "the advisory did not eat the turn");
   s.close();
 });
 
-test("a stream that throws mid-turn: error, then exactly one turn_end", async () => {
-  const { s, msgs, turnEnds, awaitTurnEnd } = makeSession(() =>
-    (async function* (): AsyncGenerator<ThreadEvent> {
-      yield ev({ type: "turn.started" });
-      throw new Error("stream died");
-    })(),
+test("app-server dies mid-turn: one error, one turn_end, and the next prompt respawns and RESUMES the thread", async () => {
+  const { s, msgs, server, turnEnds, awaitTurnEnd } = makeSession(
+    async (ctx) => {
+      ctx.notify("turn/started", {});
+      server.clients[0]!.exit();
+    },
+    [DONE],
   );
   s.pushPrompt("go");
   await awaitTurnEnd();
-  assert.equal(msgs.find((m) => m.type === "error")!.message, "stream died");
+  assert.equal(msgs.filter((m) => m.type === "error").length, 1);
+  assert.match(msgs.find((m) => m.type === "error")!.message, /exited/);
   assert.equal(turnEnds(), 1);
+
+  s.pushPrompt("again");
+  await awaitTurnEnd(2);
+  assert.equal(server.clients.length, 2, "a fresh process for the next turn");
+  const starts = server.threadStarts();
+  assert.deepEqual(
+    starts.map((r) => [r.method, r.params.threadId]),
+    [
+      ["thread/start", undefined],
+      ["thread/resume", "codex-thread-new"],
+    ],
+    "the conversation survives the crash by id",
+  );
   s.close();
 });
 
-test("interrupt: aborts silently — one turn_end, no error", async () => {
-  const { s, msgs, turnEnds, awaitTurnEnd } = makeSession((signal) =>
-    (async function* (): AsyncGenerator<ThreadEvent> {
-      yield ev({ type: "turn.started" });
-      await new Promise<never>((_, reject) =>
-        signal.addEventListener("abort", () =>
-          reject(Object.assign(new Error("aborted"), { name: "AbortError" })),
-        ),
-      );
-    })(),
-  );
+test("interrupt: ends the turn silently — one turn_end, no error", async () => {
+  const { s, msgs, server, turnEnds, awaitTurnEnd } = makeSession(runsUntilInterrupted);
   s.pushPrompt("go");
   await new Promise((r) => setTimeout(r, 50)); // let the turn start
   s.interrupt();
   await awaitTurnEnd();
   assert.equal(turnEnds(), 1);
   assert.ok(!msgs.some((m) => m.type === "error"));
+  const interrupt = server.requests.find((r) => r.method === "turn/interrupt")!;
+  assert.deepEqual(interrupt.params, { threadId: "codex-thread-new", turnId: "turn-1" });
   s.close();
 });
 
-// ---- Resolved-model lookup (fleet/status-bar parity with Claude, F.3) ------
-// The SDK stream never names the model; the rollout file's turn_context does.
-
-const rolloutFixture = (threadId: string, lines: string[]) => {
-  const home = mkdtempSync(path.join(os.tmpdir(), "codex-home-test-"));
-  const day = rolloutDateDir(home, new Date());
-  mkdirSync(day, { recursive: true });
-  writeFileSync(
-    path.join(day, `rollout-2026-07-16T21-58-26-${threadId}.jsonl`),
-    lines.join("\n") + "\n",
-  );
-  return home;
-};
-
-const META_LINE = JSON.stringify({
-  type: "session_meta",
-  payload: { session_id: "t-1", model_provider: "openai" },
-});
-const CONTEXT_LINE = JSON.stringify({
-  type: "turn_context",
-  payload: { model: "gpt-5.6-sol", settings: { model: "gpt-5.6-sol" } },
-});
-
-/** The minimal turn whose thread.started kicks off the model lookup. */
-const lookupTurn = (threadId: string): ThreadEvent[] => [
-  ev({ type: "thread.started", thread_id: threadId }),
-  ev({ type: "turn.started" }),
-  ev({
-    type: "turn.completed",
-    usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1, reasoning_output_tokens: 0 },
-  }),
-];
-
-test("resolveRolloutModel: reads the model from the thread's turn_context line", async () => {
-  const home = rolloutFixture("t-1", [META_LINE, "not json {", CONTEXT_LINE]);
-  assert.equal(await resolveRolloutModel("t-1", home), "gpt-5.6-sol");
-  // An unknown thread, or a record with no model yet, resolves to nothing.
-  assert.equal(await resolveRolloutModel("t-other", home), undefined);
-  const bare = rolloutFixture("t-2", [META_LINE]);
-  assert.equal(await resolveRolloutModel("t-2", bare), undefined);
-});
-
-test("thread.started triggers the lookup: modelName goes from unknown to the truth", async () => {
-  const home = rolloutFixture("t-3", [META_LINE, CONTEXT_LINE]);
-  const { s, awaitTurnEnd } = makeSession(lookupTurn("t-3"));
-  (s as unknown as { codexHome: string }).codexHome = home;
-  // Pre-turn the model is unknown — reported as absent, never a stand-in.
-  assert.equal(s.modelName, undefined);
+test("until CA.3, every engine approval ask is declined — fail-closed, and the turn goes on", async () => {
+  const answers: unknown[] = [];
+  const { s, msgs, awaitTurnEnd } = makeSession(async (ctx) => {
+    answers.push(await ctx.serverRequest("item/commandExecution/requestApproval", { itemId: "c1", command: "curl x", reason: "network" }));
+    answers.push(await ctx.serverRequest("item/fileChange/requestApproval", { itemId: "f1" }));
+    answers.push(await ctx.serverRequest("item/permissions/requestApproval", { itemId: "p1", permissions: { network: { enabled: true } } }));
+    ctx.notify("item/completed", { item: { type: "agentMessage", id: "m1", text: "denied, moving on" } });
+    ctx.complete();
+  });
   s.pushPrompt("go");
   await awaitTurnEnd();
-  // The lookup is async beside the turn — give its first attempt a beat.
-  const t0 = Date.now();
-  while (s.modelName === undefined && Date.now() - t0 < 3_000)
-    await new Promise((r) => setTimeout(r, 10));
-  assert.equal(s.modelName, "gpt-5.6-sol");
+  assert.deepEqual(answers, [{ decision: "decline" }, { decision: "decline" }, { permissions: {} }]);
+  assert.ok(msgs.some((m) => m.type === "text_delta" && m.text.includes("moving on")));
   s.close();
 });
 
-test("a configured model is the label — the rollout lookup never overrides it", async () => {
-  const home = rolloutFixture("t-4", [CONTEXT_LINE]);
-  const { s, awaitTurnEnd } = makeSession(lookupTurn("t-4"));
-  (s as unknown as { codexHome: string }).codexHome = home;
-  (s as unknown as { modelLabel: string }).modelLabel = "o3-configured";
-  s.pushPrompt("go");
-  await awaitTurnEnd();
-  await new Promise((r) => setTimeout(r, 50));
-  assert.equal(s.modelName, "o3-configured");
-  s.close();
-});
+// ── The spawn: the chosen backend reaches the ENGINE's process — captured
+// off the session's spawn spec (nothing is spawned in these tests).
 
-// ── N.5: the chosen backend reaches the ENGINE's construction options —
-// captured via the makeCodex seam (the SDK object is never built here).
-
-function capturedCodexOptions(opts: {
+function capturedSpawn(opts: {
   kind?: "api-key" | "subscription" | "local";
   endpoint?: string;
   provider?: string;
   model?: string;
-}): CodexOptions {
-  let captured: CodexOptions | undefined;
-  const s = new CodexSession({
-    workspaceDir: tmp,
-    ...opts,
-    makeCodex: (o) => {
-      captured = o;
-      return { startThread: () => ({}) } as unknown as Codex;
-    },
-  });
+}): AppServerSpawn {
+  const s = new CodexSession({ workspaceDir: tmp, ...opts, makeAppServer: fakeAppServer().makeAppServer });
+  const spec = (s as unknown as { spawnSpec: AppServerSpawn }).spawnSpec;
   s.close();
-  assert.ok(captured, "makeCodex seam was not invoked");
-  return captured;
+  return spec;
+}
+
+/** The `-c key=value` overrides of a spawn, as the nested object they encode. */
+function configOf(spec: AppServerSpawn): Record<string, any> {
+  const out: Record<string, any> = {};
+  for (let i = 0; i < spec.args.length; i++) {
+    if (spec.args[i] !== "-c") continue;
+    const [key, ...rest] = spec.args[++i]!.split("=");
+    const value = JSON.parse(rest.join("="));
+    const parts = key!.split(".");
+    let node = out;
+    for (const part of parts.slice(0, -1)) node = node[part] ??= {};
+    node[parts.at(-1)!] = value;
+  }
+  return out;
 }
 
 function withEnvVar(name: string, value: string | undefined, fn: () => void) {
@@ -888,83 +910,69 @@ function withEnvVar(name: string, value: string | undefined, fn: () => void) {
 const withOpenAiKey = (value: string | undefined, fn: () => void) =>
   withEnvVar("OPENAI_API_KEY", value, fn);
 
-test("F.10: the installed Codex executable drives the SDK engine", () => {
+test("F.10: the installed Codex executable runs the app-server", () => {
   withEnvVar("MIRAFOLD_CODEX_BIN", "/operator/chosen/codex", () => {
-    const o = capturedCodexOptions({ kind: "subscription" });
-    assert.equal(o.codexPathOverride, "/operator/chosen/codex");
+    const spec = capturedSpawn({ kind: "subscription" });
+    assert.equal(spec.command, "/operator/chosen/codex");
+    assert.equal(spec.args[0], "app-server");
   });
 });
 
 test("N.5: a subscription choice withholds the env API key — the explicit pick beats env precedence", () => {
   withOpenAiKey("sk-env", () => {
-    const o = capturedCodexOptions({ kind: "subscription" });
-    assert.equal(o.apiKey, undefined);
-    assert.ok(o.env, "subscription must pass an env override");
-    assert.ok(!("OPENAI_API_KEY" in o.env!), "the env key must not reach the engine");
+    const spec = capturedSpawn({ kind: "subscription" });
+    assert.ok(spec.env, "subscription must pass an env override");
+    assert.ok(!("OPENAI_API_KEY" in spec.env!), "the env key must not reach the engine");
+    assert.equal(configOf(spec).forced_login_method, undefined);
   });
 });
 
-test("N.5: an api-key choice passes the key, no env override (auth.json stays reachable but unused)", () => {
+test("N.5: an api-key choice keeps the env key AND forces the api login method (CA.1: app-server otherwise prefers auth.json)", () => {
   withOpenAiKey("sk-env", () => {
-    const o = capturedCodexOptions({ kind: "api-key" });
-    assert.equal(o.apiKey, "sk-env");
-    assert.equal(o.env, undefined);
+    const spec = capturedSpawn({ kind: "api-key" });
+    assert.equal(spec.env, undefined, "the process inherits OPENAI_API_KEY");
+    assert.equal(configOf(spec).forced_login_method, "api");
   });
 });
 
-test("N.5: no choice keeps the pre-N default — apiKey iff the env var is set, nothing else", () => {
+test("N.5: no choice keeps the pre-N default — api-key iff the env var is set, nothing else", () => {
   withOpenAiKey("sk-env", () => {
-    const o = capturedCodexOptions({});
-    assert.equal(o.apiKey, "sk-env");
-    assert.equal(o.env, undefined);
+    const spec = capturedSpawn({});
+    assert.equal(spec.env, undefined);
+    assert.equal(configOf(spec).forced_login_method, "api");
   });
   withOpenAiKey(undefined, () => {
-    const o = capturedCodexOptions({});
-    assert.equal(o.apiKey, undefined);
-    assert.equal(o.env, undefined);
+    const spec = capturedSpawn({});
+    assert.equal(spec.env, undefined);
+    assert.equal(configOf(spec).forced_login_method, undefined);
   });
 });
 
 test("N.5: a discovered-endpoint choice injects the documented provider recipe, keeping the MCP config", () => {
-  let o!: CodexOptions;
+  let spec!: AppServerSpawn;
   withOpenAiKey("sk-env", () => {
-    o = capturedCodexOptions({
-      kind: "local",
-      endpoint: "http://127.0.0.1:11434",
-      model: "qwen3-coder",
-    });
+    spec = capturedSpawn({ kind: "local", endpoint: "http://127.0.0.1:11434", model: "qwen3-coder" });
     // 2026-07-17 audit: the key is withheld from a local-endpoint engine —
     // same posture as the claude adapter's local branch.
-    assert.ok(o.env);
-    assert.ok(!("OPENAI_API_KEY" in o.env!));
-    assert.equal(o.apiKey, undefined);
+    assert.ok(spec.env);
+    assert.ok(!("OPENAI_API_KEY" in spec.env!));
   });
-  const config = o.config as {
-    model_provider?: string;
-    model_providers?: Record<string, { base_url?: string; wire_api?: string }>;
-    mcp_servers?: Record<string, unknown>;
-  };
+  const config = configOf(spec);
   assert.equal(config.model_provider, "mirafold_local");
   assert.equal(config.model_providers?.mirafold_local.base_url, "http://127.0.0.1:11434/v1");
   assert.equal(config.model_providers?.mirafold_local.wire_api, "responses"); // docs Path B
   assert.ok(config.mcp_servers?.[MIRAFOLD_MCP], "the render MCP server must survive the merge");
+  assert.equal(config.mcp_servers[MIRAFOLD_MCP].default_tools_approval_mode, "approve");
 });
 
 test("a config.toml-provider choice (kind local, NO endpoint) injects nothing — the config default wins", () => {
-  let o!: CodexOptions;
+  let spec!: AppServerSpawn;
   withOpenAiKey("sk-env", () => {
-    o = capturedCodexOptions({ kind: "local" });
-    // Same withholding posture as the discovered-endpoint branch: the key has
-    // no business in a process pointed away from OpenAI.
-    assert.ok(o.env);
-    assert.ok(!("OPENAI_API_KEY" in o.env!));
-    assert.equal(o.apiKey, undefined);
+    spec = capturedSpawn({ kind: "local" });
+    assert.ok(spec.env);
+    assert.ok(!("OPENAI_API_KEY" in spec.env!));
   });
-  const config = o.config as {
-    model_provider?: string;
-    model_providers?: Record<string, unknown>;
-    mcp_servers?: Record<string, unknown>;
-  };
+  const config = configOf(spec);
   // No override: Codex must resolve the user's own config.toml default
   // provider (faithful skin — inherit, not invent).
   assert.equal(config.model_provider, undefined);
@@ -976,21 +984,14 @@ test("a config.toml-provider choice (kind local, NO endpoint) injects nothing �
 // promised, so a config.toml custom default can't silently redirect a session
 // the user was told runs elsewhere.
 
-type CapturedConfig = {
-  model_provider?: string;
-  model_providers?: Record<string, unknown>;
-  mcp_servers?: Record<string, unknown>;
-};
-
 test("provider binding: a named config-provider pick forces that id, declaration inherited", () => {
-  let o!: CodexOptions;
+  let spec!: AppServerSpawn;
   withOpenAiKey("sk-env", () => {
-    o = capturedCodexOptions({ kind: "local", provider: "openrouter" });
-    assert.ok(o.env);
-    assert.ok(!("OPENAI_API_KEY" in o.env!));
-    assert.equal(o.apiKey, undefined);
+    spec = capturedSpawn({ kind: "local", provider: "openrouter" });
+    assert.ok(spec.env);
+    assert.ok(!("OPENAI_API_KEY" in spec.env!));
   });
-  const config = o.config as CapturedConfig;
+  const config = configOf(spec);
   assert.equal(config.model_provider, "openrouter");
   // The provider's DEFINITION (base_url, env_key, wire_api) stays the user's
   // own [model_providers.openrouter] table — nothing injected over it.
@@ -1000,18 +1001,24 @@ test("provider binding: a named config-provider pick forces that id, declaration
 
 test("provider binding: api-key and subscription picks force the first-party provider", () => {
   withOpenAiKey("sk-env", () => {
-    const apiKey = capturedCodexOptions({ kind: "api-key" }).config as CapturedConfig;
-    assert.equal(apiKey.model_provider, "openai");
-    const sub = capturedCodexOptions({ kind: "subscription" }).config as CapturedConfig;
-    assert.equal(sub.model_provider, "openai");
+    assert.equal(configOf(capturedSpawn({ kind: "api-key" })).model_provider, "openai");
+    assert.equal(configOf(capturedSpawn({ kind: "subscription" })).model_provider, "openai");
   });
 });
 
 test("provider binding: NO explicit pick still injects no provider — inherit stays inherit", () => {
   withOpenAiKey(undefined, () => {
-    const config = capturedCodexOptions({}).config as CapturedConfig;
-    assert.equal(config.model_provider, undefined);
+    assert.equal(configOf(capturedSpawn({})).model_provider, undefined);
   });
+});
+
+test("faithful skin: no sandbox or approval override ever rides the spawn", () => {
+  for (const kind of ["api-key", "subscription", "local", undefined] as const) {
+    const config = configOf(capturedSpawn({ kind }));
+    assert.equal(config.sandbox_mode, undefined);
+    assert.equal(config.approval_policy, undefined);
+    assert.equal(config.sandbox_workspace_write, undefined);
+  }
 });
 
 // ── Provider binding, model axis: a forced-openai pick must not inherit a
@@ -1022,29 +1029,30 @@ const FOREIGN_MODEL_TOML =
   'model = "qwen/qwen3-coder"\nmodel_provider = "openrouter"\n' +
   '[model_providers.openrouter]\nbase_url = "https://openrouter.ai/api/v1"\n';
 
-/** makeModelSession, plus a CODEX_HOME fixture (read at construction only)
- *  and the engine-catalog seam. */
+/** A session plus a CODEX_HOME fixture (read at construction only) and the
+ *  engine-catalog seam. */
 function makeBindingSession(configToml: string | undefined, opts: {
   kind?: "api-key" | "subscription";
   model?: string;
   listEngineModels?: () => Promise<any[]>;
-}) {
+}, ...turns: Scripted[]) {
   const home = mkdtempSync(path.join(tmp, "codex-home-"));
   if (configToml !== undefined) writeFileSync(path.join(home, "config.toml"), configToml);
-  const { calls, prompts, makeCodex } = recordingCodex();
+  const server = fakeAppServer();
+  server.turns.push(...turns);
   // CODEX_HOME only matters at construction (the config scan runs there).
   const saved = process.env.CODEX_HOME;
   process.env.CODEX_HOME = home;
   let s: CodexSession;
   try {
-    s = new CodexSession({ workspaceDir: tmp, ...opts, makeCodex });
+    s = new CodexSession({ workspaceDir: tmp, ...opts, makeAppServer: server.makeAppServer });
   } finally {
     if (saved === undefined) delete process.env.CODEX_HOME;
     else process.env.CODEX_HOME = saved;
   }
   const msgs: Any[] = [];
   s.onMessage((m) => msgs.push(m as Any));
-  return { s, msgs, calls, prompts, awaitTurnEnd: (count = 1) => waitForTurnEnds(msgs, count) };
+  return { s, msgs, server, prompts: server.prompts, awaitTurnEnd: (count = 1) => waitForTurnEnds(msgs, count) };
 }
 
 // The model axis runs for BOTH first-party kinds. They aren't two code paths:
@@ -1054,19 +1062,18 @@ function makeBindingSession(configToml: string | undefined, opts: {
 // the one that can't be exercised live without buying a key, which makes this
 // the only thing pinning it.
 for (const kind of ["subscription", "api-key"] as const) {
-  test(`model axis (${kind}): the engine's catalog default replaces the foreign config model on the first turn`, async () => {
-    const { s, calls, prompts, awaitTurnEnd } = makeBindingSession(FOREIGN_MODEL_TOML, {
-      kind,
-      listEngineModels: async () => CATALOG,
-    });
+  test(`model axis (${kind}): the engine's catalog default replaces the foreign config model before the first turn`, async () => {
+    const { s, server, prompts, awaitTurnEnd } = makeBindingSession(
+      FOREIGN_MODEL_TOML,
+      { kind, listEngineModels: async () => CATALOG },
+      [DONE],
+    );
     s.pushPrompt("hi");
     await awaitTurnEnd();
-    // Constructor start (no model), then the pre-turn restart under the default.
-    assert.equal(calls.length, 2);
-    assert.equal(calls[0].options.model, undefined);
-    assert.deepEqual([calls[1].kind, calls[1].options.model], ["start", "gpt-9-sol"]);
+    assert.equal(server.threadStarts()[0].params.model, "gpt-9-sol", "the thread opens under the engine default");
+    assert.equal(server.turnStarts()[0].model, "gpt-9-sol");
     assert.equal(s.modelName, "gpt-9-sol");
-    assert.equal(prompts.length, 1); // the turn still ran, once, after the swap
+    assert.equal(prompts().length, 1); // the turn still ran, once, after the swap
     s.close();
   });
 
@@ -1086,7 +1093,7 @@ for (const kind of ["subscription", "api-key"] as const) {
     const err = msgs.find((m) => m.type === "error")!.message;
     assert.match(err, /meituan\/longcat-2\.0/);
     assert.match(err, /can't run/);
-    assert.equal(prompts.length, 0, "the foreign model must never reach the engine");
+    assert.equal(prompts().length, 0, "the foreign model must never reach the engine");
     s.close();
   });
 
@@ -1099,38 +1106,36 @@ for (const kind of ["subscription", "api-key"] as const) {
     });
     s.pushPrompt("hi");
     await awaitTurnEnd();
-    assert.match(
-      msgs.find((m) => m.type === "error")!.message,
-      /default model could not be resolved/,
-    );
-    assert.equal(prompts.length, 0);
+    assert.match(msgs.find((m) => m.type === "error")!.message, /default model could not be resolved/);
+    assert.equal(prompts().length, 0);
     s.close();
   });
 
   test(`model axis (${kind}): a transient catalog failure is retried before the next prompt`, async () => {
     let lookups = 0;
-    const { s, msgs, prompts, awaitTurnEnd } = makeBindingSession(FOREIGN_MODEL_TOML, {
-      kind,
-      listEngineModels: async () => {
-        lookups += 1;
-        if (lookups === 1) throw new Error("temporary catalog failure");
-        return CATALOG;
+    const { s, msgs, prompts, awaitTurnEnd } = makeBindingSession(
+      FOREIGN_MODEL_TOML,
+      {
+        kind,
+        listEngineModels: async () => {
+          lookups += 1;
+          if (lookups === 1) throw new Error("temporary catalog failure");
+          return CATALOG;
+        },
       },
-    });
+      [DONE],
+    );
 
     s.pushPrompt("first");
     await awaitTurnEnd(1);
     assert.equal(lookups, 1);
-    assert.equal(prompts.length, 0, "the unresolved first-party model blocks the first prompt");
+    assert.equal(prompts().length, 0, "the unresolved first-party model blocks the first prompt");
     assert.match(msgs.find((m) => m.type === "error")!.message, /default model could not be resolved/);
 
     s.pushPrompt("second");
     await awaitTurnEnd(2);
     assert.equal(lookups, 2, "the failed lookup did not disable the guard");
-    assert.equal(prompts.length, 1);
-    assert.ok(prompts[0].includes("## Generative UI"));
-    assert.ok(prompts[0].includes("DEFERRED"));
-    assert.ok(prompts[0].endsWith("second"));
+    assert.deepEqual(prompts(), ["second"]);
     assert.equal(s.modelName, "gpt-9-sol");
     s.close();
   });
@@ -1145,35 +1150,43 @@ for (const kind of ["subscription", "api-key"] as const) {
     s.pushPrompt("hi");
     await awaitTurnEnd();
     assert.match(msgs.find((m) => m.type === "error")!.message, /marks no default model/);
-    assert.equal(prompts.length, 0);
+    assert.equal(prompts().length, 0);
     s.close();
   });
 }
 
 test("model axis: an explicit model (construction or /model) wins — no resolution", async () => {
-  const viaOpts = makeBindingSession(FOREIGN_MODEL_TOML, {
-    kind: "subscription",
-    model: "gpt-9-luna",
-    listEngineModels: async () => {
-      throw new Error("must not be asked");
+  const viaOpts = makeBindingSession(
+    FOREIGN_MODEL_TOML,
+    {
+      kind: "subscription",
+      model: "gpt-9-luna",
+      listEngineModels: async () => {
+        throw new Error("must not be asked");
+      },
     },
-  });
+    [DONE],
+  );
   viaOpts.s.pushPrompt("hi");
   await viaOpts.awaitTurnEnd();
-  assert.equal(viaOpts.prompts.length, 1);
+  assert.equal(viaOpts.prompts().length, 1);
   assert.equal(viaOpts.s.modelName, "gpt-9-luna");
   viaOpts.s.close();
 
-  const viaSwitch = makeBindingSession(FOREIGN_MODEL_TOML, {
-    kind: "subscription",
-    listEngineModels: async () => {
-      throw new Error("must not be asked");
+  const viaSwitch = makeBindingSession(
+    FOREIGN_MODEL_TOML,
+    {
+      kind: "subscription",
+      listEngineModels: async () => {
+        throw new Error("must not be asked");
+      },
     },
-  });
+    [DONE],
+  );
   viaSwitch.s.pushPrompt("/model gpt-9-terra");
   viaSwitch.s.pushPrompt("hi");
   await viaSwitch.awaitTurnEnd(2);
-  assert.equal(viaSwitch.prompts.length, 1);
+  assert.equal(viaSwitch.prompts().length, 1);
   assert.equal(viaSwitch.s.modelName, "gpt-9-terra");
   viaSwitch.s.close();
 });
@@ -1186,51 +1199,45 @@ test("model axis: no foreign model (or no custom default) = no swap at all", asy
     'model = "gpt-9-terra"\n',
     undefined, // no config at all
   ]) {
-    const { s, calls, prompts, awaitTurnEnd } = makeBindingSession(toml, {
-      kind: "subscription",
-      listEngineModels: async () => {
-        throw new Error("must not be asked");
+    const { s, server, prompts, awaitTurnEnd } = makeBindingSession(
+      toml,
+      {
+        kind: "subscription",
+        listEngineModels: async () => {
+          throw new Error("must not be asked");
+        },
       },
-    });
+      [DONE],
+    );
     s.pushPrompt("hi");
     await awaitTurnEnd();
-    assert.equal(calls.length, 1, `no restart for config: ${String(toml)}`);
-    assert.equal(prompts.length, 1);
+    assert.equal(server.threadStarts()[0].params.model, undefined, `no model override for config: ${String(toml)}`);
+    assert.equal(prompts().length, 1);
     s.close();
   }
 });
 
-test("2026-07-29 a failed first turn does not burn the render guidance — the retry still carries it", async () => {
-  // firstTurn used to flip BEFORE the engine accepted the prompt, so a
-  // spawn failure on turn 1 lost RENDER_GUIDANCE forever and the session
-  // never made a render call again (V.2: 0/9 without the addendum).
-  const s = new CodexSession({ workspaceDir: tmp });
+test("a failed engine start does not burn anything: the retry spawns afresh and the guidance still lands", async () => {
+  // The exec path once flipped its guidance flag before the engine accepted
+  // the prompt, so a spawn failure on turn 1 lost RENDER_GUIDANCE forever.
+  // With app-server the guidance is a thread/start param, and a start that
+  // fails is simply retried by the next turn.
+  const server = fakeAppServer({ startError: new Error("codex binary missing") });
+  server.turns.push([DONE]);
+  const s = new CodexSession({ workspaceDir: tmp, makeAppServer: server.makeAppServer });
   const msgs: Any[] = [];
-  const prompts: string[] = [];
   s.onMessage((m) => msgs.push(m as Any));
-  let call = 0;
-  (s as unknown as { thread: unknown }).thread = {
-    runStreamed: async (text: string) => {
-      if (call++ === 0) throw new Error("codex binary missing");
-      prompts.push(text);
-      return {
-        events: (async function* () {
-          yield ev({
-            type: "turn.completed",
-            usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1, reasoning_output_tokens: 0 },
-          });
-        })(),
-      };
-    },
-  };
   s.pushPrompt("first ask");
   await waitForTurnEnds(msgs, 1);
-  assert.ok(msgs.some((m) => m.type === "error"), "the failure itself surfaced");
+  assert.ok(msgs.some((m) => m.type === "error" && m.message.includes("codex binary missing")), "the failure itself surfaced");
+  assert.equal(server.prompts().length, 0);
+
   s.pushPrompt("second ask");
+  // This fake fails every start the same way; what must hold is the shape:
+  // another spawn, another initialize, one turn_end each — never a wedged
+  // session holding a dead first attempt.
   await waitForTurnEnds(msgs, 2);
-  assert.equal(prompts.length, 1);
-  assert.ok(prompts[0].includes("## Generative UI"), "guidance survives the failed delivery");
-  assert.ok(prompts[0].includes("DEFERRED"));
-  assert.ok(prompts[0].endsWith("second ask"));
+  assert.equal(server.clients.length, 2, "each attempt gets a fresh process");
+  assert.equal(server.requests.filter((r) => r.method === "initialize").length, 2);
   s.close();
 });
