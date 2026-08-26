@@ -2354,7 +2354,7 @@ the relay, which a terminal cannot do at all. (Promoted from
 POST-RELEASE.md's "Input augment" entry; clipboard PASTE of files/images
 stays parked there.)
 
-**Bounds.** Staging is `os.tmpdir()/mirafold-uploads/<sessionId>/` (0700);
+**Bounds.** Staging is `<random per-daemon mkdtemp root>/<sessionId>/` (0700, never a fixed name in shared tmp — 2026-08-26 audit);
 v1 cleanup relies on the OS's tmp reaping (recorded decision — per-session
 delete-on-end can ride later). Caps: `FILE_UPLOAD_MAX_BYTES` (10 MB
 default, env), 2 concurrent uploads per connection, chunks bounded well
@@ -3346,6 +3346,102 @@ resolution path — adapters that emit `permission_request` MUST emit it
 nothing is pending. Pinned in all three tiers, mutation-tested; replay
 carries request→resolved so a reload can't repaint a stale bar. Full
 diagnosis → PLAN-ARCHIVE.md, "Moved 2026-08-12 (prune — completed bodies)."
+
+## Closed from the 2026-08-26 security audit (the `main…next` delta, 58 commits)
+
+Audited on the `polish` working tree; fixes landed there uncommitted, each
+with a break-the-guard test, cold-reviewed in two batches. Three of the
+findings were already closed by the `polish` work in progress (Codex Stop
+inert during app-server startup; the `!!` `silent` flag missing from the
+checkpoint decoder — one `!!` made a session unrecoverable after a restart;
+the Gemini auth stub written before the trust ask). What the audit added:
+
+- **A checkout's `.env` can no longer disable or pin the auth token** —
+  `.env.example` shipped a bare `MIRAFOLD_TOKEN=` and `cp .env.example .env`
+  turned auth off. `MIRAFOLD_TOKEN` left `PROJECT_ENV_KEYS`; the example
+  documents it as parent-environment-only. (`project-env.test.ts`)
+- **A connection whose session was evicted OR ended loses its handle**
+  (`refused` / `session_ended`), and `!`, `bang_input`, plus an allowing
+  `permission_response` now carry the drive-time relay gate that
+  `prompt`/acts/uploads had — the 2026-08-13 fix had missed those paths and
+  treated eviction as a stream detach only; a stale handle after `end()`
+  could spawn an invisible PTY (cold review). (`fleet-acts.test.ts`)
+- **Every Gemini project write opens `O_NOFOLLOW`** (the invalid-JSON backup
+  exclusively) and `.gemini` must be a real directory — the first cut
+  guarded two paths and the cold review routed the repo's own bytes through
+  a symlink planted under the backup's name. `/model` sits behind the trust
+  ask (it spawns Gemini in the folder). Ask text says "sets its auth type"
+  honestly. (`gemini-cli.test.ts`)
+- **The registry admits nothing the checkpoint decoder would refuse**
+  (`admitForCheckpoint`, judged by the store's own schemas): an overlong id,
+  a `NaN`/float/negative token count, an array `tool_use.input`, an
+  over-long catalog, an undecodable prompt-catalog entry — each used to
+  checkpoint fine and make the whole session unrestorable at the next start
+  (two cold-review rounds widened this from "ids" to the class). Coerced
+  where a legitimate reading exists, dropped otherwise; one round-trip test
+  over the hostile shapes pins it. One render-id grammar
+  (`RENDER_ID_GRAMMAR`) is enforced on the in-process server, the stdio
+  stub's ack, and `renderIdFor`, and told to the model.
+- Hardening, all pinned: Codex `item/permissions/requestApproval` states the
+  grant (`describePermissionProfile`); the Codex trust ask says Codex "may"
+  record trust (the config.toml write did not reproduce on codex-cli 0.149.1
+  under a fresh `CODEX_HOME`); checkpoint `nextSeq` regained its
+  bound with headroom (`MAX_NEXT_SEQ` = 2^48 — the safe-integer edge itself
+  pinned the stream after one message); `IDLE_STATE` frozen; release
+  workflow pins `npm@11.19.0`; `PermissionLedger`
+  settles exactly once structurally; `permission_request` tool/detail capped
+  (never scrubbed — the detail is what the user approves); `reduceTurn`
+  returns `prev` on a no-op frame (one Shell re-render per frame, gone).
+
+Nothing deferred. Left for Kyle: review + commit on `polish`.
+
+## Closed from the 2026-08-26 whole-project security audit
+
+Six reviewers over the full tree (network entry, filesystem/process paths,
+adapters, relay/crypto, web/sandbox, repo/CI/supply chain), each finding
+proven by probe; fixes landed uncommitted on `polish` in three batches, each
+cold-reviewed and the reviews' own findings fixed. Exploitable-now:
+
+- **Every engine now asks "trust this folder?" before its first spawn** —
+  a hostile checkout's `.claude/settings.json` hook, `.mcp.json` server and
+  `opencode.json` MCP command all ran at session start with no prompt
+  (probed). Claude Code and OpenCode gained the gate Gemini/Codex had
+  (`workspace-trust.ts` scopes; lazy engine start; slash commands ask too).
+- **A checkout's `.env` configures the agent, never the daemon** — three
+  lines redirected the license-key exchange and the relay to a hostile host
+  and pinned the pairing code (probed). Relay/entitlement/app-URL/local-
+  endpoint keys are operator-environment only.
+- **The repo-program guard's three bypasses closed** (`=` in a filter name,
+  submodule config, oversized config failing open): env-pair
+  neutralization, `--ignore-submodules=dirty`, fail-closed scan, and `git`
+  itself through the trusted-executable lookup. Pinned in
+  `git-trust.itest.ts`.
+- **An artifact can no longer seize keyboard focus** (probed: typed prompt
+  landed in the artifact) — focus enters a frame only on the user's gesture;
+  otherwise the artifact is blanked like a navigation. e2e-pinned.
+
+Ship-time: uploads stage under a random owner-only root with exclusive
+no-follow writes; the git-trust notice never echoes repo-chosen text; the
+daemon's own credentials never enter an engine child (`DAEMON_ONLY_ENV`);
+the release workflow verifies the tag's SSH signature against
+`.github/allowed_signers` and publishes from a job that runs no install
+scripts; app.mirafold.com gets the shell CSP via `web/public/_headers` +
+a `<meta>` policy (it had none); permission asks render bidi/invisible
+controls visibly; a `#code=` pairing is remembered only after its
+handshake succeeds.
+
+Hardening: log lines neutralized for control bytes and written 0600/0700;
+trust record realpath-only and exclusive; image reads O_NOFOLLOW; a restored
+"discovered" endpoint must be loopback; stdio render props validated
+server-side with the strict schema; license key never in the log; handshake
+nonce length checked; link-group href refine never throws; pin dock has a
+boundary; frame ingress guard; ICE/preconnect side channel disclosed.
+
+**Left for Kyle (GitHub settings, not code):** add a tag ruleset for `v*`
+requiring signed tags, and drop the admin "always" bypass on `main` (or
+require a PR) — see the session recap for the exact clicks. Review + commit
+on `polish`; then a patch release (findings 2–4 of the delta audit and the
+engine gate are live in 0.5.0).
 
 ## Stretch goals (unscheduled — polish, no milestone gates on these)
 
