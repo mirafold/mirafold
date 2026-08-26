@@ -2996,6 +2996,14 @@ catalogs (`codex-model-list.ts`, `codex-skills-list.ts`).
   app-server (59 tests); live smoke against the real binary: streamed prose,
   model from thread/start, resume id, a declined out-of-workspace write.
   Tier-1 935, Tier-2 153 green.
+  - **Fix 2026-08-25 (Kyle screenshot, still on this branch):** app-server
+    marks ANY nonzero exit `status:"failed"` (the exec path said
+    "completed"), so grep-no-match / `gh repo view` on a missing repo /
+    a failing test each rendered as an EXPANDED red error that broke the
+    fold. Faithful rule now matches the TUI: a command that RAN (has an exit
+    code) is non-error and foldable, exit code annotated; only a no-exit-code
+    failure or a decline is an error. Proven live + three unit tests
+    (incl. the screenshot's exact shape). Tier-1 941.
   - Build: `codex-app-server.ts` — a JSON-RPC-over-stdio client (the
     `jsonrpc-oneshot.ts` patterns, made long-lived) replacing the SDK spawn
     in `codex-binding.ts` / `codex.ts`; same config overrides and provider

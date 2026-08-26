@@ -257,23 +257,25 @@ export class CodexEventMapper {
         } else {
           this.ensureAnnounced(item.id, "Shell", command, { command });
           const capped = capOutput(item.aggregatedOutput ?? "");
-          // Codex reports probe commands (grep with no match, a failing
-          // test run) as status "completed" with a nonzero exit, and its
-          // own TUI shows them as ordinary completed commands — only
-          // "failed" is an error, and "declined" (the user said no to the
-          // approval) is shown as one so the refusal is visible. The exit
-          // code stays visible as an annotation, so nothing the terminal
-          // showed is lost.
-          const failed = item.status === "failed";
+          // A command that RAN is an ordinary completed command, exactly as
+          // the Codex TUI shows it — dim, foldable, exit code annotated —
+          // never a red error, whatever its exit status. app-server marks
+          // ANY nonzero exit `status: "failed"` (grep-no-match, a
+          // `gh repo view` on a missing repo, a failing test — measured
+          // 2026-08-25), unlike the old exec path which called those
+          // "completed"; keying error-ness off `status` alone turned every
+          // such probe into an expanded error block that broke the fold.
+          // So: it ran iff it produced an exit code. Only a command that
+          // couldn't run at all (no exit code) or was declined is an error.
           const declined = item.status === "declined";
+          const ran = item.exitCode != null;
+          const isError = declined || (!ran && item.status === "failed");
           const exitNote =
-            !failed && !declined && item.exitCode != null && item.exitCode !== 0
-              ? `${capped.text ? "\n" : ""}(exit ${item.exitCode})`
-              : "";
+            ran && item.exitCode !== 0 ? `${capped.text ? "\n" : ""}(exit ${item.exitCode})` : "";
           this.finishTool(item.id, {
             output: declined ? `${capped.text}${capped.text ? "\n" : ""}(declined)` : capped.text + exitNote,
             truncatedBytes: capped.truncatedBytes,
-            isError: failed || declined,
+            isError,
           });
         }
         break;

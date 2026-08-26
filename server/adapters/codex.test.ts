@@ -605,28 +605,54 @@ test("/effort <bad>: an unknown level gets a usage line, never reaches the engin
   s.close();
 });
 
-test("failed command: isError; completion without a start still announces", async () => {
+test("a command that RAN is never a red error, whatever its exit status — app-server marks any nonzero exit 'failed'", async () => {
+  // The CA.2 regression: app-server reports a probe's nonzero exit as
+  // status:"failed" (grep-no-match, a `gh repo view` on a missing repo),
+  // where the old exec path said "completed". Both must read as ordinary
+  // completed commands — non-error, foldable, exit code annotated — exactly
+  // as the Codex TUI shows them. A completion without a start still
+  // announces (ensureAnnounced).
   const { s, msgs, awaitTurnEnd } = makeSession([
-    ["item/completed", { item: { type: "commandExecution", id: "c9", command: "false", aggregatedOutput: "", exitCode: 2, status: "failed" } }],
+    ["item/completed", { item: { type: "commandExecution", id: "cA", command: "grep zzz f", aggregatedOutput: "", exitCode: 1, status: "failed" } }],
+    ["item/completed", { item: { type: "commandExecution", id: "cB", command: "ls /nope", aggregatedOutput: "ls: cannot access", exitCode: 2, status: "failed" } }],
+    ["item/completed", { item: { type: "commandExecution", id: "cC", command: "grep -r x src/", aggregatedOutput: "", exitCode: 1, status: "completed" } }],
     DONE,
   ]);
   s.pushPrompt("go");
   await awaitTurnEnd();
-  assert.equal(msgs.filter((m) => m.type === "tool_use" && m.id === "c9").length, 1);
+  assert.equal(msgs.filter((m) => m.type === "tool_use").length, 3, "each still announces once");
+  const results = msgs.filter((m) => m.type === "tool_result");
+  assert.ok(results.every((r) => r.isError !== true), "a command that ran is not a red error");
+  assert.deepEqual(results.map((r) => r.output), ["(exit 1)", "ls: cannot access\n(exit 2)", "(exit 1)"]);
+  s.close();
+});
+
+test("a command that could NOT run (failed with no exit code) is a real error, shown expanded", async () => {
+  const { s, msgs, awaitTurnEnd } = makeSession([
+    ["item/completed", { item: { type: "commandExecution", id: "c9", command: "no-such-binary", aggregatedOutput: "spawn error", status: "failed" } }],
+    DONE,
+  ]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
   assert.equal(msgs.find((m) => m.type === "tool_result" && m.id === "c9")!.isError, true);
   s.close();
 });
 
-test("a completed command with a nonzero exit is not an error — the exit code is annotated", async () => {
+test("the two mislabeled probes from the screenshot fold together instead of showing as expanded errors", async () => {
+  // The exact shape of Kyle's 2026-08-25 screenshot: prose, then an rg probe
+  // (no match → failed/exit 1) and a `gh repo view` (missing repo → failed),
+  // then prose. Both ran, so both are non-error and fold into one run.
   const { s, msgs, awaitTurnEnd } = makeSession([
-    ["item/completed", { item: { type: "commandExecution", id: "c10", command: "grep -r missing src/", aggregatedOutput: "", exitCode: 1, status: "completed" } }],
+    ["item/completed", { item: { type: "agentMessage", id: "m1", text: "The starting state is verified." } }],
+    ["item/completed", { item: { type: "commandExecution", id: "rg", command: "rg --files --hidden", aggregatedOutput: "", exitCode: 1, status: "failed" } }],
+    ["item/completed", { item: { type: "commandExecution", id: "gh", command: "gh repo view kserrec/test-project", aggregatedOutput: "GraphQL: Could not resolve", exitCode: 1, status: "failed" } }],
+    ["item/completed", { item: { type: "agentMessage", id: "m2", text: "The local project is now initialized." } }],
     DONE,
   ]);
   s.pushPrompt("go");
   await awaitTurnEnd();
-  const result = msgs.find((m) => m.type === "tool_result" && m.id === "c10")!;
-  assert.ok(!result.isError, "a probe's nonzero exit was branded an error");
-  assert.equal(result.output, "(exit 1)");
+  const results = msgs.filter((m) => m.type === "tool_result");
+  assert.ok(results.every((r) => r.isError !== true), "neither probe is a red error, so both are foldable");
   s.close();
 });
 
