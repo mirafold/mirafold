@@ -50,6 +50,10 @@ const DEFAULT_LOCAL_TURN_TIMEOUT_MS = envInt(
   "MIRAFOLD_CODEX_LOCAL_TURN_TIMEOUT_MS",
   8 * 60_000,
 );
+// A normal Stop ends when Codex reports turn/completed. If that notification
+// never arrives, abandon the app-server after this bound so the serial prompt
+// worker cannot stay wedged forever.
+const DEFAULT_INTERRUPT_GRACE_MS = envInt("MIRAFOLD_CODEX_INTERRUPT_GRACE_MS", 5_000);
 
 /** What Mirafold tells Codex at thread start — the render guidance plus the
  *  deferred-tools note — through app-server's `developerInstructions`, a
@@ -59,8 +63,82 @@ export const CODEX_DEVELOPER_INSTRUCTIONS = `${RENDER_GUIDANCE}\n${CODEX_DEFERRE
 // The folder-trust ask waits this long before denying — the same window
 // Gemini's folder gate uses. A person reads the ask, not a machine.
 const TRUST_PROMPT_TIMEOUT_MS = 5 * 60_000;
+const STARTUP_INTERRUPTED = Symbol("startup-interrupted");
 
 type ThreadInfo = { id: string; model?: string };
+
+/** The `RequestPermissionProfile` of an `item/permissions/requestApproval`,
+ *  in words a person can approve: `entries[]` (`access` + `path`), the
+ *  legacy `read`/`write` path lists, and `network.enabled`. Shapes from the
+ *  binary's own schema (`codex app-server generate-json-schema`). Read
+ *  defensively — an engine profile is data, never trusted by shape. */
+/** `FileSystemPath` (schema): a literal path, a glob, or one of the named
+ *  special sets — the "root" one is the entire filesystem, and a person must
+ *  read it as that, never as `{"kind":"root"}`. */
+const SPECIAL_PATHS: Record<string, string> = {
+  root: "the ENTIRE filesystem",
+  minimal: "the minimal sandbox set",
+  project_roots: "the project roots",
+  tmpdir: "the temp directory",
+  slash_tmp: "/tmp",
+  unknown: "an unspecified location",
+};
+function describeFileSystemPath(p: unknown): string {
+  if (typeof p === "string") return p;
+  if (typeof p !== "object" || p === null) return "";
+  const v = p as {
+    type?: unknown;
+    path?: unknown;
+    pattern?: unknown;
+    value?: { kind?: unknown; path?: unknown; subpath?: unknown } | null;
+  };
+  // Dispatch on the tag, as the engine does — never on which keys happen
+  // to be present.
+  if (v.type === "path" && typeof v.path === "string") return v.path;
+  if (v.type === "glob_pattern" && typeof v.pattern === "string") return `${v.pattern} (glob)`;
+  const kind = v.value?.kind;
+  if (v.type === "special" && typeof kind === "string") {
+    const sub = typeof v.value?.subpath === "string" && v.value.subpath ? v.value.subpath : "";
+    // `unknown` carries the literal path the engine means (a subpath is
+    // joined onto it); every other kind is a named set, and a subpath is a
+    // directory INSIDE each of its members.
+    if (typeof v.value?.path === "string") return sub ? `${v.value.path.replace(/\/+$/, "")}/${sub}` : v.value.path;
+    const literal = SPECIAL_PATHS[kind] ?? `${kind} (special)`;
+    return sub ? `${sub} inside ${kind === "project_roots" ? "each project root" : literal}` : literal;
+  }
+  return JSON.stringify(p);
+}
+
+export function describePermissionProfile(profile: Record<string, unknown>): string {
+  const parts: string[] = [];
+  const fs = profile["fileSystem"] as Record<string, unknown> | null | undefined;
+  const asPaths = (v: unknown) =>
+    Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+  if (fs && typeof fs === "object") {
+    for (const raw of Array.isArray(fs["entries"]) ? fs["entries"] : []) {
+      const entry = raw as { access?: unknown; path?: unknown } | null;
+      const pathText = describeFileSystemPath(entry?.path);
+      if (pathText) parts.push(`${typeof entry?.access === "string" ? entry.access : "access"} ${pathText}`);
+    }
+    for (const p of asPaths(fs["read"])) parts.push(`read ${p}`);
+    for (const p of asPaths(fs["write"])) parts.push(`write ${p}`);
+  }
+  const net = profile["network"] as { enabled?: unknown } | null | undefined;
+  if (net && typeof net === "object" && net.enabled === true) parts.push("network access");
+  return parts.length
+    ? `grant for this turn: ${parts.join(", ")}`
+    : "grant additional permissions for this turn (the engine named none)";
+}
+type TurnOutcome = { status: string; error?: unknown } | { exited: true };
+type ActiveTurn = {
+  id?: string;
+  finish: (outcome: TurnOutcome) => void;
+  interrupted: boolean;
+  interruptSent: boolean;
+  startupInterrupted: Promise<typeof STARTUP_INTERRUPTED>;
+  interruptStartup: () => void;
+  interruptTimer?: ReturnType<typeof setTimeout>;
+};
 
 /**
  * The Codex adapter: OpenAI's Codex, driven through its own `codex app-server`
@@ -89,21 +167,19 @@ export class CodexSession implements AgentSession {
   private resumeIdState: ResumeIdState;
   private listModels: () => Promise<CodexModel[]>;
   private closed = false;
-  private activeTurn?: {
-    id?: string;
-    finish: (outcome: { status: string; error?: unknown } | { exited: true }) => void;
-    interrupted: boolean;
-  };
+  private activeTurn?: ActiveTurn;
   private eventMapper: CodexEventMapper;
   // The engine's approval round-trips (command / patch / permission), and the
   // one folder-trust ask, both ride the shared permission ledger → the
   // browser's permission bar. Answers already sync across viewports.
   private permissions = new PermissionLedger((msg) => this.emit(msg));
-  // Codex writes `[projects."<cwd>"] trust_level = "trusted"` into the user's
-  // config.toml on the FIRST thread/start in a folder, with no dialog (CA.1
-  // spike). So the first turn in an untrusted folder asks first, exactly as
-  // the terminal TUI does, and only calls thread/start on a yes — the write
-  // becomes consented, or never happens.
+  // Headless Codex was observed writing `[projects."<cwd>"] trust_level =
+  // "trusted"` into the user's config.toml on the FIRST thread/start in a
+  // folder, with no dialog (CA.1 spike, codex-cli 0.149.1; not reproduced
+  // under a fresh CODEX_HOME on 2026-08-26, so it is state-dependent — the
+  // ask says "may"). Either way the first turn in an untrusted folder asks
+  // first, exactly as the terminal TUI does, and only calls thread/start on
+  // a yes — any such write becomes consented, or never happens.
   private trusted = false;
   private modelLabel: string;
   // Per-turn options: a model/effort switch applies from the next turn on,
@@ -124,6 +200,7 @@ export class CodexSession implements AgentSession {
   private discoveredLocalEndpoint = false;
   private localTurnTimeoutMs = 0;
   private permissionTimeoutMs = PERMISSION_TIMEOUT_MS;
+  private interruptGraceMs = DEFAULT_INTERRUPT_GRACE_MS;
 
   get modelName(): string | undefined {
     return this.modelLabel === MODEL_STAND_IN ? undefined : this.modelLabel;
@@ -153,6 +230,8 @@ export class CodexSession implements AgentSession {
     listSkills?: () => Promise<CodexSkill[]>;
     /** Unit-test seam; production uses MIRAFOLD_CODEX_LOCAL_TURN_TIMEOUT_MS. */
     localTurnTimeoutMs?: number;
+    /** Unit-test seam; production uses MIRAFOLD_CODEX_INTERRUPT_GRACE_MS. */
+    interruptGraceMs?: number;
   }) {
     const workspaceDir = path.resolve(opts.workspaceDir);
     mkdirSync(workspaceDir, { recursive: true });
@@ -194,6 +273,9 @@ export class CodexSession implements AgentSession {
       opts.listSkills ?? (() => listCodexSkills(workspaceDir, undefined, runtime.engineBin));
     this.needsEngineDefaultModel = runtime.needsEngineDefaultModel;
     if (opts.permissionTimeoutMs !== undefined) this.permissionTimeoutMs = opts.permissionTimeoutMs;
+    if (opts.interruptGraceMs !== undefined) {
+      this.interruptGraceMs = Math.max(0, opts.interruptGraceMs);
+    }
     void this.worker();
   }
 
@@ -218,13 +300,54 @@ export class CodexSession implements AgentSession {
     const turn = this.activeTurn;
     if (!turn) return;
     turn.interrupted = true;
-    if (turn.id && this.client && this.threadId) {
-      this.client
+    turn.interruptStartup();
+    // Stop owns every blocking ask too — folder trust before startup and
+    // engine approvals after it. Leaving either unresolved pins the serial
+    // worker until its long timeout and leaves a stale permission bar.
+    this.permissions.denyAll();
+    this.sendTurnInterrupt(turn);
+  }
+
+  /** Send at most one engine interrupt once both protocol ids exist, then
+   * bound the wait for its terminal notification. Stop can arrive while
+   * turn/start itself is awaiting its response; runTurn calls this again
+   * after adopting the returned id. */
+  private sendTurnInterrupt(turn: ActiveTurn) {
+    if (!turn.id || !this.client || !this.threadId) return;
+    const client = this.client;
+    if (!turn.interruptSent) {
+      turn.interruptSent = true;
+      client
         .request("turn/interrupt", { threadId: this.threadId, turnId: turn.id })
         .catch(() => {
-          /* the turn's own end path reports what happened */
+          /* the completion notification or grace fallback owns the end */
         });
     }
+    if (turn.interruptTimer) return;
+    turn.interruptTimer = setTimeout(() => {
+      turn.interruptTimer = undefined;
+      if (this.activeTurn !== turn) return;
+      this.abandonAppServer(client);
+      turn.finish({ exited: true });
+    }, this.interruptGraceMs);
+    turn.interruptTimer.unref?.();
+  }
+
+  /** A startup request has no turn id that Codex can interrupt. Detach and
+   * kill that app-server so a missing or late response cannot pin the worker
+   * or accept a ghost prompt. The known thread id, if any, is retained for a
+   * fresh app-server to resume on the next turn. */
+  private abandonAppServer(client: AppServerClient | undefined) {
+    if (!client) return;
+    if (this.client === client) {
+      this.client = undefined;
+      this.threadReady = undefined;
+    }
+    client.kill();
+  }
+
+  private awaitStartup<T>(turn: ActiveTurn, pending: Promise<T>) {
+    return Promise.race<T | typeof STARTUP_INTERRUPTED>([pending, turn.startupInterrupted]);
   }
 
   // The browser's permission-bar answer for any ask this session raised —
@@ -297,12 +420,14 @@ export class CodexSession implements AgentSession {
   }
 
   /** Resolve the engine's marked default before a forced first-party turn. */
-  private async applyEngineDefaultModel(): Promise<boolean> {
+  private async applyEngineDefaultModel(turn: ActiveTurn): Promise<boolean> {
     try {
       const models = await this.listEngineModels();
+      if (this.closed || turn.interrupted) return false;
       this.setModel(codexEngineDefaultModel(models, this.firstPartyOpenAI));
       return true;
     } catch (err) {
+      if (this.closed || turn.interrupted) return false;
       this.emit({
         type: "error",
         message:
@@ -332,6 +457,9 @@ export class CodexSession implements AgentSession {
       await client.request("initialize", {
         clientInfo: { name: "mirafold", title: "Mirafold", version: "0.0.1" },
       });
+      if (this.client !== client || client.exited) {
+        throw new Error("codex app-server startup was abandoned");
+      }
       client.notify("initialized");
       const common = {
         cwd: this.workspaceDir,
@@ -345,6 +473,9 @@ export class CodexSession implements AgentSession {
             ...common,
             developerInstructions: CODEX_DEVELOPER_INSTRUCTIONS,
           }))) as { thread?: { id?: unknown }; model?: unknown };
+      if (this.client !== client || client.exited) {
+        throw new Error("codex app-server startup was abandoned");
+      }
       const id = typeof response.thread?.id === "string" ? response.thread.id : this.threadId;
       if (!id) throw new Error("codex app-server answered thread/start without a thread id");
       this.adoptThread(id);
@@ -418,7 +549,12 @@ export class CodexSession implements AgentSession {
         break;
       case "item/permissions/requestApproval": {
         const permissions = (p["permissions"] ?? {}) as Record<string, unknown>;
-        this.ask("Codex", reason ?? "grant additional permissions for this turn?", (allow) =>
+        // The ask names what a yes GRANTS — the profile the engine wants,
+        // stated by Mirafold — not only the engine's reason for wanting it:
+        // an allow echoes that exact profile back, so the user must have
+        // seen it (audit 2026-08-26).
+        const grant = describePermissionProfile(permissions);
+        this.ask("Codex", reason ? `${grant} — ${reason}` : grant, (allow) =>
           respond({ permissions: allow ? permissions : {} }),
         );
         break;
@@ -442,7 +578,7 @@ export class CodexSession implements AgentSession {
    * silent config.toml trust write happen before the yes.
    */
   private ensureTrusted(): Promise<boolean> {
-    if (this.trusted || isWorkspaceTrusted(this.workspaceDir)) {
+    if (this.trusted || isWorkspaceTrusted(this.workspaceDir, "codex")) {
       this.trusted = true;
       return Promise.resolve(true);
     }
@@ -452,28 +588,46 @@ export class CodexSession implements AgentSession {
         tool: "Codex",
         detail:
           `trust this folder — ${this.workspaceDir}. ` +
-          `Yes lets Codex run here; it records the folder as trusted in your ~/.codex/config.toml, ` +
-          `exactly as the Codex terminal does when you say yes there.`,
+          `Yes lets Codex run here (Mirafold remembers the answer); Codex may also record the folder ` +
+          `as trusted in your ~/.codex/config.toml, as its terminal does when you say yes there.`,
       },
       TRUST_PROMPT_TIMEOUT_MS,
       (allow) => {
         if (allow) {
           this.trusted = true;
-          trustWorkspace(this.workspaceDir); // remembered: asked once, ever
+          trustWorkspace(this.workspaceDir, "codex"); // remembered for this disclosed effect
         }
       },
     );
+  }
+
+  private reportTurnError(error: unknown) {
+    this.emit({
+      type: "error",
+      message: codexTurnDiagnostic(
+        error,
+        this.endpointForRedaction,
+        this.discoveredLocalEndpoint,
+      ),
+    });
   }
 
   private async runTurn(text: string) {
     let ended = false;
     let timeoutFired = false;
     let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-    const turn: NonNullable<CodexSession["activeTurn"]> = {
+    let interruptStartup!: () => void;
+    const startupInterrupted = new Promise<typeof STARTUP_INTERRUPTED>((resolve) => {
+      interruptStartup = () => resolve(STARTUP_INTERRUPTED);
+    });
+    const turn: ActiveTurn = {
       finish: () => {},
       interrupted: false,
+      interruptSent: false,
+      startupInterrupted,
+      interruptStartup,
     };
-    const outcome = new Promise<{ status: string; error?: unknown } | { exited: true }>((resolve) => {
+    const outcome = new Promise<TurnOutcome>((resolve) => {
       turn.finish = resolve;
     });
     this.activeTurn = turn;
@@ -494,8 +648,10 @@ export class CodexSession implements AgentSession {
       // The trust gate runs BEFORE anything spawns: an untrusted workspace
       // can't produce a turn at all, and a denied ask leaves config.toml
       // untouched.
-      if (!(await this.ensureTrusted())) {
-        if (!this.closed) {
+      const trusted = await this.awaitStartup(turn, this.ensureTrusted());
+      if (trusted === STARTUP_INTERRUPTED) return;
+      if (!trusted) {
+        if (!this.closed && !turn.interrupted) {
           this.emit({
             type: "notice",
             text: `Codex won't run in a folder you haven't trusted. Nothing ran — send another prompt to be asked again.`,
@@ -504,48 +660,58 @@ export class CodexSession implements AgentSession {
         }
         return;
       }
-      if (this.needsEngineDefaultModel && !(await this.applyEngineDefaultModel())) return;
-      const thread = await this.ensureThread();
+      // Stop may resolve the trust ask itself. Do not continue from any
+      // startup await once this turn was abandoned.
+      if (this.closed || turn.interrupted) return;
+      if (this.needsEngineDefaultModel) {
+        const modelReady = await this.awaitStartup(turn, this.applyEngineDefaultModel(turn));
+        if (modelReady === STARTUP_INTERRUPTED || !modelReady) return;
+      }
+      if (this.closed || turn.interrupted) return;
+      const threadPending = this.ensureThread();
+      const startupClient = this.client;
+      const thread = await this.awaitStartup(turn, threadPending);
+      if (thread === STARTUP_INTERRUPTED) {
+        this.abandonAppServer(startupClient);
+        return;
+      }
+      if (this.closed || turn.interrupted) return;
       const client = this.client!;
       this.eventMapper.beginTurn();
-      const started = (await client.request("turn/start", {
+      const startPending = client.request("turn/start", {
         threadId: thread.id,
         input: [{ type: "text", text }],
         ...(this.model ? { model: this.model } : {}),
         ...(this.effort ? { effort: this.effort } : {}),
-      })) as { turn?: { id?: unknown } };
-      if (typeof started.turn?.id === "string") turn.id = started.turn.id;
+      }) as Promise<{ turn?: { id?: unknown } }>;
+      const started = await this.awaitStartup(turn, startPending);
+      if (started === STARTUP_INTERRUPTED) {
+        this.abandonAppServer(client);
+        return;
+      }
+      if (typeof started.turn?.id !== "string" || !started.turn.id) {
+        this.abandonAppServer(client);
+        throw new Error("codex app-server answered turn/start without a turn id");
+      }
+      turn.id = started.turn.id;
+      if (turn.interrupted) this.sendTurnInterrupt(turn);
       const result = await outcome;
       if ("exited" in result) {
         if (!this.closed && !turn.interrupted) {
-          this.emit({
-            type: "error",
-            message: codexTurnDiagnostic(
-              client.stderrTail.trim().split("\n").at(-1) || "codex app-server exited mid-turn",
-              this.endpointForRedaction,
-              this.discoveredLocalEndpoint,
-            ),
-          });
+          this.reportTurnError(
+            client.stderrTail.trim().split("\n").at(-1) || "codex app-server exited mid-turn",
+          );
         }
       } else if (result.status === "failed" && !turn.interrupted) {
-        this.emit({
-          type: "error",
-          message: codexTurnDiagnostic(
-            turnErrorMessage(result.error) ?? "the turn failed",
-            this.endpointForRedaction,
-            this.discoveredLocalEndpoint,
-          ),
-        });
+        this.reportTurnError(turnErrorMessage(result.error) ?? "the turn failed");
       }
     } catch (err) {
       if (!this.closed && !turn.interrupted) {
-        this.emit({
-          type: "error",
-          message: codexTurnDiagnostic(err, this.endpointForRedaction, this.discoveredLocalEndpoint),
-        });
+        this.reportTurnError(err);
       }
     } finally {
       if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
+      if (turn.interruptTimer !== undefined) clearTimeout(turn.interruptTimer);
       if (!this.closed && timeoutFired) {
         this.emit({
           type: "error",
