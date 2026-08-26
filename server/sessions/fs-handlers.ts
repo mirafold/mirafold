@@ -156,14 +156,23 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
     if (isClosed() || trustNoticed.has(repoRoot)) return;
     if (trust.allowed || (!trust.risky.length && !trust.unscannable)) return;
     trustNoticed.add(repoRoot);
+    // Named by CATEGORY, never by the repo's own text: a filter driver's
+    // name is any string git accepts, and echoing it put a "run this" lure
+    // into Mirafold's own voice (audit 2026-08-26).
+    const filters = trust.risky.filter((r) => r.key !== "core.fsmonitor").length;
     const what = trust.unscannable
-      ? "an unusual number of content filters"
-      : trust.risky.map((r) => r.key).join(", ");
+      ? "a config Mirafold could not scan, or an unusual number of content filters"
+      : [
+          trust.risky.some((r) => r.key === "core.fsmonitor") ? "core.fsmonitor" : "",
+          filters ? `${filters} content filter driver${filters === 1 ? "" : "s"}` : "",
+        ]
+          .filter(Boolean)
+          .join(" and ");
     viewport({
       type: "notice",
       text:
         `This project's git settings ask git to run a program (${what}), and Mirafold skipped it — ` +
-        `file statuses still work. If you set this up yourself, add ${repoRoot} to ` +
+        `file statuses still work. If you set this up yourself, add ${JSON.stringify(repoRoot)} to ` +
         `${trustFile() ?? "the trusted-repos file"} to allow it.`,
     });
   };
