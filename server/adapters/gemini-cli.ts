@@ -1,11 +1,11 @@
 import path from "node:path";
 import { createLogger, verbose } from "../log";
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { closeSync, constants, mkdirSync, openSync, readFileSync, writeFileSync, existsSync, lstatSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import type { PromptOption, SessionMsg } from "../protocol";
 import { RENDER_GUIDANCE } from "../render-tools";
-import { type AgentSession, capOutput, emitPromptOptions, errText, toolDetail } from "./types";
+import { type AgentSession, capOutput, emitPromptOptions, envWithout, errText, toolDetail } from "./types";
 import { MIRAFOLD_MCP, generativeUIMsg, renderIdFor, renderMcpCommand } from "./render-mcp-cmd";
 import { PermissionLedger, RenderGuidanceOnce, runSlashTurn } from "./wire-helpers";
 import { geminiBin, listGeminiModels, type GeminiModelCatalog } from "./gemini-model-list";
@@ -79,8 +79,9 @@ export class GeminiCliSession implements AgentSession {
   // Set once the user says yes IN THIS SESSION — the disk record is the
   // durable answer, this just avoids re-reading it every turn.
   private trusted = false;
-  // Whether the render-MCP entry has been merged into project settings yet:
-  // deferred until trust is confirmed, unlike the auth stub below.
+  // Whether the render-MCP entry and auth selection have been merged into
+  // project settings yet: both are deferred until Gemini-specific trust is
+  // confirmed.
   private mcpSettingsWritten = false;
 
   // `modelLabel` is undefined until configured or a turn reports the concrete
@@ -113,12 +114,6 @@ export class GeminiCliSession implements AgentSession {
     this.started = Boolean(opts.resumeId);
     this.resumeIdState = new ResumeIdState(opts.resumeId || undefined);
     this.listModels = opts.listModels ?? (() => listGeminiModels(this.workspaceDir));
-    // Only ever creates a settings.json that didn't already exist: a file
-    // that predates this session is the user's, and
-    // consent to modify it — same as the MCP entry below — doesn't exist
-    // yet at construction time. No read, no parse, no backup, no rewrite of
-    // anything pre-existing until ensureTrusted() actually resolves true.
-    this.writeAuthSettingsIfAbsent();
     void this.worker();
   }
 
@@ -144,6 +139,69 @@ export class GeminiCliSession implements AgentSession {
     return path.join(this.workspaceDir, ".gemini", "settings.json");
   }
 
+  /**
+   * Every file this adapter writes in the project is opened with O_NOFOLLOW
+   * (and the backup exclusively): the consented write is to THIS folder's
+   * own files, and a repository must not get to choose where a write lands.
+   * A checkout can ship `.gemini/settings.json` — or the backup's name
+   * beside it — as a symlink (dangling ones pass `existsSync`) pointing at
+   * `~/.ssh/authorized_keys` or any user-owned path; a path check alone
+   * missed the backup write on the first cut (cold review, 2026-08-26), so
+   * the rule lives at open time, for every write, not in a list of paths.
+   * A hardlink — which git cannot deliver — is the accepted residual, as
+   * for the daemon's `.env` guard.
+   */
+  private writeOwnFile(file: string, data: string, exclusive = false) {
+    const { O_WRONLY, O_CREAT, O_TRUNC, O_EXCL, O_NOFOLLOW } = constants;
+    const flags = O_WRONLY | O_CREAT | (O_NOFOLLOW ?? 0) | (exclusive ? O_EXCL : O_TRUNC);
+    let fd: number;
+    try {
+      fd = openSync(file, flags, 0o644);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === "ELOOP" || code === "EMLINK") {
+        throw new Error(
+          `${file} is a symlink — Mirafold only writes this folder's own .gemini files; ` +
+            `replace it with a real file or remove it`,
+        );
+      }
+      throw err;
+    }
+    try {
+      writeFileSync(fd, data);
+    } finally {
+      closeSync(fd);
+    }
+  }
+
+  /**
+   * The directory half of the same rule: O_NOFOLLOW guards only the last
+   * path component, so `.gemini` itself being a symlink (to `~/.gemini`, or
+   * anywhere) is refused here, and a FIFO/device at `settings.json` is
+   * refused before a read could block the daemon. The turn fails with a
+   * sentence the user can act on; nothing is written (audit 2026-08-26).
+   */
+  private assertSettingsPathIsOurs() {
+    const file = this.settingsFile();
+    const check = (p: string, want: "directory" | "file") => {
+      let st;
+      try {
+        st = lstatSync(p);
+      } catch {
+        return; // absent: we would create it, which is fine
+      }
+      const ok = want === "directory" ? st.isDirectory() : st.isFile();
+      if (!ok) {
+        throw new Error(
+          `${p} is ${st.isSymbolicLink() ? "a symlink" : `not a ${want}`} — Mirafold only writes ` +
+            `this folder's own .gemini/settings.json; replace it with a real ${want} or remove it`,
+        );
+      }
+    };
+    check(path.dirname(file), "directory");
+    check(file, "file");
+  }
+
   // Only called once consent exists (writeMcpSettings, post-trust): existing
   // content is preserved and merged over; an unparseable file is rewritten
   // rather than failing the session, but it's the user's file, so their
@@ -155,8 +213,17 @@ export class GeminiCliSession implements AgentSession {
     try {
       return JSON.parse(raw);
     } catch {
-      const backup = `${file}.mirafold-backup`;
-      writeFileSync(backup, raw);
+      // Exclusive create: never through a link a checkout planted under the
+      // backup's name, never over an earlier backup — a taken name gets a
+      // timestamped sibling instead.
+      let backup = `${file}.mirafold-backup`;
+      try {
+        this.writeOwnFile(backup, raw, true);
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+        backup = `${file}.mirafold-backup.${Date.now()}`;
+        this.writeOwnFile(backup, raw, true);
+      }
       createLogger("gemini-cli").warn(
         `existing ${file} is not valid JSON — rewriting it (original saved to ${backup})`,
       );
@@ -166,16 +233,7 @@ export class GeminiCliSession implements AgentSession {
 
   private writeSettings(cfg: Record<string, any>) {
     mkdirSync(path.dirname(this.settingsFile()), { recursive: true });
-    writeFileSync(this.settingsFile(), JSON.stringify(cfg, null, 2));
-  }
-
-  // Runs at construction, before any trust decision. Declares which auth type
-  // to use — but ONLY by creating a brand-new file: that's Mirafold's own
-  // bookkeeping, nothing pre-existing touched. A file that's already there,
-  // valid or not, is left completely alone until writeMcpSettings runs.
-  private writeAuthSettingsIfAbsent() {
-    if (existsSync(this.settingsFile())) return;
-    this.writeSettings({ security: { auth: { selectedType: "gemini-api-key" } } });
+    this.writeOwnFile(this.settingsFile(), JSON.stringify(cfg, null, 2));
   }
 
   // Runs only once ensureTrusted() has actually resolved true: the one place
@@ -183,6 +241,7 @@ export class GeminiCliSession implements AgentSession {
   // Sets the auth stub too (not just the MCP entry) — a file that predated
   // this session and was left untouched at construction may not have it yet.
   private writeMcpSettings() {
+    this.assertSettingsPathIsOurs();
     const cfg = this.readSettings();
     cfg.security = { ...cfg.security, auth: { ...cfg.security?.auth, selectedType: "gemini-api-key" } };
     cfg.mcpServers = {
@@ -221,7 +280,7 @@ export class GeminiCliSession implements AgentSession {
    * Resolves to whether this turn may run.
    */
   private ensureTrusted(): Promise<boolean> {
-    if (this.trusted || isWorkspaceTrusted(this.workspaceDir)) {
+    if (this.trusted || isWorkspaceTrusted(this.workspaceDir, "gemini-cli")) {
       this.trusted = true;
       return Promise.resolve(true);
     }
@@ -236,14 +295,16 @@ export class GeminiCliSession implements AgentSession {
         tool: "Gemini",
         detail:
           `trust this folder — ${this.workspaceDir}. ` +
-          `Yes lets Gemini run here and adds Mirafold's render tools and API-key auth ` +
-          `to this folder's .gemini/settings.json (merged, never overwritten; terminal Gemini reads it too).`,
+          `Yes lets Gemini run here, adds Mirafold's render tools to this folder's ` +
+          `.gemini/settings.json, and sets its auth type to API key (replacing any other choice). ` +
+          `Other settings are merged; if that file is not valid JSON, its original bytes are saved ` +
+          `beside it before Mirafold replaces it. Terminal Gemini reads this file too.`,
       },
       TRUST_PROMPT_TIMEOUT_MS,
       (allow) => {
         if (allow) {
           this.trusted = true;
-          trustWorkspace(this.workspaceDir); // remembered: asked once, ever
+          trustWorkspace(this.workspaceDir, "gemini-cli"); // remembered for this disclosed effect
         }
       },
     );
@@ -270,7 +331,12 @@ export class GeminiCliSession implements AgentSession {
       try {
         const trimmed = item.trim();
         if (trimmed === "/model" || trimmed.startsWith("/model ")) {
-          await this.runModelCommand(trimmed.slice("/model".length).trim());
+          // The catalog is read by spawning Gemini IN this folder
+          // (gemini-model-list.ts), so it sits behind the same trust gate as
+          // a turn: only Gemini's own untrusted-folder rule stood between a
+          // checkout's `.gemini/settings.json` and that spawn (2026-08-26).
+          if (!(await this.ensureTrusted())) this.refuseUntrusted();
+          else await this.runModelCommand(trimmed.slice("/model".length).trim());
         } else {
           await this.runTurn(item);
         }
@@ -350,13 +416,7 @@ export class GeminiCliSession implements AgentSession {
     // leave the session usable (say why, end the turn) rather than spawn a
     // child that exits 55 with a stderr the user can't act on.
     if (!(await this.ensureTrusted())) {
-      this.emit({
-        type: "notice",
-        text:
-          `Gemini won't run in a folder you haven't trusted. Nothing ran. ` +
-          `Send another prompt to be asked again, or switch agents.`,
-      });
-      this.emit({ type: "turn_end" });
+      this.refuseUntrusted();
       return;
     }
     // The consequential half of settings.json: only merged in once the
@@ -366,6 +426,17 @@ export class GeminiCliSession implements AgentSession {
       this.mcpSettingsWritten = true;
     }
     return this.spawnTurn(text);
+  }
+
+  /** A denied (or timed-out) trust ask: say why, end the turn, spawn nothing. */
+  private refuseUntrusted() {
+    this.emit({
+      type: "notice",
+      text:
+        `Gemini won't run in a folder you haven't trusted. Nothing ran. ` +
+        `Send another prompt to be asked again, or switch agents.`,
+    });
+    this.emit({ type: "turn_end" });
   }
 
   private spawnTurn(text: string): Promise<void> {
@@ -394,7 +465,7 @@ export class GeminiCliSession implements AgentSession {
       const child = spawn(geminiBin(), args, {
         cwd: this.workspaceDir,
         env: {
-          ...process.env, // GEMINI_API_KEY lives here; never serialized to the wire
+          ...envWithout(), // GEMINI_API_KEY lives here (never the daemon's own secrets); never serialized to the wire
           // Only reached once ensureTrusted() holds the user's yes. This is
           // ALSO what makes auth work, which is not obvious: 0.53.0 does not
           // load a project's `.gemini/settings.json` for an UNTRUSTED folder,
@@ -534,7 +605,7 @@ export class GeminiCliSession implements AgentSession {
       }
       case "tool_use": {
         const name = String(ev["tool_name"] ?? "");
-        const id = String(ev["tool_id"] ?? randomUUID());
+        const id = String(ev["tool_id"] ?? "") || randomUUID();
         const params = (ev["parameters"] ?? {}) as Record<string, unknown>;
         if (name.startsWith(MCP_PREFIX)) {
           // Our generative-UI tools: buffer until the result carries the id.
