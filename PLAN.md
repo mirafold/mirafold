@@ -2925,7 +2925,7 @@ glyph beside the chevron.
     `-folder-open` in the tree; a dir name and a file name at the same
     depth share the same x.
 
-## Phase CA — Codex on app-server: terminal-equal permissions (written + opened 2026-08-25; Kyle-directed)
+## Phase CA — Codex on app-server: terminal-equal permissions (opened + ✅ COMPLETE 2026-08-25; Kyle-directed; PR `feature/codex-app-server` → `next`; hosted acceptance is Kyle-run)
 
 **Finding (verified 2026-08-25).** Mirafold passes Codex **no** sandbox or
 approval settings (`codex.ts` leaves `sandboxMode`/`approvalPolicy` unset
@@ -3032,7 +3032,22 @@ catalogs (`codex-model-list.ts`, `codex-skills-list.ts`).
   - Done when: Tier-2 proves request → bar → answer → command proceeds or
     is denied, and a denied request never runs.
 
-- [ ] **Step CA.4 — Fidelity acceptance (live, Kyle-run)**
+- [x] **Step CA.4 — Fidelity acceptance** — automated live DONE 2026-08-25;
+  hosted "feels like the terminal" judgment is Kyle's. `codex-live.ltest.ts`
+  (Tier-4, real binary) updated to the app-server transport and green: a real
+  Ollama turn streams text through the new stack with one turn_end and the
+  `/effort none` control; the pinned first-party catalog still holds; an
+  unreachable endpoint now surfaces Codex's own "Reconnecting… (willRetry)"
+  as retry notices and the discovered-local watchdog ends it (app-server
+  retries a connection failure forever, exactly as the TUI does — a hosted
+  blip shows the same notices and interrupt is the out). Beyond the suite,
+  three live smokes against the real binary during CA.2/CA.3 proved: streamed
+  prose + model-from-thread/start + resume id; a DECLINED out-of-workspace
+  write never ran; an APPROVED one did (the file was written). **Left for
+  Kyle:** a hosted session (subscription/api-key) doing real sandboxed work —
+  commit, a network call — and confirming the approve/deny prompts feel like
+  Codex in the terminal. That can't be automated (Tier-4 forbids metered
+  models).
   - `codex-live.ltest.ts`: in a workspace-write sandbox, the agent commits
     → Mirafold prompts → approve → the commit lands; deny → it doesn't;
     `~/.codex/config.toml` byte-identical before and after (never written);
