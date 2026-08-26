@@ -45,7 +45,13 @@ export class PermissionLedger {
   ): Promise<boolean> {
     const id = request.id ?? randomUUID();
     return new Promise((resolve) => {
+      // Settled-once is structural, not a property of the callers: a
+      // listener on `permission_resolved` that re-enters the ledger during a
+      // denyAll sweep must not resolve one ask twice.
+      let settled = false;
       const finish = (allow: boolean, how: PermissionResolution) => {
+        if (settled) return;
+        settled = true;
         clearTimeout(timer);
         this.pending.delete(id);
         this.emit({ type: "permission_resolved", id, allow });

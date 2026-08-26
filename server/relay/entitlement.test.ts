@@ -126,3 +126,23 @@ test("malformed exchange response degrades to no token, never throws", async () 
     fetchMock.mock.restore();
   }
 });
+
+// AUDIT 2026-08-26: no key bytes in the log, not even a prefix.
+test("AUDIT: a refused license key is never echoed into the log, not even its prefix", async () => {
+  const lines: string[] = [];
+  const warn = mock.method(console, "warn", (...args: unknown[]) => lines.push(args.map(String).join(" ")));
+  const error = mock.method(console, "error", (...args: unknown[]) => lines.push(args.map(String).join(" ")));
+  try {
+    const source = createEntitlementTokenSource({
+      licenseKey: "mf_SECRETSECRETSECRET",
+      url: "http://127.0.0.1:1/api/entitlement",
+      fetchImpl: (async () => new Response(JSON.stringify({ reason: "lapsed" }), { status: 403 })) as unknown as typeof fetch,
+    } as unknown as Parameters<typeof createEntitlementTokenSource>[0]);
+    await source.get().catch(() => undefined);
+    source.stop();
+  } finally {
+    warn.mock.restore();
+    error.mock.restore();
+  }
+  assert.ok(!lines.some((l) => l.includes("mf_SEC")), lines.join(" | "));
+});

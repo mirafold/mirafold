@@ -40,7 +40,9 @@ export type EntitlementTokenSource = {
 /** What index.ts logs at boot — which supply is in play. */
 export type EntitlementMode = "token-override" | "license-key" | "none";
 
-const mask = (s: string) => `${s.slice(0, 6)}…`;
+// Never key bytes in a log line, not even a prefix — the flight recorder
+// is promised paste-safe (audit 2026-08-26).
+const mask = (_s: string) => "[license key]";
 
 export const DEFAULT_ENTITLEMENT_URL = "https://mirafold.com/api/entitlement";
 

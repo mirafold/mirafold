@@ -125,3 +125,14 @@ test("handshake round-trips per role and rejects the wrong role or key", async (
   const wrong = await derivePair("some-other-code-entirely");
   await assert.rejects(() => openHandshake(wrong, "c", hello));
 });
+
+// AUDIT 2026-08-26: a handshake payload is exactly the peer's 32-byte nonce.
+test("AUDIT: a handshake carrying a nonce of the wrong length is refused", async () => {
+  const pair = await derivePair("a-long-enough-pairing-code-for-tests");
+  for (const bad of [0, 16, 31, 33]) {
+    const frame = await sealHandshake(pair, "c", randomBytes(bad));
+    await assert.rejects(openHandshake(pair, "c", frame), /wrong length/);
+  }
+  const ok = await sealHandshake(pair, "c", randomBytes(32));
+  assert.equal((await openHandshake(pair, "c", ok)).length, 32);
+});

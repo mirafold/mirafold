@@ -109,7 +109,13 @@ export async function openHandshake(
   frame: string,
 ): Promise<Bytes> {
   const buf = fromB64u(frame);
-  return openAead(pair.hs, buf.subarray(0, 12), `hs-${role}`, buf.subarray(12));
+  const nonce = await openAead(pair.hs, buf.subarray(0, 12), `hs-${role}`, buf.subarray(12));
+  // The payload IS the peer's 32-byte session nonce; anything else is not a
+  // handshake we made (a zero-length one opened before 2026-08-26 — harmless
+  // since our own nonce keeps the frame keys fresh, but not a frame to
+  // accept).
+  if (nonce.length !== 32) throw new Error("relay handshake nonce has the wrong length");
+  return nonce;
 }
 
 /**

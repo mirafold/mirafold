@@ -110,3 +110,16 @@ test("scrub leaves ordinary log text untouched", () => {
     assert.equal(scrub(line), line, line);
   }
 });
+
+// AUDIT 2026-08-26: engine stderr and client-reported errors are logged
+// verbatim; a newline forged a whole second log line and an ESC sequence
+// retitled the terminal. One record is one line, with no control bytes.
+test("AUDIT: a log line cannot carry a forged second line or a terminal control sequence", async () => {
+  const { sanitizeLogLine } = await import("./log");
+  const hostile = "engine said hi\n[2026-08-26T00:00:00.000Z] [auth] token accepted FORGED\r\n\u001b]0;retitled\u0007\u0000tail";
+  const out = sanitizeLogLine(hostile);
+  assert.ok(!out.includes("\n") && !out.includes("\r"), out);
+  assert.ok(!/[\u0000-\u001f\u007f]/.test(out), "no control bytes survive");
+  assert.match(out, /engine said hi⏎\[2026/, "the newline is shown, not honored");
+  assert.match(out, /retitledtail$/);
+});
