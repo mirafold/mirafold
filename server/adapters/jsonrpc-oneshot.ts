@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { envWithout } from "./types";
 
 // Provider catalog replies are normally tens of kilobytes. Bound cumulative
 // stdout as it crosses the process boundary so a corrupt binary cannot retain
@@ -28,6 +29,7 @@ export function jsonRpcOneShot<T>(opts: {
   return new Promise((resolve, reject) => {
     const child = spawn(opts.command, opts.args, {
       ...(opts.cwd ? { cwd: opts.cwd } : {}),
+      env: envWithout(), // never the daemon's own secrets
       stdio: ["pipe", "pipe", "ignore"],
     });
     let settled = false;
