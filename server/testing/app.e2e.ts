@@ -566,6 +566,10 @@ test("a fenced block the agent types in prose wears the code painting's header: 
   await page.keyboard.press("Enter");
   const fence = page.locator(".markdown-fence", { hasText: "stablePainting" });
   await fence.waitFor({ timeout: 15_000 });
+  // The fence streams in; copy is proven against the COMPLETE block, so
+  // wait for the turn to end before clicking (a slow runner clicked mid-stream
+  // and copied a partial fence).
+  await page.locator(".stop-btn").waitFor({ state: "detached", timeout: 30_000 });
   assert.equal(await fence.locator(".rc-code-name").innerText(), "ts");
   assert.ok((await fence.locator("pre.rc-code-body code.hljs .hljs-keyword").count()) > 0, "fence lost its highlighting");
   assert.equal(await fence.locator(".rc, .rc-card").count(), 0, "a fence is prose, never a painting");
@@ -574,7 +578,6 @@ test("a fenced block the agent types in prose wears the code painting's header: 
   await fence.locator(".rc-copy", { hasText: "copied" }).waitFor({ timeout: 5_000 });
   const clipboard = await page.evaluate(() => navigator.clipboard.readText());
   assert.match(clipboard, /^const stablePainting = "checkpoint_x+";$/, "the clipboard holds the fence verbatim");
-  await page.locator(".activity-line").waitFor({ state: "detached", timeout: 30_000 });
 });
 
 test("status-list component: one verdict pill per row, glyph + word, all five states", async () => {
@@ -1434,8 +1437,9 @@ test("! cd .. — silent success says so, the escape is announced, and the agent
 test("!! echo — the silent bang shows its `!!` strip and output, and the agent never answers", async () => {
   // The previous test's turn must be fully over first: its trailing painting
   // would otherwise land after this block (a bang row is a hard document
-  // boundary) and read as an answer to the silent command.
-  await page.waitForSelector(".activity-line", { state: "detached", timeout: 30_000 });
+  // boundary) and read as an answer to the silent command. The stop button
+  // is the whole-turn signal; the activity line can blink off mid-turn.
+  await page.locator(".stop-btn").waitFor({ state: "detached", timeout: 30_000 });
   await page.locator("textarea").click();
   await page.keyboard.type("!!echo shell-only");
   await page.keyboard.press("Enter");
@@ -1458,7 +1462,7 @@ test("!! echo — the silent bang shows its `!!` strip and output, and the agent
     return n;
   });
   assert.equal(after, 0, "a !! command must not start an agent turn");
-  assert.equal(await page.locator(".activity-line").count(), 0, "no turn is running");
+  assert.equal(await page.locator(".stop-btn").count(), 0, "no turn is running");
 });
 
 test("entering a session puts the caret in the prompt box — no click first", async () => {
@@ -1688,10 +1692,20 @@ test("E.3: the files panel lists the working tree, opens a file beside the trans
   assert.equal(await page.locator(".folder-tree-node-icon-folder, .folder-tree-node-icon-folder-open").count(), 0);
   // Folder and file names share one column at the same depth: the spacer
   // holds the icon's width on directory rows.
-  const serverDir = page.locator(".folder-tree-dir", { hasText: "server" }).first();
-  await serverDir.waitFor({ timeout: 15_000 });
-  const dirNameX = (await serverDir.locator(".folder-tree-name").boundingBox())!.x;
-  const fileNameX = (await pkg.locator(".folder-tree-name").boundingBox())!.x;
+  // Geometry at REST and in ONE frame: the panel slides in (folder-tree-in),
+  // and two boundingBox reads straddling that transform disagree by a pixel.
+  await settled(page, ".folder-tree-panel");
+  // (No named inner functions here: tsx wraps them in an esbuild `__name`
+  // helper that does not exist inside the page.)
+  const [dirNameX, fileNameX] = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll(".folder-tree-ul .folder-tree-row")];
+    const dir = rows.find((r) => r.classList.contains("folder-tree-dir"));
+    const file = rows.find((r) => r.classList.contains("folder-tree-file-row"));
+    return [
+      dir?.querySelector(".folder-tree-name")?.getBoundingClientRect().x ?? NaN,
+      file?.querySelector(".folder-tree-name")?.getBoundingClientRect().x ?? NaN,
+    ];
+  });
   assert.ok(Math.abs(dirNameX - fileNameX) < 0.5, `names align (dir ${dirNameX}, file ${fileNameX})`);
   assert.equal(
     await pkg.locator(".folder-tree-caret + .folder-tree-node-icon-config[aria-hidden=true] + .folder-tree-name").count(),
