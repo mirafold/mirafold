@@ -364,3 +364,21 @@
   padding-left: 8px;
   border-left: 1px solid var(--border-faint);
 }
+
+/* A fold that is still growing: the gear breathes like a running call's caret. */
+.tool-activity-live .tool-activity-label svg {
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+/* A short remark the agent made between two calls, replayed inside the fold
+   as inert plain text in transcript order. */
+.tool-activity-narration {
+  margin: 2px 4px;
+  padding: 2px 0;
+  font-family: var(--font-mono);
+  font-size: 0.82em;
+  line-height: 1.45;
+  color: var(--fg-dim);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

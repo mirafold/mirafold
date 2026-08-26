@@ -94,20 +94,38 @@ test("provider completions open before submit, transcript click focuses, and set
         true,
       );
 
-      // Successful provider activity becomes one terminal-sized record only
-      // when the turn settles. A failure remains visible at top level, and
-      // narration between commands (Codex's cadence) rides inside the fold
+      // Successful provider activity becomes one terminal-sized record LIVE,
+      // while the turn still runs: the finished calls fold as "working", the
+      // call in flight stays its own pulsing row beneath. A failure remains
+      // visible at top level, and narration between commands (Codex's
+      // cadence — thinking, or a short spoken remark) rides inside the fold
       // instead of shattering it into singletons.
       await prompt.fill("show transcript compact tool activity");
       await prompt.press("Enter");
       await page2.locator(".stop-btn").waitFor();
-      await page2.locator(".stop-btn").waitFor({ state: "detached" });
-      assert.equal(await page2.locator(".tool-activity-group").count(), 1);
-      // The fold's count speaks of ACTIONS only — absorbed narration
-      // (thinking rows riding inside the fold) must never inflate it.
+      // Mid-turn, during the scenario's deliberately slow third call.
+      const runningRow = page2.locator(".tool-group .tool-block.is-running");
+      await runningRow.waitFor({ timeout: 10_000 });
+      await page2.locator(".tool-activity-group.tool-activity-live").waitFor();
       assert.match(
         await page2.locator(".tool-activity-label").innerText(),
-        /worked · 2 actions/,
+        /working · 2 actions/,
+        "the finished calls fold while the turn is still running",
+      );
+      assert.match(await runningRow.innerText(), /yarn lint/, "the running call is the visible row");
+      // Expand the running call by hand; that choice must survive its move
+      // into the fold once it finishes.
+      await runningRow.locator(".tool-head").click();
+      assert.equal(await runningRow.locator(".tool-body").count(), 1);
+
+      await page2.locator(".stop-btn").waitFor({ state: "detached" });
+      assert.equal(await page2.locator(".tool-activity-group").count(), 1);
+      assert.equal(await page2.locator(".tool-activity-live").count(), 0, "a settled fold is no longer live");
+      // The fold's count speaks of ACTIONS only — absorbed narration
+      // (thinking and remarks riding inside the fold) must never inflate it.
+      assert.match(
+        await page2.locator(".tool-activity-label").innerText(),
+        /worked · 3 actions/,
         "the fold label must count tool calls only, not absorbed narration",
       );
       assert.equal(await page2.locator(".tool-group").count(), 1);
@@ -117,17 +135,38 @@ test("provider completions open before submit, transcript click focuses, and set
         0,
         "interleaved narration leaked outside the settled fold",
       );
+      assert.equal(
+        await page2.locator(".turn-assistant", { hasText: "running lint next" }).count(),
+        0,
+        "a short remark between commands leaked outside the fold as prose",
+      );
       await page2.locator(".tool-activity-head").click();
       assert.equal(
         await page2.evaluate(() => document.activeElement?.classList.contains("tool-activity-head")),
         true,
         "a transcript control click was redirected to the prompt",
       );
-      assert.equal(await page2.locator(".tool-activity-calls .tool-block").count(), 2);
+      assert.equal(await page2.locator(".tool-activity-calls .tool-block").count(), 3);
       assert.equal(
         await page2.locator(".tool-activity-calls .thinking-block", { hasText: "Weighing which check" }).count(),
         1,
         "the fold's expansion must replay the interleaved narration in place",
+      );
+      assert.equal(
+        await page2.locator(".tool-activity-calls .tool-activity-narration", { hasText: "running lint next" }).count(),
+        1,
+        "the fold's expansion must replay the absorbed remark in place, as plain text",
+      );
+      const lintInFold = page2.locator(".tool-activity-calls .tool-block", { hasText: "yarn lint" });
+      assert.equal(
+        await lintInFold.locator(".tool-body").count(),
+        1,
+        "the user's expand must survive the call's move into the fold",
+      );
+      assert.equal(
+        await page2.locator(".tool-activity-calls .tool-block", { hasText: "yarn typecheck" }).locator(".tool-body").count(),
+        0,
+        "an untouched call stays collapsed",
       );
 
       // Event delegation must treat ordinary transcript links as controls too.

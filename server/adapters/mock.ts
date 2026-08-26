@@ -1429,8 +1429,10 @@ export class MockSession implements AgentSession {
     this.endTurn(delay);
   }
 
-  /** Deterministic hook: two successful actions fold together after the
-   * turn, while the failed action remains an honest top-level row. */
+  /** Deterministic hook: the successful actions fold together — live, while
+   * the turn still runs (the third call is slow on purpose so a viewer can
+   * see the fold beside the running row), and settled after — while the
+   * failed action remains an honest top-level row. */
   private playToolActivity() {
     const calls: Array<{
       name: string;
@@ -1439,6 +1441,10 @@ export class MockSession implements AgentSession {
       isError?: boolean;
       // Codex-style narration between commands: the fold must absorb it.
       thinkBefore?: string;
+      // A short spoken remark between commands: absorbed the same way.
+      sayBefore?: string;
+      // How long the call appears to run (a window for live assertions).
+      runFor?: number;
     }> = [
       {
         name: "Read",
@@ -1450,6 +1456,13 @@ export class MockSession implements AgentSession {
         detail: "yarn typecheck",
         output: "Done in 1.2s",
         thinkBefore: "Weighing which check to run next.",
+      },
+      {
+        name: "Bash",
+        detail: "yarn lint",
+        output: "No lint errors",
+        sayBefore: "Typecheck is clean — running lint next.",
+        runFor: 1_500,
       },
       {
         name: "Bash",
@@ -1467,6 +1480,11 @@ export class MockSession implements AgentSession {
         this.schedule(() => this.emit({ type: "thinking_delta", text }), delay);
         delay += 30;
       }
+      if (call.sayBefore) {
+        const text = call.sayBefore;
+        this.schedule(() => this.emit({ type: "text_delta", text }), delay);
+        delay += 30;
+      }
       this.schedule(() => {
         this.emit({ type: "status", state: "tool", label: call.name });
         this.emit({
@@ -1476,7 +1494,7 @@ export class MockSession implements AgentSession {
           id,
         });
       }, delay);
-      delay += 90;
+      delay += call.runFor ?? 90;
       this.schedule(
         () =>
           this.emit({

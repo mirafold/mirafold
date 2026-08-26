@@ -8,6 +8,9 @@ import { ToolBlock, formatBytes } from "./ToolBlock";
 test("a malformed MultiEdit input renders instead of throwing (engine data is checked per element)", () => {
   const html = renderToStaticMarkup(
     createElement(ToolBlock, {
+      id: 1,
+      toggled: null,
+      onToggle: () => {},
       name: "MultiEdit",
       input: { file_path: "a.ts", edits: [null, 42, { old_string: "a", new_string: "b" }] },
       output: "",

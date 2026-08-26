@@ -50,6 +50,20 @@
     gap: 12px;
   }
 
+  /* Thumb reach: centered, and a 40px target. */
+  .jump-to-latest {
+    right: auto;
+    left: 50%;
+    bottom: 10px;
+    width: 40px;
+    height: 40px;
+    transform: translateX(-50%) translateY(6px);
+  }
+
+  .jump-to-latest.is-visible {
+    transform: translateX(-50%);
+  }
+
   .response-document {
     gap: 12px;
   }

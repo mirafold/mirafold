@@ -8,6 +8,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
+import { CodeHead } from "./Code";
 
 // remark-gfm's task-list checkbox (`- [x] thing`) renders as a bare
 // `<input disabled>` with no accessible name — a screen reader announces
@@ -24,6 +25,48 @@ function childrenText(children: ReactNode): string {
     })
     .join("")
     .trim();
+}
+
+/** The verbatim text of a rendered node tree (highlight.js token spans
+ *  included), untrimmed — a fence's first line may be indented on purpose.
+ *  Exported for Tier-1. */
+export function nodeText(children: ReactNode): string {
+  return Children.toArray(children)
+    .map((c) => {
+      if (typeof c === "string") return c;
+      if (typeof c === "number") return String(c);
+      if (isValidElement(c)) return nodeText((c.props as { children?: ReactNode }).children);
+      return "";
+    })
+    .join("");
+}
+
+/** The language a fence named (` ```ts `), read off the class react-markdown
+ *  gives its <code>; undefined for a bare fence. Exported for Tier-1. */
+export function fenceLanguage(className: string | undefined): string | undefined {
+  return className?.match(/(?:^|\s)language-([\w+#.-]+)/)?.[1];
+}
+
+/** A fenced code block the agent typed in prose, dressed exactly like the
+ *  `code` painting: the same header strip (language, copy) over the same
+ *  body — so "code the agent offers you" is one object whichever way it
+ *  arrived (Kyle, 2026-08-25). Deliberately NOT `.rc`: a fence is prose,
+ *  not a painting, and must not count as one. */
+function FencedCode({ node: _node, children, ...props }: ComponentProps<"pre"> & { node?: unknown }) {
+  const code = Children.toArray(children).find(isValidElement) as
+    | ReactElement<{ className?: string; children?: ReactNode }>
+    | undefined;
+  const lang = fenceLanguage(code?.props.className);
+  // The body ends in the fence's own newline; the clipboard shouldn't.
+  const text = nodeText(code?.props.children).replace(/\n$/, "");
+  return (
+    <div className="markdown-fence rc-code">
+      <CodeHead name={lang ?? "code"} code={text} />
+      <pre {...props} className="rc-code-body">
+        {children}
+      </pre>
+    </div>
+  );
 }
 
 // react-markdown blanks the href of any scheme off its allowlist
@@ -71,6 +114,7 @@ export const mdOverrides = {
       {children}
     </code>
   ),
+  pre: FencedCode,
   table: ScrollableMarkdownTable,
   li: ({ node: _node, children, ...props }: ComponentProps<"li"> & { node?: unknown }) => {
     const kids = Children.toArray(children);

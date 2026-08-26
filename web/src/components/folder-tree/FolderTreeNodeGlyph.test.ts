@@ -2,9 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { folderTreeNodeGlyphKind } from "./FolderTreeNodeGlyph";
 
-test("folderTreeNodeGlyphKind distinguishes hierarchy and broad file families", () => {
-  assert.equal(folderTreeNodeGlyphKind("src", "dir"), "folder");
-  assert.equal(folderTreeNodeGlyphKind("src", "dir", true), "folder-open");
+test("folderTreeNodeGlyphKind distinguishes symlinks and broad file families", () => {
   assert.equal(folderTreeNodeGlyphKind("current.ts", "symlink"), "symlink");
 
   assert.equal(folderTreeNodeGlyphKind("PromptBox.TSX", "file"), "code");

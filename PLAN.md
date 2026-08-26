@@ -2808,7 +2808,7 @@ off fresh `next`, one PR, merged before the next is cut.
   - Done when: the e2e proves a `!!` command runs, shows, replays, and the
     mock adapter's prompt log stays empty.
 
-## Phase TR — Transcript readability (written 2026-08-25; NOT YET OPENED)
+## Phase TR — Transcript readability (opened + ✅ COMPLETE 2026-08-25; Kyle-directed; PR `feature/transcript-readability` → `next`)
 
 Findings (2026-08-25 sweep): per-call bodies are always collapsed except on
 error (`ToolBlock.tsx`); the higher-level fold ("worked · N actions",
@@ -2821,8 +2821,19 @@ Prose code fences render as a bare `<pre>` with no copy button while
 `render_code` has a header strip + `CopyButton`. Folder rows carry a folder
 glyph beside the chevron.
 
-- [ ] **Step TR.1 — The fold forms live, absorbs short narration, keeps
-  the user's expands**
+- [x] **Step TR.1 — The fold forms live, absorbs short narration, keeps
+  the user's expands** — done 2026-08-25: `groupToolActivity` (was
+  `groupSettledTools`) folds on *finished + successful* rather than settled,
+  so the fold grows mid-turn ("working · N actions", gear pulsing) with the
+  in-flight call as its own row beneath, and relabels "worked" at
+  `turn_end`; short assistant remarks (≤ 2 lines, ≤ 160 chars —
+  `isShortNarration`) are absorbed like interior thinking and replayed inside
+  the fold as inert plain text; tool disclosure is lifted into `OutputZone`
+  (`toolToggles`, the `expandedThinking` pattern) so a hand-expanded call
+  stays expanded after it moves into the fold. Mock `tool-activity` gained a
+  remark + a deliberately slow third call; `shell-effects.e2e.ts` asserts
+  the live fold, the running row, the survive-the-move expand, and the
+  absorbed remark. Tier-1 929, Tier-3 116 green.
   - Decisions (Kyle): fold **during** the turn — "working · N actions"
     growing, only the in-flight call shown beneath it as its own row;
     flips to "worked · N actions" at turn end. Narration of **≤ 2 lines**
@@ -2844,7 +2855,18 @@ glyph beside the chevron.
     fold and the paragraph outside; a click-expanded call is still expanded
     after `turn_end`; the failing call still stands alone, open.
 
-- [ ] **Step TR.2 — Jump to latest**
+- [x] **Step TR.2 — Jump to latest** — done 2026-08-25: `useFollowTail`
+  mirrors `following` into render state (`detached`) and gains
+  `jumpToTail()`; the `↓` pill is a sibling of the scroller inside a new
+  `.transcript-column` wrapper — deliberately OUTSIDE the scroll flow (a
+  sticky child was scrolled "into view" by focus/automation, which re-armed
+  following and hid it mid-tap) — bottom-right on desktop, bottom-center and
+  40 px on the phone, fades in/out, hidden from the tab order and a11y tree
+  while at the tail; click = arm + scroll + focus the prompt. New
+  `follow-tail.e2e.ts` (desktop + phone: appears only in scrollback,
+  placement, click/tap returns to the tail, sending a prompt hides it). The
+  two live-document visual baselines were regenerated: that snapshot scrolls
+  to the top, so the pill now legitimately shows in it.
   - Decision (Kyle): a small round pill with a single `↓`, bottom-right of
     the transcript scroller inside `.zone-row`, ~12 px above the scroller's
     bottom edge (above the activity line / prompt box, out of the 76ch
@@ -2861,7 +2883,17 @@ glyph beside the chevron.
     click → at bottom, following, pill gone; never visible while at bottom;
     phone viewport places it bottom-center.
 
-- [ ] **Step TR.3 — Prose code fences get `render_code`'s header strip**
+- [x] **Step TR.3 — Prose code fences get `render_code`'s header strip** —
+  done 2026-08-25: `CodeHead` extracted from `registry/Code.tsx` and shared;
+  `mdOverrides.pre` (`FencedCode` in `Md.tsx`) wraps every fence in
+  `.markdown-fence.rc-code` — the painting's box, the same head (language
+  from the highlight class, else "code"; `CopyButton` with the verbatim
+  text) over `pre.rc-code-body` — deliberately not `.rc`, so a fence never
+  counts as a painting. Tier-1 (`Md.test.ts`: head + copy + body class, bare
+  fence, inline code untouched, `fenceLanguage`/`nodeText`), Tier-3
+  (`app.e2e.ts`: the live-document fence shows `ts`, highlighting intact,
+  copy → "copied" and the clipboard holds the fence verbatim). Both
+  live-document visual baselines regenerated again for the new look.
   - Decision (Kyle, "option 2"): a fenced code block the agent types in
     prose renders with the same header strip as the `render_code` painting
     — language on the left (when the fence names one), `copy` on the right
@@ -2877,7 +2909,13 @@ glyph beside the chevron.
   - Done when: e2e — a fenced block in a mock turn shows the head with the
     language and a `copy` that flips to `copied`; `render_code` unchanged.
 
-- [ ] **Step TR.4 — No folder icon on folder rows**
+- [x] **Step TR.4 — No folder icon on folder rows** — done 2026-08-25:
+  directory rows and the root row render `FolderTreeNodeSpacer` (the empty
+  14 px icon column) in place of the folder glyph; the chevron is the folder.
+  The `folder`/`folder-open` glyph kinds and the `open` prop are gone from
+  `FolderTreeNodeGlyph` (leaves only). `app.e2e.ts` asserts chevron → spacer
+  → name on the root both open and closed, zero folder glyphs, and that a
+  dir name and a file name at the same depth share one x.
   - Decision (Kyle): drop the folder glyph from directory rows and the root
     row; keep the rotating chevron; files keep their icons; keep an empty
     spacer where the glyph was so names align in one column.

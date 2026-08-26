@@ -298,18 +298,14 @@
   transition: opacity 0.12s ease, color 0.12s ease;
 }
 
-.folder-tree-root-row .folder-tree-node-icon {
-  width: 14px;
-  height: 14px;
+/* Directory rows carry no icon — the chevron is the folder — but keep the
+   14px column so folder and file names align at every depth. */
+.folder-tree-node-spacer {
+  display: inline-block;
 }
 
 .folder-tree-row:hover .folder-tree-node-icon {
   opacity: 1;
-}
-
-.folder-tree-node-icon-folder,
-.folder-tree-node-icon-folder-open {
-  color: var(--info);
 }
 
 .folder-tree-node-icon-code,

@@ -111,3 +111,63 @@ body {
   gap: 14px;
 }
 
+/* The transcript column: the scroller, and the jump-to-latest pill floating
+   over its bottom edge from outside the scroll flow. */
+.transcript-column {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+
+.jump-to-latest {
+  position: absolute;
+  z-index: 2;
+  right: 20px;
+  bottom: 12px;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--border-mid);
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--fg-body);
+  font: 1.05em/1 var(--font-mono);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.25);
+  cursor: pointer;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(6px);
+  transition:
+    opacity 0.16s ease,
+    transform 0.16s ease,
+    visibility 0s linear 0.16s;
+}
+
+.jump-to-latest.is-visible {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  pointer-events: auto;
+  transition:
+    opacity 0.16s ease,
+    transform 0.16s ease,
+    visibility 0s;
+}
+
+.jump-to-latest:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-hover);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jump-to-latest {
+    transition: none;
+    transform: none;
+  }
+}
+
