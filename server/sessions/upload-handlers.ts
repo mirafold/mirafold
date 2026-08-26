@@ -51,20 +51,42 @@ export function safeUploadName(raw: unknown): string {
   return cleaned.slice(0, 120);
 }
 
-/** name.ext → name-2.ext, name-3.ext … until the name is free in dir. */
-export function collisionFreePath(dir: string, name: string): string {
-  const ext = path.extname(name);
-  const stem = name.slice(0, name.length - ext.length);
-  let candidate = path.join(dir, name);
-  for (let n = 2; fs.existsSync(candidate); n++) {
-    candidate = path.join(dir, `${stem}-${n}${ext}`);
-  }
-  return candidate;
+// One random, daemon-owned 0700 root per daemon (mkdtemp's mode) — never a
+// fixed name under shared /tmp, where another local user could pre-create
+// the parent and own every session dir beneath it (rename it away, plant a
+// symlink under the next upload's name, swap a staged file's bytes before
+// the agent reads it; audit 2026-08-26). The same rule the `!` cwd handoff
+// follows (bang-handlers.ts). Lazy: a daemon that never stages creates none.
+let uploadsRoot: string | undefined;
+/** The per-session staging dir under the daemon's private root. */
+export function stagingDir(sessionId: string): string {
+  uploadsRoot ??= fs.mkdtempSync(path.join(os.tmpdir(), "mirafold-uploads-"));
+  return path.join(uploadsRoot, sessionId);
 }
 
-/** The per-session staging dir, created private on first use. */
-export function stagingDir(sessionId: string): string {
-  return path.join(os.tmpdir(), "mirafold-uploads", sessionId);
+/** Create the destination exclusively and without following a link, then
+ *  write: the name is the client's (sanitized), the directory is ours, and
+ *  nothing pre-placed under that name can redirect or receive the bytes. */
+function writeStagedFile(dir: string, name: string, bytes: Buffer): string {
+  const { O_WRONLY, O_CREAT, O_EXCL, O_NOFOLLOW } = fs.constants;
+  const ext = path.extname(name);
+  const stem = name.slice(0, name.length - ext.length);
+  for (let n = 1; ; n++) {
+    const candidate = n === 1 ? path.join(dir, name) : path.join(dir, `${stem}-${n}${ext}`);
+    let fd: number;
+    try {
+      fd = fs.openSync(candidate, O_WRONLY | O_CREAT | O_EXCL | (O_NOFOLLOW ?? 0), 0o600);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "EEXIST") continue;
+      throw err;
+    }
+    try {
+      fs.writeFileSync(fd, bytes);
+    } finally {
+      fs.closeSync(fd);
+    }
+    return candidate;
+  }
 }
 
 type ActiveUpload = {
@@ -124,8 +146,7 @@ export function createUploadHandlers({ viewport, getEntry, remote, isClosed }: U
     try {
       const dir = stagingDir(entry.id);
       fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-      const dest = collisionFreePath(dir, up.name);
-      fs.writeFileSync(dest, Buffer.concat(up.chunks), { mode: 0o600 });
+      const dest = writeStagedFile(dir, up.name, Buffer.concat(up.chunks));
       log.info(`staged upload ${up.name} (${up.size} bytes) → session ${entry.id}`);
       reply({ type: "file_upload_done", id, path: dest, name: up.name });
     } catch (err) {

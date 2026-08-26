@@ -1,3 +1,4 @@
+import path from "node:path";
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -35,7 +36,13 @@ test("FD.1: chunked upload over a real socket stages exact bytes at the replied 
     const done = (await client.type("file_upload_done")) as { id: string; path: string; name: string };
     assert.equal(done.id, "up1");
     assert.equal(done.name, "notes.txt");
-    assert.ok(done.path.startsWith(stagingDir(sessionId)), `staged outside staging: ${done.path}`);
+    // The daemon is another process, so its random staging root is not this
+    // process's `stagingDir()`; the shape is what is pinned: a per-daemon
+    // mkdtemp root, the session dir beneath it (audit 2026-08-26).
+    const sessionDir = path.dirname(done.path);
+    assert.equal(path.basename(sessionDir), sessionId, `staged outside staging: ${done.path}`);
+    assert.match(path.basename(path.dirname(sessionDir)), /^mirafold-uploads-/, `staged outside staging: ${done.path}`);
+    assert.equal(fs.statSync(sessionDir).mode & 0o077, 0, "the session dir is owner-only");
     assert.equal(fs.readFileSync(done.path, "utf8"), body);
 
     // The same connection refuses an over-cap declaration with a typed

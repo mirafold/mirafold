@@ -9,7 +9,6 @@ import {
   FILE_UPLOAD_MAX_BYTES,
   FILE_UPLOAD_MAX_CHUNK_BYTES,
   FILE_UPLOAD_MAX_CONCURRENT,
-  collisionFreePath,
   createUploadHandlers,
   safeUploadName,
   stagingDir,
@@ -266,15 +265,30 @@ test("safeUploadName strips paths and control chars, never returns empty", () =>
   assert.equal(safeUploadName("x".repeat(300)).length, 120);
 });
 
-test("collisionFreePath suffixes before the extension", () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "uh-collide-"));
+// AUDIT 2026-08-26: staging lived at a FIXED name under shared /tmp, where
+// another local user could pre-create the parent and plant links. Now the
+// root is a random 0700 mkdtemp per daemon and every file is created
+// exclusively without following a link.
+test("staging never lands in a predictable /tmp name, and a link planted under the upload's name is not followed", () => {
+  const { handlers, sent, sessionId, cleanup } = harness();
   try {
-    assert.equal(collisionFreePath(dir, "a.txt"), path.join(dir, "a.txt"));
-    fs.writeFileSync(path.join(dir, "a.txt"), "");
-    assert.equal(collisionFreePath(dir, "a.txt"), path.join(dir, "a-2.txt"));
-    fs.writeFileSync(path.join(dir, "a-2.txt"), "");
-    assert.equal(collisionFreePath(dir, "a.txt"), path.join(dir, "a-3.txt"));
+    const dir = stagingDir(sessionId);
+    assert.notEqual(path.dirname(dir), path.join(os.tmpdir(), "mirafold-uploads"), "not the fixed shared-tmp name");
+    assert.match(path.basename(path.dirname(dir)), /^mirafold-uploads-[^/]+$/, "a mkdtemp root");
+    assert.equal((fs.statSync(path.dirname(dir)).mode & 0o777) & 0o077, 0, "the root is private");
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const victim = path.join(path.dirname(dir), `victim-${sessionId}.txt`);
+    fs.symlinkSync(victim, path.join(dir, "notes.txt")); // dangling: existsSync says "free"
+    handlers.begin({ type: "file_upload_begin", id: "u1", name: "notes.txt", size: 5 });
+    handlers.chunk({ type: "file_upload_chunk", id: "u1", data: Buffer.from("hello").toString("base64") });
+    const done = sent.find((m) => m.type === "file_upload_done") as { path: string } | undefined;
+    assert.ok(done, `staged: ${JSON.stringify(sent)}`);
+    assert.equal(fs.existsSync(victim), false, "nothing was written through the planted link");
+    assert.ok(fs.lstatSync(done.path).isFile() && !fs.lstatSync(done.path).isSymbolicLink());
+    assert.equal(path.basename(done.path), "notes-2.txt", "the planted name is skipped, not followed");
+    assert.equal(fs.readFileSync(done.path, "utf8"), "hello");
+    assert.equal(fs.statSync(done.path).mode & 0o077, 0);
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    cleanup();
   }
 });
