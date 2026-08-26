@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import os from "node:os";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import type { WireMsg } from "../protocol";
 import { CODEX_DEVELOPER_INSTRUCTIONS, CodexSession } from "./codex";
 import type { AppServerClient, AppServerSpawn, JsonRpcId } from "./codex-app-server";
@@ -31,6 +31,35 @@ type Scripted = Notification[] | ((ctx: TurnCtx) => Promise<void>);
 type SessionOpts = Omit<ConstructorParameters<typeof CodexSession>[0], "workspaceDir">;
 
 const tmp = mkdtempSync(path.join(os.tmpdir(), "mcp-codex-test-"));
+// Every session below lives under `tmp`; trusting that root once means the
+// folder-trust gate (CA.3) never asks in these tests — the dedicated trust
+// tests use their own untrusted workspaces.
+const trustRecord = path.join(tmp, "trusted-workspaces.json");
+writeFileSync(trustRecord, JSON.stringify([tmp]));
+process.env.MIRAFOLD_WORKSPACE_TRUST_FILE = trustRecord;
+
+/** Wait until `pred` matches a message, and return it. */
+const waitFor = (msgs: Any[], pred: (m: Any) => boolean, timeoutMs = 5_000) =>
+  new Promise<Any>((resolve, reject) => {
+    const t0 = Date.now();
+    const poll = setInterval(() => {
+      const hit = msgs.find(pred);
+      if (hit) {
+        clearInterval(poll);
+        resolve(hit);
+      } else if (Date.now() - t0 > timeoutMs) {
+        clearInterval(poll);
+        reject(new Error("waitFor timed out"));
+      }
+    }, 5);
+  });
+
+/** Answer the Nth permission ask as it appears; returns the request row. */
+async function answerAsk(s: CodexSession, msgs: Any[], n: number, allow: boolean): Promise<Any> {
+  const req = await waitFor(msgs, (m) => m.type === "permission_request" && msgs.filter((x) => x.type === "permission_request").indexOf(m) === n - 1);
+  s.resolvePermission(req.id, allow);
+  return req;
+}
 
 const DONE: Notification = ["turn/completed", { turn: { status: "completed" } }];
 const usage = (inputTokens: number, outputTokens: number, reasoningOutputTokens = 0): Notification => [
@@ -849,19 +878,55 @@ test("interrupt: ends the turn silently — one turn_end, no error", async () =>
   s.close();
 });
 
-test("until CA.3, every engine approval ask is declined — fail-closed, and the turn goes on", async () => {
-  const answers: unknown[] = [];
+test("an engine approval becomes a bar ask: allow → accept, deny → decline, a permission grant carries the profile", async () => {
+  const answers: Record<string, unknown> = {};
   const { s, msgs, awaitTurnEnd } = makeSession(async (ctx) => {
-    answers.push(await ctx.serverRequest("item/commandExecution/requestApproval", { itemId: "c1", command: "curl x", reason: "network" }));
-    answers.push(await ctx.serverRequest("item/fileChange/requestApproval", { itemId: "f1" }));
-    answers.push(await ctx.serverRequest("item/permissions/requestApproval", { itemId: "p1", permissions: { network: { enabled: true } } }));
-    ctx.notify("item/completed", { item: { type: "agentMessage", id: "m1", text: "denied, moving on" } });
+    ctx.notify("turn/started", {});
+    answers.cmd = await ctx.serverRequest("item/commandExecution/requestApproval", {
+      itemId: "c1",
+      command: "git commit -m x",
+      reason: "retry outside the sandbox?",
+    });
+    answers.patch = await ctx.serverRequest("item/fileChange/requestApproval", { itemId: "f1", reason: "write .git/index" });
+    answers.perms = await ctx.serverRequest("item/permissions/requestApproval", {
+      itemId: "p1",
+      permissions: { network: { enabled: true } },
+    });
+    ctx.notify("item/completed", { item: { type: "agentMessage", id: "m1", text: "done" } });
+    ctx.complete();
+  });
+  s.pushPrompt("go");
+  const cmdAsk = await answerAsk(s, msgs, 1, true);
+  await answerAsk(s, msgs, 2, false);
+  await answerAsk(s, msgs, 3, true);
+  await awaitTurnEnd();
+
+  assert.deepEqual(answers.cmd, { decision: "accept" });
+  assert.deepEqual(answers.patch, { decision: "decline" });
+  assert.deepEqual(answers.perms, { permissions: { network: { enabled: true } } }, "an allowed permission ask grants exactly what was asked");
+  // The ask states the command plainly and carries the engine's own reason.
+  assert.equal(cmdAsk.tool, "Shell");
+  assert.match(cmdAsk.detail, /git commit -m x — retry outside the sandbox\?/);
+  // Every ask resolved visibly, in order.
+  assert.deepEqual(
+    msgs.filter((m) => m.type === "permission_resolved").map((m) => m.allow),
+    [true, false, true],
+  );
+  s.close();
+});
+
+test("an unanswered approval denies at the timeout — fail-closed, and the command never runs", async () => {
+  let decision: unknown;
+  const { s, msgs, awaitTurnEnd } = makeSessionWithOptions({ permissionTimeoutMs: 25 }, async (ctx) => {
+    ctx.notify("turn/started", {});
+    decision = await ctx.serverRequest("item/commandExecution/requestApproval", { itemId: "c1", command: "rm -rf /x" });
+    ctx.notify("item/completed", { item: { type: "agentMessage", id: "m1", text: "denied" } });
     ctx.complete();
   });
   s.pushPrompt("go");
   await awaitTurnEnd();
-  assert.deepEqual(answers, [{ decision: "decline" }, { decision: "decline" }, { permissions: {} }]);
-  assert.ok(msgs.some((m) => m.type === "text_delta" && m.text.includes("moving on")));
+  assert.deepEqual(decision, { decision: "decline" }, "a timed-out ask declines");
+  assert.equal(msgs.filter((m) => m.type === "permission_resolved" && m.allow === false).length, 1);
   s.close();
 });
 
@@ -1239,5 +1304,66 @@ test("a failed engine start does not burn anything: the retry spawns afresh and 
   await waitForTurnEnds(msgs, 2);
   assert.equal(server.clients.length, 2, "each attempt gets a fresh process");
   assert.equal(server.requests.filter((r) => r.method === "initialize").length, 2);
+  s.close();
+});
+
+
+// ── The folder-trust gate (CA.3): headless Codex writes trust_level into the
+// user's config.toml on the first thread/start; Mirafold asks first. These
+// tests share the module's global trust record (trustRecord, listing tmp);
+// each uses a fresh workspace OUTSIDE tmp so it starts untrusted.
+
+const trustedNow = (): string[] => JSON.parse(readFileSync(trustRecord, "utf8"));
+
+function makeSessionAt(workspaceDir: string, ...turns: Scripted[]) {
+  const server = fakeAppServer();
+  server.turns.push(...turns);
+  const s = new CodexSession({ workspaceDir, makeAppServer: server.makeAppServer });
+  const msgs: Any[] = [];
+  s.onMessage((m) => msgs.push(m as Any));
+  return { s, msgs, server, awaitTurnEnd: (count = 1) => waitForTurnEnds(msgs, count) };
+}
+
+test("an untrusted folder is asked before anything spawns; yes runs the turn and records the folder", async () => {
+  const ws = realpathSync(mkdtempSync(path.join(os.tmpdir(), "codex-untrusted-yes-")));
+  assert.ok(!trustedNow().includes(ws), "the fresh folder must start untrusted");
+  const { s, msgs, server, awaitTurnEnd } = makeSessionAt(ws, [DONE]);
+  s.pushPrompt("go");
+  const ask = await waitFor(msgs, (m) => m.type === "permission_request");
+  assert.equal(ask.tool, "Codex");
+  assert.match(ask.detail, /trust this folder/);
+  assert.match(ask.detail, /config\.toml/);
+  assert.equal(server.specs.length, 0, "nothing spawned before the yes");
+  s.resolvePermission(ask.id, true);
+  await awaitTurnEnd();
+  assert.equal(server.threadStarts().length, 1, "the thread starts only after the yes");
+  assert.ok(trustedNow().includes(ws), "the yes was remembered");
+  s.close();
+});
+
+test("an untrusted folder denied: nothing spawns, config.toml is never touched, a refusal notice shows", async () => {
+  const ws = realpathSync(mkdtempSync(path.join(os.tmpdir(), "codex-untrusted-no-")));
+  const { s, msgs, server, awaitTurnEnd } = makeSessionAt(ws, [DONE]);
+  s.pushPrompt("go");
+  const ask = await waitFor(msgs, (m) => m.type === "permission_request");
+  s.resolvePermission(ask.id, false);
+  await awaitTurnEnd();
+  assert.equal(server.specs.length, 0, "a denied folder never spawns the engine");
+  assert.equal(server.threadStarts().length, 0);
+  const notice = msgs.find((m) => m.type === "notice")!;
+  assert.equal(notice.kind, "refusal");
+  assert.match(notice.text, /won't run in a folder you haven't trusted/);
+  assert.ok(!trustedNow().includes(ws), "a denied trust records nothing");
+  s.close();
+});
+
+test("a pre-trusted folder never asks", async () => {
+  const ws = realpathSync(mkdtempSync(path.join(os.tmpdir(), "codex-trusted-")));
+  writeFileSync(trustRecord, JSON.stringify([...trustedNow(), ws]));
+  const { s, msgs, server, awaitTurnEnd } = makeSessionAt(ws, [DONE]);
+  s.pushPrompt("go");
+  await awaitTurnEnd();
+  assert.ok(!msgs.some((m) => m.type === "permission_request"), "a trusted folder is not asked");
+  assert.equal(server.threadStarts().length, 1);
   s.close();
 });

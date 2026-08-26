@@ -3005,7 +3005,25 @@ catalogs (`codex-model-list.ts`, `codex-skills-list.ts`).
   - Done when: Tier-2 `codex.test.ts` green on the new transport with a
     scripted app-server stub; interrupt, resume, `/model`, `/effort` intact.
 
-- [ ] **Step CA.3 — The approval round trip**
+- [x] **Step CA.3 — The approval round trip** — done 2026-08-25: a
+  `PermissionLedger` (the shared one the other adapters use) turns each
+  `item/commandExecution/requestApproval` / `item/fileChange/requestApproval`
+  / `item/permissions/requestApproval` into a `permission_request` on the
+  shell's bar — the command stated plainly, the engine's own `reason` (the
+  "retry outside the sandbox?" escalation) alongside it; the bar's answer
+  maps to `{decision:"accept"|"decline"}` / the granted permission profile.
+  Fail-closed on every path (timeout, close, dead process → decline). ALSO
+  the folder-trust gate (assigned here by the CA.1 spike): the first turn in
+  a folder Mirafold has no record of asks before anything spawns — `Codex`
+  tool, wording that says a yes records the folder as trusted in
+  `~/.codex/config.toml` — and only on a yes does `thread/start` run (so the
+  config write is consented, or never happens); remembered in
+  `workspace-trust.ts`, the same mechanism Gemini uses. Tier-2 (unit): the
+  three-way approval round trip, a timeout decline, and the trust gate
+  (asked/spawns-only-on-yes/records; denied → refusal notice, nothing
+  spawned, config untouched; pre-trusted → no ask). Live smoke: approving a
+  real out-of-workspace write made the command RUN (the file was written),
+  where CA.2 fail-closed left it nonexistent. Tier-1 940, Tier-2 153 green.
   - Build: app-server approval requests → `permission_request` (tool +
     detail, with the "retry outside the sandbox" meaning stated in the
     shell's own words, engine words badged with `source`); the permission

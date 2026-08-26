@@ -7,6 +7,9 @@ import type { CodexModel } from "./codex-model-list";
 import { AsyncQueue, CLOSE } from "./async-queue";
 import { listCodexSkills, type CodexSkill } from "./codex-skills-list";
 import { ResumeIdState } from "./resume-id";
+import { PermissionLedger } from "./wire-helpers";
+import { isWorkspaceTrusted, trustWorkspace } from "../sessions/workspace-trust";
+import { PERMISSION_TIMEOUT_MS } from "./types";
 import { envInt } from "../env";
 import {
   codexEngineDefaultModel,
@@ -53,6 +56,10 @@ const DEFAULT_LOCAL_TURN_TIMEOUT_MS = envInt(
  *  real instructions hook (the exec path had none and rode the first turn). */
 export const CODEX_DEVELOPER_INSTRUCTIONS = `${RENDER_GUIDANCE}\n${CODEX_DEFERRED_TOOLS_ADDENDUM}`;
 
+// The folder-trust ask waits this long before denying — the same window
+// Gemini's folder gate uses. A person reads the ask, not a machine.
+const TRUST_PROMPT_TIMEOUT_MS = 5 * 60_000;
+
 type ThreadInfo = { id: string; model?: string };
 
 /**
@@ -88,6 +95,16 @@ export class CodexSession implements AgentSession {
     interrupted: boolean;
   };
   private eventMapper: CodexEventMapper;
+  // The engine's approval round-trips (command / patch / permission), and the
+  // one folder-trust ask, both ride the shared permission ledger → the
+  // browser's permission bar. Answers already sync across viewports.
+  private permissions = new PermissionLedger((msg) => this.emit(msg));
+  // Codex writes `[projects."<cwd>"] trust_level = "trusted"` into the user's
+  // config.toml on the FIRST thread/start in a folder, with no dialog (CA.1
+  // spike). So the first turn in an untrusted folder asks first, exactly as
+  // the terminal TUI does, and only calls thread/start on a yes — the write
+  // becomes consented, or never happens.
+  private trusted = false;
   private modelLabel: string;
   // Per-turn options: a model/effort switch applies from the next turn on,
   // on the same warm thread (no restart, unlike the exec path).
@@ -106,6 +123,7 @@ export class CodexSession implements AgentSession {
   // Local-only effort/timeout behavior applies only to probe-discovered URLs.
   private discoveredLocalEndpoint = false;
   private localTurnTimeoutMs = 0;
+  private permissionTimeoutMs = PERMISSION_TIMEOUT_MS;
 
   get modelName(): string | undefined {
     return this.modelLabel === MODEL_STAND_IN ? undefined : this.modelLabel;
@@ -128,6 +146,8 @@ export class CodexSession implements AgentSession {
     provider?: string;
     resumeId?: string;
     makeAppServer?: (spec: AppServerSpawn) => AppServerClient;
+    /** Unit-test seam; production uses PERMISSION_TIMEOUT_MS. */
+    permissionTimeoutMs?: number;
     listModels?: () => Promise<CodexModel[]>;
     listEngineModels?: () => Promise<CodexModel[]>;
     listSkills?: () => Promise<CodexSkill[]>;
@@ -173,6 +193,7 @@ export class CodexSession implements AgentSession {
     this.listSkills =
       opts.listSkills ?? (() => listCodexSkills(workspaceDir, undefined, runtime.engineBin));
     this.needsEngineDefaultModel = runtime.needsEngineDefaultModel;
+    if (opts.permissionTimeoutMs !== undefined) this.permissionTimeoutMs = opts.permissionTimeoutMs;
     void this.worker();
   }
 
@@ -206,14 +227,17 @@ export class CodexSession implements AgentSession {
     }
   }
 
-  // The engine's approval asks are answered in answerServerRequest; the
-  // browser's permission bar is wired to it in CA.3.
-  resolvePermission(_id: string, _allow: boolean) {}
+  // The browser's permission-bar answer for any ask this session raised —
+  // an engine approval or the folder-trust question.
+  resolvePermission(id: string, allow: boolean) {
+    this.permissions.resolve(id, allow);
+  }
 
   close() {
     if (this.closed) return;
     this.closed = true;
     this.interrupt();
+    this.permissions.denyAll(); // an unanswered ask must not pin a turn open
     this.queue.push(CLOSE);
     this.client?.kill();
   }
@@ -365,22 +389,80 @@ export class CodexSession implements AgentSession {
     this.eventMapper.handle(method, params);
   }
 
-  /** The engine's own requests to its client. Until CA.3 wires the browser's
-   *  permission bar in, every approval is declined — fail-closed: nothing
-   *  runs outside the sandbox that nobody approved. */
-  private answerServerRequest(client: AppServerClient, id: JsonRpcId, method: string, _params: unknown) {
+  /** The engine's own requests to its client — its approval round-trips. Each
+   *  becomes a permission_request on the shell's bar; the user's answer maps
+   *  back to the protocol's decision. Fail-closed on every path: a timeout, a
+   *  close, or a dead process all resolve to a decline, so nothing the user
+   *  didn't approve runs outside the sandbox. */
+  private answerServerRequest(client: AppServerClient, id: JsonRpcId, method: string, params: unknown) {
     if (this.client !== client) return;
+    const p = (params ?? {}) as Record<string, unknown>;
+    const reason = typeof p["reason"] === "string" ? p["reason"] : undefined;
+    const respond = (result: unknown) => {
+      if (this.client === client && !client.exited) client.respond(id, result);
+    };
     switch (method) {
-      case "item/commandExecution/requestApproval":
+      case "item/commandExecution/requestApproval": {
+        const command = typeof p["command"] === "string" ? p["command"] : "a command";
+        // The command is ours to state plainly; the reason is the engine's own
+        // explanation of the escalation ("retry outside the sandbox?").
+        this.ask("Shell", reason ? `${command} — ${reason}` : command, (allow) =>
+          respond({ decision: allow ? "accept" : "decline" }),
+        );
+        break;
+      }
       case "item/fileChange/requestApproval":
-        client.respond(id, { decision: "decline" });
+        this.ask("apply_patch", reason ?? "apply this change outside the sandbox?", (allow) =>
+          respond({ decision: allow ? "accept" : "decline" }),
+        );
         break;
-      case "item/permissions/requestApproval":
-        client.respond(id, { permissions: {} });
+      case "item/permissions/requestApproval": {
+        const permissions = (p["permissions"] ?? {}) as Record<string, unknown>;
+        this.ask("Codex", reason ?? "grant additional permissions for this turn?", (allow) =>
+          respond({ permissions: allow ? permissions : {} }),
+        );
         break;
+      }
       default:
         client.respondError(id, -32601, `Mirafold does not handle ${method}`);
     }
+  }
+
+  /** Raise one permission ask on the bar; `onAnswer` fires once, on any
+   *  resolution path (answer, timeout, teardown — all deny but "answer"). */
+  private ask(tool: string, detail: string, onAnswer: (allow: boolean) => void) {
+    void this.permissions.ask({ tool, detail }, this.permissionTimeoutMs, (allow) => onAnswer(allow));
+  }
+
+  /**
+   * The folder-trust gate: resolves to whether this turn may run. True once
+   * the user has vouched for the workspace (or a parent) — asked once, ever,
+   * through the shell's own permission strip, remembered in Mirafold's state.
+   * Never blanket-trusts whatever folder is open, and never lets Codex's
+   * silent config.toml trust write happen before the yes.
+   */
+  private ensureTrusted(): Promise<boolean> {
+    if (this.trusted || isWorkspaceTrusted(this.workspaceDir)) {
+      this.trusted = true;
+      return Promise.resolve(true);
+    }
+    if (this.closed) return Promise.resolve(false);
+    return this.permissions.ask(
+      {
+        tool: "Codex",
+        detail:
+          `trust this folder — ${this.workspaceDir}. ` +
+          `Yes lets Codex run here; it records the folder as trusted in your ~/.codex/config.toml, ` +
+          `exactly as the Codex terminal does when you say yes there.`,
+      },
+      TRUST_PROMPT_TIMEOUT_MS,
+      (allow) => {
+        if (allow) {
+          this.trusted = true;
+          trustWorkspace(this.workspaceDir); // remembered: asked once, ever
+        }
+      },
+    );
   }
 
   private async runTurn(text: string) {
@@ -409,6 +491,19 @@ export class CodexSession implements AgentSession {
       }, this.localTurnTimeoutMs);
     }
     try {
+      // The trust gate runs BEFORE anything spawns: an untrusted workspace
+      // can't produce a turn at all, and a denied ask leaves config.toml
+      // untouched.
+      if (!(await this.ensureTrusted())) {
+        if (!this.closed) {
+          this.emit({
+            type: "notice",
+            text: `Codex won't run in a folder you haven't trusted. Nothing ran — send another prompt to be asked again.`,
+            kind: "refusal",
+          });
+        }
+        return;
+      }
       if (this.needsEngineDefaultModel && !(await this.applyEngineDefaultModel())) return;
       const thread = await this.ensureThread();
       const client = this.client!;
@@ -458,6 +553,7 @@ export class CodexSession implements AgentSession {
         });
       }
       if (this.activeTurn === turn) this.activeTurn = undefined;
+      this.permissions.denyAll("moot"); // drop any ask the ended turn left open
       end(); // guarantees exactly one turn_end (interrupt, error, or normal)
     }
   }
