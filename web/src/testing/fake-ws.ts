@@ -108,4 +108,3 @@ export function shimDom() {
       (win.get("pagehide")?.size ?? 0),
   };
 }
-

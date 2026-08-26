@@ -11,6 +11,7 @@ import { convertMermaidCharts } from "./mermaid-chart";
 // codex.spike.md records what was observed live.
 
 type Emit = (message: SessionMsg) => void;
+type ItemPhase = "started" | "completed";
 
 /** One `ThreadItem` as it arrives — the fields the mapper reads, loosely
  *  typed on purpose: engine data is checked at use, never trusted by shape. */
@@ -74,8 +75,9 @@ export class CodexEventMapper {
   private announced = new Set<string>();
   private readonly checklist: ChecklistPainter;
   // Streaming prose per agentMessage item: how much of it already went out
-  // as deltas, and whether we are holding the rest for the item to finish.
-  private prose = new Map<string, { streamed: number; holding: boolean }>();
+  // as deltas, whether we are holding the rest for the item to finish, and a
+  // one/two-backtick suffix that may be the start of a split code fence.
+  private prose = new Map<string, { streamed: number; holding: boolean; pending: string }>();
   private thinkingStreamed = new Set<string>();
   private thinkingAnnounced = false;
   private totals?: TokenTotals;
@@ -196,146 +198,184 @@ export class CodexEventMapper {
    *  completed text is re-read). Plain prose never waits. */
   private onProseDelta(itemId: string, delta: string) {
     if (!delta) return;
-    const state = this.prose.get(itemId) ?? { streamed: 0, holding: false };
+    const state = this.prose.get(itemId) ?? { streamed: 0, holding: false, pending: "" };
     this.prose.set(itemId, state);
     if (state.holding) return;
-    if (delta.includes("```")) {
+    const combined = state.pending + delta;
+    state.pending = "";
+    const fenceAt = combined.indexOf("```");
+    if (fenceAt >= 0) {
+      const prefix = combined.slice(0, fenceAt);
+      if (prefix) {
+        state.streamed += prefix.length;
+        this.options.emit({ type: "text_delta", text: prefix });
+      }
       state.holding = true;
       return;
     }
-    state.streamed += delta.length;
-    this.options.emit({ type: "text_delta", text: delta });
+    const pendingLength = combined.endsWith("``") ? 2 : combined.endsWith("`") ? 1 : 0;
+    const ready = pendingLength ? combined.slice(0, -pendingLength) : combined;
+    state.pending = pendingLength ? combined.slice(-pendingLength) : "";
+    if (!ready) return;
+    state.streamed += ready.length;
+    this.options.emit({ type: "text_delta", text: ready });
   }
 
   /** Normalize one thread item. `phase` distinguishes start vs. finish. */
-  private onItem(item: CodexItem | undefined, phase: "started" | "completed") {
+  private onItem(item: CodexItem | undefined, phase: ItemPhase) {
     if (!item || typeof item.type !== "string" || typeof item.id !== "string") return;
     switch (item.type) {
-      case "agentMessage": {
-        if (phase !== "completed") break;
-        const text = typeof item.text === "string" ? item.text : "";
-        const streamed = this.prose.get(item.id)?.streamed ?? 0;
-        this.prose.delete(item.id);
-        const rest = text.slice(streamed);
-        if (!rest) break;
-        // Any mermaid xychart the model still hand-wrote becomes the real
-        // chart component; all other text passes through verbatim.
-        for (const segment of convertMermaidCharts(rest)) {
-          if ("text" in segment) {
-            this.options.emit({ type: "text_delta", text: segment.text });
-          } else {
-            this.options.emit({
-              type: "render",
-              component: "chart",
-              props: segment.chart as unknown as Record<string, unknown>,
-              id: randomUUID(),
-            });
-          }
-        }
+      case "agentMessage":
+        this.onAgentMessage(item, phase);
         break;
-      }
-      case "reasoning": {
-        if (phase === "started") {
-          this.announceThinking();
-        } else if (!this.thinkingStreamed.has(item.id)) {
-          // No deltas came for this item: the summary arrives whole.
-          const summary = Array.isArray(item.summary)
-            ? item.summary.filter((s): s is string => typeof s === "string").join("\n")
-            : "";
-          if (summary) {
-            this.announceThinking();
-            this.options.emit({ type: "thinking_delta", text: summary });
-          }
-        }
-        if (phase === "completed") this.thinkingStreamed.delete(item.id);
+      case "reasoning":
+        this.onReasoning(item, phase);
         break;
-      }
-      case "commandExecution": {
-        const command = typeof item.command === "string" ? item.command : "";
-        if (phase === "started") {
-          this.announceTool(item.id, "Shell", command, { command });
-        } else {
-          this.ensureAnnounced(item.id, "Shell", command, { command });
-          const capped = capOutput(item.aggregatedOutput ?? "");
-          // A command that RAN is an ordinary completed command, exactly as
-          // the Codex TUI shows it — dim, foldable, exit code annotated —
-          // never a red error, whatever its exit status. app-server marks
-          // ANY nonzero exit `status: "failed"` (grep-no-match, a
-          // `gh repo view` on a missing repo, a failing test — measured
-          // 2026-08-25), unlike the old exec path which called those
-          // "completed"; keying error-ness off `status` alone turned every
-          // such probe into an expanded error block that broke the fold.
-          // So: it ran iff it produced an exit code. Only a command that
-          // couldn't run at all (no exit code) or was declined is an error.
-          const declined = item.status === "declined";
-          const ran = item.exitCode != null;
-          const isError = declined || (!ran && item.status === "failed");
-          const exitNote =
-            ran && item.exitCode !== 0 ? `${capped.text ? "\n" : ""}(exit ${item.exitCode})` : "";
-          this.finishTool(item.id, {
-            output: declined ? `${capped.text}${capped.text ? "\n" : ""}(declined)` : capped.text + exitNote,
-            truncatedBytes: capped.truncatedBytes,
-            isError,
-          });
-        }
+      case "commandExecution":
+        this.onCommandExecution(item, phase);
         break;
-      }
-      case "fileChange": {
-        if (phase !== "completed") break;
-        const changes = Array.isArray(item.changes) ? (item.changes as { kind?: unknown; path?: unknown }[]) : [];
-        const paths = changes
-          .map((change) => `${String(change.kind ?? "update")} ${String(change.path ?? "")}`.trim())
-          .join(", ");
-        this.announceTool(item.id, "apply_patch", paths, { changes });
-        const declined = item.status === "declined";
-        this.finishTool(item.id, {
-          output: declined ? "(declined)" : paths || "(no changes)",
-          isError: item.status === "failed" || declined,
-        });
+      case "fileChange":
+        this.onFileChange(item, phase);
         break;
-      }
-      case "mcpToolCall": {
-        const server = typeof item.server === "string" ? item.server : "";
-        const tool = typeof item.tool === "string" ? item.tool : "";
-        // Mirafold's generative-UI server becomes the render/artifact message
-        // represented by the call rather than a raw tool row.
-        if (server === MIRAFOLD_MCP) {
-          if (phase === "completed" && item.status !== "failed" && !item.error) {
-            this.emitGenerativeUI(tool, item);
-          }
-          break;
-        }
-        const label = `${server}.${tool}`;
-        if (phase === "started") {
-          this.announceTool(item.id, label, tool, item.arguments);
-        } else {
-          this.ensureAnnounced(item.id, label, tool, item.arguments);
-          const capped = capOutput(item.error ? String(item.error.message ?? "") : mcpText(item.result?.content));
-          this.finishTool(item.id, {
-            output: capped.text,
-            truncatedBytes: capped.truncatedBytes,
-            isError: item.status === "failed" || Boolean(item.error),
-          });
-        }
+      case "mcpToolCall":
+        this.onMcpToolCall(item, phase);
         break;
-      }
-      case "webSearch": {
-        if (phase !== "completed") break;
-        const query = typeof item.query === "string" ? item.query : "";
-        this.announceTool(item.id, "web_search", query, { query });
-        this.finishTool(item.id, { output: "(results returned to the agent)" });
+      case "webSearch":
+        this.onWebSearch(item, phase);
         break;
-      }
       case "contextCompaction":
-        if (phase === "completed") {
-          this.options.emit({
-            type: "notice",
-            text: "Codex compacted the conversation context.",
-            kind: "compaction",
-          });
-        }
+        this.onContextCompaction(phase);
         break;
     }
+  }
+
+  private onAgentMessage(item: CodexItem, phase: ItemPhase) {
+    if (phase !== "completed") return;
+    const text = typeof item.text === "string" ? item.text : "";
+    const streamed = this.prose.get(item.id)?.streamed ?? 0;
+    this.prose.delete(item.id);
+    const rest = text.slice(streamed);
+    if (!rest) return;
+    // Any mermaid xychart the model still hand-wrote becomes the real chart
+    // component; all other text passes through verbatim.
+    for (const segment of convertMermaidCharts(rest)) {
+      if ("text" in segment) {
+        this.options.emit({ type: "text_delta", text: segment.text });
+      } else {
+        this.options.emit({
+          type: "render",
+          component: "chart",
+          props: segment.chart as unknown as Record<string, unknown>,
+          id: randomUUID(),
+        });
+      }
+    }
+  }
+
+  private onReasoning(item: CodexItem, phase: ItemPhase) {
+    if (phase === "started") {
+      this.announceThinking();
+    } else if (!this.thinkingStreamed.has(item.id)) {
+      // No deltas came for this item: the summary arrives whole.
+      const summary = Array.isArray(item.summary)
+        ? item.summary.filter((s): s is string => typeof s === "string").join("\n")
+        : "";
+      if (summary) {
+        this.announceThinking();
+        this.options.emit({ type: "thinking_delta", text: summary });
+      }
+    }
+    if (phase === "completed") this.thinkingStreamed.delete(item.id);
+  }
+
+  private onCommandExecution(item: CodexItem, phase: ItemPhase) {
+    const command = typeof item.command === "string" ? item.command : "";
+    if (phase === "started") {
+      this.announceTool(item.id, "Shell", command, { command });
+      return;
+    }
+    this.ensureAnnounced(item.id, "Shell", command, { command });
+    const capped = capOutput(item.aggregatedOutput ?? "");
+    // A command that RAN is an ordinary completed command, exactly as the
+    // Codex TUI shows it — dim, foldable, exit code annotated — never a red
+    // error, whatever its exit status. app-server marks ANY nonzero exit
+    // `status: "failed"` (grep-no-match, a `gh repo view` on a missing repo,
+    // a failing test — measured 2026-08-25), unlike the old exec path which
+    // called those "completed"; keying error-ness off `status` alone turned
+    // every such probe into an expanded error block that broke the fold.
+    // So: it ran iff it produced an exit code. Only a command that couldn't
+    // run at all (no exit code) or was declined is an error.
+    const declined = item.status === "declined";
+    const ran = item.exitCode != null;
+    const isError = declined || (!ran && item.status === "failed");
+    const exitNote =
+      ran && item.exitCode !== 0 ? `${capped.text ? "\n" : ""}(exit ${item.exitCode})` : "";
+    this.finishTool(item.id, {
+      output: declined
+        ? `${capped.text}${capped.text ? "\n" : ""}(declined)`
+        : capped.text + exitNote,
+      truncatedBytes: capped.truncatedBytes,
+      isError,
+    });
+  }
+
+  private onFileChange(item: CodexItem, phase: ItemPhase) {
+    if (phase !== "completed") return;
+    const changes = Array.isArray(item.changes)
+      ? (item.changes as { kind?: unknown; path?: unknown }[])
+      : [];
+    const paths = changes
+      .map((change) => `${String(change.kind ?? "update")} ${String(change.path ?? "")}`.trim())
+      .join(", ");
+    this.announceTool(item.id, "apply_patch", paths, { changes });
+    const declined = item.status === "declined";
+    this.finishTool(item.id, {
+      output: declined ? "(declined)" : paths || "(no changes)",
+      isError: item.status === "failed" || declined,
+    });
+  }
+
+  private onMcpToolCall(item: CodexItem, phase: ItemPhase) {
+    const server = typeof item.server === "string" ? item.server : "";
+    const tool = typeof item.tool === "string" ? item.tool : "";
+    // Mirafold's generative-UI server becomes the render/artifact message
+    // represented by the call rather than a raw tool row.
+    if (server === MIRAFOLD_MCP) {
+      if (phase === "completed" && item.status !== "failed" && !item.error) {
+        this.emitGenerativeUI(tool, item);
+      }
+      return;
+    }
+    const label = `${server}.${tool}`;
+    if (phase === "started") {
+      this.announceTool(item.id, label, tool, item.arguments);
+      return;
+    }
+    this.ensureAnnounced(item.id, label, tool, item.arguments);
+    const capped = capOutput(
+      item.error ? String(item.error.message ?? "") : mcpText(item.result?.content),
+    );
+    this.finishTool(item.id, {
+      output: capped.text,
+      truncatedBytes: capped.truncatedBytes,
+      isError: item.status === "failed" || Boolean(item.error),
+    });
+  }
+
+  private onWebSearch(item: CodexItem, phase: ItemPhase) {
+    if (phase !== "completed") return;
+    const query = typeof item.query === "string" ? item.query : "";
+    this.announceTool(item.id, "web_search", query, { query });
+    this.finishTool(item.id, { output: "(results returned to the agent)" });
+  }
+
+  private onContextCompaction(phase: ItemPhase) {
+    if (phase !== "completed") return;
+    this.options.emit({
+      type: "notice",
+      text: "Codex compacted the conversation context.",
+      kind: "compaction",
+    });
   }
 
   /** Announce only when the started phase was missed. */

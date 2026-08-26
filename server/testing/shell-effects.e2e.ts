@@ -20,7 +20,8 @@ after(async () => {
 
 test("provider completions open before submit, transcript click focuses, and settled activity compacts", async () => {
   const token = "e2e-native-prompt-9c2f";
-  await withFreshMockSession(browser, 
+  await withFreshMockSession(
+    browser,
     token,
     async (page2) => {
       const prompt = page2.locator(".prompt-box textarea");
@@ -260,7 +261,8 @@ test("NF: hidden viewport toasts a permission then the turn end; visibility clos
        });
        document.dispatchEvent(new Event("visibilitychange"));`,
     );
-  await withFreshMockSession(browser, 
+  await withFreshMockSession(
+    browser,
     token,
     async (page2) => {
       // The toggle lives in the settings card and defaults off; flipping it
