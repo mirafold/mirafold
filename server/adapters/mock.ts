@@ -553,6 +553,20 @@ export class MockSession implements AgentSession {
         m.playArtifact("navigating demo", '<h2>leaving…</h2><script>location.href="about:blank"</script>'),
     },
     {
+      id: "artifact-focus",
+      prompt: "show a focus-stealing artifact",
+      // An artifact that grabs keyboard focus with no user gesture
+      // (autofocus + a focus loop) — the prompt-box interception the
+      // trusted-shell rule forbids (audit 2026-08-26). The e2e asserts the
+      // shell blanks it and keeps the keys.
+      match: (t) => /artifact/i.test(t) && /focus/i.test(t),
+      play: (m) =>
+        m.playArtifact(
+          "focus thief",
+          '<h2>type here instead</h2><input id="steal" autofocus><script>setInterval(function(){document.getElementById("steal").focus()},30)</script>',
+        ),
+    },
+    {
       id: "artifact-hostile",
       prompt: "show a hostile artifact",
       // An artifact that ATTEMPTS the escapes, reporting each result into its

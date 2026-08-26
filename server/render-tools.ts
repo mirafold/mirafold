@@ -7,7 +7,7 @@
 import { randomUUID } from "node:crypto";
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
-import { renderToolEntries, type RenderToolName } from "./adapters/render-mcp-cmd";
+import { RENDER_ID_GRAMMAR, acceptableRenderId, renderToolEntries, type RenderToolName } from "./adapters/render-mcp-cmd";
 import type { SessionMsg } from "./protocol";
 import { resolveImageProps } from "./render-image";
 import { registryShapes, type ComponentName } from "./registry-spec";
@@ -19,7 +19,7 @@ const idParam = {
     .optional()
     .describe(
       "Omit to render a new component. Pass an id returned by a previous " +
-        "render_* call to update that component in place instead.",
+        `render_* call to update that component in place instead (your own ids: ${RENDER_ID_GRAMMAR}).`,
     ),
 };
 
@@ -139,6 +139,8 @@ components freely.
 - Every render_* result includes the component's id. Calling the same tool
   again with that id replaces that component's props in place — use it to keep
   one painting live (progress, updated stats) instead of stacking duplicates.
+  An id you choose yourself must be ${RENDER_ID_GRAMMAR}; anything else is
+  replaced by a fresh id (read it back from the result).
 - Text inside component props supports inline markdown only where the prop
   description says so; keep it terse — components are for scanning, prose is
   for reading.
@@ -154,7 +156,7 @@ components freely.
 // skipping containment and the byte cap. Required, that's a compile error.
 export function makeRenderServer(emit: (msg: SessionMsg) => void, workspaceDir: string) {
   const emitRender = (component: ComponentName, id: string | undefined, props: object) => {
-    const renderId = id ?? randomUUID();
+    const renderId = acceptableRenderId(id) ?? randomUUID();
     // image authors a PATH; the daemon inlines the bytes at the synthesis
     // point (same contract as generativeUIMsg on the stdio adapters).
     if (component === "image") {
@@ -197,7 +199,7 @@ export function makeRenderServer(emit: (msg: SessionMsg) => void, workspaceDir: 
             .describe(
               "Body markup only (the host supplies <html>/<head>); inline " +
                 "<style> and <script> are fine. Must be fully self-contained: " +
-                "a strict CSP blocks ALL network (fetch/XHR/WebSocket, external " +
+                "a strict CSP blocks HTTP and WebSocket (fetch/XHR/WebSocket, external " +
                 "scripts/images/fonts) and the sandbox has no cookies or " +
                 "storage. Dark background (#141a26) — style for it.",
             ),
@@ -214,7 +216,7 @@ export function makeRenderServer(emit: (msg: SessionMsg) => void, workspaceDir: 
             ),
         },
         async ({ html, title, id }) => {
-          const artifactId = id ?? randomUUID();
+          const artifactId = acceptableRenderId(id) ?? randomUUID();
           emit({ type: "artifact", html, id: artifactId, title });
           return {
             content: [

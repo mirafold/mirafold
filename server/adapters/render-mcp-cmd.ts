@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { SessionMsg } from "../protocol";
 import { resolveImageProps } from "../render-image";
-import type { ComponentName } from "../registry-spec";
+import { clientSchemas, type ComponentName } from "../registry-spec";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -45,10 +45,23 @@ export const renderToolEntries = Object.entries(RENDER_TOOL_COMPONENT) as [
 
 /** Matches the component id inside the render-MCP stub's ack text
  *  ("Rendered card (id: …)") — the fallback channel when an engine drops
- *  structured content. The id is whatever the agent chose (any non-space
- *  text), not only a uuid: `render_progress({id:"deploy-status"})` is the
- *  documented update-in-place idiom. */
+ *  structured content. The id is the agent's own choice within
+ *  RENDER_ID_GRAMMAR (`render_progress({id:"deploy-status"})` is the
+ *  documented update-in-place idiom), not only a uuid. */
 export const RENDER_ID_RE = /\(id:\s*([^\s)]+)\)/;
+
+/** The one grammar for an agent-chosen render/artifact id, stated to the
+ *  model in RENDER_GUIDANCE and enforced wherever an id enters the shell:
+ *  the in-process render server (Claude Code), the stdio stub's ack, and
+ *  `renderIdFor` on every stdio adapter. The shell keys paintings, the
+ *  replay ring, and the checkpoint by this id, so it is bounded and plain;
+ *  anything else gets a fresh uuid — the agent loses update-in-place for
+ *  that call, the shell never keys on hostile data (2026-08-26). */
+export const RENDER_ID_GRAMMAR = "1–128 characters from letters, digits, `_`, `.`, `:`, `-`";
+const RENDER_ID_OK = /^[A-Za-z0-9_.:-]{1,128}$/;
+export const acceptableRenderId = (v: unknown): string | undefined =>
+  typeof v === "string" && RENDER_ID_OK.test(v) ? v : undefined;
+const acceptableId = acceptableRenderId;
 
 /**
  * The ONE precedence for the component id a Mirafold render call paints
@@ -66,10 +79,13 @@ export function renderIdFor(source: {
   ackText?: unknown;
 }): string {
   const structured = source.structured as { renderId?: unknown } | undefined;
-  if (structured && typeof structured.renderId === "string") return structured.renderId;
-  if (typeof source.argId === "string") return source.argId;
   const match = RENDER_ID_RE.exec(String(source.ackText ?? ""));
-  return match ? match[1] : randomUUID();
+  return (
+    acceptableId(structured?.renderId) ??
+    acceptableId(source.argId) ??
+    acceptableId(match?.[1]) ??
+    randomUUID()
+  );
 }
 
 /**
@@ -98,11 +114,21 @@ export function generativeUIMsg(
     };
   }
   const component = (RENDER_TOOL_COMPONENT as Record<string, ComponentName | undefined>)[tool];
+  if (!component) return null;
   // The image component's props are authored as a PATH; the daemon inlines
   // the bytes here, where the WireMsg is synthesized (the stdio stub has no
   // file access by design).
   if (component === "image") props = resolveImageProps(workspaceDir, props);
-  return component ? { type: "render", component, props, id } : null;
+  // These props come from the engine's EVENT STREAM, not from the stub that
+  // validated the tool call — a steered engine controls them directly. The
+  // browser re-validates, but the server must not hand it a link scheme or
+  // a bad shape it never checked (audit 2026-08-26). The tolerant twin
+  // (unknown keys STRIPPED) is deliberate: it is what the stub and the
+  // in-process SDK server both apply, so a call the engine was told
+  // "Rendered" for is never dropped here over an extra key (cold review).
+  const checked = clientSchemas[component].safeParse(props);
+  if (!checked.success) return null;
+  return { type: "render", component, props: checked.data as Record<string, unknown>, id };
 }
 
 /**

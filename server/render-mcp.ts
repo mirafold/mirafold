@@ -22,7 +22,7 @@ import { randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { renderToolEntries, type RenderToolName } from "./adapters/render-mcp-cmd";
+import { RENDER_ID_GRAMMAR, acceptableRenderId, renderToolEntries, type RenderToolName } from "./adapters/render-mcp-cmd";
 import { registryShapes } from "./registry-spec";
 
 const idParam = {
@@ -32,7 +32,7 @@ const idParam = {
     .describe(
       "Omit for a new component. To UPDATE a component you rendered earlier " +
         "(e.g. live progress), pass the id you were given for it — its props " +
-        "are replaced in place instead of stacking a duplicate.",
+        `are replaced in place instead of stacking a duplicate (your own ids: ${RENDER_ID_GRAMMAR}).`,
     ),
 };
 
@@ -42,7 +42,9 @@ const server = new McpServer({ name: "mirafold", version: "1.0.0" });
 // mcp_tool_call result. structuredContent is the primary channel; the text is a
 // parseable fallback in case an engine drops structured content.
 function ack(kind: string, id: string | undefined) {
-  const renderId = id ?? randomUUID();
+  // The same id rule the adapters apply (acceptableRenderId): the ack names
+  // the id that will actually be painted, so the agent can read it back.
+  const renderId = acceptableRenderId(id) ?? randomUUID();
   return {
     content: [{ type: "text" as const, text: `Rendered ${kind} (id: ${renderId})` }],
     structuredContent: { renderId },
@@ -119,7 +121,7 @@ server.registerTool(
     description:
       "Render self-contained HTML/CSS/JS in a locked-down sandboxed iframe. LAST " +
       "RESORT — use only when no render_* component fits (custom visuals, " +
-      "simulations, bespoke interactivity). A strict CSP blocks ALL network and " +
+      "simulations, bespoke interactivity). A strict CSP blocks HTTP/WebSocket and " +
       "there is no storage; style for a dark background (#141a26).",
     inputSchema: {
       html: z

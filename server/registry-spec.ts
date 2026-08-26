@@ -161,9 +161,20 @@ export const registryShapes = {
           // agent-controlled script one click from the shell's scope.
           href: z
             .url()
-            .refine((u) => /^https?:$/.test(new URL(u).protocol), {
-              message: "href must be an http(s) URL",
-            })
+            .refine(
+              (u) => {
+                // zod 4 runs the refine even after z.url() failed, and
+                // `new URL("docs/README.md")` THROWS — a relative link (the
+                // model's commonest mistake) became a TypeError out of the
+                // schema instead of a validation message (audit 2026-08-26).
+                try {
+                  return /^https?:$/.test(new URL(u).protocol);
+                } catch {
+                  return false;
+                }
+              },
+              { message: "href must be an http(s) URL" },
+            )
             .describe("Absolute http(s) URL."),
           description: z.string().optional().describe("One-line description, muted."),
         }),

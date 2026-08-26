@@ -13,7 +13,7 @@
 // picture). Whatever the agent put in `src`/`error` never survives: those
 // fields are daemon-filled here or absent.
 
-import { readFileSync, statSync } from "node:fs";
+import { closeSync, constants, fstatSync, openSync, readFileSync } from "node:fs";
 import { inside } from "./sessions/actions";
 import { isSecretFile } from "./security/permissions";
 
@@ -60,12 +60,22 @@ export function resolveImageProps(
   if (isSecretFile(abs)) return fail("not an image file");
   let buf: Buffer;
   try {
-    const st = statSync(abs);
-    if (!st.isFile()) return fail("not a file");
-    if (st.size > IMAGE_MAX_BYTES) {
-      return fail(`too large (${(st.size / 1e6).toFixed(1)} MB; the cap is 2 MB)`);
+    // Open without following a link and read THAT descriptor: `inside()`
+    // realpathed the name an instant ago, but the file it named can be
+    // swapped for a link or a FIFO between the check and the read (the
+    // folder tree's readRegularFile does the same; audit 2026-08-26).
+    const { O_RDONLY, O_NOFOLLOW, O_NONBLOCK } = constants;
+    const fd = openSync(abs, O_RDONLY | (O_NOFOLLOW ?? 0) | (O_NONBLOCK ?? 0));
+    try {
+      const st = fstatSync(fd);
+      if (!st.isFile()) return fail("not a file");
+      if (st.size > IMAGE_MAX_BYTES) {
+        return fail(`too large (${(st.size / 1e6).toFixed(1)} MB; the cap is 2 MB)`);
+      }
+      buf = readFileSync(fd);
+    } finally {
+      closeSync(fd);
     }
-    buf = readFileSync(abs);
   } catch {
     return fail("unreadable");
   }
