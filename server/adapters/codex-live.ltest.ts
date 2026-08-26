@@ -1,6 +1,6 @@
-import { test } from "node:test";
+import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createServer } from "node:net";
@@ -30,6 +30,26 @@ import { codexInstalled, ollamaModels, withCodexHome, withoutCredentials } from 
 // Everything skips cleanly when the tool isn't installed.
 
 const HAVE_CODEX = codexInstalled();
+
+// Every Codex session now asks folder-trust before its first turn (CA.3), and
+// each test workspace here is a fresh mkdtemp — untrusted. Point the trust
+// record at a THROWAWAY file (never the real state dir) so a live yes can't
+// pollute Kyle's trusted-workspaces, and auto-approve the ask so these
+// transport tests exercise a real turn. `autoApproveTrust(session)` wires the
+// yes; the gate itself is proven in the Tier-2 unit tests.
+let trustFile: string;
+before(() => {
+  trustFile = path.join(mkdtempSync(path.join(os.tmpdir(), "mirafold-live-trust-")), "trusted.json");
+  writeFileSync(trustFile, "[]");
+  process.env.MIRAFOLD_WORKSPACE_TRUST_FILE = trustFile;
+});
+after(() => {
+  delete process.env.MIRAFOLD_WORKSPACE_TRUST_FILE;
+});
+const autoApproveTrust = (s: CodexSession) =>
+  s.onMessage((m) => {
+    if (m.type === "permission_request") s.resolvePermission(m.id, true);
+  });
 // A 4K Ollama runner reserves roughly half its window for output and silently
 // truncated the ~7.7K Codex prompt to 2,050 tokens in two false-green runs.
 // Tier 4 accepts only a model whose `/api/show` proves a 32K override.
@@ -120,8 +140,8 @@ test(
 );
 
 test(
-  "a real Codex turn against an unavailable local engine fails promptly and actionably",
-  { skip: HAVE_CODEX ? false : "codex is not installed", timeout: 30_000 },
+  "a real Codex turn against an unavailable local engine: the reconnection is visible, and the watchdog ends it promptly",
+  { skip: HAVE_CODEX ? false : "codex is not installed", timeout: 40_000 },
   (t) =>
     withCodexHome(undefined, async () => {
       const workspace = mkdtempSync(path.join(os.tmpdir(), "mirafold-live-unavailable-"));
@@ -134,10 +154,15 @@ test(
             kind: "local",
             endpoint: `http://127.0.0.1:${port}`,
             model: "unavailable-local-model",
-            // A test backstop only. The assertion below requires Codex's own
-            // provider failure, not the adapter watchdog message.
-            localTurnTimeoutMs: 15_000,
+            // On a connection failure, app-server does NOT fail the turn — it
+            // emits `Reconnecting…` (willRetry) roughly every 8 s and retries
+            // forever, exactly as the Codex TUI does. For a discovered-local
+            // session the adapter's watchdog is what ends it; 12 s leaves room
+            // for at least one reconnection notice to reach the transcript
+            // first (measured 2026-08-25).
+            localTurnTimeoutMs: 12_000,
           });
+          autoApproveTrust(s);
           let abortTurn: (() => void) | undefined;
           const done = new Promise<void>((resolve, reject) => {
             abortTurn = () => {
@@ -155,12 +180,19 @@ test(
             s.pushPrompt("Reply with exactly: ok");
             await done;
             const elapsedMs = Date.now() - startedAt;
+            // The engine's reconnection attempts are shown as retry notices in
+            // Codex's own words — badged to it, not spoken as Mirafold's.
+            const retries = msgs.filter(
+              (m): m is Extract<WireMsg, { type: "notice" }> => m.type === "notice" && m.kind === "retry",
+            );
+            assert.ok(retries.length >= 1, "the reconnection must be visible as at least one retry notice");
+            assert.match(retries[0].text, /reconnect|network/i);
+            assert.equal(retries[0].source, "codex");
+            // The watchdog ends the turn once, with one actionable error.
             const errors = msgs.filter((message) => message.type === "error");
             assert.equal(errors.length, 1);
-            assert.match(errors[0].message, /^Local Codex could not complete the turn:/);
-            assert.doesNotMatch(errors[0].message, /did not finish within/);
-            assert.match(errors[0].message, /server is running and still serves the selected model/);
-            assert.ok(elapsedMs < 15_000, `the unavailable engine took ${elapsedMs} ms to fail`);
+            assert.match(errors[0].message, /did not finish within 12 seconds/);
+            assert.ok(elapsedMs < 25_000, `the watchdog took ${elapsedMs} ms to fire`);
             assert.equal(msgs.filter((message) => message.type === "turn_end").length, 1);
           } finally {
             if (abortTurn) t.signal.removeEventListener("abort", abortTurn);
@@ -198,6 +230,7 @@ test(
             endpoint: "http://127.0.0.1:11434",
             model: LOCAL_MODELS[0],
           });
+          autoApproveTrust(s);
           let abortTurn: (() => void) | undefined;
           const aborted = new Promise<never>((_, reject) => {
             abortTurn = () => {

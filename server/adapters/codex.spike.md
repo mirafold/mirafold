@@ -215,3 +215,108 @@ that actually runs/asks (e.g. `sandbox_mode:"workspace-write"` +
 `approval_policy:"on-request"` or `on-failure`) — not `never`. One short live
 run will lock the tool/approval mapping; the rest of the adapter can be written
 offline from what's above.
+
+## CA.1 spike — `codex app-server` as the adapter's transport (2026-08-25, codex-cli 0.149.1)
+
+**Verdict: GREEN.** Driven by hand from a throwaway git repo with Kyle's real
+`~/.codex/config.toml` (`sandbox_mode = "workspace-write"`,
+`approval_policy = "on-request"`, `sandbox_workspace_write.network_access =
+true`) and his ChatGPT login (plan `pro`), `-c model_reasoning_effort="low"`
+for the spike only. Newline-delimited JSON-RPC over stdio, the same framing
+`codex-model-list.ts` already uses. The v2 protocol schema comes from the
+binary itself: `codex app-server generate-json-schema --out <dir>`.
+
+### The surface, as observed
+
+- `initialize` `{clientInfo}` → `{userAgent, codexHome, platformOs}`; then
+  the `initialized` notification. (Already what `codex-model-list.ts` sends.)
+- `thread/start` `{cwd}` → `{thread:{id,…}, model, modelProvider,
+  approvalPolicy, sandbox:{type:"workspaceWrite", writableRoots, networkAccess,
+  …}, approvalsReviewer:"user", instructionSources:["~/.codex/AGENTS.md"]}`.
+  Optional params of note: `sandbox`, `approvalPolicy`, `model`,
+  `modelProvider`, `config` (the same dotted overrides as `-c`),
+  **`developerInstructions`**, `baseInstructions`, `ephemeral`.
+- `turn/start` `{threadId, input:[{type:"text", text}]}` → `{turn:{id,…}}`;
+  then notifications `turn/started`, `item/started` / `item/completed`
+  (item `type`: `userMessage`, `reasoning`, `agentMessage`,
+  `commandExecution` with `command`, `cwd`, `status`, `exitCode`,
+  `aggregatedOutput`; `fileChange`), deltas `item/agentMessage/delta`,
+  `item/reasoning/*Delta`, `item/commandExecution/outputDelta`,
+  `turn/diff/updated`, `thread/tokenUsage/updated`, `account/rateLimits/updated`,
+  `thread/status/changed` (`active` with `activeFlags:["waitingOnApproval"]`
+  while a request is pending; `idle` after), and `turn/completed`
+  `{turn:{status:"completed"|"interrupted"|"failed"}}`.
+- **Approvals are server→client JSON-RPC requests**, answered by a response
+  with the same `id`: `item/commandExecution/requestApproval`
+  `{threadId, turnId, itemId, command, cwd, reason, commandActions,
+  networkApprovalContext?}` → `{decision:"accept"|"acceptForSession"|
+  "decline"|"cancel"|…}`; also `item/fileChange/requestApproval` and
+  `item/permissions/requestApproval` (schema-known, not exercised).
+  `serverRequest/resolved` follows the answer.
+- `thread/resume` `{threadId, cwd}` → the same shape as `thread/start` plus the
+  prior turns; `turn/interrupt` `{threadId, turnId}` → `{}` and the turn ends
+  `"interrupted"`.
+
+### What was observed, probe by probe
+
+| probe | app-server (Kyle's config) | `codex exec` (Mirafold today) |
+|---|---|---|
+| append + `git commit` in the workspace | ran, **no approval asked**, commit landed | ran, commit landed |
+| write to `$HOME/…` (outside the writable roots) | `item/commandExecution/requestApproval`, `reason: "Allow the exact command you requested to create /home/…?"`; **declined → status `declined`, agent says permission was denied**; the file was never created | command fails inside the sandbox: `zsh:1: read-only file system: /home/…` — **nobody can be asked**, the agent just reports the error |
+| `curl https://example.com` with `network_access=false` | first run fails inside the sandbox (`Could not resolve host`), Codex **asks** (`reason: "…outside the network-restricted sandbox?"`); **accepted → re-ran outside the sandbox and succeeded** | (not run; same mechanism as the row above) |
+| `thread/resume` in a fresh process | works — the model recalled the earlier commit | n/a (`resume` is `exec resume <id>`) |
+| `developerInstructions` on `thread/start` | **honored** ("PINEAPPLE. Hello!") — a real system-level hook, unlike `exec` | none (guidance rides the first user turn) |
+| `turn/interrupt` mid-`sleep 60` | `turn/completed` `"interrupted"` in ~1 s | SDK abort signal |
+| MCP + provider via `-c` | rides along as with `exec` (proved by `-c sandbox_workspace_write.network_access=false`) | same |
+
+So: **the "read-only" Kyle hit is the `exec` failure mode.** `codex exec` is
+Codex's non-interactive entry point; a sandbox denial there is just an error
+string (`read-only file system`) the model works around. On `app-server` the
+same denial becomes a question with a human-readable `reason` — the terminal's
+"retry outside the sandbox?" — and the answer decides. `.git` itself is NOT
+read-only in 0.149.1 under either path (the binary carries no such rule; the
+commit succeeded twice); the wording came from a denial elsewhere.
+
+### The one trust finding (both paths, pre-existing)
+
+Codex **writes `[projects."<cwd>"] trust_level = "trusted"` into
+`~/.codex/config.toml` on every headless start** — `exec` (Mirafold today),
+`thread/start`, even `thread/start` with `ephemeral: true`, with no turn sent.
+The terminal TUI asks "trust this folder?" first; headless Codex does not.
+This is Codex's own write into the user's own Codex config, identical to what
+Mirafold's current path already causes, so CA does not worsen it — but the
+faithful-skin bar says the user should be *asked* the way the TUI asks.
+**CA.3 owns this:** before the first `thread/start` in a folder Codex has not
+recorded, Mirafold asks its own shell-owned trust question (the
+`workspace-trust.ts` mechanism Gemini uses) and starts the thread only on yes.
+(Four scratch entries from this spike are in Kyle's config — lines named in
+the report; his file, his deletion.)
+
+### Consequences for CA.2–CA.4
+
+- Transport: a long-lived `codex app-server` per session (the one-shot
+  `jsonrpc-oneshot.ts` framing, made persistent), `thread/start` /
+  `thread/resume` with `cwd`, `turn/start` per prompt, `turn/interrupt` for
+  stop. `sandbox` / `approvalPolicy` stay UNSET (inherited from config —
+  faithful, as today). Resume id = the thread id.
+- `@openai/codex-sdk` has no remaining role once the transport lands → remove
+  (dependency policy: zero passengers).
+- Approvals: `item/commandExecution/requestApproval` → `permission_request`
+  (tool "Shell", detail = `command`, the engine's `reason` badged with
+  `source` on the notice line); the bar's answer → `{decision:"accept"}` /
+  `{decision:"decline"}`; `item/fileChange/requestApproval` the same with tool
+  "apply_patch"; `item/permissions/requestApproval` answered with the granted
+  profile (map to one allow/deny for the first cut). `thread/status/changed`
+  `waitingOnApproval` is the needs-you signal.
+- `developerInstructions` becomes RENDER_GUIDANCE's home for Codex — no more
+  first-turn prepend, and the CX.1 paragraph reaches Codex the way it reaches
+  Claude.
+- Event mapping: `item/*` replaces the exec-JSON `item.*` shapes the mapper
+  knows; `agentMessage` deltas stream, `commandExecution` carries
+  `aggregatedOutput` + `exitCode` on completion (same fields, camelCase).
+- Not exercised, noted: `item/fileChange/requestApproval`,
+  `item/permissions/requestApproval`, `acceptForSession`, the network-policy
+  amendment decisions, `thread/fork`, `turn/steer`. None gates CA.2.
+
+Driver + raw JSONL logs: the session scratchpad (`spike-driver.mjs`,
+`spike-*.jsonl`) — throwaway, not committed.

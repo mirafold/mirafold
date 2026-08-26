@@ -2925,7 +2925,7 @@ glyph beside the chevron.
     `-folder-open` in the tree; a dir name and a file name at the same
     depth share the same x.
 
-## Phase CA — Codex on app-server: terminal-equal permissions (written 2026-08-25; NOT YET OPENED)
+## Phase CA — Codex on app-server: terminal-equal permissions (opened + ✅ COMPLETE 2026-08-25; Kyle-directed; PR `feature/codex-app-server` → `next`; hosted acceptance is Kyle-run)
 
 **Finding (verified 2026-08-25).** Mirafold passes Codex **no** sandbox or
 approval settings (`codex.ts` leaves `sandboxMode`/`approvalPolicy` unset
@@ -2947,7 +2947,16 @@ the existing `permission_request` / `permission_resolved` messages and the
 permission bar. `app-server` is already spawned for the model and skills
 catalogs (`codex-model-list.ts`, `codex-skills-list.ts`).
 
-- [ ] **Step CA.1 — The spike (throwaway, time-boxed)**
+- [x] **Step CA.1 — The spike (throwaway, time-boxed)** — done 2026-08-25:
+  findings in `server/adapters/codex.spike.md`, "CA.1 spike". Verdict GREEN:
+  observed approval round trips for an out-of-workspace write (declined →
+  denied) and a network call (accepted → re-ran outside the sandbox);
+  `thread/resume`, `turn/interrupt`, and `developerInstructions` all work.
+  The "read-only" Kyle hit is `codex exec`'s failure mode (a bare
+  `read-only file system` error, nobody to ask); `.git` is not read-only in
+  0.149.1 on either path. One trust finding for CA.3: headless Codex (exec
+  AND app-server, even ephemeral) writes `trust_level = "trusted"` for the
+  cwd into `~/.codex/config.toml` with no dialog — Mirafold must ask first.
   - Goal: watch the protocol do what the docs say before any product code.
   - Build: drive `codex app-server` by hand from a scratch folder against
     the installed `codex-cli` (0.149.1 today): initialize; new thread + one
@@ -2962,7 +2971,39 @@ catalogs (`codex-model-list.ts`, `codex-skills-list.ts`).
     (a sandboxed commit produced a request; approving it made it succeed)
     and names every place terminal-equal behavior is or isn't reachable.
 
-- [ ] **Step CA.2 — The transport**
+- [x] **Step CA.2 — The transport** — done 2026-08-25: `codex-app-server.ts`
+  (long-lived newline JSON-RPC client over stdio: our requests, the
+  engine's notifications, and the engine's own requests to us, kept apart
+  by shape) replaces `@openai/codex-sdk` (dependency REMOVED); `codex.ts`
+  spawns lazily on the first turn, `initialize` → `thread/start` (with
+  `developerInstructions` = RENDER_GUIDANCE + the deferred-tools addendum —
+  a real instructions hook at last) or `thread/resume` by id, `turn/start`
+  per prompt with `model`/`effort` as per-turn params (a `/model` or
+  `/effort` pick no longer restarts anything), `turn/interrupt` for stop; a
+  dead process is respawned and the thread resumed by id on the next
+  prompt. `codex-events.ts` maps the v2 `item/*` stream: prose streams as
+  deltas (held only from a code fence on, so a hand-written mermaid chart
+  still becomes the chart component), reasoning deltas, `commandExecution`
+  (declined → error row "(declined)"), `fileChange`, `mcpToolCall`
+  (`structuredContent`), `webSearch`, `turn/plan/updated` → checklist,
+  `thread/tokenUsage/updated` → one `usage` per turn (delta of totals),
+  `error`(willRetry)/`warning` → badged notices. The rollout-file model
+  lookup is gone — `thread/start` answers with the model. API-key picks pass
+  `-c forced_login_method="api"` (CA.1: app-server otherwise prefers
+  auth.json). Approvals are DECLINED fail-closed until CA.3. Fixed en route:
+  `configArgs` wrote arrays as `args.0=` (rejected by the binary) — arrays
+  now encode whole. `codex.test.ts` rewritten on an in-memory fake
+  app-server (59 tests); live smoke against the real binary: streamed prose,
+  model from thread/start, resume id, a declined out-of-workspace write.
+  Tier-1 935, Tier-2 153 green.
+  - **Fix 2026-08-25 (Kyle screenshot, still on this branch):** app-server
+    marks ANY nonzero exit `status:"failed"` (the exec path said
+    "completed"), so grep-no-match / `gh repo view` on a missing repo /
+    a failing test each rendered as an EXPANDED red error that broke the
+    fold. Faithful rule now matches the TUI: a command that RAN (has an exit
+    code) is non-error and foldable, exit code annotated; only a no-exit-code
+    failure or a decline is an error. Proven live + three unit tests
+    (incl. the screenshot's exact shape). Tier-1 941.
   - Build: `codex-app-server.ts` — a JSON-RPC-over-stdio client (the
     `jsonrpc-oneshot.ts` patterns, made long-lived) replacing the SDK spawn
     in `codex-binding.ts` / `codex.ts`; same config overrides and provider
@@ -2972,7 +3013,25 @@ catalogs (`codex-model-list.ts`, `codex-skills-list.ts`).
   - Done when: Tier-2 `codex.test.ts` green on the new transport with a
     scripted app-server stub; interrupt, resume, `/model`, `/effort` intact.
 
-- [ ] **Step CA.3 — The approval round trip**
+- [x] **Step CA.3 — The approval round trip** — done 2026-08-25: a
+  `PermissionLedger` (the shared one the other adapters use) turns each
+  `item/commandExecution/requestApproval` / `item/fileChange/requestApproval`
+  / `item/permissions/requestApproval` into a `permission_request` on the
+  shell's bar — the command stated plainly, the engine's own `reason` (the
+  "retry outside the sandbox?" escalation) alongside it; the bar's answer
+  maps to `{decision:"accept"|"decline"}` / the granted permission profile.
+  Fail-closed on every path (timeout, close, dead process → decline). ALSO
+  the folder-trust gate (assigned here by the CA.1 spike): the first turn in
+  a folder Mirafold has no record of asks before anything spawns — `Codex`
+  tool, wording that says a yes records the folder as trusted in
+  `~/.codex/config.toml` — and only on a yes does `thread/start` run (so the
+  config write is consented, or never happens); remembered in
+  `workspace-trust.ts`, the same mechanism Gemini uses. Tier-2 (unit): the
+  three-way approval round trip, a timeout decline, and the trust gate
+  (asked/spawns-only-on-yes/records; denied → refusal notice, nothing
+  spawned, config untouched; pre-trusted → no ask). Live smoke: approving a
+  real out-of-workspace write made the command RUN (the file was written),
+  where CA.2 fail-closed left it nonexistent. Tier-1 940, Tier-2 153 green.
   - Build: app-server approval requests → `permission_request` (tool +
     detail, with the "retry outside the sandbox" meaning stated in the
     shell's own words, engine words badged with `source`); the permission
@@ -2981,7 +3040,22 @@ catalogs (`codex-model-list.ts`, `codex-skills-list.ts`).
   - Done when: Tier-2 proves request → bar → answer → command proceeds or
     is denied, and a denied request never runs.
 
-- [ ] **Step CA.4 — Fidelity acceptance (live, Kyle-run)**
+- [x] **Step CA.4 — Fidelity acceptance** — automated live DONE 2026-08-25;
+  hosted "feels like the terminal" judgment is Kyle's. `codex-live.ltest.ts`
+  (Tier-4, real binary) updated to the app-server transport and green: a real
+  Ollama turn streams text through the new stack with one turn_end and the
+  `/effort none` control; the pinned first-party catalog still holds; an
+  unreachable endpoint now surfaces Codex's own "Reconnecting… (willRetry)"
+  as retry notices and the discovered-local watchdog ends it (app-server
+  retries a connection failure forever, exactly as the TUI does — a hosted
+  blip shows the same notices and interrupt is the out). Beyond the suite,
+  three live smokes against the real binary during CA.2/CA.3 proved: streamed
+  prose + model-from-thread/start + resume id; a DECLINED out-of-workspace
+  write never ran; an APPROVED one did (the file was written). **Left for
+  Kyle:** a hosted session (subscription/api-key) doing real sandboxed work —
+  commit, a network call — and confirming the approve/deny prompts feel like
+  Codex in the terminal. That can't be automated (Tier-4 forbids metered
+  models).
   - `codex-live.ltest.ts`: in a workspace-write sandbox, the agent commits
     → Mirafold prompts → approve → the commit lands; deny → it doesn't;
     `~/.codex/config.toml` byte-identical before and after (never written);
