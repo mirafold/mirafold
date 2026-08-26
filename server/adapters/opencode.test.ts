@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import os from "node:os";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import type { WireMsg } from "../protocol";
 import { MIRAFOLD_CONTEXT, RENDER_GUIDANCE } from "../render-tools";
 import { OpenCodeSession } from "./opencode";
@@ -18,6 +18,11 @@ import { OPENCODE_SUBAGENT_EVENTS } from "../testing/opencode-subagent-fixture";
 type Any = WireMsg & Record<string, any>;
 
 const tmp = mkdtempSync(path.join(os.tmpdir(), "mcp-opencode-test-"));
+// The folder-trust gate (audit 2026-08-26): sessions under `tmp` start warm;
+// the gate has its own untrusted-folder test at the end.
+const trustRecord = path.join(tmp, "trusted-workspaces.json");
+writeFileSync(trustRecord, JSON.stringify({ version: 2, scopes: { opencode: [tmp] } }));
+process.env.MIRAFOLD_WORKSPACE_TRUST_FILE = trustRecord;
 const SES = "ses_test";
 
 class FakeTransport implements OpenCodeTransport {
@@ -30,6 +35,7 @@ class FakeTransport implements OpenCodeTransport {
   closed = false;
   existing = new Set<string>();
   failPrompt?: Error;
+  failPermissionReply?: Error;
   configContent?: Record<string, unknown>;
   // OC.3 classification inputs — defaults let a pinless session resolve the
   // user's config default onto an allowed BYO provider.
@@ -99,6 +105,7 @@ class FakeTransport implements OpenCodeTransport {
   }
   async replyPermission(permissionID: string, response: "once" | "reject") {
     this.replies.push({ permissionID, response });
+    if (this.failPermissionReply) throw this.failPermissionReply;
   }
   close() {
     this.closed = true;
@@ -297,7 +304,7 @@ test("an agent-chosen render id (update-in-place) paints under that id", async (
       tool: "mirafold_render_progress",
       state: {
         status: "completed",
-        input: { id: "deploy-status", label: "deploy", value: 40 },
+        input: { id: "deploy-status", label: "deploy", percent: 40 },
         output: "Rendered progress (id: deploy-status)",
       },
     }),
@@ -383,6 +390,30 @@ test("deny replies `reject`; a second answer for the same ask is a no-op", async
   await waitFor(() => fake.replies.length === 1, "engine reply");
   assert.deepEqual(fake.replies[0], { permissionID: "per1", response: "reject" });
   assert.equal(msgs.filter((m) => m.type === "permission_resolved").length, 1);
+  session.close();
+});
+
+test("a failed permission reply reports beside the still-active engine turn", async () => {
+  const { session, fake, msgs, prompt, feed, awaitTurnEnd } = makeSession();
+  await prompt("hi");
+  feed(asked());
+  await waitFor(() => msgs.some((m) => m.type === "permission_request"), "ask");
+  fake.failPermissionReply = new Error("permission endpoint unavailable");
+  session.resolvePermission("per1", true);
+  await waitFor(
+    () => msgs.some((m) => m.type === "error" && /permission reply failed/.test(m.message)),
+    "failed permission reply",
+  );
+  const error = msgs.find(
+    (m): m is Extract<WireMsg, { type: "error" }> =>
+      m.type === "error" && /permission reply failed/.test(m.message),
+  );
+  assert.equal(error?.terminal, false);
+  assert.equal(msgs.some((m) => m.type === "turn_end"), false, "the engine turn is still open");
+
+  feed(delta("answer", "still working"), idle());
+  await awaitTurnEnd();
+  assert.ok(msgs.some((m) => m.type === "text_delta" && m.text === "still working"));
   session.close();
 });
 
@@ -1401,4 +1432,47 @@ test("RC: verifyBackendKind rejects with the honest reason and stays retryable",
   await session.verifyBackendKind!();
   assert.equal(fake.sessionsCreated, 1, "recovered into a real engine session");
   session.close();
+});
+
+// ── The folder-trust gate (audit 2026-08-26): `opencode serve` applies the
+// folder's own opencode.json — any MCP command it names — the moment it
+// starts (probed: it ran at session create). No spawn before the ask.
+test("an untrusted folder asks before `opencode serve` starts; a no spawns nothing, a yes starts it", async () => {
+  const ws = mkdtempSync(path.join(os.tmpdir(), "mcp-opencode-untrusted-"));
+  const fake = new FakeTransport();
+  let starts = 0;
+  const originalStart = fake.start.bind(fake);
+  fake.start = async (cb) => {
+    starts++;
+    await originalStart(cb);
+  };
+  const session = new OpenCodeSession({ workspaceDir: ws, makeTransport: () => fake });
+  const msgs: Any[] = [];
+  session.onMessage((m) => msgs.push(m as Any));
+  try {
+    session.refreshPromptOptions(); // what the registry does at create — must not spawn
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(starts, 0, "the catalog refresh spawns nothing in an untrusted folder");
+    session.pushPrompt("hello");
+    await waitFor(() => msgs.some((m) => m.type === "permission_request"), "the trust ask");
+    const ask = msgs.find((m) => m.type === "permission_request")!;
+    assert.equal(ask.tool, "OpenCode");
+    assert.match(ask.detail, /trust this folder/);
+    assert.match(ask.detail, /opencode\.json/);
+    assert.equal(starts, 0, "nothing spawned while the ask is open");
+    session.resolvePermission(ask.id, false);
+    await waitFor(() => msgs.some((m) => m.type === "turn_end"), "turn_end after the no");
+    assert.ok(msgs.some((m) => m.type === "notice" && /haven't trusted/.test(m.text)));
+    assert.ok(!msgs.some((m) => m.type === "error"), "a no is a notice, never a red error");
+    assert.equal(starts, 0);
+
+    msgs.length = 0;
+    session.pushPrompt("again");
+    await waitFor(() => msgs.some((m) => m.type === "permission_request"), "asked again");
+    session.resolvePermission(msgs.find((m) => m.type === "permission_request")!.id, true);
+    await waitFor(() => starts === 1, "the engine starts on the yes");
+    await waitFor(() => fake.prompts.length === 1, "the prompt reaches the engine");
+  } finally {
+    session.close();
+  }
 });

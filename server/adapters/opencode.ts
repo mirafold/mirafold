@@ -7,7 +7,8 @@ import { classifyOpenCodeProvider, type CredentialKind } from "../provider-polic
 import { agentBin, errText, PERMISSION_TIMEOUT_MS, type AgentSession } from "./types";
 import { AsyncQueue, CLOSE } from "./async-queue";
 import { ResumeIdState } from "./resume-id";
-import { PermissionLedger, RenderGuidanceOnce } from "./wire-helpers";
+import { PermissionLedger, RenderGuidanceOnce, runSlashTurn } from "./wire-helpers";
+import { isWorkspaceTrusted, trustWorkspace } from "../sessions/workspace-trust";
 import { renderMcpCommand, MIRAFOLD_MCP } from "./render-mcp-cmd";
 import {
   OpenCodeServerProcess,
@@ -51,6 +52,20 @@ const MAX_ENGINE_COMMANDS = 500;
  * bridge to the shell's bar and are answered `once`/`reject` — never
  * `always`, which would persist an approval into their own OpenCode state.
  */
+// The folder-trust ask waits this long before denying — the same window the
+// other engines' gates use. A person reads the ask, not a machine.
+const TRUST_PROMPT_TIMEOUT_MS = 5 * 60_000;
+
+/** A denied (or timed-out) trust ask; the turn ends with this notice. */
+class TrustRefusedError extends Error {
+  constructor() {
+    super(
+      "OpenCode won't run in a folder you haven't trusted. Nothing ran. " +
+        "Send another prompt to be asked again, or switch agents.",
+    );
+  }
+}
+
 export class OpenCodeSession implements AgentSession {
   private queue = new AsyncQueue<string | typeof CLOSE>();
   private listeners = new Set<(msg: SessionMsg) => void>();
@@ -130,6 +145,13 @@ export class OpenCodeSession implements AgentSession {
    *  which publishes the truthful kind on the way (adoptPin). A failure has
    *  already reset the started latch, so a later local prompt retries. */
   verifyBackendKind(): Promise<void> {
+    // A remote create classifies by spawning the engine; in a folder nobody
+    // has vouched for, nobody is there to answer the ask — refuse now.
+    if (!this.isTrusted()) {
+      return Promise.reject(
+        new Error("this folder hasn't been trusted for OpenCode yet — open it from this machine first"),
+      );
+    }
     return this.ensureStarted();
   }
 
@@ -204,10 +226,12 @@ export class OpenCodeSession implements AgentSession {
   }
 
   interrupt() {
+    // Stop also answers an open ask (a trust question raised outside a
+    // turn by /model or /agent included): the user walked away from it.
+    this.permissions.denyAll();
     if (!this.turnActive) return;
     const token = this.turnToken;
     const sessionID = this.sessionID;
-    this.permissions.denyAll();
     const fallback = () => {
       this.graceTimer = undefined;
       if (!this.turnActive || this.turnToken !== token) return;
@@ -267,9 +291,49 @@ export class OpenCodeSession implements AgentSession {
   // serve` per retry, orphaning the previous server and doubling the event
   // pump.
   private engineUp?: Promise<void>;
+  // Set once the user says yes IN THIS SESSION — the disk record is the
+  // durable answer; this just avoids re-reading it every spawn.
+  private trusted = false;
+
+  private isTrusted(): boolean {
+    if (this.trusted || isWorkspaceTrusted(this.workspaceDir, "opencode")) this.trusted = true;
+    return this.trusted;
+  }
+
+  /**
+   * The folder-trust gate (the terminal's own first-run question). `opencode
+   * serve` applies the folder's own opencode.json / .opencode the moment it
+   * starts — including any MCP server it names, i.e. programs a checkout
+   * brought with it (probed 2026-08-26: an opencode.json command ran at
+   * session create). So the first engine spawn asks, exactly as the
+   * terminal does; a folder already vouched for starts without a question.
+   */
+  private ensureTrusted(): Promise<boolean> {
+    if (this.isTrusted()) return Promise.resolve(true);
+    if (this.closed) return Promise.resolve(false);
+    return this.permissions.ask(
+      {
+        tool: "OpenCode",
+        detail:
+          `trust this folder — ${this.workspaceDir}. ` +
+          `Yes lets OpenCode run here and applies this folder's own opencode.json and .opencode ` +
+          `settings (including any MCP servers they define), exactly as the terminal does once ` +
+          `you trust it there.`,
+      },
+      TRUST_PROMPT_TIMEOUT_MS,
+      (allow) => {
+        if (allow) {
+          this.trusted = true;
+          trustWorkspace(this.workspaceDir, "opencode"); // remembered for this disclosed effect
+        }
+      },
+    );
+  }
 
   private ensureEngine(): Promise<void> {
     this.engineUp ??= (async () => {
+      // Before anything spawns in the folder.
+      if (!(await this.ensureTrusted())) throw new TrustRefusedError();
       await this.transport.start(
         (ev) => this.handleEvent(ev),
         (detail) => this.onEngineDied(detail),
@@ -280,6 +344,8 @@ export class OpenCodeSession implements AgentSession {
         0,
         MAX_ENGINE_COMMANDS,
       );
+      // A catalog that had to wait for the trust answer is sent now.
+      this.refreshPromptOptions();
     })();
     return this.engineUp.catch((err) => {
       // Only a failed ENGINE start may retry the spawn; the transport keeps
@@ -364,6 +430,9 @@ export class OpenCodeSession implements AgentSession {
       emit: (msg) => this.emit(msg),
       isClosed: () => this.closed,
       listCommands: async () => {
+        // Never a spawn before the folder is trusted: the engine rows arrive
+        // once the first turn's ask is answered (ensureEngine re-sends).
+        if (!this.isTrusted()) return [];
         await this.ensureEngine();
         return this.engineCommands;
       },
@@ -408,7 +477,13 @@ export class OpenCodeSession implements AgentSession {
       // Token-guarded: a send that fails AFTER the grace fallback already
       // ended this turn must not error-and-end whatever turn now runs.
       if (this.turnActive && this.turnToken === token) {
-        if (!this.closed) this.emit({ type: "error", message: errText(err) });
+        if (!this.closed) {
+          if (err instanceof TrustRefusedError) {
+            this.emit({ type: "notice", text: err.message });
+          } else {
+            this.emit({ type: "error", message: errText(err) });
+          }
+        }
         this.endTurn();
       }
     }
@@ -420,6 +495,15 @@ export class OpenCodeSession implements AgentSession {
       const item = await this.queue.next();
       if (item === CLOSE) return;
       const trimmed = item.trim();
+      // Anything slash-shaped spawns the engine (its catalog, or a turn), so
+      // in a folder nobody has vouched for the ask comes FIRST, once — not
+      // from inside a picker's error path, and not twice.
+      if (trimmed.startsWith("/") && !this.isTrusted()) {
+        await runSlashTurn((msg) => this.emit(msg), async () => {
+          if (!(await this.ensureTrusted())) this.emit({ type: "notice", text: new TrustRefusedError().message });
+        });
+        if (!this.isTrusted()) continue;
+      }
       if (trimmed === "/model" || trimmed.startsWith("/model ")) {
         await this.runModelCommand(trimmed.slice("/model".length).trim());
       } else if (trimmed === "/agent" || trimmed.startsWith("/agent ")) {
@@ -643,7 +727,11 @@ export class OpenCodeSession implements AgentSession {
         if (how === "external" || how === "moot") return;
         void this.transport.replyPermission(ask.id, allow ? "once" : "reject").catch((err) => {
           if (!this.closed)
-            this.emit({ type: "error", message: `permission reply failed: ${errText(err)}` });
+            this.emit({
+              type: "error",
+              message: `permission reply failed: ${errText(err)}`,
+              terminal: false,
+            });
         });
       },
     );
