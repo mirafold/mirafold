@@ -107,6 +107,24 @@ export function openConnection(
   // A connection is a viewport onto one registry session — or a fleet
   // watcher observing the registry itself.
   let entry: SessionEntry | null = null;
+  // A `refused` frame is the registry's word that this viewport no longer
+  // belongs to its session (a mid-session credential-kind flip evicts remote
+  // viewports). The registry detaches the viewport itself; what it cannot
+  // reach is THIS handle — and a stale one let an evicted phone keep sending
+  // `bang`/`permission_response` into a session the gate had already refused
+  // (audit 2026-08-26). Same identity is registered with the registry, so
+  // attach/detach/markRemote all see one function.
+  // `session_ended` is the same word from the other teardown path (a stale
+  // handle there let a paired phone spawn a real PTY, invisibly, after the
+  // user ended the session — cold review of the same fix).
+  const deliver = viewport;
+  viewport = (msg) => {
+    if (entry) {
+      if (msg.type === "refused" && !entry.viewports.has(viewport)) entry = null;
+      else if (msg.type === "session_ended" && msg.sessionId === entry.id) entry = null;
+    }
+    deliver(msg);
+  };
   // Per-connection budget for forwarded client_error reports — the client
   // caps itself too, but a hostile client isn't bound by our bundle.
   let clientErrorReports = 0;
@@ -124,7 +142,7 @@ export function openConnection(
   // stranger's; the terminal log is what lands in a bug report.
   const sendError = (message: string) => {
     log.error(message);
-    viewport({ type: "error", message });
+    viewport({ type: "error", message, terminal: false });
   };
   // One context for every per-connection handler factory (handler-context.ts).
   const ctx: ConnectionContext = {
@@ -350,6 +368,10 @@ export function openConnection(
   };
 
   const handleMessage = (raw: string) => {
+    // A frame decrypted or queued across a close (the relay path awaits the
+    // cipher between its liveness check and this call) must not act on a
+    // session this viewport has already left.
+    if (closed) return;
     let msg: ClientMsg;
     try {
       msg = JSON.parse(raw) as ClientMsg;
@@ -542,6 +564,14 @@ export function openConnection(
         break;
       case "permission_response":
         if (typeof msg.id === "string" && typeof msg.allow === "boolean" && entry) {
+          // An ALLOW drives the model, so a remote viewport gets the same
+          // drive-time relay gate as `prompt` (a DENY stops it — ungated,
+          // like answer_permission).
+          const refusal = remote && msg.allow ? relayGateRefusal(entry) : undefined;
+          if (refusal) {
+            sendError(refusal);
+            break;
+          }
           // Through the registry, not the adapter directly: the answer must
           // also drop the ask from the fleet's pending queue and notify
           // watchers — same semantics as the grid's answer_permission.
@@ -655,6 +685,7 @@ export function openConnection(
     if (entry) {
       registry.detach(entry, viewport);
       log.info(`viewport detached ← session ${entry.id}`);
+      entry = null;
     }
     if (watching) registry.unwatch(viewport);
   };

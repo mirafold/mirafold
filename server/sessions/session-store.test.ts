@@ -12,7 +12,7 @@ import path from "node:path";
 
 import { restoreBackend, type Backend } from "../adapters";
 import { SessionRegistry } from "./registry";
-import { SessionCheckpointStore, type StoredSession } from "./session-store";
+import { MAX_NEXT_SEQ, SessionCheckpointStore, type StoredSession } from "./session-store";
 import type { SessionMsg, WireMsg } from "../protocol";
 import { PROMPT_LABEL_CAP, normalizePromptOptions } from "../prompt-options";
 
@@ -223,6 +223,7 @@ test("UX.8: strict checkpoint decoding accepts every persistable transcript fram
     { type: "status", state: "tool", label: "Read" },
     { type: "turn_end" },
     { type: "error", message: "failed" },
+    { type: "error", message: "request refused", terminal: false },
     { type: "render", component: "card", props: { title: "safe" }, id: "r1" },
     {
       type: "picker",
@@ -246,7 +247,7 @@ test("UX.8: strict checkpoint decoding accepts every persistable transcript fram
     { type: "thinking_delta", text: "child reasoning", parentId: "t1" },
     { type: "permission_request", tool: "bash", detail: "touch x", id: "p2", parentId: "t1" },
     { type: "notice", text: "retrying", kind: "retry", source: "codex" },
-    { type: "bang_start", command: "echo ok", id: "b1" },
+    { type: "bang_start", command: "echo ok", id: "b1", silent: true },
     { type: "bang_output", data: "ok\n", id: "b1" },
     { type: "bang_end", id: "b1", exitCode: 0 },
   ];
@@ -260,6 +261,17 @@ test("UX.8: strict checkpoint decoding accepts every persistable transcript fram
     loaded.sessions.get(stored.id)?.buffer.map((msg) => msg.type),
     bodies.map((msg) => msg.type),
   );
+  const loadedBuffer = loaded.sessions.get(stored.id)?.buffer ?? [];
+  const silentBang = loadedBuffer.find(
+    (msg): msg is Extract<SessionMsg, { type: "bang_start" }> =>
+      msg.type === "bang_start" && msg.id === "b1",
+  );
+  assert.equal(silentBang?.silent, true);
+  const requestError = loadedBuffer.find(
+    (msg): msg is Extract<SessionMsg, { type: "error" }> =>
+      msg.type === "error" && msg.message === "request refused",
+  );
+  assert.equal(requestError?.terminal, false);
 });
 
 test("UX.8: malformed, control, and non-transcript checkpoint frames never replay", () => {
@@ -529,4 +541,76 @@ test("BUGFIX: OC.4c backend shapes survive a restart — decode accepts them all
   const bad = { ...fixture(), id: "codex-bad", backend: { agent: "codex", kind: "api-key", live: true, provider: "x" } as unknown as ReturnType<typeof fixture>["backend"] };
   store.write(bad);
   assert.ok(store.loadAll().errors.has("codex-bad"));
+});
+
+// AUDIT 2026-08-26: the zod rewrite kept `seq`'s safe-integer bound but
+// dropped `nextSeq`'s (main checked Number.isSafeInteger). 1e300 is an
+// integer to zod; adopted, `nextSeq++` is a no-op and every later message
+// carries the same seq for the session's life.
+test("a checkpoint whose nextSeq is beyond the safe-integer range is refused, not adopted", () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "mirafold-session-store-"));
+  const store = new SessionCheckpointStore(dir);
+  for (const [id, nextSeq] of [["hugenext", 1e300], ["floatnext", 2 ** 53 + 2], ["edgenext", Number.MAX_SAFE_INTEGER], ["overroom", MAX_NEXT_SEQ + 1]] as const) {
+    writeFileSync(path.join(dir, `${id}.json`), JSON.stringify({ ...fixture(id), buffer: [], nextSeq }), { mode: 0o600 });
+  }
+  const loaded = store.loadAll();
+  assert.equal(loaded.sessions.size, 0);
+  assert.ok(loaded.errors.has("hugenext"));
+  assert.ok(loaded.errors.has("floatnext"));
+  assert.ok(loaded.errors.has("edgenext"), "the safe-integer edge itself pins the stream after one message");
+  assert.ok(loaded.errors.has("overroom"));
+});
+
+// AUDIT 2026-08-26: a discovered endpoint is loopback by construction when
+// picked; a tampered checkpoint could otherwise restore a session pointed at
+// any host and ship the conversation there with no prompt.
+test("AUDIT: a saved discovered endpoint that is not on this machine is refused on restore", () => {
+  for (const agent of ["claude-code", "codex"] as const) {
+    const stored = fixture();
+    stored.backend = { agent, kind: "local", live: true, endpoint: "http://attacker.example:11434", endpointSource: "discovered", ...(agent === "claude-code" ? { endpointAuth: "none" as const } : {}) };
+    assert.throws(() => restoreBackend(stored), /on this machine/);
+    stored.backend = { ...stored.backend, endpoint: "http://127.0.0.1:11434" };
+    assert.equal(restoreBackend(stored).endpoint, "http://127.0.0.1:11434", `${agent}: a loopback discovered endpoint still restores`);
+  }
+});
+
+// Cold review (2026-08-26): the configured-but-unauthenticated branch restored
+// a saved endpoint verbatim — a tampered checkpoint naming any host shipped
+// the conversation there. Loopback restores; anything else must still be this
+// daemon's own configured endpoint.
+test("AUDIT: a saved unauthenticated configured endpoint restores only if loopback or still configured", () => {
+  const prior = process.env.ANTHROPIC_BASE_URL;
+  const priorKey = process.env.ANTHROPIC_API_KEY;
+  delete process.env.ANTHROPIC_API_KEY;
+  try {
+    const stored = fixture();
+    const backend = (endpoint: string) => ({ agent: "claude-code" as const, kind: "local" as const, live: true, endpoint, endpointSource: "configured" as const, endpointAuth: "none" as const });
+    process.env.ANTHROPIC_BASE_URL = "http://gateway.internal:8080";
+    stored.backend = backend("http://attacker.example:8080");
+    assert.throws(() => restoreBackend(stored), /not this daemon's configured endpoint/);
+    stored.backend = backend("http://gateway.internal:8080");
+    assert.equal(restoreBackend(stored).endpoint, "http://gateway.internal:8080", "the current configuration still restores");
+    stored.backend = backend("http://127.0.0.1:11434");
+    assert.equal(restoreBackend(stored).endpoint, "http://127.0.0.1:11434", "loopback restores regardless");
+  } finally {
+    if (prior === undefined) delete process.env.ANTHROPIC_BASE_URL; else process.env.ANTHROPIC_BASE_URL = prior;
+    if (priorKey !== undefined) process.env.ANTHROPIC_API_KEY = priorKey;
+  }
+});
+
+// Cold review (2026-08-26): a LAN server the operator listed in
+// MIRAFOLD_LOCAL_ENDPOINTS is a real "local" endpoint — its saved sessions
+// must restore; an unlisted host still must not.
+test("AUDIT: a saved discovered endpoint restores when it is a current MIRAFOLD_LOCAL_ENDPOINTS target", () => {
+  const prior = process.env.MIRAFOLD_LOCAL_ENDPOINTS;
+  process.env.MIRAFOLD_LOCAL_ENDPOINTS = "http://192.168.1.50:11434";
+  try {
+    const stored = fixture();
+    stored.backend = { agent: "codex", kind: "local", live: true, endpoint: "http://192.168.1.50:11434", endpointSource: "discovered" };
+    assert.equal(restoreBackend(stored).endpoint, "http://192.168.1.50:11434");
+    stored.backend = { ...stored.backend, endpoint: "http://192.168.1.51:11434" };
+    assert.throws(() => restoreBackend(stored), /neither on this machine nor/);
+  } finally {
+    if (prior === undefined) delete process.env.MIRAFOLD_LOCAL_ENDPOINTS; else process.env.MIRAFOLD_LOCAL_ENDPOINTS = prior;
+  }
 });

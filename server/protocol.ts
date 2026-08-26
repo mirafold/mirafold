@@ -80,7 +80,10 @@ export type SessionMsgBody =
   | { type: "prompt_options"; options: PromptOption[] }
   | { type: "status"; state: "thinking" | "tool"; label?: string }
   | { type: "turn_end" }
-  | { type: "error"; message: string }
+  // Adapter failures end a model turn by default. Request-scoped shell
+  // failures opt out explicitly so they can render without closing an
+  // unrelated turn or clearing its permission state.
+  | { type: "error"; message: string; terminal?: false }
   // "Show component X with props P." `component` is a plain string on the
   // wire (not keyof the registry spec) so an unknown/malformed instruction is
   // still representable and can degrade gracefully client-side. Re-sending

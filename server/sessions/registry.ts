@@ -20,7 +20,7 @@ import { startWatch, type FsWatchHandle } from "./fs-watch";
 import { invalidateRepoStatusCache } from "./git";
 import { envInt } from "../env";
 import { recoverStoredTranscript } from "./session-recovery";
-import { SessionCheckpointStore, type StoredSession } from "./session-store";
+import { SessionCheckpointStore, admitForCheckpoint, type StoredSession } from "./session-store";
 import { normalizePromptOptions } from "../prompt-options";
 
 import { ReplayRing } from "./replay-ring";
@@ -70,11 +70,29 @@ const MAX_SESSIONS = envInt("MAX_SESSIONS", 100);
 // string inert.
 const LABEL_CAP = 120;
 const capLabel = (s: string) => (s.length > LABEL_CAP ? s.slice(0, LABEL_CAP) + "…" : s);
+// A permission ask's detail is what the user decides ON, so it is never
+// scrubbed (a redacted command is not the command that runs) — but it IS
+// bounded: an engine-authored detail otherwise rides the wire, the fleet
+// mirror, and the checkpoint at any size. Generous, because a real multi-line
+// script must stay readable; the marker makes the cut honest (2026-08-26).
+const DETAIL_CAP = 16_000;
+// After the caps below, every message is judged by the checkpoint decoder's
+// own schemas (session-store.ts admitForCheckpoint): an engine-authored value
+// the decoder would refuse — an overlong id, a NaN token count, an array
+// where a record is due — used to checkpoint fine and make the WHOLE session
+// unrestorable at the next start. Coerced where a legitimate reading exists,
+// dropped otherwise (an ask that never shows denies at its timeout).
+const capDetail = (s: string) =>
+  s.length > DETAIL_CAP ? s.slice(0, DETAIL_CAP) + `\n(… ${s.length - DETAIL_CAP} more characters withheld …)` : s;
 
 /** Bound engine-supplied shell metadata and scrub credential-bearing provider
  * errors before wire/checkpoint/log fanout. Returns the same object on the
  * common no-change path. */
-function normalizeWireMetadata(msg: SessionMsg): SessionMsg {
+function normalizeWireMetadata(msg: SessionMsg): SessionMsg | undefined {
+  return admitForCheckpoint(capWireMetadata(msg));
+}
+
+function capWireMetadata(msg: SessionMsg): SessionMsg {
   if (msg.type === "prompt_options") {
     return { ...msg, options: normalizePromptOptions(msg.options) };
   }
@@ -89,6 +107,11 @@ function normalizeWireMetadata(msg: SessionMsg): SessionMsg {
   if (msg.type === "usage") {
     if (msg.model === undefined || msg.model.length <= LABEL_CAP) return msg;
     return { ...msg, model: capLabel(msg.model) };
+  }
+  if (msg.type === "permission_request") {
+    const tool = capLabel(msg.tool);
+    const detail = capDetail(msg.detail);
+    return tool === msg.tool && detail === msg.detail ? msg : { ...msg, tool, detail };
   }
   if (msg.type === "error") {
     const message = scrub(msg.message);
@@ -172,7 +195,7 @@ export type SessionEntry = SessionActivityState & {
   idleTimer?: NodeJS.Timeout;
   // The one running `!` command, if any (one at a time per session,
   // like a terminal). The proc itself never leaves the server.
-  bang?: { id: string; proc: BangProc };
+  bang?: { id: string; proc: BangProc; silent: boolean };
   // When the last `!` command started — the burst throttle in connection.ts
   // (each bang costs a model turn, so bursts burn tokens).
   lastBangAt?: number;
@@ -458,7 +481,12 @@ export class SessionRegistry {
     // Before persistence, buffering, or any viewport. Catalog metadata can
     // originate in user-installed skills/MCP servers, so it shares the same
     // bounded choke point as engine-authored tool and status labels.
-    msg = normalizeWireMetadata(msg);
+    const normalized = normalizeWireMetadata(msg);
+    if (!normalized) {
+      createLogger(`session ${entry.id}`).warn(`dropped a ${msg.type} frame the checkpoint decoder would refuse`);
+      return;
+    }
+    msg = normalized;
     // Replaceable shell metadata, not transcript history: one catalog is
     // enough, and it must not consume a resume sequence number.
     if (msg.type === "prompt_options") {
@@ -545,13 +573,15 @@ export class SessionRegistry {
    *  equivalent of the attach-time relay gate. */
   private evictRemoteViewports(entry: SessionEntry) {
     for (const viewport of [...entry.remoteViewports]) {
+      // Detach first: the connection reads "no longer attached" off the
+      // `refused` frame to drop its own session handle (connection.ts).
+      this.detach(entry, viewport);
       viewport({
         type: "refused",
         reason: "subscription-relay",
         message: relayGateRefusal({ kind: entry.kind, kindPending: entry.kindPending }) ??
           "This session can no longer be driven over the relay.",
       });
-      this.detach(entry, viewport);
     }
   }
 
@@ -627,7 +657,10 @@ export class SessionRegistry {
       entry.fsWatch?.stop(); // nobody listening → no watches held
       entry.fsWatch = undefined;
     }
-    this.checkpoint(entry);
+    // Both `=== entry` guards skip a session already ended: end() deletes it
+    // from the map, and a later detach must neither re-create its deleted
+    // checkpoint nor re-arm the idle timer / double-close the engine.
+    if (this.entries.get(entry.id) === entry) this.checkpoint(entry);
     this.notifyWatchers(); // viewport counts are fleet metadata
     // The `=== entry` guard skips this for a session already ended:
     // end() deletes it from the map, so a later detach mustn't re-arm the idle

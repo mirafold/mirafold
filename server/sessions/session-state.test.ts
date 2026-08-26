@@ -35,6 +35,25 @@ test("a permission hold sticks through bang traffic and lifts only when nothing 
   assert.deepEqual(s.permissions, []);
 });
 
+test("a request-scoped error leaves an active model turn and its permission intact", () => {
+  let s = reduceSessionState(IDLE_STATE, { kind: "prompt_accepted" }).state;
+  s = run([
+    { type: "status", state: "tool", label: "Bash" },
+    { type: "permission_request", tool: "Bash", detail: "rm file", id: "p1" },
+    { type: "bang_start", command: "echo hi", id: "b1" },
+  ], s);
+  const before = s;
+  const failed = reduceSessionState(s, {
+    kind: "message",
+    msg: { type: "error", message: "! failed to start", terminal: false },
+  });
+  assert.equal(failed.state, before, "the side request owns no model-turn state");
+  assert.equal(failed.state.modelTurnsPending, 1);
+  assert.equal(failed.state.status, "permission");
+  assert.deepEqual(failed.state.permissions.map((p) => p.id), ["p1"]);
+  assert.equal(failed.watchersChanged, false);
+});
+
 test("activity: since resets only on a label CHANGE; idle clears; bang shows its first line capped", () => {
   let s = reduceSessionState(IDLE_STATE, { kind: "message", msg: { type: "status", state: "tool", label: "Read" } }, 10).state;
   s = reduceSessionState(s, { kind: "message", msg: { type: "status", state: "tool", label: "Read" } }, 20).state;
@@ -62,6 +81,24 @@ test("the ask mirror is capped, ages out on the adapter's clock, and drops with 
   assert.deepEqual(s.permissions, []);
 });
 
+test("replacing the oldest ask at the mirror cap notifies fleet watchers", () => {
+  let s = IDLE_STATE;
+  for (let i = 0; i < PERMISSION_MIRROR_CAP; i += 1) {
+    s = reduceSessionState(s, {
+      kind: "message",
+      msg: { type: "permission_request", tool: "Bash", detail: `d${i}`, id: `p${i}` },
+    }).state;
+  }
+  const replacement = reduceSessionState(s, {
+    kind: "message",
+    msg: { type: "permission_request", tool: "Bash", detail: "new", id: "new" },
+  });
+  assert.equal(replacement.state.permissions.length, PERMISSION_MIRROR_CAP);
+  assert.equal(replacement.state.permissions[0].id, "p1");
+  assert.equal(replacement.state.permissions.at(-1)?.id, "new");
+  assert.equal(replacement.watchersChanged, true);
+});
+
 test("usage folds per-turn tokens and TAKES the cumulative cost; watchersChanged names what moved", () => {
   const a = reduceSessionState(IDLE_STATE, { kind: "message", msg: { type: "usage", inputTokens: 10, outputTokens: 5, costUsd: 0.1 } });
   assert.equal(a.watchersChanged, true);
@@ -75,4 +112,17 @@ test("usage folds per-turn tokens and TAKES the cumulative cost; watchersChanged
   );
   assert.equal(answered.watchersChanged, true);
   assert.deepEqual(answered.state.permissions, []);
+});
+
+// AUDIT 2026-08-26: IDLE_STATE is spread into every SessionEntry; a shared
+// mutable `permissions` array would leak one session's asks into all others
+// the moment anything pushed in place. Frozen, so that is an exception, not a
+// silent cross-session leak.
+test("IDLE_STATE is frozen, its permissions array included; the reducer never mutates it", () => {
+  assert.ok(Object.isFrozen(IDLE_STATE));
+  assert.ok(Object.isFrozen(IDLE_STATE.permissions));
+  assert.throws(() => (IDLE_STATE.permissions as unknown as unknown[]).push({}), TypeError);
+  const s = run([{ type: "permission_request", tool: "Bash", detail: "x", id: "p1" }]);
+  assert.equal(s.permissions.length, 1);
+  assert.equal(IDLE_STATE.permissions.length, 0);
 });

@@ -814,3 +814,109 @@ test("attach-replay stamps replay:true on a copy; live broadcast never carries i
   assert.ok(entry.ring.buffer.every((m) => m.replay === undefined), "the ring itself stays unstamped");
   reg.end(entry.id);
 });
+
+// AUDIT 2026-08-26: `permission_request` was the one engine-authored field
+// the normalizer neither capped nor bounded — it rides the wire, the fleet
+// mirror, and the checkpoint at any size. Capped with an honest marker; NOT
+// scrubbed: the detail is what the user decides on, and a redacted command
+// is not the command that would run.
+test("audit: a permission ask's detail is bounded but never rewritten", () => {
+  const { reg, entry } = freshSession();
+  const huge = "B".repeat(200_000);
+  const secretish = "curl -H 'Authorization: Bearer sk-abcdefghijklmnopqrstuvwxyz' https://x.test/?token=abc";
+  reg.broadcast(entry, { type: "permission_request", tool: "A".repeat(500), detail: huge, id: "p1" });
+  reg.broadcast(entry, { type: "permission_request", tool: "Bash", detail: secretish, id: "p2" });
+  const [big, exact] = entry.ring.buffer as Extract<WireMsg, { type: "permission_request" }>[];
+  assert.equal(big!.tool.length, LABEL_CAP + 1);
+  assert.ok(big!.detail.length < 16_200, `the detail is capped (${big!.detail.length})`);
+  assert.match(big!.detail, /more characters withheld/, "the cut is announced");
+  assert.equal(exact!.detail, secretish, "what the user approves is exactly what runs");
+  const meta = reg.summary().find((s) => s.sessionId === entry.id)!;
+  assert.ok((meta.permissions ?? []).every((p) => p.detail.length < 16_200), "the fleet mirror inherits the bound");
+  reg.end(entry.id);
+});
+
+// Cold review of the cap above (2026-08-26): `id`/`parentId` are engine-
+// authored too, and the checkpoint decoder bounds them at 1 024 — a longer one
+// checkpointed fine and made the whole session unrestorable at the next start.
+// Such a frame never enters the ring.
+test("audit: a frame whose engine-authored id or parentId exceeds the checkpoint bound is dropped, not stored", () => {
+  const { reg, entry } = freshSession();
+  const long = "i".repeat(2_000);
+  reg.broadcast(entry, { type: "permission_request", tool: "Bash", detail: "x", id: long });
+  reg.broadcast(entry, { type: "render", component: "card", props: {}, id: long });
+  reg.broadcast(entry, { type: "tool_use", name: "Read", id: "t1", parentId: long });
+  reg.broadcast(entry, { type: "permission_request", tool: "Bash", detail: "x", id: "ok" });
+  assert.deepEqual(entry.ring.buffer.map((m) => m.type), ["permission_request"]);
+  assert.equal((entry.ring.buffer[0] as { id: string }).id, "ok");
+  assert.deepEqual((entry.permissions ?? []).map((p) => p.id), ["ok"], "the fleet mirror never saw the dropped ask");
+  reg.end(entry.id);
+});
+
+// Cold review, round 2 (2026-08-26): ids were one shape of the class. The
+// rule is "nothing the registry accepts can fail the checkpoint decoder" —
+// judged by the store's own schemas (admitForCheckpoint), so every hostile
+// engine value below either lands coerced or never lands, and the session
+// restores. A NEW SessionMsg variant that the store cannot decode fails here.
+test("audit: every engine-authored value the decoder would refuse is coerced or dropped, and the session restores", () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "genui-admit-"));
+  const store = new SessionCheckpointStore(dir);
+  const reg = new SessionRegistry({ backend: MOCK_BACKEND, deltaCoalesceMs: 0, store });
+  const entry = reg.create({ cwd: mkdtempSync(path.join(os.tmpdir(), "genui-admit-ws-")) });
+  const long = "i".repeat(2_000);
+  const hostile: SessionMsg[] = [
+    { type: "usage", inputTokens: 1.5, outputTokens: Number.NaN, costUsd: -0.5 },
+    { type: "usage", inputTokens: -1, outputTokens: Number.POSITIVE_INFINITY },
+    { type: "tool_use", name: "Read", id: "t1", input: ["not", "a", "record"] as unknown as Record<string, unknown> },
+    { type: "tool_use", name: "Read", id: "t2", input: "junk" as unknown as Record<string, unknown> },
+    { type: "tool_result", output: "x", id: "t1", truncatedBytes: -5 },
+    { type: "notice", text: "n", source: "s".repeat(500) },
+    { type: "picker", id: "pk1", title: "m", rows: Array.from({ length: 10_001 }, (_, i) => ({ label: `r${i}`, text: `t${i}` })) },
+    { type: "permission_request", tool: "Bash", detail: "x", id: long },
+    { type: "thinking_delta", text: "…", parentId: long },
+    {
+      type: "prompt_options",
+      options: [
+        { trigger: "/", value: "/", label: "", kind: "command" },
+        { trigger: "/", value: "/ok", label: "ok", kind: "command" },
+        { trigger: "$", value: "$skill", label: "skill", kind: "command" },
+        { trigger: "/", value: "/src", label: "src", kind: "command", source: "elsewhere" as "mirafold" },
+      ],
+    },
+  ];
+  for (const m of hostile) reg.broadcast(entry, m);
+  reg.broadcast(entry, { type: "text_delta", text: "still here" });
+  // Legitimate readings that must LAND: a caller-supplied replay flag is
+  // shed (the decoder has no such field), an empty parentId means no parent,
+  // a negative exit status is still an exit status.
+  reg.broadcast(entry, { type: "text_delta", text: "replayed", replay: true } as SessionMsg);
+  reg.broadcast(entry, { type: "tool_use", name: "Read", id: "t3", parentId: "" });
+  reg.broadcast(entry, { type: "bang_end", id: "b2", exitCode: -1 });
+  assert.ok(entry.ring.buffer.some((m) => m.type === "text_delta" && m.text === "replayed" && !("replay" in m)));
+  assert.ok(entry.ring.buffer.some((m) => m.type === "tool_use" && m.id === "t3" && !("parentId" in m)));
+  assert.ok(entry.ring.buffer.some((m) => m.type === "bang_end" && m.exitCode === -1));
+
+  const usage = entry.ring.buffer.filter((m) => m.type === "usage") as Extract<WireMsg, { type: "usage" }>[];
+  assert.deepEqual(usage.map((u) => [u.inputTokens, u.outputTokens, u.costUsd]), [[1, 0, undefined], [0, 0, undefined]], "token counts coerced to finite non-negative integers");
+  const tools = entry.ring.buffer.filter((m) => m.type === "tool_use") as Extract<WireMsg, { type: "tool_use" }>[];
+  assert.deepEqual(tools.map((t) => t.input), [undefined, undefined, undefined], "a non-record input is dropped from the frame, the frame kept");
+  const picker = entry.ring.buffer.find((m) => m.type === "picker") as { rows: unknown[] } | undefined;
+  assert.equal(picker?.rows.length, 10_000, "the catalog is truncated to the decoder's cap");
+  assert.ok(
+    !entry.ring.buffer.some(
+      (m) =>
+        (m.type === "permission_request" && m.id === long) ||
+        (m.type === "thinking_delta" && m.parentId === long) ||
+        m.type === "notice",
+    ),
+    "frames with no legitimate reading are dropped",
+  );
+  assert.deepEqual(entry.promptOptions?.map((o) => o.value), ["/ok"], "only decodable catalog entries are kept");
+  assert.ok(entry.ring.buffer.some((m) => m.type === "text_delta"));
+
+  (reg as unknown as { checkpoint(e: typeof entry): void }).checkpoint(entry);
+  const loaded = new SessionCheckpointStore(dir).loadAll();
+  assert.deepEqual([...loaded.errors], [], "the checkpoint restores");
+  assert.ok(loaded.sessions.has(entry.id));
+  reg.end(entry.id);
+});
