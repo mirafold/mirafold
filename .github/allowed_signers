@@ -1,0 +1,3 @@
+# Release tags are SSH-signed by this key (docs/RELEASING.md). The release
+# workflow verifies every v* tag against this file before publishing.
+kserrec@gmail.com namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKsDF7rgx82FuQuyREdrdOkTToa+nmeepC+1shE8T/Yp
