@@ -2947,7 +2947,16 @@ the existing `permission_request` / `permission_resolved` messages and the
 permission bar. `app-server` is already spawned for the model and skills
 catalogs (`codex-model-list.ts`, `codex-skills-list.ts`).
 
-- [ ] **Step CA.1 — The spike (throwaway, time-boxed)**
+- [x] **Step CA.1 — The spike (throwaway, time-boxed)** — done 2026-08-25:
+  findings in `server/adapters/codex.spike.md`, "CA.1 spike". Verdict GREEN:
+  observed approval round trips for an out-of-workspace write (declined →
+  denied) and a network call (accepted → re-ran outside the sandbox);
+  `thread/resume`, `turn/interrupt`, and `developerInstructions` all work.
+  The "read-only" Kyle hit is `codex exec`'s failure mode (a bare
+  `read-only file system` error, nobody to ask); `.git` is not read-only in
+  0.149.1 on either path. One trust finding for CA.3: headless Codex (exec
+  AND app-server, even ephemeral) writes `trust_level = "trusted"` for the
+  cwd into `~/.codex/config.toml` with no dialog — Mirafold must ask first.
   - Goal: watch the protocol do what the docs say before any product code.
   - Build: drive `codex app-server` by hand from a scratch folder against
     the installed `codex-cli` (0.149.1 today): initialize; new thread + one
