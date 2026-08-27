@@ -2,9 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import os from "node:os";
-import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import type { WireMsg } from "../protocol";
-import { CODEX_DEVELOPER_INSTRUCTIONS, CodexSession } from "./codex";
+import { CODEX_DEVELOPER_INSTRUCTIONS, CodexSession, describePermissionProfile } from "./codex";
+import { waitFor as waitForCond } from "../testing/wait-for";
 import type { AppServerClient, AppServerSpawn, JsonRpcId } from "./codex-app-server";
 import { MIRAFOLD_MCP } from "./render-mcp-cmd";
 import { MIRAFOLD_CONTEXT } from "../render-tools";
@@ -35,24 +36,24 @@ const tmp = mkdtempSync(path.join(os.tmpdir(), "mcp-codex-test-"));
 // folder-trust gate (CA.3) never asks in these tests — the dedicated trust
 // tests use their own untrusted workspaces.
 const trustRecord = path.join(tmp, "trusted-workspaces.json");
-writeFileSync(trustRecord, JSON.stringify([tmp]));
+writeFileSync(
+  trustRecord,
+  JSON.stringify({ version: 2, scopes: { "gemini-cli": [], codex: [tmp] } }),
+);
 process.env.MIRAFOLD_WORKSPACE_TRUST_FILE = trustRecord;
+// Never the developer's real ~/.codex: every session in this file reads its
+// config from an empty, isolated CODEX_HOME (test-audit 2026-08-26). Tests
+// that need their own home set it explicitly and restore this one.
+process.env.CODEX_HOME = path.join(tmp, "codex-home");
+mkdirSync(process.env.CODEX_HOME, { recursive: true });
 
-/** Wait until `pred` matches a message, and return it. */
-const waitFor = (msgs: Any[], pred: (m: Any) => boolean, timeoutMs = 5_000) =>
-  new Promise<Any>((resolve, reject) => {
-    const t0 = Date.now();
-    const poll = setInterval(() => {
-      const hit = msgs.find(pred);
-      if (hit) {
-        clearInterval(poll);
-        resolve(hit);
-      } else if (Date.now() - t0 > timeoutMs) {
-        clearInterval(poll);
-        reject(new Error("waitFor timed out"));
-      }
-    }, 5);
-  });
+/** Wait until `pred` matches a message, and return it — named, with the
+ *  seen-type list on a timeout (test-audit 2026-08-26: the old local helper
+ *  failed with a bare "waitFor timed out"). */
+const waitFor = async (msgs: Any[], pred: (m: Any) => boolean, what = "a matching message", timeoutMs = 5_000): Promise<Any> => {
+  await waitForCond(() => msgs.some(pred), what, timeoutMs, () => `seen: ${msgs.map((m) => m.type).join(",")}`);
+  return msgs.find(pred)!;
+};
 
 /** Answer the Nth permission ask as it appears; returns the request row. */
 async function answerAsk(s: CodexSession, msgs: Any[], n: number, allow: boolean): Promise<Any> {
@@ -86,13 +87,22 @@ const waitForTurnEnds = (msgs: Any[], count = 1, timeoutMs = 5_000) =>
  *  thread/resume / turn/start / turn/interrupt, records every request, and
  *  plays one scripted turn per turn/start. `exit()` simulates the process
  *  dying. */
-function fakeAppServer(opts: { threadId?: string; model?: string; startError?: Error } = {}) {
+function fakeAppServer(opts: {
+  threadId?: string;
+  model?: string;
+  startError?: Error;
+  threadStartGate?: Promise<void>;
+  turnStartGate?: Promise<void>;
+  omitTurnId?: boolean | "once";
+  interruptCompletes?: boolean;
+} = {}) {
   const requests: { method: string; params: any }[] = [];
   const specs: AppServerSpawn[] = [];
   const turns: Scripted[] = [];
   type FakeClient = AppServerClient & { exit: () => void };
   const clients: FakeClient[] = [];
   let turnSeq = 0;
+  let turnIdOmitted = false;
 
   function makeClient(spec: AppServerSpawn): FakeClient {
     specs.push(spec);
@@ -115,6 +125,7 @@ function fakeAppServer(opts: { threadId?: string; model?: string; startError?: E
       notify("turn/completed", { threadId, turn: { id: turnId, status, ...(error !== undefined ? { error } : {}) } });
     };
     const play = async (turnId: string) => {
+      if (exited) return;
       const script = turns.shift() ?? [];
       const fill = (params: Record<string, unknown>) => ({ threadId, turnId, ...params });
       if (typeof script === "function") {
@@ -151,6 +162,7 @@ function fakeAppServer(opts: { threadId?: string; model?: string; startError?: E
             if (opts.startError) throw opts.startError;
             return {} as any;
           case "thread/start":
+            await opts.threadStartGate;
             return { thread: { id: threadId }, model: opts.model ?? "gpt-test" } as any;
           case "thread/resume":
             threadId = params.threadId;
@@ -158,12 +170,18 @@ function fakeAppServer(opts: { threadId?: string; model?: string; startError?: E
           case "turn/start": {
             const turnId = `turn-${++turnSeq}`;
             activeTurn = turnId;
+            await opts.turnStartGate;
             setTimeout(() => void play(turnId), 0);
-            return { turn: { id: turnId } } as any;
+            const omitTurnId =
+              opts.omitTurnId === true || (opts.omitTurnId === "once" && !turnIdOmitted);
+            turnIdOmitted ||= omitTurnId;
+            return { turn: omitTurnId ? {} : { id: turnId } } as any;
           }
           case "turn/interrupt": {
             interruptResolve?.();
-            setTimeout(() => complete(params.turnId, "interrupted"), 0);
+            if (opts.interruptCompletes !== false) {
+              setTimeout(() => complete(params.turnId, "interrupted"), 0);
+            }
             return {} as any;
           }
           default:
@@ -384,6 +402,38 @@ test("streamed prose flows live until a fence opens; the held remainder is conve
   assert.ok(texts.some((t) => t.includes("Outro.")));
   assert.equal(msgs.filter((m) => m.type === "render" && m.component === "chart").length, 1);
   s.close();
+});
+
+test("a Mermaid opener split across prose deltas is held and converted", async () => {
+  const fence = "```mermaid\nxychart-beta\n  x-axis [A]\n  y-axis \"n\" 0 --> 2\n  bar [1]\n```";
+  const full = `Intro. ${fence}\nOutro.`;
+  for (const openerSplit of [1, 2]) {
+    const { s, msgs, awaitTurnEnd } = makeSession([
+      [
+        "item/agentMessage/delta",
+        { itemId: "m1", delta: `Intro. ${"```".slice(0, openerSplit)}` },
+      ],
+      [
+        "item/agentMessage/delta",
+        { itemId: "m1", delta: `${"```".slice(openerSplit)}mermaid\nxychart-beta\n` },
+      ],
+      [
+        "item/agentMessage/delta",
+        { itemId: "m1", delta: "  x-axis [A]\n  y-axis \"n\" 0 --> 2\n  bar [1]\n```\nOutro." },
+      ],
+      ["item/completed", { item: { type: "agentMessage", id: "m1", text: full } }],
+      DONE,
+    ]);
+    s.pushPrompt("go");
+    await awaitTurnEnd();
+
+    const texts = msgs.filter((m) => m.type === "text_delta").map((m) => m.text);
+    assert.equal(texts[0], "Intro. ");
+    assert.ok(texts.every((text) => !text.includes("xychart")));
+    assert.ok(texts.some((text) => text.includes("Outro.")));
+    assert.equal(msgs.filter((m) => m.type === "render" && m.component === "chart").length, 1);
+    s.close();
+  }
 });
 
 test("recovery and discovery: Codex resumes its thread and advertises only implemented / commands plus live $ skills", async () => {
@@ -645,7 +695,7 @@ test("the two mislabeled probes from the screenshot fold together instead of sho
   const { s, msgs, awaitTurnEnd } = makeSession([
     ["item/completed", { item: { type: "agentMessage", id: "m1", text: "The starting state is verified." } }],
     ["item/completed", { item: { type: "commandExecution", id: "rg", command: "rg --files --hidden", aggregatedOutput: "", exitCode: 1, status: "failed" } }],
-    ["item/completed", { item: { type: "commandExecution", id: "gh", command: "gh repo view kserrec/test-project", aggregatedOutput: "GraphQL: Could not resolve", exitCode: 1, status: "failed" } }],
+    ["item/completed", { item: { type: "commandExecution", id: "gh", command: "gh repo view example/test-project", aggregatedOutput: "GraphQL: Could not resolve", exitCode: 1, status: "failed" } }],
     ["item/completed", { item: { type: "agentMessage", id: "m2", text: "The local project is now initialized." } }],
     DONE,
   ]);
@@ -690,7 +740,7 @@ test("mirafold MCP calls paint render/artifact, never tool rows; failures and un
   ];
   const { s, msgs, turnEnds, awaitTurnEnd } = makeSession([
     ["turn/started", {}],
-    mcp("render_card", { title: "T", id: "keep-me" }),
+    mcp("render_card", { title: "T", body: "b", id: "keep-me" }),
     mcp("emit_artifact", { html: "<b>x</b>", title: "demo" }),
     mcp("render_table", { columns: ["a"] }, { status: "failed" }),
     mcp("render_bogus", {}),
@@ -704,7 +754,7 @@ test("mirafold MCP calls paint render/artifact, never tool rows; failures and un
 
   const render = msgs.find((m) => m.type === "render")!;
   assert.equal(render.component, "card");
-  assert.deepEqual(render.props, { title: "T" }); // id stripped from props
+  assert.deepEqual(render.props, { title: "T", body: "b" }); // id stripped from props
   assert.equal(render.id, "rid-1"); // structuredContent wins
 
   const art = msgs.find((m) => m.type === "artifact")!;
@@ -904,6 +954,121 @@ test("interrupt: ends the turn silently — one turn_end, no error", async () =>
   s.close();
 });
 
+test("interrupt while folder trust is pending denies the ask and releases the turn without spawning", async () => {
+  const workspace = mkdtempSync(path.join(os.tmpdir(), "mcp-codex-untrusted-stop-"));
+  let spawned = 0;
+  const s = new CodexSession({
+    workspaceDir: workspace,
+    makeAppServer: () => {
+      spawned += 1;
+      return fakeAppServer().makeAppServer({} as AppServerSpawn);
+    },
+  });
+  const msgs: Any[] = [];
+  s.onMessage((m) => msgs.push(m as Any));
+  s.pushPrompt("go");
+  const ask = await waitFor(msgs, (m) => m.type === "permission_request");
+  s.interrupt();
+  await waitForTurnEnds(msgs);
+  assert.equal(spawned, 0, "Stop before trust never reaches app-server startup");
+  assert.ok(
+    msgs.some((m) => m.type === "permission_resolved" && m.id === ask.id && m.allow === false),
+    "the abandoned trust bar resolves visibly",
+  );
+  assert.ok(!msgs.some((m) => m.type === "notice" && /haven't trusted/.test(m.text)));
+  s.close();
+});
+
+test("interrupt during thread startup cancels before turn/start — no ghost prompt", async () => {
+  const threadStartGate = new Promise<void>(() => {});
+  const server = fakeAppServer({ threadStartGate });
+  const s = new CodexSession({ workspaceDir: tmp, makeAppServer: server.makeAppServer });
+  const msgs: Any[] = [];
+  s.onMessage((m) => msgs.push(m as Any));
+  s.pushPrompt("must not start");
+  while (!server.requests.some((r) => r.method === "thread/start")) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  s.interrupt();
+  await waitForTurnEnds(msgs);
+  assert.equal(server.turnStarts().length, 0, "the stopped prompt never reaches the engine");
+  assert.equal(server.clients[0]?.exited, true, "a startup with no answer is abandoned");
+  assert.ok(!msgs.some((m) => m.type === "error"));
+  s.close();
+});
+
+test("interrupt while turn/start never answers abandons the client and releases the turn", async () => {
+  const turnStartGate = new Promise<void>(() => {});
+  const server = fakeAppServer({ turnStartGate });
+  const s = new CodexSession({ workspaceDir: tmp, makeAppServer: server.makeAppServer });
+  const msgs: Any[] = [];
+  s.onMessage((m) => msgs.push(m as Any));
+  s.pushPrompt("stop after acceptance");
+  while (!server.requests.some((r) => r.method === "turn/start")) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  s.interrupt();
+  await waitForTurnEnds(msgs);
+  assert.equal(server.turnStarts().length, 1, "the request had already been sent to app-server");
+  assert.equal(server.clients[0]?.exited, true, "the id-less turn cannot survive Stop");
+  assert.equal(server.requests.filter((r) => r.method === "turn/interrupt").length, 0);
+  assert.ok(!msgs.some((m) => m.type === "error"));
+  s.close();
+});
+
+test("a successful turn/start response without an id abandons that client and retries fresh", async () => {
+  const server = fakeAppServer({ omitTurnId: "once" });
+  server.turns.push([DONE]);
+  const s = new CodexSession({ workspaceDir: tmp, makeAppServer: server.makeAppServer });
+  const msgs: Any[] = [];
+  s.onMessage((m) => msgs.push(m as Any));
+  s.pushPrompt("malformed response");
+  await waitForTurnEnds(msgs);
+  assert.match(
+    msgs.find((m) => m.type === "error")?.message ?? "",
+    /turn\/start without a turn id/,
+  );
+  assert.equal(msgs.filter((m) => m.type === "turn_end").length, 1);
+  assert.equal(server.clients[0]?.exited, true, "the unaddressable engine turn is abandoned");
+
+  s.pushPrompt("retry");
+  await waitForTurnEnds(msgs, 2);
+  assert.equal(server.clients.length, 2, "the retry uses a fresh app-server");
+  assert.equal(
+    msgs.filter((m) => m.type === "error").length,
+    1,
+    "the valid retry adds no second error",
+  );
+  s.close();
+});
+
+test("interrupt grace abandons a valid-id turn whose completion never arrives", async () => {
+  const server = fakeAppServer({ interruptCompletes: false });
+  server.turns.push(async (ctx) => {
+    ctx.notify("item/agentMessage/delta", { itemId: "m1", delta: "working" });
+    await new Promise<void>(() => {});
+  });
+  const s = new CodexSession({
+    workspaceDir: tmp,
+    makeAppServer: server.makeAppServer,
+    interruptGraceMs: 20,
+  });
+  const msgs: Any[] = [];
+  s.onMessage((m) => msgs.push(m as Any));
+  s.pushPrompt("hang after Stop");
+  await waitFor(msgs, (m) => m.type === "text_delta" && m.text === "working");
+  s.interrupt();
+  await waitForTurnEnds(msgs);
+  assert.equal(server.requests.filter((r) => r.method === "turn/interrupt").length, 1);
+  assert.equal(server.clients[0]?.exited, true, "the grace fallback reaps the wedged client");
+  assert.ok(!msgs.some((m) => m.type === "error"));
+
+  s.pushPrompt("/effort high");
+  await waitForTurnEnds(msgs, 2);
+  assert.ok(msgs.some((m) => m.type === "text_delta" && /high/.test(m.text)));
+  s.close();
+});
+
 test("an engine approval becomes a bar ask: allow → accept, deny → decline, a permission grant carries the profile", async () => {
   const answers: Record<string, unknown> = {};
   const { s, msgs, awaitTurnEnd } = makeSession(async (ctx) => {
@@ -933,6 +1098,10 @@ test("an engine approval becomes a bar ask: allow → accept, deny → decline, 
   // The ask states the command plainly and carries the engine's own reason.
   assert.equal(cmdAsk.tool, "Shell");
   assert.match(cmdAsk.detail, /git commit -m x — retry outside the sandbox\?/);
+  // The permissions ask says what a yes GRANTS, not only why the engine asks
+  // (audit 2026-08-26): the allow above echoed exactly this profile back.
+  const permAsk = msgs.filter((m) => m.type === "permission_request")[2]!;
+  assert.match(permAsk.detail, /network access/);
   // Every ask resolved visibly, in order.
   assert.deepEqual(
     msgs.filter((m) => m.type === "permission_resolved").map((m) => m.allow),
@@ -1021,7 +1190,9 @@ test("N.5: a subscription choice withholds the env API key — the explicit pick
 test("N.5: an api-key choice keeps the env key AND forces the api login method (CA.1: app-server otherwise prefers auth.json)", () => {
   withOpenAiKey("sk-env", () => {
     const spec = capturedSpawn({ kind: "api-key" });
-    assert.equal(spec.env, undefined, "the process inherits OPENAI_API_KEY");
+    // The engine env is always a filtered copy (audit 2026-08-26: the
+    // daemon's own credentials never enter a child); the provider key stays.
+    assert.equal(spec.env?.OPENAI_API_KEY, "sk-env", "the process inherits OPENAI_API_KEY");
     assert.equal(configOf(spec).forced_login_method, "api");
   });
 });
@@ -1029,12 +1200,12 @@ test("N.5: an api-key choice keeps the env key AND forces the api login method (
 test("N.5: no choice keeps the pre-N default — api-key iff the env var is set, nothing else", () => {
   withOpenAiKey("sk-env", () => {
     const spec = capturedSpawn({});
-    assert.equal(spec.env, undefined);
+    assert.equal(spec.env?.OPENAI_API_KEY, "sk-env", "no choice: the env key stays with the engine");
     assert.equal(configOf(spec).forced_login_method, "api");
   });
   withOpenAiKey(undefined, () => {
     const spec = capturedSpawn({});
-    assert.equal(spec.env, undefined);
+    assert.equal(spec.env?.OPENAI_API_KEY, undefined);
     assert.equal(configOf(spec).forced_login_method, undefined);
   });
 });
@@ -1339,7 +1510,13 @@ test("a failed engine start does not burn anything: the retry spawns afresh and 
 // tests share the module's global trust record (trustRecord, listing tmp);
 // each uses a fresh workspace OUTSIDE tmp so it starts untrusted.
 
-const trustedNow = (): string[] => JSON.parse(readFileSync(trustRecord, "utf8"));
+type TrustRecord = {
+  version: 2;
+  scopes: { "gemini-cli": string[]; codex: string[] };
+};
+
+const trustRecordNow = (): TrustRecord => JSON.parse(readFileSync(trustRecord, "utf8"));
+const trustedNow = (): string[] => trustRecordNow().scopes.codex;
 
 function makeSessionAt(workspaceDir: string, ...turns: Scripted[]) {
   const server = fakeAppServer();
@@ -1354,42 +1531,106 @@ test("an untrusted folder is asked before anything spawns; yes runs the turn and
   const ws = realpathSync(mkdtempSync(path.join(os.tmpdir(), "codex-untrusted-yes-")));
   assert.ok(!trustedNow().includes(ws), "the fresh folder must start untrusted");
   const { s, msgs, server, awaitTurnEnd } = makeSessionAt(ws, [DONE]);
-  s.pushPrompt("go");
-  const ask = await waitFor(msgs, (m) => m.type === "permission_request");
-  assert.equal(ask.tool, "Codex");
-  assert.match(ask.detail, /trust this folder/);
-  assert.match(ask.detail, /config\.toml/);
-  assert.equal(server.specs.length, 0, "nothing spawned before the yes");
-  s.resolvePermission(ask.id, true);
-  await awaitTurnEnd();
-  assert.equal(server.threadStarts().length, 1, "the thread starts only after the yes");
-  assert.ok(trustedNow().includes(ws), "the yes was remembered");
-  s.close();
+  // try/finally: a red run must not sit on the 5-minute trust timer
+  // (test-audit 2026-08-26).
+  try {
+    s.pushPrompt("go");
+    const ask = await waitFor(msgs, (m) => m.type === "permission_request", "the trust ask");
+    assert.equal(ask.tool, "Codex");
+    assert.match(ask.detail, /trust this folder/);
+    assert.match(ask.detail, /config\.toml/);
+    assert.equal(server.specs.length, 0, "nothing spawned before the yes");
+    s.resolvePermission(ask.id, true);
+    await awaitTurnEnd();
+    assert.equal(server.threadStarts().length, 1, "the thread starts only after the yes");
+    assert.ok(trustedNow().includes(ws), "the yes was remembered");
+  } finally {
+    s.close();
+    rmSync(ws, { recursive: true, force: true });
+  }
 });
 
 test("an untrusted folder denied: nothing spawns, config.toml is never touched, a refusal notice shows", async () => {
   const ws = realpathSync(mkdtempSync(path.join(os.tmpdir(), "codex-untrusted-no-")));
+  // The name's config.toml claim is ASSERTED: an isolated CODEX_HOME whose
+  // config.toml must be byte-identical after the no (test-audit 2026-08-26).
+  const priorHome = process.env.CODEX_HOME;
+  const home = mkdtempSync(path.join(os.tmpdir(), "codex-home-"));
+  const configToml = path.join(home, "config.toml");
+  writeFileSync(configToml, 'model = "gpt-5"\n');
+  process.env.CODEX_HOME = home;
   const { s, msgs, server, awaitTurnEnd } = makeSessionAt(ws, [DONE]);
-  s.pushPrompt("go");
-  const ask = await waitFor(msgs, (m) => m.type === "permission_request");
-  s.resolvePermission(ask.id, false);
-  await awaitTurnEnd();
-  assert.equal(server.specs.length, 0, "a denied folder never spawns the engine");
-  assert.equal(server.threadStarts().length, 0);
-  const notice = msgs.find((m) => m.type === "notice")!;
-  assert.equal(notice.kind, "refusal");
-  assert.match(notice.text, /won't run in a folder you haven't trusted/);
-  assert.ok(!trustedNow().includes(ws), "a denied trust records nothing");
-  s.close();
+  try {
+    s.pushPrompt("go");
+    const ask = await waitFor(msgs, (m) => m.type === "permission_request", "the trust ask");
+    s.resolvePermission(ask.id, false);
+    await awaitTurnEnd();
+    assert.equal(server.specs.length, 0, "a denied folder never spawns the engine");
+    assert.equal(server.threadStarts().length, 0);
+    const notice = msgs.find((m) => m.type === "notice")!;
+    assert.equal(notice.kind, "refusal");
+    assert.match(notice.text, /won't run in a folder you haven't trusted/);
+    assert.ok(!trustedNow().includes(ws), "a denied trust records nothing");
+    assert.equal(readFileSync(configToml, "utf8"), 'model = "gpt-5"\n', "config.toml is never touched");
+  } finally {
+    s.close();
+    if (priorHome === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = priorHome;
+    rmSync(ws, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
 });
 
 test("a pre-trusted folder never asks", async () => {
   const ws = realpathSync(mkdtempSync(path.join(os.tmpdir(), "codex-trusted-")));
-  writeFileSync(trustRecord, JSON.stringify([...trustedNow(), ws]));
+  const record = trustRecordNow();
+  writeFileSync(
+    trustRecord,
+    JSON.stringify({ ...record, scopes: { ...record.scopes, codex: [...record.scopes.codex, ws] } }),
+  );
   const { s, msgs, server, awaitTurnEnd } = makeSessionAt(ws, [DONE]);
-  s.pushPrompt("go");
-  await awaitTurnEnd();
-  assert.ok(!msgs.some((m) => m.type === "permission_request"), "a trusted folder is not asked");
-  assert.equal(server.threadStarts().length, 1);
-  s.close();
+  try {
+    s.pushPrompt("go");
+    await awaitTurnEnd();
+    assert.ok(!msgs.some((m) => m.type === "permission_request"), "a trusted folder is not asked");
+    assert.equal(server.threadStarts().length, 1);
+  } finally {
+    s.close();
+    rmSync(ws, { recursive: true, force: true });
+  }
+});
+
+test("describePermissionProfile: every shape of the engine's RequestPermissionProfile is stated in words", () => {
+  assert.equal(
+    describePermissionProfile({
+      fileSystem: {
+        entries: [
+          { access: "write", path: { type: "path", path: "/home/u/proj/out" } },
+          { access: "read", path: { type: "glob_pattern", pattern: "/etc/**" } },
+          { access: "write", path: { type: "special", value: { kind: "root" } } },
+        ],
+        read: ["/var/log"],
+        write: ["/tmp/x"],
+      },
+      network: { enabled: true },
+    }),
+    "grant for this turn: write /home/u/proj/out, read /etc/** (glob), write the ENTIRE filesystem, read /var/log, write /tmp/x, network access",
+  );
+  assert.equal(describePermissionProfile({ network: { enabled: false } }), "grant additional permissions for this turn (the engine named none)");
+  assert.equal(describePermissionProfile({ fileSystem: "junk", network: null }), "grant additional permissions for this turn (the engine named none)");
+});
+
+test("describePermissionProfile: the special kinds that carry a literal path or subpath state it", () => {
+  assert.equal(
+    describePermissionProfile({
+      fileSystem: {
+        entries: [
+          { access: "write", path: { type: "special", value: { kind: "unknown", path: "/etc/cron.d" } } },
+          { access: "read", path: { type: "special", value: { kind: "project_roots", subpath: "secrets" } } },
+          { access: "read", path: { type: "special", value: { kind: "unknown", path: "/var/x", subpath: "y" } } },
+        ],
+      },
+    }),
+    "grant for this turn: write /etc/cron.d, read secrets inside each project root, read /var/x/y",
+  );
 });

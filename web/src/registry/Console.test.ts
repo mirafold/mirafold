@@ -45,8 +45,7 @@ test("ansiSpans: adjacent same-style runs merge into one span", () => {
 test("clipping mid-escape-sequence drops the partial sequence, not just its head", async () => {
   const { createElement } = await import("react");
   const { renderToStaticMarkup } = await import("react-dom/server");
-  const { Console } = await import("./Console");
-  const CLIP = 200_000; // Console.tsx's CONSOLE_CLIP
+  const { Console, CONSOLE_CLIP: CLIP } = await import("./Console"); // the real cap, never a copy (test-audit 2026-08-26)
   // Place the cut two chars into "\x1b[31m": the clipped text ends "\x1b[3".
   const output = "x".repeat(CLIP - 3) + "\x1b[31mred text past the clip";
   const html = renderToStaticMarkup(createElement(Console as never, { output }));

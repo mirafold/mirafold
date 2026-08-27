@@ -17,10 +17,11 @@ import type { ZoneMsg } from "./session-bus";
 
 const ACTIVITY_TYPES = new Set<ZoneMsg["type"]>(["status", "thinking_delta", "text_delta", "tool_use"]);
 
-// Terminal for a turn — the SAME set the daemon uses to decide a session went
-// idle and to clear its burst gate (`server/sessions/registry.ts`: "turn_end
-// || error → idle"). Mirroring it is the point: when the two disagree, the
-// daemon knows the session is idle while the shell shows "working…" forever.
+// `turn_end` and adapter errors are terminal for a turn — the same rule the
+// daemon uses for session state. Request-scoped errors pass
+// `errorIsTerminal=false`: they render beside the turn and own none of it.
+// Keeping both sides aligned prevents the daemon and shell from disagreeing
+// about whether the turn is still open.
 //
 // Why forever, and why this matters:
 // a turn that ends by `error` — an adapter crash, an engine dying mid-stream,
@@ -33,11 +34,37 @@ const ACTIVITY_TYPES = new Set<ZoneMsg["type"]>(["status", "thinking_delta", "te
 // closing one may read idle a beat early. That self-heals on the very next
 // activity frame (Shell re-arms busy on any of ACTIVITY_TYPES), whereas a
 // permanent wedge never heals at all. Transient wrong beats permanent wrong.
-const TERMINAL_TYPES = new Set<ZoneMsg["type"]>(["turn_end", "error"]);
+export type TurnBalance = {
+  openTurns: number;
+  /** A terminal error already paid down its turn; its paired turn_end must
+   * clear this marker without paying the same turn down again. */
+  errorAwaitingTurnEnd: boolean;
+};
 
-export function nextOpenTurns(current: number, msgType: ZoneMsg["type"], replayed = false): number {
-  if (msgType === "user_prompt") return current + 1;
-  if (TERMINAL_TYPES.has(msgType)) return Math.max(0, current - 1);
-  if (replayed && ACTIVITY_TYPES.has(msgType)) return Math.max(current, 1);
+export function nextTurnBalance(
+  current: TurnBalance,
+  msgType: ZoneMsg["type"],
+  replayed = false,
+  errorIsTerminal = true,
+): TurnBalance {
+  if (msgType === "user_prompt") {
+    return { openTurns: current.openTurns + 1, errorAwaitingTurnEnd: false };
+  }
+  if (msgType === "error" && errorIsTerminal) {
+    return {
+      openTurns: current.errorAwaitingTurnEnd
+        ? current.openTurns
+        : Math.max(0, current.openTurns - 1),
+      errorAwaitingTurnEnd: true,
+    };
+  }
+  if (msgType === "turn_end") {
+    return current.errorAwaitingTurnEnd
+      ? { openTurns: current.openTurns, errorAwaitingTurnEnd: false }
+      : { openTurns: Math.max(0, current.openTurns - 1), errorAwaitingTurnEnd: false };
+  }
+  if (replayed && ACTIVITY_TYPES.has(msgType)) {
+    return { ...current, openTurns: Math.max(current.openTurns, 1) };
+  }
   return current;
 }

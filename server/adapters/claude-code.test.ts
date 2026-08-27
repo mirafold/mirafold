@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import os from "node:os";
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import type { query, Options } from "@anthropic-ai/claude-agent-sdk";
 import type { WireMsg } from "../protocol";
 import { ClaudeCodeSession } from "./claude-code";
@@ -21,6 +21,12 @@ type SDKMsg = Record<string, unknown>;
 type Turn = SDKMsg[] | (() => AsyncGenerator<SDKMsg>);
 
 const tmp = mkdtempSync(path.join(os.tmpdir(), "genui-claude-test-"));
+// The folder-trust gate (audit 2026-08-26): every session below lives under
+// `tmp`, so vouching for that root once keeps these tests about the SDK
+// stream; the gate itself is tested at the end with its own untrusted dirs.
+const trustRecord = path.join(tmp, "trusted-workspaces.json");
+writeFileSync(trustRecord, JSON.stringify({ version: 2, scopes: { "claude-code": [tmp] } }));
+process.env.MIRAFOLD_WORKSPACE_TRUST_FILE = trustRecord;
 
 function makeSession(...turns: Turn[]) {
   const captured: { options?: Options; interrupts: number } = { interrupts: 0 };
@@ -718,7 +724,9 @@ test("N.5: an explicit api-key choice strips a globally-set BASE_URL — the ses
 
 test("N.5: no explicit choice inherits; an identifier-free local choice is credential-safe", () => {
   withAnthropicEnv({ ANTHROPIC_BASE_URL: "http://localhost:11434" }, () => {
-    assert.equal(capturedEnv({}), undefined);
+    // No explicit choice inherits the ambient endpoint (a filtered copy of
+    // the daemon's env — audit 2026-08-26 — never the raw process env).
+    assert.equal(capturedEnv({})?.ANTHROPIC_BASE_URL, "http://localhost:11434");
     const env = capturedEnv({ kind: "local" });
     assert.equal(env?.ANTHROPIC_BASE_URL, "http://localhost:11434");
     assert.equal(env?.ANTHROPIC_API_KEY, undefined);
@@ -843,4 +851,111 @@ test("recovery: Claude receives the saved SDK resume id and exposes its live com
     },
   );
   s.close();
+});
+
+// ── The folder-trust gate (audit 2026-08-26): the SDK session applies the
+// folder's own .claude/settings.json hooks and .mcp.json servers the moment
+// it starts (probed: both ran with no prompt). So no engine exists before
+// the folder is vouched for — the terminal's own first-run question.
+test("an untrusted folder asks before the engine is created; a no runs nothing, a yes starts it and delivers the prompt", async () => {
+  const ws = mkdtempSync(path.join(os.tmpdir(), "genui-claude-untrusted-"));
+  let engineStarts = 0;
+  const engine = ((args: { prompt: AsyncIterable<unknown>; options: Options }) => {
+    engineStarts++;
+    const gen = (async function* () {
+      for await (const _prompt of args.prompt) {
+        yield { type: "assistant", message: { content: [{ type: "text", text: "hello" }] } };
+        yield { type: "result", subtype: "success", usage: { input_tokens: 1, output_tokens: 1 } };
+      }
+    })();
+    return Object.assign(gen, { interrupt: async () => {}, supportedCommands: async () => [] });
+  }) as unknown as typeof query;
+  const s = new ClaudeCodeSession({ workspaceDir: ws, engine });
+  const msgs: Any[] = [];
+  s.onMessage((m) => msgs.push(m as Any));
+  const waitFor = (pred: (m: Any) => boolean, label: string) =>
+    new Promise<Any>((resolve, reject) => {
+      const t0 = Date.now();
+      const poll = setInterval(() => {
+        const hit = msgs.find(pred);
+        if (hit) {
+          clearInterval(poll);
+          resolve(hit);
+        } else if (Date.now() - t0 > 5_000) {
+          clearInterval(poll);
+          reject(new Error(`no ${label}; seen: ${msgs.map((m) => m.type).join(",")}`));
+        }
+      }, 5);
+    });
+  try {
+    assert.equal(engineStarts, 0, "construction spawns nothing in an untrusted folder");
+    s.refreshPromptOptions();
+    s.pushPrompt("hello");
+    const ask = await waitFor((m) => m.type === "permission_request", "the trust ask");
+    assert.equal(ask.tool, "Claude Code");
+    assert.match(ask.detail, /trust this folder/);
+    assert.ok(ask.detail.includes(ws), "the ask names the exact folder");
+    assert.match(ask.detail, /hooks/, "the ask says what a yes applies");
+    assert.equal(engineStarts, 0, "nothing spawned while the ask is open");
+
+    s.resolvePermission(ask.id, false);
+    await waitFor((m) => m.type === "turn_end", "turn_end after the no");
+    assert.ok(msgs.some((m) => m.type === "notice" && /haven't trusted/.test(m.text)));
+    assert.equal(engineStarts, 0, "a no spawns nothing");
+    assert.equal(existsSync(path.join(ws, ".claude")), false);
+
+    msgs.length = 0;
+    s.pushPrompt("hello again");
+    const again = await waitFor((m) => m.type === "permission_request", "asked again");
+    s.resolvePermission(again.id, true);
+    await waitFor((m) => m.type === "text_delta" || m.type === "turn_end", "the prompt reached the engine");
+    assert.equal(engineStarts, 1, "a yes starts the engine once");
+    assert.ok(msgs.some((m) => m.type === "permission_resolved" && m.allow === true));
+    s.pushPrompt("third");
+    await waitFor((m) => m.type === "turn_end" && msgs.filter((x) => x.type === "turn_end").length >= 2, "the next prompt needs no ask");
+    assert.equal(engineStarts, 1);
+    assert.equal(msgs.filter((m) => m.type === "permission_request").length, 1, "asked once, ever");
+  } finally {
+    s.close();
+  }
+});
+
+// Cold review (2026-08-26): the lazily started engine runs outside the
+// constructor's guarded path, so a synchronous SDK failure (a missing native
+// CLI binary) must be this turn's error — never an unhandled rejection that
+// exits the daemon.
+test("a synchronous engine failure on the first trusted prompt errors the turn, not the daemon", async () => {
+  const ws = mkdtempSync(path.join(os.tmpdir(), "genui-claude-boom-"));
+  const engine = (() => {
+    throw new Error("Native CLI binary for linux-x64 not found");
+  }) as unknown as typeof query;
+  const s = new ClaudeCodeSession({ workspaceDir: ws, engine });
+  const msgs: Any[] = [];
+  s.onMessage((m) => msgs.push(m as Any));
+  const rejections: unknown[] = [];
+  const onRejection = (r: unknown) => rejections.push(r);
+  process.on("unhandledRejection", onRejection);
+  try {
+    s.pushPrompt("hello");
+    const ask = await new Promise<Any>((resolve, reject) => {
+      const t0 = Date.now();
+      const poll = setInterval(() => {
+        const hit = msgs.find((m) => m.type === "permission_request");
+        if (hit) { clearInterval(poll); resolve(hit); } else if (Date.now() - t0 > 5_000) { clearInterval(poll); reject(new Error("no ask")); }
+      }, 5);
+    });
+    s.resolvePermission(ask.id, true);
+    await new Promise<void>((resolve, reject) => {
+      const t0 = Date.now();
+      const poll = setInterval(() => {
+        if (msgs.some((m) => m.type === "turn_end")) { clearInterval(poll); resolve(); } else if (Date.now() - t0 > 5_000) { clearInterval(poll); reject(new Error("no turn_end")); }
+      }, 5);
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.ok(msgs.some((m) => m.type === "error" && /could not start/.test(m.message)));
+    assert.deepEqual(rejections, [], "no unhandled rejection");
+  } finally {
+    process.off("unhandledRejection", onRejection);
+    s.close();
+  }
 });

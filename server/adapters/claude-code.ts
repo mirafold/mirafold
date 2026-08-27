@@ -6,8 +6,10 @@ import {
   type Query,
   type SDKResultMessage,
   type SDKUserMessage,
+  type Options,
   type SlashCommand,
 } from "@anthropic-ai/claude-agent-sdk";
+import { isWorkspaceTrusted, trustWorkspace } from "../sessions/workspace-trust";
 import type { PromptOption, SessionMsg } from "../protocol";
 import { makeCanUseTool } from "../security/permissions";
 import { makeRenderServer, RENDER_GUIDANCE } from "../render-tools";
@@ -120,10 +122,22 @@ function firstPartyCredentialEnv(): Record<string, string> {
  * preset, inherited settings.json) is scoped to this adapter only — shared
  * code stays agent-neutral.
  */
+// The folder-trust ask waits this long before denying — the same window the
+// Gemini and Codex gates use. A person reads the ask, not a machine.
+const TRUST_PROMPT_TIMEOUT_MS = 5 * 60_000;
+
 export class ClaudeCodeSession implements AgentSession {
   private queue = new AsyncQueue<string | typeof CLOSE>();
   private listeners = new Set<(msg: SessionMsg) => void>();
-  private engine: Query;
+  private engine?: Query;
+  private readonly startEngine: () => void;
+  private readonly workspaceDir: string;
+  // Set once the user says yes IN THIS SESSION — the disk record is the
+  // durable answer; this just avoids re-reading it every prompt.
+  private trusted = false;
+  // The one in-flight trust ask: prompts arriving while it is open queue
+  // behind it, in order.
+  private gate?: Promise<boolean>;
   private closed = false;
   // pump() exited — the SDK stream is gone. Distinct from `closed`: this is
   // the abnormal path (stream death without close()), where a queued prompt
@@ -185,58 +199,116 @@ export class ClaudeCodeSession implements AgentSession {
   }) {
     const workspaceDir = path.resolve(opts.workspaceDir);
     mkdirSync(workspaceDir, { recursive: true }); // spawn fails on a missing cwd
+    this.workspaceDir = workspaceDir;
     const model = opts.model ?? process.env.DEFAULT_MODEL;
     this.modelLabel = model;
     this.endpointForRedaction =
       opts.kind === "local" ? (opts.endpoint ?? process.env.ANTHROPIC_BASE_URL) : undefined;
     this.providerSessionId = opts.resumeId ?? randomUUID();
     this.resumeIdState = new ResumeIdState(opts.resumeId || undefined);
-    this.engine = (opts.engine ?? query)({
-      prompt: this.promptStream(),
-      options: {
-        ...(opts.resumeId
-          ? { resume: opts.resumeId }
-          : { sessionId: this.providerSessionId }),
-        model,
-        cwd: workspaceDir,
-        // The chosen backend is enforced per-session through the SDK's own
-        // env (never a process.env mutation). Discovered/unauthenticated
-        // endpoints get only the fixed dummy token; configured endpoints get
-        // exactly the credential MODE the server bound to that destination.
-        ...(opts.kind === "local"
-          ? { env: localEndpointEnv(opts.endpoint, opts.endpointAuth ?? "none") }
-          : opts.kind === "api-key"
-            ? { env: firstPartyCredentialEnv() }
-            : {}),
-        canUseTool: makeCanUseTool(workspaceDir, this.ask),
-        // settingSources is intentionally UNSET so it matches the CLI default
-        // (user + project + local). Mirafold is a different *view* of the
-        // terminal, so a user's own Claude Code config must apply here exactly
-        // as it does there — their settings.json permission allowlists and deny
-        // rules, their CLAUDE.md, their memory. Switching from the terminal to
-        // this has to be seamless and unsurprising. Honoring host allowlists
-        // (those tools then don't re-prompt in the browser) and letting
-        // "remember X" write to the real ~/.claude memory are terminal-native
-        // behaviors, not leaks to isolate against — `settingSources: []` would
-        // mistake the terminal's own behavior for a threat. (`canUseTool` still
-        // runs for anything the user's rules don't already decide.)
-        includePartialMessages: true, // gives us token-level text deltas
-        // MIRAFOLD_DEBUG=1 surfaces the engine's own stderr (the SDK
-        // swallows it otherwise) — where a bad key or dead CLI explains itself.
-        ...(verbose ? { stderr: (data: string) => log.debug(`stderr — ${this.safeEngineText(data)}`) } : {}),
-        // Opt-in extended thinking; unset leaves the preset's behavior
-        // (trigger words like "think hard" still work either way).
-        ...(process.env.MAX_THINKING_TOKENS
-          ? { maxThinkingTokens: Number(process.env.MAX_THINKING_TOKENS) }
-          : {}),
-        mcpServers: { [UI_MCP]: makeRenderServer((msg) => this.emit(msg), workspaceDir) },
-        systemPrompt: { type: "preset", preset: "claude_code", append: RENDER_GUIDANCE },
+    const queryFn = opts.engine ?? query;
+    const engineOptions: Options = {
+      ...(opts.resumeId
+        ? { resume: opts.resumeId }
+        : { sessionId: this.providerSessionId }),
+      model,
+      cwd: workspaceDir,
+      // The chosen backend is enforced per-session through the SDK's own
+      // env (never a process.env mutation). Discovered/unauthenticated
+      // endpoints get only the fixed dummy token; configured endpoints get
+      // exactly the credential MODE the server bound to that destination.
+      ...(opts.kind === "local"
+        ? { env: localEndpointEnv(opts.endpoint, opts.endpointAuth ?? "none") }
+        : opts.kind === "api-key"
+          ? { env: firstPartyCredentialEnv() }
+          : { env: envWithout() }),
+      canUseTool: makeCanUseTool(workspaceDir, this.ask),
+      // settingSources is intentionally UNSET so it matches the CLI default
+      // (user + project + local). Mirafold is a different *view* of the
+      // terminal, so a user's own Claude Code config must apply here exactly
+      // as it does there — their settings.json permission allowlists and deny
+      // rules, their CLAUDE.md, their memory. Switching from the terminal to
+      // this has to be seamless and unsurprising. Honoring host allowlists
+      // (those tools then don't re-prompt in the browser) and letting
+      // "remember X" write to the real ~/.claude memory are terminal-native
+      // behaviors, not leaks to isolate against — `settingSources: []` would
+      // mistake the terminal's own behavior for a threat. (`canUseTool` still
+      // runs for anything the user's rules don't already decide.)
+      includePartialMessages: true, // gives us token-level text deltas
+      // MIRAFOLD_DEBUG=1 surfaces the engine's own stderr (the SDK
+      // swallows it otherwise) — where a bad key or dead CLI explains itself.
+      ...(verbose ? { stderr: (data: string) => log.debug(`stderr — ${this.safeEngineText(data)}`) } : {}),
+      // Opt-in extended thinking; unset leaves the preset's behavior
+      // (trigger words like "think hard" still work either way).
+      ...(process.env.MAX_THINKING_TOKENS
+        ? { maxThinkingTokens: Number(process.env.MAX_THINKING_TOKENS) }
+        : {}),
+      mcpServers: { [UI_MCP]: makeRenderServer((msg) => this.emit(msg), workspaceDir) },
+      systemPrompt: { type: "preset", preset: "claude_code", append: RENDER_GUIDANCE },
+    };
+    // The engine is the terminal's `claude` in this folder: it applies the
+    // folder's own .claude/settings.json (hooks included), .mcp.json servers
+    // and CLAUDE.md the moment it starts — programs a checkout brought with
+    // it. The terminal asks "trust this folder?" first; headless does not
+    // (probed 2026-08-26: a SessionStart hook and an .mcp.json server both
+    // ran at start), so the same ask gates the first spawn here. A folder
+    // already vouched for starts warm, exactly as before.
+    this.startEngine = () => {
+      const engine = queryFn({ prompt: this.promptStream(), options: engineOptions });
+      this.engine = engine;
+      void this.pump(engine);
+    };
+    if (isWorkspaceTrusted(workspaceDir, "claude-code")) {
+      this.trusted = true;
+      this.startEngine();
+    }
+  }
+
+  /**
+   * The folder-trust gate (the terminal's own first-run question): resolves
+   * to whether this session may start its engine here. Asked once, ever,
+   * through the shell's permission strip, remembered in Mirafold's state.
+   */
+  private ensureTrusted(): Promise<boolean> {
+    if (this.trusted || isWorkspaceTrusted(this.workspaceDir, "claude-code")) {
+      this.trusted = true;
+      return Promise.resolve(true);
+    }
+    if (this.closed) return Promise.resolve(false);
+    return this.permissions.ask(
+      {
+        tool: "Claude Code",
+        detail:
+          `trust this folder — ${this.workspaceDir}. ` +
+          `Yes lets Claude Code run here and applies this folder's own .claude/settings.json ` +
+          `(hooks included), .mcp.json servers, and CLAUDE.md, exactly as the terminal does once ` +
+          `you trust it there.`,
       },
+      TRUST_PROMPT_TIMEOUT_MS,
+      (allow) => {
+        if (allow) {
+          this.trusted = true;
+          trustWorkspace(this.workspaceDir, "claude-code"); // remembered for this disclosed effect
+        }
+      },
+    );
+  }
+
+  /** A denied (or timed-out) trust ask: say why, end the turn, spawn nothing. */
+  private refuseUntrusted() {
+    this.emit({
+      type: "notice",
+      text:
+        `Claude Code won't run in a folder you haven't trusted. Nothing ran. ` +
+        `Send another prompt to be asked again, or switch agents.`,
     });
-    void this.pump();
+    this.emit({ type: "turn_end" });
   }
 
   refreshPromptOptions() {
+    // The catalog comes from the engine; before the folder is trusted there
+    // is none — it is sent as soon as the engine starts.
+    if (!this.engine) return;
     this.engine
       .supportedCommands()
       .then((commands) => {
@@ -286,7 +358,37 @@ export class ClaudeCodeSession implements AgentSession {
       this.emit({ type: "turn_end" });
       return;
     }
-    this.queue.push(text);
+    if (this.engine) {
+      this.queue.push(text);
+      return;
+    }
+    // Untrusted folder: the first prompt asks; later prompts wait behind
+    // the same ask and land in order. A no refuses just this prompt — the
+    // next one asks again.
+    this.gate ??= this.ensureTrusted();
+    void this.gate.then((allowed) => {
+      if (this.closed) return;
+      if (!allowed) {
+        this.gate = undefined;
+        this.refuseUntrusted();
+        return;
+      }
+      if (!this.engine) {
+        try {
+          this.startEngine();
+        } catch (err) {
+          // A sync throw out of the SDK (a missing native CLI binary) used
+          // to happen inside the guarded constructor; here it would be an
+          // unhandled rejection and take the daemon down — it is this
+          // turn's error instead.
+          this.emit({ type: "error", message: `Claude Code could not start: ${this.safeEngineText(errText(err))}` });
+          this.emit({ type: "turn_end" });
+          return;
+        }
+        this.refreshPromptOptions();
+      }
+      this.queue.push(text);
+    });
   }
 
   onMessage(cb: (msg: SessionMsg) => void) {
@@ -301,7 +403,7 @@ export class ClaudeCodeSession implements AgentSession {
     // The SDK also emits a result for the aborted turn; the extra turn_end
     // after the abort settles is a client-side no-op, kept as a guarantee.
     this.engine
-      .interrupt()
+      ?.interrupt()
       .then(() => this.emit({ type: "turn_end" }))
       .catch(() => {}); // interrupting an idle session is not an error
   }
@@ -315,7 +417,7 @@ export class ClaudeCodeSession implements AgentSession {
     this.closed = true;
     this.permissions.denyAll();
     this.queue.push(CLOSE);
-    this.engine.interrupt().catch(() => {});
+    this.engine?.interrupt().catch(() => {});
   }
 
   /** Pause the tool call on a browser prompt; deny on timeout or close. */
@@ -396,9 +498,9 @@ export class ClaudeCodeSession implements AgentSession {
   }
 
   /** Normalize the SDK's event stream into SessionMsg. */
-  private async pump() {
+  private async pump(engine: Query) {
     try {
-      for await (const msg of this.engine) {
+      for await (const msg of engine) {
         switch (msg.type) {
           case "stream_event": {
             // Subagent deltas never arrive here (SDK streams are main-session

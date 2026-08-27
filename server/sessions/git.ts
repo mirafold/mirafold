@@ -16,7 +16,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 import type { FsChangeRepo, FsDirEntry, FsEntry } from "../protocol";
-import { GIT_TIMEOUT_MS, invalidateRepoTrustCache, repoTrust } from "./git-trust";
+import { GIT_TIMEOUT_MS, gitBin, invalidateRepoTrustCache, repoTrust } from "./git-trust";
 // The walk's caps, shared (fs-folder-tree.ts) — both replies ride the same wire.
 import {
   contentRevision,
@@ -61,15 +61,19 @@ const runGit = async (root: string, args: string[]): Promise<RunResult> => {
   if (trust.unscannable) {
     return { ok: false, notGit: true, code: null, stderr: "repo config not scannable" };
   }
-  return runGitRaw(root, [...trust.disableArgs, ...args]);
+  return runGitRaw(root, args, trust.disableEnv);
 };
 
-const runGitRaw = (root: string, args: string[]): Promise<RunResult> =>
+const runGitRaw = (root: string, args: string[], env: Record<string, string> = {}): Promise<RunResult> =>
   new Promise((resolve) => {
+    const git = gitBin();
+    if (!git) return resolve({ ok: false, notGit: true, code: null, stderr: "no trusted git executable" });
     execFile(
-      "git",
+      git,
       ["--no-optional-locks", "-C", root, ...args],
-      { timeout: GIT_TIMEOUT_MS, maxBuffer: GIT_MAX_BUFFER, encoding: "buffer" },
+      // The neutralizations ride the env (git-trust.ts disableEnv); git
+      // reads no daemon secret, so the rest of the environment passes.
+      { timeout: GIT_TIMEOUT_MS, maxBuffer: GIT_MAX_BUFFER, encoding: "buffer", env: { ...process.env, ...env } },
       (err, stdout, stderr) => {
         if (!err) return resolve({ ok: true, stdout });
         const errno = (err as NodeJS.ErrnoException).code;
@@ -279,7 +283,11 @@ export async function gitTree(
   const ls = await runGit(root, ["ls-files", "--cached", "--others", "--exclude-standard", "-z"]);
   if (!ls.ok) return ls.notGit ? { notGit: true } : { error: gitErr("ls-files", ls) };
   const [status, prefixRes] = await Promise.all([
-    runGit(root, ["status", "--porcelain=v1", "-z", "--", "."]),
+    // --ignore-submodules=dirty on EVERY status: git otherwise recurses into
+    // each populated submodule, whose own .git/modules/<name>/config the
+    // trust scan never sees (audit 2026-08-26, probed). The gitlink's
+    // commit-level M is all the tree needs; no child git is spawned for it.
+    runGit(root, ["status", "--porcelain=v1", "-z", "--ignore-submodules=dirty", "--", "."]),
     runGit(root, ["rev-parse", "--show-prefix"]),
   ]);
   if (!status.ok) return status.notGit ? { notGit: true } : { error: gitErr("status", status) };
@@ -351,7 +359,7 @@ export async function gitChanges(
     return { error: "repository Git settings could not be inspected safely" };
   }
   const [status, prefixRes, trackedFlags] = await Promise.all([
-    runGit(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--", "."]),
+    runGit(root, ["status", "--porcelain=v1", "-z", "--ignore-submodules=dirty", "--untracked-files=all", "--", "."]),
     runGit(root, ["rev-parse", "--show-prefix"]),
     runGit(root, ["ls-files", "-v", "-z", "--", "."]),
   ]);
@@ -805,7 +813,7 @@ export function repoStatus(repoRoot: string): Promise<RepoStatus> {
   // under a long-lived daemon).
   if (statusCache.size > 64) statusCache.clear();
   const value = enqueue(async () => {
-    const r = await runGit(repoRoot, ["status", "--porcelain=v1", "-z", "--ignored"]);
+    const r = await runGit(repoRoot, ["status", "--porcelain=v1", "-z", "--ignore-submodules=dirty", "--ignored"]);
     if (!r.ok) return r.notGit ? { notGit: true as const } : { error: gitErr("status", r) };
     return parseStatusIgnoredZ(String(r.stdout));
   });

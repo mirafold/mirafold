@@ -149,10 +149,25 @@ export type BackendEndpoint =
  *  engine env override that WITHHOLDS a credential. Both SDKs stop
  *  inheriting once `env` is passed, so the override must carry the full
  *  environment, not just the changed vars. */
+/** The daemon's OWN credentials — never an engine's business. An engine's
+ *  `env` tool call is recorded into the transcript and the checkpoint, and
+ *  after a trust yes every project-configured MCP server inherits the
+ *  engine's env, so these must not be there to read (audit 2026-08-26).
+ *  Provider keys stay: they are the agent's, and OpenCode drives several. */
+export const DAEMON_ONLY_ENV: ReadonlySet<string> = new Set([
+  "MIRAFOLD_TOKEN",
+  "MIRAFOLD_LICENSE_KEY",
+  "MIRAFOLD_RELAY_CODE",
+  "MIRAFOLD_ENTITLEMENT_TOKEN",
+]);
+
+/** The environment every engine child receives: the daemon's, minus the
+ *  daemon's own credentials (always) and the named keys. */
 export function envWithout(...keys: string[]): Record<string, string> {
   return Object.fromEntries(
     Object.entries(process.env).filter(
-      (e): e is [string, string] => e[1] !== undefined && !keys.includes(e[0]),
+      (e): e is [string, string] =>
+        e[1] !== undefined && !keys.includes(e[0]) && !DAEMON_ONLY_ENV.has(e[0]),
     ),
   );
 }

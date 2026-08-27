@@ -62,15 +62,24 @@ function writeFile(line: string) {
   if (!fileOk || !logFile) return;
   try {
     if (fileBytes < 0) {
-      fs.mkdirSync(path.dirname(logFile), { recursive: true });
+      // Private like the checkpoint store: the log names projects, uploads,
+      // session ids and engine stderr — not for other local users.
+      fs.mkdirSync(path.dirname(logFile), { recursive: true, mode: 0o700 });
       fileBytes = fs.existsSync(logFile) ? fs.statSync(logFile).size : 0;
+      if (fileBytes > 0) {
+        try {
+          fs.chmodSync(logFile, 0o600);
+        } catch {
+          /* an operator-owned path we may append to but not re-mode */
+        }
+      }
     }
     if (fileBytes > MAX_FILE_BYTES) {
       fs.renameSync(logFile, `${logFile}.1`); // replaces the prior generation
       fileBytes = 0;
     }
     const buf = `${line}\n`;
-    fs.appendFileSync(logFile, buf);
+    fs.appendFileSync(logFile, buf, { mode: 0o600 });
     fileBytes += Buffer.byteLength(buf);
   } catch {
     fileOk = false;
@@ -155,7 +164,16 @@ export function scrubSelectedEndpoint(msg: string, endpoint?: string): string {
 
 /** Scrub BEFORE clipping — clipping first could sever a credential mid-string
  *  and leave the surviving half unmatched. */
-const sanitize = (msg: string) => clip(scrub(msg));
+// A log line is one line, and a terminal reads it: a newline in an engine
+// or client string forged a whole second line (a fake "token accepted"),
+// and ESC sequences retitled the terminal (audit 2026-08-26, probed). Every
+// C0/DEL byte goes — a newline becomes a visible ⏎ so a multi-line stderr
+// still reads as one record.
+const neutralizeControls = (msg: string) =>
+  msg.replace(/\r?\n|[\u0085\u2028\u2029]/g, "⏎").replace(/[\u0000-\u001f\u007f-\u009f]/g, "");
+/** Exported for the Tier-1 pin only. */
+export const sanitizeLogLine = (msg: string) => clip(scrub(neutralizeControls(msg)));
+const sanitize = sanitizeLogLine;
 
 function emit(level: Level, component: string, msg: string) {
   const tag = level === "info" ? "" : ` ${level}:`;

@@ -58,12 +58,26 @@
   color: var(--fg);
 }
 
+.artifact-frame-wrap {
+  position: relative;
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
 .artifact-frame {
   flex: 1;
   width: 100%;
   border: 0;
   display: block;
   background: var(--surface);
+}
+/* The activation layer: shell-owned, transparent, above the frame until the
+   user clicks it (Artifact.tsx). */
+.artifact-activate {
+  position: absolute;
+  inset: 0;
+  cursor: pointer;
+  background: transparent;
 }
 
 /* Failure fallback: the frame is gone; source takes its place. */
@@ -234,3 +248,10 @@
   background: var(--surface);
 }
 
+
+/* A pinned painting that threw (PinDock.tsx RenderBoundary). */
+.pin-dock-fallback {
+  padding: 8px 10px;
+  color: var(--fg-dim);
+  font-size: 12px;
+}

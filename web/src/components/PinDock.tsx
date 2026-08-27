@@ -1,5 +1,5 @@
 import type { Action } from "@protocol";
-import { RenderBlock } from "../registry/RenderBlock";
+import { RenderBlock, RenderBoundary } from "../registry/RenderBlock";
 import { Artifact } from "./Artifact";
 
 // The dock renders the same entry objects the transcript holds, so a
@@ -41,12 +41,17 @@ export function PinDock({
               >
                 ✕
               </button>
-              <RenderBlock
-                component={item.component}
-                props={item.props}
-                renderId={item.renderId}
-                onAction={onAction}
-              />
+              {/* A boundary per pinned painting, like the transcript rows: a
+                  painting that throws must not take the dock — or the shell
+                  above it — down with it (audit 2026-08-26). */}
+              <RenderBoundary fallback={<div className="pin-dock-fallback">This painting failed to render.</div>}>
+                <RenderBlock
+                  component={item.component}
+                  props={item.props}
+                  renderId={item.renderId}
+                  onAction={onAction}
+                />
+              </RenderBoundary>
             </div>
           ) : (
             <div key={item.artifactId} className="pin-dock-item">

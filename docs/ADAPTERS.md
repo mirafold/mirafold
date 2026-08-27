@@ -329,7 +329,11 @@ Adapter obligations for either path:
    shared `emitGenerativeUI` path); other MCP servers' calls surface as
    ordinary tool records.
 3. Re-sending a render `id` is an in-place update — adapters must paint under
-   the id the agent will re-send. `renderIdFor()` in `render-mcp-cmd.ts` is the
+   the id the agent will re-send, provided it fits `RENDER_ID_GRAMMAR`
+   (1–128 characters of letters, digits, `_ . : -`; the guidance tells the
+   model so, and an id outside it is replaced by a fresh uuid everywhere —
+   the in-process server, the stdio stub's ack, and `renderIdFor`, 2026-08-26).
+   `renderIdFor()` in `render-mcp-cmd.ts` is the
    one precedence (stub structured ack → the call's `id` argument → the ack
    text → a fresh uuid); every stdio adapter feeds it its channels rather than
    parsing the ack itself.
@@ -422,7 +426,15 @@ Deviations a reviewer might flag, with why they stand:
   folder-trust ask, and that ask says so in its own text (render tools +
   API-key auth merged into this folder's `.gemini/settings.json`, which
   terminal Gemini reads too) — consent to the write is explicit, not implied
-  by "trust". Documented in
+  by "trust". Every write opens with `O_NOFOLLOW` (the invalid-JSON backup
+  exclusively) and `.gemini` must be a real directory: a checkout that ships
+  `settings.json`, the backup's name beside it, or `.gemini` as a symlink (a
+  dangling one passes `existsSync`) would otherwise redirect the consented
+  write — or the repo's own bytes — to any user-owned path, so the turn
+  refuses instead (2026-08-26 audit; a hardlink, which git cannot deliver,
+  is the accepted residual as for the daemon's `.env` guard). `/model`
+  sits behind the same trust ask, because its catalog is read by spawning
+  Gemini in the folder. Documented in
   [ARCHITECTURE.md](ARCHITECTURE.md#agent-adapters); acceptable, but any
   alternative that appears in a future Gemini version (CLI flag for an extra
   MCP server) should replace it.

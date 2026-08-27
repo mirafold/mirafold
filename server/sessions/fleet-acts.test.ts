@@ -147,6 +147,10 @@ test("M.2 unknown session ids answer with an error; malformed acts are silently 
   send(c, { type: "answer_permission", sessionId: "nope", id: "p", allow: false });
   assert.equal(errors(seen).length, 3);
   assert.ok(errors(seen).every((m) => m.includes("no such session")));
+  assert.ok(
+    seen.filter((m) => m.type === "error").every((m) => m.terminal === false),
+    "a refused viewport request never closes an unrelated model turn",
+  );
 
   // Malformed fields: the repo's malformed-input convention — ignored, no
   // crash, no error spam (same posture as rename/permission_response).
@@ -240,4 +244,114 @@ test("a throttle-refused bang answers the issuer only — nothing enters the ses
   assert.ok(!e.ring.buffer.some((m) => m.type === "bang_end"), "the replay ring stays clean");
   assert.equal(e.status, "working", "a mid-turn session never flips idle over a refused bang");
   reg.end(e.id);
+});
+
+// AUDIT 2026-08-26: the eviction above detached the STREAM, but the evicted
+// connection kept its `entry` handle — and two client messages never checked
+// the drive-time gate at all. An evicted phone could send `bang` (whose
+// transcript becomes a model turn) or an allowing `permission_response` into
+// the subscription session. Now a `refused` frame drops the handle, and both
+// paths carry the gate like `prompt` does.
+
+test("AUDIT: an evicted remote connection loses its session — bang, permission_response, prompt all stop", () => {
+  const reg = new SessionRegistry({ backend: { agent: "opencode", kind: "api-key", live: false } });
+  const e = reg.create({ cwd: dir() });
+  const { c, seen } = conn(reg, true);
+  send(c, { type: "attach", sessionId: e.id });
+  assert.equal(e.remoteViewports.size, 1);
+  reg.broadcast(e, { type: "permission_request", tool: "Bash", detail: "x", id: "p1" });
+
+  e.kind = "subscription";
+  (reg as unknown as { evictRemoteViewports(entry: typeof e): void }).evictRemoteViewports(e);
+  assert.ok(seen.some((m) => m.type === "refused"));
+  const before = e.ring.buffer.length;
+
+  send(c, { type: "bang", command: "echo STALE-must-never-run", id: "b1" });
+  send(c, { type: "permission_response", id: "p1", allow: true });
+  send(c, { type: "prompt", text: "drive it" });
+  send(c, { type: "interrupt" });
+
+  try {
+    assert.equal(e.ring.buffer.length, before, "nothing from the evicted connection entered the stream");
+    assert.ok(!e.ring.buffer.some((m) => m.type === "bang_start"), "no PTY was spawned");
+    assert.equal(e.bang, undefined);
+    assert.deepEqual(e.permissions.map((p) => p.id), ["p1"], "the ask is still pending — the allow never landed");
+  } finally {
+    // A regressed guard spawns a real PTY; kill it so the run fails red
+    // instead of hanging on the live handle (test-audit 2026-08-26).
+    e.bang?.proc.kill();
+    reg.end(e.id);
+  }
+});
+
+test("AUDIT: `!` and an allowing permission_response are relay-gated at drive time like `prompt`; `!!` and a deny are not", () => {
+  const reg = new SessionRegistry({ backend: { agent: "opencode", kind: "api-key", live: false } });
+  const e = reg.create({ cwd: dir() });
+  const { c, seen } = conn(reg, true);
+  send(c, { type: "attach", sessionId: e.id });
+  reg.broadcast(e, { type: "permission_request", tool: "Bash", detail: "x", id: "p1" });
+  e.kind = "subscription"; // the flip, without the eviction: the gate alone must hold
+
+  send(c, { type: "bang", command: "echo drive", id: "b1" });
+  send(c, { type: "permission_response", id: "p1", allow: true });
+  assert.equal(errors(seen).filter((m) => m.includes("subscription")).length, 2);
+  assert.ok(!e.ring.buffer.some((m) => m.type === "bang_start"), "the gated ! never started");
+  assert.deepEqual(e.permissions.map((p) => p.id), ["p1"], "the gated allow never landed");
+
+  send(c, { type: "permission_response", id: "p1", allow: false });
+  assert.deepEqual(e.permissions, [], "a deny stops the model — ungated");
+  send(c, { type: "bang", command: "true", id: "b2", silent: true });
+  assert.ok(e.ring.buffer.some((m) => m.type === "bang_start" && m.silent === true), "a silent !! drives no model — ungated");
+  if (e.bang) e.bang.proc.kill();
+  reg.end(e.id);
+});
+
+// Cold review of the fix above (2026-08-26): the OTHER teardown path. After
+// `registry.end`, the connection's handle was just as stale — and a `bang`
+// through it spawned a real PTY whose output reached no viewport, no ring,
+// no checkpoint. Now `session_ended` drops the handle like `refused` does.
+test("AUDIT: a connection whose session was ended loses its handle — a later bang spawns nothing", () => {
+  const reg = new SessionRegistry({ backend: NONE });
+  const e = reg.create({ cwd: dir() });
+  const { c, seen } = conn(reg, false);
+  send(c, { type: "attach", sessionId: e.id });
+  reg.end(e.id);
+  assert.ok(seen.some((m) => m.type === "session_ended" && m.sessionId === e.id));
+  send(c, { type: "bang", command: "echo STALE", id: "b1", silent: true });
+  send(c, { type: "prompt", text: "hi" });
+  try {
+    assert.equal(e.bang, undefined, "no PTY was spawned for the dead session");
+    assert.ok(!e.ring.buffer.some((m) => m.type === "bang_start" || m.type === "user_prompt"));
+  } finally {
+    e.bang?.proc.kill();
+  }
+});
+
+test("AUDIT: the relay refusal of a `!` frees the issuer's bang bar with a bang_end, like the throttle refusal", () => {
+  const reg = new SessionRegistry({ backend: { agent: "opencode", kind: "api-key", live: false } });
+  const e = reg.create({ cwd: dir() });
+  const { c, seen } = conn(reg, true);
+  send(c, { type: "attach", sessionId: e.id });
+  e.kind = "subscription";
+  send(c, { type: "bang", command: "echo drive", id: "b9" });
+  assert.ok(seen.some((m) => m.type === "bang_end" && m.id === "b9" && m.exitCode === null), "the issuer's bar is released");
+  assert.ok(!e.ring.buffer.some((m) => m.type === "bang_end"), "…to that viewport only, never into the stream");
+  reg.end(e.id);
+});
+
+test("AUDIT: a closed connection drops its handle — a frame handled after close spawns nothing", () => {
+  const reg = new SessionRegistry({ backend: NONE });
+  const e = reg.create({ cwd: dir() });
+  const { c } = conn(reg, false);
+  send(c, { type: "attach", sessionId: e.id });
+  c.close();
+  send(c, { type: "bang", command: "echo STALE", id: "b1", silent: true });
+  send(c, { type: "prompt", text: "hi" });
+  try {
+    assert.equal(e.bang, undefined);
+    assert.ok(!e.ring.buffer.some((m) => m.type === "bang_start" || m.type === "user_prompt"));
+  } finally {
+    e.bang?.proc.kill();
+    reg.end(e.id);
+  }
 });

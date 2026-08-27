@@ -23,7 +23,6 @@ export const PROJECT_ENV_KEYS: ReadonlySet<string> = new Set([
 
   // Daemon, local-model, logging, and relay configuration.
   "PORT",
-  "MIRAFOLD_TOKEN",
   "MIRAFOLD_DEBUG",
   // NOT MIRAFOLD_LOG_FILE: it's a daemon-OPERATOR setting (where the daemon
   // writes its own log), not project data. Honoring it from a checkout's
@@ -31,16 +30,24 @@ export const PROJECT_ENV_KEYS: ReadonlySet<string> = new Set([
   // it at ~/.bashrc or a crontab, and since log lines can carry engine stderr
   // verbatim, an embedded newline writes an unprefixed line. That is outside
   // the disclosed set of what a project .env may do (endpoints, relay access,
-  // resource limits, auth posture).
-  "MIRAFOLD_LOCAL_ENDPOINTS",
+  // resource limits).
+  // NOT MIRAFOLD_TOKEN either: the auth posture is the operator's, never a
+  // checkout's. An EMPTY value disables auth (index.ts), and `.env.example`
+  // is conventionally copied to `.env` verbatim — so a bare `MIRAFOLD_TOKEN=`
+  // line, or a hostile checkout carrying one, would silently open the daemon
+  // to any page on localhost (audit 2026-08-26). Disabling or pinning the
+  // token needs the parent environment, as `yarn dev:server` does.
   "MIRAFOLD_LOCAL_DISCOVERY",
   "MIRAFOLD_CODEX_LOCAL_TURN_TIMEOUT_MS",
-  "MIRAFOLD_RELAY_URL",
-  "MIRAFOLD_APP_URL",
-  "MIRAFOLD_RELAY_CODE",
-  "MIRAFOLD_LICENSE_KEY",
-  "MIRAFOLD_ENTITLEMENT_URL",
-  "MIRAFOLD_ENTITLEMENT_TOKEN",
+  // NOT the relay / entitlement family, and NOT MIRAFOLD_LOCAL_ENDPOINTS:
+  // a checkout's .env configures the AGENT (its credentials, endpoints,
+  // model), never the daemon's own identity, credentials, or where it
+  // dials. Three lines in a hostile repo's .env otherwise POSTed the user's
+  // real license key to an attacker host, dialed the attacker's relay with
+  // a pairing code the attacker wrote, and presented all of it as the
+  // daemon's own boot output (audit 2026-08-26, probed). A checkout-added
+  // "local" endpoint would likewise be offered as a discovered local server
+  // and carry the conversation off-machine. Operator environment only.
 
   // Documented resource limits.
   "MAX_WS_PAYLOAD",
@@ -53,6 +60,20 @@ export const PROJECT_ENV_KEYS: ReadonlySet<string> = new Set([
   "BANG_CONTEXT_CAP",
   "MAX_REMOTE_VIEWPORTS",
   "RELAY_VIEWPORT_IDLE_MS",
+]);
+
+/** Keys a checkout's .env may name but the daemon deliberately refuses (see
+ *  the allowlist's comments): named here so the refusal is announced. */
+const OPERATOR_ONLY_KEYS: ReadonlySet<string> = new Set([
+  "MIRAFOLD_TOKEN",
+  "MIRAFOLD_LOG_FILE",
+  "MIRAFOLD_RELAY_URL",
+  "MIRAFOLD_RELAY_CODE",
+  "MIRAFOLD_APP_URL",
+  "MIRAFOLD_LICENSE_KEY",
+  "MIRAFOLD_ENTITLEMENT_URL",
+  "MIRAFOLD_ENTITLEMENT_TOKEN",
+  "MIRAFOLD_LOCAL_ENDPOINTS",
 ]);
 
 // Keep provenance, never a duplicate of secret contents: endpoint
@@ -88,6 +109,7 @@ export function shellEnv(env: NodeJS.ProcessEnv = process.env): Record<string, s
 export function loadProjectEnv(
   file = ".env",
   target: NodeJS.ProcessEnv = process.env,
+  warn: (message: string) => void = (message) => process.stderr.write(`${message}\n`),
 ): void {
   let parsed: NodeJS.Dict<string>;
   try {
@@ -97,6 +119,12 @@ export function loadProjectEnv(
   }
 
   for (const [key, value] of Object.entries(parsed)) {
+    // Silently ignoring a key the older .env.example invited would read as
+    // "set, nothing happened" — say why it did nothing.
+    if (OPERATOR_ONLY_KEYS.has(key)) {
+      warn(`mirafold: ${file}: ${key} is an operator setting and is not read from a checkout's .env — export it in the parent environment instead`);
+      continue;
+    }
     if (value !== undefined && PROJECT_ENV_KEYS.has(key) && target[key] === undefined) {
       target[key] = value;
       if (target === process.env) loadedProjectKeys.add(key);

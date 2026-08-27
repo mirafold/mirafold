@@ -59,6 +59,9 @@ Two mechanics to know:
    git push origin vx.y.z
    ```
 
+   The release workflow verifies the tag's SSH signature against
+   `.github/allowed_signers` before anything publishes (2026-08-26 audit) — a
+   new signing key means a new line in that file, merged to `main` first.
    The tag message carries the tarball's SHA-256 so the signed tag attests to
    the exact bytes. No hand-run `npm publish`, ever — the tag push triggers
    `.github/workflows/release.yml`, which re-verifies (guard, tag↔version

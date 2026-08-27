@@ -78,7 +78,9 @@ test("project .env imports supported data but never process identity", () => {
     assert.equal(target.OPENAI_API_KEY, "from-parent", "parent-process values win");
     assert.equal(target.PORT, "4321");
     assert.equal(target.MIRAFOLD_CODEX_LOCAL_TURN_TIMEOUT_MS, "480000");
-    assert.equal(target.MIRAFOLD_TOKEN, "x&calc|whoami");
+    // The auth token is operator-only too: a checkout .env could otherwise
+    // disable auth with an empty value, or pin one (audit 2026-08-26).
+    assert.equal(target.MIRAFOLD_TOKEN, undefined);
     assert.equal(target.MIRAFOLD_CODEX_BIN, "/operator/codex");
     assert.equal(target.MIRAFOLD_GEMINI_BIN, undefined);
     assert.equal(target.NODE_OPTIONS, "--trace-warnings", "the file cannot replace a loader hook");

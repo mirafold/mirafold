@@ -484,3 +484,11 @@
   font: inherit;
   cursor: pointer;
 }
+
+/* Bidi isolation on the answer-or-act surface: a direction control inside
+   an ask must not re-order the chrome around it (visible-controls.ts marks
+   the control itself; audit 2026-08-26). */
+.permission-detail,
+.permission-modal-detail {
+  unicode-bidi: isolate;
+}

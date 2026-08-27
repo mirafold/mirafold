@@ -33,7 +33,8 @@ reasoning inside shell chrome: it renders as inert plain text only, never
 markdown or HTML, and a subagent cannot paint generative-UI components — on
 OpenCode the adapter's lane refuses it, and on Claude Code the SDK withholds
 the MCP render tools from subagent contexts (verified against the real
-adapter). Per-subagent narration is byte-capped with an explicit elision
+adapter — a live-tier fact no Tier 1–3 test can hold, so an SDK upgrade
+re-verifies it under `yarn test:live`; 2026-08-26 test-audit). Per-subagent narration is byte-capped with an explicit elision
 marker, and the cap's ledger bounds distinct subagents per turn, so a
 hostile or looping engine cannot grow it — or the wire — without bound.
 
@@ -45,8 +46,9 @@ daemon, a dependency, or a paired device is code execution as you. A few
 things follow, and they are the whole list:
 
 - **Leave the auth token on.** Each launch mints one and the browser trades it
-  for a SameSite cookie. `MIRAFOLD_TOKEN=""` disables it, which means any page
-  served from localhost — another dev server, a hostile package's local
+  for a SameSite cookie. `MIRAFOLD_TOKEN=""` in the parent environment (never
+  a checkout's `.env` — that file cannot disable or pin the token) disables it,
+  which means any page served from localhost — another dev server, a hostile package's local
   server — can drive your agent. The daemon says so loudly at boot when you do
   it. It exists for the Vite dev proxy, not for daily use.
 - **Don't put the daemon on a network.** It binds `127.0.0.1` deliberately and
@@ -68,8 +70,12 @@ things follow, and they are the whole list:
   launcher then ignores project/npm-bin candidates for its own host chrome and
   agent lookup. This prevents executable shadowing, but does not make the
   checkout trusted: inspect or temporarily rename its `.env` before first
-  launch because supported settings can still select endpoints, relay access,
-  resource limits, and authentication posture.
+  launch because supported settings can still select the AGENT's endpoints,
+  credentials, models, and resource limits — never the daemon's own: the auth
+  token, the relay address, the pairing code, the license key, the
+  entitlement exchange, and extra discovery targets are read from the parent
+  environment only (2026-08-26 audit: three `.env` lines once redirected the
+  license-key exchange and the relay to a hostile host and pinned the code).
 - **Keys and configured endpoint URLs stay server-side.** Credentials come
   from the environment or a `.env` in the launch directory and are never
   serialized to the browser. Configured URLs are sensitive too: userinfo or a
@@ -89,12 +95,18 @@ things follow, and they are the whole list:
 - **Saved transcripts are treated as untrusted input on recovery.** Session
   checkpoints are owner-only, bounded, and atomically replaced, but local
   corruption/tampering is still decoded through a strict allowlist of every
-  persistable sequenced message shape. Per-viewport/control frames, replay
+  persistable sequenced message shape — and the registry admits only what
+  that allowlist decodes (`admitForCheckpoint`), so a hostile engine value
+  cannot make a saved session unavailable at the next start (2026-08-26
+  audit). Per-viewport/control frames, replay
   stamps, malformed payloads, unsafe catalog controls, and non-monotonic
   sequences make the saved session unavailable instead of replaying into the
   trusted shell. Mirafold never writes a provider key or token into a
   checkpoint itself, but `!` output is recorded verbatim — a command that
-  prints its environment records what it printed. That is why the `!` shell
+  prints its environment records what it printed. The daemon's own credentials
+  (auth token, license key, pairing code, entitlement token) never enter an
+  engine's environment either, so an agent's `env` call cannot record them
+  (2026-08-26 audit). That is why the `!` shell
   inherits the parent terminal's environment but never a value the checkout's
   `.env` supplied (those are the agent's credentials; a terminal would not
   export them either). Checkpoints can contain a sensitive configured
@@ -262,6 +274,53 @@ makes the file tree match what git actually thinks — but it is a real widening
 of what the daemon reads compared to Phase E, so it is stated here rather
 than left implied.
 
+**Every engine asks "trust this folder?" before its first spawn in a folder
+(2026-08-26 audit).** All four agents apply the folder's own configuration
+the moment they start — Claude Code its `.claude/settings.json` (hooks
+included), `.mcp.json` servers and `CLAUDE.md`; OpenCode its `opencode.json`
+and `.opencode`; Gemini its `.gemini/settings.json`; Codex its `.codex`
+(which Codex's own engine refuses until trusted). Their terminals ask first;
+headless does not — probed: a hostile checkout's `SessionStart` hook, its
+`.mcp.json` server and its `opencode.json` MCP command all ran at session
+start with no prompt. Mirafold now asks the same question through the
+permission strip before any engine spawns in a folder nobody has vouched
+for, remembers each answer per engine (`trusted-workspaces.json`, owner-only),
+and never lets a symlink inside a trusted project inherit the answer. A
+"no" runs nothing; the next prompt asks again.
+
+**Uploads and the `!` handoff stage under a random, owner-only directory,
+never a fixed name in shared `/tmp`** (2026-08-26 audit: a fixed
+`mirafold-uploads/` parent let another local user pre-create it and plant a
+link under the next upload's name); every staged file is created
+exclusively and never through a link.
+
+**An artifact takes keyboard focus only after you click it** (2026-08-26
+audit). A sandboxed frame may call `focus()` on its own input with no user
+gesture, and then everything typed for the prompt box lands inside the
+artifact (probed: a typed prompt never sent, Escape did not recover). The
+parent page cannot see input that happens over a frame, so the gesture is
+observed on shell chrome: a transparent activation layer sits over every
+artifact until you click it (or Tab into it), and re-arms whenever you
+click or focus anything else in the shell. Focus arriving in a frame while
+the layer is armed — noticed the instant the keys leave a shell element
+(`focusout`), on the window's blur, and by a fast poll for the gaps those
+two miss — is treated like a navigation: the shell takes the keys back and
+blanks the artifact, showing its source. Honest residual: no browser control
+stops a sandboxed document from calling `focus()` on itself (an `inert`
+frame does not, probed), so a grab can capture at most the keystroke in
+flight before the artifact is blanked — and each grab costs that artifact
+its life. Pinned by e2e tests against a focus-stealing mock artifact, alone
+and beside a live one.
+
+**A sandboxed artifact has no HTTP, WebSocket, fetch, or resource loads —
+but ICE (WebRTC) and navigation preconnect can still carry a hostname's worth
+of bytes to a network** (disclosed 2026-08-26). No browser control closes
+that channel (Chrome ignores the `webrtc` CSP directive; neutering the API
+from the boot script is bypassable from a nested frame). What it buys an
+attacker is a covert, low-bandwidth beacon from an artifact the agent was
+steered into writing — not access to the shell, cookies, or files. The
+permission prompts remain the boundary for what the agent may read.
+
 **A repository does not get to run programs just by being browsed**
 (2026-07-26 audit). Git can be told, by settings inside a repository's own
 `.git/config`, to run a program during ordinary read-only commands — and the
@@ -298,6 +357,19 @@ daemon's exact commands:
 Pinned by `server/sessions/git-trust.itest.ts`, which plants real programs in
 all three settings and fails if any of them leaves a mark on disk — verified
 to fail when the protection is removed.
+
+Three bypasses of that guard were found and closed on 2026-08-26 (each
+proven with a marker program first): a `=` inside a filter's name split the
+`-c key=value` neutralization, so it is now passed as `GIT_CONFIG_KEY_n` /
+`GIT_CONFIG_VALUE_n` env pairs, which cannot be split; `git status` recursed
+into populated submodules, whose own config the scan never read, so every
+status now carries `--ignore-submodules=dirty` (the gitlink's commit-level
+`M` is kept; no child git is spawned); and a config larger than the
+scanner's 2 MB buffer made the scan fail *open* — any scan failure other than
+"no git / not a repo" now refuses git for that repo. `git` itself is resolved
+through the same trusted-executable lookup as every other daemon child,
+never a bare name a checkout's `node_modules/.bin` could shadow. The itest
+pins all three.
 
 **One render can now carry megabytes, so the replay buffer is capped by bytes
 as well as by count** (2026-07-27 audit). Each session keeps its recent
@@ -358,8 +430,12 @@ that attached as an API-key one. The absolute bound ("no subscription of any
 kind is driven over the paid relay") is therefore enforced at every model-
 driving path a remote viewport can reach — the in-session `prompt`, the
 component `action{kind:prompt}`, cross-session `prompt_session`, an ALLOW
-`answer_permission`, and uploads — each re-checked against the session's
-*current* kind, not the kind it had at attach. When the kind flips to a relay-
+`answer_permission` or `permission_response`, a `!` command (its transcript
+becomes a model turn; the shell-only `!!` is not gated), and uploads — each
+re-checked against the session's *current* kind, not the kind it had at
+attach. (`!` and `permission_response` were missing from that list until the
+2026-08-26 audit, and an evicted — or ended — session left the connection a
+stale handle; a `refused` or `session_ended` frame now drops it.) When the kind flips to a relay-
 ineligible one, any already-attached relay viewport is also actively evicted
 (`SessionRegistry.evictRemoteViewports`), matching the posture the attach gate
 already takes for a fresh remote attach: a remote viewport is never even
@@ -386,7 +462,8 @@ module's header already parks the related forward-secrecy item for a v2 crypto
 pass, and this joins it. Verified under tamper/replay/forge probes: a hostile,
 E2E-blind relay operator still cannot inject anything the daemon acts on.
 
-**A session's own live transcript grows the browser tab's DOM without a cap
+**A session's own live transcript grows the browser tab's DOM — and the
+projection's per-frame cost with it — without a cap
 (disclosed, 2026-08-13 audit).** The daemon's replay ring is byte-capped, so a
 reload is always bounded, but while a tab is open the agent's streamed
 `render_*`/text output appends to the DOM unbounded — an agent looping output

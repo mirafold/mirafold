@@ -81,3 +81,25 @@ test("runSlashTurn wraps the body in the turn envelope even when it throws", asy
     ["status", "turn_end"],
   );
 });
+
+// AUDIT 2026-08-26: exactly-once must be structural. A resolution hook that
+// re-enters the ledger during a denyAll sweep (the sweep snapshots every
+// pending resolver first) previously ran the re-entered ask's finish twice —
+// two permission_resolved frames, two engine replies.
+test("PermissionLedger: an ask resolved from inside another ask's resolution hook still resolves exactly once", async () => {
+  const { msgs, emit } = recorder();
+  const ledger = new PermissionLedger(emit);
+  const hows: string[] = [];
+  let secondId = "";
+  const first = ledger.ask({ id: "a", tool: "Read", detail: "a" }, 60_000, () => {
+    ledger.resolve(secondId, true); // re-entrant: answers the sibling mid-sweep
+  });
+  const second = ledger.ask({ tool: "Read", detail: "b" }, 60_000, (_a, how) => hows.push(how));
+  secondId = msgs.filter((m) => m.type === "permission_request").map((m) => (m as { id: string }).id)[1]!;
+  ledger.denyAll("teardown");
+  assert.equal(await first, false);
+  assert.equal(await second, true, "the re-entrant answer won");
+  assert.deepEqual(hows, ["answer"], "one resolution, not answer-then-teardown");
+  assert.equal(resolvedFor(msgs, secondId).length, 1);
+  assert.equal(ledger.size, 0);
+});

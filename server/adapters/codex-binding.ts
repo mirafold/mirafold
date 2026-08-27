@@ -133,7 +133,7 @@ export function createCodexRuntimeBinding(options: {
     // Subscription must beat key precedence; local sessions must not receive
     // a key intended for another provider. An api-key pick keeps the env key
     // (and forces the api login method above).
-    ...(kind === "subscription" || kind === "local" ? { env: envWithout("OPENAI_API_KEY") } : {}),
+    env: kind === "subscription" || kind === "local" ? envWithout("OPENAI_API_KEY") : envWithout(),
   };
 
   // Ask the exact spawned binary for both catalogs under the same binding.

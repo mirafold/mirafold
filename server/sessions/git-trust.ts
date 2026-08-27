@@ -26,8 +26,32 @@
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { stateDir } from "../log";
+import { createLogger, stateDir } from "../log";
 import { envInt } from "../env";
+import { locateTrustedExecutable } from "../security/executable-trust";
+
+/** The one git the daemon runs: resolved through the trusted-executable
+ *  lookup like every other daemon-owned child — never a bare name the OS
+ *  would search a checkout's `node_modules/.bin` (npx) or its cwd (win32)
+ *  for. Undefined means "no git": every caller degrades to not-a-repo. */
+let gitBinCache: string | undefined | null = null;
+export function gitBin(): string | undefined {
+  if (gitBinCache === null) {
+    gitBinCache = locateTrustedExecutable("git");
+    if (!gitBinCache) {
+      // Silent degradation reads as "the tree shows no git info" — say why
+      // once (a git only under the launch directory is deliberately ignored).
+      createLogger("git").warn(
+        "no trusted git executable found on PATH (one inside the launch directory is ignored) — file statuses and changes are off",
+      );
+    }
+  }
+  return gitBinCache;
+}
+/** Test seam: forget the cached lookup (PATH changed). */
+export function resetGitBinCache(): void {
+  gitBinCache = null;
+}
 
 // Shared with every git invocation in git.ts — one timebox for the family.
 export const GIT_TIMEOUT_MS = envInt("FS_GIT_TIMEOUT_MS", 5_000);
@@ -46,16 +70,22 @@ const INERT_FSMONITOR = new Set(["", "true", "false", "1", "0", "yes", "no"]);
 export type RepoTrust = {
   /** Settings that would make git run a program, effective for this repo. */
   risky: { key: string; value: string }[];
-  /** `-c` arguments neutralizing them for one invocation — empty when the
-   *  repo configures nothing risky, or when the user has allowed it. */
-  disableArgs: string[];
+  /** `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n` for the
+   *  child's env, neutralizing them for one invocation — empty when the repo
+   *  configures nothing risky, or when the user has allowed it. Env pairs,
+   *  not `-c key=value`: key and value are separate variables, so a `=`
+   *  inside a driver's name (`[filter "ev=il"]`) cannot split the override
+   *  — git cut `-c` at the first `=` and left the real driver armed
+   *  (audit 2026-08-26). */
+  disableEnv: Record<string, string>;
   /** The user allowed this repo: its programs run, terminal-identically. */
   allowed: boolean;
   /** Too many drivers to neutralize one by one — skip git for this repo. */
   unscannable: boolean;
 };
 
-const SAFE: RepoTrust = { risky: [], disableArgs: [], allowed: false, unscannable: false };
+const SAFE: RepoTrust = { risky: [], disableEnv: {}, allowed: false, unscannable: false };
+const UNSCANNABLE: RepoTrust = { risky: [], disableEnv: {}, allowed: false, unscannable: true };
 
 /**
  * The repo's OWN config — `--local` scope only. The threat is what the repo
@@ -70,17 +100,39 @@ const SAFE: RepoTrust = { risky: [], disableArgs: [], allowed: false, unscannabl
  * entries, which lands as "nothing risky": correct, since a git that cannot
  * run cannot run anything for an attacker either.
  */
-const readConfig = (root: string): Promise<Map<string, string>> =>
+const readConfig = (root: string): Promise<Map<string, string> | null> =>
   new Promise((resolve) => {
+    const git = gitBin();
+    if (!git) return resolve(new Map());
     execFile(
-      "git",
+      git,
       // --includes is explicit: given a single scope, git defaults it OFF,
       // which would hide exactly the included-file indirection pinned below.
       ["--no-optional-locks", "-C", root, "config", "--local", "--includes", "--list", "-z"],
       { timeout: GIT_TIMEOUT_MS, maxBuffer: CONFIG_MAX_BUFFER, encoding: "utf8" },
-      (err, stdout) => {
+      (err, stdout, stderr) => {
         const entries = new Map<string, string>();
-        if (err) return resolve(entries);
+        if (err) {
+          // No git, or not a repo: nothing can run. ANY other failure —
+          // our own maxBuffer on a padded config, a timeout — is the SCAN
+          // failing, not git: fail closed (null → unscannable). A config
+          // padded past 2 MB used to hide a live driver behind an empty
+          // map (audit 2026-08-26, probed).
+          // Not-a-repo is git's own verdict — exit 128 plus one of its two
+          // wordings on STDERR (the callback's third argument; `err.message`
+          // embeds the command line, i.e. the root PATH, which a tarball
+          // names — cold review 2026-08-26). A signal (timeout) or our own
+          // maxBuffer never counts as "not a repo".
+          const e = err as NodeJS.ErrnoException & { killed?: boolean; signal?: string | null };
+          const exit = typeof e.code === "number" ? e.code : undefined;
+          const notRepo =
+            e.code === "ENOENT" ||
+            (exit === 128 &&
+              !e.killed &&
+              !e.signal &&
+              /not a git repository|can only be used inside a git repository/i.test(String(stderr ?? "")));
+          return resolve(notRepo ? entries : null);
+        }
         // -z records are `key\nvalue\0`; a valueless key has no newline.
         for (const record of stdout.split("\0")) {
           if (!record) continue;
@@ -99,25 +151,33 @@ const readConfig = (root: string): Promise<Map<string, string>> =>
  *  Pure — exported for the Tier-1 pin. */
 export function assessConfig(entries: ReadonlyMap<string, string>): {
   risky: { key: string; value: string }[];
-  disableArgs: string[];
+  disableEnv: Record<string, string>;
   unscannable: boolean;
 } {
   const risky: { key: string; value: string }[] = [];
-  const disableArgs: string[] = [];
+  const overrides: [string, string][] = [];
   let drivers = 0;
 
   const fsmonitor = entries.get("core.fsmonitor");
   if (fsmonitor !== undefined && !INERT_FSMONITOR.has(fsmonitor.trim().toLowerCase())) {
     risky.push({ key: "core.fsmonitor", value: fsmonitor });
-    disableArgs.push("-c", "core.fsmonitor=false");
+    overrides.push(["core.fsmonitor", "false"]);
   }
   for (const [key, value] of entries) {
     if (!/^filter\..+\.(clean|process)$/.test(key)) continue;
-    if (++drivers > MAX_FILTER_DRIVERS) return { risky, disableArgs, unscannable: true };
+    if (++drivers > MAX_FILTER_DRIVERS) return { risky, disableEnv: {}, unscannable: true };
     risky.push({ key, value });
-    disableArgs.push("-c", `${key}=`);
+    overrides.push([key, ""]);
   }
-  return { risky, disableArgs, unscannable: false };
+  const disableEnv: Record<string, string> = {};
+  if (overrides.length) {
+    disableEnv["GIT_CONFIG_COUNT"] = String(overrides.length);
+    overrides.forEach(([key, value], i) => {
+      disableEnv[`GIT_CONFIG_KEY_${i}`] = key;
+      disableEnv[`GIT_CONFIG_VALUE_${i}`] = value;
+    });
+  }
+  return { risky, disableEnv, unscannable: false };
 }
 
 // --- The user's allow list ---
@@ -173,12 +233,14 @@ export function invalidateRepoTrustCache(): void {
 export async function repoTrust(root: string): Promise<RepoTrust> {
   let pending = trustCache.get(root);
   if (!pending) {
-    pending = readConfig(root).then((entries) => ({ ...assessConfig(entries), allowed: false }));
+    pending = readConfig(root).then((entries) =>
+      entries === null ? UNSCANNABLE : { ...assessConfig(entries), allowed: false },
+    );
     if (trustCache.size > 64) trustCache.clear();
     trustCache.set(root, pending);
   }
   const scanned = await pending;
   if (!scanned.risky.length && !scanned.unscannable) return SAFE;
   const allowed = allowedRepos().has(root);
-  return { ...scanned, allowed, disableArgs: allowed ? [] : scanned.disableArgs };
+  return { ...scanned, allowed, disableEnv: allowed ? {} : scanned.disableEnv };
 }

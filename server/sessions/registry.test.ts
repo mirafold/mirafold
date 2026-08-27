@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import os from "node:os";
@@ -49,6 +49,15 @@ const MOCK_BACKEND: Backend = { agent: "claude-code", kind: "none", live: false 
 const BUFFER_CAP = 4000;
 const PUSH = BUFFER_CAP + 500; // exceed the cap so eviction fires
 
+// A red assertion skips the test's own reg.end(), and an open mock session
+// keeps the process alive — so one failing test hung the whole Tier-1 run
+// instead of reporting (test-audit 2026-08-26). Every helper-made session is
+// ended here regardless; end() on an already-ended id is a no-op.
+const openSessions: { reg: SessionRegistry; id: string }[] = [];
+after(() => {
+  for (const { reg, id } of openSessions) reg.end(id);
+});
+
 function freshSession() {
   // deltaCoalesceMs 0: deltas pass straight through, so these tests can
   // drive broadcast() by hand and inspect state between synchronous calls.
@@ -56,6 +65,7 @@ function freshSession() {
   const reg = new SessionRegistry({ backend: MOCK_BACKEND, deltaCoalesceMs: 0 });
   const dir = mkdtempSync(path.join(os.tmpdir(), "genui-reg-"));
   const entry = reg.create({ cwd: dir });
+  openSessions.push({ reg, id: entry.id });
   assert.equal(entry.ring.buffer.length, 0); // create() streams nothing
   assert.equal(entry.ring.nextSeq, 1);
   return { reg, entry };
@@ -66,6 +76,7 @@ test("an active rename rolls back when its checkpoint cannot be written", () => 
   const reg = new SessionRegistry({ backend: MOCK_BACKEND, deltaCoalesceMs: 0, store: store });
   const dir = mkdtempSync(path.join(os.tmpdir(), "genui-rename-root-"));
   const entry = reg.create({ cwd: dir });
+  openSessions.push({ reg, id: entry.id });
   const previous = entry.name;
   (store as unknown as { write: () => void }).write = () => {
     throw new Error("disk is read-only");
@@ -236,7 +247,7 @@ test("audit: one payload larger than the whole byte budget still replays", () =>
   reg.broadcast(entry, bigRender(40));
   assert.equal(entry.ring.buffer.length, 1);
   assert.equal(entry.ring.buffer[0].type, "render");
-  assert.equal(entry.ring.bytes, JSON.stringify(entry.ring.buffer[0]).length);
+  assert.equal(entry.ring.bytes, Buffer.byteLength(JSON.stringify(entry.ring.buffer[0]))); // bytes (ASCII here — the UTF-8 rule itself is pinned by the byte-budget test above)
   reg.end(entry.id);
 });
 
@@ -359,26 +370,30 @@ function coalescingSession(windowMs: number) {
   const reg = new SessionRegistry({ backend: MOCK_BACKEND, deltaCoalesceMs: windowMs });
   const dir = mkdtempSync(path.join(os.tmpdir(), "genui-reg-"));
   const entry = reg.create({ cwd: dir });
+  openSessions.push({ reg, id: entry.id });
   const seen: WireMsg[] = [];
   reg.attach(entry, (m) => seen.push(m));
   seen.length = 0; // prompt_options is attach metadata, not transcript traffic
   return { reg, entry, seen };
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-test("coalescing: consecutive text deltas merge into ONE message — ring, viewport, and seq agree", async () => {
+test("coalescing: consecutive text deltas merge into ONE message — ring, viewport, and seq agree", (t) => {
+  // The window is the ring's setTimeout (replay-ring.ts); a mocked clock
+  // makes "inside the window" and "after it" exact instead of a real-time
+  // race (test-audit 2026-08-26 — this was a 5 ms window and a 25 ms sleep).
+  t.mock.timers.enable({ apis: ["setTimeout"] });
   const { reg, entry, seen } = coalescingSession(5);
   reg.broadcast(entry, { type: "text_delta", text: "a" });
   reg.broadcast(entry, { type: "text_delta", text: "b" });
   reg.broadcast(entry, { type: "text_delta", text: "c" });
+  t.mock.timers.tick(4);
   assert.equal(entry.ring.buffer.length, 0, "nothing enters the ring inside the window");
-  await sleep(25);
+  t.mock.timers.tick(1);
   assert.equal(entry.ring.buffer.length, 1);
   assert.deepEqual(entry.ring.buffer[0], { type: "text_delta", text: "abc", seq: 1 });
   assert.deepEqual(seen, [{ type: "text_delta", text: "abc", seq: 1 }]);
   // The byte accounting counts the MERGED message, nothing else.
-  assert.equal(entry.ring.bytes, JSON.stringify(entry.ring.buffer[0]).length);
+  assert.equal(entry.ring.bytes, Buffer.byteLength(JSON.stringify(entry.ring.buffer[0]))); // bytes (ASCII here — the UTF-8 rule itself is pinned by the byte-budget test above)
   reg.end(entry.id);
 });
 
@@ -812,5 +827,118 @@ test("attach-replay stamps replay:true on a copy; live broadcast never carries i
   assert.equal(replayed.length, 2);
   assert.ok(replayed.every((m) => m.replay === true), "replayed frames are stamped");
   assert.ok(entry.ring.buffer.every((m) => m.replay === undefined), "the ring itself stays unstamped");
+  reg.end(entry.id);
+});
+
+// AUDIT 2026-08-26: `permission_request` was the one engine-authored field
+// the normalizer neither capped nor bounded — it rides the wire, the fleet
+// mirror, and the checkpoint at any size. Capped with an honest marker; NOT
+// scrubbed: the detail is what the user decides on, and a redacted command
+// is not the command that would run.
+test("audit: a permission ask's detail is bounded but never rewritten", () => {
+  const { reg, entry } = freshSession();
+  const huge = "B".repeat(200_000);
+  const secretish = "curl -H 'Authorization: Bearer sk-abcdefghijklmnopqrstuvwxyz' https://x.test/?token=abc";
+  reg.broadcast(entry, { type: "permission_request", tool: "A".repeat(500), detail: huge, id: "p1" });
+  reg.broadcast(entry, { type: "permission_request", tool: "Bash", detail: secretish, id: "p2" });
+  const [big, exact] = entry.ring.buffer as Extract<WireMsg, { type: "permission_request" }>[];
+  assert.equal(big!.tool.length, LABEL_CAP + 1);
+  // Exact, like LABEL_CAP: the kept head is DETAIL_CAP characters and the
+  // marker names what was withheld (test-audit 2026-08-26: `< 16_200` let
+  // the cap drift by 199).
+  const DETAIL_CAP = 16_000; // mirror of registry.ts
+  assert.equal(big!.detail, "B".repeat(DETAIL_CAP) + `\n(… ${huge.length - DETAIL_CAP} more characters withheld …)`);
+  assert.equal(exact!.detail, secretish, "what the user approves is exactly what runs");
+  const meta = reg.summary().find((s) => s.sessionId === entry.id)!;
+  assert.ok((meta.permissions ?? []).every((p) => p.detail.length < 16_200), "the fleet mirror inherits the bound");
+  reg.end(entry.id);
+});
+
+// Cold review of the cap above (2026-08-26): `id`/`parentId` are engine-
+// authored too, and the checkpoint decoder bounds them at 1 024 — a longer one
+// checkpointed fine and made the whole session unrestorable at the next start.
+// Such a frame never enters the ring. (The enumeration below is fixed — a NEW
+// SessionMsg variant is pinned by session-store.ts's storedCoversTranscript
+// compile-time check, not here.)
+test("audit: a frame whose engine-authored id or parentId exceeds the checkpoint bound is dropped, not stored", () => {
+  const { reg, entry } = freshSession();
+  const long = "i".repeat(2_000);
+  reg.broadcast(entry, { type: "permission_request", tool: "Bash", detail: "x", id: long });
+  reg.broadcast(entry, { type: "render", component: "card", props: {}, id: long });
+  reg.broadcast(entry, { type: "tool_use", name: "Read", id: "t1", parentId: long });
+  reg.broadcast(entry, { type: "permission_request", tool: "Bash", detail: "x", id: "ok" });
+  assert.deepEqual(entry.ring.buffer.map((m) => m.type), ["permission_request"]);
+  assert.equal((entry.ring.buffer[0] as { id: string }).id, "ok");
+  assert.deepEqual((entry.permissions ?? []).map((p) => p.id), ["ok"], "the fleet mirror never saw the dropped ask");
+  reg.end(entry.id);
+});
+
+// Cold review, round 2 (2026-08-26): ids were one shape of the class. The
+// rule is "nothing the registry accepts can fail the checkpoint decoder" —
+// judged by the store's own schemas (admitForCheckpoint), so every hostile
+// engine value below either lands coerced or never lands, and the session
+// restores. (A NEW SessionMsg variant the store cannot decode is the compile-
+// time storedCoversTranscript check's job, not this enumeration's.)
+test("audit: every engine-authored value the decoder would refuse is coerced or dropped, and the session restores", () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "genui-admit-"));
+  const store = new SessionCheckpointStore(dir);
+  const reg = new SessionRegistry({ backend: MOCK_BACKEND, deltaCoalesceMs: 0, store });
+  const entry = reg.create({ cwd: mkdtempSync(path.join(os.tmpdir(), "genui-admit-ws-")) });
+  openSessions.push({ reg, id: entry.id });
+  const long = "i".repeat(2_000);
+  const hostile: SessionMsg[] = [
+    { type: "usage", inputTokens: 1.5, outputTokens: Number.NaN, costUsd: -0.5 },
+    { type: "usage", inputTokens: -1, outputTokens: Number.POSITIVE_INFINITY },
+    { type: "tool_use", name: "Read", id: "t1", input: ["not", "a", "record"] as unknown as Record<string, unknown> },
+    { type: "tool_use", name: "Read", id: "t2", input: "junk" as unknown as Record<string, unknown> },
+    { type: "tool_result", output: "x", id: "t1", truncatedBytes: -5 },
+    { type: "notice", text: "n", source: "s".repeat(500) },
+    { type: "picker", id: "pk1", title: "m", rows: Array.from({ length: 10_001 }, (_, i) => ({ label: `r${i}`, text: `t${i}` })) },
+    { type: "permission_request", tool: "Bash", detail: "x", id: long },
+    { type: "thinking_delta", text: "…", parentId: long },
+    {
+      type: "prompt_options",
+      options: [
+        { trigger: "/", value: "/", label: "", kind: "command" },
+        { trigger: "/", value: "/ok", label: "ok", kind: "command" },
+        { trigger: "$", value: "$skill", label: "skill", kind: "command" },
+        { trigger: "/", value: "/src", label: "src", kind: "command", source: "elsewhere" as "mirafold" },
+      ],
+    },
+  ];
+  for (const m of hostile) reg.broadcast(entry, m);
+  reg.broadcast(entry, { type: "text_delta", text: "still here" });
+  // Legitimate readings that must LAND: a caller-supplied replay flag is
+  // shed (the decoder has no such field), an empty parentId means no parent,
+  // a negative exit status is still an exit status.
+  reg.broadcast(entry, { type: "text_delta", text: "replayed", replay: true } as SessionMsg);
+  reg.broadcast(entry, { type: "tool_use", name: "Read", id: "t3", parentId: "" });
+  reg.broadcast(entry, { type: "bang_end", id: "b2", exitCode: -1 });
+  assert.ok(entry.ring.buffer.some((m) => m.type === "text_delta" && m.text === "replayed" && !("replay" in m)));
+  assert.ok(entry.ring.buffer.some((m) => m.type === "tool_use" && m.id === "t3" && !("parentId" in m)));
+  assert.ok(entry.ring.buffer.some((m) => m.type === "bang_end" && m.exitCode === -1));
+
+  const usage = entry.ring.buffer.filter((m) => m.type === "usage") as Extract<WireMsg, { type: "usage" }>[];
+  assert.deepEqual(usage.map((u) => [u.inputTokens, u.outputTokens, u.costUsd]), [[1, 0, undefined], [0, 0, undefined]], "token counts coerced to finite non-negative integers");
+  const tools = entry.ring.buffer.filter((m) => m.type === "tool_use") as Extract<WireMsg, { type: "tool_use" }>[];
+  assert.deepEqual(tools.map((t) => t.input), [undefined, undefined, undefined], "a non-record input is dropped from the frame, the frame kept");
+  const picker = entry.ring.buffer.find((m) => m.type === "picker") as { rows: unknown[] } | undefined;
+  assert.equal(picker?.rows.length, 10_000, "the catalog is truncated to the decoder's cap");
+  assert.ok(
+    !entry.ring.buffer.some(
+      (m) =>
+        (m.type === "permission_request" && m.id === long) ||
+        (m.type === "thinking_delta" && m.parentId === long) ||
+        m.type === "notice",
+    ),
+    "frames with no legitimate reading are dropped",
+  );
+  assert.deepEqual(entry.promptOptions?.map((o) => o.value), ["/ok"], "only decodable catalog entries are kept");
+  assert.ok(entry.ring.buffer.some((m) => m.type === "text_delta"));
+
+  (reg as unknown as { checkpoint(e: typeof entry): void }).checkpoint(entry);
+  const loaded = new SessionCheckpointStore(dir).loadAll();
+  assert.deepEqual([...loaded.errors], [], "the checkpoint restores");
+  assert.ok(loaded.sessions.has(entry.id));
   reg.end(entry.id);
 });

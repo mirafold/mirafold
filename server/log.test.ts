@@ -72,6 +72,9 @@ test("the scrubber is actually WIRED to both sinks, not just exported", () => {
   // pointed at a temp file — the real emit() path, console and file both.
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mirafold-log-"));
   const logPath = path.join(dir, "probe.log");
+  // A log left behind by an older build was world-readable: the sink re-modes
+  // it on first use (the pre-existing-file branch — cold review 2026-08-26).
+  fs.writeFileSync(logPath, "older build's line\n", { mode: 0o644 });
   const KEY = "AIzaSyA1B2C3D4E5F6G7H8I9J0K1L2M3N4O5P6Q";
   const serverDir = path.dirname(fileURLToPath(import.meta.url));
   try {
@@ -88,6 +91,9 @@ test("the scrubber is actually WIRED to both sinks, not just exported", () => {
       { env: { ...process.env, MIRAFOLD_LOG_FILE: logPath }, encoding: "utf8", stdio: "pipe" },
     );
     const onDisk = fs.readFileSync(logPath, "utf8");
+    // The file and its directory are owner-only (audit 2026-08-26); pinned
+    // here because this is the one test that exercises the real sink.
+    assert.equal(fs.statSync(logPath).mode & 0o077, 0, "the log file is 0600");
     assert.ok(!onDisk.includes(KEY), `key reached the log FILE:\n${onDisk}`);
     assert.ok(!stdio.includes(KEY), `key reached the console:\n${stdio}`);
     assert.equal((onDisk.match(/\[redacted\]/g) ?? []).length, 2); // error() and file()
@@ -109,4 +115,17 @@ test("scrub leaves ordinary log text untouched", () => {
   ]) {
     assert.equal(scrub(line), line, line);
   }
+});
+
+// AUDIT 2026-08-26: engine stderr and client-reported errors are logged
+// verbatim; a newline forged a whole second log line and an ESC sequence
+// retitled the terminal. One record is one line, with no control bytes.
+test("AUDIT: a log line cannot carry a forged second line or a terminal control sequence", async () => {
+  const { sanitizeLogLine } = await import("./log");
+  const hostile = "engine said hi\n[2026-08-26T00:00:00.000Z] [auth] token accepted FORGED\r\n\u001b]0;retitled\u0007\u0000tail";
+  const out = sanitizeLogLine(hostile);
+  assert.ok(!out.includes("\n") && !out.includes("\r"), out);
+  assert.ok(!/[\u0000-\u001f\u007f]/.test(out), "no control bytes survive");
+  assert.match(out, /engine said hi⏎\[2026/, "the newline is shown, not honored");
+  assert.match(out, /retitledtail$/);
 });

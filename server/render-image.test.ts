@@ -103,3 +103,19 @@ test("refusals: wrong bytes, oversize, secret basename, missing file, no path", 
   );
   assert.equal(resolveImageProps(root, { alt: "x" })["error"], "no path given");
 });
+
+// AUDIT 2026-08-26: the read opens the descriptor without following a link
+// and judges THAT descriptor — a FIFO or directory swapped in under the name
+// is refused without blocking the daemon, and a link is never followed.
+test("AUDIT: a FIFO or a directory under an image name is refused promptly; a link is not followed", async () => {
+  const { execFileSync } = await import("node:child_process");
+  const fifo = path.join(root, "pipe.png");
+  execFileSync("mkfifo", [fifo]);
+  mkdirSync(path.join(root, "dir.png"));
+  const t0 = Date.now();
+  const pipe = resolveImageProps(root, { path: "pipe.png" });
+  assert.ok(Date.now() - t0 < 2_000, "a FIFO must not block the event loop");
+  assert.match(String(pipe.error ?? ""), /not a file|unreadable/);
+  assert.match(String(resolveImageProps(root, { path: "dir.png" }).error ?? ""), /not a file|unreadable|outside/);
+  assert.match(String(resolveImageProps(root, { path: "escape.png" }).error ?? ""), /outside|unreadable/);
+});

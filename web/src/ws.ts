@@ -1,6 +1,6 @@
 import type { ClientMsg, WireMsg } from "@protocol";
 import { CLIENT_VERSION } from "./version";
-import { relayTargetFromPage } from "./relay-pairing";
+import { relayTargetFromPage, rememberPairing } from "./relay-pairing";
 import {
   derivePair,
   frameCiphers,
@@ -113,6 +113,22 @@ function installErrorForwarding() {
  * closed → normal reconnect → fresh handshake). A local page has no code and
  * none of this engages.
  */
+/** The shape every frame must have before the app sees it: an object with a
+ *  string `type`, and — for the frames whose text the transcript projection
+ *  trims and splits — string text fields. A corrupt replay or a buggy adapter
+ *  used to wedge the whole projection with one non-string `text` (audit
+ *  2026-08-26); now that frame is dropped and the session goes on. Exported
+ *  for the Tier-1 pin. */
+export function admitWireFrame(parsed: unknown): WireMsg | null {
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
+  const m = parsed as Record<string, unknown>;
+  if (typeof m["type"] !== "string") return null;
+  for (const field of ["text", "message", "data", "html"]) {
+    if (field in m && typeof m[field] !== "string") return null;
+  }
+  return parsed as WireMsg;
+}
+
 export class SocketClient {
   private ws?: WebSocket;
   private listeners = new Set<Listener>();
@@ -131,6 +147,8 @@ export class SocketClient {
   lastSeq: number | null = null;
 
   private url!: string;
+  // A fresh fragment pairing awaiting its first successful handshake.
+  private unremembered?: { code: string; ws: string | null };
   private pair: PairSecret | null = null;
   /** Open AND (on the relay path) handshaken — the app may talk. */
   private ready = false;
@@ -160,6 +178,7 @@ export class SocketClient {
     // the first connect. Only the derived id ever reaches a URL. The socket
     // dials the fragment's relay origin when one was given (static-origin
     // serving), else this page's own host (dev / self-host fallback).
+    if (target.fresh) this.unremembered = target;
     void derivePair(target.code).then((pair) => {
       if (this.closedByUs) return;
       this.pair = pair;
@@ -313,6 +332,12 @@ export class SocketClient {
 
   /** The channel is usable (handshaken, on the relay path) — start the app flow. */
   private finishOpen() {
+    // A fresh `#code=` pairing is remembered only now that its handshake
+    // succeeded (relay-pairing.ts rememberPairing).
+    if (this.unremembered) {
+      rememberPairing(this.unremembered);
+      this.unremembered = undefined;
+    }
     // Backoff resets HERE, not in onopen: a relay refusal is a close CODE,
     // which requires a completed upgrade — resetting on open would let a
     // permanently-refused viewport (dead pairing, at-capacity relay)
@@ -330,12 +355,14 @@ export class SocketClient {
 
   /** One decrypted/plain wire frame → the app. */
   private dispatch(text: string) {
-    let msg: WireMsg;
+    let parsed: unknown;
     try {
-      msg = JSON.parse(text) as WireMsg;
+      parsed = JSON.parse(text);
     } catch {
       return;
     }
+    const msg = admitWireFrame(parsed);
+    if (!msg) return;
     if (typeof msg.seq === "number") this.lastSeq = msg.seq;
     if (msg.type === "pong") return; // liveness only, not for the app
     for (const l of this.listeners) l(msg);

@@ -134,6 +134,7 @@ test("a failing shell spawn errors the session, never the daemon (R.4f)", async 
   await client.type("bang_start");
   const err = (await client.type("error")) as Any;
   assert.match(err.message, /shell not found: \/nonexistent\/genui-itest-shell/);
+  assert.equal(err.terminal, false, "a shell spawn failure does not end the model turn");
   const end = (await client.type("bang_end")) as Any;
   assert.equal(end.id, "bf");
   assert.equal(end.exitCode, null);

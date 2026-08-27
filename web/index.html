@@ -9,6 +9,15 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
     />
+    <!-- The host-independent half of the shell's CSP, in the document itself
+         so no host that serves this bundle can forget it (the daemon header
+         and public/_headers carry the full policy incl. connect-src, which a
+         <meta> must NOT restrict — the relay dial depends on it). Policies
+         intersect: this can only tighten. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="frame-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'"
+    />
     <title>Mirafold</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />

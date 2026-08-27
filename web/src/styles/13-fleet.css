@@ -354,6 +354,7 @@
 }
 
 .fleet-permission-detail {
+  unicode-bidi: isolate;
   color: var(--warn-fg);
   flex: 1;
   min-width: 0;

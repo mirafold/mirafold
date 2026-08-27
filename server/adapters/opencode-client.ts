@@ -4,7 +4,7 @@ import net from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 import { envInt } from "../env";
 import type { OpenCodeProviderEntry } from "../provider-policy";
-import { errText } from "./types";
+import { envWithout, errText } from "./types";
 
 /** One event off `GET /event` — `properties` is the engine's payload,
  *  deliberately loose: shapes are locked by the live capture in
@@ -187,7 +187,7 @@ export class OpenCodeServerProcess implements OpenCodeTransport {
       {
         cwd: this.options.cwd,
         env: {
-          ...(this.options.env ?? process.env),
+          ...(this.options.env ?? envWithout()),
           OPENCODE_CONFIG_CONTENT: JSON.stringify(this.options.configContent),
           OPENCODE_SERVER_PASSWORD: password,
         },

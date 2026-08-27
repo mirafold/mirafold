@@ -36,7 +36,8 @@ if (process.argv.includes("--help") || process.argv.includes("-h")) {
       `  -h, --help       show this help and exit\n` +
       `\n` +
       `Config is read from .env in the launch directory (see .env.example) —\n` +
-      `agent credentials, PORT, MIRAFOLD_AGENT, MIRAFOLD_RELAY_URL, MIRAFOLD_DEBUG=1.\n` +
+      `agent credentials, PORT, MIRAFOLD_AGENT, MIRAFOLD_DEBUG=1 (never the token,\n` +
+      `relay, license key or pairing code — export those in the terminal).\n` +
       `\n` +
       `Logs: warnings/errors also land in ~/.local/state/mirafold/mirafold.log\n` +
       `(size-capped, no session content ever; MIRAFOLD_LOG_FILE moves it, empty disables).`,

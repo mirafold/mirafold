@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { diffLines } from "../diff";
+import { visibleControls } from "../visible-controls";
 import { DiffLines } from "../registry/Diff";
 
 /**
@@ -48,7 +49,7 @@ export const ToolBlock = memo(function ToolBlock({
       >
         <span className="tool-caret">{running ? "•" : expanded ? "▾" : "▸"}</span>
         <span className="tool-name">{name}</span>
-        {detail && <span className="tool-detail">{detail}</span>}
+        {detail && <span className="tool-detail">{visibleControls(detail)}</span>}
       </button>
       {expanded && (
         <div className="tool-body">

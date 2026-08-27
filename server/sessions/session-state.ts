@@ -46,12 +46,16 @@ export type SessionStateInput =
   // feedback before the stream moves — the allowed tool may take a moment).
   | { kind: "permission_answered"; id: string };
 
-export const IDLE_STATE: SessionActivityState = {
+// Frozen, and its array too: it is spread into every SessionEntry, so a
+// shared mutable `permissions` would be one session's asks leaking into
+// every other the moment anything pushes in place. The reducer only ever
+// replaces the array; the freeze makes that a rule instead of a habit.
+export const IDLE_STATE: SessionActivityState = Object.freeze({
   status: "idle",
   modelTurnsPending: 0,
   errorAwaitingTurnEnd: false,
-  permissions: [],
-};
+  permissions: Object.freeze([]) as unknown as SessionActivityState["permissions"],
+});
 
 /**
  * Fold one per-turn `usage` report into the session total — the status
@@ -71,10 +75,26 @@ export function foldUsage(
   };
 }
 
+function permissionsChanged(before: PendingPermission[], after: PendingPermission[]): boolean {
+  return (
+    before.length !== after.length ||
+    after.some((permission, index) => {
+      const prior = before[index];
+      return (
+        !prior ||
+        permission.id !== prior.id ||
+        permission.tool !== prior.tool ||
+        permission.detail !== prior.detail ||
+        permission.askedAt !== prior.askedAt
+      );
+    })
+  );
+}
+
 /**
  * The one rule for "what does the session look like after this": a pure
  * reducer over the stream. `watchersChanged` is true when fleet-visible
- * metadata moved (status, activity label, pending-ask count, usage).
+ * metadata moved (status, activity label, pending-ask contents, usage).
  *
  * Terminal states first; a permission hold sticks until the turn moves
  * again; `!` bang traffic runs BESIDE the model turn and is never turn
@@ -101,6 +121,11 @@ export function reduceSessionState(
     };
   }
   const { msg } = input;
+  // A viewport or shell request can fail beside an active model turn. It is
+  // transcript-visible, but it owns none of the model turn's fleet state.
+  if (msg.type === "error" && msg.terminal === false) {
+    return { state: prev, watchersChanged: false };
+  }
   const next: SessionActivityState = { ...prev, permissions: prev.permissions };
 
   // ---- coarse status + the turn counters ----
@@ -157,8 +182,6 @@ export function reduceSessionState(
       ...next.permissions,
       { id: msg.id, tool: msg.tool, detail: msg.detail, askedAt: now },
     ];
-    // At-cap eviction keeps the length constant, so the changed-metadata
-    // check below stays false and the notify storm is damped too.
     if (next.permissions.length > PERMISSION_MIRROR_CAP) {
       next.permissions = next.permissions.slice(-PERMISSION_MIRROR_CAP);
     }
@@ -188,7 +211,7 @@ export function reduceSessionState(
     watchersChanged:
       next.status !== prev.status ||
       next.activity?.label !== prev.activity?.label ||
-      next.permissions.length !== prev.permissions.length ||
+      permissionsChanged(prev.permissions, next.permissions) ||
       msg.type === "usage",
   };
 }

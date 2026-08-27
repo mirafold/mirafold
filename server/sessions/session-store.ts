@@ -70,7 +70,9 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
 const sequenceSchema = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 const nonnegativeIntSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 const idSchema = z.string().min(1).max(1_024);
+export const MAX_NEXT_SEQ = 2 ** 48;
 const jsonRecordSchema = z.record(z.string(), z.unknown());
+const PICKER_ROW_CAP = 10_000;
 const pickerRowSchema = z
   .object({
     label: z.string(),
@@ -104,7 +106,14 @@ const storedWireMessageSchema = z.discriminatedUnion("type", [
     })
     .strict(),
   z.object({ type: z.literal("turn_end"), seq: sequenceSchema }).strict(),
-  z.object({ type: z.literal("error"), message: z.string(), seq: sequenceSchema }).strict(),
+  z
+    .object({
+      type: z.literal("error"),
+      message: z.string(),
+      terminal: z.literal(false).optional(),
+      seq: sequenceSchema,
+    })
+    .strict(),
   z
     .object({
       type: z.literal("render"),
@@ -119,7 +128,7 @@ const storedWireMessageSchema = z.discriminatedUnion("type", [
       type: z.literal("picker"),
       id: idSchema,
       title: z.string(),
-      rows: z.array(pickerRowSchema).max(10_000),
+      rows: z.array(pickerRowSchema).max(PICKER_ROW_CAP),
       hint: z.string().optional(),
       seq: sequenceSchema,
     })
@@ -208,6 +217,7 @@ const storedWireMessageSchema = z.discriminatedUnion("type", [
       type: z.literal("bang_start"),
       command: z.string(),
       id: idSchema,
+      silent: z.literal(true).optional(),
       seq: sequenceSchema,
     })
     .strict(),
@@ -223,7 +233,9 @@ const storedWireMessageSchema = z.discriminatedUnion("type", [
     .object({
       type: z.literal("bang_end"),
       id: idSchema,
-      exitCode: z.union([nonnegativeIntSchema, z.null()]),
+      // Any safe integer: a PTY's exit status is what it is (Windows DWORDs,
+      // a sign-converted status) — displayed, never acted on.
+      exitCode: z.union([z.number().int().min(-Number.MAX_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER), z.null()]),
       seq: sequenceSchema,
     })
     .strict(),
@@ -249,6 +261,50 @@ const promptOptionSchema = z
       promptOptionIsControlSafe(option),
     { message: "unsafe prompt catalog entry" },
   );
+
+/**
+ * The registry's admission rule for one session-stream message: whatever
+ * enters the ring will be checkpointed, and the decoder above is strict, so
+ * one frame the decoder refuses makes the WHOLE session unrestorable at the
+ * next start. Engine-authored values (a `NaN` token count, an array where a
+ * record is due, an overlong id, a catalog entry with an empty label) are
+ * therefore coerced where a legitimate reading exists and dropped otherwise
+ * — decided HERE, against the same schemas, so the two can't drift (cold
+ * review, 2026-08-26). Returns the message to broadcast, or undefined.
+ */
+export function admitForCheckpoint(msg: SessionMsg): SessionMsg | undefined {
+  if (msg.type === "prompt_options") {
+    const options = msg.options.filter((option) => promptOptionSchema.safeParse(option).success);
+    return options.length === msg.options.length ? msg : { ...msg, options };
+  }
+  let m: SessionMsg = msg;
+  if (m.type === "usage") {
+    const count = (n: unknown) => (typeof n === "number" && Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0);
+    const inputTokens = count(m.inputTokens);
+    const outputTokens = count(m.outputTokens);
+    const costOk = m.costUsd === undefined || (typeof m.costUsd === "number" && Number.isFinite(m.costUsd) && m.costUsd >= 0);
+    if (inputTokens !== m.inputTokens || outputTokens !== m.outputTokens || !costOk) {
+      const { costUsd, ...rest } = m;
+      m = { ...rest, inputTokens, outputTokens, ...(costOk && costUsd !== undefined ? { costUsd } : {}) };
+    }
+  } else if (m.type === "tool_use" && m.input !== undefined && !isObject(m.input)) {
+    const { input: _input, ...rest } = m;
+    m = rest;
+  } else if (m.type === "picker" && m.rows.length > PICKER_ROW_CAP) {
+    m = { ...m, rows: m.rows.slice(0, PICKER_ROW_CAP) };
+  }
+  // An empty parentId is "no parent", not a subagent with an empty name.
+  if ("parentId" in m && m.parentId === "") {
+    const { parentId: _p, ...rest } = m;
+    m = rest as SessionMsg;
+  }
+  // Judge — and return — the frame without a caller-supplied seq/replay:
+  // the ring stamps seq itself, and a `replay` flag that rode in would be
+  // stored and then refused by the strict decoder (cold review, round 3).
+  const { seq: _seq, replay: _replay, ...body } = m;
+  const judged = ("seq" in m || "replay" in m ? body : m) as SessionMsg;
+  return storedWireMessageSchema.safeParse({ ...body, seq: 1 }).success ? judged : undefined;
+}
 
 const httpEndpointSchema = z.string().refine((value) => {
   try {
@@ -332,7 +388,13 @@ const storedMetadataSchema = z.object({
   cwd: z.string(),
   bangCwd: z.string(),
   name: z.string(),
-  nextSeq: z.number().int().min(1),
+  // Bounded with HEADROOM, not at the safe-integer edge: a restored ring
+  // increments from here for the session's whole life, and at 2^53−1 the
+  // very next `nextSeq++` is a no-op that freezes every later seq (the
+  // 1e300 case decoded outright before 2026-08-26; MAX_SAFE_INTEGER itself
+  // pinned the stream after one message — cold review). 2^48 is beyond any
+  // real session by a factor of ~10^9 and leaves 2^5 × 2^48 of room.
+  nextSeq: z.number().int().min(1).max(MAX_NEXT_SEQ),
   lastActivity: finiteNonnegativeSchema,
   createdAt: finiteNonnegativeSchema,
   status: z.enum(["idle", "working", "permission"]),

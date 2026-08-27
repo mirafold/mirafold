@@ -722,4 +722,46 @@ test("adoption never overwrites a live device-store pairing", () => {
   const adopted = adoptStoredPairing(device, legacy, 1_000);
   assert.equal(adopted?.code, "device-code-16chars");
   assert.equal(device.getItem("mirafold-relay-code"), "device-code-16chars");
+  // What the guard protects is the AGE WINDOW: an adoption that re-stamped
+  // paired-at kept the bearer credential alive forever, and the code check
+  // above cannot see it (test-audit 2026-08-26).
+  assert.equal(device.getItem("mirafold-relay-paired-at"), "500", "adoption never re-stamps a live pairing's age");
+});
+
+test("AUDIT: a fragment pairing lands in storage only once the handshake succeeded (the wiring, not the helper)", async (t) => {
+  const { client, sock } = setupRelay(t);
+  client.setHello(() => null);
+  await drainUntil(() => FakeWS.instances.length > 0, "first dial after derivePair");
+  const store = globalThis.localStorage;
+  assert.equal(store.getItem("mirafold-relay-code"), null, "nothing stored on arrival");
+  const s = sock();
+  s.open();
+  await drainUntil(() => s.sent.length >= 1, "client handshake frame sent");
+  assert.equal(store.getItem("mirafold-relay-code"), null, "nothing stored while the handshake is open");
+  await answerHandshake(s, client);
+  assert.equal(store.getItem("mirafold-relay-code"), PAIR_CODE, "stored once the daemon answered");
+  client.close();
+});
+
+// AUDIT 2026-08-26: two ingress guards. A frame is an object with a string
+// type and string text; a fresh `#code=` pairing is remembered only after a
+// successful handshake.
+test("AUDIT: admitWireFrame drops non-object frames and non-string text fields, keeps ordinary frames", async () => {
+  const { admitWireFrame } = await import("./ws");
+  for (const bad of [null, 1, "s", [], { type: 1 }, { type: "text_delta", text: 5 }, { type: "error", message: null }, { type: "bang_output", data: {} }, { type: "artifact", html: [] }]) {
+    assert.equal(admitWireFrame(bad), null, JSON.stringify(bad));
+  }
+  assert.deepEqual(admitWireFrame({ type: "text_delta", text: "hi" }), { type: "text_delta", text: "hi" });
+  assert.deepEqual(admitWireFrame({ type: "turn_end" }), { type: "turn_end" });
+  assert.deepEqual(admitWireFrame({ type: "unknown_future_type", seq: 9 }), { type: "unknown_future_type", seq: 9 });
+});
+
+test("AUDIT: rememberPairing is the only write; a fragment pairing is not stored until the handshake succeeds", async () => {
+  const { rememberPairing, storedPairing } = await import("./relay-pairing");
+  const store = fakeStorage();
+  assert.equal(storedPairing(store, null, 1_000), null);
+  rememberPairing({ code: "abcdefghijklmnop", ws: "wss://relay.example" }, store, 1_000);
+  assert.deepEqual(storedPairing(store, null, 2_000), { code: "abcdefghijklmnop", ws: "wss://relay.example" });
+  rememberPairing({ code: "qrstuvwxyzabcdef", ws: null }, store, 3_000);
+  assert.deepEqual(storedPairing(store, null, 4_000), { code: "qrstuvwxyzabcdef", ws: null }, "a fresh code without a relay clears the stale origin");
 });

@@ -10,7 +10,7 @@ import { CopyButton } from "./CopyButton";
 // A pathological payload can't hang the tab: past this, the tail is dropped
 // with a visible note (the head carries the command context; agents are told
 // to quote excerpts).
-const CONSOLE_CLIP = 200_000;
+export const CONSOLE_CLIP = 200_000;
 
 export type AnsiSpan = { text: string; className?: string };
 

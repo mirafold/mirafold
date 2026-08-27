@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ModalCard } from "./ModalCard";
+import { visibleControls } from "../visible-controls";
 
 const TITLE_ID = "permission-modal-title";
 
@@ -43,8 +44,8 @@ export function PermissionBar({
         >
           <span className="permission-badge">permission</span>
           {asks[0].parentId && <span className="permission-subagent">subagent</span>}
-          <span className="permission-tool">{asks[0].tool}</span>
-          <code className="permission-detail">{asks[0].detail}</code>
+          <span className="permission-tool">{visibleControls(asks[0].tool)}</span>
+          <code className="permission-detail">{visibleControls(asks[0].detail)}</code>
           {asks.length > 1 && <span className="permission-more">+{asks.length - 1}</span>}
         </button>
         <button className="permission-allow" onClick={() => onAnswer(asks[0].id, true)}>
@@ -63,10 +64,10 @@ export function PermissionBar({
         >
           <div className="permission-modal-head" id={TITLE_ID}>
             <span className="permission-badge">permission</span>
-            <span className="permission-tool">{detailAsk.tool}</span>
+            <span className="permission-tool">{visibleControls(detailAsk.tool)}</span>
           </div>
           <code className="permission-modal-detail" tabIndex={0}>
-            {detailAsk.detail}
+            {visibleControls(detailAsk.detail)}
           </code>
         </ModalCard>
       )}

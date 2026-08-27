@@ -16,7 +16,7 @@ import {
   opencodeSubscriptionAllowed,
   type CredentialKind,
 } from "../provider-policy";
-import { cachedLocalServers, hostKey, type LocalDialect, type LocalServer } from "../local-models";
+import { cachedLocalServers, hostKey, probeTargets, type LocalDialect, type LocalServer } from "../local-models";
 import { codexConfigProvider, codexProviders, type CodexProviderEntry } from "./codex-config";
 import { wasLoadedFromProjectEnv } from "../project-env";
 import type { StoredSession } from "../sessions/session-store";
@@ -508,6 +508,16 @@ function validEndpointUrl(value: string | undefined): string | undefined {
 /** Exact, DNS-independent loopback classification for UI privacy claims.
  * Hostname prefixes are never enough: `127.attacker.test` is an ordinary
  * remote DNS name. URL parsing canonicalizes numeric IPv4 spellings first. */
+/** Is this endpoint's origin one the daemon is configured to probe right now? */
+function isCurrentProbeTarget(value: string): boolean {
+  try {
+    const origin = new URL(value).origin;
+    return probeTargets().some((t) => t.origin === origin);
+  } catch {
+    return false;
+  }
+}
+
 export function isLoopbackEndpointUrl(value: string): boolean {
   try {
     const parsed = new URL(value);
@@ -742,14 +752,38 @@ export function restoreBackend(stored: Pick<StoredSession, "id" | "backend" | "m
   if (saved.kind === "local" && saved.endpoint) {
     if (saved.agent !== "claude-code" || saved.endpointSource !== "configured") {
       // The decoder already normalizes a pre-endpointSource Claude checkpoint
-      // to discovered/none; a non-Claude discovered endpoint is kept as is.
+      // to discovered/none; a non-Claude discovered endpoint is kept as is —
+      // provided it is still ON THIS MACHINE. A fresh discovered pick is
+      // loopback by construction (the daemon probed it); a tampered
+      // checkpoint could otherwise restore a session pointed at any host
+      // and ship the conversation there, with no prompt (audit 2026-08-26).
+      // No credential rides either way — the local kind strips them.
+      // "This machine" means loopback, OR an origin the operator listed in
+      // MIRAFOLD_LOCAL_ENDPOINTS (a LAN Ollama is a real use of that knob):
+      // the daemon's own current configuration, the same standard the
+      // configured branch below applies.
+      if (!isLoopbackEndpointUrl(saved.endpoint) && !isCurrentProbeTarget(saved.endpoint)) {
+        throw new Error(
+          `session ${stored.id} is saved but its discovered local endpoint ${saved.endpoint} is neither on this machine nor in this daemon's MIRAFOLD_LOCAL_ENDPOINTS. End the saved session; nothing was sent to it.`,
+        );
+      }
       return saved;
     }
-    // An unauthenticated configured endpoint is safe to preserve even when
-    // daemon configuration changes: the adapter keeps stripping both real
-    // credentials and uses only its fixed dummy token.
-    if ((saved.endpointAuth ?? "none") === "none") return saved;
+    // An unauthenticated configured endpoint carries no credential, but it
+    // still carries the CONVERSATION: a tampered checkpoint naming any host
+    // would ship it there with no prompt (cold review 2026-08-26). Loopback
+    // restores as-is; anything else must still be this daemon's own
+    // configured endpoint.
     const current = resolveBackendFor("claude-code");
+    if ((saved.endpointAuth ?? "none") === "none") {
+      if (isLoopbackEndpointUrl(saved.endpoint)) return saved;
+      if (current.kind === "local" && current.endpointSource === "configured" && current.endpoint === saved.endpoint) {
+        return saved;
+      }
+      throw new Error(
+        `session ${stored.id} is saved but its configured endpoint ${saved.endpoint} is not this daemon's configured endpoint and not on this machine. End the saved session; nothing was sent to it.`,
+      );
+    }
     if (
       current.kind !== "local" ||
       current.endpointSource !== "configured" ||

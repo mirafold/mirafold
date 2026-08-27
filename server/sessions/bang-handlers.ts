@@ -13,6 +13,7 @@ import type { ClientMsg, WireMsg } from "../protocol";
 import type { SessionEntry, SessionRegistry } from "./registry";
 import { CLIENT_ID_RE } from "./fs-handlers";
 import { spawnBang } from "../pty/pty";
+import { relayGateRefusal } from "../provider-policy";
 import { errText } from "../adapters";
 import { envInt } from "../env";
 
@@ -234,7 +235,7 @@ const startBang = (
       },
       cwdFile,
     );
-    e.bang = { id, proc };
+    e.bang = { id, proc, silent };
   } catch (err) {
     // A throwing spawn (missing shell — the win32 /bin/bash trap)
     // is a session-level error, never a daemon death: this handler runs
@@ -243,6 +244,7 @@ const startBang = (
     registry.broadcast(e, {
       type: "error",
       message: `! failed to start: ${errText(err)}`,
+      terminal: false,
     });
     registry.broadcast(e, { type: "bang_end", id, exitCode: null });
   }
@@ -252,7 +254,7 @@ type Bang = Extract<ClientMsg, { type: "bang" }>;
 type BangInput = Extract<ClientMsg, { type: "bang_input" }>;
 type BangKill = Extract<ClientMsg, { type: "bang_kill" }>;
 
-type BangDeps = Pick<ConnectionContext, "getEntry" | "sendError" | "viewport"> & {
+type BangDeps = Pick<ConnectionContext, "getEntry" | "sendError" | "viewport" | "remote"> & {
   registry: SessionRegistry;
 };
 
@@ -262,7 +264,7 @@ export type BangHandlers = {
   kill: (msg: BangKill) => void;
 };
 
-export function createBangHandlers({ registry, getEntry, sendError, viewport }: BangDeps): BangHandlers {
+export function createBangHandlers({ registry, getEntry, sendError, viewport, remote }: BangDeps): BangHandlers {
   const start = (msg: Bang): void => {
     // The `!` passthrough: run it in a PTY in the session's bang
     // cwd; the finished transcript reaches the agent as its own turn —
@@ -274,6 +276,19 @@ export function createBangHandlers({ registry, getEntry, sendError, viewport }: 
     // into something that passes the regex and launches a bang with a bad
     // correlation id.
     if (typeof msg.id !== "string" || !CLIENT_ID_RE.test(msg.id)) return;
+    const silent = msg.silent === true; // exactly `true` — a truthy string is not a silent bang
+    // A `!` transcript is pushed to the model as its own turn, so a remote
+    // viewport gets the drive-time relay gate `prompt` gets (a `!!` drives
+    // no model and stays ungated, like the rest of the shell).
+    const refusal = remote && !silent ? relayGateRefusal(entry) : undefined;
+    if (refusal) {
+      sendError(refusal);
+      // The issuer armed its bang bar on send and frees it only on a
+      // bang_end for this id — to that viewport only, as the throttle
+      // refusal below does, never into the session stream.
+      viewport({ type: "bang_end", id: msg.id, exitCode: null });
+      return;
+    }
     if (entry.bang) {
       sendError("a ! command is already running (stop it first)");
       return;
@@ -291,8 +306,7 @@ export function createBangHandlers({ registry, getEntry, sendError, viewport }: 
       return;
     }
     entry.lastBangAt = Date.now();
-    // Exactly `true` — a hostile client's truthy string is not a silent bang.
-    startBang(registry, entry, msg.command, msg.id, msg.silent === true);
+    startBang(registry, entry, msg.command, msg.id, silent);
   };
 
   const input = (msg: BangInput): void => {
@@ -300,6 +314,10 @@ export function createBangHandlers({ registry, getEntry, sendError, viewport }: 
     // broadcast, no buffer, no log (a password may be in `data`).
     const entry = getEntry();
     if (entry?.bang && entry.bang.id === msg.id && typeof msg.data === "string") {
+      // Typed input lands in the transcript a non-silent `!` pushes to the
+      // model, so a relay viewport is held to the same gate as `bang` itself
+      // (dropped, not errored: this is a keystroke path; a `!!` stays open).
+      if (remote && !entry.bang.silent && relayGateRefusal(entry)) return;
       entry.bang.proc.write(msg.data);
     }
   };

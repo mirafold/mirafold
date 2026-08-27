@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { useWorkspacePanelFrame } from "../../use-workspace-panel-frame";
 import type { ZoneMsg } from "../../session-bus";
 import { rootNameOf, shownListing } from "../../folder-tree";
@@ -13,11 +13,128 @@ import { WorkspaceTabs, type WorkspaceSurface } from "../WorkspaceTabs";
 import { useFileView } from "./use-file-view";
 import { useFolderTree } from "./use-folder-tree";
 
+type FolderTreePanelProps = {
+  open: boolean;
+  subscribe: (listener: (message: ZoneMsg) => void) => () => void;
+  requestListdir: (path: string) => string;
+  requestRead: (path: string) => string;
+  requestDiff: (path: string) => string;
+  onClose: () => void;
+  /** Phone drawer view switch (Files ⇄ Changes); rendered in the head on
+   *  ≤640px only — desktop's rail owns the choice there. */
+  onSwitch?: (surface: WorkspaceSurface) => void;
+  /** ~-abbreviated session root — its basename names the tree's root row,
+   *  the full path lives in that row's tooltip. */
+  rootLabel?: string;
+  /** meta.sessionId — a change means a different workspace: reset + refetch. */
+  sessionKey?: string;
+};
+
+type FileViewController = ReturnType<typeof useFileView>;
+type FolderTreeFileLayerProps = Pick<FileViewController, "mode" | "view" | "openFile"> & {
+  selected: NonNullable<FileViewController["selected"]>;
+  phone: boolean;
+  maximized: boolean;
+  fileRef: RefObject<HTMLDivElement | null>;
+  onClose: () => void;
+  onRestore: () => void;
+  onToggleMaximized: () => void;
+};
+
+function FolderTreeFileLayer({
+  selected,
+  mode,
+  view,
+  openFile,
+  phone,
+  maximized,
+  fileRef,
+  onClose,
+  onRestore,
+  onToggleMaximized,
+}: FolderTreeFileLayerProps) {
+  return (
+    <>
+      {/* The lightbox backdrop: the whole workspace dimmed but visible
+          behind the lifted box — clicking it is the universal "put it
+          back". Below the box, above everything the box floats over. */}
+      {maximized && <div className="folder-tree-dim" onClick={onRestore} aria-hidden="true" />}
+      {/* One node in BOTH frames — enlarging toggles a class, never remounts,
+          so the view's scroll position survives the round trip in each
+          direction. */}
+      <div
+        className={"folder-tree-file" + (maximized ? " is-maximized" : "")}
+        ref={fileRef}
+        role={maximized ? "dialog" : undefined}
+        aria-modal={maximized ? true : undefined}
+        tabIndex={maximized ? -1 : undefined}
+      >
+        <div className="folder-tree-file-path">
+          <button
+            className="folder-tree-back"
+            onClick={onClose}
+            title="Back to files"
+            aria-label="Back to files"
+          >
+            ‹
+          </button>
+          <span className="folder-tree-file-name" title={selected.path}>
+            {selected.path}
+          </span>
+          {selected.status && (
+            <span className="folder-tree-file-tabs">
+              <button
+                className={"folder-tree-tab" + (mode === "content" ? " is-active" : "")}
+                onClick={() => openFile(selected.path, selected.status, "content")}
+              >
+                file
+              </button>
+              <button
+                className={"folder-tree-tab" + (mode === "diff" ? " is-active" : "")}
+                onClick={() => openFile(selected.path, selected.status, "diff")}
+              >
+                diff
+              </button>
+            </span>
+          )}
+        </div>
+        {/* tabIndex + a named region because this div SCROLLS
+            (02-folder-tree.css `.folder-tree-view { overflow: auto }`):
+            without a tab stop, a keyboard-only user could open a file or a
+            diff and never scroll it — axe `scrollable-region-focusable`,
+            serious. A focusable region needs an accessible name, hence role
+            + label. Costs one tab stop in the folder tree, which is the point:
+            the content is reachable. */}
+        <div
+          className="folder-tree-view"
+          tabIndex={0}
+          role="region"
+          aria-label={`${selected.path} — ${mode === "diff" ? "diff" : "contents"}`}
+        >
+          <FileView state={view} />
+        </div>
+        {/* Desktop-only (the phone frame is already full-screen): floats in
+            the box's bottom-right corner — the refresh idiom, other corner —
+            and stays under the pointer across a toggle. */}
+        {!phone && (
+          <button
+            className="folder-tree-btn folder-tree-enlarge"
+            onClick={onToggleMaximized}
+            title={maximized ? "Restore size" : "Enlarge"}
+            aria-label={maximized ? "Restore file view size" : "Enlarge file view"}
+          >
+            {maximized ? "⤡" : "⤢"}
+          </button>
+        )}
+      </div>
+    </>
+  );
+}
+
 // The folder tree's shell-owned panel: a read-only browser of the session's
-// working tree, built
-// incrementally — one fs_listdir per directory, fetched on first expand and
-// cached (folder-tree.ts holds the store). Opening fetches the root and
-// prefetches its first level; the client never sends the whole-tree
+// working tree, built incrementally — one fs_listdir per directory, fetched
+// on first expand and cached (folder-tree.ts holds the store). Opening fetches
+// the root and prefetches its first level; the client never sends the whole-tree
 // fs_list (the server keeps answering it for older bundles). Interaction is
 // drill-in on both platforms — the tree, then a file view laid OVER it with
 // a back button — so a narrow surface never shows tree and file at once, the
@@ -41,22 +158,7 @@ export function FolderTreePanel({
   onSwitch,
   rootLabel,
   sessionKey,
-}: {
-  open: boolean;
-  subscribe: (l: (m: ZoneMsg) => void) => () => void;
-  requestListdir: (path: string) => string;
-  requestRead: (path: string) => string;
-  requestDiff: (path: string) => string;
-  onClose: () => void;
-  /** Phone drawer view switch (Files ⇄ Changes); rendered in the head on
-   *  ≤640px only — desktop's rail owns the choice there. */
-  onSwitch?: (surface: WorkspaceSurface) => void;
-  /** ~-abbreviated session root — its basename names the tree's root row,
-   *  the full path lives in that row's tooltip. */
-  rootLabel?: string;
-  /** meta.sessionId — a change means a different workspace: reset + refetch. */
-  sessionKey?: string;
-}) {
+}: FolderTreePanelProps) {
   const { store, expanded, rootOpen, setRootOpen, toggleDir, refreshTree } = useFolderTree({
     open,
     subscribe,
@@ -216,87 +318,20 @@ export function FolderTreePanel({
         </div>
 
         {selected && (
-          <>
-            {/* The lightbox backdrop: the whole workspace dimmed but visible
-                behind the lifted box — clicking it is the universal "put it
-                back". Below the box, above everything the box floats over. */}
-            {maxi && (
-              <div className="folder-tree-dim" onClick={() => setMaximized(false)} aria-hidden="true" />
-            )}
-            {/* One node in BOTH frames — enlarging toggles a class, never
-                remounts, so the view's scroll position survives the round
-                trip in each direction. */}
-            <div
-              className={"folder-tree-file" + (maxi ? " is-maximized" : "")}
-              ref={fileRef}
-              role={maxi ? "dialog" : undefined}
-              aria-modal={maxi ? true : undefined}
-              tabIndex={maxi ? -1 : undefined}
-            >
-              <div className="folder-tree-file-path">
-                <button
-                  className="folder-tree-back"
-                  onClick={closeFile}
-                  title="Back to files"
-                  aria-label="Back to files"
-                >
-                  ‹
-                </button>
-                <span className="folder-tree-file-name" title={selected.path}>
-                  {selected.path}
-                </span>
-                {selected.status && (
-                  <span className="folder-tree-file-tabs">
-                    <button
-                      className={"folder-tree-tab" + (mode === "content" ? " is-active" : "")}
-                      onClick={() => openFile(selected.path, selected.status, "content")}
-                    >
-                      file
-                    </button>
-                    <button
-                      className={"folder-tree-tab" + (mode === "diff" ? " is-active" : "")}
-                      onClick={() => openFile(selected.path, selected.status, "diff")}
-                    >
-                      diff
-                    </button>
-                  </span>
-                )}
-              </div>
-              {/* tabIndex + a named region because this div SCROLLS
-                  (02-folder-tree.css `.folder-tree-view { overflow: auto }`): without a tab
-                  stop, a keyboard-only user could open a file or a diff and
-                  never scroll it — axe `scrollable-region-focusable`, serious.
-                  A focusable region needs an accessible name, hence
-                  role + label. Costs one tab stop in the folder tree, which is
-                  the point: the content is reachable. */}
-              <div
-                className="folder-tree-view"
-                tabIndex={0}
-                role="region"
-                aria-label={`${selected.path} — ${mode === "diff" ? "diff" : "contents"}`}
-              >
-                <FileView state={view} />
-              </div>
-              {/* Desktop-only (the phone frame is already full-screen): floats
-                  in the box's bottom-right corner — the refresh idiom, other
-                  corner — and stays under the pointer across a toggle. */}
-              {!phone && (
-                <button
-                  className="folder-tree-btn folder-tree-enlarge"
-                  onClick={() => setMaximized((m) => !m)}
-                  title={maxi ? "Restore size" : "Enlarge"}
-                  aria-label={maxi ? "Restore file view size" : "Enlarge file view"}
-                >
-                  {maxi ? "⤡" : "⤢"}
-                </button>
-              )}
-            </div>
-          </>
+          <FolderTreeFileLayer
+            selected={selected}
+            mode={mode}
+            view={view}
+            openFile={openFile}
+            phone={phone}
+            maximized={maxi}
+            fileRef={fileRef}
+            onClose={closeFile}
+            onRestore={() => setMaximized(false)}
+            onToggleMaximized={() => setMaximized((current) => !current)}
+          />
         )}
       </div>
     </aside>
   );
 }
-
-
-
