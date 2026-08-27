@@ -19,7 +19,12 @@
 // relay-client already prints the actionable line.
 
 import { createLogger } from "../log";
+import type { WireMsg } from "../protocol";
 import { carriesCredentialInClear } from "./relay-url";
+
+/** What the daemon tells local viewports about its key (protocol.ts
+ *  `entitlement`, minus the tag). Undefined outside license-key mode. */
+export type EntitlementView = Omit<Extract<WireMsg, { type: "entitlement" }>, "type">;
 
 const log = createLogger("relay");
 
@@ -29,12 +34,19 @@ const REFRESH_INTERVAL_MS = 12 * 60 * 60 * 1000; // well inside the 48h token TT
 // backoff into an HTTP hammer.
 const FORCED_REFRESH_MIN_GAP_MS = 60_000;
 const FETCH_TIMEOUT_MS = 10_000;
+// The backend's refusal line rides to the pair card verbatim — bounded, like
+// subscription.ts bounds the manage card's.
+const MAX_REASON_CHARS = 200;
 
 export type EntitlementTokenSource = {
   /** Current token, or undefined if none is available. `refresh: true` (after
    *  a 4007 refusal) forces a re-exchange first, throttled to once a minute. */
   get: (opts?: { refresh?: boolean }) => Promise<string | undefined>;
   stop: () => void;
+  /** The current read for the pair card; undefined outside license-key mode. */
+  state: () => EntitlementView | undefined;
+  /** Called with each NEW read (dedupe is the source's job). Returns unsubscribe. */
+  onChange: (cb: (view: EntitlementView) => void) => () => void;
 };
 
 /** What index.ts logs at boot — which supply is in play. */
@@ -80,10 +92,16 @@ export function createEntitlementTokenSource(env: {
           `the token override wins; the license key is ignored`,
       );
     }
-    return { mode: "token-override", get: async () => override, stop: () => {} };
+    return {
+      mode: "token-override",
+      get: async () => override,
+      stop: () => {},
+      state: () => undefined,
+      onChange: () => () => {},
+    };
   }
   if (!licenseKey) {
-    return { mode: "none", get: async () => undefined, stop: () => {} };
+    return { mode: "none", get: async () => undefined, stop: () => {}, state: () => undefined, onChange: () => () => {} };
   }
 
   // The license key POSTs to the exchange in the clear if the operator pointed
@@ -99,6 +117,15 @@ export function createEntitlementTokenSource(env: {
   }
 
   let cached: { token: string; expMs: number } | undefined;
+  // The read the pair card gets. Starts as `checking`; every exchange outcome
+  // sets it, and only a CHANGED read reaches listeners.
+  let view: EntitlementView = { state: "checking" };
+  const listeners = new Set<(v: EntitlementView) => void>();
+  const setView = (next: EntitlementView) => {
+    if (next.state === view.state && next.reason === view.reason && next.cached === view.cached) return;
+    view = next;
+    for (const cb of listeners) cb(view);
+  };
   let denied = false; // a 403 already warned — suppresses repeat WARNINGS only (the request throttle is FORCED_REFRESH_MIN_GAP_MS)
   let lastFetchMs = 0;
   let inflight: Promise<void> | undefined;
@@ -118,6 +145,7 @@ export function createEntitlementTokenSource(env: {
         }
         denied = true;
         cached = undefined;
+        setView({ state: "invalid", ...(reason ? { reason: reason.slice(0, MAX_REASON_CHARS) } : {}) });
         return;
       }
       if (!res.ok) throw new Error(`http ${res.status}`);
@@ -127,10 +155,13 @@ export function createEntitlementTokenSource(env: {
       }
       cached = { token: body.token, expMs: body.exp * 1000 };
       denied = false;
+      setView({ state: "valid" });
     } catch {
       // Endpoint down/unreachable: keep serving the cached token while it's
-      // unexpired; otherwise we just have none. Deliberately quiet — the
-      // refusal line at dial time is the user-facing signal.
+      // unexpired; otherwise we just have none. Quiet in the log — the
+      // refusal line at dial time is the terminal's signal; the pair card
+      // gets the honest read (and whether the cached token still carries it).
+      setView({ state: "unreachable", cached: !!cached && cached.expMs > Date.now() });
     }
   };
 
@@ -154,5 +185,10 @@ export function createEntitlementTokenSource(env: {
       return cached && cached.expMs > Date.now() ? cached.token : undefined;
     },
     stop: () => clearInterval(timer),
+    state: () => view,
+    onChange: (cb) => {
+      listeners.add(cb);
+      return () => listeners.delete(cb);
+    },
   };
 }

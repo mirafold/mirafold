@@ -146,3 +146,58 @@ test("AUDIT: a refused license key is never echoed into the log, not even its pr
   }
   assert.ok(!lines.some((l) => l.includes("mf_SEC")), lines.join(" | "));
 });
+
+// Phase PB.2: the source's READ for the pair card — every exchange outcome
+// sets it, listeners hear only changes, and `unreachable` says whether an
+// unexpired token still carries the relay meanwhile.
+test("license key: the read starts checking, then follows each exchange outcome; listeners hear changes only", async () => {
+  let answer: () => Response = () => jsonResponse(200, { token: "t1", exp: futureExp() });
+  const fetchMock = mock.method(globalThis, "fetch", async () => answer());
+  // A forced re-exchange is throttled to once a minute (a lapsed key must not
+  // turn dial backoff into an HTTP hammer) — the clock has to move for it.
+  mock.timers.enable({ apis: ["Date"] });
+  try {
+    const src = createEntitlementTokenSource({
+      MIRAFOLD_LICENSE_KEY: "mf_test",
+      MIRAFOLD_ENTITLEMENT_URL: "http://billing.test/api/entitlement",
+    });
+    const heard: string[] = [];
+    const off = src.onChange((v) => heard.push(`${v.state}${v.reason ? ":" + v.reason : ""}${v.cached ? ":cached" : ""}`));
+    assert.deepEqual(src.state(), { state: "checking" });
+    await src.get();
+    assert.deepEqual(src.state(), { state: "valid" });
+
+    // A lapse at the next (forced) exchange: refused, the reason quoted, capped.
+    answer = () => jsonResponse(403, { reason: "x".repeat(500) });
+    mock.timers.tick(61_000);
+    await src.get({ refresh: true });
+    assert.equal(src.state()?.state, "invalid");
+    assert.equal(src.state()?.reason?.length, 200);
+
+    // Outage with nothing cached (the 403 cleared it): unreachable, uncached.
+    answer = () => {
+      throw new Error("ECONNREFUSED");
+    };
+    // The minute gap throttles a stale-cache refetch too — move the clock again.
+    mock.timers.tick(61_000);
+    await src.get();
+    assert.deepEqual(src.state(), { state: "unreachable", cached: false });
+    await src.get(); // same read again → no second notification
+    assert.deepEqual(heard, ["valid", "invalid:" + "x".repeat(200), "unreachable"]);
+    off();
+    src.stop();
+  } finally {
+    mock.timers.reset();
+    fetchMock.mock.restore();
+  }
+});
+
+test("outside license-key mode the read is undefined and listeners never fire", () => {
+  const none = createEntitlementTokenSource({});
+  assert.equal(none.state(), undefined);
+  none.onChange(() => assert.fail("must not fire"))();
+  const override = createEntitlementTokenSource({ MIRAFOLD_ENTITLEMENT_TOKEN: "hand.token" });
+  assert.equal(override.state(), undefined);
+  none.stop();
+  override.stop();
+});

@@ -2271,7 +2271,9 @@ test("CS: manage subscription — status, cancel behind its confirm, scheduled s
       if (typeof body.licenseKey === "string") seenKeys.push(body.licenseKey);
       const url = req.url ?? "";
       if (!url.startsWith("/api/subscription")) {
-        res.writeHead(404).end(); // the boot-time entitlement exchange — not under test
+        // The boot-time entitlement exchange: a valid, active subscriber.
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ token: "e2e.signed.token", exp: Math.floor(Date.now() / 1000) + 48 * 3600 }));
         return;
       }
       if (body.licenseKey !== KEY) {
@@ -2309,6 +2311,8 @@ test("CS: manage subscription — status, cancel behind its confirm, scheduled s
     // The resting UI shows only the pair button; nothing cancel-shaped.
     await p.locator(".sb-pair").click();
     await p.waitForSelector(".pair-card");
+    // A valid key carries the relay: the QR is real (PB.2).
+    await p.waitForSelector(".pair-qr");
     const manage = p.locator(".pair-manage", { hasText: "manage subscription" });
     assert.equal(await manage.count(), 1, "licensed daemon must offer the neutral manage link");
 
@@ -2387,6 +2391,53 @@ test("no relay: the pair button is still there and opens the Mirafold Pro offer"
   } finally {
     await p.close();
     await d2.stop();
+  }
+});
+
+test("PB.2: a refused license key — no QR, the reason, the pay link; a phone is never upsold", async () => {
+  // The billing backend refuses the exchange (unknown key / lapsed). The
+  // relay is configured, so the daemon dials — and the card must not draw a
+  // QR the relay would refuse: it quotes the refusal, offers the pay page,
+  // and keeps the manage link (which shows the backend's own status).
+  const relay = await startRelayStub({});
+  const billing = createServer((req, res) => {
+    req.on("data", () => {});
+    req.on("end", () => {
+      res.writeHead(403, { "content-type": "application/json" });
+      res.end(JSON.stringify({ reason: "unknown license key" }));
+    });
+  });
+  const billingPort = await new Promise<number>((resolve) =>
+    billing.listen(0, "127.0.0.1", () => resolve((billing.address() as { port: number }).port)),
+  );
+  const token = "e2e-pb2-7d3a";
+  const d2 = await startDaemon({
+    MIRAFOLD_TOKEN: token,
+    MIRAFOLD_RELAY_URL: relay.url,
+    MIRAFOLD_RELAY_CODE: "e2e-pb2-pairing-code-1a2b",
+    MIRAFOLD_LICENSE_KEY: "mf_e2e_bogus_key_00000000000",
+    MIRAFOLD_ENTITLEMENT_URL: `http://127.0.0.1:${billingPort}/api/entitlement`,
+  });
+  const p = await browser.newPage();
+  try {
+    await p.goto(`http://127.0.0.1:${d2.port}/?token=${token}`);
+    await p.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
+    await p.waitForURL(/\/s\/[\w-]+/);
+    await p.locator(".status-bar .sb-pair").click();
+    await p.waitForSelector(".pair-card");
+    await p.waitForSelector(".pair-card q:has-text('unknown license key')");
+    assert.equal(await p.locator(".pair-qr").count(), 0, "a QR the relay would refuse");
+    const cta = p.locator(".pair-card a.pair-cta");
+    assert.equal(await cta.getAttribute("href"), "https://mirafold.com/pay");
+    assert.equal(await cta.getAttribute("rel"), "noopener noreferrer");
+    assert.equal(await p.locator(".pair-manage", { hasText: "manage subscription" }).count(), 1);
+    assert.ok(!(await p.content()).includes("mf_e2e_bogus"), "license key leaked into the DOM");
+    await assertAxeClean(p, "pair card, refused key");
+  } finally {
+    await p.close();
+    await d2.stop();
+    await relay.stop();
+    await new Promise((resolve) => billing.close(resolve));
   }
 });
 

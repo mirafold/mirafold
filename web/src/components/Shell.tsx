@@ -15,7 +15,7 @@ import { createSessionBus } from "../session-bus";
 import type { SubscriptionReply } from "../subscription-card";
 import { IDLE_TURN, reduceTurn, type TurnInput } from "../turn-state";
 import { traceTurn } from "../turn-trace";
-import { NO_DAEMON_INFO, daemonInfoFrom, type DaemonInfo } from "../daemon-hello";
+import { NO_DAEMON_INFO, daemonInfoFrom, withEntitlement, type DaemonInfo } from "../daemon-hello";
 import { ThemePicker } from "./ThemePicker";
 import { useThemeSlots } from "../use-theme-slots";
 import { useNotifyPreference } from "../use-notify-preference";
@@ -259,7 +259,9 @@ export function Shell() {
           // They've moved on in the new session — the fallback notice is done.
           setNotices((n) => (n.session ? { ...n, session: false } : n));
         } else if (m.type === "agents") {
-          setDaemonInfo(daemonInfoFrom(m));
+          setDaemonInfo((d) => daemonInfoFrom(m, d));
+        } else if (m.type === "entitlement") {
+          setDaemonInfo((d) => withEntitlement(d, m));
         } else if (m.type === "subscription") {
           setSubReply(m);
         } else if (m.type === "prompt_options") {
@@ -577,6 +579,7 @@ export function Shell() {
               onEndSession={meta.sessionId ? bus.endSession : undefined}
               relay={daemonInfo.relay}
               relayOff={daemonInfo.relayOff}
+              entitlement={daemonInfo.entitlement}
               version={daemonInfo.version}
               billing={daemonInfo.billing === "license-key"}
               subRequest={bus.requestSubscription}

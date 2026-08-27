@@ -21,8 +21,8 @@ import {
 // The hello's pairing info (protocol.ts `agents.relay`): `ws` is the relay's
 // ws(s) origin, present when `url` is a separate static app origin — it rides
 // the QR fragment so the loaded page knows where to dial.
-export type { RelayInfo } from "../daemon-hello";
-import type { AgentsHello, RelayInfo } from "../daemon-hello";
+export type { EntitlementView, RelayInfo } from "../daemon-hello";
+import type { AgentsHello, EntitlementView, RelayInfo } from "../daemon-hello";
 
 /** Why remote access is off (hello `relayOff`) — the card's state when there
  *  is no relay to draw a QR for. */
@@ -181,6 +181,44 @@ export function RemoteAccessOff({ reason }: { reason: RelayOff }) {
   );
 }
 
+/** With a relay AND a license-key read that doesn't carry it, the QR would
+ *  be a lie: the relay refuses this daemon. `valid` carries; `unreachable`
+ *  carries only while an unexpired token is cached; everything else gates. */
+export function entitlementGates(view: EntitlementView | undefined): boolean {
+  if (!view) return false;
+  if (view.state === "valid") return false;
+  if (view.state === "unreachable" && view.cached) return false;
+  return true;
+}
+
+// The card's body when the relay is configured but the license key doesn't
+// carry it. Shell-owned copy; the backend's refusal line is quoted as its
+// own, never dressed up as ours. The parent keeps the manage link under it.
+export function LicenseGate({ view }: { view: EntitlementView }) {
+  if (view.state === "checking") {
+    return <div className="sub-line sub-dim">checking your license key…</div>;
+  }
+  if (view.state === "invalid") {
+    return (
+      <>
+        <div className="pair-hint" role="alert">
+          Your license key was refused{view.reason ? <>: <q>{view.reason}</q></> : null}. Remote
+          access is off until a subscription is active — local sessions are unaffected.
+        </div>
+        <a className="pair-cta" href={PAY_URL} target="_blank" rel="noopener noreferrer">
+          renew or get Mirafold Pro ↗
+        </a>
+      </>
+    );
+  }
+  return (
+    <div className="pair-hint" role="alert">
+      Couldn't reach mirafold.com to check your license key, so remote access is off until it
+      can — local sessions are unaffected.
+    </div>
+  );
+}
+
 // `sessionId`: pairing from inside a session encodes that session into the
 // fragment (`&s=<id>`) so the scanned phone lands IN it, not on the fleet
 // list. Mission control's pair button passes nothing and keeps landing on the
@@ -194,9 +232,12 @@ export function RemoteAccessOff({ reason }: { reason: RelayOff }) {
 // every local viewport has one — and the card says what's true: the offer
 // when nothing is configured, the setting to change otherwise. Neither field
 // (a remote viewport) → nothing: the phone is already paired.
+// `entitlement`: the daemon's license-key read. A read that doesn't carry
+// the relay replaces the QR with the truth (LicenseGate) — the button stays.
 export function ConnectDevice({
   relay,
   relayOff,
+  entitlement,
   sessionId,
   billing,
   subRequest,
@@ -204,6 +245,7 @@ export function ConnectDevice({
 }: {
   relay?: RelayInfo;
   relayOff?: RelayOff;
+  entitlement?: EntitlementView;
   sessionId?: string;
   billing?: boolean;
   subRequest?: SubscriptionRequest;
@@ -214,11 +256,13 @@ export function ConnectDevice({
   const [manage, setManage] = useState(false);
 
   if (!relay && !relayOff) return null;
-  const href = relay
-    ? `${relay.url}/#code=${relay.code}${
-        relay.ws ? `&relay=${encodeURIComponent(relay.ws)}` : ""
-      }${sessionId ? `&s=${sessionId}` : ""}`
-    : undefined;
+  const gated = !!relay && entitlementGates(entitlement);
+  const href =
+    relay && !gated
+      ? `${relay.url}/#code=${relay.code}${
+          relay.ws ? `&relay=${encodeURIComponent(relay.ws)}` : ""
+        }${sessionId ? `&s=${sessionId}` : ""}`
+      : undefined;
 
   return (
     <>
@@ -228,7 +272,9 @@ export function ConnectDevice({
         title={
           href
             ? "Connect a device — scan a QR to open this daemon's sessions on your phone"
-            : "Connect a device — open this daemon's sessions on your phone with Mirafold Pro"
+            : gated
+              ? "Connect a device — remote access is off: your license key isn't carrying it"
+              : "Connect a device — open this daemon's sessions on your phone with Mirafold Pro"
         }
       >
         ⧉ pair
@@ -262,18 +308,33 @@ export function ConnectDevice({
               ✕
             </button>
           </div>
-          {!href ? (
-            <RemoteAccessOff reason={relayOff as RelayOff} />
-          ) : manage && subRequest ? (
+          {manage && subRequest ? (
             <>
               <ManageSubscription request={subRequest} reply={subReply ?? null} titleId={TITLE_ID} />
               <button className="pair-manage" onClick={() => setManage(false)}>
-                ← back to pairing
+                ← back
               </button>
             </>
+          ) : gated ? (
+            <>
+              <LicenseGate view={entitlement as EntitlementView} />
+              {billing && subRequest && (
+                <button className="pair-manage" onClick={() => setManage(true)}>
+                  manage subscription
+                </button>
+              )}
+            </>
+          ) : !href ? (
+            <RemoteAccessOff reason={relayOff as RelayOff} />
           ) : (
             <>
               <QrSvg text={href} />
+              {entitlement?.state === "unreachable" && (
+                <div className="pair-hint pair-hint-sub">
+                  Couldn't re-check your license key just now — remote access continues on the
+                  last successful check.
+                </div>
+              )}
               <div className="pair-hint">
                 Scan from your phone. The pairing code rides the URL fragment — it never
                 reaches the relay, and every frame is end-to-end encrypted.

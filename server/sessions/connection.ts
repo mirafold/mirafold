@@ -18,6 +18,7 @@ import {
   type Backend,
 } from "../adapters";
 import { relayGateRefusal } from "../provider-policy";
+import type { EntitlementTokenSource, EntitlementView } from "../relay/entitlement";
 import {
   createSubscriptionThrottle,
   type SubscriptionActions,
@@ -99,6 +100,10 @@ export type ConnectionOptions = {
    *  actions never ride the relay (the key stays with the machine that holds
    *  it), so remote viewports get error replies and no hello flag. */
   subscription?: SubscriptionActions;
+  /** The daemon's license-key read (protocol.ts `entitlement`): the local WS
+   *  path passes the source so the pair card can present on validity — sent
+   *  after each hello and on every change. Never to a remote viewport. */
+  entitlement?: Pick<EntitlementTokenSource, "state" | "onChange">;
 };
 
 export function openConnection(
@@ -106,7 +111,7 @@ export function openConnection(
   viewport: (msg: WireMsg) => void,
   options: ConnectionOptions = {},
 ): Connection {
-  const { label = "ws", relay, relayOff, remote = false, subscription } = options;
+  const { label = "ws", relay, relayOff, remote = false, subscription, entitlement } = options;
   const log = createLogger(label);
   // A connection is a viewport onto one registry session — or a fleet
   // watcher observing the registry itself.
@@ -298,6 +303,12 @@ export function openConnection(
       ...(subscription && !remote ? { billing: "license-key" as const } : {}),
     });
   sendAgents();
+
+  const sendEntitlement = (v: EntitlementView | undefined) => {
+    if (v && !remote) viewport({ type: "entitlement", ...v });
+  };
+  sendEntitlement(entitlement?.state());
+  const unsubscribeEntitlement = remote ? undefined : entitlement?.onChange(sendEntitlement);
 
   // The `!` lifecycle — PTY spawn, output budgets, cwd handoff, burst
   // throttle — handled per-connection in bang-handlers.ts, the fs-handlers
@@ -685,6 +696,7 @@ export function openConnection(
 
   const close = () => {
     closed = true;
+    unsubscribeEntitlement?.();
     folderPicker.close();
     uploads.dispose();
     if (entry) {

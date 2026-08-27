@@ -152,6 +152,8 @@ const WIRE: WireByType = {
     periodEnd: "2026-09-01T00:00:00Z",
     cancelAt: "2026-09-01T00:00:00Z",
   },
+  // Phase PB: the daemon's license-key read, local viewports only.
+  entitlement: { type: "entitlement", state: "invalid", reason: "unknown license key", cached: false },
   // Phase FD: staged-upload replies (correlated, per-viewport).
   file_upload_done: {
     type: "file_upload_done",

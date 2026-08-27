@@ -3551,6 +3551,20 @@ ordinary `<a target="_blank" rel="noopener noreferrer">`, nothing scripted.
   hello assertions (Tier 2), "no relay: the pair button is still there…"
   in `app.e2e.ts` incl. axe (Tier 3); two visual baselines re-taken for the
   new status-bar button. Done 2026-08-26 on `feature/pair-upsell`.
+- [x] **PB.2 — present on the key's validity.** The daemon already validates
+  the key (the entitlement exchange: token = valid, 403 = refused); the read
+  now reaches LOCAL viewports as an additive `entitlement` message (after each
+  hello and on every change — boot, the 12-hourly refresh, a lapse): `valid`
+  → the QR as before; `invalid` → no QR, the backend's refusal quoted, the
+  `/pay` link, the manage link kept; `unreachable` → no claim either way: the
+  QR stays only while a cached unexpired token still carries the relay (with
+  a dim "couldn't re-check" line), otherwise "couldn't reach mirafold.com",
+  no sales link; `checking` → the first second after launch. Remote
+  viewports never receive it (`entitlement.itest`). Tests: `entitlement.test`
+  (read + listeners + cap), `ConnectDevice.test` (gate + card), `entitlement.itest`
+  (local gets it, phone doesn't, key never on the wire), `app.e2e` "PB.2: a
+  refused license key…" incl. axe; the CS e2e stub now answers the exchange
+  as a valid subscriber and asserts the QR. Done 2026-08-26.
 
 ## Stretch goals (unscheduled — polish, no milestone gates on these)
 

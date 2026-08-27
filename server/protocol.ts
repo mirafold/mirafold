@@ -319,6 +319,21 @@ export type ViewportMsgBody =
       cancelAt?: string;
       error?: string;
     }
+  // The daemon's read on its own license key — LICENSE-KEY MODE ONLY, local
+  // viewports only, sent right after every hello and again whenever it
+  // changes (the boot exchange landing, a 12-hourly refresh, a lapse). The
+  // pair card presents on it: `valid` = the QR; `invalid` = the key was
+  // refused (`reason` is the billing backend's line, capped) — no QR, the
+  // offer instead; `unreachable` = the backend couldn't be asked — `cached`
+  // says whether an unexpired token still carries the relay meanwhile;
+  // `checking` = the first exchange hasn't answered yet. Never a claim of
+  // validity the backend didn't make. Old clients strip it.
+  | {
+      type: "entitlement";
+      state: "checking" | "valid" | "invalid" | "unreachable";
+      reason?: string;
+      cached?: boolean;
+    }
   // The daemon refused to attach this REMOTE (relay) viewport to the
   // session because the session's credential can't be used over the paid relay
   // — a subscription-backed agent (closed-model reselling posture). Sent instead
