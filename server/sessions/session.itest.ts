@@ -114,9 +114,14 @@ test("a template turn follows the full wire grammar", async () => {
   assert.equal(turn[0].type, "user_prompt");
   assert.equal(turn[0].text, "hello from the integration suite");
 
-  // seq strictly increases across the whole broadcast stream.
-  const seqs = turn.map((m) => m.seq as number);
-  for (let i = 1; i < seqs.length; i++) assert.ok(seqs[i] > seqs[i - 1]);
+  // seq strictly increases across the whole broadcast stream. The one frame
+  // the registry deliberately never sequences is the replaceable
+  // prompt_options catalog (it may land mid-turn under load — test-audit
+  // 2026-08-26: comparing its `undefined` seq failed 2 of 3 loaded runs).
+  const unsequenced = turn.filter((m) => typeof m.seq !== "number");
+  assert.deepEqual([...new Set(unsequenced.map((m) => m.type))], unsequenced.length ? ["prompt_options"] : [], "only prompt_options may ride unsequenced");
+  const seqs = turn.filter((m) => typeof m.seq === "number").map((m) => m.seq as number);
+  for (let i = 1; i < seqs.length; i++) assert.ok(seqs[i] > seqs[i - 1], `seq ${seqs[i]} after ${seqs[i - 1]}`);
 
   const types = turn.map((m) => m.type);
   assert.ok(types.includes("thinking_delta"));
@@ -186,7 +191,10 @@ test("huge-output hook: the cap reports truncatedBytes, never a silent cut", asy
 test("artifact hook: sandboxed html rides the artifact message", async () => {
   const turn = await runTurn(c, "show me an artifact");
   const art = turn.find((m) => m.type === "artifact")!;
-  assert.ok(art.html.length > 0);
+  // The mock's artifact is fully knowable — pin it, not "non-empty"
+  // (test-audit 2026-08-26).
+  assert.equal(art.title, "bridge demo");
+  assert.match(art.html, /id="b"/, "the bridge demo's counter button rides the html");
   assert.ok(typeof art.id === "string" && art.id.length > 0);
 });
 
@@ -255,7 +263,14 @@ test("interrupt mid-turn: the stream stops dead and the turn still ends", async 
   await c.type("turn_end", 20_000);
   const count = c.received.length;
   await new Promise((r) => setTimeout(r, 600));
-  assert.equal(c.received.length, count); // the aborted turn never speaks again
+  // The aborted turn never speaks again: the ONLY frame allowed after its
+  // turn_end is the shell's replaceable prompt_options catalog, which may
+  // land under load and is not the turn speaking (test-audit 2026-08-26: an
+  // exact frame count failed 1 of 3 loaded runs; a denylist of turn types
+  // let a stray `usage` through — cold review). Everything else is a
+  // regression, whatever its type.
+  const stragglers = (c.received.slice(count) as Any[]).filter((m) => m.type !== "prompt_options");
+  assert.deepEqual(stragglers.map((m) => m.type), [], `the aborted turn spoke again: ${stragglers.map((m) => m.type).join(",")}`);
   // The session takes the next turn cleanly.
   const next = await runTurn(c, "still alive?");
   assert.equal(next[next.length - 1].type, "turn_end");

@@ -22,6 +22,11 @@ const TOKEN = "e2e-token-9c2f";
 
 let d: Daemon;
 let browser: Browser;
+// Two shapes (test-audit 2026-08-26): a test that only needs "a session
+// exists" runs on this shared page; a test that depends on session STATE —
+// what was said, what is pending, which frames exist, which rows the fleet
+// holds — runs in `withFreshMockSession` (its own daemon, context, session)
+// so no test can be set up, or broken, by a neighbor.
 let page: Page; // carries the auth cookie across tests, like a real tab
 let base: string;
 
@@ -125,10 +130,9 @@ async function advertiseStubbedFolderPicker(p: Page, choice: string): Promise<vo
 
 before(async () => {
   // MIRAFOLD_DEBUG makes the registry log every WireMsg it broadcasts, per
-  // session (registry.ts). That is the SERVER's half of the flake-watch
-  // wedge: the client trace shows a turn that never closed, and only this
-  // says whether the daemon emitted a turn_end that was lost on the way, or
-  // never emitted one at all.
+  // session (registry.ts): `d.logs()` is the server-side evidence when a
+  // SHARED-page test wedges (did the daemon emit the turn_end, or not?).
+  // Fresh-session tests run their own daemon and carry their own evidence.
   d = await startDaemon({ MIRAFOLD_TOKEN: TOKEN, MIRAFOLD_DEBUG: "1" });
   base = `http://127.0.0.1:${d.port}`;
   browser = await launchChrome();
@@ -367,22 +371,30 @@ test("agent picker → a full mock turn renders in the DOM", async () => {
   await page.waitForSelector("text=plan it step by step", { timeout: 15_000 });
   // The live checklist paints…
   await page.waitForSelector("text=Read the current implementation", { timeout: 15_000 });
-  // …and the turn runs to its streamed conclusion.
+  // …and the turn runs to its streamed conclusion…
   await page.waitForSelector("text=Plan complete — all four steps done.", { timeout: 30_000 });
+  // …and OUT: turn_end trails the last streamed text, and the shared-page
+  // tests that follow must start from an idle session, never mid-turn
+  // (a prompt sent then would be QUEUED — a different code path).
+  await awaitIdle(page);
 });
 
-test("A.1: announcer regions exist, spoke the turn, and the transcript is silent", async () => {
+test("A.1: announcer regions exist, spoke the turn, and the transcript is silent", () => withFreshMockSession(browser, TOKEN, async (page) => {
   // The two shell-owned announcer regions (Announcer.tsx): polite for turn
   // progress, assertive reserved for errors/permissions. `.sr-only` hides
   // them with clip-path, NOT display:none — the latter would drop them from
   // the accessibility tree and silence every announcement.
+  // This test's own turn, run to its streamed end: the polite region banks
+  // the prose and speaks it whole at turn_end.
+  await typePrompt(page, MOCK_PROMPTS["checklist"]);
+  await page.waitForSelector("text=Plan complete — all four steps done.", { timeout: 30_000 });
   const polite = page.locator('[role="status"][aria-live="polite"]');
   const alert = page.locator('[role="alert"][aria-live="assertive"]');
   assert.equal(await polite.count(), 1);
   assert.equal(await alert.count(), 1);
   // The finished mock turn was announced once, whole: its banked prose lands
-  // in the polite region at turn_end (may trail the transcript paint the
-  // previous test waited on, hence the poll).
+  // in the polite region at turn_end (may trail the transcript paint,
+  // hence the poll).
   await page.waitForFunction(
     () =>
       document
@@ -396,9 +408,9 @@ test("A.1: announcer regions exist, spoke the turn, and the transcript is silent
   const log = page.locator('[role="log"]');
   assert.equal(await log.count(), 1);
   assert.equal(await log.getAttribute("aria-live"), "off");
-});
+}));
 
-test("A.1: tool_use and permission_request announce (assertive interrupts polite)", async () => {
+test("A.1: a permission_request lands in the assertive region, a tool_use in the polite one", () => withFreshMockSession(browser, TOKEN, async (page) => {
   const alert = page.locator('[role="alert"][aria-live="assertive"]');
   await page.locator("textarea").click();
   await page.keyboard.type(MOCK_PROMPTS["permission-ask"]);
@@ -433,9 +445,9 @@ test("A.1: tool_use and permission_request announce (assertive interrupts polite
   );
   // The permission bar clears once answered.
   assert.equal(await page.locator(".permission-bar").count(), 0);
-});
+}));
 
-test("the permission strip expands to the full command on click, and collapses away", async () => {
+test("the permission strip expands to the full command on click, and collapses away", () => withFreshMockSession(browser, TOKEN, async (page) => {
   await page.locator("textarea").click();
   await page.keyboard.type(MOCK_PROMPTS["permission-ask"]);
   await page.keyboard.press("Enter");
@@ -451,7 +463,7 @@ test("the permission strip expands to the full command on click, and collapses a
   // A click away dismisses WITHOUT answering: the ask (and the turn paused
   // behind it) must both survive.
   await page.mouse.click(8, 8);
-  await eventually(
+  await eventually(page, 
     () => !document.querySelector(".permission-modal-card"),
     "clicking the backdrop did not close the card",
   );
@@ -462,7 +474,7 @@ test("the permission strip expands to the full command on click, and collapses a
   await page.waitForSelector(".permission-modal-card");
   await settled(page, ".permission-modal-card"); // its entrance transition, then Esc
   await page.keyboard.press("Escape");
-  await eventually(() => !document.querySelector(".permission-modal-card"), "Esc did not close the card");
+  await eventually(page, () => !document.querySelector(".permission-modal-card"), "Esc did not close the card");
   assert.equal(await page.locator(".permission-bar").count(), 1, "Esc through the card killed the ask");
   assert.equal(await page.locator(".stop-btn").count(), 1, "Esc through the card halted the turn");
   // Focus lands back on the strip that opened the card (A.3).
@@ -475,7 +487,7 @@ test("the permission strip expands to the full command on click, and collapses a
   await page.waitForFunction(() => !document.querySelector(".stop-btn"), undefined, {
     timeout: 15_000,
   });
-});
+}));
 
 test("question component: clicking an option sends it as the user's next turn", async () => {
   await page.locator("textarea").click();
@@ -1101,9 +1113,11 @@ test("sandboxed artifact: scripts run inside the iframe under the shell CSP", as
   assert.equal(await frame!.textContent("#n"), "1");
 });
 
-test("an artifact pins to the dock via its chrome control, and unpins back", async () => {
-  // The pin rides the shell-drawn chrome bar (outside the iframe). One
-  // artifact is in the transcript from the previous test.
+test("an artifact pins to the dock via its chrome control, and unpins back", () => withFreshMockSession(browser, TOKEN, async (page) => {
+  // The pin rides the shell-drawn chrome bar (outside the iframe). This
+  // test paints its own artifact — its fresh session holds nothing else.
+  await typePrompt(page, "show me an artifact");
+  await page.waitForSelector("iframe.artifact-frame", { timeout: 30_000 });
   await page.locator(".artifact-pin").click();
   await page.waitForSelector(".pin-dock");
   // The dock holds the live iframe; a stub holds its place in the flow.
@@ -1116,15 +1130,15 @@ test("an artifact pins to the dock via its chrome control, and unpins back", asy
   await page.waitForSelector(".pin-dock", { state: "detached" });
   assert.equal(await page.locator(".pin-stub").count(), 0);
   assert.equal(await page.locator(".output-zone iframe.artifact-frame").count(), 1);
-});
+}));
 
-test("hostile artifact is contained: escapes fail, sandbox is exactly allow-scripts (R.4e)", async () => {
+test("hostile artifact is contained: escapes fail, sandbox is exactly allow-scripts (R.4e)", () => withFreshMockSession(browser, TOKEN, async (page) => {
   await page.locator("textarea").click();
   await page.keyboard.type("show me a hostile artifact");
   await page.keyboard.press("Enter");
 
-  // The transcript accumulates across tests, so target the NEWEST iframe (an
-  // earlier test's bridge-demo artifact is still in the scrollback).
+  // A fresh session: this artifact's frame is the newest and the only one
+  // (`.last()` also tolerates a diagram frame the transcript might hold).
   const lastFrame = page.locator("iframe").last();
   await lastFrame.waitFor({ timeout: 30_000 });
   // The sandbox attribute is EXACTLY allow-scripts — one added token
@@ -1165,9 +1179,9 @@ test("hostile artifact is contained: escapes fail, sandbox is exactly allow-scri
     !body.includes("forged-unstamped-prompt"),
     "nonce check failed: a forged bridge message landed",
   );
-});
+}));
 
-test("navigating artifact is blanked into the navigation-blocked fallback (R.4e)", async () => {
+test("navigating artifact is blanked into the navigation-blocked fallback (R.4e)", () => withFreshMockSession(browser, TOKEN, async (page) => {
   await page.locator("textarea").click();
   await page.keyboard.type("show me a navigating artifact");
   await page.keyboard.press("Enter");
@@ -1175,7 +1189,7 @@ test("navigating artifact is blanked into the navigation-blocked fallback (R.4e)
   // and shows the fallback with the source.
   await page.waitForSelector("text=navigation blocked", { timeout: 30_000 });
   await page.waitForSelector("text=tried to navigate away", { timeout: 5_000 });
-});
+}));
 
 // AUDIT 2026-08-26: the focus guard. Hermetic — each in a FRESH session, so
 // the focus-stealing artifacts never enter this file's shared session: a
@@ -1222,19 +1236,12 @@ test("AUDIT 2026-08-26: a second artifact cannot steal focus from inside a live 
   });
 });
 
-test("2026-07-29 reload replays history silently — no re-announced turns in the live regions", async () => {
+test("2026-07-29 reload replays history silently — no re-announced turns in the live regions", () => withFreshMockSession(browser, TOKEN, async (page) => {
   // The attach replay repaints every completed turn; before the `replay`
   // stamp, each historical turn re-fired its screen-reader announcements,
   // ending with an old response spoken as though it just arrived.
   // Hermetic: a FRESH session with exactly one completed turn — the minimal
-  // scenario the bug needed (even one historical turn re-announced), free of
-  // the long shared-session history the suite accumulates by this point.
-  const sharedSession = page.url();
-  await page.goto(`${base}/?new=1`);
-  await page.waitForSelector(".agent-picker-agent");
-  await page.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
-  await page.waitForURL(/\/s\/[\w-]+/);
-  const freshSession = page.url();
+  // scenario the bug needed (even one historical turn re-announced).
   await page.locator("textarea").click();
   await page.keyboard.type("hello there");
   await page.keyboard.press("Enter");
@@ -1256,77 +1263,9 @@ test("2026-07-29 reload replays history silently — no re-announced turns in th
   const assertive = ((await page.locator('[role="alert"]').textContent()) ?? "").trim();
   assert.equal(polite, "", `polite live region re-announced history: "${polite}"`);
   assert.equal(assertive, "", `assertive live region re-announced history: "${assertive}"`);
-  // Hand the shared session back to the tests that follow.
-  assert.ok(freshSession.includes("/s/"));
-  await page.goto(sharedSession);
-  await page.waitForSelector("textarea", { timeout: 30_000 });
-});
+}));
 
-// Flake instrumentation (2026-07-30). Waiting for the activity indicator to
-// clear is a PRECONDITION at two sites, and when it timed out — once in seven
-// full Tier-3 runs — the message said only "still visible after 63 polls".
-// That cannot distinguish the two candidate causes, which differ in kind: a
-// turn that never ended (test/mock timing) versus an indicator that stuck
-// after turn_end (a real 4.14 UI bug). So capture the page's own account of
-// itself when it fires. Diagnostic only — it changes no assertion.
-const waitTurnIdle = async (p: Page, where: string) => {
-  try {
-    await p.waitForSelector(".activity-line", { state: "detached", timeout: 30_000 });
-  } catch {
-    const snap = await p.evaluate(() => ({
-      path: location.pathname,
-      activity: document.querySelector(".activity-line")?.textContent?.trim() ?? null,
-      politeRegion: document.querySelector('[role="status"]')?.textContent?.trim() ?? null,
-      promptDisabled: (document.querySelector("textarea") as HTMLTextAreaElement | null)?.disabled ?? null,
-      tail: [...document.querySelectorAll(".turn-user, .turn-assistant, .turn-tool, .bang-block")]
-        .slice(-5)
-        .map((n) => (n.className + " :: " + (n.textContent ?? "")).replace(/\s+/g, " ").slice(0, 110)),
-      // The counter's own history: `type[*=replayed] from->to`. The wedge is
-      // whichever frame raised the count with nothing to lower it.
-      // The WHOLE ring, run-length compressed ("text_delta* 2->2 ×17"), so
-      // the imbalance is visible from page load rather than from an
-      // arbitrary tail window.
-      turnTrace: (() => {
-        const raw = (window as unknown as { __MIRAFOLD_TURN_TRACE__?: string[] }).__MIRAFOLD_TURN_TRACE__ ?? [];
-        const out: string[] = [];
-        for (const e of raw) {
-          const last = out[out.length - 1];
-          if (last && last.startsWith(e)) {
-            const n = Number(last.slice(e.length).replace(" ×", "")) || 1;
-            out[out.length - 1] = `${e} ×${n + 1}`;
-          } else out.push(e);
-        }
-        return out;
-      })(),
-    }));
-    // The daemon's own account of the same session, for comparison: if these
-    // counts balance while the client's do not, the loss is in transport or
-    // the ring; if they match the client, the adapter never closed the turn.
-    const sid = snap.path.replace("/s/", "");
-    const frames = d
-      .logs()
-      .split("\n")
-      .filter((l) => l.includes(`session ${sid}`));
-    const seen = (t: string) => frames.filter((l) => l.includes(`debug: ${t} {`)).length;
-    const server = {
-      sessionId: sid,
-      user_prompt: seen("user_prompt"),
-      turn_end: seen("turn_end"),
-      error: seen("error"),
-      lastFrames: frames.slice(-14).map((l) => l.replace(/^.*?debug: /, "").slice(0, 70)),
-      // Every prompt the daemon admitted, in order — the client's trace names
-      // the turn that never closed, and this says whether the daemon agreed.
-      prompts: frames
-        .filter((l) => l.includes("debug: user_prompt {"))
-        .map((l) => (l.match(/"text":"(.{0,26})/)?.[1] ?? "?")),
-    };
-    throw new Error(
-      `${where}: the activity indicator never cleared\nCLIENT ${JSON.stringify(snap, null, 1)}\nSERVER ${JSON.stringify(server, null, 1)}`,
-    );
-  }
-};
-
-test("2026-07-30 a turn that dies by error leaves the shell idle, not wedged on 'working…'", async () => {
+test("2026-07-30 a turn that dies by error leaves the shell idle, not wedged on 'working…'", () => withFreshMockSession(browser, TOKEN, async (page) => {
   // The wedge this pins was a 1-in-4 Tier-3 flake until its trace was read:
   // the daemon calls `error` terminal (registry.ts → status idle, burst gate
   // cleared) while the shell only decremented on `turn_end`. One errored turn
@@ -1334,15 +1273,8 @@ test("2026-07-30 a turn that dies by error leaves the shell idle, not wedged on 
   // reload did NOT heal it, because replay rebuilds the imbalance from
   // history. Both halves are asserted: live, and after a reload.
   //
-  // Its OWN session, deliberately: the shared one carries a separate,
-  // still-unexplained unterminated turn from the artifact chain (PLAN's
-  // flake-watch item), and asserting against that history would test
-  // something other than what this test claims.
-  const shared = page.url(); // hand it back at the end
-  await page.goto(`${base}/?new=1`);
-  await page.waitForSelector(".agent-picker-agent");
-  await page.locator(".agent-picker-agent", { hasText: "Claude Code" }).click();
-  await page.waitForURL(/\/s\/[\w-]+/);
+  // Its OWN session, deliberately: asserting against a session with other
+  // history would test something other than what this test claims.
   const errSession = page.url();
 
   await page.locator("textarea").click();
@@ -1368,17 +1300,12 @@ test("2026-07-30 a turn that dies by error leaves the shell idle, not wedged on 
     0,
     "replaying an errored turn re-wedged the indicator",
   );
+}));
 
-  // Hand the shared session back to the tests that follow.
-  await page.goto(shared);
-  await page.waitForSelector("textarea", { timeout: 30_000 });
-});
-
-test("2026-07-29 update-in-place artifacts survive the liveness tripwire", async () => {
+test("2026-07-29 update-in-place artifacts survive the liveness tripwire", () => withFreshMockSession(browser, TOKEN, async (page) => {
   // The mock re-sends ONE artifact id with three htmls, each update landing
   // inside the liveness grace window — a stale deadline from an earlier
   // html's load used to kill the healthy update as "navigation".
-  await waitTurnIdle(page, "update-in-place artifacts precondition");
   await page.locator("textarea").click();
   await page.keyboard.type("show me an updating artifact");
   await page.keyboard.press("Enter");
@@ -1392,9 +1319,9 @@ test("2026-07-29 update-in-place artifacts survive the liveness tripwire", async
     .filter({ hasText: "updating demo" })
     .count();
   assert.ok(frames >= 1, "the updated artifact is still mounted");
-});
+}));
 
-test("fleet: the cwd is the row's hover tooltip; clicking outside the new-session card dismisses it", async () => {
+test("fleet: the cwd is the row's hover tooltip; clicking outside the new-session card dismisses it", () => withFreshMockSession(browser, TOKEN, async (page, base) => {
   await page.goto(`${base}/`);
   await page.waitForSelector(".fleet-row");
   // The cwd left the row proper (clutter) — it survives as the row's
@@ -1423,9 +1350,9 @@ test("fleet: the cwd is the row's hover tooltip; clicking outside the new-sessio
   // …and Esc closes it, same idiom as the settings card.
   await page.keyboard.press("Escape");
   assert.equal(await page.locator(".agent-picker-overlay").count(), 0);
-});
+}));
 
-test("A.3b: the session name is the row's one link; buttons ride above the stretched overlay", async () => {
+test("A.3b: the session name is the row's one link; buttons ride above the stretched overlay", () => withFreshMockSession(browser, TOKEN, async (page, base) => {
   await page.goto(`${base}/`);
   await page.waitForSelector(".fleet-row");
   const row = page.locator(".fleet-row").first();
@@ -1450,14 +1377,9 @@ test("A.3b: the session name is the row's one link; buttons ride above the stret
   assert.equal(await page.locator(".fleet-rename").count(), 0);
   // (Click-anywhere-on-the-row still opening the session is proven by the
   // next two tests, which click the row body, and by the phone tap.)
-});
+}));
 
-test("! cd .. — silent success says so, the escape is announced, and the agent answers unprompted (terminal parity)", async () => {
-  // Back into a session created earlier in this file.
-  await page.locator(".fleet-row").first().click();
-  await page.waitForURL(/\/s\/[\w-]+/);
-  await page.waitForSelector("textarea");
-
+test("! cd .. — silent success says so, the escape is announced, and the agent answers unprompted (terminal parity)", () => withFreshMockSession(browser, TOKEN, async (page) => {
   await page.locator("textarea").click();
   await page.keyboard.type("! cd ..");
   await page.keyboard.press("Enter");
@@ -1481,18 +1403,12 @@ test("! cd .. — silent success says so, the escape is announced, and the agent
   await page.waitForSelector(".bang-block ~ .response-document .turn-assistant", {
     timeout: 30_000,
   });
-});
+}));
 
-test("!! echo — the silent bang shows its `!!` strip and output, and the agent never answers", async () => {
-  // The previous test's turn must be fully over first: its trailing painting
-  // would otherwise land after this block (a bang row is a hard document
-  // boundary) and read as an answer to the silent command. The stop button
-  // is the whole-turn signal; the activity line can blink off mid-turn.
-  await page.locator(".stop-btn").waitFor({ state: "detached", timeout: 30_000 });
-  // fill() (not click+type) so the composer is CLEARED first: a stray draft
-  // left by a prior test would push our text off position 0, the `!!` prefix
-  // would be lost, and the line would send as an ordinary prompt (the CI
-  // flake, 2026-08-25).
+test("!! echo — the silent bang shows its `!!` strip and output, and the agent never answers", () => withFreshMockSession(browser, TOKEN, async (page) => {
+  // fill() (not click+type) so the composer is CLEARED first: any draft
+  // would push the text off position 0 and the `!!` prefix would be lost,
+  // sending the line as an ordinary prompt (the CI flake, 2026-08-25).
   await page.locator("textarea").fill("!!echo shell-only");
   await page.keyboard.press("Enter");
 
@@ -1519,9 +1435,9 @@ test("!! echo — the silent bang shows its `!!` strip and output, and the agent
   await page.waitForTimeout(3000);
   assert.equal(await followers(), before, "a !! command must not start an agent turn");
   assert.equal(await page.locator(".stop-btn").count(), 0, "no turn is running");
-});
+}));
 
-test("entering a session puts the caret in the prompt box — no click first", async () => {
+test("entering a session puts the caret in the prompt box — no click first", () => withFreshMockSession(browser, TOKEN, async (page, base) => {
   await page.goto(`${base}/`);
   await page.waitForSelector(".fleet-row");
   await page.locator(".fleet-row").first().click();
@@ -1536,9 +1452,9 @@ test("entering a session puts the caret in the prompt box — no click first", a
   await page.reload();
   await page.waitForSelector("textarea");
   assert.equal(await page.evaluate(() => document.activeElement?.tagName), "TEXTAREA");
-});
+}));
 
-test("status bar: new sits beside home, end is the far-right control, ?new opens the picker", async () => {
+test("status bar: new sits beside home, end is the far-right control, ?new opens the picker", () => withFreshMockSession(browser, TOKEN, async (page, base) => {
   const cls = async (sel: string) => (await page.locator(sel).getAttribute("class")) ?? "";
   assert.match(await cls(".status-bar > *:first-child"), /sb-home/);
   assert.match(await cls(".status-bar > *:nth-child(2)"), /sb-new/);
@@ -1553,7 +1469,7 @@ test("status bar: new sits beside home, end is the far-right control, ?new opens
   await fresh.goto(`${base}${href}`);
   await fresh.waitForSelector(".agent-picker-card");
   await fresh.close();
-});
+}));
 
 // The frame sampler's in-page globals (armed before the prompt, read after).
 
@@ -1562,15 +1478,15 @@ test("status bar: new sits beside home, end is the far-right control, ?new opens
  *  handful of samples and reads as "the glyph barely moved" (a real 2-in-5
  *  flake on 2026-07-29, diagnosed off a 332 ms run: the shared `page` carries
  *  session state across tests). Anchor on idle first. */
-const awaitIdle = () =>
-  page.waitForFunction(() => !document.querySelector(".stop-btn"), undefined, {
+const awaitIdle = (p: Page) =>
+  p.waitForFunction(() => !document.querySelector(".stop-btn"), undefined, {
     timeout: 30_000,
   });
 
 // In-page globals for the queued-follow-up sampler below.
 type QueueWatch = { __framesSeen: boolean[]; __qWatch: number };
 
-test("a queued follow-up keeps the indicator up across the turn boundary", async () => {
+test("a queued follow-up keeps the indicator up across the turn boundary", () => withFreshMockSession(browser, TOKEN, async (page) => {
   // Registry queues ONE prompt sent mid-turn. The first turn ending must
   // not blank the indicator while the engine rolls straight into the queued
   // turn — that gap is real work with nothing on screen (2026-07-29).
@@ -1584,7 +1500,7 @@ test("a queued follow-up keeps the indicator up across the turn boundary", async
   // test report a 2.2s "blank" that was the product behaving properly.
   let seen: boolean[] | null = null;
   for (let attempt = 0; attempt < 3 && seen === null; attempt++) {
-    await awaitIdle();
+    await awaitIdle(page);
     const echoBefore = await page.evaluate(
       (needle) =>
         [...document.querySelectorAll(".turn-user")].filter((e) =>
@@ -1635,10 +1551,10 @@ test("a queued follow-up keeps the indicator up across the turn boundary", async
   assert.ok(last < seen.length - 1, "the indicator never cleared after both turns ended");
   const gaps = seen.slice(first, last + 1).filter((present) => !present).length;
   assert.equal(gaps, 0, `the indicator blanked for ${gaps} frame(s) between the queued turns`);
-});
+}));
 
 test("audit: an over-long engine label can't widen the page (the indicator ellipsizes)", async () => {
-  await awaitIdle();
+  await awaitIdle(page);
   // 2026-07-29 audit. The label is engine-supplied — realistically from a
   // third-party MCP server's tool name — and the indicator is prompt-area
   // chrome, so before the fix a huge one grew the PAGE's scroll width
@@ -1675,8 +1591,8 @@ test("audit: an over-long engine label can't widen the page (the indicator ellip
  *  Keeps the descriptive message a bare waitForFunction timeout would lose.
  *  Pass the check INLINE (never via a const): tsx's keepNames wraps a named
  *  function expression in a helper that doesn't exist inside the page. */
-const eventually = async (check: () => boolean, message: string, timeout = 10_000) => {
-  await page.waitForFunction(check, undefined, { timeout }).catch(() => assert.fail(message));
+const eventually = async (p: Page, check: () => boolean, message: string, timeout = 10_000) => {
+  await p.waitForFunction(check, undefined, { timeout }).catch(() => assert.fail(message));
 };
 
 /** A checkout-independent folder tree fixture: the shape the E.3/E.5/E.6/E2.2
@@ -1769,7 +1685,7 @@ test("E.3: the files panel lists the working tree, opens a file beside the trans
     "package.json carries its decorative configuration glyph before its name",
   );
   await root.click();
-  await eventually(
+  await eventually(page, 
     () => document.querySelectorAll(".folder-tree-file-row").length === 0,
     "collapsed root still lists files",
   );
@@ -1795,7 +1711,7 @@ test("E.3: the files panel lists the working tree, opens a file beside the trans
   await page.locator(".folder-tree-back").click();
   await page.waitForSelector(".folder-tree");
   await page.locator(".ab-folder-tree").click();
-  await eventually(() => !document.querySelector(".folder-tree-panel"), "the toggle left the panel open");
+  await eventually(page, () => !document.querySelector(".folder-tree-panel"), "the toggle left the panel open");
 }));
 
 test("E.6: ⤢ lifts the file view into a dimmed lightbox; Esc and the backdrop restore it in place", () => onFolderTreeFixture(async () => {
@@ -1849,7 +1765,7 @@ test("E.6: ⤢ lifts the file view into a dimmed lightbox; Esc and the backdrop 
   // Esc restores the frame WITHOUT closing the file view or the panel — the
   // exclusive handler must also keep the key from Shell's busy interrupt.
   await page.keyboard.press("Escape");
-  await eventually(() => !document.querySelector(".folder-tree-file.is-maximized"), "Esc left it enlarged");
+  await eventually(page, () => !document.querySelector(".folder-tree-file.is-maximized"), "Esc left it enlarged");
   assert.ok(await page.locator(".folder-tree-view .fv-content").isVisible(), "Esc closed the file view");
   assert.equal(await page.locator(".folder-tree-dim").count(), 0, "backdrop outlived the restore");
 
@@ -1857,14 +1773,14 @@ test("E.6: ⤢ lifts the file view into a dimmed lightbox; Esc and the backdrop 
   await page.locator(".folder-tree-enlarge").click();
   await page.waitForSelector(".folder-tree-dim");
   await page.locator(".folder-tree-dim").click({ position: { x: 5, y: 5 } });
-  await eventually(
+  await eventually(page, 
     () => !document.querySelector(".folder-tree-file.is-maximized"),
     "backdrop click left it enlarged",
   );
 
   await page.locator(".folder-tree-back").click(); // tidy up for later tests
   await page.locator(".ab-folder-tree").click();
-  await eventually(() => !document.querySelector(".folder-tree-panel"), "the toggle left the panel open");
+  await eventually(page, () => !document.querySelector(".folder-tree-panel"), "the toggle left the panel open");
 }));
 
 test("E.5: expanded dirs survive a close/reopen, and a turn's auto-refresh keeps tree state", () => onFolderTreeFixture(async () => {
@@ -1882,10 +1798,10 @@ test("E.5: expanded dirs survive a close/reopen, and a turn's auto-refresh keeps
   // Close and reopen within the same session — the expansion is remembered
   // (E.5: reset is keyed on session switch, not on open).
   await page.locator(".ab-folder-tree").click();
-  await eventually(() => !document.querySelector(".folder-tree-panel"), "the toggle left the panel open");
+  await eventually(page, () => !document.querySelector(".folder-tree-panel"), "the toggle left the panel open");
   await page.locator(".ab-folder-tree").click();
   await page.waitForSelector(".folder-tree");
-  await eventually(
+  await eventually(page, 
     () =>
       [...document.querySelectorAll(".folder-tree-file-row")].some((el) =>
         el.textContent?.includes("protocol.ts"),
@@ -1912,8 +1828,8 @@ test("E.5: expanded dirs survive a close/reopen, and a turn's auto-refresh keeps
     undefined,
     { polling: 150, timeout: 10_000 },
   );
-  await eventually(() => !!document.querySelector(".folder-tree-panel"), "auto-refresh closed the panel");
-  await eventually(
+  await eventually(page, () => !!document.querySelector(".folder-tree-panel"), "auto-refresh closed the panel");
+  await eventually(page, 
     () =>
       [...document.querySelectorAll(".folder-tree-file-row")].some((el) =>
         el.textContent?.includes("protocol.ts"),
@@ -1976,7 +1892,7 @@ test("E2.2: the tree is LAZY — open fetches root + first level only; expand fe
   // Collapse and re-expand: served from cache, zero requests.
   m0 = await mark();
   await webDir.click(); // collapse web (web/src stays expanded underneath)
-  await eventually(
+  await eventually(page, 
     () => ![...document.querySelectorAll(".folder-tree-file-row")].some((el) => el.textContent?.includes("main.tsx")),
     "collapse left the subtree visible",
   );

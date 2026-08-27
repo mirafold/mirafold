@@ -101,3 +101,19 @@ test("WS: another loopback port is rejected even with a valid token (2026-07-27 
     new TestClient(d.port, { token: TOKEN, origin: "http://localhost:5173" }).opened(),
   );
 });
+
+// SECURITY.md: with the token disabled "the daemon says so loudly at boot".
+// Four suites boot with MIRAFOLD_TOKEN="" and none read the log, so the
+// warning could vanish unnoticed (test-audit 2026-08-26).
+test("auth off: the boot log carries the AUTH DISABLED warning, and the page is served without a token", async () => {
+  const open = await startDaemon({ MIRAFOLD_TOKEN: "" });
+  try {
+    // stderr, not the stdout ready line startDaemon waits on — so wait for
+    // it the way the harness documents (cold review 2026-08-26).
+    await open.waitForLog(/AUTH DISABLED/, "the loud auth-off warning");
+    const res = await fetch(`http://127.0.0.1:${open.port}/`);
+    assert.equal(res.status, 200, "auth is really off — the shell is served with no token");
+  } finally {
+    await open.stop();
+  }
+});

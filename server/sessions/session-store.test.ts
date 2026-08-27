@@ -581,7 +581,9 @@ test("AUDIT: a saved discovered endpoint that is not on this machine is refused 
 test("AUDIT: a saved unauthenticated configured endpoint restores only if loopback or still configured", () => {
   const prior = process.env.ANTHROPIC_BASE_URL;
   const priorKey = process.env.ANTHROPIC_API_KEY;
+  const priorToken = process.env.ANTHROPIC_AUTH_TOKEN;
   delete process.env.ANTHROPIC_API_KEY;
+  delete process.env.ANTHROPIC_AUTH_TOKEN;
   try {
     const stored = fixture();
     const backend = (endpoint: string) => ({ agent: "claude-code" as const, kind: "local" as const, live: true, endpoint, endpointSource: "configured" as const, endpointAuth: "none" as const });
@@ -595,6 +597,7 @@ test("AUDIT: a saved unauthenticated configured endpoint restores only if loopba
   } finally {
     if (prior === undefined) delete process.env.ANTHROPIC_BASE_URL; else process.env.ANTHROPIC_BASE_URL = prior;
     if (priorKey !== undefined) process.env.ANTHROPIC_API_KEY = priorKey;
+    if (priorToken !== undefined) process.env.ANTHROPIC_AUTH_TOKEN = priorToken;
   }
 });
 

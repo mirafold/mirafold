@@ -61,8 +61,13 @@ test("activity: since resets only on a label CHANGE; idle clears; bang shows its
   s = reduceSessionState(s, { kind: "message", msg: { type: "bang_start", command: `${"x".repeat(100)}\nsecond`, id: "b" } }, 30).state;
   assert.equal(s.activity?.label, `! ${"x".repeat(80)}`);
   s = run([{ type: "bang_end", id: "b", exitCode: 0 }], s);
-  assert.equal(s.status, "idle");
   assert.equal(s.activity, undefined);
+  // "idle clears" means FROM busy: a turn opened, then closed (test-audit
+  // 2026-08-26 — the old assertion never left idle).
+  let busy = run([{ type: "user_prompt", text: "x" }], s);
+  assert.notEqual(busy.status, "idle", "a prompt makes the session busy");
+  busy = run([{ type: "turn_end" }], busy);
+  assert.equal(busy.status, "idle", "turn_end clears it");
 });
 
 test("the ask mirror is capped, ages out on the adapter's clock, and drops with its turn", () => {

@@ -2,9 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import os from "node:os";
-import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import type { WireMsg } from "../protocol";
 import { CODEX_DEVELOPER_INSTRUCTIONS, CodexSession, describePermissionProfile } from "./codex";
+import { waitFor as waitForCond } from "../testing/wait-for";
 import type { AppServerClient, AppServerSpawn, JsonRpcId } from "./codex-app-server";
 import { MIRAFOLD_MCP } from "./render-mcp-cmd";
 import { MIRAFOLD_CONTEXT } from "../render-tools";
@@ -40,22 +41,19 @@ writeFileSync(
   JSON.stringify({ version: 2, scopes: { "gemini-cli": [], codex: [tmp] } }),
 );
 process.env.MIRAFOLD_WORKSPACE_TRUST_FILE = trustRecord;
+// Never the developer's real ~/.codex: every session in this file reads its
+// config from an empty, isolated CODEX_HOME (test-audit 2026-08-26). Tests
+// that need their own home set it explicitly and restore this one.
+process.env.CODEX_HOME = path.join(tmp, "codex-home");
+mkdirSync(process.env.CODEX_HOME, { recursive: true });
 
-/** Wait until `pred` matches a message, and return it. */
-const waitFor = (msgs: Any[], pred: (m: Any) => boolean, timeoutMs = 5_000) =>
-  new Promise<Any>((resolve, reject) => {
-    const t0 = Date.now();
-    const poll = setInterval(() => {
-      const hit = msgs.find(pred);
-      if (hit) {
-        clearInterval(poll);
-        resolve(hit);
-      } else if (Date.now() - t0 > timeoutMs) {
-        clearInterval(poll);
-        reject(new Error("waitFor timed out"));
-      }
-    }, 5);
-  });
+/** Wait until `pred` matches a message, and return it — named, with the
+ *  seen-type list on a timeout (test-audit 2026-08-26: the old local helper
+ *  failed with a bare "waitFor timed out"). */
+const waitFor = async (msgs: Any[], pred: (m: Any) => boolean, what = "a matching message", timeoutMs = 5_000): Promise<Any> => {
+  await waitForCond(() => msgs.some(pred), what, timeoutMs, () => `seen: ${msgs.map((m) => m.type).join(",")}`);
+  return msgs.find(pred)!;
+};
 
 /** Answer the Nth permission ask as it appears; returns the request row. */
 async function answerAsk(s: CodexSession, msgs: Any[], n: number, allow: boolean): Promise<Any> {
@@ -697,7 +695,7 @@ test("the two mislabeled probes from the screenshot fold together instead of sho
   const { s, msgs, awaitTurnEnd } = makeSession([
     ["item/completed", { item: { type: "agentMessage", id: "m1", text: "The starting state is verified." } }],
     ["item/completed", { item: { type: "commandExecution", id: "rg", command: "rg --files --hidden", aggregatedOutput: "", exitCode: 1, status: "failed" } }],
-    ["item/completed", { item: { type: "commandExecution", id: "gh", command: "gh repo view kserrec/test-project", aggregatedOutput: "GraphQL: Could not resolve", exitCode: 1, status: "failed" } }],
+    ["item/completed", { item: { type: "commandExecution", id: "gh", command: "gh repo view example/test-project", aggregatedOutput: "GraphQL: Could not resolve", exitCode: 1, status: "failed" } }],
     ["item/completed", { item: { type: "agentMessage", id: "m2", text: "The local project is now initialized." } }],
     DONE,
   ]);
@@ -1533,33 +1531,54 @@ test("an untrusted folder is asked before anything spawns; yes runs the turn and
   const ws = realpathSync(mkdtempSync(path.join(os.tmpdir(), "codex-untrusted-yes-")));
   assert.ok(!trustedNow().includes(ws), "the fresh folder must start untrusted");
   const { s, msgs, server, awaitTurnEnd } = makeSessionAt(ws, [DONE]);
-  s.pushPrompt("go");
-  const ask = await waitFor(msgs, (m) => m.type === "permission_request");
-  assert.equal(ask.tool, "Codex");
-  assert.match(ask.detail, /trust this folder/);
-  assert.match(ask.detail, /config\.toml/);
-  assert.equal(server.specs.length, 0, "nothing spawned before the yes");
-  s.resolvePermission(ask.id, true);
-  await awaitTurnEnd();
-  assert.equal(server.threadStarts().length, 1, "the thread starts only after the yes");
-  assert.ok(trustedNow().includes(ws), "the yes was remembered");
-  s.close();
+  // try/finally: a red run must not sit on the 5-minute trust timer
+  // (test-audit 2026-08-26).
+  try {
+    s.pushPrompt("go");
+    const ask = await waitFor(msgs, (m) => m.type === "permission_request", "the trust ask");
+    assert.equal(ask.tool, "Codex");
+    assert.match(ask.detail, /trust this folder/);
+    assert.match(ask.detail, /config\.toml/);
+    assert.equal(server.specs.length, 0, "nothing spawned before the yes");
+    s.resolvePermission(ask.id, true);
+    await awaitTurnEnd();
+    assert.equal(server.threadStarts().length, 1, "the thread starts only after the yes");
+    assert.ok(trustedNow().includes(ws), "the yes was remembered");
+  } finally {
+    s.close();
+    rmSync(ws, { recursive: true, force: true });
+  }
 });
 
 test("an untrusted folder denied: nothing spawns, config.toml is never touched, a refusal notice shows", async () => {
   const ws = realpathSync(mkdtempSync(path.join(os.tmpdir(), "codex-untrusted-no-")));
+  // The name's config.toml claim is ASSERTED: an isolated CODEX_HOME whose
+  // config.toml must be byte-identical after the no (test-audit 2026-08-26).
+  const priorHome = process.env.CODEX_HOME;
+  const home = mkdtempSync(path.join(os.tmpdir(), "codex-home-"));
+  const configToml = path.join(home, "config.toml");
+  writeFileSync(configToml, 'model = "gpt-5"\n');
+  process.env.CODEX_HOME = home;
   const { s, msgs, server, awaitTurnEnd } = makeSessionAt(ws, [DONE]);
-  s.pushPrompt("go");
-  const ask = await waitFor(msgs, (m) => m.type === "permission_request");
-  s.resolvePermission(ask.id, false);
-  await awaitTurnEnd();
-  assert.equal(server.specs.length, 0, "a denied folder never spawns the engine");
-  assert.equal(server.threadStarts().length, 0);
-  const notice = msgs.find((m) => m.type === "notice")!;
-  assert.equal(notice.kind, "refusal");
-  assert.match(notice.text, /won't run in a folder you haven't trusted/);
-  assert.ok(!trustedNow().includes(ws), "a denied trust records nothing");
-  s.close();
+  try {
+    s.pushPrompt("go");
+    const ask = await waitFor(msgs, (m) => m.type === "permission_request", "the trust ask");
+    s.resolvePermission(ask.id, false);
+    await awaitTurnEnd();
+    assert.equal(server.specs.length, 0, "a denied folder never spawns the engine");
+    assert.equal(server.threadStarts().length, 0);
+    const notice = msgs.find((m) => m.type === "notice")!;
+    assert.equal(notice.kind, "refusal");
+    assert.match(notice.text, /won't run in a folder you haven't trusted/);
+    assert.ok(!trustedNow().includes(ws), "a denied trust records nothing");
+    assert.equal(readFileSync(configToml, "utf8"), 'model = "gpt-5"\n', "config.toml is never touched");
+  } finally {
+    s.close();
+    if (priorHome === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = priorHome;
+    rmSync(ws, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
 });
 
 test("a pre-trusted folder never asks", async () => {
@@ -1570,11 +1589,15 @@ test("a pre-trusted folder never asks", async () => {
     JSON.stringify({ ...record, scopes: { ...record.scopes, codex: [...record.scopes.codex, ws] } }),
   );
   const { s, msgs, server, awaitTurnEnd } = makeSessionAt(ws, [DONE]);
-  s.pushPrompt("go");
-  await awaitTurnEnd();
-  assert.ok(!msgs.some((m) => m.type === "permission_request"), "a trusted folder is not asked");
-  assert.equal(server.threadStarts().length, 1);
-  s.close();
+  try {
+    s.pushPrompt("go");
+    await awaitTurnEnd();
+    assert.ok(!msgs.some((m) => m.type === "permission_request"), "a trusted folder is not asked");
+    assert.equal(server.threadStarts().length, 1);
+  } finally {
+    s.close();
+    rmSync(ws, { recursive: true, force: true });
+  }
 });
 
 test("describePermissionProfile: every shape of the engine's RequestPermissionProfile is stated in words", () => {

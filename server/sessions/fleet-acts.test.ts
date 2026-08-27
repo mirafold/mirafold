@@ -266,16 +266,22 @@ test("AUDIT: an evicted remote connection loses its session — bang, permission
   assert.ok(seen.some((m) => m.type === "refused"));
   const before = e.ring.buffer.length;
 
-  send(c, { type: "bang", command: "cat ~/.ssh/id_rsa", id: "b1" });
+  send(c, { type: "bang", command: "echo STALE-must-never-run", id: "b1" });
   send(c, { type: "permission_response", id: "p1", allow: true });
   send(c, { type: "prompt", text: "drive it" });
   send(c, { type: "interrupt" });
 
-  assert.equal(e.ring.buffer.length, before, "nothing from the evicted connection entered the stream");
-  assert.ok(!e.ring.buffer.some((m) => m.type === "bang_start"), "no PTY was spawned");
-  assert.equal(e.bang, undefined);
-  assert.deepEqual(e.permissions.map((p) => p.id), ["p1"], "the ask is still pending — the allow never landed");
-  reg.end(e.id);
+  try {
+    assert.equal(e.ring.buffer.length, before, "nothing from the evicted connection entered the stream");
+    assert.ok(!e.ring.buffer.some((m) => m.type === "bang_start"), "no PTY was spawned");
+    assert.equal(e.bang, undefined);
+    assert.deepEqual(e.permissions.map((p) => p.id), ["p1"], "the ask is still pending — the allow never landed");
+  } finally {
+    // A regressed guard spawns a real PTY; kill it so the run fails red
+    // instead of hanging on the live handle (test-audit 2026-08-26).
+    e.bang?.proc.kill();
+    reg.end(e.id);
+  }
 });
 
 test("AUDIT: `!` and an allowing permission_response are relay-gated at drive time like `prompt`; `!!` and a deny are not", () => {
@@ -313,8 +319,12 @@ test("AUDIT: a connection whose session was ended loses its handle — a later b
   assert.ok(seen.some((m) => m.type === "session_ended" && m.sessionId === e.id));
   send(c, { type: "bang", command: "echo STALE", id: "b1", silent: true });
   send(c, { type: "prompt", text: "hi" });
-  assert.equal(e.bang, undefined, "no PTY was spawned for the dead session");
-  assert.ok(!e.ring.buffer.some((m) => m.type === "bang_start" || m.type === "user_prompt"));
+  try {
+    assert.equal(e.bang, undefined, "no PTY was spawned for the dead session");
+    assert.ok(!e.ring.buffer.some((m) => m.type === "bang_start" || m.type === "user_prompt"));
+  } finally {
+    e.bang?.proc.kill();
+  }
 });
 
 test("AUDIT: the relay refusal of a `!` frees the issuer's bang bar with a bang_end, like the throttle refusal", () => {
@@ -337,7 +347,11 @@ test("AUDIT: a closed connection drops its handle — a frame handled after clos
   c.close();
   send(c, { type: "bang", command: "echo STALE", id: "b1", silent: true });
   send(c, { type: "prompt", text: "hi" });
-  assert.equal(e.bang, undefined);
-  assert.ok(!e.ring.buffer.some((m) => m.type === "bang_start" || m.type === "user_prompt"));
-  reg.end(e.id);
+  try {
+    assert.equal(e.bang, undefined);
+    assert.ok(!e.ring.buffer.some((m) => m.type === "bang_start" || m.type === "user_prompt"));
+  } finally {
+    e.bang?.proc.kill();
+    reg.end(e.id);
+  }
 });

@@ -11,6 +11,18 @@ import path from "node:path";
 const web = path.resolve(import.meta.dirname, "..");
 const html = readFileSync(path.join(web, "index.html"), "utf8");
 const headers = readFileSync(path.join(web, "public", "_headers"), "utf8");
+// The daemon's policy, read from its source (server/index.ts SHELL_CSP) the
+// way brand-mark.test.ts reads its hand-kept mirror — importing index.ts
+// would boot a daemon. Every entry of the array literal, whatever its quote
+// style (a template literal is a directive too — cold review 2026-08-26);
+// connect-src is host-dependent by design and compared nowhere.
+const daemonSource = readFileSync(path.join(web, "..", "server", "index.ts"), "utf8");
+const cspBlock = daemonSource.slice(daemonSource.indexOf("const SHELL_CSP = ["), daemonSource.indexOf('].join("; ")'));
+const daemonDirectives = [...cspBlock.matchAll(/^\s+["`]([a-z-]+ [^"`]+)["`],?$/gm)]
+  .map((m) => m[1]!)
+  .filter((d) => !d.startsWith("connect-src"));
+const directivesOf = (policy: string) =>
+  policy.split(";").map((d) => d.trim()).filter((d) => d && !d.startsWith("connect-src"));
 
 const REQUIRED = ["frame-src 'self'", "img-src 'self' data:", "object-src 'none'", "base-uri 'self'", "form-action 'self'"];
 
@@ -29,4 +41,10 @@ test("public/_headers carries the full policy for the static origin, aligned wit
   }
   assert.match(headers, /X-Content-Type-Options: nosniff/);
   assert.match(headers, /Referrer-Policy: no-referrer/);
+  // "Aligned with the daemon's" means the SAME directives, whole — a substring
+  // check let a widened `frame-src 'self' https://attacker` pass (cold review
+  // 2026-08-26). The count is exact on purpose: adding a directive to the
+  // daemon is a deliberate act that updates this number and public/_headers.
+  assert.equal(daemonDirectives.length, 10, `the daemon's policy has ${daemonDirectives.length} host-independent directives: ${daemonDirectives.join(" | ")}`);
+  assert.deepEqual([...directivesOf(csp)].sort(), [...daemonDirectives].sort(), "_headers drifted from the daemon's policy");
 });

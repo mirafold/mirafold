@@ -3,7 +3,7 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { startDaemon, createSession, type Daemon } from "../testing/itest-harness";
-import { stagingDir, FILE_UPLOAD_MAX_BYTES } from "./upload-handlers";
+import { FILE_UPLOAD_MAX_BYTES } from "./upload-handlers";
 
 // Phase FD over a REAL socket: a chunked upload lands byte-exact in the
 // session's staging dir and the reply path is where the bytes actually are —
@@ -25,6 +25,8 @@ const b64 = (s: string | Buffer) => Buffer.from(s).toString("base64");
 
 test("FD.1: chunked upload over a real socket stages exact bytes at the replied path", async () => {
   const { client, sessionId } = await createSession(d.port);
+
+  let staged: string | undefined;
   try {
     // Three chunks incl. multibyte content — byte math, not string math.
     const body = "line one\n☃ snowman\n" + "x".repeat(1000);
@@ -61,24 +63,34 @@ test("FD.1: chunked upload over a real socket stages exact bytes at the replied 
     const done3 = (await client.type("file_upload_done")) as { id: string; path: string };
     assert.equal(done3.id, "up3");
     assert.equal(fs.readFileSync(done3.path, "utf8"), "ok");
+    staged = path.dirname(done3.path);
   } finally {
-    fs.rmSync(stagingDir(sessionId), { recursive: true, force: true });
+    // The daemon's staging root is its own (a separate process mints its own
+    // mkdtemp) — clean what a reply named, never a dir computed here.
+    if (staged) fs.rmSync(staged, { recursive: true, force: true });
     client.close();
   }
 });
 
 test("FD.1: overflow past the declared size dies with a typed error, file never staged", async () => {
-  const { client, sessionId } = await createSession(d.port);
+  const { client } = await createSession(d.port);
+  let staged: string | undefined;
   try {
     client.send({ type: "file_upload_begin", id: "ov", name: "small.txt", size: 3 } as never);
     client.send({ type: "file_upload_chunk", id: "ov", data: b64("way too many bytes") } as never);
     const err = (await client.type("file_upload_error")) as { id: string };
     assert.equal(err.id, "ov");
-    const dir = stagingDir(sessionId);
-    const staged = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
-    assert.deepEqual(staged, [], "nothing may be staged from a dead upload");
+    // The daemon's session dir is only knowable from a reply (test-audit
+    // 2026-08-26: `stagingDir()` called HERE named this process's own root, a
+    // directory that never existed, so the old assertion could not fail). A
+    // sibling upload names it; the dead one must not be beside it.
+    client.send({ type: "file_upload_begin", id: "sib", name: "sibling.txt", size: 2 } as never);
+    client.send({ type: "file_upload_chunk", id: "sib", data: b64("ok") } as never);
+    const done = (await client.type("file_upload_done")) as { id: string; path: string };
+    staged = path.dirname(done.path);
+    assert.deepEqual(fs.readdirSync(staged), ["sibling.txt"], "nothing may be staged from a dead upload");
   } finally {
-    fs.rmSync(stagingDir(sessionId), { recursive: true, force: true });
+    if (staged) fs.rmSync(staged, { recursive: true, force: true });
     client.close();
   }
 });

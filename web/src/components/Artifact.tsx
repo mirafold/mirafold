@@ -73,7 +73,7 @@ import type { Action } from "@protocol";
  * iframe — same rule as the pin affordance: the agent can't fake it.
  */
 
-const ARTIFACT_CSP =
+export const ARTIFACT_CSP =
   "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:";
 
 // Base styles so bare artifact markup reads as part of the output zone;

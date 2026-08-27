@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { isWorkspaceTrusted, trustWorkspace, trustedWorkspaces } from "./workspace-trust";
@@ -47,7 +47,7 @@ test("an empty allow-set trusts nothing", () => {
 });
 
 test("a yes is remembered only for the engine whose consequence was disclosed", () => {
-  withTrustFile(() => {
+  withTrustFile((file) => {
     const dir = mkdtempSync(path.join(os.tmpdir(), "mirafold-ws-"));
     try {
       assert.equal(isWorkspaceTrusted(dir, "gemini-cli"), false, "unknown before the answer");
@@ -55,11 +55,11 @@ test("a yes is remembered only for the engine whose consequence was disclosed", 
       assert.equal(isWorkspaceTrusted(dir, "gemini-cli"), true, "Gemini trusted after its yes");
       assert.equal(isWorkspaceTrusted(dir, "codex"), false, "Gemini consent never authorizes Codex");
       trustWorkspace(dir, "gemini-cli");
-      assert.equal(
-        trustedWorkspaces("gemini-cli").size,
-        1,
-        "a repeat answer adds no duplicate row",
-      );
+      // The FILE, not the Set the reader builds — a Set cannot hold a
+      // duplicate, so it could never see one (test-audit 2026-08-26).
+      const rows = (JSON.parse(readFileSync(file, "utf8")) as { scopes: { "gemini-cli": string[] } }).scopes["gemini-cli"];
+      assert.deepEqual(rows, [realpathSync(dir)], "a repeat answer adds no duplicate row"); // realpath: a symlinked tmpdir (macOS) stores the real form
+      assert.equal(trustedWorkspaces("gemini-cli").size, 1);
       trustWorkspace(dir, "codex");
       assert.equal(isWorkspaceTrusted(dir, "codex"), true, "Codex requires and remembers its own yes");
     } finally {

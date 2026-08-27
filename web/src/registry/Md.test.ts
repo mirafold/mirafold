@@ -93,3 +93,17 @@ test("fenceLanguage reads the fence's language off the highlight class; nodeText
     "  if (a) {\n    b();\n  }\n",
   );
 });
+
+// Test-audit 2026-08-26: the trusted-shell claim in Md.tsx ("react-markdown
+// never emits raw HTML") and the image path had no pin. Raw tags are text;
+// an image with an off-allowlist source gets no src at all.
+test("raw HTML in agent markdown is inert text, and a hostile image source never reaches src", () => {
+  const html = render(
+    'before <script>alert(1)</script> <img src="x" onerror="alert(1)"> after\n\n![pic](javascript:alert(1)) ![svg](data:image/svg+xml;base64,PHN2Zz4=) ![ok](https://example.test/a.png)',
+  );
+  assert.ok(!/<script/i.test(html), "a <script> tag was emitted");
+  assert.ok(!/<img[^>]*onerror/i.test(html), "an event-handler attribute was emitted (as an attribute, not as text)");
+  assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/, "the tag is shown as text");
+  assert.ok(!/src="javascript:/i.test(html) && !/src="data:image\/svg/i.test(html), "a hostile image source survived into src (the gate must blank it)");
+  assert.match(html, /src="https:\/\/example\.test\/a\.png"/, "an ordinary https image still renders");
+});

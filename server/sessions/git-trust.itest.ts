@@ -18,6 +18,7 @@ import { repoTrust } from "./git-trust";
 let repo: string;
 let bin: string;
 let trustPath: string;
+let priorTrustFile: string | undefined;
 
 const marker = (name: string) => path.join(bin, `${name}.fired`);
 const fired = (name: string) => existsSync(marker(name));
@@ -47,6 +48,7 @@ const forceContentRead = () => {
 before(() => {
   bin = mkdtempSync(path.join(os.tmpdir(), "trust-bin-"));
   trustPath = path.join(bin, "trusted-repos.json");
+  priorTrustFile = process.env.MIRAFOLD_TRUST_FILE;
   process.env.MIRAFOLD_TRUST_FILE = trustPath;
 
   repo = mkdtempSync(path.join(os.tmpdir(), "trust-repo-"));
@@ -63,7 +65,7 @@ before(() => {
   git(repo, "config", "filter.evil.process", plantProgram("process", false));
 });
 after(() => {
-  delete process.env.MIRAFOLD_TRUST_FILE;
+  if (priorTrustFile === undefined) delete process.env.MIRAFOLD_TRUST_FILE; else process.env.MIRAFOLD_TRUST_FILE = priorTrustFile;
   rmSync(repo, { recursive: true, force: true });
   rmSync(bin, { recursive: true, force: true });
 });
@@ -125,6 +127,7 @@ test("machine-level config is never flagged — only what the repo brought", asy
     '[filter "lfs"]\n\tclean = git-lfs clean -- %f\n\tprocess = git-lfs filter-process\n[core]\n\tfsmonitor = /usr/bin/true\n',
   );
   const clean = mkdtempSync(path.join(os.tmpdir(), "trust-clean-"));
+  const priorSys = process.env.GIT_CONFIG_SYSTEM;
   process.env.GIT_CONFIG_SYSTEM = sysConfig;
   try {
     git(clean, "init", "-q");
@@ -133,7 +136,7 @@ test("machine-level config is never flagged — only what the repo brought", asy
     assert.deepEqual(trust.risky, [], "machine-level settings reported as the repo's own");
     assert.deepEqual(trust.disableEnv, {}, "and nothing neutralized — terminal parity");
   } finally {
-    delete process.env.GIT_CONFIG_SYSTEM;
+    if (priorSys === undefined) delete process.env.GIT_CONFIG_SYSTEM; else process.env.GIT_CONFIG_SYSTEM = priorSys;
     rmSync(clean, { recursive: true, force: true });
     rmSync(sysConfig, { force: true });
   }

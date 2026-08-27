@@ -130,8 +130,66 @@ export const PHONE_CONTEXT: BrowserContextOptions = {
 };
 
 /** Wait until no turn is in flight (the stop affordance is gone). */
-export const waitTurnIdle = (page: Page, timeout = 30_000) =>
-  page.waitForFunction(() => !document.querySelector(".stop-btn"), undefined, { timeout });
+/** Wait for the turn to end — and on a TIMEOUT, dump the page's turn state
+ *  (activity line, live region, the last rows, the turn-counter trace) so a
+ *  wedge is diagnosable instead of "Timeout 30000ms exceeded". Lived private
+ *  in app.e2e.ts; now the one every e2e file gets (test-audit 2026-08-26). */
+export const waitTurnIdle = async (p: Page, where = "turn idle", timeout = 30_000, daemonLogs?: () => string) => {
+  try {
+    await p.waitForSelector(".activity-line", { state: "detached", timeout });
+  } catch {
+    const snap = await p.evaluate(() => ({
+      path: location.pathname,
+      activity: document.querySelector(".activity-line")?.textContent?.trim() ?? null,
+      politeRegion: document.querySelector('[role="status"]')?.textContent?.trim() ?? null,
+      promptDisabled: (document.querySelector("textarea") as HTMLTextAreaElement | null)?.disabled ?? null,
+      tail: [...document.querySelectorAll(".turn-user, .turn-assistant, .tool-block, .bang-block")]
+        .slice(-5)
+        .map((n) => (n.className + " :: " + (n.textContent ?? "")).replace(/\s+/g, " ").slice(0, 110)),
+      // The counter's own history: `type[*=replayed] from->to`. The wedge is
+      // whichever frame raised the count with nothing to lower it.
+      // The WHOLE ring, run-length compressed ("text_delta* 2->2 ×17"), so
+      // the imbalance is visible from page load rather than from an
+      // arbitrary tail window.
+      turnTrace: (() => {
+        const raw = (window as unknown as { __MIRAFOLD_TURN_TRACE__?: string[] }).__MIRAFOLD_TURN_TRACE__ ?? [];
+        const out: string[] = [];
+        for (const e of raw) {
+          const last = out[out.length - 1];
+          if (last && last.startsWith(e)) {
+            const n = Number(last.slice(e.length).replace(" ×", "")) || 1;
+            out[out.length - 1] = `${e} ×${n + 1}`;
+          } else out.push(e);
+        }
+        return out;
+      })(),
+    }));
+    // The daemon's own account of the same session, for comparison: if these
+    // counts balance while the client's do not, the loss is in transport or
+    // the ring; if they match the client, the adapter never closed the turn.
+    const sid = snap.path.replace("/s/", "");
+    const frames = (daemonLogs?.() ?? "")
+      .split("\n")
+      .filter((l: string) => l.includes(`session ${sid}`));
+    const seen = (t: string) => frames.filter((l: string) => l.includes(`debug: ${t} {`)).length;
+    const server = {
+      sessionId: sid,
+      user_prompt: seen("user_prompt"),
+      turn_end: seen("turn_end"),
+      error: seen("error"),
+      lastFrames: frames.slice(-14).map((l: string) => l.replace(/^.*?debug: /, "").slice(0, 70)),
+      // Every prompt the daemon admitted, in order — the client's trace names
+      // the turn that never closed, and this says whether the daemon agreed.
+      prompts: frames
+        .filter((l: string) => l.includes("debug: user_prompt {"))
+        .map((l: string) => (l.match(/"text":"(.{0,26})/)?.[1] ?? "?")),
+    };
+    throw new Error(
+      `${where}: the activity indicator never cleared\nCLIENT ${JSON.stringify(snap, null, 1)}\nSERVER ${JSON.stringify(server, null, 1)}`,
+    );
+  }
+};
+
 
 /** Wait for every running animation/transition under `selector` to finish. */
 export const settled = (page: Page, selector: string) =>

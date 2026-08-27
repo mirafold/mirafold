@@ -200,6 +200,7 @@ before(async () => {
 
   daemon = await startDaemon({
     MIRAFOLD_TOKEN: TOKEN,
+    MIRAFOLD_DEBUG: "1", // fs_read/fs_file debug lines feed the CR.2 phone flake dump
     FS_CHANGES_MAX_ENTRIES: "5",
     FS_LISTDIR_STATUS_WAIT_MS: "0",
   });
@@ -662,6 +663,8 @@ test("CR.2 phone: full-screen one-file review has persistent navigation and pres
     hasTouch: true,
   });
   phone = await phoneContext.newPage();
+  const pageErrors: string[] = [];
+  phone.on("pageerror", (e) => pageErrors.push(e.message));
   await phone.goto(sessionUrl(changedSession));
   await phone.waitForSelector(".status-bar");
   await noSideScroll(phone);
@@ -748,7 +751,35 @@ test("CR.2 phone: full-screen one-file review has persistent navigation and pres
   await phone.locator(".diff-panel-close").tap();
   await openPhoneWorkspace(phone, "folder-tree");
   await phone.locator(".folder-tree-file-row", { hasText: "a-added.ts" }).tap();
-  await phone.waitForSelector(".folder-tree-view .fv-content");
+  try {
+    await phone.waitForSelector(".folder-tree-view .fv-content");
+  } catch (error) {
+    // Flake evidence (2026-08-26): this wait timed out in full Tier-3 runs on
+    // 08-19 and 08-20 and never once in isolation (3/3, 3/3, then 8/8 whole-
+    // file runs), so the next occurrence must carry its own evidence: what
+    // the page and the daemon held when the file view failed to land.
+    const dir = process.env.MIRAFOLD_FLAKE_DUMP_DIR ?? os.tmpdir();
+    const stamp = Date.now();
+    await phone.screenshot({ path: path.join(dir, `dp-751-${stamp}.png`) }).catch(() => {});
+    const state = await phone.evaluate(() => ({
+      url: location.href,
+      active: document.activeElement?.className ?? null,
+      dialogs: [...document.querySelectorAll("[role=dialog]")].map((el) => el.className),
+      rows: [...document.querySelectorAll(".folder-tree-file-row")].map((el) => el.textContent),
+      panel: document.querySelector(".folder-tree-panel")?.outerHTML.slice(0, 6000) ?? null,
+      view: document.querySelector(".folder-tree-view")?.outerHTML.slice(0, 3000) ?? null,
+      diffPanel: document.querySelector(".diff-panel-panel")?.className ?? null,
+      // "connected" vs "reconnecting…": a reconnect between the tap and the
+      // fs_file reply cancels the pending read and the view stays loading.
+      socket: document.querySelector(".sb-dot")?.getAttribute("title") ?? null,
+    })).catch((e) => ({ evaluateFailed: String(e) }));
+    writeFileSync(
+      path.join(dir, `dp-751-${stamp}.json`),
+      JSON.stringify({ state, pageErrors, daemonLogTail: daemon.logs().slice(-20_000) }, null, 2),
+    );
+    if (error instanceof Error) error.message += `\n  evidence: ${path.join(dir, `dp-751-${stamp}.{json,png}`)}`;
+    throw error;
+  }
   await noSideScroll(phone);
   await phone.keyboard.press("Escape");
   await phone.keyboard.press("Escape");

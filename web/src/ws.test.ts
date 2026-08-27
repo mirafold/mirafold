@@ -722,6 +722,25 @@ test("adoption never overwrites a live device-store pairing", () => {
   const adopted = adoptStoredPairing(device, legacy, 1_000);
   assert.equal(adopted?.code, "device-code-16chars");
   assert.equal(device.getItem("mirafold-relay-code"), "device-code-16chars");
+  // What the guard protects is the AGE WINDOW: an adoption that re-stamped
+  // paired-at kept the bearer credential alive forever, and the code check
+  // above cannot see it (test-audit 2026-08-26).
+  assert.equal(device.getItem("mirafold-relay-paired-at"), "500", "adoption never re-stamps a live pairing's age");
+});
+
+test("AUDIT: a fragment pairing lands in storage only once the handshake succeeded (the wiring, not the helper)", async (t) => {
+  const { client, sock } = setupRelay(t);
+  client.setHello(() => null);
+  await drainUntil(() => FakeWS.instances.length > 0, "first dial after derivePair");
+  const store = globalThis.localStorage;
+  assert.equal(store.getItem("mirafold-relay-code"), null, "nothing stored on arrival");
+  const s = sock();
+  s.open();
+  await drainUntil(() => s.sent.length >= 1, "client handshake frame sent");
+  assert.equal(store.getItem("mirafold-relay-code"), null, "nothing stored while the handshake is open");
+  await answerHandshake(s, client);
+  assert.equal(store.getItem("mirafold-relay-code"), PAIR_CODE, "stored once the daemon answered");
+  client.close();
 });
 
 // AUDIT 2026-08-26: two ingress guards. A frame is an object with a string

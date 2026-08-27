@@ -14,6 +14,7 @@
 // throw would exit the daemon.
 
 import path from "node:path";
+import { createLogger } from "../log";
 import type { ConnectionContext } from "./handler-context";
 import { TOO_FAST, inflightSlot, minInterval, tokenBucket } from "../throttle";
 import type { ClientMsg, FsDirEntry, FsEntry, WireMsg } from "../protocol";
@@ -60,6 +61,7 @@ const FS_MIN_INTERVAL_MS = envInt("FS_MIN_INTERVAL_MS", 250);
 // this many per second. A drained bucket still ANSWERS (error reply).
 const FS_LISTDIR_MAX_PER_SEC = envInt("FS_LISTDIR_MAX_PER_SEC", 32);
 const GIT_BUSY = "a git query is already running — retry shortly";
+const fsLog = createLogger("fs");
 
 // How long a directory listing may wait on its repo's git status
 // before shipping plain. Status calls serialize in one GLOBAL queue, so one
@@ -293,6 +295,10 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
 
   const read = (msg: FsRead): void => {
     if (badId(msg.id)) return;
+    // Debug-only (console under MIRAFOLD_DEBUG, never the log file): a file
+    // view that stays "Loading…" needs to know whether the read arrived and
+    // what left — the daemon's half of that diagnosis (diff-panel.e2e, CR.2).
+    fsLog.debug(`fs_read ${msg.id} ${msg.path}`);
     const sendErr = (p: string, error: string) =>
       viewport({ type: "fs_file", id: msg.id, path: p, error });
     if (typeof msg.path !== "string" || msg.path.length === 0 || msg.path.length > 4_096) {
@@ -303,6 +309,7 @@ export function createFsHandlers({ viewport, getEntry, isClosed }: FsDeps): FsHa
     if (!readGate.take()) return sendErr(msg.path, TOO_FAST);
     try {
       const r = readWorkspaceFile(entry.cwd, msg.path);
+      fsLog.debug(`fs_file ${msg.id} ${"error" in r ? `error: ${r.error}` : "binary" in r ? "binary" : `${r.size} bytes`}`);
       if ("error" in r) {
         sendErr(msg.path, r.error);
       } else if ("binary" in r) {

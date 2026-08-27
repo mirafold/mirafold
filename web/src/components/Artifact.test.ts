@@ -73,7 +73,11 @@ test("wrap() injects the lockdown CSP meta and it precedes the content", () => {
   const out = wrap("<b>content-marker</b>", "nonce-1");
   const csp = out.indexOf('http-equiv="Content-Security-Policy"');
   assert.notEqual(csp, -1, "CSP meta missing");
-  assert.match(out, /default-src 'none'/);
+  // The WHOLE policy is the pin: `default-src 'none'` alone let `connect-src *`
+  // (fetch/WebSocket re-opened) ride along unnoticed (test-audit 2026-08-26).
+  // Changing the policy is a deliberate act that updates this literal.
+  const content = out.match(/http-equiv="Content-Security-Policy" content="([^"]*)"/)?.[1];
+  assert.equal(content, "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:");
   assert.ok(csp < out.indexOf("content-marker"), "CSP must come before the content");
 });
 

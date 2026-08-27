@@ -3443,6 +3443,96 @@ require a PR) — see the session recap for the exact clicks. Review + commit
 on `polish`; then a patch release (findings 2–4 of the delta audit and the
 engine gate are live in 0.5.0).
 
+## Test-audit pass (2026-08-26) — the whole suite
+
+Baseline: Tier-1 998/998 ×3 (~22 s); Tier-2 156/156 ×3 idle, 155/154/156
+under load (~4 min); Tier-3 120/121 then 121/121 (~7.3 min); UI gate 10/10
+(68 s). 110 product mutations (three reviewers in worktrees + the
+coordinator), 104 caught. Repaired, each re-falsified:
+
+- **Proven worthless → repaired:** `file-upload.itest` "nothing staged from a
+  dead upload" (computed the DAEMON's staging dir in the test process — a
+  dir that never existed); `workspace-trust.test` duplicate-row claim asserted
+  on a Set; `git.test` rename framing survived the exact bug it names (now
+  pins the record count); `Console.test` hardcoded a private cap copy.
+- **Wrong thing → repaired:** `Artifact.test` pinned one CSP directive (now
+  the exact policy); `ws.test` "stored only after the handshake" tested the
+  helper, not the wiring (now drives `finishOpen`); adoption test now checks
+  `paired-at`; `codex.test` "config.toml never touched" now asserted with an
+  isolated `CODEX_HOME`; `csp.test` "aligned with the daemon's" now compares
+  against `server/index.ts`'s directives.
+- **Fragile → repaired:** `session.itest` seq-monotonic (excludes the
+  deliberately unsequenced `prompt_options`) and interrupt (no TURN content
+  after `turn_end`, not an exact frame count); `codex.test` trust tests
+  try/finally (a red run sat on the 5-min trust timer) + `CODEX_HOME`
+  isolation in `capturedSpawn`; `fleet-acts` stale-handle tests kill a
+  regressed PTY instead of hanging the run, and never `cat ~/.ssh/id_rsa`;
+  `hostile-client.itest` pins `MAX_WS_PAYLOAD`; `session-store.test` clears
+  both Anthropic credentials; `git-trust.itest` restores borrowed env.
+- **Weak → tightened:** exact `DETAIL_CAP`; byte accounting via
+  `Buffer.byteLength`; "idle clears" now leaves idle first; `session.itest`
+  artifact pinned to the mock's known html; `codex.test` waits go through
+  `wait-for.ts` (named, seen-list); the diagnosable `waitTurnIdle` moved
+  into `e2e-harness.ts` for every e2e file.
+- **Proven gaps → added, watched to fail under mutation:**
+  `security/bind.itest.ts` (the daemon is unreachable on the LAN address —
+  `0.0.0.0` passed every tier before); `auth.itest.ts` (the AUTH DISABLED
+  boot warning); `log.test.ts` (log file 0600); `Md.test.ts` (raw HTML inert,
+  hostile image sources get no src).
+- Fixture hygiene: the one real handle in a fixture replaced.
+
+**Follow-up the same day (Kyle: "do 2 through 5, and 1 if you recommend
+it"):**
+- *Real-clock coalescing test* → `t.mock.timers` (tick 4 holds, tick 1
+  flushes); re-falsified. Doing it exposed that a RED assertion in
+  `registry.test.ts` hung the whole Tier-1 run (the test's own `reg.end`
+  never ran, the open mock session kept the process alive) — a file-level
+  `after()` now ends every helper-made session.
+- *`app.e2e.ts` shared-session design* → the 16 tests that depended on a
+  neighbor's state (a spoken turn, a leftover artifact, `.fleet-row.first()`,
+  "back into a session created earlier", "the previous turn must be over")
+  run in `withFreshMockSession` with their own preconditions; `eventually`
+  / `awaitIdle` take the page explicitly. Two shapes now, documented at the
+  top of the file: shared page for "a session exists", fresh session for
+  anything that depends on session STATE. 53/53, 157 s alone.
+- *`diff-panel.e2e.ts:751` phone flake* → characterized, NOT reproduced:
+  8/8 whole-file runs idle (46–51 s each), on top of 3/3 + 3/3 focused on
+  record and two green full runs this session; the only two occurrences
+  ever were inside full Tier-3 runs (08-19, 08-20). No cause named, so no
+  fix; the wait now dumps a screenshot, the page's state (dialogs, file
+  rows, panel/view HTML) and the daemon log tail to
+  `MIRAFOLD_FLAKE_DUMP_DIR ?? os.tmpdir()` and names the path in the error,
+  so the next occurrence carries its evidence.
+- *The two wiring tests* → added: `PermissionBar.test.ts` (an ask's tool AND
+  detail route through `visibleControls`; the modal-card branch needs state
+  and is uncovered) and `PinDock.test.ts` (React server rendering rethrows
+  through error boundaries — probed — so it walks the element tree: one
+  `RenderBoundary` per pinned painting, the block its direct child, the
+  dock's own fallback). Both re-falsified (five mutations).
+- *Cold review of the batch* (fresh agent) → fixed the same sitting: the
+  shared "agent picker → full mock turn" test now leaves its session IDLE
+  (`awaitIdle`) — without it the next shared-page prompt was a coin flip
+  between "sent idle" and "queued mid-turn", a new order dependency the
+  conversion had created; the tool_use/permission announcer test renamed to
+  what it asserts (it never set up the "assertive interrupts polite"
+  scenario its title claimed); the dangling 2026-07-30 instrumentation
+  comment removed and the shared daemon's `MIRAFOLD_DEBUG` rationale
+  rewritten; `RenderBoundary`'s CATCH now pinned DOM-free in
+  `RenderBlock.test.ts` (derived error state → fallback; clean → child;
+  re-falsified twice); the CR.2 flake dump now also records the socket
+  state, page errors, and — new debug-only lines in `fs-handlers.ts`
+  (`fs_read` receipt / `fs_file` reply, console under `MIRAFOLD_DEBUG`,
+  never the log file; probed) — whether the read reached the daemon, with
+  the diff-panel daemon started in debug for that reason.
+- *The `registry.test.ts` re-pins* → recommended AGAINST, so left alone:
+  they carry provenance (M.1, the 2026-07-24/28 bugs) and most exercise
+  registry-only paths (`answerPermission`, `summary()` copies, `askedAt`
+  aging, `dispatchPrompt`); the three near-duplicates of `session-state.test`
+  cost ~40 lines. "Never delete a regression fixture" applies.
+**Suite health:** Tier-2's `session.itest` was the load-sensitive spot
+(fixed above); Tier-3's one flake in two runs was `follow-tail` (hardened
+twice before — on the proposed list).
+
 ## Stretch goals (unscheduled — polish, no milestone gates on these)
 
 Pick one up only when the phases above are quiet.
