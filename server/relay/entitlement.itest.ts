@@ -27,7 +27,7 @@ function billingStub(answer: (path: string) => { status: number; body: unknown }
   });
 }
 
-test("a refused license key reaches the local viewport as an `entitlement` read; a remote viewport never sees one", async () => {
+test("a refused license key reaches the local viewport ON its hello; a remote viewport never sees one", async () => {
   const stub = await startRelayStub({});
   const billing = await billingStub(() => ({ status: 403, body: { reason: "unknown license key" } }));
   const d = await startDaemon({
@@ -45,8 +45,7 @@ test("a refused license key reaches the local viewport as an `entitlement` read;
     await local.opened();
     const hello = (await local.type("agents")) as Any;
     assert.equal(hello.billing, "license-key");
-    const read = (await local.type("entitlement")) as Any;
-    assert.deepEqual(read, { type: "entitlement", state: "invalid", reason: "unknown license key" });
+    assert.deepEqual(hello.entitlement, { state: "invalid", reason: "unknown license key" });
     // The log line elided the key; so does the wire.
     assert.ok(!JSON.stringify(local.received).includes("mf_itest_bogus"), "the license key rode the wire");
     local.close();
@@ -55,6 +54,7 @@ test("a refused license key reaches the local viewport as an `entitlement` read;
     const rhello = (await remote.type("agents")) as Any;
     assert.equal(rhello.billing, undefined);
     assert.equal(rhello.relay, undefined);
+    assert.equal(rhello.entitlement, undefined);
     remote.send({ type: "ping" } as never);
     await remote.type("pong"); // a round-trip AFTER the hello: anything sent with it has arrived
     assert.ok(

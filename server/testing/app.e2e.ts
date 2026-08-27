@@ -2429,6 +2429,11 @@ test("PB.2: a refused license key — no QR, the reason, the pay link; a phone i
     await p.locator(".status-bar .sb-pair").click();
     await p.waitForSelector(".pair-card");
     await p.waitForSelector(".pair-card q:has-text('unknown license key')");
+    assert.equal(
+      await p.locator(".pair-card q.pair-quote").evaluate((el) => getComputedStyle(el).unicodeBidi),
+      "isolate",
+      "the quoted backend line is bidi-isolated from our sentence",
+    );
     assert.equal(await p.locator(".pair-qr").count(), 0, "a QR the relay would refuse");
     const cta = p.locator(".pair-card a.pair-cta");
     assert.equal(await cta.getAttribute("href"), "https://mirafold.com/pay");

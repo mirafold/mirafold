@@ -12,26 +12,24 @@ export type { EntitlementView };
 
 /** Everything the hello carries that the shell keeps: which agents the daemon
  *  offers (null until the first hello), where it was launched, its home dir,
- *  the pairing info, its version, the billing affordance — plus the
- *  license-key read, which arrives as its own message after each hello. */
+ *  the pairing info, its version, the billing affordance, and the
+ *  license-key read. */
 export type DaemonInfo = Omit<AgentsHello, "type" | "agents" | "default"> & {
   agents: AgentInfo[] | null;
-  entitlement?: EntitlementView;
 };
 
 export const NO_DAEMON_INFO: DaemonInfo = { agents: null };
 
-/** Fold a hello in. The license-key read is kept across a hello ONLY while
- *  the hello still says this daemon runs on a key (the read follows it
- *  again momentarily); a relaunched daemon without one must not inherit a
- *  stale "refused" read that would hide a working QR. */
-export function daemonInfoFrom(hello: AgentsHello, prev?: DaemonInfo): DaemonInfo {
+/** Fold a hello in — whole. The license-key read comes WITH the hello, so a
+ *  hello without one (a relaunched daemon that no longer presents on the
+ *  exchange) drops whatever was held: nothing carries over from a previous
+ *  daemon. */
+export function daemonInfoFrom(hello: AgentsHello): DaemonInfo {
   const { type: _type, default: _default, ...info } = hello;
-  const keep = hello.billing === "license-key" ? prev?.entitlement : undefined;
-  return keep ? { ...info, entitlement: keep } : info;
+  return info;
 }
 
-/** Fold an `entitlement` message into what the shell holds. */
+/** Fold an `entitlement` change (between hellos) into what the shell holds. */
 export function withEntitlement(prev: DaemonInfo, m: Extract<WireMsg, { type: "entitlement" }>): DaemonInfo {
   const { type: _type, ...entitlement } = m;
   return { ...prev, entitlement };

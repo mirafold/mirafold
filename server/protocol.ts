@@ -301,6 +301,12 @@ export type ViewportMsgBody =
       // holds the key); token-override, self-host, and unentitled daemons
       // send nothing. Old clients strip it.
       billing?: "license-key";
+      // Optional/additive: the daemon's current license-key read, riding
+      // the hello itself so a client never holds one from a PREVIOUS
+      // daemon (a relaunch on the same port re-hellos without one when it
+      // no longer presents on the exchange). Changes after the hello ride
+      // the `entitlement` message below. LOCAL viewports only.
+      entitlement?: EntitlementView;
     }
   // One local, per-viewport reply to `pick_folder`; never broadcast or
   // replayed. Cancel is explicit so an empty reply cannot strand the button.

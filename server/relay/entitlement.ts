@@ -135,12 +135,17 @@ export function createEntitlementTokenSource(env: {
   // `unreachable` + a cached token: the QR stays only while that token is
   // unexpired, so its expiry must flip the read — not wait for the next
   // 12-hourly exchange.
+  // Node clamps a delay past 2^31-1 ms (~24.8 days) to 1 ms, so a long-lived
+  // token is watched in chained hops and the flip re-checks the clock.
+  const MAX_DELAY_MS = 2 ** 31 - 1;
   let expiry: ReturnType<typeof setTimeout> | undefined;
   const watchExpiry = (expMs: number) => {
     clearTimeout(expiry);
     expiry = setTimeout(() => {
-      if (view.state === "unreachable" && view.cached) setView({ state: "unreachable", cached: false });
-    }, Math.max(0, expMs - Date.now()));
+      if (view.state !== "unreachable" || !view.cached) return;
+      if (expMs > Date.now()) watchExpiry(expMs);
+      else setView({ state: "unreachable", cached: false });
+    }, Math.min(MAX_DELAY_MS, Math.max(0, expMs - Date.now())));
     expiry.unref();
   };
   let denied = false; // a 403 already warned — suppresses repeat WARNINGS only (the request throttle is FORCED_REFRESH_MIN_GAP_MS)
@@ -153,8 +158,10 @@ export function createEntitlementTokenSource(env: {
     try {
       const res = await postLicenseKey(url, licenseKey, FETCH_TIMEOUT_MS);
       if (res.status === 403) {
-        // The backend's `reason` is untrusted JSON: only a string is quoted.
-        const raw = ((await res.json().catch(() => ({}))) as { reason?: unknown }).reason;
+        // The backend's body is untrusted JSON — any shape, `null` included;
+        // only a string `reason` is quoted, and nothing here may throw.
+        const body: unknown = await res.json().catch(() => undefined);
+        const raw = body && typeof body === "object" ? (body as { reason?: unknown }).reason : undefined;
         const reason = typeof raw === "string" ? raw : undefined;
         if (!denied) {
           log.warn(

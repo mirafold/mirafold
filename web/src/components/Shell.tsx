@@ -259,7 +259,7 @@ export function Shell() {
           // They've moved on in the new session — the fallback notice is done.
           setNotices((n) => (n.session ? { ...n, session: false } : n));
         } else if (m.type === "agents") {
-          setDaemonInfo((d) => daemonInfoFrom(m, d));
+          setDaemonInfo(daemonInfoFrom(m));
         } else if (m.type === "entitlement") {
           setDaemonInfo((d) => withEntitlement(d, m));
         } else if (m.type === "subscription") {

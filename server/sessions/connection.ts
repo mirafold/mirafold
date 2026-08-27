@@ -290,13 +290,13 @@ export function openConnection(
   // sessions — plus home, so the client can show paths in ~-form.
   // Re-sent whole on refresh_agents — availableAgents() reads the live
   // probe cache, so a re-send after a re-probe carries newly started servers.
-  // The license-key read rides after EVERY hello (refresh_agents re-sends
-  // the hello every few seconds from the picker) and on each change, so a
-  // client that resets on hello is never left without it.
+  // The license-key read rides ON every hello (so a client never keeps a
+  // previous daemon's) and, between hellos, as its own message on change.
   const sendEntitlement = (v: EntitlementView | undefined) => {
     if (v && !remote) viewport({ type: "entitlement", ...v });
   };
   const sendAgents = () => {
+    const read = remote ? undefined : entitlement?.state();
     viewport({
       type: "agents",
       agents: availableAgents(),
@@ -308,8 +308,8 @@ export function openConnection(
       ...(relay ? { relay } : {}),
       ...(relayOff && !remote ? { relayOff } : {}),
       ...(subscription && !remote ? { billing: "license-key" as const } : {}),
+      ...(read ? { entitlement: read } : {}),
     });
-    sendEntitlement(entitlement?.state());
   };
   sendAgents();
   const unsubscribeEntitlement = remote ? undefined : entitlement?.onChange(sendEntitlement);

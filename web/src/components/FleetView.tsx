@@ -151,7 +151,7 @@ export function FleetView() {
           return kept.length === prev.size ? prev : new Set(kept);
         });
       } else if (m.type === "agents") {
-        setDaemon((d) => daemonInfoFrom(m, d));
+        setDaemon(daemonInfoFrom(m));
       } else if (m.type === "entitlement") {
         setDaemon((d) => withEntitlement(d, m));
       } else if (m.type === "subscription") {

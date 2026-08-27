@@ -3587,6 +3587,14 @@ ordinary `<a target="_blank" rel="noopener noreferrer">`, nothing scripted.
   in four tests (a helper is a test-harness change, out of this pass); the
   residual gap that the card presents on the exchange, not the relay dial —
   a paired/refused relay state is a step of its own (PB.3, Kyle's call).
+  **Second cold review of the fixes** found five more, all fixed: the
+  stale-read keep-rule was keyed to `billing`, which the self-host rule had
+  just decoupled from the read → the read now rides ON the hello (additive
+  `agents.entitlement`) and nothing carries over between hellos; a 403 with
+  a non-object body (`null`) still threw into `unreachable`; the expiry timer
+  overflowed past ~24.8 days (chained hops, clock re-checked); the bidi rule
+  sat on `<div>`s (already isolated) instead of the inline `<q>` — now
+  `.pair-quote`, asserted by computed style in the e2e.
 
 ## Stretch goals (unscheduled — polish, no milestone gates on these)
 
