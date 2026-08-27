@@ -3533,6 +3533,25 @@ it"):**
 (fixed above); Tier-3's one flake in two runs was `follow-tail` (hardened
 twice before — on the proposed list).
 
+## Phase PB — The pair button is always there (Kyle-directed, opened + ✅ COMPLETE 2026-08-26)
+
+Before: a daemon with no relay configured rendered no pair button at all, so a
+new user never learned remote access existed. Now every LOCAL viewport draws
+`⧉ pair`; without a relay the card states why (additive hello field
+`relayOff`: `unentitled` | `opt-out` | `malformed-url`) — a plain link to
+`https://mirafold.com/pay` when nothing is configured (plus the
+`MIRAFOLD_LICENSE_KEY` line for an existing subscriber), the setting to change
+otherwise, never a sales pitch to someone who opted out. Remote viewports
+still receive neither field (a paired phone is not upsold). The link is an
+ordinary `<a target="_blank" rel="noopener noreferrer">`, nothing scripted.
+
+- [x] **PB.1** — `relayOff` on the hello (local only), `ConnectDevice`
+  always-present button + `RemoteAccessOff` card, CSS, README line. Tests:
+  `ConnectDevice.test.ts` (Tier 1), `session.itest`/`relay-service.itest`
+  hello assertions (Tier 2), "no relay: the pair button is still there…"
+  in `app.e2e.ts` incl. axe (Tier 3); two visual baselines re-taken for the
+  new status-bar button. Done 2026-08-26 on `feature/pair-upsell`.
+
 ## Stretch goals (unscheduled — polish, no milestone gates on these)
 
 Pick one up only when the phases above are quiet.
